@@ -1,0 +1,71 @@
+{
+  "name": "narduk-charts",
+  "version": "1.0.0",
+  "description": "Beautiful Vue 3 SVG charting library with smooth animations, tooltips, and dark mode support",
+  "type": "module",
+  "main": "./dist/narduk-charts.umd.cjs",
+  "module": "./dist/narduk-charts.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/narduk-charts.js",
+      "require": "./dist/narduk-charts.umd.cjs"
+    },
+    "./style.css": "./dist/narduk-charts.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite --config playground/vite.config.ts",
+    "build": "vue-tsc --noEmit && vite build",
+    "build:only": "vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "story:dev": "histoire dev",
+    "story:build": "histoire build",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "devDependencies": {
+    "@histoire/plugin-vue": "^0.17.17",
+    "@tailwindcss/vite": "^4.2.2",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "histoire": "^0.17.17",
+    "tailwindcss": "^4.2.2",
+    "typescript": "~5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^3.0.0",
+    "vue": "^3.5.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "chart",
+    "charts",
+    "svg",
+    "line-chart",
+    "bar-chart",
+    "pie-chart",
+    "donut-chart",
+    "data-visualization",
+    "typescript",
+    "composition-api",
+    "tailwindcss"
+  ],
+  "license": "MIT",
+  "author": "narduk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/narduk/narduk-charts"
+  }
+}
