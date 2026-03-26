@@ -1,0 +1,114 @@
+# AAPL Marketing Demo Brief
+
+Build a new flagship marketing-site example that feels inspired by the density and confidence of the TradingView chart surface without copying TradingView 1:1.
+
+## Goal
+
+Add a dedicated `AAPL` example to the marketing site and make it the best showcase of the advanced capabilities already present in `narduk-charts`.
+
+## Route And Placement
+
+- Add a dedicated route at `/examples/aapl`.
+- Implement the page in `site/views/examples/AaplExample.vue`.
+- Add a clear entry point from the marketing home page so the AAPL demo is visible as a flagship example, not buried behind the generic trading page.
+- Keep the existing `/examples/trading` page, but make the new AAPL page the more polished market-facing demo.
+
+## Visual Direction
+
+Use the current [TradingView chart surface](https://www.tradingview.com/chart/) as interaction-density reference:
+
+- clear symbol header
+- compact status strip with price / change / session stats
+- confident chart framing
+- professional control density
+- room for supporting data around the main chart
+
+Do not clone TradingView branding or layout literally. Stay inside the established `narduk-charts` visual language and ship a distinctive, product-ready surface.
+
+## Required `narduk-charts` Features To Showcase
+
+The point of this page is to demonstrate the advanced features we already have in the library:
+
+- `NardukCandleChart`
+- `NardukChartStack`
+- `NardukLineChart`
+- linked viewport sync with `v-model:domain`
+- linked study pane sync with `v-model:x-window`
+- volume pane
+- brush / minimap
+- drag-to-zoom, wheel zoom, shift-pan, double-click reset
+- crosshair
+- last-price line
+- session grid
+- forming-bar highlight
+- overlay slot usage
+- drawing tools
+- linear / log scale toggle
+- computed study row such as RSI
+- polished stats / HUD framing around the chart
+
+## Data Source
+
+Use the Stonx public market-data stream instead of exposing Polygon directly in the client.
+
+Default stream URL:
+
+- `wss://stonx.app/ws/stream`
+
+Subscription protocol from `stonx-app-2026`:
+
+- send `{"type":"subscribe","channels":["price:AAPL"]}`
+- send `{"type":"unsubscribe","channels":["price:AAPL"]}` on cleanup
+- handle `connected`
+- handle `price_update`
+- handle `pong`
+- handle `error`
+
+Observed live payload example:
+
+```json
+{
+  "type": "price_update",
+  "data": [
+    {
+      "symbol": "AAPL",
+      "price": 254,
+      "change": null,
+      "changePercent": null,
+      "lastUpdated": 1774562115772
+    }
+  ],
+  "timestamp": 1774562171041
+}
+```
+
+## Implementation Expectations
+
+- Show `AAPL` and `Apple Inc.` prominently.
+- Use real live updates from the stream for quote / header / status elements.
+- Seed the chart with plausible deterministic historical candles, then let live updates move the latest state forward.
+- If the WebSocket is unavailable, degrade gracefully with the seeded dataset and an explicit offline / delayed badge instead of a broken UI.
+- Keep the page responsive and credible on desktop and mobile.
+- Avoid leaking any secret API key into the marketing-site client bundle.
+
+## Marketing-Site Composition
+
+Aim for a flagship demo page with:
+
+- symbol header
+- company / venue context
+- real-time price strip
+- main candle chart
+- lower study pane
+- sidecar insight cards or watchlist-style context
+- clear CTA back into the library examples / playground
+
+## Quality Bar
+
+- production-ready polish, not a rough demo
+- no placeholder copy
+- no broken loading states
+- no hydration or runtime errors
+- no regressions to existing examples
+- follow existing Vue 3 Composition API patterns used in the repo
+

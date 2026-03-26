@@ -53,6 +53,11 @@ export const router = createRouter({
       name: 'example-streaming',
       component: () => import('./views/examples/StreamingExample.vue'),
     },
+    {
+      path: '/examples/aapl',
+      name: 'example-aapl',
+      component: () => import('./views/examples/AaplExample.vue'),
+    },
   ],
   scrollBehavior() {
     return { top: 0 }

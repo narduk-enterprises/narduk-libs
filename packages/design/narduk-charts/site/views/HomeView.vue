@@ -67,6 +67,12 @@ function formatHeroTime(ms: number) {
 
 const useCases = [
   {
+    to: '/examples/aapl',
+    title: 'AAPL flagship demo',
+    desc: 'Real-time AAPL candles from the Stonx stream. Linked panes, RSI study, volume, brush, drawings, and crosshair — best showcase of every advanced feature.',
+    tag: 'Flagship',
+  },
+  {
     to: '/examples/trading',
     title: 'Trading & OHLC',
     desc: 'Dual synced panes, live stream, volume, brush, pinch zoom, domain lock — pro-terminal patterns.',
@@ -152,8 +158,14 @@ const heroStats = [
               </p>
               <div class="mt-8 flex flex-wrap gap-3">
                 <RouterLink
-                  to="/examples/trading"
+                  to="/examples/aapl"
                   class="ns-btn ns-btn--primary"
+                >
+                  See AAPL live demo
+                </RouterLink>
+                <RouterLink
+                  to="/examples/trading"
+                  class="ns-btn ns-btn--ghost"
                 >
                   See trading charts
                 </RouterLink>
