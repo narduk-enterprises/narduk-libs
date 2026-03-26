@@ -1,3 +1,5 @@
+import type { ChartSeries, HistogramBin, CandleBar } from '../types'
+
 export interface ScaleResult {
   min: number
   max: number
@@ -182,4 +184,195 @@ export function formatValue(value: number): string {
 
 export function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3
+}
+
+export interface DecimatedCategoryData {
+  labels: string[]
+  series: ChartSeries[]
+}
+
+/**
+ * Evenly subsample categories for large datasets (same indices across all series).
+ * Use when `!zoomable` or when you accept zoom operating on decimated indices.
+ */
+export function decimateCategoryData(
+  labels: string[],
+  series: ChartSeries[],
+  maxPoints: number,
+): DecimatedCategoryData {
+  const n = labels.length
+  if (n <= maxPoints || maxPoints < 2) {
+    return {
+      labels: [...labels],
+      series: series.map(s => ({ ...s, data: [...s.data] })),
+    }
+  }
+  const idx: number[] = []
+  for (let i = 0; i < maxPoints; i++) {
+    idx.push(Math.round((i * (n - 1)) / Math.max(1, maxPoints - 1)))
+  }
+  const uniq = [...new Set(idx)].sort((a, b) => a - b)
+  const newLabels = uniq.map(i => labels[i] ?? '')
+  const newSeries = series.map(s => ({
+    ...s,
+    data: uniq.map(i => s.data[i] ?? null),
+  }))
+  return { labels: newLabels, series: newSeries }
+}
+
+export function computeHistogramBins(values: number[], binCount: number): HistogramBin[] {
+  if (values.length === 0 || binCount < 1) return []
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if (min === max) {
+    return [{ start: min, end: max, count: values.length }]
+  }
+  const w = (max - min) / binCount
+  const bins = Array.from({ length: binCount }, (_, i) => ({
+    start: min + i * w,
+    end: min + (i + 1) * w,
+    count: 0,
+  }))
+  for (const v of values) {
+    const i = Math.min(binCount - 1, Math.max(0, Math.floor((v - min) / w)))
+    bins[i].count += 1
+  }
+  return bins
+}
+
+export interface XYPoint {
+  x: number
+  y: number
+}
+
+/**
+ * Largest-Triangle-Three-Buckets downsampling (Steinarsson) for line/scatter paths.
+ */
+export function largestTriangleThreeBuckets(points: XYPoint[], threshold: number): XYPoint[] {
+  if (threshold < 3 || points.length <= threshold) return points.slice()
+  const sampled: XYPoint[] = []
+  const bucketSize = (points.length - 2) / (threshold - 2)
+  let a = 0
+  sampled.push(points[a]!)
+  for (let i = 0; i < threshold - 2; i++) {
+    const rangeStart = Math.floor((i + 0) * bucketSize) + 1
+    const rangeEnd = Math.floor((i + 1) * bucketSize) + 1
+    const avgRangeStart = Math.floor((i + 1) * bucketSize) + 1
+    const avgRangeEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, points.length)
+    let avgX = 0
+    let avgY = 0
+    const arLen = Math.max(1, avgRangeEnd - avgRangeStart)
+    for (let j = avgRangeStart; j < avgRangeEnd; j++) {
+      avgX += points[j]!.x
+      avgY += points[j]!.y
+    }
+    avgX /= arLen
+    avgY /= arLen
+    let maxArea = -1
+    let maxIdx = rangeStart
+    const pa = points[a]!
+    for (let j = rangeStart; j < rangeEnd; j++) {
+      const pj = points[j]!
+      const area = Math.abs(
+        (pa.x - avgX) * (pj.y - pa.y) - (pa.x - pj.x) * (avgY - pa.y),
+      ) * 0.5
+      if (area > maxArea) {
+        maxArea = area
+        maxIdx = j
+      }
+    }
+    sampled.push(points[maxIdx]!)
+    a = maxIdx
+  }
+  sampled.push(points[points.length - 1]!)
+  return sampled
+}
+
+export interface AggregatedCandleBucket {
+  bar: CandleBar
+  /** Inclusive slice indices relative to the `bars` argument. */
+  i0: number
+  i1: number
+}
+
+/** Merge contiguous candles into at most `maxBuckets` bars (for drawing dense history). */
+export function aggregateCandles(bars: CandleBar[], maxBuckets: number): CandleBar[] {
+  return aggregateCandlesDetailed(bars, maxBuckets).map(b => b.bar)
+}
+
+/** Same as `aggregateCandles` but keeps index ranges for layout and hit-testing. */
+export function aggregateCandlesDetailed(
+  bars: CandleBar[],
+  maxBuckets: number,
+): AggregatedCandleBucket[] {
+  if (bars.length === 0) return []
+  if (bars.length <= maxBuckets || maxBuckets < 2) {
+    return bars.map((bar, i) => ({ bar, i0: i, i1: i }))
+  }
+  const k = maxBuckets
+  const out: AggregatedCandleBucket[] = []
+  const chunk = bars.length / k
+  for (let b = 0; b < k; b++) {
+    const i0 = Math.floor(b * chunk)
+    const i1 = Math.min(bars.length - 1, Math.ceil((b + 1) * chunk) - 1)
+    if (i0 > i1) continue
+    const sub = bars.slice(i0, i1 + 1)
+    let h = -Infinity
+    let l = Infinity
+    let v = 0
+    for (const x of sub) {
+      h = Math.max(h, x.h)
+      l = Math.min(l, x.l)
+      v += x.v ?? 0
+    }
+    out.push({
+      i0,
+      i1,
+      bar: {
+        t: sub[0]!.t,
+        o: sub[0]!.o,
+        h,
+        l,
+        c: sub[sub.length - 1]!.c,
+        v: v > 0 ? v : undefined,
+      },
+    })
+  }
+  return out
+}
+
+/** Linear time (ms) at fractional bar index along sorted `bars`. */
+export function candleTimeAtIndex(bars: CandleBar[], index: number): number {
+  const n = bars.length
+  if (n === 0) return 0
+  if (n === 1) return bars[0]!.t
+  const full = n - 1
+  const x = Math.min(full, Math.max(0, index))
+  const i = Math.floor(x)
+  const f = x - i
+  if (i >= full) return bars[full]!.t
+  const t0 = bars[i]!.t
+  const t1 = bars[i + 1]!.t
+  return t0 + f * (t1 - t0)
+}
+
+/** Fractional bar index for a time (ms); clamps to `[0, bars.length - 1]`. */
+export function candleIndexAtTime(bars: CandleBar[], tMs: number): number {
+  const n = bars.length
+  if (n === 0) return 0
+  if (n === 1) return 0
+  if (tMs <= bars[0]!.t) return 0
+  if (tMs >= bars[n - 1]!.t) return n - 1
+  let lo = 0
+  let hi = n - 1
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1
+    if (bars[mid]!.t <= tMs) lo = mid
+    else hi = mid
+  }
+  const i = lo
+  const t0 = bars[i]!.t
+  const t1 = bars[i + 1]!.t
+  if (t1 === t0) return i
+  return i + (tMs - t0) / (t1 - t0)
 }

@@ -32,7 +32,12 @@ const positionStyle = computed(() => {
 </script>
 
 <template>
-  <div class="narduk-tooltip" :style="positionStyle">
+  <div
+    class="narduk-tooltip"
+    :style="positionStyle"
+    role="tooltip"
+    :aria-hidden="!visible"
+  >
     <slot
       name="content"
       :title="title"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, useId } from 'vue'
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { describeArc, easeOutCubic, formatValue } from '../utils/math'
@@ -14,6 +14,7 @@ import type {
   ChartTheme,
 } from '../types'
 import { chartThemeClass } from '../utils/chartTheme'
+import { defaultPieChartLabel } from '../utils/chartA11y'
 
 interface SliceData {
   path: string
@@ -37,12 +38,17 @@ const props = withDefaults(defineProps<{
   dark?: boolean
   respectReducedMotion?: boolean
   theme?: ChartTheme
+  chartTitle?: string
+  chartDescription?: string
+  legendGroupLabel?: string
+  dir?: 'ltr' | 'rtl'
 }>(), {
   donut: false,
   innerRadius: 0.6,
   showLabels: true,
   animate: true,
   respectReducedMotion: true,
+  legendGroupLabel: 'Data series',
 })
 
 const emit = defineEmits<{
@@ -55,7 +61,19 @@ defineSlots<{
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
 }>()
 
+const pieA11yRaw = useId()
+const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const pieCaptionId = `nc-pcap-${idSafe(pieA11yRaw)}`
+const svgTitleId = `nc-pt-${idSafe(pieA11yRaw)}`
+const svgDescId = `nc-pd-${idSafe(pieA11yRaw)}`
+
 const containerRef = ref<HTMLElement | null>(null)
+const svgRef = ref<SVGSVGElement | null>(null)
+const focusedSliceIndex = ref(0)
+
+const effectiveChartTitle = computed(() =>
+  props.chartTitle ?? defaultPieChartLabel(props.data.map(d => d.label)),
+)
 const { chartWidth, chartHeight, padding, isDark, effectiveAnimate } = useChart(
   containerRef, props,
   { top: 20, right: 20, bottom: 20, left: 20 },
@@ -171,6 +189,79 @@ const slices = computed<SliceData[]>(() => {
   return result
 })
 
+watch(
+  () => slices.value.length,
+  (n) => {
+    if (focusedSliceIndex.value >= n) focusedSliceIndex.value = Math.max(0, n - 1)
+  },
+)
+
+function focusSliceEl(index: number) {
+  nextTick(() => {
+    const el = svgRef.value?.querySelector(`[data-nc-slice="${index}"]`)
+    if (el instanceof SVGElement) el.focus()
+  })
+}
+
+function onSliceKeydown(e: KeyboardEvent, i: number) {
+  const n = slices.value.length
+  if (n === 0) return
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    const next = (i + 1) % n
+    focusedSliceIndex.value = next
+    focusSliceEl(next)
+    showSliceTooltip(next)
+    return
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const prev = (i - 1 + n) % n
+    focusedSliceIndex.value = prev
+    focusSliceEl(prev)
+    showSliceTooltip(prev)
+    return
+  }
+  if (e.key === 'Home') {
+    e.preventDefault()
+    focusedSliceIndex.value = 0
+    focusSliceEl(0)
+    showSliceTooltip(0)
+    return
+  }
+  if (e.key === 'End') {
+    e.preventDefault()
+    const last = n - 1
+    focusedSliceIndex.value = last
+    focusSliceEl(last)
+    showSliceTooltip(last)
+    return
+  }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    const s = slices.value[i]
+    emit('sliceClick', {
+      label: s.item.label,
+      value: s.item.value,
+      percentage: s.percentage,
+    })
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    hideTooltip()
+  }
+}
+
+function showSliceTooltip(i: number) {
+  const s = slices.value[i]
+  showTooltip(8, 8, '', [{
+    color: s.color,
+    label: s.item.label,
+    value: `${formatValue(s.item.value)} (${s.percentage.toFixed(1)}%)`,
+  }])
+}
+
 // ── Hover ────────────────────────────────────────────────────
 
 const hoverIndex = ref<number | null>(null)
@@ -256,32 +347,69 @@ function sliceTransform(index: number): string {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    :class="rootChartClasses"
-    :style="{ width: props.width ? `${props.width}px` : '100%' }"
+  <figure
+    class="narduk-chart-figure m-0 min-w-0"
+    :dir="dir"
   >
+    <figcaption
+      v-if="chartTitle"
+      :id="pieCaptionId"
+      class="narduk-chart__title"
+    >
+      {{ chartTitle }}
+    </figcaption>
+    <p
+      v-if="chartDescription"
+      class="narduk-chart__description"
+    >
+      {{ chartDescription }}
+    </p>
     <div
-      v-if="isEmpty"
-      class="narduk-chart__empty"
+      ref="containerRef"
+      :class="rootChartClasses"
+      :style="{ width: props.width ? `${props.width}px` : '100%' }"
+      role="group"
+      :aria-labelledby="chartTitle ? pieCaptionId : undefined"
+      :aria-label="chartTitle ? undefined : effectiveChartTitle"
+      :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <slot name="empty">No data</slot>
-    </div>
-    <svg
-      v-else-if="chartWidth > 0"
-      :width="chartWidth"
-      :height="chartHeight"
-      @mousemove="onMouseMove"
-      @mouseleave="onMouseLeave"
-    >
+      <div
+        v-if="isEmpty"
+        class="narduk-chart__empty"
+      >
+        <slot name="empty">No data</slot>
+      </div>
+      <svg
+        v-else-if="chartWidth > 0"
+        ref="svgRef"
+        :width="chartWidth"
+        :height="chartHeight"
+        role="img"
+        :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+      >
+        <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
+        <desc
+          v-if="chartDescription?.trim()"
+          :id="svgDescId"
+        >
+          {{ chartDescription }}
+        </desc>
       <g v-for="(slice, i) in slices" :key="slice.item.label">
         <path
           v-if="slice.path"
           class="narduk-pie-slice"
+          role="button"
+          :tabindex="focusedSliceIndex === i ? 0 : -1"
+          :data-nc-slice="i"
+          :aria-label="`${slice.item.label}, ${formatValue(slice.item.value)}, ${slice.percentage.toFixed(1)} percent`"
           :d="slice.path"
           :fill="slice.color"
           :opacity="hoverIndex !== null && hoverIndex !== i ? 0.6 : 1"
           :transform="sliceTransform(i)"
+          @focus="focusedSliceIndex = i"
+          @keydown="onSliceKeydown($event, i)"
           @click="onSliceClick(slice, $event)"
         />
       </g>
@@ -340,6 +468,7 @@ function sliceTransform(index: number): string {
     <template v-if="!isEmpty">
       <ChartLegend
         :items="legendItems"
+        :group-label="legendGroupLabel"
         @toggle="toggleItem"
       >
         <template
@@ -367,5 +496,6 @@ function sliceTransform(index: number): string {
         </template>
       </ChartTooltip>
     </template>
-  </div>
+    </div>
+  </figure>
 </template>

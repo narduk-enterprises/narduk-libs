@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
 import { useStreamingSeries } from './useStreamingSeries'
 
 describe('useStreamingSeries', () => {
@@ -21,5 +21,21 @@ describe('useStreamingSeries', () => {
     push(1)
     clear()
     expect(values.value).toEqual([])
+  })
+
+  it('throttles when maxUpdatesPerSecond is set', () => {
+    vi.useFakeTimers()
+    const { values, push } = useStreamingSeries(10, [], { maxUpdatesPerSecond: 2 })
+    push(1)
+    push(2)
+    expect(values.value).toEqual([1])
+    vi.advanceTimersByTime(510)
+    push(2)
+    expect(values.value).toEqual([1, 2])
+    vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 })

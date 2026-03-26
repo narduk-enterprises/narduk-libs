@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted, watch, unref, type Ref, type MaybeRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, unref, type Ref, type MaybeRef } from 'vue'
 import type { ChartPadding } from '../types'
 
 export interface UseChartProps {
@@ -43,20 +43,44 @@ export function useChart(
   const prefersReducedMotion = ref(false)
 
   let observer: ResizeObserver | null = null
+  let resizeRaf = 0
   let mqlDark: MediaQueryList | null = null
   let mqlMotion: MediaQueryList | null = null
 
   const onDarkChange = (e: MediaQueryListEvent) => { systemPrefersDark.value = e.matches }
   const onMotionChange = (e: MediaQueryListEvent) => { prefersReducedMotion.value = e.matches }
 
+  function cancelResizeRaf() {
+    if (resizeRaf) {
+      cancelAnimationFrame(resizeRaf)
+      resizeRaf = 0
+    }
+  }
+
   onMounted(() => {
-    const el = containerRef.value
-    if (el && !props.width && typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(([entry]) => {
-        observedWidth.value = entry.contentRect.width
+    void nextTick(() => {
+      const el = containerRef.value
+      if (!el || props.width !== undefined) return
+      const syncFromDom = () => {
+        const node = containerRef.value
+        if (!node) return
+        const w = node.clientWidth
+        if (w < 1) return
+        if (observedWidth.value !== w) observedWidth.value = w
+      }
+      syncFromDom()
+
+      if (typeof ResizeObserver === 'undefined') return
+
+      observer = new ResizeObserver(() => {
+        cancelResizeRaf()
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0
+          syncFromDom()
+        })
       })
       observer.observe(el)
-    }
+    })
 
     if (typeof window !== 'undefined') {
       mqlDark = window.matchMedia('(prefers-color-scheme: dark)')
@@ -70,13 +94,15 @@ export function useChart(
   })
 
   watch(() => props.width, (w) => {
-    if (w && observer) {
+    if (w !== undefined && observer) {
+      cancelResizeRaf()
       observer.disconnect()
       observer = null
     }
   })
 
   onUnmounted(() => {
+    cancelResizeRaf()
     observer?.disconnect()
     mqlDark?.removeEventListener('change', onDarkChange)
     mqlMotion?.removeEventListener('change', onMotionChange)

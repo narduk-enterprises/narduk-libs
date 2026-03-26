@@ -7,6 +7,7 @@ import {
   lineSegmentsToPaths,
   closeAreaUnderLine,
   formatValue,
+  decimateCategoryData,
 } from '../utils/math'
 import { createYAxisMap } from '../utils/yScale'
 import { layoutReferenceLabelYs } from '../utils/refLabelLayout'
@@ -27,6 +28,11 @@ import type {
   LineZoomRange,
 } from '../types'
 import { chartThemeClass } from '../utils/chartTheme'
+import {
+  defaultLineChartLabel,
+  linePointSummary,
+  zoomKeyboardHint,
+} from '../utils/chartA11y'
 
 const props = withDefaults(defineProps<{
   series: ChartSeries[]
@@ -64,6 +70,25 @@ const props = withDefaults(defineProps<{
   zoomAutoY?: boolean
   /** Minimum visible points along X when zooming in (default 3). */
   zoomMinPoints?: number
+  /** Short visible title (figcaption) and primary accessible name when set. */
+  chartTitle?: string
+  /** Longer description for screen readers and SVG `<desc>`. */
+  chartDescription?: string
+  /** Render an off-screen data table for high-stakes accessibility. */
+  showDataTable?: boolean
+  /** Fieldset legend label for the series toggles (screen readers). */
+  legendGroupLabel?: string
+  /** Text direction for layout mirroring (e.g. RTL). */
+  dir?: 'ltr' | 'rtl'
+  /** Format category labels on the X axis. */
+  formatXLabel?: (label: string, index: number) => string
+  /** Format numeric Y-axis tick labels. */
+  formatTickValue?: (value: number) => string
+  /**
+   * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
+   * intentionally zoom on decimated indices.
+   */
+  maxRenderPoints?: number
 }>(), {
   smooth: true,
   showGrid: true,
@@ -78,6 +103,8 @@ const props = withDefaults(defineProps<{
   zoomable: false,
   zoomAutoY: true,
   zoomMinPoints: 3,
+  showDataTable: false,
+  legendGroupLabel: 'Data series',
 })
 
 const emit = defineEmits<{
@@ -85,11 +112,30 @@ const emit = defineEmits<{
   zoom: [range: LineZoomRange]
 }>()
 
+const effLabels = computed(() => {
+  const m = props.maxRenderPoints
+  if (m && props.labels.length > m) {
+    return decimateCategoryData(props.labels, props.series, m).labels
+  }
+  return props.labels
+})
+
+const effSeries = computed(() => {
+  const m = props.maxRenderPoints
+  if (m && props.labels.length > m) {
+    return decimateCategoryData(props.labels, props.series, m).series
+  }
+  return props.series
+})
+
 defineSlots<{
   empty?: () => unknown
   tooltip?: (props: { title: string; items: TooltipItem[]; visible: boolean }) => unknown
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
 }>()
+
+/** Fractional category index window; sync with `NardukCandleChart` via mapped indices + `candleTimeAtIndex`. */
+const xWindowModel = defineModel<{ start: number; end: number } | undefined>('xWindow')
 
 const showRightAxis = computed(() => {
   if (!props.dualYAxis) return false
@@ -123,24 +169,45 @@ const {
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
 
 const plotClipIdRaw = useId()
-const plotClipId = `nc-clip-${plotClipIdRaw.replace(/[^a-zA-Z0-9_-]/g, '')}`
+const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const plotClipId = `nc-clip-${idSafe(plotClipIdRaw)}`
 const plotClipUrl = computed(() => `url(#${plotClipId})`)
+const captionElId = `nc-cap-${idSafe(plotClipIdRaw)}`
+const liveRegionElId = `nc-live-${idSafe(plotClipIdRaw)}`
+const zoomHintElId = `nc-zoom-${idSafe(plotClipIdRaw)}`
+const svgTitleElId = `nc-svgt-${idSafe(plotClipIdRaw)}`
+const svgDescElId = `nc-svgd-${idSafe(plotClipIdRaw)}`
 
 /** Fractional index window along `labels` (inclusive ends). */
 const xViewMin = ref(0)
 const xViewMax = ref(1)
 
 watch(
-  () => props.labels.length,
+  () => effLabels.value.length,
   (n) => {
     const full = Math.max(0, n - 1)
+    const w = xWindowModel.value
+    if (w !== undefined && n > 1) {
+      clampViewWindow(w.start, w.end)
+      return
+    }
     xViewMin.value = 0
     xViewMax.value = full
   },
   { immediate: true },
 )
 
-const xFullSpan = computed(() => Math.max(1e-9, props.labels.length - 1))
+watch(
+  () => xWindowModel.value,
+  (w) => {
+    if (w === undefined || effLabels.value.length <= 1) return
+    if (xViewMin.value === w.start && xViewMax.value === w.end) return
+    clampViewWindow(w.start, w.end)
+  },
+  { deep: true },
+)
+
+const xFullSpan = computed(() => Math.max(1e-9, effLabels.value.length - 1))
 
 const minIndexSpan = computed(() => {
   const pts = Math.max(2, props.zoomMinPoints ?? 3)
@@ -167,11 +234,19 @@ function clampViewWindow(a: number, b: number) {
   xViewMax.value = nmax
 }
 
+function emitZoomRange() {
+  const r = { start: xViewMin.value, end: xViewMax.value }
+  emit('zoom', r)
+  const m = xWindowModel.value
+  if (m?.start !== r.start || m?.end !== r.end)
+    xWindowModel.value = r
+}
+
 function resetZoom() {
   const full = xFullSpan.value
   xViewMin.value = 0
   xViewMax.value = full
-  emit('zoom', { start: 0, end: full })
+  emitZoomRange()
 }
 
 function applyWheelZoom(e: WheelEvent) {
@@ -181,7 +256,7 @@ function applyWheelZoom(e: WheelEvent) {
   if (!svg) return
   const rect = svg.getBoundingClientRect()
   const mouseX = (e.clientX - rect.left) * (chartWidth.value / rect.width)
-  const n = props.labels.length
+  const n = effLabels.value.length
   const full = xFullSpan.value
   if (n <= 1 || full <= 0) return
 
@@ -211,7 +286,7 @@ function applyWheelZoom(e: WheelEvent) {
     nmin = Math.max(0, nmin)
   }
   clampViewWindow(nmin, nmax)
-  emit('zoom', { start: xViewMin.value, end: xViewMax.value })
+  emitZoomRange()
 }
 
 watch(
@@ -280,7 +355,7 @@ const zoomBoxPreview = computed(() => {
 })
 
 function applyZoomFromBox() {
-  const n = props.labels.length
+  const n = effLabels.value.length
   if (n <= 1) return
   const x1 = clampSvgXToPlot(zoomBoxStartSvgX.value)
   const x2 = clampSvgXToPlot(zoomBoxCurrentSvgX.value)
@@ -288,7 +363,7 @@ function applyZoomFromBox() {
   let i1 = svgPlotXToDataIndex(x2)
   if (i1 < i0) [i0, i1] = [i1, i0]
   clampViewWindow(i0, i1)
-  emit('zoom', { start: xViewMin.value, end: xViewMax.value })
+  emitZoomRange()
 }
 
 function onPlotPointerDown(e: PointerEvent) {
@@ -342,7 +417,7 @@ function onPlotPointerMove(e: PointerEvent) {
     }
     xViewMin.value = nmin
     xViewMax.value = nmax
-    emit('zoom', { start: nmin, end: nmax })
+    emitZoomRange()
     return
   }
 
@@ -425,7 +500,7 @@ function toggleSeries(name: string) {
 }
 
 const visibleSeries = computed(() =>
-  props.series.filter(s => !hiddenSeries.value.has(s.name)),
+  effSeries.value.filter(s => !hiddenSeries.value.has(s.name)),
 )
 
 const isEmpty = computed(() => {
@@ -454,7 +529,7 @@ function numericValues(series: ChartSeries[]): number[] {
 }
 
 function visibleIndexBounds(): { i0: number; i1: number } {
-  const n = props.labels.length
+  const n = effLabels.value.length
   if (n === 0) return { i0: 0, i1: -1 }
   const i0 = Math.max(0, Math.floor(xViewMin.value))
   const i1 = Math.min(n - 1, Math.ceil(xViewMax.value))
@@ -540,6 +615,20 @@ const secondaryMap = computed(() => {
   )
 })
 
+const primaryTicksForDisplay = computed(() =>
+  primaryMap.value.ticks.map(t => ({
+    ...t,
+    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+  })),
+)
+
+const secondaryTicksForDisplay = computed(() =>
+  secondaryMap.value.ticks.map(t => ({
+    ...t,
+    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+  })),
+)
+
 function axisForSeries(s: ChartSeries): ChartYAxisId {
   if (!useDual.value) return 'primary'
   return s.yAxis ?? 'primary'
@@ -559,7 +648,7 @@ function yPosForSeries(s: ChartSeries, v: number): number {
 }
 
 function xPos(index: number): number {
-  const n = props.labels.length
+  const n = effLabels.value.length
   if (n <= 1) return padding.value.left + plotWidth.value / 2
   const lo = xViewMin.value
   const hi = xViewMax.value
@@ -581,13 +670,121 @@ const seriesRender = computed(() =>
 )
 
 function resolveColor(s: ChartSeries): string {
-  return s.color || getColor(props.colors, props.series.indexOf(s))
+  const idx = props.series.findIndex(x => x.name === s.name)
+  return s.color || getColor(props.colors, idx >= 0 ? idx : 0)
 }
 
 const activeIndex = ref<number | null>(null)
+const kbFocusIndex = ref<number | null>(null)
+const svgRef = ref<SVGSVGElement | null>(null)
+
+const effectiveChartTitle = computed(() =>
+  props.chartTitle ?? defaultLineChartLabel(props.series, props.labels.length),
+)
+
+const ariaDescribedBy = computed(() => {
+  const ids: string[] = []
+  if (props.chartDescription?.trim()) ids.push(svgDescElId)
+  if (props.zoomable) ids.push(zoomHintElId)
+  return ids.length ? ids.join(' ') : undefined
+})
+
+const displayIndex = computed(() =>
+  kbFocusIndex.value !== null ? kbFocusIndex.value : activeIndex.value,
+)
+
+const liveSummary = computed(() => {
+  const i = displayIndex.value
+  if (i === null || isEmpty.value) return ''
+  return linePointSummary(formatXAxisLabel(i), visibleSeries.value, i)
+})
+
+function formatXAxisLabel(i: number): string {
+  const raw = effLabels.value[i] ?? ''
+  return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+}
+
+function showTooltipAtIndex(idx: number) {
+  const items: TooltipItem[] = visibleSeries.value.map((s) => {
+    const v = s.data[idx]
+    return {
+      color: resolveColor(s),
+      label: s.name,
+      value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
+    }
+  })
+  const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
+  const py = padding.value.top + plotHeight.value / 2
+  showTooltip(px, py, formatXAxisLabel(idx), items)
+}
+
+function onSvgFocus() {
+  if (isEmpty.value) return
+  const { i0, i1 } = visibleIndexBounds()
+  const start = Math.min(i1, Math.max(i0, Math.round((i0 + i1) / 2)))
+  kbFocusIndex.value = start
+  showTooltipAtIndex(start)
+}
+
+function onSvgBlur() {
+  kbFocusIndex.value = null
+  hideTooltip()
+}
+
+function onPlotKeydown(e: KeyboardEvent) {
+  if (isEmpty.value || effLabels.value.length === 0) return
+  const { i0, i1 } = visibleIndexBounds()
+  let idx = kbFocusIndex.value ?? Math.min(i1, Math.max(i0, Math.round((i0 + i1) / 2)))
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    idx = Math.min(i1, idx + 1)
+    kbFocusIndex.value = idx
+    showTooltipAtIndex(idx)
+    return
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    idx = Math.max(i0, idx - 1)
+    kbFocusIndex.value = idx
+    showTooltipAtIndex(idx)
+    return
+  }
+  if (e.key === 'Home') {
+    e.preventDefault()
+    kbFocusIndex.value = i0
+    showTooltipAtIndex(i0)
+    return
+  }
+  if (e.key === 'End') {
+    e.preventDefault()
+    kbFocusIndex.value = i1
+    showTooltipAtIndex(i1)
+    return
+  }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    const cur = kbFocusIndex.value
+    if (cur === null) return
+    emit('pointClick', {
+      index: cur,
+      label: effLabels.value[cur],
+      values: visibleSeries.value.map(s => ({
+        seriesName: s.name,
+        value: s.data[cur] ?? null,
+      })),
+    })
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    hideTooltip()
+    kbFocusIndex.value = null
+  }
+}
 
 function pickNearestIndex(svgX: number): number | null {
-  const n = props.labels.length
+  const n = effLabels.value.length
   if (n === 0) return null
   const pl = padding.value.left
   const pr = chartWidth.value - padding.value.right
@@ -605,9 +802,11 @@ function pickNearestIndex(svgX: number): number | null {
 function onMouseMove(event: MouseEvent) {
   if (props.zoomable && zoomBoxPhase.value === 'dragging') {
     activeIndex.value = null
+    kbFocusIndex.value = null
     hideTooltip()
     return
   }
+  kbFocusIndex.value = null
   const svg = containerRef.value?.querySelector('svg')
   if (!svg) return
   const rect = svg.getBoundingClientRect()
@@ -633,12 +832,15 @@ function onMouseMove(event: MouseEvent) {
     }
   })
 
-  showTooltip(mouseX, mouseY, props.labels[nearest], items)
+  showTooltip(mouseX, mouseY, effLabels.value[nearest], items)
 }
 
 function onMouseLeave() {
   activeIndex.value = null
-  hideTooltip()
+  if (document.activeElement !== svgRef.value) {
+    hideTooltip()
+    kbFocusIndex.value = null
+  }
 }
 
 function onSvgClick(event: MouseEvent) {
@@ -654,7 +856,7 @@ function onSvgClick(event: MouseEvent) {
   if (idx === null) return
   emit('pointClick', {
     index: idx,
-    label: props.labels[idx],
+    label: effLabels.value[idx],
     values: visibleSeries.value.map(s => ({
       seriesName: s.name,
       value: s.data[idx] ?? null,
@@ -682,7 +884,7 @@ const legendItems = computed<LegendItem[]>(() =>
 
 /** Integer label indices along X for the visible window (readability). */
 const xAxisLabelIndices = computed(() => {
-  const n = props.labels.length
+  const n = effLabels.value.length
   if (n === 0) return []
   const i0 = Math.max(0, Math.floor(xViewMin.value))
   const i1 = Math.min(n - 1, Math.ceil(xViewMax.value))
@@ -762,34 +964,130 @@ const referenceLineLayouts = computed(() => {
 })
 
 const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 4)
+
+const svgAriaLabelledby = computed(() => {
+  const parts = [svgTitleElId]
+  if (props.chartDescription?.trim()) parts.push(svgDescElId)
+  return parts.join(' ')
+})
+
+const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    :class="rootChartClasses"
-    :style="{ width: props.width ? `${props.width}px` : '100%' }"
+  <figure
+    class="narduk-chart-figure m-0 min-w-0"
+    :dir="dir"
   >
+    <figcaption
+      v-if="chartTitle"
+      :id="captionElId"
+      class="narduk-chart__title"
+    >
+      {{ chartTitle }}
+    </figcaption>
+    <p
+      v-if="chartDescription"
+      class="narduk-chart__description"
+    >
+      {{ chartDescription }}
+    </p>
     <div
-      v-if="isEmpty"
-      class="narduk-chart__empty"
+      ref="containerRef"
+      :class="rootChartClasses"
+      :style="{ width: props.width ? `${props.width}px` : '100%' }"
+      role="group"
+      :aria-labelledby="chartTitle ? captionElId : undefined"
+      :aria-label="chartTitle ? undefined : effectiveChartTitle"
+      :aria-describedby="ariaDescribedBy"
     >
-      <slot name="empty">No data</slot>
-    </div>
-    <svg
-      v-else-if="chartWidth > 0"
-      :width="chartWidth"
-      :height="chartHeight"
-      class="narduk-line-chart__svg"
-      @mousemove="onMouseMove"
-      @mouseleave="onMouseLeave"
-      @click="onSvgClick"
-      @pointerdown="onPlotPointerDown"
-      @pointermove="onPlotPointerMove"
-      @pointerup="onPlotPointerEnd"
-      @pointercancel="onPlotPointerEnd"
-      @dblclick="onPlotDblClick"
-    >
+      <div
+        v-if="zoomable"
+        :id="zoomHintElId"
+        class="narduk-sr-only"
+      >
+        {{ zoomAriaHint }}
+      </div>
+      <div
+        :id="liveRegionElId"
+        aria-live="polite"
+        aria-atomic="true"
+        class="narduk-sr-only"
+      >
+        {{ liveSummary }}
+      </div>
+
+      <table
+        v-if="showDataTable && !isEmpty"
+        class="narduk-sr-only"
+      >
+        <caption>{{ effectiveChartTitle }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">
+              Category
+            </th>
+            <th
+              v-for="s in series"
+              :key="s.name"
+              scope="col"
+            >
+              {{ s.name }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(lab, ri) in labels"
+            :key="ri"
+          >
+            <th scope="row">
+              {{ formatXLabel ? formatXLabel(lab, ri) : lab }}
+            </th>
+            <td
+              v-for="s in series"
+              :key="s.name"
+            >
+              {{ s.data[ri] ?? '' }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div
+        v-if="isEmpty"
+        class="narduk-chart__empty"
+      >
+        <slot name="empty">No data</slot>
+      </div>
+      <svg
+        v-else-if="chartWidth > 0"
+        ref="svgRef"
+        :width="chartWidth"
+        :height="chartHeight"
+        class="narduk-line-chart__svg"
+        role="img"
+        :aria-labelledby="svgAriaLabelledby"
+        tabindex="0"
+        @focus="onSvgFocus"
+        @blur="onSvgBlur"
+        @keydown="onPlotKeydown"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+        @click="onSvgClick"
+        @pointerdown="onPlotPointerDown"
+        @pointermove="onPlotPointerMove"
+        @pointerup="onPlotPointerEnd"
+        @pointercancel="onPlotPointerEnd"
+        @dblclick="onPlotDblClick"
+      >
+        <title :id="svgTitleElId">{{ effectiveChartTitle }}</title>
+        <desc
+          v-if="chartDescription?.trim()"
+          :id="svgDescElId"
+        >
+          {{ chartDescription }}
+        </desc>
       <defs>
         <clipPath :id="plotClipId">
           <rect
@@ -1000,21 +1298,21 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
       </g>
 
       <!-- Crosshair -->
-      <g v-if="activeIndex !== null">
+      <g v-if="displayIndex !== null">
         <line
           class="narduk-crosshair"
-          :x1="xPos(activeIndex)"
+          :x1="xPos(displayIndex)"
           :y1="padding.top"
-          :x2="xPos(activeIndex)"
+          :x2="xPos(displayIndex)"
           :y2="chartHeight - padding.bottom"
         />
         <circle
           v-for="s in visibleSeries"
           :key="s.name"
-          v-show="s.data[activeIndex!] != null && !Number.isNaN(s.data[activeIndex!] as number)"
+          v-show="s.data[displayIndex!] != null && !Number.isNaN(s.data[displayIndex!] as number)"
           class="narduk-line-point"
-          :cx="xPos(activeIndex)"
-          :cy="yPosForSeries(s, s.data[activeIndex!] as number)"
+          :cx="xPos(displayIndex)"
+          :cy="yPosForSeries(s, s.data[displayIndex!] as number)"
           r="5"
           :fill="resolveColor(s)"
         />
@@ -1030,7 +1328,7 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
           :y2="chartHeight - padding.bottom"
         />
         <text
-          v-for="(t, ti) in primaryMap.ticks"
+          v-for="(t, ti) in primaryTicksForDisplay"
           :key="'py-' + ti"
           :x="padding.left - 8"
           :y="yAtDataValue(t.value, 'primary')"
@@ -1052,7 +1350,7 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
           :y2="chartHeight - padding.bottom"
         />
         <text
-          v-for="(t, ti) in secondaryMap.ticks"
+          v-for="(t, ti) in secondaryTicksForDisplay"
           :key="'sy-' + ti"
           :x="chartWidth - padding.right + 8"
           :y="yAtDataValue(t.value, 'secondary')"
@@ -1078,7 +1376,7 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
           text-anchor="middle"
           dominant-baseline="hanging"
         >
-          {{ labels[i] }}
+          {{ formatXAxisLabel(i) }}
         </text>
       </g>
 
@@ -1095,6 +1393,7 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
     <template v-if="!isEmpty">
       <ChartLegend
         :items="legendItems"
+        :group-label="legendGroupLabel"
         @toggle="toggleSeries"
       >
         <template
@@ -1122,5 +1421,6 @@ const refLabelAnchorX = computed(() => chartWidth.value - padding.value.right + 
         </template>
       </ChartTooltip>
     </template>
-  </div>
+    </div>
+  </figure>
 </template>

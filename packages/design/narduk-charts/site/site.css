@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-ns-bg: #fafafa;
+  --color-ns-surface: #ffffff;
+  --color-ns-text: #0c0c0f;
+  --color-ns-muted: #5c5c66;
+  --color-ns-border: #e8e8ed;
+  --color-ns-accent: #4338ca;
+  --color-ns-accent-hover: #3730a3;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-ns-bg);
+  color: var(--color-ns-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ns-container {
+  width: 100%;
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.ns-prose {
+  max-width: 42rem;
+  line-height: 1.65;
+  color: var(--color-ns-muted);
+  font-size: 0.9375rem;
+}
+
+.ns-prose p {
+  margin: 0 0 1rem;
+}
+
+.ns-card {
+  background: var(--color-ns-surface);
+  border: 1px solid var(--color-ns-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Chart example panels: fill viewport in native fullscreen */
+.ns-chart-panel:fullscreen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border-radius: 0;
+  overflow: auto;
+  box-shadow: none;
+}
+
+.ns-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ns-btn--primary {
+  background: var(--color-ns-accent);
+  color: #fff;
+}
+
+.ns-btn--primary:hover {
+  background: var(--color-ns-accent-hover);
+}
+
+.ns-btn--ghost {
+  background: transparent;
+  color: var(--color-ns-text);
+  border: 1px solid var(--color-ns-border);
+}
+
+.ns-btn--ghost:hover {
+  border-color: var(--color-ns-accent);
+  color: var(--color-ns-accent);
+}
+
+.ns-btn--compact {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8125rem;
+  border-radius: 0.625rem;
+  min-height: 2.25rem;
+}
+
+.ns-hero-chart-card {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 28px -16px rgba(15, 23, 42, 0.12);
+}

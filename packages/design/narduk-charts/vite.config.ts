@@ -6,11 +6,11 @@ import dts from 'vite-plugin-dts'
 
 export default defineConfig({
   plugins: [
-    tailwindcss(),
     vue(),
+    tailwindcss(),
     dts({
       include: ['src'],
-      exclude: ['src/**/*.story.vue', 'src/stories/**'],
+      exclude: ['src/**/*.story.vue', 'src/stories/**', 'src/entries/**'],
       insertTypesEntry: true,
     }),
   ],

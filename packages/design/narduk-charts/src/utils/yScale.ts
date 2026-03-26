@@ -52,11 +52,13 @@ export function createYAxisMap(
   dataValues: number[],
   extraValues: number[],
   plotHeight: number,
-  options?: { symlogLinthresh?: number; maxTicks?: number },
+  options?: { symlogLinthresh?: number; maxTicks?: number; linearFromZero?: boolean },
 ): YAxisMapResult {
   const maxTicks = options?.maxTicks ?? 6
   const linthresh = options?.symlogLinthresh ?? 1
   const all = [...dataValues, ...extraValues].filter(v => Number.isFinite(v))
+  /** When true (default), linear Y includes 0 when all values are positive — good for counts, bad for OHLC-only prices. */
+  const linearFromZero = options?.linearFromZero !== false
 
   if (mode === 'linear') {
     const vals = all
@@ -69,7 +71,10 @@ export function createYAxisMap(
           linearScale(v, s.min, s.max, 0, plotHeight),
       }
     }
-    const s = niceScale(Math.min(0, Math.min(...vals)), Math.max(...vals), maxTicks)
+    const rawMin = Math.min(...vals)
+    const rawMax = Math.max(...vals)
+    const low = linearFromZero ? Math.min(0, rawMin) : rawMin
+    const s = niceScale(low, rawMax, maxTicks)
     return {
       domain: { min: s.min, max: s.max },
       ticks: s.ticks.map(value => ({ value, label: formatValue(value) })),
@@ -128,4 +133,32 @@ export function createYAxisMap(
     yFromBottom: v =>
       linearScale(symlogForward(v, linthresh), s.min, s.max, 0, plotHeight),
   }
+}
+
+/**
+ * Invert the Y axis: distance from the **bottom** of the plot (px) → data value.
+ * Use with the same `mode` / `domain` as `createYAxisMap`.
+ */
+export function dataValueFromBottomPx(
+  mode: ChartYScaleMode,
+  bottomPx: number,
+  plotHeight: number,
+  domain: { min: number; max: number },
+  options?: { symlogLinthresh?: number },
+): number {
+  const h = Math.max(1e-9, plotHeight)
+  const u = Math.min(1, Math.max(0, bottomPx / h))
+  if (mode === 'linear') {
+    return domain.min + u * (domain.max - domain.min)
+  }
+  if (mode === 'log') {
+    const lo = Math.log10(Math.max(domain.min, LOG_FLOOR))
+    const hi = Math.log10(Math.max(domain.max, domain.min * 1.0001))
+    return 10 ** (lo + u * (hi - lo))
+  }
+  const linthresh = options?.symlogLinthresh ?? 1
+  const tMin = symlogForward(domain.min, linthresh)
+  const tMax = symlogForward(domain.max, linthresh)
+  const t = tMin + u * (tMax - tMin)
+  return symlogInverse(t, linthresh)
 }

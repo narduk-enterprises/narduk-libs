@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, useId } from 'vue'
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { formatValue } from '../utils/math'
@@ -20,6 +20,7 @@ import type {
   BarClickPayload,
 } from '../types'
 import { chartThemeClass } from '../utils/chartTheme'
+import { defaultBarChartLabel } from '../utils/chartA11y'
 
 interface BarRect {
   x: number
@@ -39,6 +40,8 @@ const props = withDefaults(defineProps<{
   width?: number
   height?: number
   stacked?: boolean
+  /** When `stacked`, rescale each category to 100%. */
+  stackedPercent?: boolean
   colors?: string[]
   animate?: boolean
   barRadius?: number
@@ -51,13 +54,23 @@ const props = withDefaults(defineProps<{
   yBands?: ChartYBand[]
   /** Renders `vline` annotations at category centers. */
   annotations?: ChartLineAnnotation[]
+  chartTitle?: string
+  chartDescription?: string
+  showDataTable?: boolean
+  legendGroupLabel?: string
+  dir?: 'ltr' | 'rtl'
+  formatXLabel?: (label: string, index: number) => string
+  formatTickValue?: (value: number) => string
 }>(), {
   stacked: false,
+  stackedPercent: false,
   animate: true,
   barRadius: 4,
   respectReducedMotion: true,
   yScale: 'linear',
   symlogLinthresh: 1,
+  showDataTable: false,
+  legendGroupLabel: 'Data series',
 })
 
 const emit = defineEmits<{
@@ -70,7 +83,102 @@ defineSlots<{
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
 }>()
 
+const barA11yRaw = useId()
+const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const barCaptionId = `nc-bcap-${idSafe(barA11yRaw)}`
+const svgTitleId = `nc-bt-${idSafe(barA11yRaw)}`
+const svgDescId = `nc-bd-${idSafe(barA11yRaw)}`
+
 const containerRef = ref<HTMLElement | null>(null)
+const svgRef = ref<SVGSVGElement | null>(null)
+const focusedBarIndex = ref(0)
+
+const effectiveChartTitle = computed(() =>
+  props.chartTitle ?? defaultBarChartLabel(props.series, props.labels.length),
+)
+
+function formatXAt(i: number): string {
+  const raw = props.labels[i] ?? ''
+  return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+}
+
+function focusBarEl(index: number) {
+  nextTick(() => {
+    const el = svgRef.value?.querySelector(`[data-nc-bar="${index}"]`)
+    if (el instanceof SVGElement) el.focus()
+  })
+}
+
+function onBarKeydown(e: KeyboardEvent, bi: number) {
+  const n = bars.value.length
+  if (n === 0) return
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    const next = Math.min(n - 1, bi + 1)
+    focusedBarIndex.value = next
+    focusBarEl(next)
+    const b = bars.value[next]
+    showTooltip(8, 8, b.label, [{
+      color: b.color,
+      label: b.seriesName,
+      value: formatValue(b.value),
+    }])
+    return
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const prev = Math.max(0, bi - 1)
+    focusedBarIndex.value = prev
+    focusBarEl(prev)
+    const b = bars.value[prev]
+    showTooltip(8, 8, b.label, [{
+      color: b.color,
+      label: b.seriesName,
+      value: formatValue(b.value),
+    }])
+    return
+  }
+  if (e.key === 'Home') {
+    e.preventDefault()
+    focusedBarIndex.value = 0
+    focusBarEl(0)
+    const b = bars.value[0]
+    showTooltip(8, 8, b.label, [{
+      color: b.color,
+      label: b.seriesName,
+      value: formatValue(b.value),
+    }])
+    return
+  }
+  if (e.key === 'End') {
+    e.preventDefault()
+    const last = n - 1
+    focusedBarIndex.value = last
+    focusBarEl(last)
+    const b = bars.value[last]
+    showTooltip(8, 8, b.label, [{
+      color: b.color,
+      label: b.seriesName,
+      value: formatValue(b.value),
+    }])
+    return
+  }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    const b = bars.value[bi]
+    emit('barClick', {
+      index: b.labelIndex,
+      label: b.label,
+      seriesName: b.seriesName,
+      value: b.value,
+    })
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    hideTooltip()
+  }
+}
 const barPaddingOverrides = computed(() => ({
   right: (props.referenceLines ?? []).some(r => r.label) ? 34 : 24,
 }))
@@ -128,9 +236,13 @@ const yMap = computed(() => {
 
   let dataVals: number[] = []
   if (props.stacked) {
-    dataVals = props.labels.map((_, li) =>
-      visibleSeries.value.reduce((sum, s) => sum + barValue(s.data[li]), 0),
-    )
+    if (props.stackedPercent) {
+      dataVals = props.labels.map(() => 100)
+    } else {
+      dataVals = props.labels.map((_, li) =>
+        visibleSeries.value.reduce((sum, s) => sum + barValue(s.data[li]), 0),
+      )
+    }
   } else {
     dataVals = visibleSeries.value.flatMap(s => s.data.map(barValue))
   }
@@ -151,6 +263,13 @@ const yMap = computed(() => {
     { symlogLinthresh: props.symlogLinthresh },
   )
 })
+
+const yTicksForDisplay = computed(() =>
+  yMap.value.ticks.map(t => ({
+    ...t,
+    label: props.formatTickValue ? props.formatTickValue(t.value) : t.label,
+  })),
+)
 
 function barPixelHeight(value: number): number {
   const m = yMap.value
@@ -221,9 +340,11 @@ const bars = computed<BarRect[]>(() => {
     const barW = innerWidth
     for (let li = 0; li < n; li++) {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
+      const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
       let cumY = bottomY
       for (const s of visibleSeries.value) {
-        const val = barValue(s.data[li])
+        const raw = barValue(s.data[li])
+        const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
         const barH = barPixelHeight(val)
         cumY -= barH
         result.push({
@@ -263,6 +384,13 @@ const bars = computed<BarRect[]>(() => {
 
   return result
 })
+
+watch(
+  () => bars.value.length,
+  (n) => {
+    if (focusedBarIndex.value >= n) focusedBarIndex.value = Math.max(0, n - 1)
+  },
+)
 
 // ── Hover ────────────────────────────────────────────────────
 
@@ -349,24 +477,88 @@ function bandRectBar(b: ChartYBand) {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    :class="rootChartClasses"
-    :style="{ width: props.width ? `${props.width}px` : '100%' }"
+  <figure
+    class="narduk-chart-figure m-0 min-w-0"
+    :dir="dir"
   >
+    <figcaption
+      v-if="chartTitle"
+      :id="barCaptionId"
+      class="narduk-chart__title"
+    >
+      {{ chartTitle }}
+    </figcaption>
+    <p
+      v-if="chartDescription"
+      class="narduk-chart__description"
+    >
+      {{ chartDescription }}
+    </p>
     <div
-      v-if="isEmpty"
-      class="narduk-chart__empty"
+      ref="containerRef"
+      :class="rootChartClasses"
+      :style="{ width: props.width ? `${props.width}px` : '100%' }"
+      role="group"
+      :aria-labelledby="chartTitle ? barCaptionId : undefined"
+      :aria-label="chartTitle ? undefined : effectiveChartTitle"
+      :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <slot name="empty">No data</slot>
-    </div>
-    <svg
-      v-else-if="chartWidth > 0"
-      :width="chartWidth"
-      :height="chartHeight"
-      @mousemove="onMouseMove"
-      @mouseleave="onMouseLeave"
-    >
+      <table
+        v-if="showDataTable && !isEmpty"
+        class="narduk-sr-only"
+      >
+        <caption>{{ effectiveChartTitle }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Category</th>
+            <th
+              v-for="s in series"
+              :key="s.name"
+              scope="col"
+            >
+              {{ s.name }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(lab, ri) in labels"
+            :key="ri"
+          >
+            <th scope="row">{{ formatXAt(ri) }}</th>
+            <td
+              v-for="s in series"
+              :key="s.name"
+            >
+              {{ s.data[ri] ?? '' }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div
+        v-if="isEmpty"
+        class="narduk-chart__empty"
+      >
+        <slot name="empty">No data</slot>
+      </div>
+      <svg
+        v-else-if="chartWidth > 0"
+        ref="svgRef"
+        :width="chartWidth"
+        :height="chartHeight"
+        role="img"
+        :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+      >
+        <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
+        <desc
+          v-if="chartDescription?.trim()"
+          :id="svgDescId"
+        >
+          {{ chartDescription }}
+        </desc>
       <g
         v-if="yBands?.length"
         class="narduk-y-bands"
@@ -460,7 +652,7 @@ function bandRectBar(b: ChartYBand) {
           :y2="chartHeight - padding.bottom"
         />
         <text
-          v-for="(t, ti) in yMap.ticks"
+          v-for="(t, ti) in yTicksForDisplay"
           :key="'yt-' + ti"
           :x="padding.left - 8"
           :y="yPos(t.value)"
@@ -480,14 +672,14 @@ function bandRectBar(b: ChartYBand) {
           :y2="chartHeight - padding.bottom"
         />
         <text
-          v-for="(label, i) in labels"
+          v-for="(_, i) in labels"
           :key="i"
           :x="padding.left + (i + 0.5) * (plotWidth / labels.length)"
           :y="chartHeight - padding.bottom + 20"
           text-anchor="middle"
           dominant-baseline="hanging"
         >
-          {{ label }}
+          {{ formatXAt(i) }}
         </text>
       </g>
 
@@ -496,6 +688,10 @@ function bandRectBar(b: ChartYBand) {
         v-for="(bar, bi) in bars"
         :key="bi"
         class="narduk-bar-rect"
+        role="button"
+        :tabindex="focusedBarIndex === bi ? 0 : -1"
+        :data-nc-bar="bi"
+        :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
         :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
         :x="bar.x"
         :y="animated ? bar.y : padding.top + plotHeight"
@@ -503,6 +699,8 @@ function bandRectBar(b: ChartYBand) {
         :height="animated ? bar.height : 0"
         :rx="barRadius"
         :fill="bar.color"
+        @focus="focusedBarIndex = bi"
+        @keydown="onBarKeydown($event, bi)"
         @click="onBarPointerDown(bar, $event)"
       />
     </svg>
@@ -510,6 +708,7 @@ function bandRectBar(b: ChartYBand) {
     <template v-if="!isEmpty">
       <ChartLegend
         :items="legendItems"
+        :group-label="legendGroupLabel"
         @toggle="toggleSeries"
       >
         <template
@@ -537,5 +736,6 @@ function bandRectBar(b: ChartYBand) {
         </template>
       </ChartTooltip>
     </template>
-  </div>
+    </div>
+  </figure>
 </template>

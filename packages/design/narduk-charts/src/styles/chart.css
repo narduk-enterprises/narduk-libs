@@ -2,48 +2,126 @@
 @import "tailwindcss/theme" theme(reference);
 
 /**
- * Chart design tokens — override from your app with Tailwind v4 `@theme`:
- *
- * @theme {
- *   --color-chart-text: var(--color-slate-900);
- *   --color-chart-muted: var(--color-slate-500);
- *   --color-chart-grid: var(--color-slate-200);
- *   --color-chart-axis: var(--color-slate-300);
- *   --color-chart-surface: var(--color-white);
- *   --color-chart-accent: var(--color-indigo-500);
- *   --color-chart-tooltip-bg: var(--color-slate-900);
- *   --color-chart-tooltip-foreground: var(--color-slate-50);
- *   --color-chart-tooltip-border: color-mix(in srgb, var(--color-white) 12%, transparent);
- * }
+ * Chart design tokens (2026 palette — OKLCH, cool-neutral base).
+ * Override from your app with Tailwind v4 `@theme { ... }` after importing this file.
  */
 
 @theme {
-  --color-chart-text: #374151;
-  --color-chart-muted: #6b7280;
-  --color-chart-grid: #e5e7eb;
-  --color-chart-axis: #d1d5db;
-  --color-chart-surface: #ffffff;
-  --color-chart-accent: #6366f1;
-  --color-chart-tooltip-bg: rgba(17, 24, 39, 0.95);
-  --color-chart-tooltip-foreground: #f9fafb;
-  --color-chart-tooltip-border: rgba(255, 255, 255, 0.08);
+  --color-chart-text: oklch(30% 0.024 264);
+  --color-chart-muted: oklch(52% 0.028 264);
+  --color-chart-grid: oklch(91% 0.012 264);
+  --color-chart-axis: oklch(80% 0.018 264);
+  --color-chart-surface: oklch(100% 0 0);
+  --color-chart-plot-tint: oklch(98.2% 0.008 264);
+  --color-chart-accent: oklch(56% 0.22 290);
+  --color-chart-up: oklch(58% 0.14 155);
+  --color-chart-down: oklch(55% 0.17 28);
+  --color-chart-tooltip-bg: oklch(24% 0.035 264 / 0.92);
+  --color-chart-tooltip-foreground: oklch(98% 0.005 264);
+  --color-chart-tooltip-border: oklch(100% 0 0 / 0.14);
+  --radius-chart-tooltip: 0.625rem;
+  --shadow-chart-tooltip: oklch(20% 0.04 264 / 0.12) 0 12px 40px -8px;
 }
 
 @layer components {
+  .narduk-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .narduk-chart {
-    @apply relative font-sans text-sm antialiased;
+    @apply relative text-sm antialiased;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--color-chart-text);
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+    font-feature-settings:
+      "kern" 1,
+      "tnum" 1;
+    /* Avoid native text-selection highlight over the whole plot when zoom/pan dragging */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .narduk-chart svg,
+  .narduk-chart svg text {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .narduk-chart__title {
+    @apply mb-1.5 text-center text-sm font-semibold tracking-tight;
+    color: var(--color-chart-text);
+    letter-spacing: -0.01em;
+  }
+
+  .narduk-chart__description {
+    @apply mb-2 text-center text-[11px] leading-snug;
+    color: var(--color-chart-muted);
+    letter-spacing: 0.01em;
+  }
+
+  .narduk-legend__fieldset {
+    @apply m-0 min-w-0 border-0 p-0;
+  }
+
+  .narduk-legend__legend {
+    @apply float-left w-full px-0 py-0 text-left text-xs font-medium;
     color: var(--color-chart-text);
   }
 
+  .narduk-line-chart__svg:focus,
+  .narduk-candle-chart__svg:focus {
+    outline: 2px solid var(--color-chart-accent);
+    outline-offset: 2px;
+  }
+
+  .narduk-line-chart__svg:focus:not(:focus-visible),
+  .narduk-candle-chart__svg:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  .narduk-bar-rect:focus,
+  .narduk-pie-slice:focus {
+    outline: 2px solid var(--color-chart-accent);
+    outline-offset: 2px;
+  }
+
+  .narduk-bar-rect:focus:not(:focus-visible),
+  .narduk-pie-slice:focus:not(:focus-visible) {
+    outline: none;
+  }
+
   .narduk-chart--dark {
-    --color-chart-text: #e5e7eb;
-    --color-chart-muted: #9ca3af;
-    --color-chart-grid: #374151;
-    --color-chart-axis: #4b5563;
+    --color-chart-text: oklch(92% 0.012 264);
+    --color-chart-muted: oklch(68% 0.022 264);
+    --color-chart-grid: oklch(36% 0.03 264);
+    --color-chart-axis: oklch(48% 0.03 264);
     --color-chart-surface: transparent;
-    --color-chart-tooltip-bg: rgba(249, 250, 251, 0.95);
-    --color-chart-tooltip-foreground: #111827;
-    --color-chart-tooltip-border: rgba(0, 0, 0, 0.08);
+    --color-chart-plot-tint: oklch(22% 0.035 264);
+    --color-chart-accent: oklch(72% 0.18 290);
+    --color-chart-up: oklch(70% 0.13 152);
+    --color-chart-down: oklch(67% 0.14 28);
+    --color-chart-tooltip-bg: oklch(98% 0.008 264 / 0.96);
+    --color-chart-tooltip-foreground: oklch(22% 0.04 264);
+    --color-chart-tooltip-border: oklch(22% 0.04 264 / 0.1);
+    --shadow-chart-tooltip: oklch(12% 0.02 264 / 0.35) 0 16px 48px -12px;
   }
 
   .narduk-chart--zoomable .narduk-line-chart__svg {
@@ -51,8 +129,8 @@
   }
 
   .narduk-zoom-box {
-    fill: color-mix(in srgb, var(--color-chart-accent) 22%, transparent);
-    stroke: var(--color-chart-accent);
+    fill: color-mix(in oklch, var(--color-chart-accent) 16%, transparent);
+    stroke: color-mix(in oklch, var(--color-chart-accent) 65%, transparent);
     stroke-width: 1;
     pointer-events: none;
   }
@@ -64,27 +142,35 @@
   .narduk-grid line {
     stroke: var(--color-chart-grid);
     stroke-width: 1;
+    stroke-dasharray: 3 7;
+    stroke-linecap: round;
+    opacity: 0.72;
   }
 
   .narduk-axis line {
     stroke: var(--color-chart-axis);
     stroke-width: 1;
+    opacity: 0.9;
   }
 
   .narduk-axis text,
   .narduk-axis-label {
     fill: var(--color-chart-muted);
     font-family: inherit;
-    @apply text-[11px];
+    @apply text-[10px];
+    font-weight: 500;
+    letter-spacing: 0.02em;
   }
 
   .narduk-line-path {
     fill: none;
-    stroke-width: 2.5;
+    stroke-width: 2.1;
     stroke-linecap: round;
     stroke-linejoin: round;
     transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    filter: drop-shadow(0 1px 1px oklch(30% 0.03 264 / 0.06));
   }
+
 
   .narduk-line-point {
     stroke: var(--color-chart-surface);
@@ -93,9 +179,166 @@
   }
 
   .narduk-crosshair {
+    stroke: color-mix(in oklch, var(--color-chart-accent) 42%, var(--color-chart-grid));
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+    opacity: 0.85;
+  }
+
+  .narduk-chart--zoomable .narduk-candle-chart__svg {
+    @apply cursor-crosshair;
+  }
+
+  .narduk-candle-session line {
     stroke: var(--color-chart-grid);
     stroke-width: 1;
-    stroke-dasharray: 4 4;
+    stroke-dasharray: 2 6;
+    opacity: 0.55;
+  }
+
+  .narduk-candle-close-line {
+    fill: none;
+    stroke: var(--color-chart-accent);
+    stroke-width: 1.25;
+    opacity: 0.38;
+  }
+
+  .narduk-chart--dark .narduk-candle-close-line {
+    opacity: 0.48;
+  }
+
+  .narduk-candle__body {
+    stroke: color-mix(in oklch, var(--color-chart-text) 14%, transparent);
+    stroke-width: 0.85;
+    filter: drop-shadow(0 1px 1px oklch(25% 0.03 264 / 0.05));
+  }
+
+  .narduk-chart--dark .narduk-candle__body {
+    stroke: color-mix(in oklch, oklch(100% 0 0) 18%, transparent);
+    filter: drop-shadow(0 1px 2px oklch(5% 0.02 264 / 0.5));
+  }
+
+  .narduk-candle__wick {
+    stroke-width: 1.15;
+  }
+
+  .narduk-candle-last-price line {
+    stroke: var(--color-chart-accent);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.95;
+  }
+
+  .narduk-candle-last-price__tag {
+    fill: var(--color-chart-accent);
+  }
+
+  .narduk-candle-last-price__text {
+    fill: var(--color-chart-surface);
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
+  .narduk-chart--dark .narduk-candle-last-price__text {
+    fill: oklch(18% 0.04 264);
+  }
+
+  .narduk-candle-crosshair line {
+    stroke: var(--color-chart-muted);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.92;
+  }
+
+  .narduk-candle-crosshair__tag {
+    fill: var(--color-chart-text);
+  }
+
+  .narduk-candle-crosshair__text {
+    fill: var(--color-chart-surface);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .narduk-chart--dark .narduk-candle-crosshair__tag {
+    fill: #f3f4f6;
+  }
+
+  .narduk-chart--dark .narduk-candle-crosshair__text {
+    fill: #111827;
+  }
+
+  .narduk-candle-hud__bg {
+    fill: color-mix(in oklch, var(--color-chart-tooltip-bg) 96%, var(--color-chart-surface));
+    stroke: var(--color-chart-tooltip-border);
+    stroke-width: 1;
+    filter: drop-shadow(0 4px 14px oklch(20% 0.04 264 / 0.08));
+  }
+
+  .narduk-candle-hud__title {
+    fill: var(--color-chart-muted);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .narduk-candle-hud__row {
+    fill: var(--color-chart-text);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .narduk-candle-hud__muted {
+    fill: var(--color-chart-muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .narduk-candle__body--forming {
+    stroke: var(--color-chart-accent);
+    stroke-width: 2;
+  }
+
+  .narduk-candle-drawing {
+    stroke: var(--color-chart-accent);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    opacity: 0.92;
+  }
+
+  .narduk-candle-drawing--preview {
+    stroke-dasharray: 4 3;
+    opacity: 0.65;
+  }
+
+  .narduk-candle-volume__bg {
+    fill: color-mix(in oklch, var(--color-chart-grid) 35%, var(--color-chart-plot-tint));
+    opacity: 0.55;
+  }
+
+  .narduk-candle-brush__track {
+    fill: color-mix(in oklch, var(--color-chart-plot-tint) 88%, var(--color-chart-surface));
+  }
+
+  .narduk-candle-brush__window {
+    fill: color-mix(in oklch, var(--color-chart-text) 7%, transparent);
+    stroke: color-mix(in oklch, var(--color-chart-muted) 55%, var(--color-chart-axis));
+    stroke-width: 1;
+    opacity: 1;
+  }
+
+  .narduk-chart--dark .narduk-candle-brush__window {
+    fill: color-mix(in oklch, var(--color-chart-surface) 12%, transparent);
+    stroke: color-mix(in oklch, var(--color-chart-muted) 70%, var(--color-chart-axis));
+  }
+
+  .narduk-chart-stack {
+    @apply flex min-w-0 flex-col gap-3;
   }
 
   .narduk-line-chart__svg {
@@ -184,12 +427,16 @@
   }
 
   .narduk-tooltip {
-    @apply pointer-events-none absolute z-10 rounded-lg px-3 py-2 text-xs leading-normal whitespace-nowrap;
+    @apply pointer-events-none absolute z-10 px-3 py-2.5 text-xs leading-normal whitespace-nowrap;
+    border-radius: var(--radius-chart-tooltip);
+    -webkit-user-select: text;
+    user-select: text;
     background: var(--color-chart-tooltip-bg);
     color: var(--color-chart-tooltip-foreground);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-chart-tooltip);
     border: 1px solid var(--color-chart-tooltip-border);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(12px) saturate(1.25);
+    -webkit-backdrop-filter: blur(12px) saturate(1.25);
     transition:
       opacity 0.15s ease,
       transform 0.1s ease;

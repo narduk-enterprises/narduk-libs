@@ -2231,7 +2231,7 @@ body {
 .lab__panel {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(260px, 300px) 1fr;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   gap: 0;
   min-height: min(70vh, 720px);
 }
@@ -2417,6 +2417,7 @@ body {
 
 .lab__chart-wrap {
   width: 100%;
+  min-width: 0;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2429,6 +2430,7 @@ body {
 
 .lab__chart {
   width: 100%;
+  min-width: 0;
   flex: 1;
   min-height: 0;
 }

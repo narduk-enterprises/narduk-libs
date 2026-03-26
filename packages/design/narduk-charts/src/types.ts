@@ -118,6 +118,102 @@ export interface LegendItem {
   hidden: boolean
 }
 
+/** Version-stable alias for line chart `annotations` arrays (migration tags). */
+export type ChartLineAnnotationsV1 = ChartLineAnnotation[]
+
+export interface ScatterPoint {
+  x: number
+  y: number
+  label?: string
+}
+
+export interface ScatterSeries {
+  name: string
+  points: ScatterPoint[]
+  color?: string
+}
+
+export interface HistogramBin {
+  start: number
+  end: number
+  count: number
+}
+
+/** OHLC bar; `t` is open time (Unix ms). */
+export interface CandleBar {
+  t: number
+  o: number
+  h: number
+  l: number
+  c: number
+  v?: number
+}
+
+/** Visible X domain in time (ms) plus fractional bar indices (same semantics as line zoom). */
+export interface CandleZoomRange {
+  startTime: number
+  endTime: number
+  startIndex: number
+  endIndex: number
+}
+
+/** Controlled viewport for syncing multiple charts (`v-model:domain`). */
+export interface CandleTimeDomain {
+  start: number
+  end: number
+}
+
+export interface CandleClickPayload {
+  index: number
+  bar: CandleBar
+}
+
+/**
+ * `percent`: (price / ref − 1) × 100 vs first visible close.
+ * `indexed`: price / ref × 100 vs first visible close.
+ */
+export type CandlePriceDisplayMode = 'absolute' | 'percent' | 'indexed'
+
+/** Read-only layout + mappers from `NardukCandleChart` (`defineExpose` / overlay slot). */
+export interface CandlePlotMetrics {
+  chartWidth: number
+  chartHeight: number
+  padding: { top: number; right: number; bottom: number; left: number }
+  plotWidth: number
+  priceInnerHeight: number
+  xViewMin: number
+  xViewMax: number
+  yDomain: { min: number; max: number }
+  /** Fractional bar index from SVG X inside the chart. */
+  indexFromSvgX: (svgX: number) => number
+  xPos: (index: number) => number
+  /** Pixel Y for an OHLC value in raw price space (applies `priceDisplayMode`). */
+  priceYFromRaw: (ohlcPrice: number) => number
+  /** Interpolated open time (ms) at fractional bar index. */
+  timeAtIndex: (index: number) => number
+  /** Raw OHLC price from a Y coordinate in the price pane (outside → NaN). */
+  rawFromPlotY: (svgY: number) => number
+}
+
+export interface CandleTrendLineDrawing {
+  id: string
+  type: 'trend'
+  tStart: number
+  priceStart: number
+  tEnd: number
+  priceEnd: number
+}
+
+export interface CandleHorizontalRayDrawing {
+  id: string
+  type: 'horizontal'
+  price: number
+}
+
+export type CandleDrawing = CandleTrendLineDrawing | CandleHorizontalRayDrawing
+
+export type CandleDrawingTool = 'trend' | 'horizontal' | null
+
 export interface ExportChartOptions {
   filename?: string
   /** PNG pixel ratio vs SVG nominal size (default 2). */
