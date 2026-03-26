@@ -12,6 +12,7 @@
   --color-chart-grid: oklch(91% 0.012 264);
   --color-chart-axis: oklch(80% 0.018 264);
   --color-chart-surface: oklch(100% 0 0);
+  --color-chart-frame: oklch(88% 0.012 264 / 0.82);
   --color-chart-plot-tint: oklch(98.2% 0.008 264);
   --color-chart-accent: oklch(56% 0.22 290);
   --color-chart-up: oklch(58% 0.14 155);
@@ -41,6 +42,7 @@
     min-width: 0;
     max-width: 100%;
     color: var(--color-chart-text);
+    isolation: isolate;
     font-family:
       ui-sans-serif,
       system-ui,
@@ -75,6 +77,46 @@
     @apply mb-2 text-center text-[11px] leading-snug;
     color: var(--color-chart-muted);
     letter-spacing: 0.01em;
+  }
+
+  .narduk-line-chart__svg,
+  .narduk-candle-chart__svg {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--color-chart-surface) 92%, var(--color-chart-plot-tint)),
+        color-mix(in oklch, var(--color-chart-surface) 84%, var(--color-chart-plot-tint))
+      );
+    border: 1px solid color-mix(in oklch, var(--color-chart-frame) 88%, transparent);
+    border-radius: 16px;
+    box-sizing: border-box;
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, oklch(100% 0 0) 60%, transparent),
+      0 14px 34px -28px oklch(24% 0.035 264 / 0.26);
+  }
+
+  .narduk-chart--dark .narduk-line-chart__svg,
+  .narduk-chart--dark .narduk-candle-chart__svg {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--color-chart-plot-tint) 88%, var(--color-chart-surface)),
+        color-mix(in oklch, var(--color-chart-plot-tint) 72%, var(--color-chart-surface))
+      );
+    border-color: color-mix(in oklch, var(--color-chart-axis) 48%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, oklch(100% 0 0) 10%, transparent),
+      0 18px 42px -32px oklch(6% 0.02 264 / 0.8);
+  }
+
+  .narduk-plot-surface {
+    fill: color-mix(in oklch, var(--color-chart-surface) 82%, var(--color-chart-plot-tint));
+    stroke: color-mix(in oklch, var(--color-chart-axis) 44%, transparent);
+    stroke-width: 1;
+  }
+
+  .narduk-plot-surface--volume {
+    fill: color-mix(in oklch, var(--color-chart-plot-tint) 85%, var(--color-chart-grid));
   }
 
   .narduk-legend__fieldset {
@@ -114,6 +156,7 @@
     --color-chart-grid: oklch(36% 0.03 264);
     --color-chart-axis: oklch(48% 0.03 264);
     --color-chart-surface: transparent;
+    --color-chart-frame: oklch(52% 0.03 264 / 0.46);
     --color-chart-plot-tint: oklch(22% 0.035 264);
     --color-chart-accent: oklch(72% 0.18 290);
     --color-chart-up: oklch(70% 0.13 152);
@@ -142,15 +185,15 @@
   .narduk-grid line {
     stroke: var(--color-chart-grid);
     stroke-width: 1;
-    stroke-dasharray: 3 7;
+    stroke-dasharray: 3 6;
     stroke-linecap: round;
-    opacity: 0.72;
+    opacity: 0.84;
   }
 
   .narduk-axis line {
     stroke: var(--color-chart-axis);
     stroke-width: 1;
-    opacity: 0.9;
+    opacity: 0.95;
   }
 
   .narduk-axis text,
@@ -158,19 +201,26 @@
     fill: var(--color-chart-muted);
     font-family: inherit;
     @apply text-[10px];
-    font-weight: 500;
-    letter-spacing: 0.02em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    font-variant-numeric: tabular-nums;
   }
 
   .narduk-line-path {
     fill: none;
-    stroke-width: 2.1;
+    stroke-width: 2.25;
     stroke-linecap: round;
     stroke-linejoin: round;
     transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    filter: drop-shadow(0 1px 1px oklch(30% 0.03 264 / 0.06));
+    filter: drop-shadow(0 2px 4px oklch(30% 0.02 264 / 0.06));
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .narduk-line-path {
+      filter: none;
+      transition: none;
+    }
+  }
 
   .narduk-line-point {
     stroke: var(--color-chart-surface);
@@ -199,8 +249,8 @@
   .narduk-candle-close-line {
     fill: none;
     stroke: var(--color-chart-accent);
-    stroke-width: 1.25;
-    opacity: 0.38;
+    stroke-width: 1.35;
+    opacity: 0.42;
   }
 
   .narduk-chart--dark .narduk-candle-close-line {
@@ -210,7 +260,8 @@
   .narduk-candle__body {
     stroke: color-mix(in oklch, var(--color-chart-text) 14%, transparent);
     stroke-width: 0.85;
-    filter: drop-shadow(0 1px 1px oklch(25% 0.03 264 / 0.05));
+    filter: drop-shadow(0 4px 10px oklch(25% 0.03 264 / 0.1));
+    shape-rendering: geometricPrecision;
   }
 
   .narduk-chart--dark .narduk-candle__body {
@@ -220,6 +271,7 @@
 
   .narduk-candle__wick {
     stroke-width: 1.15;
+    opacity: 0.94;
   }
 
   .narduk-candle-last-price line {
@@ -318,7 +370,13 @@
 
   .narduk-candle-volume__bg {
     fill: color-mix(in oklch, var(--color-chart-grid) 35%, var(--color-chart-plot-tint));
-    opacity: 0.55;
+    opacity: 0.42;
+  }
+
+  .narduk-candle-volume__bar {
+    stroke: color-mix(in oklch, var(--color-chart-text) 12%, transparent);
+    stroke-width: 1;
+    opacity: 0.96;
   }
 
   .narduk-candle-brush__track {
@@ -346,12 +404,12 @@
   }
 
   .narduk-area-path {
-    opacity: 0.2;
+    opacity: 0.16;
     pointer-events: none;
   }
 
   .narduk-chart--dark .narduk-area-path {
-    opacity: 0.28;
+    opacity: 0.24;
   }
 
   .narduk-ref-line {
@@ -468,12 +526,13 @@
 
   .narduk-legend__item {
     font-family: inherit;
-    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2 py-1 text-xs transition-[opacity,background] duration-200 select-none;
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-transparent bg-transparent px-2.5 py-1.5 text-xs transition-[opacity,background,border-color] duration-200 select-none;
     color: var(--color-chart-text);
   }
 
   .narduk-legend__item:hover {
-    background: var(--color-chart-grid);
+    background: color-mix(in oklch, var(--color-chart-grid) 75%, var(--color-chart-surface));
+    border-color: color-mix(in oklch, var(--color-chart-axis) 28%, transparent);
   }
 
   .narduk-legend__item--hidden {

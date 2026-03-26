@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-/** Built tokens + rules (run `npm run build` so PNG/SVG export embeds valid CSS). */
-import chartStylesRaw from '../dist/narduk-charts.css?raw'
+/**
+ * Import processed CSS (Tailwind directives expanded by Vite) so the string
+ * injected into exported SVGs is browser-valid CSS without any @apply/@layer.
+ */
+import chartStylesRaw from '../src/styles/chart.css?inline'
 import {
   NardukLineChart,
   NardukBarChart,

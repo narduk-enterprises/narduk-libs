@@ -13,6 +13,8 @@ import {
 } from 'narduk-charts'
 import type { CandleBar, CandleDrawing, CandleTimeDomain, ChartSeries } from 'narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
+import TradingDemoToolbar from '../../components/TradingDemoToolbar.vue'
+import TradingChartOverlay from '../../components/TradingChartOverlay.vue'
 
 /** Futures-style random walk with wicks and volume spikes. */
 function seedHistory(count: number, seedPrice: number): CandleBar[] {
@@ -84,6 +86,77 @@ const rsiSeries = computed<ChartSeries[]>(() => [
   },
 ])
 
+const latestBar = computed(() => candleBars.value[candleBars.value.length - 1] ?? null)
+const firstBar = computed(() => candleBars.value[0] ?? null)
+
+const sessionChange = computed(() => {
+  const first = firstBar.value
+  const latest = latestBar.value
+  if (!first || !latest) return 0
+  return latest.c - first.o
+})
+
+const sessionChangePct = computed(() => {
+  const first = firstBar.value
+  if (!first || first.o === 0) return 0
+  return (sessionChange.value / first.o) * 100
+})
+
+const sessionChangeTone = computed<'up' | 'down' | 'flat'>(() => {
+  if (sessionChange.value > 0.01) return 'up'
+  if (sessionChange.value < -0.01) return 'down'
+  return 'flat'
+})
+
+const sessionOpen = computed(() => firstBar.value?.o ?? 0)
+
+const sessionRange = computed(() => {
+  if (candleBars.value.length === 0) return { high: 0, low: 0 }
+  let high = Number.NEGATIVE_INFINITY
+  let low = Number.POSITIVE_INFINITY
+  for (const bar of candleBars.value) {
+    high = Math.max(high, bar.h)
+    low = Math.min(low, bar.l)
+  }
+  return { high, low }
+})
+
+const openingRange = computed(() => {
+  const sample = candleBars.value.slice(0, Math.min(15, candleBars.value.length))
+  if (sample.length === 0) return { high: 0, low: 0 }
+  let high = Number.NEGATIVE_INFINITY
+  let low = Number.POSITIVE_INFINITY
+  for (const bar of sample) {
+    high = Math.max(high, bar.h)
+    low = Math.min(low, bar.l)
+  }
+  return { high, low }
+})
+
+const averageVolume = computed(() => {
+  let total = 0
+  let count = 0
+  for (const bar of candleBars.value) {
+    if (bar.v == null) continue
+    total += bar.v
+    count += 1
+  }
+  return count > 0 ? total / count : 0
+})
+
+const sessionVwap = computed(() => {
+  let weighted = 0
+  let totalVolume = 0
+  for (const bar of candleBars.value) {
+    const volume = Math.max(1, bar.v ?? 0)
+    const typicalPrice = (bar.h + bar.l + bar.c) / 3
+    weighted += typicalPrice * volume
+    totalVolume += volume
+  }
+  if (totalVolume === 0) return latestBar.value?.c ?? 0
+  return weighted / totalVolume
+})
+
 let liveTimer: ReturnType<typeof setInterval> | null = null
 
 function pushNextBar() {
@@ -130,6 +203,23 @@ function formatPrice(n: number) {
     maximumFractionDigits: 2,
   })
 }
+
+function formatSignedPrice(n: number) {
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${formatPrice(n)}`
+}
+
+function formatSignedPercent(n: number) {
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${n.toFixed(2)}%`
+}
+
+function formatCompactVolume(n: number) {
+  return new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n)
+}
 </script>
 
 <template>
@@ -162,113 +252,111 @@ function formatPrice(n: number) {
         <li>Last-price line, forming-bar highlight, <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">overlay</code> slot + <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">getCandlePlotMetrics()</code> for custom SVG layers.</li>
         <li>Keyboard: arrows scrub; <kbd class="rounded border border-slate-300 px-1 dark:border-slate-600">Delete</kbd> clears drawings; double-click resets zoom.</li>
       </ul>
-      <div class="mt-4 flex flex-wrap items-center gap-4 text-sm font-medium text-[var(--color-ns-text)]">
-        <label class="flex cursor-pointer items-center gap-2">
-          <input
-            v-model="terminalDark"
-            type="checkbox"
-            class="h-4 w-4 rounded border-slate-300 accent-indigo-600"
-          >
-          Terminal dark surface
-        </label>
-        <label class="flex cursor-pointer items-center gap-2">
-          <input
-            v-model="useLogScale"
-            type="checkbox"
-            class="h-4 w-4 rounded border-slate-300 accent-indigo-600"
-          >
-          Log Y (absolute prices)
-        </label>
-        <span class="text-[var(--color-ns-muted)]">Draw tool:</span>
-        <select
-          v-model="drawMode"
-          class="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
-        >
-          <option value="off">
-            Off (zoom box)
-          </option>
-          <option value="trend">
-            Trend line (drag)
-          </option>
-          <option value="horizontal">
-            Horizontal (click)
-          </option>
-        </select>
-      </div>
     </template>
 
     <template #default="{ fullscreenChartHeight }">
-      <NardukChartStack v-model:domain="sharedDomain">
-        <div class="flex flex-col gap-8">
-          <div class="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/40">
-            <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Primary — NQ-style continuous (1m, demo)
-            </p>
-            <NardukCandleChart
-              chart-title="NQ — 1 minute"
-              chart-description="Demo data. Zoom and pan; domain syncs RSI row and secondary pane."
-              :bars="candleBars"
-              :height="fullscreenChartHeight ?? 340"
-              class="w-full min-w-0"
-              :dark="terminalDark"
-              :zoomable="true"
-              :y-scale="useLogScale ? 'log' : 'linear'"
-              :highlight-forming-bar="true"
-              :drawings="drawings"
-              :drawing-tool="drawingTool"
-              :show-volume="true"
-              :show-brush="true"
-              :show-session-grid="true"
-              :max-draw-bars="maxDraw"
-              v-model:domain="sharedDomain"
-              :format-time="formatTime"
-              :format-price="formatPrice"
-              @update:drawings="drawings = $event"
-            />
-          </div>
+      <div class="ns-terminal-shell">
+        <TradingDemoToolbar
+          symbol="NQ1!"
+          venue="CME Futures"
+          timeframe="1 minute"
+          :last-price-text="formatPrice(latestBar?.c ?? 0)"
+          :change-text="formatSignedPrice(sessionChange)"
+          :change-pct-text="formatSignedPercent(sessionChangePct)"
+          :change-tone="sessionChangeTone"
+          :vwap-text="formatPrice(sessionVwap)"
+          :avg-volume-text="formatCompactVolume(averageVolume)"
+          :session-range-text="`${formatPrice(sessionRange.low)} – ${formatPrice(sessionRange.high)}`"
+          :terminal-dark="terminalDark"
+          :use-log-scale="useLogScale"
+          :draw-mode="drawMode"
+          @update:terminal-dark="terminalDark = $event"
+          @update:use-log-scale="useLogScale = $event"
+          @update:draw-mode="drawMode = $event"
+        />
 
-          <div class="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/40">
-            <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              RSI(14) — same viewport (<code class="font-mono text-[10px]">v-model:x-window</code>)
-            </p>
-            <NardukLineChart
-              chart-title="RSI study"
-              chart-description="Linked X window via fractional indices mapped to bar times."
-              :series="rsiSeries"
-              :labels="rsiLabels"
-              :height="fullscreenChartHeight ? Math.max(120, Math.min(200, Math.round(fullscreenChartHeight * 0.2))) : 160"
-              class="w-full min-w-0"
-              :dark="terminalDark"
-              :zoomable="false"
-              :show-grid="true"
-              :show-points="false"
-              v-model:x-window="lineXWindow"
-            />
-          </div>
+        <NardukChartStack v-model:domain="sharedDomain">
+          <div class="flex flex-col gap-8">
+            <div class="ns-terminal-panel">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Primary — NQ-style continuous (1m, demo)
+              </p>
+              <NardukCandleChart
+                chart-title="NQ — 1 minute"
+                chart-description="Demo data. Zoom and pan; domain syncs RSI row and secondary pane."
+                :bars="candleBars"
+                :height="fullscreenChartHeight ?? 360"
+                class="w-full min-w-0"
+                :dark="terminalDark"
+                :zoomable="true"
+                :y-scale="useLogScale ? 'log' : 'linear'"
+                :highlight-forming-bar="true"
+                :drawings="drawings"
+                :drawing-tool="drawingTool"
+                :show-volume="true"
+                :show-brush="true"
+                :show-session-grid="true"
+                :max-draw-bars="maxDraw"
+                v-model:domain="sharedDomain"
+                :format-time="formatTime"
+                :format-price="formatPrice"
+                @update:drawings="drawings = $event"
+              >
+                <template #overlay="{ metrics }">
+                  <TradingChartOverlay
+                    :metrics="metrics"
+                    :vwap="sessionVwap"
+                    :session-open="sessionOpen"
+                    :opening-range-high="openingRange.high"
+                    :opening-range-low="openingRange.low"
+                  />
+                </template>
+              </NardukCandleChart>
+            </div>
 
-          <div class="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/40">
-            <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Secondary — same series, synced viewport
-            </p>
-            <NardukCandleChart
-              chart-title="Linked window (same feed)"
-              chart-description="v-model:domain binds both charts to the same visible time range in milliseconds."
-              :bars="candleBars"
-              :height="fullscreenChartHeight ? Math.max(240, Math.round(fullscreenChartHeight * 0.38)) : 300"
-              class="w-full min-w-0"
-              :dark="terminalDark"
-              :zoomable="true"
-              :show-volume="true"
-              :show-brush="true"
-              :show-session-grid="true"
-              :max-draw-bars="maxDraw"
-              v-model:domain="sharedDomain"
-              :format-time="formatTime"
-              :format-price="formatPrice"
-            />
+            <div class="ns-terminal-panel">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                RSI(14) — same viewport (<code class="font-mono text-[10px]">v-model:x-window</code>)
+              </p>
+              <NardukLineChart
+                chart-title="RSI study"
+                chart-description="Linked X window via fractional indices mapped to bar times."
+                :series="rsiSeries"
+                :labels="rsiLabels"
+                :height="fullscreenChartHeight ? Math.max(128, Math.min(208, Math.round(fullscreenChartHeight * 0.22))) : 176"
+                class="w-full min-w-0"
+                :dark="terminalDark"
+                :zoomable="false"
+                :show-grid="true"
+                :show-points="false"
+                v-model:x-window="lineXWindow"
+              />
+            </div>
+
+            <div class="ns-terminal-panel">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Secondary — same series, synced viewport
+              </p>
+              <NardukCandleChart
+                chart-title="Linked window (same feed)"
+                chart-description="v-model:domain binds both charts to the same visible time range in milliseconds."
+                :bars="candleBars"
+                :height="fullscreenChartHeight ? Math.max(244, Math.round(fullscreenChartHeight * 0.4)) : 320"
+                class="w-full min-w-0"
+                :dark="terminalDark"
+                :zoomable="true"
+                :show-volume="true"
+                :show-brush="true"
+                :show-session-grid="true"
+                :max-draw-bars="maxDraw"
+                v-model:domain="sharedDomain"
+                :format-time="formatTime"
+                :format-price="formatPrice"
+              />
+            </div>
           </div>
-        </div>
-      </NardukChartStack>
+        </NardukChartStack>
+      </div>
     </template>
   </ExamplePage>
 </template>

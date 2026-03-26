@@ -109,19 +109,38 @@ const useCases = [
     tag: 'Realtime',
   },
 ] as const
+
+const heroStats = [
+  {
+    label: 'Flagship surface',
+    value: 'Trading-grade OHLC',
+    copy: 'Linked panes, brush navigation, streaming candles, and drawing overlays.',
+  },
+  {
+    label: 'Accessibility',
+    value: 'Keyboard-first defaults',
+    copy: 'Focus states, live regions, and screen-reader-friendly chart descriptions.',
+  },
+  {
+    label: 'Ship size',
+    value: 'Per-chart entry points',
+    copy: 'Import only line, bar, pie, candle, or studies when you need them.',
+  },
+] as const
 </script>
 
 <template>
   <div class="min-h-screen flex flex-col">
     <SiteHeader />
     <main class="flex-1">
-      <section
-        class="relative overflow-hidden border-b border-[var(--color-ns-border)] bg-gradient-to-b from-indigo-50/80 to-[var(--color-ns-bg)]"
-      >
+      <section class="relative overflow-hidden border-b border-[var(--color-ns-border)]">
+        <div
+          class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(49,88,255,0.18),transparent_34%),radial-gradient(circle_at_85%_14%,rgba(8,145,178,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.82),rgba(243,245,251,0.62))]"
+        />
         <div class="ns-container py-16 md:py-24">
           <div class="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
-            <div class="min-w-0">
-              <p class="mb-3 text-sm font-semibold uppercase tracking-wider text-indigo-600">
+            <div class="min-w-0 relative">
+              <p class="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-ns-accent)]">
                 Vue 3 · SVG · TypeScript
               </p>
               <h1 class="max-w-3xl text-4xl font-extrabold tracking-tight text-[var(--color-ns-text)] md:text-5xl md:leading-tight">
@@ -153,11 +172,22 @@ const useCases = [
                   View on GitHub
                 </a>
               </div>
+              <div class="ns-signal-grid mt-8 max-w-3xl">
+                <article
+                  v-for="stat in heroStats"
+                  :key="stat.label"
+                  class="ns-signal-card"
+                >
+                  <p class="ns-signal-label">{{ stat.label }}</p>
+                  <p class="ns-signal-value">{{ stat.value }}</p>
+                  <p class="ns-signal-copy">{{ stat.copy }}</p>
+                </article>
+              </div>
             </div>
             <div class="min-w-0">
               <div
                 ref="heroChartPanelRef"
-                class="ns-chart-panel ns-hero-chart-card rounded-2xl border border-[var(--color-ns-border)] bg-[var(--color-ns-surface)] p-4 md:p-5"
+                class="ns-chart-panel ns-hero-chart-card rounded-[1.4rem] border border-[var(--color-ns-border)] p-4 md:p-5"
               >
                 <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 text-center sm:text-left">
