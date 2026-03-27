@@ -9,15 +9,17 @@ Vue 3 SVG charting library for dashboards and **trading-grade market UIs**—Typ
 ## Install
 
 ```bash
-npm install narduk-charts
+npm install @narduk-enterprises/narduk-charts
 ```
+
+Configure the [GitHub Packages npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry) for the `@narduk-enterprises` scope (for example `.npmrc`: `@narduk-enterprises:registry=https://npm.pkg.github.com` and auth via `NODE_AUTH_TOKEN` or `~/.npmrc`).
 
 ## Setup
 
 Import the CSS once in your app entry:
 
 ```ts
-import 'narduk-charts/style.css'
+import '@narduk-enterprises/narduk-charts/style.css'
 ```
 
 ### Theming (Tailwind v4 tokens)
@@ -60,7 +62,7 @@ Multi-series smooth line chart with hover crosshair and data points.
 
 ```vue
 <script setup lang="ts">
-import { NardukLineChart } from 'narduk-charts'
+import { NardukLineChart } from '@narduk-enterprises/narduk-charts'
 
 const series = [
   { name: 'Revenue', data: [30, 40, 35, 50, 49, 60, 70] },
@@ -125,7 +127,7 @@ Grouped or stacked bar chart with hover highlighting.
 
 ```vue
 <script setup lang="ts">
-import { NardukBarChart } from 'narduk-charts'
+import { NardukBarChart } from '@narduk-enterprises/narduk-charts'
 
 const series = [
   { name: 'Desktop', data: [65, 59, 80, 81, 56] },
@@ -180,7 +182,7 @@ Pie and donut chart with labels and percentage display.
 
 ```vue
 <script setup lang="ts">
-import { NardukPieChart } from 'narduk-charts'
+import { NardukPieChart } from '@narduk-enterprises/narduk-charts'
 
 const data = [
   { label: 'Chrome', value: 65 },

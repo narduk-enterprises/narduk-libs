@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CandleResolutionId } from 'narduk-charts'
-import { CANDLE_RESOLUTION_LABEL } from 'narduk-charts'
+import type { CandleResolutionId } from '@narduk-enterprises/narduk-charts'
+import { CANDLE_RESOLUTION_LABEL } from '@narduk-enterprises/narduk-charts'
 
 const props = withDefaults(defineProps<{
   symbol: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NardukLineChart } from 'narduk-charts'
+import { NardukLineChart } from '@narduk-enterprises/narduk-charts'
 
 const series = [
   { name: 'Alpha', data: [3, 7, 5, 12, 9, 14] },

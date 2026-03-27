@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { NardukScatterChart } from 'narduk-charts'
-import type { ScatterSeries } from 'narduk-charts'
+import { NardukScatterChart } from '@narduk-enterprises/narduk-charts'
+import type { ScatterSeries } from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 
 const series: ScatterSeries[] = [

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NardukPieChart } from 'narduk-charts'
+import { NardukPieChart } from '@narduk-enterprises/narduk-charts'
 
 const data = [
   { label: 'A', value: 40 },

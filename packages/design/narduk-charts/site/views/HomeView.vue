@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { NardukCandleChart, useChartFullscreen } from 'narduk-charts'
-import type { CandleBar, CandleDrawing } from 'narduk-charts'
+import { NardukCandleChart, useChartFullscreen } from '@narduk-enterprises/narduk-charts'
+import type { CandleBar, CandleDrawing } from '@narduk-enterprises/narduk-charts'
 import SiteHeader from '../components/SiteHeader.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 
@@ -355,9 +355,9 @@ const heroStats = [
           <h2 class="mb-4 text-2xl font-bold text-[var(--color-ns-text)]">
             Quick start
           </h2>
-          <pre class="overflow-x-auto rounded-lg border border-[var(--color-ns-border)] bg-slate-50 p-4 text-left text-sm leading-relaxed text-slate-800"><code>npm install narduk-charts vue</code></pre>
-          <pre class="mt-4 overflow-x-auto rounded-lg border border-[var(--color-ns-border)] bg-slate-900 p-4 text-left text-sm leading-relaxed text-slate-100"><code>import { NardukLineChart } from 'narduk-charts'
-import 'narduk-charts/style.css'</code></pre>
+          <pre class="overflow-x-auto rounded-lg border border-[var(--color-ns-border)] bg-slate-50 p-4 text-left text-sm leading-relaxed text-slate-800"><code>npm install @narduk-enterprises/narduk-charts vue</code></pre>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-[var(--color-ns-border)] bg-slate-900 p-4 text-left text-sm leading-relaxed text-slate-100"><code>import { NardukLineChart } from '@narduk-enterprises/narduk-charts'
+import '@narduk-enterprises/narduk-charts/style.css'</code></pre>
         </div>
       </section>
     </main>

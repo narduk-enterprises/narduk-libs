@@ -13,14 +13,14 @@ import {
   aggregateCandlesToResolution,
   resolutionMsFromId,
   CANDLE_RESOLUTION_LABEL,
-} from 'narduk-charts'
+} from '@narduk-enterprises/narduk-charts'
 import type {
   CandleBar,
   CandleDrawing,
   CandleResolutionId,
   CandleTimeDomain,
   ChartSeries,
-} from 'narduk-charts'
+} from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 import TradingDemoToolbar from '../../components/TradingDemoToolbar.vue'
 import TradingChartOverlay from '../../components/TradingChartOverlay.vue'

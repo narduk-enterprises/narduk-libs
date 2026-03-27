@@ -1,6 +1,6 @@
 {
-  "name": "narduk-charts",
-  "version": "1.0.0",
+  "name": "@narduk-enterprises/narduk-charts",
+  "version": "2.0.0",
   "description": "Vue 3 SVG charting library for dashboards and trading-grade market UIs (TypeScript, themable, accessible)",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",
@@ -100,5 +100,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/narduk-enterprises/narduk-charts"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
 }

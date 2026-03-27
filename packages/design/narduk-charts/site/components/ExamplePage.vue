@@ -3,7 +3,7 @@ import SiteHeader from './SiteHeader.vue'
 import SiteFooter from './SiteFooter.vue'
 import { RouterLink } from 'vue-router'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useChartFullscreen } from 'narduk-charts'
+import { useChartFullscreen } from '@narduk-enterprises/narduk-charts'
 
 const props = defineProps<{
   title: string

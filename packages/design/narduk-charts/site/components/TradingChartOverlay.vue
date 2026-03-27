@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CandlePlotMetrics } from 'narduk-charts'
+import type { CandlePlotMetrics } from '@narduk-enterprises/narduk-charts'
 
 const props = defineProps<{
   metrics: CandlePlotMetrics

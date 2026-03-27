@@ -143,7 +143,7 @@ test.describe('site ui quality', () => {
     )
 
     writeUiQualityManifest(SCREENSHOT_ROOT, {
-      app: 'narduk-charts/site',
+      app: '@narduk-enterprises/narduk-charts/site',
       generatedAt: new Date().toISOString(),
       minimumScreenshotCount: 10,
       minimumFullPageCount: 3,

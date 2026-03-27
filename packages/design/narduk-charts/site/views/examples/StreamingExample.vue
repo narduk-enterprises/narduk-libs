@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { NardukLineChart, useStreamingSeries } from 'narduk-charts'
+import { NardukLineChart, useStreamingSeries } from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 
 const WINDOW = 48

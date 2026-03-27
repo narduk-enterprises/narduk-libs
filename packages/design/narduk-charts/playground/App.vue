@@ -32,7 +32,7 @@ import {
   type CandleDrawing,
   type CandlePriceDisplayMode,
   type CandleResolutionId,
-} from 'narduk-charts'
+} from '@narduk-enterprises/narduk-charts'
 
 type TabId = 'line' | 'bar' | 'pie' | 'ohlc' | 'wind'
 type WindUnit = 'mph' | 'knots' | 'ms'

@@ -4,8 +4,8 @@ Local demos: `npm run dev` serves the marketing site + example routes; `npm run 
 
 Types ship from `dist/index.d.ts`. Import paths:
 
-- Full bundle: `import { NardukLineChart } from 'narduk-charts'` + `import 'narduk-charts/style.css'`
-- Per-chart ESM: `import { NardukLineChart } from 'narduk-charts/line'` (same stylesheet import as above); `narduk-charts/candle` for `NardukCandleChart` only; `narduk-charts/studies` for indicator math only (no Vue).
+- Full bundle: `import { NardukLineChart } from '@narduk-enterprises/narduk-charts'` + `import '@narduk-enterprises/narduk-charts/style.css'`
+- Per-chart ESM: `import { NardukLineChart } from '@narduk-enterprises/narduk-charts/line'` (same stylesheet import as above); `@narduk-enterprises/narduk-charts/candle` for `NardukCandleChart` only; `@narduk-enterprises/narduk-charts/studies` for indicator math only (no Vue).
 
 ## Components
 

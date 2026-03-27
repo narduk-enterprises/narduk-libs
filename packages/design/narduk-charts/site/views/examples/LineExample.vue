@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { NardukLineChart } from 'narduk-charts'
-import type { ChartSeries } from 'narduk-charts'
+import { NardukLineChart } from '@narduk-enterprises/narduk-charts'
+import type { ChartSeries } from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 
 const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
-      'narduk-charts': resolve(repoRoot, 'src/index.ts'),
+      '@narduk-enterprises/narduk-charts': resolve(repoRoot, 'src/index.ts'),
     },
   },
   server: {

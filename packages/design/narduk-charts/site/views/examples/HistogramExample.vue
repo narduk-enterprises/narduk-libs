@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NardukHistogramChart } from 'narduk-charts'
+import { NardukHistogramChart } from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 
 /** Skewed sample: web response times (ms) */

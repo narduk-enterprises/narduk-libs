@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { NardukPieChart } from 'narduk-charts'
-import type { PieDataItem } from 'narduk-charts'
+import { NardukPieChart } from '@narduk-enterprises/narduk-charts'
+import type { PieDataItem } from '@narduk-enterprises/narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 
 const data: PieDataItem[] = [

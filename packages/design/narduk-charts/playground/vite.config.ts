@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
-      'narduk-charts': resolve(__dirname, '../src/index.ts'),
+      '@narduk-enterprises/narduk-charts': resolve(__dirname, '../src/index.ts'),
     },
   },
 })

@@ -15,7 +15,7 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "narduk-charts": ["./src/index.ts"]
+      "@narduk-enterprises/narduk-charts": ["./src/index.ts"]
     }
   },
   "include": [
