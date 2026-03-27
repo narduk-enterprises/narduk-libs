@@ -182,6 +182,32 @@ export function formatValue(value: number): string {
   return value.toFixed(1)
 }
 
+/**
+ * Axis tick label: avoid collapsing distinct prices to the same string (e.g. 21050
+ * and 21100 both becoming "21.1K") when the visible domain is tight vs magnitude.
+ */
+export function formatAxisTickValue(domainMin: number, domainMax: number, value: number): string {
+  const span = Math.abs(domainMax - domainMin)
+  if (!Number.isFinite(value) || !Number.isFinite(span)) return formatValue(value)
+  if (span === 0) return formatValue(value)
+
+  const mag = Math.max(Math.abs(domainMin), Math.abs(domainMax), Math.abs(value), 1e-12)
+  const relSpan = span / mag
+  const abs = Math.abs(value)
+
+  if (abs >= 1_000_000) {
+    const dec = relSpan < 0.05 ? 2 : 1
+    return `${(value / 1_000_000).toFixed(dec)}M`
+  }
+  if (abs >= 1000) {
+    if (relSpan < 0.12) return `${(value / 1000).toFixed(2)}K`
+    return formatValue(value)
+  }
+  if (Number.isInteger(value) && span >= 10) return value.toString()
+  const decimals = span < 0.01 ? 4 : span < 0.1 ? 3 : span < 1 ? 3 : span < 10 ? 2 : 1
+  return value.toFixed(decimals)
+}
+
 export function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3
 }

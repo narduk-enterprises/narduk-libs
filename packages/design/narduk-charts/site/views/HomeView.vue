@@ -183,7 +183,11 @@ const heroStats = [
 <template>
   <div class="min-h-screen flex flex-col">
     <SiteHeader />
-    <main class="flex-1">
+    <main
+      id="main-content"
+      class="flex-1"
+      tabindex="-1"
+    >
       <section class="relative overflow-hidden border-b border-[var(--color-ns-border)]">
         <div
           class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(49,88,255,0.18),transparent_34%),radial-gradient(circle_at_85%_14%,rgba(8,145,178,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.82),rgba(243,245,251,0.62))]"
@@ -255,16 +259,17 @@ const heroStats = [
                 <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 text-center sm:text-left">
                     <p class="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ns-muted)]">
-                      Live preview
+                      Interactive sample
                     </p>
                     <p class="mt-1 m-0 text-sm font-medium text-[var(--color-ns-text)]">
-                      Hollow candles · volume · brush · sample drawings
+                      Static series · hollow candles · volume · brush · drawings
                     </p>
                   </div>
                   <button
                     type="button"
                     class="ns-btn ns-btn--ghost ns-btn--compact shrink-0"
                     :aria-pressed="heroFullscreen"
+                    :aria-label="heroFullscreen ? 'Exit full screen chart' : 'View chart full screen'"
                     @click="toggleHeroFullscreen"
                   >
                     {{ heroFullscreen ? 'Exit full screen' : 'Full screen' }}
@@ -333,9 +338,9 @@ const heroStats = [
           >
             <RouterLink
               :to="u.to"
-              class="ns-card block h-full no-underline transition-shadow hover:shadow-md"
+              class="ns-card block h-full no-underline transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
             >
-              <span class="text-xs font-bold uppercase tracking-wide text-indigo-600">{{ u.tag }}</span>
+              <span class="text-xs font-bold uppercase tracking-wide text-[var(--color-ns-accent)]">{{ u.tag }}</span>
               <h3 class="mt-2 text-lg font-bold text-[var(--color-ns-text)]">
                 {{ u.title }}
               </h3>

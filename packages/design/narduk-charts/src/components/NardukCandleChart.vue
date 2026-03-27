@@ -4,6 +4,7 @@ import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import {
   formatValue,
+  formatAxisTickValue,
   aggregateCandlesDetailed,
   candleTimeAtIndex,
   candleIndexAtTime,
@@ -352,12 +353,21 @@ function formatOhlcTooltipValue(v: number): string {
   return formatPriceStr(v)
 }
 
-const ticksForDisplay = computed(() =>
-  yMap.value.ticks.map(t => ({
+const ticksForDisplay = computed(() => {
+  const domain = yMap.value.domain
+  const custom = props.formatPrice || props.formatTickValue
+  return yMap.value.ticks.map(t => ({
     ...t,
-    label: formatPriceStr(t.value),
-  })),
-)
+    label: custom ? formatPriceStr(t.value) : formatAxisTickLabel(domain.min, domain.max, t.value),
+  }))
+})
+
+function formatAxisTickLabel(domainMin: number, domainMax: number, value: number): string {
+  const m = props.priceDisplayMode ?? 'absolute'
+  if (m === 'percent') return `${formatAxisTickValue(domainMin, domainMax, value)}%`
+  if (m === 'indexed') return formatAxisTickValue(domainMin, domainMax, value)
+  return formatAxisTickValue(domainMin, domainMax, value)
+}
 
 function yPriceRaw(rawOhlc: number): number {
   const d = rawToDisplayPrice(rawOhlc)
@@ -1181,6 +1191,31 @@ const crosshairPlot = computed(() => {
   return null
 })
 
+/** When Y matches the last-price pill, draw the crosshair price tag on the left edge instead. */
+const crosshairPriceTagLayout = computed(() => {
+  const cp = crosshairPlot.value
+  if (!cp || cp.priceY == null) return null
+  const yCenter = yPriceDisplay(cp.priceY)
+  const tagW = 62
+  const tagH = 18
+  const pr = padding.value
+  const cw = chartWidth.value
+  const rightX = cw - pr.right + 2
+  const leftX = pr.left + 2
+  const overlapLast =
+    props.showLastPrice !== false
+    && lastPriceInfo.value?.inView === true
+    && Math.abs(yCenter - lastPriceInfo.value.y) < 24
+  const rectX = overlapLast ? leftX : rightX
+  return {
+    rectX,
+    rectY: yCenter - tagH / 2,
+    textX: rectX + tagW / 2,
+    tagW,
+    tagH,
+  }
+})
+
 /** OHLC HUD anchored top-right inside the price pane so it clears titles and left-side data. */
 const hudTransform = computed(() => {
   const w = 124
@@ -1423,13 +1458,24 @@ const xAxisLabelIndices = computed(() => {
   if (n === 0) return []
   const { i0, i1 } = visibleIndexBounds()
   const span = Math.max(1, i1 - i0 + 1)
-  const approxLabelWidth = 56
-  const available = plotWidth.value / span
-  const step = available >= approxLabelWidth ? 1 : Math.ceil(approxLabelWidth / available)
+  /** Long datetime strings need more space; cap count from plot width (not bar width). */
+  const minPxPerLabel = 92
+  const pw = Math.max(1, plotWidth.value)
+  const maxSlots = Math.max(2, Math.floor(pw / minPxPerLabel))
+  const count = Math.min(span, maxSlots)
+  if (count >= span) {
+    return Array.from({ length: span }, (_, k) => i0 + k)
+  }
   const out: number[] = []
-  for (let i = i0; i <= i1; i += step) out.push(i)
-  if (out.length === 0 || out[out.length - 1] !== i1) out.push(i1)
-  return out
+  for (let k = 0; k < count; k++) {
+    const t = count <= 1 ? 0 : k / (count - 1)
+    out.push(Math.round(i0 + t * (i1 - i0)))
+  }
+  let uniq = [...new Set(out)].sort((a, b) => a - b)
+  if (uniq.length === 0) return [i0]
+  if (uniq[0] !== i0) uniq = [i0, ...uniq]
+  if (uniq[uniq.length - 1] !== i1) uniq = [...uniq, i1]
+  return [...new Set(uniq)].sort((a, b) => a - b)
 })
 
 const rootChartClasses = computed(() => {
@@ -1792,7 +1838,7 @@ defineExpose({
               :y1="padding.top"
               :y2="mainPlotBottom"
             />
-            <template v-if="crosshairPlot.priceY != null">
+            <template v-if="crosshairPlot.priceY != null && crosshairPriceTagLayout">
               <line
                 :x1="padding.left"
                 :x2="chartWidth - padding.right"
@@ -1800,16 +1846,16 @@ defineExpose({
                 :y2="yPriceDisplay(crosshairPlot.priceY)"
               />
               <rect
-                :x="chartWidth - padding.right + 2"
-                :y="yPriceDisplay(crosshairPlot.priceY) - 9"
-                width="62"
-                height="18"
+                :x="crosshairPriceTagLayout.rectX"
+                :y="crosshairPriceTagLayout.rectY"
+                :width="crosshairPriceTagLayout.tagW"
+                :height="crosshairPriceTagLayout.tagH"
                 rx="9"
                 class="narduk-candle-crosshair__tag"
               />
               <text
                 class="narduk-candle-crosshair__text"
-                :x="chartWidth - padding.right + 33"
+                :x="crosshairPriceTagLayout.textX"
                 :y="yPriceDisplay(crosshairPlot.priceY)"
                 dominant-baseline="middle"
                 text-anchor="middle"

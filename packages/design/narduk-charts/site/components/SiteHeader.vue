@@ -27,7 +27,7 @@ function navActive(path: string) {
       <div class="flex items-center gap-6">
         <RouterLink
           to="/"
-          class="text-lg font-bold tracking-tight text-[var(--color-ns-text)] no-underline"
+          class="text-lg font-bold tracking-tight text-[var(--color-ns-text)] no-underline rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
         >
           Narduk Charts
         </RouterLink>
@@ -39,7 +39,7 @@ function navActive(path: string) {
             v-for="ex in examples"
             :key="ex.to"
             :to="ex.to"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium no-underline transition-colors"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2.5 py-2 text-sm font-medium no-underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
             :class="
               navActive(ex.to)
                 ? 'bg-indigo-50 text-[var(--color-ns-accent)]'
@@ -83,7 +83,7 @@ function navActive(path: string) {
         v-for="ex in examples"
         :key="ex.to"
         :to="ex.to"
-        class="shrink-0 rounded-full border border-[var(--color-ns-border)] px-3 py-1 text-xs font-medium no-underline"
+        class="inline-flex min-h-11 shrink-0 items-center rounded-full border border-[var(--color-ns-border)] px-3.5 py-2 text-xs font-medium no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
         :class="navActive(ex.to) ? 'border-indigo-300 bg-indigo-50 text-[var(--color-ns-accent)]' : 'text-[var(--color-ns-muted)]'"
       >
         {{ ex.label }}

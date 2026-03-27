@@ -215,17 +215,21 @@
     filter: drop-shadow(0 2px 4px oklch(30% 0.02 264 / 0.06));
   }
 
+  .narduk-line-point {
+    stroke: var(--color-chart-surface);
+    stroke-width: 2;
+    transition: r 0.15s ease;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .narduk-line-path {
       filter: none;
       transition: none;
     }
-  }
 
-  .narduk-line-point {
-    stroke: var(--color-chart-surface);
-    stroke-width: 2;
-    transition: r 0.15s ease;
+    .narduk-line-point {
+      transition: none;
+    }
   }
 
   .narduk-crosshair {
@@ -642,5 +646,23 @@
 
   .narduk-chart--theme-colorblind-safe .narduk-legend__dot {
     box-sizing: border-box;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .narduk-bar-rect {
+      transition: none;
+    }
+
+    .narduk-pie-slice {
+      transition: none;
+    }
+
+    .narduk-tooltip {
+      transition: none;
+    }
+
+    .narduk-legend__item {
+      transition: none;
+    }
   }
 }

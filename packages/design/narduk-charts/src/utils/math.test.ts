@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   niceScale,
   linearScale,
+  formatAxisTickValue,
   segmentLinePoints,
   lineSegmentsToPaths,
   closeAreaUnderLine,
@@ -28,6 +29,17 @@ describe('niceScale', () => {
     expect(s.min).toBeLessThanOrEqual(0)
     expect(s.max).toBeGreaterThanOrEqual(100)
     expect(s.ticks[s.ticks.length - 1]).toBeGreaterThanOrEqual(100)
+  })
+})
+
+describe('formatAxisTickValue', () => {
+  it('uses extra precision on K-scale when domain is tight', () => {
+    expect(formatAxisTickValue(21040, 21160, 21050)).toBe('21.05K')
+    expect(formatAxisTickValue(21040, 21160, 21100)).toBe('21.10K')
+  })
+
+  it('falls back to compact K when range is wide', () => {
+    expect(formatAxisTickValue(10000, 30000, 21100)).toBe('21.1K')
   })
 })
 

@@ -39,7 +39,11 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen flex flex-col">
     <SiteHeader />
-    <main class="flex-1">
+    <main
+      id="main-content"
+      class="flex-1"
+      tabindex="-1"
+    >
       <div class="ns-container py-10">
         <RouterLink
           to="/"
@@ -71,6 +75,7 @@ onUnmounted(() => {
               type="button"
               class="ns-btn ns-btn--ghost !px-3 !py-1.5 text-xs"
               :aria-pressed="isFullscreen"
+              :aria-label="isFullscreen ? 'Exit full screen chart' : 'View chart full screen'"
               @click="toggle"
             >
               {{ isFullscreen ? 'Exit full screen' : 'Full screen' }}

@@ -201,4 +201,10 @@ onMounted(() => {
 .narduk-hist-bar {
   transition: y 0.5s ease, height 0.5s ease;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .narduk-hist-bar {
+    transition: none;
+  }
+}
 </style>

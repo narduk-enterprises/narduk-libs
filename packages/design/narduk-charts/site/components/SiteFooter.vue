@@ -11,18 +11,18 @@ import { RouterLink } from 'vue-router'
       <div class="flex flex-wrap gap-4 text-sm">
         <RouterLink
           to="/"
-          class="font-medium text-[var(--color-ns-accent)] no-underline"
+          class="font-medium text-[var(--color-ns-accent)] no-underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
         >
           Home
         </RouterLink>
         <RouterLink
           to="/playground"
-          class="font-medium text-[var(--color-ns-accent)] no-underline"
+          class="font-medium text-[var(--color-ns-accent)] no-underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
         >
           Playground
         </RouterLink>
         <a
-          class="font-medium text-[var(--color-ns-accent)] no-underline"
+          class="font-medium text-[var(--color-ns-accent)] no-underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
           href="https://github.com/narduk-enterprises/narduk-charts"
           target="_blank"
           rel="noopener noreferrer"
@@ -30,7 +30,7 @@ import { RouterLink } from 'vue-router'
           Library
         </a>
         <a
-          class="font-medium text-[var(--color-ns-accent)] no-underline"
+          class="font-medium text-[var(--color-ns-accent)] no-underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
           href="https://github.com/narduk-enterprises/charts"
           target="_blank"
           rel="noopener noreferrer"

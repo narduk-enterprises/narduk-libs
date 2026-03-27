@@ -22,6 +22,7 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
+  touch-action: manipulation;
   background:
     radial-gradient(circle at top left, rgba(99, 102, 241, 0.14), transparent 32%),
     radial-gradient(circle at 88% 12%, rgba(6, 182, 212, 0.1), transparent 24%),
@@ -33,6 +34,46 @@ body {
 
 #app {
   min-height: 100vh;
+}
+
+/* WCAG 2.x skip link: first tab stop jumps past repetitive chrome */
+.ns-skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ns-skip-link:focus {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 10000;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.65rem 1rem;
+  clip: auto;
+  overflow: visible;
+  white-space: normal;
+  border-radius: 0.5rem;
+  background: var(--color-ns-surface-strong);
+  color: #f8fafc;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 12px 40px -12px rgba(15, 23, 42, 0.45);
+  outline: 2px solid var(--color-ns-accent);
+  outline-offset: 2px;
+}
+
+#main-content {
+  scroll-margin-top: 5.5rem;
 }
 
 a,
@@ -159,6 +200,16 @@ textarea {
 
 .ns-btn:hover {
   transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-btn {
+    transition-duration: 0.01ms;
+  }
+
+  .ns-btn:hover {
+    transform: none;
+  }
 }
 
 .ns-btn:focus-visible {

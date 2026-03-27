@@ -4,7 +4,12 @@ import PlaygroundLab from '../../playground/App.vue'
 </script>
 
 <template>
-  <div class="playground-route">
+  <div
+    id="main-content"
+    class="playground-route"
+    role="main"
+    tabindex="-1"
+  >
     <div
       class="sticky top-0 z-50 border-b border-[var(--color-ns-border)] bg-[var(--color-ns-surface)] px-4 py-2"
     >
