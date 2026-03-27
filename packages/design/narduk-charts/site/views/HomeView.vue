@@ -279,7 +279,7 @@ const heroStats = [
                     class="ns-btn ns-btn--ghost ns-btn--compact shrink-0"
                     :aria-pressed="heroFullscreen"
                     :aria-label="heroFullscreen ? 'Exit full screen chart' : 'View chart full screen'"
-                    @click="toggleHeroFullscreen"
+                    @click="() => void toggleHeroFullscreen()"
                   >
                     {{ heroFullscreen ? 'Exit full screen' : 'Full screen' }}
                   </button>
