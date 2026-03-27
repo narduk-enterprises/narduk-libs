@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-03-27
+
+### Changed
+
+- Gallery site: skip link, main landmark, focus-visible styles, touch-friendly nav, reduced-motion button transitions, clearer hero sample labeling.
+- Chart styles: `prefers-reduced-motion` overrides for bar, pie, tooltip, and legend transitions; histogram bar transitions respect reduced motion.
+- Candle chart and math utilities: minor fixes (see git history).
+
 ## [2.0.0] — 2026-03-26
 
 ### Changed
