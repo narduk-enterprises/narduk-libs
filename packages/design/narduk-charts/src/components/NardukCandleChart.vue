@@ -148,7 +148,8 @@ const svgDescElId = `nc-csvg-d-${idSafe(rawId)}`
 
 const containerRef = ref<HTMLElement | null>(null)
 const paddingOverrides = computed(() => ({
-  bottom: 48 + (props.showBrush ? 36 : 0),
+  left: 62,
+  bottom: 52 + (props.showBrush ? 36 : 0),
   right: props.showLastPrice !== false ? 68 : 24,
 }))
 
@@ -356,17 +357,35 @@ function formatOhlcTooltipValue(v: number): string {
 const ticksForDisplay = computed(() => {
   const domain = yMap.value.domain
   const custom = props.formatPrice || props.formatTickValue
-  return yMap.value.ticks.map(t => ({
-    ...t,
-    label: custom ? formatPriceStr(t.value) : formatAxisTickLabel(domain.min, domain.max, t.value),
-  }))
+  const raw = yMap.value.ticks
+  return raw.map((t, ti) => {
+    const prev = raw[ti - 1]
+    const next = raw[ti + 1]
+    const step = Math.min(
+      prev != null ? Math.abs(t.value - prev.value) : Number.POSITIVE_INFINITY,
+      next != null ? Math.abs(next.value - t.value) : Number.POSITIVE_INFINITY,
+    )
+    const tickStep = Number.isFinite(step) && step > 0 ? step : undefined
+    return {
+      ...t,
+      label: custom
+        ? formatPriceStr(t.value)
+        : formatAxisTickLabel(domain.min, domain.max, t.value, tickStep),
+    }
+  })
 })
 
-function formatAxisTickLabel(domainMin: number, domainMax: number, value: number): string {
+function formatAxisTickLabel(
+  domainMin: number,
+  domainMax: number,
+  value: number,
+  tickStep?: number,
+): string {
   const m = props.priceDisplayMode ?? 'absolute'
-  if (m === 'percent') return `${formatAxisTickValue(domainMin, domainMax, value)}%`
-  if (m === 'indexed') return formatAxisTickValue(domainMin, domainMax, value)
-  return formatAxisTickValue(domainMin, domainMax, value)
+  const opt = tickStep != null ? { tickStep } : undefined
+  if (m === 'percent') return `${formatAxisTickValue(domainMin, domainMax, value, opt)}%`
+  if (m === 'indexed') return formatAxisTickValue(domainMin, domainMax, value, opt)
+  return formatAxisTickValue(domainMin, domainMax, value, opt)
 }
 
 function yPriceRaw(rawOhlc: number): number {
@@ -1456,15 +1475,19 @@ function onSvgClick(event: MouseEvent) {
 const xAxisLabelIndices = computed(() => {
   const n = sortedBars.value.length
   if (n === 0) return []
+  const bars = sortedBars.value
   const { i0, i1 } = visibleIndexBounds()
   const span = Math.max(1, i1 - i0 + 1)
   /** Long datetime strings need more space; cap count from plot width (not bar width). */
-  const minPxPerLabel = 92
+  const minPxPerLabel = 112
   const pw = Math.max(1, plotWidth.value)
   const maxSlots = Math.max(2, Math.floor(pw / minPxPerLabel))
   const count = Math.min(span, maxSlots)
   if (count >= span) {
-    return Array.from({ length: span }, (_, k) => i0 + k)
+    return dedupeTimeAxisIndices(
+      Array.from({ length: span }, (_, k) => i0 + k),
+      (i) => formatTimeLabel(bars[i]!.t),
+    )
   }
   const out: number[] = []
   for (let k = 0; k < count; k++) {
@@ -1475,8 +1498,26 @@ const xAxisLabelIndices = computed(() => {
   if (uniq.length === 0) return [i0]
   if (uniq[0] !== i0) uniq = [i0, ...uniq]
   if (uniq[uniq.length - 1] !== i1) uniq = [...uniq, i1]
-  return [...new Set(uniq)].sort((a, b) => a - b)
+  const merged = [...new Set(uniq)].sort((a, b) => a - b)
+  return dedupeTimeAxisIndices(merged, (i) => formatTimeLabel(bars[i]!.t))
 })
+
+/** Drop interior ticks whose formatted time matches the previous tick (reduces overlap when zoomed). */
+function dedupeTimeAxisIndices(indices: number[], labelAt: (i: number) => string): number[] {
+  if (indices.length <= 2) return indices
+  const out: number[] = [indices[0]!]
+  let lastLab = labelAt(indices[0]!)
+  for (let k = 1; k < indices.length - 1; k++) {
+    const i = indices[k]!
+    const lab = labelAt(i)
+    if (lab === lastLab) continue
+    out.push(i)
+    lastLab = lab
+  }
+  const last = indices[indices.length - 1]!
+  if (out[out.length - 1] !== last) out.push(last)
+  return out
+}
 
 const rootChartClasses = computed(() => {
   const c = ['narduk-chart']

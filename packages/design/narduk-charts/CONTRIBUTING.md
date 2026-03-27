@@ -1,5 +1,7 @@
 # Contributing
 
+**Naming:** The product is **NardukCharts**. Published packages use the scope **`@narduk-enterprises/narduk-charts`**—keep that distinction in UI copy and documentation.
+
 ## Development
 
 ```bash
@@ -11,8 +13,7 @@ npm run test:e2e
 npm run size
 ```
 
-- **Playground:** `npm run dev`
-- **Stories:** `npm run story:dev`
+- **Histoire:** `npm run dev` (alias of `npm run story:dev`)
 - **E2E / screenshots:** `npm run test:e2e` (update baselines: `npm run test:e2e:update` on your OS)
 
 Install used `--legacy-peer-deps` if npm reports peer conflicts with Histoire.

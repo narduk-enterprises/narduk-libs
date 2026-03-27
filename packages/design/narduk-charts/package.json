@@ -1,7 +1,7 @@
 {
   "name": "@narduk-enterprises/narduk-charts",
   "version": "2.0.1",
-  "description": "Vue 3 SVG charting library for dashboards and trading-grade market UIs (TypeScript, themable, accessible)",
+  "description": "NardukCharts — Vue 3 SVG charting for dashboards and trading-grade market UIs (TypeScript, themable, accessible). Package: @narduk-enterprises/narduk-charts.",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",
   "module": "./dist/narduk-charts.js",
@@ -41,10 +41,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "vite --config site/vite.config.ts",
-    "dev:playground": "vite --config playground/vite.config.ts",
-    "dev:site": "vite --config site/vite.config.ts",
-    "build:site": "vite build --config site/vite.config.ts",
+    "dev": "histoire dev",
     "build": "vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
     "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts",
     "typecheck": "vue-tsc --noEmit",
@@ -52,10 +49,8 @@
     "test:watch": "vitest",
     "story:dev": "histoire dev",
     "story:build": "histoire build",
-    "test:e2e": "PLAYWRIGHT_TARGET=components playwright test --project=chromium",
-    "test:e2e:update": "PLAYWRIGHT_TARGET=components playwright test --project=chromium --update-snapshots",
-    "test:e2e:ui": "PLAYWRIGHT_TARGET=site playwright test --project=ui-quality",
-    "test:e2e:ui:analyze": "node tools/playwright/analyze-ui-quality.mjs output/playwright/ui-quality",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:update": "playwright test --project=chromium --update-snapshots",
     "size": "size-limit",
     "prepublishOnly": "npm run build"
   },
@@ -77,7 +72,6 @@
     "vite-plugin-dts": "^4.5.0",
     "vitest": "^3.0.0",
     "vue": "^3.5.0",
-    "vue-router": "^4.6.4",
     "vue-tsc": "^2.2.0"
   },
   "keywords": [

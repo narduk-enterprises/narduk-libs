@@ -5,6 +5,7 @@ import { NardukCandleChart, useChartFullscreen } from '@narduk-enterprises/nardu
 import type { CandleBar, CandleDrawing } from '@narduk-enterprises/narduk-charts'
 import SiteHeader from '../components/SiteHeader.vue'
 import SiteFooter from '../components/SiteFooter.vue'
+import NsHeroBackdrop from '../components/NsHeroBackdrop.vue'
 
 const { targetRef: heroChartPanelRef, isFullscreen: heroFullscreen, toggle: toggleHeroFullscreen } =
   useChartFullscreen()
@@ -188,28 +189,28 @@ const heroStats = [
       class="flex-1"
       tabindex="-1"
     >
-      <section class="relative overflow-hidden border-b border-[var(--color-ns-border)]">
-        <div
-          class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(49,88,255,0.18),transparent_34%),radial-gradient(circle_at_85%_14%,rgba(8,145,178,0.14),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.82),rgba(243,245,251,0.62))]"
-        />
-        <div class="ns-container py-16 md:py-24">
+      <section class="ns-hero-section relative overflow-hidden border-b border-[var(--color-ns-border)]">
+        <NsHeroBackdrop />
+        <div class="ns-container relative z-10 py-16 md:py-24">
           <div class="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
             <div class="min-w-0 relative">
               <p class="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-ns-accent)]">
-                narduk-charts · developer gallery
+                NardukCharts · developer gallery
               </p>
-              <h1 class="max-w-3xl text-4xl font-extrabold tracking-tight text-[var(--color-ns-text)] md:text-5xl md:leading-tight">
-                Library development gallery
+              <h1
+                class="ns-font-display max-w-3xl text-4xl font-extrabold tracking-tight text-[var(--color-ns-text)] md:text-5xl md:leading-tight"
+              >
+                Trading-grade charts for Vue
               </h1>
               <p class="mt-5 max-w-2xl text-lg text-[var(--color-ns-muted)]">
-                Routed examples and OHLC previews for validating the Vue charting package. Product positioning, enterprise pages, and SEO live in the
+                Routed examples and OHLC surfaces for validating the library. Narrative marketing, enterprise pages, and SEO for the Narduk product line live in the companion
                 <a
                   class="font-semibold text-[var(--color-ns-accent)] no-underline hover:underline"
                   href="https://github.com/narduk-enterprises/charts"
                   target="_blank"
                   rel="noopener noreferrer"
-                >charts</a>
-                marketing repository—not here.
+                >Narduk marketing site</a>
+                —this repo is the chart engine and gallery.
               </p>
               <div class="mt-8 flex flex-wrap gap-3">
                 <RouterLink

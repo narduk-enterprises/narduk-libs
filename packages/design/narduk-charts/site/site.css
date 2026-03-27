@@ -1,18 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
-  --color-ns-bg: #f3f5fb;
-  --color-ns-surface: rgba(255, 255, 255, 0.9);
+  --font-sans: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display: "JetBrains Mono", ui-monospace, monospace;
+  --color-ns-bg: #f1f5f9;
+  --color-ns-surface: rgba(255, 255, 255, 0.92);
   --color-ns-surface-strong: #0b1220;
-  --color-ns-surface-soft: #eef2ff;
-  --color-ns-text: #07111f;
-  --color-ns-muted: #5d6779;
-  --color-ns-border: rgba(15, 23, 42, 0.08);
-  --color-ns-accent: #3158ff;
-  --color-ns-accent-hover: #2748d3;
-  --color-ns-success: #0f9d76;
+  --color-ns-surface-soft: #ecfeff;
+  --color-ns-text: #0f172a;
+  --color-ns-muted: #64748b;
+  --color-ns-border: rgba(15, 23, 42, 0.09);
+  --color-ns-accent: #0891b2;
+  --color-ns-accent-bright: #06b6d4;
+  --color-ns-accent-hover: #0e7490;
+  --color-ns-success: #0d9488;
 }
 
 :root {
@@ -24,12 +26,25 @@ body {
   font-family: var(--font-sans);
   touch-action: manipulation;
   background:
-    radial-gradient(circle at top left, rgba(99, 102, 241, 0.14), transparent 32%),
-    radial-gradient(circle at 88% 12%, rgba(6, 182, 212, 0.1), transparent 24%),
-    linear-gradient(180deg, #f8fbff, #eef2f8 55%, #f7f9fc 100%);
+    radial-gradient(circle at top left, rgba(6, 182, 212, 0.12), transparent 36%),
+    radial-gradient(circle at 88% 8%, rgba(99, 102, 241, 0.1), transparent 28%),
+    linear-gradient(180deg, #f8fafc, #f1f5f9 52%, #f8fafc 100%);
   color: var(--color-ns-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.ns-font-display {
+  font-family: var(--font-display);
+}
+
+.ns-hero-section {
+  isolation: isolate;
+  background-image:
+    radial-gradient(ellipse 90% 70% at 12% -10%, rgba(6, 182, 212, 0.11), transparent 50%),
+    radial-gradient(ellipse 80% 60% at 92% 0%, rgba(99, 102, 241, 0.09), transparent 48%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 55%, #f8fafc 100%);
+  background-repeat: no-repeat;
 }
 
 #app {
@@ -213,18 +228,18 @@ textarea {
 }
 
 .ns-btn:focus-visible {
-  outline: 2px solid rgba(49, 88, 255, 0.34);
+  outline: 2px solid rgba(8, 145, 178, 0.45);
   outline-offset: 2px;
 }
 
 .ns-btn--primary {
-  background: linear-gradient(135deg, #3158ff, #4f46e5);
-  box-shadow: 0 16px 28px -20px rgba(49, 88, 255, 0.76);
+  background: linear-gradient(135deg, #06b6d4, #6366f1);
+  box-shadow: 0 16px 32px -18px rgba(6, 182, 212, 0.55);
   color: #fff;
 }
 
 .ns-btn--primary:hover {
-  background: linear-gradient(135deg, #2748d3, #4338ca);
+  background: linear-gradient(135deg, #0891b2, #4f46e5);
 }
 
 .ns-btn--ghost {
@@ -235,7 +250,7 @@ textarea {
 }
 
 .ns-btn--ghost:hover {
-  border-color: rgba(49, 88, 255, 0.24);
+  border-color: rgba(6, 182, 212, 0.35);
   color: var(--color-ns-accent);
 }
 
@@ -247,11 +262,11 @@ textarea {
 
 .ns-hero-chart-card {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.86)),
-    radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 32%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 253, 255, 0.88)),
+    radial-gradient(circle at top right, rgba(6, 182, 212, 0.1), transparent 36%);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.04),
-    0 28px 60px -40px rgba(15, 23, 42, 0.24);
+    0 28px 60px -40px rgba(15, 23, 42, 0.22);
 }
 
 .ns-terminal-shell {

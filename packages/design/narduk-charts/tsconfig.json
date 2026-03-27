@@ -18,16 +18,6 @@
       "@narduk-enterprises/narduk-charts": ["./src/index.ts"]
     }
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "src/**/*.vue",
-    "playground/**/*.ts",
-    "playground/**/*.d.ts",
-    "playground/**/*.vue",
-    "site/**/*.ts",
-    "site/**/*.d.ts",
-    "site/**/*.vue"
-  ],
-  "exclude": ["node_modules", "dist", "playground/vite.config.ts", "site/vite.config.ts", "histoire.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
+  "exclude": ["node_modules", "dist", "histoire.config.ts"]
 }

@@ -182,11 +182,21 @@ export function formatValue(value: number): string {
   return value.toFixed(1)
 }
 
+export interface FormatAxisTickValueOptions {
+  /** Smallest gap between adjacent axis ticks (same units as `value`). When < ~120, "K" labels need two decimals to stay distinct. */
+  tickStep?: number
+}
+
 /**
  * Axis tick label: avoid collapsing distinct prices to the same string (e.g. 21050
  * and 21100 both becoming "21.1K") when the visible domain is tight vs magnitude.
  */
-export function formatAxisTickValue(domainMin: number, domainMax: number, value: number): string {
+export function formatAxisTickValue(
+  domainMin: number,
+  domainMax: number,
+  value: number,
+  options?: FormatAxisTickValueOptions,
+): string {
   const span = Math.abs(domainMax - domainMin)
   if (!Number.isFinite(value) || !Number.isFinite(span)) return formatValue(value)
   if (span === 0) return formatValue(value)
@@ -194,13 +204,17 @@ export function formatAxisTickValue(domainMin: number, domainMax: number, value:
   const mag = Math.max(Math.abs(domainMin), Math.abs(domainMax), Math.abs(value), 1e-12)
   const relSpan = span / mag
   const abs = Math.abs(value)
+  const step = options?.tickStep
+  const fineK =
+    relSpan < 0.12
+    || (step != null && step > 0 && step < 120)
 
   if (abs >= 1_000_000) {
     const dec = relSpan < 0.05 ? 2 : 1
     return `${(value / 1_000_000).toFixed(dec)}M`
   }
   if (abs >= 1000) {
-    if (relSpan < 0.12) return `${(value / 1000).toFixed(2)}K`
+    if (fineK) return `${(value / 1000).toFixed(2)}K`
     return formatValue(value)
   }
   if (Number.isInteger(value) && span >= 10) return value.toString()

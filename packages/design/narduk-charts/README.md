@@ -1,10 +1,12 @@
-# narduk-charts
+# NardukCharts
 
-Vue 3 SVG charting library for dashboards and **trading-grade market UIs**—TypeScript-first, themeable, accessible. Built without D3 or Chart.js: Vue 3 + TypeScript + SVG.
+**NardukCharts** is the product name for this Vue 3 SVG charting stack—TypeScript-first, themeable, accessible, built without D3 or Chart.js.
 
-**Product website (marketing, enterprise narrative, SEO):** [github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)
+**npm package:** [`@narduk-enterprises/narduk-charts`](https://github.com/narduk-enterprises/narduk-charts) (GitHub Packages).
 
-**This repository:** library source, tests, component docs (`docs/`), Histoire stories, **development gallery** (`npm run dev`), and the interactive **playground** (`npm run dev:playground`).
+**Companion marketing site** (broader Narduk narrative, enterprise pages, SEO): [github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)
+
+**This repository:** library source, tests, markdown API notes (`docs/`), and **Histoire** component stories (`pnpm dev` / `npm run dev`, same as `npm run story:dev`). Runnable demos and flagship examples live on the **marketing site** (see link above).
 
 ## Install
 
@@ -236,7 +238,7 @@ Same as line chart: `empty`, `tooltip`, `legend-item`.
 
 ### Live data helper
 
-**`useStreamingSeries(maxPoints, initial?)`** — `{ values, push, setWindow, clear }` for rolling numeric buffers (see Wind demo in the playground).
+**`useStreamingSeries(maxPoints, initial?)`** — `{ values, push, setWindow, clear }` for rolling numeric buffers (see realtime docs on the marketing site).
 
 ### Theme class
 
@@ -313,20 +315,14 @@ interface PieDataItem {
 - **Legends** — click to toggle series visibility; scales recalculate automatically
 - **Zero dependencies** — only requires Vue 3 as a peer dependency
 
-## Local demos
+## Local development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Runs the **development gallery** (routed examples + OHLC preview). Use this to validate chart behavior while authoring the library.
-
-```bash
-npm run dev:playground
-```
-
-Runs the full **playground** (Line / Bar / Pie / OHLC / Wind) with the control dock; **Wind** simulates a live anemometer stream.
+Runs **Histoire** with library stories (same as `npm run story:dev`). For full-page examples, AAPL stream demos, and showcase routes, use the companion **marketing site** repository.
 
 ```bash
 npm test
@@ -335,10 +331,10 @@ npm test
 Runs Vitest (math, y-scale helpers, streaming composable).
 
 ```bash
-npm run story:dev
+npm run story:build
 ```
 
-Opens Histoire with library stories.
+Produces a static Histoire build (optional).
 
 ## License
 

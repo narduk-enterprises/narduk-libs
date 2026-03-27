@@ -1,5 +1,7 @@
 # Migrations
 
+**Branding:** The product name is **NardukCharts**; local component work runs in **Histoire** (`pnpm dev`). Import paths and the package name remain **`@narduk-enterprises/narduk-charts`** (no change required for consumers).
+
 Breaking changes are listed here and in `CHANGELOG.md` with semver bumps.
 
 ## Policy

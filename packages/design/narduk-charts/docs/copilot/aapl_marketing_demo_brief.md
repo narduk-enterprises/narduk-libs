@@ -8,10 +8,10 @@ Add a dedicated `AAPL` example to the marketing site and make it the best showca
 
 ## Route And Placement
 
-- Add a dedicated route at `/examples/aapl`.
-- Implement the page in `site/views/examples/AaplExample.vue`.
-- Add a clear entry point from the marketing home page so the AAPL demo is visible as a flagship example, not buried behind the generic trading page.
-- Keep the existing `/examples/trading` page, but make the new AAPL page the more polished market-facing demo.
+- Canonical route: `/docs/examples/aapl` on the **marketing site** Nuxt app (`narduk-enterprises/charts`).
+- Implement the page in `apps/web/app/pages/docs/examples/aapl.vue` (client chart in `apps/web/app/components/examples/`).
+- Redirect legacy `/examples/aapl` → `/docs/examples/aapl` via `routeRules` in `apps/web/nuxt.config.ts`.
+- Link the demo from **Documentation → Examples** and keep candle/OHLC depth in **Showcase** (e.g. `/showcase/candle`).
 
 ## Visual Direction
 
@@ -51,7 +51,7 @@ The point of this page is to demonstrate the advanced features we already have i
 
 Use the Stonx public market-data stream instead of exposing Polygon directly in the client.
 
-**Canonical wire behavior** is defined by the Stonx server implementation (reference: `stonx-app-2026/server/routes/ws/stream.ts`). This repo does not modify Stonx; the marketing site uses [`site/utils/stonxStream.ts`](../../site/utils/stonxStream.ts) for types and JSON helpers.
+**Canonical wire behavior** is defined by the Stonx server implementation (reference: `stonx-app-2026/server/routes/ws/stream.ts`). The `narduk-charts` package repo does not modify Stonx; the marketing site uses [`apps/web/app/utils/stonxStream.ts`](https://github.com/narduk-enterprises/charts) (paths relative to the charts app checkout) for types and JSON helpers.
 
 Default stream URL:
 
@@ -109,7 +109,7 @@ Aim for a flagship demo page with:
 - main candle chart
 - lower study pane
 - sidecar insight cards or watchlist-style context
-- clear CTA back into the library examples / playground
+- clear CTA back into **Docs → Examples** and **Showcase**
 
 ## Quality Bar
 

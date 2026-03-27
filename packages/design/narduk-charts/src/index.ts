@@ -20,6 +20,8 @@ export { default as NardukHistogramChart } from './components/NardukHistogramCha
 export { default as NardukCandleChart } from './components/NardukCandleChart.vue'
 /** Layout helper forwarding `v-model:domain` for stacked panes. */
 export { default as NardukChartStack } from './components/NardukChartStack.vue'
+/** Optional marketing / hero backdrop: SVG grid + series (uses chart CSS variables; no images). */
+export { default as NardukBrandBackdrop } from './components/NardukBrandBackdrop.vue'
 
 /** Rolling `number[]` buffer for live scalar charts. */
 export { useStreamingSeries } from './composables/useStreamingSeries'

@@ -41,6 +41,11 @@ describe('formatAxisTickValue', () => {
   it('falls back to compact K when range is wide', () => {
     expect(formatAxisTickValue(10000, 30000, 21100)).toBe('21.1K')
   })
+
+  it('uses fine K when tick spacing is small even if relative span is wide', () => {
+    expect(formatAxisTickValue(20000, 24000, 21050, { tickStep: 50 })).toBe('21.05K')
+    expect(formatAxisTickValue(20000, 24000, 21100, { tickStep: 50 })).toBe('21.10K')
+  })
 })
 
 describe('linearScale', () => {

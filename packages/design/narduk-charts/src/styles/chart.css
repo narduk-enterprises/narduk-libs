@@ -341,8 +341,9 @@
     filter: drop-shadow(0 6px 18px oklch(20% 0.04 264 / 0.1));
   }
 
+  /* Match .narduk-tooltip: panel is tooltip-tinted, not plot surface — use tooltip foreground. */
   .narduk-candle-hud__title {
-    fill: var(--color-chart-muted);
+    fill: color-mix(in oklch, var(--color-chart-tooltip-foreground) 58%, transparent);
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
@@ -350,14 +351,14 @@
   }
 
   .narduk-candle-hud__row {
-    fill: var(--color-chart-text);
+    fill: var(--color-chart-tooltip-foreground);
     font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
 
   .narduk-candle-hud__muted {
-    fill: var(--color-chart-muted);
+    fill: color-mix(in oklch, var(--color-chart-tooltip-foreground) 72%, transparent);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
   }

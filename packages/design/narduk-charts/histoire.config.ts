@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 export default defineConfig({
   plugins: [HstVue()],
   setupFile: resolve(__dirname, 'histoire.setup.ts'),
-  theme: { title: 'Narduk Charts' },
+  theme: { title: 'NardukCharts' },
   vite: {
     plugins: [tailwindcss()],
     resolve: {

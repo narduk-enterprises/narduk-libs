@@ -1,6 +1,8 @@
 # Public API overview
 
-Local demos: `npm run dev` serves the marketing site + example routes; `npm run dev:playground` is the full control-panel lab. Static export: `npm run build:site` → `site/dist` (SPA; use a host that rewrites to `index.html` for deep links).
+**NardukCharts** is the public product name; the installable package is **`@narduk-enterprises/narduk-charts`**.
+
+Local component lab: `npm run dev` (Histoire). Full-page examples, AAPL stream demo, and static showcase routes live on the **marketing site** repo ([github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)), under **Documentation → Examples** and **Showcase**.
 
 Types ship from `dist/index.d.ts`. Import paths:
 
@@ -18,6 +20,7 @@ Types ship from `dist/index.d.ts`. Import paths:
 | `NardukHistogramChart` | `values` + `binCount` or explicit `bins` |
 | `NardukCandleChart` | OHLC `bars`, zoom/pan/box/pinch, volume + brush, `v-model:domain`, `yScale` / `priceDisplayMode`, crosshair + axis time tag, last-price line, close trace, session grid, OHLC HUD, `highlightFormingBar`, `drawings` + `drawingTool` + `update:drawings`, `overlay` slot + `getCandlePlotMetrics()` |
 | `NardukChartStack` | Layout wrapper with `v-model:domain` slot props for linked panes |
+| `NardukBrandBackdrop` | Optional full-bleed SVG hero/marketing layer (grid + polylines + candle hints); reads `--color-chart-*` tokens, no bitmaps |
 
 ## Events (high level)
 

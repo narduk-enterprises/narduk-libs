@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `NardukBrandBackdrop`: optional SVG-only marketing/hero backdrop (grid, series, candle hints) driven by `--color-chart-*` tokens—no bitmap assets. Histoire story **Brand backdrop** demonstrates usage behind a line chart.
+
+### Changed
+
+- **Removed** the in-repo Vite **gallery** (`site/`) and **playground**; runnable demos and flagship examples belong on the companion marketing site. Local library work uses **Histoire** (`npm run dev` / `npm run story:dev`). Dropped the Playwright **ui-quality** job and `aaplMarketingDemo` file-path scaffold test that targeted `site/`.
+
 ## [2.0.1] — 2026-03-27
 
 ### Changed
