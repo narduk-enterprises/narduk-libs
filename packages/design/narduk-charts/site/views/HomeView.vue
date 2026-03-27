@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { NardukCandleChart, useChartFullscreen } from '@narduk-enterprises/narduk-charts'
 import type { CandleBar, CandleDrawing } from '@narduk-enterprises/narduk-charts'
 import SiteHeader from '../components/SiteHeader.vue'
@@ -111,51 +110,54 @@ function formatHeroTime(ms: number) {
   })
 }
 
+/** Public marketing site (Nuxt); this repo ships the library only. */
+const MARKETING = 'https://charts.nard.uk' as const
+
 const useCases = [
   {
-    to: '/examples/aapl',
+    href: `${MARKETING}/docs/examples/aapl`,
     title: 'AAPL flagship demo',
     desc: 'Stonx WebSocket with auto-reconnect + history backfill, toolbar timeframe resampling (1m→1D), hollow candles, Fib/range/trend drawings, RSI row, volume, brush.',
     tag: 'Flagship',
   },
   {
-    to: '/examples/trading',
+    href: `${MARKETING}/showcase/candle`,
     title: 'Trading & OHLC',
-    desc: 'Dual synced candle panes, timer-fed stream, OHLC bar style option, TF picker, pinch zoom, drawings, RSI — futures-style terminal layout.',
+    desc: 'Candlestick showcase: bar styles, price scale, volume, brush, crosshair — pair with chart stack for multi-pane layouts.',
     tag: 'Markets',
   },
   {
-    to: '/examples/line',
+    href: `${MARKETING}/showcase/line`,
     title: 'Line & trends',
     desc: 'Multi-series, dual Y, zoom, annotations, log scale, and live streaming.',
     tag: 'Analytics',
   },
   {
-    to: '/examples/bar',
+    href: `${MARKETING}/showcase/bar`,
     title: 'Bar & composition',
     desc: 'Grouped and stacked bars, reference lines, and Y-band guides.',
     tag: 'Reporting',
   },
   {
-    to: '/examples/pie',
+    href: `${MARKETING}/showcase/pie`,
     title: 'Pie & donut',
     desc: 'Part-to-whole breakdowns with keyboard-accessible slices.',
     tag: 'Dashboards',
   },
   {
-    to: '/examples/scatter',
+    href: `${MARKETING}/showcase/scatter`,
     title: 'Scatter & correlation',
     desc: 'Numeric X/Y with multiple series and clean axes.',
     tag: 'Science',
   },
   {
-    to: '/examples/histogram',
+    href: `${MARKETING}/showcase/histogram`,
     title: 'Histogram',
     desc: 'Distribution of values with adjustable bins.',
     tag: 'Stats',
   },
   {
-    to: '/examples/streaming',
+    href: `${MARKETING}/showcase/capabilities/realtime`,
     title: 'Live metrics',
     desc: 'Rolling window with useStreamingSeries — ideal for IoT and ops.',
     tag: 'Realtime',
@@ -213,24 +215,30 @@ const heroStats = [
                 —this repo is the chart engine and gallery.
               </p>
               <div class="mt-8 flex flex-wrap gap-3">
-                <RouterLink
-                  to="/examples/aapl"
+                <a
+                  :href="`${MARKETING}/docs/examples/aapl`"
                   class="ns-btn ns-btn--primary"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   AAPL demo
-                </RouterLink>
-                <RouterLink
-                  to="/examples/trading"
+                </a>
+                <a
+                  :href="`${MARKETING}/showcase/candle`"
                   class="ns-btn ns-btn--ghost"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   Trading OHLC
-                </RouterLink>
-                <RouterLink
-                  to="/playground"
+                </a>
+                <a
+                  :href="`${MARKETING}/showcase`"
                   class="ns-btn ns-btn--ghost"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  Playground
-                </RouterLink>
+                  Showcase
+                </a>
                 <a
                   class="ns-btn ns-btn--ghost"
                   href="https://github.com/narduk-enterprises/narduk-charts"
@@ -293,26 +301,32 @@ const heroStats = [
                   :format-time="formatHeroTime"
                 />
                 <p class="mt-3 text-center text-xs text-[var(--color-ns-muted)]">
-                  <RouterLink
-                    to="/examples/aapl"
+                  <a
+                    :href="`${MARKETING}/docs/examples/aapl`"
                     class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
                     AAPL + Stonx stream
-                  </RouterLink>
+                  </a>
                   ·
-                  <RouterLink
-                    to="/examples/trading"
+                  <a
+                    :href="`${MARKETING}/showcase/candle`"
                     class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    Trading + TF resample
-                  </RouterLink>
+                    Candle showcase
+                  </a>
                   ·
-                  <RouterLink
-                    to="/playground"
+                  <a
+                    :href="`${MARKETING}/showcase`"
                     class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    Playground OHLC tab
-                  </RouterLink>
+                    All showcases
+                  </a>
                 </p>
               </div>
             </div>
@@ -325,20 +339,24 @@ const heroStats = [
           Example routes
         </h2>
         <p class="mb-10 max-w-2xl text-[var(--color-ns-muted)]">
-          Each page is a minimal, copy-paste-friendly setup. The
-          <RouterLink
-            to="/playground"
+          Runnable demos and SEO pages live on the public
+          <a
+            :href="MARKETING"
             class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
-          >playground</RouterLink>
-          adds an <strong class="font-semibold text-[var(--color-ns-text)]">OHLC</strong> tab (styles, drawings, timeframes, price scale) beside line, bar, pie, and wind.
+            target="_blank"
+            rel="noopener noreferrer"
+          >Narduk Charts site</a>
+          (<code class="text-[var(--color-ns-text)]">/showcase/*</code>). Each card opens the matching route in a new tab.
         </p>
         <ul class="m-0 grid list-none gap-5 p-0 sm:grid-cols-2 lg:grid-cols-3">
           <li
             v-for="u in useCases"
-            :key="u.to"
+            :key="u.href"
           >
-            <RouterLink
-              :to="u.to"
+            <a
+              :href="u.href"
+              target="_blank"
+              rel="noopener noreferrer"
               class="ns-card block h-full no-underline transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ns-accent)]"
             >
               <span class="text-xs font-bold uppercase tracking-wide text-[var(--color-ns-accent)]">{{ u.tag }}</span>
@@ -351,7 +369,7 @@ const heroStats = [
               <span class="mt-4 inline-block text-sm font-semibold text-[var(--color-ns-accent)]">
                 View example →
               </span>
-            </RouterLink>
+            </a>
           </li>
         </ul>
       </section>

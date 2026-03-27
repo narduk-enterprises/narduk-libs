@@ -230,12 +230,15 @@ function barValue(v: number | null | undefined): number {
 
 // ── Scale ────────────────────────────────────────────────────
 
+/** 100% mode implies stacked geometry even if the stacked prop is omitted. */
+const stackedLayout = computed(() => props.stacked || props.stackedPercent)
+
 const yMap = computed(() => {
   const refVals = (props.referenceLines ?? []).map(r => r.value)
   const bandEdges = (props.yBands ?? []).flatMap(b => [b.y0, b.y1])
 
   let dataVals: number[] = []
-  if (props.stacked) {
+  if (stackedLayout.value) {
     if (props.stackedPercent) {
       dataVals = props.labels.map(() => 100)
     } else {
@@ -336,7 +339,7 @@ const bars = computed<BarRect[]>(() => {
   const result: BarRect[] = []
   const bottomY = padding.value.top + plotHeight.value
 
-  if (props.stacked) {
+  if (stackedLayout.value) {
     const barW = innerWidth
     for (let li = 0; li < n; li++) {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2

@@ -27,9 +27,9 @@ async function exitFs(): Promise<void> {
 export function useChartFullscreen(): {
   targetRef: Ref<HTMLElement | null>
   isFullscreen: Ref<boolean>
-  enter: () => Promise<void>
+  enter: () => Promise<boolean>
   exit: () => Promise<void>
-  toggle: () => Promise<void>
+  toggle: () => Promise<boolean>
 } {
   const targetRef = ref<HTMLElement | null>(null)
   const isFullscreen = ref(false)
@@ -39,13 +39,14 @@ export function useChartFullscreen(): {
     isFullscreen.value = el !== null && el === targetRef.value
   }
 
-  async function enter(): Promise<void> {
+  async function enter(): Promise<boolean> {
     const el = targetRef.value
-    if (!el) return
+    if (!el) return false
     try {
       await requestFs(el)
+      return getFsElement() === el
     } catch {
-      /* user denied or API unsupported */
+      return false
     }
   }
 
@@ -56,9 +57,12 @@ export function useChartFullscreen(): {
     } catch { /* ignore */ }
   }
 
-  async function toggle(): Promise<void> {
-    if (isFullscreen.value) await exit()
-    else await enter()
+  async function toggle(): Promise<boolean> {
+    if (isFullscreen.value) {
+      await exit()
+      return !getFsElement()
+    }
+    return enter()
   }
 
   onMounted(() => {

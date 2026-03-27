@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Removed** the in-repo Vite **gallery** (`site/`) and **playground**; runnable demos and flagship examples belong on the companion marketing site. Local library work uses **Histoire** (`npm run dev` / `npm run story:dev`). Dropped the Playwright **ui-quality** job and `aaplMarketingDemo` file-path scaffold test that targeted `site/`.
 
+## [2.0.2] — 2026-03-27
+
+### Fixed
+
+- **Bar chart:** `stacked-percent` without `stacked` now lays out as stacked (100% composition was a no-op when `stacked` stayed false).
+
+### Changed
+
+- **`useChartFullscreen`:** `enter` and `toggle` return `Promise<boolean>` so apps can detect denial or unsupported APIs.
+- **Site `HomeView`:** example/playground links target the public marketing site (`charts.nard.uk` showcase and docs) instead of removed in-repo routes.
+
 ## [2.0.1] — 2026-03-27
 
 ### Changed
