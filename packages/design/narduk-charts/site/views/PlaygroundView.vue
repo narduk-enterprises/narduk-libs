@@ -15,6 +15,9 @@ import PlaygroundLab from '../../playground/App.vue'
         ← Marketing site
       </RouterLink>
     </div>
+    <p class="ns-container border-b border-[var(--color-ns-border)] py-3 text-sm text-[var(--color-ns-muted)]">
+      The <strong class="font-semibold text-[var(--color-ns-text)]">OHLC</strong> tab demonstrates candle styles, drawing tools, timeframe resampling, price display modes, and a rolling candle buffer — same primitives as the AAPL and Trading marketing examples.
+    </p>
     <PlaygroundLab />
   </div>
 </template>

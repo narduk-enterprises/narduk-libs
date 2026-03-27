@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { NardukCandleChart, useChartFullscreen } from 'narduk-charts'
-import type { CandleBar } from 'narduk-charts'
+import type { CandleBar, CandleDrawing } from 'narduk-charts'
 import SiteHeader from '../components/SiteHeader.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 
@@ -55,6 +55,51 @@ function makeHeroCandleBars(): CandleBar[] {
 
 const heroCandleBars = makeHeroCandleBars()
 
+/** Static showcase: range + Fib + trend on the hero series (no draw tool needed). */
+function makeHeroDrawings(bars: CandleBar[]): CandleDrawing[] {
+  // Max index used below is iTrend1 (78); need length >= 79.
+  if (bars.length < 79) return []
+  const iTrend0 = 12
+  const iTrend1 = 78
+  const lo = 28
+  const hi = 52
+  const slice = bars.slice(lo, hi + 1)
+  let top = Number.NEGATIVE_INFINITY
+  let bot = Number.POSITIVE_INFINITY
+  for (const x of slice) {
+    top = Math.max(top, x.h)
+    bot = Math.min(bot, x.l)
+  }
+  return [
+    {
+      id: 'hero-range',
+      type: 'range',
+      tStart: bars[lo]!.t,
+      tEnd: bars[hi]!.t,
+      priceTop: top,
+      priceBottom: bot,
+    },
+    {
+      id: 'hero-fib',
+      type: 'fib_retracement',
+      tStart: bars[8]!.t,
+      priceStart: bars[8]!.h,
+      tEnd: bars[38]!.t,
+      priceEnd: bars[38]!.l,
+    },
+    {
+      id: 'hero-trend',
+      type: 'trend',
+      tStart: bars[iTrend0]!.t,
+      priceStart: bars[iTrend0]!.l,
+      tEnd: bars[iTrend1]!.t,
+      priceEnd: bars[iTrend1]!.h,
+    },
+  ]
+}
+
+const heroDrawings = makeHeroDrawings(heroCandleBars)
+
 function formatHeroTime(ms: number) {
   const d = new Date(ms)
   return d.toLocaleTimeString(undefined, {
@@ -69,13 +114,13 @@ const useCases = [
   {
     to: '/examples/aapl',
     title: 'AAPL flagship demo',
-    desc: 'Real-time AAPL candles from the Stonx stream. Linked panes, RSI study, volume, brush, drawings, and crosshair — best showcase of every advanced feature.',
+    desc: 'Stonx WebSocket with auto-reconnect + history backfill, toolbar timeframe resampling (1m→1D), hollow candles, Fib/range/trend drawings, RSI row, volume, brush.',
     tag: 'Flagship',
   },
   {
     to: '/examples/trading',
     title: 'Trading & OHLC',
-    desc: 'Dual synced panes, live stream, volume, brush, pinch zoom, domain lock — pro-terminal patterns.',
+    desc: 'Dual synced candle panes, timer-fed stream, OHLC bar style option, TF picker, pinch zoom, drawings, RSI — futures-style terminal layout.',
     tag: 'Markets',
   },
   {
@@ -120,7 +165,7 @@ const heroStats = [
   {
     label: 'Flagship surface',
     value: 'Trading-grade OHLC',
-    copy: 'Linked panes, brush navigation, streaming candles, and drawing overlays.',
+    copy: 'Hollow / bar / classic bodies, resampled timeframes, Fib & range drawings, live WebSocket path (AAPL).',
   },
   {
     label: 'Accessibility',
@@ -147,33 +192,39 @@ const heroStats = [
           <div class="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
             <div class="min-w-0 relative">
               <p class="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-ns-accent)]">
-                Vue 3 · SVG · TypeScript
+                narduk-charts · developer gallery
               </p>
               <h1 class="max-w-3xl text-4xl font-extrabold tracking-tight text-[var(--color-ns-text)] md:text-5xl md:leading-tight">
-                Charts that feel at home in your product
+                Library development gallery
               </h1>
               <p class="mt-5 max-w-2xl text-lg text-[var(--color-ns-muted)]">
-                Accessible, themeable components with tooltips, export helpers, and optional per-chart bundles.
-                <strong class="font-semibold text-[var(--color-ns-text)]">Trading charts</strong> include synced viewports, streaming candles, and depth-friendly zoom.
+                Routed examples and OHLC previews for validating the Vue charting package. Product positioning, enterprise pages, and SEO live in the
+                <a
+                  class="font-semibold text-[var(--color-ns-accent)] no-underline hover:underline"
+                  href="https://github.com/narduk-enterprises/charts"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >charts</a>
+                marketing repository—not here.
               </p>
               <div class="mt-8 flex flex-wrap gap-3">
                 <RouterLink
                   to="/examples/aapl"
                   class="ns-btn ns-btn--primary"
                 >
-                  See AAPL live demo
+                  AAPL demo
                 </RouterLink>
                 <RouterLink
                   to="/examples/trading"
                   class="ns-btn ns-btn--ghost"
                 >
-                  See trading charts
+                  Trading OHLC
                 </RouterLink>
                 <RouterLink
                   to="/playground"
                   class="ns-btn ns-btn--ghost"
                 >
-                  Open playground
+                  Playground
                 </RouterLink>
                 <a
                   class="ns-btn ns-btn--ghost"
@@ -181,7 +232,7 @@ const heroStats = [
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  View on GitHub
+                  Library source
                 </a>
               </div>
               <div class="ns-signal-grid mt-8 max-w-3xl">
@@ -207,7 +258,7 @@ const heroStats = [
                       Live preview
                     </p>
                     <p class="mt-1 m-0 text-sm font-medium text-[var(--color-ns-text)]">
-                      OHLC chart · volume · navigator
+                      Hollow candles · volume · brush · sample drawings
                     </p>
                   </div>
                   <button
@@ -220,12 +271,14 @@ const heroStats = [
                   </button>
                 </div>
                 <NardukCandleChart
-                  chart-description="Pinch or scroll to zoom. Shift-drag to pan, or drag on the plot to zoom a range."
+                  chart-description="Pinch or scroll to zoom. Shift-drag to pan, or drag on the plot to zoom a range. Hero shows static Fib, range, and trend overlays."
                   :bars="heroCandleBars"
                   :height="heroChartHeight"
                   class="w-full min-w-0"
                   :zoomable="true"
                   :zoom-wheel-free="true"
+                  candle-style="hollow"
+                  :drawings="heroDrawings"
                   :show-volume="true"
                   :volume-fraction="0.17"
                   :show-brush="true"
@@ -235,12 +288,25 @@ const heroStats = [
                 />
                 <p class="mt-3 text-center text-xs text-[var(--color-ns-muted)]">
                   <RouterLink
+                    to="/examples/aapl"
+                    class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+                  >
+                    AAPL + Stonx stream
+                  </RouterLink>
+                  ·
+                  <RouterLink
                     to="/examples/trading"
                     class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
                   >
-                    Full trading example
+                    Trading + TF resample
                   </RouterLink>
-                  — RSI, linked panes, drawings, log scale.
+                  ·
+                  <RouterLink
+                    to="/playground"
+                    class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+                  >
+                    Playground OHLC tab
+                  </RouterLink>
                 </p>
               </div>
             </div>
@@ -250,10 +316,15 @@ const heroStats = [
 
       <section class="ns-container py-14">
         <h2 class="mb-2 text-2xl font-bold text-[var(--color-ns-text)]">
-          Examples by use case
+          Example routes
         </h2>
         <p class="mb-10 max-w-2xl text-[var(--color-ns-muted)]">
-          Each page is a minimal, copy-paste-friendly setup. The playground adds every control in one place.
+          Each page is a minimal, copy-paste-friendly setup. The
+          <RouterLink
+            to="/playground"
+            class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
+          >playground</RouterLink>
+          adds an <strong class="font-semibold text-[var(--color-ns-text)]">OHLC</strong> tab (styles, drawings, timeframes, price scale) beside line, bar, pie, and wind.
         </p>
         <ul class="m-0 grid list-none gap-5 p-0 sm:grid-cols-2 lg:grid-cols-3">
           <li

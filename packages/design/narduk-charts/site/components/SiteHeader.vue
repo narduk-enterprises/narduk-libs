@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 const route = useRoute()
 
 const examples = [
+  { to: '/examples/aapl', label: 'AAPL' },
   { to: '/examples/trading', label: 'Trading' },
   { to: '/examples/line', label: 'Line' },
   { to: '/examples/bar', label: 'Bar' },
@@ -54,15 +55,23 @@ function navActive(path: string) {
           to="/playground"
           class="ns-btn ns-btn--ghost text-sm"
         >
-          Full playground
+          Playground
         </RouterLink>
         <a
-          class="ns-btn ns-btn--primary text-sm"
-          href="https://www.npmjs.com/package/narduk-charts"
+          class="ns-btn ns-btn--ghost text-sm"
+          href="https://github.com/narduk-enterprises/charts"
           target="_blank"
           rel="noopener noreferrer"
         >
-          npm
+          Product site
+        </a>
+        <a
+          class="ns-btn ns-btn--primary text-sm"
+          href="https://github.com/narduk-enterprises/narduk-charts"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Library repo
         </a>
       </div>
     </div>

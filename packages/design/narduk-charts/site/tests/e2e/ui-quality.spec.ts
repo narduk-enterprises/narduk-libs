@@ -78,7 +78,7 @@ test.describe('site ui quality', () => {
           await captureNamedLocator(
             page,
             page
-              .getByRole('heading', { name: /Examples by use case/i })
+              .getByRole('heading', { name: /Example routes/i })
               .locator('xpath=ancestor::section[1]'),
             'examples-grid',
             directory,

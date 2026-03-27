@@ -27,7 +27,15 @@ import { RouterLink } from 'vue-router'
           target="_blank"
           rel="noopener noreferrer"
         >
-          GitHub
+          Library
+        </a>
+        <a
+          class="font-medium text-[var(--color-ns-accent)] no-underline"
+          href="https://github.com/narduk-enterprises/charts"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Product site
         </a>
       </div>
     </div>

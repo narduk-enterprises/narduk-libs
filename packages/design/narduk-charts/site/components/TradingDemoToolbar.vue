@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { CandleResolutionId } from 'narduk-charts'
+import { CANDLE_RESOLUTION_LABEL } from 'narduk-charts'
 
 const props = withDefaults(defineProps<{
   symbol: string
@@ -14,16 +16,26 @@ const props = withDefaults(defineProps<{
   sessionRangeText: string
   terminalDark: boolean
   useLogScale: boolean
-  drawMode: 'off' | 'trend' | 'horizontal'
+  drawMode: 'off' | 'trend' | 'horizontal' | 'fib_retracement' | 'range'
+  resolution?: CandleResolutionId
 }>(), {
   changeTone: 'flat',
+  resolution: '1m',
 })
 
 const emit = defineEmits<{
   'update:terminalDark': [value: boolean]
   'update:useLogScale': [value: boolean]
-  'update:drawMode': [value: 'off' | 'trend' | 'horizontal']
+  'update:drawMode': [value: 'off' | 'trend' | 'horizontal' | 'fib_retracement' | 'range']
+  'update:resolution': [value: CandleResolutionId]
 }>()
+
+const resolutionOptions = computed(() =>
+  (Object.keys(CANDLE_RESOLUTION_LABEL) as CandleResolutionId[]).map(id => ({
+    id,
+    label: id,
+  })),
+)
 
 const changeClass = computed(() => {
   if (props.changeTone === 'up') return 'td-toolbar__change--up'
@@ -52,7 +64,19 @@ function onUseLogScaleChange(event: Event) {
 }
 
 function onDrawModeChange(event: Event) {
-  emit('update:drawMode', (event.target as HTMLSelectElement).value as 'off' | 'trend' | 'horizontal')
+  emit(
+    'update:drawMode',
+    (event.target as HTMLSelectElement).value as
+      | 'off'
+      | 'trend'
+      | 'horizontal'
+      | 'fib_retracement'
+      | 'range',
+  )
+}
+
+function onResolutionChange(event: Event) {
+  emit('update:resolution', (event.target as HTMLSelectElement).value as CandleResolutionId)
 }
 </script>
 
@@ -111,6 +135,23 @@ function onDrawModeChange(event: Event) {
         <span>Log Y</span>
       </label>
       <label class="td-toolbar__select-wrap">
+        <span class="td-toolbar__select-label">TF</span>
+        <select
+          :value="resolution"
+          class="td-toolbar__select"
+          aria-label="Chart timeframe"
+          @change="onResolutionChange"
+        >
+          <option
+            v-for="opt in resolutionOptions"
+            :key="opt.id"
+            :value="opt.id"
+          >
+            {{ opt.label }}
+          </option>
+        </select>
+      </label>
+      <label class="td-toolbar__select-wrap">
         <span class="td-toolbar__select-label">Tool</span>
         <select
           :value="drawMode"
@@ -120,6 +161,8 @@ function onDrawModeChange(event: Event) {
           <option value="off">Zoom box</option>
           <option value="trend">Trend line</option>
           <option value="horizontal">Horizontal</option>
+          <option value="fib_retracement">Fib retracement</option>
+          <option value="range">Range box</option>
         </select>
       </label>
     </div>

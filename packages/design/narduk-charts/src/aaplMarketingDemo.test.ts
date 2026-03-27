@@ -7,6 +7,7 @@ const routerPath = resolve(repoRoot, 'site/router.ts')
 const homeViewPath = resolve(repoRoot, 'site/views/HomeView.vue')
 const examplePath = resolve(repoRoot, 'site/views/examples/AaplExample.vue')
 const siteRoot = resolve(repoRoot, 'site')
+const stonxStreamPath = resolve(repoRoot, 'site/utils/stonxStream.ts')
 
 function read(path: string) {
   return readFileSync(path, 'utf8')
@@ -52,11 +53,21 @@ describe('AAPL marketing demo acceptance scaffold', () => {
   })
 
   it('wires the marketing site to the Stonx AAPL stream contract', () => {
+    expect(existsSync(stonxStreamPath)).toBe(true)
+    const stonxUtil = read(stonxStreamPath)
+    expect(stonxUtil).toMatch(/stonxSubscribeJson/)
+    expect(stonxUtil).toMatch(/channels/)
+    expect(stonxUtil).not.toMatch(/symbols\s*:\s*\[/)
+    expect(stonxUtil).toMatch(/stonxPingJson/)
+    expect(stonxUtil).toMatch(/parseStonxStreamMessage/)
+
     const siteSources = readAllTextFiles(siteRoot)
     expect(siteSources).toMatch(/wss:\/\/stonx\.app\/ws\/stream/)
     expect(siteSources).toMatch(/price:AAPL/)
     expect(siteSources).toMatch(/price_update/)
     expect(siteSources).toMatch(/subscribe/)
     expect(siteSources).toMatch(/unsubscribe/)
+    expect(siteSources).toMatch(/STONX_STREAM_PING_INTERVAL_MS/)
+    expect(read(examplePath)).toMatch(/stonxSubscribeJson|stonxStream/)
   })
 })

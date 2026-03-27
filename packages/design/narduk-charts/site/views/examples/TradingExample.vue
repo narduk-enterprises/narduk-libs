@@ -10,8 +10,17 @@ import {
   rsi,
   recommendMaxDrawBars,
   suggestCandleRenderStrategy,
+  aggregateCandlesToResolution,
+  resolutionMsFromId,
+  CANDLE_RESOLUTION_LABEL,
 } from 'narduk-charts'
-import type { CandleBar, CandleDrawing, CandleTimeDomain, ChartSeries } from 'narduk-charts'
+import type {
+  CandleBar,
+  CandleDrawing,
+  CandleResolutionId,
+  CandleTimeDomain,
+  ChartSeries,
+} from 'narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 import TradingDemoToolbar from '../../components/TradingDemoToolbar.vue'
 import TradingChartOverlay from '../../components/TradingChartOverlay.vue'
@@ -50,6 +59,8 @@ function seedHistory(count: number, seedPrice: number): CandleBar[] {
   return out
 }
 
+const BASE_STEP_MS = 60_000
+
 const STREAM_CAP = 420
 const { bars: candleBars, pushBar } = useCandleStream(STREAM_CAP, seedHistory(320, 21_180))
 
@@ -57,44 +68,53 @@ const sharedDomain = ref<CandleTimeDomain | null>(null)
 const terminalDark = ref(true)
 const useLogScale = ref(false)
 const drawings = ref<CandleDrawing[]>([])
-const drawMode = ref<'off' | 'trend' | 'horizontal'>('off')
+const drawMode = ref<'off' | 'trend' | 'horizontal' | 'fib_retracement' | 'range'>('off')
+const selectedResolution = ref<CandleResolutionId>('1m')
 
 const drawingTool = computed(() => (drawMode.value === 'off' ? null : drawMode.value))
+
+const timeframeLabel = computed(() => CANDLE_RESOLUTION_LABEL[selectedResolution.value])
+
+const chartBars = computed(() => {
+  const ms = resolutionMsFromId(selectedResolution.value)
+  if (ms === BASE_STEP_MS) return candleBars.value
+  return aggregateCandlesToResolution(candleBars.value, ms)
+})
 
 const maxDraw = recommendMaxDrawBars({ plotWidthPx: 720 })
 const renderHint = suggestCandleRenderStrategy(STREAM_CAP, maxDraw)
 
 const lineXWindow = computed({
   get() {
-    if (!sharedDomain.value || candleBars.value.length < 2) return undefined
+    if (!sharedDomain.value || chartBars.value.length < 2) return undefined
     return {
-      start: candleIndexAtTime(candleBars.value, sharedDomain.value.start),
-      end: candleIndexAtTime(candleBars.value, sharedDomain.value.end),
+      start: candleIndexAtTime(chartBars.value, sharedDomain.value.start),
+      end: candleIndexAtTime(chartBars.value, sharedDomain.value.end),
     }
   },
   set(w: { start: number; end: number } | undefined) {
-    if (!w || candleBars.value.length < 2) return
+    if (!w || chartBars.value.length < 2) return
     sharedDomain.value = {
-      start: candleTimeAtIndex(candleBars.value, w.start),
-      end: candleTimeAtIndex(candleBars.value, w.end),
+      start: candleTimeAtIndex(chartBars.value, w.start),
+      end: candleTimeAtIndex(chartBars.value, w.end),
     }
   },
 })
 
-const rsiLabels = computed(() => candleBars.value.map((b) => formatShortTime(b.t)))
+const rsiLabels = computed(() => chartBars.value.map((b) => formatShortTime(b.t)))
 
 const rsiSeries = computed<ChartSeries[]>(() => [
   {
     name: 'RSI(14)',
     data: rsi(
-      candleBars.value.map((b) => b.c),
+      chartBars.value.map((b) => b.c),
       14
     ),
   },
 ])
 
-const latestBar = computed(() => candleBars.value[candleBars.value.length - 1] ?? null)
-const firstBar = computed(() => candleBars.value[0] ?? null)
+const latestBar = computed(() => chartBars.value[chartBars.value.length - 1] ?? null)
+const firstBar = computed(() => chartBars.value[0] ?? null)
 
 const sessionChange = computed(() => {
   const first = firstBar.value
@@ -118,10 +138,10 @@ const sessionChangeTone = computed<'up' | 'down' | 'flat'>(() => {
 const sessionOpen = computed(() => firstBar.value?.o ?? 0)
 
 const sessionRange = computed(() => {
-  if (candleBars.value.length === 0) return { high: 0, low: 0 }
+  if (chartBars.value.length === 0) return { high: 0, low: 0 }
   let high = Number.NEGATIVE_INFINITY
   let low = Number.POSITIVE_INFINITY
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     high = Math.max(high, bar.h)
     low = Math.min(low, bar.l)
   }
@@ -129,7 +149,7 @@ const sessionRange = computed(() => {
 })
 
 const openingRange = computed(() => {
-  const sample = candleBars.value.slice(0, Math.min(15, candleBars.value.length))
+  const sample = chartBars.value.slice(0, Math.min(15, chartBars.value.length))
   if (sample.length === 0) return { high: 0, low: 0 }
   let high = Number.NEGATIVE_INFINITY
   let low = Number.POSITIVE_INFINITY
@@ -143,7 +163,7 @@ const openingRange = computed(() => {
 const averageVolume = computed(() => {
   let total = 0
   let count = 0
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     if (bar.v == null) continue
     total += bar.v
     count += 1
@@ -154,7 +174,7 @@ const averageVolume = computed(() => {
 const sessionVwap = computed(() => {
   let weighted = 0
   let totalVolume = 0
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     const volume = Math.max(1, bar.v ?? 0)
     const typicalPrice = (bar.h + bar.l + bar.c) / 3
     weighted += typicalPrice * volume
@@ -263,7 +283,8 @@ function formatCompactVolume(n: number) {
       <ul class="mt-3 list-disc pl-5 text-sm text-[var(--color-ns-muted)]">
         <li>
           Crosshair (linear / log / symlog Y), magnetic X, axis time tag, OHLC HUD, optional
-          drawings (trend / horizontal).
+          drawings (trend, horizontal, Fib retracement, range box). Toolbar resamples 1m feed to
+          higher timeframes via <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">aggregateCandlesToResolution</code>.
         </li>
         <li>
           Last-price line, forming-bar highlight,
@@ -284,7 +305,8 @@ function formatCompactVolume(n: number) {
         <TradingDemoToolbar
           symbol="NQ1!"
           venue="CME Futures"
-          timeframe="1 minute"
+          :timeframe="timeframeLabel"
+          :resolution="selectedResolution"
           :last-price-text="formatPrice(latestBar?.c ?? 0)"
           :change-text="formatSignedPrice(sessionChange)"
           :change-pct-text="formatSignedPercent(sessionChangePct)"
@@ -298,18 +320,20 @@ function formatCompactVolume(n: number) {
           @update:terminal-dark="terminalDark = $event"
           @update:use-log-scale="useLogScale = $event"
           @update:draw-mode="drawMode = $event"
+          @update:resolution="selectedResolution = $event"
         />
 
         <NardukChartStack v-model:domain="sharedDomain">
           <div class="flex flex-col gap-3">
             <div class="ns-terminal-panel">
               <p class="mb-2 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-slate-600">
-                NQ1! · 1 min — primary
+                NQ1! · {{ timeframeLabel }} — primary
               </p>
               <NardukCandleChart
-                chart-title="NQ — 1 minute"
+                :chart-title="`NQ — ${timeframeLabel}`"
                 chart-description="Demo data. Zoom and pan; domain syncs RSI row and secondary pane."
-                :bars="candleBars"
+                :bars="chartBars"
+                candle-style="bar"
                 :height="fullscreenChartHeight ?? 380"
                 class="w-full min-w-0"
                 :dark="terminalDark"
@@ -371,7 +395,7 @@ function formatCompactVolume(n: number) {
               <NardukCandleChart
                 chart-title="Linked window (same feed)"
                 chart-description="v-model:domain binds both charts to the same visible time range in milliseconds."
-                :bars="candleBars"
+                :bars="chartBars"
                 :height="
                   fullscreenChartHeight
                     ? Math.max(224, Math.round(fullscreenChartHeight * 0.38))

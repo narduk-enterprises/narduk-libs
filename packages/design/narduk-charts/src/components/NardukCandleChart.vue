@@ -18,6 +18,7 @@ import type {
   CandleDrawingTool,
   CandlePlotMetrics,
   CandlePriceDisplayMode,
+  CandleBarStyle,
   ChartTheme,
   ChartYScaleMode,
   TooltipItem,
@@ -88,6 +89,8 @@ const props = withDefaults(defineProps<{
   priceDisplayMode?: CandlePriceDisplayMode
   /** Emphasize the rightmost (forming) bucket in the visible window. */
   highlightFormingBar?: boolean
+  /** Candle bodies vs hollow (bull outline) vs OHLC bar ticks. */
+  candleStyle?: CandleBarStyle
   /** Serializable overlays in raw price + time (ms) space. */
   drawings?: CandleDrawing[]
   /**
@@ -118,6 +121,7 @@ const props = withDefaults(defineProps<{
   symlogLinthresh: 1,
   priceDisplayMode: 'absolute',
   highlightFormingBar: false,
+  candleStyle: 'candle',
   drawings: () => [],
   drawingTool: null,
 })
@@ -430,17 +434,22 @@ const candleGeoms = computed(() => {
     const yc = yPriceRaw(b.c)
     const top = Math.min(yo, yc)
     const bot = Math.max(yo, yc)
-    const fill = b.c >= b.o ? bull.value : bear.value
+    const isUp = b.c >= b.o
+    const fill = isUp ? bull.value : bear.value
     return {
       cx,
       yh,
       yl,
+      yo,
+      yc,
       top,
       bot,
       bodyH: Math.max(1, bot - top),
       bodyW,
+      tickW: Math.max(3, bodyW * 0.45),
       wickW: Math.max(1, bodyW * 0.15),
       fill,
+      isUp,
       bar: b,
       g0: d.g0,
       g1: d.g1,
@@ -601,8 +610,18 @@ const suppressNextSvgClick = ref(false)
 /** Pointer-driven crosshair; keyboard focus adds a vertical-only line via `crosshairPlot`. */
 const pointerCrosshair = ref<{ plotX: number; priceY: number | null } | null>(null)
 
-const trendDragStart = ref<{ t0: number; p0: number; pointerId: number } | null>(null)
+const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 1] as const
+
+const trendDragStart = ref<{
+  t0: number
+  p0: number
+  pointerId: number
+  mode: 'trend' | 'fib_retracement'
+} | null>(null)
 const trendDragCurrent = ref<{ t1: number; p1: number } | null>(null)
+
+const rangeDragStart = ref<{ t0: number; p0: number; pointerId: number } | null>(null)
+const rangeDragCurrent = ref<{ t1: number; p1: number } | null>(null)
 
 function newDrawingId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -621,21 +640,70 @@ const trendPreviewLine = computed(() => {
   return `M ${x1} ${y1} L ${x2} ${y2}`
 })
 
-const committedDrawingPaths = computed(() => {
+const rangePreviewPath = computed(() => {
+  const a = rangeDragStart.value
+  const b = rangeDragCurrent.value
+  if (!a || !b) return ''
+  const tLo = Math.min(a.t0, b.t1)
+  const tHi = Math.max(a.t0, b.t1)
+  const pTop = Math.max(a.p0, b.p1)
+  const pBot = Math.min(a.p0, b.p1)
+  const x1 = xFromTimeMs(tLo)
+  const x2 = xFromTimeMs(tHi)
+  const y1 = yPriceRaw(pTop)
+  const y2 = yPriceRaw(pBot)
+  const left = Math.min(x1, x2)
+  const right = Math.max(x1, x2)
+  const top = Math.min(y1, y2)
+  const bot = Math.max(y1, y2)
+  return `M ${left} ${top} L ${right} ${top} L ${right} ${bot} L ${left} ${bot} Z`
+})
+
+const drawingSvgItems = computed(() => {
   const pl = padding.value.left
   const pr = chartWidth.value - padding.value.right
-  const out: { key: string; d: string }[] = []
+  const out: { key: string; d: string; variant: 'line' | 'fib' | 'rangeFill' | 'rangeStroke' }[] = []
   for (const d of props.drawings ?? []) {
     if (d.type === 'trend') {
       const x1 = xFromTimeMs(d.tStart)
       const y1 = yPriceRaw(d.priceStart)
       const x2 = xFromTimeMs(d.tEnd)
       const y2 = yPriceRaw(d.priceEnd)
-      out.push({ key: d.id, d: `M ${x1} ${y1} L ${x2} ${y2}` })
+      out.push({ key: d.id, d: `M ${x1} ${y1} L ${x2} ${y2}`, variant: 'line' })
+    }
+    else if (d.type === 'horizontal') {
+      const y = yPriceRaw(d.price)
+      out.push({ key: d.id, d: `M ${pl} ${y} L ${pr} ${y}`, variant: 'line' })
+    }
+    else if (d.type === 'fib_retracement') {
+      const pHigh = Math.max(d.priceStart, d.priceEnd)
+      const pLow = Math.min(d.priceStart, d.priceEnd)
+      for (const r of FIB_RATIOS) {
+        const price = pHigh - r * (pHigh - pLow)
+        const y = yPriceRaw(price)
+        out.push({
+          key: `${d.id}-fib-${r}`,
+          d: `M ${pl} ${y} L ${pr} ${y}`,
+          variant: 'fib',
+        })
+      }
     }
     else {
-      const y = yPriceRaw(d.price)
-      out.push({ key: d.id, d: `M ${pl} ${y} L ${pr} ${y}` })
+      const tLo = Math.min(d.tStart, d.tEnd)
+      const tHi = Math.max(d.tStart, d.tEnd)
+      const pTop = Math.max(d.priceTop, d.priceBottom)
+      const pBot = Math.min(d.priceTop, d.priceBottom)
+      const x1 = xFromTimeMs(tLo)
+      const x2 = xFromTimeMs(tHi)
+      const y1 = yPriceRaw(pTop)
+      const y2 = yPriceRaw(pBot)
+      const left = Math.min(x1, x2)
+      const right = Math.max(x1, x2)
+      const top = Math.min(y1, y2)
+      const bot = Math.max(y1, y2)
+      const box = `M ${left} ${top} L ${right} ${top} L ${right} ${bot} L ${left} ${bot} Z`
+      out.push({ key: `${d.id}-rf`, d: box, variant: 'rangeFill' })
+      out.push({ key: `${d.id}-rs`, d: box, variant: 'rangeStroke' })
     }
   }
   return out
@@ -700,12 +768,24 @@ function onPlotPointerDown(e: PointerEvent) {
   const pb = pt + priceInnerHeight.value
 
   const tool = props.drawingTool
-  if (tool === 'trend' && !e.shiftKey && svgX >= pl && svgX <= pr && svgY >= pt && svgY <= pb) {
+  if (
+    (tool === 'trend' || tool === 'fib_retracement')
+    && !e.shiftKey
+    && svgX >= pl
+    && svgX <= pr
+    && svgY >= pt
+    && svgY <= pb
+  ) {
     e.preventDefault()
     const raw = rawPriceFromPricePaneSvgY(svgY)
     if (raw == null) return
     const t0 = candleTimeAtIndex(sortedBars.value, svgPlotXToDataIndex(clampSvgXToPlot(svgX)))
-    trendDragStart.value = { t0, p0: raw, pointerId: e.pointerId }
+    trendDragStart.value = {
+      t0,
+      p0: raw,
+      pointerId: e.pointerId,
+      mode: tool === 'fib_retracement' ? 'fib_retracement' : 'trend',
+    }
     trendDragCurrent.value = { t1: t0, p1: raw }
     svg.setPointerCapture(e.pointerId)
     return
@@ -718,6 +798,16 @@ function onPlotPointerDown(e: PointerEvent) {
       ...(props.drawings ?? []),
       { id: newDrawingId(), type: 'horizontal', price: raw },
     ])
+    return
+  }
+  if (tool === 'range' && !e.shiftKey && svgX >= pl && svgX <= pr && svgY >= pt && svgY <= pb) {
+    e.preventDefault()
+    const raw = rawPriceFromPricePaneSvgY(svgY)
+    if (raw == null) return
+    const t0 = candleTimeAtIndex(sortedBars.value, svgPlotXToDataIndex(clampSvgXToPlot(svgX)))
+    rangeDragStart.value = { t0, p0: raw, pointerId: e.pointerId }
+    rangeDragCurrent.value = { t1: t0, p1: raw }
+    svg.setPointerCapture(e.pointerId)
     return
   }
 
@@ -761,6 +851,23 @@ function onPlotPointerMove(e: PointerEvent) {
     trendDragCurrent.value = {
       t1,
       p1: raw ?? td.p0,
+    }
+    return
+  }
+
+  const rd = rangeDragStart.value
+  if (rd && e.pointerId === rd.pointerId) {
+    const svgX = clientToSvgX(e, svg)
+    const svgY = clientToSvgY(e, svg)
+    const pt = padding.value.top
+    const pb = pt + priceInnerHeight.value
+    const cx = clampSvgXToPlot(svgX)
+    const cy = Math.min(pb, Math.max(pt, svgY))
+    const raw = rawPriceFromPricePaneSvgY(cy)
+    const t1 = candleTimeAtIndex(sortedBars.value, svgPlotXToDataIndex(cx))
+    rangeDragCurrent.value = {
+      t1,
+      p1: raw ?? rd.p0,
     }
     return
   }
@@ -815,15 +922,52 @@ function onPlotPointerEnd(e: PointerEvent) {
     } catch { /* ignore */ }
     suppressNextSvgClick.value = true
     if (cur && (Math.abs(cur.t1 - td.t0) > 0.5 || Math.abs(cur.p1 - td.p0) > 1e-9)) {
+      const next =
+        td.mode === 'fib_retracement'
+          ? {
+              id: newDrawingId(),
+              type: 'fib_retracement' as const,
+              tStart: td.t0,
+              priceStart: td.p0,
+              tEnd: cur.t1,
+              priceEnd: cur.p1,
+            }
+          : {
+              id: newDrawingId(),
+              type: 'trend' as const,
+              tStart: td.t0,
+              priceStart: td.p0,
+              tEnd: cur.t1,
+              priceEnd: cur.p1,
+            }
+      emit('update:drawings', [...(props.drawings ?? []), next])
+    }
+    return
+  }
+
+  const rds = rangeDragStart.value
+  if (rds && e.pointerId === rds.pointerId) {
+    const cur = rangeDragCurrent.value
+    rangeDragStart.value = null
+    rangeDragCurrent.value = null
+    try {
+      svg.releasePointerCapture(e.pointerId)
+    }
+    catch { /* ignore */ }
+    suppressNextSvgClick.value = true
+    if (
+      cur
+      && (Math.abs(cur.t1 - rds.t0) > 0.5 || Math.abs(cur.p1 - rds.p0) > 1e-9)
+    ) {
       emit('update:drawings', [
         ...(props.drawings ?? []),
         {
           id: newDrawingId(),
-          type: 'trend',
-          tStart: td.t0,
-          priceStart: td.p0,
-          tEnd: cur.t1,
-          priceEnd: cur.p1,
+          type: 'range',
+          tStart: Math.min(rds.t0, cur.t1),
+          tEnd: Math.max(rds.t0, cur.t1),
+          priceTop: Math.max(rds.p0, cur.p1),
+          priceBottom: Math.min(rds.p0, cur.p1),
         },
       ])
     }
@@ -1486,26 +1630,62 @@ defineExpose({
               v-for="(c, ci) in candleGeoms"
               :key="'c-' + ci"
             >
-              <line
-                class="narduk-candle__wick"
-                :x1="c.cx"
-                :x2="c.cx"
-                :y1="c.yh"
-                :y2="c.yl"
-                :stroke="c.fill"
-                stroke-width="1"
-              />
-              <rect
-                class="narduk-candle__body"
-                :class="{ 'narduk-candle__body--forming': c.isForming }"
-                :data-nc-candle="ci"
-                :x="c.cx - c.bodyW / 2"
-                :y="c.top"
-                :width="c.bodyW"
-                :height="c.bodyH"
-                :rx="Math.min(2.5, c.bodyW / 3)"
-                :fill="c.fill"
-              />
+              <template v-if="candleStyle === 'bar'">
+                <line
+                  class="narduk-candle__wick"
+                  :x1="c.cx"
+                  :x2="c.cx"
+                  :y1="c.yh"
+                  :y2="c.yl"
+                  :stroke="c.fill"
+                  stroke-width="1"
+                />
+                <line
+                  class="narduk-candle__tick"
+                  :x1="c.cx - c.tickW"
+                  :x2="c.cx"
+                  :y1="c.yo"
+                  :y2="c.yo"
+                  :stroke="c.fill"
+                  stroke-width="1"
+                />
+                <line
+                  class="narduk-candle__tick"
+                  :x1="c.cx"
+                  :x2="c.cx + c.tickW"
+                  :y1="c.yc"
+                  :y2="c.yc"
+                  :stroke="c.fill"
+                  stroke-width="1"
+                />
+              </template>
+              <template v-else>
+                <line
+                  class="narduk-candle__wick"
+                  :x1="c.cx"
+                  :x2="c.cx"
+                  :y1="c.yh"
+                  :y2="c.yl"
+                  :stroke="c.fill"
+                  stroke-width="1"
+                />
+                <rect
+                  class="narduk-candle__body"
+                  :class="{
+                    'narduk-candle__body--forming': c.isForming,
+                    'narduk-candle__body--hollow': candleStyle === 'hollow',
+                  }"
+                  :data-nc-candle="ci"
+                  :x="c.cx - c.bodyW / 2"
+                  :y="c.top"
+                  :width="c.bodyW"
+                  :height="c.bodyH"
+                  :rx="Math.min(2.5, c.bodyW / 3)"
+                  :fill="candleStyle === 'hollow' && c.isUp ? 'none' : c.fill"
+                  :stroke="candleStyle === 'hollow' ? c.fill : 'none'"
+                  :stroke-width="candleStyle === 'hollow' ? 1.25 : 0"
+                />
+              </template>
             </g>
           </g>
 
@@ -1540,16 +1720,34 @@ defineExpose({
           </g>
 
           <g
-            v-if="committedDrawingPaths.length || trendPreviewLine"
+            v-if="drawingSvgItems.length || trendPreviewLine || rangePreviewPath"
             class="narduk-candle-drawings"
             pointer-events="none"
           >
-            <path
-              v-for="p in committedDrawingPaths"
+            <template
+              v-for="p in drawingSvgItems"
               :key="p.key"
-              class="narduk-candle-drawing"
-              fill="none"
-              :d="p.d"
+            >
+              <path
+                v-if="p.variant === 'rangeFill'"
+                class="narduk-candle-drawing narduk-candle-drawing--range-fill"
+                :d="p.d"
+              />
+              <path
+                v-else
+                class="narduk-candle-drawing"
+                :class="{
+                  'narduk-candle-drawing--fib': p.variant === 'fib',
+                  'narduk-candle-drawing--range-stroke': p.variant === 'rangeStroke',
+                }"
+                fill="none"
+                :d="p.d"
+              />
+            </template>
+            <path
+              v-if="rangePreviewPath"
+              class="narduk-candle-drawing narduk-candle-drawing--range-fill narduk-candle-drawing--preview"
+              :d="rangePreviewPath"
             />
             <path
               v-if="trendPreviewLine"

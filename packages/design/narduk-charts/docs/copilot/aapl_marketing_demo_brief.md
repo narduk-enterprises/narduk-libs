@@ -51,18 +51,26 @@ The point of this page is to demonstrate the advanced features we already have i
 
 Use the Stonx public market-data stream instead of exposing Polygon directly in the client.
 
+**Canonical wire behavior** is defined by the Stonx server implementation (reference: `stonx-app-2026/server/routes/ws/stream.ts`). This repo does not modify Stonx; the marketing site uses [`site/utils/stonxStream.ts`](../../site/utils/stonxStream.ts) for types and JSON helpers.
+
 Default stream URL:
 
 - `wss://stonx.app/ws/stream`
 
-Subscription protocol from `stonx-app-2026`:
+Client messages:
 
-- send `{"type":"subscribe","channels":["price:AAPL"]}`
-- send `{"type":"unsubscribe","channels":["price:AAPL"]}` on cleanup
-- handle `connected`
-- handle `price_update`
-- handle `pong`
-- handle `error`
+- `{"type":"subscribe","channels":["price:AAPL"]}` — channel prefix `price:` + uppercase symbol (server normalizes).
+- `{"type":"unsubscribe","channels":["price:AAPL"]}` on cleanup.
+- `{"type":"ping"}` periodically (e.g. every 30s); server responds with `{"type":"pong"}`. Matches Stonx app `useStreamStore` keep-alive / stale detection.
+- Debug-only on Stonx side: `subscribe_all` / `unsubscribe_all` (wildcard `price:*`) — not used by this demo.
+
+Server → client (handle in the example):
+
+- `connected` — e.g. `{ "type": "connected", "message": "Connected to Stonx Stream", "timestamp": <ms> }`
+- `price_update` — `{ "type", "data": [ { symbol, price, change, changePercent, lastUpdated, ... } ], "timestamp" }`. Rows may include `dayVolume`, `high24h`, `low24h`, `vwap`, `openPrice` when available from cache.
+- `pong`
+- `error` (log and continue)
+- Optional: `realtime_event` (db relay), research broadcasts — not used by the AAPL chart demo.
 
 Observed live payload example:
 

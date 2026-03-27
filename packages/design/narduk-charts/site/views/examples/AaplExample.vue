@@ -9,103 +9,36 @@ import {
   candleTimeAtIndex,
   rsi,
   recommendMaxDrawBars,
+  aggregateCandlesToResolution,
+  resolutionMsFromId,
+  CANDLE_RESOLUTION_LABEL,
 } from 'narduk-charts'
-import type { CandleBar, CandleDrawing, CandleTimeDomain, ChartSeries } from 'narduk-charts'
+import type {
+  CandleBar,
+  CandleDrawing,
+  CandleResolutionId,
+  CandleTimeDomain,
+  ChartSeries,
+} from 'narduk-charts'
 import ExamplePage from '../../components/ExamplePage.vue'
 import TradingDemoToolbar from '../../components/TradingDemoToolbar.vue'
 import TradingChartOverlay from '../../components/TradingChartOverlay.vue'
+import { useStonxStream } from '../../composables/useStonxStream'
 import { createSeededRandom, hasUiAuditFlag } from '../../utils/demoMode'
+import { STONX_STREAM_URL_DEFAULT } from '../../utils/stonxStream'
 
-// ─── Stonx stream ────────────────────────────────────────────────────────────
-const STREAM_URL = 'wss://stonx.app/ws/stream'
+// ─── Stonx stream (reconnect + stale watchdog) ───────────────────────────────
+const STREAM_URL = STONX_STREAM_URL_DEFAULT
 const STREAM_CHANNEL = 'price:AAPL'
 const uiAuditMode = hasUiAuditFlag()
 
-const streamStatus = ref<'connecting' | 'connected' | 'offline'>('connecting')
 const livePrice = ref<number | null>(null)
 const liveTimestamp = ref<number | null>(null)
+const liveDayVolume = ref<number | null>(null)
+const liveHigh24h = ref<number | null>(null)
+const liveLow24h = ref<number | null>(null)
 
-let ws: WebSocket | null = null
 let fallbackTimer: ReturnType<typeof setTimeout> | null = null
-
-function connectStonx() {
-  if (typeof WebSocket === 'undefined') {
-    streamStatus.value = 'offline'
-    return
-  }
-  try {
-    ws = new WebSocket(STREAM_URL)
-
-    ws.addEventListener('open', () => {
-      ws!.send(JSON.stringify({ type: 'subscribe', channels: [STREAM_CHANNEL] }))
-    })
-
-    ws.addEventListener('message', (event: MessageEvent) => {
-      let msg: Record<string, unknown>
-      try {
-        msg = JSON.parse(event.data as string) as Record<string, unknown>
-      } catch {
-        return
-      }
-      const type = msg.type as string | undefined
-      if (type === 'connected') {
-        streamStatus.value = 'connected'
-        stopDemoTimer()
-        clearFallbackTimer()
-      } else if (type === 'price_update') {
-        streamStatus.value = 'connected'
-        stopDemoTimer()
-        clearFallbackTimer()
-        const data = (
-          msg.data as Array<{
-            symbol: string
-            price: number
-            change: number | null
-            changePercent: number | null
-            lastUpdated: number
-          }>
-        )[0]
-        if (data && data.symbol === 'AAPL' && typeof data.price === 'number') {
-          livePrice.value = data.price
-          liveTimestamp.value =
-            typeof data.lastUpdated === 'number'
-              ? data.lastUpdated
-              : typeof msg.timestamp === 'number'
-                ? msg.timestamp
-                : Date.now()
-          ingestLivePrice(data.price)
-        }
-      } else if (type === 'pong') {
-        // keep-alive acknowledged — no-op
-      } else if (type === 'error') {
-        console.warn('[stonx] stream error', msg)
-      }
-    })
-
-    ws.addEventListener('error', () => {
-      streamStatus.value = 'offline'
-    })
-
-    ws.addEventListener('close', () => {
-      if (streamStatus.value !== 'offline') {
-        streamStatus.value = 'offline'
-      }
-    })
-  } catch {
-    streamStatus.value = 'offline'
-  }
-}
-
-function disconnectStonx() {
-  if (!ws) return
-  try {
-    ws.send(JSON.stringify({ type: 'unsubscribe', channels: [STREAM_CHANNEL] }))
-  } catch {
-    // ignore send errors on close
-  }
-  ws.close()
-  ws = null
-}
 
 // ─── Seed history ─────────────────────────────────────────────────────────────
 const SEED_PRICE = 213.5
@@ -136,10 +69,39 @@ function seedAaplHistory(count: number, startPrice: number): CandleBar[] {
 }
 
 const STREAM_CAP = 420
-const { bars: candleBars, pushBar } = useCandleStream(
+const { bars: candleBars, pushBar, setBars } = useCandleStream(
   STREAM_CAP,
-  seedAaplHistory(SEED_COUNT, SEED_PRICE)
+  seedAaplHistory(SEED_COUNT, SEED_PRICE),
 )
+
+const { status: streamStatus, connect: connectStonx, disconnect: disconnectStonx, pickRow }
+  = useStonxStream({
+    url: STREAM_URL,
+    channels: [STREAM_CHANNEL],
+    staleAfterMs: 90_000,
+    onMessage(msg) {
+      if (msg.type === 'price_update') {
+        stopDemoTimer()
+        clearFallbackTimer()
+        const row = pickRow(msg.data, 'AAPL')
+        if (row) {
+          livePrice.value = row.price
+          liveTimestamp.value = row.lastUpdated
+          if (row.dayVolume != null) liveDayVolume.value = row.dayVolume
+          if (row.high24h != null) liveHigh24h.value = row.high24h
+          if (row.low24h != null) liveLow24h.value = row.low24h
+          ingestLivePrice(row.price)
+        }
+      }
+      else if (msg.type === 'error') {
+        console.warn('[stonx] stream error', msg.detail)
+      }
+    },
+    onReconnect() {
+      setBars(seedAaplHistory(SEED_COUNT, SEED_PRICE))
+      lastBarTime = 0
+    },
+  })
 
 let lastBarTime = 0
 
@@ -211,43 +173,52 @@ const sharedDomain = ref<CandleTimeDomain | null>(null)
 const terminalDark = ref(true)
 const useLogScale = ref(false)
 const drawings = ref<CandleDrawing[]>([])
-const drawMode = ref<'off' | 'trend' | 'horizontal'>('off')
+const drawMode = ref<'off' | 'trend' | 'horizontal' | 'fib_retracement' | 'range'>('off')
+const selectedResolution = ref<CandleResolutionId>('1m')
 
 const drawingTool = computed(() => (drawMode.value === 'off' ? null : drawMode.value))
+
+const timeframeLabel = computed(() => CANDLE_RESOLUTION_LABEL[selectedResolution.value])
+
+const chartBars = computed(() => {
+  const ms = resolutionMsFromId(selectedResolution.value)
+  if (ms === STEP_MS) return candleBars.value
+  return aggregateCandlesToResolution(candleBars.value, ms)
+})
 
 const maxDraw = recommendMaxDrawBars({ plotWidthPx: 720 })
 
 const lineXWindow = computed({
   get() {
-    if (!sharedDomain.value || candleBars.value.length < 2) return undefined
+    if (!sharedDomain.value || chartBars.value.length < 2) return undefined
     return {
-      start: candleIndexAtTime(candleBars.value, sharedDomain.value.start),
-      end: candleIndexAtTime(candleBars.value, sharedDomain.value.end),
+      start: candleIndexAtTime(chartBars.value, sharedDomain.value.start),
+      end: candleIndexAtTime(chartBars.value, sharedDomain.value.end),
     }
   },
   set(w: { start: number; end: number } | undefined) {
-    if (!w || candleBars.value.length < 2) return
+    if (!w || chartBars.value.length < 2) return
     sharedDomain.value = {
-      start: candleTimeAtIndex(candleBars.value, w.start),
-      end: candleTimeAtIndex(candleBars.value, w.end),
+      start: candleTimeAtIndex(chartBars.value, w.start),
+      end: candleTimeAtIndex(chartBars.value, w.end),
     }
   },
 })
 
-const rsiLabels = computed(() => candleBars.value.map((b) => formatShortTime(b.t)))
+const rsiLabels = computed(() => chartBars.value.map((b) => formatShortTime(b.t)))
 
 const rsiSeries = computed<ChartSeries[]>(() => [
   {
     name: 'RSI(14)',
     data: rsi(
-      candleBars.value.map((b) => b.c),
+      chartBars.value.map((b) => b.c),
       14
     ),
   },
 ])
 
-const latestBar = computed(() => candleBars.value[candleBars.value.length - 1] ?? null)
-const firstBar = computed(() => candleBars.value[0] ?? null)
+const latestBar = computed(() => chartBars.value[chartBars.value.length - 1] ?? null)
+const firstBar = computed(() => chartBars.value[0] ?? null)
 
 const displayPrice = computed(() => livePrice.value ?? latestBar.value?.c ?? SEED_PRICE)
 
@@ -272,10 +243,10 @@ const sessionChangeTone = computed<'up' | 'down' | 'flat'>(() => {
 const sessionOpen = computed(() => firstBar.value?.o ?? 0)
 
 const sessionRange = computed(() => {
-  if (candleBars.value.length === 0) return { high: 0, low: 0 }
+  if (chartBars.value.length === 0) return { high: 0, low: 0 }
   let high = Number.NEGATIVE_INFINITY
   let low = Number.POSITIVE_INFINITY
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     high = Math.max(high, bar.h)
     low = Math.min(low, bar.l)
   }
@@ -283,7 +254,7 @@ const sessionRange = computed(() => {
 })
 
 const openingRange = computed(() => {
-  const sample = candleBars.value.slice(0, Math.min(15, candleBars.value.length))
+  const sample = chartBars.value.slice(0, Math.min(15, chartBars.value.length))
   if (sample.length === 0) return { high: 0, low: 0 }
   let high = Number.NEGATIVE_INFINITY
   let low = Number.POSITIVE_INFINITY
@@ -297,7 +268,7 @@ const openingRange = computed(() => {
 const averageVolume = computed(() => {
   let total = 0
   let count = 0
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     if (bar.v == null) continue
     total += bar.v
     count += 1
@@ -308,7 +279,7 @@ const averageVolume = computed(() => {
 const sessionVwap = computed(() => {
   let weighted = 0
   let totalVolume = 0
-  for (const bar of candleBars.value) {
+  for (const bar of chartBars.value) {
     const volume = Math.max(1, bar.v ?? 0)
     const typicalPrice = (bar.h + bar.l + bar.c) / 3
     weighted += typicalPrice * volume
@@ -401,7 +372,10 @@ function formatCompactVolume(n: number) {
           class="inline-block h-2 w-2 rounded-full"
           :class="{
             'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]': streamStatus === 'connected',
-            'bg-amber-400 animate-pulse': streamStatus === 'connecting',
+            'bg-amber-400 animate-pulse':
+              streamStatus === 'connecting'
+              || streamStatus === 'reconnecting'
+              || streamStatus === 'idle',
             'bg-rose-400': streamStatus === 'offline',
           }"
           aria-hidden="true"
@@ -409,10 +383,28 @@ function formatCompactVolume(n: number) {
         <span v-if="streamStatus === 'connected'" class="text-emerald-600 font-semibold"
           >Stream live</span
         >
-        <span v-else-if="streamStatus === 'connecting'" class="text-amber-600"
-          >Connecting to stream…</span
+        <span
+          v-else-if="
+            streamStatus === 'connecting'
+              || streamStatus === 'reconnecting'
+              || streamStatus === 'idle'
+          "
+          class="text-amber-600"
+          >{{ streamStatus === 'reconnecting' ? 'Reconnecting…' : 'Connecting to stream…' }}</span
         >
         <span v-else class="text-rose-500 font-semibold">Offline / delayed — demo data</span>
+      </p>
+      <p
+        v-if="
+          streamStatus === 'connected' &&
+          (liveHigh24h != null || liveLow24h != null || liveDayVolume != null)
+        "
+        class="mt-2 text-sm text-slate-600 dark:text-slate-400"
+      >
+        <span v-if="liveHigh24h != null && liveLow24h != null" class="mr-3"
+          >24h {{ formatPrice(liveLow24h) }} – {{ formatPrice(liveHigh24h) }}</span
+        >
+        <span v-if="liveDayVolume != null">Day vol {{ formatCompactVolume(liveDayVolume) }}</span>
       </p>
     </template>
 
@@ -421,7 +413,8 @@ function formatCompactVolume(n: number) {
         <TradingDemoToolbar
           symbol="AAPL"
           venue="NASDAQ · Apple Inc."
-          timeframe="1 minute"
+          :timeframe="timeframeLabel"
+          :resolution="selectedResolution"
           :last-price-text="formatPrice(displayPrice)"
           :change-text="formatSignedPrice(sessionChange)"
           :change-pct-text="formatSignedPercent(sessionChangePct)"
@@ -435,22 +428,24 @@ function formatCompactVolume(n: number) {
           @update:terminal-dark="terminalDark = $event"
           @update:use-log-scale="useLogScale = $event"
           @update:draw-mode="drawMode = $event"
+          @update:resolution="selectedResolution = $event"
         />
 
         <NardukChartStack v-model:domain="sharedDomain">
           <div class="flex flex-col gap-3">
             <div class="ns-terminal-panel">
               <p class="mb-2 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-slate-600">
-                AAPL · 1 min
+                AAPL · {{ timeframeLabel }}
               </p>
               <NardukCandleChart
-                chart-title="AAPL — 1 minute"
+                :chart-title="`AAPL — ${timeframeLabel}`"
                 chart-description="Apple Inc. (AAPL) candlestick chart. Zoom and pan; domain syncs RSI pane."
-                :bars="candleBars"
+                :bars="chartBars"
                 :height="fullscreenChartHeight ?? 400"
                 class="w-full min-w-0"
                 :dark="terminalDark"
                 :zoomable="true"
+                candle-style="hollow"
                 :y-scale="useLogScale ? 'log' : 'linear'"
                 :highlight-forming-bar="true"
                 :drawings="drawings"

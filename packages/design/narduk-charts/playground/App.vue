@@ -9,11 +9,17 @@ import {
   NardukLineChart,
   NardukBarChart,
   NardukPieChart,
+  NardukCandleChart,
   exportChartPng,
   exportChartSvg,
   getChartSvgElement,
   useStreamingSeries,
+  useCandleStream,
   chartThemeClass,
+  aggregateCandlesToResolution,
+  resolutionMsFromId,
+  recommendMaxDrawBars,
+  CANDLE_RESOLUTION_LABEL,
   type ChartSeries,
   type ChartTheme,
   type ChartYScaleMode,
@@ -21,15 +27,21 @@ import {
   type ChartLineAnnotation,
   type PieDataItem,
   type ChartReferenceLine,
+  type CandleBar,
+  type CandleBarStyle,
+  type CandleDrawing,
+  type CandlePriceDisplayMode,
+  type CandleResolutionId,
 } from 'narduk-charts'
 
-type TabId = 'line' | 'bar' | 'pie' | 'wind'
+type TabId = 'line' | 'bar' | 'pie' | 'ohlc' | 'wind'
 type WindUnit = 'mph' | 'knots' | 'ms'
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'line', label: 'Line' },
   { id: 'bar', label: 'Bar' },
   { id: 'pie', label: 'Pie' },
+  { id: 'ohlc', label: 'OHLC' },
   { id: 'wind', label: 'Wind' },
 ]
 
@@ -40,6 +52,7 @@ const lastEvent = ref<string | null>(null)
 const lineChartWrapRef = ref<HTMLElement | null>(null)
 const barChartWrapRef = ref<HTMLElement | null>(null)
 const pieChartWrapRef = ref<HTMLElement | null>(null)
+const ohlcChartWrapRef = ref<HTMLElement | null>(null)
 const windChartWrapRef = ref<HTMLElement | null>(null)
 
 function activeChartRoot(): HTMLElement | null {
@@ -50,6 +63,8 @@ function activeChartRoot(): HTMLElement | null {
       return barChartWrapRef.value
     case 'pie':
       return pieChartWrapRef.value
+    case 'ohlc':
+      return ohlcChartWrapRef.value
     case 'wind':
       return windChartWrapRef.value
     default:
@@ -645,6 +660,120 @@ const windNowDisplay = computed(() => mphToDisplay(windNowMph.value, windUnit.va
 
 const windColors = ['#0ea5e9']
 
+const OHLC_BASE_MS = 60_000
+
+function seedOhlcPlayground(count: number, seedPrice: number): CandleBar[] {
+  const t0 = Date.UTC(2026, 2, 1, 14, 0, 0)
+  let p = seedPrice
+  const out: CandleBar[] = []
+  for (let i = 0; i < count; i++) {
+    const o = p
+    const drift = Math.sin(i / 9) * 9 + Math.cos(i / 5) * 5 + (Math.random() - 0.48) * 6
+    const c = Math.max(0.01, o + drift)
+    const h = Math.max(o, c) + Math.random() * 7
+    const l = Math.min(o, c) - Math.random() * 7
+    out.push({
+      t: t0 + i * OHLC_BASE_MS,
+      o,
+      h,
+      l,
+      c,
+      v: Math.round(900 + Math.random() * 12_000),
+    })
+    p = c
+  }
+  return out
+}
+
+const { bars: ohlcBars, pushBar: ohlcPushBar, setBars: ohlcSetBars } = useCandleStream(
+  480,
+  seedOhlcPlayground(300, 21_280),
+)
+
+const ohlcResolution = ref<CandleResolutionId>('1m')
+const ohlcCandleStyle = ref<CandleBarStyle>('hollow')
+const ohlcDrawMode = ref<'off' | 'trend' | 'horizontal' | 'fib_retracement' | 'range'>('off')
+const ohlcDrawings = ref<CandleDrawing[]>([])
+const ohlcShowVolume = ref(true)
+const ohlcShowBrush = ref(true)
+const ohlcSessionGrid = ref(true)
+const ohlcLogY = ref(false)
+const ohlcHighlightForming = ref(true)
+const ohlcPaused = ref(false)
+const ohlcHeight = ref(440)
+const ohlcPriceDisplayMode = ref<CandlePriceDisplayMode>('absolute')
+
+const ohlcResolutionOptions = (Object.keys(CANDLE_RESOLUTION_LABEL) as CandleResolutionId[]).map(
+  id => ({ id, label: `${id} — ${CANDLE_RESOLUTION_LABEL[id]}` }),
+)
+
+const ohlcChartBars = computed(() => {
+  const ms = resolutionMsFromId(ohlcResolution.value)
+  if (ms === OHLC_BASE_MS) return ohlcBars.value
+  return aggregateCandlesToResolution(ohlcBars.value, ms)
+})
+
+const ohlcDrawingTool = computed(() => (ohlcDrawMode.value === 'off' ? null : ohlcDrawMode.value))
+
+const ohlcMaxDraw = recommendMaxDrawBars({ plotWidthPx: 960 })
+
+function ohlcFormatTime(ms: number) {
+  return new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function ohlcFormatPrice(n: number) {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function pushOhlcRandomBar() {
+  const b = ohlcBars.value
+  const last = b[b.length - 1]
+  if (!last) return
+  const o = last.c
+  const drift = (Math.random() - 0.48) * 11
+  const c = Math.max(0.01, o + drift)
+  const h = Math.max(o, c) + Math.random() * 7
+  const l = Math.min(o, c) - Math.random() * 7
+  ohlcPushBar({
+    t: last.t + OHLC_BASE_MS,
+    o,
+    h,
+    l,
+    c,
+    v: Math.round(800 + Math.random() * 10_000),
+  })
+}
+
+function ohlcReseed() {
+  ohlcSetBars(seedOhlcPlayground(300, 21_200 + Math.random() * 80))
+}
+
+function ohlcClearDrawings() {
+  ohlcDrawings.value = []
+}
+
+let ohlcTimer: ReturnType<typeof setInterval> | null = null
+
+function syncOhlcTimer() {
+  if (ohlcTimer) {
+    clearInterval(ohlcTimer)
+    ohlcTimer = null
+  }
+  if (activeTab.value !== 'ohlc' || ohlcPaused.value) return
+  ohlcTimer = setInterval(pushOhlcRandomBar, 1_600)
+}
+
+watch(
+  () => [activeTab.value, ohlcPaused.value] as const,
+  () => syncOhlcTimer(),
+  { immediate: true },
+)
+
 let windTimer: ReturnType<typeof setInterval> | null = null
 let windEaseRaf: number = 0
 
@@ -719,6 +848,7 @@ watch(windScenario, () => {
 
 onUnmounted(() => {
   if (windTimer) clearInterval(windTimer)
+  if (ohlcTimer) clearInterval(ohlcTimer)
   if (windEaseRaf) cancelAnimationFrame(windEaseRaf)
 })
 </script>
@@ -734,7 +864,7 @@ onUnmounted(() => {
           Narduk Charts
         </h1>
         <p class="lab__tag">
-          Playground — one chart per mode, tune props live.
+          Line, bar, pie, OHLC (candles, drawings, timeframes), and wind — tune props live.
         </p>
       </div>
       <div class="lab__top-actions">
@@ -1708,6 +1838,241 @@ onUnmounted(() => {
                 </div>
               </template>
             </NardukPieChart>
+          </div>
+        </div>
+      </div>
+
+      <!-- OHLC / trading -->
+      <div
+        v-show="activeTab === 'ohlc'"
+        class="lab__panel"
+        role="tabpanel"
+      >
+        <aside class="lab__dock">
+          <h2 class="lab__dock-title">
+            OHLC / candles
+          </h2>
+          <p class="lab__wind-hint">
+            Timer-driven <code class="lab__code">useCandleStream</code> at 1m; switch TF to see
+            <code class="lab__code">aggregateCandlesToResolution</code>. Pick a drawing tool and drag on the plot (⌫ clears).
+          </p>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Timeframe
+            </h3>
+            <label class="lab__field">
+              <span class="lab__field-label">Resample (UTC buckets)</span>
+              <select
+                v-model="ohlcResolution"
+                class="lab__select"
+              >
+                <option
+                  v-for="opt in ohlcResolutionOptions"
+                  :key="opt.id"
+                  :value="opt.id"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
+          </section>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Appearance
+            </h3>
+            <label class="lab__field">
+              <span class="lab__field-label">Candle style</span>
+              <select
+                v-model="ohlcCandleStyle"
+                class="lab__select"
+              >
+                <option value="candle">
+                  Filled bodies
+                </option>
+                <option value="hollow">
+                  Hollow up-candles
+                </option>
+                <option value="bar">
+                  OHLC bars
+                </option>
+              </select>
+            </label>
+            <label class="lab__field">
+              <span class="lab__field-label">Price display</span>
+              <select
+                v-model="ohlcPriceDisplayMode"
+                class="lab__select"
+              >
+                <option value="absolute">
+                  Absolute
+                </option>
+                <option value="percent">
+                  % vs first visible
+                </option>
+                <option value="indexed">
+                  Indexed (×100)
+                </option>
+              </select>
+            </label>
+            <label class="lab__row">
+              <span>Log Y</span>
+              <input
+                v-model="ohlcLogY"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+            <label class="lab__row">
+              <span>Highlight forming bar</span>
+              <input
+                v-model="ohlcHighlightForming"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+          </section>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Drawings
+            </h3>
+            <label class="lab__field">
+              <span class="lab__field-label">Tool</span>
+              <select
+                v-model="ohlcDrawMode"
+                class="lab__select"
+              >
+                <option value="off">
+                  Zoom box (default)
+                </option>
+                <option value="trend">
+                  Trend line
+                </option>
+                <option value="horizontal">
+                  Horizontal ray
+                </option>
+                <option value="fib_retracement">
+                  Fib retracement
+                </option>
+                <option value="range">
+                  Range box
+                </option>
+              </select>
+            </label>
+            <button
+              type="button"
+              class="lab__btn"
+              @click="ohlcClearDrawings"
+            >
+              Clear drawings
+            </button>
+          </section>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Stream
+            </h3>
+            <label class="lab__row">
+              <span>Pause new bars</span>
+              <input
+                v-model="ohlcPaused"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+            <button
+              type="button"
+              class="lab__btn"
+              @click="ohlcReseed"
+            >
+              Reseed history
+            </button>
+          </section>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Chart chrome
+            </h3>
+            <label class="lab__row">
+              <span>Volume</span>
+              <input
+                v-model="ohlcShowVolume"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+            <label class="lab__row">
+              <span>Brush minimap</span>
+              <input
+                v-model="ohlcShowBrush"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+            <label class="lab__row">
+              <span>Session grid (UTC)</span>
+              <input
+                v-model="ohlcSessionGrid"
+                type="checkbox"
+                class="lab__toggle"
+              >
+            </label>
+          </section>
+
+          <section class="lab__group">
+            <h3 class="lab__group-title">
+              Size
+            </h3>
+            <label class="lab__dial">
+              <div class="lab__dial-top">
+                <span class="lab__dial-label">Height (px)</span>
+                <output class="lab__dial-value">{{ ohlcHeight }}</output>
+              </div>
+              <input
+                v-model.number="ohlcHeight"
+                type="range"
+                min="320"
+                max="640"
+                step="20"
+                class="lab__range"
+              >
+            </label>
+          </section>
+        </aside>
+
+        <div class="lab__stage">
+          <div
+            ref="ohlcChartWrapRef"
+            class="lab__chart-wrap"
+          >
+            <NardukCandleChart
+              chart-title="Playground OHLC"
+              chart-description="Drag zoom box, Ctrl or ⌘ + wheel zoom, Shift drag pan, double-click reset. Choose a drawing tool to sketch on the chart."
+              :bars="ohlcChartBars"
+              :height="ohlcHeight"
+              class="lab__chart"
+              :dark="forceDark"
+              :theme="chartTheme"
+              :zoomable="true"
+              :zoom-wheel-free="true"
+              :candle-style="ohlcCandleStyle"
+              :price-display-mode="ohlcPriceDisplayMode"
+              :y-scale="ohlcLogY ? 'log' : 'linear'"
+              :highlight-forming-bar="ohlcHighlightForming"
+              :drawings="ohlcDrawings"
+              :drawing-tool="ohlcDrawingTool"
+              :show-volume="ohlcShowVolume"
+              :show-brush="ohlcShowBrush"
+              :show-session-grid="ohlcSessionGrid"
+              :max-draw-bars="ohlcMaxDraw"
+              :format-time="ohlcFormatTime"
+              :format-price="ohlcFormatPrice"
+              @update:drawings="ohlcDrawings = $event"
+              @zoom="log('candleZoom', $event)"
+              @bar-click="log('candleBarClick', $event)"
+            />
           </div>
         </div>
       </div>

@@ -1,6 +1,10 @@
 # narduk-charts
 
-Beautiful Vue 3 SVG charting library with smooth animations, interactive tooltips, and dark mode support. Built 100% from scratch — no D3, no Chart.js — just Vue 3 + TypeScript + SVG.
+Vue 3 SVG charting library for dashboards and **trading-grade market UIs**—TypeScript-first, themeable, accessible. Built without D3 or Chart.js: Vue 3 + TypeScript + SVG.
+
+**Product website (marketing, enterprise narrative, SEO):** [github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)
+
+**This repository:** library source, tests, component docs (`docs/`), Histoire stories, **development gallery** (`npm run dev`), and the interactive **playground** (`npm run dev:playground`).
 
 ## Install
 
@@ -307,14 +311,20 @@ interface PieDataItem {
 - **Legends** — click to toggle series visibility; scales recalculate automatically
 - **Zero dependencies** — only requires Vue 3 as a peer dependency
 
-## Local demo
+## Local demos
 
 ```bash
 npm install
 npm run dev
 ```
 
-Runs a tabbed Vite playground (Line / Bar / Pie / Wind) with a control dock of toggles and sliders plus one full-width chart per tab; **Wind** simulates a live anemometer stream.
+Runs the **development gallery** (routed examples + OHLC preview). Use this to validate chart behavior while authoring the library.
+
+```bash
+npm run dev:playground
+```
+
+Runs the full **playground** (Line / Bar / Pie / OHLC / Wind) with the control dock; **Wind** simulates a live anemometer stream.
 
 ```bash
 npm test

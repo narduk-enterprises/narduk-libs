@@ -1,5 +1,7 @@
 import './styles/chart.css'
 
+/** Alerts, bar replay, broker/DOM, Pine, multi-chart cloud sync, and social feed are intentionally out of library scope. */
+
 export { default as NardukLineChart } from './components/NardukLineChart.vue'
 export { default as NardukBarChart } from './components/NardukBarChart.vue'
 export { default as NardukPieChart } from './components/NardukPieChart.vue'
@@ -35,6 +37,14 @@ export {
   candleTimeAtIndex,
   candleIndexAtTime,
 } from './utils/math'
+
+export {
+  aggregateCandlesToResolution,
+  resolutionMsFromId,
+  CANDLE_RESOLUTION_MS,
+  CANDLE_RESOLUTION_LABEL,
+} from './utils/candleResolution'
+export type { CandleResolutionId } from './utils/candleResolution'
 
 export {
   sma,
@@ -87,5 +97,8 @@ export type {
   CandleDrawing,
   CandleTrendLineDrawing,
   CandleHorizontalRayDrawing,
+  CandleFibRetracementDrawing,
+  CandleRangeBoxDrawing,
   CandleDrawingTool,
+  CandleBarStyle,
 } from './types'

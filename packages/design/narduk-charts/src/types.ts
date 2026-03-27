@@ -174,6 +174,9 @@ export interface CandleClickPayload {
  */
 export type CandlePriceDisplayMode = 'absolute' | 'percent' | 'indexed'
 
+/** `candle` filled bodies; `hollow` bullish hollow / bearish filled (TradingView-style); `bar` OHLC ticks. */
+export type CandleBarStyle = 'candle' | 'hollow' | 'bar'
+
 /** Read-only layout + mappers from `NardukCandleChart` (`defineExpose` / overlay slot). */
 export interface CandlePlotMetrics {
   chartWidth: number
@@ -210,9 +213,38 @@ export interface CandleHorizontalRayDrawing {
   price: number
 }
 
-export type CandleDrawing = CandleTrendLineDrawing | CandleHorizontalRayDrawing
+/** Fib retracement between two anchors; levels span [min(price), max(price)] along Y. */
+export interface CandleFibRetracementDrawing {
+  id: string
+  type: 'fib_retracement'
+  tStart: number
+  priceStart: number
+  tEnd: number
+  priceEnd: number
+}
 
-export type CandleDrawingTool = 'trend' | 'horizontal' | null
+/** Price/time rectangle (two-corner drag). Serialized for persistence. */
+export interface CandleRangeBoxDrawing {
+  id: string
+  type: 'range'
+  tStart: number
+  tEnd: number
+  priceTop: number
+  priceBottom: number
+}
+
+export type CandleDrawing =
+  | CandleTrendLineDrawing
+  | CandleHorizontalRayDrawing
+  | CandleFibRetracementDrawing
+  | CandleRangeBoxDrawing
+
+export type CandleDrawingTool =
+  | 'trend'
+  | 'horizontal'
+  | 'fib_retracement'
+  | 'range'
+  | null
 
 export interface ExportChartOptions {
   filename?: string

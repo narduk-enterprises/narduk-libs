@@ -1,7 +1,7 @@
 {
   "name": "narduk-charts",
   "version": "1.0.0",
-  "description": "Beautiful Vue 3 SVG charting library with smooth animations, tooltips, and dark mode support",
+  "description": "Vue 3 SVG charting library for dashboards and trading-grade market UIs (TypeScript, themable, accessible)",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",
   "module": "./dist/narduk-charts.js",
