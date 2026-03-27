@@ -13,7 +13,7 @@ const props = defineProps<{
 const plotLeft = computed(() => props.metrics.padding.left)
 const plotRight = computed(() => props.metrics.chartWidth - props.metrics.padding.right)
 const plotWidth = computed(() => props.metrics.plotWidth)
-const labelX = computed(() => plotRight.value - 76)
+const tagX = computed(() => plotRight.value - 72)
 
 const openingBand = computed(() => {
   const high = props.metrics.priceYFromRaw(props.openingRangeHigh)
@@ -31,6 +31,7 @@ const overlayLines = computed(() => [
     y: props.metrics.priceYFromRaw(props.vwap),
     lineClass: 'td-overlay__line td-overlay__line--vwap',
     tagClass: 'td-overlay__tag td-overlay__tag--vwap',
+    textClass: 'td-overlay__tag-text td-overlay__tag-text--vwap',
   },
   {
     key: 'open',
@@ -38,29 +39,35 @@ const overlayLines = computed(() => [
     y: props.metrics.priceYFromRaw(props.sessionOpen),
     lineClass: 'td-overlay__line td-overlay__line--open',
     tagClass: 'td-overlay__tag td-overlay__tag--open',
+    textClass: 'td-overlay__tag-text',
   },
 ])
 </script>
 
 <template>
   <g class="td-overlay" pointer-events="none">
-    <rect
+    <g
       v-if="openingBand.height > 0"
-      class="td-overlay__opening-band"
-      :x="plotLeft"
-      :y="openingBand.y"
-      :width="plotWidth"
-      :height="openingBand.height"
-      rx="10"
-    />
-    <text
-      v-if="openingBand.height > 0"
-      class="td-overlay__caption"
-      :x="plotLeft + 12"
-      :y="Math.max(props.metrics.padding.top + 16, openingBand.y + 14)"
+      role="img"
+      aria-label="Opening range"
     >
-      Opening range
-    </text>
+      <rect
+        class="td-overlay__opening-band"
+        :x="plotLeft"
+        :y="openingBand.y"
+        :width="plotWidth"
+        :height="openingBand.height"
+        rx="12"
+      />
+      <text
+        class="td-overlay__caption"
+        :x="plotLeft + 10"
+        :y="Math.max(props.metrics.padding.top + 16, openingBand.y + 13)"
+        aria-hidden="true"
+      >
+        OR
+      </text>
+    </g>
 
     <g
       v-for="line in overlayLines"
@@ -69,21 +76,21 @@ const overlayLines = computed(() => [
       <line
         :class="line.lineClass"
         :x1="plotLeft"
-        :x2="plotRight"
+        :x2="plotRight - 76"
         :y1="line.y"
         :y2="line.y"
       />
       <rect
         :class="line.tagClass"
-        :x="labelX"
-        :y="line.y - 9"
-        width="60"
-        height="18"
-        rx="9"
+        :x="tagX"
+        :y="line.y - 10"
+        width="64"
+        height="20"
+        rx="10"
       />
       <text
-        class="td-overlay__tag-text"
-        :x="labelX + 30"
+        :class="line.textClass"
+        :x="tagX + 32"
         :y="line.y"
         text-anchor="middle"
         dominant-baseline="middle"
@@ -96,30 +103,33 @@ const overlayLines = computed(() => [
 
 <style scoped>
 .td-overlay__opening-band {
-  fill: rgba(99, 102, 241, 0.08);
-  stroke: rgba(129, 140, 248, 0.24);
-  stroke-dasharray: 8 8;
+  fill: rgba(99, 102, 241, 0.06);
+  stroke: rgba(129, 140, 248, 0.2);
+  stroke-dasharray: 6 8;
+  stroke-width: 1;
 }
 
 .td-overlay__caption {
-  fill: rgba(165, 180, 252, 0.95);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  fill: rgba(165, 180, 252, 0.75);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .td-overlay__line {
-  stroke-width: 1.15;
-  stroke-dasharray: 6 6;
+  stroke-width: 1;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
 }
 
 .td-overlay__line--vwap {
-  stroke: rgba(45, 212, 191, 0.92);
+  stroke: rgba(45, 212, 191, 0.85);
+  filter: drop-shadow(0 0 4px rgba(45, 212, 191, 0.35));
 }
 
 .td-overlay__line--open {
-  stroke: rgba(148, 163, 184, 0.74);
+  stroke: rgba(148, 163, 184, 0.6);
 }
 
 .td-overlay__tag {
@@ -127,19 +137,24 @@ const overlayLines = computed(() => [
 }
 
 .td-overlay__tag--vwap {
-  fill: rgba(15, 23, 42, 0.86);
-  stroke: rgba(45, 212, 191, 0.44);
+  fill: rgba(6, 30, 28, 0.9);
+  stroke: rgba(45, 212, 191, 0.5);
+  filter: drop-shadow(0 2px 8px rgba(45, 212, 191, 0.2));
 }
 
 .td-overlay__tag--open {
-  fill: rgba(15, 23, 42, 0.82);
-  stroke: rgba(148, 163, 184, 0.3);
+  fill: rgba(15, 20, 36, 0.85);
+  stroke: rgba(100, 116, 139, 0.28);
 }
 
 .td-overlay__tag-text {
-  fill: rgba(248, 250, 252, 0.95);
+  fill: rgba(203, 213, 225, 0.92);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
+}
+
+.td-overlay__tag-text--vwap {
+  fill: rgba(94, 234, 212, 0.96);
 }
 </style>

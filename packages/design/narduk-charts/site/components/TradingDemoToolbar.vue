@@ -31,6 +31,12 @@ const changeClass = computed(() => {
   return 'td-toolbar__change--flat'
 })
 
+const changeBadgeClass = computed(() => {
+  if (props.changeTone === 'up') return 'td-toolbar__change-badge--up'
+  if (props.changeTone === 'down') return 'td-toolbar__change-badge--down'
+  return 'td-toolbar__change-badge--flat'
+})
+
 const metrics = computed(() => [
   { label: 'VWAP', value: props.vwapText },
   { label: 'Avg volume', value: props.avgVolumeText },
@@ -51,28 +57,28 @@ function onDrawModeChange(event: Event) {
 </script>
 
 <template>
-  <section class="td-toolbar">
-    <div class="td-toolbar__quote">
-      <div class="td-toolbar__eyebrow">
-        <span class="td-toolbar__venue">{{ venue }}</span>
-        <span class="td-toolbar__eyebrow-dot" aria-hidden="true" />
-        <span>{{ timeframe }}</span>
+  <section class="td-toolbar" role="toolbar" aria-label="Chart controls">
+    <div class="td-toolbar__header">
+      <div class="td-toolbar__identity">
+        <div class="td-toolbar__eyebrow">
+          <span class="td-toolbar__venue">{{ venue }}</span>
+          <span class="td-toolbar__sep" aria-hidden="true">·</span>
+          <span class="td-toolbar__timeframe">{{ timeframe }}</span>
+        </div>
+        <p class="td-toolbar__symbol">{{ symbol }}</p>
       </div>
-      <div class="td-toolbar__headline">
-        <div class="td-toolbar__headline-copy">
-          <p class="td-toolbar__symbol">{{ symbol }}</p>
-          <p class="td-toolbar__subcopy">
-            Flagship demo with synced panes, overlays, and pro-grade market interactions.
-          </p>
-        </div>
-        <div class="td-toolbar__price-block">
-          <p class="td-toolbar__price">{{ lastPriceText }}</p>
-          <p class="td-toolbar__change" :class="changeClass">
-            {{ changeText }} · {{ changePctText }}
-          </p>
-        </div>
+
+      <div class="td-toolbar__quote-block">
+        <p class="td-toolbar__price">{{ lastPriceText }}</p>
+        <span class="td-toolbar__change-badge" :class="changeBadgeClass">
+          <span class="td-toolbar__change" :class="changeClass">{{ changeText }}</span>
+          <span class="td-toolbar__change-divider" aria-hidden="true" />
+          <span class="td-toolbar__change" :class="changeClass">{{ changePctText }}</span>
+        </span>
       </div>
     </div>
+
+    <div class="td-toolbar__divider" aria-hidden="true" />
 
     <div class="td-toolbar__metrics">
       <article
@@ -85,6 +91,8 @@ function onDrawModeChange(event: Event) {
       </article>
     </div>
 
+    <div class="td-toolbar__divider" aria-hidden="true" />
+
     <div class="td-toolbar__controls">
       <label class="td-toolbar__toggle">
         <input
@@ -92,7 +100,7 @@ function onDrawModeChange(event: Event) {
           type="checkbox"
           @change="onTerminalDarkChange"
         >
-        <span>Terminal surface</span>
+        <span>Dark surface</span>
       </label>
       <label class="td-toolbar__toggle">
         <input
@@ -103,21 +111,15 @@ function onDrawModeChange(event: Event) {
         <span>Log Y</span>
       </label>
       <label class="td-toolbar__select-wrap">
-        <span class="td-toolbar__select-label">Draw mode</span>
+        <span class="td-toolbar__select-label">Tool</span>
         <select
           :value="drawMode"
           class="td-toolbar__select"
           @change="onDrawModeChange"
         >
-          <option value="off">
-            Zoom box
-          </option>
-          <option value="trend">
-            Trend line
-          </option>
-          <option value="horizontal">
-            Horizontal
-          </option>
+          <option value="off">Zoom box</option>
+          <option value="trend">Trend line</option>
+          <option value="horizontal">Horizontal</option>
         </select>
       </label>
     </div>
@@ -126,213 +128,262 @@ function onDrawModeChange(event: Event) {
 
 <style scoped>
 .td-toolbar {
-  display: grid;
-  gap: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 1.25rem;
   background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(11, 17, 31, 0.96)),
-    radial-gradient(circle at top left, rgba(49, 88, 255, 0.22), transparent 35%);
+    linear-gradient(160deg, rgba(16, 24, 44, 0.99) 0%, rgba(10, 16, 30, 0.97) 100%),
+    radial-gradient(ellipse at 0% 0%, rgba(49, 88, 255, 0.18) 0%, transparent 40%),
+    radial-gradient(ellipse at 100% 100%, rgba(45, 212, 191, 0.08) 0%, transparent 40%);
   box-shadow:
-    0 20px 46px -28px rgba(2, 6, 23, 0.72),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 24px 56px -32px rgba(2, 6, 23, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   color: rgba(248, 250, 252, 0.96);
-  padding: 1.1rem 1.15rem;
+  overflow: hidden;
 }
 
-.td-toolbar__quote {
-  display: grid;
-  gap: 0.65rem;
+.td-toolbar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.25rem 1rem;
+  flex-wrap: wrap;
+}
+
+.td-toolbar__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .td-toolbar__eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
 }
 
 .td-toolbar__venue {
-  color: rgba(165, 180, 252, 0.95);
+  color: rgba(165, 180, 252, 0.9);
 }
 
-.td-toolbar__eyebrow-dot {
-  width: 0.35rem;
-  height: 0.35rem;
-  border-radius: 999px;
-  background: rgba(45, 212, 191, 0.9);
-  box-shadow: 0 0 16px rgba(45, 212, 191, 0.4);
+.td-toolbar__sep {
+  color: rgba(45, 212, 191, 0.7);
 }
 
-.td-toolbar__headline {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.td-toolbar__headline-copy {
-  min-width: 0;
+.td-toolbar__timeframe {
+  color: rgba(148, 163, 184, 0.75);
 }
 
 .td-toolbar__symbol {
   margin: 0;
-  font-size: clamp(1.5rem, 2vw, 2rem);
+  font-size: clamp(1.65rem, 2.5vw, 2.1rem);
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.98);
 }
 
-.td-toolbar__subcopy {
-  margin: 0.35rem 0 0;
-  max-width: 34rem;
-  color: rgba(203, 213, 225, 0.88);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
-.td-toolbar__price-block {
-  display: inline-flex;
+.td-toolbar__quote-block {
+  display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  align-items: flex-end;
+  gap: 0.35rem;
+  min-width: 0;
 }
 
 .td-toolbar__price {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-family: var(--font-mono, monospace);
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  color: rgba(255, 255, 255, 0.98);
+  line-height: 1;
 }
 
-.td-toolbar__change {
-  margin: 0;
-  font-size: 0.88rem;
+.td-toolbar__change-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
+.td-toolbar__change-badge--up {
+  background: rgba(22, 163, 74, 0.18);
+  border: 1px solid rgba(74, 222, 128, 0.24);
+}
+
+.td-toolbar__change-badge--down {
+  background: rgba(185, 28, 28, 0.18);
+  border: 1px solid rgba(248, 113, 113, 0.24);
+}
+
+.td-toolbar__change-badge--flat {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.td-toolbar__change {
+  display: inline;
+}
+
+.td-toolbar__change-divider {
+  display: inline-block;
+  width: 1px;
+  height: 0.75em;
+  background: currentColor;
+  opacity: 0.3;
+  margin: 0 0.45em;
+  vertical-align: middle;
+}
+
 .td-toolbar__change--up {
-  color: rgba(74, 222, 128, 0.96);
+  color: rgba(74, 222, 128, 0.98);
 }
 
 .td-toolbar__change--down {
-  color: rgba(248, 113, 113, 0.96);
+  color: rgba(252, 100, 100, 0.98);
 }
 
 .td-toolbar__change--flat {
-  color: rgba(226, 232, 240, 0.92);
+  color: rgba(203, 213, 225, 0.85);
+}
+
+.td-toolbar__divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07) 20%, rgba(255, 255, 255, 0.07) 80%, transparent);
+  flex-shrink: 0;
 }
 
 .td-toolbar__metrics {
   display: grid;
-  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
 }
 
 .td-toolbar__metric {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.62);
-  padding: 0.8rem 0.9rem;
+  padding: 0.8rem 1.25rem;
+  position: relative;
+}
+
+.td-toolbar__metric + .td-toolbar__metric::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  height: 50%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .td-toolbar__metric-label {
   margin: 0;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgba(100, 116, 139, 0.95);
+  white-space: nowrap;
 }
 
 .td-toolbar__metric-value {
-  margin: 0.45rem 0 0;
-  font-family: var(--font-mono);
-  font-size: 0.98rem;
+  margin: 0.35rem 0 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.92rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgba(226, 232, 240, 0.95);
+  white-space: nowrap;
 }
 
 .td-toolbar__controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.85rem;
+  gap: 0.6rem;
   align-items: center;
+  padding: 0.75rem 1.25rem;
 }
 
 .td-toolbar__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.54);
-  color: rgba(226, 232, 240, 0.94);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(203, 213, 225, 0.88);
   cursor: pointer;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  min-height: 2.75rem;
-  padding: 0 0.95rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  letter-spacing: 0.01em;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.td-toolbar__toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .td-toolbar__toggle input {
-  accent-color: #4f46e5;
+  accent-color: #818cf8;
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .td-toolbar__select-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.54);
-  min-height: 2.75rem;
-  padding: 0 0.45rem 0 0.95rem;
+  background: rgba(255, 255, 255, 0.04);
+  min-height: 2.25rem;
+  padding: 0 0.4rem 0 0.85rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.td-toolbar__select-wrap:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .td-toolbar__select-label {
-  color: rgba(203, 213, 225, 0.88);
-  font-size: 0.84rem;
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 0.8rem;
   font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
 .td-toolbar__select {
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(248, 250, 252, 0.96);
-  font-size: 0.82rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(226, 232, 240, 0.95);
+  font-size: 0.8rem;
   font-weight: 600;
-  min-height: 2.15rem;
-  padding: 0 0.8rem;
+  min-height: 1.85rem;
+  padding: 0 0.75rem;
 }
 
 .td-toolbar__select:focus-visible {
   outline: 2px solid rgba(129, 140, 248, 0.86);
   outline-offset: 2px;
-}
-
-@media (min-width: 860px) {
-  .td-toolbar {
-    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-    align-items: center;
-  }
-
-  .td-toolbar__headline {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-  }
-
-  .td-toolbar__metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .td-toolbar__controls {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
 }
 </style>

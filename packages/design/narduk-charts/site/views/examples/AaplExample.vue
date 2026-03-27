@@ -14,16 +14,19 @@ import type { CandleBar, CandleDrawing, CandleTimeDomain, ChartSeries } from 'na
 import ExamplePage from '../../components/ExamplePage.vue'
 import TradingDemoToolbar from '../../components/TradingDemoToolbar.vue'
 import TradingChartOverlay from '../../components/TradingChartOverlay.vue'
+import { createSeededRandom, hasUiAuditFlag } from '../../utils/demoMode'
 
 // ─── Stonx stream ────────────────────────────────────────────────────────────
 const STREAM_URL = 'wss://stonx.app/ws/stream'
 const STREAM_CHANNEL = 'price:AAPL'
+const uiAuditMode = hasUiAuditFlag()
 
 const streamStatus = ref<'connecting' | 'connected' | 'offline'>('connecting')
 const livePrice = ref<number | null>(null)
 const liveTimestamp = ref<number | null>(null)
 
 let ws: WebSocket | null = null
+let fallbackTimer: ReturnType<typeof setTimeout> | null = null
 
 function connectStonx() {
   if (typeof WebSocket === 'undefined') {
@@ -47,22 +50,29 @@ function connectStonx() {
       const type = msg.type as string | undefined
       if (type === 'connected') {
         streamStatus.value = 'connected'
+        stopDemoTimer()
+        clearFallbackTimer()
       } else if (type === 'price_update') {
         streamStatus.value = 'connected'
-        const data = (msg.data as Array<{
-          symbol: string
-          price: number
-          change: number | null
-          changePercent: number | null
-          lastUpdated: number
-        }>)[0]
+        stopDemoTimer()
+        clearFallbackTimer()
+        const data = (
+          msg.data as Array<{
+            symbol: string
+            price: number
+            change: number | null
+            changePercent: number | null
+            lastUpdated: number
+          }>
+        )[0]
         if (data && data.symbol === 'AAPL' && typeof data.price === 'number') {
           livePrice.value = data.price
-          liveTimestamp.value = typeof data.lastUpdated === 'number'
-            ? data.lastUpdated
-            : typeof msg.timestamp === 'number'
-              ? msg.timestamp
-              : Date.now()
+          liveTimestamp.value =
+            typeof data.lastUpdated === 'number'
+              ? data.lastUpdated
+              : typeof msg.timestamp === 'number'
+                ? msg.timestamp
+                : Date.now()
           ingestLivePrice(data.price)
         }
       } else if (type === 'pong') {
@@ -101,18 +111,24 @@ function disconnectStonx() {
 const SEED_PRICE = 213.5
 const STEP_MS = 60_000
 const SEED_COUNT = 320
+const offlineRandom = createSeededRandom(26_031)
 
 function seedAaplHistory(count: number, startPrice: number): CandleBar[] {
-  const t0 = Date.now() - count * STEP_MS
+  // In audit mode use a fixed anchor date + seeded RNG for determinism.
+  // In normal mode anchor to the recent past so the demo looks "live".
+  const t0 = uiAuditMode
+    ? Date.UTC(2026, 0, 15, 14, 0, 0)
+    : Date.now() - count * STEP_MS
+  const rand = uiAuditMode ? createSeededRandom(88_031) : Math.random
   let price = startPrice
   const out: CandleBar[] = []
   for (let i = 0; i < count; i++) {
     const o = price
-    const drift = Math.sin(i / 13) * 1.4 + Math.cos(i / 7) * 0.8 + (Math.random() - 0.49) * 1.2
+    const drift = Math.sin(i / 13) * 1.4 + Math.cos(i / 7) * 0.8 + (rand() - 0.49) * 1.2
     const c = Math.max(0.01, o + drift)
-    const h = Math.max(o, c) + Math.random() * 0.9
-    const l = Math.min(o, c) - Math.random() * 0.9
-    const v = Math.round(450_000 + Math.random() * 800_000 + (Math.abs(c - o) > 1.1 ? 300_000 : 0))
+    const h = Math.max(o, c) + rand() * 0.9
+    const l = Math.min(o, c) - rand() * 0.9
+    const v = Math.round(450_000 + rand() * 800_000 + (Math.abs(c - o) > 1.1 ? 300_000 : 0))
     out.push({ t: t0 + i * STEP_MS, o, h, l, c, v })
     price = c
   }
@@ -120,7 +136,10 @@ function seedAaplHistory(count: number, startPrice: number): CandleBar[] {
 }
 
 const STREAM_CAP = 420
-const { bars: candleBars, pushBar } = useCandleStream(STREAM_CAP, seedAaplHistory(SEED_COUNT, SEED_PRICE))
+const { bars: candleBars, pushBar } = useCandleStream(
+  STREAM_CAP,
+  seedAaplHistory(SEED_COUNT, SEED_PRICE)
+)
 
 let lastBarTime = 0
 
@@ -132,28 +151,57 @@ function ingestLivePrice(price: number) {
   const nextT = last.t + STEP_MS
   if (now >= nextT && now - lastBarTime >= STEP_MS) {
     // open a new candle
-    pushBar({ t: nextT, o: last.c, h: Math.max(last.c, price), l: Math.min(last.c, price), c: price, v: 500_000 })
+    pushBar({
+      t: nextT,
+      o: last.c,
+      h: Math.max(last.c, price),
+      l: Math.min(last.c, price),
+      c: price,
+      v: 500_000,
+    })
     lastBarTime = now
   } else {
     // update forming bar
-    pushBar({ t: last.t, o: last.o, h: Math.max(last.h, price), l: Math.min(last.l, price), c: price, v: (last.v ?? 0) + 10_000 })
+    pushBar({
+      t: last.t,
+      o: last.o,
+      h: Math.max(last.h, price),
+      l: Math.min(last.l, price),
+      c: price,
+      v: (last.v ?? 0) + 10_000,
+    })
   }
 }
 
 // ─── Offline demo timer (when WebSocket is unavailable) ──────────────────────
 let demoTimer: ReturnType<typeof setInterval> | null = null
 
+function clearFallbackTimer() {
+  if (fallbackTimer) {
+    clearTimeout(fallbackTimer)
+    fallbackTimer = null
+  }
+}
+
+function stopDemoTimer() {
+  if (demoTimer) {
+    clearInterval(demoTimer)
+    demoTimer = null
+  }
+}
+
 function startDemoTimer() {
+  if (demoTimer || uiAuditMode) return
   demoTimer = setInterval(() => {
     const bars = candleBars.value
     const last = bars[bars.length - 1]
     if (!last) return
     const o = last.c
-    const drift = (Math.random() - 0.49) * 1.1
+    const drift = (offlineRandom() - 0.49) * 1.1
     const c = Math.max(0.01, o + drift)
-    const h = Math.max(o, c) + Math.random() * 0.6
-    const l = Math.min(o, c) - Math.random() * 0.6
-    const v = Math.round(550_000 + Math.random() * 700_000)
+    const h = Math.max(o, c) + offlineRandom() * 0.6
+    const l = Math.min(o, c) - offlineRandom() * 0.6
+    const v = Math.round(550_000 + offlineRandom() * 700_000)
     pushBar({ t: last.t + STEP_MS, o, h, l, c, v })
   }, 3_000)
 }
@@ -165,9 +213,7 @@ const useLogScale = ref(false)
 const drawings = ref<CandleDrawing[]>([])
 const drawMode = ref<'off' | 'trend' | 'horizontal'>('off')
 
-const drawingTool = computed(() =>
-  drawMode.value === 'off' ? null : drawMode.value,
-)
+const drawingTool = computed(() => (drawMode.value === 'off' ? null : drawMode.value))
 
 const maxDraw = recommendMaxDrawBars({ plotWidthPx: 720 })
 
@@ -188,10 +234,16 @@ const lineXWindow = computed({
   },
 })
 
-const rsiLabels = computed(() => candleBars.value.map(b => formatShortTime(b.t)))
+const rsiLabels = computed(() => candleBars.value.map((b) => formatShortTime(b.t)))
 
 const rsiSeries = computed<ChartSeries[]>(() => [
-  { name: 'RSI(14)', data: rsi(candleBars.value.map(b => b.c), 14) },
+  {
+    name: 'RSI(14)',
+    data: rsi(
+      candleBars.value.map((b) => b.c),
+      14
+    ),
+  },
 ])
 
 const latestBar = computed(() => candleBars.value[candleBars.value.length - 1] ?? null)
@@ -268,9 +320,13 @@ const sessionVwap = computed(() => {
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
+  if (uiAuditMode) {
+    streamStatus.value = 'offline'
+    return
+  }
   connectStonx()
   // Fall back to demo timer after 5s if no connection
-  setTimeout(() => {
+  fallbackTimer = setTimeout(() => {
     if (streamStatus.value !== 'connected') {
       streamStatus.value = 'offline'
       startDemoTimer()
@@ -280,7 +336,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   disconnectStonx()
-  if (demoTimer) clearInterval(demoTimer)
+  clearFallbackTimer()
+  stopDemoTimer()
 })
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -322,11 +379,7 @@ function formatCompactVolume(n: number) {
 </script>
 
 <template>
-  <ExamplePage
-    title="AAPL — Apple Inc."
-    kicker="Flagship demo · Real-time"
-    enable-chart-fullscreen
-  >
+  <ExamplePage title="AAPL — Apple Inc." kicker="Flagship demo · Real-time" enable-chart-fullscreen>
     <template #intro>
       <p>
         Live candles for <strong>AAPL</strong> (<strong>Apple Inc.</strong>) powered by the
@@ -335,7 +388,8 @@ function formatCompactVolume(n: number) {
           target="_blank"
           rel="noopener noreferrer"
           class="font-medium text-[var(--color-ns-accent)] no-underline hover:underline"
-        >Stonx</a>
+          >Stonx</a
+        >
         market-data stream at
         <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">wss://stonx.app/ws/stream</code>.
         Demonstrates <strong>linked panes</strong>, volume, brush navigation,
@@ -352,8 +406,12 @@ function formatCompactVolume(n: number) {
           }"
           aria-hidden="true"
         />
-        <span v-if="streamStatus === 'connected'" class="text-emerald-600 font-semibold">Stream live</span>
-        <span v-else-if="streamStatus === 'connecting'" class="text-amber-600">Connecting to stream…</span>
+        <span v-if="streamStatus === 'connected'" class="text-emerald-600 font-semibold"
+          >Stream live</span
+        >
+        <span v-else-if="streamStatus === 'connecting'" class="text-amber-600"
+          >Connecting to stream…</span
+        >
         <span v-else class="text-rose-500 font-semibold">Offline / delayed — demo data</span>
       </p>
     </template>
@@ -380,16 +438,16 @@ function formatCompactVolume(n: number) {
         />
 
         <NardukChartStack v-model:domain="sharedDomain">
-          <div class="flex flex-col gap-8">
+          <div class="flex flex-col gap-3">
             <div class="ns-terminal-panel">
-              <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                AAPL · 1 min · Apple Inc. — primary candle pane
+              <p class="mb-2 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-slate-600">
+                AAPL · 1 min
               </p>
               <NardukCandleChart
                 chart-title="AAPL — 1 minute"
                 chart-description="Apple Inc. (AAPL) candlestick chart. Zoom and pan; domain syncs RSI pane."
                 :bars="candleBars"
-                :height="fullscreenChartHeight ?? 380"
+                :height="fullscreenChartHeight ?? 400"
                 class="w-full min-w-0"
                 :dark="terminalDark"
                 :zoomable="true"
@@ -401,6 +459,8 @@ function formatCompactVolume(n: number) {
                 :show-brush="true"
                 :show-session-grid="true"
                 :max-draw-bars="maxDraw"
+                bull-color="#26a69a"
+                bear-color="#ef5350"
                 v-model:domain="sharedDomain"
                 :format-time="formatTime"
                 :format-price="formatPrice"
@@ -419,15 +479,19 @@ function formatCompactVolume(n: number) {
             </div>
 
             <div class="ns-terminal-panel">
-              <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                RSI(14) — linked viewport (<code class="font-mono text-[10px]">v-model:x-window</code>)
+              <p class="mb-2 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-slate-600">
+                RSI(14)
               </p>
               <NardukLineChart
                 chart-title="RSI(14) study"
                 chart-description="Relative Strength Index linked to the AAPL candle viewport."
                 :series="rsiSeries"
                 :labels="rsiLabels"
-                :height="fullscreenChartHeight ? Math.max(128, Math.min(208, Math.round(fullscreenChartHeight * 0.22))) : 176"
+                :height="
+                  fullscreenChartHeight
+                    ? Math.max(128, Math.min(196, Math.round(fullscreenChartHeight * 0.2)))
+                    : 168
+                "
                 class="w-full min-w-0"
                 :dark="terminalDark"
                 :zoomable="false"

@@ -418,7 +418,7 @@ const bear = computed(() => props.bearColor ?? 'var(--color-chart-down, #ef4444)
 
 const candleGeoms = computed(() => {
   const slot = plotWidth.value / Math.max(1, drawBuckets.value.length)
-  const bodyW = Math.max(1, Math.min(18, slot * 0.72))
+  const bodyW = Math.max(1, Math.min(18, slot * 0.68))
   const nBar = sortedBars.value.length
   const forming = props.highlightFormingBar === true && nBar > 0
   return drawBuckets.value.map((d) => {
@@ -464,7 +464,7 @@ const volumeMax = computed(() => {
 const volumeBars = computed(() => {
   if (!showVolumePane.value) return []
   const slot = plotWidth.value / Math.max(1, drawBuckets.value.length)
-  const bodyW = Math.max(1, Math.min(18, slot * 0.72))
+  const bodyW = Math.max(1, Math.min(18, slot * 0.68))
   return drawBuckets.value.map((d) => {
     const v = d.bar.v ?? 0
     const h = (v / volumeMax.value) * volumeInnerHeight.value
@@ -1522,18 +1522,18 @@ defineExpose({
             />
             <rect
               :x="chartWidth - padding.right + 2"
-              :y="lastPriceInfo.y - 10"
-              width="62"
-              height="20"
-              rx="3"
+              :y="lastPriceInfo.y - 11"
+              width="64"
+              height="22"
+              rx="11"
               class="narduk-candle-last-price__tag"
             />
             <text
               class="narduk-candle-last-price__text"
-              :x="chartWidth - padding.right + 8"
+              :x="chartWidth - padding.right + 34"
               :y="lastPriceInfo.y"
               dominant-baseline="middle"
-              text-anchor="start"
+              text-anchor="middle"
             >
               {{ formatPriceStr(rawToDisplayPrice(lastPriceInfo.close)) }}
             </text>
@@ -1604,17 +1604,17 @@ defineExpose({
               <rect
                 :x="chartWidth - padding.right + 2"
                 :y="yPriceDisplay(crosshairPlot.priceY) - 9"
-                width="56"
+                width="62"
                 height="18"
-                rx="2"
+                rx="9"
                 class="narduk-candle-crosshair__tag"
               />
               <text
                 class="narduk-candle-crosshair__text"
-                :x="chartWidth - padding.right + 6"
+                :x="chartWidth - padding.right + 33"
                 :y="yPriceDisplay(crosshairPlot.priceY)"
                 dominant-baseline="middle"
-                text-anchor="start"
+                text-anchor="middle"
               >
                 {{ formatPriceStr(crosshairPlot.priceY) }}
               </text>
@@ -1632,7 +1632,7 @@ defineExpose({
               y="0"
               width="124"
               height="76"
-              rx="6"
+              rx="10"
               class="narduk-candle-hud__bg"
             />
             <text
