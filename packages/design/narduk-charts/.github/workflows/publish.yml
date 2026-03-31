@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          registry-url: 'https://npm.pkg.github.com'
+          registry-url: 'https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/'
           scope: '@narduk-enterprises'
 
       - name: Verify
@@ -31,7 +31,7 @@ jobs:
           npm run build
           npm run size
 
-      - name: Publish to GitHub Packages
+      - name: Publish to Forgejo Packages
         run: npm publish --access restricted
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.FORGEJO_TOKEN }}

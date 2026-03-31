@@ -2,7 +2,7 @@
 
 **NardukCharts** is the product name for this Vue 3 SVG charting stack—TypeScript-first, themeable, accessible, built without D3 or Chart.js.
 
-**npm package:** [`@narduk-enterprises/narduk-charts`](https://github.com/narduk-enterprises/narduk-charts) (GitHub Packages).
+**npm package:** [`@narduk-enterprises/narduk-charts`](https://code.platform.nard.uk/narduk-enterprises/narduk-charts) (Forgejo Packages).
 
 **Companion marketing site** (broader Narduk narrative, enterprise pages, SEO): [github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)
 
@@ -14,7 +14,7 @@
 npm install @narduk-enterprises/narduk-charts
 ```
 
-Configure the [GitHub Packages npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry) for the `@narduk-enterprises` scope (for example `.npmrc`: `@narduk-enterprises:registry=https://npm.pkg.github.com` and auth via `NODE_AUTH_TOKEN` or `~/.npmrc`).
+Configure the `@narduk-enterprises` scope for the platform Forgejo registry (for example `.npmrc`: `@narduk-enterprises:registry=https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/` and auth via `NODE_AUTH_TOKEN` or `~/.npmrc`).
 
 ## Setup
 
