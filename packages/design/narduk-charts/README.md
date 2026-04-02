@@ -4,9 +4,9 @@
 
 **npm package:** [`@narduk-enterprises/narduk-charts`](https://code.platform.nard.uk/narduk-enterprises/narduk-charts) (Forgejo Packages).
 
-**Companion marketing site** (broader Narduk narrative, enterprise pages, SEO): [github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)
+**Companion marketing site** (broader Narduk narrative, enterprise pages, SEO): [charts.nard.uk](https://charts.nard.uk)
 
-**This repository:** library source, tests, markdown API notes (`docs/`), and **Histoire** component stories (`pnpm dev` / `npm run dev`, same as `npm run story:dev`). Runnable demos and flagship examples live on the **marketing site** (see link above).
+**This repository:** library source, tests, markdown API notes (`docs/`), and **Histoire** component stories (`pnpm dev` / `npm run dev`, same as `npm run story:dev`). Runnable demos and flagship examples live on the companion **charts** site, not in this package repo.
 
 ## Install
 
@@ -15,6 +15,17 @@ npm install @narduk-enterprises/narduk-charts
 ```
 
 Configure the `@narduk-enterprises` scope for the platform Forgejo registry (for example `.npmrc`: `@narduk-enterprises:registry=https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/` and auth via `NODE_AUTH_TOKEN` or `~/.npmrc`).
+
+## Publishing
+
+Forgejo Actions is the canonical publish path for this package.
+
+- Canonical workflow: `.forgejo/workflows/publish-package.yml`
+- Compatibility mirror: `.github/workflows/publish.yml`
+- Required secret: `FORGEJO_TOKEN`
+- npm tooling auth: export `NODE_AUTH_TOKEN="$FORGEJO_TOKEN"` during install/publish
+
+Release steps live in [docs/RELEASE.md](./docs/RELEASE.md).
 
 ## Setup
 

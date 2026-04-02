@@ -2,7 +2,7 @@
 
 **NardukCharts** is the public product name; the installable package is **`@narduk-enterprises/narduk-charts`**.
 
-Local component lab: `npm run dev` (Histoire). Full-page examples, AAPL stream demo, and static showcase routes live on the **marketing site** repo ([github.com/narduk-enterprises/charts](https://github.com/narduk-enterprises/charts)), under **Documentation → Examples** and **Showcase**.
+Local component lab: `npm run dev` (Histoire). Full-page examples, AAPL stream demo, and static showcase routes live on the companion **charts** site at [charts.nard.uk](https://charts.nard.uk), under **Documentation → Examples** and **Showcase**.
 
 Types ship from `dist/index.d.ts`. Import paths:
 

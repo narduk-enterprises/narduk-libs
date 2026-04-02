@@ -93,7 +93,11 @@
   "author": "narduk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/narduk-enterprises/narduk-charts"
+    "url": "https://code.platform.nard.uk/narduk-enterprises/narduk-charts.git"
+  },
+  "homepage": "https://charts.nard.uk",
+  "bugs": {
+    "url": "https://code.platform.nard.uk/narduk-enterprises/narduk-charts/issues"
   },
   "publishConfig": {
     "registry": "https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/"
