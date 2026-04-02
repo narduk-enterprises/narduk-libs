@@ -6,33 +6,38 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           registry-url: 'https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/'
           scope: '@narduk-enterprises'
 
-      - name: Verify
-        run: |
-          npm ci --legacy-peer-deps
-          npm run typecheck
-          npm test
-          npm run build
-          npm run size
+      - name: Install
+        run: npm ci --legacy-peer-deps
         env:
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Size
+        run: npm run size
 
       - name: Publish to Forgejo Packages
         run: npm publish --access restricted

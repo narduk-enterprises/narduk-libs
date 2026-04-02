@@ -8,7 +8,7 @@ Add a dedicated `AAPL` example to the marketing site and make it the best showca
 
 ## Route And Placement
 
-- Canonical route: `/docs/examples/aapl` on the **marketing site** Nuxt app (`narduk-enterprises/charts`).
+- Canonical route: `/docs/examples/aapl` on the companion **charts** site (`charts.nard.uk` / Forgejo repo `narduk-enterprises/charts`).
 - Implement the page in `apps/web/app/pages/docs/examples/aapl.vue` (client chart in `apps/web/app/components/examples/`).
 - Redirect legacy `/examples/aapl` → `/docs/examples/aapl` via `routeRules` in `apps/web/nuxt.config.ts`.
 - Link the demo from **Documentation → Examples** and keep candle/OHLC depth in **Showcase** (e.g. `/showcase/candle`).
@@ -51,7 +51,7 @@ The point of this page is to demonstrate the advanced features we already have i
 
 Use the Stonx public market-data stream instead of exposing Polygon directly in the client.
 
-**Canonical wire behavior** is defined by the Stonx server implementation (reference: `stonx-app-2026/server/routes/ws/stream.ts`). The `narduk-charts` package repo does not modify Stonx; the marketing site uses [`apps/web/app/utils/stonxStream.ts`](https://github.com/narduk-enterprises/charts) (paths relative to the charts app checkout) for types and JSON helpers.
+**Canonical wire behavior** is defined by the Stonx server implementation (reference: `stonx-app-2026/server/routes/ws/stream.ts`). The `narduk-charts` package repo does not modify Stonx; the companion charts site uses [`apps/web/app/utils/stonxStream.ts`](https://code.platform.nard.uk/narduk-enterprises/charts) (paths relative to the charts app checkout) for types and JSON helpers.
 
 Default stream URL:
 
@@ -119,4 +119,3 @@ Aim for a flagship demo page with:
 - no hydration or runtime errors
 - no regressions to existing examples
 - follow existing Vue 3 Composition API patterns used in the repo
-
