@@ -41,6 +41,7 @@
     "dist"
   ],
   "scripts": {
+    "package-registry:auth": "node tools/configure-package-registry-auth.mjs",
     "dev": "histoire dev",
     "build": "vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
     "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts",
@@ -95,13 +96,13 @@
   "author": "narduk",
   "repository": {
     "type": "git",
-    "url": "https://code.platform.nard.uk/narduk-enterprises/narduk-charts.git"
+    "url": "git+https://github.com/narduk-enterprises/narduk-charts.git"
   },
   "homepage": "https://charts.nard.uk",
   "bugs": {
-    "url": "https://code.platform.nard.uk/narduk-enterprises/narduk-charts/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-charts/issues"
   },
   "publishConfig": {
-    "registry": "https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/"
+    "registry": "https://npm.pkg.github.com"
   }
 }

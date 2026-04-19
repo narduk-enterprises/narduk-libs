@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   verify:
@@ -25,7 +26,18 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies
+        env:
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
+            node ./tools/configure-package-registry-auth.mjs
+            export NPM_CONFIG_USERCONFIG="${GITHUB_WORKSPACE}/.npmrc.auth"
+            export NPM_CONFIG_GLOBALCONFIG=/dev/null
+          fi
+          npm ci --legacy-peer-deps
+
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -45,5 +57,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies
+        env:
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
+            node ./tools/configure-package-registry-auth.mjs
+            export NPM_CONFIG_USERCONFIG="${GITHUB_WORKSPACE}/.npmrc.auth"
+            export NPM_CONFIG_GLOBALCONFIG=/dev/null
+          fi
+          npm ci --legacy-peer-deps
+
       - run: npm audit --audit-level=high

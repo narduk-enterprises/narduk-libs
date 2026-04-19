@@ -1,14 +1,14 @@
 # Release Runbook
 
-`@narduk-enterprises/narduk-charts` publishes to the Forgejo npm registry:
+`@narduk-enterprises/narduk-charts` publishes to **GitHub Packages**:
 
-`https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/`
+`https://npm.pkg.github.com`
 
 ## Prerequisites
 
-- Root `.npmrc` contains only the scoped Forgejo registry line.
-- The publish workflow receives `FORGEJO_TOKEN`.
-- `NODE_AUTH_TOKEN` is set to the same value during install and publish steps.
+- Root `.npmrc` scopes `@narduk-enterprises` to GitHub Packages (committed in this repo).
+- CI and publish workflows use `tools/configure-package-registry-auth.mjs` (same as [`narduk-template`](https://github.com/narduk-enterprises/narduk-nuxt-template)).
+- The publish workflow expects org secrets: `NARDUK_PLATFORM_GH_PACKAGES_READ` and `NARDUK_PLATFORM_GH_PACKAGES_WRITE`, or `NARDUK_PLATFORM_GH_PACKAGES_RW` for both.
 
 ## Release Steps
 
@@ -23,13 +23,13 @@
 4. Update `CHANGELOG.md`.
 5. Commit the release changes.
 6. Create a tag in the format `vX.Y.Z`.
-7. Push the branch and the tag to the Forgejo-connected remote.
-8. Confirm the workflow completed successfully in Forgejo Actions.
-9. Confirm the package version appears in Forgejo Packages and installs cleanly from a consumer app.
+7. Push the branch and the tag to GitHub.
+8. Confirm the **Publish package** workflow completed in GitHub Actions.
+9. Confirm the version appears under the org packages and installs cleanly from a consumer app.
 
 ## Consumer Install Smoke
 
-Use a consumer app with the same scoped registry configured:
+Use a consumer app with GitHub Packages auth for the `@narduk-enterprises` scope (see template `configure-package-registry-auth` / `package-registry:auth`):
 
 ```bash
 npm install @narduk-enterprises/narduk-charts

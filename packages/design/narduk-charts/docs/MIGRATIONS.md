@@ -12,12 +12,12 @@ Breaking changes are listed here and in `CHANGELOG.md` with semver bumps.
 
 ## 2.0.0
 
-- **Package name** is now **`@narduk-enterprises/narduk-charts`** (published to the platform **Forgejo npm registry**). Replace imports and `npm install` / lockfile entries:
+- **Package name** is now **`@narduk-enterprises/narduk-charts`** (published to **GitHub Packages** at `https://npm.pkg.github.com`). Replace imports and `npm install` / lockfile entries:
   - `narduk-charts` → `@narduk-enterprises/narduk-charts`
   - `narduk-charts/style.css` → `@narduk-enterprises/narduk-charts/style.css`
   - `narduk-charts/line` (and other subpaths) → `@narduk-enterprises/narduk-charts/line`, etc.
-- Configure the `@narduk-enterprises` scope in `.npmrc` to use `https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/`.
-- For installs and publishing, provide a Forgejo token through `NODE_AUTH_TOKEN` (and `FORGEJO_TOKEN` inside CI workflows).
+- Configure the `@narduk-enterprises` scope in `.npmrc` to use `https://npm.pkg.github.com/` (see this repo’s root `.npmrc`).
+- For installs and publishing, use a GitHub token with `read:packages` / `write:packages` via `tools/configure-package-registry-auth.mjs` (same env vars as `narduk-template`).
 
 ## 1.x
 

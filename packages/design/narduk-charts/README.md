@@ -2,7 +2,7 @@
 
 **NardukCharts** is the product name for this Vue 3 SVG charting stack—TypeScript-first, themeable, accessible, built without D3 or Chart.js.
 
-**npm package:** [`@narduk-enterprises/narduk-charts`](https://code.platform.nard.uk/narduk-enterprises/narduk-charts) (Forgejo Packages).
+**npm package:** [`@narduk-enterprises/narduk-charts`](https://github.com/narduk-enterprises/narduk-charts) (published to **GitHub Packages**; not the public npm registry).
 
 **Companion marketing site** (broader Narduk narrative, enterprise pages, SEO): [charts.nard.uk](https://charts.nard.uk)
 
@@ -14,16 +14,11 @@
 npm install @narduk-enterprises/narduk-charts
 ```
 
-Configure the `@narduk-enterprises` scope for the platform Forgejo registry (for example `.npmrc`: `@narduk-enterprises:registry=https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/` and auth via `NODE_AUTH_TOKEN` or `~/.npmrc`).
+For private org packages, configure the `@narduk-enterprises` scope to **GitHub Packages** (see root `.npmrc`) and authenticate with a GitHub token that has `read:packages` (install) or `write:packages` (publish). Locally, `npm run package-registry:auth` writes `.npmrc.auth` when `NARDUK_PLATFORM_GH_PACKAGES_READ` or `NARDUK_PLATFORM_GH_PACKAGES_RW` is set (same pattern as [narduk-template](https://github.com/narduk-enterprises/narduk-nuxt-template)).
 
 ## Publishing
 
-Forgejo Actions is the canonical publish path for this package.
-
-- Canonical workflow: `.forgejo/workflows/publish-package.yml`
-- Compatibility mirror: `.github/workflows/publish.yml`
-- Required secret: `FORGEJO_TOKEN`
-- npm tooling auth: export `NODE_AUTH_TOKEN="$FORGEJO_TOKEN"` during install/publish
+GitHub Actions publishes tags `v*` to GitHub Packages (see `.github/workflows/publish.yml`), matching `narduk-template` publish jobs: org secrets `NARDUK_PLATFORM_GH_PACKAGES_READ` / `NARDUK_PLATFORM_GH_PACKAGES_WRITE` (or `NARDUK_PLATFORM_GH_PACKAGES_RW`).
 
 Release steps live in [docs/RELEASE.md](./docs/RELEASE.md).
 
