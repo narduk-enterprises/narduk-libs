@@ -5,20 +5,39 @@ on:
     branches: [main, master]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
-  actions: read
   contents: read
+  packages: read
 
 jobs:
   verify:
+    name: Verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: 22
           cache: npm
-      - run: npm ci --legacy-peer-deps
+
+      - name: Install dependencies
+        env:
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
+            node ./tools/configure-package-registry-auth.mjs
+            export NPM_CONFIG_USERCONFIG="${GITHUB_WORKSPACE}/.npmrc.auth"
+            export NPM_CONFIG_GLOBALCONFIG=/dev/null
+          fi
+          npm ci --legacy-peer-deps
+
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -27,12 +46,27 @@ jobs:
       - run: npm run test:e2e
 
   audit:
+    name: Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: 22
           cache: npm
-      - run: npm ci --legacy-peer-deps
+
+      - name: Install dependencies
+        env:
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
+            node ./tools/configure-package-registry-auth.mjs
+            export NPM_CONFIG_USERCONFIG="${GITHUB_WORKSPACE}/.npmrc.auth"
+            export NPM_CONFIG_GLOBALCONFIG=/dev/null
+          fi
+          npm ci --legacy-peer-deps
+
       - run: npm audit --audit-level=high

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `NardukBrandBackdrop`: optional SVG-only marketing/hero backdrop (grid, series, candle hints) driven by `--color-chart-*` tokens—no bitmap assets. Histoire story **Brand backdrop** demonstrates usage behind a line chart.
 
+### Changed
+
+- **Registry:** CI and publish target **GitHub Packages** (`npm.pkg.github.com`) using `tools/configure-package-registry-auth.mjs` and org secrets (`NARDUK_PLATFORM_GH_PACKAGES_*`), aligned with [`narduk-template`](https://github.com/narduk-enterprises/narduk-nuxt-template). Legacy Forgejo registry workflows and URLs were removed.
+
 ## [2.1.0] — 2026-04-19
 
 ### Added

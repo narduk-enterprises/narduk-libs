@@ -6,36 +6,50 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
+      NPM_CONFIG_GLOBALCONFIG: /dev/null
 
-      - uses: actions/setup-node@v4
+    steps:
+      - uses: actions/checkout@v6
         with:
-          node-version: '20'
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
           cache: npm
-          registry-url: 'https://code.platform.nard.uk/api/packages/narduk-enterprises/npm/'
-          scope: '@narduk-enterprises'
+
+      - name: Configure package registry auth
+        run: node ./tools/configure-package-registry-auth.mjs
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
 
       - name: Verify
         run: |
-          npm ci --legacy-peer-deps
           npm run typecheck
           npm test
           npm run build
           npm run size
-        env:
-          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
-      - name: Publish to Forgejo Packages
-        run: npm publish --access restricted
+      - name: Rewrite .npmrc.auth with WRITE token for publish
         env:
-          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+          PACKAGE_REGISTRY_PREFER_WRITE: '1'
+        run: node ./tools/configure-package-registry-auth.mjs
+
+      - name: Publish to GitHub Packages
+        run: npm publish --access public --registry https://npm.pkg.github.com
