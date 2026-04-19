@@ -39,13 +39,17 @@ export interface ChartYBand {
   yAxis?: ChartYAxisId
 }
 
-/** Markers for line charts (category index + Y in data space). */
+/**
+ * Markers for line charts (category index + Y in data space).
+ * On **bar charts**, `vline` is vertical at the category in default orientation;
+ * with `orientation: 'horizontal'` it renders as a horizontal guide at that category row.
+ */
 export type ChartLineAnnotation =
   | {
       type: 'vline'
       xIndex: number
       color?: string
-      /** Default true (dashed vertical guide). */
+      /** Default true (dashed guide: vertical in default bar orientation, horizontal when `orientation` is `horizontal`). */
       dashed?: boolean
       label?: string
     }
@@ -85,6 +89,47 @@ export interface BarClickPayload {
   label: string
   seriesName: string
   value: number
+}
+
+/** `NardukBarChart` layout: categories on X (default) or on Y for long labels / leaderboards. */
+export type NardukBarChartOrientation = 'vertical' | 'horizontal'
+
+/**
+ * Public props for {@link NardukBarChart} (for typing wrapper components and documentation).
+ * The SFC mirrors this shape in `defineProps`.
+ */
+export interface NardukBarChartProps {
+  series: ChartSeries[]
+  labels: string[]
+  width?: number
+  height?: number
+  stacked?: boolean
+  stackedPercent?: boolean
+  colors?: string[]
+  animate?: boolean
+  barRadius?: number
+  dark?: boolean
+  respectReducedMotion?: boolean
+  referenceLines?: ChartReferenceLine[]
+  theme?: ChartTheme
+  yScale?: ChartYScaleMode
+  symlogLinthresh?: number
+  yBands?: ChartYBand[]
+  annotations?: ChartLineAnnotation[]
+  chartTitle?: string
+  chartDescription?: string
+  showDataTable?: boolean
+  legendGroupLabel?: string
+  dir?: 'ltr' | 'rtl'
+  formatXLabel?: (label: string, index: number) => string
+  formatTickValue?: (value: number) => string
+  /** Default `'vertical'`. `'horizontal'` places categories on the Y axis and bars along +X. */
+  orientation?: NardukBarChartOrientation
+  /**
+   * When `orientation` is `horizontal`, max width (px) for the left category
+   * gutter. Layout uses `min(estimated, cap)` (minimum gutter 32px).
+   */
+  categoryLabelMaxWidth?: number
 }
 
 export interface PieSliceClickPayload {

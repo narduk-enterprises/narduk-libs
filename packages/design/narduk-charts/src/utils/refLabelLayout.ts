@@ -1,9 +1,17 @@
 export const DEFAULT_REF_LABEL_HEIGHT = 12
 export const DEFAULT_REF_LABEL_GAP = 3
 
+/** Estimated half-width for short numeric reference labels above vertical guides (px). */
+export const DEFAULT_REF_LABEL_HALF_WIDTH = 28
+
 export interface RefLabelEntry {
   id: number
   lineY: number
+}
+
+export interface RefLabelXEntry {
+  id: number
+  lineX: number
 }
 
 /**
@@ -56,4 +64,52 @@ export function layoutReferenceLabelYs(
   }
 
   return labelY
+}
+
+/**
+ * Compute non-overlapping horizontal positions for labels anchored above the plot
+ * (e.g. vertical reference guides on horizontal bar charts).
+ */
+export function layoutReferenceLabelXs(
+  entries: readonly RefLabelXEntry[],
+  bounds: { left: number; right: number },
+  opts?: { halfWidth?: number; gap?: number },
+): Map<number, number> {
+  const half = opts?.halfWidth ?? DEFAULT_REF_LABEL_HALF_WIDTH
+  const gap = opts?.gap ?? DEFAULT_REF_LABEL_GAP
+  const labelX = new Map<number, number>()
+  if (entries.length === 0) return labelX
+
+  const sorted = [...entries].sort((a, b) => a.lineX - b.lineX)
+
+  let prevRight = -Infinity
+  for (const e of sorted) {
+    let x = e.lineX
+    if (x - half < prevRight + gap) x = prevRight + gap + half
+    x = Math.min(Math.max(x, bounds.left + half), bounds.right - half)
+    labelX.set(e.id, x)
+    prevRight = x + half
+  }
+
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    const cur = sorted[i]!
+    const nxt = sorted[i + 1]!
+    let xCur = labelX.get(cur.id)!
+    const xNxt = labelX.get(nxt.id)!
+    if (xNxt - xCur < 2 * half + gap) {
+      xCur = xNxt - 2 * half - gap
+      labelX.set(cur.id, Math.max(xCur, bounds.left + half))
+    }
+  }
+
+  prevRight = -Infinity
+  for (const e of sorted) {
+    let x = labelX.get(e.id)!
+    if (x - half < prevRight + gap) x = prevRight + gap + half
+    x = Math.min(Math.max(x, bounds.left + half), bounds.right - half)
+    labelX.set(e.id, x)
+    prevRight = x + half
+  }
+
+  return labelX
 }
