@@ -647,6 +647,14 @@ function bandRectBar(b: ChartYBand) {
   }
 }
 
+function horizontalRoundedPathAnimStyle(anim: boolean): Record<string, string> {
+  return {
+    transform: anim ? 'scaleX(1)' : 'scaleX(0)',
+    transformOrigin: '0 center',
+    transformBox: 'fill-box',
+  }
+}
+
 /** Rounded outer (+X / right) edge only — vertical bars use SVG rect rounding. */
 function horizontalBarRoundedPath(bar: BarRect): string {
   const r = Math.max(0, props.barRadius)
@@ -1002,23 +1010,30 @@ function horizontalBarRoundedPath(bar: BarRect): string {
           @keydown="onBarKeydown($event, bi)"
           @click="onBarPointerDown(bar, $event)"
         />
-        <path
+        <g
           v-else-if="barRadius > 0"
-          class="narduk-bar-rect"
-          role="button"
-          :tabindex="focusedBarIndex === bi ? 0 : -1"
-          :data-nc-bar="bi"
-          :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
-          :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
-          :d="horizontalBarRoundedPath({
-            ...bar,
-            width: animated ? bar.width : 0,
-          })"
-          :fill="bar.color"
-          @focus="focusedBarIndex = bi"
-          @keydown="onBarKeydown($event, bi)"
-          @click="onBarPointerDown(bar, $event)"
-        />
+          :transform="`translate(${bar.x}, ${bar.y})`"
+        >
+          <path
+            class="narduk-bar-rect narduk-bar-rect--hscale"
+            role="button"
+            :tabindex="focusedBarIndex === bi ? 0 : -1"
+            :data-nc-bar="bi"
+            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+            :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
+            :d="horizontalBarRoundedPath({
+              ...bar,
+              x: 0,
+              y: 0,
+              width: bar.width,
+            })"
+            :style="horizontalRoundedPathAnimStyle(animated)"
+            :fill="bar.color"
+            @focus="focusedBarIndex = bi"
+            @keydown="onBarKeydown($event, bi)"
+            @click="onBarPointerDown(bar, $event)"
+          />
+        </g>
         <rect
           v-else
           class="narduk-bar-rect"
