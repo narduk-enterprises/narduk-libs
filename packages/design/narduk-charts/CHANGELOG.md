@@ -15,14 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`NardukBarChart` horizontal orientation:** new optional prop `orientation?: 'vertical' | 'horizontal'` (default `'vertical'`). Horizontal mode lays categories along the Y axis and draws bars extending along +X from the left gutter—ideal for long category labels (e.g. leaderboards). Optional `categoryLabelMaxWidth` caps the left gutter width. Keyboard: ArrowUp/ArrowDown move between categories; ArrowLeft/ArrowRight move between series within a category.
+- **`NardukBarChart` horizontal orientation:** new optional prop `orientation?: 'vertical' | 'horizontal'` (default `'vertical'`). Horizontal mode lays categories along the Y axis and draws bars extending along +X from the left gutter—ideal for long category labels (e.g. leaderboards). Optional `categoryLabelMaxWidth` caps the left gutter (`min` of estimated width and cap). Keyboard: ArrowUp/ArrowDown move between categories; ArrowLeft/ArrowRight move between series within a category.
 
 ### Changed
 
 - Exported types `NardukBarChartOrientation` and `NardukBarChartProps` from the package entrypoint.
-
-### Changed
-
 - **Removed** the in-repo Vite **gallery** (`site/`) and **playground**; runnable demos and flagship examples belong on the companion marketing site. Local library work uses **Histoire** (`npm run dev` / `npm run story:dev`). Dropped the Playwright **ui-quality** job and `aaplMarketingDemo` file-path scaffold test that targeted `site/`.
 
 ## [2.0.2] — 2026-03-27

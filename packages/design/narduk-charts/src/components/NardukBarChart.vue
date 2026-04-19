@@ -52,7 +52,11 @@ const props = withDefaults(defineProps<{
   yScale?: ChartYScaleMode
   symlogLinthresh?: number
   yBands?: ChartYBand[]
-  /** Renders `vline` annotations at category centers. */
+  /**
+   * Line annotations. `type: 'vline'` is drawn **vertically** at the category
+   * center in vertical orientation; in **horizontal** orientation it becomes a
+   * **horizontal** guide across the plot at that category row (same `xIndex`).
+   */
   annotations?: ChartLineAnnotation[]
   chartTitle?: string
   chartDescription?: string
@@ -68,8 +72,9 @@ const props = withDefaults(defineProps<{
    */
   orientation?: 'vertical' | 'horizontal'
   /**
-   * When `orientation` is `horizontal`, optional maximum width (px) reserved for category labels on the left.
-   * When omitted, the gutter is estimated from formatted label strings.
+   * When `orientation` is `horizontal`, maximum width (px) for the left
+   * category gutter. The layout uses `min(estimatedWidth, this value)` with a
+   * 32px floor — i.e. a cap, not a minimum width override.
    */
   categoryLabelMaxWidth?: number
 }>(), {
@@ -118,12 +123,14 @@ const isHorizontal = computed(() => props.orientation === 'horizontal')
 
 const estimatedCategoryLabelWidth = computed(() => {
   if (!isHorizontal.value) return 56
-  if (props.categoryLabelMaxWidth != null)
-    return Math.max(32, props.categoryLabelMaxWidth)
   let maxLen = 0
   for (let i = 0; i < props.labels.length; i++)
     maxLen = Math.max(maxLen, formatXAt(i).length)
-  return Math.min(320, Math.max(56, maxLen * 7 + 16))
+  const estimated = Math.min(320, Math.max(56, maxLen * 7 + 16))
+  if (props.categoryLabelMaxWidth != null) {
+    return Math.min(estimated, Math.max(32, props.categoryLabelMaxWidth))
+  }
+  return estimated
 })
 
 function focusBarEl(index: number) {
@@ -145,7 +152,7 @@ function focusBarAndTooltip(index: number) {
   focusedBarIndex.value = index
   focusBarEl(index)
   const b = bars.value[index]
-  showTooltip(8, 8, b.label, barTooltipItems(b))
+  showTooltip(8, 8, formatXAt(b.labelIndex), barTooltipItems(b))
 }
 
 function onBarKeydown(e: KeyboardEvent, bi: number) {
@@ -563,7 +570,7 @@ function onMouseMove(event: MouseEvent) {
 
   if (hit) {
     hoverBar.value = hit
-    showTooltip(mouseX, mouseY, hit.label, [{
+    showTooltip(mouseX, mouseY, formatXAt(hit.labelIndex), [{
       color: hit.color,
       label: hit.seriesName,
       value: formatValue(hit.value),
@@ -777,6 +784,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         />
       </g>
 
+      <!-- Horizontal mode: `vline` is a horizontal guide at the category row (`xIndex` → category). -->
       <g
         v-if="vlineAnnotations.length && isHorizontal"
         class="narduk-ann-vline"
