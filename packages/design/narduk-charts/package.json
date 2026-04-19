@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-charts",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "NardukCharts — Vue 3 SVG charting for dashboards and trading-grade market UIs (TypeScript, themable, accessible). Package: @narduk-enterprises/narduk-charts.",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",
@@ -63,6 +63,8 @@
     "@size-limit/file": "^12.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.9.0",
     "histoire": "^0.17.17",
     "sharp": "^0.34.5",
     "size-limit": "^12.0.1",

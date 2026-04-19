@@ -87,6 +87,44 @@ export interface BarClickPayload {
   value: number
 }
 
+/** `NardukBarChart` layout: categories on X (default) or on Y for long labels / leaderboards. */
+export type NardukBarChartOrientation = 'vertical' | 'horizontal'
+
+/**
+ * Public props for {@link NardukBarChart} (for typing wrapper components and documentation).
+ * The SFC mirrors this shape in `defineProps`.
+ */
+export interface NardukBarChartProps {
+  series: ChartSeries[]
+  labels: string[]
+  width?: number
+  height?: number
+  stacked?: boolean
+  stackedPercent?: boolean
+  colors?: string[]
+  animate?: boolean
+  barRadius?: number
+  dark?: boolean
+  respectReducedMotion?: boolean
+  referenceLines?: ChartReferenceLine[]
+  theme?: ChartTheme
+  yScale?: ChartYScaleMode
+  symlogLinthresh?: number
+  yBands?: ChartYBand[]
+  annotations?: ChartLineAnnotation[]
+  chartTitle?: string
+  chartDescription?: string
+  showDataTable?: boolean
+  legendGroupLabel?: string
+  dir?: 'ltr' | 'rtl'
+  formatXLabel?: (label: string, index: number) => string
+  formatTickValue?: (value: number) => string
+  /** Default `'vertical'`. `'horizontal'` places categories on the Y axis and bars along +X. */
+  orientation?: NardukBarChartOrientation
+  /** When `orientation` is `horizontal`, optional cap for the left gutter (px). */
+  categoryLabelMaxWidth?: number
+}
+
 export interface PieSliceClickPayload {
   label: string
   value: number

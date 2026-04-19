@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { layoutReferenceLabelYs } from './refLabelLayout'
+import {
+  layoutReferenceLabelXs,
+  layoutReferenceLabelYs,
+} from './refLabelLayout'
 
 describe('layoutReferenceLabelYs', () => {
   it('keeps isolated labels on the line', () => {
@@ -26,5 +29,28 @@ describe('layoutReferenceLabelYs', () => {
     const y2 = m.get(2)!
     expect(y1 - y0).toBeGreaterThanOrEqual(12 + 3 - 0.01)
     expect(y2 - y1).toBeGreaterThanOrEqual(12 + 3 - 0.01)
+  })
+})
+
+describe('layoutReferenceLabelXs', () => {
+  it('keeps isolated labels on the line', () => {
+    const m = layoutReferenceLabelXs(
+      [{ id: 0, lineX: 120 }],
+      { left: 40, right: 400 },
+      { halfWidth: 28, gap: 3 },
+    )
+    expect(m.get(0)).toBe(120)
+  })
+
+  it('packs labels when vertical guides overlap', () => {
+    const m = layoutReferenceLabelXs(
+      [
+        { id: 0, lineX: 100 },
+        { id: 1, lineX: 105 },
+      ],
+      { left: 0, right: 400 },
+      { halfWidth: 28, gap: 3 },
+    )
+    expect((m.get(1)! - m.get(0)!) / 2).toBeGreaterThanOrEqual(28 + 3 / 2 - 0.01)
   })
 })

@@ -99,6 +99,8 @@ export type {
   LinePointClickPayload,
   LineZoomRange,
   BarClickPayload,
+  NardukBarChartOrientation,
+  NardukBarChartProps,
   PieSliceClickPayload,
   ExportChartOptions,
   ChartLineAnnotationsV1,

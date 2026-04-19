@@ -11,6 +11,8 @@ const logBars = [{ name: 'Hits', data: [3, 18, 420, 65] }]
 const logLabels = ['A', 'B', 'C', 'D']
 const barBands = [{ y0: 20, y1: 80, color: '#38bdf8', opacity: 0.15 }]
 const barVline = [{ type: 'vline' as const, xIndex: 1, dashed: true, label: 'v1' }]
+const wideLabels = ['North waterfront district', 'Central business corridor', 'South industrial zone']
+const wideSeries = [{ name: 'Acquisitions', data: [12, 28, 9] }]
 </script>
 
 <template>
@@ -40,6 +42,16 @@ const barVline = [{ type: 'vline' as const, xIndex: 1, dashed: true, label: 'v1'
         y-scale="log"
         :y-bands="barBands"
         :annotations="barVline"
+      />
+    </Variant>
+
+    <Variant title="Horizontal (long labels)">
+      <NardukBarChart
+        orientation="horizontal"
+        :series="wideSeries"
+        :labels="wideLabels"
+        :width="560"
+        :height="260"
       />
     </Variant>
   </Story>
