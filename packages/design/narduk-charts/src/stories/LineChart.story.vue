@@ -16,6 +16,17 @@ const dualLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const logSeries = [{ name: 'Count', data: [2, 8, 45, 120, 400, 90, 15] }]
 const logLabels = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
 
+const buoyStart = Date.UTC(2026, 4, 14, 20, 0)
+const buoyTimes = Array.from({ length: 72 }, (_, i) => buoyStart + i * 60 * 60 * 1000)
+const buoyLabels = buoyTimes.map(t => new Date(t).toISOString())
+const buoySeries = [{
+  name: 'Wind · kt',
+  data: buoyTimes.map((_, i) => {
+    const ramp = Math.min(10, i / 4)
+    return Number((4 + ramp + Math.sin(i / 3) * 1.1 + Math.cos(i / 9) * 0.7).toFixed(1))
+  }),
+}]
+
 const bands = [{ y0: 6, y1: 10, color: '#22c55e', opacity: 0.15 }]
 const ann = [
   { type: 'vline' as const, xIndex: 2, label: 'Cutoff', dashed: true },
@@ -88,6 +99,19 @@ const ann = [
         :labels="labels"
         :height="300"
         zoomable
+      />
+    </Variant>
+
+    <Variant title="Dense time series">
+      <NardukLineChart
+        :series="buoySeries"
+        :labels="buoyLabels"
+        :times="buoyTimes"
+        x-axis-type="time"
+        chart-title="Wind · kt"
+        chart-description="Buoy-style hourly wind observations with an adaptive time axis."
+        :height="320"
+        show-area
       />
     </Variant>
   </Story>

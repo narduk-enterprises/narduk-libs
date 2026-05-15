@@ -13,7 +13,7 @@ Types ship from `dist/index.d.ts`. Import paths:
 
 | Export | Summary |
 |--------|---------|
-| `NardukLineChart` | Category X, dual Y, zoom, optional `v-model:x-window` (sync with candle indices), annotations, `maxRenderPoints`, a11y props |
+| `NardukLineChart` | Category or adaptive time-series X, dual Y, zoom, optional `v-model:x-window` (sync with candle indices), annotations, `maxRenderPoints`, a11y props |
 | `NardukBarChart` | Grouped / stacked / `stackedPercent`, shared a11y props |
 | `NardukPieChart` | Donut, legend, keyboard slices |
 | `NardukScatterChart` | Numeric X/Y series |

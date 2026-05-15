@@ -9,6 +9,10 @@ import {
   candleTimeAtIndex,
   candleIndexAtTime,
 } from '../utils/math'
+import {
+  defaultTimeAxisLabel,
+  selectEvenAxisLabelIndices,
+} from '../utils/xAxis'
 import { createYAxisMap, dataValueFromBottomPx } from '../utils/yScale'
 import type {
   CandleBar,
@@ -1193,8 +1197,7 @@ const effectiveChartTitle = computed(() =>
 
 function formatTimeLabel(t: number): string {
   if (props.formatTime) return props.formatTime(t)
-  const d = new Date(t)
-  return Number.isNaN(d.getTime()) ? String(t) : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return defaultTimeAxisLabel(t)
 }
 
 const displayIndex = computed(() =>
@@ -1477,47 +1480,14 @@ const xAxisLabelIndices = computed(() => {
   if (n === 0) return []
   const bars = sortedBars.value
   const { i0, i1 } = visibleIndexBounds()
-  const span = Math.max(1, i1 - i0 + 1)
-  /** Long datetime strings need more space; cap count from plot width (not bar width). */
-  const minPxPerLabel = 112
-  const pw = Math.max(1, plotWidth.value)
-  const maxSlots = Math.max(2, Math.floor(pw / minPxPerLabel))
-  const count = Math.min(span, maxSlots)
-  if (count >= span) {
-    return dedupeTimeAxisIndices(
-      Array.from({ length: span }, (_, k) => i0 + k),
-      (i) => formatTimeLabel(bars[i]!.t),
-    )
-  }
-  const out: number[] = []
-  for (let k = 0; k < count; k++) {
-    const t = count <= 1 ? 0 : k / (count - 1)
-    out.push(Math.round(i0 + t * (i1 - i0)))
-  }
-  let uniq = [...new Set(out)].sort((a, b) => a - b)
-  if (uniq.length === 0) return [i0]
-  if (uniq[0] !== i0) uniq = [i0, ...uniq]
-  if (uniq[uniq.length - 1] !== i1) uniq = [...uniq, i1]
-  const merged = [...new Set(uniq)].sort((a, b) => a - b)
-  return dedupeTimeAxisIndices(merged, (i) => formatTimeLabel(bars[i]!.t))
+  return selectEvenAxisLabelIndices({
+    i0,
+    i1,
+    plotWidth: plotWidth.value,
+    minPxPerLabel: 112,
+    labelAt: (i) => formatTimeLabel(bars[i]!.t),
+  })
 })
-
-/** Drop interior ticks whose formatted time matches the previous tick (reduces overlap when zoomed). */
-function dedupeTimeAxisIndices(indices: number[], labelAt: (i: number) => string): number[] {
-  if (indices.length <= 2) return indices
-  const out: number[] = [indices[0]!]
-  let lastLab = labelAt(indices[0]!)
-  for (let k = 1; k < indices.length - 1; k++) {
-    const i = indices[k]!
-    const lab = labelAt(i)
-    if (lab === lastLab) continue
-    out.push(i)
-    lastLab = lab
-  }
-  const last = indices[indices.length - 1]!
-  if (out[out.length - 1] !== last) out.push(last)
-  return out
-}
 
 const rootChartClasses = computed(() => {
   const c = ['narduk-chart']

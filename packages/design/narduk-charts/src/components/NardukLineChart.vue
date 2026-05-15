@@ -9,6 +9,10 @@ import {
   formatValue,
   decimateCategoryData,
 } from '../utils/math'
+import {
+  defaultTimeAxisLabel,
+  selectEvenAxisLabelIndices,
+} from '../utils/xAxis'
 import { createYAxisMap } from '../utils/yScale'
 import { layoutReferenceLabelYs } from '../utils/refLabelLayout'
 import { getColor } from '../utils/colors'
@@ -26,6 +30,7 @@ import type {
   TooltipItem,
   LinePointClickPayload,
   LineZoomRange,
+  ChartXAxisType,
 } from '../types'
 import { chartThemeClass } from '../utils/chartTheme'
 import {
@@ -84,6 +89,14 @@ const props = withDefaults(defineProps<{
   formatXLabel?: (label: string, index: number) => string
   /** Format numeric Y-axis tick labels. */
   formatTickValue?: (value: number) => string
+  /** Default `'category'`; use `'time'` with `times` for dense timestamp axes. */
+  xAxisType?: ChartXAxisType
+  /** Unix milliseconds aligned 1:1 with `labels` and series values. */
+  times?: number[]
+  /** Format timestamp labels when `xAxisType` is `'time'`. */
+  formatTime?: (timestamp: number) => string
+  /** Minimum horizontal spacing per X-axis label. Defaults to 112px for time axes, 50px for category axes. */
+  xAxisMinLabelPx?: number
   /**
    * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
    * intentionally zoom on decimated indices.
@@ -105,7 +118,19 @@ const props = withDefaults(defineProps<{
   zoomMinPoints: 3,
   showDataTable: false,
   legendGroupLabel: 'Data series',
+  xAxisType: 'category',
 })
+
+function decimatedIndices(length: number, maxPoints?: number): number[] | null {
+  if (!maxPoints || length <= maxPoints || maxPoints < 2) return null
+  const idx: number[] = []
+  for (let i = 0; i < maxPoints; i++) {
+    idx.push(Math.round((i * (length - 1)) / Math.max(1, maxPoints - 1)))
+  }
+  return [...new Set(idx)].sort((a, b) => a - b)
+}
+
+const effIndexMap = computed(() => decimatedIndices(props.labels.length, props.maxRenderPoints))
 
 const emit = defineEmits<{
   pointClick: [payload: LinePointClickPayload]
@@ -126,6 +151,13 @@ const effSeries = computed(() => {
     return decimateCategoryData(props.labels, props.series, m).series
   }
   return props.series
+})
+
+const effTimes = computed(() => {
+  if (!props.times) return undefined
+  const map = effIndexMap.value
+  if (!map) return props.times
+  return map.map(i => props.times?.[i] ?? Number.NaN)
 })
 
 defineSlots<{
@@ -701,7 +733,18 @@ const liveSummary = computed(() => {
 
 function formatXAxisLabel(i: number): string {
   const raw = effLabels.value[i] ?? ''
+  if (props.xAxisType === 'time') {
+    const t = effTimes.value?.[i]
+    if (typeof t === 'number' && Number.isFinite(t)) {
+      return props.formatTime ? props.formatTime(t) : defaultTimeAxisLabel(t)
+    }
+  }
   return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+}
+
+function formatTooltipTitle(i: number): string {
+  if (props.xAxisType === 'time') return formatXAxisLabel(i)
+  return effLabels.value[i] ?? ''
 }
 
 function showTooltipAtIndex(idx: number) {
@@ -715,7 +758,7 @@ function showTooltipAtIndex(idx: number) {
   })
   const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
   const py = padding.value.top + plotHeight.value / 2
-  showTooltip(px, py, formatXAxisLabel(idx), items)
+  showTooltip(px, py, formatTooltipTitle(idx), items)
 }
 
 function onSvgFocus() {
@@ -832,7 +875,7 @@ function onMouseMove(event: MouseEvent) {
     }
   })
 
-  showTooltip(mouseX, mouseY, effLabels.value[nearest], items)
+  showTooltip(mouseX, mouseY, formatTooltipTitle(nearest), items)
 }
 
 function onMouseLeave() {
@@ -888,8 +931,17 @@ const xAxisLabelIndices = computed(() => {
   if (n === 0) return []
   const i0 = Math.max(0, Math.floor(xViewMin.value))
   const i1 = Math.min(n - 1, Math.ceil(xViewMax.value))
+  if (props.xAxisType === 'time') {
+    return selectEvenAxisLabelIndices({
+      i0,
+      i1,
+      plotWidth: plotWidth.value,
+      minPxPerLabel: props.xAxisMinLabelPx ?? 112,
+      labelAt: formatXAxisLabel,
+    })
+  }
   const span = Math.max(1, i1 - i0 + 1)
-  const approxLabelWidth = 50
+  const approxLabelWidth = props.xAxisMinLabelPx ?? 50
   const available = plotWidth.value / span
   const step = available >= approxLabelWidth ? 1 : Math.ceil(approxLabelWidth / available)
   const out: number[] = []

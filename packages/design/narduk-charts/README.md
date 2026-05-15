@@ -111,6 +111,10 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `zoomable` | `boolean` | `false` | X zoom: **drag** a box on the plot, **Ctrl/Cmd + wheel**, **Shift + drag** to pan, **double-click** to reset; emits `zoom` |
 | `zoomAutoY` | `boolean` | `true` | When `zoomable`, rescale Y from series values in the visible X window |
 | `zoomMinPoints` | `number` | `3` | Minimum points visible along X when zoomed in |
+| `xAxisType` | `'category' \| 'time'` | `'category'` | Opt into adaptive time-axis labels |
+| `times` | `number[]` | — | Unix ms timestamps aligned with labels/series when `xAxisType="time"` |
+| `formatTime` | `(timestamp) => string` | locale date/time | Format time-axis labels and tooltip titles |
+| `xAxisMinLabelPx` | `number` | `112` time / `50` category | Minimum horizontal spacing per X label |
 
 #### Events
 

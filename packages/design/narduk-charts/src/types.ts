@@ -1,5 +1,7 @@
 export type ChartTheme = 'default' | 'high-contrast' | 'print' | 'colorblind-safe'
 
+export type ChartXAxisType = 'category' | 'time'
+
 /** Primary = left Y-axis; secondary = right Y-axis when `dualYAxis` is enabled. */
 export type ChartYAxisId = 'primary' | 'secondary'
 
@@ -89,6 +91,54 @@ export interface BarClickPayload {
   label: string
   seriesName: string
   value: number
+}
+
+/**
+ * Public props for {@link NardukLineChart} (for typing wrapper components and documentation).
+ * The SFC mirrors this shape in `defineProps`.
+ */
+export interface NardukLineChartProps {
+  series: ChartSeries[]
+  labels: string[]
+  width?: number
+  height?: number
+  smooth?: boolean
+  showGrid?: boolean
+  showPoints?: boolean
+  showArea?: boolean
+  colors?: string[]
+  animate?: boolean
+  dark?: boolean
+  respectReducedMotion?: boolean
+  referenceLines?: ChartReferenceLine[]
+  theme?: ChartTheme
+  dualYAxis?: boolean
+  yScale?: ChartYScaleMode
+  yScaleSecondary?: ChartYScaleMode
+  symlogLinthresh?: number
+  yBands?: ChartYBand[]
+  annotations?: ChartLineAnnotation[]
+  zoomable?: boolean
+  zoomAutoY?: boolean
+  zoomMinPoints?: number
+  chartTitle?: string
+  chartDescription?: string
+  showDataTable?: boolean
+  legendGroupLabel?: string
+  dir?: 'ltr' | 'rtl'
+  formatXLabel?: (label: string, index: number) => string
+  formatTickValue?: (value: number) => string
+  maxRenderPoints?: number
+  /** Controlled fractional X window for `v-model:x-window`. */
+  xWindow?: LineZoomRange
+  /** Default `'category'`; use `'time'` with `times` for dense timestamp axes. */
+  xAxisType?: ChartXAxisType
+  /** Unix milliseconds aligned with `labels` and series values when `xAxisType` is `'time'`. */
+  times?: number[]
+  /** Timestamp formatter for time axes. */
+  formatTime?: (timestamp: number) => string
+  /** Minimum horizontal label spacing. Defaults to 112px for time axes and 50px for category axes. */
+  xAxisMinLabelPx?: number
 }
 
 /** `NardukBarChart` layout: categories on X (default) or on Y for long labels / leaderboards. */
