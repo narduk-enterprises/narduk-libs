@@ -116,6 +116,7 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `formatTime` | `(timestamp) => string` | locale date/time | Format time-axis labels and tooltip titles |
 | `xAxisMinLabelPx` | `number` | `112` time / `50` category | Minimum horizontal spacing per X label |
 | `padding` | `Partial<ChartPadding>` | `{ top: 24, right: 24, bottom: 48, left: 56 }` | Override plot padding, useful for compact previews with hidden axes |
+| `linearFromZero` | `boolean` | `true` | Include zero in positive linear Y domains; set `false` for relative trend/detail charts |
 
 #### Events
 

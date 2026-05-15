@@ -139,4 +139,21 @@ describe('NardukLineChart time axis', () => {
     expect(surface.attributes('width')).toBe('104')
     expect(surface.attributes('height')).toBe('52')
   })
+
+  it('can render a data-relative positive linear Y domain', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Air temp', data: [79.8, 80.1, 80.4, 80.6] }],
+        labels: ['1', '2', '3', '4'],
+        width: 240,
+        height: 120,
+        animate: false,
+        linearFromZero: false,
+      },
+    })
+
+    const tickTexts = w.findAll('.narduk-axis text').map(node => node.text().trim())
+    expect(tickTexts).toContain('80')
+    expect(tickTexts).not.toContain('0')
+  })
 })

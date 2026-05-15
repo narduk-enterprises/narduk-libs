@@ -61,6 +61,8 @@ const props = withDefaults(defineProps<{
   yScale?: ChartYScaleMode
   /** Y scale for the secondary (right) axis when `dualYAxis` is true. */
   yScaleSecondary?: ChartYScaleMode
+  /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
+  linearFromZero?: boolean
   /** Linear threshold for `symlog` (matplotlib-style). */
   symlogLinthresh?: number
   /** Horizontal bands (Y in data space). */
@@ -115,6 +117,7 @@ const props = withDefaults(defineProps<{
   dualYAxis: false,
   yScale: 'linear',
   yScaleSecondary: 'linear',
+  linearFromZero: true,
   symlogLinthresh: 1,
   zoomable: false,
   zoomAutoY: true,
@@ -582,7 +585,10 @@ function numericValuesSlice(series: ChartSeries[], i0: number, i1: number): numb
   })
 }
 
-const symlogOpts = computed(() => ({ symlogLinthresh: props.symlogLinthresh }))
+const yScaleOpts = computed(() => ({
+  linearFromZero: props.linearFromZero,
+  symlogLinthresh: props.symlogLinthresh,
+}))
 
 const zoomYActive = computed(() => props.zoomable && props.zoomAutoY)
 
@@ -615,7 +621,7 @@ const primaryMap = computed(() => {
     seriesVals,
     [...refs, ...bands, ...annY],
     plotHeight.value,
-    symlogOpts.value,
+    yScaleOpts.value,
   )
 })
 
@@ -649,7 +655,7 @@ const secondaryMap = computed(() => {
     seriesVals,
     [...refs, ...bands, ...annY],
     plotHeight.value,
-    symlogOpts.value,
+    yScaleOpts.value,
   )
 })
 

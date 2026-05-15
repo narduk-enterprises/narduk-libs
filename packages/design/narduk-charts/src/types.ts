@@ -115,6 +115,8 @@ export interface NardukLineChartProps {
   dualYAxis?: boolean
   yScale?: ChartYScaleMode
   yScaleSecondary?: ChartYScaleMode
+  /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
+  linearFromZero?: boolean
   symlogLinthresh?: number
   yBands?: ChartYBand[]
   annotations?: ChartLineAnnotation[]
