@@ -52,7 +52,12 @@ export function createYAxisMap(
   dataValues: number[],
   extraValues: number[],
   plotHeight: number,
-  options?: { symlogLinthresh?: number; maxTicks?: number; linearFromZero?: boolean },
+  options?: {
+    symlogLinthresh?: number
+    maxTicks?: number
+    linearFromZero?: boolean
+    linearPaddingRatio?: number
+  },
 ): YAxisMapResult {
   const maxTicks = options?.maxTicks ?? 6
   const linthresh = options?.symlogLinthresh ?? 1
@@ -73,8 +78,14 @@ export function createYAxisMap(
     }
     const rawMin = Math.min(...vals)
     const rawMax = Math.max(...vals)
-    const low = linearFromZero ? Math.min(0, rawMin) : rawMin
-    const s = niceScale(low, rawMax, maxTicks)
+    const paddingRatio = Math.max(0, options?.linearPaddingRatio ?? 0)
+    const rawRange = rawMax - rawMin
+    const padding = rawRange > 0
+      ? rawRange * paddingRatio
+      : Math.max(Math.abs(rawMax), 1) * paddingRatio
+    const low = linearFromZero ? Math.min(0, rawMin - padding) : rawMin - padding
+    const high = rawMax + padding
+    const s = niceScale(low, high, maxTicks)
     return {
       domain: { min: s.min, max: s.max },
       ticks: s.ticks.map(value => ({ value, label: formatValue(value) })),

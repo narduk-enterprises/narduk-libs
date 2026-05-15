@@ -63,6 +63,8 @@ const props = withDefaults(defineProps<{
   yScaleSecondary?: ChartYScaleMode
   /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
   linearFromZero?: boolean
+  /** Add proportional headroom/footroom to linear Y domains. */
+  linearPaddingRatio?: number
   /** Linear threshold for `symlog` (matplotlib-style). */
   symlogLinthresh?: number
   /** Horizontal bands (Y in data space). */
@@ -118,6 +120,7 @@ const props = withDefaults(defineProps<{
   yScale: 'linear',
   yScaleSecondary: 'linear',
   linearFromZero: true,
+  linearPaddingRatio: 0,
   symlogLinthresh: 1,
   zoomable: false,
   zoomAutoY: true,
@@ -587,6 +590,7 @@ function numericValuesSlice(series: ChartSeries[], i0: number, i1: number): numb
 
 const yScaleOpts = computed(() => ({
   linearFromZero: props.linearFromZero,
+  linearPaddingRatio: props.linearPaddingRatio,
   symlogLinthresh: props.symlogLinthresh,
 }))
 

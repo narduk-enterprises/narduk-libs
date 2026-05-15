@@ -31,6 +31,15 @@ describe('createYAxisMap', () => {
     expect(m.yFromBottom(21_050)).toBeLessThan(m.yFromBottom(21_180))
   })
 
+  it('pads relative linear domains so extrema do not touch the plot bounds', () => {
+    const m = createYAxisMap('linear', [11, 15], [], 100, {
+      linearFromZero: false,
+      linearPaddingRatio: 0.1,
+    })
+    expect(m.domain.min).toBeLessThan(11)
+    expect(m.domain.max).toBeGreaterThan(15)
+  })
+
   it('builds positive log domain', () => {
     const m = createYAxisMap('log', [1, 1000], [], 100)
     expect(m.domain.min).toBeGreaterThan(0)

@@ -117,6 +117,8 @@ export interface NardukLineChartProps {
   yScaleSecondary?: ChartYScaleMode
   /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
   linearFromZero?: boolean
+  /** Add proportional headroom/footroom to linear Y domains. */
+  linearPaddingRatio?: number
   symlogLinthresh?: number
   yBands?: ChartYBand[]
   annotations?: ChartLineAnnotation[]

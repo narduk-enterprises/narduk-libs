@@ -117,6 +117,7 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `xAxisMinLabelPx` | `number` | `112` time / `50` category | Minimum horizontal spacing per X label |
 | `padding` | `Partial<ChartPadding>` | `{ top: 24, right: 24, bottom: 48, left: 56 }` | Override plot padding, useful for compact previews with hidden axes |
 | `linearFromZero` | `boolean` | `true` | Include zero in positive linear Y domains; set `false` for relative trend/detail charts |
+| `linearPaddingRatio` | `number` | `0` | Add proportional headroom/footroom to linear Y domains |
 
 #### Events
 
