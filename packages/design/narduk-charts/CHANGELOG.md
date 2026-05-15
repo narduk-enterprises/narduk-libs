@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Registry:** CI and publish target **GitHub Packages** (`npm.pkg.github.com`) using `tools/configure-package-registry-auth.mjs` and org secrets (`NARDUK_PLATFORM_GH_PACKAGES_*`), aligned with [`narduk-template`](https://github.com/narduk-enterprises/narduk-nuxt-template). Legacy Forgejo registry workflows and URLs were removed.
 
+## [2.1.1] — 2026-05-15
+
+### Added
+
+- `NardukLineChart` supports opt-in adaptive time-series X axes with `xAxisType="time"`, aligned `times`, `formatTime`, and `xAxisMinLabelPx`.
+- Shared X-axis tick selection helpers with regression coverage for dense line and candle time labels.
+
+### Fixed
+
+- CI audit now passes at the configured high-severity threshold after refreshing vulnerable transitive dev-tooling packages in the lockfile.
+
 ## [2.1.0] — 2026-04-19
 
 ### Added
