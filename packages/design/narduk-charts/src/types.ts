@@ -139,6 +139,8 @@ export interface NardukLineChartProps {
   formatTime?: (timestamp: number) => string
   /** Minimum horizontal label spacing. Defaults to 112px for time axes and 50px for category axes. */
   xAxisMinLabelPx?: number
+  /** Override chart padding, useful for compact axis-free previews. */
+  padding?: Partial<ChartPadding>
 }
 
 /** `NardukBarChart` layout: categories on X (default) or on Y for long labels / leaderboards. */

@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Registry:** CI and publish target **GitHub Packages** (`npm.pkg.github.com`) using `tools/configure-package-registry-auth.mjs` and org secrets (`NARDUK_PLATFORM_GH_PACKAGES_*`), aligned with [`narduk-template`](https://github.com/narduk-enterprises/narduk-nuxt-template). Legacy Forgejo registry workflows and URLs were removed.
 
+## [2.1.2] — 2026-05-15
+
+### Added
+
+- `NardukLineChart` accepts `padding` overrides for compact chart previews that hide axes or need tighter plot bounds.
+
 ## [2.1.1] — 2026-05-15
 
 ### Added

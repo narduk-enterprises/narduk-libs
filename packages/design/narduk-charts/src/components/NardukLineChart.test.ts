@@ -119,4 +119,24 @@ describe('NardukLineChart time axis', () => {
     expect(w.text()).toContain('Full category B')
     w.unmount()
   })
+
+  it('allows compact padding overrides for axis-free previews', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Trend', data: [2, 4, 3, 5] }],
+        labels: ['1', '2', '3', '4'],
+        width: 120,
+        height: 64,
+        animate: false,
+        padding: { top: 6, right: 8, bottom: 6, left: 8 },
+        showGrid: false,
+      },
+    })
+
+    const surface = w.find('.narduk-plot-surface--line')
+    expect(surface.attributes('x')).toBe('8')
+    expect(surface.attributes('y')).toBe('6')
+    expect(surface.attributes('width')).toBe('104')
+    expect(surface.attributes('height')).toBe('52')
+  })
 })

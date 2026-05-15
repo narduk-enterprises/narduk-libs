@@ -31,6 +31,7 @@ import type {
   LinePointClickPayload,
   LineZoomRange,
   ChartXAxisType,
+  ChartPadding,
 } from '../types'
 import { chartThemeClass } from '../utils/chartTheme'
 import {
@@ -97,6 +98,8 @@ const props = withDefaults(defineProps<{
   formatTime?: (timestamp: number) => string
   /** Minimum horizontal spacing per X-axis label. Defaults to 112px for time axes, 50px for category axes. */
   xAxisMinLabelPx?: number
+  /** Override chart padding, useful for compact axis-free previews. */
+  padding?: Partial<ChartPadding>
   /**
    * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
    * intentionally zoom on decimated indices.
@@ -185,7 +188,10 @@ const showRightAxis = computed(() => {
 const paddingOverrides = computed(() => {
   const base = showRightAxis.value ? 56 : 24
   const refLabelPad = (props.referenceLines ?? []).some(r => r.label) ? 10 : 0
-  return { right: base + refLabelPad }
+  return {
+    ...props.padding,
+    right: props.padding?.right ?? base + refLabelPad,
+  }
 })
 
 const containerRef = ref<HTMLElement | null>(null)
