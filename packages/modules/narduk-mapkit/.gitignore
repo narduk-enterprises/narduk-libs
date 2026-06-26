@@ -1,4 +1,5 @@
-dist/
+# dist/ is committed so git-dependency consumers work without a build step
+# (e.g. environments with npm allow-scripts that block the prepare build).
 node_modules/
 coverage/
 .DS_Store
