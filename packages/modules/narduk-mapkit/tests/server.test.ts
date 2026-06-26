@@ -1,5 +1,9 @@
 import { decodeJwt } from '../src/token/index.js'
-import { issueMapKitTokenForRequest, mapKitTokenResponse } from '../src/server/index.js'
+import {
+  issueMapKitTokenForRequest,
+  mapKitTokenResponse,
+  mapKitTokenResponseFromEnv,
+} from '../src/server/index.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
 
 describe('MapKit token request handler', () => {
@@ -52,5 +56,21 @@ describe('MapKit token request handler', () => {
       configured: false,
       token: '',
     })
+  })
+
+  it('signs from a Worker-style env object and derives origin from the request', async () => {
+    const response = await mapKitTokenResponseFromEnv(
+      new Request('https://h2.example/api/mapkit-token'),
+      {
+        APPLE_TEAM_ID: 'TEAM123',
+        APPLE_KEY_ID: 'KEY123',
+        APPLE_PRIVATE_KEY: await createTestPrivateKeyPem(),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { configured: boolean; token: string }
+    expect(body.configured).toBe(true)
+    expect(decodeJwt(body.token).payload.origin).toBe('https://h2.example')
   })
 })

@@ -73,6 +73,39 @@ The handler returns JSON:
 On misconfiguration it returns `503` with `configured: false` instead of
 throwing framework-specific errors.
 
+## Cloudflare Workers
+
+Workers pass bindings through the `fetch(request, env)` argument, not
+`process.env`, and have no `child_process` for the Doppler fallback. Use the
+env-aware helper — token signing is pure Web Crypto, so it runs natively in
+workerd (no `nodejs_compat` flag required):
+
+```ts
+import { mapKitTokenResponseFromEnv } from '@loganrenz/narduk-mapkit/server'
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname === '/api/mapkit-token') {
+      return mapKitTokenResponseFromEnv(request, env)
+    }
+    return new Response('Not found', { status: 404 })
+  },
+}
+```
+
+`env` must expose `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY` as
+Worker secrets. Set them with `wrangler secret put`, e.g. piping from Doppler so
+the key is never printed:
+
+```sh
+doppler secrets get APPLE_PRIVATE_KEY --plain -p narduk -c tokens \
+  | wrangler secret put APPLE_PRIVATE_KEY
+```
+
+The token's `origin` claim is derived from the request, so the same handler
+works in local `wrangler dev` and in production. Pass `overrides` (a
+`MapKitServerConfig`) for `allowedOrigins`, a custom TTL, etc.
+
 ## Credentials
 
 The server config lookup order is:

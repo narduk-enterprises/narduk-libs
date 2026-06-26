@@ -3,11 +3,12 @@ import {
   hasSigningConfig,
   hasUsableStaticToken,
   isOriginAllowed,
+  mapKitConfigFromEnv,
   parseAllowedOrigins,
   resolveMapKitServerConfig,
 } from './config.js'
 
-import type { MapKitServerConfig } from './config.js'
+import type { MapKitEnv, MapKitServerConfig } from './config.js'
 
 export interface MapKitTokenRequestOptions {
   config?: MapKitServerConfig
@@ -98,6 +99,35 @@ export async function mapKitTokenResponse(
     const message = error instanceof Error ? error.message : 'Failed to generate MapKit token'
     return jsonResponse({ configured: false, error: message, token: '' }, 500)
   }
+}
+
+/**
+ * Cloudflare Worker / Fetch convenience. Reads Apple credentials from a passed
+ * `env` object (Worker secret bindings, not `process.env`) and returns a token
+ * `Response`. The Doppler fallback is disabled because Workers have no
+ * `child_process`; token signing is pure Web Crypto and runs natively in workerd.
+ *
+ * ```ts
+ * export default {
+ *   async fetch(request: Request, env: Env): Promise<Response> {
+ *     if (new URL(request.url).pathname === '/api/mapkit-token') {
+ *       return mapKitTokenResponseFromEnv(request, env)
+ *     }
+ *     return new Response('Not found', { status: 404 })
+ *   },
+ * }
+ * ```
+ */
+export function mapKitTokenResponseFromEnv(
+  request: Request,
+  env: MapKitEnv,
+  overrides: Partial<MapKitServerConfig> = {},
+): Promise<Response> {
+  return mapKitTokenResponse(request, {
+    ...mapKitConfigFromEnv(env),
+    doppler: false,
+    ...overrides,
+  })
 }
 
 export function createMapKitTokenHandler(config?: MapKitServerConfig) {

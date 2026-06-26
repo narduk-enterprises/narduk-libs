@@ -1,6 +1,6 @@
 {
   "name": "@loganrenz/narduk-mapkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Framework-agnostic Apple MapKit JS token and browser helpers.",
@@ -42,7 +42,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "pnpm run build",
+    "prepare": "tsc -p tsconfig.build.json",
     "publish:local": "node script/publish_local_package.mjs",
     "quality": "pnpm run typecheck && pnpm run test && pnpm run build",
     "test": "vitest run",
