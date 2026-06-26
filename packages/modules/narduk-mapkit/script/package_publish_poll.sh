@@ -12,6 +12,8 @@ LOCKDIR="$DEPLOY_DIR/package-publish.lock.d"
 REPO_URL="${NARDUK_MAPKIT_REPO_URL:-git@github.com:loganrenz/narduk-mapkit.git}"
 LOCK_STALE_SECONDS="${NARDUK_MAPKIT_LOCK_STALE_SECONDS:-1800}"
 
+export PATH="$HOME/.volta/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
 log() { printf '%s narduk-mapkit-publish: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 
 mkdir -p "$DEPLOY_DIR"
@@ -54,7 +56,13 @@ fi
 log "publishing ${last:0:8} -> ${origin_sha:0:8}"
 git reset --hard origin/main
 
-corepack enable
+if command -v corepack >/dev/null 2>&1; then
+  corepack enable
+fi
+if ! command -v pnpm >/dev/null 2>&1; then
+  log "pnpm is not available on PATH"
+  exit 127
+fi
 pnpm install --frozen-lockfile
 pnpm run publish:local
 
