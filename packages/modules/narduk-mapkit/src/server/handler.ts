@@ -3,8 +3,8 @@ import {
   hasSigningConfig,
   hasUsableStaticToken,
   isOriginAllowed,
-  mapKitConfigFromEnv,
   parseAllowedOrigins,
+  resolveMapKitServerConfig,
 } from './config.js'
 
 import type { MapKitServerConfig } from './config.js'
@@ -44,7 +44,7 @@ export function getOriginFromRequest(request: Request, fallbackOrigin = 'http://
 export async function issueMapKitTokenForRequest(
   options: MapKitTokenRequestOptions,
 ): Promise<MapKitTokenResult> {
-  const config = { ...mapKitConfigFromEnv(), ...options.config }
+  const config = await resolveMapKitServerConfig(options.config)
   const origin = getOriginFromRequest(options.request, config.fallbackOrigin)
   const allowedOrigins = parseAllowedOrigins(config.allowedOrigins)
 

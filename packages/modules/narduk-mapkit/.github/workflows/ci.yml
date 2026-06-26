@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Package quality
+    runs-on: [self-hosted, macOS, ARM64, logans-imac-pro, narduk-mapkit]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck, test, and build
+        run: pnpm run quality

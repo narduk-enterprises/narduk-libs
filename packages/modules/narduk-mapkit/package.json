@@ -43,6 +43,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "pnpm run build",
+    "publish:local": "node script/publish_local_package.mjs",
     "quality": "pnpm run typecheck && pnpm run test && pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

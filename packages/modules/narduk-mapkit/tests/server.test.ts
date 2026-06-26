@@ -43,7 +43,9 @@ describe('MapKit token request handler', () => {
   })
 
   it('reports missing credentials without throwing', async () => {
-    const response = await mapKitTokenResponse(new Request('http://local.test/api/mapkit-token'))
+    const response = await mapKitTokenResponse(new Request('http://local.test/api/mapkit-token'), {
+      doppler: false,
+    })
 
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({
