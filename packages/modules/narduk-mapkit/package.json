@@ -24,7 +24,6 @@
   "files": [
     "CHANGELOG.md",
     "dist/",
-    "docs/",
     "examples/",
     "LICENSE",
     "README.md"
@@ -57,9 +56,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "check:exports": "node script/check_package_exports.mjs",
+    "check:package": "node script/check_package_exports.mjs && node script/check_package_install.mjs",
     "prepare": "tsc -p tsconfig.build.json",
     "publish:local": "node script/publish_local_package.mjs",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build",
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:package",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

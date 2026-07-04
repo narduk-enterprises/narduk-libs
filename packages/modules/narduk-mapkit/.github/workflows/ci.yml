@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -13,20 +16,18 @@ permissions:
 jobs:
   quality:
     name: Package quality
-    runs-on: [self-hosted, macOS, ARM64, logans-imac-pro, narduk-mapkit]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Configure local tool PATH
-        run: |
-          echo "$HOME/.volta/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Enable Corepack
         run: |
-          if command -v corepack >/dev/null 2>&1; then
-            corepack enable
-          fi
+          corepack enable
+          corepack prepare pnpm@10.33.4 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Typecheck, test, and build
+      - name: Run package quality gate
         run: pnpm run quality

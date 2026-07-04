@@ -156,8 +156,8 @@ export function computeMapKitRegionForLngLatBounds(bounds, options = {}) {
     const north = clamp(northLat, -90, 90);
     const minLat = Math.min(south, north);
     const maxLat = Math.max(south, north);
-    const lngSpan = Math.abs(eastLng - westLng);
-    if (lngSpan >= 360) {
+    const rawLngDelta = eastLng - westLng;
+    if (Math.abs(rawLngDelta) >= 360) {
         return regionFromCoordinateBounds({
             centerLat: (minLat + maxLat) / 2,
             centerLng: 0,
@@ -165,10 +165,15 @@ export function computeMapKitRegionForLngLatBounds(bounds, options = {}) {
             lngDelta: 360,
         });
     }
-    return computeMapKitRegionForPoints([
-        { lat: minLat, lng: normalizeLongitudeDegrees(westLng) },
-        { lat: maxLat, lng: normalizeLongitudeDegrees(eastLng) },
-    ], options);
+    const lngDelta = rawLngDelta >= 0 ? rawLngDelta : rawLngDelta + 360;
+    const paddedLngDelta = Math.max(lngDelta * (1 + regionOptionsPadding(options)), regionOptionsMinSpanDelta(options));
+    const latDelta = Math.max((maxLat - minLat) * (1 + regionOptionsPadding(options)), regionOptionsMinSpanDelta(options));
+    return regionFromCoordinateBounds({
+        centerLat: (minLat + maxLat) / 2,
+        centerLng: normalizeLongitudeDegrees(westLng + lngDelta / 2),
+        latDelta,
+        lngDelta: paddedLngDelta,
+    });
 }
 export function collectMapKitPointsFromGeoJson(input) {
     if (!input)

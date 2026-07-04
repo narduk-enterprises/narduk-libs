@@ -7,6 +7,8 @@
 - Added bounded server-side caching for origin-scoped signed MapKit JS tokens.
 - Coalesced concurrent browser token refreshes during MapKit authorization callbacks.
 - Added Hono, Nuxt, browser marker, and animated tile overlay examples.
+- Added package export and clean-room tarball install smoke validation to the canonical quality gate.
+- Updated CI to run on push and pull requests with a portable Node job.
 - Updated package metadata and license for public open-source distribution.
 
 ## 0.1.1

@@ -60,6 +60,30 @@ describe('geometry helpers', () => {
     })
   })
 
+  it('preserves wide non-crossing lng/lat bounds instead of using shortest span', () => {
+    const region = computeMapKitRegionForLngLatBounds([-170, -10, 170, 10], {
+      minSpanDelta: 0.1,
+      padding: 0,
+    })
+
+    expect(region).toEqual({
+      center: { lat: 0, lng: 0 },
+      span: { latDelta: 20, lngDelta: 340 },
+    })
+  })
+
+  it('supports antimeridian-crossing lng/lat bounds when west is greater than east', () => {
+    const region = computeMapKitRegionForLngLatBounds([170, -10, -170, 10], {
+      minSpanDelta: 0.1,
+      padding: 0,
+    })
+
+    expect(region).toEqual({
+      center: { lat: 0, lng: -180 },
+      span: { latDelta: 20, lngDelta: 20 },
+    })
+  })
+
   it('collects GeoJSON and drawable points for shared map framing', () => {
     const geojson = {
       type: 'FeatureCollection' as const,

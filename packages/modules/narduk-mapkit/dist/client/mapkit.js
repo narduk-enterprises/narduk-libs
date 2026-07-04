@@ -3,9 +3,47 @@ const DEFAULT_MAPKIT_SCRIPT_URL = 'https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.
 const DEFAULT_TOKEN_ENDPOINT = '/api/mapkit-token';
 const DEFAULT_TOKEN_REFRESH_WINDOW_MS = 60_000;
 let scriptPromise = null;
+let scriptPromiseKey = '';
 let initPromise = null;
+let initPromiseKey = '';
 let lastIssuedToken = '';
 let tokenPromise = null;
+let objectIdCounter = 0;
+const objectIds = new WeakMap();
+function optionIdentity(value) {
+    if (value === undefined || value === null)
+        return '';
+    if (typeof value !== 'object' && typeof value !== 'function')
+        return String(value);
+    const objectValue = value;
+    let id = objectIds.get(objectValue);
+    if (!id) {
+        id = ++objectIdCounter;
+        objectIds.set(objectValue, id);
+    }
+    return `#${id}`;
+}
+function mapKitScriptCacheKey(options) {
+    if (options.mapkitGlobal)
+        return `mapkitGlobal:${optionIdentity(options.mapkitGlobal)}`;
+    return [
+        options.scriptUrl ?? DEFAULT_MAPKIT_SCRIPT_URL,
+        optionIdentity(options.document),
+        optionIdentity(options.window),
+    ].join('|');
+}
+function mapKitInitCacheKey(options) {
+    return [
+        mapKitScriptCacheKey(options),
+        options.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
+        options.tokenRefreshWindowMs ?? DEFAULT_TOKEN_REFRESH_WINDOW_MS,
+        optionIdentity(options.staticToken),
+        optionIdentity(options.fetchImpl),
+        optionIdentity(options.mapkitGlobal),
+        optionIdentity(options.document),
+        optionIdentity(options.window),
+    ].join('|');
+}
 function resolveWindow(options) {
     const resolvedWindow = options.window ?? globalThis.window;
     if (!resolvedWindow) {
@@ -34,18 +72,30 @@ export function loadMapKitScript(options = {}) {
         return Promise.resolve();
     const document = resolveDocument(options);
     const scriptUrl = options.scriptUrl ?? DEFAULT_MAPKIT_SCRIPT_URL;
-    scriptPromise ??= new Promise((resolve, reject) => {
+    const cacheKey = mapKitScriptCacheKey(options);
+    if (scriptPromise && scriptPromiseKey !== cacheKey) {
+        return Promise.reject(new Error('MapKit script loading is already in progress with different options'));
+    }
+    if (scriptPromise)
+        return scriptPromise;
+    scriptPromiseKey = cacheKey;
+    const nextScriptPromise = new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${scriptUrl}"]`)) {
-            resolve();
+            resolve(undefined);
             return;
         }
         const script = document.createElement('script');
         script.src = scriptUrl;
         script.crossOrigin = 'anonymous';
-        script.onload = () => resolve();
+        script.onload = () => resolve(undefined);
         script.onerror = () => reject(new Error(`Failed to load MapKit JS from ${scriptUrl}`));
         document.head.appendChild(script);
+    }).catch((error) => {
+        scriptPromise = null;
+        scriptPromiseKey = '';
+        throw error;
     });
+    scriptPromise ??= nextScriptPromise;
     return scriptPromise;
 }
 export async function fetchMapKitToken(endpoint = DEFAULT_TOKEN_ENDPOINT, fetchImpl = fetch) {
@@ -58,6 +108,11 @@ export async function fetchMapKitToken(endpoint = DEFAULT_TOKEN_ENDPOINT, fetchI
     throw new Error(data.error || `MapKit token request failed with ${response.status}`);
 }
 export async function initializeMapKit(options = {}) {
+    const cacheKey = mapKitInitCacheKey(options);
+    if (initPromise && initPromiseKey !== cacheKey) {
+        throw new Error('MapKit is already initialized or initializing with different options');
+    }
+    initPromiseKey = cacheKey;
     initPromise ??= (async () => {
         await loadMapKitScript(options);
         const mapkit = resolveMapkit(options);
@@ -90,12 +145,20 @@ export async function initializeMapKit(options = {}) {
             },
         });
         return mapkit;
-    })();
+    })().catch((error) => {
+        initPromise = null;
+        initPromiseKey = '';
+        lastIssuedToken = '';
+        tokenPromise = null;
+        throw error;
+    });
     return initPromise;
 }
 export function resetMapKitClientStateForTests() {
     scriptPromise = null;
+    scriptPromiseKey = '';
     initPromise = null;
+    initPromiseKey = '';
     lastIssuedToken = '';
     tokenPromise = null;
 }

@@ -101,8 +101,8 @@ export async function mapKitTokenResponse(request, config) {
 export function mapKitTokenResponseFromEnv(request, env, overrides = {}) {
     return mapKitTokenResponse(request, {
         ...mapKitConfigFromEnv(env),
-        doppler: false,
         ...overrides,
+        doppler: false,
     });
 }
 export function createMapKitTokenHandler(config) {

@@ -149,8 +149,8 @@ export function mapKitTokenResponseFromEnv(
 ): Promise<Response> {
   return mapKitTokenResponse(request, {
     ...mapKitConfigFromEnv(env),
-    doppler: false,
     ...overrides,
+    doppler: false,
   })
 }
 

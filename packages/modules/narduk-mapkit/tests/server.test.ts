@@ -6,6 +6,17 @@ import {
   mapKitTokenResponseFromEnv,
 } from '../src/server/index.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+
+function unsignedTokenWithExp(exp: number): string {
+  const payload = btoa(JSON.stringify({ exp }))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '')
+  return `eyJhbGciOiJFUzI1NiJ9.${payload}.sig`
+}
 
 describe('MapKit token request handler', () => {
   afterEach(() => {
@@ -104,5 +115,29 @@ describe('MapKit token request handler', () => {
     const body = (await response.json()) as { configured: boolean; token: string }
     expect(body.configured).toBe(true)
     expect(decodeJwt(body.token).payload.origin).toBe('https://h2.example')
+  })
+
+  it('does not allow Worker-style env overrides to re-enable Doppler fallback', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mapkit-doppler-'))
+    const command = join(directory, 'fake-doppler')
+    await writeFile(
+      command,
+      `#!/bin/sh\nprintf '%s\\n' '${unsignedTokenWithExp(Math.floor(Date.now() / 1000) + 3600)}'\n`,
+    )
+    await chmod(command, 0o700)
+
+    const response = await mapKitTokenResponseFromEnv(
+      new Request('https://worker.example/api/mapkit-token'),
+      {},
+      {
+        doppler: { command },
+      },
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      configured: false,
+      token: '',
+    })
   })
 })

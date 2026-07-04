@@ -36,6 +36,54 @@ describe('browser MapKit initialization', () => {
     expect(mapkit.init).toHaveBeenCalledTimes(1)
     expect(issuedTokens).toEqual([token])
   })
+
+  it('rejects mismatched singleton initialization options', async () => {
+    const mapkit = {
+      init: vi.fn((options: { authorizationCallback(done: (token: string) => void): void }) => {
+        options.authorizationCallback(() => {})
+      }),
+    }
+    const token = tokenWithExp(Math.floor(Date.now() / 1000) + 3600)
+
+    await initializeMapKit({
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
+      mapkitGlobal: mapkit,
+      tokenEndpoint: '/mapkit-token-a',
+    })
+
+    await expect(
+      initializeMapKit({
+        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
+        mapkitGlobal: mapkit,
+        tokenEndpoint: '/mapkit-token-b',
+      }),
+    ).rejects.toThrow('different options')
+  })
+
+  it('clears failed initialization so callers can retry', async () => {
+    const mapkit = {
+      init: vi.fn((options: { authorizationCallback(done: (token: string) => void): void }) => {
+        options.authorizationCallback(() => {})
+      }),
+    }
+    const token = tokenWithExp(Math.floor(Date.now() / 1000) + 3600)
+
+    await expect(
+      initializeMapKit({
+        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ error: 'no token' }), { status: 503 })),
+        mapkitGlobal: mapkit,
+        tokenEndpoint: '/mapkit-token',
+      }),
+    ).rejects.toThrow('no token')
+
+    await expect(
+      initializeMapKit({
+        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
+        mapkitGlobal: mapkit,
+        tokenEndpoint: '/mapkit-token',
+      }),
+    ).resolves.toBe(mapkit)
+  })
 })
 
 describe('browser MapKit runtime helpers', () => {

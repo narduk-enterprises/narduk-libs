@@ -26,9 +26,47 @@ const DEFAULT_TOKEN_ENDPOINT = '/api/mapkit-token'
 const DEFAULT_TOKEN_REFRESH_WINDOW_MS = 60_000
 
 let scriptPromise: Promise<void> | null = null
+let scriptPromiseKey = ''
 let initPromise: Promise<MapKitRuntime> | null = null
+let initPromiseKey = ''
 let lastIssuedToken = ''
 let tokenPromise: Promise<string> | null = null
+let objectIdCounter = 0
+const objectIds = new WeakMap<object, number>()
+
+function optionIdentity(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'object' && typeof value !== 'function') return String(value)
+  const objectValue = value as object
+  let id = objectIds.get(objectValue)
+  if (!id) {
+    id = ++objectIdCounter
+    objectIds.set(objectValue, id)
+  }
+  return `#${id}`
+}
+
+function mapKitScriptCacheKey(options: MapKitClientOptions): string {
+  if (options.mapkitGlobal) return `mapkitGlobal:${optionIdentity(options.mapkitGlobal)}`
+  return [
+    options.scriptUrl ?? DEFAULT_MAPKIT_SCRIPT_URL,
+    optionIdentity(options.document),
+    optionIdentity(options.window),
+  ].join('|')
+}
+
+function mapKitInitCacheKey(options: MapKitClientOptions): string {
+  return [
+    mapKitScriptCacheKey(options),
+    options.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
+    options.tokenRefreshWindowMs ?? DEFAULT_TOKEN_REFRESH_WINDOW_MS,
+    optionIdentity(options.staticToken),
+    optionIdentity(options.fetchImpl),
+    optionIdentity(options.mapkitGlobal),
+    optionIdentity(options.document),
+    optionIdentity(options.window),
+  ].join('|')
+}
 
 function resolveWindow(options: MapKitClientOptions): Window {
   const resolvedWindow = options.window ?? globalThis.window
@@ -64,20 +102,33 @@ export function loadMapKitScript(options: MapKitClientOptions = {}): Promise<voi
 
   const document = resolveDocument(options)
   const scriptUrl = options.scriptUrl ?? DEFAULT_MAPKIT_SCRIPT_URL
+  const cacheKey = mapKitScriptCacheKey(options)
+  if (scriptPromise && scriptPromiseKey !== cacheKey) {
+    return Promise.reject(
+      new Error('MapKit script loading is already in progress with different options'),
+    )
+  }
+  if (scriptPromise) return scriptPromise
 
-  scriptPromise ??= new Promise((resolve, reject) => {
+  scriptPromiseKey = cacheKey
+  const nextScriptPromise = new Promise<void>((resolve, reject) => {
     if (document.querySelector(`script[src="${scriptUrl}"]`)) {
-      resolve()
+      resolve(undefined)
       return
     }
 
     const script = document.createElement('script')
     script.src = scriptUrl
     script.crossOrigin = 'anonymous'
-    script.onload = () => resolve()
+    script.onload = () => resolve(undefined)
     script.onerror = () => reject(new Error(`Failed to load MapKit JS from ${scriptUrl}`))
     document.head.appendChild(script)
+  }).catch((error: unknown) => {
+    scriptPromise = null
+    scriptPromiseKey = ''
+    throw error
   })
+  scriptPromise ??= nextScriptPromise
 
   return scriptPromise
 }
@@ -95,6 +146,12 @@ export async function fetchMapKitToken(
 }
 
 export async function initializeMapKit(options: MapKitClientOptions = {}): Promise<MapKitRuntime> {
+  const cacheKey = mapKitInitCacheKey(options)
+  if (initPromise && initPromiseKey !== cacheKey) {
+    throw new Error('MapKit is already initialized or initializing with different options')
+  }
+
+  initPromiseKey = cacheKey
   initPromise ??= (async () => {
     await loadMapKitScript(options)
     const mapkit = resolveMapkit(options)
@@ -130,14 +187,22 @@ export async function initializeMapKit(options: MapKitClientOptions = {}): Promi
     })
 
     return mapkit
-  })()
+  })().catch((error: unknown) => {
+    initPromise = null
+    initPromiseKey = ''
+    lastIssuedToken = ''
+    tokenPromise = null
+    throw error
+  })
 
   return initPromise
 }
 
 export function resetMapKitClientStateForTests(): void {
   scriptPromise = null
+  scriptPromiseKey = ''
   initPromise = null
+  initPromiseKey = ''
   lastIssuedToken = ''
   tokenPromise = null
 }

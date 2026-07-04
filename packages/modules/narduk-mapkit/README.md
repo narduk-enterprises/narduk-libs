@@ -29,10 +29,12 @@ HTML, panels, data fetching, and domain-specific behavior.
 pnpm add @loganrenz/narduk-mapkit
 ```
 
-For same-machine development before publishing, use the local tarball:
+For local package-consumer testing before publishing, pack the current checkout
+and install the generated tarball into the consumer app:
 
 ```sh
-pnpm add "/Users/narduk/Library/Application Support/NardukMapKit/packages/loganrenz-narduk-mapkit-latest.tgz"
+pnpm pack --pack-destination /tmp
+pnpm add /tmp/loganrenz-narduk-mapkit-*.tgz
 ```
 
 Or depend on Git directly:
@@ -86,7 +88,14 @@ export default {
 }
 ```
 
-Recognized secrets:
+Narduk projects should source these values through Doppler, for example:
+
+```sh
+doppler run -- pnpm dev
+```
+
+Cloudflare Workers should receive the same names through Worker secrets or
+bindings. Recognized runtime names:
 
 - `APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY`
 - `APPLE_TEAM_ID`
@@ -201,10 +210,10 @@ in the app.
 | `@loganrenz/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@loganrenz/narduk-mapkit/token` | Low-level JWT signing and decoding |
 
-## Centralization Plan
+## Maintainer Migration Notes
 
-The current plan is in [docs/centralization-plan.md](docs/centralization-plan.md).
-The short version:
+The repository keeps internal migration notes under `docs/`, but those notes are
+not part of the published package artifact. The short version:
 
 1. Move token routes to `server` helpers.
 2. Move local script loaders to `initializeMapKit()`.
@@ -230,7 +239,8 @@ pnpm install --frozen-lockfile
 pnpm run quality
 ```
 
-`pnpm run quality` runs typecheck, tests, and build.
+`pnpm run quality` runs typecheck, tests, build, package export smoke, and a
+clean-room tarball install smoke.
 
 `dist/` is committed so Git dependency consumers can install without running a
 prepare build. When source exports change, run `pnpm run build` and commit the
