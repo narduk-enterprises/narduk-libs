@@ -18,6 +18,8 @@ export interface DecodedJwt {
     header: Record<string, unknown>;
     payload: Record<string, unknown>;
 }
+export declare const DEFAULT_MAPKIT_TOKEN_TTL_SECONDS: number;
+export declare const DEFAULT_APPLE_MAPS_AUTH_TTL_SECONDS: number;
 export declare function createMapKitToken(options: MapKitJwtOptions): Promise<string>;
 export declare function createAppleMapsAuthToken(options: AppleMapsAuthTokenOptions): Promise<string>;
 export declare function decodeJwt(token: string): DecodedJwt;

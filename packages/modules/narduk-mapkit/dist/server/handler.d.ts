@@ -5,6 +5,7 @@ export interface MapKitTokenRequestOptions {
 }
 export interface MapKitTokenResult {
     configured: boolean;
+    expiresAt?: string | null;
     error?: string;
     origin: string;
     token: string;
@@ -31,4 +32,5 @@ export declare function mapKitTokenResponse(request: Request, config?: MapKitSer
  */
 export declare function mapKitTokenResponseFromEnv(request: Request, env: MapKitEnv, overrides?: Partial<MapKitServerConfig>): Promise<Response>;
 export declare function createMapKitTokenHandler(config?: MapKitServerConfig): (request: Request) => Promise<Response>;
+export declare function clearMapKitTokenCacheForTests(): void;
 //# sourceMappingURL=handler.d.ts.map

@@ -1,118 +1,90 @@
-# narduk-mapkit
+# @loganrenz/narduk-mapkit
 
-Framework-agnostic Apple MapKit JS helpers extracted from the Narduk template maps layer.
+Framework-agnostic TypeScript helpers for Apple MapKit JS.
 
-This package exists so local web apps can boot MapKit quickly without each app
-copying token-signing, script-loading, and geometry helpers.
+This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
+token routes, browser bootstrapping, coordinate and region math, GeoJSON and
+drawable framing, tile overlay animation, and route playback utilities.
 
-The important path is:
+Core stays runtime-neutral. App code still owns framework components, marker
+HTML, panels, data fetching, and domain-specific behavior.
 
-1. Server code signs an origin-scoped MapKit JS JWT with Apple credentials.
-2. Browser code loads `https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js`.
-3. `mapkit.init()` uses an `authorizationCallback` that refreshes the token when
-   it expires.
+## Features
 
-This is not a Nuxt layer. It works with any runtime that can expose a
-Fetch-style `Request -> Response` route.
+- Origin-scoped MapKit JS JWT signing with Web Crypto.
+- Fetch-compatible token responses for Hono, Workers, Nuxt/H3, Next route
+  handlers, and plain server runtimes.
+- Bounded in-memory token caching so repeated requests do not reimport/sign the
+  same Apple key.
+- Browser script loading and MapKit initialization with token refresh
+  coalescing.
+- Plain-data geometry helpers for bounds, GeoJSON, drawables, distance, hit
+  testing, and route playback.
+- MapKit JS runtime helpers for coordinates, coordinate regions, tile overlays,
+  and cancellable opacity crossfades.
 
-## Local Agent Quick Start
+## Install
 
-For same-Mac testing, prefer the local tarball. It avoids GitHub Packages and
-npm auth entirely:
+```sh
+pnpm add @loganrenz/narduk-mapkit
+```
+
+For same-machine development before publishing, use the local tarball:
 
 ```sh
 pnpm add "/Users/narduk/Library/Application Support/NardukMapKit/packages/loganrenz-narduk-mapkit-latest.tgz"
 ```
 
-If the tarball is missing or stale, refresh the local publish poller:
+Or depend on Git directly:
 
 ```sh
-script/package_publish_bootstrap.sh
+pnpm add git+https://github.com/loganrenz/narduk-mapkit.git#main
 ```
 
-The poller mirrors the Agent Hub deploy pattern:
+## Server Token Route
 
-- LaunchAgent: `com.narduk.mapkit.package-publish`
-- Source: `origin/main`
-- Build location: throwaway clone under `~/Library/Application Support/NardukMapKit/deploy/src`
-- Output: `~/Library/Application Support/NardukMapKit/packages/loganrenz-narduk-mapkit-latest.tgz`
-- Marker: `~/Library/Application Support/NardukMapKit/deploy/last-published-sha`
-
-The live editing checkout is not touched by the poller. It records the marker
-only after install, build, and pack succeed.
-
-## Git Install
-
-For a committed dependency that still avoids npm registry auth:
-
-```sh
-pnpm add git+ssh://git@github.com/loganrenz/narduk-mapkit.git#main
-```
-
-Use the tarball for fastest local iteration and the Git dependency when a repo
-needs to resolve the package from GitHub.
-
-## Server Route
-
-Mount the Fetch handler at the app's token endpoint:
+Mount the Fetch handler at your app's token endpoint:
 
 ```ts
 import { createMapKitTokenHandler } from '@loganrenz/narduk-mapkit/server'
 
 export const GET = createMapKitTokenHandler({
-  allowedOrigins: ['http://localhost:3000', 'https://example.com'],
+  allowedOrigins: ['http://localhost:3000', 'https://maps.example.com'],
 })
 ```
 
-The handler returns JSON:
+The response shape is stable:
 
 ```json
-{ "configured": true, "origin": "http://localhost:3000", "token": "..." }
+{
+  "configured": true,
+  "expiresAt": "2026-07-05T14:00:00.000Z",
+  "origin": "http://localhost:3000",
+  "token": "..."
+}
 ```
 
-On misconfiguration it returns `503` with `configured: false` instead of
-throwing framework-specific errors.
+Misconfiguration returns `503` with `configured: false`; blocked origins return
+`403`.
 
-## Cloudflare Workers
+### Cloudflare Workers
 
-Workers pass bindings through the `fetch(request, env)` argument, not
-`process.env`, and have no `child_process` for the Doppler fallback. Use the
-env-aware helper — token signing is pure Web Crypto, so it runs natively in
-workerd (no `nodejs_compat` flag required):
+Workers pass secrets through `fetch(request, env)`, not `process.env`:
 
 ```ts
 import { mapKitTokenResponseFromEnv } from '@loganrenz/narduk-mapkit/server'
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  fetch(request: Request, env: Env): Promise<Response> {
     if (new URL(request.url).pathname === '/api/mapkit-token') {
-      return mapKitTokenResponseFromEnv(request, env)
+      return mapKitTokenResponseFromEnv(request, env, {
+        allowedOrigins: env.MAPKIT_ALLOWED_ORIGINS,
+      })
     }
     return new Response('Not found', { status: 404 })
   },
 }
 ```
-
-`env` must expose `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY` as
-Worker secrets. Set them with `wrangler secret put`, e.g. piping from Doppler so
-the key is never printed:
-
-```sh
-doppler secrets get APPLE_PRIVATE_KEY --plain -p narduk -c tokens \
-  | wrangler secret put APPLE_PRIVATE_KEY
-```
-
-The token's `origin` claim is derived from the request, so the same handler
-works in local `wrangler dev` and in production. Pass `overrides` (a
-`MapKitServerConfig`) for `allowedOrigins`, a custom TTL, etc.
-
-## Credentials
-
-The server config lookup order is:
-
-1. Explicit handler config
-2. Environment variables
-3. Doppler project `narduk`, config `tokens`, via the local `doppler` CLI
 
 Recognized secrets:
 
@@ -120,133 +92,152 @@ Recognized secrets:
 - `APPLE_TEAM_ID`
 - `APPLE_KEY_ID`
 - `MAPKIT_ALLOWED_ORIGINS`
-- `MAPKIT_TOKEN` or `APPLE_MAPKIT_TOKEN` as a fallback pre-signed static JWT
+- `MAPKIT_TOKEN` or `APPLE_MAPKIT_TOKEN` as a fallback static JWT
 
-`APPLE_PRIVATE_KEY` must be PKCS#8 PEM format with `BEGIN PRIVATE KEY`. Escaped
+`APPLE_PRIVATE_KEY` must be PKCS#8 PEM with `BEGIN PRIVATE KEY`. Escaped
 newlines are accepted.
-
-Disable Doppler fallback when a test should prove missing configuration:
-
-```ts
-createMapKitTokenHandler({ doppler: false })
-```
-
-Do not send Apple private keys to the browser. Token signing belongs on the
-server route only.
 
 ## Browser Boot
 
 ```ts
 import { initializeMapKit } from '@loganrenz/narduk-mapkit/client'
 
-await initializeMapKit({
-  tokenEndpoint: '/api/mapkit-token',
-})
+await initializeMapKit({ tokenEndpoint: '/api/mapkit-token' })
 
 const map = new window.mapkit.Map('map')
 ```
 
-`initializeMapKit()` is a singleton. Multiple calls share script loading and
-MapKit initialization. The authorization callback reuses a fresh token until it
-nears expiry, then asks the token endpoint for a new one.
+`initializeMapKit()` is a singleton. It shares the script load, initializes
+MapKit once, reuses fresh tokens until they approach expiry, and coalesces
+concurrent token refreshes.
 
-## Low-Level Token API
+## Shared Region Framing
 
-Use this when a framework wants to own its own response shape:
+Use package geometry to keep bounds logic out of app components:
 
 ```ts
-import { createMapKitToken } from '@loganrenz/narduk-mapkit/token'
+import { computeMapKitRegionForDrawables } from '@loganrenz/narduk-mapkit/geometry'
+import { createMapKitRegionForPoints } from '@loganrenz/narduk-mapkit/client'
 
-const token = await createMapKitToken({
-  privateKey: process.env.APPLE_PRIVATE_KEY!,
-  teamId: process.env.APPLE_TEAM_ID!,
-  keyId: process.env.APPLE_KEY_ID!,
-  origin: 'http://localhost:3000',
+const plainRegion = computeMapKitRegionForDrawables({
+  markers: [{ id: 'austin', lat: 30.2672, lng: -97.7431 }],
+  geojson: featureCollection,
 })
+
+const mapkitRegion = createMapKitRegionForPoints(window.mapkit, points, {
+  fallbackCenter: { lat: 30.2672, lng: -97.7431 },
+  fallbackSpan: { latDelta: 0.12, lngDelta: 0.12 },
+  padding: 0.16,
+})
+
+if (mapkitRegion) map.setRegionAnimated(mapkitRegion)
 ```
 
-For Apple Maps Server API auth-token signing, use
-`createAppleMapsAuthToken()` with the Maps app id claim.
+Region helpers handle invalid points, minimum spans, padding, and antimeridian
+crossings.
 
-## Geometry And Playback
+## Tile Overlay Crossfade
 
-The geometry and playback helpers are plain TypeScript and do not require the
-MapKit JS global:
+Map viewers can share tile overlay construction and fade-out cleanup:
 
 ```ts
 import {
-  computeCoordinateBounds,
-  computeRouteDistanceMetres,
-} from '@loganrenz/narduk-mapkit/geometry'
+  createMapKitTileOverlay,
+  crossfadeMapKitOverlayOpacity,
+} from '@loganrenz/narduk-mapkit/client'
+
+const nextOverlay = createMapKitTileOverlay(window.mapkit, '/tiles/{z}/{x}/{y}.png', {
+  maximumZ: 10,
+  minimumZ: 3.33,
+  opacity: 0,
+})
+
+map.addTileOverlay(nextOverlay)
+
+void crossfadeMapKitOverlayOpacity({
+  durationMs: 520,
+  nextOverlay,
+  oldOverlays: [currentOverlay],
+  removeOverlay: (overlay) => map.removeTileOverlay(overlay),
+  targetOpacity: 0.82,
+}).finished
 ```
 
-## Package Maintenance
+## Playback
 
-Run the full local gate before pushing code changes:
+Playback helpers are plain TypeScript and do not require MapKit JS:
+
+```ts
+import {
+  buildMapKitPlaybackLineSlices,
+  formatMapKitPlaybackDuration,
+  mapKitPlaybackProgressToIndex,
+} from '@loganrenz/narduk-mapkit/playback'
+
+const index = mapKitPlaybackProgressToIndex(progress, route.length)
+const lines = buildMapKitPlaybackLineSlices(route, index)
+const label = formatMapKitPlaybackDuration(elapsedMs)
+```
+
+## Examples
+
+The `examples/` directory contains copyable integration patterns:
+
+- `hono-token-route.ts`
+- `nuxt-mapkit-token.get.ts`
+- `browser-markers.ts`
+- `tile-overlay-crossfade.ts`
+
+These are intentionally small. Keep app styling, marker HTML, and data loading
+in the app.
+
+## API Surface
+
+| Export | Purpose |
+| --- | --- |
+| `@loganrenz/narduk-mapkit/server` | Fetch responses, config lookup, Worker env bridge, token cache |
+| `@loganrenz/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, crossfades |
+| `@loganrenz/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
+| `@loganrenz/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
+| `@loganrenz/narduk-mapkit/token` | Low-level JWT signing and decoding |
+
+## Centralization Plan
+
+The current plan is in [docs/centralization-plan.md](docs/centralization-plan.md).
+The short version:
+
+1. Move token routes to `server` helpers.
+2. Move local script loaders to `initializeMapKit()`.
+3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client`
+   region helpers.
+4. Move MapKit tile overlay construction and fade loops to `client` runtime
+   helpers.
+5. Keep framework components, marker DOM, callouts, panels, and native Swift
+   renderers outside this package.
+
+## Security
+
+Apple private keys belong only on the server side. Never pass
+`APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY` to browser code.
+
+Origin allowlists are optional for local tools, but production token endpoints
+should set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`.
+
+## Development
 
 ```sh
+pnpm install --frozen-lockfile
 pnpm run quality
 ```
 
-Publish the current checkout to the local tarball manually:
+`pnpm run quality` runs typecheck, tests, and build.
+
+`dist/` is committed so Git dependency consumers can install without running a
+prepare build. When source exports change, run `pnpm run build` and commit the
+matching `dist/` output.
+
+Maintainers can refresh the local tarball with:
 
 ```sh
 pnpm run publish:local
 ```
-
-GitHub Actions is manual and runs on the custom build host:
-
-```sh
-gh workflow run CI --ref main
-```
-
-Runner labels:
-
-- `self-hosted`
-- `macOS`
-- `ARM64`
-- `logans-imac-pro`
-- `narduk-mapkit`
-
-## Patterns For Agents
-
-This repo follows the useful parts of the `grib-viewer` agent workflow:
-
-- Keep one obvious green gate: `pnpm run quality`.
-- Keep runtime data and generated artifacts out of Git.
-- Make local prerequisites explicit instead of hiding them in tribal memory.
-- Preserve unrelated dirty work and stage task files explicitly.
-- Keep generated package output reproducible from source.
-
-Use this package's README as the main agent runbook. This repo is intentionally
-small, so adding more always-read docs should be rare.
-
-## Do Not Do This
-
-These are mistakes to avoid when working on this library:
-
-- Do not turn this into a framework layer. No Nuxt, Next, Vite, Express, or
-  Cloudflare runtime globals belong in core code.
-- Do not create a maze of handoff, cleanup, wave, and phase docs for ordinary
-  package work. If an instruction matters every time, put it here.
-- Do not commit local package tarballs, `dist/`, `node_modules/`, `.env`, or
-  agent run logs.
-- Do not add a package dependency solely to run local agents. Agent tooling
-  belongs outside this library unless it is part of the library itself.
-- Do not publish through GitHub Packages for local testing. Use the local
-  tarball or Git over SSH so app repos do not need npm auth setup.
-- Do not let token handling drift into consuming apps. Apps should mount the
-  server handler and call the browser initializer.
-- Do not print or commit Apple/Doppler secret values while debugging. It is
-  enough to verify that keys resolve.
-
-## Agent Notes
-
-- Prefer `@loganrenz/narduk-mapkit/server` for token routes and
-  `@loganrenz/narduk-mapkit/client` for browser boot.
-- Prefer the local tarball path for same-machine app testing.
-- Do not introduce framework-specific runtime globals into the package core.
-- Do not commit generated `dist/`, local package tarballs, `.env`, or Apple
-  credentials.
-- If public exports change, update `package.json` exports, README examples, and
-  focused tests in the same commit.

@@ -1,4 +1,6 @@
-import { haversineDistanceMetres, isValidCoordinate, normalizeCoordinate } from './helpers.js';
+import { computeCoordinateBounds, haversineDistanceMetres, isValidCoordinate, normalizeCoordinate, } from './helpers.js';
+const DEFAULT_REGION_PADDING = 0.05;
+const DEFAULT_REGION_MIN_SPAN_DELTA = 0.01;
 function readLngLatPair(value) {
     if (!Array.isArray(value) || value.length < 2)
         return null;
@@ -108,6 +110,147 @@ export function measureLineDistanceMetres(points) {
         total += haversineDistanceMetres(points[i - 1], points[i]);
     }
     return total;
+}
+function regionOptionsPadding(options) {
+    return options.padding ?? DEFAULT_REGION_PADDING;
+}
+function regionOptionsMinSpanDelta(options) {
+    return options.minSpanDelta ?? DEFAULT_REGION_MIN_SPAN_DELTA;
+}
+function regionFromCoordinateBounds(bounds) {
+    return {
+        center: normalizeCoordinate(bounds.centerLat, bounds.centerLng),
+        span: {
+            latDelta: bounds.latDelta,
+            lngDelta: bounds.lngDelta,
+        },
+    };
+}
+export function fallbackMapKitRegion(options = {}) {
+    const center = normalizeMapKitPoint(options.fallbackCenter);
+    const span = normalizeMapKitSpan(options.fallbackSpan);
+    if (!center || !span)
+        return null;
+    return { center, span };
+}
+export function computeMapKitRegionForPoints(points, options = {}) {
+    if (!Array.isArray(points))
+        return fallbackMapKitRegion(options);
+    const normalized = points
+        .map((point) => normalizeMapKitPoint(point))
+        .filter((point) => point !== null);
+    const bounds = computeCoordinateBounds(normalized, regionOptionsPadding(options), regionOptionsMinSpanDelta(options));
+    return bounds ? regionFromCoordinateBounds(bounds) : fallbackMapKitRegion(options);
+}
+export function computeMapKitRegionForLngLatBounds(bounds, options = {}) {
+    if (!bounds)
+        return fallbackMapKitRegion(options);
+    const [westLng, southLat, eastLng, northLat] = bounds;
+    if (!isFiniteNumber(westLng) ||
+        !isFiniteNumber(southLat) ||
+        !isFiniteNumber(eastLng) ||
+        !isFiniteNumber(northLat)) {
+        return fallbackMapKitRegion(options);
+    }
+    const south = clamp(southLat, -90, 90);
+    const north = clamp(northLat, -90, 90);
+    const minLat = Math.min(south, north);
+    const maxLat = Math.max(south, north);
+    const lngSpan = Math.abs(eastLng - westLng);
+    if (lngSpan >= 360) {
+        return regionFromCoordinateBounds({
+            centerLat: (minLat + maxLat) / 2,
+            centerLng: 0,
+            latDelta: Math.max((maxLat - minLat) * (1 + regionOptionsPadding(options)), regionOptionsMinSpanDelta(options)),
+            lngDelta: 360,
+        });
+    }
+    return computeMapKitRegionForPoints([
+        { lat: minLat, lng: normalizeLongitudeDegrees(westLng) },
+        { lat: maxLat, lng: normalizeLongitudeDegrees(eastLng) },
+    ], options);
+}
+export function collectMapKitPointsFromGeoJson(input) {
+    if (!input)
+        return [];
+    if (isGeoJsonFeatureCollectionInput(input)) {
+        return input.features.flatMap((feature) => collectMapKitPointsFromGeoJson(feature));
+    }
+    if (isGeoJsonFeatureInput(input)) {
+        return extractGeoJsonPoints(input.geometry).flatMap((point) => {
+            const normalized = normalizeMapKitPoint(point);
+            return normalized ? [normalized] : [];
+        });
+    }
+    return extractGeoJsonPoints(input).flatMap((point) => {
+        const normalized = normalizeMapKitPoint(point);
+        return normalized ? [normalized] : [];
+    });
+}
+function isGeoJsonFeatureCollectionInput(input) {
+    return input.type === 'FeatureCollection' && Array.isArray(input.features);
+}
+function isGeoJsonFeatureInput(input) {
+    return input.type === 'Feature' && typeof input.geometry === 'object';
+}
+export function computeMapKitRegionForGeoJson(input, options = {}) {
+    return computeMapKitRegionForPoints(collectMapKitPointsFromGeoJson(input), options);
+}
+function collectMarkerPoint(marker) {
+    return 'point' in marker ? normalizeMapKitPoint(marker.point) : normalizeMapKitPoint(marker);
+}
+function collectLinePoints(line) {
+    return normalizeMapKitLineCoordinates('points' in line ? line.points : line.coordinates);
+}
+function collectPolygonPoints(polygon) {
+    return normalizeMapKitPolygonCoordinates(polygon.rings).flatMap((ring) => [...ring]);
+}
+function collectCirclePoint(circle) {
+    if ('radiusMetres' in circle)
+        return normalizeMapKitPoint(circle.center);
+    const normalized = normalizeCircleOverlay(circle);
+    return normalized?.center ? normalizeMapKitPoint(normalized.center) : null;
+}
+export function collectMapKitDrawablePoints(input) {
+    const points = [];
+    if (input.points) {
+        for (const point of input.points) {
+            const normalized = normalizeMapKitPoint(point);
+            if (normalized)
+                points.push(normalized);
+        }
+    }
+    if (input.markers) {
+        for (const marker of input.markers) {
+            const point = collectMarkerPoint(marker);
+            if (point)
+                points.push(point);
+        }
+    }
+    if (input.lines) {
+        for (const line of input.lines) {
+            points.push(...collectLinePoints(line));
+        }
+    }
+    if (input.polygons) {
+        for (const polygon of input.polygons) {
+            points.push(...collectPolygonPoints(polygon));
+        }
+    }
+    if (input.circles) {
+        for (const circle of input.circles) {
+            const point = collectCirclePoint(circle);
+            if (point)
+                points.push(point);
+        }
+    }
+    if (input.geojson) {
+        points.push(...collectMapKitPointsFromGeoJson(input.geojson));
+    }
+    return points;
+}
+export function computeMapKitRegionForDrawables(input, options = {}) {
+    return computeMapKitRegionForPoints(collectMapKitDrawablePoints(input), options);
 }
 function closestPointOnSegment(point, start, end) {
     const x = point.lng;

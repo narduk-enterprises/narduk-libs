@@ -1,5 +1,6 @@
 import { decodeJwt } from '../src/token/index.js'
 import {
+  clearMapKitTokenCacheForTests,
   issueMapKitTokenForRequest,
   mapKitTokenResponse,
   mapKitTokenResponseFromEnv,
@@ -7,6 +8,10 @@ import {
 import { createTestPrivateKeyPem } from './test-keys.js'
 
 describe('MapKit token request handler', () => {
+  afterEach(() => {
+    clearMapKitTokenCacheForTests()
+  })
+
   it('signs a token for the request origin', async () => {
     const privateKey = await createTestPrivateKeyPem()
     const result = await issueMapKitTokenForRequest({
@@ -24,6 +29,33 @@ describe('MapKit token request handler', () => {
     expect(result.configured).toBe(true)
     expect(result.origin).toBe('http://localhost:5173')
     expect(decodeJwt(result.token).payload.origin).toBe('http://localhost:5173')
+  })
+
+  it('reuses cached signed tokens for the same origin and signing config', async () => {
+    const privateKey = await createTestPrivateKeyPem()
+    const config = {
+      cache: { refreshWindowMs: 0 },
+      keyId: 'KEY123',
+      privateKey,
+      teamId: 'TEAM123',
+      tokenExpiresInSeconds: 3600,
+    }
+    const request = new Request('http://local.test/api/mapkit-token', {
+      headers: { origin: 'http://localhost:5173' },
+    })
+
+    const first = await issueMapKitTokenForRequest({ config, request })
+    const second = await issueMapKitTokenForRequest({ config, request })
+    const otherOrigin = await issueMapKitTokenForRequest({
+      config,
+      request: new Request('http://local.test/api/mapkit-token', {
+        headers: { origin: 'http://localhost:4173' },
+      }),
+    })
+
+    expect(second.token).toBe(first.token)
+    expect(second.expiresAt).toBe(first.expiresAt)
+    expect(otherOrigin.token).not.toBe(first.token)
   })
 
   it('rejects origins outside the allowlist', async () => {

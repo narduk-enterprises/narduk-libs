@@ -1,5 +1,6 @@
 export interface MapKitServerConfig {
     allowedOrigins?: readonly string[] | string;
+    cache?: false | MapKitTokenCacheConfig;
     doppler?: false | MapKitDopplerConfig;
     fallbackOrigin?: string;
     keyId?: string;
@@ -7,6 +8,10 @@ export interface MapKitServerConfig {
     staticToken?: string;
     teamId?: string;
     tokenExpiresInSeconds?: number;
+}
+export interface MapKitTokenCacheConfig {
+    maxEntries?: number;
+    refreshWindowMs?: number;
 }
 export interface MapKitDopplerConfig {
     command?: string;

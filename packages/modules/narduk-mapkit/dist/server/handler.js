@@ -1,5 +1,8 @@
-import { createMapKitToken } from '../token/jwt.js';
+import { createMapKitToken, DEFAULT_MAPKIT_TOKEN_TTL_SECONDS } from '../token/jwt.js';
 import { hasSigningConfig, hasUsableStaticToken, isOriginAllowed, mapKitConfigFromEnv, parseAllowedOrigins, resolveMapKitServerConfig, } from './config.js';
+const DEFAULT_CACHE_MAX_ENTRIES = 100;
+const DEFAULT_CACHE_REFRESH_WINDOW_MS = 60_000;
+const signedTokenCache = new Map();
 export function getOriginFromRequest(request, fallbackOrigin = 'http://localhost:3000') {
     const origin = request.headers.get('origin');
     if (origin)
@@ -33,20 +36,32 @@ export async function issueMapKitTokenForRequest(options) {
         };
     }
     if (hasSigningConfig(config)) {
+        const expiresInSeconds = config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS;
+        const cached = readCachedSignedToken(config, origin);
+        if (cached) {
+            return {
+                configured: true,
+                expiresAt: new Date(cached.expiresAtMs).toISOString(),
+                origin,
+                token: cached.token,
+            };
+        }
+        const issuedAtSeconds = Math.floor(Date.now() / 1000);
         const tokenOptions = {
+            expiresInSeconds,
+            issuedAtSeconds,
             keyId: config.keyId,
             origin,
             privateKey: config.privateKey,
             teamId: config.teamId,
-            ...(config.tokenExpiresInSeconds !== undefined
-                ? { expiresInSeconds: config.tokenExpiresInSeconds }
-                : {}),
         };
         const token = await createMapKitToken(tokenOptions);
-        return { configured: true, origin, token };
+        const expiresAtMs = (issuedAtSeconds + expiresInSeconds) * 1000;
+        writeCachedSignedToken(config, origin, token, expiresAtMs);
+        return { configured: true, expiresAt: new Date(expiresAtMs).toISOString(), origin, token };
     }
     if (hasUsableStaticToken(config)) {
-        return { configured: true, origin, token: config.staticToken.trim() };
+        return { configured: true, expiresAt: null, origin, token: config.staticToken.trim() };
     }
     return {
         configured: false,
@@ -92,6 +107,61 @@ export function mapKitTokenResponseFromEnv(request, env, overrides = {}) {
 }
 export function createMapKitTokenHandler(config) {
     return (request) => config ? mapKitTokenResponse(request, config) : mapKitTokenResponse(request);
+}
+export function clearMapKitTokenCacheForTests() {
+    signedTokenCache.clear();
+}
+function cacheEnabled(config) {
+    return config.cache !== false;
+}
+function cacheMaxEntries(config) {
+    const maxEntries = typeof config.cache === 'object' ? config.cache.maxEntries : undefined;
+    return typeof maxEntries === 'number' && Number.isFinite(maxEntries) && maxEntries > 0
+        ? Math.floor(maxEntries)
+        : DEFAULT_CACHE_MAX_ENTRIES;
+}
+function cacheRefreshWindowMs(config) {
+    const refreshWindowMs = typeof config.cache === 'object' ? config.cache.refreshWindowMs : undefined;
+    return typeof refreshWindowMs === 'number' &&
+        Number.isFinite(refreshWindowMs) &&
+        refreshWindowMs >= 0
+        ? refreshWindowMs
+        : DEFAULT_CACHE_REFRESH_WINDOW_MS;
+}
+function signedTokenCacheKey(config, origin) {
+    return [
+        config.teamId?.trim() ?? '',
+        config.keyId?.trim() ?? '',
+        config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS,
+        origin.replace(/\/$/, ''),
+    ].join('\0');
+}
+function readCachedSignedToken(config, origin) {
+    if (!cacheEnabled(config))
+        return null;
+    const key = signedTokenCacheKey(config, origin);
+    const cached = signedTokenCache.get(key);
+    if (!cached)
+        return null;
+    if (cached.expiresAtMs <= Date.now() + cacheRefreshWindowMs(config)) {
+        signedTokenCache.delete(key);
+        return null;
+    }
+    signedTokenCache.delete(key);
+    signedTokenCache.set(key, cached);
+    return cached;
+}
+function writeCachedSignedToken(config, origin, token, expiresAtMs) {
+    if (!cacheEnabled(config))
+        return;
+    signedTokenCache.set(signedTokenCacheKey(config, origin), { expiresAtMs, token });
+    const maxEntries = cacheMaxEntries(config);
+    while (signedTokenCache.size > maxEntries) {
+        const oldestKey = signedTokenCache.keys().next().value;
+        if (!oldestKey)
+            break;
+        signedTokenCache.delete(oldestKey);
+    }
 }
 function jsonResponse(body, status) {
     return new Response(JSON.stringify(body), {

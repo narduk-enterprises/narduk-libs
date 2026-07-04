@@ -1,17 +1,32 @@
 {
   "name": "@loganrenz/narduk-mapkit",
-  "version": "0.1.1",
-  "private": true,
+  "version": "0.2.0",
   "type": "module",
-  "description": "Framework-agnostic Apple MapKit JS token and browser helpers.",
+  "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/loganrenz/narduk-mapkit.git"
+    "url": "git+https://github.com/loganrenz/narduk-mapkit.git"
   },
-  "license": "UNLICENSED",
+  "homepage": "https://github.com/loganrenz/narduk-mapkit#readme",
+  "bugs": {
+    "url": "https://github.com/loganrenz/narduk-mapkit/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "apple-maps",
+    "geojson",
+    "mapkit",
+    "mapkit-js",
+    "maps",
+    "typescript"
+  ],
   "sideEffects": false,
   "files": [
+    "CHANGELOG.md",
     "dist/",
+    "docs/",
+    "examples/",
+    "LICENSE",
     "README.md"
   ],
   "exports": {
@@ -55,6 +70,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "packageManager": "pnpm@10.33.4"
 }

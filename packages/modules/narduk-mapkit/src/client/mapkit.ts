@@ -28,6 +28,7 @@ const DEFAULT_TOKEN_REFRESH_WINDOW_MS = 60_000
 let scriptPromise: Promise<void> | null = null
 let initPromise: Promise<MapKitRuntime> | null = null
 let lastIssuedToken = ''
+let tokenPromise: Promise<string> | null = null
 
 function resolveWindow(options: MapKitClientOptions): Window {
   const resolvedWindow = options.window ?? globalThis.window
@@ -106,7 +107,10 @@ export async function initializeMapKit(options: MapKitClientOptions = {}): Promi
       if (lastIssuedToken && !isJwtExpired(lastIssuedToken, Date.now(), refreshWindowMs)) {
         return lastIssuedToken
       }
-      lastIssuedToken = await fetchMapKitToken(options.tokenEndpoint, options.fetchImpl)
+      tokenPromise ??= fetchMapKitToken(options.tokenEndpoint, options.fetchImpl).finally(() => {
+        tokenPromise = null
+      })
+      lastIssuedToken = await tokenPromise
       return lastIssuedToken
     }
 
@@ -135,4 +139,5 @@ export function resetMapKitClientStateForTests(): void {
   scriptPromise = null
   initPromise = null
   lastIssuedToken = ''
+  tokenPromise = null
 }

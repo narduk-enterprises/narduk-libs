@@ -1,7 +1,13 @@
-import { haversineDistanceMetres, isValidCoordinate, normalizeCoordinate } from './helpers.js'
+import {
+  computeCoordinateBounds,
+  haversineDistanceMetres,
+  isValidCoordinate,
+  normalizeCoordinate,
+} from './helpers.js'
 
 import type {
   MapKitCircleDrawable,
+  MapKitCircleDrawableV2,
   MapKitGeoJSONFeatureCollectionV2,
   MapKitGeoJSONFeatureV2,
   MapKitGeoJSONGeometryV2,
@@ -12,9 +18,12 @@ import type {
   MapKitLineDrawable,
   MapKitLineDrawableV2,
   MapKitLineHitV2,
+  MapKitMarkerDrawable,
+  MapKitMarkerDrawableV2,
   MapKitOverlaySelection,
   MapKitPoint,
   MapKitPolygonDrawable,
+  MapKitPolygonDrawableV2,
   MapKitRegion,
   MapKitRegionSpan,
 } from '../types.js'
@@ -41,6 +50,32 @@ export interface MapKitLineHit<TData = unknown> {
   overlay: MapKitLineDrawable<TData>
   segmentIndex: number
 }
+
+export type MapKitLngLatBounds = readonly [
+  westLng: number,
+  southLat: number,
+  eastLng: number,
+  northLat: number,
+]
+
+export interface MapKitRegionOptions {
+  fallbackCenter?: MapKitPointLike | null
+  fallbackSpan?: MapKitRegionSpan | null
+  minSpanDelta?: number
+  padding?: number
+}
+
+export interface MapKitDrawableRegionInput {
+  circles?: ReadonlyArray<MapKitCircleDrawable | MapKitCircleDrawableV2> | null
+  geojson?: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry | null
+  lines?: ReadonlyArray<MapKitLineDrawable | MapKitLineDrawableV2> | null
+  markers?: ReadonlyArray<MapKitMarkerDrawable | MapKitMarkerDrawableV2> | null
+  points?: readonly MapKitPointLike[] | null
+  polygons?: ReadonlyArray<MapKitPolygonDrawable | MapKitPolygonDrawableV2> | null
+}
+
+const DEFAULT_REGION_PADDING = 0.05
+const DEFAULT_REGION_MIN_SPAN_DELTA = 0.01
 
 function readLngLatPair(value: unknown): MapKitLatLng | null {
   if (!Array.isArray(value) || value.length < 2) return null
@@ -176,6 +211,196 @@ export function measureLineDistanceMetres(points: readonly MapKitLatLng[]): numb
     total += haversineDistanceMetres(points[i - 1]!, points[i]!)
   }
   return total
+}
+
+function regionOptionsPadding(options: MapKitRegionOptions): number {
+  return options.padding ?? DEFAULT_REGION_PADDING
+}
+
+function regionOptionsMinSpanDelta(options: MapKitRegionOptions): number {
+  return options.minSpanDelta ?? DEFAULT_REGION_MIN_SPAN_DELTA
+}
+
+function regionFromCoordinateBounds(bounds: {
+  centerLat: number
+  centerLng: number
+  latDelta: number
+  lngDelta: number
+}): MapKitRegion {
+  return {
+    center: normalizeCoordinate(bounds.centerLat, bounds.centerLng),
+    span: {
+      latDelta: bounds.latDelta,
+      lngDelta: bounds.lngDelta,
+    },
+  }
+}
+
+export function fallbackMapKitRegion(options: MapKitRegionOptions = {}): MapKitRegion | null {
+  const center = normalizeMapKitPoint(options.fallbackCenter)
+  const span = normalizeMapKitSpan(options.fallbackSpan)
+  if (!center || !span) return null
+  return { center, span }
+}
+
+export function computeMapKitRegionForPoints(
+  points: readonly MapKitPointLike[] | null | undefined,
+  options: MapKitRegionOptions = {},
+): MapKitRegion | null {
+  if (!Array.isArray(points)) return fallbackMapKitRegion(options)
+
+  const normalized = points
+    .map((point) => normalizeMapKitPoint(point))
+    .filter((point): point is MapKitPoint => point !== null)
+  const bounds = computeCoordinateBounds(
+    normalized,
+    regionOptionsPadding(options),
+    regionOptionsMinSpanDelta(options),
+  )
+
+  return bounds ? regionFromCoordinateBounds(bounds) : fallbackMapKitRegion(options)
+}
+
+export function computeMapKitRegionForLngLatBounds(
+  bounds: MapKitLngLatBounds | null | undefined,
+  options: MapKitRegionOptions = {},
+): MapKitRegion | null {
+  if (!bounds) return fallbackMapKitRegion(options)
+  const [westLng, southLat, eastLng, northLat] = bounds
+  if (
+    !isFiniteNumber(westLng) ||
+    !isFiniteNumber(southLat) ||
+    !isFiniteNumber(eastLng) ||
+    !isFiniteNumber(northLat)
+  ) {
+    return fallbackMapKitRegion(options)
+  }
+
+  const south = clamp(southLat, -90, 90)
+  const north = clamp(northLat, -90, 90)
+  const minLat = Math.min(south, north)
+  const maxLat = Math.max(south, north)
+  const lngSpan = Math.abs(eastLng - westLng)
+  if (lngSpan >= 360) {
+    return regionFromCoordinateBounds({
+      centerLat: (minLat + maxLat) / 2,
+      centerLng: 0,
+      latDelta: Math.max(
+        (maxLat - minLat) * (1 + regionOptionsPadding(options)),
+        regionOptionsMinSpanDelta(options),
+      ),
+      lngDelta: 360,
+    })
+  }
+
+  return computeMapKitRegionForPoints(
+    [
+      { lat: minLat, lng: normalizeLongitudeDegrees(westLng) },
+      { lat: maxLat, lng: normalizeLongitudeDegrees(eastLng) },
+    ],
+    options,
+  )
+}
+
+export function collectMapKitPointsFromGeoJson(
+  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry | null | undefined,
+): MapKitPoint[] {
+  if (!input) return []
+  if (isGeoJsonFeatureCollectionInput(input)) {
+    return input.features.flatMap((feature) => collectMapKitPointsFromGeoJson(feature))
+  }
+  if (isGeoJsonFeatureInput(input)) {
+    return extractGeoJsonPoints(input.geometry).flatMap((point) => {
+      const normalized = normalizeMapKitPoint(point)
+      return normalized ? [normalized] : []
+    })
+  }
+  return extractGeoJsonPoints(input).flatMap((point) => {
+    const normalized = normalizeMapKitPoint(point)
+    return normalized ? [normalized] : []
+  })
+}
+
+function isGeoJsonFeatureCollectionInput(
+  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry,
+): input is MapKitGeoJsonFeatureCollection {
+  return input.type === 'FeatureCollection' && Array.isArray((input as { features?: unknown }).features)
+}
+
+function isGeoJsonFeatureInput(
+  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry,
+): input is MapKitGeoJsonFeature {
+  return input.type === 'Feature' && typeof (input as { geometry?: unknown }).geometry === 'object'
+}
+
+export function computeMapKitRegionForGeoJson(
+  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry | null | undefined,
+  options: MapKitRegionOptions = {},
+): MapKitRegion | null {
+  return computeMapKitRegionForPoints(collectMapKitPointsFromGeoJson(input), options)
+}
+
+function collectMarkerPoint(marker: MapKitMarkerDrawable | MapKitMarkerDrawableV2): MapKitPoint | null {
+  return 'point' in marker ? normalizeMapKitPoint(marker.point) : normalizeMapKitPoint(marker)
+}
+
+function collectLinePoints(line: MapKitLineDrawable | MapKitLineDrawableV2): MapKitPoint[] {
+  return normalizeMapKitLineCoordinates('points' in line ? line.points : line.coordinates)
+}
+
+function collectPolygonPoints(polygon: MapKitPolygonDrawable | MapKitPolygonDrawableV2): MapKitPoint[] {
+  return normalizeMapKitPolygonCoordinates(polygon.rings).flatMap((ring) => [...ring])
+}
+
+function collectCirclePoint(circle: MapKitCircleDrawable | MapKitCircleDrawableV2): MapKitPoint | null {
+  if ('radiusMetres' in circle) return normalizeMapKitPoint(circle.center)
+  const normalized = normalizeCircleOverlay(circle)
+  return normalized?.center ? normalizeMapKitPoint(normalized.center) : null
+}
+
+export function collectMapKitDrawablePoints(input: MapKitDrawableRegionInput): MapKitPoint[] {
+  const points: MapKitPoint[] = []
+
+  if (input.points) {
+    for (const point of input.points) {
+      const normalized = normalizeMapKitPoint(point)
+      if (normalized) points.push(normalized)
+    }
+  }
+  if (input.markers) {
+    for (const marker of input.markers) {
+      const point = collectMarkerPoint(marker)
+      if (point) points.push(point)
+    }
+  }
+  if (input.lines) {
+    for (const line of input.lines) {
+      points.push(...collectLinePoints(line))
+    }
+  }
+  if (input.polygons) {
+    for (const polygon of input.polygons) {
+      points.push(...collectPolygonPoints(polygon))
+    }
+  }
+  if (input.circles) {
+    for (const circle of input.circles) {
+      const point = collectCirclePoint(circle)
+      if (point) points.push(point)
+    }
+  }
+  if (input.geojson) {
+    points.push(...collectMapKitPointsFromGeoJson(input.geojson))
+  }
+
+  return points
+}
+
+export function computeMapKitRegionForDrawables(
+  input: MapKitDrawableRegionInput,
+  options: MapKitRegionOptions = {},
+): MapKitRegion | null {
+  return computeMapKitRegionForPoints(collectMapKitDrawablePoints(input), options)
 }
 
 function closestPointOnSegment(

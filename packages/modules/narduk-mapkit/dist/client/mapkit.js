@@ -5,6 +5,7 @@ const DEFAULT_TOKEN_REFRESH_WINDOW_MS = 60_000;
 let scriptPromise = null;
 let initPromise = null;
 let lastIssuedToken = '';
+let tokenPromise = null;
 function resolveWindow(options) {
     const resolvedWindow = options.window ?? globalThis.window;
     if (!resolvedWindow) {
@@ -68,7 +69,10 @@ export async function initializeMapKit(options = {}) {
             if (lastIssuedToken && !isJwtExpired(lastIssuedToken, Date.now(), refreshWindowMs)) {
                 return lastIssuedToken;
             }
-            lastIssuedToken = await fetchMapKitToken(options.tokenEndpoint, options.fetchImpl);
+            tokenPromise ??= fetchMapKitToken(options.tokenEndpoint, options.fetchImpl).finally(() => {
+                tokenPromise = null;
+            });
+            lastIssuedToken = await tokenPromise;
             return lastIssuedToken;
         }
         const firstToken = await resolveToken();
@@ -93,5 +97,6 @@ export function resetMapKitClientStateForTests() {
     scriptPromise = null;
     initPromise = null;
     lastIssuedToken = '';
+    tokenPromise = null;
 }
 //# sourceMappingURL=mapkit.js.map

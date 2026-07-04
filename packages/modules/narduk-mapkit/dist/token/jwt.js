@@ -1,6 +1,6 @@
 import { base64urlEncode, derEcdsaSignatureToRaw, importPrivateKeyForAppleMaps, } from './crypto.js';
-const DEFAULT_MAPKIT_TOKEN_TTL_SECONDS = 60 * 60 * 24;
-const DEFAULT_APPLE_MAPS_AUTH_TTL_SECONDS = 60 * 30;
+export const DEFAULT_MAPKIT_TOKEN_TTL_SECONDS = 60 * 60 * 24;
+export const DEFAULT_APPLE_MAPS_AUTH_TTL_SECONDS = 60 * 30;
 function normalizePem(privateKey) {
     return privateKey.includes('\\n') ? privateKey.replaceAll('\\n', '\n') : privateKey;
 }
