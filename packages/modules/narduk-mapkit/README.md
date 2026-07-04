@@ -232,11 +232,20 @@ Apple private keys belong only on the server side. Never pass
 Origin allowlists are optional for local tools, but production token endpoints
 should set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`.
 
+Report vulnerabilities through the process in `SECURITY.md`, not public issues.
+
 ## Development
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm run quality
+```
+
+Do not add `.env` files. For local secret-backed flows, run commands through
+Doppler:
+
+```sh
+doppler run -- pnpm run quality
 ```
 
 `pnpm run quality` runs typecheck, tests, build, package export smoke, and a
@@ -245,6 +254,9 @@ clean-room tarball install smoke.
 `dist/` is committed so Git dependency consumers can install without running a
 prepare build. When source exports change, run `pnpm run build` and commit the
 matching `dist/` output.
+
+See `CONTRIBUTING.md` for public API, testing, example, and release checklist
+expectations.
 
 Maintainers can refresh the local tarball with:
 

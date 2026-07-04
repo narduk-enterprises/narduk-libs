@@ -69,6 +69,38 @@ describe('MapKit token request handler', () => {
     expect(otherOrigin.token).not.toBe(first.token)
   })
 
+  it('does not reuse cached signed tokens after private-key rotation', async () => {
+    const [oldPrivateKey, newPrivateKey] = await Promise.all([
+      createTestPrivateKeyPem(),
+      createTestPrivateKeyPem(),
+    ])
+    const config = {
+      cache: { refreshWindowMs: 0 },
+      keyId: 'KEY123',
+      teamId: 'TEAM123',
+      tokenExpiresInSeconds: 3600,
+    }
+    const request = new Request('http://local.test/api/mapkit-token', {
+      headers: { origin: 'http://localhost:5173' },
+    })
+
+    const oldToken = await issueMapKitTokenForRequest({
+      config: { ...config, privateKey: oldPrivateKey },
+      request,
+    })
+    const rotatedToken = await issueMapKitTokenForRequest({
+      config: { ...config, privateKey: newPrivateKey },
+      request,
+    })
+    const repeatedRotatedToken = await issueMapKitTokenForRequest({
+      config: { ...config, privateKey: newPrivateKey },
+      request,
+    })
+
+    expect(rotatedToken.token).not.toBe(oldToken.token)
+    expect(repeatedRotatedToken.token).toBe(rotatedToken.token)
+  })
+
   it('rejects origins outside the allowlist', async () => {
     const response = await mapKitTokenResponse(
       new Request('http://local.test/api/mapkit-token', {

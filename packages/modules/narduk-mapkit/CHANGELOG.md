@@ -6,8 +6,10 @@
 - Added shared region helpers for point lists, lng/lat bounds, GeoJSON, and common drawable collections.
 - Added bounded server-side caching for origin-scoped signed MapKit JS tokens.
 - Coalesced concurrent browser token refreshes during MapKit authorization callbacks.
+- Hardened signed-token cache partitioning across Apple private-key rotation.
 - Added Hono, Nuxt, browser marker, and animated tile overlay examples.
 - Added package export and clean-room tarball install smoke validation to the canonical quality gate.
+- Added contributor and security policy docs for production library maintenance.
 - Updated CI to run on push and pull requests with a portable Node job.
 - Updated package metadata and license for public open-source distribution.
 

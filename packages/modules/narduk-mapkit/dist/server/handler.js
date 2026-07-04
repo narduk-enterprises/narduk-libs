@@ -37,7 +37,8 @@ export async function issueMapKitTokenForRequest(options) {
     }
     if (hasSigningConfig(config)) {
         const expiresInSeconds = config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS;
-        const cached = readCachedSignedToken(config, origin);
+        const cacheKey = cacheEnabled(config) ? await signedTokenCacheKey(config, origin) : null;
+        const cached = cacheKey ? readCachedSignedToken(config, cacheKey) : null;
         if (cached) {
             return {
                 configured: true,
@@ -57,7 +58,8 @@ export async function issueMapKitTokenForRequest(options) {
         };
         const token = await createMapKitToken(tokenOptions);
         const expiresAtMs = (issuedAtSeconds + expiresInSeconds) * 1000;
-        writeCachedSignedToken(config, origin, token, expiresAtMs);
+        if (cacheKey)
+            writeCachedSignedToken(config, cacheKey, token, expiresAtMs);
         return { configured: true, expiresAt: new Date(expiresAtMs).toISOString(), origin, token };
     }
     if (hasUsableStaticToken(config)) {
@@ -128,33 +130,40 @@ function cacheRefreshWindowMs(config) {
         ? refreshWindowMs
         : DEFAULT_CACHE_REFRESH_WINDOW_MS;
 }
-function signedTokenCacheKey(config, origin) {
+async function signedTokenCacheKey(config, origin) {
     return [
         config.teamId?.trim() ?? '',
         config.keyId?.trim() ?? '',
+        await signingMaterialFingerprint(config.privateKey ?? ''),
         config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS,
         origin.replace(/\/$/, ''),
     ].join('\0');
 }
-function readCachedSignedToken(config, origin) {
+async function signingMaterialFingerprint(privateKey) {
+    const normalizedPrivateKey = privateKey.trim().replaceAll('\\n', '\n');
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizedPrivateKey));
+    return [...new Uint8Array(digest)]
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+}
+function readCachedSignedToken(config, cacheKey) {
     if (!cacheEnabled(config))
         return null;
-    const key = signedTokenCacheKey(config, origin);
-    const cached = signedTokenCache.get(key);
+    const cached = signedTokenCache.get(cacheKey);
     if (!cached)
         return null;
     if (cached.expiresAtMs <= Date.now() + cacheRefreshWindowMs(config)) {
-        signedTokenCache.delete(key);
+        signedTokenCache.delete(cacheKey);
         return null;
     }
-    signedTokenCache.delete(key);
-    signedTokenCache.set(key, cached);
+    signedTokenCache.delete(cacheKey);
+    signedTokenCache.set(cacheKey, cached);
     return cached;
 }
-function writeCachedSignedToken(config, origin, token, expiresAtMs) {
+function writeCachedSignedToken(config, cacheKey, token, expiresAtMs) {
     if (!cacheEnabled(config))
         return;
-    signedTokenCache.set(signedTokenCacheKey(config, origin), { expiresAtMs, token });
+    signedTokenCache.set(cacheKey, { expiresAtMs, token });
     const maxEntries = cacheMaxEntries(config);
     while (signedTokenCache.size > maxEntries) {
         const oldestKey = signedTokenCache.keys().next().value;
