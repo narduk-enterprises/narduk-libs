@@ -18,6 +18,16 @@ describe('narduk-core package exports', () => {
     })
   })
 
+  it('exports app composables for package-owned UI state reuse', async () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      exports: Record<string, unknown>
+    }
+
+    expect(packageJson.exports['./app/composables/*']).toEqual({
+      import: './runtime/app/composables/*.ts',
+    })
+  })
+
   it('exports core eslint fragments for follow-on package migration', async () => {
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
       exports: Record<string, unknown>

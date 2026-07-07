@@ -392,6 +392,9 @@ importers:
       vitest:
         specifier: 4.1.6
         version: 4.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.11.2)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.28.1)(happy-dom@20.10.6)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vue:
+        specifier: ^3.5.39
+        version: 3.5.39(typescript@5.9.3)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@5.9.3)
@@ -6948,6 +6951,8 @@ packages:
 
   vaul-vue@0.4.1:
     resolution: {integrity: sha512-A6jOWOZX5yvyo1qMn7IveoWN91mJI5L3BUKsIwkg6qrTGgHs1Sb1JF/vyLJgnbN1rH4OOOxFbtqL9A46bOyGUQ==}
+    peerDependencies:
+      vue: ^3.3.0
 
   vfile-message@4.0.3:
     resolution: {integrity: sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw==}
@@ -8894,7 +8899,7 @@ snapshots:
       unplugin: 3.3.0(@emnapi/core@1.10.0)(@emnapi/runtime@1.11.2)(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.0.0-beta.53(@emnapi/core@1.10.0)(@emnapi/runtime@1.11.2))(rollup@4.62.2)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       unplugin-auto-import: 21.0.0(@nuxt/kit@4.4.8(magicast@0.5.3))(@vueuse/core@14.3.0(vue@3.5.39(typescript@5.9.3)))
       unplugin-vue-components: 31.1.0(@nuxt/kit@4.4.8(magicast@0.5.3))(vue@3.5.39(typescript@5.9.3))
-      vaul-vue: 0.4.1(typescript@5.9.3)
+      vaul-vue: 0.4.1(vue@3.5.39(typescript@5.9.3))
       vue-component-type-helpers: 3.3.6
     optionalDependencies:
       valibot: 1.4.2(typescript@5.9.3)
@@ -15205,14 +15210,13 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  vaul-vue@0.4.1(typescript@5.9.3):
+  vaul-vue@0.4.1(vue@3.5.39(typescript@5.9.3)):
     dependencies:
       '@vueuse/core': 10.11.1(vue@3.5.39(typescript@5.9.3))
       reka-ui: 2.9.2(vue@3.5.39(typescript@5.9.3))
       vue: 3.5.39(typescript@5.9.3)
     transitivePeerDependencies:
       - '@vue/composition-api'
-      - typescript
 
   vfile-message@4.0.3:
     dependencies:
