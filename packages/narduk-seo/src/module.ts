@@ -14,6 +14,8 @@ import {
 import { defu } from 'defu'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-seo'
+const nonProductionRobotsRule = 'noindex, nofollow'
+const nonProductionDeploymentTargets = new Set(['staging', 'preview'])
 const nonPublicSitemapRoutes = [
   '/__preview/**',
   '/admin',
@@ -90,6 +92,7 @@ interface TypePrepareOptions {
 
 export interface NardukSeoModuleOptions {
   app?: boolean
+  indexNonProduction?: boolean
   seoModule?: boolean
   server?: boolean
 }
@@ -140,6 +143,84 @@ function addPageIfMissing(
   }
 }
 
+function readTrimmedEnv(keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+
+  return ''
+}
+
+function readBooleanEnv(key: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((process.env[key] || '').trim().toLowerCase())
+}
+
+function readDeploymentTarget(): string {
+  return readTrimmedEnv([
+    'NARDUK_DEPLOY_TARGET',
+    'NUXT_PUBLIC_NARDUK_DEPLOY_TARGET',
+    'NUXT_PUBLIC_DEPLOYMENT_TARGET',
+  ]).toLowerCase()
+}
+
+function isNonProductionDeployment(): boolean {
+  const deploymentTarget = readDeploymentTarget()
+
+  return nonProductionDeploymentTargets.has(deploymentTarget)
+}
+
+function shouldForceNonProductionNoindex(options: NardukSeoModuleOptions): boolean {
+  if (options.indexNonProduction || readBooleanEnv('NARDUK_SEO_INDEX_NON_PRODUCTION')) {
+    return false
+  }
+
+  return isNonProductionDeployment()
+}
+
+function applyNonProductionSeoSafety(nuxtOptions: MutableNuxtOptionsRecord): void {
+  const deploymentTarget = readDeploymentTarget()
+  const nonProductionRouteRule = {
+    headers: {
+      'X-Robots-Tag': nonProductionRobotsRule,
+    },
+    site: {
+      env: deploymentTarget,
+      indexable: false,
+    },
+    sitemap: false,
+  } as unknown as Parameters<typeof extendRouteRules>[1]
+
+  nuxtOptions.site = {
+    ...((nuxtOptions.site ?? {}) as Record<string, unknown>),
+    env: deploymentTarget,
+    indexable: false,
+  }
+  nuxtOptions.runtimeConfig = {
+    ...nuxtOptions.runtimeConfig,
+    site: {
+      ...((nuxtOptions.runtimeConfig.site ?? {}) as Record<string, unknown>),
+      env: deploymentTarget,
+      indexable: false,
+    },
+  }
+  nuxtOptions.sitemap = {
+    ...((nuxtOptions.sitemap ?? {}) as Record<string, unknown>),
+    sources: [],
+    urls: [],
+    exclude: ['/**'],
+  }
+  nuxtOptions.robots = {
+    ...((nuxtOptions.robots ?? {}) as Record<string, unknown>),
+    allow: [],
+    disallow: ['/'],
+    sitemap: [],
+    robotsDisabledValue: nonProductionRobotsRule,
+  }
+
+  extendRouteRules('/**', nonProductionRouteRule, { override: true })
+}
+
 export default defineNuxtModule<NardukSeoModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
@@ -148,6 +229,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
   },
   defaults: {
     app: true,
+    indexNonProduction: false,
     seoModule: true,
     server: true,
   },
@@ -258,6 +340,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       disallowNonIndexableRoutes: false,
       disallow: nonPublicRobotsDisallow,
     })
+    if (shouldForceNonProductionNoindex(options)) {
+      applyNonProductionSeoSafety(nuxtOptions)
+    }
     nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
       compatibilityVersion: 4,
     })
