@@ -1,0 +1,65 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+.turbo
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files — use Doppler, not .env files
+.env
+.env.*
+.dev.vars
+
+# Cloudflare
+.wrangler/
+
+# Drizzle local SQLite (created by drizzle-kit push)
+**/drizzle/*.sqlite
+
+# Build artifacts
+*.bak
+*.tsbuildinfo
+
+# Test artifacts
+coverage/
+output/
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# ESLint plugin build artifacts (rebuilt via `pnpm run build:plugins`)
+packages/eslint-config/*/dist/
+packages/narduk-platform/dist/
+# ESLint caches
+.eslint-results.json
+
+# Secrets & credential artifacts (use Doppler, never commit these)
+*-secrets.json
+*.jsonl
+lint-results.txt
+.npmrc.auth
+
+# Python cache (uipro skill)
+__pycache__/
+*.pyc
+
+# Legacy local skills scratch dir
+.skills
+.agents/skills/
+.agents/.narduk-skills.generated.json
+
+# Local audit snapshots
+artifacts/

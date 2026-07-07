@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "#layer": ["./runtime"],
+      "#layer/*": ["./runtime/*"],
+      "#layer/orm-tables": ["./runtime/server/database/schema.ts"],
+      "#layer/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
+    }
+  },
+  "include": ["runtime/internal/**/*.ts", "runtime/shared/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+}

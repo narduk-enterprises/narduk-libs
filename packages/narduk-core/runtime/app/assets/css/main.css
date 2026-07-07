@@ -1,0 +1,105 @@
+/* Fonts are handled by @nuxt/fonts — no @import url() needed */
+
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+:root {
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', system-ui, sans-serif;
+
+  /* Shadows — semantic elevation scale */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+  --shadow-overlay: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+
+  /* Border Radius — semantic scale */
+  --radius-card: 1rem;
+  --radius-button: 0.5rem;
+  --radius-badge: 9999px;
+  --radius-input: 0.5rem;
+
+  /* Transitions — consistent motion */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+body {
+  @apply antialiased text-default bg-default scheme-light dark:scheme-dark;
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* ─── Elevation Utilities ─── */
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+.shadow-elevated {
+  box-shadow: var(--shadow-elevated);
+}
+.shadow-overlay {
+  box-shadow: var(--shadow-overlay);
+}
+
+/* ─── Transition Utilities ─── */
+
+.transition-fast {
+  transition: all var(--transition-fast);
+}
+.transition-base {
+  transition: all var(--transition-base);
+}
+.transition-slow {
+  transition: all var(--transition-slow);
+}
+
+/* ─── Card Base — reusable card primitive ─── */
+
+.card-base {
+  @apply bg-default border border-default;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition-base);
+}
+
+.card-base:hover {
+  box-shadow: var(--shadow-elevated);
+}
+
+/* ─── Dark Mode Enhancements ─── */
+
+.dark .shadow-card {
+  --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  box-shadow: var(--tw-shadow);
+}
+
+.dark .shadow-elevated {
+  --tw-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  box-shadow: var(--tw-shadow);
+}
+
+/* Page transitions */
+.page-enter-active,
+.page-leave-active {
+  transition: all var(--transition-slow);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}

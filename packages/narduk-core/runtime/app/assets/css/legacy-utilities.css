@@ -1,0 +1,130 @@
+/* Optional utility classes kept out of the default critical stylesheet. */
+
+/* Glassmorphism helpers use stable Nuxt UI design tokens. */
+.glass {
+  background-color: color-mix(in oklab, var(--ui-bg) 80%, transparent);
+  border: 1px solid var(--ui-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glass-card {
+  background-color: color-mix(in oklab, var(--ui-bg) 80%, transparent);
+  border: 1px solid var(--ui-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-card);
+}
+
+.dark .glass {
+  --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  box-shadow: var(--tw-shadow);
+}
+
+.dark .glass-card {
+  box-shadow: var(--shadow-elevated);
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+@keyframes count-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-count-in {
+  animation: count-in 0.6s ease-out forwards;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 16px currentColor;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Form layout shortcuts retained for apps that have not moved to component-level layout. */
+.form-container {
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.form-narrow {
+  max-width: 24rem;
+}
+
+.form-wide {
+  max-width: 40rem;
+}
+
+.form-full {
+  max-width: none;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .form-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.form-actions-center {
+  justify-content: center;
+}
+
+.form-actions-full {
+  flex-direction: column;
+}
+
+.form-actions-full > * {
+  width: 100%;
+}

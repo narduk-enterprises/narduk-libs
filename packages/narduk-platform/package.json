@@ -1,0 +1,68 @@
+{
+  "name": "@narduk-enterprises/narduk-platform",
+  "version": "1.28.63",
+  "private": false,
+  "type": "module",
+  "description": "Fleet data model: layer manifests, theme definitions, env contracts, and provision types for the narduk platform.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/narduk-platform"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./env-catalog": {
+      "types": "./dist/env-catalog.d.ts",
+      "default": "./dist/env-catalog.js"
+    },
+    "./layer-bundle-manifest": {
+      "types": "./dist/layer-bundle-manifest.d.ts",
+      "default": "./dist/layer-bundle-manifest.js"
+    },
+    "./package-registry": {
+      "types": "./dist/package-registry.d.ts",
+      "default": "./dist/package-registry.js"
+    },
+    "./provision-env-contract": {
+      "types": "./dist/provision-env-contract.d.ts",
+      "default": "./dist/provision-env-contract.js"
+    },
+    "./provision-metadata": {
+      "types": "./dist/provision-metadata.d.ts",
+      "default": "./dist/provision-metadata.js"
+    },
+    "./provider-console": {
+      "types": "./dist/provider-console.d.ts",
+      "default": "./dist/provider-console.js"
+    },
+    "./starter-composition": {
+      "types": "./dist/starter-composition.d.ts",
+      "default": "./dist/starter-composition.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json && node scripts/fix-esm-imports.mjs",
+    "format:check": "node ../../tools/package-quality.mjs format:check",
+    "lint": "node ../../tools/package-quality.mjs lint \"src/**/*.ts\" \"scripts/**/*.mjs\"",
+    "prepare": "node scripts/ensure-dist.mjs",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "node ../../tools/package-quality.mjs typecheck tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "typescript": "^5.9.3"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "name": "narduk-libs",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "build": "turbo run build --filter='./packages/*'",
+    "typecheck": "turbo run typecheck --filter='./packages/*'",
+    "lint": "turbo run lint --filter='./packages/*'",
+    "format": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
+    "test": "pnpm -r --filter './packages/*' --if-present test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test"
+  },
+  "pnpm": {
+    "overrides": {
+      "drizzle-orm": "0.45.2",
+      "esbuild": ">=0.25.0",
+      "serialize-javascript": ">=7.0.5",
+      "@cloudflare/unenv-preset": "2.12.1",
+      "@takumi-rs/core": ">=0.70.1",
+      "@takumi-rs/wasm": ">=0.70.1",
+      "glob": "13.0.6",
+      "@cloudflare/workers-types": "4.20260511.1",
+      "@typescript-eslint/utils": "^8.59.3",
+      "@nuxt/eslint": "^1.15.2",
+      "@nuxtjs/seo": "5.1.2",
+      "nuxt-og-image": "6.4.5",
+      "nuxt-seo-utils": "8.1.7",
+      "@nuxtjs/seo>nuxtseo-shared": "5.1.3",
+      "eslint-plugin-unicorn": "^63.0.0",
+      "svgo": "4.0.1",
+      "tar": "7.5.15",
+      "flatted": "3.4.2",
+      "node-forge": "1.4.0",
+      "defu": "6.1.7",
+      "@eslint/config-inspector>h3": "1.15.11",
+      "@stylistic/eslint-plugin>picomatch": "4.0.4",
+      "vite": "npm:rolldown-vite@7.3.1",
+      "vite>picomatch": "4.0.4",
+      "micromatch>picomatch": "2.3.2",
+      "listhen>h3": "1.15.11",
+      "@nuxt/image>h3": "1.15.11",
+      "@nuxt/fonts>h3": "1.15.11",
+      "nuxt-auth-utils>h3": "1.15.11",
+      "@nuxt/test-utils>h3": "1.15.11",
+      "@nuxt/test-utils>h3-next": "npm:h3@2.0.1-rc.22",
+      "anymatch>picomatch": "2.3.2",
+      "tinyglobby>picomatch": "4.0.4",
+      "unplugin>picomatch": "4.0.4",
+      "unplugin-utils>picomatch": "4.0.4",
+      "unimport>picomatch": "4.0.4",
+      "vitest>picomatch": "4.0.4",
+      "@vue/language-core>picomatch": "4.0.4",
+      "vite>yaml": "2.8.4",
+      "yaml": "2.8.4",
+      "minimatch@3>brace-expansion": "1.1.14",
+      "minimatch@5>brace-expansion": "2.1.0",
+      "minimatch@9>brace-expansion": "2.1.0",
+      "minimatch@10>brace-expansion": "5.0.6",
+      "unhead": "2.1.15",
+      "vitest": "4.1.6"
+    },
+    "peerDependencyRules": {
+      "allowAny": [
+        "eslint",
+        "citty",
+        "@cloudflare/workers-types"
+      ],
+      "ignoreMissing": [
+        "@tiptap/y-tiptap",
+        "@tiptap/extensions",
+        "yjs",
+        "embla-carousel"
+      ]
+    },
+    "allowedDeprecatedVersions": {
+      "@esbuild-kit/core-utils": "*",
+      "@esbuild-kit/esm-loader": "*",
+      "@types/parse-path": "*",
+      "prebuild-install": "*"
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "better-sqlite3",
+      "core-js",
+      "esbuild",
+      "protobufjs",
+      "sharp",
+      "unrs-resolver",
+      "vue-demi",
+      "workerd"
+    ]
+  },
+  "volta": {
+    "node": "22.22.3"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "1.2.17",
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^22.19.19",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.3",
+    "publint": "^0.3.21",
+    "turbo": "^2.9.14",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  }
+}

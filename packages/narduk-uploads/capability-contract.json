@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "narduk.uploads",
+  "name": "Narduk Uploads",
+  "package": "@narduk-enterprises/narduk-uploads",
+  "version": "1.19.14",
+  "runtime": {
+    "framework": "nuxt",
+    "module": "@narduk-enterprises/narduk-uploads/nuxt"
+  },
+  "requires": {
+    "cloudflare": {
+      "r2Buckets": [
+        {
+          "binding": "BUCKET",
+          "purpose": "Stores user-uploaded public image objects served from /images/uploads/*"
+        }
+      ]
+    },
+    "auth": {
+      "session": "required",
+      "mutationWrapper": "#layer/server/utils/mutation"
+    }
+  },
+  "provides": {
+    "serverRoutes": ["POST /api/upload", "GET /images/**"],
+    "composables": ["useUpload"]
+  },
+  "checks": [
+    {
+      "id": "uploads.r2-binding-present",
+      "kind": "cloudflare-r2-binding",
+      "binding": "BUCKET"
+    },
+    {
+      "id": "uploads.endpoint-live",
+      "kind": "http-route",
+      "method": "POST",
+      "path": "/api/upload",
+      "expects": "401-or-authenticated-upload"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".output/**", ".nuxt/**", "**/dist/**"]
+    },
+    "nuxt:prepare": {
+      "dependsOn": [],
+      "outputs": [".nuxt/**"]
+    },
+    "eslint:typegen": {
+      "dependsOn": ["nuxt:prepare"],
+      "outputs": [".nuxt/eslint-typegen.d.ts"]
+    },
+    "lint": {
+      "dependsOn": ["nuxt:prepare", "eslint:typegen"],
+      "outputs": [".nuxt/eslint-typegen.d.ts"]
+    },
+    "lint:strict": {
+      "dependsOn": ["nuxt:prepare", "eslint:typegen"],
+      "outputs": [".nuxt/eslint-typegen.d.ts"]
+    },
+    "typecheck": {
+      "dependsOn": ["nuxt:prepare", "eslint:typegen"]
+    },
+    "format:check": {},
+    "quality": {
+      "dependsOn": ["lint", "typecheck", "format:check"]
+    },
+    "quality:strict": {
+      "dependsOn": ["lint", "typecheck", "format:check", "build", "^build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
