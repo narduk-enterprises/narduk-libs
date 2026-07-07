@@ -25,5 +25,12 @@ pnpm run typecheck
 pnpm run test
 ```
 
+## Fix Policy
+
+Fleet app bugs that come from shared auth, runtime, Cloudflare, Nuxt, SEO,
+analytics, upload, D1, KV, R2, or deployment behavior should be fixed in the
+owning package. App-local workarounds must be explicitly justified, scoped, and
+tracked for removal once the library fix is available.
+
 Publishing uses GitHub Packages. Use a temporary npm config or Doppler-provided
 token material; do not commit auth files.

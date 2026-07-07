@@ -17,6 +17,17 @@ apps. It is intentionally not an app starter and not the fleet template.
 - Do not commit token-bearing files such as `.npmrc.auth`.
 - Publish package versions from this repo only after build/pack validation.
 
+## Library-first fixes
+
+- When a fleet app exposes a bug in shared auth, runtime, Cloudflare, Nuxt, SEO,
+  analytics, upload, D1, KV, R2, or deployment behavior, default to fixing it in
+  the owning package here.
+- App-local papering over is a temporary exception, not the normal path. It
+  needs a clear written justification, a narrow blast radius, and a follow-up
+  plan to remove it after the library fix ships.
+- Do not let one app quietly fork shared behavior unless the app has a genuine
+  product-specific requirement that does not belong in the reusable package.
+
 ## Validation
 
 - `pnpm install`
