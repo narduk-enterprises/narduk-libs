@@ -1,13 +1,13 @@
 /// <reference types="@cloudflare/workers-types" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('nitropack/runtime', () => ({
-  useRuntimeConfig: () => ({}),
-}))
-
 import { deleteKVCache, withKVCache } from '../runtime/server/utils/kvCache'
 
 import type { H3Event } from 'h3'
+
+vi.mock('nitropack/runtime', () => ({
+  useRuntimeConfig: () => ({}),
+}))
 
 function createKV() {
   const values = new Map<string, string>()

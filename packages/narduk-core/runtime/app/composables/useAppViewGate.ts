@@ -1,4 +1,6 @@
-import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
+import * as Vue from 'vue'
+
+import type { ComputedRef, MaybeRefOrGetter } from 'vue'
 
 export type AppViewGateState =
   'checking' | 'signed-out' | 'forbidden' | 'loading' | 'ready' | 'refreshing' | 'empty' | 'error'
@@ -52,16 +54,16 @@ export function resolveAppViewGateState(input: ResolveAppViewGateInput): AppView
 }
 
 export function useAppViewGate(input: UseAppViewGateInput): ComputedRef<AppViewGateState> {
-  return computed(() =>
+  return Vue.computed(() =>
     resolveAppViewGateState({
-      accessResolved: toValue(input.accessResolved),
-      allowed: toValue(input.allowed),
-      empty: toValue(input.empty),
-      error: toValue(input.error),
-      loaded: toValue(input.loaded),
-      loading: toValue(input.loading),
-      refreshing: toValue(input.refreshing),
-      signedIn: toValue(input.signedIn),
+      accessResolved: Vue.toValue(input.accessResolved),
+      allowed: Vue.toValue(input.allowed),
+      empty: Vue.toValue(input.empty),
+      error: Vue.toValue(input.error),
+      loaded: Vue.toValue(input.loaded),
+      loading: Vue.toValue(input.loading),
+      refreshing: Vue.toValue(input.refreshing),
+      signedIn: Vue.toValue(input.signedIn),
     }),
   )
 }

@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import * as Vue from 'vue'
 
-import {
-  isAppViewGateInteractive,
-  resolveAppViewGateState,
-  useAppViewGate,
-} from '../runtime/app/composables/useAppViewGate'
+import * as viewGate from '../runtime/app/composables/useAppViewGate'
 
 describe('app view gate', () => {
   it.each([
@@ -136,17 +132,17 @@ describe('app view gate', () => {
       'ready',
     ],
   ] as const)('resolves %s state', (_label, input, expected) => {
-    expect(resolveAppViewGateState(input)).toBe(expected)
+    expect(viewGate.resolveAppViewGateState(input)).toBe(expected)
   })
 
   it('accepts refs for Nuxt page state', () => {
-    const accessResolved = ref(false)
-    const signedIn = ref(false)
-    const allowed = ref(false)
-    const loading = ref(false)
-    const loaded = ref(false)
+    const accessResolved = Vue.ref(false)
+    const signedIn = Vue.ref(false)
+    const allowed = Vue.ref(false)
+    const loading = Vue.ref(false)
+    const loaded = Vue.ref(false)
 
-    const state = useAppViewGate({
+    const state = viewGate.useAppViewGate({
       accessResolved,
       allowed,
       loaded,
@@ -170,7 +166,7 @@ describe('app view gate', () => {
   })
 
   it('accepts getters for Nuxt page state', () => {
-    const state = useAppViewGate({
+    const state = viewGate.useAppViewGate({
       accessResolved: () => true,
       allowed: () => true,
       loaded: () => true,
@@ -184,7 +180,7 @@ describe('app view gate', () => {
 
   it('lets explicit refreshing override loaded loading refresh inference', () => {
     expect(
-      resolveAppViewGateState({
+      viewGate.resolveAppViewGateState({
         accessResolved: true,
         allowed: true,
         loaded: true,
@@ -196,10 +192,10 @@ describe('app view gate', () => {
   })
 
   it('marks ready, refreshing, and empty views as interactive', () => {
-    expect(isAppViewGateInteractive('ready')).toBe(true)
-    expect(isAppViewGateInteractive('refreshing')).toBe(true)
-    expect(isAppViewGateInteractive('empty')).toBe(true)
-    expect(isAppViewGateInteractive('loading')).toBe(false)
-    expect(isAppViewGateInteractive('signed-out')).toBe(false)
+    expect(viewGate.isAppViewGateInteractive('ready')).toBe(true)
+    expect(viewGate.isAppViewGateInteractive('refreshing')).toBe(true)
+    expect(viewGate.isAppViewGateInteractive('empty')).toBe(true)
+    expect(viewGate.isAppViewGateInteractive('loading')).toBe(false)
+    expect(viewGate.isAppViewGateInteractive('signed-out')).toBe(false)
   })
 })
