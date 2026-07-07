@@ -4,17 +4,18 @@ describe('narduk-auth module', () => {
   it('registers auth surface without Nuxt layer inheritance', async () => {
     const addComponentsDir = vi.fn()
     const addImportsDir = vi.fn()
-    const addLayout = vi.fn()
-    const addRouteMiddleware = vi.fn()
     const addServerScanDir = vi.fn()
+    const addTemplate = vi.fn((template: { src: string }) => ({
+      filename: template.src.endsWith('auth.vue') ? 'auth.vue' : 'blank.vue',
+    }))
     const extendPages = vi.fn()
     const extendRouteRules = vi.fn()
+    const hooks = new Map<string, Array<(value: never) => void>>()
     vi.doMock('@nuxt/kit', () => ({
       addComponentsDir,
       addImportsDir,
-      addLayout,
-      addRouteMiddleware,
       addServerScanDir,
+      addTemplate,
       createResolver: (url: string) => ({
         resolve: (path: string) => new URL(path, url).pathname,
       }),
@@ -33,19 +34,45 @@ describe('narduk-auth module', () => {
         nitro: {},
         runtimeConfig: {},
       },
-      hook: vi.fn(),
+      hook(name: string, handler: (value: never) => void) {
+        hooks.set(name, [...(hooks.get(name) || []), handler])
+      },
     }
 
     mod.setup({ app: true, server: true }, nuxt)
 
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-auth')
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
-    expect(addRouteMiddleware).toHaveBeenCalledWith({
-      name: 'auth',
-      path: expect.stringContaining('/app/middleware/auth.ts'),
-    })
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
+    expect(addTemplate).toHaveBeenCalledWith({
+      src: expect.stringContaining('/app/layouts/auth.vue'),
+    })
+    expect(addTemplate).toHaveBeenCalledWith({
+      src: expect.stringContaining('/app/layouts/blank.vue'),
+    })
     expect(extendPages).toHaveBeenCalledTimes(1)
     expect(extendRouteRules).toHaveBeenCalledWith('/login', expect.objectContaining({ ssr: false }))
+
+    const appResolveState = {
+      middleware: [{ name: 'auth', path: '/app-owned/auth.ts' }],
+    }
+    for (const hook of hooks.get('app:resolve') || []) {
+      hook(appResolveState as never)
+    }
+    expect(appResolveState.middleware).toEqual([
+      { name: 'auth', path: '/app-owned/auth.ts' },
+      { name: 'guest', path: expect.stringContaining('/app/middleware/guest.ts') },
+    ])
+
+    const appTemplateState = {
+      layouts: {
+        auth: { file: '~/layouts/auth.vue', name: 'auth' },
+      },
+    }
+    for (const hook of hooks.get('app:templates') || []) {
+      hook(appTemplateState as never)
+    }
+    expect(appTemplateState.layouts.auth).toEqual({ file: '~/layouts/auth.vue', name: 'auth' })
+    expect(appTemplateState.layouts.blank).toEqual({ file: '#build/blank.vue', name: 'blank' })
   })
 })

@@ -7,9 +7,9 @@ import { readProvisionMetadata, resolveLocalNuxtPort } from '@narduk-enterprises
 import {
   addComponentsDir,
   addImportsDir,
-  addLayout,
   addPlugin,
   addServerScanDir,
+  addTemplate,
   createResolver,
   defineNuxtModule,
   installModule,
@@ -18,6 +18,7 @@ import { defu } from 'defu'
 
 import { resolveNuxtProvisionAppRoot } from '../runtime/internal/nuxt-provision-app-root'
 import {
+  applyCoreRollupBuildWarningPolicy,
   applyCoreViteBuildWarningPolicy,
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
@@ -47,6 +48,10 @@ interface TypePrepareOptions {
   tsConfig?: {
     include?: string[]
   }
+}
+
+interface NuxtAppTemplateState {
+  layouts: Record<string, { file: string; name: string }>
 }
 
 type OpenApiProductionMode = false | 'runtime' | 'prerender'
@@ -82,6 +87,21 @@ function pushUnique<T>(items: T[], item: T): void {
   if (!items.includes(item)) {
     items.push(item)
   }
+}
+
+function addFallbackLayout(
+  nuxt: { hook: (name: 'app:templates', handler: (app: NuxtAppTemplateState) => void) => void },
+  template: { src: string },
+  name: string,
+): void {
+  const { filename } = addTemplate(template)
+  nuxt.hook('app:templates', (app) => {
+    if (name in app.layouts) return
+    app.layouts[name] = {
+      file: `#build/${filename}`,
+      name,
+    }
+  })
 }
 
 function addNitroInlinePackage(nuxtOptions: MutableNuxtOptionsRecord, packageName: string): void {
@@ -279,10 +299,12 @@ function addNardukAppRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord):
 function addNardukServerRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord): void {
   const nitro = (nuxtOptions.nitro ??= {}) as {
     rollupConfig?: {
+      onwarn?: (warning: unknown, warn: (warning: unknown) => void) => unknown
       plugins?: Array<{ name?: string } | unknown>
     }
   }
   nitro.rollupConfig ??= {}
+  applyCoreRollupBuildWarningPolicy(nitro.rollupConfig)
   nitro.rollupConfig.plugins ??= []
 
   if (
@@ -506,8 +528,16 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
       addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
       addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
-      addLayout({ src: resolver.resolve('../runtime/app/layouts/dashboard.vue') }, 'dashboard')
-      addLayout({ src: resolver.resolve('../runtime/app/layouts/landing.vue') }, 'landing')
+      addFallbackLayout(
+        nuxt,
+        { src: resolver.resolve('../runtime/app/layouts/dashboard.vue') },
+        'dashboard',
+      )
+      addFallbackLayout(
+        nuxt,
+        { src: resolver.resolve('../runtime/app/layouts/landing.vue') },
+        'landing',
+      )
 
       pushUnique(
         nuxtOptions.css,

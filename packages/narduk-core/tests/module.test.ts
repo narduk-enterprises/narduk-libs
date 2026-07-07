@@ -6,15 +6,17 @@ describe('narduk-core module', () => {
     const addImportsDir = vi.fn()
     const addComponentsDir = vi.fn()
     const addPlugin = vi.fn()
-    const addLayout = vi.fn()
     const addServerScanDir = vi.fn()
+    const addTemplate = vi.fn((template: { src: string }) => ({
+      filename: template.src.endsWith('dashboard.vue') ? 'dashboard.vue' : 'landing.vue',
+    }))
     const hooks = new Map<string, Array<(value: never) => void>>()
     vi.doMock('@nuxt/kit', () => ({
       addComponentsDir,
       addImportsDir,
-      addLayout,
       addPlugin,
       addServerScanDir,
+      addTemplate,
       createResolver: (url: string) => ({
         resolve: (path: string) => new URL(path, url).pathname,
       }),
@@ -76,6 +78,30 @@ describe('narduk-core module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(addTemplate).toHaveBeenCalledWith({
+      src: expect.stringContaining('/runtime/app/layouts/dashboard.vue'),
+    })
+    expect(addTemplate).toHaveBeenCalledWith({
+      src: expect.stringContaining('/runtime/app/layouts/landing.vue'),
+    })
+    const appTemplateState: {
+      layouts: Record<string, { file: string; name: string }>
+    } = {
+      layouts: {
+        dashboard: { file: '~/layouts/dashboard.vue', name: 'dashboard' },
+      },
+    }
+    for (const hook of hooks.get('app:templates') || []) {
+      hook(appTemplateState as never)
+    }
+    expect(appTemplateState.layouts.dashboard).toEqual({
+      file: '~/layouts/dashboard.vue',
+      name: 'dashboard',
+    })
+    expect(appTemplateState.layouts.landing).toEqual({
+      file: '#build/landing.vue',
+      name: 'landing',
+    })
     expect(hooks.has('vite:extendConfig')).toBe(true)
   })
 })

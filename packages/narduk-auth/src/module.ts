@@ -3,9 +3,8 @@ import { fileURLToPath } from 'node:url'
 import {
   addComponentsDir,
   addImportsDir,
-  addLayout,
-  addRouteMiddleware,
   addServerScanDir,
+  addTemplate,
   createResolver,
   defineNuxtModule,
   extendPages,
@@ -42,6 +41,14 @@ interface TypePrepareOptions {
   tsConfig?: {
     include?: string[]
   }
+}
+
+interface NuxtAppTemplateState {
+  layouts: Record<string, { file: string; name: string }>
+}
+
+interface NuxtAppResolveState {
+  middleware: Array<{ name?: string; path: string }>
 }
 
 export interface NardukAuthModuleOptions {
@@ -83,6 +90,31 @@ function addNitroInlinePackage(nuxtOptions: MutableNuxtOptionsRecord, packageNam
   nitro.externals ??= {}
   nitro.externals.inline ??= []
   pushUnique(nitro.externals.inline, packageName)
+}
+
+function addFallbackLayout(
+  nuxt: { hook: (name: 'app:templates', handler: (app: NuxtAppTemplateState) => void) => void },
+  template: { src: string },
+  name: string,
+): void {
+  const { filename } = addTemplate(template)
+  nuxt.hook('app:templates', (app) => {
+    if (name in app.layouts) return
+    app.layouts[name] = {
+      file: `#build/${filename}`,
+      name,
+    }
+  })
+}
+
+function addFallbackRouteMiddleware(
+  nuxt: { hook: (name: 'app:resolve', handler: (app: NuxtAppResolveState) => void) => void },
+  middleware: { name: string; path: string },
+): void {
+  nuxt.hook('app:resolve', (app) => {
+    if (app.middleware.some((item) => item.name === middleware.name)) return
+    app.middleware.push({ ...middleware })
+  })
 }
 
 function addPageIfMissing(
@@ -135,10 +167,16 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
         path: resolver.resolve('../app/components'),
         pathPrefix: false,
       })
-      addLayout({ src: resolver.resolve('../app/layouts/auth.vue') }, 'auth')
-      addLayout({ src: resolver.resolve('../app/layouts/blank.vue') }, 'blank')
-      addRouteMiddleware({ name: 'auth', path: resolver.resolve('../app/middleware/auth.ts') })
-      addRouteMiddleware({ name: 'guest', path: resolver.resolve('../app/middleware/guest.ts') })
+      addFallbackLayout(nuxt, { src: resolver.resolve('../app/layouts/auth.vue') }, 'auth')
+      addFallbackLayout(nuxt, { src: resolver.resolve('../app/layouts/blank.vue') }, 'blank')
+      addFallbackRouteMiddleware(nuxt, {
+        name: 'auth',
+        path: resolver.resolve('../app/middleware/auth.ts'),
+      })
+      addFallbackRouteMiddleware(nuxt, {
+        name: 'guest',
+        path: resolver.resolve('../app/middleware/guest.ts'),
+      })
       extendPages((pages) => {
         addPageIfMissing(pages, {
           name: 'auth-callback',

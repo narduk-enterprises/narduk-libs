@@ -15,12 +15,14 @@ export interface MutableViteBuildConfig {
   build?: {
     chunkSizeWarningLimit?: number
     reportCompressedSize?: boolean
-    rollupOptions?: {
-      onwarn?: (warning: unknown, warn: (warning: unknown) => void) => unknown
-    }
+    rollupOptions?: MutableRollupWarningConfig
   }
   customLogger?: CoreViteBuildLogger
   logLevel?: 'error' | 'info' | 'silent' | 'warn'
+}
+
+export interface MutableRollupWarningConfig {
+  onwarn?: (warning: unknown, warn: (warning: unknown) => void) => unknown
 }
 
 export function isKnownViteSourcemapWarning(warning: ViteRollupWarning): boolean {
@@ -43,6 +45,27 @@ export function isKnownIconifyUnusedImportWarning(warning: ViteRollupWarning): b
   )
 }
 
+export function isKnownPlaywrightVirtualProxyWarning(warning: ViteRollupWarning): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  return (
+    message.includes('"mocked-exports/proxy" is imported by') &&
+    message.includes('virtual:playwright-core') &&
+    message.includes('could not be resolved')
+  )
+}
+
+export function isKnownGeneratedCircularDependencyWarning(warning: ViteRollupWarning): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  if (!message.includes('Circular dependency:')) return false
+
+  return (
+    message.includes('node_modules/.pnpm/') ||
+    message.includes('node_modules/') ||
+    message.includes('virtual:#imports') ||
+    message.includes('virtual:#nitro-internal-virtual')
+  )
+}
+
 export function createCoreViteBuildLogger(): CoreViteBuildLogger {
   const loggedWarnings = new Set<string>()
   const loggedErrors = new WeakSet<Error>()
@@ -58,11 +81,15 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
     info: () => {},
     warn(message) {
       if (isKnownIconifyUnusedImportWarning(message)) return
+      if (isKnownPlaywrightVirtualProxyWarning(message)) return
+      if (isKnownGeneratedCircularDependencyWarning(message)) return
       logger.hasWarned = true
       console.warn(message)
     },
     warnOnce(message) {
       if (isKnownIconifyUnusedImportWarning(message)) return
+      if (isKnownPlaywrightVirtualProxyWarning(message)) return
+      if (isKnownGeneratedCircularDependencyWarning(message)) return
       if (loggedWarnings.has(message)) return
       loggedWarnings.add(message)
       logger.warn(message)
@@ -80,13 +107,21 @@ export function applyCoreViteBuildWarningPolicy(config: unknown) {
   mutableConfig.build.chunkSizeWarningLimit ??= 1000
   mutableConfig.build.reportCompressedSize ??= false
   mutableConfig.build.rollupOptions ??= {}
-  const existingOnWarn = mutableConfig.build.rollupOptions.onwarn
 
-  mutableConfig.build.rollupOptions.onwarn = (warning, warn) => {
+  applyCoreRollupBuildWarningPolicy(mutableConfig.build.rollupOptions)
+}
+
+export function applyCoreRollupBuildWarningPolicy(config: unknown) {
+  const mutableConfig = config as MutableRollupWarningConfig
+  const existingOnWarn = mutableConfig.onwarn
+
+  mutableConfig.onwarn = (warning, warn) => {
     // Upstream: these plugins currently emit sourcemap warnings during
     // production builds even though the output still bundles correctly.
     if (isKnownViteSourcemapWarning(warning as ViteRollupWarning)) return
     if (isKnownIconifyUnusedImportWarning(warning as ViteRollupWarning)) return
+    if (isKnownPlaywrightVirtualProxyWarning(warning as ViteRollupWarning)) return
+    if (isKnownGeneratedCircularDependencyWarning(warning as ViteRollupWarning)) return
 
     if (typeof existingOnWarn === 'function') {
       return existingOnWarn(warning, warn)
