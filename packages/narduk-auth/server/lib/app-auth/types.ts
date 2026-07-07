@@ -117,6 +117,11 @@ export interface OAuthStartInput {
   provider: OAuthProvider
 }
 
+export interface NativeAppleSignInInput {
+  identityToken: string
+  nonce?: string
+}
+
 export interface VerifyMfaInput {
   code: string
   factorId: string

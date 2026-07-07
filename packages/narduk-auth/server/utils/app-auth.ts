@@ -15,6 +15,7 @@ export {
   loginUser,
   registerUser,
   startOAuthFlow,
+  signInWithNativeApple,
   exchangeSupabaseCode,
   requestPasswordReset,
   logoutUser,

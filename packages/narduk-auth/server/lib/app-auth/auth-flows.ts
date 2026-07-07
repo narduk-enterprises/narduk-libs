@@ -37,6 +37,7 @@ import type {
   AuthMutationResult,
   ExchangeCodeOptions,
   LoginInput,
+  NativeAppleSignInInput,
   OAuthStartInput,
   PasswordResetRequest,
   RegisterInput,
@@ -308,6 +309,75 @@ export async function startOAuthFlow(event: H3Event, body: OAuthStartInput) {
 
   return {
     url: data.url,
+  }
+}
+
+export async function signInWithNativeApple(
+  event: H3Event,
+  body: NativeAppleSignInInput,
+): Promise<AuthMutationResult> {
+  const config = getAuthConfig(event)
+  if (config.backend !== 'supabase' || !isSupabaseConfigured(config)) {
+    throw createError({
+      statusCode: 501,
+      statusMessage: 'Native Apple sign-in is only available when Supabase auth is enabled.',
+    })
+  }
+
+  if (!config.providers.includes('apple')) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Apple sign-in is not enabled for this app.',
+    })
+  }
+
+  const token = body.identityToken.trim()
+  if (!token) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Apple identity token is required.',
+    })
+  }
+
+  const client = createSupabaseUserClient(event)
+  const { data, error } = await client.signInWithIdToken({
+    provider: 'apple',
+    token,
+    ...(body.nonce ? { nonce: body.nonce } : {}),
+  })
+
+  if (error || !data.user || !data.session) {
+    if (error) toSupabaseHttpError(error, 401)
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Apple sign-in could not be exchanged for a session.',
+    })
+  }
+
+  const localUser = await ensureLinkedLocalUser(event, data.user)
+  const persisted = await persistSupabaseSession(event, {
+    authUser: data.user,
+    localUser,
+    session: data.session,
+  })
+  const sessionUser = stampAuthSessionValidated(
+    toSessionUser(localUser, {
+      authBackend: 'supabase',
+      authSessionId: persisted.authSessionId,
+      authProvider: persisted.authProvider,
+      authProviders: persisted.providers,
+      emailConfirmedAt: persisted.emailConfirmedAt,
+      aal: persisted.aal,
+      needsPasswordSetup: persisted.needsPasswordSetup,
+      recoveryMode: persisted.recoveryMode,
+    }),
+  )
+  await setCurrentSessionUser(event, sessionUser)
+
+  return {
+    user: sessionUser,
+    nextStep: 'signed_in',
+    redirectTo: config.redirectPath,
   }
 }
 
