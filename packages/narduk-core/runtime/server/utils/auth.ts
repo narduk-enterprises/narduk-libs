@@ -8,6 +8,7 @@ import { apiKeys, sessions, users } from '#layer/orm-tables'
 import {
   API_KEY_PREFIX,
   getApiKeyFromAuthorization,
+  hashApiKeyText,
   hasRequiredApiKeyScopes,
   normalizeApiKeyAuthScopes as normalizeAuthScopes,
   nowSec,
@@ -93,16 +94,6 @@ export function requireAuthScopes(user: AuthUser, requiredScopes: readonly strin
 }
 
 /**
- * Hash a raw API key using SHA-256 (Web Crypto, edge-compatible).
- */
-async function hashApiKey(rawKey: string): Promise<string> {
-  const data = new TextEncoder().encode(rawKey)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/**
  * Create a D1-backed session for a user and set the session cookie.
  * @optional Use when you need server-side session listing/revocation alongside nuxt-auth-utils.
  */
@@ -169,7 +160,7 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
   if (!rawKey) return null
 
   const db = useDatabase(event)
-  const keyHash = await hashApiKey(rawKey)
+  const keyHash = await hashApiKeyText(rawKey)
 
   const key = await getDatabaseRow<typeof apiKeys.$inferSelect>(
     db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).limit(1),
@@ -295,7 +286,7 @@ export async function generateApiKey(): Promise<{
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
   const rawKey = `${API_KEY_PREFIX}${hex}`
-  const keyHash = await hashApiKey(rawKey)
+  const keyHash = await hashApiKeyText(rawKey)
   const keyPrefix = rawKey.slice(0, 11) // "nk_" + 8 chars
 
   return { rawKey, keyHash, keyPrefix }

@@ -17,5 +17,12 @@
       "#layer/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
     }
   },
-  "include": ["runtime/internal/**/*.ts", "runtime/shared/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "runtime/internal/**/*.ts",
+    "runtime/server/utils/authApiKeyD1.ts",
+    "runtime/server/utils/authApiKeyText.ts",
+    "runtime/shared/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }
