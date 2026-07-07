@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { createError } from 'h3'
 
-import { useLogger } from './logger'
 import { readWorkerRuntimeEnv } from './worker-env'
 
 import type { H3Event } from 'h3'
@@ -76,9 +75,7 @@ export async function kvGet<T = unknown>(
   try {
     return JSON.parse(raw) as T
   } catch (err) {
-    useLogger(event)
-      .child('KV')
-      .warn('Failed to parse JSON for key', { key, error: String(err) })
+    console.warn('[KV] Failed to parse JSON for key', { key, error: String(err) })
     return raw as unknown as T
   }
 }
