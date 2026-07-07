@@ -5,13 +5,40 @@ interface SetupModuleOptions {
   nuxtOptions?: Record<string, unknown>
 }
 
+function cloneConfig(value: unknown): unknown {
+  if (value === undefined) return undefined
+
+  return JSON.parse(JSON.stringify(value))
+}
+
 async function setupModule(options: SetupModuleOptions = {}) {
   const addComponentsDir = vi.fn()
   const addImportsDir = vi.fn()
   const addServerScanDir = vi.fn()
   const extendPages = vi.fn()
   const extendRouteRules = vi.fn()
-  const installModule = vi.fn()
+  const installSnapshots: Array<{
+    moduleName: string
+    robots: unknown
+    site: unknown
+    sitemap: unknown
+  }> = []
+  const nuxt = {
+    options: {
+      build: { transpile: [] },
+      runtimeConfig: {},
+      ...options.nuxtOptions,
+    },
+    hook: vi.fn(),
+  }
+  const installModule = vi.fn((moduleName: string) => {
+    installSnapshots.push({
+      moduleName,
+      robots: cloneConfig(nuxt.options.robots),
+      site: cloneConfig(nuxt.options.site),
+      sitemap: cloneConfig(nuxt.options.sitemap),
+    })
+  })
 
   vi.doMock('@nuxt/kit', () => ({
     addComponentsDir,
@@ -28,14 +55,6 @@ async function setupModule(options: SetupModuleOptions = {}) {
 
   const mod = (await import('../src/module')).default as unknown as {
     setup: (moduleOptions: unknown, nuxt: Record<string, unknown>) => Promise<void>
-  }
-  const nuxt = {
-    options: {
-      build: { transpile: [] },
-      runtimeConfig: {},
-      ...options.nuxtOptions,
-    },
-    hook: vi.fn(),
   }
 
   await mod.setup(
@@ -54,6 +73,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addServerScanDir,
     extendPages,
     extendRouteRules,
+    installSnapshots,
     installModule,
     nuxt,
   }
@@ -83,7 +103,7 @@ describe('narduk-seo module', () => {
   it('keeps production deployments indexable by default', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
 
-    const { extendRouteRules, nuxt } = await setupModule({
+    const { extendRouteRules, installSnapshots, nuxt } = await setupModule({
       nuxtOptions: {
         site: {
           url: 'https://example.com',
@@ -99,13 +119,19 @@ describe('narduk-seo module', () => {
     expect(nuxt.options.robots).toMatchObject({
       disallow: expect.arrayContaining(['/__preview/', '/admin/']),
     })
+    expect(
+      installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/sitemap')?.sitemap,
+    ).toMatchObject({
+      urls: ['/narduk-network'],
+      exclude: expect.arrayContaining(['/__preview/**', '/admin/**']),
+    })
     expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
   })
 
   it('forces noindex robots and sitemap suppression for staging deployments', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'staging')
 
-    const { extendRouteRules, nuxt } = await setupModule({
+    const { extendRouteRules, installSnapshots, nuxt } = await setupModule({
       nuxtOptions: {
         robots: {
           allow: ['/'],
@@ -134,6 +160,19 @@ describe('narduk-seo module', () => {
       },
     })
     expect(nuxt.options.sitemap).toMatchObject({
+      enabled: false,
+      excludeAppSources: true,
+      includeAppSources: false,
+      sources: [],
+      urls: [],
+      exclude: ['/**'],
+    })
+    expect(
+      installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/sitemap')?.sitemap,
+    ).toMatchObject({
+      enabled: false,
+      excludeAppSources: true,
+      includeAppSources: false,
       sources: [],
       urls: [],
       exclude: ['/**'],

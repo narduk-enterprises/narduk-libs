@@ -53,7 +53,7 @@ crawl targets.
 Staging and preview deployments are not indexable by default. When
 `NARDUK_DEPLOY_TARGET` is `staging` or `preview`, the layer sets site
 `indexable: false`, emits `noindex, nofollow` robots metadata, blocks all
-robots.txt crawling, and suppresses sitemap entries. A deployment that
+robots.txt crawling, and disables sitemap generation. A deployment that
 intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.

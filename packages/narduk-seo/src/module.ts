@@ -206,6 +206,9 @@ function applyNonProductionSeoSafety(nuxtOptions: MutableNuxtOptionsRecord): voi
   }
   nuxtOptions.sitemap = {
     ...((nuxtOptions.sitemap ?? {}) as Record<string, unknown>),
+    enabled: false,
+    excludeAppSources: true,
+    includeAppSources: false,
     sources: [],
     urls: [],
     exclude: ['/**'],
@@ -258,45 +261,6 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       '#narduk-seo-server': resolver.resolve('../server'),
     }
 
-    if (options.seoModule) {
-      await installModule('nuxt-site-config')
-      await installModule('@nuxtjs/robots')
-      await installModule('@nuxtjs/sitemap')
-      await installModule('nuxt-link-checker')
-      await installModule('nuxt-og-image')
-      await installModule('nuxt-schema-org')
-      await installModule('nuxt-seo-utils')
-    }
-
-    if (options.app) {
-      addImportsDir(resolver.resolve('../app/composables'))
-      addImportsDir(resolver.resolve('../app/utils'))
-      addComponentsDir({
-        path: resolver.resolve('../app/components'),
-        pathPrefix: false,
-      })
-      addComponentsDir({
-        path: resolver.resolve('../components'),
-        pathPrefix: false,
-      })
-      extendPages((pages) => {
-        addPageIfMissing(pages, {
-          name: 'og-image-preview',
-          path: '/__preview/og-images',
-          file: resolver.resolve('../app/pages/__preview/og-images.vue'),
-        })
-        addPageIfMissing(pages, {
-          name: 'narduk-network',
-          path: '/narduk-network',
-          file: resolver.resolve('../app/pages/narduk-network.vue'),
-        })
-      })
-    }
-
-    if (options.server) {
-      addServerScanDir(resolver.resolve('../server'))
-    }
-
     nuxtOptions.site = defu((nuxtOptions.site ?? {}) as Record<string, unknown>, {
       name: process.env.APP_NAME || 'Nuxt 4 App',
       description: 'A Nuxt 4 application deployed on Cloudflare Workers.',
@@ -343,6 +307,46 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     if (shouldForceNonProductionNoindex(options)) {
       applyNonProductionSeoSafety(nuxtOptions)
     }
+
+    if (options.seoModule) {
+      await installModule('nuxt-site-config')
+      await installModule('@nuxtjs/robots')
+      await installModule('@nuxtjs/sitemap')
+      await installModule('nuxt-link-checker')
+      await installModule('nuxt-og-image')
+      await installModule('nuxt-schema-org')
+      await installModule('nuxt-seo-utils')
+    }
+
+    if (options.app) {
+      addImportsDir(resolver.resolve('../app/composables'))
+      addImportsDir(resolver.resolve('../app/utils'))
+      addComponentsDir({
+        path: resolver.resolve('../app/components'),
+        pathPrefix: false,
+      })
+      addComponentsDir({
+        path: resolver.resolve('../components'),
+        pathPrefix: false,
+      })
+      extendPages((pages) => {
+        addPageIfMissing(pages, {
+          name: 'og-image-preview',
+          path: '/__preview/og-images',
+          file: resolver.resolve('../app/pages/__preview/og-images.vue'),
+        })
+        addPageIfMissing(pages, {
+          name: 'narduk-network',
+          path: '/narduk-network',
+          file: resolver.resolve('../app/pages/narduk-network.vue'),
+        })
+      })
+    }
+
+    if (options.server) {
+      addServerScanDir(resolver.resolve('../server'))
+    }
+
     nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
       compatibilityVersion: 4,
     })
