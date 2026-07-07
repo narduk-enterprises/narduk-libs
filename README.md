@@ -10,6 +10,7 @@ came from it.
 ## Packages
 
 - `@narduk-enterprises/narduk-platform`
+- `@narduk-enterprises/narduk-app`
 - `@narduk-enterprises/narduk-core`
 - `@narduk-enterprises/narduk-auth`
 - `@narduk-enterprises/narduk-seo`

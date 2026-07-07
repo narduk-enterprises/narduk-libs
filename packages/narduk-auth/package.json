@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-auth",
-  "version": "1.19.22",
+  "version": "1.19.23",
   "private": false,
   "type": "module",
   "description": "Auth, user session, notification, and protected-route Nuxt module for Narduk Cloudflare apps.",
@@ -90,6 +90,7 @@
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
   },
   "dependencies": {
+    "@narduk-enterprises/narduk-app": "workspace:*",
     "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/kit": "^4.0.0",
     "@supabase/auth-js": "^2.105.4",

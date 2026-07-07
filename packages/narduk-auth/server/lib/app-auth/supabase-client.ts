@@ -1,5 +1,10 @@
+import {
+  deleteAppCookie,
+  readAppCookie,
+  setAppCookie,
+} from '@narduk-enterprises/narduk-app/server/http'
 import { type AuthError, GoTrueClient } from '@supabase/auth-js'
-import { createError, deleteCookie, getCookie, setCookie } from 'h3'
+import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { getSessionCookieSecure, isAuthProvider, normalizeAuthUrl } from './helpers'
@@ -76,13 +81,13 @@ function getPkceStorage(event: H3Event): CookieLikeStorage {
     isServer: true,
     getItem(key) {
       if (key.endsWith('-code-verifier')) {
-        return getCookie(event, PKCE_COOKIE_NAME) ?? null
+        return readAppCookie(event, PKCE_COOKIE_NAME) ?? null
       }
       return memory.get(key) ?? null
     },
     setItem(key, value) {
       if (key.endsWith('-code-verifier')) {
-        setCookie(event, PKCE_COOKIE_NAME, value, {
+        setAppCookie(event, PKCE_COOKIE_NAME, value, {
           httpOnly: true,
           sameSite: 'lax',
           secure: getSessionCookieSecure(event),
@@ -96,7 +101,7 @@ function getPkceStorage(event: H3Event): CookieLikeStorage {
     },
     removeItem(key) {
       if (key.endsWith('-code-verifier')) {
-        deleteCookie(event, PKCE_COOKIE_NAME, { path: '/' })
+        deleteAppCookie(event, PKCE_COOKIE_NAME, { path: '/' })
         return
       }
 

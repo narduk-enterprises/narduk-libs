@@ -1,4 +1,4 @@
-import { getCookie, getRequestHeader } from 'h3'
+import { readAppCookie, readAppRequestHeader } from '@narduk-enterprises/narduk-app/server/http'
 
 import type { H3Event } from 'h3'
 
@@ -48,10 +48,10 @@ export function logAuthCallbackFailure(
       : null
 
   log.error('Auth callback exchange failed', {
-    requestHost: getRequestHeader(event, 'host') ?? null,
+    requestHost: readAppRequestHeader(event, 'host') ?? null,
     next: context.next ?? null,
     returnPath: context.returnPath ?? null,
-    hasPkceCookie: Boolean(getCookie(event, PKCE_COOKIE_NAME)),
+    hasPkceCookie: Boolean(readAppCookie(event, PKCE_COOKIE_NAME)),
     statusCode,
     statusMessage: getAuthCallbackLogMessage(error),
   })

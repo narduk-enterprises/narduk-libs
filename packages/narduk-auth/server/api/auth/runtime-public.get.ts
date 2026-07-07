@@ -1,4 +1,5 @@
-import { defineEventHandler, setResponseHeader } from 'h3'
+import { setAppResponseHeader } from '@narduk-enterprises/narduk-app/server/http'
+import { defineEventHandler } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { readWorkerRuntimeEnv } from '#layer/server/utils/worker-env'
@@ -77,7 +78,7 @@ export default defineEventHandler((event) => {
   // Lowest → highest priority so live Worker bindings win over build-time process env.
   const merged = { ...fromProcess, ...fromNuxt, ...fromH3 }
   const resolved = resolveAuthEnvironment(coerceStringEnv(merged))
-  setResponseHeader(event, 'Cache-Control', 'private, no-store')
+  setAppResponseHeader(event, 'Cache-Control', 'private, no-store')
   return {
     authBackend: resolved.authBackend,
     authProviders: resolved.authProviders,

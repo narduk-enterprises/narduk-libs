@@ -1,4 +1,4 @@
-import { getRequestHeader } from 'h3'
+import { readAppRequestHeader } from '@narduk-enterprises/narduk-app/server/http'
 
 import type { User as LocalUser } from '#layer/orm-tables'
 import type { AppAuthProvider, AppSessionUser } from './types'
@@ -28,7 +28,7 @@ export function isAuthProvider(value: string): value is AppAuthProvider {
 }
 
 export function getSessionCookieSecure(event: H3Event) {
-  const host = getRequestHeader(event, 'host') ?? ''
+  const host = readAppRequestHeader(event, 'host') ?? ''
   return !(host.startsWith('localhost') || host.startsWith('127.0.0.1'))
 }
 

@@ -1,6 +1,7 @@
+import { deleteAppCookie } from '@narduk-enterprises/narduk-app/server/http'
 import { AuthSessionMissingError } from '@supabase/auth-js'
 import { and, eq } from 'drizzle-orm'
-import { createError, deleteCookie } from 'h3'
+import { createError } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
@@ -133,7 +134,7 @@ export async function clearCurrentSession(event: H3Event) {
     await executeDatabaseQuery(appDb.delete(authSessions).where(eq(authSessions.id, authSessionId)))
   }
 
-  deleteCookie(event, PKCE_COOKIE_NAME, { path: '/' })
+  deleteAppCookie(event, PKCE_COOKIE_NAME, { path: '/' })
   await clearLayerUserSession(event)
 }
 
