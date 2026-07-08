@@ -109,7 +109,7 @@ export function createBoundsGatedUrlTemplate(urlTemplate, bounds) {
         return urlTemplate;
     if (!urlTemplate.trim())
         throw new Error('urlTemplate is required');
-    return (x, y, scale, z) => {
+    return (x, y, z, scale) => {
         const tile = tileLngLatBounds(x, y, z);
         if (!tile || !boundsIntersectTile(bounds, tile))
             return TRANSPARENT_PNG_DATA_URI;

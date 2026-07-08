@@ -6,7 +6,7 @@ export interface MapKitRegionConstructors<TCoordinate = unknown, TSpan = unknown
     CoordinateRegion: Constructor<[center: TCoordinate, span: TSpan], TRegion>;
     CoordinateSpan: Constructor<[latitudeDelta: number, longitudeDelta: number], TSpan>;
 }
-export type MapKitTileOverlayUrlTemplate = string | ((x: number, y: number, scale: number, z: number) => string);
+export type MapKitTileOverlayUrlTemplate = string | ((x: number, y: number, z: number, scale: number) => string);
 export interface MapKitTileOverlayConstructors<TTileOverlay = unknown, TUrlTemplate extends MapKitTileOverlayUrlTemplate = MapKitTileOverlayUrlTemplate> {
     TileOverlay: Constructor<[
         urlTemplate: TUrlTemplate,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- Fixed a critical bug in `createBoundsGatedUrlTemplate`'s function-form `urlTemplate`:
+  real MapKit JS invokes it as `(x, y, z, scale)`, not `(x, y, scale, z)`. The wrong
+  order meant every bounds-gated overlay silently computed tile bounds using the
+  scale factor as the zoom level (almost always `1`), which gated out every real
+  tile request as out-of-bounds -- overlays rendered nothing, with no error.
+  Confirmed against the real MapKit JS SDK, not just documentation.
+
 ## 0.3.0
 
 - Added a MapKit JS layer registry for multiple live tile overlays with independent opacity.

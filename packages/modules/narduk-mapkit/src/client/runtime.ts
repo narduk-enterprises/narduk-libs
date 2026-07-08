@@ -24,9 +24,15 @@ export interface MapKitRegionConstructors<
   CoordinateSpan: Constructor<[latitudeDelta: number, longitudeDelta: number], TSpan>
 }
 
+// Parameter order confirmed empirically against real MapKit JS (not just docs) on
+// 2026-07-08: passing a labeled (x, y, scale, z) function and inspecting the actual
+// argument values received showed the zoom level arrives in the 3rd position and
+// the scale factor arrives in the 4th -- i.e. the real call is (x, y, z, scale).
+// Getting this wrong silently breaks any per-tile logic that reads z (e.g. bounds
+// gating), since z=1 (near-whole-earth) gets read instead of the real zoom.
 export type MapKitTileOverlayUrlTemplate =
   | string
-  | ((x: number, y: number, scale: number, z: number) => string)
+  | ((x: number, y: number, z: number, scale: number) => string)
 
 export interface MapKitTileOverlayConstructors<
   TTileOverlay = unknown,

@@ -69,8 +69,10 @@ describe('MapKit layer helpers', () => {
     expect(typeof urlTemplate).toBe('function')
     const resolveTileUrl = urlTemplate as Exclude<MapKitTileOverlayUrlTemplate, string>
 
-    expect(resolveTileUrl(0, 0, 2, 1)).toBe('/tiles/1/0/0@2x.png')
-    expect(resolveTileUrl(1, 1, 2, 1)).toMatch(/^data:image\/png;base64,/)
+    // Real MapKit JS invokes urlTemplate functions as (x, y, z, scale) -- confirmed
+    // empirically against the live SDK on 2026-07-08, not just from docs.
+    expect(resolveTileUrl(0, 0, 1, 2)).toBe('/tiles/1/0/0@2x.png')
+    expect(resolveTileUrl(1, 1, 1, 2)).toMatch(/^data:image\/png;base64,/)
   })
 
   it('tightens the default minimum span for small AOI layer bounds', () => {
