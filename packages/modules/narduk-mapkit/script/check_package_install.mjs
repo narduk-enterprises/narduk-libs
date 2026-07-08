@@ -53,6 +53,8 @@ const checks = [
   ['root.computeRouteDistanceMetres', root.computeRouteDistanceMetres],
   ['client.initializeMapKit', client.initializeMapKit],
   ['client.createMapKitTileOverlay', client.createMapKitTileOverlay],
+  ['client.createBoundsGatedUrlTemplate', client.createBoundsGatedUrlTemplate],
+  ['client.MapKitLayerRegistry', client.MapKitLayerRegistry],
   ['geometry.computeMapKitRegionForPoints', geometry.computeMapKitRegionForPoints],
   ['playback.buildMapKitPlaybackLineSlices', playback.buildMapKitPlaybackLineSlices],
   ['server.createMapKitTokenHandler', server.createMapKitTokenHandler],

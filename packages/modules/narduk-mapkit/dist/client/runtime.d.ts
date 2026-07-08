@@ -6,8 +6,12 @@ export interface MapKitRegionConstructors<TCoordinate = unknown, TSpan = unknown
     CoordinateRegion: Constructor<[center: TCoordinate, span: TSpan], TRegion>;
     CoordinateSpan: Constructor<[latitudeDelta: number, longitudeDelta: number], TSpan>;
 }
-export interface MapKitTileOverlayConstructors<TTileOverlay = unknown> {
-    TileOverlay: Constructor<[urlTemplate: string, options?: MapKitTileOverlayOptions], TTileOverlay>;
+export type MapKitTileOverlayUrlTemplate = string | ((x: number, y: number, scale: number, z: number) => string);
+export interface MapKitTileOverlayConstructors<TTileOverlay = unknown, TUrlTemplate extends MapKitTileOverlayUrlTemplate = MapKitTileOverlayUrlTemplate> {
+    TileOverlay: Constructor<[
+        urlTemplate: TUrlTemplate,
+        options?: MapKitTileOverlayOptions
+    ], TTileOverlay>;
 }
 export interface MapKitTileOverlayOptions {
     data?: unknown;
@@ -41,7 +45,7 @@ export declare function createMapKitCoordinateSpan<TSpan>(mapkit: Pick<MapKitReg
 export declare function createMapKitCoordinateRegion<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, region: MapKitRegion): TRegion;
 export declare function createMapKitRegionForPoints<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, points: readonly MapKitPointLike[] | null | undefined, options?: MapKitRegionOptions): TRegion | null;
 export declare function createMapKitRegionForLngLatBounds<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, bounds: MapKitLngLatBounds | null | undefined, options?: MapKitRegionOptions): TRegion | null;
-export declare function createMapKitTileOverlay<TTileOverlay>(mapkit: MapKitTileOverlayConstructors<TTileOverlay>, urlTemplate: string, options?: MapKitTileOverlayOptions): TTileOverlay;
+export declare function createMapKitTileOverlay<TTileOverlay, TUrlTemplate extends MapKitTileOverlayUrlTemplate>(mapkit: MapKitTileOverlayConstructors<TTileOverlay, TUrlTemplate>, urlTemplate: TUrlTemplate, options?: MapKitTileOverlayOptions): TTileOverlay;
 export declare function uniqueMapKitOverlays<TOverlay>(overlays: readonly TOverlay[]): TOverlay[];
 export declare function easeInOutQuad(progress: number): number;
 export declare function interpolateNumber(start: number, end: number, progress: number): number;

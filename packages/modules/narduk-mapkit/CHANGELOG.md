@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Added a MapKit JS layer registry for multiple live tile overlays with independent opacity.
+- Added bounds-gated tile URL templates that short-circuit outside-AOI tile requests to a transparent PNG.
+- Added AOI-aware layer region helpers that tighten default minimum spans for small layer bounds.
+- Added layer registry documentation and an example showing two simultaneous AOI raster layers.
+
 ## 0.2.0
 
 - Added reusable MapKit JS runtime helpers for coordinates, regions, tile overlays, and cancellable overlay opacity crossfades.

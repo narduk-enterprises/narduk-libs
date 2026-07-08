@@ -22,6 +22,8 @@ HTML, panels, data fetching, and domain-specific behavior.
   testing, and route playback.
 - MapKit JS runtime helpers for coordinates, coordinate regions, tile overlays,
   and cancellable opacity crossfades.
+- A MapKit JS layer registry for multiple live AOI tile overlays with
+  independent opacity, bounds-gated tile URLs, and replacement fades.
 
 ## Install
 
@@ -172,6 +174,55 @@ void crossfadeMapKitOverlayOpacity({
 }).finished
 ```
 
+## Layer Registry
+
+Use the layer registry when a map needs multiple raster layers live at the same
+time, each with its own opacity and AOI bounds:
+
+```ts
+import {
+  MapKitLayerRegistry,
+  regionForMapKitLayer,
+} from '@loganrenz/narduk-mapkit/client'
+
+const registry = new MapKitLayerRegistry({
+  mapkit: window.mapkit,
+  map,
+  crossfadeDurationMs: 400,
+})
+
+const vegetation = {
+  id: 'vegetation',
+  urlTemplate: '/tiles/vegetation/{z}/{x}/{y}@{scale}x.png',
+  bounds: [-97.706, 30.198, -97.692, 30.209] as const,
+  minimumZ: 10,
+  maximumZ: 16,
+  opacity: 0.6,
+}
+
+map.region = regionForMapKitLayer(window.mapkit, vegetation)
+
+registry.register(vegetation)
+registry.register({
+  id: 'moisture',
+  urlTemplate: '/tiles/moisture/{z}/{x}/{y}@{scale}x.png',
+  bounds: vegetation.bounds,
+  minimumZ: 10,
+  maximumZ: 16,
+  opacity: 0.4,
+})
+
+await registry.replace('vegetation', {
+  ...vegetation,
+  urlTemplate: '/tiles/vegetation/next/{z}/{x}/{y}@{scale}x.png',
+})
+```
+
+When `bounds` are present, tile URLs outside the layer extent resolve to a
+valid 1x1 transparent PNG data URI before any network request. `replace()`
+requires an already-registered id and folds any still-fading overlays for that
+id into the next crossfade. `unregister()` is a no-op for unknown ids.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -196,6 +247,7 @@ The `examples/` directory contains copyable integration patterns:
 - `nuxt-mapkit-token.get.ts`
 - `browser-markers.ts`
 - `tile-overlay-crossfade.ts`
+- `layer-registry.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -205,7 +257,7 @@ in the app.
 | Export | Purpose |
 | --- | --- |
 | `@loganrenz/narduk-mapkit/server` | Fetch responses, config lookup, Worker env bridge, token cache |
-| `@loganrenz/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, crossfades |
+| `@loganrenz/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer registries, crossfades |
 | `@loganrenz/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@loganrenz/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@loganrenz/narduk-mapkit/token` | Low-level JWT signing and decoding |

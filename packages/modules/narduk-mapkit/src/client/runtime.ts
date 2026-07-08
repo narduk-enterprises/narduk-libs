@@ -24,8 +24,18 @@ export interface MapKitRegionConstructors<
   CoordinateSpan: Constructor<[latitudeDelta: number, longitudeDelta: number], TSpan>
 }
 
-export interface MapKitTileOverlayConstructors<TTileOverlay = unknown> {
-  TileOverlay: Constructor<[urlTemplate: string, options?: MapKitTileOverlayOptions], TTileOverlay>
+export type MapKitTileOverlayUrlTemplate =
+  | string
+  | ((x: number, y: number, scale: number, z: number) => string)
+
+export interface MapKitTileOverlayConstructors<
+  TTileOverlay = unknown,
+  TUrlTemplate extends MapKitTileOverlayUrlTemplate = MapKitTileOverlayUrlTemplate,
+> {
+  TileOverlay: Constructor<
+    [urlTemplate: TUrlTemplate, options?: MapKitTileOverlayOptions],
+    TTileOverlay
+  >
 }
 
 export interface MapKitTileOverlayOptions {
@@ -124,12 +134,18 @@ export function createMapKitRegionForLngLatBounds<TCoordinate, TSpan, TRegion>(
   return region ? createMapKitCoordinateRegion(mapkit, region) : null
 }
 
-export function createMapKitTileOverlay<TTileOverlay>(
-  mapkit: MapKitTileOverlayConstructors<TTileOverlay>,
-  urlTemplate: string,
+export function createMapKitTileOverlay<
+  TTileOverlay,
+  TUrlTemplate extends MapKitTileOverlayUrlTemplate,
+>(
+  mapkit: MapKitTileOverlayConstructors<TTileOverlay, TUrlTemplate>,
+  urlTemplate: TUrlTemplate,
   options: MapKitTileOverlayOptions = {},
 ): TTileOverlay {
-  if (!urlTemplate.trim()) throw new Error('urlTemplate is required')
+  if (typeof urlTemplate === 'string' && !urlTemplate.trim()) throw new Error('urlTemplate is required')
+  if (typeof urlTemplate !== 'string' && typeof urlTemplate !== 'function') {
+    throw new Error('urlTemplate is required')
+  }
   return new mapkit.TileOverlay(urlTemplate, options)
 }
 

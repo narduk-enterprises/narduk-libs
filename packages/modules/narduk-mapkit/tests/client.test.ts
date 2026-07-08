@@ -8,6 +8,8 @@ import {
   resetMapKitClientStateForTests,
 } from '../src/client/index.js'
 
+import type { MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
+
 function tokenWithExp(exp: number): string {
   const payload = btoa(JSON.stringify({ exp })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
   return `eyJhbGciOiJFUzI1NiJ9.${payload}.sig`
@@ -110,7 +112,7 @@ describe('browser MapKit runtime helpers', () => {
 
   class TileOverlay {
     constructor(
-      readonly urlTemplate: string,
+      readonly urlTemplate: MapKitTileOverlayUrlTemplate,
       readonly options: Record<string, unknown> = {},
     ) {}
   }
