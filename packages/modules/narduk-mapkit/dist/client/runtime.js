@@ -42,8 +42,11 @@ export function createMapKitRegionForLngLatBounds(mapkit, bounds, options = {}) 
     return region ? createMapKitCoordinateRegion(mapkit, region) : null;
 }
 export function createMapKitTileOverlay(mapkit, urlTemplate, options = {}) {
-    if (!urlTemplate.trim())
+    if (typeof urlTemplate === 'string' && !urlTemplate.trim())
         throw new Error('urlTemplate is required');
+    if (typeof urlTemplate !== 'string' && typeof urlTemplate !== 'function') {
+        throw new Error('urlTemplate is required');
+    }
     return new mapkit.TileOverlay(urlTemplate, options);
 }
 export function uniqueMapKitOverlays(overlays) {
