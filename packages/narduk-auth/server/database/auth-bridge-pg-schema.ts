@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { boolean, integer, pgTable, primaryKey, text } from 'drizzle-orm/pg-core'
 
 import { users } from '#layer/server/database/pg-schema'
 
@@ -48,5 +48,22 @@ export const authSessions = pgTable('auth_sessions', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
+export const farmDataUserFarms = pgTable(
+  'farmdata_user_farms',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    farmId: text('farm_id').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.userId, table.farmId] }),
+  }),
+)
+
 export type AuthUserLink = typeof authUserLinks.$inferSelect
 export type AuthSession = typeof authSessions.$inferSelect
+export type FarmDataUserFarm = typeof farmDataUserFarms.$inferSelect
