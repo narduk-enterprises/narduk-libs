@@ -232,12 +232,16 @@ const data = [
 | `respectReducedMotion` | `boolean` | `true` | Honor `prefers-reduced-motion` |
 | `theme` | `ChartTheme` | `default` | Preset visual theme |
 | `dark` | `boolean` | auto-detect | Force dark/light mode |
+| `showLegend` | `boolean` | `true` | Render the built-in legend below the chart |
+| `showCenterLabel` | `boolean` | `true` | Render the donut center total/label (only when `donut` is also true) |
+| `showTooltip` | `boolean` | `true` | Built-in hover/keyboard-focus cursor tooltip |
 
 #### Events
 
 | Event | Payload |
 |-------|---------|
 | `sliceClick` | `{ label, value, percentage }` |
+| `sliceHover` | `index: number \| null` — slice pointer enter (`index`) / leave (`null`) |
 
 #### Slots
 

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NardukBrandBackdrop`: optional SVG-only marketing/hero backdrop (grid, series, candle hints) driven by `--color-chart-*` tokens—no bitmap assets. Histoire story **Brand backdrop** demonstrates usage behind a line chart.
 - `NardukLineChart` accepts `chrome` (default `true`), `showTooltip` (default `true`), and `focusable` (default `true`) for decorative/sparkline embedding: `chrome={false}` drops the card border/shadow/background wrapper, `showTooltip={false}` disables the built-in cursor tooltip, and `focusable={false}` removes the SVG root's `tabindex`/keyboard handling and marks it `aria-hidden`. Replaces `:deep()` CSS overrides and inert wrappers consumers were reaching for.
 - `NardukCandleChart` emits `reachedStart` with `{ earliestTime }` when the visible domain's start reaches/nears (within ~2 bars of) the earliest loaded bar—mirrors lightweight-charts' `subscribeVisibleTimeRangeChange` left-edge load-more pattern. Fires once per dataset identity and re-arms when earlier bars are prepended (the bars array's first `t` changes).
+- `NardukPieChart` emits `sliceHover(index: number | null)` on slice `pointerenter`/`pointerleave`, and accepts `showLegend` / `showCenterLabel` / `showTooltip` (all default `true`) so consumers stop hiding built-ins with `display: none` on internal class names.
 
 ### Changed
 
