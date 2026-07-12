@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added `refreshMapKitMapLayout` so consumers can refresh MapKit viewport
+  geometry after responsive container or drawer layout changes.
+
 ## 0.3.1
 
 - Fixed a critical bug in `createBoundsGatedUrlTemplate`'s function-form `urlTemplate`:

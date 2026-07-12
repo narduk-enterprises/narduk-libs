@@ -5,6 +5,7 @@ import {
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
   initializeMapKit,
+  refreshMapKitMapLayout,
   resetMapKitClientStateForTests,
 } from '../src/client/index.js'
 
@@ -89,6 +90,15 @@ describe('browser MapKit initialization', () => {
 })
 
 describe('browser MapKit runtime helpers', () => {
+  it('refreshes a map after its host layout changes', () => {
+    const region = { center: 'center', span: 'span' }
+    const map = { region }
+
+    refreshMapKitMapLayout(map)
+
+    expect(map.region).toBe(region)
+  })
+
   class Coordinate {
     constructor(
       readonly latitude: number,
