@@ -115,6 +115,19 @@
     stroke-width: 1;
   }
 
+  /* `chrome={false}` on NardukLineChart: decorative/sparkline usage with no card look. */
+  .narduk-chart--no-chrome .narduk-line-chart__svg {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .narduk-chart--no-chrome .narduk-plot-surface--line {
+    fill: none;
+    stroke: none;
+  }
+
   .narduk-plot-surface--volume {
     fill: color-mix(in oklch, var(--color-chart-plot-tint) 85%, var(--color-chart-grid));
   }

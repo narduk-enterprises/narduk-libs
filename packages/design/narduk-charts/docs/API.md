@@ -13,12 +13,12 @@ Types ship from `dist/index.d.ts`. Import paths:
 
 | Export | Summary |
 |--------|---------|
-| `NardukLineChart` | Category or adaptive time-series X, dual Y, zoom, optional `v-model:x-window` (sync with candle indices), annotations, `maxRenderPoints`, a11y props |
+| `NardukLineChart` | Category or adaptive time-series X, dual Y, zoom, optional `v-model:x-window` (sync with candle indices), annotations, `maxRenderPoints`, a11y props, `chrome` / `showTooltip` / `focusable` for decorative/sparkline embedding |
 | `NardukBarChart` | Grouped / stacked / `stackedPercent`, shared a11y props |
-| `NardukPieChart` | Donut, legend, keyboard slices |
+| `NardukPieChart` | Donut, legend, keyboard slices, `showLegend` / `showCenterLabel` / `showTooltip` toggles |
 | `NardukScatterChart` | Numeric X/Y series |
 | `NardukHistogramChart` | `values` + `binCount` or explicit `bins` |
-| `NardukCandleChart` | OHLC `bars`, zoom/pan/box/pinch, volume + brush, `v-model:domain`, `yScale` / `priceDisplayMode`, crosshair + axis time tag, last-price line, close trace, session grid, OHLC HUD, `highlightFormingBar`, `drawings` + `drawingTool` + `update:drawings`, `overlay` slot + `getCandlePlotMetrics()` |
+| `NardukCandleChart` | OHLC `bars`, zoom/pan/box/pinch, volume + brush, `v-model:domain`, `yScale` / `priceDisplayMode`, crosshair + axis time tag, last-price line, close trace, session grid, OHLC HUD, `highlightFormingBar`, `drawings` + `drawingTool` + `update:drawings`, `reachedStart` left-edge load-more, `overlay` slot + `getCandlePlotMetrics()` |
 | `NardukChartStack` | Layout wrapper with `v-model:domain` slot props for linked panes |
 | `NardukBrandBackdrop` | Optional full-bleed SVG hero/marketing layer (grid + polylines + candle hints); reads `--color-chart-*` tokens, no bitmaps |
 
@@ -26,9 +26,9 @@ Types ship from `dist/index.d.ts`. Import paths:
 
 - Line: `pointClick`, `zoom`, `update:x-window` (when `v-model:x-window` used)
 - Bar: `barClick`
-- Pie: `sliceClick`
+- Pie: `sliceClick`, `sliceHover`
 - Scatter: `pointClick`
-- Candle: `zoom`, `update:domain`, `barClick`, `update:drawings`
+- Candle: `zoom`, `update:domain`, `barClick`, `update:drawings`, `reachedStart` (left-edge load-more)
 
 ## CSS variables
 

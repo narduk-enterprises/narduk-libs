@@ -118,6 +118,9 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `padding` | `Partial<ChartPadding>` | `{ top: 24, right: 24, bottom: 48, left: 56 }` | Override plot padding, useful for compact previews with hidden axes |
 | `linearFromZero` | `boolean` | `true` | Include zero in positive linear Y domains; set `false` for relative trend/detail charts |
 | `linearPaddingRatio` | `number` | `0` | Add proportional headroom/footroom to linear Y domains |
+| `chrome` | `boolean` | `true` | Card border/shadow/background wrapper styling; set `false` for decorative/sparkline usage embedded in another surface |
+| `showTooltip` | `boolean` | `true` | Built-in hover/keyboard-focus cursor tooltip; set `false` when a consumer renders its own |
+| `focusable` | `boolean` | `true` | Keyboard focusability/interaction on the SVG root; set `false` for purely decorative charts (removes `tabindex`, adds `aria-hidden`) |
 
 #### Events
 
@@ -229,12 +232,16 @@ const data = [
 | `respectReducedMotion` | `boolean` | `true` | Honor `prefers-reduced-motion` |
 | `theme` | `ChartTheme` | `default` | Preset visual theme |
 | `dark` | `boolean` | auto-detect | Force dark/light mode |
+| `showLegend` | `boolean` | `true` | Render the built-in legend below the chart |
+| `showCenterLabel` | `boolean` | `true` | Render the donut center total/label (only when `donut` is also true) |
+| `showTooltip` | `boolean` | `true` | Built-in hover/keyboard-focus cursor tooltip |
 
 #### Events
 
 | Event | Payload |
 |-------|---------|
 | `sliceClick` | `{ label, value, percentage }` |
+| `sliceHover` | `index: number \| null` — slice pointer enter (`index`) / leave (`null`) |
 
 #### Slots
 

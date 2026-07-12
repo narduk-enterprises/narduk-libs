@@ -42,6 +42,12 @@ const props = withDefaults(defineProps<{
   chartDescription?: string
   legendGroupLabel?: string
   dir?: 'ltr' | 'rtl'
+  /** Render the built-in legend below the chart. */
+  showLegend?: boolean
+  /** Render the donut center total/label (only when `donut` is also true). */
+  showCenterLabel?: boolean
+  /** Built-in hover/keyboard-focus cursor tooltip. */
+  showTooltip?: boolean
 }>(), {
   donut: false,
   innerRadius: 0.6,
@@ -49,10 +55,15 @@ const props = withDefaults(defineProps<{
   animate: true,
   respectReducedMotion: true,
   legendGroupLabel: 'Data series',
+  showLegend: true,
+  showCenterLabel: true,
+  showTooltip: true,
 })
 
 const emit = defineEmits<{
   sliceClick: [payload: PieSliceClickPayload]
+  /** Slice pointer enter (`index`) / leave (`null`). */
+  sliceHover: [index: number | null]
 }>()
 
 defineSlots<{
@@ -326,6 +337,14 @@ function onSliceClick(slice: SliceData, e: MouseEvent) {
   })
 }
 
+function onSlicePointerEnter(index: number) {
+  emit('sliceHover', index)
+}
+
+function onSlicePointerLeave() {
+  emit('sliceHover', null)
+}
+
 // ── Legend ────────────────────────────────────────────────────
 
 const legendItems = computed<LegendItem[]>(() =>
@@ -411,6 +430,8 @@ function sliceTransform(index: number): string {
           @focus="focusedSliceIndex = i"
           @keydown="onSliceKeydown($event, i)"
           @click="onSliceClick(slice, $event)"
+          @pointerenter="onSlicePointerEnter(i)"
+          @pointerleave="onSlicePointerLeave"
         />
       </g>
 
@@ -442,7 +463,7 @@ function sliceTransform(index: number): string {
 
       <!-- Donut center label -->
       <text
-        v-if="donut"
+        v-if="donut && showCenterLabel"
         class="narduk-pie-label"
         :x="cx"
         :y="cy - 6"
@@ -454,7 +475,7 @@ function sliceTransform(index: number): string {
         {{ formatValue(total) }}
       </text>
       <text
-        v-if="donut"
+        v-if="donut && showCenterLabel"
         class="narduk-pie-value"
         :x="cx"
         :y="cy + 14"
@@ -467,6 +488,7 @@ function sliceTransform(index: number): string {
 
     <template v-if="!isEmpty">
       <ChartLegend
+        v-if="showLegend"
         :items="legendItems"
         :group-label="legendGroupLabel"
         @toggle="toggleItem"
@@ -482,6 +504,7 @@ function sliceTransform(index: number): string {
         </template>
       </ChartLegend>
       <ChartTooltip
+        v-if="props.showTooltip"
         v-bind="tooltip"
         :chart-width="chartWidth"
       >
