@@ -157,3 +157,73 @@ describe('NardukLineChart time axis', () => {
     expect(tickTexts).not.toContain('0')
   })
 })
+
+describe('NardukLineChart consumer ergonomics', () => {
+  function baseProps() {
+    return {
+      series: [{ name: 'Trend', data: [2, 4, 3, 5] }],
+      labels: ['1', '2', '3', '4'],
+      width: 240,
+      height: 120,
+      animate: false,
+    }
+  }
+
+  it('defaults chrome to true and keeps the card wrapper class absent', () => {
+    const w = mount(NardukLineChart, { props: baseProps() })
+    expect(w.find('.narduk-chart').classes()).not.toContain('narduk-chart--no-chrome')
+  })
+
+  it('chrome=false adds the no-chrome modifier class for card-free sparkline usage', () => {
+    const w = mount(NardukLineChart, { props: { ...baseProps(), chrome: false } })
+    expect(w.find('.narduk-chart').classes()).toContain('narduk-chart--no-chrome')
+  })
+
+  it('showTooltip defaults to true and renders the built-in cursor tooltip on hover', async () => {
+    const w = mount(NardukLineChart, {
+      attachTo: document.body,
+      props: baseProps(),
+    })
+    const svg = w.find('svg').element as SVGSVGElement
+    svg.getBoundingClientRect = () => ({
+      x: 0, y: 0, left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120, toJSON: () => ({}),
+    })
+    await w.find('svg').trigger('mousemove', { clientX: 120, clientY: 60 })
+    expect(w.find('.narduk-tooltip').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('showTooltip=false disables the built-in cursor tooltip', async () => {
+    const w = mount(NardukLineChart, {
+      attachTo: document.body,
+      props: { ...baseProps(), showTooltip: false },
+    })
+    const svg = w.find('svg').element as SVGSVGElement
+    svg.getBoundingClientRect = () => ({
+      x: 0, y: 0, left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120, toJSON: () => ({}),
+    })
+    await w.find('svg').trigger('mousemove', { clientX: 120, clientY: 60 })
+    expect(w.find('.narduk-tooltip').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('defaults focusable to true with a tabbable, non-hidden SVG root', () => {
+    const w = mount(NardukLineChart, { props: baseProps() })
+    const svg = w.find('svg')
+    expect(svg.attributes('tabindex')).toBe('0')
+    expect(svg.attributes('aria-hidden')).toBeUndefined()
+  })
+
+  it('focusable=false removes tabindex, marks aria-hidden, and ignores keyboard navigation', async () => {
+    const w = mount(NardukLineChart, { props: { ...baseProps(), focusable: false } })
+    const svg = w.find('svg')
+    expect(svg.attributes('tabindex')).toBeUndefined()
+    expect(svg.attributes('aria-hidden')).toBe('true')
+
+    await svg.trigger('focus')
+    await svg.trigger('keydown', { key: 'ArrowRight' })
+    // No point click should fire on Enter either, since keyboard focus never armed.
+    await svg.trigger('keydown', { key: 'Enter' })
+    expect(w.emitted('pointClick')).toBeUndefined()
+  })
+})

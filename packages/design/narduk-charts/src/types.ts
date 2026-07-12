@@ -145,6 +145,12 @@ export interface NardukLineChartProps {
   xAxisMinLabelPx?: number
   /** Override chart padding, useful for compact axis-free previews. */
   padding?: Partial<ChartPadding>
+  /** Card border/shadow/background wrapper styling. `false` for decorative/sparkline usage. */
+  chrome?: boolean
+  /** Built-in hover/keyboard-focus cursor tooltip. */
+  showTooltip?: boolean
+  /** Keyboard focusability/interaction on the SVG root. `false` marks it `aria-hidden` and removes `tabindex`. */
+  focusable?: boolean
 }
 
 /** `NardukBarChart` layout: categories on X (default) or on Y for long labels / leaderboards. */

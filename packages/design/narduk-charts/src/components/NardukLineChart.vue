@@ -109,6 +109,18 @@ const props = withDefaults(defineProps<{
    * intentionally zoom on decimated indices.
    */
   maxRenderPoints?: number
+  /**
+   * Card border/shadow/background wrapper styling. Set `false` for decorative or
+   * sparkline usage embedded in another surface (e.g. a table cell or KPI card).
+   */
+  chrome?: boolean
+  /** Built-in hover/keyboard-focus cursor tooltip. Set `false` when a consumer renders its own. */
+  showTooltip?: boolean
+  /**
+   * Keyboard focusability and interaction on the SVG root. Set `false` for purely
+   * decorative/sparkline charts—removes `tabindex` and marks the SVG `aria-hidden`.
+   */
+  focusable?: boolean
 }>(), {
   smooth: true,
   showGrid: true,
@@ -128,6 +140,9 @@ const props = withDefaults(defineProps<{
   showDataTable: false,
   legendGroupLabel: 'Data series',
   xAxisType: 'category',
+  chrome: true,
+  showTooltip: true,
+  focusable: true,
 })
 
 function decimatedIndices(length: number, maxPoints?: number): number[] | null {
@@ -529,6 +544,7 @@ const rootChartClasses = computed(() => {
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
   if (props.zoomable) c.push('narduk-chart--zoomable')
+  if (!props.chrome) c.push('narduk-chart--no-chrome')
   return c
 })
 
@@ -778,7 +794,7 @@ function showTooltipAtIndex(idx: number) {
 }
 
 function onSvgFocus() {
-  if (isEmpty.value) return
+  if (!props.focusable || isEmpty.value) return
   const { i0, i1 } = visibleIndexBounds()
   const start = Math.min(i1, Math.max(i0, Math.round((i0 + i1) / 2)))
   kbFocusIndex.value = start
@@ -791,7 +807,7 @@ function onSvgBlur() {
 }
 
 function onPlotKeydown(e: KeyboardEvent) {
-  if (isEmpty.value || effLabels.value.length === 0) return
+  if (!props.focusable || isEmpty.value || effLabels.value.length === 0) return
   const { i0, i1 } = visibleIndexBounds()
   let idx = kbFocusIndex.value ?? Math.min(i1, Math.max(i0, Math.round((i0 + i1) / 2)))
 
@@ -1136,7 +1152,8 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         class="narduk-line-chart__svg"
         role="img"
         :aria-labelledby="svgAriaLabelledby"
-        tabindex="0"
+        :aria-hidden="focusable ? undefined : 'true'"
+        :tabindex="focusable ? 0 : undefined"
         @focus="onSvgFocus"
         @blur="onSvgBlur"
         @keydown="onPlotKeydown"
@@ -1483,6 +1500,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         </template>
       </ChartLegend>
       <ChartTooltip
+        v-if="props.showTooltip"
         v-bind="tooltip"
         :chart-width="chartWidth"
       >

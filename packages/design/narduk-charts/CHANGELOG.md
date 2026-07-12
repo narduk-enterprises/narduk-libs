@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `NardukBrandBackdrop`: optional SVG-only marketing/hero backdrop (grid, series, candle hints) driven by `--color-chart-*` tokens—no bitmap assets. Histoire story **Brand backdrop** demonstrates usage behind a line chart.
+- `NardukLineChart` accepts `chrome` (default `true`), `showTooltip` (default `true`), and `focusable` (default `true`) for decorative/sparkline embedding: `chrome={false}` drops the card border/shadow/background wrapper, `showTooltip={false}` disables the built-in cursor tooltip, and `focusable={false}` removes the SVG root's `tabindex`/keyboard handling and marks it `aria-hidden`. Replaces `:deep()` CSS overrides and inert wrappers consumers were reaching for.
 
 ### Changed
 
