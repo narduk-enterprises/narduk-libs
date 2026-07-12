@@ -275,6 +275,11 @@ export interface CandleClickPayload {
   bar: CandleBar
 }
 
+/** Emitted when the visible domain's start nears the earliest loaded bar (left-edge load-more). */
+export interface CandleReachedStartPayload {
+  earliestTime: number
+}
+
 /**
  * `percent`: (price / ref − 1) × 100 vs first visible close.
  * `indexed`: price / ref × 100 vs first visible close.

@@ -19,6 +19,7 @@ import type {
   CandleTimeDomain,
   CandleZoomRange,
   CandleClickPayload,
+  CandleReachedStartPayload,
   CandleDrawing,
   CandleDrawingTool,
   CandlePlotMetrics,
@@ -138,6 +139,12 @@ const emit = defineEmits<{
   'update:domain': [domain: CandleTimeDomain]
   barClick: [payload: CandleClickPayload]
   'update:drawings': [drawings: CandleDrawing[]]
+  /**
+   * Visible domain's start reached/neared (within ~2 bars of) the earliest loaded bar.
+   * Fires once per dataset identity; re-armed when earlier data arrives (bars[0].t changes).
+   * Mirrors lightweight-charts' `subscribeVisibleTimeRangeChange` left-edge load-more pattern.
+   */
+  reachedStart: [payload: CandleReachedStartPayload]
 }>()
 
 const rawId = useId()
@@ -209,6 +216,29 @@ watch(
     clampViewWindow(a, b)
   },
   { deep: true },
+)
+
+/** Left-edge load-more: how close (in bar indices) the view must get to index 0 to fire `reachedStart`. */
+const REACHED_START_THRESHOLD_BARS = 2
+
+const earliestBarTime = computed(() => sortedBars.value[0]?.t ?? null)
+let reachedStartFiredForEarliest: number | null = null
+
+watch(
+  () => [xViewMin.value, earliestBarTime.value] as const,
+  ([viewMin, earliest], prev) => {
+    const prevEarliest = prev ? prev[1] : null
+    if (earliest !== prevEarliest) {
+      // Dataset identity changed (initial load or new/earlier data)—re-arm.
+      reachedStartFiredForEarliest = null
+    }
+    if (earliest === null || reachedStartFiredForEarliest === earliest) return
+    if (viewMin <= REACHED_START_THRESHOLD_BARS) {
+      reachedStartFiredForEarliest = earliest
+      emit('reachedStart', { earliestTime: earliest })
+    }
+  },
+  { immediate: true },
 )
 
 function clampViewWindow(a: number, b: number) {
