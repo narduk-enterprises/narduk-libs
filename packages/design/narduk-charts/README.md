@@ -96,6 +96,9 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `showGrid` | `boolean` | `true` | Show horizontal grid lines |
 | `showPoints` | `boolean` | `false` | Always show data points |
 | `showArea` | `boolean` | `false` | Fill area under each line to the plot bottom |
+| `volume` | `(number \| null)[]` | — | Volume values aligned index-for-index with `labels`. Applies to `series[0]` only in multi-series charts (documented, no runtime warning). Omit to leave rendering unchanged |
+| `showVolume` | `boolean` | `false` | Render a bottom volume histogram pane when `volume` has data—mirrors `NardukCandleChart`'s volume pane sizing, bar styling, and bull/bear coloring. Bars decimate/window identically to the plotted series (same `maxRenderPoints` index pipeline), so they stay aligned under downsampling and `zoomable` pan/zoom |
+| `volumeFraction` | `number` | `0.22` | Fraction of plot height reserved for the volume pane when `showVolume` is set (clamped 0.12–0.45, same semantics as `NardukCandleChart`) |
 | `referenceLines` | `ChartReferenceLine[]` | — | Horizontal guides; optional `yAxis` when `dualYAxis`; right-side labels stack when close together |
 | `colors` | `string[]` | built-in palette | Custom color palette |
 | `animate` | `boolean` | `true` | Animate line draw-in on mount |
