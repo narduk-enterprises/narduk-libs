@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-13
+
 ### Added
 
 - `NardukLineChart` accepts `volume` (aligned index-for-index with `labels`), `showVolume` (default `false`), and `volumeFraction` (default `0.22`, same clamp range and semantics as `NardukCandleChart`) to render a bottom volume histogram pane. Mirrors `NardukCandleChart`'s volume pane sizing, bar styling (`narduk-line-volume` / `narduk-line-volume__bg` / `narduk-line-volume__bar`), and bull/bear coloring (close vs. previous close, neutral fallback at index 0 or for null volume). Volume decimates/windows identically to the plotted series (same `maxRenderPoints` index pipeline), so bars stay aligned under downsampling and `zoomable` pan/zoom. In multi-series charts, volume applies to `series[0]` only (documented; no runtime warning).
