@@ -49,6 +49,19 @@ const props = withDefaults(defineProps<{
   showGrid?: boolean
   showPoints?: boolean
   showArea?: boolean
+  /**
+   * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
+   * additional series are ignored for the volume pane (documented, no runtime warning).
+   * Omit to leave rendering unchanged.
+   */
+  volume?: (number | null)[]
+  /** Render a bottom volume histogram pane when `volume` has data. Default `false`. */
+  showVolume?: boolean
+  /**
+   * Fraction of plot height reserved for the volume pane when `showVolume` is set.
+   * Clamped to 0.12–0.45, same default and semantics as `NardukCandleChart`.
+   */
+  volumeFraction?: number
   colors?: string[]
   animate?: boolean
   dark?: boolean
@@ -126,6 +139,8 @@ const props = withDefaults(defineProps<{
   showGrid: true,
   showPoints: false,
   showArea: false,
+  showVolume: false,
+  volumeFraction: 0.22,
   animate: true,
   respectReducedMotion: true,
   dualYAxis: false,
@@ -225,6 +240,43 @@ const {
   isDark,
   effectiveAnimate,
 } = useChart(containerRef, props, paddingOverrides)
+
+/**
+ * Volume pane geometry mirrors `NardukCandleChart`'s `showVolume` / `volumeFraction`
+ * bottom-pane reservation exactly (same clamp range, gap, and minimum-height rules).
+ * Volume is decimated with the same index map as `effLabels` / `effSeries` (`effIndexMap`)
+ * so bars stay aligned under `maxRenderPoints` downsampling.
+ */
+const effVolume = computed<(number | null)[] | undefined>(() => {
+  const vol = props.volume
+  if (!vol) return undefined
+  const map = effIndexMap.value
+  if (!map) return vol
+  return map.map(i => vol[i] ?? null)
+})
+
+const showVolumePane = computed(() =>
+  props.showVolume === true && (props.volume?.length ?? 0) > 0,
+)
+
+const volGap = 6
+
+const priceInnerHeight = computed(() => {
+  if (!showVolumePane.value) return plotHeight.value
+  const vf = Math.min(0.45, Math.max(0.12, props.volumeFraction ?? 0.22))
+  const volH = Math.max(32, Math.floor(plotHeight.value * vf))
+  return Math.max(40, plotHeight.value - volH - volGap)
+})
+
+const volumeInnerHeight = computed(() => {
+  if (!showVolumePane.value) return 0
+  return Math.max(0, plotHeight.value - priceInnerHeight.value - volGap)
+})
+
+const volumeTop = computed(() =>
+  padding.value.top + priceInnerHeight.value + (showVolumePane.value ? volGap : 0),
+)
+
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
 
 const plotClipIdRaw = useId()
@@ -405,7 +457,7 @@ function svgPlotXToDataIndex(svgX: number): number {
 const zoomBoxPreview = computed(() => {
   if (zoomBoxPhase.value !== 'dragging') return null
   const pt = padding.value.top
-  const ph = plotHeight.value
+  const ph = priceInnerHeight.value
   const x1 = clampSvgXToPlot(zoomBoxStartSvgX.value)
   const x2 = clampSvgXToPlot(zoomBoxCurrentSvgX.value)
   const left = Math.min(x1, x2)
@@ -640,7 +692,7 @@ const primaryMap = computed(() => {
     props.yScale,
     seriesVals,
     [...refs, ...bands, ...annY],
-    plotHeight.value,
+    priceInnerHeight.value,
     yScaleOpts.value,
   )
 })
@@ -674,7 +726,7 @@ const secondaryMap = computed(() => {
     props.yScaleSecondary,
     seriesVals,
     [...refs, ...bands, ...annY],
-    plotHeight.value,
+    priceInnerHeight.value,
     yScaleOpts.value,
   )
 })
@@ -704,7 +756,7 @@ function yMapForAxis(axis: ChartYAxisId) {
 
 function yAtDataValue(value: number, axis: ChartYAxisId): number {
   const m = yMapForAxis(axis)
-  return padding.value.top + plotHeight.value - m.yFromBottom(value)
+  return padding.value.top + priceInnerHeight.value - m.yFromBottom(value)
 }
 
 function yPosForSeries(s: ChartSeries, v: number): number {
@@ -720,7 +772,7 @@ function xPos(index: number): number {
   return padding.value.left + ((index - lo) / span) * plotWidth.value
 }
 
-const yBaseline = computed(() => padding.value.top + plotHeight.value)
+const yBaseline = computed(() => padding.value.top + priceInnerHeight.value)
 
 const seriesRender = computed(() =>
   visibleSeries.value.map((s) => {
@@ -737,6 +789,62 @@ function resolveColor(s: ChartSeries): string {
   const idx = props.series.findIndex(x => x.name === s.name)
   return s.color || getColor(props.colors, idx >= 0 ? idx : 0)
 }
+
+/** Same bull/bear/neutral color resolution `NardukCandleChart` uses for its volume bars. */
+const VOLUME_BULL_COLOR = 'var(--color-chart-up, #22c55e)'
+const VOLUME_BEAR_COLOR = 'var(--color-chart-down, #ef4444)'
+const VOLUME_NEUTRAL_COLOR = 'var(--color-chart-muted)'
+
+/** Neutral fallback at index 0 (no previous point) and for null volume/price entries. */
+function volumeBarFill(
+  index: number,
+  data: (number | null)[],
+  rawVolume: number | null | undefined,
+): string {
+  if (index <= 0 || rawVolume == null) return VOLUME_NEUTRAL_COLOR
+  const cur = data[index]
+  const prev = data[index - 1]
+  if (cur == null || prev == null || Number.isNaN(cur) || Number.isNaN(prev)) return VOLUME_NEUTRAL_COLOR
+  return cur >= prev ? VOLUME_BULL_COLOR : VOLUME_BEAR_COLOR
+}
+
+/** Rescale to the max volume in the visible window, like `NardukCandleChart`'s `zoomAutoY`-style volume scaling. */
+const volumeMax = computed(() => {
+  if (!showVolumePane.value) return 1
+  const vol = effVolume.value
+  if (!vol) return 1
+  const { i0, i1 } = visibleIndexBounds()
+  if (i1 < i0) return 1
+  let m = 0
+  for (let i = i0; i <= i1; i++) {
+    const v = vol[i]
+    if (v != null) m = Math.max(m, v)
+  }
+  return m > 0 ? m : 1
+})
+
+/** Bars aligned to `xPos(i)`—the same x positions the price series/points use. */
+const volumeBars = computed(() => {
+  if (!showVolumePane.value) return []
+  const vol = effVolume.value
+  if (!vol) return []
+  const data = effSeries.value[0]?.data ?? []
+  const n = effLabels.value.length
+  const slot = plotWidth.value / Math.max(1, n)
+  const bodyW = Math.max(1, Math.min(18, slot * 0.68))
+  return Array.from({ length: n }, (_, i) => {
+    const raw = vol[i]
+    const v = raw != null && Number.isFinite(raw) ? raw : 0
+    const h = (v / volumeMax.value) * volumeInnerHeight.value
+    return {
+      x: xPos(i) - bodyW / 2,
+      y: volumeTop.value + volumeInnerHeight.value - h,
+      w: bodyW,
+      h: Math.max(0, h),
+      fill: volumeBarFill(i, data, raw),
+    }
+  })
+})
 
 const activeIndex = ref<number | null>(null)
 const kbFocusIndex = ref<number | null>(null)
@@ -789,7 +897,7 @@ function showTooltipAtIndex(idx: number) {
     }
   })
   const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
-  const py = padding.value.top + plotHeight.value / 2
+  const py = padding.value.top + priceInnerHeight.value / 2
   showTooltip(px, py, formatTooltipTitle(idx), items)
 }
 
@@ -1189,8 +1297,17 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         :x="padding.left"
         :y="padding.top"
         :width="plotWidth"
-        :height="plotHeight"
+        :height="priceInnerHeight"
         rx="12"
+      />
+      <rect
+        v-if="showVolumePane"
+        class="narduk-plot-surface narduk-plot-surface--volume"
+        :x="padding.left"
+        :y="volumeTop"
+        :width="plotWidth"
+        :height="volumeInnerHeight"
+        rx="10"
       />
       <g :clip-path="plotClipUrl">
       <!-- Y bands (behind grid) -->
@@ -1347,6 +1464,31 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         />
       </g>
 
+      <!-- Volume -->
+      <g
+        v-if="showVolumePane"
+        class="narduk-line-volume"
+      >
+        <rect
+          :x="padding.left"
+          :y="volumeTop"
+          :width="plotWidth"
+          :height="volumeInnerHeight"
+          class="narduk-line-volume__bg"
+        />
+        <rect
+          v-for="(vb, vi) in volumeBars"
+          :key="'v-' + vi"
+          class="narduk-line-volume__bar"
+          :x="vb.x"
+          :y="vb.y"
+          :width="vb.w"
+          :height="vb.h"
+          :rx="Math.min(2, vb.w / 3)"
+          :fill="vb.fill"
+        />
+      </g>
+
       <!-- Annotation markers -->
       <g
         v-if="pointAnnotations.length"
@@ -1413,6 +1555,18 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
       </g>
 
       <!-- Axes (unclipped so tick labels stay readable) -->
+      <g
+        v-if="showVolumePane"
+        class="narduk-axis"
+      >
+        <line
+          :x1="padding.left"
+          :y1="volumeTop"
+          :x2="chartWidth - padding.right"
+          :y2="volumeTop"
+        />
+      </g>
+
       <g class="narduk-axis">
         <line
           :x1="padding.left"

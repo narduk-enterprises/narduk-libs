@@ -106,6 +106,19 @@ export interface NardukLineChartProps {
   showGrid?: boolean
   showPoints?: boolean
   showArea?: boolean
+  /**
+   * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
+   * additional series are ignored for the volume pane (documented, no runtime warning).
+   * Omit to leave rendering unchanged.
+   */
+  volume?: (number | null)[]
+  /** Render a bottom volume histogram pane when `volume` has data. Default `false`. */
+  showVolume?: boolean
+  /**
+   * Fraction of plot height reserved for the volume pane when `showVolume` is set.
+   * Clamped to 0.12–0.45, same default (`0.22`) and semantics as `NardukCandleChart`.
+   */
+  volumeFraction?: number
   colors?: string[]
   animate?: boolean
   dark?: boolean

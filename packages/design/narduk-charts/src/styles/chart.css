@@ -132,6 +132,11 @@
     fill: color-mix(in oklch, var(--color-chart-plot-tint) 85%, var(--color-chart-grid));
   }
 
+  .narduk-chart--no-chrome .narduk-plot-surface--volume {
+    fill: none;
+    stroke: none;
+  }
+
   .narduk-legend__fieldset {
     @apply m-0 min-w-0 border-0 p-0;
   }
@@ -413,12 +418,14 @@
     opacity: 0.9;
   }
 
-  .narduk-candle-volume__bg {
+  .narduk-candle-volume__bg,
+  .narduk-line-volume__bg {
     fill: color-mix(in oklch, var(--color-chart-grid) 25%, var(--color-chart-plot-tint));
     opacity: 0.35;
   }
 
-  .narduk-candle-volume__bar {
+  .narduk-candle-volume__bar,
+  .narduk-line-volume__bar {
     stroke: none;
     opacity: 0.62;
   }
