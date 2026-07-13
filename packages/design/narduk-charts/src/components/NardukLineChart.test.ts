@@ -227,3 +227,188 @@ describe('NardukLineChart consumer ergonomics', () => {
     expect(w.emitted('pointClick')).toBeUndefined()
   })
 })
+
+describe('NardukLineChart volume pane', () => {
+  it('does not render a volume pane by default, even when volume data is provided', () => {
+    const baseProps = {
+      series: [{ name: 'Price', data: [1, 2, 3] }],
+      labels: ['a', 'b', 'c'],
+      width: 300,
+      height: 150,
+      animate: false,
+    }
+    const withoutVolume = mount(NardukLineChart, { props: baseProps })
+    const withVolume = mount(NardukLineChart, {
+      props: { ...baseProps, volume: [10, 20, 30] },
+    })
+
+    expect(withVolume.find('.narduk-line-volume').exists()).toBe(false)
+    expect(withVolume.find('.narduk-plot-surface--volume').exists()).toBe(false)
+    // Unchanged rendering: the price surface height is identical with or without `volume` data.
+    const heightWith = withVolume.find('.narduk-plot-surface--line').attributes('height')
+    const heightWithout = withoutVolume.find('.narduk-plot-surface--line').attributes('height')
+    expect(heightWith).toBe(heightWithout)
+  })
+
+  it('does nothing when showVolume is set but no volume data is provided', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Price', data: [1, 2, 3] }],
+        labels: ['a', 'b', 'c'],
+        showVolume: true,
+        width: 300,
+        height: 150,
+        animate: false,
+      },
+    })
+
+    expect(w.find('.narduk-line-volume').exists()).toBe(false)
+    expect(w.find('.narduk-plot-surface--volume').exists()).toBe(false)
+  })
+
+  it('reserves the bottom fraction of the plot for volume and shrinks the price pane', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Price', data: [1, 2, 3] }],
+        labels: ['a', 'b', 'c'],
+        volume: [10, 20, 30],
+        showVolume: true,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        width: 300,
+        height: 200,
+        animate: false,
+      },
+    })
+
+    const priceSurface = w.find('.narduk-plot-surface--line')
+    const volSurface = w.find('.narduk-plot-surface--volume')
+    expect(volSurface.exists()).toBe(true)
+    const priceH = Number(priceSurface.attributes('height'))
+    const volH = Number(volSurface.attributes('height'))
+    expect(priceH).toBeLessThan(200)
+    expect(volH).toBeGreaterThan(0)
+    expect(priceH + volH).toBeLessThan(200)
+    expect(w.findAll('.narduk-line-volume__bar')).toHaveLength(3)
+  })
+
+  it('volumeFraction grows the volume pane and shrinks the price pane, like NardukCandleChart', () => {
+    function heights(volumeFraction: number) {
+      const w = mount(NardukLineChart, {
+        props: {
+          series: [{ name: 'Price', data: [1, 2, 3] }],
+          labels: ['a', 'b', 'c'],
+          volume: [10, 20, 30],
+          showVolume: true,
+          volumeFraction,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          width: 300,
+          height: 200,
+          animate: false,
+        },
+      })
+      return {
+        price: Number(w.find('.narduk-plot-surface--line').attributes('height')),
+        volume: Number(w.find('.narduk-plot-surface--volume').attributes('height')),
+      }
+    }
+
+    const small = heights(0.12)
+    const large = heights(0.4)
+    expect(large.volume).toBeGreaterThan(small.volume)
+    expect(large.price).toBeLessThan(small.price)
+  })
+
+  it('aligns volume bars to the same x positions as the decimated series under maxRenderPoints', () => {
+    const n = 20
+    const labels = Array.from({ length: n }, (_, i) => `L${i}`)
+    const data = Array.from({ length: n }, (_, i) => i + 1)
+    const volume = Array.from({ length: n }, (_, i) => (i + 1) * 100)
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Price', data }],
+        labels,
+        volume,
+        showVolume: true,
+        showPoints: true,
+        maxRenderPoints: 5,
+        width: 500,
+        height: 200,
+        animate: false,
+      },
+    })
+
+    const points = w.findAll('.narduk-line-point')
+    const bars = w.findAll('.narduk-line-volume__bar')
+    expect(points.length).toBeLessThan(n)
+    expect(bars.length).toBe(points.length)
+
+    points.forEach((pt, i) => {
+      const cx = Number(pt.attributes('cx'))
+      const barX = Number(bars[i]!.attributes('x'))
+      const barW = Number(bars[i]!.attributes('width'))
+      expect(barX + barW / 2).toBeCloseTo(cx, 5)
+    })
+  })
+
+  it('renders zero-height, neutral-colored bars for null volume entries', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Price', data: [10, 12, 9, 15] }],
+        labels: ['a', 'b', 'c', 'd'],
+        volume: [100, null, 50, null],
+        showVolume: true,
+        width: 400,
+        height: 200,
+        animate: false,
+      },
+    })
+
+    const bars = w.findAll('.narduk-line-volume__bar')
+    expect(bars).toHaveLength(4)
+    expect(Number(bars[1]!.attributes('height'))).toBe(0)
+    expect(bars[1]!.attributes('fill')).toBe('var(--color-chart-muted)')
+    expect(Number(bars[3]!.attributes('height'))).toBe(0)
+    expect(bars[3]!.attributes('fill')).toBe('var(--color-chart-muted)')
+  })
+
+  it('colors bars by close-vs-previous-close direction with a neutral index-0 fallback', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        // idx0: neutral (no previous). idx1: 10->15 up. idx2: 15->12 down. idx3: 12->12 flat (>=  → up).
+        series: [{ name: 'Price', data: [10, 15, 12, 12] }],
+        labels: ['a', 'b', 'c', 'd'],
+        volume: [100, 200, 150, 90],
+        showVolume: true,
+        width: 400,
+        height: 200,
+        animate: false,
+      },
+    })
+
+    const bars = w.findAll('.narduk-line-volume__bar')
+    expect(bars[0]!.attributes('fill')).toBe('var(--color-chart-muted)')
+    expect(bars[1]!.attributes('fill')).toBe('var(--color-chart-up, #22c55e)')
+    expect(bars[2]!.attributes('fill')).toBe('var(--color-chart-down, #ef4444)')
+    expect(bars[3]!.attributes('fill')).toBe('var(--color-chart-up, #22c55e)')
+  })
+
+  it('applies volume direction coloring from series[0] only in multi-series charts', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [
+          { name: 'A', data: [10, 5] }, // down
+          { name: 'B', data: [1, 100] }, // up — must be ignored for volume coloring
+        ],
+        labels: ['x', 'y'],
+        volume: [10, 20],
+        showVolume: true,
+        width: 300,
+        height: 150,
+        animate: false,
+      },
+    })
+
+    const bars = w.findAll('.narduk-line-volume__bar')
+    expect(bars[1]!.attributes('fill')).toBe('var(--color-chart-down, #ef4444)')
+  })
+})
