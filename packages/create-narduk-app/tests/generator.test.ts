@@ -114,6 +114,12 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
+    expect(files.get('apps/web/nuxt.config.ts')).toContain(
+      "'#narduk-db': fileURLToPath(new URL('./server/database/schema.ts', import.meta.url))",
+    )
+    expect(files.get('apps/web/server/utils/database.ts')).toContain(
+      "import * as schema from '#narduk-db'",
+    )
     expect(dependencies['@narduk-enterprises/narduk-ai']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-ai'],
     )
