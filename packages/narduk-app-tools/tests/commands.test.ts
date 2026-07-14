@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { buildDopplerRunArgs, parseDevArgs } from '../src/dev'
 import {
   buildWranglerCommandArgs,
+  isDryRunDeploy,
   isLocalDeployAllowed,
   parseDeployArgs,
   readWranglerScriptName,
@@ -50,6 +51,17 @@ describe('app-local command planning', () => {
       action: 'versions-upload',
       passthroughArgs: ['--minify'],
     })
+    expect(parseDeployArgs(['deploy', '--', '--dry-run'])).toEqual({
+      action: 'deploy',
+      passthroughArgs: ['--dry-run'],
+    })
+    expect(isDryRunDeploy(parseDeployArgs(['deploy', '--', '--dry-run']).passthroughArgs)).toBe(
+      true,
+    )
+    expect(() => parseDeployArgs(['deploy', '--', '--', '--dry-run'])).toThrow(
+      'bare -- is not allowed',
+    )
+    expect(isLocalDeployAllowed({ SKIP_DEPENDENCY_INSTALL: '1' })).toBe(false)
     expect(() => parseDeployArgs(['--minify'])).toThrow('deploy <deploy|versions-upload>')
     expect(
       buildWranglerCommandArgs({

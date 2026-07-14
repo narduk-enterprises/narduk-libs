@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,15 +22,14 @@ describe('assets favicons', () => {
       join(publicDir, 'favicon.svg'),
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>',
     )
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'example-app' }))
-
-    expect(resolveFaviconOptions({}, root).name).toBe('example-app')
+    expect(resolveFaviconOptions({}, root).target).toBe(publicDir)
     const outputs = await generateFavicons({}, root)
-    expect(outputs).toHaveLength(7)
-    expect(existsSync(join(publicDir, 'pwa-512x512.png'))).toBe(true)
-    expect(JSON.parse(readFileSync(join(publicDir, 'site.webmanifest'), 'utf8'))).toMatchObject({
-      name: 'example-app',
-      start_url: '/',
-    })
+    expect(outputs).toHaveLength(4)
+    expect(existsSync(join(publicDir, 'apple-touch-icon.png'))).toBe(true)
+    expect(existsSync(join(publicDir, 'favicon-32x32.png'))).toBe(true)
+    expect(existsSync(join(publicDir, 'favicon-16x16.png'))).toBe(true)
+    expect(existsSync(join(publicDir, 'favicon.ico'))).toBe(true)
+    expect(existsSync(join(publicDir, 'pwa-512x512.png'))).toBe(false)
+    expect(existsSync(join(publicDir, 'site.webmanifest'))).toBe(false)
   })
 })

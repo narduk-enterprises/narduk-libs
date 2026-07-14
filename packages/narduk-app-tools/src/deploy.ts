@@ -22,7 +22,7 @@ function isTruthy(value: string | undefined): boolean {
 }
 
 export function isLocalDeployAllowed(env: DeployEnv = process.env): boolean {
-  return isTruthy(env.SKIP_DEPENDENCY_INSTALL) || isTruthy(env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY)
+  return isTruthy(env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY)
 }
 
 export function getDeployGuardMessage(action: DeployAction): string {
@@ -35,9 +35,17 @@ export function parseDeployArgs(args: string[]): {
   passthroughArgs: string[]
 } {
   const [first, ...rest] = args
-  if (first === 'versions-upload') return { action: 'versions-upload', passthroughArgs: rest }
-  if (first === 'deploy') return { action: 'deploy', passthroughArgs: rest }
+  const passthroughArgs = rest[0] === '--' ? rest.slice(1) : rest
+  if (passthroughArgs.includes('--')) {
+    throw new Error('A bare -- is not allowed inside Wrangler deploy arguments')
+  }
+  if (first === 'versions-upload') return { action: 'versions-upload', passthroughArgs }
+  if (first === 'deploy') return { action: 'deploy', passthroughArgs }
   throw new Error('Usage: narduk-app deploy <deploy|versions-upload> [args...]')
+}
+
+export function isDryRunDeploy(args: readonly string[]): boolean {
+  return args.includes('--dry-run')
 }
 
 export function readJsonc<T>(path: string): T {
@@ -160,7 +168,7 @@ export function runDeploy(
   env: DeployEnv = process.env,
 ): number {
   const { action, passthroughArgs } = parseDeployArgs(args)
-  if (!isLocalDeployAllowed(env)) {
+  if (!isDryRunDeploy(passthroughArgs) && !isLocalDeployAllowed(env)) {
     console.error(getDeployGuardMessage(action))
     return 1
   }

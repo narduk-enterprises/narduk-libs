@@ -23,7 +23,7 @@ function usage(): string {
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  doctor                              Check app-local prerequisites',
     '  performance-budget [options]        Check built asset budgets',
-    '  assets favicons [options]            Generate favicon assets and manifest',
+    '  assets favicons [options]            Generate ordinary favicon assets',
   ].join('\n')
 }
 

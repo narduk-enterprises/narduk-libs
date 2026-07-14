@@ -342,7 +342,7 @@ export function discoverMigrations(config: MigrationConfig, baseDir: string): Mi
       throw new Error(`Migration directory not found for ${source.source}: ${directory}`)
     }
     const names = readdirSync(directory)
-      .filter((name) => name.toLowerCase().endsWith('.sql'))
+      .filter((name) => /^\d{4,}(?:_\w[\w.-]*)?\.sql$/i.test(name))
       .sort((left, right) => left.localeCompare(right))
     for (const filename of names) {
       const path = join(directory, filename)

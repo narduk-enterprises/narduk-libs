@@ -160,6 +160,7 @@ describe('migration config and planning', () => {
     mkdirSync(join(root, 'pkg'), { recursive: true })
     writeFileSync(join(root, 'app', '0001.sql'), 'app')
     writeFileSync(join(root, 'pkg', '0000.sql'), 'pkg')
+    writeFileSync(join(root, 'pkg', 'seed.sql'), 'must never run')
     const config = parseMigrationConfig({
       sources: [
         { source: 'app', path: 'app', sourceVersion: 'app' },
@@ -171,6 +172,9 @@ describe('migration config and planning', () => {
       'app',
     ])
     expect(readFileSync(join(root, 'app', '0001.sql'), 'utf8')).toBe('app')
+    expect(discoverMigrations(config, root).some((file) => file.filename === 'seed.sql')).toBe(
+      false,
+    )
   })
 
   it('builds credential-free Wrangler planning args and enforces reset scope', () => {
