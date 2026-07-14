@@ -1,0 +1,83 @@
+name: Release packages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: narduk-libs-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, proxmox]
+    timeout-minutes: 45
+    env:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
+      NPM_CONFIG_GLOBALCONFIG: /dev/null
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Configure GitHub Packages read auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}"
+          umask 077
+          cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
+          @narduk-enterprises:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ}
+          EOF
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release candidate
+        run: pnpm run quality && pnpm run release:dry-run
+
+      - name: Configure GitHub Packages write auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${NARDUK_PLATFORM_GH_PACKAGES_WRITE:-}"
+          umask 077
+          cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
+          @narduk-enterprises:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_WRITE}
+          EOF
+
+      - name: Prepare or publish independent package versions
+        uses: changesets/action@v1
+        with:
+          version: pnpm run release:version
+          publish: pnpm run release:publish
+          title: "chore: release packages"
+          commit: "chore: release packages"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Remove temporary registry auth
+        if: always()
+        run: rm -f "${NPM_CONFIG_USERCONFIG}"

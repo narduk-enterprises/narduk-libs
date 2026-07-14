@@ -10,7 +10,13 @@
     "format": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "test": "pnpm -r --filter './packages/*' --if-present test:unit",
-    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test"
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test",
+    "changeset": "changeset",
+    "pack:check": "node scripts/release-packages.mjs --dry-run",
+    "release:dry-run": "node scripts/release-packages.mjs --dry-run",
+    "release:consumer-smoke": "node scripts/release-packages.mjs --dry-run --consumer-smoke",
+    "release:version": "changeset version",
+    "release:publish": "changeset publish"
   },
   "pnpm": {
     "overrides": {
@@ -96,6 +102,7 @@
     "node": "22.22.3"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
     "@narduk-enterprises/eslint-config": "1.2.17",
     "@playwright/test": "^1.59.1",
     "@types/node": "^22.19.19",
