@@ -1,11 +1,11 @@
 # narduk-libs
 
-Reusable Narduk packages published under `@narduk-enterprises/*`.
+Reusable Narduk packages published independently under `@narduk-enterprises/*`.
 
-This monorepo is the home for the app libraries that production fleet apps
-import directly. It replaces the old physical dependency on `narduk-template`
-for package development while preserving the template history in the apps that
-came from it.
+This monorepo is the source for the shared libraries and focused one-shot tools
+that production apps import directly. It is not a fleet template, sync service,
+or Command control plane. The decommission ledger and archive gates live in
+[`docs/architecture/narduk-template-decommission.md`](docs/architecture/narduk-template-decommission.md).
 
 ## Packages
 
@@ -21,10 +21,23 @@ came from it.
 
 ```sh
 pnpm install
-pnpm run build
-pnpm run typecheck
+pnpm run quality
+pnpm run release:dry-run
+pnpm run release:consumer-smoke
 pnpm run test
 ```
+
+`release:dry-run` validates every public package with publint and a pnpm pack
+listing without changing versions or publishing. `release:consumer-smoke` packs
+the packages and installs those tarballs in a temporary directory outside the
+workspace. Both commands are safe to run locally.
+
+## Independent releases
+
+Add a Changeset for each public package change. Changesets bump and publish only
+the named packages, with immutable versions in GitHub Packages. The release
+workflow authenticates the `@narduk-enterprises` scope using a short-lived
+workflow secret and never dispatches to an app repository.
 
 ## Fix Policy
 
