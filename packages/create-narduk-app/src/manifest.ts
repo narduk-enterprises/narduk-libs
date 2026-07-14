@@ -3,13 +3,16 @@ import type { Capability, ProductSpec } from './types.js'
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '4.20260511.1',
   '@iconify-json/lucide': '1.2.108',
-  '@loganrenz/narduk-mapkit': '0.2.0',
+  '@loganrenz/narduk-mapkit': '1.0.0',
+  '@loganrenz/narduk-mapkit-nuxt': '1.0.0',
+  '@narduk-enterprises/narduk-app-tools': '0.1.0',
   '@narduk-enterprises/eslint-config': '1.2.17',
   '@narduk-enterprises/narduk-ai': '0.1.0',
   '@narduk-enterprises/narduk-analytics': '1.19.19',
   '@narduk-enterprises/narduk-auth': '1.19.26',
   '@narduk-enterprises/narduk-core': '1.19.40',
   '@narduk-enterprises/narduk-seo': '1.19.22',
+  '@narduk-enterprises/narduk-testkit': '1.0.0',
   '@narduk-enterprises/narduk-uploads': '1.19.18',
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.6.0',
@@ -18,29 +21,36 @@ export const PACKAGE_VERSIONS = {
   '@types/node': '22.19.19',
   'drizzle-kit': '0.31.10',
   'drizzle-orm': '0.45.2',
+  esbuild: '0.28.1',
   eslint: '9.39.4',
+  glob: '13.0.6',
   'happy-dom': '20.9.0',
   knip: '6.14.1',
-  nuxt: '4.4.2',
+  nuxt: '4.4.8',
+  '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
   tailwindcss: '4.2.1',
   typescript: '5.9.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',
-  wrangler: '4.90.1',
+  wrangler: '4.110.0',
   zod: '4.4.3',
 } as const
 
-const capabilityPackages: Record<Capability, string> = {
-  ai: '@narduk-enterprises/narduk-ai',
-  analytics: '@narduk-enterprises/narduk-analytics',
-  auth: '@narduk-enterprises/narduk-auth',
-  mapkit: '@loganrenz/narduk-mapkit',
-  seo: '@narduk-enterprises/narduk-seo',
-  uploads: '@narduk-enterprises/narduk-uploads',
+const capabilityPackages: Record<Capability, readonly string[]> = {
+  ai: ['@narduk-enterprises/narduk-ai'],
+  analytics: ['@narduk-enterprises/narduk-analytics'],
+  auth: ['@narduk-enterprises/narduk-auth'],
+  mapkit: ['@loganrenz/narduk-mapkit', '@loganrenz/narduk-mapkit-nuxt'],
+  seo: ['@narduk-enterprises/narduk-seo'],
+  uploads: ['@narduk-enterprises/narduk-uploads'],
 }
 
 export function packageNameForCapability(capability: Capability): string {
+  return capabilityPackages[capability][0] as string
+}
+
+export function packageNamesForCapability(capability: Capability): readonly string[] {
   return capabilityPackages[capability]
 }
 
@@ -48,11 +58,13 @@ export function packageVersionsForCapabilities(
   capabilities: readonly Capability[],
 ): Record<string, string> {
   const names = [
-    '@narduk-enterprises/narduk-core',
-    ...capabilities.map(packageNameForCapability),
-    'drizzle-orm',
-    'nuxt',
-    'zod',
+    ...Object.keys(dependencyEntries(capabilities)),
+    ...Object.keys(devDependencyEntries()),
+    '@narduk-enterprises/eslint-config',
+    '@nuxt/eslint',
+    'esbuild',
+    'glob',
+    'knip',
   ]
 
   return Object.fromEntries(
@@ -66,11 +78,10 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
   const names = [
     '@iconify-json/lucide',
     '@narduk-enterprises/narduk-core',
-    ...capabilities.map(packageNameForCapability),
+    ...capabilities.flatMap(packageNamesForCapability),
     '@nuxt/ui',
     'drizzle-orm',
     'nuxt',
-    'zod',
   ]
 
   return Object.fromEntries(
@@ -83,17 +94,14 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
 function devDependencyEntries(): Record<string, string> {
   const names = [
     '@cloudflare/workers-types',
-    '@narduk-enterprises/eslint-config',
-    '@nuxt/test-utils',
+    '@narduk-enterprises/narduk-app-tools',
+    '@narduk-enterprises/narduk-testkit',
     '@playwright/test',
-    '@tailwindcss/vite',
     '@types/node',
     'drizzle-kit',
     'eslint',
     'happy-dom',
-    'knip',
     'prettier',
-    'tailwindcss',
     'typescript',
     'vitest',
     'vue-tsc',
@@ -125,11 +133,21 @@ export function createRootPackageManifest(
     },
     scripts: {
       build: 'pnpm --filter web run build',
+      'cf:build': 'pnpm --filter web run cf:build',
+      'cf:deploy': 'pnpm --filter web run cf:deploy',
+      'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
+      'db:migrate:local': 'pnpm --filter web run db:migrate:local',
+      'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+      deploy: 'pnpm --filter web run deploy',
+      'deploy:dry-run': 'pnpm --filter web run deploy:dry-run',
+      'deploy:version': 'pnpm --filter web run deploy:version',
       dev: 'pnpm --filter web run dev',
+      doctor: 'pnpm --filter web run doctor',
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       knip: 'knip',
       lint: 'pnpm --filter web run lint',
+      'performance-budget': 'pnpm --filter web run performance-budget',
       quality:
         'pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
@@ -143,6 +161,33 @@ export function createRootPackageManifest(
       knip: PACKAGE_VERSIONS.knip,
       prettier: PACKAGE_VERSIONS.prettier,
       typescript: PACKAGE_VERSIONS.typescript,
+    },
+    pnpm: {
+      overrides: {
+        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
+        ...(capabilities.includes('auth')
+          ? {
+              '@narduk-enterprises/narduk-auth':
+                PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
+            }
+          : {}),
+        '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
+        esbuild: PACKAGE_VERSIONS.esbuild,
+        glob: PACKAGE_VERSIONS.glob,
+      },
+      allowedDeprecatedVersions: {
+        '@esbuild-kit/core-utils': '*',
+        '@esbuild-kit/esm-loader': '*',
+      },
+      onlyBuiltDependencies: [
+        '@parcel/watcher',
+        'core-js',
+        'esbuild',
+        'sharp',
+        'unrs-resolver',
+        'vue-demi',
+        'workerd',
+      ],
     },
   })
 }
@@ -159,12 +204,33 @@ export function createWebPackageManifest(
     type: 'module',
     scripts: {
       build: 'nuxt build',
-      dev: 'nuxt dev',
+      dev: 'narduk-app dev -- nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
-      lint: 'eslint . --max-warnings 0',
+      lint: 'nuxt prepare && eslint . --max-warnings 0',
       'nuxt:prepare': 'nuxt prepare',
       'test:e2e': 'playwright test',
       'test:unit': 'vitest run --config vitest.config.ts',
+      'cf:build': 'nuxt build --preset=cloudflare_module',
+      'cf:deploy':
+        'narduk-app db migrate --config migrations.sources.json --database ' +
+        appName +
+        '-db --remote --workers-build-only && narduk-app deploy deploy',
+      'cf:deploy:preview': 'narduk-app deploy versions-upload',
+      'db:migrate:local':
+        'narduk-app db migrate --config migrations.sources.json --database ' +
+        appName +
+        '-db --local',
+      'db:migrate:remote':
+        'narduk-app db migrate --config migrations.sources.json --database ' +
+        appName +
+        '-db --remote',
+      deploy: 'narduk-app deploy deploy',
+      'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
+      'deploy:local': 'narduk-app deploy-local',
+      'deploy:version': 'narduk-app deploy versions-upload',
+      doctor: 'narduk-app doctor',
+      'performance-budget': 'narduk-app performance-budget',
+      'registry-auth': 'narduk-app registry-auth',
       typecheck: 'nuxt typecheck',
     },
     narduk: {
@@ -173,38 +239,30 @@ export function createWebPackageManifest(
     },
     dependencies: dependencyEntries(capabilities),
     devDependencies: devDependencyEntries(),
-    metadata: {
-      generatedBy: '@narduk-enterprises/create-narduk-app',
-      appName,
-    },
   })
 }
 
 export function createMigrationSourcesManifest(capabilities: readonly Capability[]): string {
   const packageSources = [
     {
-      directory: 'node_modules/@narduk-enterprises/narduk-core/drizzle',
-      source: '@narduk-enterprises/narduk-core',
-      sourceVersion: PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
+      id: '@narduk-enterprises/narduk-core',
+      dir: 'node_modules/@narduk-enterprises/narduk-core/runtime/drizzle',
     },
     ...(capabilities.includes('auth')
       ? [
           {
-            directory: 'node_modules/@narduk-enterprises/narduk-auth/drizzle',
-            source: '@narduk-enterprises/narduk-auth',
-            sourceVersion: PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
+            id: '@narduk-enterprises/narduk-auth',
+            dir: 'node_modules/@narduk-enterprises/narduk-auth/drizzle',
           },
         ]
       : []),
     {
-      directory: 'apps/web/drizzle',
-      source: 'app',
-      sourceVersion: '0.1.0',
+      id: 'app',
+      dir: 'drizzle',
     },
   ]
 
   return json({
-    identity: ['source', 'filename', 'checksum'],
     schemaVersion: 1,
     sources: packageSources,
   })

@@ -57,8 +57,10 @@ describe('create-narduk-app generation contract', () => {
 
     expect([...first.keys()]).toEqual([...second.keys()])
     expect(first).toEqual(second)
-    expect(first.get('create-narduk-app-report.json')).not.toContain('/one/target')
-    expect(first.get('create-narduk-app-report.json')).not.toContain('/two/target')
+    expect(first.has('create-narduk-app-report.json')).toBe(false)
+    expect(first.get('.github/workflows/ci.yml')).toContain('runs-on: ubuntu-latest')
+    expect([...first.values()].join('\n')).not.toContain('/one/target')
+    expect([...first.values()].join('\n')).not.toContain('/two/target')
   })
 
   it('selects capabilities, keeps core implicit, and pins every manifest version', () => {
@@ -75,17 +77,37 @@ describe('create-narduk-app generation contract', () => {
       string,
       unknown
     >
-    const report = JSON.parse(files.get('create-narduk-app-report.json') ?? '') as {
-      capabilities: string[]
-      packageVersions: Record<string, string>
-    }
     const dependencies = collectVersionedDependencies(webManifest)
 
     expect(rootManifest.narduk).toEqual({
       capabilities: ['auth', 'seo', 'analytics', 'uploads', 'ai', 'mapkit'],
       visibility: 'private',
     })
-    expect(report.capabilities).toEqual(['auth', 'seo', 'analytics', 'uploads', 'ai', 'mapkit'])
+    expect(rootManifest.pnpm).toEqual({
+      overrides: {
+        '@narduk-enterprises/narduk-auth': PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
+        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
+        '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
+        esbuild: PACKAGE_VERSIONS.esbuild,
+        glob: PACKAGE_VERSIONS.glob,
+      },
+      allowedDeprecatedVersions: {
+        '@esbuild-kit/core-utils': '*',
+        '@esbuild-kit/esm-loader': '*',
+      },
+      onlyBuiltDependencies: [
+        '@parcel/watcher',
+        'core-js',
+        'esbuild',
+        'sharp',
+        'unrs-resolver',
+        'vue-demi',
+        'workerd',
+      ],
+    })
+    expect(files.get('.github/workflows/ci.yml')).toContain(
+      'runs-on: [self-hosted, Linux, proxmox]',
+    )
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
@@ -95,16 +117,22 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@loganrenz/narduk-mapkit']).toBe(
       PACKAGE_VERSIONS['@loganrenz/narduk-mapkit'],
     )
+    expect(dependencies['@loganrenz/narduk-mapkit-nuxt']).toBe(
+      PACKAGE_VERSIONS['@loganrenz/narduk-mapkit-nuxt'],
+    )
+    expect(dependencies['@narduk-enterprises/narduk-app-tools']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-app-tools'],
+    )
+    expect(dependencies['@narduk-enterprises/narduk-testkit']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
+    )
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
     )
-    expect(
-      Object.entries(report.packageVersions).every(([, version]) =>
-        /^\d+\.\d+\.\d+$/u.test(version),
-      ),
-    ).toBe(true)
     expect(files.get('apps/web/nuxt.config.ts')).toContain("'@narduk-enterprises/narduk-ai'")
-    expect(files.get('apps/web/nuxt.config.ts')).not.toContain('narduk-mapkit')
+    expect(files.get('apps/web/nuxt.config.ts')).toContain("'@loganrenz/narduk-mapkit-nuxt'")
+    expect(files.get('apps/web/nuxt.config.ts')).toContain('zeroRuntime: true')
+    expect(files.get('apps/web/app/pages/index.vue')).toContain('useWebPageSchema')
   })
 
   it('rejects permanently unsupported capabilities with actionable guidance', () => {
@@ -192,9 +220,22 @@ describe('create-narduk-app generation contract', () => {
 
     expect(exitCode).toBe(0)
     expect(fetch).not.toHaveBeenCalled()
-    const report = JSON.parse(chunks.join('')) as { appName: string; capabilities: string[] }
+    const report = JSON.parse(chunks.join('')) as {
+      appName: string
+      capabilities: string[]
+      packageVersions: Record<string, string>
+    }
     expect(report.appName).toBe('json-app')
     expect(report.capabilities).toEqual(['auth', 'seo'])
+    expect(report.packageVersions.wrangler).toBe(PACKAGE_VERSIONS.wrangler)
+    expect(report.packageVersions['@playwright/test']).toBe(PACKAGE_VERSIONS['@playwright/test'])
+    expect(report).toMatchObject({
+      validationResults: [
+        { check: 'capabilities', passed: true },
+        { check: 'exact-package-versions', passed: true },
+        { check: 'generated-paths', passed: true },
+      ],
+    })
   })
 
   it('emits no forbidden artifacts and parses every generated config surface', () => {
@@ -212,6 +253,7 @@ describe('create-narduk-app generation contract', () => {
       'scripts/narduk-toolchain.mjs',
       'provision.json',
       'guardrail-exceptions.json',
+      'create-narduk-app-report.json',
       '.setup-complete',
       'public/sw.js',
       'public/offline.html',
@@ -226,13 +268,26 @@ describe('create-narduk-app generation contract', () => {
     )
     expect(paths.some((path) => /service-worker|offline/u.test(path))).toBe(false)
     expect(paths.some((path) => path.includes('command'))).toBe(false)
-    expect(paths).not.toContain('.npmrc')
+    expect(paths).toContain('.npmrc')
 
     const generatedText = files.map((file) => file.contents).join('\n')
     expect(generatedText).not.toContain('postinstall')
     expect(generatedText).not.toContain('git+')
-    expect(generatedText).not.toContain('NARDUK_PLATFORM_GH_PACKAGES')
     expect(generatedText).not.toContain('provision.json')
+    expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
+      '@narduk-enterprises:registry=https://npm.pkg.github.com\n' +
+        '@loganrenz:registry=https://registry.npmjs.org/\n' +
+        '//npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ-UNCONFIGURED}\n',
+    )
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
+      'pnpm install --frozen-lockfile',
+    )
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
+      '${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+    )
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
+      'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+    )
 
     for (const file of files.filter((file) => file.path.endsWith('.json'))) {
       expect(() => JSON.parse(file.contents), file.path).not.toThrow()
@@ -266,9 +321,20 @@ describe('create-narduk-app generation contract', () => {
     expect(files).toContain('apps/web/package.json')
     expect(files).toContain('apps/web/nuxt.config.ts')
     expect(
-      JSON.parse(await readFile(join(targetDir, 'migrations.sources.json'), 'utf8')),
+      JSON.parse(await readFile(join(targetDir, 'apps/web/migrations.sources.json'), 'utf8')),
     ).toMatchObject({
-      identity: ['source', 'filename', 'checksum'],
+      schemaVersion: 1,
+      sources: [
+        {
+          id: '@narduk-enterprises/narduk-core',
+          dir: 'node_modules/@narduk-enterprises/narduk-core/runtime/drizzle',
+        },
+        {
+          id: '@narduk-enterprises/narduk-auth',
+          dir: 'node_modules/@narduk-enterprises/narduk-auth/drizzle',
+        },
+        { id: 'app', dir: 'drizzle' },
+      ],
     })
     const rootPackage = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
@@ -276,13 +342,36 @@ describe('create-narduk-app generation contract', () => {
     expect(rootPackage.scripts.quality).toContain('pnpm run format:check')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
+    expect(rootPackage.scripts['cf:build']).toBe('pnpm --filter web run cf:build')
+    expect(rootPackage.scripts['cf:deploy']).toBe('pnpm --filter web run cf:deploy')
+    expect(rootPackage.scripts.deploy).toBe('pnpm --filter web run deploy')
+    const webPackage = JSON.parse(
+      await readFile(join(targetDir, 'apps/web/package.json'), 'utf8'),
+    ) as { scripts: Record<string, string> }
+    expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
+    expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
+    expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
+    expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
+    expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
+    expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
+    expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
+      '<NuxtLayout>',
+    )
+    const wranglerConfig = await readFile(join(targetDir, 'apps/web/wrangler.jsonc'), 'utf8')
+    expect(wranglerConfig).toContain('"no_bundle": true')
+    expect(wranglerConfig).toContain('"find_additional_modules": true')
+    expect(wranglerConfig).toContain('"base_dir": ".output/server"')
+    expect(
+      await readFile(join(targetDir, 'apps/web/drizzle/0000_app_records.sql'), 'utf8'),
+    ).toContain('CREATE TABLE `app_records`')
+    expect(await stat(join(targetDir, 'apps/web/wrangler.jsonc'))).toBeDefined()
   })
 })
 
 describe('CLI argument parsing', () => {
   it('supports named options and exact local target resolution', async () => {
     const parsed = (await import('../src/cli.js')).parseCliArguments(
-      ['--name', 'named-app', '--target-dir', 'output', '--local-port=3456', '--no-git'],
+      ['--name', 'named-app', '--target-dir', 'output', '--local-dev-port=3456', '--no-git'],
       '/workspace',
     )
     expect(parsed.options.appName).toBe('named-app')
