@@ -69,15 +69,7 @@ describe('narduk-core module', () => {
         },
       }),
     )
-    expect(nuxt.options.app).toMatchObject({
-      head: {
-        link: expect.arrayContaining([
-          expect.objectContaining({ rel: 'icon', href: '/favicon.svg' }),
-          expect.objectContaining({ rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }),
-        ]),
-      },
-    })
-    expect(JSON.stringify(nuxt.options.app)).not.toContain('manifest')
+    expect(JSON.stringify(nuxt.options.app)).not.toMatch(/apple-touch|favicon|manifest/u)
     expect(nuxt.options.runtimeConfig).toMatchObject({
       public: expect.not.objectContaining({ controlPlaneUrl: expect.anything() }),
     })
