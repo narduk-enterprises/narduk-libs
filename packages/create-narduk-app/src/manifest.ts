@@ -1,7 +1,7 @@
 import type { Capability, ProductSpec } from './types.js'
 
 export const PACKAGE_VERSIONS = {
-  '@cloudflare/workers-types': '4.20260511.1',
+  '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
   '@loganrenz/narduk-mapkit': '1.0.0',
   '@loganrenz/narduk-mapkit-nuxt': '1.0.0',
@@ -19,6 +19,7 @@ export const PACKAGE_VERSIONS = {
   '@playwright/test': '1.59.1',
   '@tailwindcss/vite': '4.2.1',
   '@types/node': '22.19.19',
+  '@typescript-eslint/utils': '8.64.0',
   'drizzle-kit': '0.31.10',
   'drizzle-orm': '0.45.2',
   esbuild: '0.28.1',
@@ -62,6 +63,7 @@ export function packageVersionsForCapabilities(
     ...Object.keys(devDependencyEntries()),
     '@narduk-enterprises/eslint-config',
     '@nuxt/eslint',
+    '@typescript-eslint/utils',
     'esbuild',
     'glob',
     'knip',
@@ -172,6 +174,8 @@ export function createRootPackageManifest(
             }
           : {}),
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
+        'eslint-plugin-vitest>@typescript-eslint/utils':
+          PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
       },
@@ -204,7 +208,7 @@ export function createWebPackageManifest(
     type: 'module',
     scripts: {
       build: 'nuxt build',
-      dev: 'narduk-app dev -- nuxt dev --host 127.0.0.1',
+      dev: 'narduk-app dev --project ' + appName + ' --config dev -- nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       lint: 'nuxt prepare && eslint . --max-warnings 0',
       'nuxt:prepare': 'nuxt prepare',
@@ -228,8 +232,9 @@ export function createWebPackageManifest(
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
+      'dev:test': 'nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
-      'performance-budget': 'narduk-app performance-budget',
+      'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
       'registry-auth': 'narduk-app registry-auth',
       typecheck: 'nuxt typecheck',
     },

@@ -220,17 +220,16 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     visibility,
   } = options
   const modules = moduleList(capabilities)
-  const uploadBindings = capabilities.includes('uploads')
+  const uploadBindingLines = capabilities.includes('uploads')
     ? [
-        ',',
         '  "r2_buckets": [',
         '    {',
         '      "binding": "UPLOADS",',
-        '      "bucket_name": "' + appName + '-uploads"',
-        '    }',
-        '  ]',
-      ].join('\n')
-    : ''
+        '      "bucket_name": "' + appName + '-uploads",',
+        '    },',
+        '  ],',
+      ]
+    : []
 
   const files: GeneratedFile[] = [
     {
@@ -522,6 +521,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '  },',
             ]
           : []),
+        '  site: {',
+        '    name: appName,',
+        '    url: siteUrl,',
+        '  },',
+        ...(capabilities.includes('seo') ? ["  routeRules: { '/': { prerender: true } },"] : []),
         '  runtimeConfig: {',
         "    xaiApiKey: process.env.XAI_API_KEY || '',",
         '    public: {',
@@ -534,9 +538,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  },',
         '  nitro: {',
         "    preset: 'cloudflare_module',",
-        ...(capabilities.includes('seo')
-          ? ['    prerender: {', "      routes: ['/', '/sitemap.xml'],", '    },']
-          : []),
         '    openAPI: {',
         '      meta: {',
         '        title: ' + tsString(displayName + ' API') + ',',
@@ -620,9 +621,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "no_bundle": true,',
         '  "find_additional_modules": true,',
         '  "base_dir": ".output/server",',
-        '  "rules": [',
-        '    { "type": "ESModule", "globs": ["**/*.mjs"] }',
-        '  ],',
+        '  "rules": [{ "type": "ESModule", "globs": ["**/*.mjs"] }],',
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
         '  "d1_databases": [',
@@ -630,9 +629,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      "binding": "DB",',
         '      "database_name": ' + JSON.stringify(appName + '-db') + ',',
         '      "database_id": "00000000-0000-0000-0000-000000000000",',
-        '      "migrations_dir": "drizzle"',
-        '    }',
-        '  ]' + uploadBindings,
+        '      "migrations_dir": "drizzle",',
+        '    },',
+        '  ],',
+        ...uploadBindingLines,
         '}',
       ),
     },
@@ -665,11 +665,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "include": ["dependencies", "devDependencies", "unlisted", "binaries", "unresolved"],',
         '  "workspaces": {',
         '    "apps/web": {',
-        '      "entry": [',
-        '        "app/pages/**/*.{ts,vue}",',
-        '        "server/api/**/*.ts",',
-        '        "server/utils/**/*.ts"',
-        '      ],',
+        '      "entry": ["app/pages/**/*.{ts,vue}", "server/api/**/*.ts", "server/utils/**/*.ts"],',
         '      "project": ["**/*.{ts,mts,vue,js,mjs}"],',
         '      "paths": {',
         '        "#narduk-db/*": ["server/database/*"]',
@@ -704,7 +700,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "    trace: 'on-first-retry',",
         '  },',
         '  webServer: {',
-        "    command: 'pnpm --filter web run dev',",
+        '    command:',
+        "      'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 pnpm --filter web run dev:test',",
         "    url: 'http://127.0.0.1:" + localPort + "',",
         '    reuseExistingServer: !process.env.CI,',
         '  },',

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
 
+import * as prettier from 'prettier'
 import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -88,6 +89,8 @@ describe('create-narduk-app generation contract', () => {
         '@narduk-enterprises/narduk-auth': PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
+        'eslint-plugin-vitest>@typescript-eslint/utils':
+          PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
       },
@@ -303,6 +306,30 @@ describe('create-narduk-app generation contract', () => {
     }
   })
 
+  it('emits files already canonical under the generated Prettier contract', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'format-check',
+      capabilities: ['auth', 'seo', 'analytics', 'uploads', 'ai', 'mapkit'],
+      noGit: true,
+      targetDir: '/tmp/format-check',
+    })
+    const supported = /\.(?:css|json|jsonc|md|mjs|ts|vue|ya?ml)$/u
+
+    for (const file of files.filter((candidate) => supported.test(candidate.path))) {
+      expect(
+        await prettier.check(file.contents, {
+          endOfLine: 'lf',
+          filepath: file.path,
+          printWidth: 100,
+          semi: false,
+          singleQuote: true,
+          trailingComma: 'all',
+        }),
+        file.path,
+      ).toBe(true)
+    }
+  })
+
   it('writes a generated fixture with app-owned workspace and direct quality scripts', async () => {
     const targetDir = await makeTempDirectory()
     await createNardukApp({
@@ -349,10 +376,15 @@ describe('create-narduk-app generation contract', () => {
       await readFile(join(targetDir, 'apps/web/package.json'), 'utf8'),
     ) as { scripts: Record<string, string> }
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
+    expect(webPackage.scripts.dev).toBe(
+      'narduk-app dev --project generated-fixture --config dev -- nuxt dev --host 127.0.0.1',
+    )
+    expect(webPackage.scripts['dev:test']).toBe('nuxt dev --host 127.0.0.1')
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
     expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
     expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
+    expect(webPackage.scripts['performance-budget']).toContain('--font-total-budget-kb 140')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
       '<NuxtLayout>',
@@ -361,6 +393,9 @@ describe('create-narduk-app generation contract', () => {
     expect(wranglerConfig).toContain('"no_bundle": true')
     expect(wranglerConfig).toContain('"find_additional_modules": true')
     expect(wranglerConfig).toContain('"base_dir": ".output/server"')
+    expect(await readFile(join(targetDir, 'playwright.config.ts'), 'utf8')).toContain(
+      'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000',
+    )
     expect(
       await readFile(join(targetDir, 'apps/web/drizzle/0000_app_records.sql'), 'utf8'),
     ).toContain('CREATE TABLE `app_records`')
