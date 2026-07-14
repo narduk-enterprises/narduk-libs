@@ -1,5 +1,24 @@
-export type ViteRollupWarning = string | { message?: string; plugin?: string }
+interface ViteWarningLocation {
+  column?: number
+  file?: string
+  line?: number
+}
+
+export type ViteRollupWarning =
+  | string
+  | {
+      code?: string
+      id?: string
+      loc?: ViteWarningLocation
+      message?: string
+      plugin?: string
+    }
 type ViteLogType = 'error' | 'info' | 'warn'
+
+const vueUseInvalidAnnotationLocations = [
+  { column: 0, line: 3362 },
+  { column: 22, line: 5780 },
+] as const
 
 export interface CoreViteBuildLogger {
   clearScreen: (type: ViteLogType) => void
@@ -66,6 +85,61 @@ export function isKnownGeneratedCircularDependencyWarning(warning: ViteRollupWar
   )
 }
 
+function isVueUseCoreDistPath(value: string | undefined): boolean {
+  if (!value) return false
+
+  const normalized = `/${value.replaceAll('\\', '/')}`
+  return normalized.includes('/node_modules/@vueuse/core/dist/index.js')
+}
+
+function hasKnownVueUseInvalidAnnotationLocation(warning: ViteRollupWarning): boolean {
+  if (typeof warning === 'string') {
+    return vueUseInvalidAnnotationLocations.some(({ column, line }) =>
+      warning.includes(`(${line}:${column})`),
+    )
+  }
+
+  const { loc, message = '' } = warning
+  return vueUseInvalidAnnotationLocations.some(
+    ({ column, line }) =>
+      (loc?.line === line && loc.column === column) || message.includes(`(${line}:${column})`),
+  )
+}
+
+/**
+ * VueUse 14.3.0 ships two misplaced PURE annotations. Rollup safely removes
+ * them, and the upstream source fix is merged but not yet released:
+ * https://github.com/vueuse/vueuse/pull/5388
+ */
+export function isKnownVueUseAnnotationPositionWarning(warning: ViteRollupWarning): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  if (!message.includes('#__PURE__')) return false
+  if (
+    !message.includes(
+      'contains an annotation that Rollup cannot interpret due to the position of the comment',
+    )
+  ) {
+    return false
+  }
+
+  if (typeof warning !== 'string') {
+    if (warning.code !== 'INVALID_ANNOTATION' && warning.code !== 'ANNOTATION_POSITION') {
+      return false
+    }
+    if (
+      !isVueUseCoreDistPath(warning.id) &&
+      !isVueUseCoreDistPath(warning.loc?.file) &&
+      !isVueUseCoreDistPath(message)
+    ) {
+      return false
+    }
+  } else if (!isVueUseCoreDistPath(message)) {
+    return false
+  }
+
+  return hasKnownVueUseInvalidAnnotationLocation(warning)
+}
+
 export function createCoreViteBuildLogger(): CoreViteBuildLogger {
   const loggedWarnings = new Set<string>()
   const loggedErrors = new WeakSet<Error>()
@@ -80,6 +154,7 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
     hasWarned: false,
     info: () => {},
     warn(message) {
+      if (isKnownVueUseAnnotationPositionWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -87,6 +162,7 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
       console.warn(message)
     },
     warnOnce(message) {
+      if (isKnownVueUseAnnotationPositionWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -118,6 +194,7 @@ export function applyCoreRollupBuildWarningPolicy(config: unknown) {
   mutableConfig.onwarn = (warning, warn) => {
     // Upstream: these plugins currently emit sourcemap warnings during
     // production builds even though the output still bundles correctly.
+    if (isKnownVueUseAnnotationPositionWarning(warning as ViteRollupWarning)) return
     if (isKnownViteSourcemapWarning(warning as ViteRollupWarning)) return
     if (isKnownIconifyUnusedImportWarning(warning as ViteRollupWarning)) return
     if (isKnownPlaywrightVirtualProxyWarning(warning as ViteRollupWarning)) return

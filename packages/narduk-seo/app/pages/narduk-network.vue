@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useRuntimeConfig } from '#imports'
 
+import { resolveSiteOriginForSchemaInput } from '../utils/resolveSiteOriginForSchema'
+
 const runtimeConfig = useRuntimeConfig()
 const siteConfig = useSiteConfig()
 const appName = runtimeConfig.public.appName
