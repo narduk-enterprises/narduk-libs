@@ -1,12 +1,18 @@
 # Narduk Libs Agent Guide
 
-This repo owns the reusable published packages used by Narduk Cloudflare/Nuxt
-apps. It is intentionally not an app starter and not the fleet template.
+This repo owns the reusable published packages and focused one-shot tooling used
+by Narduk Cloudflare/Nuxt apps. It is not a fleet template and must never create
+a continuing sync, reconcile, drift, or control-plane relationship with apps.
 
 ## Scope
 
-- Shared Nuxt modules and runtime helpers live in `packages/*`.
-- Template scaffolding, app generation, and starter sync stay out of this repo.
+- Shared Nuxt modules, runtime helpers, test helpers, focused app-local tooling,
+  and the deterministic one-shot app generator live in `packages/*`.
+- The app generator may create a new repository layout once. It must not manage
+  that repository afterward and must not call Command, Cloudflare, GitHub, or
+  Doppler directly.
+- Fleet sync, starter reconciliation, drift enforcement, registry mutation, and
+  central deployment orchestration stay out of this repo.
 - Keep package changes source-compatible for existing fleet apps unless the user
   explicitly approves a breaking release.
 
@@ -31,6 +37,8 @@ apps. It is intentionally not an app starter and not the fleet template.
 ## Validation
 
 - `pnpm install`
-- `pnpm run build`
-- `pnpm run typecheck`
-- `pnpm -r --filter './packages/*' --if-present test:unit`
+- `pnpm run quality`
+- For a touched package, also run its focused typecheck/unit tests and
+  `pnpm pack --dry-run` before publication.
+- New package releases must be installable from their packed artifact by a
+  consumer fixture outside the workspace.
