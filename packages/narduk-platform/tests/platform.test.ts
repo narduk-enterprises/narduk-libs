@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,6 +23,8 @@ describe('neutral platform contracts', () => {
     expect(packageJson.exports).not.toHaveProperty('./layer-bundle-manifest')
     expect(packageJson.exports).not.toHaveProperty('./starter-composition')
     expect(packageJson.exports).toHaveProperty('./onboarding-metadata')
+    expect(existsSync(join(packageRoot, 'dist', 'layer-bundle-manifest.js'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'dist', 'starter-composition.js'))).toBe(false)
   })
 
   it('contains only app capability environment entries', () => {
