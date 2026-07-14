@@ -232,9 +232,8 @@ Every app row must eventually record:
 The first read-only Command snapshot was exported from `command-db` at
 `2026-07-14T22:03:12.940Z`, source revision
 `3238e183836efdf145365bfc9762b0ffabd5a553`, with 34 apps, canonical content
-SHA-256 `0e1654dcdfdad83f4a6f274f4044f5cd968ee2452eb3427462f6aaa4fb293119`,
-and file SHA-256
-`c932bf93f13f774e5273e1332fcc00119c6bf96cf501dc169813459a68e14321`.
+SHA-256 `0e1654dcdfdad83f4a6f274f4044f5cd968ee2452eb3427462f6aaa4fb293119`, and
+file SHA-256 `c932bf93f13f774e5273e1332fcc00119c6bf96cf501dc169813459a68e14321`.
 It is redacted and checksummed. It does not model schedules, and resource target
 names can be declarative; repository and Cloudflare inspection must fill those
 gaps. `narduk-control` consumes the checked-in artifact read-only and does not
@@ -242,12 +241,12 @@ call Command APIs or D1.
 
 Wave 0 implementation evidence:
 
-| Evidence | Result |
-| --- | --- |
-| Template feature freeze | [narduk-template PR #456](https://github.com/narduk-enterprises/narduk-template/pull/456), merge `faf414afefade12b475da67d1380f9f91dd7cbbd` |
-| Command export and feature freeze | [Command PR #375](https://github.com/narduk-enterprises/command/pull/375), merge `0c638b9450c46d819c74b46182e3e60e60759fe8` |
-| Read-only inventory import | [narduk-control PR #1](https://github.com/narduk-enterprises/narduk-control/pull/1), merge `b4af3a64b8ffdbff09e6b4125dcbc4049a7e0da8`; 24 tests, lint, typecheck, and production build passed; deployment proof pending |
-| Canonical MapKit extraction | [narduk-mapkit PR #2](https://github.com/narduk-geo/narduk-mapkit/pull/2); 49 core tests, 6 Nuxt tests, strict package checks, Cloudflare build, and packed-consumer fixtures passed; merge and public npm publication pending |
+| Evidence                          | Result                                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Template feature freeze           | [narduk-template PR #456](https://github.com/narduk-enterprises/narduk-template/pull/456), merge `faf414afefade12b475da67d1380f9f91dd7cbbd`                                                                                    |
+| Command export and feature freeze | [Command PR #375](https://github.com/narduk-enterprises/command/pull/375), merge `0c638b9450c46d819c74b46182e3e60e60759fe8`                                                                                                    |
+| Read-only inventory import        | [narduk-control PR #1](https://github.com/narduk-enterprises/narduk-control/pull/1), merge `b4af3a64b8ffdbff09e6b4125dcbc4049a7e0da8`; 24 tests, lint, typecheck, and production build passed; deployment proof pending        |
+| Canonical MapKit extraction       | [narduk-mapkit PR #2](https://github.com/narduk-geo/narduk-mapkit/pull/2); 49 core tests, 6 Nuxt tests, strict package checks, Cloudflare build, and packed-consumer fixtures passed; merge and public npm publication pending |
 
 Status values are `inventory`, `pr-open`, `landed`, `staging`,
 `production-proved`, `blocked`, and `complete`. Only `complete` satisfies a
@@ -262,12 +261,12 @@ canonical repository column applies the approved ownership corrections even when
 the Command snapshot still names the old repository.
 
 The 2026-07-14 remote audit confirmed all 34 rows are unarchived and
-`active/live`. Every one still has functional template markers at current
-remote HEAD. A scan of 169 unarchived repositories across the relevant owners
-found no additional template-coupled repository. Seven existing local
-checkouts still point at pre-transfer origins—App Builder, Clawdle, Favicon
-Checker, Gulf Fishing Report, iMessage Dictionary, Napkinbets, and LLB CPA—and
-must have their remotes corrected before migration worktrees are created.
+`active/live`. Every one still has functional template markers at current remote
+HEAD. A scan of 169 unarchived repositories across the relevant owners found no
+additional template-coupled repository. Seven existing local checkouts still
+point at pre-transfer origins—App Builder, Clawdle, Favicon Checker, Gulf
+Fishing Report, iMessage Dictionary, Napkinbets, and LLB CPA—and must have their
+remotes corrected before migration worktrees are created.
 `narduk-enterprises/myboat` is public and must use GitHub-hosted CI runners.
 
 | App                       | Canonical repository                           | Cohort / capabilities                                          | Baseline evidence                                                                                                    | Migration PR + exact pins | Migration proof                                                                         | Worker build/SHA + routes                                | Zero refs | Status    |
@@ -309,12 +308,12 @@ must have their remotes corrected before migration worktrees are created.
 
 ### Additional retain/audit repositories
 
-| Repository                | Required result                                                               | PR / deploy / zero-reference evidence              | Status    |
-| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------- | --------- |
-| `narduk-control`          | Read-only inventory and proof with no Command API or D1 dependency            | PR #1 merged at `b4af3a6`; artifact validation/build proved; deployed route proof pending | landed |
-| `circuit-breaker-online`  | Audit and migrate if active                                                   | Pending                                            | inventory |
-| `ai-media-gen`            | Retain; migrate to `narduk-ai`                                                | Pending                                            | inventory |
-| canonical `narduk-charts` | Retain canonical repository; distinguish from old `narduk-enterprises/charts` | Pending                                            | inventory |
+| Repository                | Required result                                                               | PR / deploy / zero-reference evidence                                                     | Status    |
+| ------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------- |
+| `narduk-control`          | Read-only inventory and proof with no Command API or D1 dependency            | PR #1 merged at `b4af3a6`; artifact validation/build proved; deployed route proof pending | landed    |
+| `circuit-breaker-online`  | Audit and migrate if active                                                   | Pending                                                                                   | inventory |
+| `ai-media-gen`            | Retain; migrate to `narduk-ai`                                                | Pending                                                                                   | inventory |
+| canonical `narduk-charts` | Retain canonical repository; distinguish from old `narduk-enterprises/charts` | Pending                                                                                   | inventory |
 
 ### Discovered deployed surfaces already decoupled
 
@@ -322,21 +321,21 @@ These were not in the Command registry. The 2026-07-14 audit found live
 deployment evidence and zero functional template markers or Narduk package
 dependencies at current HEAD. They remain in the ledger so the final survivor
 scan cannot silently omit them. `passage-map` is distinct from the retired
-`sailing-passage-map`; `wheat-data` and `gonogo-api` are data/API services rather
-than Nuxt fleet apps.
+`sailing-passage-map`; `wheat-data` and `gonogo-api` are data/API services
+rather than Nuxt fleet apps.
 
-| Repository | Production evidence | Zero-reference evidence | Status |
-| --- | --- | --- | --- |
-| `loganrenz/austin-rising-runners` | Workers Builds success; Workers route returned 200 | Current remote HEAD audited | production-proved |
-| `loganrenz/about-me` | Workers route returned 200 | Current remote HEAD audited | production-proved |
-| `loganrenz/caminoreal` | `caminoreal.nard.uk` returned 200 | Current remote HEAD audited | production-proved |
-| `loganrenz/family.nard.uk` | `family.nard.uk` returned 200 | Current remote HEAD audited | production-proved |
-| `loganrenz/gonogo-api` | Deployed JSON handler and four configured crons | Current remote HEAD audited | production-proved |
-| `loganrenz/software-delivery` | Custom route returned 200 | Current remote HEAD audited | production-proved |
-| `loganrenz/wheat-data` | Two Workers and configured routes/crons; catalog returned 200 | Current remote HEAD audited | production-proved |
-| `narduk-enterprises/marketing-web` | Two custom domains returned 200 | Current remote HEAD audited | production-proved |
-| `narduk-enterprises/pnl` | Custom route and Workers route returned 200 | Current remote HEAD audited | production-proved |
-| `narduk-incubator/passage-map` | D2 API health returned 200 with database connected | Current remote HEAD audited | production-proved |
+| Repository                         | Production evidence                                           | Zero-reference evidence     | Status            |
+| ---------------------------------- | ------------------------------------------------------------- | --------------------------- | ----------------- |
+| `loganrenz/austin-rising-runners`  | Workers Builds success; Workers route returned 200            | Current remote HEAD audited | production-proved |
+| `loganrenz/about-me`               | Workers route returned 200                                    | Current remote HEAD audited | production-proved |
+| `loganrenz/caminoreal`             | `caminoreal.nard.uk` returned 200                             | Current remote HEAD audited | production-proved |
+| `loganrenz/family.nard.uk`         | `family.nard.uk` returned 200                                 | Current remote HEAD audited | production-proved |
+| `loganrenz/gonogo-api`             | Deployed JSON handler and four configured crons               | Current remote HEAD audited | production-proved |
+| `loganrenz/software-delivery`      | Custom route returned 200                                     | Current remote HEAD audited | production-proved |
+| `loganrenz/wheat-data`             | Two Workers and configured routes/crons; catalog returned 200 | Current remote HEAD audited | production-proved |
+| `narduk-enterprises/marketing-web` | Two custom domains returned 200                               | Current remote HEAD audited | production-proved |
+| `narduk-enterprises/pnl`           | Custom route and Workers route returned 200                   | Current remote HEAD audited | production-proved |
+| `narduk-incubator/passage-map`     | D2 API health returned 200 with database connected            | Current remote HEAD audited | production-proved |
 
 ### Direct MapKit consumers
 
@@ -344,14 +343,14 @@ These migrate independently of the Nuxt fleet. Each row requires exact package
 versions, removal of tarball/Git/vendored/copied-token code, build/test proof,
 and map/token/search/geocode runtime proof.
 
-| Consumer            | Current coupling | Package PR + pins | Runtime proof | Old-copy removal                        | Status    |
-| ------------------- | ---------------- | ----------------- | ------------- | --------------------------------------- | --------- |
-| `earthdata-viewer`  | `file:vendor/narduk-mapkit` | Pending | Pending | Rescue Earthdata vendor cache first | inventory |
-| `narduk-earth-data` | mutable Git `#v1` reference | Pending | Pending | Pending | inventory |
-| `rawenc-lab`        | absolute `latest.tgz` path | Pending | Pending | Pending | inventory |
-| `gonogo-web`        | Git URL pinned to commit `47e2d6a` | Pending | Pending | Pending | inventory |
-| `hydrogen`          | mutable Git `#main` reference | Pending | Pending | Pending | inventory |
-| `gonogo`            | copied token implementation | Pending | Pending | Preserve app-owned intentional `200` fallback | inventory |
+| Consumer            | Current coupling                   | Package PR + pins | Runtime proof | Old-copy removal                              | Status    |
+| ------------------- | ---------------------------------- | ----------------- | ------------- | --------------------------------------------- | --------- |
+| `earthdata-viewer`  | `file:vendor/narduk-mapkit`        | Pending           | Pending       | Rescue Earthdata vendor cache first           | inventory |
+| `narduk-earth-data` | mutable Git `#v1` reference        | Pending           | Pending       | Pending                                       | inventory |
+| `rawenc-lab`        | absolute `latest.tgz` path         | Pending           | Pending       | Pending                                       | inventory |
+| `gonogo-web`        | Git URL pinned to commit `47e2d6a` | Pending           | Pending       | Pending                                       | inventory |
+| `hydrogen`          | mutable Git `#main` reference      | Pending           | Pending       | Pending                                       | inventory |
+| `gonogo`            | copied token implementation        | Pending           | Pending       | Preserve app-owned intentional `200` fallback | inventory |
 
 ### Retire and preserve history
 
@@ -378,8 +377,8 @@ repository history. Do not unpublish packages or delete tags.
 | `wan-video-review`                                | Preserve unique code/data                                                               | Pending             | inventory |
 | stale `/Users/narduk/code/narduk-mapkit` checkout | Rescue unique vector-overlay/cache work and wait for all consumers to leave its tarball | Pending             | inventory |
 | duplicate `narduk-incubator/harmony-hot-sauce`    | Compare with canonical client repository, preserve unique work, then archive            | Pending             | inventory |
-| duplicate `narduk-incubator/myboat`               | Compare with canonical public repository, preserve unique work, then archive             | Pending             | inventory |
-| stale `narduk-incubator/narduk-auth` deployment   | Resolve Pages 503 / Worker 1042 resources and archive or explicitly retain               | Pending             | inventory |
+| duplicate `narduk-incubator/myboat`               | Compare with canonical public repository, preserve unique work, then archive            | Pending             | inventory |
+| stale `narduk-incubator/narduk-auth` deployment   | Resolve Pages 503 / Worker 1042 resources and archive or explicitly retain              | Pending             | inventory |
 
 Any newly discovered deployed app defaults to migration. Any newly discovered
 non-deployed repository outside the keep list defaults to retirement after
