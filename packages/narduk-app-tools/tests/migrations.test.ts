@@ -160,6 +160,26 @@ describe('migration config and planning', () => {
     expect(plan.actions[0]?.kind).toBe('adopt')
   })
 
+  it('does not require adoption evidence when a fresh database has no legacy row', () => {
+    const file = migration('package:a', '0001.sql')
+    const plan = planMigrations({
+      migrations: [file],
+      adoptions: [
+        {
+          evidence: { tables: ['users'] },
+          filename: file.filename,
+          legacy: { filename: file.filename },
+          checksum: file.checksum,
+          source: file.source,
+          sourceVersion: file.sourceVersion,
+        },
+      ],
+    })
+
+    expect(plan).toMatchObject({ apply: 1, adopt: 0, skip: 0 })
+    expect(plan.actions[0]?.kind).toBe('apply')
+  })
+
   it('fails legacy adoption when the required index is absent', () => {
     const file = migration('package:a', '0001.sql')
     expect(() =>

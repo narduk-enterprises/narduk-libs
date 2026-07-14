@@ -519,14 +519,15 @@ export function planMigrations(input: MigrationPlanningInput): MigrationPlan {
         `Adoption source version does not match ${adoption.source}:${adoption.filename}`,
       )
     }
-    assertSchemaEvidence(adoption, input.schemaEvidence)
   }
 
   for (const row of ambiguousRows) {
     const key = legacyRowKey(row)
-    if (!adoptionByLegacyKey.has(key)) {
+    const adoption = adoptionByLegacyKey.get(key)
+    if (!adoption) {
       throw new Error(`Ambiguous legacy migration row refused: ${key}`)
     }
+    assertSchemaEvidence(adoption, input.schemaEvidence)
   }
 
   const adoptedIds = new Set(
