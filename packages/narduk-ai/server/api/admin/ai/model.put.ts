@@ -5,7 +5,7 @@ import {
 import { RATE_LIMIT_POLICIES } from '@narduk-enterprises/narduk-core/server/utils/rateLimit'
 import { z } from 'zod'
 
-import { setStoredChatModel } from '#server/utils/chatModelConfig'
+import { setStoredChatModel } from '../../../utils/chatModelConfig'
 
 const schema = z.object({
   model: z.string().min(1),

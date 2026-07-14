@@ -28,7 +28,7 @@ vi.mock('@narduk-enterprises/narduk-core/server/utils/database', () => ({
   getDatabaseRows: vi.fn(),
 }))
 
-vi.mock('#server/utils/chatModelConfig', () => ({
+vi.mock('../server/utils/chatModelConfig', () => ({
   getStoredChatModel: mocks.getStoredChatModel,
   resolveStoredChatModel: mocks.resolveStoredChatModel,
   setStoredChatModel: mocks.setStoredChatModel,
@@ -81,7 +81,7 @@ describe('AI admin route contracts', () => {
   })
 
   it('applies the same admin and validation wrappers to prompt writes', async () => {
-    vi.doMock('#server/utils/aiDatabase', () => ({
+    vi.doMock('../server/utils/aiDatabase', () => ({
       getAiSystemPromptsTable: vi.fn(),
       useAiDatabase: vi.fn(),
     }))

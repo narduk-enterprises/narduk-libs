@@ -7,7 +7,7 @@ import { RATE_LIMIT_POLICIES } from '@narduk-enterprises/narduk-core/server/util
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { getAiSystemPromptsTable, useAiDatabase } from '#server/utils/aiDatabase'
+import { getAiSystemPromptsTable, useAiDatabase } from '../../../utils/aiDatabase'
 
 const schema = z.object({
   name: z.string().min(1),

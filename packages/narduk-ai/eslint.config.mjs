@@ -6,5 +6,14 @@ import { nardukTemplateStrictCapabilityPacks } from '@narduk-enterprises/narduk-
 export default createAppLintConfig({
   withNuxt,
   capabilityPacks: [...nardukTemplateStrictCapabilityPacks],
+  extraOverrides: [
+    {
+      files: ['server/**/*.ts'],
+      name: 'narduk-ai/portable-package-internal-server-imports',
+      rules: {
+        'narduk/no-relative-server-imports': 'off',
+      },
+    },
+  ],
   seoMode: 'disabled',
 })

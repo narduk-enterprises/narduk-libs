@@ -6,7 +6,7 @@ import {
   type AiSystemPrompt,
   getAiSystemPromptsTable,
   useAiDatabase,
-} from '#server/utils/aiDatabase'
+} from '../../../utils/aiDatabase'
 
 export default defineAdminQuery(
   {
