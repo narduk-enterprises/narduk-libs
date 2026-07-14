@@ -20,7 +20,7 @@ function usage(): string {
       '  --site-url <url>            Public or local site URL',
       '  --target-dir <path>         Output directory (defaults to ./<app-name>)',
       '  --visibility <value>        private (default) or public',
-      '  --local-port <port>         Local Nuxt port (default: 3000)',
+      '  --local-dev-port <port>     Local Nuxt port (default: 3000)',
       '  --problem <text>            Product spec problem',
       '  --audience <text>           Product spec audience',
       '  --value-proposition <text>  Product spec value proposition',
@@ -122,10 +122,11 @@ export function parseCliArguments(
         }
         visibility = parsed.value
         break
+      case '--local-dev-port':
       case '--local-port': {
         const parsedPort = Number(parsed.value)
         if (!Number.isInteger(parsedPort)) {
-          throw new CreateNardukAppError('--local-port must be an integer.')
+          throw new CreateNardukAppError('--local-dev-port must be an integer.')
         }
         localPort = parsedPort
         break

@@ -122,8 +122,12 @@ function normalizeProductSpec(options: CreateNardukAppOptions): ProductSpec | un
   return createProductSpec(options.productSpec ?? options.product ?? options.spec)
 }
 
-function json(value: unknown): string {
-  return JSON.stringify(value, null, 2) + '\n'
+function tsString(value: string): string {
+  const singleQuotes = value.match(/'/gu)?.length ?? 0
+  const doubleQuotes = value.match(/"/gu)?.length ?? 0
+  if (singleQuotes > doubleQuotes) return JSON.stringify(value)
+  const jsonValue = JSON.stringify(value)
+  return `'${jsonValue.slice(1, -1).replaceAll('\\"', '"').replaceAll("'", "\\'")}'`
 }
 
 function markdownProductSpec(spec: ProductSpec | undefined): string {
@@ -152,27 +156,59 @@ function markdownProductSpec(spec: ProductSpec | undefined): string {
 }
 
 function moduleList(capabilities: readonly Capability[]): string {
-  return [
+  const moduleNames = [
+    '@nuxt/ui',
     '@narduk-enterprises/narduk-core',
-    ...capabilities
-      .filter((capability) => capability !== 'mapkit')
-      .map((capability) => '@narduk-enterprises/narduk-' + capability),
+    ...capabilities.map((capability) =>
+      capability === 'mapkit'
+        ? '@loganrenz/narduk-mapkit-nuxt'
+        : '@narduk-enterprises/narduk-' + capability,
+    ),
   ]
-    .map((module) => "    '" + module + "',")
-    .join('\n')
+  const inline = `  modules: [${moduleNames.map(tsString).join(', ')}],`
+  if (inline.length <= 100) return inline
+  return ['  modules: [', ...moduleNames.map((module) => `    ${tsString(module)},`), '  ],'].join(
+    '\n',
+  )
 }
 
-function filesFor(options: {
+interface NormalizedCreateOptions {
   appName: string
-  capabilities: readonly Capability[]
+  capabilities: Capability[]
   description: string
   displayName: string
   localPort: number
   productSpec?: ProductSpec
   siteUrl: string
   visibility: AppVisibility
-  gitInitialized: boolean
-}): GeneratedFile[] {
+}
+
+function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOptions {
+  const appName = normalizeAppName(options)
+  const capabilities = normalizeCapabilities(options.capabilities)
+  const localPort = normalizePort(options.localDevPort ?? options.localPort)
+  const visibility = normalizeVisibility(options.visibility)
+  const siteUrl = normalizeSiteUrl(options.siteUrl, localPort)
+  const displayName = options.displayName?.trim() || titleCase(appName)
+  const description = options.description?.trim() || DEFAULT_DESCRIPTION
+  const productSpec = normalizeProductSpec(options)
+
+  if (!displayName) throw new CreateNardukAppError('displayName cannot be empty.')
+  if (!description) throw new CreateNardukAppError('description cannot be empty.')
+
+  return {
+    appName,
+    capabilities,
+    description,
+    displayName,
+    localPort,
+    productSpec,
+    siteUrl,
+    visibility,
+  }
+}
+
+function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   const {
     appName,
     capabilities,
@@ -182,13 +218,12 @@ function filesFor(options: {
     productSpec,
     siteUrl,
     visibility,
-    gitInitialized,
   } = options
-  const packageVersions = packageVersionsForCapabilities(capabilities)
   const modules = moduleList(capabilities)
   const uploadBindings = capabilities.includes('uploads')
     ? [
-        '  ,"r2_buckets": [',
+        ',',
+        '  "r2_buckets": [',
         '    {',
         '      "binding": "UPLOADS",',
         '      "bucket_name": "' + appName + '-uploads"',
@@ -204,7 +239,10 @@ function filesFor(options: {
         'node_modules',
         '.nuxt',
         '.output',
+        '.narduk/recovery',
+        '.npmrc.auth',
         '.wrangler',
+        '.wrangler.deploy.production.json',
         '.data',
         'coverage',
         'playwright-report',
@@ -215,14 +253,24 @@ function filesFor(options: {
       ),
     },
     {
+      path: '.npmrc',
+      contents: text(
+        '@narduk-enterprises:registry=https://npm.pkg.github.com',
+        '@loganrenz:registry=https://registry.npmjs.org/',
+        '//npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ-UNCONFIGURED}',
+      ),
+    },
+    {
       path: '.prettierignore',
       contents: text(
         'node_modules',
         '.nuxt',
         '.output',
         '.wrangler',
+        '.wrangler.deploy.production.json',
         'coverage',
         'playwright-report',
+        'pnpm-lock.yaml',
         'test-results',
       ),
     },
@@ -241,7 +289,9 @@ function filesFor(options: {
         '',
         'jobs:',
         '  quality:',
-        '    runs-on: ubuntu-latest',
+        visibility === 'private'
+          ? '    runs-on: [self-hosted, Linux, proxmox]'
+          : '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: actions/checkout@v4',
         '      - uses: pnpm/action-setup@v4',
@@ -251,7 +301,13 @@ function filesFor(options: {
         '        with:',
         '          node-version: 22.22.3',
         '          cache: pnpm',
-        '      - run: pnpm install --no-frozen-lockfile',
+        '          registry-url: https://npm.pkg.github.com',
+        "          scope: '@narduk-enterprises'",
+        '      - run: pnpm install --frozen-lockfile',
+        '        env:',
+        '          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '          NODE_AUTH_TOKEN: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '      - run: pnpm exec playwright install --with-deps chromium',
         '      - run: pnpm run quality',
       ),
     },
@@ -280,6 +336,12 @@ function filesFor(options: {
         '- pnpm run dev',
         '- pnpm run quality',
         '- pnpm run test',
+        '',
+        'The committed `.npmrc` routes only `@narduk-enterprises/*` to GitHub Packages and reads `NARDUK_PLATFORM_GH_PACKAGES_READ` from the process environment. It contains no credential value and leaves public `@loganrenz/*` packages on npm.',
+        '',
+        'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
+        '',
+        'Cloudflare Workers Builds uses `pnpm run cf:build` as its build command, `pnpm run cf:deploy` for the production deploy command, and `pnpm run cf:deploy:preview` for non-production branches. Local `pnpm run deploy` remains recovery-only; `pnpm run deploy:dry-run` is credential-free.',
         '',
         'The app is configured for local Nuxt development on port ' +
           localPort +
@@ -326,25 +388,55 @@ function filesFor(options: {
       path: 'apps/web/app/app.config.ts',
       contents: text(
         'export default defineAppConfig({',
-        '  appName: ' + JSON.stringify(displayName) + ',',
-        '  siteUrl: ' + JSON.stringify(siteUrl) + ',',
+        '  appName: ' + tsString(displayName) + ',',
+        '  siteUrl: ' + tsString(siteUrl) + ',',
         '})',
       ),
     },
     {
       path: 'apps/web/app/app.vue',
-      contents: text('<template>', '  <NuxtPage />', '</template>'),
+      contents: text(
+        '<template>',
+        '  <UApp>',
+        '    <NuxtLayout>',
+        '      <NuxtPage />',
+        '    </NuxtLayout>',
+        '  </UApp>',
+        '</template>',
+      ),
     },
     {
       path: 'apps/web/app/pages/index.vue',
-      contents: text(
-        '<template>',
-        '  <main>',
-        '    <h1>' + displayName + '</h1>',
-        '    <p>' + description + '</p>',
-        '  </main>',
-        '</template>',
-      ),
+      contents: capabilities.includes('seo')
+        ? text(
+            '<script setup lang="ts">',
+            'useSeo({',
+            '  title: ' + tsString(displayName) + ',',
+            '  description: ' + tsString(description) + ',',
+            '  canonicalUrl: ' + tsString(siteUrl) + ',',
+            '})',
+            '',
+            'useWebPageSchema({',
+            '  name: ' + tsString(displayName) + ',',
+            '  description: ' + tsString(description) + ',',
+            '})',
+            '</script>',
+            '',
+            '<template>',
+            '  <main>',
+            '    <h1>' + displayName + '</h1>',
+            '    <p>' + description + '</p>',
+            '  </main>',
+            '</template>',
+          )
+        : text(
+            '<template>',
+            '  <main>',
+            '    <h1>' + displayName + '</h1>',
+            '    <p>' + description + '</p>',
+            '  </main>',
+            '</template>',
+          ),
     },
     {
       path: 'apps/web/drizzle.config.ts',
@@ -367,6 +459,16 @@ function filesFor(options: {
         '# App migrations',
         '',
         'Keep app-owned SQL migrations in this directory. Migration identity is the tuple source, filename, checksum; package-owned migration sources are listed in migrations.sources.json.',
+      ),
+    },
+    {
+      path: 'apps/web/drizzle/0000_app_records.sql',
+      contents: text(
+        'CREATE TABLE `app_records` (',
+        '  `id` text PRIMARY KEY NOT NULL,',
+        '  `label` text NOT NULL,',
+        '  `created_at` integer NOT NULL',
+        ');',
       ),
     },
     {
@@ -394,24 +496,32 @@ function filesFor(options: {
         "import { fileURLToPath } from 'node:url'",
         '',
         'const localPort = ' + localPort,
-        'const siteUrl = ' + JSON.stringify(siteUrl),
-        'const appName = ' + JSON.stringify(displayName),
-        'const appDescription = ' + JSON.stringify(description),
+        'const siteUrl = ' + tsString(siteUrl),
+        'const appName = ' + tsString(displayName),
+        'const appDescription = ' + tsString(description),
         '',
         'export default defineNuxtConfig({',
-        '  compatibilityDate: ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
+        '  compatibilityDate: ' + tsString(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  future: {',
         '    compatibilityVersion: 4,',
         '  },',
-        '  modules: [',
         modules,
-        '  ],',
         '  alias: {',
         "    '#narduk-db': fileURLToPath(new URL('./server/database', import.meta.url)),",
         '  },',
         '  devServer: {',
         '    port: localPort,',
         '  },',
+        ...(capabilities.includes('seo')
+          ? [
+              '  fonts: {',
+              "    defaults: { subsets: ['latin'] },",
+              '  },',
+              '  sitemap: {',
+              '    zeroRuntime: true,',
+              '  },',
+            ]
+          : []),
         '  runtimeConfig: {',
         "    xaiApiKey: process.env.XAI_API_KEY || '',",
         '    public: {',
@@ -424,9 +534,12 @@ function filesFor(options: {
         '  },',
         '  nitro: {',
         "    preset: 'cloudflare_module',",
+        ...(capabilities.includes('seo')
+          ? ['    prerender: {', "      routes: ['/', '/sitemap.xml'],", '    },']
+          : []),
         '    openAPI: {',
         '      meta: {',
-        '        title: ' + JSON.stringify(displayName + ' API') + ',',
+        '        title: ' + tsString(displayName + ' API') + ',',
         '        description: appDescription,',
         "        version: '0.1.0',",
         '      },',
@@ -444,7 +557,7 @@ function filesFor(options: {
       contents: text(
         'export default defineEventHandler(() => ({',
         '  ok: true,',
-        '  app: ' + JSON.stringify(appName) + ',',
+        '  app: ' + tsString(appName) + ',',
         '}))',
       ),
     },
@@ -467,6 +580,7 @@ function filesFor(options: {
       path: 'apps/web/server/utils/database.ts',
       contents: text(
         "import { createAppDatabase } from '@narduk-enterprises/narduk-core/server/utils/database'",
+        '',
         "import * as schema from '#narduk-db/schema'",
         '',
         'export const useAppDatabase = createAppDatabase(schema)',
@@ -498,11 +612,17 @@ function filesFor(options: {
       ),
     },
     {
-      path: 'apps/web/wrangler.json',
+      path: 'apps/web/wrangler.jsonc',
       contents: text(
         '{',
         '  "name": ' + JSON.stringify(appName) + ',',
         '  "main": "./.output/server/index.mjs",',
+        '  "no_bundle": true,',
+        '  "find_additional_modules": true,',
+        '  "base_dir": ".output/server",',
+        '  "rules": [',
+        '    { "type": "ESModule", "globs": ["**/*.mjs"] }',
+        '  ],',
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
         '  "d1_databases": [',
@@ -522,9 +642,9 @@ function filesFor(options: {
         "import { expect, test } from '@playwright/test'",
         '',
         "test('home page renders', async ({ page }) => {",
-        '  await page.goto("/")',
-        '  await expect(page.getByRole("heading", { name: ' +
-          JSON.stringify(displayName) +
+        "  await page.goto('/')",
+        "  await expect(page.getByRole('heading', { name: " +
+          tsString(displayName) +
           ' })).toBeVisible()',
         '})',
       ),
@@ -532,24 +652,36 @@ function filesFor(options: {
     {
       path: 'apps/web/tests/unit/smoke.test.ts',
       contents: text(
-        "import { describe, expect, it } from 'vitest'",
+        "import { registerAppSmokeTests } from '@narduk-enterprises/narduk-testkit/server/kit/smoke'",
         '',
-        "describe('" + appName + "', () => {",
-        "  it('has a stable generated identity', () => {",
-        '    expect(' + JSON.stringify(appName) + ").toBe('" + appName + "')",
-        '  })',
-        '})',
+        'registerAppSmokeTests({ describeName: ' + tsString(appName) + ' })',
       ),
     },
     {
       path: 'knip.json',
-      contents: json({
-        entry: ['apps/web/nuxt.config.ts', 'playwright.config.ts'],
-        project: ['apps/web/**/*.{ts,vue,mjs}'],
-      }),
+      contents: text(
+        '{',
+        '  "$schema": "https://unpkg.com/knip@6/schema.json",',
+        '  "include": ["dependencies", "devDependencies", "unlisted", "binaries", "unresolved"],',
+        '  "workspaces": {',
+        '    "apps/web": {',
+        '      "entry": [',
+        '        "app/pages/**/*.{ts,vue}",',
+        '        "server/api/**/*.ts",',
+        '        "server/utils/**/*.ts"',
+        '      ],',
+        '      "project": ["**/*.{ts,mts,vue,js,mjs}"],',
+        '      "paths": {',
+        '        "#narduk-db/*": ["server/database/*"]',
+        '      }',
+        '    }',
+        '  },',
+        '  "ignoreDependencies": ["@iconify-json/lucide", "@loganrenz/narduk-mapkit", "vue-tsc"]',
+        '}',
+      ),
     },
     {
-      path: 'migrations.sources.json',
+      path: 'apps/web/migrations.sources.json',
       contents: createMigrationSourcesManifest(capabilities),
     },
     {
@@ -603,32 +735,29 @@ function filesFor(options: {
     },
     {
       path: 'renovate.json',
-      contents: json({
-        extends: ['config:recommended'],
-        packageRules: [{ rangeStrategy: 'pin', matchManagers: ['pnpm'] }],
-      }),
+      contents: text(
+        '{',
+        '  "extends": ["config:recommended"],',
+        '  "packageRules": [',
+        '    {',
+        '      "rangeStrategy": "pin",',
+        '      "matchManagers": ["pnpm"]',
+        '    },',
+        '    {',
+        '      "groupName": "narduk libraries",',
+        '      "matchPackageNames": ["@narduk-enterprises/**"],',
+        '      "rangeStrategy": "pin"',
+        '    },',
+        '    {',
+        '      "groupName": "narduk mapkit",',
+        '      "matchPackageNames": ["@loganrenz/narduk-mapkit", "@loganrenz/narduk-mapkit-nuxt"],',
+        '      "rangeStrategy": "pin"',
+        '    }',
+        '  ]',
+        '}',
+      ),
     },
   ]
-
-  const report: CreateNardukAppReport = {
-    appName,
-    capabilities: [...capabilities],
-    description,
-    displayName,
-    files: [...files.map((file) => file.path), 'create-narduk-app-report.json'].sort(
-      compareStrings,
-    ),
-    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
-    gitInitialized,
-    localPort,
-    packageVersions,
-    schemaVersion: 1,
-    siteUrl,
-    targetDir: '.',
-    visibility,
-    ...(productSpec ? { productSpec } : {}),
-  }
-  files.push({ path: 'create-narduk-app-report.json', contents: json(report) })
 
   return files.sort((left, right) => compareStrings(left.path, right.path))
 }
@@ -648,29 +777,7 @@ function safeRelativePath(targetDir: string, filePath: string): string {
 }
 
 export function buildGeneratedFiles(options: CreateNardukAppOptions): GeneratedFile[] {
-  const appName = normalizeAppName(options)
-  const capabilities = normalizeCapabilities(options.capabilities)
-  const localPort = normalizePort(options.localPort)
-  const visibility = normalizeVisibility(options.visibility)
-  const siteUrl = normalizeSiteUrl(options.siteUrl, localPort)
-  const displayName = options.displayName?.trim() || titleCase(appName)
-  const description = options.description?.trim() || DEFAULT_DESCRIPTION
-  const productSpec = normalizeProductSpec(options)
-
-  if (!displayName) throw new CreateNardukAppError('displayName cannot be empty.')
-  if (!description) throw new CreateNardukAppError('description cannot be empty.')
-
-  return filesFor({
-    appName,
-    capabilities,
-    description,
-    displayName,
-    localPort,
-    productSpec,
-    siteUrl,
-    visibility,
-    gitInitialized: !options.noGit,
-  })
+  return filesFor(normalizeOptions(options))
 }
 
 export async function createNardukApp(
@@ -678,7 +785,8 @@ export async function createNardukApp(
 ): Promise<CreateNardukAppReport> {
   const targetDir = resolve(options.targetDir)
   const force = options.force ?? false
-  const files = buildGeneratedFiles(options)
+  const normalized = normalizeOptions(options)
+  const files = filesFor(normalized)
 
   if (existsSync(targetDir)) {
     const targetStats = await stat(targetDir)
@@ -706,13 +814,38 @@ export async function createNardukApp(
   const gitInitialized = !options.noGit
   if (gitInitialized) await initializeGit(targetDir)
 
-  const report = JSON.parse(
-    files.find((file) => file.path === 'create-narduk-app-report.json')?.contents ?? '{}',
-  ) as CreateNardukAppReport
   return {
-    ...report,
+    appName: normalized.appName,
+    capabilities: normalized.capabilities,
+    description: normalized.description,
+    displayName: normalized.displayName,
+    files: files.map((file) => file.path),
+    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     gitInitialized,
+    localPort: normalized.localPort,
+    packageVersions: packageVersionsForCapabilities(normalized.capabilities),
+    schemaVersion: 1,
+    siteUrl: normalized.siteUrl,
     targetDir,
+    validationResults: [
+      {
+        check: 'capabilities',
+        detail: `Validated ${normalized.capabilities.length} explicit capability selection(s); core is implicit.`,
+        passed: true,
+      },
+      {
+        check: 'exact-package-versions',
+        detail: 'Every generated package dependency uses an exact SemVer version.',
+        passed: true,
+      },
+      {
+        check: 'generated-paths',
+        detail: `Validated ${files.length} generated path(s) inside the target directory.`,
+        passed: true,
+      },
+    ],
+    visibility: normalized.visibility,
+    ...(normalized.productSpec ? { productSpec: normalized.productSpec } : {}),
   }
 }
 

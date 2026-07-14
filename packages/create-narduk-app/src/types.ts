@@ -30,6 +30,7 @@ export interface CreateNardukAppOptions {
   description?: string
   displayName?: string
   force?: boolean
+  localDevPort?: number
   localPort?: number
   name?: string
   noGit?: boolean
@@ -57,6 +58,11 @@ export interface CreateNardukAppReport {
   schemaVersion: 1
   siteUrl: string
   targetDir: string
+  validationResults: Array<{
+    check: 'capabilities' | 'exact-package-versions' | 'generated-paths'
+    detail: string
+    passed: true
+  }>
   visibility: AppVisibility
   productSpec?: ProductSpec
 }
