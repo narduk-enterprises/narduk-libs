@@ -1,0 +1,58 @@
+{
+  "name": "@narduk-enterprises/narduk-app-tools",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Focused app-local development, migration, deployment, and asset tools.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/narduk-app-tools"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "bin": {
+    "narduk-app": "./bin/narduk-app.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    },
+    "./migrations": {
+      "import": "./src/migrations.ts"
+    }
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "tsconfig.json",
+    "vitest.config.ts"
+  ],
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "lint": "eslint src tests bin --max-warnings 0",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run --coverage --config vitest.config.ts"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "sharp": "^0.34.5",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "1.2.17",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}
