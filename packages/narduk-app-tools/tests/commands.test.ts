@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { parseMigrationArgs } from '../src/cli'
 import { buildDopplerRunArgs, parseDevArgs } from '../src/dev'
 import {
   buildWranglerCommandArgs,
@@ -92,6 +93,29 @@ describe('app-local command planning', () => {
       '--env=',
       '--keep-vars',
     ])
+  })
+
+  it('guards generated remote migrations behind Workers Builds attestation', () => {
+    expect(
+      parseMigrationArgs([
+        '--config',
+        'migrations.sources.json',
+        '--database',
+        'app-db',
+        '--remote',
+        '--workers-build-only',
+      ]),
+    ).toMatchObject({ location: '--remote', workersBuildOnly: true })
+    expect(() =>
+      parseMigrationArgs([
+        '--config',
+        'migrations.sources.json',
+        '--database',
+        'app-db',
+        '--local',
+        '--workers-build-only',
+      ]),
+    ).toThrow('valid only with --remote')
   })
 
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {

@@ -61,6 +61,11 @@ unrelated environment flags never bypass that guard. A package-manager
 passthrough separator is normalized before invoking Wrangler so it cannot
 neutralize `--dry-run`.
 
+Generated Workers Builds scripts pass `--workers-build-only` to the remote
+migration command. That attestation is checked before D1 recovery capture or
+mutation, so invoking the production script locally cannot migrate a remote
+database and then fail only at the deploy step.
+
 The command never writes secret files. Registry auth writes the requested
 `.npmrc.auth` path and scopes GitHub Packages only to `@narduk-enterprises`;
 `@loganrenz` remains on the public npm registry.

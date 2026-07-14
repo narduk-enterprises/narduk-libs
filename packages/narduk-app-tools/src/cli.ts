@@ -3,7 +3,7 @@ import { generateFavicons, parseFaviconArgs } from './assets'
 import { parseDevArgs, runDev } from './dev'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local'
 import { runDoctor, formatDoctorReport } from './doctor'
-import { runDeploy } from './deploy'
+import { isWorkersBuildDeployAllowed, runDeploy } from './deploy'
 import { runMigrations, type MigrationLocation } from './migrations'
 import {
   formatPerformanceBudgetReport,
@@ -27,16 +27,18 @@ function usage(): string {
   ].join('\n')
 }
 
-function parseMigrationArgs(args: string[]): {
+export function parseMigrationArgs(args: string[]): {
   configFile: string
   database: string
   location: MigrationLocation
   reset: boolean
+  workersBuildOnly: boolean
 } {
   let configFile = ''
   let database = ''
   let location: MigrationLocation | undefined
   let reset = false
+  let workersBuildOnly = false
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === '--config') configFile = args[++index] ?? ''
@@ -48,13 +50,17 @@ function parseMigrationArgs(args: string[]): {
       if (location) throw new Error('Choose exactly one of --local or --remote')
       location = '--remote'
     } else if (arg === '--reset') reset = true
+    else if (arg === '--workers-build-only') workersBuildOnly = true
     else throw new Error(`Unknown migrate option: ${arg}`)
   }
   if (!configFile) throw new Error('--config requires a file')
   if (!database) throw new Error('--database requires a name')
   if (!location) throw new Error('Choose exactly one of --local or --remote')
   if (location === '--remote' && reset) throw new Error('Remote migration reset is refused')
-  return { configFile, database, location, reset }
+  if (workersBuildOnly && location !== '--remote') {
+    throw new Error('--workers-build-only is valid only with --remote')
+  }
+  return { configFile, database, location, reset, workersBuildOnly }
 }
 
 export async function main(args = process.argv.slice(2)): Promise<number> {
@@ -69,6 +75,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       const [subcommand, ...migrateArgs] = rest
       if (subcommand !== 'migrate') throw new Error('Usage: narduk-app db migrate ...')
       const options = parseMigrationArgs(migrateArgs)
+      if (options.workersBuildOnly && !isWorkersBuildDeployAllowed()) {
+        throw new Error('Remote migration requires an attested Cloudflare Workers Build')
+      }
       const plan = runMigrations(options)
       if (plan.recoveryPath) console.log(`[db] recovery snapshot ${plan.recoveryPath}`)
       console.log(`[db] ${plan.apply} applied, ${plan.adopt} adopted, ${plan.skip} skipped`)
