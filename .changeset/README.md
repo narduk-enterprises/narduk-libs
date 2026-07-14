@@ -8,4 +8,6 @@ The release workflow uses the checked-in configuration and publishes only
 immutable versions to GitHub Packages. It never coordinates an app repository.
 `pnpm run release:version` also refreshes the generator's exact internal package
 pins from the newly versioned manifests; `pnpm run versions:check` fails CI if
-those pins ever drift.
+those pins ever drift. `pnpm run release-plan:check` also requires a generator
+release whenever the resolved Changesets plan changes a package version
+hard-coded by the generator.
