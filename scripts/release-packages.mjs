@@ -47,7 +47,10 @@ for (const { directory, manifest } of packages) {
   }
 
   writeLine(`Checking ${manifest.name}@${manifest.version}`)
-  execFileSync('pnpm', ['exec', 'publint', directory], { cwd: root, stdio: 'inherit' })
+  execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
+    cwd: root,
+    stdio: 'inherit',
+  })
   execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
 }
 

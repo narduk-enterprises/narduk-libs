@@ -40,9 +40,6 @@
     },
     "./server/*": {
       "import": "./server/*.ts"
-    },
-    "./shared/*": {
-      "import": "./shared/*.ts"
     }
   },
   "files": [
