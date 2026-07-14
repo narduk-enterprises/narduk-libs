@@ -289,7 +289,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'jobs:',
         '  quality:',
         visibility === 'private'
-          ? '    runs-on: [self-hosted, Linux, proxmox]'
+          ? '    runs-on: [self-hosted, Linux, X64]'
           : '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: actions/checkout@v4',
