@@ -38,7 +38,12 @@ describe('narduk-core package exports', () => {
     })
   })
 
-  it('does not ship retired PWA or control-plane runtime assets', () => {
+  it('does not ship retired PWA, shared icon, or control-plane runtime assets', () => {
+    expect(existsSync(join(packageRoot, 'runtime/public/apple-touch-icon.png'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/favicon-16x16.png'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/favicon-32x32.png'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/favicon.ico'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/favicon.svg'))).toBe(false)
     expect(existsSync(join(packageRoot, 'runtime/public/site.webmanifest'))).toBe(false)
     expect(existsSync(join(packageRoot, 'runtime/public/pwa-192x192.png'))).toBe(false)
     expect(existsSync(join(packageRoot, 'runtime/public/pwa-512x512.png'))).toBe(false)
