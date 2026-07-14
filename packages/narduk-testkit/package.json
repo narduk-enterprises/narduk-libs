@@ -1,0 +1,113 @@
+{
+  "name": "@narduk-enterprises/narduk-testkit",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Dev-only Vitest, Playwright, and UI-quality test helpers for Narduk apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/narduk-testkit"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./e2e/fixtures": {
+      "types": "./src/e2e/fixtures.ts",
+      "import": "./src/e2e/fixtures.ts"
+    },
+    "./e2e/contracts/auth": {
+      "types": "./src/e2e/contracts/auth.ts",
+      "import": "./src/e2e/contracts/auth.ts"
+    },
+    "./e2e/contracts/notifications": {
+      "types": "./src/e2e/contracts/notifications.ts",
+      "import": "./src/e2e/contracts/notifications.ts"
+    },
+    "./e2e/contracts/user-profile": {
+      "types": "./src/e2e/contracts/user-profile.ts",
+      "import": "./src/e2e/contracts/user-profile.ts"
+    },
+    "./e2e/specs/users-api": {
+      "types": "./src/e2e/specs/users-api.ts",
+      "import": "./src/e2e/specs/users-api.ts"
+    },
+    "./playwright/ui-quality": {
+      "types": "./src/playwright/ui-quality.ts",
+      "import": "./src/playwright/ui-quality.ts"
+    },
+    "./playwright/ui-quality-analyzer": {
+      "types": "./src/playwright/ui-quality-analyzer.ts",
+      "import": "./src/playwright/ui-quality-analyzer.ts"
+    },
+    "./server/kit/smoke": {
+      "types": "./src/server/kit/smoke.ts",
+      "import": "./src/server/kit/smoke.ts"
+    },
+    "./server/kit/canonical-host": {
+      "types": "./src/server/kit/canonical-host.ts",
+      "import": "./src/server/kit/canonical-host.ts"
+    },
+    "./server/kit/auth-session-refresh": {
+      "types": "./src/server/kit/auth-session-refresh.ts",
+      "import": "./src/server/kit/auth-session-refresh.ts"
+    },
+    "./server/kit/auth-session-stability": {
+      "types": "./src/server/kit/auth-session-stability.ts",
+      "import": "./src/server/kit/auth-session-stability.ts"
+    },
+    "./server/kit/managed-supabase": {
+      "types": "./src/server/kit/managed-supabase.ts",
+      "import": "./src/server/kit/managed-supabase.ts"
+    }
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "tsconfig.json",
+    "vitest.config.ts"
+  ],
+  "bin": {
+    "narduk-testkit": "./bin/narduk-testkit.mjs"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "lint": "eslint src tests bin --max-warnings 0",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "format": "pnpm run prettier:fix",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5",
+    "tsx": "^4.21.0"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50.0",
+    "vitest": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "1.2.17",
+    "@playwright/test": "^1.59.1",
+    "@supabase/supabase-js": "^2.105.4",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^9.39.4",
+    "h3": "^1.15.11",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}
