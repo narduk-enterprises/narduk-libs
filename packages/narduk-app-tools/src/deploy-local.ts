@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { fetchWorkerPlainTextVars } from './cloudflare'
-import { assertDopplerCliAvailable, readDopplerSecret } from './doppler'
-import { readWranglerScriptName, resolveAppDir, runDeploy } from './deploy'
+import { fetchWorkerPlainTextVars } from './cloudflare.js'
+import { assertDopplerCliAvailable, readDopplerSecret } from './doppler.js'
+import { readWranglerScriptName, resolveAppDir, runDeploy } from './deploy.js'
 
 const DOPPLER_PROJECT = 'narduk'
 const DOPPLER_CONFIG = 'tokens'

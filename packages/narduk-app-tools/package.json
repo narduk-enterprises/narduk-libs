@@ -14,34 +14,36 @@
     "registry": "https://npm.pkg.github.com"
   },
   "bin": {
-    "narduk-app": "./bin/narduk-app.mjs"
+    "narduk-app": "./dist/bin.js"
   },
   "exports": {
     ".": {
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./migrations": {
-      "import": "./src/migrations.ts"
+      "types": "./dist/migrations.d.ts",
+      "import": "./dist/migrations.js"
     }
   },
   "files": [
-    "bin/",
-    "src/",
+    "dist/",
     "README.md",
     "tsconfig.json",
+    "tsconfig.build.json",
     "vitest.config.ts"
   ],
   "scripts": {
-    "build": "pnpm run typecheck",
+    "build": "tsc --project tsconfig.build.json",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
-    "lint": "eslint src tests bin --max-warnings 0",
+    "lint": "eslint src tests --max-warnings 0",
+    "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
-    "sharp": "^0.34.5",
-    "tsx": "^4.21.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@narduk-enterprises/eslint-config": "1.2.17",

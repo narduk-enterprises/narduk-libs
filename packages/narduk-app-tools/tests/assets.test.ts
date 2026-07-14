@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { generateFavicons, resolveFaviconOptions } from '../src/assets'
+import { generateFavicons, resolveFaviconOptions } from '../src/assets.js'
 
 const tempDirs: string[] = []
 

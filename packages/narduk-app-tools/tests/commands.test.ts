@@ -4,8 +4,8 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { parseMigrationArgs } from '../src/cli'
-import { buildDopplerRunArgs, parseDevArgs } from '../src/dev'
+import { parseMigrationArgs } from '../src/cli.js'
+import { buildDopplerRunArgs, parseDevArgs } from '../src/dev.js'
 import {
   buildWranglerCommandArgs,
   isDryRunDeploy,
@@ -16,13 +16,14 @@ import {
   resolveAppDir,
   resolveWranglerConfigPath,
   writeFlattenedWranglerDeployConfig,
-} from '../src/deploy'
+} from '../src/deploy.js'
 import {
   isGitWorkingTreeClean,
   isNonLocalHttpsUrl,
   normalizeDeployHostname,
   parseDeployLocalArgs,
-} from '../src/deploy-local'
+} from '../src/deploy-local.js'
+import { parsePerformanceBudgetArgs } from '../src/performance.js'
 
 const tempDirs: string[] = []
 
@@ -116,6 +117,16 @@ describe('app-local command planning', () => {
         '--workers-build-only',
       ]),
     ).toThrow('valid only with --remote')
+  })
+
+  it('accepts package-manager passthrough before performance budget flags', () => {
+    expect(parsePerformanceBudgetArgs(['--', '--json', '--font-total-budget-kb', '120'])).toEqual({
+      fontTotalBudgetKb: 120,
+      json: true,
+    })
+    expect(() => parsePerformanceBudgetArgs(['--', '--', '--json'])).toThrow(
+      'Unknown performance-budget option: --',
+    )
   })
 
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {

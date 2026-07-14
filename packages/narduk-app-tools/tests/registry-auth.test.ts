@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { renderRegistryAuth, resolveRegistryConfig } from '../src/registry-auth'
+import { renderRegistryAuth, resolveRegistryConfig } from '../src/registry-auth.js'
 
 describe('registry-auth', () => {
   it('scopes GitHub Packages to the Narduk scope and keeps Loganrenz public', () => {

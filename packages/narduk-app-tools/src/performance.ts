@@ -215,6 +215,7 @@ export function runPerformanceBudgetCheck(
 
 export function parsePerformanceBudgetArgs(args: string[]): PerformanceBudgetOptions {
   const options: PerformanceBudgetOptions = {}
+  const normalizedArgs = args[0] === '--' ? args.slice(1) : args
   const numeric = new Map([
     ['--critical-image-budget-kb', 'criticalImageBudgetKb'],
     ['--css-budget-kb', 'cssBudgetKb'],
@@ -222,13 +223,13 @@ export function parsePerformanceBudgetArgs(args: string[]): PerformanceBudgetOpt
     ['--font-total-budget-kb', 'fontTotalBudgetKb'],
     ['--image-budget-kb', 'imageBudgetKb'],
   ])
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]
-    if (arg === '--app-dir') options.appDir = args[++index]
+  for (let index = 0; index < normalizedArgs.length; index += 1) {
+    const arg = normalizedArgs[index]
+    if (arg === '--app-dir') options.appDir = normalizedArgs[++index]
     else if (arg === '--json') options.json = true
     else if (arg === '--report-only') options.reportOnly = true
     else if (numeric.has(arg)) {
-      const value = Number(args[++index])
+      const value = Number(normalizedArgs[++index])
       if (!Number.isFinite(value) || value <= 0) throw new Error(`${arg} must be a positive number`)
       const key = numeric.get(arg) as keyof PerformanceBudgetOptions
       ;(options as Record<string, unknown>)[key] = value

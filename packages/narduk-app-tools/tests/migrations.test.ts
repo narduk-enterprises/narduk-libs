@@ -20,7 +20,7 @@ import {
   validateMigrationReset,
   type MigrationConfig,
   type MigrationFile,
-} from '../src/migrations'
+} from '../src/migrations.js'
 
 const tempDirs: string[] = []
 

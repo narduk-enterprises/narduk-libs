@@ -1,15 +1,15 @@
-import { configureRegistryAuth } from './registry-auth'
-import { generateFavicons, parseFaviconArgs } from './assets'
-import { parseDevArgs, runDev } from './dev'
-import { parseDeployLocalArgs, runDeployLocal } from './deploy-local'
-import { runDoctor, formatDoctorReport } from './doctor'
-import { isWorkersBuildDeployAllowed, runDeploy } from './deploy'
-import { runMigrations, type MigrationLocation } from './migrations'
+import { configureRegistryAuth } from './registry-auth.js'
+import { generateFavicons, parseFaviconArgs } from './assets.js'
+import { parseDevArgs, runDev } from './dev.js'
+import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
+import { runDoctor, formatDoctorReport } from './doctor.js'
+import { isWorkersBuildDeployAllowed, runDeploy } from './deploy.js'
+import { runMigrations, type MigrationLocation } from './migrations.js'
 import {
   formatPerformanceBudgetReport,
   parsePerformanceBudgetArgs,
   runPerformanceBudgetCheck,
-} from './performance'
+} from './performance.js'
 
 function usage(): string {
   return [
@@ -122,11 +122,4 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error))
     return 1
   }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  void main().then((status) => {
-    process.exitCode = status
-    return status
-  })
 }
