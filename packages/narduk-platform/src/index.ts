@@ -1,7 +1,5 @@
 export * from './env-catalog'
-export * from './layer-bundle-manifest'
 export * from './package-registry'
 export * from './provision-env-contract'
 export * from './provision-metadata'
 export * from './provider-console'
-export * from './starter-composition'

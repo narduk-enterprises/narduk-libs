@@ -123,7 +123,7 @@ export function patchPackageRegistryNpmrcContent(
     .filter((line) => !isLegacyPackageRegistryLine(line))
     .filter((line) => !line.includes('Auth token injected via CI env'))
     .map((line) => {
-      if (line.startsWith(`${config.scope}:registry=`) || line.startsWith('@loganrenz:registry=')) {
+      if (line.startsWith(`${config.scope}:registry=`)) {
         return registryLine
       }
 

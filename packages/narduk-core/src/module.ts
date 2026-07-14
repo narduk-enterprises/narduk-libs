@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { readProvisionMetadata, resolveLocalNuxtPort } from '@narduk-enterprises/narduk-platform'
 import {
   addComponentsDir,
   addImportsDir,
@@ -16,7 +15,6 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
-import { resolveNuxtProvisionAppRoot } from '../runtime/internal/nuxt-provision-app-root'
 import {
   applyCoreRollupBuildWarningPolicy,
   applyCoreViteBuildWarningPolicy,
@@ -87,6 +85,11 @@ function pushUnique<T>(items: T[], item: T): void {
   if (!items.includes(item)) {
     items.push(item)
   }
+}
+
+function resolveDevServerPort(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535 ? parsed : fallback
 }
 
 function addFallbackLayout(
@@ -474,8 +477,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       }
     })()
     const colorModePreference = process.env.NUXT_COLOR_MODE_PREFERENCE || 'system'
-    const provision = readProvisionMetadata(resolveNuxtProvisionAppRoot())
-    const devServerPort = resolveLocalNuxtPort(process.env, provision, 3000)
+    const devServerPort = resolveDevServerPort(process.env.NUXT_PORT, 3000)
     const ormTablesEntry =
       databaseBackend === 'postgres' ? 'server/database/pg-schema.ts' : 'server/database/schema.ts'
     const postgresRuntimeEntry =
@@ -562,7 +564,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
           { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
           { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
           { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
-          { rel: 'manifest', href: '/site.webmanifest' },
         ],
       },
     })
@@ -591,7 +592,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
         appVersion,
         buildVersion,
         buildTime,
-        controlPlaneUrl: process.env.CONTROL_PLANE_URL || '',
         cspScriptSrc: process.env.CSP_SCRIPT_SRC || '',
         cspConnectSrc: process.env.CSP_CONNECT_SRC || '',
         cspFrameSrc: process.env.CSP_FRAME_SRC || '',

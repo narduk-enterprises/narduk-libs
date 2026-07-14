@@ -1,9 +1,7 @@
 /**
- * Per-app env-contract composition. Derives an `AppEnvContractDefinition` from the
- * selected layer bundles by asking each layer which modules it provides, then reading
- * the env catalog for the keys in those modules.
- *
- * There is no hand-maintained bundle->keys map anywhere: modules are the single axis.
+ * App-owned environment contract composition. Callers pass the capabilities an
+ * independent app has selected; this module only describes provider requirements.
+ * It does not infer capabilities from a template or mutate any provider.
  */
 import type {
   AppEnvContractDefinition,
@@ -20,18 +18,23 @@ import {
   listKeysForModules,
   type CatalogDestination,
   type CatalogEntry,
-  type FleetModuleId,
+  type AppCapabilityId,
 } from './env-catalog'
-import { listProvidedModules, type TemplateLayerSelection } from './layer-bundle-manifest'
 
-export const PROVISION_ENV_CONTRACT_VERSION = 1 as const
+export const APP_ENV_CONTRACT_VERSION = 1 as const
+/** @deprecated Use APP_ENV_CONTRACT_VERSION. */
+export const PROVISION_ENV_CONTRACT_VERSION = APP_ENV_CONTRACT_VERSION
 
-export type ProvisionEnvContractStatus = 'available' | 'missing' | 'invalid'
+export type AppEnvContractStatus = 'available' | 'missing' | 'invalid'
+/** @deprecated Use AppEnvContractStatus. */
+export type ProvisionEnvContractStatus = AppEnvContractStatus
 
-export interface ProvisionEnvContractResult {
-  status: ProvisionEnvContractStatus
+export interface AppEnvContractResult {
+  status: AppEnvContractStatus
   value: AppEnvContractDefinition | null
 }
+/** @deprecated Use AppEnvContractResult. */
+export type ProvisionEnvContractResult = AppEnvContractResult
 
 type SupportedCanonicalProvider = Exclude<CanonicalProvider, 'doppler' | 'unknown'>
 type SupportedGithubScope = Exclude<
@@ -54,7 +57,7 @@ function uniqueSorted(values: readonly string[]) {
 }
 
 function normalizeManagedBy(value: unknown): AppEnvContractManagedBy | null {
-  return value === 'template' || value === 'app' ? value : null
+  return value === 'app' ? value : null
 }
 
 function normalizePhase(value: unknown): EnvKeyPhase | null {
@@ -97,7 +100,7 @@ function normalizeCloudflarePlanes(value: unknown): CloudflarePlane[] | null {
 }
 
 function normalizeExpectedValueSource(value: unknown): AppEnvContractExpectedValueSource | null {
-  return value === 'provision.url' ? value : null
+  return value === 'app.url' ? value : null
 }
 
 interface CatalogKeyClassification {
@@ -176,7 +179,7 @@ function classifyCatalogKey(key: string): CatalogKeyClassification {
 
 function normalizeRequirement(
   value: unknown,
-  fallbackManagedBy?: AppEnvContractManagedBy,
+  fallbackManagedBy: AppEnvContractManagedBy = 'app',
 ): AppEnvContractRequirement | null {
   if (!isRecord(value)) return null
 
@@ -184,7 +187,10 @@ function normalizeRequirement(
   if (!key) return null
 
   const classified = classifyCatalogKey(key)
-  const managedBy = normalizeManagedBy(value.managedBy) ?? fallbackManagedBy ?? null
+  const hasManagedBy = Object.prototype.hasOwnProperty.call(value, 'managedBy')
+  const normalizedManagedBy = normalizeManagedBy(value.managedBy)
+  if (hasManagedBy && !normalizedManagedBy) return null
+  const managedBy = normalizedManagedBy ?? fallbackManagedBy
   const phase = normalizePhase(value.phase) ?? classified.phase
   const sensitivity = normalizeSensitivity(value.sensitivity) ?? classified.sensitivity
   const canonicalProvider =
@@ -221,7 +227,10 @@ function normalizeRequirement(
   }
 
   const expectedValue = normalizeText(value.expectedValue) ?? undefined
-  const expectedValueFrom = normalizeExpectedValueSource(value.expectedValueFrom) ?? undefined
+  const hasExpectedValueFrom = Object.prototype.hasOwnProperty.call(value, 'expectedValueFrom')
+  const normalizedExpectedValueFrom = normalizeExpectedValueSource(value.expectedValueFrom)
+  if (hasExpectedValueFrom && !normalizedExpectedValueFrom) return null
+  const expectedValueFrom = normalizedExpectedValueFrom ?? undefined
 
   if (sensitivity === 'secret' && (expectedValue || expectedValueFrom)) {
     return null
@@ -268,11 +277,8 @@ function hasDuplicateRequirementKeys(requirements: readonly AppEnvContractRequir
   return new Set(requirements.map((requirement) => requirement.key)).size !== requirements.length
 }
 
-function createRequirementForKey(
-  key: string,
-  managedBy: AppEnvContractManagedBy,
-): AppEnvContractRequirement {
-  const requirement = normalizeRequirement({ key, managedBy }, managedBy)
+function createRequirementForKey(key: string): AppEnvContractRequirement {
+  const requirement = normalizeRequirement({ key, managedBy: 'app' })
 
   if (!requirement) {
     throw new Error(`Unable to normalize env contract requirement for ${key}.`)
@@ -281,7 +287,7 @@ function createRequirementForKey(
   if (key === 'SITE_URL') {
     return {
       ...requirement,
-      expectedValueFrom: 'provision.url',
+      expectedValueFrom: 'app.url',
     }
   }
 
@@ -307,46 +313,37 @@ function isEligibleForEnvContract(entry: CatalogEntry): boolean {
   // belongs to the per-app Cloudflare contract iff it writes at least one
   // Cloudflare plane (build-var / runtime-var / runtime-secret). `from` only
   // tells the resolver *where the value comes from* — e.g. `SITE_URL` is
-  // sourced from `app-config:provision.url` but still needs to land on the
+  // sourced from `app-config:url` but still needs to land on the
   // Worker as `cf:build-var` + `cf:runtime-var`, so it must stay in the
   // contract and in drift checks.
   return entry.to.some((dest) => dest.startsWith('cf:'))
 }
 
-export function buildTemplateManagedEnvContract(options: {
-  templateLayerSelection: TemplateLayerSelection
+export function buildAppEnvContract(options: {
+  capabilities: readonly AppCapabilityId[]
 }): AppEnvContractDefinition {
-  // The env contract surface is driven entirely by the MODULES the template
-  // selection installs. Scope (`every-app` / `one-app`) only governs whether
+  // The env contract surface is driven entirely by the capabilities an app
+  // declares. Scope (`every-app` / `one-app`) only governs whether
   // the resolved VALUE is shared across apps or per-app — not whether the key
   // is required. A core-only app intentionally does not provision
   // auth/supabase/posthog keys because those modules were not selected. See
   // the docstring on `CatalogScope` in `env-catalog.ts` for the full meaning.
-  const modules: FleetModuleId[] = listProvidedModules(options.templateLayerSelection)
   const requirementKeys = uniqueSorted(
-    listKeysForModules(modules).filter((key) => {
+    listKeysForModules(options.capabilities).filter((key) => {
       const entry = getCatalogEntry(key)
-      return entry ? isEligibleForEnvContract(entry) && entry.scope !== 'command-only' : false
+      return entry ? isEligibleForEnvContract(entry) : false
     }),
   )
 
-  // Defensive: `listKeysForModules(fleet modules)` cannot return command-only
-  // keys by construction, but the filter above still guards against catalog
-  // drift.
-
   return {
-    version: PROVISION_ENV_CONTRACT_VERSION,
-    requirements: sortRequirements(
-      requirementKeys.map((key) => createRequirementForKey(key, 'template')),
-    ),
+    version: APP_ENV_CONTRACT_VERSION,
+    requirements: sortRequirements(requirementKeys.map((key) => createRequirementForKey(key))),
   }
 }
 
-export function normalizeProvisionEnvContractDefinition(
-  value: unknown,
-): AppEnvContractDefinition | null {
+export function normalizeAppEnvContractDefinition(value: unknown): AppEnvContractDefinition | null {
   if (!isRecord(value)) return null
-  if (value.version !== PROVISION_ENV_CONTRACT_VERSION) return null
+  if (value.version !== APP_ENV_CONTRACT_VERSION) return null
   if (!Array.isArray(value.requirements)) return null
 
   const requirements = value.requirements
@@ -362,16 +359,14 @@ export function normalizeProvisionEnvContractDefinition(
   }
 
   return {
-    version: PROVISION_ENV_CONTRACT_VERSION,
+    version: APP_ENV_CONTRACT_VERSION,
     requirements: sortRequirements(requirements),
   }
 }
 
-export function extractProvisionAppManagedEnvContractDefinition(
-  value: unknown,
-): AppEnvContractDefinition | null {
+export function extractAppEnvContractDefinition(value: unknown): AppEnvContractDefinition | null {
   if (!isRecord(value)) return null
-  if (value.version !== PROVISION_ENV_CONTRACT_VERSION) return null
+  if (value.version !== APP_ENV_CONTRACT_VERSION) return null
   if (!Array.isArray(value.requirements)) return null
 
   const requirements = value.requirements
@@ -387,52 +382,44 @@ export function extractProvisionAppManagedEnvContractDefinition(
   )
 
   return {
-    version: PROVISION_ENV_CONTRACT_VERSION,
+    version: APP_ENV_CONTRACT_VERSION,
     requirements: sortRequirements(uniqueRequirements),
   }
 }
 
-export function mergeProvisionEnvContractDefinitions(options: {
+export function mergeAppEnvContractDefinitions(options: {
   existing: AppEnvContractDefinition | null
-  templateManaged: AppEnvContractDefinition
+  required: AppEnvContractDefinition
 }): AppEnvContractDefinition {
-  const templateRequirements = sortRequirements(
-    options.templateManaged.requirements
-      .map((requirement) =>
-        normalizeRequirement({ ...requirement, managedBy: 'template' }, 'template'),
-      )
-      .filter((requirement): requirement is AppEnvContractRequirement => requirement != null),
-  )
-
-  const templateKeys = new Set(templateRequirements.map((requirement) => requirement.key))
-  const appManagedRequirements = sortRequirements(
-    (options.existing?.requirements ?? [])
-      .map((requirement) =>
-        normalizeRequirement({ ...requirement, managedBy: requirement.managedBy ?? 'app' }),
-      )
-      .filter(
-        (requirement): requirement is AppEnvContractRequirement =>
-          requirement != null &&
-          requirement.managedBy === 'app' &&
-          !templateKeys.has(requirement.key),
-      ),
-  )
+  const byKey = new Map<string, AppEnvContractRequirement>()
+  for (const requirement of [
+    ...(options.existing?.requirements ?? []),
+    ...options.required.requirements,
+  ]) {
+    const normalized = normalizeRequirement({ ...requirement, managedBy: 'app' })
+    if (normalized) byKey.set(normalized.key, normalized)
+  }
 
   return {
-    version: PROVISION_ENV_CONTRACT_VERSION,
-    requirements: sortRequirements([...templateRequirements, ...appManagedRequirements]),
+    version: APP_ENV_CONTRACT_VERSION,
+    requirements: sortRequirements([...byKey.values()]),
   }
 }
 
-export function readProvisionEnvContract(
-  record: Record<string, unknown>,
-): ProvisionEnvContractResult {
+export function readAppEnvContract(record: Record<string, unknown>): AppEnvContractResult {
   if (!Object.prototype.hasOwnProperty.call(record, 'envContract')) {
     return { status: 'missing', value: null }
   }
 
-  const normalized = normalizeProvisionEnvContractDefinition(record.envContract)
+  const normalized = normalizeAppEnvContractDefinition(record.envContract)
   return normalized
     ? { status: 'available', value: normalized }
     : { status: 'invalid', value: null }
 }
+
+/** @deprecated Use normalizeAppEnvContractDefinition. */
+export const normalizeProvisionEnvContractDefinition = normalizeAppEnvContractDefinition
+/** @deprecated Use extractAppEnvContractDefinition. */
+export const extractProvisionAppManagedEnvContractDefinition = extractAppEnvContractDefinition
+/** @deprecated Use readAppEnvContract. */
+export const readProvisionEnvContract = readAppEnvContract
