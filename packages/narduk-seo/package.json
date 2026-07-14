@@ -33,7 +33,7 @@
       "import": "./app/pages/*.vue"
     },
     "./app/types/*": {
-      "types": "./app/types/*.d.ts"
+      "types": "./app/types/*.ts"
     },
     "./app/utils/*": {
       "import": "./app/utils/*.ts"

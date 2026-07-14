@@ -23,11 +23,6 @@ describe('narduk-core module', () => {
       defineNuxtModule: (definition: unknown) => definition,
       installModule,
     }))
-    vi.doMock('@narduk-enterprises/narduk-platform', () => ({
-      readProvisionMetadata: () => ({}),
-      resolveLocalNuxtPort: () => 3000,
-    }))
-
     const mod = (await import('../src/module')).default as unknown as {
       setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
     }
@@ -74,6 +69,18 @@ describe('narduk-core module', () => {
         },
       }),
     )
+    expect(nuxt.options.app).toMatchObject({
+      head: {
+        link: expect.arrayContaining([
+          expect.objectContaining({ rel: 'icon', href: '/favicon.svg' }),
+          expect.objectContaining({ rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }),
+        ]),
+      },
+    })
+    expect(JSON.stringify(nuxt.options.app)).not.toContain('manifest')
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: expect.not.objectContaining({ controlPlaneUrl: expect.anything() }),
+    })
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/composables'))
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))

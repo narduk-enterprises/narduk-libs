@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Strict capability preset for narduk-template apps and local layers.
+ * Strict capability preset for independent Narduk apps and shared packages.
  * Import this everywhere so `eslint .` matches consumer apps using the full
  * Narduk preset (correctness, a11y, complexity, formatting, e2e, …).
  *

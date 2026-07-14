@@ -3,7 +3,7 @@
   "version": "1.28.63",
   "private": false,
   "type": "module",
-  "description": "Fleet data model: layer manifests, theme definitions, env contracts, and provision types for the narduk platform.",
+  "description": "Neutral environment, onboarding, package-registry, and provider contracts for independent Narduk apps.",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
@@ -22,10 +22,6 @@
       "types": "./dist/env-catalog.d.ts",
       "default": "./dist/env-catalog.js"
     },
-    "./layer-bundle-manifest": {
-      "types": "./dist/layer-bundle-manifest.d.ts",
-      "default": "./dist/layer-bundle-manifest.js"
-    },
     "./package-registry": {
       "types": "./dist/package-registry.d.ts",
       "default": "./dist/package-registry.js"
@@ -42,9 +38,9 @@
       "types": "./dist/provider-console.d.ts",
       "default": "./dist/provider-console.js"
     },
-    "./starter-composition": {
-      "types": "./dist/starter-composition.d.ts",
-      "default": "./dist/starter-composition.js"
+    "./onboarding-metadata": {
+      "types": "./dist/provision-metadata.d.ts",
+      "default": "./dist/provision-metadata.js"
     }
   },
   "files": [
@@ -53,14 +49,16 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "format:check": "node ../../tools/package-quality.mjs format:check",
-    "lint": "node ../../tools/package-quality.mjs lint \"src/**/*.ts\" \"scripts/**/*.mjs\"",
+    "lint": "node ../../tools/package-quality.mjs lint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "prepare": "node scripts/ensure-dist.mjs",
     "prepublishOnly": "pnpm run build",
-    "typecheck": "node ../../tools/package-quality.mjs typecheck tsconfig.build.json"
+    "test:unit": "vitest run",
+    "typecheck": "node ../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../tools/package-quality.mjs typecheck tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
   },
   "volta": {
     "node": "22.22.3"

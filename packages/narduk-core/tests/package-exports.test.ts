@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -36,5 +36,15 @@ describe('narduk-core package exports', () => {
     expect(packageJson.exports['./eslint-capability-packs']).toEqual({
       import: './eslint-capability-packs.mjs',
     })
+  })
+
+  it('does not ship retired PWA or control-plane runtime assets', () => {
+    expect(existsSync(join(packageRoot, 'runtime/public/site.webmanifest'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/pwa-192x192.png'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/public/pwa-512x512.png'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/shared/controlPlaneProxy.ts'))).toBe(false)
+    expect(existsSync(join(packageRoot, 'runtime/server/api/control-plane/[...path].ts'))).toBe(
+      false,
+    )
   })
 })
