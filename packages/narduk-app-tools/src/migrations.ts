@@ -310,11 +310,73 @@ export function loadMigrationConfig(configFile: string): {
   } catch (error) {
     throw new Error(`Could not parse migration config ${path}: ${String(error)}`)
   }
-  return { baseDir: dirname(path), config: parseMigrationConfig(value) }
+  const baseDir = dirname(path)
+  return {
+    baseDir,
+    config: resolveMigrationConfigVersions(parseMigrationConfig(value), baseDir),
+  }
 }
 
 function isAppSource(source: string): boolean {
   return source === 'app' || source.startsWith('app:')
+}
+
+function readOwningPackageVersion(directory: string, source: string): string {
+  let current = resolve(directory)
+  const filesystemRoot = dirname(current) === current ? current : resolve(current, '/')
+  while (true) {
+    const manifestPath = join(current, 'package.json')
+    if (existsSync(manifestPath) && statSync(manifestPath).isFile()) {
+      let manifest: { name?: unknown; version?: unknown }
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+          name?: unknown
+          version?: unknown
+        }
+      } catch (error) {
+        throw new Error(
+          `Could not parse migration owner manifest ${manifestPath}: ${String(error)}`,
+        )
+      }
+      const packageName = typeof manifest.name === 'string' ? manifest.name : undefined
+      const ownsSource = source.startsWith('@') ? packageName === source : true
+      if (ownsSource) {
+        return requireText(manifest.version, `Migration owner ${manifestPath} version`)
+      }
+    }
+    if (current === filesystemRoot || dirname(current) === current) break
+    current = dirname(current)
+  }
+  throw new Error(
+    `Could not resolve source version for ${source} from an owning package.json above ${directory}`,
+  )
+}
+
+export function resolveMigrationConfigVersions(
+  config: MigrationConfig,
+  baseDir: string,
+): MigrationConfig {
+  const sources = config.sources.map((source) => ({
+    ...source,
+    sourceVersion:
+      source.sourceVersion === DEFAULT_SOURCE_VERSION
+        ? readOwningPackageVersion(resolve(baseDir, source.path), source.source)
+        : source.sourceVersion,
+  }))
+  const versions = new Map(sources.map((source) => [source.source, source.sourceVersion]))
+  const adoptions = config.adoptions.map((adoption) => ({
+    ...adoption,
+    sourceVersion:
+      adoption.sourceVersion === DEFAULT_SOURCE_VERSION
+        ? (versions.get(adoption.source) ?? DEFAULT_SOURCE_VERSION)
+        : adoption.sourceVersion,
+  }))
+  for (const adoption of adoptions) {
+    if (adoption.sourceVersion === DEFAULT_SOURCE_VERSION) {
+      throw new Error(`Could not resolve source version for adoption ${adoption.source}`)
+    }
+  }
+  return { ...config, adoptions, sources }
 }
 
 export function orderMigrationSources(
@@ -336,7 +398,8 @@ export function checksumMigrationSql(sql: string): string {
 
 export function discoverMigrations(config: MigrationConfig, baseDir: string): MigrationFile[] {
   const files: MigrationFile[] = []
-  for (const source of orderMigrationSources(config.sources)) {
+  const resolvedConfig = resolveMigrationConfigVersions(config, baseDir)
+  for (const source of orderMigrationSources(resolvedConfig.sources)) {
     const directory = resolve(baseDir, source.path)
     if (!existsSync(directory) || !statSync(directory).isDirectory()) {
       throw new Error(`Migration directory not found for ${source.source}: ${directory}`)

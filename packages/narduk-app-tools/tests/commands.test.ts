@@ -9,6 +9,7 @@ import {
   buildWranglerCommandArgs,
   isDryRunDeploy,
   isLocalDeployAllowed,
+  isWorkersBuildDeployAllowed,
   parseDeployArgs,
   readWranglerScriptName,
   resolveAppDir,
@@ -62,6 +63,16 @@ describe('app-local command planning', () => {
       'bare -- is not allowed',
     )
     expect(isLocalDeployAllowed({ SKIP_DEPENDENCY_INSTALL: '1' })).toBe(false)
+    expect(
+      isWorkersBuildDeployAllowed({
+        CI: 'true',
+        WORKERS_CI: '1',
+        WORKERS_CI_BRANCH: 'main',
+        WORKERS_CI_BUILD_UUID: 'build-uuid',
+        WORKERS_CI_COMMIT_SHA: '0123456789abcdef0123456789abcdef01234567',
+      }),
+    ).toBe(true)
+    expect(isWorkersBuildDeployAllowed({ CI: 'true', WORKERS_CI: '1' })).toBe(false)
     expect(() => parseDeployArgs(['--minify'])).toThrow('deploy <deploy|versions-upload>')
     expect(
       buildWranglerCommandArgs({

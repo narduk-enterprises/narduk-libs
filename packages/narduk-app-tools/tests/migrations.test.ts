@@ -16,6 +16,7 @@ import {
   parseMigrationConfig,
   parseTimeTravelBookmark,
   planMigrations,
+  resolveMigrationConfigVersions,
   validateMigrationReset,
   type MigrationConfig,
   type MigrationFile,
@@ -42,9 +43,39 @@ function migration(
 }
 
 describe('migration config and planning', () => {
-  it('accepts the app manifest shape and records a safe default source version', () => {
+  it('accepts the app manifest shape and defers version resolution until paths are known', () => {
     const config = parseMigrationConfig({ sources: [{ id: 'app', dir: 'drizzle' }] })
     expect(config.sources[0]?.sourceVersion).toBe('unversioned')
+  })
+
+  it('resolves omitted source versions from owning package manifests', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-migration-versions-'))
+    tempDirs.push(root)
+    const appMigrations = join(root, 'drizzle')
+    const coreRoot = join(root, 'node_modules', '@narduk-enterprises', 'narduk-core')
+    mkdirSync(appMigrations, { recursive: true })
+    mkdirSync(join(coreRoot, 'runtime', 'drizzle'), { recursive: true })
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'web', version: '0.1.0' }))
+    writeFileSync(
+      join(coreRoot, 'package.json'),
+      JSON.stringify({ name: '@narduk-enterprises/narduk-core', version: '1.19.40' }),
+    )
+    const config = resolveMigrationConfigVersions(
+      parseMigrationConfig({
+        sources: [
+          {
+            id: '@narduk-enterprises/narduk-core',
+            dir: 'node_modules/@narduk-enterprises/narduk-core/runtime/drizzle',
+          },
+          { id: 'app', dir: 'drizzle' },
+        ],
+      }),
+      root,
+    )
+    expect(config.sources.map(({ source, sourceVersion }) => [source, sourceVersion])).toEqual([
+      ['@narduk-enterprises/narduk-core', '1.19.40'],
+      ['app', '0.1.0'],
+    ])
   })
 
   it('orders every package source before app source', () => {

@@ -25,9 +25,19 @@ export function isLocalDeployAllowed(env: DeployEnv = process.env): boolean {
   return isTruthy(env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY)
 }
 
+export function isWorkersBuildDeployAllowed(env: DeployEnv = process.env): boolean {
+  return (
+    isTruthy(env.CI) &&
+    isTruthy(env.WORKERS_CI) &&
+    Boolean(env.WORKERS_CI_BUILD_UUID?.trim()) &&
+    /^[a-f\d]{7,64}$/iu.test(env.WORKERS_CI_COMMIT_SHA?.trim() ?? '') &&
+    Boolean(env.WORKERS_CI_BRANCH?.trim())
+  )
+}
+
 export function getDeployGuardMessage(action: DeployAction): string {
   const label = action === 'deploy' ? 'wrangler deploy' : 'wrangler versions upload'
-  return `Local ${label} is disabled by default. Push to the configured build branch, or set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for intentional recovery work.`
+  return `Local ${label} is disabled by default. Push to the configured Workers Builds branch, or set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for intentional recovery work.`
 }
 
 export function parseDeployArgs(args: string[]): {
@@ -168,7 +178,11 @@ export function runDeploy(
   env: DeployEnv = process.env,
 ): number {
   const { action, passthroughArgs } = parseDeployArgs(args)
-  if (!isDryRunDeploy(passthroughArgs) && !isLocalDeployAllowed(env)) {
+  if (
+    !isDryRunDeploy(passthroughArgs) &&
+    !isWorkersBuildDeployAllowed(env) &&
+    !isLocalDeployAllowed(env)
+  ) {
     console.error(getDeployGuardMessage(action))
     return 1
   }
