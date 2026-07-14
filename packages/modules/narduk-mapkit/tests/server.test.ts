@@ -172,4 +172,28 @@ describe('MapKit token request handler', () => {
       token: '',
     })
   })
+
+  it('supports app-owned rate limiting without coupling the package to a provider', async () => {
+    const response = await mapKitTokenResponse(
+      new Request('https://worker.example/api/mapkit-token'),
+      {
+        staticToken: unsignedTokenWithExp(Math.floor(Date.now() / 1000) + 3600),
+      },
+      {
+        rateLimit: ({ origin }) => ({
+          allowed: false,
+          error: `Rate limit exceeded for ${origin}`,
+          retryAfterSeconds: 30,
+        }),
+      },
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('30')
+    await expect(response.json()).resolves.toMatchObject({
+      configured: true,
+      error: 'Rate limit exceeded for https://worker.example',
+      token: '',
+    })
+  })
 })

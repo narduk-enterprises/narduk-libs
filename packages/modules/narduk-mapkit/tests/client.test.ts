@@ -1,10 +1,12 @@
 import {
+  addMapKitVectorOverlay,
   createMapKitCoordinateRegion,
   createMapKitRegionForLngLatBounds,
   createMapKitRegionForPoints,
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
   initializeMapKit,
+  removeMapKitVectorOverlay,
   refreshMapKitMapLayout,
   resetMapKitClientStateForTests,
 } from '../src/client/index.js'
@@ -170,6 +172,25 @@ describe('browser MapKit runtime helpers', () => {
 
     expect(overlay.urlTemplate).toBe('/tiles/{z}/{x}/{y}.png')
     expect(overlay.options).toMatchObject({ maximumZ: 10, minimumZ: 3.33, opacity: 0.8 })
+  })
+
+  it('makes vector overlay attach and removal idempotent', () => {
+    const overlay = {}
+    const attached: object[] = []
+    const map = {
+      overlays: attached,
+      addOverlay: vi.fn((value: object) => attached.push(value)),
+      removeOverlay: vi.fn((value: object) => attached.splice(attached.indexOf(value), 1)),
+    }
+
+    addMapKitVectorOverlay(map, overlay)
+    addMapKitVectorOverlay(map, overlay)
+    removeMapKitVectorOverlay(map, overlay)
+    removeMapKitVectorOverlay(map, overlay)
+
+    expect(map.addOverlay).toHaveBeenCalledTimes(1)
+    expect(map.removeOverlay).toHaveBeenCalledTimes(1)
+    expect(attached).toEqual([])
   })
 
   it('crossfades overlay opacity and removes stale overlays', async () => {

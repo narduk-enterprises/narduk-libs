@@ -1,15 +1,15 @@
 {
   "name": "@loganrenz/narduk-mapkit",
-  "version": "0.3.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/loganrenz/narduk-mapkit.git"
+    "url": "git+https://github.com/narduk-geo/narduk-mapkit.git"
   },
-  "homepage": "https://github.com/loganrenz/narduk-mapkit#readme",
+  "homepage": "https://github.com/narduk-geo/narduk-mapkit#readme",
   "bugs": {
-    "url": "https://github.com/loganrenz/narduk-mapkit/issues"
+    "url": "https://github.com/narduk-geo/narduk-mapkit/issues"
   },
   "license": "MIT",
   "keywords": [
@@ -39,6 +39,10 @@
       "types": "./dist/client/index.d.ts",
       "import": "./dist/client/index.js"
     },
+    "./apple-maps": {
+      "types": "./dist/server/apple-maps.d.ts",
+      "import": "./dist/server/apple-maps.js"
+    },
     "./geometry": {
       "types": "./dist/geometry/index.d.ts",
       "import": "./dist/geometry/index.js"
@@ -51,6 +55,14 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
     },
+    "./worker": {
+      "types": "./dist/server/worker.d.ts",
+      "import": "./dist/server/worker.js"
+    },
+    "./node": {
+      "types": "./dist/server/node.d.ts",
+      "import": "./dist/server/node.js"
+    },
     "./token": {
       "types": "./dist/token/index.d.ts",
       "import": "./dist/token/index.js"
@@ -61,13 +73,15 @@
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && node script/check_package_install.mjs",
     "prepare": "tsc -p tsconfig.build.json",
-    "publish:local": "node script/publish_local_package.mjs",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:package",
+    "pack:artifacts": "node script/pack_packages.mjs",
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dist && pnpm run check:package && pnpm exec publint && pnpm --filter @loganrenz/narduk-mapkit-nuxt run quality",
+    "check:dist": "node script/check_dist_clean.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^24.0.4",
+    "publint": "^0.3.21",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"
   },
@@ -75,7 +89,14 @@
     "node": ">=20"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   },
   "packageManager": "pnpm@10.33.4"
 }

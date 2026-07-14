@@ -1,13 +1,20 @@
-# @loganrenz/narduk-mapkit
+# Narduk MapKit
 
-Framework-agnostic TypeScript helpers for Apple MapKit JS.
+Canonical Apple MapKit JS workspace for Narduk web apps. It publishes two
+public, independently versioned npm packages:
+
+- `@loganrenz/narduk-mapkit` — framework-neutral client, server, token,
+  geometry, temporal, vector-overlay, and Apple Maps Server API helpers.
+- `@loganrenz/narduk-mapkit-nuxt` — `AppMapKit`, `useMapKit`,
+  `useMapkitToken`, Nuxt registration, and `/api/mapkit-token`.
 
 This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
 token routes, browser bootstrapping, coordinate and region math, GeoJSON and
 drawable framing, tile overlay animation, and route playback utilities.
 
-Core stays runtime-neutral. App code still owns framework components, marker
-HTML, panels, data fetching, and domain-specific behavior.
+Core stays runtime-neutral. The Nuxt adapter owns only reusable framework
+integration; consuming apps still own marker HTML, panels, data fetching, and
+domain-specific behavior.
 
 ## Features
 
@@ -24,6 +31,10 @@ HTML, panels, data fetching, and domain-specific behavior.
   and cancellable opacity crossfades.
 - A MapKit JS layer registry for multiple live AOI tile overlays with
   independent opacity, bounds-gated tile URLs, and replacement fades.
+- Idempotent vector-overlay attachment and bounded tile-intersection caching.
+- Apple Maps access-token exchange, search, and geocoding helpers.
+- A separately published Nuxt adapter with no dependency on Narduk template
+  layers or UI packages.
 
 ## Install
 
@@ -31,26 +42,38 @@ HTML, panels, data fetching, and domain-specific behavior.
 pnpm add @loganrenz/narduk-mapkit
 ```
 
-For local package-consumer testing before publishing, pack the current checkout
-and install the generated tarball into the consumer app:
+Nuxt apps install both immutable releases:
 
 ```sh
-pnpm pack --pack-destination /tmp
-pnpm add /tmp/loganrenz-narduk-mapkit-*.tgz
+pnpm add @loganrenz/narduk-mapkit @loganrenz/narduk-mapkit-nuxt
 ```
 
-Or depend on Git directly:
-
-```sh
-pnpm add git+https://github.com/loganrenz/narduk-mapkit.git#main
+```ts
+export default defineNuxtConfig({
+  modules: ['@loganrenz/narduk-mapkit-nuxt'],
+})
 ```
+
+Do not use mutable Git branches, absolute tarball paths, or vendored source in
+production consumers. Publish immutable SemVer packages and pin or range those
+versions normally.
+
+## Nuxt integration
+
+The adapter auto-registers `AppMapKit`, `useMapKit`, `useMapkitToken`, and the
+token route. The component fills its parent, so the parent must establish an
+explicit height. The adapter has no Nuxt UI or color-mode-module dependency.
+
+Missing token credentials return `503` with `configured: false`; disallowed
+origins return `403`. See `packages/nuxt/README.md` for options and runtime
+configuration.
 
 ## Server Token Route
 
 Mount the Fetch handler at your app's token endpoint:
 
 ```ts
-import { createMapKitTokenHandler } from '@loganrenz/narduk-mapkit/server'
+import { createMapKitTokenHandler } from '@loganrenz/narduk-mapkit/node'
 
 export const GET = createMapKitTokenHandler({
   allowedOrigins: ['http://localhost:3000', 'https://maps.example.com'],
@@ -69,14 +92,16 @@ The response shape is stable:
 ```
 
 Misconfiguration returns `503` with `configured: false`; blocked origins return
-`403`.
+`403`. The `/node` entry point is the only surface that reads `process.env` or
+uses the optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
+configuration in Web-standard runtimes.
 
 ### Cloudflare Workers
 
 Workers pass secrets through `fetch(request, env)`, not `process.env`:
 
 ```ts
-import { mapKitTokenResponseFromEnv } from '@loganrenz/narduk-mapkit/server'
+import { mapKitTokenResponseFromEnv } from '@loganrenz/narduk-mapkit/worker'
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -107,6 +132,41 @@ bindings. Recognized runtime names:
 
 `APPLE_PRIVATE_KEY` must be PKCS#8 PEM with `BEGIN PRIVATE KEY`. Escaped
 newlines are accepted.
+
+## Apple Maps Server API
+
+Core signs or accepts a Maps auth JWT, exchanges it for an access token, caches
+that token until its refresh window, and exposes framework-neutral search and
+geocode calls:
+
+```ts
+import {
+  geocodeAppleMaps,
+  getAppleMapsAccessToken,
+  searchAppleMaps,
+} from '@loganrenz/narduk-mapkit/apple-maps'
+
+const serverConfig = {
+  appId: 'maps.example.app',
+  keyId: env.APPLE_KEY_ID,
+  privateKey: env.APPLE_PRIVATE_KEY,
+  teamId: env.APPLE_TEAM_ID,
+}
+
+const accessToken = await getAppleMapsAccessToken(serverConfig)
+const places = await searchAppleMaps('marina', {
+  accessToken,
+  searchLocation: { lat: 30.2672, lng: -97.7431 },
+})
+const addresses = await geocodeAppleMaps('1100 Congress Ave, Austin, TX', {
+  accessToken,
+  limitToCountries: 'US',
+})
+```
+
+`APPLE_MAPS_APP_ID` is distinct from a raw bundle ID and is required when the
+library signs a Maps Server API developer token. Apps may instead provide a
+fresh pre-signed auth JWT as `authToken`.
 
 ## Browser Boot
 
@@ -256,11 +316,15 @@ in the app.
 
 | Export | Purpose |
 | --- | --- |
-| `@loganrenz/narduk-mapkit/server` | Fetch responses, config lookup, Worker env bridge, token cache |
+| `@loganrenz/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding |
+| `@loganrenz/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
+| `@loganrenz/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
+| `@loganrenz/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
 | `@loganrenz/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer registries, crossfades |
 | `@loganrenz/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@loganrenz/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@loganrenz/narduk-mapkit/token` | Low-level JWT signing and decoding |
+| `@loganrenz/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, composables, and token route |
 
 ## Maintainer Migration Notes
 
@@ -273,8 +337,10 @@ not part of the published package artifact. The short version:
    region helpers.
 4. Move MapKit tile overlay construction and fade loops to `client` runtime
    helpers.
-5. Keep framework components, marker DOM, callouts, panels, and native Swift
-   renderers outside this package.
+5. Replace template-layer MapKit components and composables with
+   `@loganrenz/narduk-mapkit-nuxt`.
+6. Keep app-specific marker DOM, callouts, panels, and native Swift renderers
+   outside this workspace.
 
 ## Security
 
@@ -282,7 +348,10 @@ Apple private keys belong only on the server side. Never pass
 `APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY` to browser code.
 
 Origin allowlists are optional for local tools, but production token endpoints
-should set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`.
+should set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`. Token issuance is
+GET-only in the Nuxt adapter. Apps own provider-specific rate limiting and can
+pass a `rateLimit` hook to the core handler or set the request-scoped Nuxt hook
+documented in `packages/nuxt/README.md`.
 
 Report vulnerabilities through the process in `SECURITY.md`, not public issues.
 
@@ -300,18 +369,17 @@ Doppler:
 doppler run -- pnpm run quality
 ```
 
-`pnpm run quality` runs typecheck, tests, build, package export smoke, and a
-clean-room tarball install smoke.
+`pnpm run quality` validates core and Nuxt types, tests, production builds,
+`publint`, package exports, and clean-room builds installed only from packed
+tarballs.
 
-`dist/` is committed so Git dependency consumers can install without running a
-prepare build. When source exports change, run `pnpm run build` and commit the
-matching `dist/` output.
+Core `dist/` remains committed for current consumers while they migrate. The
+Nuxt adapter is built during `prepack`; production consumers must use published
+SemVer artifacts rather than Git dependencies.
 
 See `CONTRIBUTING.md` for public API, testing, example, and release checklist
-expectations.
+expectations and `docs/releasing.md` for the public npm publish order and proof.
 
-Maintainers can refresh the local tarball with:
-
-```sh
-pnpm run publish:local
-```
+There is no mutable `latest.tgz`, local publish poller, or absolute-path package
+channel. Local tarballs are disposable test artifacts only; consumers use
+immutable public npm releases.

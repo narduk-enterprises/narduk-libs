@@ -75,6 +75,18 @@ describe('MapKit layer helpers', () => {
     expect(resolveTileUrl(1, 1, 1, 2)).toMatch(/^data:image\/png;base64,/)
   })
 
+  it('reuses tile intersection decisions across scale variants', () => {
+    const resolveTileUrl = createBoundsGatedUrlTemplate(
+      '/tiles/{z}/{x}/{y}@{scale}x.png',
+      [-100, 20, -90, 30],
+    ) as Exclude<MapKitTileOverlayUrlTemplate, string>
+
+    expect(resolveTileUrl(0, 0, 1, 1)).toBe('/tiles/1/0/0@1x.png')
+    expect(resolveTileUrl(0, 0, 1, 2)).toBe('/tiles/1/0/0@2x.png')
+    expect(resolveTileUrl(1, 1, 1, 1)).toMatch(/^data:image\/png;base64,/)
+    expect(resolveTileUrl(1, 1, 1, 2)).toMatch(/^data:image\/png;base64,/)
+  })
+
   it('tightens the default minimum span for small AOI layer bounds', () => {
     const bounds = [-97.701, 30.201, -97.699, 30.203] as const
     const untightened = computeMapKitRegionForLngLatBounds(bounds)

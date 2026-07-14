@@ -43,21 +43,30 @@ try {
     join(projectDir, 'smoke.mjs'),
     `
 import * as root from '@loganrenz/narduk-mapkit'
+import * as appleMaps from '@loganrenz/narduk-mapkit/apple-maps'
 import * as client from '@loganrenz/narduk-mapkit/client'
 import * as geometry from '@loganrenz/narduk-mapkit/geometry'
+import * as nodeServer from '@loganrenz/narduk-mapkit/node'
 import * as playback from '@loganrenz/narduk-mapkit/playback'
 import * as server from '@loganrenz/narduk-mapkit/server'
 import * as token from '@loganrenz/narduk-mapkit/token'
+import * as worker from '@loganrenz/narduk-mapkit/worker'
 
 const checks = [
   ['root.computeRouteDistanceMetres', root.computeRouteDistanceMetres],
   ['client.initializeMapKit', client.initializeMapKit],
   ['client.createMapKitTileOverlay', client.createMapKitTileOverlay],
   ['client.createBoundsGatedUrlTemplate', client.createBoundsGatedUrlTemplate],
+  ['client.addMapKitVectorOverlay', client.addMapKitVectorOverlay],
   ['client.MapKitLayerRegistry', client.MapKitLayerRegistry],
   ['geometry.computeMapKitRegionForPoints', geometry.computeMapKitRegionForPoints],
   ['playback.buildMapKitPlaybackLineSlices', playback.buildMapKitPlaybackLineSlices],
   ['server.createMapKitTokenHandler', server.createMapKitTokenHandler],
+  ['worker.mapKitTokenResponseFromEnv', worker.mapKitTokenResponseFromEnv],
+  ['nodeServer.resolveMapKitServerConfig', nodeServer.resolveMapKitServerConfig],
+  ['appleMaps.searchAppleMaps', appleMaps.searchAppleMaps],
+  ['appleMaps.geocodeAppleMaps', appleMaps.geocodeAppleMaps],
+  ['appleMaps.getAppleMapsAccessToken', appleMaps.getAppleMapsAccessToken],
   ['token.createMapKitToken', token.createMapKitToken],
 ]
 

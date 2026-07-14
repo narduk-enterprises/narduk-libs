@@ -120,7 +120,11 @@ function rangesIntersect(
   return first[0] <= second[1] && first[1] >= second[0]
 }
 
-function boundsIntersectTile(bounds: MapKitLngLatBounds, tile: TileBounds): boolean {
+function boundsIntersectTile(
+  bounds: MapKitLngLatBounds,
+  tile: TileBounds,
+  ranges: ReadonlyArray<readonly [number, number]>,
+): boolean {
   const [, southLat, , northLat] = bounds
   const south = clamp(Math.min(southLat, northLat), -90, 90)
   const north = clamp(Math.max(southLat, northLat), -90, 90)
@@ -128,7 +132,7 @@ function boundsIntersectTile(bounds: MapKitLngLatBounds, tile: TileBounds): bool
   if (south > tile.northLat || north < tile.southLat) return false
 
   const tileLngRange = [clamp(tile.westLng, -180, 180), clamp(tile.eastLng, -180, 180)] as const
-  return longitudeRanges(bounds).some((range) => rangesIntersect(range, tileLngRange))
+  return ranges.some((range) => rangesIntersect(range, tileLngRange))
 }
 
 function formatUrlTemplate(
@@ -191,9 +195,27 @@ export function createBoundsGatedUrlTemplate(
   if (!bounds) return urlTemplate
   if (!urlTemplate.trim()) throw new Error('urlTemplate is required')
 
+  const ranges = longitudeRanges(bounds)
+  const decisionCache = new Map<string, boolean>()
+  const maxDecisionCacheEntries = 2048
+
   return (x: number, y: number, z: number, scale: number): string => {
+    // Scale changes the URL but not geographic intersection. MapKit commonly
+    // asks for the same tile at 1x and 2x, so cache only the geometry decision.
+    const cacheKey = `${z}/${x}/${y}`
+    const cached = decisionCache.get(cacheKey)
+    if (cached !== undefined) {
+      return cached ? formatUrlTemplate(urlTemplate, x, y, scale, z) : TRANSPARENT_PNG_DATA_URI
+    }
+
     const tile = tileLngLatBounds(x, y, z)
-    if (!tile || !boundsIntersectTile(bounds, tile)) return TRANSPARENT_PNG_DATA_URI
+    const intersects = Boolean(tile && boundsIntersectTile(bounds, tile, ranges))
+    if (decisionCache.size >= maxDecisionCacheEntries) {
+      const oldestKey = decisionCache.keys().next().value
+      if (oldestKey) decisionCache.delete(oldestKey)
+    }
+    decisionCache.set(cacheKey, intersects)
+    if (!intersects) return TRANSPARENT_PNG_DATA_URI
     return formatUrlTemplate(urlTemplate, x, y, scale, z)
   }
 }

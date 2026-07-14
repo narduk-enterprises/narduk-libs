@@ -1,9 +1,29 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - Unreleased
 
+- Established this `narduk-geo/narduk-mapkit` repository as the canonical
+  two-package workspace.
+- Added public `@loganrenz/narduk-mapkit-nuxt` with `AppMapKit`, `useMapKit`,
+  `useMapkitToken`, Nuxt module registration, and a Worker-compatible token
+  route that retains the unconfigured `503` contract.
+- Added the `@loganrenz/narduk-mapkit/apple-maps` access-token, search, and
+  geocode API.
+- Added idempotent vector-overlay helpers from the preserved legacy checkout.
+- Added the Earthdata tile-intersection decision cache, bounded at 2,048
+  entries and shared across scale variants.
+- Pointed package metadata at `github.com/narduk-geo/narduk-mapkit` and added
+  public-npm, `publint`, Nuxt production-build, and packed-consumer gates.
 - Added `refreshMapKitMapLayout` so consumers can refresh MapKit viewport
   geometry after responsive container or drawer layout changes.
+- Split the token runtime into Web-standard `/server` and `/worker` exports and
+  an explicit Node-only `/node` export for `process.env` and Doppler CLI lookup.
+- Added warning-free Cloudflare module and packed-consumer gates that reject
+  Node built-ins and prove GET-only `503`, `403`, `200`, and binding behavior.
+- Added an app-owned token rate-limit hook with `429`/`Retry-After` support.
+- Removed the mutable local-tarball publish poller and its `latest.tgz` channel.
+- Removed Austin-specific fallback coordinates and property fields from the
+  generic Nuxt map component.
 
 ## 0.3.1
 

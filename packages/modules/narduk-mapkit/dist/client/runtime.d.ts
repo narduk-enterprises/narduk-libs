@@ -47,6 +47,15 @@ export declare function createMapKitRegionForPoints<TCoordinate, TSpan, TRegion>
 export declare function createMapKitRegionForLngLatBounds<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, bounds: MapKitLngLatBounds | null | undefined, options?: MapKitRegionOptions): TRegion | null;
 export declare function createMapKitTileOverlay<TTileOverlay, TUrlTemplate extends MapKitTileOverlayUrlTemplate>(mapkit: MapKitTileOverlayConstructors<TTileOverlay, TUrlTemplate>, urlTemplate: TUrlTemplate, options?: MapKitTileOverlayOptions): TTileOverlay;
 export declare function uniqueMapKitOverlays<TOverlay>(overlays: readonly TOverlay[]): TOverlay[];
+export interface MapKitVectorOverlayMap<TOverlay = unknown> {
+    overlays?: readonly TOverlay[];
+    addOverlay: (overlay: TOverlay) => unknown;
+    removeOverlay: (overlay: TOverlay) => void;
+}
+/** Add a vector overlay once, even when a reactive visibility update repeats. */
+export declare function addMapKitVectorOverlay<TOverlay>(map: MapKitVectorOverlayMap<TOverlay>, overlay: TOverlay): void;
+/** Remove a vector overlay only when MapKit still has it attached. */
+export declare function removeMapKitVectorOverlay<TOverlay>(map: MapKitVectorOverlayMap<TOverlay>, overlay: TOverlay): void;
 export declare function easeInOutQuad(progress: number): number;
 export declare function interpolateNumber(start: number, end: number, progress: number): number;
 export declare function crossfadeMapKitOverlayOpacity<TOverlay extends MapKitOpacityTarget>(options: MapKitOverlayCrossfadeOptions<TOverlay>): MapKitOverlayCrossfadeController;

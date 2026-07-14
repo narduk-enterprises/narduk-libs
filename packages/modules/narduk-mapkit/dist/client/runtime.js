@@ -52,6 +52,33 @@ export function createMapKitTileOverlay(mapkit, urlTemplate, options = {}) {
 export function uniqueMapKitOverlays(overlays) {
     return [...new Set(overlays)];
 }
+const attachedVectorOverlays = new WeakMap();
+function attachedVectorOverlaySet(map) {
+    let overlays = attachedVectorOverlays.get(map);
+    if (!overlays) {
+        overlays = new Set();
+        attachedVectorOverlays.set(map, overlays);
+    }
+    return overlays;
+}
+/** Add a vector overlay once, even when a reactive visibility update repeats. */
+export function addMapKitVectorOverlay(map, overlay) {
+    const attached = attachedVectorOverlaySet(map);
+    if (attached.has(overlay))
+        return;
+    if (!map.overlays?.includes(overlay))
+        map.addOverlay(overlay);
+    attached.add(overlay);
+}
+/** Remove a vector overlay only when MapKit still has it attached. */
+export function removeMapKitVectorOverlay(map, overlay) {
+    const attached = attachedVectorOverlaySet(map);
+    const present = attached.has(overlay) || Boolean(map.overlays?.includes(overlay));
+    if (!present)
+        return;
+    map.removeOverlay(overlay);
+    attached.delete(overlay);
+}
 export function easeInOutQuad(progress) {
     const clamped = Math.max(0, Math.min(1, progress));
     return clamped < 0.5 ? 2 * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 2) / 2;

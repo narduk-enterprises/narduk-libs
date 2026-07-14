@@ -1,4 +1,4 @@
-import { createMapKitTokenHandler } from '@loganrenz/narduk-mapkit/server'
+import { createMapKitTokenHandler } from '@loganrenz/narduk-mapkit/node'
 import { Hono } from 'hono'
 
 const app = new Hono()

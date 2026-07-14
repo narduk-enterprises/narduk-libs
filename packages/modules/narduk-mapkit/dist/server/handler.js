@@ -1,5 +1,5 @@
 import { createMapKitToken, DEFAULT_MAPKIT_TOKEN_TTL_SECONDS } from '../token/jwt.js';
-import { hasSigningConfig, hasUsableStaticToken, isOriginAllowed, mapKitConfigFromEnv, parseAllowedOrigins, resolveMapKitServerConfig, } from './config.js';
+import { hasSigningConfig, hasUsableStaticToken, isOriginAllowed, mapKitConfigFromEnv, parseAllowedOrigins, } from './shared-config.js';
 const DEFAULT_CACHE_MAX_ENTRIES = 100;
 const DEFAULT_CACHE_REFRESH_WINDOW_MS = 60_000;
 const signedTokenCache = new Map();
@@ -24,7 +24,7 @@ export function getOriginFromRequest(request, fallbackOrigin = 'http://localhost
     }
 }
 export async function issueMapKitTokenForRequest(options) {
-    const config = await resolveMapKitServerConfig(options.config);
+    const config = options.config ?? {};
     const origin = getOriginFromRequest(options.request, config.fallbackOrigin);
     const allowedOrigins = parseAllowedOrigins(config.allowedOrigins);
     if (!isOriginAllowed(origin, allowedOrigins)) {
@@ -32,6 +32,21 @@ export async function issueMapKitTokenForRequest(options) {
             configured: true,
             error: 'Origin is not allowed for MapKit token issuance.',
             origin,
+            token: '',
+        };
+    }
+    const rateLimitDecision = options.rateLimit
+        ? normalizeRateLimitDecision(await options.rateLimit({ origin, request: options.request }))
+        : null;
+    if (rateLimitDecision && !rateLimitDecision.allowed) {
+        return {
+            configured: true,
+            error: rateLimitDecision.error ?? 'Too many MapKit token requests.',
+            origin,
+            ...(rateLimitDecision.retryAfterSeconds === undefined
+                ? {}
+                : { retryAfterSeconds: rateLimitDecision.retryAfterSeconds }),
+            status: 429,
             token: '',
         };
     }
@@ -72,11 +87,16 @@ export async function issueMapKitTokenForRequest(options) {
         token: '',
     };
 }
-export async function mapKitTokenResponse(request, config) {
+export async function mapKitTokenResponse(request, config, options = {}) {
     try {
-        const result = await issueMapKitTokenForRequest(config ? { request, config } : { request });
-        const status = result.configured ? (result.token ? 200 : 403) : 503;
-        return jsonResponse(result, status);
+        const result = await issueMapKitTokenForRequest(config
+            ? { request, config, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) }
+            : { request, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) });
+        const status = result.status ?? (result.configured ? (result.token ? 200 : 403) : 503);
+        const headers = result.retryAfterSeconds === undefined
+            ? undefined
+            : { 'retry-after': String(result.retryAfterSeconds) };
+        return jsonResponse(result, status, headers);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to generate MapKit token';
@@ -107,8 +127,8 @@ export function mapKitTokenResponseFromEnv(request, env, overrides = {}) {
         doppler: false,
     });
 }
-export function createMapKitTokenHandler(config) {
-    return (request) => config ? mapKitTokenResponse(request, config) : mapKitTokenResponse(request);
+export function createMapKitTokenHandler(config, options = {}) {
+    return (request) => mapKitTokenResponse(request, config, options);
 }
 export function clearMapKitTokenCacheForTests() {
     signedTokenCache.clear();
@@ -172,11 +192,15 @@ function writeCachedSignedToken(config, cacheKey, token, expiresAtMs) {
         signedTokenCache.delete(oldestKey);
     }
 }
-function jsonResponse(body, status) {
+function normalizeRateLimitDecision(decision) {
+    return typeof decision === 'boolean' ? { allowed: decision } : decision;
+}
+function jsonResponse(body, status, additionalHeaders = {}) {
     return new Response(JSON.stringify(body), {
         headers: {
             'cache-control': 'no-store',
             'content-type': 'application/json; charset=utf-8',
+            ...additionalHeaders,
         },
         status,
     });

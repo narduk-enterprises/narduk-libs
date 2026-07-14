@@ -159,6 +159,46 @@ export function uniqueMapKitOverlays<TOverlay>(overlays: readonly TOverlay[]): T
   return [...new Set(overlays)]
 }
 
+export interface MapKitVectorOverlayMap<TOverlay = unknown> {
+  overlays?: readonly TOverlay[]
+  addOverlay: (overlay: TOverlay) => unknown
+  removeOverlay: (overlay: TOverlay) => void
+}
+
+const attachedVectorOverlays = new WeakMap<object, Set<unknown>>()
+
+function attachedVectorOverlaySet(map: object): Set<unknown> {
+  let overlays = attachedVectorOverlays.get(map)
+  if (!overlays) {
+    overlays = new Set()
+    attachedVectorOverlays.set(map, overlays)
+  }
+  return overlays
+}
+
+/** Add a vector overlay once, even when a reactive visibility update repeats. */
+export function addMapKitVectorOverlay<TOverlay>(
+  map: MapKitVectorOverlayMap<TOverlay>,
+  overlay: TOverlay,
+): void {
+  const attached = attachedVectorOverlaySet(map)
+  if (attached.has(overlay)) return
+  if (!map.overlays?.includes(overlay)) map.addOverlay(overlay)
+  attached.add(overlay)
+}
+
+/** Remove a vector overlay only when MapKit still has it attached. */
+export function removeMapKitVectorOverlay<TOverlay>(
+  map: MapKitVectorOverlayMap<TOverlay>,
+  overlay: TOverlay,
+): void {
+  const attached = attachedVectorOverlaySet(map)
+  const present = attached.has(overlay) || Boolean(map.overlays?.includes(overlay))
+  if (!present) return
+  map.removeOverlay(overlay)
+  attached.delete(overlay)
+}
+
 export function easeInOutQuad(progress: number): number {
   const clamped = Math.max(0, Math.min(1, progress))
   return clamped < 0.5 ? 2 * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 2) / 2

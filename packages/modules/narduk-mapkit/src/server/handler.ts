@@ -5,13 +5,13 @@ import {
   isOriginAllowed,
   mapKitConfigFromEnv,
   parseAllowedOrigins,
-  resolveMapKitServerConfig,
-} from './config.js'
+} from './shared-config.js'
 
-import type { MapKitEnv, MapKitServerConfig } from './config.js'
+import type { MapKitEnv, MapKitServerConfig } from './shared-config.js'
 
 export interface MapKitTokenRequestOptions {
   config?: MapKitServerConfig
+  rateLimit?: MapKitRateLimitHook
   request: Request
 }
 
@@ -20,7 +20,28 @@ export interface MapKitTokenResult {
   expiresAt?: string | null
   error?: string
   origin: string
+  retryAfterSeconds?: number
+  status?: number
   token: string
+}
+
+export interface MapKitRateLimitContext {
+  origin: string
+  request: Request
+}
+
+export interface MapKitRateLimitDecision {
+  allowed: boolean
+  error?: string
+  retryAfterSeconds?: number
+}
+
+export type MapKitRateLimitHook = (
+  context: MapKitRateLimitContext,
+) => boolean | MapKitRateLimitDecision | Promise<boolean | MapKitRateLimitDecision>
+
+export interface MapKitTokenResponseOptions {
+  rateLimit?: MapKitRateLimitHook
 }
 
 interface CachedMapKitToken {
@@ -56,7 +77,7 @@ export function getOriginFromRequest(request: Request, fallbackOrigin = 'http://
 export async function issueMapKitTokenForRequest(
   options: MapKitTokenRequestOptions,
 ): Promise<MapKitTokenResult> {
-  const config = await resolveMapKitServerConfig(options.config)
+  const config = options.config ?? {}
   const origin = getOriginFromRequest(options.request, config.fallbackOrigin)
   const allowedOrigins = parseAllowedOrigins(config.allowedOrigins)
 
@@ -65,6 +86,22 @@ export async function issueMapKitTokenForRequest(
       configured: true,
       error: 'Origin is not allowed for MapKit token issuance.',
       origin,
+      token: '',
+    }
+  }
+
+  const rateLimitDecision = options.rateLimit
+    ? normalizeRateLimitDecision(await options.rateLimit({ origin, request: options.request }))
+    : null
+  if (rateLimitDecision && !rateLimitDecision.allowed) {
+    return {
+      configured: true,
+      error: rateLimitDecision.error ?? 'Too many MapKit token requests.',
+      origin,
+      ...(rateLimitDecision.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: rateLimitDecision.retryAfterSeconds }),
+      status: 429,
       token: '',
     }
   }
@@ -113,13 +150,19 @@ export async function issueMapKitTokenForRequest(
 export async function mapKitTokenResponse(
   request: Request,
   config?: MapKitServerConfig,
+  options: MapKitTokenResponseOptions = {},
 ): Promise<Response> {
   try {
     const result = await issueMapKitTokenForRequest(
-      config ? { request, config } : { request },
+      config
+        ? { request, config, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) }
+        : { request, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) },
     )
-    const status = result.configured ? (result.token ? 200 : 403) : 503
-    return jsonResponse(result, status)
+    const status = result.status ?? (result.configured ? (result.token ? 200 : 403) : 503)
+    const headers = result.retryAfterSeconds === undefined
+      ? undefined
+      : { 'retry-after': String(result.retryAfterSeconds) }
+    return jsonResponse(result, status, headers)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate MapKit token'
     return jsonResponse({ configured: false, error: message, token: '' }, 500)
@@ -155,9 +198,12 @@ export function mapKitTokenResponseFromEnv(
   })
 }
 
-export function createMapKitTokenHandler(config?: MapKitServerConfig) {
+export function createMapKitTokenHandler(
+  config?: MapKitServerConfig,
+  options: MapKitTokenResponseOptions = {},
+) {
   return (request: Request): Promise<Response> =>
-    config ? mapKitTokenResponse(request, config) : mapKitTokenResponse(request)
+    mapKitTokenResponse(request, config, options)
 }
 
 export function clearMapKitTokenCacheForTests(): void {
@@ -238,11 +284,22 @@ function writeCachedSignedToken(
   }
 }
 
-function jsonResponse(body: unknown, status: number): Response {
+function normalizeRateLimitDecision(
+  decision: boolean | MapKitRateLimitDecision,
+): MapKitRateLimitDecision {
+  return typeof decision === 'boolean' ? { allowed: decision } : decision
+}
+
+function jsonResponse(
+  body: unknown,
+  status: number,
+  additionalHeaders: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
+      ...additionalHeaders,
     },
     status,
   })

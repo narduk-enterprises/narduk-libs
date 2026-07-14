@@ -12,9 +12,9 @@ not contain real secrets or private data.
 
 ## Supported Versions
 
-Before `1.0`, security fixes target `main` and the latest published `0.x`
-release where practical. Older pre-1.0 versions may require consumers to
-upgrade.
+Security fixes target `main` and the latest published `1.x` releases of both
+workspace packages. Pre-1.0 artifacts are migration-only and require consumers
+to upgrade.
 
 ## Secret Handling
 

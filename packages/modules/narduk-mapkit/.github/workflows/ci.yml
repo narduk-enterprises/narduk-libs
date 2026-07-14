@@ -31,3 +31,12 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run package quality gate
         run: pnpm run quality
+      - name: Pack release candidates
+        run: pnpm run pack:artifacts
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v6
+        with:
+          name: narduk-mapkit-packages-${{ github.sha }}
+          path: .pack/*.tgz
+          if-no-files-found: error
+          include-hidden-files: true
