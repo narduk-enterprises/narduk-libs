@@ -18,7 +18,7 @@ function usage(): string {
     'Commands:',
     '  dev -- <command...>                 Run a child with Doppler env in memory',
     '  db migrate --config <file> --database <name> --local|--remote [--reset]',
-    '  deploy [versions-upload] [args...]  Deploy the built app with Wrangler safeguards',
+    '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  doctor                              Check app-local prerequisites',
@@ -70,6 +70,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       if (subcommand !== 'migrate') throw new Error('Usage: narduk-app db migrate ...')
       const options = parseMigrationArgs(migrateArgs)
       const plan = runMigrations(options)
+      if (plan.recoveryPath) console.log(`[db] recovery snapshot ${plan.recoveryPath}`)
       console.log(`[db] ${plan.apply} applied, ${plan.adopt} adopted, ${plan.skip} skipped`)
       return 0
     }

@@ -1,6 +1,16 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
 export const MIGRATION_LEDGER_TABLE = '_narduk_migrations'
@@ -18,6 +28,7 @@ export interface MigrationSourceConfig {
 
 export interface MigrationAdoptionEvidence {
   columns?: ReadonlyArray<{ column: string; table: string }>
+  indexes?: ReadonlyArray<{ name: string; table: string }>
   tables: readonly string[]
 }
 
@@ -56,6 +67,7 @@ export interface MigrationLedgerRow {
 
 export interface MigrationSchemaEvidence {
   columns: ReadonlyArray<{ column: string; table: string }>
+  indexes: ReadonlyArray<{ name: string; table: string }>
   tables: readonly string[]
 }
 
@@ -79,6 +91,7 @@ export interface MigrationPlan {
   actions: readonly MigrationAction[]
   apply: number
   adopt: number
+  recoveryPath?: string
   skip: number
 }
 
@@ -94,7 +107,17 @@ export interface MigrationRunOptions {
   cwd?: string
   database: string
   location: MigrationLocation
+  recoveryDir?: string
   reset?: boolean
+}
+
+export interface MigrationRecoverySnapshot {
+  capturedAt: string
+  database: string
+  legacyLedger: readonly MigrationLedgerRow[]
+  migrationLedger: readonly MigrationLedgerRow[]
+  schema: ReadonlyArray<{ name?: string; sql?: string; type?: string }>
+  timeTravelBookmark: string
 }
 
 export function validateMigrationReset(location: MigrationLocation, reset = false): boolean {
@@ -173,7 +196,20 @@ function normalizeEvidence(value: unknown, label: string): MigrationAdoptionEvid
       })
     : []
 
-  return { columns, tables }
+  const indexes = Array.isArray(record.indexes)
+    ? record.indexes.map((entry, index) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error(`${label}.evidence.indexes[${index}] must be an object`)
+        }
+        const schemaIndex = entry as Record<string, unknown>
+        return {
+          name: requireText(schemaIndex.name, `${label}.evidence.indexes[${index}].name`),
+          table: requireText(schemaIndex.table, `${label}.evidence.indexes[${index}].table`),
+        }
+      })
+    : []
+
+  return { columns, indexes, tables }
 }
 
 function normalizeAdoption(value: unknown, index: number): MigrationAdoptionConfig {
@@ -365,6 +401,12 @@ function assertSchemaEvidence(
       throw new Error(`Schema adoption probe did not find column ${entry.table}.${entry.column}`)
     }
   }
+  const indexes = new Set(schemaEvidence.indexes.map((entry) => `${entry.table}:${entry.name}`))
+  for (const entry of adoption.evidence.indexes ?? []) {
+    if (!indexes.has(`${entry.table}:${entry.name}`)) {
+      throw new Error(`Schema adoption probe did not find index ${entry.table}.${entry.name}`)
+    }
+  }
 }
 
 export function planMigrations(input: MigrationPlanningInput): MigrationPlan {
@@ -484,6 +526,10 @@ export function buildWranglerD1FileArgs(options: {
   return ['d1', 'execute', options.database, options.location, `--file=${options.file}`]
 }
 
+export function buildWranglerTimeTravelInfoArgs(database: string): string[] {
+  return ['d1', 'time-travel', 'info', database, '--json']
+}
+
 export function parseWranglerJson<T>(output: string): WranglerResult<T> {
   let parsed: unknown
   try {
@@ -501,13 +547,13 @@ export function parseWranglerJson<T>(output: string): WranglerResult<T> {
 }
 
 function runWrangler(args: string[], cwd: string, json: boolean): string {
-  const result = spawnSync('wrangler', args, {
+  const result = spawnSync('pnpm', ['exec', 'wrangler', ...args], {
     cwd,
     encoding: 'utf8',
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  if (result.error) throw new Error(`Could not run wrangler: ${result.error.message}`)
+  if (result.error) throw new Error(`Could not run pnpm exec wrangler: ${result.error.message}`)
   if (result.status !== 0) {
     throw new Error((result.stderr || result.stdout || `wrangler exited ${result.status}`).trim())
   }
@@ -562,6 +608,7 @@ function readSchemaEvidence(
     cwd,
   )
   const columns: Array<{ column: string; table: string }> = []
+  const indexes: Array<{ name: string; table: string }> = []
   for (const table of tables) {
     const rows = readD1Rows<{ name?: string }>(
       { database, location, sql: `PRAGMA table_info(${table});` },
@@ -570,9 +617,17 @@ function readSchemaEvidence(
     for (const row of rows) {
       if (row.name) columns.push({ column: row.name, table })
     }
+    const indexRows = readD1Rows<{ name?: string }>(
+      { database, location, sql: `PRAGMA index_list(${table});` },
+      cwd,
+    )
+    for (const row of indexRows) {
+      if (row.name) indexes.push({ name: row.name, table })
+    }
   }
   return {
     columns,
+    indexes,
     tables: tableRows.map((row) => row.name).filter((name): name is string => Boolean(name)),
   }
 }
@@ -608,11 +663,99 @@ function recordMigrationSql(action: MigrationAction): string {
   return `INSERT INTO ${MIGRATION_LEDGER_TABLE} (source, filename, checksum, source_version, applied_at) VALUES (${quote(action.source)}, ${quote(action.filename)}, ${quote(action.checksum)}, ${quote(action.sourceVersion)}, datetime('now'));`
 }
 
+export function buildMigrationBatchSql(action: MigrationAction, migrationSql: string): string {
+  return `${migrationSql.trimEnd()}\n${recordMigrationSql(action)}\n`
+}
+
+export function parseTimeTravelBookmark(output: string): string {
+  let value: unknown
+  try {
+    value = JSON.parse(output)
+  } catch {
+    throw new Error('Wrangler returned invalid JSON while capturing the D1 recovery bookmark')
+  }
+  const entry = Array.isArray(value) ? value[0] : value
+  const bookmark =
+    entry && typeof entry === 'object' ? (entry as { bookmark?: unknown }).bookmark : undefined
+  if (typeof bookmark !== 'string' || bookmark.trim() === '') {
+    throw new Error('Wrangler did not return a D1 Time Travel bookmark')
+  }
+  return bookmark.trim()
+}
+
+function writeRecoverySnapshot(snapshot: MigrationRecoverySnapshot, recoveryDir: string): string {
+  mkdirSync(recoveryDir, { recursive: true })
+  const timestamp = snapshot.capturedAt.replaceAll(/[:.]/gu, '-')
+  const safeDatabase = snapshot.database.replaceAll(/[^\w.-]/gu, '_')
+  const path = join(recoveryDir, `${safeDatabase}-${timestamp}.json`)
+  writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  return path
+}
+
+function captureRemoteRecoveryState(database: string, cwd: string, recoveryDir: string): string {
+  const timeTravelBookmark = parseTimeTravelBookmark(
+    runWrangler(buildWranglerTimeTravelInfoArgs(database), cwd, true),
+  )
+  const schema = readD1Rows<{ name?: string; sql?: string; type?: string }>(
+    {
+      database,
+      location: '--remote',
+      sql: "SELECT type, name, sql FROM sqlite_master WHERE type IN ('table', 'index', 'trigger', 'view') ORDER BY type, name;",
+    },
+    cwd,
+  )
+  const names = new Set(schema.map((entry) => entry.name))
+  const migrationLedger = names.has(MIGRATION_LEDGER_TABLE)
+    ? readD1Rows<MigrationLedgerRow>(
+        { database, location: '--remote', sql: migrationLedgerRowsSql() },
+        cwd,
+      )
+    : []
+  const legacyLedger = names.has('_applied_migrations')
+    ? readLegacyRows(database, '--remote', cwd)
+    : []
+  return writeRecoverySnapshot(
+    {
+      capturedAt: new Date().toISOString(),
+      database,
+      legacyLedger,
+      migrationLedger,
+      schema,
+      timeTravelBookmark,
+    },
+    recoveryDir,
+  )
+}
+
+function applyMigrationAndRecord(
+  action: MigrationAction,
+  database: string,
+  location: MigrationLocation,
+  cwd: string,
+): void {
+  const directory = mkdtempSync(join(tmpdir(), 'narduk-app-migration-'))
+  const path = join(directory, action.filename)
+  try {
+    writeFileSync(path, buildMigrationBatchSql(action, readFileSync(action.path, 'utf8')), 'utf8')
+    runWrangler(buildWranglerD1FileArgs({ database, file: path, location }), cwd, false)
+  } finally {
+    rmSync(directory, { force: true, recursive: true })
+  }
+}
+
 export function runMigrations(options: MigrationRunOptions): MigrationPlan {
   const resetLocal = validateMigrationReset(options.location, options.reset)
   const cwd = resolve(options.cwd ?? process.cwd())
   const loaded = loadMigrationConfig(options.configFile)
   const migrations = discoverMigrations(loaded.config, loaded.baseDir)
+  const recoveryPath =
+    options.location === '--remote'
+      ? captureRemoteRecoveryState(
+          options.database,
+          cwd,
+          resolve(options.recoveryDir ?? join(cwd, '.narduk', 'recovery', 'd1')),
+        )
+      : undefined
   if (resetLocal)
     rmSync(join(cwd, '.wrangler', 'state', 'v3', 'd1'), { force: true, recursive: true })
 
@@ -654,15 +797,8 @@ export function runMigrations(options: MigrationRunOptions): MigrationPlan {
   for (const action of plan.actions) {
     if (action.kind === 'skip') continue
     if (action.kind === 'apply') {
-      runWrangler(
-        buildWranglerD1FileArgs({
-          database: options.database,
-          file: action.path,
-          location: options.location,
-        }),
-        cwd,
-        false,
-      )
+      applyMigrationAndRecord(action, options.database, options.location, cwd)
+      continue
     }
     runWrangler(
       buildWranglerD1ExecuteArgs({
@@ -674,5 +810,5 @@ export function runMigrations(options: MigrationRunOptions): MigrationPlan {
       false,
     )
   }
-  return plan
+  return { ...plan, ...(recoveryPath ? { recoveryPath } : {}) }
 }

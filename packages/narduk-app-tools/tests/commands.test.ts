@@ -1,12 +1,31 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { buildDopplerRunArgs, parseDevArgs } from '../src/dev'
-import { buildWranglerCommandArgs, isLocalDeployAllowed, parseDeployArgs } from '../src/deploy'
 import {
+  buildWranglerCommandArgs,
+  isLocalDeployAllowed,
+  parseDeployArgs,
+  readWranglerScriptName,
+  resolveAppDir,
+  resolveWranglerConfigPath,
+  writeFlattenedWranglerDeployConfig,
+} from '../src/deploy'
+import {
+  isGitWorkingTreeClean,
   isNonLocalHttpsUrl,
   normalizeDeployHostname,
   parseDeployLocalArgs,
 } from '../src/deploy-local'
+
+const tempDirs: string[] = []
+
+afterEach(() => {
+  for (const path of tempDirs.splice(0)) rmSync(path, { force: true, recursive: true })
+})
 
 describe('app-local command planning', () => {
   it('runs dev through Doppler without a file-backed env plan', () => {
@@ -31,6 +50,7 @@ describe('app-local command planning', () => {
       action: 'versions-upload',
       passthroughArgs: ['--minify'],
     })
+    expect(() => parseDeployArgs(['--minify'])).toThrow('deploy <deploy|versions-upload>')
     expect(
       buildWranglerCommandArgs({
         action: 'deploy',
@@ -51,6 +71,24 @@ describe('app-local command planning', () => {
     ])
   })
 
+  it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-jsonc-'))
+    tempDirs.push(root)
+    const appDir = join(root, 'apps', 'web')
+    mkdirSync(appDir, { recursive: true })
+    writeFileSync(join(appDir, 'wrangler.json'), '{"name":"legacy"}\n')
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      '{\n  // canonical worker\n  "name": "jsonc-worker",\n  "env": { "staging": {} },\n}\n',
+    )
+
+    expect(resolveAppDir(root)).toBe(appDir)
+    expect(resolveWranglerConfigPath(appDir)).toBe(join(appDir, 'wrangler.jsonc'))
+    expect(readWranglerScriptName(appDir)).toBe('jsonc-worker')
+    const flattened = writeFlattenedWranglerDeployConfig(join(appDir, 'wrangler.jsonc'))
+    expect(flattened).toBe(join(appDir, '.wrangler.deploy.production.json'))
+  })
+
   it('parses headless local deploy options', () => {
     expect(
       parseDeployLocalArgs(['--yes', '--dry-run', '--skip-migrate', '--no-probe', '--force']),
@@ -69,5 +107,9 @@ describe('app-local command planning', () => {
     expect(isNonLocalHttpsUrl('https://127.0.0.1')).toBe(false)
     expect(isNonLocalHttpsUrl('https://example.com')).toBe(true)
     expect(normalizeDeployHostname('[::1]')).toBe('::1')
+  })
+
+  it('treats a failed git status as unsafe', () => {
+    expect(isGitWorkingTreeClean('/path/that/does/not/exist')).toBe(false)
   })
 })

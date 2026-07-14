@@ -15,14 +15,16 @@ versions. Paths are relative to the config file:
   "schemaVersion": 1,
   "sources": [
     {
-      "source": "@narduk-enterprises/narduk-core",
-      "directory": "node_modules/@narduk-enterprises/narduk-core/runtime/drizzle",
-      "sourceVersion": "1.0.0"
+      "id": "@narduk-enterprises/narduk-core",
+      "dir": "node_modules/@narduk-enterprises/narduk-core/runtime/drizzle"
     },
     {
-      "source": "app",
-      "directory": "apps/web/drizzle",
-      "sourceVersion": "0.1.0"
+      "id": "@narduk-enterprises/narduk-auth",
+      "dir": "node_modules/@narduk-enterprises/narduk-auth/drizzle"
+    },
+    {
+      "id": "app",
+      "dir": "drizzle"
     }
   ],
   "adoptions": []
@@ -32,7 +34,18 @@ versions. Paths are relative to the config file:
 Package sources are applied before `app`. The ledger uses `(source, filename)`
 as its primary key and stores the SHA-256 SQL checksum. Existing ambiguous rows
 are refused unless an adoption entry names the exact target checksum and proves
-the expected schema tables/columns.
+the expected schema tables, columns, and indexes. A migration and its ledger row
+are submitted in the same D1 batch so a failed statement rolls back the batch.
+
+Before any remote mutation, the command fails closed unless it can capture a D1
+Time Travel bookmark, current migration ledgers, and `sqlite_master` metadata.
+The mode-`0600` recovery artifact is written under `.narduk/recovery/d1/` and
+its path is printed by the CLI. Remote reset is never supported; corrective
+database changes are forward-only.
+
+App Worker configuration may use `wrangler.jsonc` (preferred) or legacy
+`wrangler.json`. All Wrangler calls run through the app's pinned dependency via
+`pnpm exec wrangler`.
 
 The command never writes secret files. Registry auth writes the requested
 `.npmrc.auth` path and scopes GitHub Packages only to `@narduk-enterprises`;

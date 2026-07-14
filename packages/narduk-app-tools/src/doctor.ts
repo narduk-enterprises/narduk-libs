@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { resolveWranglerConfigPath } from './deploy'
+
 export interface DoctorCheck {
   detail?: string
   name: string
@@ -14,8 +16,8 @@ export interface DoctorReport {
   rootDir: string
 }
 
-function commandAvailable(command: string): boolean {
-  const result = spawnSync(command, ['--version'], { stdio: 'ignore' })
+function commandAvailable(command: string, args = ['--version']): boolean {
+  const result = spawnSync(command, args, { stdio: 'ignore' })
   return !result.error && result.status === 0
 }
 
@@ -31,11 +33,11 @@ function readPackage(rootDir: string): { scripts?: Record<string, string> } | nu
 
 export function runDoctor(rootDir = process.cwd()): DoctorReport {
   const requestedRoot = resolve(rootDir)
+  const nestedRoot = resolve(requestedRoot, 'apps', 'web')
   const root =
-    existsSync(join(requestedRoot, 'wrangler.json')) ||
-    !existsSync(join(requestedRoot, 'apps', 'web', 'wrangler.json'))
+    resolveWranglerConfigPath(requestedRoot) || !resolveWranglerConfigPath(nestedRoot)
       ? requestedRoot
-      : resolve(requestedRoot, 'apps', 'web')
+      : nestedRoot
   const checks: DoctorCheck[] = []
   const packageJson = readPackage(root)
   checks.push(
@@ -43,11 +45,15 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
       ? { name: 'package.json', status: 'pass' }
       : { detail: 'package.json is missing or invalid', name: 'package.json', status: 'fail' },
   )
-  const wranglerPath = join(root, 'wrangler.json')
+  const wranglerPath = resolveWranglerConfigPath(root)
   checks.push(
-    existsSync(wranglerPath)
-      ? { name: 'wrangler.json', status: 'pass' }
-      : { detail: 'wrangler.json is missing', name: 'wrangler.json', status: 'fail' },
+    wranglerPath
+      ? { detail: wranglerPath, name: 'wrangler config', status: 'pass' }
+      : {
+          detail: 'wrangler.jsonc or wrangler.json is missing',
+          name: 'wrangler config',
+          status: 'fail',
+        },
   )
   checks.push(
     commandAvailable('node')
@@ -60,9 +66,13 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
       : { detail: 'pnpm is not available on PATH', name: 'pnpm', status: 'fail' },
   )
   checks.push(
-    commandAvailable('wrangler')
-      ? { name: 'wrangler', status: 'pass' }
-      : { detail: 'wrangler is not available on PATH', name: 'wrangler', status: 'warn' },
+    commandAvailable('pnpm', ['exec', 'wrangler', '--version'])
+      ? { name: 'wrangler (project)', status: 'pass' }
+      : {
+          detail: 'wrangler is not installed in the project dependency graph',
+          name: 'wrangler (project)',
+          status: 'warn',
+        },
   )
   checks.push(
     commandAvailable('doppler')

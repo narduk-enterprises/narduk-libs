@@ -8,23 +8,19 @@ export const PUBLIC_REGISTRY = 'https://registry.npmjs.org/'
 export interface RegistryAuthConfig {
   authTokenEnvVar: string
   registryUrl: string
-  token: string
-  writeLiteralToken: boolean
 }
 
 const READ_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_READ'
 const WRITE_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_WRITE'
 const LEGACY_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_RW'
 
-function truthy(value: string | undefined): boolean {
-  return value === '1' || value === 'true' || value === 'yes'
-}
-
 export function resolveRegistryConfig(env: NodeJS.ProcessEnv = process.env): RegistryAuthConfig {
   const read = env[READ_TOKEN]?.trim() ?? ''
   const write = env[WRITE_TOKEN]?.trim() ?? ''
   const legacy = env[LEGACY_TOKEN]?.trim() ?? ''
-  const preferWrite = truthy(env.PACKAGE_REGISTRY_PREFER_WRITE)
+  const preferWrite = ['1', 'true', 'yes'].includes(
+    env.PACKAGE_REGISTRY_PREFER_WRITE?.toLowerCase() ?? '',
+  )
   const token = preferWrite ? write || legacy || read : read || legacy || write
   const authTokenEnvVar = preferWrite
     ? write
@@ -41,13 +37,6 @@ export function resolveRegistryConfig(env: NodeJS.ProcessEnv = process.env): Reg
   return {
     authTokenEnvVar,
     registryUrl: NARDUK_REGISTRY,
-    token,
-    writeLiteralToken:
-      env.PACKAGE_REGISTRY_WRITE_LITERAL_TOKEN === 'true'
-        ? true
-        : env.PACKAGE_REGISTRY_WRITE_LITERAL_TOKEN === 'false'
-          ? false
-          : Boolean(env.CI && env.CI !== '0' && env.CI !== 'false'),
   }
 }
 
@@ -69,9 +58,7 @@ export function renderRegistryAuth(
 ): string {
   const registryLine = `${NARDUK_SCOPE}:registry=${config.registryUrl}`
   const publicScopeLine = `@loganrenz:registry=${PUBLIC_REGISTRY}`
-  const authLine = config.writeLiteralToken
-    ? `//npm.pkg.github.com/:_authToken=${config.token}`
-    : `//npm.pkg.github.com/:_authToken=\${${config.authTokenEnvVar}}`
+  const authLine = `//npm.pkg.github.com/:_authToken=\${${config.authTokenEnvVar}}`
   const lines: string[] = []
   const seen = new Set<string>()
   for (const content of [baseContent, existingContent]) {
@@ -89,9 +76,7 @@ export function renderRegistryAuth(
     }
   }
   if (!seen.has(registryLine)) lines.unshift(registryLine)
-  if (lines.some((line) => line.startsWith('@loganrenz:registry=')) && !seen.has(publicScopeLine)) {
-    lines.push(publicScopeLine)
-  }
+  if (!lines.includes(publicScopeLine)) lines.push(publicScopeLine)
   lines.push(authLine)
   return `${lines.join('\n').trimEnd()}\n`
 }

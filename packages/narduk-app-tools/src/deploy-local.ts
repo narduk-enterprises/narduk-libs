@@ -55,7 +55,7 @@ export function isGitWorkingTreeClean(repoRoot: string, env = process.env): bool
     env,
     stdio: ['ignore', 'pipe', 'ignore'],
   })
-  if (result.status !== 0) return true
+  if (result.error || result.signal || result.status !== 0) return false
   return !(result.stdout || '').trim()
 }
 

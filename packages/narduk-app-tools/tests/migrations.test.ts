@@ -6,12 +6,15 @@ import { describe, expect, it, afterEach } from 'vitest'
 
 import {
   buildMigrationPlan,
+  buildMigrationBatchSql,
   buildWranglerD1ExecuteArgs,
+  buildWranglerTimeTravelInfoArgs,
   checksumMigrationSql,
   discoverMigrations,
   migrationLedgerCreateSql,
   orderMigrationSources,
   parseMigrationConfig,
+  parseTimeTravelBookmark,
   planMigrations,
   validateMigrationReset,
   type MigrationConfig,
@@ -104,7 +107,11 @@ describe('migration config and planning', () => {
       ledgerRows: [{ source: 'bundle:old', filename: '0001.sql' }],
       adoptions: [
         {
-          evidence: { tables: ['users'], columns: [{ table: 'users', column: 'id' }] },
+          evidence: {
+            tables: ['users'],
+            columns: [{ table: 'users', column: 'id' }],
+            indexes: [{ table: 'users', name: 'users_email_idx' }],
+          },
           filename: file.filename,
           legacy: { source: 'bundle:old', filename: '0001.sql' },
           checksum: file.checksum,
@@ -112,10 +119,38 @@ describe('migration config and planning', () => {
           sourceVersion: file.sourceVersion,
         },
       ],
-      schemaEvidence: { tables: ['users'], columns: [{ table: 'users', column: 'id' }] },
+      schemaEvidence: {
+        tables: ['users'],
+        columns: [{ table: 'users', column: 'id' }],
+        indexes: [{ table: 'users', name: 'users_email_idx' }],
+      },
     })
     expect(plan).toMatchObject({ apply: 0, adopt: 1, skip: 0 })
     expect(plan.actions[0]?.kind).toBe('adopt')
+  })
+
+  it('fails legacy adoption when the required index is absent', () => {
+    const file = migration('package:a', '0001.sql')
+    expect(() =>
+      planMigrations({
+        migrations: [file],
+        ledgerRows: [{ filename: file.filename }],
+        adoptions: [
+          {
+            evidence: {
+              tables: ['users'],
+              indexes: [{ table: 'users', name: 'users_email_idx' }],
+            },
+            filename: file.filename,
+            legacy: { filename: file.filename },
+            checksum: file.checksum,
+            source: file.source,
+            sourceVersion: file.sourceVersion,
+          },
+        ],
+        schemaEvidence: { tables: ['users'], columns: [], indexes: [] },
+      }),
+    ).toThrow('did not find index users.users_email_idx')
   })
 
   it('discovers files and applies package-before-app ordering', () => {
@@ -152,5 +187,25 @@ describe('migration config and planning', () => {
     expect(() => validateMigrationReset('--remote', true)).toThrow(
       'Refusing remote migration reset',
     )
+    expect(buildWranglerTimeTravelInfoArgs('app-db')).toEqual([
+      'd1',
+      'time-travel',
+      'info',
+      'app-db',
+      '--json',
+    ])
+    expect(parseTimeTravelBookmark('{"bookmark":"0000-test"}')).toBe('0000-test')
+    expect(() => parseTimeTravelBookmark('{}')).toThrow('Time Travel bookmark')
+  })
+
+  it('batches migration SQL and its stable ledger record in one D1 execution', () => {
+    const file = migration('app', '0001.sql', 'CREATE TABLE example (id TEXT);')
+    const sql = buildMigrationBatchSql(
+      { ...file, kind: 'apply' },
+      'CREATE TABLE example (id TEXT);',
+    )
+    expect(sql).toContain('CREATE TABLE example')
+    expect(sql).toContain('INSERT INTO _narduk_migrations')
+    expect(sql).toContain("'app', '0001.sql'")
   })
 })

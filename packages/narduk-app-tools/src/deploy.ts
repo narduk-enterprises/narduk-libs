@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
+
 export type DeployAction = 'deploy' | 'versions-upload'
 export type DeployEnv = Record<string, string | undefined>
 
@@ -35,11 +37,23 @@ export function parseDeployArgs(args: string[]): {
   const [first, ...rest] = args
   if (first === 'versions-upload') return { action: 'versions-upload', passthroughArgs: rest }
   if (first === 'deploy') return { action: 'deploy', passthroughArgs: rest }
-  return { action: 'deploy', passthroughArgs: args }
+  throw new Error('Usage: narduk-app deploy <deploy|versions-upload> [args...]')
 }
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, 'utf8')) as T
+export function readJsonc<T>(path: string): T {
+  const errors: ParseError[] = []
+  const value = parse(readFileSync(path, 'utf8'), errors, {
+    allowEmptyContent: false,
+    allowTrailingComma: true,
+    disallowComments: false,
+  }) as T
+  if (errors.length > 0) {
+    const details = errors
+      .map((error) => `${printParseErrorCode(error.error)} at offset ${error.offset}`)
+      .join(', ')
+    throw new Error(`Could not parse Wrangler config ${path}: ${details}`)
+  }
+  return value
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -79,7 +93,7 @@ export function writeFlattenedWranglerDeployConfig(
   const appDir = dirname(configPath)
   const outputPath = join(appDir, '.wrangler.deploy.production.json')
   const redirectPath = join(appDir, '.wrangler', 'deploy', 'config.json')
-  const config = flattenWranglerDeployConfig(readJson<WranglerConfig>(configPath), options)
+  const config = flattenWranglerDeployConfig(readJsonc<WranglerConfig>(configPath), options)
   config.main = '.output/server/index.mjs'
   config.assets = { ...(config.assets ?? {}), directory: '.output/public' }
   writeJson(outputPath, config)
@@ -150,10 +164,10 @@ export function runDeploy(
     console.error(getDeployGuardMessage(action))
     return 1
   }
-  const configPath = join(appDir, 'wrangler.json')
+  const configPath = resolveWranglerConfigPath(appDir)
   const outputEntrypoint = join(appDir, '.output', 'server', 'index.mjs')
   const sourceConfigPath =
-    existsSync(configPath) && existsSync(outputEntrypoint)
+    configPath && existsSync(outputEntrypoint)
       ? writeFlattenedWranglerDeployConfig(configPath, {
           preserveNamedEnvironments: hasExplicitWranglerEnvTarget(passthroughArgs),
         })
@@ -176,14 +190,26 @@ export function runDeploy(
 }
 
 export function resolveAppDir(cwd: string): string {
-  if (existsSync(join(cwd, 'wrangler.json'))) return resolve(cwd)
+  if (resolveWranglerConfigPath(cwd)) return resolve(cwd)
   const nested = join(cwd, 'apps', 'web')
-  if (existsSync(join(nested, 'wrangler.json'))) return resolve(nested)
-  throw new Error('Could not locate wrangler.json. Run from the app directory or repository root.')
+  if (resolveWranglerConfigPath(nested)) return resolve(nested)
+  throw new Error(
+    'Could not locate wrangler.jsonc or wrangler.json. Run from the app directory or repository root.',
+  )
+}
+
+export function resolveWranglerConfigPath(appDir: string): string | null {
+  for (const filename of ['wrangler.jsonc', 'wrangler.json']) {
+    const path = join(appDir, filename)
+    if (existsSync(path)) return path
+  }
+  return null
 }
 
 export function readWranglerScriptName(appDir: string): string {
-  const config = readJson<{ name?: string }>(join(appDir, 'wrangler.json'))
-  if (!config.name?.trim()) throw new Error(`Missing name in ${join(appDir, 'wrangler.json')}`)
+  const path = resolveWranglerConfigPath(appDir)
+  if (!path) throw new Error(`Missing Wrangler config in ${appDir}`)
+  const config = readJsonc<{ name?: string }>(path)
+  if (!config.name?.trim()) throw new Error(`Missing name in ${path}`)
   return config.name.trim()
 }
