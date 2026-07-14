@@ -91,6 +91,17 @@ try {
         private: true,
         packageManager: 'pnpm@10.33.4',
         dependencies,
+        devDependencies: {
+          eslint: '9.39.4',
+          typescript: '5.9.3',
+        },
+        pnpm: {
+          overrides: {
+            'eslint-plugin-vitest>@typescript-eslint/utils': '8.64.0',
+            '@nuxt/eslint': '1.15.2',
+            glob: '13.0.6',
+          },
+        },
       },
       null,
       2,
