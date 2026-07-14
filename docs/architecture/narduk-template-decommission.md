@@ -1,0 +1,597 @@
+---
+status: active
+owner: Logan Renz
+decision_date: 2026-07-14
+last_verified: 2026-07-14
+supersedes: https://github.com/narduk-enterprises/narduk-template/pull/454
+---
+
+# Narduk template decoupling and final decommission
+
+This document is the source of truth for decoupling every surviving Narduk app
+and permanently decommissioning `narduk-template` and Command. It explicitly
+supersedes
+[narduk-template PR #454](https://github.com/narduk-enterprises/narduk-template/pull/454);
+that PR is historical context and must not guide implementation.
+
+The program is gate-driven, not date-driven. A repository is complete only when
+its row below contains reviewed PR, immutable package versions, migration proof,
+deployed Worker/SHA and route proof, and a zero-reference result. A package or
+repository may be frozen before it is archived. Nothing is unpublished:
+historical repositories, tags, and package artifacts remain available and
+read-only after retirement.
+
+## 1. Locked decisions
+
+- Surviving apps become ordinary, independently owned Nuxt repositories that
+  consume explicit, immutable package versions.
+- `narduk-libs` is the canonical monorepo and sole publisher for shared Narduk
+  runtime and tooling packages under `@narduk-enterprises/*`.
+- `/Users/narduk/code/narduk-geo/narduk-mapkit` is the sole MapKit source and
+  publishes public packages under the existing `@loganrenz/*` scope.
+- Generic ingestion moves to a future `narduk-data` pipeline outside
+  `narduk-geo` and `narduk-libs`. No interim ingestion package is permitted.
+- PWA and operator-layer concepts are retired. No replacement PWA or operator
+  package is created.
+- Command is retired without a replacement control plane. `narduk-control`
+  remains a read-only inventory and proof surface.
+- New apps are created once by a deterministic scaffolder and onboarded by a
+  skill. Generated repositories retain no scaffold, registry, or sync
+  relationship.
+- `narduk-template` is in feature freeze immediately. Only critical security
+  fixes and migration unblockers are allowed.
+- Final template archival cannot happen until every surviving repository has
+  zero functional template references and `narduk-data` passes its production
+  gate.
+- Cloudflare Workers Builds remains the production deployment owner. There is no
+  centralized fleet deploy workflow.
+
+## 2. Target architecture
+
+### Shared capability disposition
+
+| Existing surface                                     | Final owner and disposition                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core, auth, analytics, SEO, uploads, runtime helpers | Keep `@narduk-enterprises/narduk-app`, `narduk-core`, `narduk-auth`, `narduk-analytics`, `narduk-seo`, and `narduk-uploads` in `narduk-libs`. Preserve current behavior during migration.                                                                                                                               |
+| `narduk-platform`                                    | `narduk-libs` is its sole publisher immediately. Retain only neutral environment, onboarding, and provider contracts. Remove layer manifests, starter composition, Command origins, `CONTROL_PLANE_URL`, and `templateManaged` behavior.                                                                                |
+| AI layer                                             | Add `@narduk-enterprises/narduk-ai` in `narduk-libs`, exposing existing xAI helpers, model catalog, prompt resolution, admin composable/component, and optional Nuxt route registration. The already-published `system_prompts` schema and migration remain in `narduk-core`; do not create another baseline migration. |
+| Testing layer                                        | Add dev-only `@narduk-enterprises/narduk-testkit` with reusable Vitest factories, Playwright fixtures/contracts, visual-audit helpers, and analyzer. Apps own test configuration and discovery wrappers.                                                                                                                |
+| Operator layer                                       | Retire. App Builder and other consumers recreate only the primitives they actually use as app-local Nuxt UI. Do not create `narduk-operator`.                                                                                                                                                                           |
+| PWA layer                                            | Retire without replacement. Remove install/update UI, offline behavior, service workers, offline pages, and the core-injected manifest link. Ordinary icons or an app-owned non-PWA web manifest may remain.                                                                                                            |
+| Maps layer                                           | Extract generic behavior into canonical `narduk-geo/narduk-mapkit`, never `narduk-libs`.                                                                                                                                                                                                                                |
+| Ingestion layer                                      | Freeze temporarily. Do not copy it into apps or create a temporary library. Remove it only after `narduk-data` passes section 8.                                                                                                                                                                                        |
+| Template testing/smoke app                           | Replace it with packed package-consumer fixtures in `narduk-libs`, then retire the smoke repository.                                                                                                                                                                                                                    |
+
+`narduk-core` remains the v1 compatibility facade during the migration. Further
+decomposition is allowed later and cannot block template retirement. Before the
+final gate, internal `#layer` imports and broad compatibility aliases must be
+gone.
+
+### MapKit canonicalization
+
+Convert `/Users/narduk/code/narduk-geo/narduk-mapkit` into a two-package
+workspace:
+
+- `@loganrenz/narduk-mapkit@1.x`: framework-neutral client, server, token,
+  geometry, temporal, vector-overlay, and Apple Maps API helpers.
+- `@loganrenz/narduk-mapkit-nuxt@1.x`: `AppMapKit`, `useMapKit`,
+  `useMapkitToken`, Nuxt registration, and `/api/mapkit-token`.
+
+Both packages publish immutable SemVer releases publicly on npm. Registry-auth
+tooling must leave `@loganrenz/*` on the public npm registry and must never
+rewrite that scope to GitHub Packages. Package metadata points to
+`narduk-geo/narduk-mapkit`.
+
+The generic unconfigured-token response remains `503`. GoNoGo keeps its
+intentional app-owned `200` fallback. Before deleting other copies, rescue the
+stale checkout's vector-overlay helpers and the Earthdata vendor cache. Remove
+vendored MapKit source, absolute tarball references, mutable Git branches,
+redirected repository URLs, and copied token implementations only after every
+consumer is on the immutable packages.
+
+### Focused app tooling
+
+Add `@narduk-enterprises/narduk-app-tools` to `narduk-libs` with binary
+`narduk-app`. It is app-local only and must never implement sync, reconcile,
+drift, fleet mutation, registry mutation, or template-layout enforcement.
+
+Supported commands are:
+
+```text
+narduk-app dev -- <command>
+narduk-app db migrate --config <file> --database <name> --local|--remote
+narduk-app deploy <deploy|versions-upload> [...]
+narduk-app deploy-local [...]
+narduk-app registry-auth
+narduk-app doctor
+narduk-app performance-budget [...]
+narduk-app assets favicons
+```
+
+Formatting, linting, typechecking, Knip, tests, quality, and builds remain
+direct app scripts. Secrets are loaded in-memory; there is no file-writing
+`pull-secrets` replacement.
+
+Publish one final `@narduk-enterprises/narduk-cli` compatibility release. It
+delegates retained operations to `narduk-app` or `narduk-testkit` and fails each
+removed command with specific migration instructions. Then freeze and deprecate
+`narduk-cli`, `narduk-starter-toolkit`, `narduk-nuxt-module`, and every
+`narduk-nuxt-template-layer-*` package.
+
+### Database and alias contract
+
+Package-owned and app-owned migration journals remain separate. Every app owns
+`apps/web/migrations.sources.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "@narduk-enterprises/narduk-core",
+      "dir": "node_modules/@narduk-enterprises/narduk-core/runtime/drizzle"
+    },
+    {
+      "id": "@narduk-enterprises/narduk-auth",
+      "dir": "node_modules/@narduk-enterprises/narduk-auth/drizzle"
+    },
+    {
+      "id": "app",
+      "dir": "drizzle"
+    }
+  ]
+}
+```
+
+`narduk-app db migrate` uses `_narduk_migrations` with primary key
+`(source, filename)` and stores checksum, source version, and application
+timestamp. Explicit source IDs, not paths, define identity. Package sources run
+before app sources; a second run is empty; checksum drift fails closed.
+
+Legacy `bundle:*`, `layer:*`, path-derived, and bare-filename rows are adopted
+only after inspecting the actual tables, columns, and indexes named by the SQL.
+An ambiguous row is an error, never an implicit success. Remote resets are
+forbidden. Rollback is forward-only through corrective migrations. Every remote
+cutover records the D1 Time Travel or recovery state, current ledgers, and
+schema metadata and rehearses the migration against a production copy.
+
+Alias target:
+
+- Keep Nuxt's native `#server/*` alias for concrete app files.
+- Replace synthetic `#server/app-orm-tables` and `#server/core-orm-tables` with
+  one app-owned dialect selector, `#narduk-db`.
+- Replace app `#layer/server/*` imports with explicit package subpaths.
+- Package-private dynamic aliases become `#narduk-core/schema` and
+  `#narduk-core/postgres-runtime`.
+- Final searches for `#layer` and synthetic ORM aliases return zero in every
+  surviving repository.
+
+### Environment ownership after Command
+
+| Surface                                          | Owner                                         |
+| ------------------------------------------------ | --------------------------------------------- |
+| Routes, non-secret vars, bindings, cron triggers | App-owned `wrangler.jsonc`                    |
+| Build variables and runtime secrets              | Cloudflare Workers settings                   |
+| Runtime-config shape and defaults                | App-owned `nuxt.config.ts`                    |
+| Capability-specific validation                   | Each capability package                       |
+| Capability inventory for status/onboarding only  | `apps/web/package.json` `narduk.capabilities` |
+
+`narduk.capabilities` is informational. It never triggers sync or mutation.
+
+### New-app contract
+
+Add `@narduk-enterprises/create-narduk-app` in `narduk-libs` with binary
+`create-narduk-app` and API
+`createNardukApp(options): Promise<CreateNardukAppReport>`.
+
+```text
+pnpm dlx @narduk-enterprises/create-narduk-app@<exact-version> <slug>
+  --display-name="..."
+  --description="..."
+  --site-url=https://...
+  --target-dir=/absolute/path
+  --capabilities=auth,seo,analytics,uploads,ai,mapkit
+  --visibility=private|public
+  --local-dev-port=3011
+  --json
+```
+
+Core is implicit. `pwa` is rejected as retired. `ingestion` is rejected with
+guidance to `narduk-data`; a future `data` capability may be added only after
+that service is production-ready.
+
+The generator creates a deterministic pnpm workspace with `apps/web`, exact
+package versions, direct scripts, app-owned CI, Renovate, Playwright/Vitest,
+Worker config, migrations, docs, and explicit Nuxt modules. It may initialize
+local Git but performs no GitHub, Cloudflare, or Doppler mutation. It never
+creates template metadata, toolchain wrappers, sync workflows, Command payloads,
+service workers, or generic ingestion files. Its report lists generated files,
+package versions, capabilities, and validation results.
+
+The `create-narduk-app` skill in `narduk-skills` owns idempotent GitHub,
+Proxmox-runner, Cloudflare, Doppler, Workers Builds, migration, deployment, and
+live-proof steps. It never calls Command and never creates a continuing registry
+relationship.
+
+## 3. Evidence model and current inventory snapshot
+
+Every app row must eventually record:
+
+1. canonical repository and owner, migration owner, baseline commit, and
+   production URL;
+2. Worker, domains, D1/KV/R2/Queue resources, schedules, capability packages,
+   runtime/build variable names, secret names, and baseline deployment proof;
+3. migration PR and merge SHA, exact package versions, CI run, and Renovate
+   configuration;
+4. D1 recovery point, pre/post ledgers and schema, production-copy rehearsal,
+   remote migration result, and empty second run;
+5. Workers Build/deployment ID, deployed SHA, health/public/auth/mutation/cron/
+   map/AI/app-specific route proof; and
+6. final zero-reference output, rollback pins, reviewer, and completion date.
+
+The first read-only Command snapshot was exported from `command-db` at
+`2026-07-14T22:01:29.264Z`, source revision
+`6c4cbb992ad0efc57dd26da235420d606bab547f`, with 34 apps and canonical SHA-256
+`9e0424d00e4e5db21c81c9f673f66893f34584728e83a745848b5172c9b5e65b`. It is
+redacted and checksummed. It does not model schedules, and resource target names
+can be declarative; repository and Cloudflare inspection must fill those gaps.
+`narduk-control` consumes the checked-in artifact read-only and does not call
+Command APIs or D1.
+
+Status values are `inventory`, `pr-open`, `staging`, `production-proved`,
+`blocked`, and `complete`. Only `complete` satisfies a retirement gate.
+
+## 4. Decision-complete fleet ledger
+
+### Active registry apps: migrate and retain
+
+`Pending` in an evidence column is an explicit open gate, not missing scope. The
+canonical repository column applies the approved ownership corrections even when
+the Command snapshot still names the old repository.
+
+| App                       | Canonical repository                           | Cohort / capabilities                                          | Baseline evidence                                                                                                    | Migration PR + exact pins | Migration proof                                                                         | Worker build/SHA + routes                                | Zero refs | Status    |
+| ------------------------- | ---------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------- | --------- |
+| been-sober-for            | `narduk-enterprises/been-sober-for`            | Reference; analytics, auth, SEO, uploads                       | `b22a660`; `www.beensoberfor.com` 200; `/api/health` 200; auth runtime 200; D1 recovery bookmark captured 2026-07-14 | Pending                   | Legacy ledger captured; production-copy rehearsal and empty stable-ledger rerun pending | Current deployed SHA `b22a660f0a64`; replacement pending | Pending   | inventory |
+| apps-catalog              | `narduk-enterprises/apps-catalog`              | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| clawdle                   | `narduk-incubator/clawdle`                     | Baseline; analytics, auth, SEO                                 | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| domain-name-search-org    | `narduk-enterprises/domain-name-search-org`    | Baseline; analytics, auth, SEO                                 | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| favicon-checker           | `narduk-incubator/favicon-checker`             | Baseline; analytics, auth, SEO                                 | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| gulf-fishing-report       | `narduk-incubator/gulf-fishing-report`         | Baseline; analytics, SEO                                       | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| harmony-hot-sauce         | `narduk-enterprises-clients/harmony-hot-sauce` | Baseline; analytics, auth, SEO, uploads                        | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| howtostartafirewithsticks | `narduk-enterprises/howtostartafirewithsticks` | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| llb-cpa                   | `narduk-enterprises-clients/llb-cpa`           | Baseline; analytics, SEO                                       | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| lucys-loomies             | `narduk-enterprises/lucys-loomies`             | Baseline; analytics, auth, SEO, uploads                        | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| mindwalker                | `narduk-enterprises/mindwalker`                | Baseline; core only in snapshot                                | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| nagolnagemluapleira       | `narduk-enterprises/nagolnagemluapleira`       | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| namegarden                | `narduk-enterprises/namegarden`                | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| napkinbets                | `narduk-incubator/napkinbets`                  | Baseline; analytics, auth, SEO, uploads                        | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| narduk-devtools           | `narduk-enterprises/narduk-devtools`           | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| ogpreview-app-new         | `narduk-enterprises/ogpreview-app`             | Baseline; analytics, SEO                                       | Command snapshot; registry slug differs from repository                                                              | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| old-austin-grouch         | `narduk-enterprises/old-austin-grouch`         | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| papa-everetts-pizza       | `narduk-enterprises/papa-everetts-pizza`       | Baseline; analytics, auth, SEO                                 | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| sanitize-data             | `narduk-enterprises/sanitize-data`             | Baseline; analytics, auth, SEO                                 | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| spacex-ipo                | `narduk-enterprises/spacex-ipo`                | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| tprinvest                 | `narduk-enterprises-clients/tprinvest`         | Baseline; analytics, SEO                                       | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| austin-texas-net          | `narduk-enterprises/austin-texas-net`          | Map/data; analytics, maps, SEO, ingestion audit                | Command snapshot; preserve Texas wrapper app-locally                                                                 | Pending                   | Pending; `narduk-data` gate applies                                                     | Pending                                                  | Pending   | inventory |
+| bluebonnet-status-online  | `narduk-enterprises/bluebonnet-status-online`  | Map/data; analytics, auth, maps, SEO, uploads                  | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| boat-search               | `narduk-enterprises/boat-search`               | Map/data; analytics, auth, maps, SEO, uploads                  | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| borderwaitstat-us         | `narduk-enterprises/borderwaitstat-us`         | Data/PWA; analytics, ingestion, PWA, SEO                       | Command snapshot                                                                                                     | Pending                   | `narduk-data` and 144-window gates pending                                              | Two-release PWA cleanup/removal pending                  | Pending   | inventory |
+| buoys                     | `narduk-enterprises/buoys`                     | Map/data/PWA; analytics, ingestion, maps, PWA, SEO             | Command snapshot                                                                                                     | Pending                   | `narduk-data` queue gates pending                                                       | Two-release PWA cleanup/removal pending                  | Pending   | inventory |
+| coolmaps                  | `narduk-incubator/coolmaps`                    | Map/PWA; analytics, maps, PWA, SEO                             | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | Two-release PWA cleanup/removal pending                  | Pending   | inventory |
+| float-forecast            | `narduk-enterprises/float-forecast`            | Map/data; analytics, maps, SEO, uploads                        | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| lakestat-us               | `narduk-enterprises/lakestat-us`               | Map/data; analytics, auth, maps, SEO, uploads                  | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| myboat                    | `narduk-enterprises/myboat`                    | Map/data; analytics, auth, maps, SEO, uploads                  | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | Pending                                                  | Pending   | inventory |
+| riverstatus               | `narduk-enterprises/riverstatus`               | Map/data; analytics, auth, maps, SEO, uploads; ingestion audit | Command snapshot                                                                                                     | Pending                   | `narduk-data` queue gates pending                                                       | Pending                                                  | Pending   | inventory |
+| app-builder               | `narduk-incubator/app-builder`                 | AI/operator; AI, auth, operator, uploads                       | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | AI and app-local operator proof pending                  | Pending   | inventory |
+| tx-spends                 | `narduk-enterprises/tx-spends`                 | AI; AI, analytics, auth, SEO                                   | Command snapshot                                                                                                     | Pending                   | Pending                                                                                 | AI proof pending                                         | Pending   | inventory |
+| imessage-dictionary       | `narduk-incubator/imessage-dictionary`         | AI/operator; AI, analytics, auth, operator, SEO                | Command snapshot; ownership correction verified                                                                      | Pending                   | Pending                                                                                 | AI and app-local operator proof pending                  | Pending   | inventory |
+
+### Additional retain/audit repositories
+
+| Repository                | Required result                                                               | PR / deploy / zero-reference evidence              | Status    |
+| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------- | --------- |
+| `narduk-control`          | Read-only inventory and proof with no Command API or D1 dependency            | Command artifact import PR and route proof pending | inventory |
+| `circuit-breaker-online`  | Audit and migrate if active                                                   | Pending                                            | inventory |
+| `ai-media-gen`            | Retain; migrate to `narduk-ai`                                                | Pending                                            | inventory |
+| canonical `narduk-charts` | Retain canonical repository; distinguish from old `narduk-enterprises/charts` | Pending                                            | inventory |
+
+### Direct MapKit consumers
+
+These migrate independently of the Nuxt fleet. Each row requires exact package
+versions, removal of tarball/Git/vendored/copied-token code, build/test proof,
+and map/token/search/geocode runtime proof.
+
+| Consumer            | Package PR + pins | Runtime proof | Old-copy removal                        | Status    |
+| ------------------- | ----------------- | ------------- | --------------------------------------- | --------- |
+| `earthdata-viewer`  | Pending           | Pending       | Earthdata cache rescue first            | inventory |
+| `narduk-earth-data` | Pending           | Pending       | Pending                                 | inventory |
+| `rawenc-lab`        | Pending           | Pending       | Pending                                 | inventory |
+| `gonogo-web`        | Pending           | Pending       | Preserve app-owned `200` token fallback | inventory |
+| `hydrogen`          | Pending           | Pending       | Pending                                 | inventory |
+| `gonogo`            | Pending           | Pending       | Preserve app-owned `200` token fallback | inventory |
+
+### Retire and preserve history
+
+For every row: disable deployments/workflows/triggers, preserve unique code and
+data, revoke credentials, record backup checksums where applicable, and archive
+repository history. Do not unpublish packages or delete tags.
+
+| Repository or asset                               | Special requirement                                                                     | Retirement evidence | Status    |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------- | --------- |
+| `command`                                         | Follow the 30-day recovery sequence in section 9                                        | Pending             | frozen    |
+| `narduk-template`                                 | Cannot archive before `narduk-data` and fleet gates                                     | Pending             | frozen    |
+| `narduk-template-smoke-app`                       | Replace with `narduk-libs` consumer fixtures                                            | Pending             | inventory |
+| old `narduk-enterprises/charts`                   | Preserve canonical `narduk-charts` first                                                | Pending             | inventory |
+| `narduk-incubator/control-plane`                  | No replacement control plane                                                            | Pending             | inventory |
+| `grib-viewer`                                     | Preserve unique code/data                                                               | Pending             | inventory |
+| `fyooru`                                          | Preserve unique code/data                                                               | Pending             | inventory |
+| old standalone `narduk-ai`                        | Preserve unique work after `narduk-libs` AI parity                                      | Pending             | inventory |
+| `neon-sewer-raid`                                 | Preserve unique code/data                                                               | Pending             | inventory |
+| `paul`                                            | Preserve unique code/data                                                               | Pending             | inventory |
+| `sailing-passage-map`                             | Preserve unique code/data                                                               | Pending             | inventory |
+| `scorchin-tims`                                   | Preserve unique code/data                                                               | Pending             | inventory |
+| `stockpick-test`                                  | Preserve unique code/data                                                               | Pending             | inventory |
+| `video-grab`                                      | Preserve unique code/data                                                               | Pending             | inventory |
+| `wan-video-review`                                | Preserve unique code/data                                                               | Pending             | inventory |
+| stale `/Users/narduk/code/narduk-mapkit` checkout | Rescue unique vector-overlay/cache work and wait for all consumers to leave its tarball | Pending             | inventory |
+
+Any newly discovered deployed app defaults to migration. Any newly discovered
+non-deployed repository outside the keep list defaults to retirement after
+preserving unique code and data.
+
+## 5. Execution waves
+
+### Wave 0 — freeze and establish truth
+
+- Land this document and ledger in `narduk-libs`; mark PR #454 superseded.
+- Freeze template and Command feature work. Permit only critical security fixes
+  and migration unblockers.
+- For every app, refresh all evidence fields listed in section 3 using fresh
+  worktrees from current remotes.
+- Export Command registry, operation history, and audit history with checksums.
+  Check the redacted artifact into `narduk-control` and prove its GET-only
+  inventory route. Never base decisions on a missing, dirty, stale, or unborn
+  checkout.
+
+### Wave 1 — independent foundations
+
+- Add frozen-install CI and independent release automation to `narduk-libs`:
+  lint, typecheck, tests, `publint`, pack, tarball-only Nuxt/Worker fixtures,
+  database compilation, publication proof, and rollback instructions.
+- Make `narduk-libs` the sole `narduk-platform` publisher.
+- Publish immutable `narduk-app-tools`, `narduk-testkit`, `narduk-ai`, and
+  `create-narduk-app` versions.
+- Implement the stable migration ledger and physical-schema legacy adoption.
+- Neutralize `narduk-platform`; remove core's provision/template dependency and
+  core manifest injection.
+- Complete and publish both canonical MapKit packages.
+- Prove the generator and onboarding skill with a disposable app containing no
+  template or Command references.
+- Publish the final compatibility CLI release.
+
+### Wave 2 — Been Sober For reference cutover
+
+Start from current `main`. Do not merge the historical
+`bsf/narduk-libs-packages` branch.
+
+The reference pilot is complete only when it:
+
+- installs shared packages from immutable registries, never workspaces, Git, or
+  local tarballs;
+- owns direct scripts, CI, Playwright, Renovate, Worker config, migration source
+  config, and runtime config;
+- removes `.template-reference`, `.template-version`, `narduk.layout.json`,
+  `guardrail-exceptions.json`, `scripts/narduk-toolchain.mjs`, template
+  workflows, and `narduk-cli`;
+- removes `#layer` and synthetic ORM aliases;
+- adopts the stable ledger and proves a second migration run is empty;
+- passes quality, unit, integration, browser, auth, local D1, staging Worker,
+  and production-route checks; and
+- produces the reusable migration PR checklist from actual changes.
+
+### Wave 3 — baseline fleet
+
+Migrate the 20 baseline apps in small parallel cohorts, one reviewed PR and one
+production proof per app. Before removing template workflows, install meaningful
+app-owned PR CI, materialize Playwright config loaded from
+`.template-reference`, enable independent Renovate updates for
+`@narduk-enterprises/*`, confirm registry auth on the selected runner, and
+preserve Workers Builds as the `main` deployment owner.
+
+### Wave 4 — MapKit, AI, and operator consumers
+
+- Move every direct and fleet MapKit consumer to canonical immutable releases.
+- Preserve Austin's Texas-specific wrapper as app-owned code.
+- Verify rendering, token generation, Apple search/geocode, origin allowlists,
+  rate limiting, and Worker binding hydration.
+- Move App Builder, TX Spends, iMessage Dictionary, and AI Media Gen to
+  `narduk-ai`.
+- Keep `system_prompts` migration ownership in core; AI routes use its explicit
+  schema export.
+- Copy only used operator primitives into surviving apps and remove the operator
+  dependency.
+
+### Wave 5 — PWA removal
+
+For BorderWaitStat.us, Buoys, and Coolmaps:
+
+1. Ship a cleanup release that unregisters only that app's known legacy
+   service-worker registration and deletes only its known caches.
+2. Prove existing installations adopted the cleanup release.
+3. Ship a removal release deleting PWA modules, install/update UI, offline
+   routes/pages, manifest injection, and service-worker assets.
+
+No PWA package is created.
+
+### Wave 6 — `narduk-data` and ingestion cutover
+
+The frozen ingestion dependency remains until every section 8 acceptance gate is
+green. Only then remove ingestion dependencies and migrations from
+BorderWaitStat.us, Austin, Buoys, and Riverstatus.
+
+### Wave 7 — Command and template decommission
+
+Complete section 9 in order. Command is disabled and retained for its recovery
+window before resource removal. Template is tagged and archived only after the
+fleet zero-reference and `narduk-data` gates are green.
+
+## 6. Per-app migration playbook
+
+1. Create an isolated worktree from current remote `main`; record the baseline
+   SHA, live deployment, routes, resources, D1 recovery point, ledgers, and
+   schema.
+2. Install exact published package versions. Never use a workspace, mutable Git
+   ref, or local tarball for migration completion.
+3. Materialize app-owned CI, Renovate, Playwright/Vitest, direct scripts,
+   `wrangler.jsonc`, `nuxt.config.ts`, `narduk.capabilities`, and
+   `migrations.sources.json`.
+4. Replace aliases and package surfaces. Remove only capabilities whose
+   replacement or retirement gate is green.
+5. Run frozen install, format, lint, typecheck, unit, integration, production
+   build, and app-specific browser tests.
+6. Run local migrations twice and preserve proof that the second run is empty.
+   Rehearse on a production copy before remote application.
+7. Open one reviewed PR. After merge, let Workers Builds deploy `main`, verify
+   the deployed SHA, and test health, public pages, auth, mutations, cron, maps,
+   AI, and app-specific critical flows.
+8. Update this ledger with the PR, pins, build/deployment ID, route proof,
+   migration proof, zero-reference output, rollback pins, and reviewer. Do not
+   mark the app complete while any evidence field is pending.
+
+## 7. Package and app verification
+
+### Per-package gates
+
+- clean install from packed or published artifacts outside the monorepo;
+- Nuxt production build and Cloudflare Worker build;
+- export checks and zero-warning `publint`;
+- exact dependency graph with no duplicate core/auth versions;
+- migration collision, checksum drift, legacy adoption, ordering, and
+  idempotency tests;
+- MapKit token/search/geocode and visual fixtures;
+- AI route, model selection, prompt resolution, and authorization tests;
+- testkit Vitest and Playwright consumer fixtures; and
+- generated-app install, quality, test, build, migration, and deploy-dry-run.
+
+### Per-app acceptance and rollback
+
+- Capture production baseline and D1 recovery state before changes.
+- Apply remote migrations only after production-copy rehearsal.
+- Keep database changes additive and package versions exact.
+- Roll back code by reverting the app PR and restoring prior immutable pins.
+  Database correction is forward-only; never reset a remote database.
+- A rollback does not reintroduce a template layer after the app's cutover.
+- Completion requires the canonical ledger evidence described in section 3.
+
+## 8. `narduk-data` acceptance gate
+
+The future service must provide all of the following before any ingestion layer
+is removed:
+
+- stable job/source IDs and versioned schedules;
+- idempotency by job, trigger, cron, and scheduled timestamp;
+- stable run IDs available to app persistence;
+- authenticated manual and external triggers;
+- `queued`, `running`, `success`, `error`, and `skipped` lifecycle states;
+- counters, metadata, results, timestamps, errors, run listing, health, and
+  staleness;
+- a concrete request-scoped binding or signed callback/data-sink contract for
+  app-owned persistence;
+- explicit import or read-only archival of `narduk_ingestion_runs`;
+- Queue messages, `202` enqueue semantics, retries, DLQ, attempt tracking,
+  parent/child rollups, concurrency control, and orphan repair for Austin,
+  Buoys, and Riverstatus.
+
+Production proof must include:
+
+1. staging or shadow output parity without double writes;
+2. duplicate delivery producing one logical run;
+3. an injected source failure recorded correctly and a successful next run;
+4. BorderWait completing 144 consecutive expected ten-minute windows without
+   missed or duplicate product writes;
+5. queue consumers passing retry, exhausted-DLQ, rollup, and repair scenarios;
+   and
+6. cutover disabling the old plugin/cron before enabling the new scheduler and
+   proving exactly one owner for a full cadence.
+
+`narduk-data` is a hard predecessor of final template archive. It is not a
+reason to delay unrelated package or app migrations.
+
+## 9. Command and template retirement gates
+
+### Command archive prerequisites
+
+- Every keeper app has app-owned CI, Renovate, configuration, and deployment
+  proof.
+- No live workflow or deployment calls Command or either template repository.
+- `narduk-control` proves live inventory without Command APIs or D1.
+- OAuth callbacks, CORS, Apple/Supabase settings, links, and callers no longer
+  reference `command.nard.uk`.
+- Command schedules, callbacks, leases, dispatch credentials, mutation
+  endpoints, and registry mutation are disabled.
+- Command-only credentials are revoked.
+- Worker, D1, KV, and R2 data is backed up and checksummed.
+- Command routes are disabled and resources are retained for a 30-day recovery
+  window, then removed.
+- The repository is archived read-only with history retained.
+
+### Template archive prerequisites
+
+- Every surviving repository is `complete` in section 4 and passes section 10.
+- No package is published from the template.
+- Old packages have deprecation notices that point to replacements.
+- Release dispatches from `narduk-skills`, ESLint config, and other repositories
+  no longer notify the template.
+- Template workflows and deployments are disabled.
+- The final state is tagged and the repository is archived read-only.
+
+## 10. Final zero-reference gate
+
+Across every active repository and workflow, searches must return no functional
+references to:
+
+- `narduk-template`
+- `narduk-nuxt-template`
+- `narduk-fleet`
+- `narduk-cli`
+- `narduk-starter-toolkit`
+- `narduk-nuxt-module`
+- `narduk-nuxt-template-layer-*`
+- `.template-reference`
+- `.template-version`
+- `narduk.layout.json`
+- `guardrail-exceptions.json`
+- `scripts/narduk-toolchain.mjs`
+- `provision.json`
+- `#layer`
+- synthetic `#server/app-orm-tables` or `#server/core-orm-tables`
+- Command callbacks, leases, registry mutation endpoints, or workflow dispatches
+
+Archived repository history and this deprecation document may retain textual
+references. Archived repositories must have no active deployment, trigger,
+workflow, route, or credential.
+
+Example functional scan, excluding this document and Git history:
+
+```sh
+git grep -n -E \
+  -- ':!docs/architecture/narduk-template-decommission.md' \
+  'narduk-template|narduk-nuxt-template|narduk-fleet|narduk-cli|narduk-starter-toolkit|narduk-nuxt-module|narduk-nuxt-template-layer-|\.template-reference|\.template-version|narduk\.layout\.json|guardrail-exceptions\.json|scripts/narduk-toolchain\.mjs|provision\.json|#layer|#server/(app|core)-orm-tables'
+```
+
+Command-specific callbacks, leases, registry mutation endpoints, dispatches,
+URLs, and provider settings require semantic inspection in addition to string
+search.
+
+## 11. Ledger maintenance and completion rules
+
+- Update a row in the same PR that changes its evidence whenever possible.
+- Link immutable GitHub PR/run/deployment evidence; do not paste secret values.
+- Record secret names only. Resource IDs are allowed; credentials are not.
+- A worker report is not proof. The reviewer reruns the relevant gate on the
+  exact commit and deployed SHA.
+- If a production proof fails, set the row to `blocked`, preserve the evidence,
+  revert code to prior pins, and use a forward database correction if needed.
+- Final archival is a separately reviewed operation against sections 8–10. A
+  green library build, a merged migration PR, or elapsed time alone is never
+  sufficient.
