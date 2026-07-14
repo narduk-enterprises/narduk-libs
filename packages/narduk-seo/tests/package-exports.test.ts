@@ -20,4 +20,25 @@ describe('narduk-seo package exports', () => {
       import: './app/composables/*.ts',
     })
   })
+
+  it('ships immutable OG image renderer dependencies', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      dependencies: Record<string, string>
+      overrides?: Record<string, string>
+    }
+
+    expect(packageJson.dependencies['nuxt-og-image']).toBe('6.7.2')
+    expect(packageJson.dependencies['@takumi-rs/core']).toBe('2.2.0')
+    expect(packageJson.dependencies['@takumi-rs/wasm']).toBe('2.2.0')
+    expect(packageJson.overrides).not.toHaveProperty('@takumi-rs/core')
+    expect(packageJson.overrides).not.toHaveProperty('@takumi-rs/wasm')
+  })
+
+  it('keeps the packaged network page independent of consumer auto-import transforms', () => {
+    const page = readFileSync(join(packageRoot, 'app/pages/narduk-network.vue'), 'utf-8')
+
+    expect(page).toContain(
+      "import { resolveSiteOriginForSchemaInput } from '../utils/resolveSiteOriginForSchema'",
+    )
+  })
 })
