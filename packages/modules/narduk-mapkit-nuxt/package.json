@@ -1,0 +1,75 @@
+{
+  "name": "@loganrenz/narduk-mapkit-nuxt",
+  "version": "1.0.0",
+  "description": "Nuxt component, composables, and token route for @loganrenz/narduk-mapkit.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/narduk-geo/narduk-mapkit.git",
+    "directory": "packages/nuxt"
+  },
+  "homepage": "https://github.com/narduk-geo/narduk-mapkit#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-geo/narduk-mapkit/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    }
+  },
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "nuxt-module-build build",
+    "check:pack": "pnpm pack --pack-destination ../../.pack",
+    "check:package": "node script/check-package-install.mjs",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
+    "prepack": "nuxt-module-build build",
+    "test": "vitest run",
+    "test:build": "pnpm run dev:prepare && nuxt build playground",
+    "test:cloudflare": "node script/check-cloudflare-build.mjs",
+    "typecheck": "pnpm run dev:prepare && vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && publint && pnpm run test:cloudflare && pnpm run check:package"
+  },
+  "dependencies": {
+    "@loganrenz/narduk-mapkit": "workspace:^",
+    "@nuxt/kit": "^4.4.8",
+    "h3": "^1.15.4"
+  },
+  "devDependencies": {
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.8",
+    "@nuxt/test-utils": "^4.0.3",
+    "@types/node": "^24.0.4",
+    "nuxt": "^4.4.8",
+    "publint": "^0.3.21",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.2.5"
+  },
+  "peerDependencies": {
+    "nuxt": ">=4.0.0",
+    "vue": ">=3.5.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
