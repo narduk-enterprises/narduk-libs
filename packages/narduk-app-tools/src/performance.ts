@@ -215,7 +215,16 @@ export function runPerformanceBudgetCheck(
 
 export function parsePerformanceBudgetArgs(args: string[]): PerformanceBudgetOptions {
   const options: PerformanceBudgetOptions = {}
-  const normalizedArgs = args[0] === '--' ? args.slice(1) : args
+  const normalizedArgs: string[] = []
+  let separatorSeen = false
+  for (const arg of args) {
+    if (arg !== '--') {
+      normalizedArgs.push(arg)
+      continue
+    }
+    if (separatorSeen) throw new Error('Unknown performance-budget option: --')
+    separatorSeen = true
+  }
   const numeric = new Map([
     ['--critical-image-budget-kb', 'criticalImageBudgetKb'],
     ['--css-budget-kb', 'cssBudgetKb'],

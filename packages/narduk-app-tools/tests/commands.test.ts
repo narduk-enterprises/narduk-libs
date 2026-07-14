@@ -124,6 +124,10 @@ describe('app-local command planning', () => {
       fontTotalBudgetKb: 120,
       json: true,
     })
+    expect(parsePerformanceBudgetArgs(['--font-total-budget-kb', '140', '--', '--json'])).toEqual({
+      fontTotalBudgetKb: 140,
+      json: true,
+    })
     expect(() => parsePerformanceBudgetArgs(['--', '--', '--json'])).toThrow(
       'Unknown performance-budget option: --',
     )
