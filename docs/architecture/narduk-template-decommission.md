@@ -16,6 +16,12 @@ explicitly supersedes
 [narduk-template PR #454](https://github.com/narduk-enterprises/narduk-template/pull/454);
 that PR is historical context and must not guide implementation.
 
+The evidence-backed per-app procedure, Been Sober For exemplar, failure catalog,
+and automation contract live in
+[`../operations/template-decoupling/`](../operations/template-decoupling/README.md).
+Use that packet for execution; use this document for fleet scope, ownership,
+waves, and archive gates.
+
 The program is gate-driven, not date-driven. A current-scope repository is
 complete only when its row below contains reviewed PR, immutable package
 versions, migration proof, deployed Worker/SHA and route proof, and a
