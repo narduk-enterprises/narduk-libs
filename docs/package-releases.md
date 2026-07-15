@@ -20,6 +20,12 @@ an artifact.
 The Changesets run that only opens a release PR does not publish and therefore
 skips the post-publish registry proof.
 
+This organization is on GitHub Free, so private repositories cannot consume
+organization-level Actions secrets. Keep the read and write package tokens as
+repository-scoped Actions secrets named `NARDUK_PLATFORM_GH_PACKAGES_READ` and
+`NARDUK_PLATFORM_GH_PACKAGES_WRITE`; record only their names and rotation time,
+never their values.
+
 ## Failed or partial publish
 
 - Do not change, delete, or reuse a version that may have reached the registry.
