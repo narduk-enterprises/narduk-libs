@@ -108,9 +108,7 @@ describe('create-narduk-app generation contract', () => {
         'workerd',
       ],
     })
-    expect(files.get('.github/workflows/ci.yml')).toContain(
-      'runs-on: [self-hosted, Linux, X64]',
-    )
+    expect(files.get('.github/workflows/ci.yml')).toContain('runs-on: [self-hosted, Linux, X64]')
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
