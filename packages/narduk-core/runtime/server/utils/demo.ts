@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 
-import { users } from '#layer/orm-tables'
+import { users } from '#narduk-core/schema'
 
 import { useDatabase } from './database'
 

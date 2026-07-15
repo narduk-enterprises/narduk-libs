@@ -502,8 +502,8 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     nuxtOptions.alias = {
       ...nuxtOptions.alias,
       '#layer': runtimeRoot,
-      '#layer/orm-tables': resolver.resolve(`../runtime/${ormTablesEntry}`),
-      '#layer/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
+      '#narduk-core/schema': resolver.resolve(`../runtime/${ormTablesEntry}`),
+      '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
     }
 
     if (options.coreModules) {

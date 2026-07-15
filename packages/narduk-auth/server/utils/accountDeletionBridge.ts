@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 
-import { users } from '#layer/orm-tables'
 import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import { verifyUserPassword } from '#layer/server/utils/password'
 import { clearLayerUserSession } from '#layer/server/utils/user-session'
+import { users } from '#narduk-core/schema'
 
 import type { AuthUser } from '#layer/server/utils/auth'
 import type { H3Event } from 'h3'

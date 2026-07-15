@@ -1,6 +1,5 @@
 import { z } from 'zod'
 
-import { apiKeys } from '#layer/orm-tables'
 import {
   AUTH_API_KEY_SCOPES,
   generateApiKey,
@@ -15,6 +14,7 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { apiKeys } from '#narduk-core/schema'
 
 const bodySchema = z.object({
   name: z.string().min(1).max(100),

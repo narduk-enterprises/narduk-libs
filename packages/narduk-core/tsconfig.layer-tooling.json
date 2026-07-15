@@ -13,8 +13,8 @@
     "paths": {
       "#layer": ["./runtime"],
       "#layer/*": ["./runtime/*"],
-      "#layer/orm-tables": ["./runtime/server/database/schema.ts"],
-      "#layer/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
+      "#narduk-core/schema": ["./runtime/server/database/schema.ts"],
+      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
     }
   },
   "include": [

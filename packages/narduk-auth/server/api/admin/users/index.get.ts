@@ -2,9 +2,9 @@ import { desc, sql } from 'drizzle-orm'
 import { createError, defineEventHandler, getValidatedQuery } from 'h3'
 import { z } from 'zod'
 
-import { users } from '#layer/orm-tables'
 import { requireAdmin } from '#layer/server/utils/auth'
 import { getDatabaseRow, getDatabaseRows, useDatabase } from '#layer/server/utils/database'
+import { users } from '#narduk-core/schema'
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
