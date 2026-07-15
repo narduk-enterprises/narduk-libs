@@ -4,6 +4,12 @@
 Packages. A release never republishes an existing version and never unpublishes
 an artifact.
 
+For the consumer-side sequence after publication, including exact-version lock
+regeneration, app-owned configuration, migration adoption, exact-head CI, and
+source production proof, use the
+[`operations/template-decoupling/`](operations/template-decoupling/README.md)
+runbook and evidence exemplar.
+
 ## Normal release
 
 1. Add a Changeset for every publishable package whose public artifact changes.

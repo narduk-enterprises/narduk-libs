@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "recordType": "template-to-independent-app-migration",
+  "app": {
+    "slug": "been-sober-for",
+    "displayName": "BeenSoberFor",
+    "repository": "narduk-enterprises/been-sober-for",
+    "productionUrl": "https://www.beensoberfor.com",
+    "contains": ["apps/web", "apps/ios"]
+  },
+  "verifiedAt": "2026-07-15",
+  "status": {
+    "current": "target-rehearsed",
+    "completed": [
+      "inventoried",
+      "packages-ready",
+      "app-decoupled",
+      "source-deployed",
+      "target-rehearsed"
+    ],
+    "pending": ["account-cutover-ready", "account-cutover-complete", "retention-complete"],
+    "note": "Template decoupling is complete. The target-account data and workers.dev rehearsal passed. Workers Build, target zone, final data move, Registrar, Custom Domains, HTTPS, write reopening, and physical-iPhone proof remain pending."
+  },
+  "sourceControl": {
+    "historicalPilotBranch": {
+      "name": "bsf/narduk-libs-packages",
+      "commit": "b7de7acd78fb8b53209d823431856e8916764786",
+      "usedForCutover": false
+    },
+    "decoupling": {
+      "pullRequest": "https://github.com/narduk-enterprises/been-sober-for/pull/62",
+      "acceptedHead": "ae35e2f0c512219ef7b52cd36c8081eb9e96f039",
+      "mergeCommit": "e949bd9873bd72d60efcff870e50b863353d3983",
+      "mergedAt": "2026-07-15T19:15:49Z"
+    },
+    "evidencePullRequests": [
+      {
+        "number": 64,
+        "url": "https://github.com/narduk-enterprises/been-sober-for/pull/64",
+        "purpose": "source-account deployment proof",
+        "mergeCommit": "62636a5f7654caf902706e33f689776b5bc005ba"
+      },
+      {
+        "number": 65,
+        "url": "https://github.com/narduk-enterprises/been-sober-for/pull/65",
+        "purpose": "target-account rehearsal proof",
+        "mergeCommit": "d6192f22162adf8f8d942b95ba69f5d36a778c77"
+      },
+      {
+        "number": 66,
+        "url": "https://github.com/narduk-enterprises/been-sober-for/pull/66",
+        "purpose": "nested pnpm path repair",
+        "mergeCommit": "3c8459a9220e231ea1e2872ca5a8fa077178a47e"
+      },
+      {
+        "number": 67,
+        "url": "https://github.com/narduk-enterprises/been-sober-for/pull/67",
+        "purpose": "per-workflow Playwright port isolation",
+        "mergeCommit": "2404f4e2d2c97f83ac3e12ced4b2370224cb0ee7"
+      }
+    ]
+  },
+  "packages": {
+    "registry": "https://npm.pkg.github.com",
+    "publisherRepository": "narduk-enterprises/narduk-libs",
+    "releasePullRequest": "https://github.com/narduk-enterprises/narduk-libs/pull/2",
+    "releaseMergeCommit": "10a9f4ff2b262ce27b7c03ea82aabd02a733fd86",
+    "directVersions": {
+      "@narduk-enterprises/narduk-analytics": "1.19.20",
+      "@narduk-enterprises/narduk-auth": "1.19.27",
+      "@narduk-enterprises/narduk-core": "1.20.0",
+      "@narduk-enterprises/narduk-seo": "1.20.0",
+      "@narduk-enterprises/narduk-uploads": "1.19.18",
+      "@narduk-enterprises/narduk-app-tools": "0.1.2",
+      "@narduk-enterprises/narduk-testkit": "1.0.0"
+    },
+    "transitiveAccessClosure": [
+      "@narduk-enterprises/eslint-config",
+      "@narduk-enterprises/narduk-analytics",
+      "@narduk-enterprises/narduk-app",
+      "@narduk-enterprises/narduk-app-tools",
+      "@narduk-enterprises/narduk-auth",
+      "@narduk-enterprises/narduk-core",
+      "@narduk-enterprises/narduk-platform",
+      "@narduk-enterprises/narduk-seo",
+      "@narduk-enterprises/narduk-testkit",
+      "@narduk-enterprises/narduk-uploads"
+    ],
+    "lockfileSha256": "383a002e8fe4d9cf1a84a2eebbec92fcd071151de4ae00696fabc6a658b564f5",
+    "authentication": {
+      "githubActions": "repository GITHUB_TOKEN with packages: read and per-package Actions access",
+      "externalBuilder": "secret build variable NARDUK_PLATFORM_GH_PACKAGES_READ",
+      "secretValuesRecorded": false
+    },
+    "appToolsRepairTrail": [
+      {
+        "pullRequest": "https://github.com/narduk-enterprises/narduk-libs/pull/9",
+        "version": "0.1.1",
+        "lesson": "resolve pnpm without assuming PATH"
+      },
+      {
+        "pullRequest": "https://github.com/narduk-enterprises/narduk-libs/pull/11",
+        "version": "0.1.2",
+        "lesson": "reject stale npm_execpath and fall back to an existing executable or PNPM_HOME"
+      }
+    ]
+  },
+  "acceptance": {
+    "candidateCi": {
+      "run": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29443355862",
+      "commit": "ae35e2f0c512219ef7b52cd36c8081eb9e96f039",
+      "result": "success"
+    },
+    "mergedMainCi": {
+      "run": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29443848957",
+      "commit": "e949bd9873bd72d60efcff870e50b863353d3983",
+      "result": "success"
+    },
+    "postMergeCiRepairs": [
+      {
+        "purpose": "preserve pnpm path for nested Playwright server launch",
+        "pullRequestHeadRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29447360592",
+        "mergedMainRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29447696758",
+        "mergeCommit": "3c8459a9220e231ea1e2872ca5a8fa077178a47e"
+      },
+      {
+        "purpose": "isolate Playwright port per workflow run on shared runner host",
+        "pullRequestHeadRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29448250326",
+        "mergedMainRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29448625784",
+        "mergeCommit": "2404f4e2d2c97f83ac3e12ced4b2370224cb0ee7"
+      },
+      {
+        "purpose": "prove target-rehearsal evidence at exact head and merged main",
+        "pullRequestHeadRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29448653958",
+        "mergedMainRun": "https://github.com/narduk-enterprises/been-sober-for/actions/runs/29449038747",
+        "mergeCommit": "d6192f22162adf8f8d942b95ba69f5d36a778c77"
+      }
+    ],
+    "gates": {
+      "frozenInstall": "passed from immutable GitHub Packages",
+      "format": "passed",
+      "lint": "passed with zero warnings",
+      "typecheck": "passed",
+      "unitTests": { "passed": 44 },
+      "browserTests": { "passed": 102, "failed": 0 },
+      "productionBuild": "passed",
+      "knip": "passed",
+      "localMigrationsFirstRun": { "applied": 8 },
+      "localMigrationsSecondRun": { "applied": 0, "adopted": 0, "skipped": 8 },
+      "deployDryRun": {
+        "assets": 224,
+        "bindings": ["D1", "KV", "R2", "seven rate-limit namespaces", "runtime variables"]
+      }
+    },
+    "browserArtifact": {
+      "id": "8354481506",
+      "sha256": "c24adf679419386243fcc1febf56820bc7380cb12806766c1c1d8a31ae9859ed"
+    }
+  },
+  "independenceContract": {
+    "appOwned": [
+      "CI",
+      "Renovate",
+      "package scripts",
+      "Playwright configuration",
+      "Vitest configuration",
+      "Nuxt configuration",
+      "Worker configuration",
+      "migration source configuration",
+      "runtime configuration",
+      "operating documentation"
+    ],
+    "removed": [
+      ".template-reference",
+      ".template-version",
+      "narduk.layout.json",
+      "guardrail-exceptions.json",
+      "scripts/narduk-toolchain.mjs",
+      "template workflows",
+      "narduk-cli",
+      "functional #layer imports",
+      "synthetic ORM aliases",
+      "Command mutation coupling"
+    ],
+    "zeroReferenceResult": "passed for active source, scripts, workflows, configuration, and Narduk dependency metadata",
+    "unrelatedLocalDependencyException": "file:vendor/archiver-utils is app-owned and is not Narduk/template coupling"
+  },
+  "database": {
+    "sourceConfig": "apps/web/migrations.sources.json",
+    "stableJournal": "_narduk_migrations",
+    "legacyJournal": "_applied_migrations",
+    "sourceOrder": ["@narduk-enterprises/narduk-core", "@narduk-enterprises/narduk-auth", "app"],
+    "legacyRows": 21,
+    "stableRows": 8,
+    "adoptionPolicy": "inspect required tables, columns, and indexes and verify checksum before adoption",
+    "remoteResetAllowed": false,
+    "rollback": "forward-only corrective migrations"
+  },
+  "maintenance": {
+    "variable": "BSF_MAINTENANCE_MODE",
+    "allowedValues": ["off", "read-only"],
+    "invalidValuePolicy": "fail closed",
+    "blockedStatus": 503,
+    "retryAfterSeconds": 60,
+    "blocks": [
+      "unsafe HTTP methods",
+      "uploads",
+      "account provisioning",
+      "destructive operations",
+      "session exchange",
+      "native authentication state creation",
+      "auth refresh"
+    ],
+    "visibleAt": ["GET /api/maintenance-status", "health/status response headers"]
+  },
+  "sourceProductionProof": {
+    "accountId": "d715f0aeb6b2e7b10f54e9e72fba8fdd",
+    "deployedCommit": "e949bd9873bd72d60efcff870e50b863353d3983",
+    "workerDeploymentId": "af7b74fe-48a3-4d1f-8e3f-995b090486f0",
+    "workerVersionId": "5210061e-998f-467e-98b0-2c57229c6783",
+    "d1": {
+      "databaseId": "5ff42396-d981-4841-b813-391f4da3c4f2",
+      "recoveryBookmark": "0000132b-00000000-000050a9-7e2494ab329bdc9c8f12ff8d10f81c09",
+      "exportBytes": 247371,
+      "exportSha256": "3f7a418874c89800f9a358b9e604f856eb04d7f577a6e0c2d4ccfba636939663",
+      "schemaSha256": "229608876186d42363d84ceae0f99742c6953eeca225b945d9b45d1df54dbca4"
+    },
+    "appTableCounts": {
+      "users": 57,
+      "sober_profiles": 53,
+      "auth_user_links": 31,
+      "auth_sessions": 124,
+      "api_keys": 1
+    },
+    "r2": {
+      "objects": 14,
+      "bytes": 5818346,
+      "manifestSha256": "4ac0469573bfbf47eb102abe5bfb6fac6663896641949bb216cb98c4b6494555"
+    },
+    "kv": { "keys": 0, "classification": "cache" },
+    "routes": [
+      "homepage",
+      "login",
+      "auth callback page",
+      "community/public profile API and page",
+      "robots",
+      "sitemap",
+      "AASA"
+    ],
+    "protectedEvidenceRoot": "/Users/narduk/.local/state/been-sober-for/cloudflare-cutover/source-proof-20260715T191840Z"
+  },
+  "targetRehearsal": {
+    "accountId": "73a85923e2b7cf8f29d0b8c89de9d265",
+    "productionD1": {
+      "id": "80894442-eae0-4f22-b9fd-00099bc3e472",
+      "touched": false
+    },
+    "disposableD1": {
+      "name": "been-sober-for-rehearsal-20260715-e949bd9",
+      "id": "b7386a28-2501-482f-af04-9e0fc80de34a"
+    },
+    "workerVersionId": "3de99015-949a-4810-a034-a27dad4324b5",
+    "buildMarker": "e949bd9873bd",
+    "maintenance": "read-only",
+    "d1": {
+      "sourceExportBytes": 249624,
+      "sourceExportSha256": "da17b91e814605b57a8c8205e947295419a334b56039531c96525db6527c076e",
+      "sourceAndTargetSchemaSha256": "deb78118a3b65bfdcc5664e969c79b245be03df3da4614a90fad9afce41576d0",
+      "sourceAndTargetTableCountsSha256": "df895afe1da62ee447726fcba1a3da49bc61abd31e82bdf81c2798d6b86336f2",
+      "legacyRowsEqual": 21,
+      "stableRowsEqual": 8,
+      "secondMigrationRunEmpty": true
+    },
+    "r2": {
+      "objectsEqual": 14,
+      "bytesEqual": 5818346,
+      "sourceManifestSha256": "967a897c8df401adea2e76d036f450cde8c4542eace3abc47de7a182631e1628",
+      "targetKeySizeManifestSha256": "fd801e976bf1543b04ef269b927dee4d3eba3062ac9d9880abc4f2ad17d18601",
+      "retrievalClasses": ["JPEG", "PNG", "WebP"]
+    },
+    "kv": {
+      "namespaceId": "d7f2a8dcafe643f8a54526d8d1b9e3ab",
+      "keys": 0
+    },
+    "rateLimitNamespaceIds": ["61110", "61120", "61130", "61160", "61121", "61240", "61300"],
+    "freshProductionResources": {
+      "worker": "been-sober-for",
+      "d1": "been-sober-for-db",
+      "kv": "been-sober-for-kv",
+      "r2": "been-sober-for-assets",
+      "workersBuild": "pending"
+    },
+    "routeProof": {
+      "public": ["homepage", "login", "community", "public profile API", "robots", "AASA"],
+      "stagingSitemap": "intentional 404 with noindex,nofollow",
+      "blockedMutations": ["/api/profile/start-again", "/api/upload", "/api/auth/apple/native"]
+    },
+    "temporaryOperatorTokenRevoked": true,
+    "protectedEvidenceRoot": "/Users/narduk/.local/state/been-sober-for/cloudflare-cutover/target-rehearsal-20260715T192933Z"
+  },
+  "zoneInventory": {
+    "zoneId": "a33fb64bea5a4072c8f0042a6a5cfe2e",
+    "dnsRecords": 4,
+    "txtRecords": 2,
+    "mxRecords": 0,
+    "dnsNormalizedSha256": "58bccbcb92b03bbbb0c5ce666bbfe00ab555c1e1cc6c21803ef932137931ba54",
+    "settingsSha256": "69438e4464cb5b35c3c02e5fd0c218141bd5c1a92543d02e0a0b6b384d013c7b",
+    "dnssec": "disabled",
+    "registrar": {
+      "locked": true,
+      "privacy": true,
+      "autoRenew": true,
+      "expires": "2027-03-27"
+    },
+    "protectedEvidenceRoot": "/Users/narduk/.local/state/been-sober-for/cloudflare-cutover/source-zone-20260715T200250Z"
+  },
+  "secretNames": {
+    "runtime": [
+      "GSC_SERVICE_ACCOUNT_JSON",
+      "NUXT_OG_IMAGE_SECRET",
+      "NUXT_SESSION_PASSWORD",
+      "POSTHOG_PERSONAL_API_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "TURNSTILE_SECRET_KEY"
+    ],
+    "build": ["NARDUK_PLATFORM_GH_PACKAGES_READ"],
+    "valuesRecorded": false
+  },
+  "pendingBlockers": [
+    "configure and prove target Workers Build through the required user-scoped GitHub/Cloudflare authorization flow",
+    "create and independently review the target zone and copied settings",
+    "capture final freeze-time D1, R2, and KV evidence",
+    "import into untouched target production D1 and reconcile",
+    "transfer Registrar ownership and attach Custom Domains",
+    "prove Universal SSL and both apex and www HTTPS",
+    "reopen writes and prove physical-iPhone login, profile, upload, and account flows",
+    "complete 30-day source-resource retention and removal"
+  ],
+  "explicitNonActions": [
+    "no Command shutdown",
+    "no Apple Developer or App Store transfer",
+    "no target production D1 mutation during rehearsal",
+    "no DNS, Registrar, or Custom Domain move during rehearsal",
+    "no secret values committed"
+  ]
+}

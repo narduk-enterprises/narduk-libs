@@ -1,5 +1,10 @@
 # Cloudflare account and domain cutover runbook
 
+This procedure begins only after the application is independently owned and
+proven in its source account. The preceding application migration, its evidence
+manifest, and the Been Sober For exemplar are documented in
+[`template-decoupling/`](template-decoupling/README.md).
+
 This is the canonical procedure for moving a Narduk application between
 Cloudflare accounts without creating a new fleet control plane. The app remains
 independently owned, production deploys remain app-local, and this document is
