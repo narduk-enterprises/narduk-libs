@@ -1,4 +1,5 @@
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process'
+import { extname } from 'node:path'
 
 export interface PackageManagerInvocation {
   argsPrefix: string[]
@@ -12,6 +13,13 @@ export function resolvePnpmInvocation(
 ): PackageManagerInvocation {
   const packageManagerEntrypoint = env.npm_execpath?.trim()
   if (packageManagerEntrypoint) {
+    const extension = extname(packageManagerEntrypoint).toLowerCase()
+    if (!['.cjs', '.js', '.mjs'].includes(extension)) {
+      return {
+        argsPrefix: [],
+        command: packageManagerEntrypoint,
+      }
+    }
     return {
       argsPrefix: [packageManagerEntrypoint],
       command: nodeExecutable,

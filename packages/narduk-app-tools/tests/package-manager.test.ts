@@ -13,6 +13,13 @@ afterEach(() => {
 })
 
 describe('package-manager invocation', () => {
+  it('executes a native npm_execpath directly', () => {
+    expect(resolvePnpmInvocation({ npm_execpath: '/opt/pnpm/pnpm', PATH: '' })).toEqual({
+      argsPrefix: [],
+      command: '/opt/pnpm/pnpm',
+    })
+  })
+
   it('uses npm_execpath through Node when PATH cannot resolve pnpm', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-pnpm-invocation-'))
     tempDirs.push(root)
