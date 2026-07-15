@@ -229,6 +229,24 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   writeFileSync(rootManifestPath, `${JSON.stringify(rootManifest, null, 2)}\n`)
 }
 
+function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
+  const appPath = join(generatedDirectory, 'apps', 'web', 'app', 'app.vue')
+  writeFileSync(
+    appPath,
+    [
+      '<template>',
+      '  <UApp>',
+      '    <LayerAppHeader app-name="Narduk Libs Release Smoke" />',
+      '    <NuxtLayout>',
+      '      <NuxtPage />',
+      '    </NuxtLayout>',
+      '  </UApp>',
+      '</template>',
+      '',
+    ].join('\n'),
+  )
+}
+
 function assertPackedInternalDependencyGraph(packages, tarballs) {
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
 
@@ -459,6 +477,7 @@ try {
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
   addTarballOverrides(generatedDirectory, packages, tarballs)
+  addPackedCoreUiRuntimeSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   runChecked('pnpm', ['install', '--no-frozen-lockfile'], {

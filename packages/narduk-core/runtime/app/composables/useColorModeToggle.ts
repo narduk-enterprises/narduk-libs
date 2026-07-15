@@ -1,3 +1,8 @@
+// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- Packed package consumers compile this file outside the owning Nuxt source tree, so Vue APIs must be explicit.
+import { computed, onMounted, ref } from 'vue'
+
+import { useColorMode } from '#imports'
+
 /**
  * Hydration-safe color mode toggle state.
  *
@@ -5,8 +10,7 @@
  * neutral icon until mount keeps SSR and hydration markup deterministic.
  */
 export function useColorModeToggle() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Color Mode types depend on build-time module resolution
-  const colorMode = useColorMode() as any
+  const colorMode = useColorMode()
   const isMounted = ref(false)
 
   onMounted(() => {

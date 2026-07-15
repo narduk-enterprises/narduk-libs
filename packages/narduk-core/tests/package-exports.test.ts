@@ -38,6 +38,16 @@ describe('narduk-core package exports', () => {
     })
   })
 
+  it('declares explicit runtime imports for packed color-mode UI', () => {
+    const source = readFileSync(
+      join(packageRoot, 'runtime/app/composables/useColorModeToggle.ts'),
+      'utf-8',
+    )
+
+    expect(source).toContain("import { computed, onMounted, ref } from 'vue'")
+    expect(source).toContain("import { useColorMode } from '#imports'")
+  })
+
   it('does not ship retired PWA, shared icon, or control-plane runtime assets', () => {
     expect(existsSync(join(packageRoot, 'runtime/public/apple-touch-icon.png'))).toBe(false)
     expect(existsSync(join(packageRoot, 'runtime/public/favicon-16x16.png'))).toBe(false)
