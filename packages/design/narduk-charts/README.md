@@ -14,11 +14,11 @@
 npm install @narduk-enterprises/narduk-charts
 ```
 
-For private org packages, configure the `@narduk-enterprises` scope to **GitHub Packages** (see root `.npmrc`) and authenticate with a GitHub token that has `read:packages` (install) or `write:packages` (publish). Locally, `npm run package-registry:auth` writes `.npmrc.auth` when `NARDUK_PLATFORM_GH_PACKAGES_READ` or `NARDUK_PLATFORM_GH_PACKAGES_RW` is set (same pattern as [narduk-template](https://github.com/narduk-enterprises/narduk-nuxt-template)).
+For private org packages, configure the `@narduk-enterprises` scope to **GitHub Packages** (see root `.npmrc`) and authenticate with a GitHub token that has `read:packages` (install) or `write:packages` (publish). Locally, `npm run package-registry:auth` writes `.npmrc.auth` when `NARDUK_PLATFORM_GH_PACKAGES_READ` or `NARDUK_PLATFORM_GH_PACKAGES_RW` is set.
 
 ## Publishing
 
-GitHub Actions publishes tags `v*` to GitHub Packages (see `.github/workflows/publish.yml`), matching `narduk-template` publish jobs: org secrets `NARDUK_PLATFORM_GH_PACKAGES_READ` / `NARDUK_PLATFORM_GH_PACKAGES_WRITE` (or `NARDUK_PLATFORM_GH_PACKAGES_RW`).
+GitHub Actions publishes tags `v*` to GitHub Packages (see `.github/workflows/publish.yml`) using org secrets `NARDUK_PLATFORM_GH_PACKAGES_READ` / `NARDUK_PLATFORM_GH_PACKAGES_WRITE` (or `NARDUK_PLATFORM_GH_PACKAGES_RW`).
 
 Release steps live in [docs/RELEASE.md](./docs/RELEASE.md).
 

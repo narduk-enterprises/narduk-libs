@@ -7,7 +7,7 @@
 ## Prerequisites
 
 - Root `.npmrc` scopes `@narduk-enterprises` to GitHub Packages (committed in this repo).
-- CI and publish workflows use `tools/configure-package-registry-auth.mjs` (same as [`narduk-template`](https://github.com/narduk-enterprises/narduk-nuxt-template)).
+- CI and publish workflows use the repository-owned `tools/configure-package-registry-auth.mjs` helper.
 - The publish workflow expects org secrets: `NARDUK_PLATFORM_GH_PACKAGES_READ` and `NARDUK_PLATFORM_GH_PACKAGES_WRITE`, or `NARDUK_PLATFORM_GH_PACKAGES_RW` for both.
 
 ## Release Steps
@@ -29,7 +29,7 @@
 
 ## Consumer Install Smoke
 
-Use a consumer app with GitHub Packages auth for the `@narduk-enterprises` scope (see template `configure-package-registry-auth` / `package-registry:auth`):
+Use a consumer app with GitHub Packages auth for the `@narduk-enterprises` scope:
 
 ```bash
 npm install @narduk-enterprises/narduk-charts
