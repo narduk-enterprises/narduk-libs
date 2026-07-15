@@ -2,12 +2,12 @@ import {
   MapKitLayerRegistry,
   initializeMapKit,
   regionForMapKitLayer,
-} from '@loganrenz/narduk-mapkit/client'
+} from '@narduk-geo/narduk-mapkit/client'
 
 import type {
   MapKitLayerDescriptor,
   MapKitTileOverlayUrlTemplate,
-} from '@loganrenz/narduk-mapkit/client'
+} from '@narduk-geo/narduk-mapkit/client'
 
 interface MapKitNamespace {
   Coordinate: new (latitude: number, longitude: number) => unknown

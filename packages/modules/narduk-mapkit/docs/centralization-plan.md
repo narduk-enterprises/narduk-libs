@@ -23,7 +23,7 @@ Representative remote-only hits:
 
 ## Direction
 
-Keep `@loganrenz/narduk-mapkit` framework-agnostic and web-focused:
+Keep `@narduk-geo/narduk-mapkit` framework-agnostic and web-focused:
 
 - Server: origin resolution, allowlists, explicit Worker config, token signing,
   and token caching. Process/Doppler resolution is isolated in the `/node`
@@ -33,7 +33,7 @@ Keep `@loganrenz/narduk-mapkit` framework-agnostic and web-focused:
 - Playback: route progress, route slicing, duration formatting.
 - Apple Maps Server API: developer/access tokens, search, and geocoding.
 
-Publish `@loganrenz/narduk-mapkit-nuxt` from this workspace as the one Nuxt
+Publish `@narduk-geo/narduk-mapkit-nuxt` from this workspace as the one Nuxt
 adapter. It owns the reusable `AppMapKit` component, composables, module
 registration, and H3 token route while depending on core for token and client
 behavior.
@@ -51,7 +51,7 @@ Swift rendering in the Nuxt adapter.
 4. Replace custom MapKit tile overlay constructors and fade loops with `createMapKitTileOverlay()` and `crossfadeMapKitOverlayOpacity()`.
 5. Remove vendored source, absolute tarballs, mutable Git refs, redirected
    repository URLs, and copied token implementations after each consumer is
-   proven against immutable npm releases.
+   proven against immutable GitHub Packages releases.
 6. Leave marker DOM, callout content, app panels, data fetching, and
    domain-specific nearest-item logic in each app.
 7. For native Swift map code, align data contracts and tile semantics with

@@ -4,10 +4,10 @@
 
 - Established this `narduk-geo/narduk-mapkit` repository as the canonical
   two-package workspace.
-- Added public `@loganrenz/narduk-mapkit-nuxt` with `AppMapKit`, `useMapKit`,
+- Added public `@narduk-geo/narduk-mapkit-nuxt` with `AppMapKit`, `useMapKit`,
   `useMapkitToken`, Nuxt module registration, and a Worker-compatible token
   route that retains the unconfigured `503` contract.
-- Added the `@loganrenz/narduk-mapkit/apple-maps` access-token, search, and
+- Added the `@narduk-geo/narduk-mapkit/apple-maps` access-token, search, and
   geocode API.
 - Added idempotent vector-overlay helpers from the preserved legacy checkout.
 - Added the Earthdata tile-intersection decision cache, bounded at 2,048

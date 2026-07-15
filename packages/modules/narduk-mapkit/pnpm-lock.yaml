@@ -23,7 +23,7 @@ importers:
 
   packages/nuxt:
     dependencies:
-      '@loganrenz/narduk-mapkit':
+      '@narduk-geo/narduk-mapkit':
         specifier: workspace:^
         version: link:../..
       '@nuxt/kit':

@@ -1,0 +1,63 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: narduk-mapkit-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, X64, proxmox]
+    timeout-minutes: 30
+    env:
+      NODE_AUTH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          registry-url: https://npm.pkg.github.com
+          scope: '@narduk-geo'
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.4 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release candidate
+        run: pnpm run quality && pnpm run pack:artifacts
+
+      - name: Verify tag and package versions
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_version="$(node -p "require('./package.json').version")"
+          nuxt_version="$(node -p "require('./packages/nuxt/package.json').version")"
+          test "${core_version}" = "${nuxt_version}"
+          test "${GITHUB_REF_NAME}" = "v${core_version}"
+
+      - name: Publish immutable packages
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          pnpm publish --no-git-checks --access public --registry https://npm.pkg.github.com
+          pnpm --dir packages/nuxt publish --no-git-checks --access public --registry https://npm.pkg.github.com
+
+      - name: Verify published consumer
+        if: startsWith(github.ref, 'refs/tags/')
+        run: pnpm run release:verify-published

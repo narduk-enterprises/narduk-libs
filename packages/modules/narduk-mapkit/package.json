@@ -1,5 +1,5 @@
 {
-  "name": "@loganrenz/narduk-mapkit",
+  "name": "@narduk-geo/narduk-mapkit",
   "version": "1.0.0",
   "type": "module",
   "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
@@ -74,7 +74,8 @@
     "check:package": "node script/check_package_exports.mjs && node script/check_package_install.mjs",
     "prepare": "tsc -p tsconfig.build.json",
     "pack:artifacts": "node script/pack_packages.mjs",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dist && pnpm run check:package && pnpm exec publint && pnpm --filter @loganrenz/narduk-mapkit-nuxt run quality",
+    "release:verify-published": "node script/verify_published_packages.mjs",
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dist && pnpm run check:package && pnpm exec publint && pnpm --filter @narduk-geo/narduk-mapkit-nuxt run quality",
     "check:dist": "node script/check_dist_clean.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -90,7 +91,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://npm.pkg.github.com"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

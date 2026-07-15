@@ -42,15 +42,15 @@ try {
   await writeFile(
     join(projectDir, 'smoke.mjs'),
     `
-import * as root from '@loganrenz/narduk-mapkit'
-import * as appleMaps from '@loganrenz/narduk-mapkit/apple-maps'
-import * as client from '@loganrenz/narduk-mapkit/client'
-import * as geometry from '@loganrenz/narduk-mapkit/geometry'
-import * as nodeServer from '@loganrenz/narduk-mapkit/node'
-import * as playback from '@loganrenz/narduk-mapkit/playback'
-import * as server from '@loganrenz/narduk-mapkit/server'
-import * as token from '@loganrenz/narduk-mapkit/token'
-import * as worker from '@loganrenz/narduk-mapkit/worker'
+import * as root from '@narduk-geo/narduk-mapkit'
+import * as appleMaps from '@narduk-geo/narduk-mapkit/apple-maps'
+import * as client from '@narduk-geo/narduk-mapkit/client'
+import * as geometry from '@narduk-geo/narduk-mapkit/geometry'
+import * as nodeServer from '@narduk-geo/narduk-mapkit/node'
+import * as playback from '@narduk-geo/narduk-mapkit/playback'
+import * as server from '@narduk-geo/narduk-mapkit/server'
+import * as token from '@narduk-geo/narduk-mapkit/token'
+import * as worker from '@narduk-geo/narduk-mapkit/worker'
 
 const checks = [
   ['root.computeRouteDistanceMetres', root.computeRouteDistanceMetres],

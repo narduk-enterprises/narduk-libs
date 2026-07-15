@@ -38,7 +38,7 @@ personal data.
   post-build gate requires committed `dist/` to match source exactly.
 - Run `pnpm run quality` before committing. It validates both packages,
   including a clean-room Nuxt build installed only from packed tarballs.
-- Keep `@loganrenz/narduk-mapkit/worker` free of Node built-ins. Process and
+- Keep `@narduk-geo/narduk-mapkit/worker` free of Node built-ins. Process and
   Doppler CLI lookup belongs only in the explicit `/node` entry point.
 - Keep examples minimal and copyable. Do not move app styling, marker HTML,
   panels, domain data loading, or framework-specific workflows into core.
