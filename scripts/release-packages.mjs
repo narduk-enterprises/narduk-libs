@@ -375,6 +375,7 @@ try {
       2,
     )}\n`,
   )
+  addTarballOverrides(consumerDirectory, packages, tarballs)
 
   runChecked('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
     cwd: consumerDirectory,
