@@ -33,7 +33,9 @@ jobs:
       - name: Materialize Changesets base branch
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          git branch --force main origin/main
+          if [ "$(git branch --show-current)" != "main" ]; then
+            git branch --force main origin/main
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
