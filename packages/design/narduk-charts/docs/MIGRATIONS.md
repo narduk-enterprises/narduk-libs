@@ -17,7 +17,7 @@ Breaking changes are listed here and in `CHANGELOG.md` with semver bumps.
   - `narduk-charts/style.css` → `@narduk-enterprises/narduk-charts/style.css`
   - `narduk-charts/line` (and other subpaths) → `@narduk-enterprises/narduk-charts/line`, etc.
 - Configure the `@narduk-enterprises` scope in `.npmrc` to use `https://npm.pkg.github.com/` (see this repo’s root `.npmrc`).
-- For installs and publishing, use a GitHub token with `read:packages` / `write:packages` via `tools/configure-package-registry-auth.mjs` (same env vars as `narduk-template`).
+- For installs and publishing, use a GitHub token with `read:packages` / `write:packages` via this repository's `tools/configure-package-registry-auth.mjs` helper.
 
 ## 1.x
 
