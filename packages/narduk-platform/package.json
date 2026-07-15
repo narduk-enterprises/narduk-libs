@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-platform",
-  "version": "1.28.63",
+  "version": "2.0.0",
   "private": false,
   "type": "module",
   "description": "Neutral environment, onboarding, package-registry, and provider contracts for independent Narduk apps.",
