@@ -10,8 +10,9 @@ reference_app: narduk-enterprises/been-sober-for
 This is the operator runbook for converting an application created from
 `narduk-template` into an ordinary, independently owned Nuxt repository. It is
 based on the completed Been Sober For (BSF) package and application decoupling,
-its source-account production deployment, and its target-account Cloudflare
-rehearsal. It is deliberately more procedural than the fleet architecture in
+its source-account production deployment, and its 2026-07-15 Cloudflare traffic
+cutover to Narduk Enterprises. It is deliberately more procedural than the fleet
+architecture in
 [`../../architecture/narduk-template-decommission.md`](../../architecture/narduk-template-decommission.md).
 
 This packet has three parts:
@@ -52,19 +53,22 @@ account-cutover gates pass.
 
 Never compress the migration into a single `done` flag. Use these states:
 
-| State                      | Meaning                                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `inventoried`              | Remote truth, production baseline, dependencies, capabilities, data, and routes are recorded.          |
-| `packages-ready`           | Required packages have passed candidate and external-consumer gates and are published immutably.       |
-| `app-decoupled`            | The app has no functional template coupling and all app-owned local gates pass.                        |
-| `source-deployed`          | The exact merged decoupling release is proven in the existing production account.                      |
-| `target-rehearsed`         | A production-data rehearsal and target workers.dev proof pass without touching target production data. |
-| `account-cutover-ready`    | Zone, Workers Build, credentials, target production resources, and go/no-go packet are complete.       |
-| `account-cutover-complete` | Data, zone, Registrar, Custom Domains, HTTPS, writes, and device proof pass in the target account.     |
-| `retention-complete`       | The 30-day recovery window closes and source resources are removed after zero-traffic proof.           |
+| State                      | Meaning                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `inventoried`              | Remote truth, production baseline, dependencies, capabilities, data, and routes are recorded.           |
+| `packages-ready`           | Required packages have passed candidate and external-consumer gates and are published immutably.        |
+| `app-decoupled`            | The app has no functional template coupling and all app-owned local gates pass.                         |
+| `source-deployed`          | The exact merged decoupling release is proven in the existing production account.                       |
+| `target-rehearsed`         | A production-data rehearsal and target workers.dev proof pass without touching target production data.  |
+| `account-cutover-ready`    | Zone, Workers Build, credentials, target production resources, and go/no-go packet are complete.        |
+| `traffic-cutover-complete` | Data, zone, Registrar, Custom Domains, HTTPS, and writes pass in the target account.                    |
+| `product-proof-complete`   | Authenticated final-domain profile mutation and upload/retrieval pass, including required device proof. |
+| `retention-complete`       | The 30-day recovery window closes and source resources are removed after zero-traffic proof.            |
 
-At the time of this packet, BSF is `target-rehearsed`; it is not
-`account-cutover-complete`.
+BSF is `traffic-cutover-complete`: authentication succeeded on the physical
+iPhone by user/operator attestation, but profile mutation and upload/retrieval
+remain unproven. Reviewer sign-off and the 30-day retention closeout also remain
+open. Do not collapse those facts into a single `complete` flag.
 
 ## Phase 0: establish remote truth
 
@@ -409,6 +413,13 @@ support history but cannot satisfy the current gate.
 | `F20` | A rerun repeats expensive safe work after a tail-only proof failure.          | Scripts lack resumable phases.                                                                                              | Persist phase evidence and allow proof-only continuation under a new temporary token without repeating imports/copies.                                     |
 | `F21` | Existing target staging is promoted as production.                            | A working staging stack is mistaken for a production foundation despite synthetic data, partial secrets, and different IDs. | Provision fresh production Worker, D1, KV, R2, rate limits, and build; use staging only as a behavioral reference.                                         |
 | `F22` | CI discovers migration defects one at a time.                                 | The candidate was pushed without an authenticated clean install and full local acceptance.                                  | Treat missing package credentials as a defect; run the complete canonical sequence before push.                                                            |
+| `F23` | Workers Builds API rejects a valid account token.                             | The Builds API requires a user-scoped API token; its build token is a separate trigger credential.                          | Record both credential classes; use minimum Builds Configuration edit plus Workers Scripts read for API operation.                                         |
+| `F24` | A rehearsal candidate accidentally becomes production.                        | The normal deploy command activates a version before target data is imported and reconciled.                                | Upload without activation; record the prior active version and prove target production D1 stayed unchanged.                                                |
+| `F25` | Public HTTPS works but the operator Mac still resolves a dead IP.             | Local DNS retained the target zone's pre-activation placeholder after public resolvers converged.                           | Prove authoritative/public resolvers; use `curl --resolve` for TLS and route proof while local cache expires.                                              |
+| `F26` | Device authentication is reported as full product acceptance.                 | Operator attestation, app launch, profile mutation, and upload/retrieval were conflated.                                    | Record machine proof, operator attestation, and unproven flows separately.                                                                                 |
+| `F27` | Cutover configuration remains temporary after traffic moves.                  | The trigger still targets a cutover branch/version upload or test config still names source resources.                      | Restore `main` plus canonical commands and rerun the functional source-account/cutover-reference scan.                                                     |
+| `F28` | The canonical build compiles but D1 migration fails with `10000`.             | Cloudflare's automatically selected user build token can deploy Workers but does not include D1 edit.                       | Supply a separate app-scoped D1/Worker deploy token as a masked build variable, export it only for migration/deploy, and fail closed when absent.          |
+| `F29` | Committing deployment evidence immediately creates a newer deployment.        | The permanent production trigger watches documentation paths, so an evidence-only merge redeploys unchanged code.           | Exclude `docs/**` while keeping application, config, lockfile, and migration paths deployable.                                                             |
 
 ## Reusable operator checklist
 
@@ -475,6 +486,9 @@ support history but cannot satisfy the current gate.
 | CI package parallelism    | `narduk-libs` PR [#8](https://github.com/narduk-enterprises/narduk-libs/pull/8), merge `f28c73f`, maximum parallelism four                                                                                                                                             |
 | Cloudflare procedure      | [`../cloudflare-account-cutover.md`](../cloudflare-account-cutover.md)                                                                                                                                                                                                 |
 | BSF live execution record | `been-sober-for/docs/operations/cloudflare-account-cutover.md`                                                                                                                                                                                                         |
+| Final traffic cutover     | BSF PR [#70](https://github.com/narduk-enterprises/been-sober-for/pull/70), final execution record and machine-readable schema-v2 evidence                                                                                                                             |
+| Workers Build D1 repair   | BSF PR [#71](https://github.com/narduk-enterprises/been-sober-for/pull/71); failed build `d183d2fc-cabb-4d47-b577-52b69b701f1d` stopped before migration authenticated; repaired build `ee9689c3-2a5d-4951-b085-d1b473d797d6` deployed `b2e462c` successfully          |
+| Final automation evidence | BSF PR [#72](https://github.com/narduk-enterprises/been-sober-for/pull/72), canonical Workers Build, idempotent migration, deployed version, and live-marker evidence                                                                                                  |
 
 The JSON exemplar is the compact handoff. The BSF repository execution record
 remains the authoritative live account-cutover ledger and must be updated as

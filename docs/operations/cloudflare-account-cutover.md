@@ -28,7 +28,8 @@ least-privilege operator credentials for:
   target account.
 
 Store credentials in the approved secret manager. Logs and evidence records
-contain only secret names, never values. Revoke temporary credentials after the
+contain only secret names, never values. Revoke narrow phase credentials as soon
+as their proof is complete, then perform a second credential review at the
 retention gate. Confirm target-account email verification, billing, and the
 operator's ability to accept the Registrar transfer before the maintenance
 window.
@@ -153,6 +154,39 @@ The cutover operator signs off every item:
 10. Enable exactly one queue consumer and scheduler owner when applicable.
 11. Disable maintenance mode and record the outage end.
 
+### Proven activation refinement
+
+BSF established a safer split between candidate upload and activation:
+
+1. Upload the reviewed candidate as a non-activating Worker version. Record the
+   build ID, trigger ID, commands, prior active version, and `activated: false`.
+2. Prove the upload did not change target production D1 or live traffic. An
+   expected schema-health failure is acceptable only when target D1 is
+   intentionally empty and that condition is recorded.
+3. After the final import, activate a read-only target version and prove data,
+   routes, maintenance blocking, Custom Domains, and HTTPS.
+4. Activate a distinct writes-enabled version at 100% traffic, then prove the
+   final build marker and maintenance-off state.
+5. Restore Workers Builds to the default branch and canonical production
+   build/deploy commands. Remove temporary configs and scan functional files for
+   source-account IDs and cutover commands.
+
+The Workers Builds REST API requires a user-scoped API token; the build token
+selected by the trigger is a separate credential. Record both by safe identifier
+and permission class without recording either value.
+
+Cloudflare's automatically created Worker upload token does not necessarily
+include D1 edit. If the production deploy command runs remote migrations, use a
+separate app-scoped target-account token with the required Worker and D1 access,
+store it as a masked build variable, export it to Wrangler only for
+migration/deploy, and fail closed when it is absent. Prove this token with a
+safe D1 query and Worker read before selecting it.
+
+Authentication, profile mutation, and upload/retrieval are separate gates. App
+launch or user-attested login must not be represented as successful
+profile/upload proof. Record each result as machine-captured, operator-attested,
+or unproven.
+
 ## 8. Rollback boundaries
 
 - Before the Registrar move, abort by leaving traffic and writes on the source
@@ -173,6 +207,10 @@ is a no-go; it is not permission to skip reconciliation.
 Keep source Worker versions, D1, KV, R2, deployment history, and backups intact
 for 30 days. Disable source mutation paths, triggers, and credentials after
 target proof, but do not delete data during the retention window.
+
+The retention clock starts when target writes reopen. Record that timestamp,
+source trigger/mutation disablement, and any immediately revoked phase token; do
+not leave them implicit until day 30.
 
 After 30 days, confirm there is no source traffic or write activity, capture
 final checksums, revoke temporary credentials, remove retained source
@@ -197,6 +235,8 @@ Source commit/build marker:
 Target commit/build marker:
 Migration PR and exact package pins:
 Workers Build ID:
+Workers Build trigger ID, branch, commands, and credential classes:
+Candidate version, prior active version, and activated=false proof:
 Source-to-target resource mapping:
 Secret and build-variable names:
 DNS export checksum and target review:
@@ -208,11 +248,15 @@ KV inventory and treatment:
 R2 manifest comparison:
 Queue/schedule ownership proof:
 Registrar transfer evidence:
-Certificate and Custom Domain evidence:
+Zone lifecycle, nameservers, DNSSEC/DS, certificate IDs, and Custom Domain evidence:
+Read-only version and writes-enabled version/traffic evidence:
 Web/API/client proof:
+Machine proof vs operator attestation vs unproven product flows:
 Maintenance start:
 Maintenance end:
+Go/no-go decision, basis, and timestamp-captured flag:
 Rollback decision and boundary:
+Retention start and source-trigger/mutation disablement:
 30-day retention end:
 Operator sign-off:
 ```
