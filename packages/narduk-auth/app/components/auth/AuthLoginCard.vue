@@ -2,6 +2,7 @@
 /* eslint-disable narduk/file-size-budget -- Login card owns schema + form state + provider flows + error mapping in one surface to keep the auth UX coherent; splitting scatters validation across files. */
 import { z } from 'zod'
 
+import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
 const props = withDefaults(
@@ -52,7 +53,16 @@ const canUseApple = computed(
   () => effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple'),
 )
 const canRegister = computed(() => config.public.authPublicSignup)
-const resolvedRedirectPath = computed(() => props.redirectPath ?? config.public.authRedirectPath)
+const redirectRequest = computed(() =>
+  resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
+)
+const resolvedRedirectPath = computed(() => redirectRequest.value.path)
+const registerLink = computed(() =>
+  withLocalRedirectQuery(config.public.authRegisterPath, redirectRequest.value),
+)
+const resetLink = computed(() =>
+  withLocalRedirectQuery(config.public.authResetPath, redirectRequest.value),
+)
 
 watchEffect(() => {
   if (typeof route.query.email === 'string' && !state.email) {
@@ -189,7 +199,7 @@ async function onAppleSignIn() {
         </UFormField>
 
         <div class="flex justify-end">
-          <ULink :to="config.public.authResetPath" class="text-xs text-muted hover:text-primary">
+          <ULink :to="resetLink" class="text-xs text-muted hover:text-primary">
             Forgot your password?
           </ULink>
         </div>
@@ -210,10 +220,7 @@ async function onAppleSignIn() {
       <p class="text-center text-sm text-muted">
         <template v-if="canRegister">
           Don&apos;t have an account?
-          <ULink
-            :to="config.public.authRegisterPath"
-            class="font-medium text-primary hover:underline"
-          >
+          <ULink :to="registerLink" class="font-medium text-primary hover:underline">
             Sign up
           </ULink>
         </template>
