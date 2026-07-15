@@ -10,9 +10,13 @@ an artifact.
 2. Open or update the release PR by merging the package change to `main`. The
    release workflow runs quality, strict package checks, and the packed
    generated-app consumer smoke before Changesets receives write credentials.
-3. Review and merge the release PR. Changesets publishes only the versions in
+3. Let app CI validate the release PR from a fresh frozen install. The packed
+   consumer gate must prove every runtime dependency between local packages was
+   rewritten from `workspace:*` to the exact coordinated release version; this
+   prevents stale core, auth, or platform versions from entering the graph.
+4. Review and merge the release PR. Changesets publishes only the versions in
    that release plan.
-4. When Changesets reports `published=true`, the workflow waits for registry
+5. When Changesets reports `published=true`, the workflow waits for registry
    propagation, resolves every publishable manifest at its exact version, and
    performs both an initial and frozen external consumer install. A release is
    not complete until this proof passes.

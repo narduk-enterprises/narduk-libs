@@ -229,6 +229,40 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   writeFileSync(rootManifestPath, `${JSON.stringify(rootManifest, null, 2)}\n`)
 }
 
+function assertPackedInternalDependencyGraph(packages, tarballs) {
+  const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
+
+  for (const { manifest } of packages) {
+    const tarball = tarballs.get(manifest.name)
+    const packedManifest = JSON.parse(
+      execFileSync('tar', ['-xOf', tarball, 'package/package.json'], {
+        cwd: root,
+        encoding: 'utf8',
+      }),
+    )
+
+    if (packedManifest.name !== manifest.name || packedManifest.version !== manifest.version) {
+      throw new Error(
+        `Packed manifest identity mismatch for ${manifest.name}: received ${packedManifest.name}@${packedManifest.version}.`,
+      )
+    }
+
+    for (const section of ['dependencies', 'optionalDependencies']) {
+      for (const [dependencyName, dependencyVersion] of Object.entries(
+        packedManifest[section] || {},
+      )) {
+        const localDependency = packagesByName.get(dependencyName)
+        if (!localDependency) continue
+        if (dependencyVersion !== localDependency.version) {
+          throw new Error(
+            `${manifest.name}@${manifest.version} packs ${section}.${dependencyName} as ${dependencyVersion}; expected the exact coordinated version ${localDependency.version}.`,
+          )
+        }
+      }
+    }
+  }
+}
+
 const packages = readdirSync(packageRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => {
@@ -288,6 +322,8 @@ try {
     }
     tarballs.set(manifest.name, join(tarballDirectory, tarball))
   }
+
+  assertPackedInternalDependencyGraph(packages, tarballs)
 
   const dependencies = Object.fromEntries(
     packages.map(({ manifest }) => [
