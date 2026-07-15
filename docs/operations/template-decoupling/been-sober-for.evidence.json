@@ -1,6 +1,10 @@
 {
   "schemaVersion": 1,
   "recordType": "template-to-independent-app-migration",
+  "derivedFrom": "narduk-enterprises/been-sober-for/docs/operations/cloudflare-account-cutover-evidence.json",
+  "sourceCommit": "19ad68e1f602d3c1c511fc5577284779c6e13fe1",
+  "generatedAt": "2026-07-15T23:15:19Z",
+  "authoritative": false,
   "app": {
     "slug": "been-sober-for",
     "displayName": "BeenSoberFor",
@@ -10,16 +14,18 @@
   },
   "verifiedAt": "2026-07-15",
   "status": {
-    "current": "target-rehearsed",
+    "current": "traffic-cutover-complete",
     "completed": [
       "inventoried",
       "packages-ready",
       "app-decoupled",
       "source-deployed",
-      "target-rehearsed"
+      "target-rehearsed",
+      "account-cutover-ready",
+      "traffic-cutover-complete"
     ],
-    "pending": ["account-cutover-ready", "account-cutover-complete", "retention-complete"],
-    "note": "Template decoupling is complete. The target-account data and workers.dev rehearsal passed. Workers Build, target zone, final data move, Registrar, Custom Domains, HTTPS, write reopening, and physical-iPhone proof remain pending."
+    "pending": ["product-proof-complete", "retention-complete"],
+    "note": "Template decoupling and the Cloudflare traffic cutover are complete. Physical-iPhone authentication is operator-attested, but physical profile mutation and upload/retrieval are not proven, so product-proof-complete remains open. The 30-day retained-source closeout is also pending."
   },
   "sourceControl": {
     "historicalPilotBranch": {
@@ -298,6 +304,64 @@
     "temporaryOperatorTokenRevoked": true,
     "protectedEvidenceRoot": "/Users/narduk/.local/state/been-sober-for/cloudflare-cutover/target-rehearsal-20260715T192933Z"
   },
+  "infrastructureAccountCutover": {
+    "status": "complete",
+    "date": "2026-07-15",
+    "applicationCommit": "06ba0dc339d28088b9e1f032e65dbb5337b4502d",
+    "evidencePullRequest": {
+      "number": 70,
+      "url": "https://github.com/narduk-enterprises/been-sober-for/pull/70",
+      "headCommit": "19ad68e1f602d3c1c511fc5577284779c6e13fe1",
+      "stateAtVerification": "open"
+    },
+    "protectedEvidenceRoot": "/Users/narduk/.local/state/been-sober-for/cloudflare-cutover/cutover-20260715T222937Z",
+    "writeFreeze": {
+      "startedAt": "2026-07-15T22:31:51Z",
+      "endedAt": "2026-07-15T22:57:49Z",
+      "durationSeconds": 1558
+    },
+    "targetRuntime": {
+      "accountId": "73a85923e2b7cf8f29d0b8c89de9d265",
+      "workerVersionId": "5a78ec42-5ee1-430a-82e8-9ec2b5af9dac",
+      "workerVersionNumber": 20,
+      "trafficPercentage": 100,
+      "buildMarker": "06ba0dc339d2",
+      "workersBuildTriggerId": "7db4ce7c-ca5f-4dab-a398-24665c87c75d",
+      "zoneId": "eb7bcf258f0976718716c88c9e06676a",
+      "registrarTransfer": "accepted",
+      "customDomains": ["beensoberfor.com", "www.beensoberfor.com"],
+      "https": "proven",
+      "maintenanceMode": "off",
+      "writesAllowed": true
+    },
+    "dataProof": {
+      "d1DatabaseId": "80894442-eae0-4f22-b9fd-00099bc3e472",
+      "applicationTables": 12,
+      "legacyMigrationRows": 21,
+      "stableMigrationRows": 8,
+      "secondMigrationRunEmpty": true,
+      "sourceTargetSchemaMatch": true,
+      "sourceTargetLedgerMatch": true,
+      "sourceTargetTableCountsMatch": true,
+      "r2Objects": 14,
+      "r2Bytes": 5818346,
+      "r2SourceTargetMatch": true,
+      "kvSourceKeysAtFreeze": 0,
+      "kvTargetKeys": 0
+    },
+    "routeProof": {
+      "publicRoutes": "proven",
+      "physicalIPhoneAuthentication": "operator_attested_success",
+      "physicalProfileMutation": "not_proven",
+      "physicalUploadAndRetrieval": "not_proven"
+    },
+    "retention": {
+      "status": "pending",
+      "durationDays": 30,
+      "startedAt": "2026-07-15T22:57:49Z",
+      "sourceResourcesRemoved": false
+    }
+  },
   "zoneInventory": {
     "zoneId": "a33fb64bea5a4072c8f0042a6a5cfe2e",
     "dnsRecords": 4,
@@ -327,14 +391,8 @@
     "valuesRecorded": false
   },
   "pendingBlockers": [
-    "configure and prove target Workers Build through the required user-scoped GitHub/Cloudflare authorization flow",
-    "create and independently review the target zone and copied settings",
-    "capture final freeze-time D1, R2, and KV evidence",
-    "import into untouched target production D1 and reconcile",
-    "transfer Registrar ownership and attach Custom Domains",
-    "prove Universal SSL and both apex and www HTTPS",
-    "reopen writes and prove physical-iPhone login, profile, upload, and account flows",
-    "complete 30-day source-resource retention and removal"
+    "prove physical-iPhone profile mutation and upload/retrieval, including exactly-once target writes",
+    "complete the 30-day retained-source traffic, checksum, credential-review, and removal closeout"
   ],
   "explicitNonActions": [
     "no Command shutdown",

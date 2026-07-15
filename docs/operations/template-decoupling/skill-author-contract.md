@@ -37,6 +37,14 @@ cloudflare_source_account  optional in app-decoupling skill
 cloudflare_target_account  required only in account-cutover skill
 evidence_output            repository-relative checked-in manifest path
 protected_evidence_root    absolute non-Git path
+protected_final_evidence_root absolute non-Git path for freeze/cutover proof
+cutover_branch             temporary candidate branch
+candidate_build_command    non-production candidate build
+candidate_upload_command   version upload that must not activate traffic
+canonical_build_command    permanent production build command
+canonical_deploy_command   permanent production deploy command
+go_no_go_deadline          timestamp or bounded outage checkpoint
+physical_device_proof_required boolean
 mode                       audit | implement | resume | verify
 ```
 
@@ -53,7 +61,8 @@ inventoried
   -> source-deployed
   -> target-rehearsed
   -> account-cutover-ready
-  -> account-cutover-complete
+  -> traffic-cutover-complete
+  -> product-proof-complete
   -> retention-complete
 ```
 
@@ -175,6 +184,10 @@ Every evidence-producing command records:
 Normalize nondeterministic exports before comparing them. Preserve original
 artifacts as well as normalized manifests.
 
+Derived exemplars record `derivedFrom`, `sourceCommit`, `generatedAt`, and
+`authoritative: false`; the app-owned execution record remains authoritative.
+Evidence distinguishes machine proof, operator attestation, and `not_proven`.
+
 ## Cloudflare safety contract
 
 The account-cutover skill must follow these invariants:
@@ -192,6 +205,17 @@ The account-cutover skill must follow these invariants:
 - never reset remote D1; corrections are forward-only;
 - never reopen writes until target data, HTTPS, routes, and app flows pass; and
 - after target writes open, never roll traffic back to stale source data.
+
+Upload the candidate as a non-activating version and record its build, trigger,
+commands, prior active version, `activated: false`, and target D1 table count
+before and after upload. After final import, activate and prove a read-only
+version before activating a distinct writes-enabled version. Restore the
+default-branch trigger and canonical production commands after traffic proof.
+
+Workers Builds API credentials are user-scoped and distinct from the build token
+selected by the trigger. User authorization, Registrar acceptance, final
+go/no-go, physical-device unlock/authentication, and destructive day-30 cleanup
+remain explicit human authority boundaries.
 
 R2 credentials are source/target-specific. Cloudflare S3 derivation, bucket
 scope, propagation retry, manifest comparison, multipart ETag caveats, and
@@ -231,11 +255,15 @@ The skill should support a concise status command returning:
 ```json
 {
   "app": "been-sober-for",
-  "state": "target-rehearsed",
-  "exactCommit": "e949bd9873bd72d60efcff870e50b863353d3983",
-  "passedGates": 5,
-  "nextGate": "account-cutover-ready",
-  "blockers": ["Workers Build user authorization", "target zone preparation"],
+  "state": "traffic-cutover-complete",
+  "exactCommit": "06ba0dc339d28088b9e1f032e65dbb5337b4502d",
+  "passedGates": 7,
+  "nextGate": "product-proof-complete",
+  "blockers": [
+    "physical profile/upload proof",
+    "reviewer sign-off",
+    "30-day retention"
+  ],
   "evidence": "docs/operations/template-decoupling/been-sober-for.evidence.json"
 }
 ```
@@ -257,8 +285,8 @@ The skill must never:
 - treat a target workers.dev proof as the final domain/device proof;
 - transfer Apple Developer/App Store ownership when the public URL and Apple
   team remain unchanged; or
-- mark the whole migration complete while account-cutover or retention states
-  are still pending.
+- mark the whole migration complete while product-proof or retention states are
+  still pending.
 
 ## Acceptance tests for the future skill
 
@@ -281,6 +309,6 @@ Required fixtures:
 - target sitemap intentionally disabled; and
 - proof-only resume after successful import/copy.
 
-The BSF verify-mode result must reproduce the current `target-rehearsed` state
-and the pending blockers in the JSON exemplar without reading secret values or
-mutating GitHub, Cloudflare, Doppler, DNS, data, or deployments.
+The BSF verify-mode result must reproduce the current `traffic-cutover-complete`
+state and the pending blockers in the JSON exemplar without reading secret
+values or mutating GitHub, Cloudflare, Doppler, DNS, data, or deployments.
