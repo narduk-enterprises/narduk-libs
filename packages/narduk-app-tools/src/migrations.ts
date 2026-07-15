@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   existsSync,
@@ -12,6 +11,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+
+import { spawnPnpmSync } from './package-manager.js'
 
 export const MIGRATION_LEDGER_TABLE = '_narduk_migrations'
 export const MIGRATION_CONFIG_VERSION = 1
@@ -611,7 +612,7 @@ export function parseWranglerJson<T>(output: string): WranglerResult<T> {
 }
 
 function runWrangler(args: string[], cwd: string, json: boolean): string {
-  const result = spawnSync('pnpm', ['exec', 'wrangler', ...args], {
+  const result = spawnPnpmSync(['exec', 'wrangler', ...args], {
     cwd,
     encoding: 'utf8',
     env: process.env,
