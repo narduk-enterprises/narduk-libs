@@ -78,6 +78,7 @@ interface MutableNuxtOptionsRecord {
 export interface NardukCoreModuleOptions {
   app?: boolean
   coreModules?: boolean
+  image?: boolean
   server?: boolean
 }
 
@@ -449,6 +450,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
   defaults: {
     app: true,
     coreModules: true,
+    image: true,
     server: true,
   },
   async setup(options, nuxt) {
@@ -512,7 +514,9 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       await installModule('@nuxtjs/color-mode')
       await installModule('@nuxt/ui')
       await installModule('@nuxt/fonts')
-      await installModule('@nuxt/image')
+      if (options.image !== false) {
+        await installModule('@nuxt/image')
+      }
       await installModule('@nuxt/eslint')
       await installModule('nuxt-auth-utils')
       dedupeIconServerCollectionsModule(null, { options: nuxtOptions })

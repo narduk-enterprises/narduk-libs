@@ -80,6 +80,7 @@ describe('narduk-core module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(installModule).toHaveBeenCalledWith('@nuxt/image')
     expect(addTemplate).toHaveBeenCalledWith({
       src: expect.stringContaining('/runtime/app/layouts/dashboard.vue'),
     })
@@ -105,6 +106,11 @@ describe('narduk-core module', () => {
       name: 'landing',
     })
     expect(hooks.has('vite:extendConfig')).toBe(true)
+
+    installModule.mockClear()
+    await mod.setup({ app: false, coreModules: true, image: false, server: false }, nuxt)
+    expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(installModule).not.toHaveBeenCalledWith('@nuxt/image')
 
     const previousDatabaseBackend = process.env.NUXT_DATABASE_BACKEND
     try {
