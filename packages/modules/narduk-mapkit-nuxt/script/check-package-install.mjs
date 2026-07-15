@@ -9,6 +9,11 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const tempRoot = await mkdtemp(join(tmpdir(), 'narduk-mapkit-nuxt-package-'))
 const packDir = join(tempRoot, 'pack')
 const consumerDir = join(tempRoot, 'consumer')
+const registrySmoke = process.env.NARDUK_MAPKIT_REGISTRY_SMOKE === '1'
+
+async function packageManifest(packageJsonPath) {
+  return JSON.parse(await readFile(packageJsonPath, 'utf8'))
+}
 
 async function packageTarballPrefix(packageJsonPath) {
   const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'))
@@ -75,15 +80,34 @@ async function filesBelow(directory) {
 try {
   await mkdir(packDir, { recursive: true })
   await mkdir(consumerDir, { recursive: true })
-  run('pnpm', ['pack', '--pack-destination', packDir], repoRoot)
-  run('pnpm', ['pack', '--pack-destination', packDir], packageRoot)
+  const coreManifest = await packageManifest(join(repoRoot, 'package.json'))
+  const nuxtManifest = await packageManifest(join(packageRoot, 'package.json'))
+  let coreSource = coreManifest.version
+  let nuxtSource = nuxtManifest.version
 
-  const coreTarball = await findTarball(
-    await packageTarballPrefix(join(repoRoot, 'package.json')),
-  )
-  const nuxtTarball = await findTarball(
-    await packageTarballPrefix(join(packageRoot, 'package.json')),
-  )
+  if (registrySmoke) {
+    if (!process.env.NODE_AUTH_TOKEN?.trim()) {
+      throw new Error('NARDUK_MAPKIT_REGISTRY_SMOKE requires NODE_AUTH_TOKEN.')
+    }
+    await writeFile(
+      join(consumerDir, '.npmrc'),
+      [
+        '@narduk-geo:registry=https://npm.pkg.github.com',
+        '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}',
+        'registry=https://registry.npmjs.org/',
+        '',
+      ].join('\n'),
+    )
+  } else {
+    run('pnpm', ['pack', '--pack-destination', packDir], repoRoot)
+    run('pnpm', ['pack', '--pack-destination', packDir], packageRoot)
+    coreSource = `file:${await findTarball(
+      await packageTarballPrefix(join(repoRoot, 'package.json')),
+    )}`
+    nuxtSource = `file:${await findTarball(
+      await packageTarballPrefix(join(packageRoot, 'package.json')),
+    )}`
+  }
   await writeFile(
     join(consumerDir, 'package.json'),
     JSON.stringify(
@@ -92,8 +116,8 @@ try {
         private: true,
         type: 'module',
         dependencies: {
-          '@loganrenz/narduk-mapkit': `file:${coreTarball}`,
-          '@loganrenz/narduk-mapkit-nuxt': `file:${nuxtTarball}`,
+          '@narduk-geo/narduk-mapkit': coreSource,
+          '@narduk-geo/narduk-mapkit-nuxt': nuxtSource,
           nuxt: '4.4.8',
           vue: '3.5.39',
         },
@@ -105,7 +129,7 @@ try {
   await writeFile(
     join(consumerDir, 'nuxt.config.ts'),
     `export default defineNuxtConfig({
-  modules: ['@loganrenz/narduk-mapkit-nuxt'],
+  modules: ['@narduk-geo/narduk-mapkit-nuxt'],
   compatibilityDate: '2026-07-14',
   nitro: { cloudflare: { nodeCompat: false } },
   sourcemap: false,
@@ -130,7 +154,7 @@ const { mapkitReady } = useMapKit()
 
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], consumerDir)
   const installedLicense = await readFile(
-    join(consumerDir, 'node_modules/@loganrenz/narduk-mapkit-nuxt/LICENSE'),
+    join(consumerDir, 'node_modules/@narduk-geo/narduk-mapkit-nuxt/LICENSE'),
     'utf8',
   )
   if (!installedLicense.startsWith('MIT License')) {
@@ -179,6 +203,12 @@ const { mapkitReady } = useMapKit()
     {},
     503,
   )
+  await expectStatus(
+    worker,
+    new Request('https://worker.example/api/mapkit-token', { method: 'POST' }),
+    {},
+    405,
+  )
 
   const bindings = {}
   Object.defineProperties(bindings, {
@@ -213,7 +243,7 @@ const { mapkitReady } = useMapKit()
   }
 
   console.log(
-    'Built packed MapKit tarballs in a clean Cloudflare fixture and proved 503/403/200 binding behavior.',
+    `Built ${registrySmoke ? 'published MapKit packages' : 'packed MapKit tarballs'} in a clean Cloudflare fixture and proved 503/403/200/405 behavior.`,
   )
 } finally {
   if (!process.env.NARDUK_MAPKIT_KEEP_PACKAGE_SMOKE) {

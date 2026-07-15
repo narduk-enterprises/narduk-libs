@@ -37,7 +37,7 @@ function normalizeRoutePath(path: string): string {
 
 export default defineNuxtModule<NardukMapKitNuxtModuleOptions>({
   meta: {
-    name: '@loganrenz/narduk-mapkit-nuxt',
+    name: '@narduk-geo/narduk-mapkit-nuxt',
     configKey: 'nardukMapKit',
     compatibility: { nuxt: '>=4.0.0' },
   },
@@ -110,7 +110,7 @@ declare module '@nuxt/schema' {
 declare module 'h3' {
   interface H3EventContext {
     nardukMapKit?: {
-      rateLimit?: import('@loganrenz/narduk-mapkit/worker').MapKitRateLimitHook
+      rateLimit?: import('@narduk-geo/narduk-mapkit/worker').MapKitRateLimitHook
     }
   }
 }
