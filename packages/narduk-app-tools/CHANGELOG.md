@@ -1,6 +1,6 @@
-# @narduk-enterprises/create-narduk-app
+# @narduk-enterprises/narduk-app-tools
 
-## 0.1.2
+## 0.1.1
 
 ### Patch Changes
 
@@ -9,10 +9,3 @@
   invocations.
 
   Update generated-app package pins for the corrected app-tools release.
-
-## 0.1.1
-
-### Patch Changes
-
-- 7848187: Publish the generator with the exact neutralized package versions
-  produced by this release.
