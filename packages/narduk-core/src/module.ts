@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { readProvisionMetadata, resolveLocalNuxtPort } from '@narduk-enterprises/narduk-platform'
 import {
   addComponentsDir,
   addImportsDir,
@@ -16,7 +15,6 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
-import { resolveNuxtProvisionAppRoot } from '../runtime/internal/nuxt-provision-app-root'
 import {
   applyCoreRollupBuildWarningPolicy,
   applyCoreViteBuildWarningPolicy,
@@ -80,6 +78,7 @@ interface MutableNuxtOptionsRecord {
 export interface NardukCoreModuleOptions {
   app?: boolean
   coreModules?: boolean
+  image?: boolean
   server?: boolean
 }
 
@@ -87,6 +86,11 @@ function pushUnique<T>(items: T[], item: T): void {
   if (!items.includes(item)) {
     items.push(item)
   }
+}
+
+function resolveDevServerPort(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535 ? parsed : fallback
 }
 
 function addFallbackLayout(
@@ -446,6 +450,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
   defaults: {
     app: true,
     coreModules: true,
+    image: true,
     server: true,
   },
   async setup(options, nuxt) {
@@ -474,8 +479,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       }
     })()
     const colorModePreference = process.env.NUXT_COLOR_MODE_PREFERENCE || 'system'
-    const provision = readProvisionMetadata(resolveNuxtProvisionAppRoot())
-    const devServerPort = resolveLocalNuxtPort(process.env, provision, 3000)
+    const devServerPort = resolveDevServerPort(process.env.NUXT_PORT, 3000)
     const ormTablesEntry =
       databaseBackend === 'postgres' ? 'server/database/pg-schema.ts' : 'server/database/schema.ts'
     const postgresRuntimeEntry =
@@ -500,8 +504,8 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     nuxtOptions.alias = {
       ...nuxtOptions.alias,
       '#layer': runtimeRoot,
-      '#layer/orm-tables': resolver.resolve(`../runtime/${ormTablesEntry}`),
-      '#layer/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
+      '#narduk-core/schema': resolver.resolve(`../runtime/${ormTablesEntry}`),
+      '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
     }
 
     if (options.coreModules) {
@@ -510,7 +514,9 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       await installModule('@nuxtjs/color-mode')
       await installModule('@nuxt/ui')
       await installModule('@nuxt/fonts')
-      await installModule('@nuxt/image')
+      if (options.image !== false) {
+        await installModule('@nuxt/image')
+      }
       await installModule('@nuxt/eslint')
       await installModule('nuxt-auth-utils')
       dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
@@ -555,17 +561,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       addServerScanDir(resolver.resolve('../runtime/server'))
     }
 
-    nuxtOptions.app = defu(nuxtOptions.app, {
-      head: {
-        link: [
-          { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
-          { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
-          { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
-          { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
-          { rel: 'manifest', href: '/site.webmanifest' },
-        ],
-      },
-    })
     nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {
       ui: {
         colors: {
@@ -583,15 +578,11 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       logLevel: process.env.LOG_LEVEL || 'warn',
       session: {
         password: process.env.NUXT_SESSION_PASSWORD || '',
-        cookie: {
-          secure: true,
-        },
       },
       public: {
         appVersion,
         buildVersion,
         buildTime,
-        controlPlaneUrl: process.env.CONTROL_PLANE_URL || '',
         cspScriptSrc: process.env.CSP_SCRIPT_SRC || '',
         cspConnectSrc: process.env.CSP_CONNECT_SRC || '',
         cspFrameSrc: process.env.CSP_FRAME_SRC || '',

@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { z } from 'zod'
 
-import { users } from '#layer/orm-tables'
 import { useDatabase } from '#layer/server/utils/database'
 import {
   defineAdminMutation,
@@ -10,6 +9,7 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { users } from '#narduk-core/schema'
 
 const schema = z.object({
   userId: z.string().min(1),

@@ -2,10 +2,11 @@
 
 Optional public SEO, Schema.org, and Open Graph capabilities for SSR apps.
 
-Use this layer when an app is meant to be publicly discoverable and should ship
-structured data, canonical metadata, and OG image helpers. Internal operator
-consoles and other `ssr: false` apps should stay on `layers/core` and use
-`useSeoMeta()` / `useHead()` directly instead.
+Use this package when an app is meant to be publicly discoverable and should
+ship structured data, canonical metadata, and OG image helpers. Internal
+operator consoles and other `ssr: false` apps should stay on
+`@narduk-enterprises/narduk-core` and use `useSeoMeta()` / `useHead()` directly
+instead.
 
 This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.
@@ -68,12 +69,10 @@ The SEO layer exposes a catalog-hub base URL on
 directory page and adds it to the sitemap; it does not render an all-to-all list
 of sites in every footer.
 
-The network directory page fetches the Command-owned registry feed at
-`https://command.nard.uk/api/network.json`. During rollout, if that newer route
-is not deployed yet, it falls back to Command's existing public catalog API at
-`https://command.nard.uk/api/apps` and normalizes the same public registry rows.
-Apps should not override this per deployment; Command owns curation,
-publication, and the public/indexable classification. The feed shape is:
+The network directory page fetches `api/network.json` from the configured
+catalog base URL (by default `https://catalog.nard.uk/api/network.json`). The
+catalog application owns curation, publication, and the public/indexable
+classification. The feed shape is:
 
 ```json
 {
@@ -94,8 +93,8 @@ excludes the current app origin, and skips entries explicitly marked
 `"public": false` or `"indexable": false`. If the feed cannot be loaded,
 `/narduk-network` still renders a catalog link instead of throwing.
 
-Command publishes the feed from the app registry with only public, canonical,
-indexable apps. Do not hardcode fleet app lists inside the template layer.
+The catalog publishes only public, canonical, indexable apps. Do not hardcode
+app lists inside this package.
 
 Schema helpers such as `useWebSiteSchema` and `useSoftwareApplicationSchema`
 accept explicit `url` / `isPartOfUrl` / `catalogUrl` arguments — pass the
@@ -122,8 +121,8 @@ Available as auto-imported helpers in app `<script setup>`:
   with optional `SearchAction` from `public.seoSearchActionUrlTemplate` (env) or
   overrides (recommended for home / one layout).
 - `useOrganizationSchema(input?)` — Organization JSON-LD.
-- `useNardukNetworkDirectory()` — Fetches the SEO-layer normalized Command
-  network directory response for `/narduk-network`.
+- `useNardukNetworkDirectory()` — Fetches the package-normalized catalog network
+  directory response for `/narduk-network`.
 
 ### `WebSite` + `SearchAction` (Sitelinks search / Rich Results)
 

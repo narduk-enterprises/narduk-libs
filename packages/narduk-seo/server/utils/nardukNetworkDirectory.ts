@@ -1,8 +1,6 @@
 import { z } from 'zod'
 
 export const NARDUK_DEFAULT_CATALOG_BASE_URL = 'https://catalog.nard.uk'
-export const NARDUK_COMMAND_PUBLIC_CATALOG_URL = 'https://command.nard.uk/api/apps'
-export const NARDUK_NETWORK_DIRECTORY_URL = 'https://command.nard.uk/api/network.json'
 
 const rawNardukNetworkSiteSchema = z
   .object({
@@ -19,28 +17,6 @@ const rawNardukNetworkDirectorySchema = z
   .object({
     updatedAt: z.string().trim().min(1).optional(),
     sites: z.array(z.unknown()).default([]),
-  })
-  .passthrough()
-
-const rawCommandPublicCatalogAppSchema = z
-  .object({
-    slug: z.string().trim().min(1),
-    displayName: z.string().trim().min(1),
-    primaryUrl: z.string().trim().url().nullable().optional(),
-    shortDescription: z.string().trim().min(1).nullable().optional(),
-    longDescription: z.string().trim().min(1).nullable().optional(),
-  })
-  .passthrough()
-
-const rawCommandPublicCatalogGroupSchema = z
-  .object({
-    apps: z.array(z.unknown()).default([]),
-  })
-  .passthrough()
-
-const rawCommandPublicCatalogSchema = z
-  .object({
-    groups: z.array(rawCommandPublicCatalogGroupSchema).default([]),
   })
   .passthrough()
 
@@ -94,6 +70,12 @@ export function resolveNardukCatalogBaseUrl(value: null | string | undefined): s
   return normalized ?? NARDUK_DEFAULT_CATALOG_BASE_URL
 }
 
+export function resolveNardukNetworkDirectoryUrl(
+  catalogBaseUrl: null | string | undefined,
+): string {
+  return new URL('api/network.json', `${resolveNardukCatalogBaseUrl(catalogBaseUrl)}/`).href
+}
+
 export function resolveNardukNetworkDirectory(
   payload: unknown,
   options: ResolveNardukNetworkDirectoryOptions = {},
@@ -132,31 +114,4 @@ export function resolveNardukNetworkDirectory(
     updatedAt: parsed.updatedAt ?? null,
     sites,
   }
-}
-
-export function resolveNardukNetworkDirectoryFromCommandCatalog(
-  payload: unknown,
-  options: ResolveNardukNetworkDirectoryOptions = {},
-): NardukNetworkDirectory {
-  const parsed = rawCommandPublicCatalogSchema.parse(payload)
-  const sites = parsed.groups.flatMap((group) =>
-    group.apps.flatMap((rawApp) => {
-      const app = rawCommandPublicCatalogAppSchema.safeParse(rawApp)
-      if (!app.success || !app.data.primaryUrl) return []
-
-      return [
-        {
-          slug: app.data.slug,
-          name: app.data.displayName,
-          url: app.data.primaryUrl,
-          description:
-            app.data.shortDescription ??
-            app.data.longDescription ??
-            'Public Narduk Enterprises site.',
-        },
-      ]
-    }),
-  )
-
-  return resolveNardukNetworkDirectory({ sites }, options)
 }

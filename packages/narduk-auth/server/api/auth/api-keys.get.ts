@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
 
-import { apiKeys } from '#layer/orm-tables'
 import { AUTH_API_KEY_SCOPES, parseApiKeyScopes } from '#layer/server/utils/auth'
 import { getDatabaseRows, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import { defineUserQuery } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { apiKeys } from '#narduk-core/schema'
 
 /**
  * GET /api/auth/api-keys

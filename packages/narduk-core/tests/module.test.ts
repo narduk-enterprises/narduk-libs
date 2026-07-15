@@ -23,11 +23,6 @@ describe('narduk-core module', () => {
       defineNuxtModule: (definition: unknown) => definition,
       installModule,
     }))
-    vi.doMock('@narduk-enterprises/narduk-platform', () => ({
-      readProvisionMetadata: () => ({}),
-      resolveLocalNuxtPort: () => 3000,
-    }))
-
     const mod = (await import('../src/module')).default as unknown as {
       setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
     }
@@ -57,11 +52,14 @@ describe('narduk-core module', () => {
     expect(nuxt.options.alias).toEqual(
       expect.objectContaining({
         '#layer': expect.stringContaining('/runtime'),
-        '#layer/orm-tables': expect.stringContaining('/runtime/server/database/schema.ts'),
-        '#layer/postgres-runtime': expect.stringContaining(
+        '#narduk-core/schema': expect.stringContaining('/runtime/server/database/schema.ts'),
+        '#narduk-core/postgres-runtime': expect.stringContaining(
           '/runtime/internal/postgres-runtime.stub.ts',
         ),
       }),
+    )
+    expect(Object.keys(nuxt.options.alias).filter((alias) => alias.startsWith('#layer/'))).toEqual(
+      [],
     )
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-core')
     expect(nuxt.options.appConfig).toEqual(
@@ -74,10 +72,15 @@ describe('narduk-core module', () => {
         },
       }),
     )
+    expect(JSON.stringify(nuxt.options.app)).not.toMatch(/apple-touch|favicon|manifest/u)
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: expect.not.objectContaining({ controlPlaneUrl: expect.anything() }),
+    })
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/composables'))
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(installModule).toHaveBeenCalledWith('@nuxt/image')
     expect(addTemplate).toHaveBeenCalledWith({
       src: expect.stringContaining('/runtime/app/layouts/dashboard.vue'),
     })
@@ -103,5 +106,30 @@ describe('narduk-core module', () => {
       name: 'landing',
     })
     expect(hooks.has('vite:extendConfig')).toBe(true)
+
+    installModule.mockClear()
+    await mod.setup({ app: false, coreModules: true, image: false, server: false }, nuxt)
+    expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(installModule).not.toHaveBeenCalledWith('@nuxt/image')
+
+    const previousDatabaseBackend = process.env.NUXT_DATABASE_BACKEND
+    try {
+      process.env.NUXT_DATABASE_BACKEND = 'postgres'
+      await mod.setup({ app: false, coreModules: false, server: false }, nuxt)
+      expect(nuxt.options.alias).toEqual(
+        expect.objectContaining({
+          '#narduk-core/schema': expect.stringContaining('/runtime/server/database/pg-schema.ts'),
+          '#narduk-core/postgres-runtime': expect.stringContaining(
+            '/runtime/internal/postgres-runtime.ts',
+          ),
+        }),
+      )
+    } finally {
+      if (previousDatabaseBackend === undefined) {
+        delete process.env.NUXT_DATABASE_BACKEND
+      } else {
+        process.env.NUXT_DATABASE_BACKEND = previousDatabaseBackend
+      }
+    }
   })
 })

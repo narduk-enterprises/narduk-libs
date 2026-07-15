@@ -2,6 +2,7 @@
 /* eslint-disable narduk/file-size-budget -- Register card owns schema + form state + provider flows + error mapping in one surface to keep registration UX coherent. */
 import { z } from 'zod'
 
+import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
 const props = withDefaults(
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const config = useRuntimeConfig()
+const route = useRoute()
 const { register, startOAuth } = useAuth()
 
 const { data: authRuntime } = useAuthRuntimePublic()
@@ -51,7 +53,13 @@ const effectiveAuthProviders = computed(
 const canUseApple = computed(
   () => effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple'),
 )
-const resolvedRedirectPath = computed(() => props.redirectPath ?? config.public.authRedirectPath)
+const redirectRequest = computed(() =>
+  resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
+)
+const resolvedRedirectPath = computed(() => redirectRequest.value.path)
+const loginLink = computed(() =>
+  withLocalRedirectQuery(config.public.authLoginPath, redirectRequest.value),
+)
 
 async function onSubmit() {
   loading.value = true
@@ -73,13 +81,10 @@ async function onSubmit() {
 
     if (result.nextStep === 'email_confirmation') {
       await navigateTo(
-        {
-          path: config.public.authLoginPath,
-          query: {
-            checkEmail: '1',
-            email: state.email,
-          },
-        },
+        withLocalRedirectQuery(config.public.authLoginPath, redirectRequest.value, {
+          checkEmail: '1',
+          email: state.email,
+        }),
         { replace: true },
       )
       return
@@ -200,9 +205,7 @@ async function onAppleSignIn() {
     <template #footer>
       <p class="text-center text-sm text-muted">
         Already have an account?
-        <ULink :to="config.public.authLoginPath" class="font-medium text-primary hover:underline">
-          Sign in
-        </ULink>
+        <ULink :to="loginLink" class="font-medium text-primary hover:underline"> Sign in </ULink>
       </p>
     </template>
   </UCard>

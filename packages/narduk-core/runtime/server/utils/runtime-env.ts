@@ -2,7 +2,7 @@ import { readWorkerRuntimeEnv, type WorkerRuntimeEnv } from './worker-env'
 
 import type { H3Event } from 'h3'
 
-type RuntimeConfigLike = ReturnType<typeof useRuntimeConfig>
+type RuntimeConfigLike = Record<string, unknown>
 
 export interface RuntimeReadOptions {
   config?: RuntimeConfigLike

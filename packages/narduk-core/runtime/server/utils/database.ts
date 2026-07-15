@@ -4,7 +4,7 @@ import { drizzle as drizzleD1, type DrizzleD1Database } from 'drizzle-orm/d1'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { createPostgresDatabase } from '#layer/postgres-runtime'
+import { createPostgresDatabase } from '#narduk-core/postgres-runtime'
 
 import * as pgSchema from '../database/pg-schema'
 import * as d1Schema from '../database/schema'
@@ -195,7 +195,7 @@ function resolveDatabaseBackend(event: H3Event): unknown {
  * - `postgres`: Hyperdrive connection string + `postgres.js` + Drizzle postgres-js.
  *
  * Memoized on `event.context._db`. Postgres builds must use `NUXT_DATABASE_BACKEND=postgres`
- * so `#layer/orm-tables` and this schema stay aligned.
+ * so `#narduk-core/schema` and this schema stay aligned.
  */
 export function useDatabase(event: H3Event): LayerDatabase {
   const context = getLayerRequestContext(event)

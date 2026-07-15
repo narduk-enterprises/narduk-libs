@@ -1,6 +1,7 @@
 /**
- * env-catalog: the canonical list of every environment variable the Narduk platform
- * manages across fleet apps and the command operator app.
+ * env-catalog: the canonical list of environment variables used by independent
+ * Narduk apps. It describes ownership and destination planes for onboarding and
+ * status tooling; it does not provision or mutate any provider.
  *
  * Each entry has six fields. Everything else is derived.
  *
@@ -11,12 +12,11 @@
  *               registry:app:<key>            per-app registry-managed plain value
  *               derive:<formula>              computed; formulas below
  *               generate:<policy>             minted once at bootstrap
- *               command:<key>                 command-owned bootstrap material
- *               app-config:<field>            value lives in the app's own config/provision
+ *               app-config:<field>            value lives in the app's own configuration
  *   to      - flat list of destinations. Each of:
  *               cf:build-var | cf:build-secret | cf:runtime-var | cf:runtime-secret
  *               gh:repo-var | gh:repo-secret | gh:org-var | gh:org-secret
- *   scope   - every-app | one-app | command-only
+ *   scope   - every-app | one-app
  *               every-app    every app that SELECTS THIS MODULE has this key,
  *                            and the resolved VALUE is shared across those apps
  *                            (e.g. every app on the `supabase` module points at
@@ -27,13 +27,9 @@
  *               one-app      every app that SELECTS THIS MODULE has this key,
  *                            but the resolved VALUE is per-app (e.g. per-app GA
  *                            measurement id).
- *               command-only the key is provisioned only for the command
- *                            operator app and is skipped for fleet apps.
  *   secret  - true for values that must never appear in logs or the UI value cell.
  *               Redundant with `to` for storage, kept as a UI hint.
- *   module  - capability grouping, matches product language (posthog, supabase, ...).
- *               This is the axis the Variables UI groups by. Layers declare which
- *               modules they provide via `providesModules`.
+ *   module  - app capability grouping (posthog, supabase, ...).
  *
  * Formulas accepted in `derive:` (intentionally tiny DSL):
  *
@@ -48,7 +44,7 @@
  *   nonce-32                        32-byte random, hex-encoded, minted once at bootstrap
  */
 
-export const CATALOG_SCOPES = ['every-app', 'one-app', 'command-only'] as const
+export const CATALOG_SCOPES = ['every-app', 'one-app'] as const
 export type CatalogScope = (typeof CATALOG_SCOPES)[number]
 
 export const CATALOG_DESTINATIONS = [
@@ -68,10 +64,9 @@ export type CatalogRuntimePlane = (typeof CATALOG_RUNTIME_PLANES)[number]
 
 /**
  * ModuleId — capability grouping. Matches the product language the Variables UI
- * displays. Every catalog entry belongs to exactly one module. Layers declare
- * which modules they bring in.
+ * displays. Every catalog entry belongs to exactly one app capability.
  */
-export const FLEET_MODULE_IDS = [
+export const APP_CAPABILITY_IDS = [
   'site',
   'session',
   'cf-builds',
@@ -89,18 +84,12 @@ export const FLEET_MODULE_IDS = [
   'r2-uploads',
 ] as const
 
-export const COMMAND_MODULE_IDS = [
-  'command-github',
-  'command-cloudflare',
-  'command-gsc',
-  'command-doppler',
-  'command-workflow',
-  'command-admin',
-] as const
-
-export const MODULE_IDS = [...FLEET_MODULE_IDS, ...COMMAND_MODULE_IDS] as const
-export type FleetModuleId = (typeof FLEET_MODULE_IDS)[number]
-export type CommandModuleId = (typeof COMMAND_MODULE_IDS)[number]
+/** @deprecated Use APP_CAPABILITY_IDS. */
+export const FLEET_MODULE_IDS = APP_CAPABILITY_IDS
+export const MODULE_IDS = APP_CAPABILITY_IDS
+export type AppCapabilityId = (typeof APP_CAPABILITY_IDS)[number]
+/** @deprecated Use AppCapabilityId. */
+export type FleetModuleId = AppCapabilityId
 export type ModuleId = (typeof MODULE_IDS)[number]
 
 export interface ModuleDefinition {
@@ -186,44 +175,19 @@ export const MODULE_CATALOG: Record<ModuleId, ModuleDefinition> = {
     label: 'R2 Uploads',
     description: 'Cloudflare R2 bucket binding for uploads.',
   },
-  'command-github': {
-    id: 'command-github',
-    label: 'Command · GitHub',
-    description: 'Command app GitHub App and PAT.',
-  },
-  'command-cloudflare': {
-    id: 'command-cloudflare',
-    label: 'Command · Cloudflare',
-    description: 'Command app Cloudflare API credentials.',
-  },
-  'command-gsc': {
-    id: 'command-gsc',
-    label: 'Command · Search Console',
-    description: 'Command app Google Search Console service account.',
-  },
-  'command-doppler': {
-    id: 'command-doppler',
-    label: 'Command · Doppler',
-    description: 'Command app Doppler service token.',
-  },
-  'command-workflow': {
-    id: 'command-workflow',
-    label: 'Command · Workflow',
-    description: 'Command app workflow callback secret.',
-  },
-  'command-admin': {
-    id: 'command-admin',
-    label: 'Command · Agent Admin',
-    description: 'Agent admin API key.',
-  },
 }
 
 export function listModuleDefinitions(): readonly ModuleDefinition[] {
   return MODULE_IDS.map((id) => MODULE_CATALOG[id])
 }
 
+export function listAppCapabilityDefinitions(): readonly ModuleDefinition[] {
+  return APP_CAPABILITY_IDS.map((id) => MODULE_CATALOG[id])
+}
+
+/** @deprecated Use listAppCapabilityDefinitions. */
 export function listFleetModuleDefinitions(): readonly ModuleDefinition[] {
-  return FLEET_MODULE_IDS.map((id) => MODULE_CATALOG[id])
+  return listAppCapabilityDefinitions()
 }
 
 export function resolveCatalogRuntimePlane(entry: CatalogEntry): CatalogRuntimePlane {
@@ -262,7 +226,6 @@ export type CatalogFrom =
   | `registry:app:${string}`
   | `derive:${string}`
   | `generate:${string}`
-  | `command:${string}`
   | `app-config:${string}`
 
 export interface CatalogEntry {
@@ -298,17 +261,17 @@ export interface CatalogEntry {
   optional?: boolean
 }
 
-// ─── fleet-wide, always-on (provided by core layer) ──────────────────────────
+// ─── app-wide, always-on (provided by core) ──────────────────────────────────
 // Conservative runtime-overlay migration: several safe public/server values
 // still list `cf:build-var` / `cf:build-secret` for downstream compatibility,
 // but runtime code should prefer live Worker bindings via the shared overlay.
 // Remove legacy build-plane destinations only after fleet validation proves no
 // remaining Nuxt config build read depends on them.
 
-const FLEET_BASE: CatalogEntry[] = [
+const APP_BASE: CatalogEntry[] = [
   {
     key: 'SITE_URL',
-    from: 'app-config:provision.url',
+    from: 'app-config:url',
     to: ['cf:build-var', 'cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -334,15 +297,6 @@ const FLEET_BASE: CatalogEntry[] = [
     note: 'GitHub Packages read token for Workers Builds installs.',
   },
   {
-    key: 'SKIP_DEPENDENCY_INSTALL',
-    from: 'derive:const:1',
-    to: ['cf:build-var'],
-    scope: 'every-app',
-    secret: false,
-    module: 'cf-builds',
-    note: 'Tells Workers Builds to skip Cloudflare-managed dependency install.',
-  },
-  {
     key: 'NARDUK_VERBOSE_BUILD_LOGS',
     from: 'registry:app:NARDUK_VERBOSE_BUILD_LOGS',
     to: ['cf:build-var'],
@@ -360,15 +314,6 @@ const FLEET_BASE: CatalogEntry[] = [
     secret: true,
     module: 'session',
     note: 'Session signing key. Stable across deploys; never rotated without user logout.',
-  },
-  {
-    key: 'CONTROL_PLANE_URL',
-    from: 'derive:const:https://platform.nard.uk',
-    to: ['cf:runtime-var'],
-    scope: 'every-app',
-    secret: false,
-    module: 'site',
-    note: 'Command/control-plane origin exposed to runtime config for managed app links.',
   },
   {
     key: 'LOG_LEVEL',
@@ -697,12 +642,12 @@ const GA_MODULE: CatalogEntry[] = [
 const SEARCH_CONSOLE_MODULE: CatalogEntry[] = [
   {
     key: 'GSC_SERVICE_ACCOUNT_JSON',
-    from: 'command:GSC_SERVICE_ACCOUNT_JSON',
+    from: 'doppler:narduk/tokens/GSC_SERVICE_ACCOUNT_JSON',
     to: ['cf:build-secret', 'cf:runtime-secret'],
     scope: 'every-app',
     secret: true,
     module: 'search-console',
-    note: 'Shared Google service account JSON. Mirrored from command bootstrap.',
+    note: 'Shared Google service account JSON copied directly to the app provider planes during onboarding.',
   },
   {
     key: 'GSC_SITE_URL',
@@ -721,12 +666,12 @@ const SEARCH_CONSOLE_MODULE: CatalogEntry[] = [
 const INDEXNOW_MODULE: CatalogEntry[] = [
   {
     key: 'INDEXNOW_KEY',
-    from: 'command:INDEXNOW_KEY',
+    from: 'doppler:narduk/tokens/INDEXNOW_KEY',
     to: ['cf:build-var', 'cf:runtime-var'],
     scope: 'every-app',
     secret: false,
     module: 'indexnow',
-    note: 'Shared IndexNow key. Mirrored from command bootstrap.',
+    note: 'Shared IndexNow key copied directly to the app provider planes during onboarding.',
   },
 ]
 
@@ -866,133 +811,9 @@ const R2_UPLOADS_MODULE: CatalogEntry[] = [
   },
 ]
 
-// ─── command operator modules ────────────────────────────────────────────────
-
-const COMMAND_OPERATOR: CatalogEntry[] = [
-  {
-    key: 'COMMAND_GITHUB_APP_ID',
-    from: 'doppler:command/prd/COMMAND_GITHUB_APP_ID',
-    to: ['cf:runtime-var'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-github',
-    note: 'Numeric GitHub App id used by Command runtime auth.',
-  },
-  {
-    key: 'COMMAND_GITHUB_APP_CLIENT_ID',
-    from: 'doppler:command/prd/COMMAND_GITHUB_APP_CLIENT_ID',
-    to: ['cf:runtime-var', 'gh:repo-secret'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-github',
-    note: 'GitHub App client id. Bound to Command runtime and mirrored into repo Actions secrets used by create-github-app-token.',
-  },
-  {
-    key: 'COMMAND_GITHUB_APP_PRIVATE_KEY',
-    from: 'doppler:command/prd/COMMAND_GITHUB_APP_PRIVATE_KEY',
-    to: ['cf:runtime-secret', 'gh:repo-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-github',
-  },
-  {
-    key: 'COMMAND_GITHUB_APP_INSTALLATION_ID',
-    from: 'doppler:command/prd/COMMAND_GITHUB_APP_INSTALLATION_ID',
-    to: ['cf:runtime-var'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-github',
-    note: 'Optional. Auto-discovered from COMMAND_GITHUB_PRIMARY_ORG when unset.',
-  },
-  {
-    key: 'COMMAND_GITHUB_PRIMARY_ORG',
-    from: 'doppler:command/prd/COMMAND_GITHUB_PRIMARY_ORG',
-    to: ['cf:runtime-var'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-github',
-    note: 'Defaults to narduk-enterprises when unset.',
-  },
-  {
-    key: 'COMMAND_GITHUB_TOKEN',
-    from: 'doppler:command/prd/COMMAND_GITHUB_TOKEN',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-github',
-    note: 'Legacy PAT fallback. GitHub App is the primary auth path.',
-  },
-  {
-    key: 'COMMAND_GSC_SERVICE_ACCOUNT_JSON',
-    from: 'doppler:command/prd/COMMAND_GSC_SERVICE_ACCOUNT_JSON',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-gsc',
-    note: 'Base64 Google service account JSON. Synced downstream as GSC_SERVICE_ACCOUNT_JSON.',
-  },
-  {
-    key: 'COMMAND_CLOUDFLARE_API_TOKEN',
-    from: 'doppler:command/prd/COMMAND_CLOUDFLARE_API_TOKEN',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-cloudflare',
-  },
-  {
-    key: 'COMMAND_CLOUDFLARE_BUILDS_API_TOKEN',
-    from: 'doppler:command/prd/COMMAND_CLOUDFLARE_BUILDS_API_TOKEN',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-cloudflare',
-  },
-  {
-    key: 'COMMAND_CLOUDFLARE_BUILDS_TOKEN_UUID',
-    from: 'doppler:command/prd/COMMAND_CLOUDFLARE_BUILDS_TOKEN_UUID',
-    to: ['cf:runtime-var'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-cloudflare',
-  },
-  {
-    key: 'COMMAND_CLOUDFLARE_ACCOUNT_ID',
-    from: 'doppler:command/prd/COMMAND_CLOUDFLARE_ACCOUNT_ID',
-    to: ['cf:runtime-var'],
-    scope: 'command-only',
-    secret: false,
-    module: 'command-cloudflare',
-  },
-  {
-    key: 'COMMAND_DOPPLER_TOKEN',
-    from: 'doppler:command/prd/COMMAND_DOPPLER_TOKEN',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-doppler',
-  },
-  {
-    key: 'COMMAND_WORKFLOW_CALLBACK_SECRET',
-    from: 'doppler:command/prd/COMMAND_WORKFLOW_CALLBACK_SECRET',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-workflow',
-  },
-  {
-    key: 'AGENT_ADMIN_API_KEY',
-    from: 'doppler:command/prd/AGENT_ADMIN_API_KEY',
-    to: ['cf:runtime-secret'],
-    scope: 'command-only',
-    secret: true,
-    module: 'command-admin',
-    note: 'Operator key agents use to drive the deployed command API.',
-  },
-]
-
 export const ENV_CATALOG: readonly CatalogEntry[] = Object.freeze(
   [
-    ...FLEET_BASE,
+    ...APP_BASE,
     ...SUPABASE_MODULE,
     ...AUTH_CONFIG_MODULE,
     ...OG_IMAGE_MODULE,
@@ -1004,7 +825,6 @@ export const ENV_CATALOG: readonly CatalogEntry[] = Object.freeze(
     ...XAI_MODULE,
     ...APPLE_MAPS_MODULE,
     ...R2_UPLOADS_MODULE,
-    ...COMMAND_OPERATOR,
   ].sort((left, right) => left.key.localeCompare(right.key)),
 )
 
@@ -1053,7 +873,6 @@ export type CatalogFromParsed =
   | { kind: 'registry-app'; key: string }
   | { kind: 'derive'; formula: DeriveFormula }
   | { kind: 'generate'; policy: GeneratePolicy }
-  | { kind: 'command'; key: string }
   | { kind: 'app-config'; field: string }
 
 export type DeriveFormula =
@@ -1093,10 +912,6 @@ export function parseCatalogFrom(from: CatalogFrom): CatalogFromParsed {
       throw new Error(`Unknown generate policy: "${policy}" (known: nonce-32)`)
     }
     return { kind: 'generate', policy: { policy: 'nonce-32' } }
-  }
-
-  if (from.startsWith('command:')) {
-    return { kind: 'command', key: from.slice('command:'.length) }
   }
 
   if (from.startsWith('app-config:')) {

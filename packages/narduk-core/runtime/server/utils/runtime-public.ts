@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Runtime public overlay intentionally centralizes env-to-public-config mapping for the deploy contract. */
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import {
@@ -27,7 +26,6 @@ export interface RuntimePublicOverlay {
   authPublicSignup?: boolean
   authRequireMfa?: boolean
   authTurnstileSiteKey?: string
-  controlPlaneUrl: string
   deploymentTarget: 'production' | 'staging' | 'preview'
   enforceCanonicalHost?: boolean
   gaMeasurementId: string
@@ -133,10 +131,6 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
     appUrl,
     siteUrl: appUrl,
     appName: trimRuntimeString(readPublic(config, 'appName')),
-    controlPlaneUrl: readRuntimeString(event, 'CONTROL_PLANE_URL', {
-      config,
-      fallback: readPublic(config, 'controlPlaneUrl'),
-    }),
     deploymentTarget,
     previewSafeMode:
       deploymentTarget === 'preview' ||

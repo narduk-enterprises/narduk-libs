@@ -1,25 +1,25 @@
 export type ProviderName = 'github' | 'cloudflare' | 'doppler' | 'google'
 export type ProviderCredentialKey =
-  | 'COMMAND_GITHUB_TOKEN'
-  | 'COMMAND_GITHUB_APP_ID'
-  | 'COMMAND_GITHUB_APP_CLIENT_ID'
-  | 'COMMAND_GITHUB_APP_PRIVATE_KEY'
-  | 'COMMAND_GITHUB_APP_INSTALLATION_ID'
-  | 'COMMAND_GITHUB_PRIMARY_ORG'
-  | 'COMMAND_GSC_SERVICE_ACCOUNT_JSON'
-  | 'COMMAND_CLOUDFLARE_API_TOKEN'
-  | 'COMMAND_CLOUDFLARE_BUILDS_API_TOKEN'
-  | 'COMMAND_CLOUDFLARE_BUILDS_TOKEN_UUID'
-  | 'COMMAND_CLOUDFLARE_ACCOUNT_ID'
-  | 'COMMAND_DOPPLER_TOKEN'
+  | 'GH_TOKEN'
+  | 'GITHUB_APP_ID'
+  | 'GITHUB_APP_CLIENT_ID'
+  | 'GITHUB_APP_PRIVATE_KEY'
+  | 'GITHUB_APP_INSTALLATION_ID'
+  | 'GITHUB_PRIMARY_ORG'
+  | 'GSC_SERVICE_ACCOUNT_JSON'
+  | 'CLOUDFLARE_API_TOKEN'
+  | 'CLOUDFLARE_BUILDS_API_TOKEN'
+  | 'CLOUDFLARE_BUILDS_TOKEN_UUID'
+  | 'CLOUDFLARE_ACCOUNT_ID'
+  | 'DOPPLER_TOKEN'
 export type GithubAuthStrategy = 'token' | 'app'
 export type EnvKeyPhase = 'workflow' | 'build' | 'runtime' | 'build + runtime'
 export type EnvKeySensitivity = 'plain' | 'secret'
 export type CanonicalProvider = 'cloudflare' | 'github' | 'doppler' | 'unknown'
 export type CloudflarePlane = 'runtime-var' | 'runtime-secret' | 'build-var' | 'build-secret'
 export type GithubScope = 'repo' | 'org' | 'environment'
-export type AppEnvContractManagedBy = 'template' | 'app'
-export type AppEnvContractExpectedValueSource = 'provision.url'
+export type AppEnvContractManagedBy = 'app'
+export type AppEnvContractExpectedValueSource = 'app.url'
 export type ZoneResolutionStatus =
   'resolved' | 'missing-site-url' | 'not-found' | 'ambiguous' | 'unavailable'
 
@@ -130,47 +130,23 @@ export interface AppInventoryWriteStatus {
   reasons: string[]
 }
 
-export type ProvisioningProfileStatus = 'available' | 'missing' | 'unavailable' | 'invalid'
+export type AppOnboardingProfileStatus = 'available' | 'missing' | 'invalid'
 
-export interface ProvisioningProfileDefinition {
-  id: string
-  description: string | null
-}
-
-export interface AppInventoryProvisioningAppTemplate {
-  status: 'selected' | 'none' | 'missing'
-  selection: ProvisioningProfileDefinition | null
-}
-
-export interface AppInventoryProvisioningTemplateLayer {
-  status: 'configured' | 'missing' | 'unsupported'
-  mode: 'bundled' | null
-  bundles: ProvisioningProfileDefinition[]
-}
-
-export interface AppInventoryProvisioningLocalDev {
-  nuxtPort: number | null
-}
-
-export interface AppInventoryProvisioningProfile {
-  status: ProvisioningProfileStatus
+export interface AppInventoryOnboardingProfile {
+  status: AppOnboardingProfileStatus
   name: string | null
   displayName: string | null
   shortName: string | null
   description: string | null
   url: string | null
-  provisionedAt: string | null
-  localDev: AppInventoryProvisioningLocalDev | null
-  baseTheme: ProvisioningProfileDefinition | null
-  appTemplate: AppInventoryProvisioningAppTemplate
-  templateLayer: AppInventoryProvisioningTemplateLayer
+  localDevPort: number | null
+  capabilities: string[]
 }
 
 export interface ProviderConsoleApp {
   repoId: number | null
   repoSlug: string
   repoFullName: string
-  isSyntheticBootstrap?: boolean
   displayName: string
   description: string
   defaultBranch: string
@@ -556,12 +532,11 @@ export interface DopplerOverviewResponse {
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface HomeSummary {
-  fleet: {
+  apps: {
     totalApps: number
-    starterRequested: number
-    starterGenerated: number
-    adopted: number
+    onboarded: number
     live: number
+    needsAttention: number
   }
   github: {
     openPrs: number

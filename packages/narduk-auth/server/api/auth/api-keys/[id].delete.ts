@@ -1,12 +1,12 @@
 import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParam } from 'h3'
 
-import { apiKeys } from '#layer/orm-tables'
 import { AUTH_API_KEY_SCOPES } from '#layer/server/utils/auth'
 import { executeDatabaseQuery, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import { defineUserMutation } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { apiKeys } from '#narduk-core/schema'
 
 /**
  * DELETE /api/auth/api-keys/:id

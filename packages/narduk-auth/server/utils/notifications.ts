@@ -1,10 +1,10 @@
 import { and, count, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 
-import { notifications } from '#layer/orm-tables'
 import { executeDatabaseQuery, useDatabase } from '#layer/server/utils/database'
+import { notifications } from '#narduk-core/schema'
 
-import type { Notification } from '#layer/orm-tables'
+import type { Notification } from '#narduk-core/schema'
 import type { H3Event } from 'h3'
 
 /**

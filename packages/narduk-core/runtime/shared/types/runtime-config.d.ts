@@ -38,7 +38,6 @@ interface CorePublicRuntimeConfig {
   previewSafeMode: boolean
   analyticsLoadStrategy: 'immediate' | 'idle' | 'interaction' | 'off'
   appVersion: string
-  controlPlaneUrl: string
   /** Enables the internal OG image preview lab in local and approved preview envs. */
   ogImagePreviewLab: boolean
   /**
@@ -102,7 +101,6 @@ declare global {
         }
       | undefined
     __NARDUK_BUILD_LOGGED__?: string | undefined
-    __NARDUK_NATIVE_FETCH__?: typeof fetch
   }
 }
 

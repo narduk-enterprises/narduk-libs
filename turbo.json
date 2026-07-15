@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "concurrency": "1",
   "ui": "tui",
   "tasks": {
     "build": {
@@ -15,12 +16,10 @@
       "outputs": [".nuxt/eslint-typegen.d.ts"]
     },
     "lint": {
-      "dependsOn": ["nuxt:prepare", "eslint:typegen"],
-      "outputs": [".nuxt/eslint-typegen.d.ts"]
+      "dependsOn": ["nuxt:prepare", "eslint:typegen"]
     },
     "lint:strict": {
-      "dependsOn": ["nuxt:prepare", "eslint:typegen"],
-      "outputs": [".nuxt/eslint-typegen.d.ts"]
+      "dependsOn": ["nuxt:prepare", "eslint:typegen"]
     },
     "typecheck": {
       "dependsOn": ["nuxt:prepare", "eslint:typegen"]

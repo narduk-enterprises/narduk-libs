@@ -25,7 +25,7 @@ import { decodeAccessTokenPayload, extractProviderMetadata, toSessionUser } from
 import { ensureLinkedLocalUser } from './linking'
 import { createSupabaseUserClient } from './supabase-client'
 
-import type { User as LocalUser } from '#layer/orm-tables'
+import type { User as LocalUser } from '#narduk-core/schema'
 import type {
   AppAuthenticatorAssuranceLevel,
   AppSessionUser,

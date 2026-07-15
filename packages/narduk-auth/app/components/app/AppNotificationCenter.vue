@@ -10,7 +10,7 @@
  *     </template>
  *   </LayerAppHeader>
  */
-import type { AppNotification } from '../../composables/useNotifications'
+import { type AppNotification, useNotifications } from '../../composables/useNotifications'
 
 const {
   notifications,

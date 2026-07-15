@@ -1,5 +1,27 @@
-export type ViteRollupWarning = string | { message?: string; plugin?: string }
+interface ViteWarningLocation {
+  column?: number
+  file?: string
+  line?: number
+}
+
+export type ViteRollupWarning =
+  | string
+  | {
+      code?: string
+      exporter?: string
+      id?: string
+      ids?: string[]
+      loc?: ViteWarningLocation
+      message?: string
+      names?: string[]
+      plugin?: string
+    }
 type ViteLogType = 'error' | 'info' | 'warn'
+
+const vueUseInvalidAnnotationLocations = [
+  { column: 0, line: 3362 },
+  { column: 22, line: 5780 },
+] as const
 
 export interface CoreViteBuildLogger {
   clearScreen: (type: ViteLogType) => void
@@ -66,6 +88,99 @@ export function isKnownGeneratedCircularDependencyWarning(warning: ViteRollupWar
   )
 }
 
+function isVueUseCoreDistPath(value: string | undefined): boolean {
+  if (!value) return false
+
+  const normalized = `/${value.replaceAll('\\', '/')}`
+  return normalized.includes('/node_modules/@vueuse/core/dist/index.js')
+}
+
+function isGeneratedServerFocusScopeChunkPath(value: string | undefined): boolean {
+  if (!value) return false
+
+  const normalized = value.replaceAll('\\', '/')
+  return /(?:^|[/"])\.nuxt\/dist\/server\/_nuxt\/FocusScope-[^/"\s]+\.js(?:[".]|$)/u.test(
+    normalized,
+  )
+}
+
+/**
+ * Reka UI 2.9.2 imports VueUse's `useEventListener` for a browser-only branch
+ * in its body-scroll lock. The Nuxt server build removes that branch after
+ * combining it into the generated FocusScope chunk, then Rollup reports the
+ * now-dead external import. Keep this classifier constrained to Rollup's exact
+ * code, symbol, exporter and generated server chunk so app-owned warnings stay
+ * visible.
+ */
+export function isKnownRekaFocusScopeVueUseUnusedImportWarning(
+  warning: ViteRollupWarning,
+): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  if (!message.includes('"useEventListener" is imported from external module')) return false
+  if (!message.includes('but never used in')) return false
+  if (!isVueUseCoreDistPath(message)) return false
+  if (!isGeneratedServerFocusScopeChunkPath(message)) return false
+
+  if (typeof warning === 'string') return true
+
+  return (
+    warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
+    isVueUseCoreDistPath(warning.exporter) &&
+    warning.names?.length === 1 &&
+    warning.names[0] === 'useEventListener' &&
+    warning.ids?.length === 1 &&
+    isGeneratedServerFocusScopeChunkPath(warning.ids[0])
+  )
+}
+
+function hasKnownVueUseInvalidAnnotationLocation(warning: ViteRollupWarning): boolean {
+  if (typeof warning === 'string') {
+    return vueUseInvalidAnnotationLocations.some(({ column, line }) =>
+      warning.includes(`(${line}:${column})`),
+    )
+  }
+
+  const { loc, message = '' } = warning
+  return vueUseInvalidAnnotationLocations.some(
+    ({ column, line }) =>
+      (loc?.line === line && loc.column === column) || message.includes(`(${line}:${column})`),
+  )
+}
+
+/**
+ * VueUse 14.3.0 ships two misplaced PURE annotations. Rollup safely removes
+ * them, and the upstream source fix is merged but not yet released:
+ * https://github.com/vueuse/vueuse/pull/5388
+ */
+export function isKnownVueUseAnnotationPositionWarning(warning: ViteRollupWarning): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  if (!message.includes('#__PURE__')) return false
+  if (
+    !message.includes(
+      'contains an annotation that Rollup cannot interpret due to the position of the comment',
+    )
+  ) {
+    return false
+  }
+
+  if (typeof warning !== 'string') {
+    if (warning.code !== 'INVALID_ANNOTATION' && warning.code !== 'ANNOTATION_POSITION') {
+      return false
+    }
+    if (
+      !isVueUseCoreDistPath(warning.id) &&
+      !isVueUseCoreDistPath(warning.loc?.file) &&
+      !isVueUseCoreDistPath(message)
+    ) {
+      return false
+    }
+  } else if (!isVueUseCoreDistPath(message)) {
+    return false
+  }
+
+  return hasKnownVueUseInvalidAnnotationLocation(warning)
+}
+
 export function createCoreViteBuildLogger(): CoreViteBuildLogger {
   const loggedWarnings = new Set<string>()
   const loggedErrors = new WeakSet<Error>()
@@ -80,6 +195,8 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
     hasWarned: false,
     info: () => {},
     warn(message) {
+      if (isKnownVueUseAnnotationPositionWarning(message)) return
+      if (isKnownRekaFocusScopeVueUseUnusedImportWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -87,6 +204,8 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
       console.warn(message)
     },
     warnOnce(message) {
+      if (isKnownVueUseAnnotationPositionWarning(message)) return
+      if (isKnownRekaFocusScopeVueUseUnusedImportWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -116,8 +235,10 @@ export function applyCoreRollupBuildWarningPolicy(config: unknown) {
   const existingOnWarn = mutableConfig.onwarn
 
   mutableConfig.onwarn = (warning, warn) => {
-    // Upstream: these plugins currently emit sourcemap warnings during
-    // production builds even though the output still bundles correctly.
+    // Upstream dependencies and tooling currently emit these known generated
+    // warnings during production builds even though the output bundles correctly.
+    if (isKnownVueUseAnnotationPositionWarning(warning as ViteRollupWarning)) return
+    if (isKnownRekaFocusScopeVueUseUnusedImportWarning(warning as ViteRollupWarning)) return
     if (isKnownViteSourcemapWarning(warning as ViteRollupWarning)) return
     if (isKnownIconifyUnusedImportWarning(warning as ViteRollupWarning)) return
     if (isKnownPlaywrightVirtualProxyWarning(warning as ViteRollupWarning)) return

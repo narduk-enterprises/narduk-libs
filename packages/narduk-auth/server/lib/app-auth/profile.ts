@@ -2,10 +2,10 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { type User as LocalUser, users } from '#layer/orm-tables'
 import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { hashUserPassword, verifyUserPassword } from '#layer/server/utils/password'
 import { replaceLayerUserSession } from '#layer/server/utils/user-session'
+import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { encodeQrCodeDataUrl } from './helpers'
 import { ensureLinkedLocalUser } from './linking'

@@ -13,11 +13,12 @@ export interface CloudflareWorkersBuildsSettings {
       environmentName: string
       buildCommand: string
       deployCommand: string
+      previewDeployCommand: string
     }
   }
 }
 
-export interface ProvisionMetadata {
+export interface AppOnboardingMetadata {
   name: string | null
   displayName: string | null
   shortName: string | null
@@ -26,23 +27,23 @@ export interface ProvisionMetadata {
   localDevNuxtPort: number | null
 }
 
+/** @deprecated Use AppOnboardingMetadata. */
+export type ProvisionMetadata = AppOnboardingMetadata
+
 export function getCloudflareWorkersBuildsSettings(): CloudflareWorkersBuildsSettings {
   return {
-    rootDirectory: '/apps/web',
+    rootDirectory: '.',
     buildCachingEnabled: true,
-    skipDependencyInstall: true,
-    requiredBuildSecrets: [
-      'NARDUK_PLATFORM_GH_PACKAGES_READ',
-      'NUXT_SESSION_PASSWORD',
-      'NUXT_OG_IMAGE_SECRET',
-    ],
-    requiredRuntimeVariables: ['SITE_URL', 'NUXT_SESSION_PASSWORD', 'NUXT_OG_IMAGE_SECRET'],
+    skipDependencyInstall: false,
+    requiredBuildSecrets: ['NARDUK_PLATFORM_GH_PACKAGES_READ'],
+    requiredRuntimeVariables: ['SITE_URL'],
     targets: {
       production: {
         branch: 'main',
         environmentName: 'production',
-        buildCommand: 'pnpm run cf:build:production',
+        buildCommand: 'pnpm run cf:build',
         deployCommand: 'pnpm run cf:deploy',
+        previewDeployCommand: 'pnpm run cf:deploy:preview',
       },
     },
   }
@@ -70,7 +71,7 @@ function normalizePort(value: unknown): number | null {
   return parsed
 }
 
-const EMPTY_METADATA: ProvisionMetadata = {
+const EMPTY_METADATA: AppOnboardingMetadata = {
   name: null,
   displayName: null,
   shortName: null,
@@ -80,11 +81,10 @@ const EMPTY_METADATA: ProvisionMetadata = {
 }
 
 /**
- * Reads app metadata from `apps/web/package.json`. `provision.json` has been
- * retired; the package manifest is the single source of truth for app name,
- * description, and URL. Name kept for call-site compatibility.
+ * Reads app-owned onboarding metadata from `apps/web/package.json`. The package
+ * manifest is the source of truth for app identity, URL, and local dev port.
  */
-export function readProvisionMetadata(rootDir: string): ProvisionMetadata {
+export function readAppOnboardingMetadata(rootDir: string): AppOnboardingMetadata {
   const packagePath = join(rootDir, 'apps', 'web', 'package.json')
   if (!existsSync(packagePath)) return EMPTY_METADATA
 
@@ -100,14 +100,15 @@ export function readProvisionMetadata(rootDir: string): ProvisionMetadata {
     // the `narduk` block first; only fall back to `pkg.name` when it is a
     // meaningful value (i.e. *not* the fixture sentinel `"web"`). Returning
     // `null` for unbackfilled apps surfaces a real "missing metadata" signal
-    // to manifest/sync/drift tooling instead of silently displaying "web".
+    // to onboarding/status tooling instead of silently displaying "web".
+    const nardukName = normalizeText(narduk.name)
     const nardukShortName = normalizeText(narduk.shortName)
     const nardukDisplayName = normalizeText(narduk.displayName)
     const legacyName = normalizeText(parsed.name)
     const meaningfulLegacyName = legacyName === 'web' ? null : legacyName
 
     return {
-      name: nardukShortName || nardukDisplayName || meaningfulLegacyName,
+      name: nardukName || nardukShortName || nardukDisplayName || meaningfulLegacyName,
       displayName: nardukDisplayName || nardukShortName || meaningfulLegacyName,
       shortName: nardukShortName || nardukDisplayName,
       description: normalizeText(parsed.description),
@@ -121,7 +122,7 @@ export function readProvisionMetadata(rootDir: string): ProvisionMetadata {
 
 export function resolveLocalNuxtPort(
   env: Record<string, string | undefined>,
-  provision: ProvisionMetadata,
+  metadata: AppOnboardingMetadata,
   fallback: number,
   options: {
     preferPlaywrightPort?: boolean
@@ -131,23 +132,23 @@ export function resolveLocalNuxtPort(
     return (
       normalizePort(env.PLAYWRIGHT_PORT) ??
       normalizePort(env.NUXT_PORT) ??
-      provision.localDevNuxtPort ??
+      metadata.localDevNuxtPort ??
       fallback
     )
   }
 
-  return normalizePort(env.NUXT_PORT) ?? provision.localDevNuxtPort ?? fallback
+  return normalizePort(env.NUXT_PORT) ?? metadata.localDevNuxtPort ?? fallback
 }
 
-export function getProvisionDisplayName(provision: ProvisionMetadata, fallback: string): string {
-  return provision.displayName || provision.name || fallback
+export function getAppDisplayName(metadata: AppOnboardingMetadata, fallback: string): string {
+  return metadata.displayName || metadata.name || fallback
 }
 
-export function getProvisionShortName(provision: ProvisionMetadata, fallback: string): string {
-  return provision.shortName || provision.displayName || provision.name || fallback
+export function getAppShortName(metadata: AppOnboardingMetadata, fallback: string): string {
+  return metadata.shortName || metadata.displayName || metadata.name || fallback
 }
 
-export function parseProvisionMetadata(raw: Record<string, unknown>): ProvisionMetadata {
+export function parseAppOnboardingMetadata(raw: Record<string, unknown>): AppOnboardingMetadata {
   const localDev =
     typeof raw.localDev === 'object' && raw.localDev !== null
       ? (raw.localDev as Record<string, unknown>)
@@ -163,7 +164,7 @@ export function parseProvisionMetadata(raw: Record<string, unknown>): ProvisionM
   }
 }
 
-export function emptyProvisionMetadata(): ProvisionMetadata {
+export function emptyAppOnboardingMetadata(): AppOnboardingMetadata {
   return {
     name: null,
     displayName: null,
@@ -173,3 +174,14 @@ export function emptyProvisionMetadata(): ProvisionMetadata {
     localDevNuxtPort: null,
   }
 }
+
+/** @deprecated Use readAppOnboardingMetadata. */
+export const readProvisionMetadata = readAppOnboardingMetadata
+/** @deprecated Use getAppDisplayName. */
+export const getProvisionDisplayName = getAppDisplayName
+/** @deprecated Use getAppShortName. */
+export const getProvisionShortName = getAppShortName
+/** @deprecated Use parseAppOnboardingMetadata. */
+export const parseProvisionMetadata = parseAppOnboardingMetadata
+/** @deprecated Use emptyAppOnboardingMetadata. */
+export const emptyProvisionMetadata = emptyAppOnboardingMetadata
