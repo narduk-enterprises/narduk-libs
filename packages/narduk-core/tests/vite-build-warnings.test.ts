@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   applyCoreRollupBuildWarningPolicy,
@@ -6,7 +6,9 @@ import {
   createCoreViteBuildLogger,
   isKnownGeneratedCircularDependencyWarning,
   isKnownPlaywrightVirtualProxyWarning,
+  isKnownRekaFocusScopeVueUseUnusedImportWarning,
   isKnownVueUseAnnotationPositionWarning,
+  type ViteRollupWarning,
 } from '../runtime/shared/vite-build-warnings'
 
 const vueUseCorePath =
@@ -16,7 +18,105 @@ function annotationPositionMessage(path: string, line: number, column: number): 
   return `${path} (${line}:${column}): A comment\n\n"/* #__PURE__ */"\n\nin "${path}" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.`
 }
 
+const generatedFocusScopePath =
+  '/repo/node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/FocusScope-CXuIqawc.js'
+const vueUseUnusedImportMessage = `"useEventListener" is imported from external module "file://${vueUseCorePath}" but never used in "node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/FocusScope-CXuIqawc.js".`
+
+type StructuredViteRollupWarning = Exclude<ViteRollupWarning, string>
+
+function vueUseUnusedImportWarning(
+  overrides: Partial<StructuredViteRollupWarning> = {},
+): StructuredViteRollupWarning {
+  return {
+    code: 'UNUSED_EXTERNAL_IMPORT',
+    exporter: `file://${vueUseCorePath}`,
+    ids: [generatedFocusScopePath],
+    message: vueUseUnusedImportMessage,
+    names: ['useEventListener'],
+    ...overrides,
+  }
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('vite build warning policy', () => {
+  it('recognizes only the generated Reka FocusScope VueUse unused import warning', () => {
+    expect(isKnownRekaFocusScopeVueUseUnusedImportWarning(vueUseUnusedImportWarning())).toBe(true)
+    expect(isKnownRekaFocusScopeVueUseUnusedImportWarning(vueUseUnusedImportMessage)).toBe(true)
+    expect(
+      isKnownRekaFocusScopeVueUseUnusedImportWarning(
+        vueUseUnusedImportMessage.replace('node_modules/.cache/nuxt/.nuxt', '.nuxt'),
+      ),
+    ).toBe(true)
+
+    expect(
+      isKnownRekaFocusScopeVueUseUnusedImportWarning(
+        vueUseUnusedImportWarning({ ids: ['/repo/apps/web/server/FocusScope-local.js'] }),
+      ),
+    ).toBe(false)
+    expect(
+      isKnownRekaFocusScopeVueUseUnusedImportWarning(
+        vueUseUnusedImportWarning({
+          ids: ['/repo/.nuxt/dist/server/_nuxt/AppModal-CXuIqawc.js'],
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isKnownRekaFocusScopeVueUseUnusedImportWarning(
+        vueUseUnusedImportWarning({ names: ['useMutationObserver'] }),
+      ),
+    ).toBe(false)
+    expect(
+      isKnownRekaFocusScopeVueUseUnusedImportWarning(
+        vueUseUnusedImportWarning({ exporter: '/repo/apps/web/composables/useExample.ts' }),
+      ),
+    ).toBe(false)
+  })
+
+  it('filters the generated Reka FocusScope warning without hiding adjacent app warnings', () => {
+    const logger = createCoreViteBuildLogger()
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    logger.warn(vueUseUnusedImportMessage)
+
+    expect(logger.hasWarned).toBe(false)
+    expect(consoleWarn).not.toHaveBeenCalled()
+
+    const appMessage = vueUseUnusedImportMessage.replace(
+      'node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/FocusScope-CXuIqawc.js',
+      'apps/web/server/FocusScope-local.js',
+    )
+    logger.warn(appMessage)
+
+    expect(logger.hasWarned).toBe(true)
+    expect(consoleWarn).toHaveBeenCalledWith(appMessage)
+  })
+
+  it('filters the generated Reka FocusScope warning through Rollup onwarn', () => {
+    const warn = vi.fn()
+    const config = {}
+
+    applyCoreRollupBuildWarningPolicy(config)
+    const onwarn = (
+      config as {
+        onwarn: (warning: unknown, warn: (warning: unknown) => void) => void
+      }
+    ).onwarn
+
+    const knownWarning = vueUseUnusedImportWarning()
+    onwarn(knownWarning, warn)
+    expect(warn).not.toHaveBeenCalled()
+
+    const appWarning = vueUseUnusedImportWarning({
+      ids: ['/repo/apps/web/server/FocusScope-local.js'],
+    })
+    onwarn(appWarning, warn)
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith(appWarning)
+  })
+
   it('recognizes Playwright virtual proxy warnings as transient build noise', () => {
     expect(
       isKnownPlaywrightVirtualProxyWarning(

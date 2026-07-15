@@ -8,9 +8,12 @@ export type ViteRollupWarning =
   | string
   | {
       code?: string
+      exporter?: string
       id?: string
+      ids?: string[]
       loc?: ViteWarningLocation
       message?: string
+      names?: string[]
       plugin?: string
     }
 type ViteLogType = 'error' | 'info' | 'warn'
@@ -92,6 +95,44 @@ function isVueUseCoreDistPath(value: string | undefined): boolean {
   return normalized.includes('/node_modules/@vueuse/core/dist/index.js')
 }
 
+function isGeneratedServerFocusScopeChunkPath(value: string | undefined): boolean {
+  if (!value) return false
+
+  const normalized = value.replaceAll('\\', '/')
+  return /(?:^|[/"])\.nuxt\/dist\/server\/_nuxt\/FocusScope-[^/"\s]+\.js(?:[".]|$)/u.test(
+    normalized,
+  )
+}
+
+/**
+ * Reka UI 2.9.2 imports VueUse's `useEventListener` for a browser-only branch
+ * in its body-scroll lock. The Nuxt server build removes that branch after
+ * combining it into the generated FocusScope chunk, then Rollup reports the
+ * now-dead external import. Keep this classifier constrained to Rollup's exact
+ * code, symbol, exporter and generated server chunk so app-owned warnings stay
+ * visible.
+ */
+export function isKnownRekaFocusScopeVueUseUnusedImportWarning(
+  warning: ViteRollupWarning,
+): boolean {
+  const message = typeof warning === 'string' ? warning : (warning.message ?? '')
+  if (!message.includes('"useEventListener" is imported from external module')) return false
+  if (!message.includes('but never used in')) return false
+  if (!isVueUseCoreDistPath(message)) return false
+  if (!isGeneratedServerFocusScopeChunkPath(message)) return false
+
+  if (typeof warning === 'string') return true
+
+  return (
+    warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
+    isVueUseCoreDistPath(warning.exporter) &&
+    warning.names?.length === 1 &&
+    warning.names[0] === 'useEventListener' &&
+    warning.ids?.length === 1 &&
+    isGeneratedServerFocusScopeChunkPath(warning.ids[0])
+  )
+}
+
 function hasKnownVueUseInvalidAnnotationLocation(warning: ViteRollupWarning): boolean {
   if (typeof warning === 'string') {
     return vueUseInvalidAnnotationLocations.some(({ column, line }) =>
@@ -155,6 +196,7 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
     info: () => {},
     warn(message) {
       if (isKnownVueUseAnnotationPositionWarning(message)) return
+      if (isKnownRekaFocusScopeVueUseUnusedImportWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -163,6 +205,7 @@ export function createCoreViteBuildLogger(): CoreViteBuildLogger {
     },
     warnOnce(message) {
       if (isKnownVueUseAnnotationPositionWarning(message)) return
+      if (isKnownRekaFocusScopeVueUseUnusedImportWarning(message)) return
       if (isKnownIconifyUnusedImportWarning(message)) return
       if (isKnownPlaywrightVirtualProxyWarning(message)) return
       if (isKnownGeneratedCircularDependencyWarning(message)) return
@@ -192,9 +235,10 @@ export function applyCoreRollupBuildWarningPolicy(config: unknown) {
   const existingOnWarn = mutableConfig.onwarn
 
   mutableConfig.onwarn = (warning, warn) => {
-    // Upstream: these plugins currently emit sourcemap warnings during
-    // production builds even though the output still bundles correctly.
+    // Upstream dependencies and tooling currently emit these known generated
+    // warnings during production builds even though the output bundles correctly.
     if (isKnownVueUseAnnotationPositionWarning(warning as ViteRollupWarning)) return
+    if (isKnownRekaFocusScopeVueUseUnusedImportWarning(warning as ViteRollupWarning)) return
     if (isKnownViteSourcemapWarning(warning as ViteRollupWarning)) return
     if (isKnownIconifyUnusedImportWarning(warning as ViteRollupWarning)) return
     if (isKnownPlaywrightVirtualProxyWarning(warning as ViteRollupWarning)) return
