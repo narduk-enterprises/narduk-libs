@@ -2,11 +2,12 @@
 /* eslint-disable narduk/file-size-budget -- API keys management panel is a cohesive CRUD surface (list + create modal + rotate + revoke + schema) co-located so users can reason about the full lifecycle in one file; AppCopyButton is a Nuxt auto-import from the core layer. */
 import { z } from 'zod'
 
-import type {
-  AuthApiKeyCreateResponse,
-  AuthApiKeyScopeOption,
-  AuthApiKeySummary,
-  AuthApiKeyTokenProfile,
+import {
+  type AuthApiKeyCreateResponse,
+  type AuthApiKeyScopeOption,
+  type AuthApiKeySummary,
+  type AuthApiKeyTokenProfile,
+  useAuthApi,
 } from '../../composables/useAuthApi'
 
 const props = withDefaults(

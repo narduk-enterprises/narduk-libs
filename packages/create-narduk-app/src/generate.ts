@@ -88,8 +88,8 @@ function normalizeCapabilities(input: CreateNardukAppOptions['capabilities']): C
 
 function normalizePort(value: number | undefined): number {
   const port = value ?? 3000
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new CreateNardukAppError('localPort must be an integer between 1 and 65535.')
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new CreateNardukAppError('local port must be an integer between 1024 and 65535.')
   }
   return port
 }
@@ -125,8 +125,8 @@ function normalizeProductSpec(options: CreateNardukAppOptions): ProductSpec | un
 function tsString(value: string): string {
   const singleQuotes = value.match(/'/gu)?.length ?? 0
   const doubleQuotes = value.match(/"/gu)?.length ?? 0
-  if (singleQuotes > doubleQuotes) return JSON.stringify(value)
-  const jsonValue = JSON.stringify(value)
+  const jsonValue = JSON.stringify(value).replaceAll('<', '\\u003C')
+  if (singleQuotes > doubleQuotes) return jsonValue
   return `'${jsonValue.slice(1, -1).replaceAll('\\"', '"').replaceAll("'", "\\'")}'`
 }
 
@@ -230,6 +230,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  ],',
       ]
     : []
+  const knipIgnoreDependencies = [
+    '@iconify-json/lucide',
+    ...(capabilities.includes('mapkit') ? ['@loganrenz/narduk-mapkit'] : []),
+    'vue-tsc',
+  ]
 
   const files: GeneratedFile[] = [
     {
@@ -289,14 +294,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'jobs:',
         '  quality:',
         visibility === 'private'
-          ? '    runs-on: [self-hosted, Linux, X64]'
+          ? '    runs-on: [self-hosted, Linux, proxmox]'
           : '    runs-on: ubuntu-latest',
         '    steps:',
-        '      - uses: actions/checkout@v4',
-        '      - uses: pnpm/action-setup@v4',
+        '      - uses: actions/checkout@v7',
+        '      - uses: pnpm/action-setup@v6',
         '        with:',
         '          version: 10.33.4',
-        '      - uses: actions/setup-node@v4',
+        '      - uses: actions/setup-node@v7',
         '        with:',
         '          node-version: 22.22.3',
         '          cache: pnpm',
@@ -409,30 +414,38 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: capabilities.includes('seo')
         ? text(
             '<script setup lang="ts">',
+            'const displayName = ' + tsString(displayName),
+            'const description = ' + tsString(description),
+            '',
             'useSeo({',
-            '  title: ' + tsString(displayName) + ',',
-            '  description: ' + tsString(description) + ',',
+            '  title: displayName,',
+            '  description,',
             '  canonicalUrl: ' + tsString(siteUrl) + ',',
             '})',
             '',
             'useWebPageSchema({',
-            '  name: ' + tsString(displayName) + ',',
-            '  description: ' + tsString(description) + ',',
+            '  name: displayName,',
+            '  description,',
             '})',
             '</script>',
             '',
             '<template>',
             '  <main>',
-            '    <h1>' + displayName + '</h1>',
-            '    <p>' + description + '</p>',
+            '    <h1>{{ displayName }}</h1>',
+            '    <p>{{ description }}</p>',
             '  </main>',
             '</template>',
           )
         : text(
+            '<script setup lang="ts">',
+            'const displayName = ' + tsString(displayName),
+            'const description = ' + tsString(description),
+            '</script>',
+            '',
             '<template>',
             '  <main>',
-            '    <h1>' + displayName + '</h1>',
-            '    <p>' + description + '</p>',
+            '    <h1>{{ displayName }}</h1>',
+            '    <p>{{ description }}</p>',
             '  </main>',
             '</template>',
           ),
@@ -551,7 +564,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       path: 'apps/web/package.json',
-      contents: createWebPackageManifest(appName, capabilities, localPort),
+      contents: createWebPackageManifest(appName, capabilities, localPort, {
+        description,
+        displayName,
+        siteUrl,
+      }),
     },
     {
       path: 'apps/web/server/api/health.get.ts',
@@ -672,7 +689,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      }',
         '    }',
         '  },',
-        '  "ignoreDependencies": ["@iconify-json/lucide", "@loganrenz/narduk-mapkit", "vue-tsc"]',
+        '  "ignoreDependencies": [' +
+          knipIgnoreDependencies.map((dependency) => JSON.stringify(dependency)).join(', ') +
+          ']',
         '}',
       ),
     },

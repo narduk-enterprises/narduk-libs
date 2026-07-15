@@ -543,6 +543,49 @@ fleet zero-reference and `narduk-data` gates are green.
 The future service must provide all of the following before any ingestion layer
 is removed:
 
+### Current readiness baseline — 2026-07-14
+
+No `narduk-data` repository exists under `narduk-enterprises`, `narduk-geo`, or
+`loganrenz`. The intended canonical home is `narduk-enterprises/narduk-data`,
+checked out at `/Users/narduk/code/narduk-enterprises/narduk-data`. It should
+extract the generic job, identity, lifecycle, queue, and adapter contracts from
+`narduk-geo/geo-infrastructure`; Earth-data and raster-specific processing stays
+in `narduk-geo`, and application persistence schemas and sinks stay app-owned.
+
+The audit used fresh remote revisions `f4aa330` (BorderWait), `d4af9a2`
+(Austin), `372c2ac` (Buoys), `b62daa4` (Riverstatus), `d07d6f4` (template), and
+`03c025e` (`geo-infrastructure`) plus read-only production ledgers. It made no
+repository, provider, schedule, credential, or database mutation.
+
+| Consumer          | Current production finding                                                                                                                                                                                                                                                                                                                                        | Gate consequence                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| BorderWaitStat.us | The latest 144 expected ten-minute windows contain 143 successes and one upstream CBP `504` at `2026-07-14T04:10:06Z`; the next run recovered. Production has the sequential five-row D1-safe write, while current remote `main` still has unsafe concurrent 60-row writes and [PR #4](https://github.com/narduk-enterprises/borderwaitstat-us/pull/4) conflicts. | The locked 144-window gate fails. Recreate the sequential-write patch on current `main` before shadow proof. |
+| Austin            | The shared ledger has 5,752 `queued`, 13 `error`, and only 23 `success` rows, with no success after May 15. Live AQI bypasses the ledger; stored water/lake data is stale.                                                                                                                                                                                        | Scheduler and queue ownership are unhealthy and the backlog must be reconciled before replay.                |
+| Buoys             | The shared ledger has 30,976 `queued`, 2,629 `running`, 51 `error`, and 16,406 `success` rows. The separate history queue is healthier but still has failed and stale items, sends before its state update, and has no orphan repair.                                                                                                                             | Split ledgers, nondeterministic backfill IDs, and missing repair prevent cutover.                            |
+| Riverstatus       | The shared ledger has 3,258 `queued`, 34 `running`, 124 `error`, 13 legacy `failed`, 7 `skipped`, and 891 `success` rows; the last shared success is May 15. Current observations are also written with `sync_run_id IS NULL` by request-time refreshes.                                                                                                          | There are multiple untracked writers and no single-owner cadence.                                            |
+
+Austin, Buoys' realtime path, and Riverstatus use custom consumers instead of
+the template's retry-safe wrapper. Each can mark a run `error`, request
+redelivery, then acknowledge that redelivery because the row is no longer
+`queued`. The replacement must preserve the generic wrapper's transition back to
+`queued` before retry and prove exhausted-DLQ behavior. Stable source evidence:
+
+- [Austin consumer at `d4af9a2`](https://github.com/narduk-enterprises/austin-texas-net/blob/d4af9a2f7262637f9e7c4b6c0f5a5caa220c53d4/apps/web/server/plugins/ingestion.ts#L117)
+- [Buoys consumer at `372c2ac`](https://github.com/narduk-enterprises/buoys/blob/372c2aca95b4daf68b77cf8f2c1c53e19e8ec562/apps/web/server/plugins/noaa-ingestion.ts#L82)
+- [Riverstatus consumer at `b62daa4`](https://github.com/narduk-enterprises/riverstatus/blob/b62daa41a4793a160935ccb82dff14d209d25fb8/apps/web/server/plugins/riverstatus-ingestion.ts#L80)
+
+`geo-infrastructure` is source material, not a production-ready substitute. It
+has Dagster/Postgres orchestration, a public-data registry, first-party
+adapters, retry policies, and immutable Earth-data publication. Its non-daily
+jobs use a static `bootstrap` partition and Sunday schedules, its public-data
+schedules are stopped, it has no app sink or legacy-ledger contract, and its
+control host could not reach the builder code server during the audit. See the
+[partition/schedule implementation](https://github.com/narduk-geo/geo-infrastructure/blob/03c025e8bca1e5153333e035f91270b6e9fb8482/dagster_code/public_data_jobs.py#L20)
+and
+[readiness limitations](https://github.com/narduk-geo/geo-infrastructure/blob/03c025e8bca1e5153333e035f91270b6e9fb8482/docs/dagster/public-data-readiness.md#L31).
+
+### Required service contract
+
 - stable job/source IDs and versioned schedules;
 - idempotency by job, trigger, cron, and scheduled timestamp;
 - stable run IDs available to app persistence;
@@ -571,6 +614,42 @@ Production proof must include:
 
 `narduk-data` is a hard predecessor of final template archive. It is not a
 reason to delay unrelated package or app migrations.
+
+### Current acceptance matrix
+
+`Partial`, `unproven`, and `fail` are all blocking results.
+
+| Locked gate                                                                 | Current result | Evidence summary                                                                                                |
+| --------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------- |
+| Stable job/source IDs and versioned schedules                               | Partial        | IDs exist; schedules are not versioned and Dagster cadences do not match the apps.                              |
+| Idempotency by job, trigger, cron, and scheduled timestamp                  | Partial        | The shared outer ledger provides it; several domain writes and Buoys history do not.                            |
+| Stable run IDs available to app persistence                                 | Fail           | BorderWait passes; Austin is inconsistent, Buoys is split, and Riverstatus creates unrelated inner or null IDs. |
+| Authenticated manual/external triggers                                      | Partial        | Existing app routes are protected; no cross-service trigger contract exists.                                    |
+| Required lifecycle states                                                   | Partial        | The shared ledger has them; app sub-ledgers are incompatible or incomplete.                                     |
+| Counters, metadata, results, timestamps, errors, listing, health, staleness | Partial        | Fields exist, but no authoritative service API or uniform freshness behavior exists.                            |
+| Request-scoped binding or signed callback/data sink                         | Fail           | No cross-service app persistence contract exists.                                                               |
+| Import or read-only archive of `narduk_ingestion_runs`                      | Fail           | No design or implementation exists.                                                                             |
+| Queue messages, `202`, retry, DLQ, attempts, rollups, concurrency, repair   | Fail           | Custom consumers bypass safe retry and production backlogs are unresolved.                                      |
+| Shadow parity without double writes                                         | Fail           | No replacement shadow environment exists.                                                                       |
+| Duplicate delivery produces one logical run                                 | Unproven       | Outer-ledger unit dedupe exists; domain-write production proof does not.                                        |
+| Injected failure records and the next run recovers                          | Unproven       | A natural BorderWait failure recovered, but no controlled injection test exists.                                |
+| BorderWait 144 consecutive expected windows                                 | Fail           | The audited window is 143 successes plus one upstream `504`.                                                    |
+| Retry, exhausted-DLQ, rollup, and repair scenarios                          | Fail           | Generic unit helpers exist; deployed consumers and ledgers fail the gate.                                       |
+| Exactly one owner for a full cadence                                        | Fail           | No cutover exists; Riverstatus demonstrably has request-time and scheduler writers.                             |
+
+### Required next actions
+
+1. Create `narduk-enterprises/narduk-data` as the canonical replacement service;
+   do not put it in `narduk-geo` or `narduk-libs`.
+2. Port the generic identity, lifecycle, queue, health, and repair contracts and
+   their tests without creating a transitional Nuxt library.
+3. Add versioned schedules, authenticated triggers, concrete app sink contracts,
+   and a read-only importer/archive for existing package ledgers.
+4. Repair or replace all three custom queue consumers, then reconcile existing
+   queued/running rows before resending any message.
+5. Recreate the BorderWait D1-safe sequential-write fix from current `main`.
+6. Run every matrix gate in shadow, then disable the old owner immediately
+   before enabling the new one and prove a single owner for a full cadence.
 
 ## 9. Command and template retirement gates
 
@@ -630,9 +709,12 @@ Example functional scan, excluding this document and Git history:
 
 ```sh
 git grep -n -E \
-  -- ':!docs/architecture/narduk-template-decommission.md' \
-  'narduk-template|narduk-nuxt-template|narduk-fleet|narduk-cli|narduk-starter-toolkit|narduk-nuxt-module|narduk-nuxt-template-layer-|\.template-reference|\.template-version|narduk\.layout\.json|guardrail-exceptions\.json|scripts/narduk-toolchain\.mjs|provision\.json|#layer|#server/(app|core)-orm-tables'
+  -e 'narduk-template|narduk-nuxt-template|narduk-fleet|narduk-cli|narduk-starter-toolkit|narduk-nuxt-module|narduk-nuxt-template-layer-|\.template-reference|\.template-version|narduk\.layout\.json|guardrail-exceptions\.json|scripts/narduk-toolchain\.mjs|provision\.json|#layer|#server/(app|core)-orm-tables' \
+  -- . ':!docs/architecture/narduk-template-decommission.md'
 ```
+
+Exit status `1` with no output is the passing zero-match result. Any matches or
+an exit status other than `1` require review.
 
 Command-specific callbacks, leases, registry mutation endpoints, dispatches,
 URLs, and provider settings require semantic inspection in addition to string

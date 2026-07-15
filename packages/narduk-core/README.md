@@ -2,16 +2,17 @@
 
 Core UI, worker runtime, and shared utilities.
 
-First-class layer package source in this workspace.
+First-class Nuxt package source in this workspace.
 
 Generic shell primitives such as `AppBreadcrumbs` live here; AI runtime and
-admin surfaces now belong in `layers/ai/`.
+admin surfaces now belong to `@narduk-enterprises/narduk-ai` in
+`packages/narduk-ai/`.
 
 > [!NOTE] Public SEO and Schema.org capabilities have been moved to
-> `layers/seo`. Internal SPA apps and operator consoles run purely on `core`
-> without loading public formatting dependencies. Public websites should
-> explicitly extend the SEO layer and use `useSeo(...)` for proper structured
-> metadata.
+> `@narduk-enterprises/narduk-seo` in `packages/narduk-seo/`. Internal SPA apps
+> and operator consoles can use only `@narduk-enterprises/narduk-core` without
+> loading public formatting dependencies. Public websites should explicitly
+> register the SEO package and use `useSeo(...)` for proper structured metadata.
 
 Nitro OpenAPI generation is enabled here for all downstream apps. By default,
 production builds prerender `/_openapi.json`, while the Scalar and Swagger UI

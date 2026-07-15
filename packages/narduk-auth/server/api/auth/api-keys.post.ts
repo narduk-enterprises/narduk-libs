@@ -7,6 +7,7 @@ import {
   resolveApiKeyExpiry,
   serializeApiKeyScopes,
 } from '#layer/server/utils/auth'
+import { useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import {
   defineUserMutation,

@@ -340,8 +340,10 @@ try {
         packageManager: 'pnpm@10.33.4',
         dependencies,
         devDependencies: {
+          '@playwright/test': '1.59.1',
           eslint: '9.39.4',
           typescript: '5.9.3',
+          vitest: '4.1.6',
         },
         pnpm: {
           overrides: {
@@ -377,6 +379,59 @@ try {
       throw new Error(`Packed consumer resolved the wrong artifact for ${manifest.name}.`)
     }
   }
+
+  const testkitManifest = packages.find(
+    ({ manifest }) => manifest.name === '@narduk-enterprises/narduk-testkit',
+  )?.manifest
+  if (!testkitManifest) throw new Error('The release set is missing narduk-testkit.')
+  const testkitExportSpecifiers = Object.keys(testkitManifest.exports || {}).map((subpath) =>
+    subpath === '.' ? testkitManifest.name : `${testkitManifest.name}${subpath.slice(1)}`,
+  )
+  const testkitExportGroups = [
+    {
+      label: 'Playwright and analyzer',
+      specifiers: testkitExportSpecifiers.filter(
+        (specifier) => !specifier.includes('/server/kit/'),
+      ),
+    },
+    {
+      label: 'Vitest server-kit',
+      specifiers: testkitExportSpecifiers.filter((specifier) => specifier.includes('/server/kit/')),
+    },
+  ]
+  for (const group of testkitExportGroups) {
+    if (group.specifiers.length === 0) continue
+    runChecked(
+      'node',
+      [
+        '--input-type=module',
+        '--eval',
+        `const specifiers = ${JSON.stringify(group.specifiers)}; for (const specifier of specifiers) await import(specifier); console.log(\`Imported \${specifiers.length} ${group.label} narduk-testkit export subpaths.\`)`,
+      ],
+      {
+        cwd: consumerDirectory,
+        label: `import packed testkit ${group.label} exports with native Node ESM`,
+      },
+    )
+  }
+
+  const testkitCliFixture = join(consumerDirectory, 'testkit-cli-fixture')
+  mkdirSync(testkitCliFixture, { recursive: true })
+  writeFileSync(
+    join(testkitCliFixture, 'manifest.json'),
+    `${JSON.stringify({ app: 'release-smoke', minimumScreenshotCount: 1 }, null, 2)}\n`,
+  )
+  writeFileSync(
+    join(testkitCliFixture, 'screenshot.png'),
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAMgAAAB4CAYAAAC3kr3rAAAACXBIWXMAAAsTAAALEwEAmpwYAAAD2UlEQVR4nO3YsY0dQRDE0MpGMjofpacwFIkunC97fAHkATQqgQYfdjHbrz+f5rnB52vty3OD0UG0gHwEEALyTTDSQbT1BaERBGTfBmK/WAIUfUGGQwiIIP6ADA8+IILIAzI87IAIYg7I8IADIog2IMNDDYggTsPoINqeG/SKJUARkGlhBkSAIiDDIQREEH9AhgcfEEHkARkedkAEMQdkeMABEUQbkOGhBkQQp2F0EG3PDXrFEqAIyLQwAyJAEZDhEAIiiD8gw4MPiCDygAwPOyCCmAMyPOCACKINyPBQAyKI0zA6iLbnBr1iCVAEZFqYARGgCMhwCAERxB+Q4cEHRBB5QIaHHRBBzAEZHnBABNEGZHioARHEaRgdRNtzg16xBCgCMi3MgAhQBGQ4hIAI4g/I8OADIog8IMPDDogg5oAMDzgggmgDMjzUgAjiNIwOou25Qa9YAhQBmRZmQAQoAjIcQkAE8QdkePABEUQekOFhB0QQc0CGBxwQQbQBGR5qQARxGkYH0fbcoFcsAYqATAszIAIUARkOISCC+AMyPPiACCIPyPCwAyKIOSDDAw6IINqADA81III4DaODaHtu0CuWAEVApoUZEAGKgAyHEBBB/AEZHnxABJEHZHjYARHEHJDhAQdEEG1AhocaEEGchtFBtD036BVLgCIg08Lc3x8/P81zg/t97bfnBgERoAjI4RACIog/IIcHHxBB5AE5POyACGIOyOEBB0QQbUAODzUggjgNo4No99ygVywBioCcFmZABCgCcjiEgAjiD8jhwQdEEHlADg87IIKYA3J4wAERRBuQw0MNiCBOw+gg2j036BVLgCIgp4UZEAGKgBwOISCC+ANyePABEUQekMPDDogg5oAcHnBABNEG5PBQAyKI0zA6iHbPDXrFEqAIiBdmQAQoAnI4hIAI4g/I4cEHRBB5QA4POyCCmANyeMABEUQbkMNDDYggTsPoINo9N+gVS4AiIKeFGRABioAcDiEggvgDcnjwARFEHpDDww6IIOaAHB5wQATRBuTwUAMiiNMwOoh2zw16xRKgCMhpYQZEgCIgh0MIiCD+gBwefEAEkQfk8LADIog5IIcHHBBBtAE5PNSACOI0jA6i3XODXrEEKAJyWpgBEaAIyOEQAiKIPyCHBx8QQeQBOTzsgAhiDsjhAQdEEG1ADg81III4DaODaPfcoFcsAYqAnBZmQAQoAnI4hIAI4g/I4cEHRBB5QA4POyCCmANyeMABEUQbkMNDDYggTsPoINo9N+gVS4AiIKeFGRABioAcDiEggvgDcnjwARFEHpDDw/5f+wc9aM1vnZOdTgAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  )
+  runChecked('pnpm', ['exec', 'narduk-testkit', 'ui', 'analyze', testkitCliFixture], {
+    cwd: consumerDirectory,
+    label: 'execute the packed testkit CLI through built JavaScript',
+  })
 
   const generatedDirectory = join(consumerDirectory, 'generated-app')
   runChecked(

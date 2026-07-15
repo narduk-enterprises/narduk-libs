@@ -64,6 +64,33 @@ describe('create-narduk-app generation contract', () => {
     expect([...first.values()].join('\n')).not.toContain('/two/target')
   })
 
+  it('renders user-provided display text through Vue bindings', async () => {
+    const files = asFileMap(
+      buildGeneratedFiles({
+        appName: 'escaped-copy',
+        capabilities: ['seo'],
+        description: 'R&D says <ship> & "sail".',
+        displayName: 'Fish & <Ships> {{ crew }} learns </script> tags',
+        noGit: true,
+        targetDir: '/tmp/escaped-copy',
+      }),
+    )
+    const page = files.get('apps/web/app/pages/index.vue') ?? ''
+
+    expect(page).toContain('<h1>{{ displayName }}</h1>')
+    expect(page).toContain('<p>{{ description }}</p>')
+    expect(page).not.toContain('<h1>Fish & <Ships>')
+    expect(page).not.toContain('learns </script> tags')
+    expect(page).toContain('learns \\u003C/script> tags')
+    expect(
+      await prettier.check(page, {
+        filepath: 'apps/web/app/pages/index.vue',
+        semi: false,
+        singleQuote: true,
+      }),
+    ).toBe(true)
+  })
+
   it('selects capabilities, keeps core implicit, and pins every manifest version', () => {
     const files = asFileMap(
       buildGeneratedFiles({
@@ -79,6 +106,9 @@ describe('create-narduk-app generation contract', () => {
       unknown
     >
     const dependencies = collectVersionedDependencies(webManifest)
+    const knipConfig = JSON.parse(files.get('knip.json') ?? '') as {
+      ignoreDependencies: string[]
+    }
 
     expect(rootManifest.narduk).toEqual({
       capabilities: ['auth', 'seo', 'analytics', 'uploads', 'ai', 'mapkit'],
@@ -108,7 +138,9 @@ describe('create-narduk-app generation contract', () => {
         'workerd',
       ],
     })
-    expect(files.get('.github/workflows/ci.yml')).toContain('runs-on: [self-hosted, Linux, X64]')
+    expect(files.get('.github/workflows/ci.yml')).toContain(
+      'runs-on: [self-hosted, Linux, proxmox]',
+    )
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
@@ -140,6 +172,7 @@ describe('create-narduk-app generation contract', () => {
     expect(files.get('apps/web/nuxt.config.ts')).toContain("'@loganrenz/narduk-mapkit-nuxt'")
     expect(files.get('apps/web/nuxt.config.ts')).toContain('zeroRuntime: true')
     expect(files.get('apps/web/app/pages/index.vue')).toContain('useWebPageSchema')
+    expect(knipConfig.ignoreDependencies).toContain('@loganrenz/narduk-mapkit')
   })
 
   it('rejects permanently unsupported capabilities with actionable guidance', () => {
@@ -153,6 +186,22 @@ describe('create-narduk-app generation contract', () => {
         targetDir: '/tmp/no-ingestion',
       }),
     ).toThrow(/future narduk-data/u)
+  })
+
+  it('enforces the onboarding-safe non-privileged local port range', () => {
+    expect(() =>
+      buildGeneratedFiles({ appName: 'low-port', localPort: 1023, targetDir: '/tmp/low-port' }),
+    ).toThrow(/between 1024 and 65535/u)
+    expect(() =>
+      buildGeneratedFiles({ appName: 'high-port', localPort: 65536, targetDir: '/tmp/high-port' }),
+    ).toThrow(/between 1024 and 65535/u)
+
+    expect(
+      buildGeneratedFiles({ appName: 'first-port', localPort: 1024, targetDir: '/tmp/first-port' }),
+    ).not.toHaveLength(0)
+    expect(
+      buildGeneratedFiles({ appName: 'last-port', localPort: 65535, targetDir: '/tmp/last-port' }),
+    ).not.toHaveLength(0)
   })
 
   it('protects non-empty directories and force preserves unrelated files', async () => {
@@ -371,14 +420,33 @@ describe('create-narduk-app generation contract', () => {
       scripts: Record<string, string>
     }
     expect(rootPackage.scripts.quality).toContain('pnpm run format:check')
+    expect(rootPackage.scripts.quality).toContain('pnpm run knip')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
     expect(rootPackage.scripts['cf:build']).toBe('pnpm --filter web run cf:build')
     expect(rootPackage.scripts['cf:deploy']).toBe('pnpm --filter web run cf:deploy')
     expect(rootPackage.scripts.deploy).toBe('pnpm --filter web run deploy')
+    const knipConfig = JSON.parse(await readFile(join(targetDir, 'knip.json'), 'utf8')) as {
+      ignoreDependencies: string[]
+    }
+    expect(knipConfig.ignoreDependencies).not.toContain('@loganrenz/narduk-mapkit')
     const webPackage = JSON.parse(
       await readFile(join(targetDir, 'apps/web/package.json'), 'utf8'),
-    ) as { scripts: Record<string, string> }
+    ) as {
+      description: string
+      homepage: string
+      narduk: Record<string, unknown>
+      scripts: Record<string, string>
+    }
+    expect(webPackage.description).toBe('Fixture app')
+    expect(webPackage.homepage).toBe('http://localhost:4377')
+    expect(webPackage.narduk).toMatchObject({
+      name: 'generated-fixture',
+      displayName: 'Generated Fixture',
+      shortName: 'Generated Fixture',
+      url: 'http://localhost:4377',
+      localDevNuxtPort: 4377,
+    })
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
     expect(webPackage.scripts.dev).toBe(
       'narduk-app dev --project generated-fixture --config dev -- nuxt dev --host 127.0.0.1',
@@ -393,6 +461,11 @@ describe('create-narduk-app generation contract', () => {
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
       '<NuxtLayout>',
     )
+    const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
+    expect(generatedCi).toContain('actions/checkout@v7')
+    expect(generatedCi).toContain('pnpm/action-setup@v6')
+    expect(generatedCi).toContain('actions/setup-node@v7')
+    expect(generatedCi).not.toMatch(/actions\/(?:checkout|setup-node)@v4/u)
     const wranglerConfig = await readFile(join(targetDir, 'apps/web/wrangler.jsonc'), 'utf8')
     expect(wranglerConfig).toContain('"no_bundle": true')
     expect(wranglerConfig).toContain('"find_additional_modules": true')

@@ -24,6 +24,8 @@
     "runtime/server/utils/authApiKeyText.ts",
     "runtime/server/utils/kv.ts",
     "runtime/server/utils/kvCache.ts",
+    "runtime/server/utils/runtime-env.ts",
+    "runtime/server/utils/user-session.ts",
     "runtime/server/utils/worker-env.ts",
     "runtime/shared/**/*.ts",
     "src/**/*.ts",

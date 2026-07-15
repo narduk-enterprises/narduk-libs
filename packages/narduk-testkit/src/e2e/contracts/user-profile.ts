@@ -9,7 +9,7 @@ import {
   waitForBaseUrlReady,
   waitForHydration,
   warmUpApp,
-} from '../fixtures'
+} from '../fixtures.js'
 
 const AUTH_ME_URL = '/api/auth/me'
 

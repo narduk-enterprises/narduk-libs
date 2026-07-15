@@ -13,6 +13,7 @@ export interface CloudflareWorkersBuildsSettings {
       environmentName: string
       buildCommand: string
       deployCommand: string
+      previewDeployCommand: string
     }
   }
 }
@@ -31,21 +32,18 @@ export type ProvisionMetadata = AppOnboardingMetadata
 
 export function getCloudflareWorkersBuildsSettings(): CloudflareWorkersBuildsSettings {
   return {
-    rootDirectory: '/apps/web',
+    rootDirectory: '.',
     buildCachingEnabled: true,
-    skipDependencyInstall: true,
-    requiredBuildSecrets: [
-      'NARDUK_PLATFORM_GH_PACKAGES_READ',
-      'NUXT_SESSION_PASSWORD',
-      'NUXT_OG_IMAGE_SECRET',
-    ],
-    requiredRuntimeVariables: ['SITE_URL', 'NUXT_SESSION_PASSWORD', 'NUXT_OG_IMAGE_SECRET'],
+    skipDependencyInstall: false,
+    requiredBuildSecrets: ['NARDUK_PLATFORM_GH_PACKAGES_READ'],
+    requiredRuntimeVariables: ['SITE_URL'],
     targets: {
       production: {
         branch: 'main',
         environmentName: 'production',
-        buildCommand: 'pnpm run cf:build:production',
+        buildCommand: 'pnpm run cf:build',
         deployCommand: 'pnpm run cf:deploy',
+        previewDeployCommand: 'pnpm run cf:deploy:preview',
       },
     },
   }
@@ -103,13 +101,14 @@ export function readAppOnboardingMetadata(rootDir: string): AppOnboardingMetadat
     // meaningful value (i.e. *not* the fixture sentinel `"web"`). Returning
     // `null` for unbackfilled apps surfaces a real "missing metadata" signal
     // to onboarding/status tooling instead of silently displaying "web".
+    const nardukName = normalizeText(narduk.name)
     const nardukShortName = normalizeText(narduk.shortName)
     const nardukDisplayName = normalizeText(narduk.displayName)
     const legacyName = normalizeText(parsed.name)
     const meaningfulLegacyName = legacyName === 'web' ? null : legacyName
 
     return {
-      name: nardukShortName || nardukDisplayName || meaningfulLegacyName,
+      name: nardukName || nardukShortName || nardukDisplayName || meaningfulLegacyName,
       displayName: nardukDisplayName || nardukShortName || meaningfulLegacyName,
       shortName: nardukShortName || nardukDisplayName,
       description: normalizeText(parsed.description),

@@ -151,7 +151,7 @@ export function createRootPackageManifest(
       lint: 'pnpm --filter web run lint',
       'performance-budget': 'pnpm --filter web run performance-budget',
       quality:
-        'pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test',
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       typecheck: 'pnpm --filter web run typecheck',
     },
@@ -200,12 +200,19 @@ export function createWebPackageManifest(
   appName: string,
   capabilities: readonly Capability[],
   localPort: number,
+  metadata: {
+    description?: string
+    displayName?: string
+    siteUrl?: string
+  } = {},
 ): string {
   return json({
     name: 'web',
     version: '0.1.0',
     private: true,
     type: 'module',
+    ...(metadata.description ? { description: metadata.description } : {}),
+    ...(metadata.siteUrl ? { homepage: metadata.siteUrl } : {}),
     scripts: {
       build: 'nuxt build',
       dev: 'narduk-app dev --project ' + appName + ' --config dev -- nuxt dev --host 127.0.0.1',
@@ -239,6 +246,11 @@ export function createWebPackageManifest(
       typecheck: 'nuxt typecheck',
     },
     narduk: {
+      name: appName,
+      ...(metadata.displayName
+        ? { displayName: metadata.displayName, shortName: metadata.displayName }
+        : {}),
+      ...(metadata.siteUrl ? { url: metadata.siteUrl } : {}),
       capabilities: [...capabilities],
       localDevNuxtPort: localPort,
     },

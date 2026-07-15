@@ -15,15 +15,11 @@ if (args[0] !== 'ui' || args[1] !== 'analyze' || args.length > 3) {
   process.exit(1)
 }
 
-const scriptPath = fileURLToPath(new URL('../src/cli/ui-quality-analyze.ts', import.meta.url))
-const runner = spawnSync(
-  process.execPath,
-  ['--import', import.meta.resolve('tsx/esm'), scriptPath, ...(args[2] ? [args[2]] : [])],
-  {
-    env: process.env,
-    stdio: 'inherit',
-  },
-)
+const scriptPath = fileURLToPath(new URL('../dist/cli/ui-quality-analyze.js', import.meta.url))
+const runner = spawnSync(process.execPath, [scriptPath, ...(args[2] ? [args[2]] : [])], {
+  env: process.env,
+  stdio: 'inherit',
+})
 
 if (runner.error) {
   console.error(runner.error.message)

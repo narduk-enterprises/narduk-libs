@@ -639,9 +639,6 @@ importers:
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
-      tsx:
-        specifier: ^4.21.0
-        version: 4.23.0
     devDependencies:
       '@narduk-enterprises/eslint-config':
         specifier: 1.2.17

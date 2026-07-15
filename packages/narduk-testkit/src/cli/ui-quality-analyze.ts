@@ -1,4 +1,4 @@
-import { analyzeUiQualityRoot } from '../playwright/ui-quality-analyzer'
+import { analyzeUiQualityRoot } from '../playwright/ui-quality-analyzer.js'
 
 const rootDir = process.argv[2] || 'output/playwright/visual-audit'
 

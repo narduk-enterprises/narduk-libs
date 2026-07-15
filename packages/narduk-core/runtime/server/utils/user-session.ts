@@ -1,4 +1,4 @@
-import { useSession } from 'h3'
+import { getRequestProtocol, useSession } from 'h3'
 
 import { readRuntimeStringFromKeys } from './runtime-env'
 
@@ -11,20 +11,22 @@ export interface LayerUserSession extends Record<string, unknown> {
 
 type SessionData = Omit<LayerUserSession, 'id'>
 
-function resolveSessionConfig(
+export function resolveSessionConfig(
   event: H3Event,
   overrides: Partial<SessionConfig> = {},
 ): SessionConfig {
   const password = readRuntimeStringFromKeys(event, ['NUXT_SESSION_PASSWORD', 'SESSION_PASSWORD'])
+  const { cookie: cookieOverrides, ...configOverrides } = overrides
 
   return {
     name: 'nuxt-session',
     password,
+    ...configOverrides,
     cookie: {
       sameSite: 'lax',
-      secure: true,
+      secure: getRequestProtocol(event) === 'https',
+      ...cookieOverrides,
     },
-    ...overrides,
   }
 }
 

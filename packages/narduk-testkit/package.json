@@ -13,72 +13,73 @@
     "access": "restricted",
     "registry": "https://npm.pkg.github.com"
   },
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./e2e/fixtures": {
-      "types": "./src/e2e/fixtures.ts",
-      "import": "./src/e2e/fixtures.ts"
+      "types": "./dist/e2e/fixtures.d.ts",
+      "import": "./dist/e2e/fixtures.js"
     },
     "./e2e/contracts/auth": {
-      "types": "./src/e2e/contracts/auth.ts",
-      "import": "./src/e2e/contracts/auth.ts"
+      "types": "./dist/e2e/contracts/auth.d.ts",
+      "import": "./dist/e2e/contracts/auth.js"
     },
     "./e2e/contracts/notifications": {
-      "types": "./src/e2e/contracts/notifications.ts",
-      "import": "./src/e2e/contracts/notifications.ts"
+      "types": "./dist/e2e/contracts/notifications.d.ts",
+      "import": "./dist/e2e/contracts/notifications.js"
     },
     "./e2e/contracts/user-profile": {
-      "types": "./src/e2e/contracts/user-profile.ts",
-      "import": "./src/e2e/contracts/user-profile.ts"
+      "types": "./dist/e2e/contracts/user-profile.d.ts",
+      "import": "./dist/e2e/contracts/user-profile.js"
     },
     "./e2e/specs/users-api": {
-      "types": "./src/e2e/specs/users-api.ts",
-      "import": "./src/e2e/specs/users-api.ts"
+      "types": "./dist/e2e/specs/users-api.d.ts",
+      "import": "./dist/e2e/specs/users-api.js"
     },
     "./playwright/ui-quality": {
-      "types": "./src/playwright/ui-quality.ts",
-      "import": "./src/playwright/ui-quality.ts"
+      "types": "./dist/playwright/ui-quality.d.ts",
+      "import": "./dist/playwright/ui-quality.js"
     },
     "./playwright/ui-quality-analyzer": {
-      "types": "./src/playwright/ui-quality-analyzer.ts",
-      "import": "./src/playwright/ui-quality-analyzer.ts"
+      "types": "./dist/playwright/ui-quality-analyzer.d.ts",
+      "import": "./dist/playwright/ui-quality-analyzer.js"
     },
     "./server/kit/smoke": {
-      "types": "./src/server/kit/smoke.ts",
-      "import": "./src/server/kit/smoke.ts"
+      "types": "./dist/server/kit/smoke.d.ts",
+      "import": "./dist/server/kit/smoke.js"
     },
     "./server/kit/canonical-host": {
-      "types": "./src/server/kit/canonical-host.ts",
-      "import": "./src/server/kit/canonical-host.ts"
+      "types": "./dist/server/kit/canonical-host.d.ts",
+      "import": "./dist/server/kit/canonical-host.js"
     },
     "./server/kit/auth-session-refresh": {
-      "types": "./src/server/kit/auth-session-refresh.ts",
-      "import": "./src/server/kit/auth-session-refresh.ts"
+      "types": "./dist/server/kit/auth-session-refresh.d.ts",
+      "import": "./dist/server/kit/auth-session-refresh.js"
     },
     "./server/kit/auth-session-stability": {
-      "types": "./src/server/kit/auth-session-stability.ts",
-      "import": "./src/server/kit/auth-session-stability.ts"
+      "types": "./dist/server/kit/auth-session-stability.d.ts",
+      "import": "./dist/server/kit/auth-session-stability.js"
     },
     "./server/kit/managed-supabase": {
-      "types": "./src/server/kit/managed-supabase.ts",
-      "import": "./src/server/kit/managed-supabase.ts"
+      "types": "./dist/server/kit/managed-supabase.d.ts",
+      "import": "./dist/server/kit/managed-supabase.js"
     }
   },
   "files": [
     "bin/",
-    "src/",
-    "README.md",
-    "tsconfig.json",
-    "vitest.config.ts"
+    "dist/",
+    "README.md"
   ],
   "bin": {
     "narduk-testkit": "./bin/narduk-testkit.mjs"
   },
   "scripts": {
-    "build": "pnpm run typecheck",
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "prepack": "pnpm run build",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
     "lint": "eslint src tests bin --max-warnings 0",
     "typecheck": "tsc --noEmit --project tsconfig.json",
@@ -88,8 +89,7 @@
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
   },
   "dependencies": {
-    "sharp": "^0.34.5",
-    "tsx": "^4.21.0"
+    "sharp": "^0.34.5"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.50.0",

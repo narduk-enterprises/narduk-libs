@@ -11,6 +11,7 @@ import {
   mergeAppEnvContractDefinitions,
   normalizeAppEnvContractDefinition,
 } from '../src/provision-env-contract'
+import { getCloudflareWorkersBuildsSettings } from '../src/provision-metadata'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -90,5 +91,17 @@ describe('neutral platform contracts', () => {
     expect(patched).toContain('@loganrenz:registry=https://registry.npmjs.org')
     expect(patched).toContain('@narduk-enterprises:registry=https://npm.pkg.github.com')
     expect(patched).not.toContain('@loganrenz:registry=https://npm.pkg.github.com')
+  })
+
+  it('advertises the app-owned Workers Builds commands emitted by the generator', () => {
+    const settings = getCloudflareWorkersBuildsSettings()
+
+    expect(settings.rootDirectory).toBe('.')
+    expect(settings.skipDependencyInstall).toBe(false)
+    expect(settings.requiredBuildSecrets).toEqual(['NARDUK_PLATFORM_GH_PACKAGES_READ'])
+    expect(settings.requiredRuntimeVariables).toEqual(['SITE_URL'])
+    expect(settings.targets.production.buildCommand).toBe('pnpm run cf:build')
+    expect(settings.targets.production.deployCommand).toBe('pnpm run cf:deploy')
+    expect(settings.targets.production.previewDeployCommand).toBe('pnpm run cf:deploy:preview')
   })
 })

@@ -2,10 +2,11 @@
 
 Optional public SEO, Schema.org, and Open Graph capabilities for SSR apps.
 
-Use this layer when an app is meant to be publicly discoverable and should ship
-structured data, canonical metadata, and OG image helpers. Internal operator
-consoles and other `ssr: false` apps should stay on `layers/core` and use
-`useSeoMeta()` / `useHead()` directly instead.
+Use this package when an app is meant to be publicly discoverable and should
+ship structured data, canonical metadata, and OG image helpers. Internal
+operator consoles and other `ssr: false` apps should stay on
+`@narduk-enterprises/narduk-core` and use `useSeoMeta()` / `useHead()` directly
+instead.
 
 This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.

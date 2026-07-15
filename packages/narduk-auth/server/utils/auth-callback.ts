@@ -1,5 +1,7 @@
 import { readAppCookie, readAppRequestHeader } from '@narduk-enterprises/narduk-app/server/http'
 
+import { useLogger } from '#layer/server/utils/logger'
+
 import type { H3Event } from 'h3'
 
 const PKCE_COOKIE_NAME = 'app_auth_pkce'

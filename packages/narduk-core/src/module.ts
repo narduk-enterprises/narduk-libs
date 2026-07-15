@@ -574,9 +574,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       logLevel: process.env.LOG_LEVEL || 'warn',
       session: {
         password: process.env.NUXT_SESSION_PASSWORD || '',
-        cookie: {
-          secure: true,
-        },
       },
       public: {
         appVersion,

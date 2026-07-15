@@ -297,15 +297,6 @@ const APP_BASE: CatalogEntry[] = [
     note: 'GitHub Packages read token for Workers Builds installs.',
   },
   {
-    key: 'SKIP_DEPENDENCY_INSTALL',
-    from: 'derive:const:1',
-    to: ['cf:build-var'],
-    scope: 'every-app',
-    secret: false,
-    module: 'cf-builds',
-    note: 'Tells Workers Builds to skip Cloudflare-managed dependency install.',
-  },
-  {
     key: 'NARDUK_VERBOSE_BUILD_LOGS',
     from: 'registry:app:NARDUK_VERBOSE_BUILD_LOGS',
     to: ['cf:build-var'],

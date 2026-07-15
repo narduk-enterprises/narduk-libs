@@ -1,8 +1,13 @@
 # @narduk-enterprises/narduk-testkit
 
 Dev-only Vitest factories, Playwright fixtures/contracts, and UI-quality tools
-for Narduk apps. The package is plain source and has no Nuxt layer, Nuxt
-configuration, auto-merged files, or aliases.
+for Narduk apps. The published package contains built ESM and declarations; it
+has no Nuxt layer, Nuxt configuration, auto-merged files, or aliases.
+
+The root, `e2e/*`, and `playwright/*` exports belong to the Playwright runner.
+The `server/kit/*` exports belong to the Vitest runner. Import each family only
+from its owning test process because both runners install their own matcher
+globals.
 
 Apps own their Vitest and Playwright configuration. Import a factory from an
 explicit subpath and call it from a thin app-local test wrapper:

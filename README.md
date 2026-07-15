@@ -11,11 +11,15 @@ or Command control plane. The decommission ledger and archive gates live in
 
 - `@narduk-enterprises/narduk-platform`
 - `@narduk-enterprises/narduk-app`
+- `@narduk-enterprises/narduk-app-tools`
 - `@narduk-enterprises/narduk-core`
 - `@narduk-enterprises/narduk-auth`
 - `@narduk-enterprises/narduk-seo`
 - `@narduk-enterprises/narduk-analytics`
 - `@narduk-enterprises/narduk-uploads`
+- `@narduk-enterprises/narduk-ai`
+- `@narduk-enterprises/narduk-testkit`
+- `@narduk-enterprises/create-narduk-app`
 
 ## Commands
 
@@ -34,10 +38,11 @@ workspace. Both commands are safe to run locally.
 
 ## Independent releases
 
-Add a Changeset for each public package change. Changesets bump and publish only
-the named packages, with immutable versions in GitHub Packages. The release
-workflow authenticates the `@narduk-enterprises` scope using a short-lived
-workflow secret and never dispatches to an app repository.
+Add a Changeset for each public package change. Changesets bump and publish the
+named packages plus required internal dependents, with immutable versions in
+GitHub Packages. The release workflow authenticates the `@narduk-enterprises`
+scope using a short-lived workflow secret and never dispatches to an app
+repository.
 
 The complete publish, partial-failure, and forward-only rollback procedure is in
 [`docs/package-releases.md`](docs/package-releases.md).

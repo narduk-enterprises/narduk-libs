@@ -5,6 +5,7 @@
  */
 import { defineUserMutation } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { markAllNotificationsAsRead } from '#narduk-auth-server/utils/notifications'
 
 export default defineUserMutation(
   {

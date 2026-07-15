@@ -5,7 +5,7 @@ import {
   waitForBaseUrlReady,
   waitForHydration,
   warmUpApp,
-} from '../fixtures'
+} from '../fixtures.js'
 
 import type { Page } from '@playwright/test'
 
