@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  resolveLocalRedirectRequest,
-  sanitizeLocalRedirectPath,
-  withLocalRedirectQuery,
-} from '../app/utils/safeRedirectPath'
+const { resolveLocalRedirectRequest, sanitizeLocalRedirectPath, withLocalRedirectQuery } =
+  await import('../app/utils/safeRedirectPath')
 
 const FALLBACK = '/dashboard/'
 
