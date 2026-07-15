@@ -27,6 +27,15 @@ defineSharedAuthContract({ appName: 'my-app' })
 void test
 ```
 
+Apps whose users endpoint is not the default `/api/admin/users` can configure
+the reusable API spec without copying it:
+
+```ts
+import { registerUsersApiSpec } from '@narduk-enterprises/narduk-testkit/e2e/specs/users-api'
+
+registerUsersApiSpec({ apiPath: '/api/users' })
+```
+
 The UI-quality analyzer is also available as a small binary:
 
 ```sh

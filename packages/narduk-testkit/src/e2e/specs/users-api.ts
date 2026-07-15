@@ -28,7 +28,8 @@ interface UserPayload {
   status: number
 }
 
-interface UsersApiSpecOptions {
+export interface UsersApiSpecOptions {
+  apiPath?: string
   basePath?: string
   describeName?: string
 }
@@ -73,7 +74,7 @@ function assertUsersApiPayload(payload: UsersApiResponse | null): UsersApiRespon
  *   registerUsersApiSpec()
  */
 export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
-  const { describeName = 'users API', basePath = '/' } = options
+  const { apiPath = '/api/admin/users', describeName = 'users API', basePath = '/' } = options
 
   test.describe(describeName, () => {
     test.beforeAll(async ({ browser, baseURL }) => {
@@ -87,13 +88,13 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
 
     test.beforeEach(async ({ page }) => {
       // Playwright pages start at `about:blank`. Navigate to the app origin
-      // so the relative `fetch('/api/admin/users')` calls below resolve against the
+      // so the relative users API requests below resolve against the
       // test `baseURL` instead of throwing URL-parse errors.
       await page.goto(basePath)
     })
 
     test('rejects unauthenticated callers', async ({ page }) => {
-      const response = await requestUsers(page)
+      const response = await requestUsers(page, '', apiPath)
 
       expect(response.status).toBe(401)
       expect(response.ok).toBe(false)
@@ -103,7 +104,7 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
       const email = `user-${Date.now()}@example.com`
       await registerAndLogin(page, { name: 'Non-admin User', email, password: 'password123' })
 
-      const response = await requestUsers(page)
+      const response = await requestUsers(page, '', apiPath)
 
       expect(response.status).toBe(403)
       expect(response.ok).toBe(false)
@@ -111,7 +112,7 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
 
     test('returns paged rows to admins and omits sensitive fields', async ({ page }) => {
       await loginAsAdmin(page)
-      const response = await requestUsers(page, '?page=1&limit=2')
+      const response = await requestUsers(page, '?page=1&limit=2', apiPath)
       const payload = assertUsersApiPayload(response.payload)
 
       expect(response.ok).toBe(true)
@@ -155,19 +156,19 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
     test('validates pagination inputs (page and limit caps)', async ({ page }) => {
       await loginAsAdmin(page)
 
-      const invalidPage = await requestUsers(page, '?page=0&limit=2')
+      const invalidPage = await requestUsers(page, '?page=0&limit=2', apiPath)
       expect(invalidPage.status).toBe(400)
 
-      const invalidLimit = await requestUsers(page, '?page=1&limit=9999')
+      const invalidLimit = await requestUsers(page, '?page=1&limit=9999', apiPath)
       expect(invalidLimit.status).toBe(400)
 
-      const fractionalPage = await requestUsers(page, '?page=1.5&limit=2')
+      const fractionalPage = await requestUsers(page, '?page=1.5&limit=2', apiPath)
       expect(fractionalPage.status).toBe(400)
 
-      const fractionalLimit = await requestUsers(page, '?page=1&limit=2.7')
+      const fractionalLimit = await requestUsers(page, '?page=1&limit=2.7', apiPath)
       expect(fractionalLimit.status).toBe(400)
 
-      const defaults = await requestUsers(page)
+      const defaults = await requestUsers(page, '', apiPath)
       const payload = assertUsersApiPayload(defaults.payload)
 
       expect(defaults.status).toBe(200)
