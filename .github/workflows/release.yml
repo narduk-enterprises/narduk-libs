@@ -22,6 +22,7 @@ jobs:
     env:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
     steps:
