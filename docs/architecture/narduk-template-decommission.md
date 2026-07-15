@@ -19,7 +19,7 @@ that PR is historical context and must not guide implementation.
 The program is gate-driven, not date-driven. A current-scope repository is
 complete only when its row below contains reviewed PR, immutable package
 versions, migration proof, deployed Worker/SHA and route proof, and a
-zero-reference result. The 19 repositories in the owner-approved deferred table
+zero-reference result. The 20 repositories in the owner-approved deferred table
 are skipped for now, not retired or complete, and are excluded from the current
 migration-progress denominator. They must later be migrated or formally retired
 before a final template archive can omit them. A package or repository may be
@@ -285,26 +285,26 @@ the Command snapshot still names the old repository.
 
 The 2026-07-14 remote audit confirmed all 34 registry rows are unarchived and
 `active/live`, and every one still has functional template markers at current
-remote HEAD. The owner subsequently deferred 12 of those apps. The current
-active-registry migration denominator is therefore 22. A scan of 169 unarchived
+remote HEAD. The owner subsequently deferred 13 of those apps. The current
+active-registry migration denominator is therefore 21. A scan of 169 unarchived
 repositories across the relevant owners found no additional template-coupled
 repository. Existing local checkouts for Clawdle, Favicon Checker, iMessage
 Dictionary, and LLB CPA still point at pre-transfer origins and must have their
 remotes corrected before migration worktrees are created.
 
-Across the original 44 migration and audit candidates, 25 remain in the current
-program denominator: 22 active registry apps, `narduk-control`, canonical
-`narduk-charts`, and direct MapKit consumer `hydrogen`. Nineteen are deferred in
+Across the original 44 migration and audit candidates, 24 remain in the current
+program denominator: 21 active registry apps, `narduk-control`, canonical
+`narduk-charts`, and direct MapKit consumer `hydrogen`. Twenty are deferred in
 the table below. Already-decoupled deployed surfaces and explicit retirement
 targets remain tracked for final completeness but are not counted in this
 migration denominator.
 
 | Candidate bucket               | Original | Deferred | Current denominator |
 | ------------------------------ | -------: | -------: | ------------------: |
-| Active registry apps           |       34 |       12 |                  22 |
+| Active registry apps           |       34 |       13 |                  21 |
 | Additional retain/audit        |        4 |        2 |                   2 |
 | Direct MapKit consumers        |        6 |        5 |                   1 |
-| **Total migration candidates** |   **44** |   **19** |              **25** |
+| **Total migration candidates** |   **44** |   **20** |              **24** |
 
 | App                       | Canonical repository                           | Cohort / capabilities                                          | Baseline evidence                                                                                                    | Migration PR + exact pins                                             | Migration proof                                                                                                              | Worker build/SHA + routes                                | Zero refs                              | Status          |
 | ------------------------- | ---------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------- | --------------- |
@@ -313,10 +313,9 @@ migration denominator.
 | clawdle                   | `narduk-incubator/clawdle`                     | Baseline; analytics, auth, SEO                                 | Command snapshot; ownership correction verified                                                                      | Local cutover `f88b852`; immutable publication and PR pending         | Full local cutover gate green; publication and remote proof deferred                                                         | Pending                                                  | Local proof green; remote scan pending | local-validated |
 | domain-name-search-org    | `narduk-enterprises/domain-name-search-org`    | Baseline; analytics, auth, SEO                                 | Command snapshot                                                                                                     | Local cutover `67b3be4`; immutable publication and PR pending         | Quality/build/Knip, 31 unit tests, D1 `8 + 0`, legacy adoption `8 -> 8`, Playwright `48/48`, and deploy dry-run green        | Pending                                                  | Local proof green; remote scan pending | local-validated |
 | favicon-checker           | `narduk-incubator/favicon-checker`             | Baseline; analytics, auth, SEO                                 | Command snapshot; ownership correction verified                                                                      | Local cutover `a543045`; immutable publication and PR pending         | Strict quality/build/Knip, 2 unit tests, D1 `11 + 0`, Playwright `4/4`, visual score 100, and deploy dry-run green           | Pending                                                  | Local proof green; remote scan pending | local-validated |
-| howtostartafirewithsticks | `narduk-enterprises/howtostartafirewithsticks` | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
+| howtostartafirewithsticks | `narduk-enterprises/howtostartafirewithsticks` | Baseline; analytics, SEO                                       | `b132c91`; production pages and `/api/health` 200; D1/KV inventory captured                                          | Local cutover `db3c3ea`; registry lock and PR pending                 | Warning-free quality/build, D1 `6 + 0`, Playwright `9/9`, visual 100, Knip, actionlint, and deploy dry-run green             | Current deployed SHA `b132c91`; replacement pending      | Local proof green; remote scan pending | local-validated |
 | llb-cpa                   | `narduk-enterprises-clients/llb-cpa`           | Baseline; analytics, SEO                                       | Command snapshot; ownership correction verified                                                                      | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
 | lucys-loomies             | `narduk-enterprises/lucys-loomies`             | Baseline; analytics, auth, SEO, uploads                        | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
-| namegarden                | `narduk-enterprises/namegarden`                | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
 | old-austin-grouch         | `narduk-enterprises/old-austin-grouch`         | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
 | sanitize-data             | `narduk-enterprises/sanitize-data`             | Baseline; analytics, auth, SEO                                 | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
 | spacex-ipo                | `narduk-enterprises/spacex-ipo`                | Baseline; analytics, SEO                                       | Command snapshot                                                                                                     | Pending                                                               | Pending                                                                                                                      | Pending                                                  | Pending                                | inventory       |
@@ -333,7 +332,7 @@ migration denominator.
 
 ### Deferred by owner: skip for now, not retired
 
-These 19 repositories are intentionally excluded from the current migration
+These 20 repositories are intentionally excluded from the current migration
 denominator and execution waves. No shutdown, archive, credential revocation, or
 retirement work is authorized by this status. If a deferred repository still
 exists when template archival is proposed, it must first be reactivated and
@@ -344,6 +343,7 @@ migrated or receive an explicit retirement decision.
 | `gulf-fishing-report`    | Registry baseline    | Correct ownership to `narduk-incubator` before any later work | deferred |
 | `harmony-hot-sauce`      | Registry baseline    | Canonical repository remains `narduk-enterprises-clients`     | deferred |
 | `mindwalker`             | Registry baseline    | Re-audit capabilities when reactivated                        | deferred |
+| `namegarden`             | Registry baseline    | Re-audit capabilities when reactivated                        | deferred |
 | `nagolnagemluapleira`    | Registry baseline    | Re-audit capabilities when reactivated                        | deferred |
 | `napkinbets`             | Registry baseline    | Correct ownership to `narduk-incubator` before any later work | deferred |
 | `narduk-devtools`        | Registry baseline    | Re-audit capabilities when reactivated                        | deferred |
@@ -397,9 +397,9 @@ Nuxt fleet. It requires exact package versions, removal of mutable Git coupling,
 build/test proof, and map/token/search/geocode runtime proof. The other five
 known direct consumers are in the deferred table above.
 
-| Consumer   | Current coupling              | Package PR + pins | Runtime proof | Old-copy removal | Status    |
-| ---------- | ----------------------------- | ----------------- | ------------- | ---------------- | --------- |
-| `hydrogen` | mutable Git `#main` reference | Pending           | Pending       | Pending          | inventory |
+| Consumer   | Current coupling                        | Package PR + pins                                                                                                                                                           | Runtime proof                                                                                                                                                                                                                                                                                                                                                                                              | Old-copy removal                                            | Status   |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------- |
+| `hydrogen` | Former mutable Git `#main`; now removed | [PR #15](https://github.com/loganrenz/hydrogen/pull/15), merge `f652928`; exact `@narduk-geo/narduk-mapkit@1.0.0`, using `/worker` and `/client` with one token-route owner | [Run 29388815556](https://github.com/loganrenz/hydrogen/actions/runs/29388815556) attempt 3 deployed data version `01fdb4a6-bb44-4da2-9de8-01fa79727cf8` and web version `341fe51d-44c6-48b0-89cd-fa5d41427e2e`; production health/home/token returned 200 with fresh data, and a live Chromium probe reached MapKit `ready`, rendered children, observed token 200, and recorded zero console/page errors | Zero old scope, mutable Git, tarball, or copied-source refs | complete |
 
 ### Retire and preserve history
 
@@ -488,8 +488,8 @@ The reference pilot is complete only when it:
 
 ### Wave 3 — baseline fleet
 
-Migrate the 12 current-scope baseline apps in small parallel cohorts, one
-reviewed PR and one production proof per app. The other eight baseline apps are
+Migrate the 11 current-scope baseline apps in small parallel cohorts, one
+reviewed PR and one production proof per app. The other nine baseline apps are
 deferred in section 4. Before removing template workflows, install meaningful
 app-owned PR CI, materialize Playwright config loaded from
 `.template-reference`, enable independent Renovate updates for
