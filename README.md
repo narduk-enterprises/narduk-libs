@@ -39,6 +39,9 @@ the named packages, with immutable versions in GitHub Packages. The release
 workflow authenticates the `@narduk-enterprises` scope using a short-lived
 workflow secret and never dispatches to an app repository.
 
+The complete publish, partial-failure, and forward-only rollback procedure is in
+[`docs/package-releases.md`](docs/package-releases.md).
+
 ## Fix Policy
 
 Fleet app bugs that come from shared auth, runtime, Cloudflare, Nuxt, SEO,

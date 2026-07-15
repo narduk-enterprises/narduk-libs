@@ -17,6 +17,7 @@
     "release:consumer-smoke": "node scripts/release-packages.mjs --dry-run --consumer-smoke",
     "release:version": "pnpm run release-plan:check && changeset version && pnpm run versions:sync",
     "release:publish": "changeset publish",
+    "release:verify-published": "node scripts/verify-published-packages.mjs",
     "release-plan:check": "node scripts/check-generator-release-plan.mjs",
     "versions:check": "node scripts/sync-generator-package-versions.mjs --check",
     "versions:sync": "node scripts/sync-generator-package-versions.mjs"
