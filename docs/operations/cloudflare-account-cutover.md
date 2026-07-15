@@ -173,6 +173,14 @@ After 30 days, confirm there is no source traffic or write activity, capture
 final checksums, revoke temporary credentials, remove retained source
 infrastructure, and mark the fleet-ledger entry complete.
 
+## Cloudflare references
+
+- [D1 import and export](https://developers.cloudflare.com/d1/best-practices/import-export-data/)
+- [R2 migration strategies](https://developers.cloudflare.com/r2/data-migration/migration-strategies/)
+- [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
+- [Move a domain between Cloudflare accounts](https://developers.cloudflare.com/fundamentals/manage-domains/move-domain/)
+- [Registrar inter-account transfer](https://developers.cloudflare.com/registrar/account-options/inter-account-transfer/)
+
 ## Execution evidence template
 
 ```text
