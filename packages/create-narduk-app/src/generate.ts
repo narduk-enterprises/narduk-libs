@@ -301,6 +301,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      - uses: pnpm/action-setup@v6',
         '        with:',
         '          version: 10.33.4',
+        '          dest: ${{ runner.temp }}/setup-pnpm',
         '      - uses: actions/setup-node@v7',
         '        with:',
         '          node-version: 22.22.3',

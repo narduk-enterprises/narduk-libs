@@ -464,6 +464,7 @@ describe('create-narduk-app generation contract', () => {
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
     expect(generatedCi).toContain('actions/checkout@v7')
     expect(generatedCi).toContain('pnpm/action-setup@v6')
+    expect(generatedCi).toContain('dest: ${{ runner.temp }}/setup-pnpm')
     expect(generatedCi).toContain('actions/setup-node@v7')
     expect(generatedCi).not.toMatch(/actions\/(?:checkout|setup-node)@v4/u)
     const wranglerConfig = await readFile(join(targetDir, 'apps/web/wrangler.jsonc'), 'utf8')
