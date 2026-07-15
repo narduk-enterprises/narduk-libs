@@ -161,7 +161,7 @@ function moduleList(capabilities: readonly Capability[]): string {
     '@narduk-enterprises/narduk-core',
     ...capabilities.map((capability) =>
       capability === 'mapkit'
-        ? '@loganrenz/narduk-mapkit-nuxt'
+        ? '@narduk-geo/narduk-mapkit-nuxt'
         : '@narduk-enterprises/narduk-' + capability,
     ),
   ]
@@ -232,7 +232,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     : []
   const knipIgnoreDependencies = [
     '@iconify-json/lucide',
-    ...(capabilities.includes('mapkit') ? ['@loganrenz/narduk-mapkit'] : []),
+    ...(capabilities.includes('mapkit') ? ['@narduk-geo/narduk-mapkit'] : []),
     'vue-tsc',
   ]
 
@@ -260,7 +260,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.npmrc',
       contents: text(
         '@narduk-enterprises:registry=https://npm.pkg.github.com',
-        '@loganrenz:registry=https://registry.npmjs.org/',
+        '@narduk-geo:registry=https://npm.pkg.github.com',
         '//npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ-UNCONFIGURED}',
       ),
     },
@@ -342,7 +342,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run quality',
         '- pnpm run test',
         '',
-        'The committed `.npmrc` routes only `@narduk-enterprises/*` to GitHub Packages and reads `NARDUK_PLATFORM_GH_PACKAGES_READ` from the process environment. It contains no credential value and leaves public `@loganrenz/*` packages on npm.',
+        'The committed `.npmrc` routes `@narduk-enterprises/*` and `@narduk-geo/*` to GitHub Packages and reads `NARDUK_PLATFORM_GH_PACKAGES_READ` from the process environment. It contains no credential value.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
@@ -767,7 +767,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    },',
         '    {',
         '      "groupName": "narduk mapkit",',
-        '      "matchPackageNames": ["@loganrenz/narduk-mapkit", "@loganrenz/narduk-mapkit-nuxt"],',
+        '      "matchPackageNames": ["@narduk-geo/narduk-mapkit", "@narduk-geo/narduk-mapkit-nuxt"],',
         '      "rangeStrategy": "pin"',
         '    }',
         '  ]',

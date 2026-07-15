@@ -79,18 +79,18 @@ describe('neutral platform contracts', () => {
     expect(merged.requirements.every((requirement) => requirement.managedBy === 'app')).toBe(true)
   })
 
-  it('never rewrites the public MapKit scope to GitHub Packages', () => {
+  it('routes both package scopes to GitHub Packages', () => {
     const patched = patchPackageRegistryNpmrcContent(
       [
-        '@loganrenz:registry=https://registry.npmjs.org',
+        '@narduk-geo:registry=https://registry.npmjs.org',
         '@narduk-enterprises:registry=https://old.example.test',
         '',
       ].join('\n'),
     )
 
-    expect(patched).toContain('@loganrenz:registry=https://registry.npmjs.org')
+    expect(patched).toContain('@narduk-geo:registry=https://npm.pkg.github.com')
     expect(patched).toContain('@narduk-enterprises:registry=https://npm.pkg.github.com')
-    expect(patched).not.toContain('@loganrenz:registry=https://npm.pkg.github.com')
+    expect(patched).not.toContain('@narduk-geo:registry=https://registry.npmjs.org')
   })
 
   it('advertises the app-owned Workers Builds commands emitted by the generator', () => {

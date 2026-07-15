@@ -3,8 +3,8 @@ import type { Capability, ProductSpec } from './types.js'
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
-  '@loganrenz/narduk-mapkit': '1.0.0',
-  '@loganrenz/narduk-mapkit-nuxt': '1.0.0',
+  '@narduk-geo/narduk-mapkit': '1.0.0',
+  '@narduk-geo/narduk-mapkit-nuxt': '1.0.0',
   '@narduk-enterprises/narduk-app-tools': '0.1.0',
   '@narduk-enterprises/eslint-config': '1.2.17',
   '@narduk-enterprises/narduk-ai': '0.1.0',
@@ -42,7 +42,7 @@ const capabilityPackages: Record<Capability, readonly string[]> = {
   ai: ['@narduk-enterprises/narduk-ai'],
   analytics: ['@narduk-enterprises/narduk-analytics'],
   auth: ['@narduk-enterprises/narduk-auth'],
-  mapkit: ['@loganrenz/narduk-mapkit', '@loganrenz/narduk-mapkit-nuxt'],
+  mapkit: ['@narduk-geo/narduk-mapkit', '@narduk-geo/narduk-mapkit-nuxt'],
   seo: ['@narduk-enterprises/narduk-seo'],
   uploads: ['@narduk-enterprises/narduk-uploads'],
 }

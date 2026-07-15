@@ -67,8 +67,8 @@ mutation, so invoking the production script locally cannot migrate a remote
 database and then fail only at the deploy step.
 
 The command never writes secret files. Registry auth writes the requested
-`.npmrc.auth` path and scopes GitHub Packages only to `@narduk-enterprises`;
-`@loganrenz` remains on the public npm registry.
+`.npmrc.auth` path and scopes GitHub Packages to both `@narduk-enterprises` and
+`@narduk-geo`.
 
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.

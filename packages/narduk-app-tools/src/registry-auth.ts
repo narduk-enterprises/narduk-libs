@@ -2,8 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export const NARDUK_SCOPE = '@narduk-enterprises'
+export const NARDUK_GEO_SCOPE = '@narduk-geo'
 export const NARDUK_REGISTRY = 'https://npm.pkg.github.com'
-export const PUBLIC_REGISTRY = 'https://registry.npmjs.org/'
 
 export interface RegistryAuthConfig {
   authTokenEnvVar: string
@@ -56,8 +56,9 @@ export function renderRegistryAuth(
   existingContent: string,
   config: RegistryAuthConfig,
 ): string {
-  const registryLine = `${NARDUK_SCOPE}:registry=${config.registryUrl}`
-  const publicScopeLine = `@loganrenz:registry=${PUBLIC_REGISTRY}`
+  const registryLines = [NARDUK_SCOPE, NARDUK_GEO_SCOPE].map(
+    (scope) => `${scope}:registry=${config.registryUrl}`,
+  )
   const authLine = `//npm.pkg.github.com/:_authToken=\${${config.authTokenEnvVar}}`
   const lines: string[] = []
   const seen = new Set<string>()
@@ -65,20 +66,19 @@ export function renderRegistryAuth(
     for (const rawLine of stripManagedAuthLines(content)) {
       const line = rawLine.trimEnd()
       if (!line) continue
-      const normalized = line.startsWith(`${NARDUK_SCOPE}:registry=`)
-        ? registryLine
-        : line.startsWith('@loganrenz:registry=')
-          ? publicScopeLine
-          : line
-      if (seen.has(normalized)) continue
-      seen.add(normalized)
-      lines.push(normalized)
+      if (
+        line.startsWith(`${NARDUK_SCOPE}:registry=`) ||
+        line.startsWith(`${NARDUK_GEO_SCOPE}:registry=`) ||
+        line.startsWith('@loganrenz:registry=')
+      ) {
+        continue
+      }
+      if (seen.has(line)) continue
+      seen.add(line)
+      lines.push(line)
     }
   }
-  if (!seen.has(registryLine)) lines.unshift(registryLine)
-  if (!lines.includes(publicScopeLine)) lines.push(publicScopeLine)
-  lines.push(authLine)
-  return `${lines.join('\n').trimEnd()}\n`
+  return `${[...registryLines, ...lines, authLine].join('\n').trimEnd()}\n`
 }
 
 export function configureRegistryAuth(
