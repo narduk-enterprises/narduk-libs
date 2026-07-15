@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- tests exercise the utility's explicit package source rather than Nuxt's generated auto-import context.
 import {
   resolveLocalRedirectRequest,
   sanitizeLocalRedirectPath,
