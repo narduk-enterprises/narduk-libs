@@ -217,6 +217,12 @@ selected by the trigger. User authorization, Registrar acceptance, final
 go/no-go, physical-device unlock/authentication, and destructive day-30 cleanup
 remain explicit human authority boundaries.
 
+Do not assume the automatically selected build token includes D1 edit. When the
+deploy command owns remote migration, require a separate app-scoped target
+deploy token as a masked build variable, export it to Wrangler only inside the
+migration/deploy command, and fail closed when it is absent. Prove the token
+with a safe D1 query and Worker read without recording its value.
+
 R2 credentials are source/target-specific. Cloudflare S3 derivation, bucket
 scope, propagation retry, manifest comparison, multipart ETag caveats, and
 credential rotation must be explicit gates.

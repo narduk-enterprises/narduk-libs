@@ -175,6 +175,13 @@ The Workers Builds REST API requires a user-scoped API token; the build token
 selected by the trigger is a separate credential. Record both by safe identifier
 and permission class without recording either value.
 
+Cloudflare's automatically created Worker upload token does not necessarily
+include D1 edit. If the production deploy command runs remote migrations, use a
+separate app-scoped target-account token with the required Worker and D1 access,
+store it as a masked build variable, export it to Wrangler only for
+migration/deploy, and fail closed when it is absent. Prove this token with a
+safe D1 query and Worker read before selecting it.
+
 Authentication, profile mutation, and upload/retrieval are separate gates. App
 launch or user-attested login must not be represented as successful
 profile/upload proof. Record each result as machine-captured, operator-attested,

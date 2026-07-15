@@ -418,6 +418,7 @@ support history but cannot satisfy the current gate.
 | `F25` | Public HTTPS works but the operator Mac still resolves a dead IP.             | Local DNS retained the target zone's pre-activation placeholder after public resolvers converged.                           | Prove authoritative/public resolvers; use `curl --resolve` for TLS and route proof while local cache expires.                                              |
 | `F26` | Device authentication is reported as full product acceptance.                 | Operator attestation, app launch, profile mutation, and upload/retrieval were conflated.                                    | Record machine proof, operator attestation, and unproven flows separately.                                                                                 |
 | `F27` | Cutover configuration remains temporary after traffic moves.                  | The trigger still targets a cutover branch/version upload or test config still names source resources.                      | Restore `main` plus canonical commands and rerun the functional source-account/cutover-reference scan.                                                     |
+| `F28` | The canonical build compiles but D1 migration fails with `10000`.             | Cloudflare's automatically selected user build token can deploy Workers but does not include D1 edit.                       | Supply a separate app-scoped D1/Worker deploy token as a masked build variable, export it only for migration/deploy, and fail closed when absent.          |
 
 ## Reusable operator checklist
 
@@ -485,6 +486,7 @@ support history but cannot satisfy the current gate.
 | Cloudflare procedure      | [`../cloudflare-account-cutover.md`](../cloudflare-account-cutover.md)                                                                                                                                                                                                 |
 | BSF live execution record | `been-sober-for/docs/operations/cloudflare-account-cutover.md`                                                                                                                                                                                                         |
 | Final traffic cutover     | BSF PR [#70](https://github.com/narduk-enterprises/been-sober-for/pull/70), final execution record and machine-readable schema-v2 evidence                                                                                                                             |
+| Workers Build D1 repair   | BSF PR [#71](https://github.com/narduk-enterprises/been-sober-for/pull/71); failed build `d183d2fc-cabb-4d47-b577-52b69b701f1d` stopped before migration authenticated                                                                                                 |
 
 The JSON exemplar is the compact handoff. The BSF repository execution record
 remains the authoritative live account-cutover ledger and must be updated as

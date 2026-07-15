@@ -334,6 +334,16 @@
       "maintenanceMode": "off",
       "writesAllowed": true
     },
+    "postCutoverBuildAutomation": {
+      "failedBuildId": "d183d2fc-cabb-4d47-b577-52b69b701f1d",
+      "commit": "1213cadd80b9bc455455f09944ccc1618814de24",
+      "buildResult": "success",
+      "deployResult": "failed_closed_before_migration",
+      "cloudflareErrorCode": 10000,
+      "repairPullRequest": "https://github.com/narduk-enterprises/been-sober-for/pull/71",
+      "credentialContract": "masked app-scoped NARDUK_CLOUDFLARE_DEPLOY_TOKEN exported to Wrangler only for migration and deploy",
+      "successfulBuildId": null
+    },
     "dataProof": {
       "d1DatabaseId": "80894442-eae0-4f22-b9fd-00099bc3e472",
       "applicationTables": 12,
