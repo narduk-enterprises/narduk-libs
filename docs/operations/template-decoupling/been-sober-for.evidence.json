@@ -350,6 +350,7 @@
       "liveDatabaseHealth": "ok",
       "liveMaintenanceMode": "off",
       "liveWritesAllowed": true,
+      "productionTriggerPathExcludes": ["docs/**"],
       "successEvidencePullRequest": "https://github.com/narduk-enterprises/been-sober-for/pull/72"
     },
     "dataProof": {

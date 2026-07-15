@@ -211,6 +211,8 @@ commands, prior active version, `activated: false`, and target D1 table count
 before and after upload. After final import, activate and prove a read-only
 version before activating a distinct writes-enabled version. Restore the
 default-branch trigger and canonical production commands after traffic proof.
+Exclude evidence-only documentation paths from the permanent production trigger
+so recording a successful deployment does not itself create a new deployment.
 
 Workers Builds API credentials are user-scoped and distinct from the build token
 selected by the trigger. User authorization, Registrar acceptance, final
