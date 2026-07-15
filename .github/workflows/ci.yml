@@ -31,7 +31,6 @@ jobs:
           fetch-depth: 0
 
       - name: Materialize Changesets base branch
-        if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git branch --force main origin/main
