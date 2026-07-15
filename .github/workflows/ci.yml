@@ -16,14 +16,87 @@ permissions:
   packages: read
 
 jobs:
-  verify:
+  package-gates:
+    name: package / ${{ matrix.label }}
     runs-on: [self-hosted, Linux, X64, proxmox]
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          # Put the longest whole-release proof first beside the lightweight
+          # repository and TypeScript-only lanes. The Nuxt-heavy lanes follow
+          # so the cold consumer build is not starved by three typechecks.
+          - label: packed-consumer-smoke
+            kind: consumer
+            node_options: --max-old-space-size=3072
+          - label: repository-contracts
+            kind: contracts
+            node_options: --max-old-space-size=1024
+          - label: create-narduk-app
+            kind: package
+            package: "@narduk-enterprises/create-narduk-app"
+            package_dir: packages/create-narduk-app
+            # Its ESLint type-aware program exceeded a 1536 MiB heap during the
+            # cold four-runner proof; 2304 MiB stays within the 20 GiB host cap.
+            node_options: --max-old-space-size=2304
+          - label: narduk-app-tools
+            kind: package
+            package: "@narduk-enterprises/narduk-app-tools"
+            package_dir: packages/narduk-app-tools
+            node_options: --max-old-space-size=1536
+          - label: narduk-app
+            kind: package
+            package: "@narduk-enterprises/narduk-app"
+            package_dir: packages/narduk-app
+            node_options: --max-old-space-size=1536
+          - label: narduk-platform
+            kind: package
+            package: "@narduk-enterprises/narduk-platform"
+            package_dir: packages/narduk-platform
+            node_options: --max-old-space-size=1536
+          - label: narduk-testkit
+            kind: package
+            package: "@narduk-enterprises/narduk-testkit"
+            package_dir: packages/narduk-testkit
+            node_options: --max-old-space-size=1536
+          - label: narduk-core
+            kind: package
+            package: "@narduk-enterprises/narduk-core"
+            package_dir: packages/narduk-core
+            node_options: --max-old-space-size=2560
+          - label: narduk-auth
+            kind: package
+            package: "@narduk-enterprises/narduk-auth"
+            package_dir: packages/narduk-auth
+            node_options: --max-old-space-size=2304
+          - label: narduk-seo
+            kind: package
+            package: "@narduk-enterprises/narduk-seo"
+            package_dir: packages/narduk-seo
+            node_options: --max-old-space-size=2304
+          - label: narduk-analytics
+            kind: package
+            package: "@narduk-enterprises/narduk-analytics"
+            package_dir: packages/narduk-analytics
+            node_options: --max-old-space-size=2304
+          - label: narduk-ai
+            kind: package
+            package: "@narduk-enterprises/narduk-ai"
+            package_dir: packages/narduk-ai
+            node_options: --max-old-space-size=2304
+          - label: narduk-uploads
+            kind: package
+            package: "@narduk-enterprises/narduk-uploads"
+            package_dir: packages/narduk-uploads
+            node_options: --max-old-space-size=2304
     env:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
-      NODE_OPTIONS: --max-old-space-size=3072
+      NODE_OPTIONS: ${{ matrix.node_options }}
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
+      TURBO_CACHE_DIR: /srv/github-runners/_cache/turbo/narduk-libs
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -47,7 +120,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22.22.3
-          cache: pnpm
 
       - name: Configure GitHub Packages read auth
         shell: bash
@@ -64,20 +136,70 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run package quality
-        if: ${{ !startsWith(github.head_ref, 'changeset-release/') && !startsWith(github.ref_name, 'changeset-release/') }}
-        run: pnpm run quality
+      - name: Check repository contracts and formatting
+        if: matrix.kind == 'contracts'
+        env:
+          IS_CHANGESET_RELEASE: ${{ startsWith(github.head_ref, 'changeset-release/') || startsWith(github.ref_name, 'changeset-release/') }}
+        run: |
+          set -euo pipefail
+          pnpm run versions:check
+          if [ "${IS_CHANGESET_RELEASE}" != "true" ]; then
+            pnpm run release-plan:check
+          fi
+          pnpm run format:check
 
-      - name: Run generated release artifact quality
-        if: ${{ startsWith(github.head_ref, 'changeset-release/') || startsWith(github.ref_name, 'changeset-release/') }}
-        run: pnpm run versions:check && pnpm run quality:artifacts
+      - name: Lint package
+        if: matrix.kind == 'package'
+        run: >-
+          pnpm exec turbo run lint --filter="${{ matrix.package }}"
+          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
-      - name: Check package manifests and pack listings
-        run: pnpm run pack:check
+      - name: Typecheck package
+        if: matrix.kind == 'package'
+        run: >-
+          pnpm exec turbo run typecheck --filter="${{ matrix.package }}"
+          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
-      - name: Install packed artifacts outside the workspace
+      - name: Build package and its internal dependencies
+        if: matrix.kind == 'package'
+        run: >-
+          pnpm exec turbo run build --filter="${{ matrix.package }}"
+          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
+
+      - name: Run package unit tests
+        if: matrix.kind == 'package'
+        run: pnpm --filter "${{ matrix.package }}" --if-present run test:unit
+
+      - name: Check package manifest and pack listing
+        if: matrix.kind == 'package'
+        run: |
+          pnpm exec publint "${{ matrix.package_dir }}" --strict
+          pnpm --dir "${{ matrix.package_dir }}" pack --dry-run
+
+      - name: Build coordinated release set
+        if: matrix.kind == 'consumer'
+        run: >-
+          pnpm exec turbo run build --filter='./packages/*'
+          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
+
+      - name: Prove packed artifacts in an external generated consumer
+        if: matrix.kind == 'consumer'
         run: pnpm run release:consumer-smoke
 
       - name: Remove temporary registry auth
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
+
+  verify:
+    # Preserve the historical required-check name while making it depend on
+    # every matrix lane.
+    name: verify
+    if: always()
+    needs: package-gates
+    runs-on: [self-hosted, Linux, X64, proxmox]
+    timeout-minutes: 5
+    steps:
+      - name: Require every package gate
+        env:
+          PACKAGE_GATES_RESULT: ${{ needs.package-gates.result }}
+        run: test "${PACKAGE_GATES_RESULT}" = "success"

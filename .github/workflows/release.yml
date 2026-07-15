@@ -1,10 +1,11 @@
 name: Release packages
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
 
 concurrency:
   group: narduk-libs-release
@@ -17,19 +18,33 @@ permissions:
 
 jobs:
   release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: [self-hosted, Linux, X64, proxmox]
     timeout-minutes: 45
     env:
+      VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
     steps:
-      - name: Check out source
+      - name: Check out verified main
         uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Require the exact successful CI SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "${VERIFIED_SHA}"
+          test "$(git rev-parse origin/main)" = "${VERIFIED_SHA}"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -58,9 +73,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify release candidate
-        run: pnpm run quality && pnpm run release:dry-run && pnpm run release:consumer-smoke
-
       - name: Configure GitHub Packages write auth
         shell: bash
         run: |
@@ -73,7 +85,7 @@ jobs:
           //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_WRITE}
           EOF
 
-      - name: Prepare or publish independent package versions
+      - name: Prepare or publish independently verified package versions
         id: changesets
         uses: changesets/action@v1
         with:
