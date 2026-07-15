@@ -42,22 +42,48 @@ jobs:
       - name: Verify release candidate
         run: pnpm run quality && pnpm run pack:artifacts
 
-      - name: Verify tag and package versions
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Verify release ref and package versions
+        id: release
         shell: bash
         run: |
           set -euo pipefail
           core_version="$(node -p "require('./package.json').version")"
           nuxt_version="$(node -p "require('./packages/nuxt/package.json').version")"
           test "${core_version}" = "${nuxt_version}"
-          test "${GITHUB_REF_NAME}" = "v${core_version}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test "${GITHUB_REF_NAME}" = "v${core_version}"
+          else
+            test "${GITHUB_EVENT_NAME}" = "workflow_dispatch"
+            test "${GITHUB_REF}" = "refs/heads/main"
+          fi
+          echo "version=${core_version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Publish immutable packages
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish missing immutable packages
+        shell: bash
         run: |
-          pnpm publish --no-git-checks --access public --registry https://npm.pkg.github.com
-          pnpm --dir packages/nuxt publish --no-git-checks --access public --registry https://npm.pkg.github.com
+          set -euo pipefail
+          registry="https://npm.pkg.github.com"
+          version="${{ steps.release.outputs.version }}"
+
+          publish_if_missing() {
+            local package_name="$1"
+            shift
+            local published_version
+            if published_version="$(npm view "${package_name}@${version}" version --registry="${registry}" 2>/dev/null)"; then
+              test "${published_version}" = "${version}"
+              echo "${package_name}@${version} is already published; skipping."
+              return
+            fi
+
+            "$@"
+          }
+
+          publish_if_missing \
+            "@narduk-geo/narduk-mapkit" \
+            pnpm publish --no-git-checks --access public --registry "${registry}"
+          publish_if_missing \
+            "@narduk-geo/narduk-mapkit-nuxt" \
+            pnpm --filter @narduk-geo/narduk-mapkit-nuxt publish --no-git-checks --access public --registry "${registry}"
 
       - name: Verify published consumer
-        if: startsWith(github.ref, 'refs/tags/')
         run: pnpm run release:verify-published

@@ -17,10 +17,10 @@ function wait(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
-function publishedVersion(name) {
+function publishedVersion({ name, version }) {
   const result = spawnSync(
     'npm',
-    ['view', name, 'version', '--json', `--registry=${registry}`],
+    ['view', `${name}@${version}`, 'version', '--json', `--registry=${registry}`],
     { cwd: repoRoot, encoding: 'utf8', env: process.env },
   )
   if (result.status !== 0) return null
@@ -30,7 +30,7 @@ function publishedVersion(name) {
 for (const manifest of manifests) {
   let resolved = null
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    resolved = publishedVersion(manifest.name)
+    resolved = publishedVersion(manifest)
     if (resolved === manifest.version) break
     if (attempt < maxAttempts) wait(retryDelayMilliseconds)
   }
