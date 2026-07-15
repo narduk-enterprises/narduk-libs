@@ -2,7 +2,7 @@
  * PostgreSQL schema — pg-core mirror of `schema.ts` for Hyperdrive + `postgres.js`.
  *
  * Column names match the SQLite schema so migrations and queries stay aligned.
- * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#layer/orm-tables` resolves here.
+ * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#narduk-core/schema` resolves here.
  */
 import { boolean, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
@@ -87,7 +87,7 @@ export const notifications = pgTable('notifications', {
 
 /**
  * `system_prompts` mirror for the Postgres path. Defined in core so
- * `#layer/orm-tables` keeps the same shape across backends even when an app
+ * `#narduk-core/schema` keeps the same shape across backends even when an app
  * only extends `layer-core`. The AI layer preserves its own mirror for
  * backward compatibility with `#layer-ai/orm-tables`.
  */

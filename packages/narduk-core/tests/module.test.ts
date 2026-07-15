@@ -52,11 +52,14 @@ describe('narduk-core module', () => {
     expect(nuxt.options.alias).toEqual(
       expect.objectContaining({
         '#layer': expect.stringContaining('/runtime'),
-        '#layer/orm-tables': expect.stringContaining('/runtime/server/database/schema.ts'),
-        '#layer/postgres-runtime': expect.stringContaining(
+        '#narduk-core/schema': expect.stringContaining('/runtime/server/database/schema.ts'),
+        '#narduk-core/postgres-runtime': expect.stringContaining(
           '/runtime/internal/postgres-runtime.stub.ts',
         ),
       }),
+    )
+    expect(Object.keys(nuxt.options.alias).filter((alias) => alias.startsWith('#layer/'))).toEqual(
+      [],
     )
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-core')
     expect(nuxt.options.appConfig).toEqual(
@@ -102,5 +105,25 @@ describe('narduk-core module', () => {
       name: 'landing',
     })
     expect(hooks.has('vite:extendConfig')).toBe(true)
+
+    const previousDatabaseBackend = process.env.NUXT_DATABASE_BACKEND
+    try {
+      process.env.NUXT_DATABASE_BACKEND = 'postgres'
+      await mod.setup({ app: false, coreModules: false, server: false }, nuxt)
+      expect(nuxt.options.alias).toEqual(
+        expect.objectContaining({
+          '#narduk-core/schema': expect.stringContaining('/runtime/server/database/pg-schema.ts'),
+          '#narduk-core/postgres-runtime': expect.stringContaining(
+            '/runtime/internal/postgres-runtime.ts',
+          ),
+        }),
+      )
+    } finally {
+      if (previousDatabaseBackend === undefined) {
+        delete process.env.NUXT_DATABASE_BACKEND
+      } else {
+        process.env.NUXT_DATABASE_BACKEND = previousDatabaseBackend
+      }
+    }
   })
 })

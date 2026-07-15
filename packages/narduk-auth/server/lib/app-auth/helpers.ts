@@ -1,6 +1,6 @@
 import { readAppRequestHeader } from '@narduk-enterprises/narduk-app/server/http'
 
-import type { User as LocalUser } from '#layer/orm-tables'
+import type { User as LocalUser } from '#narduk-core/schema'
 import type { AppAuthProvider, AppSessionUser } from './types'
 import type { User as SupabaseUser } from '@supabase/auth-js'
 import type { H3Event } from 'h3'

@@ -3,7 +3,7 @@ import { and, eq, gt } from 'drizzle-orm'
 import { createError, deleteCookie, getCookie, getRequestHeader, setCookie } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { apiKeys, sessions, users } from '#layer/orm-tables'
+import { apiKeys, sessions, users } from '#narduk-core/schema'
 
 import {
   API_KEY_PREFIX,
@@ -19,7 +19,7 @@ import {
 import { executeDatabaseQuery, getDatabaseRow, getDatabaseRows, useDatabase } from './database'
 import { getLayerUserSession } from './user-session'
 
-import type { User } from '#layer/orm-tables'
+import type { User } from '#narduk-core/schema'
 import type { H3Event } from 'h3'
 
 /**

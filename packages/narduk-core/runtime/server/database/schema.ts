@@ -87,7 +87,7 @@ export const notifications = sqliteTable('notifications', {
 
 // ─── System Prompts ─────────────────────────────────────────
 // Lives in `layer-core` so every app that extends core (with or without
-// `layer-ai`) can resolve `#layer/orm-tables` → `systemPrompts` and
+// `layer-ai`) can resolve `#narduk-core/schema` → `systemPrompts` and
 // `#layer/server/utils/systemPrompts`. The AI layer still ships a redundant
 // mirror of the same shape under `#layer-ai/orm-tables` for backward
 // compatibility with any app that pinned the old alias.

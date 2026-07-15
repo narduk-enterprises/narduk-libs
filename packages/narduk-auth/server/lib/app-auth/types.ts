@@ -1,4 +1,4 @@
-import type { User as LocalUser } from '#layer/orm-tables'
+import type { User as LocalUser } from '#narduk-core/schema'
 import type { AppAuthBackend } from '../../../shared/utils/auth-environment'
 import type {
   EmailOtpType,

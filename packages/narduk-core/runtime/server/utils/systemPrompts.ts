@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 
-import { systemPrompts } from '#layer/orm-tables'
 import { getDatabaseRow, getDatabaseRows, useDatabase } from '#layer/server/utils/database'
+import { systemPrompts } from '#narduk-core/schema'
 
 import type { H3Event } from 'h3'
 
