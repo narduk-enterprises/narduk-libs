@@ -6,7 +6,10 @@ import {
 } from '../src/client/index.js'
 import { computeMapKitRegionForLngLatBounds } from '../src/geometry/index.js'
 
-import type { MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
+import type {
+  MapKitTileOverlaySource,
+  MapKitTileOverlayUrlTemplate,
+} from '../src/client/index.js'
 
 describe('MapKit layer helpers', () => {
   class Coordinate {
@@ -34,7 +37,7 @@ describe('MapKit layer helpers', () => {
     readonly opacity: number
 
     constructor(
-      readonly urlTemplate: MapKitTileOverlayUrlTemplate,
+      readonly urlTemplate: MapKitTileOverlaySource<unknown>,
       readonly options: Record<string, unknown> = {},
     ) {
       this.opacity = typeof options.opacity === 'number' ? options.opacity : 1
@@ -126,7 +129,7 @@ describe('MapKitLayerRegistry', () => {
     opacity: number
 
     constructor(
-      readonly urlTemplate: MapKitTileOverlayUrlTemplate,
+      readonly urlTemplate: MapKitTileOverlaySource<unknown>,
       readonly options: Record<string, unknown> = {},
     ) {
       this.opacity = typeof options.opacity === 'number' ? options.opacity : 1
@@ -138,6 +141,7 @@ describe('MapKitLayerRegistry', () => {
   }
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -252,5 +256,52 @@ describe('MapKitLayerRegistry', () => {
     expect(new Set(removed)).toEqual(new Set([initial, firstReplacement]))
     expect(secondReplacement?.opacity).toBe(0.9)
     expect(registry.get('raster')).toBe(secondReplacement)
+  })
+
+  it('retires the old overlay after bounded async-image readiness', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        callback(Date.now())
+        return 1
+      }),
+    )
+
+    const added: TileOverlay[] = []
+    const removed: TileOverlay[] = []
+    const registry = new MapKitLayerRegistry({
+      map: {
+        addTileOverlay: (overlay) => added.push(overlay),
+        removeTileOverlay: (overlay) => removed.push(overlay),
+      },
+      mapkit,
+    })
+    const initial = registry.register({
+      id: 'farm',
+      urlTemplate: '/tiles/yield/{z}/{x}/{y}.png',
+    })
+    const replacement = registry.replace(
+      'farm',
+      {
+        id: 'farm',
+        imageForTile: () => new Promise<null>(() => {}),
+      },
+      {
+        activateWhen: 'first-image',
+        crossfadeDurationMs: 0,
+        readinessTimeoutMs: 250,
+      },
+    )
+
+    expect(added).toHaveLength(2)
+    expect(removed).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(250)
+    await replacement
+
+    expect(removed).toEqual([initial])
+    expect(registry.get('farm')).toBe(added[1])
+    expect(added[1]?.opacity).toBe(1)
   })
 })

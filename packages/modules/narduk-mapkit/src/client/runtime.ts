@@ -34,12 +34,30 @@ export type MapKitTileOverlayUrlTemplate =
   | string
   | ((x: number, y: number, z: number, scale: number) => string)
 
+export type MapKitTileImageSource =
+  | HTMLImageElement
+  | HTMLCanvasElement
+  | ImageBitmap
+  | OffscreenCanvas
+
+export type MapKitTileOverlayImageSource<TImageSource = MapKitTileImageSource> = (
+  x: number,
+  y: number,
+  z: number,
+  scale: number,
+  data?: unknown,
+) => Promise<TImageSource | null>
+
+export type MapKitTileOverlaySource<TImageSource = MapKitTileImageSource> =
+  | MapKitTileOverlayUrlTemplate
+  | MapKitTileOverlayImageSource<TImageSource>
+
 export interface MapKitTileOverlayConstructors<
   TTileOverlay = unknown,
-  TUrlTemplate extends MapKitTileOverlayUrlTemplate = MapKitTileOverlayUrlTemplate,
+  TSource extends MapKitTileOverlaySource<unknown> = MapKitTileOverlaySource,
 > {
   TileOverlay: Constructor<
-    [urlTemplate: TUrlTemplate, options?: MapKitTileOverlayOptions],
+    [source: TSource, options?: MapKitTileOverlayOptions],
     TTileOverlay
   >
 }
@@ -142,17 +160,58 @@ export function createMapKitRegionForLngLatBounds<TCoordinate, TSpan, TRegion>(
 
 export function createMapKitTileOverlay<
   TTileOverlay,
-  TUrlTemplate extends MapKitTileOverlayUrlTemplate,
+  TSource extends MapKitTileOverlaySource<unknown>,
 >(
-  mapkit: MapKitTileOverlayConstructors<TTileOverlay, TUrlTemplate>,
-  urlTemplate: TUrlTemplate,
+  mapkit: MapKitTileOverlayConstructors<TTileOverlay, TSource>,
+  source: TSource,
   options: MapKitTileOverlayOptions = {},
 ): TTileOverlay {
-  if (typeof urlTemplate === 'string' && !urlTemplate.trim()) throw new Error('urlTemplate is required')
-  if (typeof urlTemplate !== 'string' && typeof urlTemplate !== 'function') {
-    throw new Error('urlTemplate is required')
+  if (typeof source === 'string' && !source.trim()) throw new Error('tile overlay source is required')
+  if (typeof source !== 'string' && typeof source !== 'function') {
+    throw new Error('tile overlay source is required')
   }
-  return new mapkit.TileOverlay(urlTemplate, options)
+  return new mapkit.TileOverlay(source, options)
+}
+
+export interface MapKitAsyncTileOverlayLifecycle {
+  onError?: (reason: unknown) => void
+  onFirstImage?: () => void
+}
+
+/**
+ * Construct a MapKit JS 6 Promise<ImageSource> tile overlay and expose the
+ * first usable image as a lifecycle event for safe layer replacement.
+ */
+export function createMapKitAsyncTileOverlay<TTileOverlay, TImageSource>(
+  mapkit: MapKitTileOverlayConstructors<
+    TTileOverlay,
+    MapKitTileOverlayImageSource<TImageSource>
+  >,
+  imageForTile: MapKitTileOverlayImageSource<TImageSource>,
+  options: MapKitTileOverlayOptions = {},
+  lifecycle: MapKitAsyncTileOverlayLifecycle = {},
+): TTileOverlay {
+  let hasImage = false
+  const source: MapKitTileOverlayImageSource<TImageSource> = (x, y, z, scale, data) => {
+    try {
+      return imageForTile(x, y, z, scale, data)
+        .then((image) => {
+          if (image !== null && !hasImage) {
+            hasImage = true
+            lifecycle.onFirstImage?.()
+          }
+          return image
+        })
+        .catch((reason: unknown) => {
+          lifecycle.onError?.(reason)
+          return null
+        })
+    } catch (reason) {
+      lifecycle.onError?.(reason)
+      return Promise.resolve(null)
+    }
+  }
+  return createMapKitTileOverlay(mapkit, source, options)
 }
 
 export function uniqueMapKitOverlays<TOverlay>(overlays: readonly TOverlay[]): TOverlay[] {

@@ -1,11 +1,13 @@
 import {
   addMapKitVectorOverlay,
+  createMapKitAsyncTileOverlay,
   createMapKitCoordinateRegion,
   createMapKitRegionForLngLatBounds,
   createMapKitRegionForPoints,
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
   initializeMapKit,
+  loadMapKitLibraries,
   removeMapKitVectorOverlay,
   refreshMapKitMapLayout,
   resetMapKitClientStateForTests,
@@ -40,6 +42,18 @@ describe('browser MapKit initialization', () => {
 
     expect(mapkit.init).toHaveBeenCalledTimes(1)
     expect(issuedTokens).toEqual([token])
+  })
+
+  it('loads MapKit JS 6 libraries through the initialized runtime', async () => {
+    const mapkit = { init: vi.fn(), load: vi.fn(async () => undefined) }
+
+    await loadMapKitLibraries(mapkit, ['map', 'overlays'])
+
+    expect(mapkit.load).toHaveBeenCalledWith(['map', 'overlays'])
+  })
+
+  it('rejects library loading from the MapKit JS 5 runtime', async () => {
+    await expect(loadMapKitLibraries({ init: vi.fn() })).rejects.toThrow('MapKit JS 6')
   })
 
   it('rejects mismatched singleton initialization options', async () => {
@@ -172,6 +186,30 @@ describe('browser MapKit runtime helpers', () => {
 
     expect(overlay.urlTemplate).toBe('/tiles/{z}/{x}/{y}.png')
     expect(overlay.options).toMatchObject({ maximumZ: 10, minimumZ: 3.33, opacity: 0.8 })
+  })
+
+  it('reports the first MapKit JS 6 async tile image and contains tile errors', async () => {
+    class AsyncTileOverlay {
+      constructor(
+        readonly imageForTile: (x: number, y: number, z: number, scale: number) => Promise<object | null>,
+        readonly options: Record<string, unknown> = {},
+      ) {}
+    }
+    const onFirstImage = vi.fn()
+    const onError = vi.fn()
+    const images = [Promise.resolve({ image: 1 }), Promise.resolve({ image: 2 }), Promise.reject(new Error('tile'))]
+    const overlay = createMapKitAsyncTileOverlay(
+      { TileOverlay: AsyncTileOverlay },
+      vi.fn(() => images.shift() ?? Promise.resolve(null)),
+      { opacity: 0 },
+      { onError, onFirstImage },
+    )
+
+    await expect(overlay.imageForTile(1, 2, 3, 1)).resolves.toEqual({ image: 1 })
+    await expect(overlay.imageForTile(1, 2, 3, 1)).resolves.toEqual({ image: 2 })
+    await expect(overlay.imageForTile(1, 2, 3, 1)).resolves.toBeNull()
+    expect(onFirstImage).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledTimes(1)
   })
 
   it('makes vector overlay attach and removal idempotent', () => {

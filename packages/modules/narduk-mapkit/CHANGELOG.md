@@ -1,6 +1,14 @@
 # Changelog
 
-## 1.0.0 - Unreleased
+## 1.1.0 - 2026-07-16
+
+- Added MapKit JS 6 core-library loading and asynchronous
+  `Promise<ImageSource>` tile-overlay construction.
+- Extended `MapKitLayerRegistry` to own async overlay replacement, first-image
+  readiness, bounded fallback activation, error reporting, and stale-overlay
+  retirement.
+
+## 1.0.0 - 2026-07-16
 
 - Established this `narduk-geo/narduk-mapkit` repository as the canonical
   two-package workspace.

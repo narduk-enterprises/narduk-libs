@@ -1,14 +1,21 @@
 import type { MapKitLngLatBounds, MapKitRegionOptions } from '../geometry/geometry.js';
-import type { MapKitOpacityTarget, MapKitRegionConstructors, MapKitTileOverlayConstructors, MapKitTileOverlayUrlTemplate } from './runtime.js';
-export interface MapKitLayerDescriptor<TData = unknown> {
+import type { MapKitOpacityTarget, MapKitTileImageSource, MapKitTileOverlayImageSource, MapKitTileOverlaySource, MapKitRegionConstructors, MapKitTileOverlayConstructors, MapKitTileOverlayUrlTemplate } from './runtime.js';
+interface MapKitLayerDescriptorBase<TData = unknown> {
     bounds?: MapKitLngLatBounds;
     data?: TData;
     id: string;
     maximumZ?: number;
     minimumZ?: number;
     opacity?: number;
+}
+export interface MapKitUrlLayerDescriptor<TData = unknown> extends MapKitLayerDescriptorBase<TData> {
     urlTemplate: string;
 }
+export interface MapKitAsyncLayerDescriptor<TData = unknown, TImageSource = MapKitTileImageSource> extends MapKitLayerDescriptorBase<TData> {
+    imageForTile: MapKitTileOverlayImageSource<TImageSource>;
+    onTileError?: (reason: unknown) => void;
+}
+export type MapKitLayerDescriptor<TData = unknown, TImageSource = MapKitTileImageSource> = MapKitUrlLayerDescriptor<TData> | MapKitAsyncLayerDescriptor<TData, TImageSource>;
 export interface MapKitLayerRegionOptions extends MapKitRegionOptions {
 }
 export interface MapKitLayerMapHandle<TTileOverlay> {
@@ -18,7 +25,13 @@ export interface MapKitLayerMapHandle<TTileOverlay> {
 export interface MapKitLayerRegistryOptions<TTileOverlay> {
     crossfadeDurationMs?: number;
     map: MapKitLayerMapHandle<TTileOverlay>;
-    mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlayUrlTemplate>;
+    mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>;
+}
+export interface MapKitLayerReplaceOptions {
+    activateWhen?: 'immediate' | 'first-image';
+    crossfadeDurationMs?: number;
+    readinessTimeoutMs?: number;
+    signal?: AbortSignal;
 }
 export declare function createBoundsGatedUrlTemplate(urlTemplate: string, bounds: MapKitLngLatBounds | undefined): MapKitTileOverlayUrlTemplate;
 export declare function regionForMapKitLayerBounds<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, bounds: MapKitLngLatBounds, options?: MapKitLayerRegionOptions): TRegion;
@@ -29,12 +42,10 @@ export declare class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarge
     register(descriptor: MapKitLayerDescriptor): TTileOverlay;
     unregister(id: string): void;
     setOpacity(id: string, opacity: number): void;
-    replace(id: string, descriptor: MapKitLayerDescriptor, options?: {
-        crossfadeDurationMs?: number;
-        signal?: AbortSignal;
-    }): Promise<void>;
+    replace(id: string, descriptor: MapKitLayerDescriptor, options?: MapKitLayerReplaceOptions): Promise<void>;
     get(id: string): TTileOverlay | undefined;
     has(id: string): boolean;
     list(): readonly string[];
 }
+export {};
 //# sourceMappingURL=layers.d.ts.map

@@ -1,5 +1,5 @@
 import { computeMapKitRegionForLngLatBounds } from '../geometry/geometry.js';
-import { createMapKitCoordinateRegion, createMapKitTileOverlay, crossfadeMapKitOverlayOpacity, } from './runtime.js';
+import { createMapKitCoordinateRegion, createMapKitAsyncTileOverlay, createMapKitTileOverlay, crossfadeMapKitOverlayOpacity, } from './runtime.js';
 const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 const DEFAULT_REGION_PADDING = 0.05;
 const DEFAULT_REGION_MIN_SPAN_DELTA = 0.01;
@@ -173,6 +173,7 @@ export class MapKitLayerRegistry {
         if (!entry)
             return;
         entry.controller?.cancel();
+        entry.pending?.cancel();
         for (const overlay of uniqueOverlays([entry.overlay, ...entry.fading])) {
             this.#map.removeTileOverlay(overlay);
         }
@@ -192,32 +193,68 @@ export class MapKitLayerRegistry {
         if (!entry)
             throw new Error(`layer "${id}" is not registered`);
         entry.controller?.cancel();
+        entry.pending?.cancel();
         const oldOverlays = uniqueOverlays([entry.overlay, ...entry.fading]);
         for (const overlay of oldOverlays)
             entry.fading.add(overlay);
         const targetOpacity = descriptor.opacity ?? 1;
-        const nextOverlay = this.#createOverlay(descriptor, 0);
+        let markReady = () => { };
+        const ready = new Promise((resolve) => { markReady = resolve; });
+        const nextOverlay = this.#createOverlay(descriptor, 0, markReady);
         this.#map.addTileOverlay(nextOverlay);
         entry.overlay = nextOverlay;
-        let controller;
-        const crossfadeOptions = {
-            durationMs: options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs,
-            nextOverlay,
-            oldOverlays,
-            onDone: () => {
-                for (const overlay of oldOverlays)
-                    entry.fading.delete(overlay);
-                if (entry.controller === controller)
-                    delete entry.controller;
-            },
-            removeOverlay: (overlay) => this.#map.removeTileOverlay(overlay),
-            targetOpacity,
+        let cancelPending = () => { };
+        const cancelled = new Promise((resolve) => {
+            cancelPending = () => resolve('cancel');
+        });
+        entry.pending = { cancel: cancelPending };
+        const activate = async () => {
+            if (options.activateWhen === 'first-image' && 'imageForTile' in descriptor) {
+                const timeoutMs = Math.max(0, options.readinessTimeoutMs ?? 1500);
+                const timeout = new Promise((resolve) => {
+                    globalThis.setTimeout(() => resolve('timeout'), timeoutMs);
+                });
+                const signal = options.signal;
+                const aborted = new Promise((resolve) => {
+                    if (signal?.aborted)
+                        resolve('abort');
+                    else
+                        signal?.addEventListener('abort', () => resolve('abort'), { once: true });
+                });
+                const outcome = await Promise.race([
+                    ready.then(() => 'ready'),
+                    timeout,
+                    cancelled,
+                    aborted,
+                ]);
+                if (outcome === 'cancel' || outcome === 'abort')
+                    return;
+            }
+            if (entry.overlay !== nextOverlay)
+                return;
+            if (entry.pending?.cancel === cancelPending)
+                delete entry.pending;
+            let controller;
+            const crossfadeOptions = {
+                durationMs: options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs,
+                nextOverlay,
+                oldOverlays,
+                onDone: () => {
+                    for (const overlay of oldOverlays)
+                        entry.fading.delete(overlay);
+                    if (entry.controller === controller)
+                        delete entry.controller;
+                },
+                removeOverlay: (overlay) => this.#map.removeTileOverlay(overlay),
+                targetOpacity,
+            };
+            if (options.signal !== undefined)
+                crossfadeOptions.signal = options.signal;
+            controller = crossfadeMapKitOverlayOpacity(crossfadeOptions);
+            entry.controller = controller;
+            await controller.finished;
         };
-        if (options.signal !== undefined)
-            crossfadeOptions.signal = options.signal;
-        controller = crossfadeMapKitOverlayOpacity(crossfadeOptions);
-        entry.controller = controller;
-        return controller.finished;
+        return activate();
     }
     get(id) {
         return this.#entries.get(id)?.overlay;
@@ -228,7 +265,15 @@ export class MapKitLayerRegistry {
     list() {
         return [...this.#entries.keys()];
     }
-    #createOverlay(descriptor, opacity) {
+    #createOverlay(descriptor, opacity, onFirstImage) {
+        if ('imageForTile' in descriptor) {
+            const lifecycle = {};
+            if (descriptor.onTileError)
+                lifecycle.onError = descriptor.onTileError;
+            if (onFirstImage)
+                lifecycle.onFirstImage = onFirstImage;
+            return createMapKitAsyncTileOverlay(this.#mapkit, descriptor.imageForTile, overlayOptionsForDescriptor(descriptor, opacity), lifecycle);
+        }
         const urlTemplate = createBoundsGatedUrlTemplate(descriptor.urlTemplate, descriptor.bounds);
         return createMapKitTileOverlay(this.#mapkit, urlTemplate, overlayOptionsForDescriptor(descriptor, opacity));
     }

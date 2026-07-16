@@ -21,6 +21,12 @@ export interface MapKitRuntime {
   init(options: { authorizationCallback(done: (token: string) => void): void }): void
 }
 
+export interface MapKitLibraryRuntime extends MapKitRuntime {
+  load?: (libraries: string | string[]) => Promise<unknown>
+}
+
+export const MAPKIT_JS_V6_SCRIPT_URL = 'https://cdn.apple-mapkit.com/mk/6/mapkit.core.js'
+
 const DEFAULT_MAPKIT_SCRIPT_URL = 'https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js'
 const DEFAULT_TOKEN_ENDPOINT = '/api/mapkit-token'
 const DEFAULT_TOKEN_REFRESH_WINDOW_MS = 60_000
@@ -196,6 +202,17 @@ export async function initializeMapKit(options: MapKitClientOptions = {}): Promi
   })
 
   return initPromise
+}
+
+/** Load optional MapKit JS 6 libraries after initializeMapKit() completes. */
+export async function loadMapKitLibraries(
+  mapkit: MapKitLibraryRuntime,
+  libraries: string | string[] = ['map', 'overlays'],
+): Promise<void> {
+  if (typeof mapkit.load !== 'function') {
+    throw new Error('MapKit JS library loading requires the MapKit JS 6 core bundle')
+  }
+  await mapkit.load(libraries)
 }
 
 export function resetMapKitClientStateForTests(): void {

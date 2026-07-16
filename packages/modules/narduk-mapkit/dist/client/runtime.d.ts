@@ -7,9 +7,12 @@ export interface MapKitRegionConstructors<TCoordinate = unknown, TSpan = unknown
     CoordinateSpan: Constructor<[latitudeDelta: number, longitudeDelta: number], TSpan>;
 }
 export type MapKitTileOverlayUrlTemplate = string | ((x: number, y: number, z: number, scale: number) => string);
-export interface MapKitTileOverlayConstructors<TTileOverlay = unknown, TUrlTemplate extends MapKitTileOverlayUrlTemplate = MapKitTileOverlayUrlTemplate> {
+export type MapKitTileImageSource = HTMLImageElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas;
+export type MapKitTileOverlayImageSource<TImageSource = MapKitTileImageSource> = (x: number, y: number, z: number, scale: number, data?: unknown) => Promise<TImageSource | null>;
+export type MapKitTileOverlaySource<TImageSource = MapKitTileImageSource> = MapKitTileOverlayUrlTemplate | MapKitTileOverlayImageSource<TImageSource>;
+export interface MapKitTileOverlayConstructors<TTileOverlay = unknown, TSource extends MapKitTileOverlaySource<unknown> = MapKitTileOverlaySource> {
     TileOverlay: Constructor<[
-        urlTemplate: TUrlTemplate,
+        source: TSource,
         options?: MapKitTileOverlayOptions
     ], TTileOverlay>;
 }
@@ -45,7 +48,16 @@ export declare function createMapKitCoordinateSpan<TSpan>(mapkit: Pick<MapKitReg
 export declare function createMapKitCoordinateRegion<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, region: MapKitRegion): TRegion;
 export declare function createMapKitRegionForPoints<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, points: readonly MapKitPointLike[] | null | undefined, options?: MapKitRegionOptions): TRegion | null;
 export declare function createMapKitRegionForLngLatBounds<TCoordinate, TSpan, TRegion>(mapkit: MapKitRegionConstructors<TCoordinate, TSpan, TRegion>, bounds: MapKitLngLatBounds | null | undefined, options?: MapKitRegionOptions): TRegion | null;
-export declare function createMapKitTileOverlay<TTileOverlay, TUrlTemplate extends MapKitTileOverlayUrlTemplate>(mapkit: MapKitTileOverlayConstructors<TTileOverlay, TUrlTemplate>, urlTemplate: TUrlTemplate, options?: MapKitTileOverlayOptions): TTileOverlay;
+export declare function createMapKitTileOverlay<TTileOverlay, TSource extends MapKitTileOverlaySource<unknown>>(mapkit: MapKitTileOverlayConstructors<TTileOverlay, TSource>, source: TSource, options?: MapKitTileOverlayOptions): TTileOverlay;
+export interface MapKitAsyncTileOverlayLifecycle {
+    onError?: (reason: unknown) => void;
+    onFirstImage?: () => void;
+}
+/**
+ * Construct a MapKit JS 6 Promise<ImageSource> tile overlay and expose the
+ * first usable image as a lifecycle event for safe layer replacement.
+ */
+export declare function createMapKitAsyncTileOverlay<TTileOverlay, TImageSource>(mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlayImageSource<TImageSource>>, imageForTile: MapKitTileOverlayImageSource<TImageSource>, options?: MapKitTileOverlayOptions, lifecycle?: MapKitAsyncTileOverlayLifecycle): TTileOverlay;
 export declare function uniqueMapKitOverlays<TOverlay>(overlays: readonly TOverlay[]): TOverlay[];
 export interface MapKitVectorOverlayMap<TOverlay = unknown> {
     overlays?: readonly TOverlay[];

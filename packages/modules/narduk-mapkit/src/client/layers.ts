@@ -1,6 +1,7 @@
 import { computeMapKitRegionForLngLatBounds } from '../geometry/geometry.js'
 import {
   createMapKitCoordinateRegion,
+  createMapKitAsyncTileOverlay,
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
 } from './runtime.js'
@@ -8,6 +9,9 @@ import {
 import type { MapKitLngLatBounds, MapKitRegionOptions } from '../geometry/geometry.js'
 import type {
   MapKitOpacityTarget,
+  MapKitTileImageSource,
+  MapKitTileOverlayImageSource,
+  MapKitTileOverlaySource,
   MapKitOverlayCrossfadeOptions,
   MapKitOverlayCrossfadeController,
   MapKitRegionConstructors,
@@ -22,15 +26,31 @@ const DEFAULT_REGION_PADDING = 0.05
 const DEFAULT_REGION_MIN_SPAN_DELTA = 0.01
 const DEFAULT_REPLACE_CROSSFADE_DURATION_MS = 400
 
-export interface MapKitLayerDescriptor<TData = unknown> {
+interface MapKitLayerDescriptorBase<TData = unknown> {
   bounds?: MapKitLngLatBounds
   data?: TData
   id: string
   maximumZ?: number
   minimumZ?: number
   opacity?: number
+}
+
+export interface MapKitUrlLayerDescriptor<TData = unknown>
+  extends MapKitLayerDescriptorBase<TData> {
   urlTemplate: string
 }
+
+export interface MapKitAsyncLayerDescriptor<
+  TData = unknown,
+  TImageSource = MapKitTileImageSource,
+> extends MapKitLayerDescriptorBase<TData> {
+  imageForTile: MapKitTileOverlayImageSource<TImageSource>
+  onTileError?: (reason: unknown) => void
+}
+
+export type MapKitLayerDescriptor<TData = unknown, TImageSource = MapKitTileImageSource> =
+  | MapKitUrlLayerDescriptor<TData>
+  | MapKitAsyncLayerDescriptor<TData, TImageSource>
 
 export interface MapKitLayerRegionOptions extends MapKitRegionOptions {}
 
@@ -42,13 +62,21 @@ export interface MapKitLayerMapHandle<TTileOverlay> {
 export interface MapKitLayerRegistryOptions<TTileOverlay> {
   crossfadeDurationMs?: number
   map: MapKitLayerMapHandle<TTileOverlay>
-  mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlayUrlTemplate>
+  mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>
 }
 
 interface MapKitLayerRegistryEntry<TTileOverlay extends MapKitOpacityTarget> {
   controller?: MapKitOverlayCrossfadeController
   fading: Set<TTileOverlay>
   overlay: TTileOverlay
+  pending?: { cancel: () => void }
+}
+
+export interface MapKitLayerReplaceOptions {
+  activateWhen?: 'immediate' | 'first-image'
+  crossfadeDurationMs?: number
+  readinessTimeoutMs?: number
+  signal?: AbortSignal
 }
 
 interface TileBounds {
@@ -243,7 +271,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
   readonly #defaultCrossfadeDurationMs: number
   readonly #entries = new Map<string, MapKitLayerRegistryEntry<TTileOverlay>>()
   readonly #map: MapKitLayerMapHandle<TTileOverlay>
-  readonly #mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlayUrlTemplate>
+  readonly #mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>
 
   constructor(options: MapKitLayerRegistryOptions<TTileOverlay>) {
     this.#mapkit = options.mapkit
@@ -272,6 +300,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     if (!entry) return
 
     entry.controller?.cancel()
+    entry.pending?.cancel()
     for (const overlay of uniqueOverlays([entry.overlay, ...entry.fading])) {
       this.#map.removeTileOverlay(overlay)
     }
@@ -287,7 +316,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
   replace(
     id: string,
     descriptor: MapKitLayerDescriptor,
-    options: { crossfadeDurationMs?: number; signal?: AbortSignal } = {},
+    options: MapKitLayerReplaceOptions = {},
   ): Promise<void> {
     requireLayerId(id)
     if (descriptor.id !== id) throw new Error('replacement descriptor id must match id')
@@ -295,31 +324,65 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     if (!entry) throw new Error(`layer "${id}" is not registered`)
 
     entry.controller?.cancel()
+    entry.pending?.cancel()
     const oldOverlays = uniqueOverlays([entry.overlay, ...entry.fading])
     for (const overlay of oldOverlays) entry.fading.add(overlay)
 
     const targetOpacity = descriptor.opacity ?? 1
-    const nextOverlay = this.#createOverlay(descriptor, 0)
+    let markReady: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { markReady = resolve })
+    const nextOverlay = this.#createOverlay(descriptor, 0, markReady)
     this.#map.addTileOverlay(nextOverlay)
     entry.overlay = nextOverlay
 
-    let controller: MapKitOverlayCrossfadeController
-    const crossfadeOptions: MapKitOverlayCrossfadeOptions<TTileOverlay> = {
-      durationMs: options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs,
-      nextOverlay,
-      oldOverlays,
-      onDone: () => {
-        for (const overlay of oldOverlays) entry.fading.delete(overlay)
-        if (entry.controller === controller) delete entry.controller
-      },
-      removeOverlay: (overlay) => this.#map.removeTileOverlay(overlay),
-      targetOpacity,
-    }
-    if (options.signal !== undefined) crossfadeOptions.signal = options.signal
+    let cancelPending: () => void = () => {}
+    const cancelled = new Promise<'cancel'>((resolve) => {
+      cancelPending = () => resolve('cancel')
+    })
+    entry.pending = { cancel: cancelPending }
 
-    controller = crossfadeMapKitOverlayOpacity(crossfadeOptions)
-    entry.controller = controller
-    return controller.finished
+    const activate = async (): Promise<void> => {
+      if (options.activateWhen === 'first-image' && 'imageForTile' in descriptor) {
+        const timeoutMs = Math.max(0, options.readinessTimeoutMs ?? 1500)
+        const timeout = new Promise<'timeout'>((resolve) => {
+          globalThis.setTimeout(() => resolve('timeout'), timeoutMs)
+        })
+        const signal = options.signal
+        const aborted = new Promise<'abort'>((resolve) => {
+          if (signal?.aborted) resolve('abort')
+          else signal?.addEventListener('abort', () => resolve('abort'), { once: true })
+        })
+        const outcome = await Promise.race([
+          ready.then(() => 'ready' as const),
+          timeout,
+          cancelled,
+          aborted,
+        ])
+        if (outcome === 'cancel' || outcome === 'abort') return
+      }
+
+      if (entry.overlay !== nextOverlay) return
+      if (entry.pending?.cancel === cancelPending) delete entry.pending
+
+      let controller: MapKitOverlayCrossfadeController
+      const crossfadeOptions: MapKitOverlayCrossfadeOptions<TTileOverlay> = {
+        durationMs: options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs,
+        nextOverlay,
+        oldOverlays,
+        onDone: () => {
+          for (const overlay of oldOverlays) entry.fading.delete(overlay)
+          if (entry.controller === controller) delete entry.controller
+        },
+        removeOverlay: (overlay) => this.#map.removeTileOverlay(overlay),
+        targetOpacity,
+      }
+      if (options.signal !== undefined) crossfadeOptions.signal = options.signal
+
+      controller = crossfadeMapKitOverlayOpacity(crossfadeOptions)
+      entry.controller = controller
+      await controller.finished
+    }
+    return activate()
   }
 
   get(id: string): TTileOverlay | undefined {
@@ -334,7 +397,22 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     return [...this.#entries.keys()]
   }
 
-  #createOverlay(descriptor: MapKitLayerDescriptor, opacity: number): TTileOverlay {
+  #createOverlay(
+    descriptor: MapKitLayerDescriptor,
+    opacity: number,
+    onFirstImage?: () => void,
+  ): TTileOverlay {
+    if ('imageForTile' in descriptor) {
+      const lifecycle: { onError?: (reason: unknown) => void; onFirstImage?: () => void } = {}
+      if (descriptor.onTileError) lifecycle.onError = descriptor.onTileError
+      if (onFirstImage) lifecycle.onFirstImage = onFirstImage
+      return createMapKitAsyncTileOverlay(
+        this.#mapkit,
+        descriptor.imageForTile,
+        overlayOptionsForDescriptor(descriptor, opacity),
+        lifecycle,
+      )
+    }
     const urlTemplate = createBoundsGatedUrlTemplate(descriptor.urlTemplate, descriptor.bounds)
     return createMapKitTileOverlay(
       this.#mapkit,

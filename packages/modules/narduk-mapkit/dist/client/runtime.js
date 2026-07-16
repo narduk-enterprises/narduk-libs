@@ -41,13 +41,41 @@ export function createMapKitRegionForLngLatBounds(mapkit, bounds, options = {}) 
     const region = computeMapKitRegionForLngLatBounds(bounds, options);
     return region ? createMapKitCoordinateRegion(mapkit, region) : null;
 }
-export function createMapKitTileOverlay(mapkit, urlTemplate, options = {}) {
-    if (typeof urlTemplate === 'string' && !urlTemplate.trim())
-        throw new Error('urlTemplate is required');
-    if (typeof urlTemplate !== 'string' && typeof urlTemplate !== 'function') {
-        throw new Error('urlTemplate is required');
+export function createMapKitTileOverlay(mapkit, source, options = {}) {
+    if (typeof source === 'string' && !source.trim())
+        throw new Error('tile overlay source is required');
+    if (typeof source !== 'string' && typeof source !== 'function') {
+        throw new Error('tile overlay source is required');
     }
-    return new mapkit.TileOverlay(urlTemplate, options);
+    return new mapkit.TileOverlay(source, options);
+}
+/**
+ * Construct a MapKit JS 6 Promise<ImageSource> tile overlay and expose the
+ * first usable image as a lifecycle event for safe layer replacement.
+ */
+export function createMapKitAsyncTileOverlay(mapkit, imageForTile, options = {}, lifecycle = {}) {
+    let hasImage = false;
+    const source = (x, y, z, scale, data) => {
+        try {
+            return imageForTile(x, y, z, scale, data)
+                .then((image) => {
+                if (image !== null && !hasImage) {
+                    hasImage = true;
+                    lifecycle.onFirstImage?.();
+                }
+                return image;
+            })
+                .catch((reason) => {
+                lifecycle.onError?.(reason);
+                return null;
+            });
+        }
+        catch (reason) {
+            lifecycle.onError?.(reason);
+            return Promise.resolve(null);
+        }
+    };
+    return createMapKitTileOverlay(mapkit, source, options);
 }
 export function uniqueMapKitOverlays(overlays) {
     return [...new Set(overlays)];

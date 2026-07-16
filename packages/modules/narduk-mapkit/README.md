@@ -29,6 +29,8 @@ domain-specific behavior.
   testing, and route playback.
 - MapKit JS runtime helpers for coordinates, coordinate regions, tile overlays,
   and cancellable opacity crossfades.
+- MapKit JS 6 async image-source overlays with first-image lifecycle reporting
+  and bounded replacement readiness.
 - A MapKit JS layer registry for multiple live AOI tile overlays with
   independent opacity, bounds-gated tile URLs, and replacement fades.
 - Idempotent vector-overlay attachment and bounded tile-intersection caching.
@@ -189,6 +191,22 @@ const map = new window.mapkit.Map('map')
 MapKit once, reuses fresh tokens until they approach expiry, and coalesces
 concurrent token refreshes.
 
+For MapKit JS 6 async tile sources, load the core bundle and map libraries:
+
+```ts
+import {
+  MAPKIT_JS_V6_SCRIPT_URL,
+  initializeMapKit,
+  loadMapKitLibraries,
+} from '@narduk-geo/narduk-mapkit/client'
+
+const mapkit = await initializeMapKit({
+  scriptUrl: MAPKIT_JS_V6_SCRIPT_URL,
+  tokenEndpoint: '/api/mapkit-token',
+})
+await loadMapKitLibraries(mapkit)
+```
+
 ## Shared Region Framing
 
 Use package geometry to keep bounds logic out of app components:
@@ -285,10 +303,34 @@ await registry.replace('vegetation', {
 })
 ```
 
+MapKit JS 6 consumers can register authenticated or cache-backed image
+providers directly. Waiting for the first usable image is bounded, so a
+provider that never signals readiness cannot leave the previous layer visible
+forever:
+
+```ts
+registry.register({
+  id: 'farm-imagery',
+  imageForTile: (x, y, z, scale) => provider.imageForTile(x, y, z, scale),
+})
+
+await registry.replace(
+  'farm-imagery',
+  {
+    id: 'farm-imagery',
+    imageForTile: (x, y, z, scale) => nextProvider.imageForTile(x, y, z, scale),
+    onTileError: console.error,
+  },
+  { activateWhen: 'first-image', readinessTimeoutMs: 1500 },
+)
+```
+
 When `bounds` are present, tile URLs outside the layer extent resolve to a
 valid 1x1 transparent PNG data URI before any network request. `replace()`
 requires an already-registered id and folds any still-fading overlays for that
-id into the next crossfade. `unregister()` is a no-op for unknown ids.
+id into the next crossfade. Async replacements may activate immediately or on
+their first image, with a bounded timeout that guarantees stale overlays are
+retired. `unregister()` is a no-op for unknown ids.
 
 ## Playback
 
