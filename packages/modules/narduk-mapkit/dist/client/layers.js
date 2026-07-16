@@ -198,9 +198,15 @@ export class MapKitLayerRegistry {
         for (const overlay of oldOverlays)
             entry.fading.add(overlay);
         const targetOpacity = descriptor.opacity ?? 1;
+        const crossfadeDurationMs = options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs;
+        // MapKit JS does not consistently repaint a TileOverlay after mutating its
+        // opacity in Safari. For an atomic replacement, construct the incoming
+        // overlay at its final opacity and use readiness only to decide when the
+        // previous overlay can be retired.
+        const replaceAtomically = crossfadeDurationMs === 0;
         let markReady = () => { };
         const ready = new Promise((resolve) => { markReady = resolve; });
-        const nextOverlay = this.#createOverlay(descriptor, 0, markReady);
+        const nextOverlay = this.#createOverlay(descriptor, replaceAtomically ? targetOpacity : 0, markReady);
         this.#map.addTileOverlay(nextOverlay);
         entry.overlay = nextOverlay;
         let cancelPending = () => { };
@@ -234,9 +240,16 @@ export class MapKitLayerRegistry {
                 return;
             if (entry.pending?.cancel === cancelPending)
                 delete entry.pending;
+            if (replaceAtomically) {
+                for (const overlay of oldOverlays) {
+                    this.#map.removeTileOverlay(overlay);
+                    entry.fading.delete(overlay);
+                }
+                return;
+            }
             let controller;
             const crossfadeOptions = {
-                durationMs: options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs,
+                durationMs: crossfadeDurationMs,
                 nextOverlay,
                 oldOverlays,
                 onDone: () => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-07-16
+
+- Made zero-duration layer replacement construct the incoming overlay at its
+  final opacity before retiring the previous overlay. This avoids Safari
+  MapKit's unreliable repainting after mutable `TileOverlay.opacity` changes.
+
 ## 1.1.0 - 2026-07-16
 
 - Added MapKit JS 6 core-library loading and asynchronous

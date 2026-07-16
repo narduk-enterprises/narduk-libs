@@ -247,10 +247,9 @@ describe('MapKitLayerRegistry', () => {
 
     expect(firstReplacement).toBe(added[1])
     expect(secondReplacement).toBe(added[2])
-    expect(removed).toEqual([])
-    expect(callbacks.size).toBe(1)
+    expect(new Set(removed)).toEqual(new Set([initial, firstReplacement]))
+    expect(callbacks.size).toBe(0)
 
-    callbacks.values().next().value?.(Date.now())
     await Promise.all([firstReplace, secondReplace])
 
     expect(new Set(removed)).toEqual(new Set([initial, firstReplacement]))
@@ -296,6 +295,7 @@ describe('MapKitLayerRegistry', () => {
 
     expect(added).toHaveLength(2)
     expect(removed).toEqual([])
+    expect(added[1]?.opacity).toBe(1)
 
     await vi.advanceTimersByTimeAsync(250)
     await replacement
