@@ -18,7 +18,9 @@ permissions:
 jobs:
   package-gates:
     name: package / ${{ matrix.label }}
-    runs-on: [self-hosted, Linux, X64, proxmox]
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, linux-ci]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -196,7 +198,9 @@ jobs:
     name: verify
     if: always()
     needs: package-gates
-    runs-on: [self-hosted, Linux, X64, proxmox]
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, linux-ci]
     timeout-minutes: 5
     steps:
       - name: Require every package gate
