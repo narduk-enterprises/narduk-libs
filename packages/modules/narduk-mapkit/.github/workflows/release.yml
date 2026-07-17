@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   release:
-    runs-on: [self-hosted, Linux, X64, proxmox]
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
     timeout-minutes: 30
     env:
       NODE_AUTH_TOKEN: ${{ github.token }}
