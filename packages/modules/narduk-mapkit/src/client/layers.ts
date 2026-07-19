@@ -67,6 +67,8 @@ export interface MapKitLayerRegistryOptions<TTileOverlay> {
 
 interface MapKitLayerRegistryEntry<TTileOverlay extends MapKitOpacityTarget> {
   controller?: MapKitOverlayCrossfadeController
+  /** Last applied descriptor; used by `reconcile()` to skip no-op source swaps. */
+  descriptor?: MapKitLayerDescriptor
   fading: Set<TTileOverlay>
   overlay: TTileOverlay
   pending?: { cancel: () => void }
@@ -77,6 +79,37 @@ export interface MapKitLayerReplaceOptions {
   crossfadeDurationMs?: number
   readinessTimeoutMs?: number
   signal?: AbortSignal
+}
+
+export interface MapKitLayerReconcileOptions {
+  /** Crossfade duration for source changes. Use `0` for atomic Safari-safe swaps. */
+  crossfadeDurationMs?: number
+  signal?: AbortSignal
+}
+
+/**
+ * Stable identity for the tile source of a layer descriptor, excluding opacity.
+ * Used by `MapKitLayerRegistry.reconcile()` to decide setOpacity vs replace.
+ */
+export function layerSourceIdentity(descriptor: MapKitLayerDescriptor): string {
+  if ('imageForTile' in descriptor) {
+    return [
+      'async',
+      descriptor.id,
+      JSON.stringify(descriptor.data ?? null),
+      String(descriptor.minimumZ ?? ''),
+      String(descriptor.maximumZ ?? ''),
+    ].join('|')
+  }
+  return [
+    'url',
+    descriptor.id,
+    descriptor.urlTemplate,
+    JSON.stringify(descriptor.bounds ?? null),
+    String(descriptor.minimumZ ?? ''),
+    String(descriptor.maximumZ ?? ''),
+    JSON.stringify(descriptor.data ?? null),
+  ].join('|')
 }
 
 interface TileBounds {
@@ -289,6 +322,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     const overlay = this.#createOverlay(descriptor, descriptor.opacity ?? 1)
     this.#map.addTileOverlay(overlay)
     this.#entries.set(descriptor.id, {
+      descriptor,
       fading: new Set(),
       overlay,
     })
@@ -340,6 +374,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     const nextOverlay = this.#createOverlay(descriptor, replaceAtomically ? targetOpacity : 0, markReady)
     this.#map.addTileOverlay(nextOverlay)
     entry.overlay = nextOverlay
+    entry.descriptor = descriptor
 
     let cancelPending: () => void = () => {}
     const cancelled = new Promise<'cancel'>((resolve) => {
@@ -409,6 +444,69 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
 
   list(): readonly string[] {
     return [...this.#entries.keys()]
+  }
+
+  /**
+   * Sync the registry to exactly `descriptors` (order preserved for listing only).
+   *
+   * Designed for multi-dataset stacks where several tile overlays share a map
+   * with independent opacity and may change dated URL templates over time:
+   * - new ids → `register`
+   * - removed ids → `unregister`
+   * - same id + same source identity → `setOpacity` only
+   * - same id + changed source → `replace` (atomic when crossfade is 0)
+   *
+   * Source identity is derived from urlTemplate/bounds/z-range (or `data` for
+   * async image overlays), not from opacity.
+   */
+  async reconcile(
+    descriptors: readonly MapKitLayerDescriptor[],
+    options: MapKitLayerReconcileOptions = {},
+  ): Promise<void> {
+    const desiredIds = new Set<string>()
+    for (const descriptor of descriptors) {
+      requireLayerId(descriptor.id)
+      if (desiredIds.has(descriptor.id)) {
+        throw new Error(`duplicate layer id "${descriptor.id}" in reconcile()`)
+      }
+      desiredIds.add(descriptor.id)
+    }
+
+    for (const id of [...this.#entries.keys()]) {
+      if (!desiredIds.has(id)) this.unregister(id)
+    }
+
+    const crossfadeDurationMs =
+      options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs
+    const replacements: Promise<void>[] = []
+
+    for (const descriptor of descriptors) {
+      const entry = this.#entries.get(descriptor.id)
+      const opacity = descriptor.opacity ?? 1
+      if (!entry) {
+        this.register(descriptor)
+        continue
+      }
+
+      const previous = entry.descriptor
+      if (previous && layerSourceIdentity(previous) === layerSourceIdentity(descriptor)) {
+        this.setOpacity(descriptor.id, opacity)
+        entry.descriptor = descriptor
+        continue
+      }
+
+      replacements.push(
+        this.replace(descriptor.id, descriptor, {
+          crossfadeDurationMs,
+          ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        }).then(() => {
+          const current = this.#entries.get(descriptor.id)
+          if (current) current.descriptor = descriptor
+        }),
+      )
+    }
+
+    await Promise.all(replacements)
   }
 
   #createOverlay(

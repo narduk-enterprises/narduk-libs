@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 - 2026-07-19
+
+- Added `MapKitLayerRegistry.reconcile()` for multi-dataset tile stacks: sync a
+  desired layer set in one call with independent opacity, register/unregister
+  by id, and replace only when the tile source identity changes.
+- Added `layerSourceIdentity()` so consumers can fingerprint urlTemplate /
+  bounds / z-range (or async `data`) without comparing opacity.
+
 ## 1.1.1 - 2026-07-16
 
 - Made zero-duration layer replacement construct the incoming overlay at its

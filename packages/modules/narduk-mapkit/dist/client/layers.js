@@ -4,6 +4,30 @@ const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA
 const DEFAULT_REGION_PADDING = 0.05;
 const DEFAULT_REGION_MIN_SPAN_DELTA = 0.01;
 const DEFAULT_REPLACE_CROSSFADE_DURATION_MS = 400;
+/**
+ * Stable identity for the tile source of a layer descriptor, excluding opacity.
+ * Used by `MapKitLayerRegistry.reconcile()` to decide setOpacity vs replace.
+ */
+export function layerSourceIdentity(descriptor) {
+    if ('imageForTile' in descriptor) {
+        return [
+            'async',
+            descriptor.id,
+            JSON.stringify(descriptor.data ?? null),
+            String(descriptor.minimumZ ?? ''),
+            String(descriptor.maximumZ ?? ''),
+        ].join('|');
+    }
+    return [
+        'url',
+        descriptor.id,
+        descriptor.urlTemplate,
+        JSON.stringify(descriptor.bounds ?? null),
+        String(descriptor.minimumZ ?? ''),
+        String(descriptor.maximumZ ?? ''),
+        JSON.stringify(descriptor.data ?? null),
+    ].join('|');
+}
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -163,6 +187,7 @@ export class MapKitLayerRegistry {
         const overlay = this.#createOverlay(descriptor, descriptor.opacity ?? 1);
         this.#map.addTileOverlay(overlay);
         this.#entries.set(descriptor.id, {
+            descriptor,
             fading: new Set(),
             overlay,
         });
@@ -209,6 +234,7 @@ export class MapKitLayerRegistry {
         const nextOverlay = this.#createOverlay(descriptor, replaceAtomically ? targetOpacity : 0, markReady);
         this.#map.addTileOverlay(nextOverlay);
         entry.overlay = nextOverlay;
+        entry.descriptor = descriptor;
         let cancelPending = () => { };
         const cancelled = new Promise((resolve) => {
             cancelPending = () => resolve('cancel');
@@ -277,6 +303,58 @@ export class MapKitLayerRegistry {
     }
     list() {
         return [...this.#entries.keys()];
+    }
+    /**
+     * Sync the registry to exactly `descriptors` (order preserved for listing only).
+     *
+     * Designed for multi-dataset stacks where several tile overlays share a map
+     * with independent opacity and may change dated URL templates over time:
+     * - new ids → `register`
+     * - removed ids → `unregister`
+     * - same id + same source identity → `setOpacity` only
+     * - same id + changed source → `replace` (atomic when crossfade is 0)
+     *
+     * Source identity is derived from urlTemplate/bounds/z-range (or `data` for
+     * async image overlays), not from opacity.
+     */
+    async reconcile(descriptors, options = {}) {
+        const desiredIds = new Set();
+        for (const descriptor of descriptors) {
+            requireLayerId(descriptor.id);
+            if (desiredIds.has(descriptor.id)) {
+                throw new Error(`duplicate layer id "${descriptor.id}" in reconcile()`);
+            }
+            desiredIds.add(descriptor.id);
+        }
+        for (const id of [...this.#entries.keys()]) {
+            if (!desiredIds.has(id))
+                this.unregister(id);
+        }
+        const crossfadeDurationMs = options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs;
+        const replacements = [];
+        for (const descriptor of descriptors) {
+            const entry = this.#entries.get(descriptor.id);
+            const opacity = descriptor.opacity ?? 1;
+            if (!entry) {
+                this.register(descriptor);
+                continue;
+            }
+            const previous = entry.descriptor;
+            if (previous && layerSourceIdentity(previous) === layerSourceIdentity(descriptor)) {
+                this.setOpacity(descriptor.id, opacity);
+                entry.descriptor = descriptor;
+                continue;
+            }
+            replacements.push(this.replace(descriptor.id, descriptor, {
+                crossfadeDurationMs,
+                ...(options.signal !== undefined ? { signal: options.signal } : {}),
+            }).then(() => {
+                const current = this.#entries.get(descriptor.id);
+                if (current)
+                    current.descriptor = descriptor;
+            }));
+        }
+        await Promise.all(replacements);
     }
     #createOverlay(descriptor, opacity, onFirstImage) {
         if ('imageForTile' in descriptor) {

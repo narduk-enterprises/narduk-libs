@@ -66,8 +66,9 @@ export async function mountLayerRegistryMap(container: HTMLElement) {
     mapkit,
   })
 
-  registry.register(vegetationLayer)
-  registry.register(moistureLayer)
+  // One-shot multi-layer stack (independent opacity). Prefer reconcile when the
+  // desired set changes over time — e.g. earthdata-viewer companion datasets.
+  await registry.reconcile([vegetationLayer, moistureLayer], { crossfadeDurationMs: 0 })
 
   async function replaceVegetationFrame(urlTemplate: string): Promise<void> {
     await registry.replace('vegetation', {
@@ -76,5 +77,11 @@ export async function mountLayerRegistryMap(container: HTMLElement) {
     })
   }
 
-  return { map, registry, replaceVegetationFrame }
+  async function setStack(
+    layers: Array<typeof vegetationLayer | typeof moistureLayer>,
+  ): Promise<void> {
+    await registry.reconcile(layers, { crossfadeDurationMs: 0 })
+  }
+
+  return { map, registry, replaceVegetationFrame, setStack }
 }

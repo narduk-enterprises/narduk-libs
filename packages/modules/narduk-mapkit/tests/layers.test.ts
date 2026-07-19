@@ -145,6 +145,48 @@ describe('MapKitLayerRegistry', () => {
     vi.unstubAllGlobals()
   })
 
+  it('reconciles a multi-layer stack by id with independent opacity', async () => {
+    const added: TileOverlay[] = []
+    const removed: TileOverlay[] = []
+    const registry = new MapKitLayerRegistry({
+      map: {
+        addTileOverlay: (overlay) => added.push(overlay),
+        removeTileOverlay: (overlay) => removed.push(overlay),
+      },
+      mapkit,
+    })
+
+    await registry.reconcile([
+      { id: 'primary', opacity: 0.8, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
+      { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day1/{z}/{x}/{y}.png' },
+    ], { crossfadeDurationMs: 0 })
+
+    expect(registry.list()).toEqual(['primary', 'companion'])
+    expect(registry.get('primary')?.opacity).toBe(0.8)
+    expect(registry.get('companion')?.opacity).toBe(0.4)
+    expect(added).toHaveLength(2)
+
+    const primaryOverlay = registry.get('primary')
+    await registry.reconcile([
+      { id: 'primary', opacity: 0.5, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
+      { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' },
+    ], { crossfadeDurationMs: 0 })
+
+    // Opacity-only change reuses the overlay instance.
+    expect(registry.get('primary')).toBe(primaryOverlay)
+    expect(registry.get('primary')?.opacity).toBe(0.5)
+    // Source change replaces companion.
+    expect(registry.get('companion')).not.toBe(added[1])
+    expect(removed).toContain(added[1])
+
+    await registry.reconcile([
+      { id: 'companion', opacity: 0.3, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' },
+    ], { crossfadeDurationMs: 0 })
+    expect(registry.list()).toEqual(['companion'])
+    expect(registry.has('primary')).toBe(false)
+    expect(removed).toContain(primaryOverlay)
+  })
+
   it('registers, unregisters, and sets opacity independently by layer id', () => {
     const added: TileOverlay[] = []
     const removed: TileOverlay[] = []
