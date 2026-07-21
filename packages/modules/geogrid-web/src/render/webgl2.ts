@@ -251,7 +251,14 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private ensureFrame(frame: TemporalRasterFrame, protectedDates?: Set<string>): GpuFrame | null {
     const protectedKeys = protectedDates ?? new Set([frame.date])
     protectedKeys.add(frame.date)
-    const contentKey = frameContentKey(frame.date, frame.width, frame.height, frame.values, frame.mask)
+    const contentKey = frameContentKey(
+      frame.date,
+      frame.width,
+      frame.height,
+      frame.values,
+      frame.mask,
+      frame.channels,
+    )
     const cached = this.frames.get(frame.date)
     if (cached && cached.contentKey === contentKey) {
       this.frames.delete(frame.date)
@@ -277,22 +284,30 @@ export class WebGL2GridBackend implements GridRenderBackend {
     ) {
       return null
     }
-    const textures = valuePlanes.map((data) =>
-      this.createTexture(data!, frame.width, frame.height, this.mode === 'rgb'),
-    )
-    const mask = this.createMaskTexture(frame.mask, frame.width, frame.height)
-    if (textures.some((texture) => !texture) || !mask) return null
-    const gpuFrame: GpuFrame = {
-      key: frame.date,
-      contentKey,
-      mask,
-      values: textures as WebGLTexture[],
-      width: frame.width,
-      height: frame.height,
+    const textures: WebGLTexture[] = []
+    try {
+      for (const data of valuePlanes) {
+        const texture = this.createTexture(data!, frame.width, frame.height, this.mode === 'rgb')
+        if (!texture) throw new Error('texture create failed')
+        textures.push(texture)
+      }
+      const mask = this.createMaskTexture(frame.mask, frame.width, frame.height)
+      if (!mask) throw new Error('mask create failed')
+      const gpuFrame: GpuFrame = {
+        key: frame.date,
+        contentKey,
+        mask,
+        values: textures,
+        width: frame.width,
+        height: frame.height,
+      }
+      this.frames.set(frame.date, gpuFrame)
+      this.evictFrames(protectedKeys)
+      return gpuFrame
+    } catch {
+      textures.forEach((texture) => this.gl.deleteTexture(texture))
+      return null
     }
-    this.frames.set(frame.date, gpuFrame)
-    this.evictFrames(protectedKeys)
-    return gpuFrame
   }
 
   private createTexture(

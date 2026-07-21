@@ -92,6 +92,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       state.lower.height,
       state.lower.values,
       state.lower.mask,
+      state.lower.channels,
     )
     const upperKey = frameContentKey(
       state.upper.date,
@@ -99,6 +100,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       state.upper.height,
       state.upper.values,
       state.upper.mask,
+      state.upper.channels,
     )
     const key = `${lowerKey}|${upperKey}|${progress.toFixed(4)}|${this.style.scale}|${this.style.valueRange.lowerBound}:${this.style.valueRange.upperBound}|${this.style.ramp.length}`
     if (!this.lastRaster || this.lastRasterKey !== key) {

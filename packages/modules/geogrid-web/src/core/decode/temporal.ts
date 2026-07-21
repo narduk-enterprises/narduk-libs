@@ -106,11 +106,6 @@ export async function decodeTemporalChunk(
     throw new Error('Temporal artifact pixel count is out of allowed range')
   }
   offset += headerLength
-  const compressed = bytes.subarray(offset)
-  const raw = await inflate(compressed)
-  if (raw.byteLength > TEMPORAL_DECODE_LIMITS.maxDecompressedBytes) {
-    throw new Error('Temporal artifact decompressed payload exceeds size limit')
-  }
   const renderMode =
     manifest.renderMode ?? header.renderMode ?? (manifest.planeCount === 3 ? 'rgb' : 'scalar')
   if (renderMode === 'scalar' && manifest.dtype === 'uint8') {
@@ -125,9 +120,19 @@ export async function decodeTemporalChunk(
   }
   const bytesPerSample = renderMode === 'rgb' ? 1 : 2
   const valuesBytes = header.frameCount * pixelCount * planeCount * bytesPerSample
+  const masksBytes = header.frameCount * pixelCount
+  const expectedDecompressed = valuesBytes + masksBytes
+  if (expectedDecompressed > TEMPORAL_DECODE_LIMITS.maxDecompressedBytes) {
+    throw new Error('Temporal artifact decompressed payload exceeds size limit')
+  }
+  const compressed = bytes.subarray(offset)
+  const raw = await inflate(compressed)
+  if (raw.byteLength > TEMPORAL_DECODE_LIMITS.maxDecompressedBytes) {
+    throw new Error('Temporal artifact decompressed payload exceeds size limit')
+  }
   const values = raw.subarray(0, valuesBytes)
   const masks = raw.subarray(valuesBytes)
-  if (values.length !== valuesBytes || masks.length !== header.frameCount * pixelCount) {
+  if (values.length !== valuesBytes || masks.length !== masksBytes) {
     throw new Error('Temporal artifact chunk is truncated')
   }
   return header.dates.map((date, frameIndex) => ({

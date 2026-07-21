@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — 2026-07-21
+
+Post-review hardening (round 1).
+
+### Fixed
+
+- Pre-inflate size check so oversized frame dimensions cannot allocate past `maxDecompressedBytes`
+- RGB planes included in `frameContentKey` so G/B-only updates bust GPU/CPU caches
+- Partial WebGL texture upload failures free already-created textures
+
 ## 0.1.1 — 2026-07-21
 
 Production-hardening pass after multi-agent review.

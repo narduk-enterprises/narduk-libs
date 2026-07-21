@@ -89,9 +89,21 @@ export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvT
   }
 }
 
+function hashPlane(values: ArrayLike<number>, seed: number): number {
+  const n = values.length
+  let hash = (seed ^ (n * 83492791)) | 0
+  const step = Math.max(1, Math.floor(n / 64))
+  for (let i = 0; i < n; i += step) {
+    hash = (hash * 31 + (values[i] ?? 0)) | 0
+  }
+  if (n > 0) hash = (hash * 31 + (values[n - 1] ?? 0)) | 0
+  return hash
+}
+
 /**
  * Content fingerprint for a frame's sample payload (not the date alone).
  * Used so GPU/CPU caches invalidate when the same date is re-decoded with new bytes.
+ * Includes all RGB planes when present so G/B-only updates bust the cache.
  */
 export function frameContentKey(
   date: string,
@@ -99,17 +111,15 @@ export function frameContentKey(
   height: number,
   values: ArrayLike<number>,
   mask: ArrayLike<number>,
+  channels?: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>],
 ): string {
-  const n = Math.min(values.length, mask.length)
-  let hash = (width * 73856093) ^ (height * 19349663) ^ (n * 83492791)
-  const step = Math.max(1, Math.floor(n / 64))
-  for (let i = 0; i < n; i += step) {
-    hash = (hash * 31 + (values[i] ?? 0)) | 0
-    hash = (hash * 31 + (mask[i] ?? 0)) | 0
+  let hash = (width * 73856093) ^ (height * 19349663)
+  hash = hashPlane(values, hash)
+  hash = hashPlane(mask, hash)
+  if (channels) {
+    hash = hashPlane(channels[0], hash ^ 0x11111111)
+    hash = hashPlane(channels[1], hash ^ 0x22222222)
+    hash = hashPlane(channels[2], hash ^ 0x33333333)
   }
-  if (n > 0) {
-    hash = (hash * 31 + (values[n - 1] ?? 0)) | 0
-    hash = (hash * 31 + (mask[n - 1] ?? 0)) | 0
-  }
-  return `${date}|${width}x${height}|${n}|${hash >>> 0}`
+  return `${date}|${width}x${height}|${values.length}|${mask.length}|${hash >>> 0}`
 }

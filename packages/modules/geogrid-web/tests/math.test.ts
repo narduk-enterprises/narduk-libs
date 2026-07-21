@@ -109,6 +109,24 @@ describe('frameContentKey', () => {
     )
   })
 
+  it('changes when only a green RGB plane changes', () => {
+    const values = new Uint8Array([1, 2])
+    const mask = new Uint8Array([1, 1])
+    const chA: [Uint8Array, Uint8Array, Uint8Array] = [
+      new Uint8Array([10, 10]),
+      new Uint8Array([20, 20]),
+      new Uint8Array([30, 30]),
+    ]
+    const chB: [Uint8Array, Uint8Array, Uint8Array] = [
+      new Uint8Array([10, 10]),
+      new Uint8Array([21, 20]),
+      new Uint8Array([30, 30]),
+    ]
+    expect(frameContentKey('d', 2, 1, values, mask, chA)).not.toBe(
+      frameContentKey('d', 2, 1, values, mask, chB),
+    )
+  })
+
   it('is stable for identical payloads', () => {
     const values = new Uint16Array([10, 20, 30])
     const mask = new Uint8Array([1, 0, 1])
