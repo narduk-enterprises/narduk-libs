@@ -42,8 +42,10 @@ export interface GeoJSONFeatureCollection {
 }
 
 export interface OverlayStyle {
+  fillRule?: 'evenodd' | 'nonzero'
   fillColor: string
   fillOpacity?: number
+  lineDash?: number[]
   lineWidth: number
   strokeColor: string
   strokeOpacity?: number
@@ -146,6 +148,7 @@ const mapContainer = ref<HTMLElement | null>(null)
 
 const pinCleanups: Array<() => void> = []
 const ownedPinAnnotations: Array<InstanceType<typeof mapkit.Annotation>> = []
+const ownedGeoJSONOverlays: object[] = []
 let map: InstanceType<typeof mapkit.Map> | null = null
 let overviewRegion: InstanceType<typeof mapkit.CoordinateRegion> | null | undefined = null
 const overlayFeatureMap = new WeakMap<object, GeoJSONFeature>()
@@ -285,37 +288,38 @@ function defaultLineOverlayStyle(): OverlayStyle {
 
 function buildPolygonRings(
   geometry: GeoJSONGeometry,
-): Array<Array<InstanceType<typeof mapkit.Coordinate>>> {
+): Array<Array<Array<InstanceType<typeof mapkit.Coordinate>>>> {
   const coords = geometry.coordinates
   if (!Array.isArray(coords)) return []
 
-  const rings: Array<Array<InstanceType<typeof mapkit.Coordinate>>> = []
+  const polygons: Array<Array<Array<InstanceType<typeof mapkit.Coordinate>>>> = []
 
   if (geometry.type === 'LineString') {
-    return rings
+    return polygons
   }
 
   if (geometry.type === 'Polygon') {
-    const outer = coords[0]
-    if (Array.isArray(outer)) {
-      const ring = outer
+    const rings = coords
+      .filter(Array.isArray)
+      .map((sourceRing) => sourceRing
         .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
-        .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0]))
-      if (ring.length >= 3) rings.push(ring)
-    }
+        .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])))
+      .filter((ring) => ring.length >= 3)
+    if (rings.length) polygons.push(rings)
   } else if (geometry.type === 'MultiPolygon') {
     for (const polygon of coords) {
       if (!Array.isArray(polygon)) continue
-      const outer = polygon[0]
-      if (!Array.isArray(outer)) continue
-      const ring = outer
-        .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
-        .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0]))
-      if (ring.length >= 3) rings.push(ring)
+      const rings = polygon
+        .filter(Array.isArray)
+        .map((sourceRing) => sourceRing
+          .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
+          .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])))
+        .filter((ring) => ring.length >= 3)
+      if (rings.length) polygons.push(rings)
     }
   }
 
-  return rings
+  return polygons
 }
 
 function buildLineStringCoordinates(
@@ -428,6 +432,7 @@ function initMap() {
   }
 
   map = new mapkit.Map(mapContainer.value, mapOpts)
+  map.addEventListener('select', handleOverlaySelect)
 
   if (excludeAllPoi && map.pointOfInterestFilter !== excludeAllPoi) {
     map.pointOfInterestFilter = excludeAllPoi
@@ -572,17 +577,19 @@ function addOverlays() {
         fillColor: styleCfg.fillColor,
         fillOpacity: styleCfg.fillOpacity ?? 0,
         lineWidth: styleCfg.lineWidth,
+        lineDash: styleCfg.lineDash,
       })
 
       const overlay = new mapkit.PolylineOverlay(lineCoordinates, { style })
       overlay.enabled = true
       overlayFeatureMap.set(overlay, feature)
+      ownedGeoJSONOverlays.push(overlay)
       map.addOverlay(overlay)
       continue
     }
 
-    const rings = buildPolygonRings(feature.geometry)
-    if (rings.length === 0) continue
+    const polygons = buildPolygonRings(feature.geometry)
+    if (polygons.length === 0) continue
 
     const styleCfg = props.overlayStyleFn
       ? props.overlayStyleFn(feature.properties)
@@ -593,31 +600,33 @@ function addOverlays() {
       strokeOpacity: styleCfg.strokeOpacity ?? 1,
       fillColor: styleCfg.fillColor,
       fillOpacity: styleCfg.fillOpacity ?? 0.2,
+      fillRule: styleCfg.fillRule ?? 'evenodd',
+      lineDash: styleCfg.lineDash,
       lineWidth: styleCfg.lineWidth,
     })
 
-    for (const ring of rings) {
-      const overlay = new mapkit.PolygonOverlay(ring, { style })
+    for (const rings of polygons) {
+      const coordinates = rings.length === 1 ? rings[0] : rings
+      const overlay = new mapkit.PolygonOverlay(coordinates, { style })
       overlay.enabled = true
       overlayFeatureMap.set(overlay, feature)
+      ownedGeoJSONOverlays.push(overlay)
       map.addOverlay(overlay)
     }
   }
+}
 
-  // Listen for overlay selection
-  map.addEventListener('select', (event: { overlay?: object }) => {
-    const overlay = event.overlay
-    if (!overlay) return
-    const feature = overlayFeatureMap.get(overlay)
-    if (feature) {
-      emit('feature-select', feature)
-    }
-  })
+function handleOverlaySelect(event: { overlay?: object }) {
+  const overlay = event.overlay
+  if (!overlay) return
+  const feature = overlayFeatureMap.get(overlay)
+  if (feature) emit('feature-select', feature)
 }
 
 function clearOverlays() {
-  if (!map) return
-  map.removeOverlays(map.overlays)
+  if (!map || ownedGeoJSONOverlays.length === 0) return
+  map.removeOverlays([...ownedGeoJSONOverlays])
+  ownedGeoJSONOverlays.length = 0
 }
 
 // ── Center label annotation ─────────────────────────────────────
@@ -803,6 +812,8 @@ onBeforeUnmount(() => {
   clearPinCleanups()
   removeOwnedPinAnnotations()
   if (map) {
+    map.removeEventListener('select', handleOverlaySelect)
+    clearOverlays()
     map.destroy()
     map = null
   }
