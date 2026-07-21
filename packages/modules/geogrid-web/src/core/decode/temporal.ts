@@ -2,6 +2,16 @@ import type { GridBBox, GridRenderMode, GridScale } from '../models.js'
 
 const MAGIC = new TextEncoder().encode('NARDUKTR1\0')
 
+/** Safety caps for untrusted network chunks (fail closed). */
+export const TEMPORAL_DECODE_LIMITS = {
+  maxHeaderBytes: 256 * 1024,
+  maxWidth: 16_384,
+  maxHeight: 16_384,
+  maxFrames: 512,
+  maxPixelsPerFrame: 64 * 1024 * 1024,
+  maxDecompressedBytes: 512 * 1024 * 1024,
+} as const
+
 export interface TemporalChunkDescriptor {
   firstFrame: number
   frameCount: number
@@ -58,6 +68,9 @@ export async function decodeTemporalChunk(
   let offset = MAGIC.byteLength
   const headerLength = view.getUint32(offset, true)
   offset += 4
+  if (headerLength <= 0 || headerLength > TEMPORAL_DECODE_LIMITS.maxHeaderBytes) {
+    throw new Error('Temporal artifact header length is invalid')
+  }
   if (offset + headerLength > bytes.byteLength) {
     throw new Error('Temporal artifact header is truncated')
   }
@@ -72,17 +85,45 @@ export async function decodeTemporalChunk(
   if (header.width !== manifest.width || header.height !== manifest.height) {
     throw new Error('Temporal artifact dimensions do not match manifest')
   }
+  if (
+    !Number.isFinite(header.width) ||
+    !Number.isFinite(header.height) ||
+    header.width <= 0 ||
+    header.height <= 0 ||
+    header.width > TEMPORAL_DECODE_LIMITS.maxWidth ||
+    header.height > TEMPORAL_DECODE_LIMITS.maxHeight
+  ) {
+    throw new Error('Temporal artifact dimensions are out of allowed range')
+  }
   if (!Array.isArray(header.dates) || header.dates.length !== header.frameCount) {
     throw new Error('Temporal artifact header dates do not match frameCount')
+  }
+  if (header.frameCount <= 0 || header.frameCount > TEMPORAL_DECODE_LIMITS.maxFrames) {
+    throw new Error('Temporal artifact frameCount is out of allowed range')
+  }
+  const pixelCount = header.width * header.height
+  if (pixelCount > TEMPORAL_DECODE_LIMITS.maxPixelsPerFrame) {
+    throw new Error('Temporal artifact pixel count is out of allowed range')
   }
   offset += headerLength
   const compressed = bytes.subarray(offset)
   const raw = await inflate(compressed)
-  const pixelCount = header.width * header.height
+  if (raw.byteLength > TEMPORAL_DECODE_LIMITS.maxDecompressedBytes) {
+    throw new Error('Temporal artifact decompressed payload exceeds size limit')
+  }
   const renderMode =
     manifest.renderMode ?? header.renderMode ?? (manifest.planeCount === 3 ? 'rgb' : 'scalar')
+  if (renderMode === 'scalar' && manifest.dtype === 'uint8') {
+    throw new Error('Scalar temporal frames require dtype uint16 (uint8 scalar is not supported)')
+  }
   const planeCount = manifest.planeCount ?? header.planeCount ?? (renderMode === 'rgb' ? 3 : 1)
-  const bytesPerSample = manifest.dtype === 'uint8' || renderMode === 'rgb' ? 1 : 2
+  if (renderMode === 'rgb' && planeCount !== 3) {
+    throw new Error('RGB temporal frames require planeCount 3')
+  }
+  if (renderMode === 'scalar' && planeCount !== 1) {
+    throw new Error('Scalar temporal frames require planeCount 1')
+  }
+  const bytesPerSample = renderMode === 'rgb' ? 1 : 2
   const valuesBytes = header.frameCount * pixelCount * planeCount * bytesPerSample
   const values = raw.subarray(0, valuesBytes)
   const masks = raw.subarray(valuesBytes)

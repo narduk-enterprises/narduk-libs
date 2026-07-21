@@ -2,13 +2,17 @@ import { deflateSync } from 'node:zlib'
 
 import { describe, expect, it } from 'vitest'
 
-import { decodeTemporalChunk, type TemporalRasterManifest } from '../src/core/decode/temporal.js'
+import {
+  decodeTemporalChunk,
+  type TemporalRasterManifest,
+} from '../src/core/decode/temporal.js'
 
 function buildChunk(options: {
   width: number
   height: number
   dates: string[]
   renderMode?: 'scalar' | 'rgb'
+  scalarFill?: number
 }): ArrayBuffer {
   const { width, height, dates } = options
   const renderMode = options.renderMode ?? 'scalar'
@@ -21,7 +25,12 @@ function buildChunk(options: {
   masks.fill(1)
   if (renderMode === 'scalar') {
     const view = new DataView(values.buffer)
-    for (let i = 0; i < pixelCount; i += 1) view.setUint16(i * 2, 32768, true)
+    const fill = options.scalarFill ?? 32768
+    for (let f = 0; f < frameCount; f += 1) {
+      for (let i = 0; i < pixelCount; i += 1) {
+        view.setUint16((f * pixelCount + i) * 2, fill + f, true)
+      }
+    }
   } else {
     values.fill(128)
   }
@@ -73,17 +82,62 @@ describe('decodeTemporalChunk', () => {
     )
   })
 
-  it('decodes a synthetic scalar chunk', async () => {
-    const payload = buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] })
-    const frames = await decodeTemporalChunk(payload, baseManifest())
+  it('decodes a synthetic scalar chunk including odd widths', async () => {
+    // width=3 exercises non-4-byte-aligned R8 mask rows and odd R16 scalar rows.
+    const payload = buildChunk({ width: 3, height: 2, dates: ['2020-01-01'], scalarFill: 1000 })
+    const frames = await decodeTemporalChunk(
+      payload,
+      baseManifest({ width: 3, height: 2, stride: 3 }),
+    )
     expect(frames).toHaveLength(1)
-    expect(frames[0]?.date).toBe('2020-01-01')
-    expect(frames[0]?.width).toBe(2)
+    expect(frames[0]?.width).toBe(3)
     expect(frames[0]?.height).toBe(2)
-    expect(frames[0]?.renderMode).toBe('scalar')
     expect(frames[0]?.values).toBeInstanceOf(Uint16Array)
-    expect(frames[0]?.mask).toHaveLength(4)
-    expect(frames[0]?.values[0]).toBe(32768)
+    expect(frames[0]?.values).toHaveLength(6)
+    expect(frames[0]?.mask).toHaveLength(6)
+    expect(frames[0]?.values[0]).toBe(1000)
+    expect(frames[0]?.mask[0]).toBe(1)
+  })
+
+  it('decodes multi-frame scalar chunks with distinct sample values', async () => {
+    const dates = ['2020-01-01', '2020-01-02']
+    const payload = buildChunk({ width: 2, height: 2, dates, scalarFill: 10 })
+    const frames = await decodeTemporalChunk(
+      payload,
+      baseManifest({
+        frameCount: 2,
+        chunkFrames: 2,
+        chunks: [{ firstFrame: 0, frameCount: 2, dates, url: 'c.bin' }],
+      }),
+    )
+    expect(frames).toHaveLength(2)
+    expect(frames[0]?.values[0]).toBe(10)
+    expect(frames[1]?.values[0]).toBe(11)
+  })
+
+  it('decodes RGB with width not multiple of 4', async () => {
+    const payload = buildChunk({ width: 5, height: 1, dates: ['2020-01-01'], renderMode: 'rgb' })
+    const frames = await decodeTemporalChunk(
+      payload,
+      baseManifest({
+        width: 5,
+        height: 1,
+        stride: 5,
+        dtype: 'uint8',
+        renderMode: 'rgb',
+        planeCount: 3,
+      }),
+    )
+    expect(frames[0]?.renderMode).toBe('rgb')
+    expect(frames[0]?.channels?.[0]).toHaveLength(5)
+    expect(frames[0]?.channels?.[0]?.[0]).toBe(128)
+  })
+
+  it('rejects scalar uint8', async () => {
+    const payload = buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] })
+    await expect(
+      decodeTemporalChunk(payload, baseManifest({ dtype: 'uint8', renderMode: 'scalar' })),
+    ).rejects.toThrow('uint16')
   })
 
   it('rejects dimension mismatch', async () => {

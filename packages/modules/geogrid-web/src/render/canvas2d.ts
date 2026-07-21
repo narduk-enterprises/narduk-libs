@@ -1,4 +1,4 @@
-import { displayValueFromEncoded } from '../core/math.js'
+import { blendEncoded, displayValueFromEncoded, frameContentKey } from '../core/math.js'
 import { sampleRamp } from '../core/color.js'
 import { isUsableViewport, type GridBBox, type GridViewport } from '../core/models.js'
 import type { TemporalRasterFrame } from '../core/decode/temporal.js'
@@ -86,7 +86,21 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     if (!isUsableViewport(viewport)) return
 
     const progress = Math.max(0, Math.min(1, state.progress))
-    const key = `${state.lower.date}|${state.upper.date}|${progress.toFixed(4)}|${this.style.scale}|${this.style.valueRange.lowerBound}:${this.style.valueRange.upperBound}|${this.style.ramp.length}`
+    const lowerKey = frameContentKey(
+      state.lower.date,
+      state.lower.width,
+      state.lower.height,
+      state.lower.values,
+      state.lower.mask,
+    )
+    const upperKey = frameContentKey(
+      state.upper.date,
+      state.upper.width,
+      state.upper.height,
+      state.upper.values,
+      state.upper.mask,
+    )
+    const key = `${lowerKey}|${upperKey}|${progress.toFixed(4)}|${this.style.scale}|${this.style.valueRange.lowerBound}:${this.style.valueRange.upperBound}|${this.style.ramp.length}`
     if (!this.lastRaster || this.lastRasterKey !== key) {
       this.lastRaster =
         state.lower === state.upper || progress === 0
@@ -136,7 +150,8 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const stencil = this.stencil
     const stencilBBox = this.stencilBBox
     if (!stencil || !stencilBBox) return
-    const [stencilWest, stencilSouth, stencilEast, stencilNorth] = stencilBBox
+    const [stencilWest, , stencilEast, stencilNorth] = stencilBBox
+    const stencilSouth = stencilBBox[1]
     const span = viewport.span
     const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
     const viewportNorth = viewport.center.latitude + span.latitudeDelta / 2
@@ -145,11 +160,22 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const sy = ((viewportNorth - stencilNorth) / span.latitudeDelta) * rect.height
     const sw = ((stencilEast - stencilWest) / span.longitudeDelta) * rect.width
     const sh = ((stencilNorth - stencilSouth) / span.latitudeDelta) * rect.height
-    if (sw <= 0 || sh <= 0 || sx > rect.width || sy > rect.height || sx + sw < 0 || sy + sh < 0) return
+    // Match WebGL: alpha 0 everywhere outside the stencil geo bbox.
+    // Build a full-viewport alpha mask that is only non-zero under the stencil.
+    const mask = document.createElement('canvas')
+    mask.width = Math.max(1, Math.round(rect.width))
+    mask.height = Math.max(1, Math.round(rect.height))
+    const maskCtx = mask.getContext('2d')
+    if (!maskCtx) return
+    maskCtx.clearRect(0, 0, mask.width, mask.height)
+    if (sw > 0 && sh > 0) {
+      maskCtx.filter = 'blur(1px)'
+      maskCtx.drawImage(stencil, sx, sy, sw, sh)
+      maskCtx.filter = 'none'
+    }
     this.context.save()
     this.context.globalCompositeOperation = 'destination-in'
-    this.context.filter = 'blur(1px)'
-    this.context.drawImage(stencil, sx, sy, sw, sh)
+    this.context.drawImage(mask, 0, 0, rect.width, rect.height)
     this.context.restore()
   }
 
@@ -226,8 +252,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
         }
         const lowerValue = lowerValid ? lowerValues[i] ?? 0 : upperValues[i] ?? 0
         const upperValue = upperValid ? upperValues[i] ?? 0 : lowerValues[i] ?? 0
-        const value = lowerValue + (upperValue - lowerValue) * progress
-        const color = this.colorFor(value)
+        const color = this.colorFor(blendEncoded(lowerValue, upperValue, progress))
         image.data[offset] = color[0]
         image.data[offset + 1] = color[1]
         image.data[offset + 2] = color[2]

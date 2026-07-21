@@ -139,6 +139,7 @@ class GridOverlayImpl implements GridOverlay {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    this.lastRender = null
     this.layoutObserver?.disconnect()
     this.layoutObserver = null
     this.observedParent = null

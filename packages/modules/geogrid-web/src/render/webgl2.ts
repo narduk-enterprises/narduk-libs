@@ -1,3 +1,4 @@
+import { dataUvTransform, frameContentKey } from '../core/math.js'
 import { isUsableViewport, type GridBBox, type GridViewport } from '../core/models.js'
 import type { TemporalRasterFrame } from '../core/decode/temporal.js'
 import type {
@@ -12,6 +13,7 @@ const DEFAULT_MAX_GPU_FRAMES = 8
 
 interface GpuFrame {
   key: string
+  contentKey: string
   mask: WebGLTexture
   values: WebGLTexture[]
   width: number
@@ -42,6 +44,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private readonly whiteStencil: WebGLTexture
   private readonly stencilUnit = 8
   private destroyed = false
+  private hasDrawn = false
 
   static create(options: CreateBackendOptions): WebGL2GridBackend | null {
     if (typeof document === 'undefined') return null
@@ -147,27 +150,26 @@ export class WebGL2GridBackend implements GridRenderBackend {
 
   render(state: GridBackendRenderState): void {
     if (this.destroyed) return
-    if (state.lower.renderMode !== this.mode || state.upper.renderMode !== this.mode) return
+    if (state.lower.renderMode !== this.mode || state.upper.renderMode !== this.mode) {
+      this.clearIfDrawn()
+      return
+    }
     const lowerGpu = this.ensureFrame(state.lower, new Set([state.lower.date, state.upper.date]))
     const upperGpu = this.ensureFrame(state.upper, new Set([state.lower.date, state.upper.date]))
-    if (!lowerGpu || !upperGpu) return
+    if (!lowerGpu || !upperGpu) {
+      this.clearIfDrawn()
+      return
+    }
     this.resize()
     const viewport = isUsableViewport(this.viewport)
       ? this.viewport
       : this.lastGoodViewport
-    if (!isUsableViewport(viewport)) return
-    if (this.canvasWidth < 1 || this.canvasHeight < 1) return
+    if (!isUsableViewport(viewport) || this.canvasWidth < 1 || this.canvasHeight < 1) {
+      this.clearIfDrawn()
+      return
+    }
 
-    const span = viewport.span
-    const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
-    const viewportNorth = viewport.center.latitude + span.latitudeDelta / 2
-    const [west, south, east, north] = state.bbox
-    const bboxWidth = Math.max(1e-9, east - west)
-    const bboxHeight = Math.max(1e-9, north - south)
-    const uvScaleX = span.longitudeDelta / bboxWidth
-    const uvScaleY = span.latitudeDelta / bboxHeight
-    const uvOffsetX = (viewportWest - west) / bboxWidth
-    const uvOffsetY = (north - viewportNorth) / bboxHeight
+    const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, state.bbox)
 
     const gl = this.gl
     gl.viewport(0, 0, this.canvasWidth, this.canvasHeight)
@@ -193,6 +195,16 @@ export class WebGL2GridBackend implements GridRenderBackend {
     }
     this.bindStencil(viewport)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    this.hasDrawn = true
+  }
+
+  private clearIfDrawn(): void {
+    if (!this.hasDrawn || this.destroyed) return
+    const gl = this.gl
+    gl.viewport(0, 0, Math.max(1, this.canvasWidth), Math.max(1, this.canvasHeight))
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    this.hasDrawn = false
   }
 
   destroy(): void {
@@ -239,12 +251,17 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private ensureFrame(frame: TemporalRasterFrame, protectedDates?: Set<string>): GpuFrame | null {
     const protectedKeys = protectedDates ?? new Set([frame.date])
     protectedKeys.add(frame.date)
+    const contentKey = frameContentKey(frame.date, frame.width, frame.height, frame.values, frame.mask)
     const cached = this.frames.get(frame.date)
-    if (cached) {
-      // Refresh insertion order for LRU-ish FIFO Map
+    if (cached && cached.contentKey === contentKey) {
       this.frames.delete(frame.date)
       this.frames.set(frame.date, cached)
       return cached
+    }
+    if (cached) {
+      cached.values.forEach((texture) => this.gl.deleteTexture(texture))
+      this.gl.deleteTexture(cached.mask)
+      this.frames.delete(frame.date)
     }
     const valuePlanes: Array<Uint16Array | Uint8Array> =
       this.mode === 'rgb'
@@ -267,6 +284,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     if (textures.some((texture) => !texture) || !mask) return null
     const gpuFrame: GpuFrame = {
       key: frame.date,
+      contentKey,
       mask,
       values: textures as WebGLTexture[],
       width: frame.width,
@@ -291,6 +309,9 @@ export class WebGL2GridBackend implements GridRenderBackend {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, rgb ? gl.LINEAR : gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    // Tightly packed plane rows are not 4-byte aligned when width is odd (R16)
+    // or width % 4 != 0 (R8). Default UNPACK_ALIGNMENT=4 would skew the texture.
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
     if (rgb) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data as Uint8Array)
     } else {
@@ -306,6 +327,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
         data as Uint16Array,
       )
     }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
     return texture
   }
 
@@ -318,7 +340,9 @@ export class WebGL2GridBackend implements GridRenderBackend {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, width, height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, data)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
     return texture
   }
 
@@ -531,15 +555,17 @@ void main() {
   bool valid0 = s0.y > 0.0;
   bool valid1 = s1.y > 0.0;
   if (!valid0 && !valid1) { color = vec4(0.0); return; }
-  float first = valid0 ? displayValue(s0.x / s0.y) : 0.0;
-  float second = valid1 ? displayValue(s1.x / s1.y) : 0.0;
-  if (!valid0) first = second;
-  if (!valid1) second = first;
+  // Mix in encoded space (matches Canvas2D + wire log quantization), then displayValue once.
+  float enc0 = valid0 ? (s0.x / s0.y) : 0.0;
+  float enc1 = valid1 ? (s1.x / s1.y) : 0.0;
+  if (!valid0) enc0 = enc1;
+  if (!valid1) enc1 = enc0;
+  float encoded = mix(enc0, enc1, progress);
   float cov0 = valid0 ? s0.z : s1.z;
   float cov1 = valid1 ? s1.z : s0.z;
   float alpha = smoothstep(0.30, 0.70, mix(cov0, cov1, progress)) * stencilAlpha(vUv);
   if (alpha <= 0.0) { color = vec4(0.0); return; }
-  color = vec4(rampColor(mix(first, second, progress)), alpha);
+  color = vec4(rampColor(displayValue(encoded)), alpha);
 }`
 }
 

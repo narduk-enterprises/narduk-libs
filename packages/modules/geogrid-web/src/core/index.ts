@@ -12,7 +12,15 @@ export {
   valueRangeFromTuple,
   valueRangeToTuple,
 } from './models.js'
-export { displayValueFromEncoded, normalizeValue } from './math.js'
+export {
+  blendEncoded,
+  blendedDisplayValue,
+  dataUvTransform,
+  displayValueFromEncoded,
+  frameContentKey,
+  normalizeValue,
+} from './math.js'
+export { TEMPORAL_DECODE_LIMITS } from './decode/temporal.js'
 export { rampLut, sampleRamp, type RGB } from './color.js'
 export type {
   CoastlineStencilDescriptor,
