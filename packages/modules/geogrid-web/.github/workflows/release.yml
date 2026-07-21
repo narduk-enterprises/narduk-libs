@@ -1,0 +1,60 @@
+name: Release package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: geogrid-web-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
+    timeout-minutes: 20
+    env:
+      NODE_AUTH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          registry-url: https://npm.pkg.github.com
+          scope: '@narduk-geo'
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.4 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release candidate
+        run: pnpm run quality
+
+      - name: Verify release ref and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test "${GITHUB_REF_NAME}" = "v${version}"
+          else
+            test "${GITHUB_EVENT_NAME}" = "workflow_dispatch"
+            test "${GITHUB_REF}" = "refs/heads/main"
+          fi
+
+      - name: Publish to GitHub Packages
+        run: pnpm publish --access public --no-git-checks
