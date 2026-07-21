@@ -148,8 +148,8 @@ export class WebGL2GridBackend implements GridRenderBackend {
   render(state: GridBackendRenderState): void {
     if (this.destroyed) return
     if (state.lower.renderMode !== this.mode || state.upper.renderMode !== this.mode) return
-    const lowerGpu = this.ensureFrame(state.lower)
-    const upperGpu = this.ensureFrame(state.upper)
+    const lowerGpu = this.ensureFrame(state.lower, new Set([state.lower.date, state.upper.date]))
+    const upperGpu = this.ensureFrame(state.upper, new Set([state.lower.date, state.upper.date]))
     if (!lowerGpu || !upperGpu) return
     this.resize()
     const viewport = isUsableViewport(this.viewport)
@@ -236,7 +236,9 @@ export class WebGL2GridBackend implements GridRenderBackend {
     bindTexture(gl, this.stencilUnit, this.stencilTexture, uniform(gl, this.program, 'stencil'))
   }
 
-  private ensureFrame(frame: TemporalRasterFrame): GpuFrame | null {
+  private ensureFrame(frame: TemporalRasterFrame, protectedDates?: Set<string>): GpuFrame | null {
+    const protectedKeys = protectedDates ?? new Set([frame.date])
+    protectedKeys.add(frame.date)
     const cached = this.frames.get(frame.date)
     if (cached) {
       // Refresh insertion order for LRU-ish FIFO Map
@@ -271,7 +273,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
       height: frame.height,
     }
     this.frames.set(frame.date, gpuFrame)
-    this.evictFrames(new Set([frame.date]))
+    this.evictFrames(protectedKeys)
     return gpuFrame
   }
 
