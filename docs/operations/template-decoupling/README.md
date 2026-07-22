@@ -12,8 +12,11 @@ This is the operator runbook for converting an application created from
 based on the completed Been Sober For (BSF) package and application decoupling,
 its source-account production deployment, and its 2026-07-15 Cloudflare traffic
 cutover to Narduk Enterprises. It is deliberately more procedural than the fleet
-architecture in
-[`../../architecture/narduk-template-decommission.md`](../../architecture/narduk-template-decommission.md).
+architecture, which now lives in
+[`narduk-enterprises/company-hq/untangle/narduk-template-decommission-ledger.md`](https://github.com/narduk-enterprises/company-hq/blob/main/untangle/narduk-template-decommission-ledger.md)
+(this repo's own
+[`../../architecture/narduk-template-decommission.md`](../../architecture/narduk-template-decommission.md)
+is now a pointer plus narduk-libs's package-extraction scope).
 
 This packet has three parts:
 

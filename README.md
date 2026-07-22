@@ -4,7 +4,10 @@ Reusable Narduk packages published independently under `@narduk-enterprises/*`.
 
 This monorepo is the source for the shared libraries and focused one-shot tools
 that production apps import directly. It is not a fleet template, sync service,
-or Command control plane. The decommission ledger and archive gates live in
+or Command control plane. The full fleet decommission ledger and archive gates
+live in
+[`narduk-enterprises/company-hq/untangle/narduk-template-decommission-ledger.md`](https://github.com/narduk-enterprises/company-hq/blob/main/untangle/narduk-template-decommission-ledger.md);
+this repo keeps only its own package-extraction scope in
 [`docs/architecture/narduk-template-decommission.md`](docs/architecture/narduk-template-decommission.md).
 
 ## Packages
