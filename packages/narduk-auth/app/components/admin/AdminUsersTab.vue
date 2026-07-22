@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useAppFetch } from '@narduk-enterprises/narduk-core/app/composables/useAppFetch'
+import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/formatBuildTimeLocal'
+
 const perPage = 20
 const page = ref(1)
 
@@ -31,7 +34,6 @@ const { data: usersData, refresh: refreshUsers } = useAsyncData(
 const total = computed(() => usersData.value.total)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / perPage)))
 const paginatedUsers = computed(() => usersData.value.users)
-
 const activeAction = ref<string | null>(null)
 
 function prevPage() {
@@ -71,7 +73,6 @@ function formatJoinDate(dateStr: string) {
 function pageRangeStart() {
   return (page.value - 1) * perPage + 1
 }
-
 function pageRangeEnd() {
   return Math.min(page.value * perPage, total.value)
 }

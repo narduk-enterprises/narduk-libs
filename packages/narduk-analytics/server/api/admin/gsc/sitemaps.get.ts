@@ -1,3 +1,5 @@
+import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
+
 import { resolveGscSiteUrl } from '#narduk-analytics-server/utils/siteConfig'
 
 export default defineEventHandler(async (event) => {

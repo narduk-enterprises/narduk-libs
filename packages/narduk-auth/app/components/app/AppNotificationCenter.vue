@@ -10,6 +10,8 @@
  *     </template>
  *   </LayerAppHeader>
  */
+import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/formatBuildTimeLocal'
+
 import { type AppNotification, useNotifications } from '../../composables/useNotifications'
 
 const {

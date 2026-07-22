@@ -1,3 +1,5 @@
+import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { readRuntimeString } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { z } from 'zod'
 

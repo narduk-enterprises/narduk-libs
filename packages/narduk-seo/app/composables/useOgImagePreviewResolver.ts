@@ -1,3 +1,5 @@
+import { useAppFetch } from '@narduk-enterprises/narduk-core/app/composables/useAppFetch'
+
 export function useOgImagePreviewResolver() {
   const appFetch = useAppFetch()
 
