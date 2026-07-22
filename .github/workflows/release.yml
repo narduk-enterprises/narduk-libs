@@ -22,7 +22,9 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: [self-hosted, Linux, X64, proxmox, proxmox-web]
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
     timeout-minutes: 45
     env:
       VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
