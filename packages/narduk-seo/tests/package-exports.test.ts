@@ -27,7 +27,7 @@ describe('narduk-seo package exports', () => {
       overrides?: Record<string, string>
     }
 
-    expect(packageJson.dependencies['nuxt-og-image']).toBe('6.7.2')
+    expect(packageJson.dependencies['nuxt-og-image']).toBe('6.7.4')
     expect(packageJson.dependencies['@takumi-rs/core']).toBe('2.2.0')
     expect(packageJson.dependencies['@takumi-rs/wasm']).toBe('2.2.0')
     expect(packageJson.overrides).not.toHaveProperty('@takumi-rs/core')
