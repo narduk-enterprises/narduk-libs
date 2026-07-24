@@ -11,7 +11,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-analytics': '1.19.20',
   '@narduk-enterprises/narduk-auth': '1.19.27',
   '@narduk-enterprises/narduk-core': '1.20.0',
-  '@narduk-enterprises/narduk-seo': '1.20.0',
+  '@narduk-enterprises/narduk-seo': '1.21.0',
   '@narduk-enterprises/narduk-testkit': '1.0.0',
   '@narduk-enterprises/narduk-uploads': '1.19.18',
   '@nuxt/test-utils': '4.0.3',
