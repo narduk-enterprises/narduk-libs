@@ -4,6 +4,7 @@ import { applyCoreViteBuildWarningPolicy } from '@narduk-enterprises/narduk-core
 import {
   addComponentsDir,
   addImportsDir,
+  addPlugin,
   addServerScanDir,
   createResolver,
   defineNuxtModule,
@@ -92,6 +93,16 @@ interface TypePrepareOptions {
 
 export interface NardukSeoModuleOptions {
   app?: boolean
+  /**
+   * Production-only, build-once indexing contract: the canonical site host
+   * stays indexable while any other request host (e.g. a route-free
+   * `workers.dev` preview alias of the same immutable version) is served
+   * `noindex, nofollow` at runtime — header via server middleware, meta via
+   * an app plugin. Also enabled by `NARDUK_SEO_HOST_AWARE_INDEXING`. Only
+   * active when the deployment target is `production`; non-production
+   * targets keep the existing build-time noindex safety.
+   */
+  hostAwareIndexing?: boolean
   indexNonProduction?: boolean
   seoModule?: boolean
   server?: boolean
@@ -178,6 +189,14 @@ function shouldForceNonProductionNoindex(options: NardukSeoModuleOptions): boole
   return isNonProductionDeployment()
 }
 
+function shouldEnableHostAwareIndexing(options: NardukSeoModuleOptions): boolean {
+  if (!(options.hostAwareIndexing || readBooleanEnv('NARDUK_SEO_HOST_AWARE_INDEXING'))) {
+    return false
+  }
+
+  return readDeploymentTarget() === 'production'
+}
+
 function applyNonProductionSeoSafety(nuxtOptions: MutableNuxtOptionsRecord): void {
   const deploymentTarget = readDeploymentTarget()
   const nonProductionRouteRule = {
@@ -232,6 +251,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
   },
   defaults: {
     app: true,
+    hostAwareIndexing: false,
     indexNonProduction: false,
     seoModule: true,
     server: true,
@@ -265,8 +285,11 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       name: process.env.APP_NAME || 'Nuxt 4 App',
       description: 'A Nuxt 4 application deployed on Cloudflare Workers.',
     })
+    const hostAwareIndexing = shouldEnableHostAwareIndexing(options)
+
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
       public: {
+        nardukSeoHostAwareIndexing: hostAwareIndexing,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
         twitterSite: process.env.NUXT_PUBLIC_TWITTER_SITE || '',
@@ -306,6 +329,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     })
     if (shouldForceNonProductionNoindex(options)) {
       applyNonProductionSeoSafety(nuxtOptions)
+    }
+    if (hostAwareIndexing) {
+      addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
     }
 
     if (options.seoModule) {

@@ -91,6 +91,7 @@
     "@nuxtjs/sitemap": "8.0.12",
     "@takumi-rs/core": "2.2.0",
     "@takumi-rs/wasm": "2.2.0",
+    "h3": "^1.15.11",
     "defu": "^6.1.7",
     "nuxt-link-checker": "5.0.7",
     "nuxt-og-image": "6.7.2",

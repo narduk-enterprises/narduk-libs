@@ -560,6 +560,9 @@ importers:
       defu:
         specifier: 6.1.7
         version: 6.1.7
+      h3:
+        specifier: ^1.15.11
+        version: 1.15.11
       nuxt-link-checker:
         specifier: 5.0.7
         version: 5.0.7(0d213255bc888e6ab152a3aaf6ec93b8)
