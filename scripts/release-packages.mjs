@@ -491,10 +491,16 @@ try {
   })
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
-  runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
-    cwd: generatedDirectory,
-    label: 'install the generated app browser fixture',
-  })
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    console.log(
+      `[consumer-smoke] using host-provided Playwright browsers at ${process.env.PLAYWRIGHT_BROWSERS_PATH}; skipping browser download`,
+    )
+  } else {
+    runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+      cwd: generatedDirectory,
+      label: 'install the generated app browser fixture',
+    })
+  }
   runChecked('pnpm', ['run', 'quality'], {
     cwd: generatedDirectory,
     label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',

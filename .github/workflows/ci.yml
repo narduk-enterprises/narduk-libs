@@ -203,6 +203,9 @@ jobs:
       # Pool guests are ephemeral one-job sandboxes without the linux-ci
       # shared cache mount; keep the turbo cache workspace-local here.
       TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
+      # The pool's browser binaries are immutable under /opt (downloads are
+      # deliberately blocked); Playwright must resolve them from there.
+      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
