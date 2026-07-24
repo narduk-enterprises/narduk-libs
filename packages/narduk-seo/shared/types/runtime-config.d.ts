@@ -1,4 +1,11 @@
 interface SeoPublicRuntimeConfig {
+  /**
+   * Build-baked flag for the production build-once indexing contract: when
+   * true, runtime guards serve `noindex, nofollow` on any non-canonical
+   * request host (e.g. `workers.dev` preview aliases) while the canonical
+   * site host stays indexable.
+   */
+  nardukSeoHostAwareIndexing: boolean
   /** Enables the internal OG image preview lab in local and approved preview envs. */
   ogImagePreviewLab: boolean
   /**

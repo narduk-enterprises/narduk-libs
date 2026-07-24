@@ -14,6 +14,7 @@ function cloneConfig(value: unknown): unknown {
 async function setupModule(options: SetupModuleOptions = {}) {
   const addComponentsDir = vi.fn()
   const addImportsDir = vi.fn()
+  const addPlugin = vi.fn()
   const addServerScanDir = vi.fn()
   const extendPages = vi.fn()
   const extendRouteRules = vi.fn()
@@ -43,6 +44,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   vi.doMock('@nuxt/kit', () => ({
     addComponentsDir,
     addImportsDir,
+    addPlugin,
     addServerScanDir,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
@@ -70,6 +72,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
 
   return {
     addImportsDir,
+    addPlugin,
     addServerScanDir,
     extendPages,
     extendRouteRules,
@@ -239,5 +242,59 @@ describe('narduk-seo module', () => {
       url: 'https://staging.example.workers.dev',
     })
     expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
+  })
+
+  it('enables host-aware indexing for production builds that opt in', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+
+    const { addPlugin, nuxt } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+    })
+
+    expect(
+      (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(true)
+    expect(addPlugin).toHaveBeenCalledWith(
+      expect.stringContaining('/app/plugins/hostAwareIndexing'),
+    )
+  })
+
+  it('keeps host-aware indexing off for non-production targets even when opted in', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'preview')
+
+    const { addPlugin, nuxt } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+    })
+
+    expect(
+      (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(false)
+    expect(addPlugin).not.toHaveBeenCalled()
+  })
+
+  it('keeps host-aware indexing off by default and honors the env opt-in', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+
+    const first = await setupModule()
+    expect(
+      (first.nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(false)
+    expect(first.addPlugin).not.toHaveBeenCalled()
+
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.stubEnv('NARDUK_SEO_HOST_AWARE_INDEXING', 'true')
+
+    const second = await setupModule()
+    expect(
+      (second.nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+        ?.nardukSeoHostAwareIndexing,
+    ).toBe(true)
+    expect(second.addPlugin).toHaveBeenCalledWith(
+      expect.stringContaining('/app/plugins/hostAwareIndexing'),
+    )
   })
 })

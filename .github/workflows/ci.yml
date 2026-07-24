@@ -27,12 +27,9 @@ jobs:
       max-parallel: 4
       matrix:
         include:
-          # Put the longest whole-release proof first beside the lightweight
-          # repository and TypeScript-only lanes. The Nuxt-heavy lanes follow
-          # so the cold consumer build is not starved by three typechecks.
-          - label: packed-consumer-smoke
-            kind: consumer
-            node_options: --max-old-space-size=3072
+          # packed-consumer-smoke runs as its own dedicated job on the
+          # playwright-isolated pool (below), since it is the only lane that
+          # launches a real browser. It no longer shares a matrix slot here.
           - label: repository-contracts
             kind: contracts
             node_options: --max-old-space-size=1024
@@ -178,14 +175,82 @@ jobs:
           pnpm exec publint "${{ matrix.package_dir }}" --strict
           pnpm --dir "${{ matrix.package_dir }}" pack --dry-run
 
+      - name: Remove temporary registry auth
+        if: always()
+        run: rm -f "${NPM_CONFIG_USERCONFIG}"
+
+  packed-consumer-smoke:
+    # Split out of package-gates because this is the only lane that installs
+    # and launches a real browser (Playwright chromium, via the generated
+    # app's `quality` gate inside scripts/release-packages.mjs). The shared
+    # linux-ci pool lost its browser system libraries (libnspr4.so and
+    # friends) at some point after 2026-07-16 and estate policy routes real
+    # browser workloads to the dedicated playwright-isolated pool instead of
+    # reinstalling OS packages on general-purpose linux-ci guests — see how
+    # status-apps' apps/lakestat-us and operator-portal run their Playwright
+    # jobs (.github/workflows/lakestat-us.yml `browser` job,
+    # browser-acceptance.yml `browser` job) for the precedent this copies.
+    name: package / packed-consumer-smoke
+    runs-on:
+      group: playwright-isolated
+      labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
+    timeout-minutes: 45
+    env:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NODE_OPTIONS: --max-old-space-size=3072
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
+      NPM_CONFIG_GLOBALCONFIG: /dev/null
+      # Pool guests are ephemeral one-job sandboxes without the linux-ci
+      # shared cache mount; keep the turbo cache workspace-local here.
+      TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
+      # The pool's browser binaries are immutable under /opt (downloads are
+      # deliberately blocked); Playwright must resolve them from there.
+      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Materialize Changesets base branch
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$(git branch --show-current)" != "main" ]; then
+            git branch --force main origin/main
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.33.4
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.3
+
+      - name: Configure GitHub Packages read auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}"
+          umask 077
+          cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
+          @narduk-enterprises:registry=https://npm.pkg.github.com
+          @narduk-geo:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ}
+          EOF
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build coordinated release set
-        if: matrix.kind == 'consumer'
         run: >-
           pnpm exec turbo run build --filter='./packages/*'
           --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
       - name: Prove packed artifacts in an external generated consumer
-        if: matrix.kind == 'consumer'
         run: pnpm run release:consumer-smoke
 
       - name: Remove temporary registry auth
@@ -194,10 +259,10 @@ jobs:
 
   verify:
     # Preserve the historical required-check name while making it depend on
-    # every matrix lane.
+    # every matrix lane plus the dedicated packed-consumer-smoke job.
     name: verify
     if: always()
-    needs: package-gates
+    needs: [package-gates, packed-consumer-smoke]
     runs-on:
       group: linux-ci
       labels: [self-hosted, linux-ci]
@@ -206,4 +271,7 @@ jobs:
       - name: Require every package gate
         env:
           PACKAGE_GATES_RESULT: ${{ needs.package-gates.result }}
-        run: test "${PACKAGE_GATES_RESULT}" = "success"
+          PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
+        run: |
+          test "${PACKAGE_GATES_RESULT}" = "success"
+          test "${PACKED_CONSUMER_SMOKE_RESULT}" = "success"
