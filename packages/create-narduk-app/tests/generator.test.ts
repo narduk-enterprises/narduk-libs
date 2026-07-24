@@ -119,10 +119,12 @@ describe('create-narduk-app generation contract', () => {
         '@narduk-enterprises/narduk-auth': PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
+        '@nuxt/kit': PACKAGE_VERSIONS.nuxt,
         'eslint-plugin-vitest>@typescript-eslint/utils':
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
+        'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'],
       },
       allowedDeprecatedVersions: {
         '@esbuild-kit/core-utils': '*',
