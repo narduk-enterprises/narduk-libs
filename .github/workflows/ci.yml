@@ -200,7 +200,9 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
-      TURBO_CACHE_DIR: /srv/github-runners/_cache/turbo/narduk-libs
+      # Pool guests are ephemeral one-job sandboxes without the linux-ci
+      # shared cache mount; keep the turbo cache workspace-local here.
+      TURBO_CACHE_DIR: ${{ runner.temp }}/turbo
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
