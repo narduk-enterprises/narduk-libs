@@ -17,7 +17,7 @@ const pageUrl = siteOrigin ? `${siteOrigin}/narduk-network` : undefined
 const { data, pending } = await useNardukNetworkDirectory()
 
 const networkSites = computed(() => data.value.sites)
-const resolvedCatalogUrl = computed(() => data.value.catalogUrl)
+const resolvedCatalogUrl = computed(() => data.value.catalogUrl || '')
 const hasNetworkSites = computed(() => networkSites.value.length > 0)
 
 useSeo({
@@ -70,6 +70,7 @@ useItemListSchema(
       >
         <template #actions>
           <UButton
+            v-if="resolvedCatalogUrl"
             :to="resolvedCatalogUrl"
             external
             color="neutral"
