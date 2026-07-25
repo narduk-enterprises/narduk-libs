@@ -58,6 +58,12 @@
   "peerDependencies": {
     "vue": "^3.3.0"
   },
+  "//overrides": "Security-only pins for transitive advisories (narduk-charts#15). Each stays INSIDE its dependent's declared major, so no consumer range is broken: brace-expansion 5.x is dual ESM/CJS and still satisfies minimatch's require(); fast-uri stays on 3.x for ajv; postcss stays on 8.x for vite/tailwind. Drop an entry once every dependent resolves a fixed version on its own.",
+  "overrides": {
+    "brace-expansion": "^5.0.8",
+    "fast-uri": "^3.1.4",
+    "postcss": "^8.5.18"
+  },
   "devDependencies": {
     "@histoire/plugin-vue": "^1.0.0-beta.1",
     "@playwright/test": "^1.58.2",
@@ -67,7 +73,7 @@
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^20.9.0",
     "histoire": "^1.0.0-beta.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "size-limit": "^12.0.1",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.7.0",
