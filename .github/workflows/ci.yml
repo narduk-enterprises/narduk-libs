@@ -1,3 +1,131 @@
+# Calls the shared node-library CI gate instead of carrying a local copy of the
+# checkout/pnpm/setup-node/install/lint/typecheck/build/test shape
+# (company-hq#278, D-WF-1: every app of a class uses that class's callable from
+# narduk-enterprises/workflows). Pinned to @v1; never @main.
+#
+# The calling job id MUST stay `ci`. GitHub composes a called workflow's check
+# context as `<caller job id> / <called job name>`, and the reusable workflow's
+# last job is named exactly `Required`, so this produces `ci / Required` -- the
+# one string every adopting repo reports.
+#
+# SPECIAL STANDING: node-library.yml's `package-matrix` input was GENERALIZED
+# FROM this file. The old `package-gates` matrix + `verify` aggregator is the
+# shape the callable's matrix + `Required` job turned into a template, so the
+# structural fit here is by construction. What follows is the accounting for
+# the details that did NOT generalize.
+#
+# RUNNER ROUTE: manifest-resolved, not hand-written.
+#   python3 scripts/github_runner_fleet.py route \
+#     --repository narduk-enterprises/narduk-libs --visibility private
+# returns the `linux-ci` ORGANIZATION group; its `runsOn` object is pasted
+# verbatim below. Org repos must pin the group -- a labels-only `runs-on` can
+# match the credentialed deploy class and land a PR job on the deploy host.
+# This also widens the label set the previous file carried by hand
+# (`[self-hosted, linux-ci]`) back to the manifest's full list.
+#
+# ============================ LANE-BY-LANE ACCOUNTING ========================
+# Every step of the hand-rolled gate, and where it went. Nothing is dropped
+# silently; the two genuine losses are called out under RESIDUE below.
+#
+# package-gates matrix (12 lanes) -> `ci` (11 lanes) + `contracts` (1 job)
+#   checkout / pnpm 10.33.4 / node 22.22.3  -> callable's equivalent steps.
+#                                              pnpm/action-setup reads the same
+#                                              pin from `packageManager`.
+#   Configure GitHub Packages read auth     -> scripts/package-registry-auth.mjs,
+#                                              the exact path the callable probes
+#                                              for. narduk-libs CANNOT take the
+#                                              callable's "no auth script, skip"
+#                                              branch: the root devDependency
+#                                              @narduk-enterprises/eslint-config
+#                                              comes from GitHub Packages and the
+#                                              install 401s without a token.
+#   pnpm install --frozen-lockfile          -> callable's install step (identical).
+#   turbo run lint    --filter=<pkg>        -> `run-lint` lane (see TURBO below).
+#   turbo run typecheck --filter=<pkg>      -> `run-typecheck` lane.
+#   turbo run build   --filter=<pkg>        -> `run-build` lane.
+#   pnpm --filter <pkg> run test:unit       -> `extra-scripts`, NOT `run-tests`
+#                                              (see TESTS below).
+#   publint <dir> --strict
+#     && pnpm --dir <dir> pack --dry-run    -> `extra-scripts` as `check:package`,
+#                                              a new script in all 11 packages.
+#   Remove temporary registry auth          -> DROPPED; see RESIDUE.
+#   contracts lane (versions:check,
+#     release-plan:check, format:check)     -> KEPT as the separate `contracts`
+#                                              job below (see CONTRACTS).
+#   per-lane NODE_OPTIONS                   -> .npmrc `node-options` (see HEAP).
+# packed-consumer-smoke                     -> KEPT as a separate job, unchanged.
+# verify                                    -> KEPT as the `verify` roll-up below.
+#
+# ------------------------------- TESTS --------------------------------------
+# `run-tests: false` IS NOT A DISABLED TEST GATE -- read this before reacting.
+# Not one of the 11 packages defines a script called `test`; they all define
+# `test:unit` (root `pnpm run test` fans out to `-r --if-present test:unit`).
+# The callable's test lane runs `run --if-present test`, so leaving
+# `run-tests: true` would have matched nothing in all 11 lanes and silently
+# turned every unit test into a green no-op. That is the exact silent loss this
+# adoption is supposed to prevent, so tests run through `extra-scripts` under
+# their real name instead, which also preserves the ORIGINAL STEP ORDER:
+# lint -> typecheck -> build -> test:unit -> check:package. Aliasing `test` to
+# `test:unit` in 11 packages would have let `run-tests: true` be literally true,
+# but the callable runs tests BEFORE build, and reordering a gate is a bigger
+# behaviour change than renaming where it is declared.
+#
+# ------------------------------- HEAP ---------------------------------------
+# The old matrix set a per-package NODE_OPTIONS heap ceiling (1024-2560 MiB) as
+# job `env:`. The callable has no env input, so it moved to `node-options` in
+# .npmrc, where it also governs a developer's local run -- see the long note in
+# that file for why a single 3072 MiB ceiling is non-regressive against every
+# value the old workflows used, including the 3072 that packed-consumer-smoke
+# and release.yml still set.
+#
+# ------------------------------ CONTRACTS -----------------------------------
+# The repository-contracts lane is a SEPARATE JOB, not a `package-matrix` lane,
+# for three independent reasons:
+#   1. Its filter would have to be "" (repo root), and the callable's
+#      run-lint/run-typecheck/run-build switches are workflow-wide, not
+#      per-lane. A root lane would therefore also run root `lint`/`typecheck`/
+#      `build`, each of which is `turbo run ... --filter='./packages/*'` -- the
+#      entire monorepo, serially, in one lane. That is precisely the monolith
+#      the 11-lane split exists to avoid.
+#   2. `pnpm run release-plan:check` shells out to `changeset status`, which
+#      resolves .changeset/config.json's `baseBranch: main` against a LOCAL
+#      `main` ref. That needs `fetch-depth: 0` plus the base-branch
+#      materialization step below; the callable checks out at depth 1 with
+#      `persist-credentials: false` and has no input for either.
+#   3. It carries an `IS_CHANGESET_RELEASE` condition that skips
+#      release-plan:check on `changeset-release/*` branches -- release
+#      machinery, which stays per-repo by class policy, and which the callable
+#      deliberately does not model.
+# The gate is NOT weakened: the same three checks run on the same events, they
+# are simply reported as `contracts` rather than as a matrix lane.
+#
+# ------------------------------- TURBO --------------------------------------
+# The callable invokes each package's own scripts, so CI no longer goes through
+# `turbo run` and no longer uses the shared host cache at
+# /srv/github-runners/_cache/turbo/narduk-libs. Correctness is unaffected and
+# was verified rather than assumed: turbo.json gives `^build` to the `build`
+# task ONLY (lint/typecheck depend on `nuxt:prepare`/`eslint:typegen`, which
+# each package re-runs itself via its own `prelint`/`pretypecheck` hooks), and
+# the one cross-package BUILD artifact -- narduk-platform's dist/, consumed by
+# narduk-core -- is materialized at install time by narduk-platform's own
+# `prepare` lifecycle script (scripts/ensure-dist.mjs), confirmed on a clean
+# `pnpm install --frozen-lockfile` locally. Root `pnpm run build` still uses
+# turbo for developers. The lost CI cache is a SPEED regression only, recorded
+# against #278.
+#
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> RESIDUE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+# 1. `rm -f .npmrc.auth` no longer runs in the matrix lanes. The callable
+#    writes the credential (via the script above) but has no teardown step and
+#    a caller cannot inject one into a called workflow. On these PERSISTENT
+#    self-hosted runners the 0600 file therefore survives between runs, until
+#    the next actions/checkout `git clean -ffdx` removes it. Mitigated but not
+#    eliminated: the file is mode 0600, gitignored, and the token is a
+#    read-only packages credential. The `contracts` and `packed-consumer-smoke`
+#    jobs below still clean up after themselves. This is a gap in the CALLABLE,
+#    reported against #278 rather than worked around here.
+# 2. The shared turbo cache (see TURBO above) -- speed only, not coverage.
+# ============================================================================
+
 name: CI
 
 on:
@@ -7,95 +135,80 @@ on:
       - main
   workflow_dispatch:
 
+# Set concurrency in the CALLER: workflow-level concurrency does not propagate
+# from a called reusable workflow.
 concurrency:
-  group: narduk-libs-ci-${{ github.workflow }}-${{ github.ref }}
+  group: narduk-libs-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
-  package-gates:
-    name: package / ${{ matrix.label }}
+  ci:
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    # A called workflow cannot request MORE than the caller grants, and
+    # node-library.yml's package job asks for `packages: read` to reach the
+    # GitHub Packages registry. Without this the run does not fail a step -- it
+    # fails to START (`startup_failure`, no logs, no annotation).
+    permissions:
+      contents: read
+      packages: read
+    with:
+      # Verbatim `runsOn` from Config/github-runner-fleet.json via
+      # scripts/github_runner_fleet.py route (organization scope, linux-ci).
+      runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
+      # Exact version the old workflow pinned, matching the root `volta.node`.
+      node-version: "22.22.3"
+      package-manager: pnpm
+      run-lint: true
+      run-typecheck: true
+      # NOT a disabled gate -- unit tests run via extra-scripts under their real
+      # script name `test:unit`. See the TESTS section in the header.
+      run-tests: false
+      run-build: true
+      # One lane per publishable workspace package, same 11 labels the old
+      # `package-gates` matrix used. The 12th lane (repository-contracts) is the
+      # separate `contracts` job below.
+      package-matrix: |
+        [
+          {"label": "create-narduk-app", "filter": "@narduk-enterprises/create-narduk-app"},
+          {"label": "narduk-app-tools",  "filter": "@narduk-enterprises/narduk-app-tools"},
+          {"label": "narduk-app",        "filter": "@narduk-enterprises/narduk-app"},
+          {"label": "narduk-platform",   "filter": "@narduk-enterprises/narduk-platform"},
+          {"label": "narduk-testkit",    "filter": "@narduk-enterprises/narduk-testkit"},
+          {"label": "narduk-core",       "filter": "@narduk-enterprises/narduk-core"},
+          {"label": "narduk-auth",       "filter": "@narduk-enterprises/narduk-auth"},
+          {"label": "narduk-seo",        "filter": "@narduk-enterprises/narduk-seo"},
+          {"label": "narduk-analytics",  "filter": "@narduk-enterprises/narduk-analytics"},
+          {"label": "narduk-ai",         "filter": "@narduk-enterprises/narduk-ai"},
+          {"label": "narduk-uploads",    "filter": "@narduk-enterprises/narduk-uploads"}
+        ]
+      # Run after build, in the same lane, so they see the build output. This
+      # ordering is load-bearing and was proven locally: `check:package` in
+      # create-narduk-app fails publint ("pkg.exports[.].types is
+      # ./dist/index.d.ts but the file does not exist") when run before its
+      # build, and passes after it.
+      extra-scripts: "test:unit check:package"
+    secrets:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+
+  contracts:
+    # The old `repository-contracts` matrix lane, kept as its own job. See the
+    # CONTRACTS section in the header for the three reasons it cannot be a
+    # package-matrix lane. Unchanged in substance from the lane it replaces.
+    name: contracts
     runs-on:
       group: linux-ci
-      labels: [self-hosted, linux-ci]
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        include:
-          # packed-consumer-smoke runs as its own dedicated job on the
-          # playwright-isolated pool (below), since it is the only lane that
-          # launches a real browser. It no longer shares a matrix slot here.
-          - label: repository-contracts
-            kind: contracts
-            node_options: --max-old-space-size=1024
-          - label: create-narduk-app
-            kind: package
-            package: "@narduk-enterprises/create-narduk-app"
-            package_dir: packages/create-narduk-app
-            # Its ESLint type-aware program exceeded a 1536 MiB heap during the
-            # cold four-runner proof; 2304 MiB stays within the 20 GiB host cap.
-            node_options: --max-old-space-size=2304
-          - label: narduk-app-tools
-            kind: package
-            package: "@narduk-enterprises/narduk-app-tools"
-            package_dir: packages/narduk-app-tools
-            node_options: --max-old-space-size=1536
-          - label: narduk-app
-            kind: package
-            package: "@narduk-enterprises/narduk-app"
-            package_dir: packages/narduk-app
-            node_options: --max-old-space-size=1536
-          - label: narduk-platform
-            kind: package
-            package: "@narduk-enterprises/narduk-platform"
-            package_dir: packages/narduk-platform
-            node_options: --max-old-space-size=1536
-          - label: narduk-testkit
-            kind: package
-            package: "@narduk-enterprises/narduk-testkit"
-            package_dir: packages/narduk-testkit
-            node_options: --max-old-space-size=1536
-          - label: narduk-core
-            kind: package
-            package: "@narduk-enterprises/narduk-core"
-            package_dir: packages/narduk-core
-            node_options: --max-old-space-size=2560
-          - label: narduk-auth
-            kind: package
-            package: "@narduk-enterprises/narduk-auth"
-            package_dir: packages/narduk-auth
-            node_options: --max-old-space-size=2304
-          - label: narduk-seo
-            kind: package
-            package: "@narduk-enterprises/narduk-seo"
-            package_dir: packages/narduk-seo
-            node_options: --max-old-space-size=2304
-          - label: narduk-analytics
-            kind: package
-            package: "@narduk-enterprises/narduk-analytics"
-            package_dir: packages/narduk-analytics
-            node_options: --max-old-space-size=2304
-          - label: narduk-ai
-            kind: package
-            package: "@narduk-enterprises/narduk-ai"
-            package_dir: packages/narduk-ai
-            node_options: --max-old-space-size=2304
-          - label: narduk-uploads
-            kind: package
-            package: "@narduk-enterprises/narduk-uploads"
-            package_dir: packages/narduk-uploads
-            node_options: --max-old-space-size=2304
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
     env:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
-      NODE_OPTIONS: ${{ matrix.node_options }}
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
-      TURBO_CACHE_DIR: /srv/github-runners/_cache/turbo/narduk-libs
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -103,6 +216,9 @@ jobs:
           fetch-depth: 0
 
       - name: Materialize Changesets base branch
+        # `changeset status` resolves .changeset/config.json `baseBranch: main`
+        # against a local ref. On a PR the checkout is detached at the merge
+        # commit with no `main`, so create it from the fetched remote.
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if [ "$(git branch --show-current)" != "main" ]; then
@@ -121,22 +237,12 @@ jobs:
           node-version: 22.22.3
 
       - name: Configure GitHub Packages read auth
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}"
-          umask 077
-          cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
-          @narduk-enterprises:registry=https://npm.pkg.github.com
-          @narduk-geo:registry=https://npm.pkg.github.com
-          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ}
-          EOF
+        run: node ./scripts/package-registry-auth.mjs
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Check repository contracts and formatting
-        if: matrix.kind == 'contracts'
         env:
           IS_CHANGESET_RELEASE: ${{ startsWith(github.head_ref, 'changeset-release/') || startsWith(github.ref_name, 'changeset-release/') }}
         run: |
@@ -147,61 +253,33 @@ jobs:
           fi
           pnpm run format:check
 
-      - name: Lint package
-        if: matrix.kind == 'package'
-        run: >-
-          pnpm exec turbo run lint --filter="${{ matrix.package }}"
-          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
-
-      - name: Typecheck package
-        if: matrix.kind == 'package'
-        run: >-
-          pnpm exec turbo run typecheck --filter="${{ matrix.package }}"
-          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
-
-      - name: Build package and its internal dependencies
-        if: matrix.kind == 'package'
-        run: >-
-          pnpm exec turbo run build --filter="${{ matrix.package }}"
-          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
-
-      - name: Run package unit tests
-        if: matrix.kind == 'package'
-        run: pnpm --filter "${{ matrix.package }}" --if-present run test:unit
-
-      - name: Check package manifest and pack listing
-        if: matrix.kind == 'package'
-        run: |
-          pnpm exec publint "${{ matrix.package_dir }}" --strict
-          pnpm --dir "${{ matrix.package_dir }}" pack --dry-run
-
       - name: Remove temporary registry auth
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
   packed-consumer-smoke:
-    # Split out of package-gates because this is the only lane that installs
-    # and launches a real browser (Playwright chromium, via the generated
-    # app's `quality` gate inside scripts/release-packages.mjs). The shared
-    # linux-ci pool lost its browser system libraries (libnspr4.so and
-    # friends) at some point after 2026-07-16 and estate policy routes real
-    # browser workloads to the dedicated playwright-isolated pool instead of
-    # reinstalling OS packages on general-purpose linux-ci guests — see how
-    # status-apps' apps/lakestat-us and operator-portal run their Playwright
-    # jobs (.github/workflows/lakestat-us.yml `browser` job,
-    # browser-acceptance.yml `browser` job) for the precedent this copies.
+    # Unchanged by the #278 adoption. This is the only lane that installs and
+    # launches a real browser (Playwright chromium, via the generated app's
+    # `quality` gate inside scripts/release-packages.mjs), so it runs on the
+    # dedicated playwright-isolated pool. node-library.yml has NO browser lane
+    # and no input that could express one, so this job cannot move into the
+    # callable and stays here by design -- recorded as a kept-separate lane
+    # against #278, not as residue.
     name: package / packed-consumer-smoke
     runs-on:
       group: playwright-isolated
       labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
     env:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
-      # Pool guests are ephemeral one-job sandboxes without the linux-ci
-      # shared cache mount; keep the turbo cache workspace-local here.
+      # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
+      # cache mount; keep the turbo cache workspace-local here.
       TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
       # The pool's browser binaries are immutable under /opt (downloads are
       # deliberately blocked); Playwright must resolve them from there.
@@ -231,16 +309,7 @@ jobs:
           node-version: 22.22.3
 
       - name: Configure GitHub Packages read auth
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}"
-          umask 077
-          cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
-          @narduk-enterprises:registry=https://npm.pkg.github.com
-          @narduk-geo:registry=https://npm.pkg.github.com
-          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ}
-          EOF
+        run: node ./scripts/package-registry-auth.mjs
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -258,20 +327,35 @@ jobs:
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
   verify:
-    # Preserve the historical required-check name while making it depend on
-    # every matrix lane plus the dedicated packed-consumer-smoke job.
+    # Repo-level roll-up over all three top-level gates. `ci / Required` is the
+    # estate-uniform sub-context that covers the 11 package lanes; this job is
+    # what covers the two lanes the callable structurally cannot host. It also
+    # keeps the historical `verify` check name reporting across the context
+    # rename, so nothing that ever authorized on it can be left waiting on a
+    # context that stopped existing.
     name: verify
     if: always()
-    needs: [package-gates, packed-consumer-smoke]
+    needs: [ci, contracts, packed-consumer-smoke]
     runs-on:
       group: linux-ci
-      labels: [self-hosted, linux-ci]
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Require every package gate
+      - name: Require every gate
         env:
-          PACKAGE_GATES_RESULT: ${{ needs.package-gates.result }}
+          CI_RESULT: ${{ needs.ci.result }}
+          CONTRACTS_RESULT: ${{ needs.contracts.result }}
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
         run: |
-          test "${PACKAGE_GATES_RESULT}" = "success"
-          test "${PACKED_CONSUMER_SMOKE_RESULT}" = "success"
+          set -euo pipefail
+          status=0
+          for gate in CI CONTRACTS PACKED_CONSUMER_SMOKE; do
+            eval "result=\${${gate}_RESULT}"
+            if [ "${result}" != "success" ]; then
+              echo "::error::${gate} gate reported '${result}'"
+              status=1
+            fi
+          done
+          exit "${status}"

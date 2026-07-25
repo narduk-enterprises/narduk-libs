@@ -55,6 +55,7 @@
   ],
   "scripts": {
     "build": "pnpm run nuxt:prepare",
+    "check:package": "publint --strict && pnpm pack --dry-run",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "nuxt:prepare": "sh ../../scripts/ensure-generated-files.sh .nuxt/tsconfig.json .nuxt/tsconfig.shared.json .nuxt/tsconfig.node.json .nuxt/nuxt.shared.d.ts .nuxt/nuxt.node.d.ts .nuxt/eslint.config.mjs -- nuxt prepare",

@@ -35,6 +35,7 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
+    "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
     "lint": "eslint src tests --max-warnings 0",
     "prepack": "pnpm run build",
