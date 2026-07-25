@@ -55,9 +55,23 @@ on:
 
 # Concurrency must live in the CALLER: workflow-level concurrency does not
 # propagate from a called reusable workflow, and the shared file declares none.
+#
+# cancel-in-progress IS SCOPED TO `pull_request` ON PURPOSE. Superseded PR runs
+# should die -- pushing a fixup must not leave the previous commit's run holding
+# one of the six linux-ci slots. A run on the DEFAULT BRANCH must NOT be
+# cancelled: cancelling it leaves main with no completed CI run, and a cancelled
+# run reads exactly like a completed one in `gh run list` unless you look at the
+# conclusion, so nothing looks wrong. narduk-mapkit sat red on main for three
+# days behind precisely that (company-hq#278, wave-2 finding: its main run was
+# cancelled by concurrency at 35s, and the pre-existing failure was only found
+# when an unrelated PR inherited the blame). Main runs now queue instead.
+#
+# publish.yml is deliberately NOT given cancel-in-progress at all: a cancelled
+# publish is a corrupt release, and it already carries `cancel-in-progress:
+# false`. That asymmetry is intentional, not an oversight.
 concurrency:
   group: ci-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -83,6 +97,15 @@ jobs:
   # Stays local -- narduk-charts#14. See the header for why it cannot move yet.
   e2e:
     name: e2e
+    # GitHub-hosted, and this is NOT one of the three named exceptions in
+    # company-hq/docs/CI-RUNNER-POLICY.md 2 -- saying so plainly rather than
+    # letting an unannotated `ubuntu-latest` pass for a forgotten pin. It is a
+    # recorded blocker: policy 5 reserves browser work for the
+    # `proxmox-playwright-x64` class, and narduk-charts is not in the fleet
+    # manifest's `playwright-isolated` group (re-verified 2026-07-25), so
+    # linux-ci would be the WRONG class rather than the missing one. The route
+    # addition is a fleet-manifest change (#155 flow), not something this
+    # workflow may assume; narduk-charts#14 owns it.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -112,8 +135,14 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - run: npm run test:e2e
 
+      # `!cancelled()` rather than `always()`. The point of this step is to keep
+      # the report when the suite FAILS, and `!cancelled()` still does that.
+      # Bare `always()` additionally fires when the job was cancelled, which now
+      # happens routinely: cancel-in-progress above kills superseded PR runs, and
+      # uploading a truncated report from a run nobody is waiting on is pure
+      # delay on the cancellation path.
       - name: Upload Playwright evidence
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-evidence
@@ -126,7 +155,25 @@ jobs:
   # Stays local -- narduk-charts#15. Intentionally outside `ci / Required`.
   audit:
     name: audit
-    runs-on: ubuntu-latest
+    # MOVED OFF ubuntu-latest. Unlike `e2e` above, nothing stopped this one: it
+    # is a plain `npm ci` + `npm audit`, needs no browser class, and
+    # narduk-charts IS approved for the `linux-ci` organization group. It was
+    # GitHub-hosted for no reason other than that it predates the adoption, and
+    # CI-RUNNER-POLICY.md 1 makes self-hosted the default for a private repo
+    # while 2 lists the only three exceptions -- this job is not in any of them.
+    #
+    # `runsOn` object pasted verbatim from the manifest, group AND labels, never
+    # hand-copied (policy 4):
+    #   python3 scripts/github_runner_fleet.py route \
+    #     --repository narduk-enterprises/narduk-charts --visibility private
+    #   => {"action":"use-organization-group","group":"linux-ci",
+    #       "labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}
+    # Pinning the group is the load-bearing half: bare
+    # [self-hosted, Linux, X64, proxmox] also matches the credentialed deploy
+    # class, so a labels-only form can land a PR job on the deploy host.
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
