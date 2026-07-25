@@ -1,27 +1,96 @@
+# ADOPTS THE SHARED REUSABLE WORKFLOW (company-hq#172, R-12) instead of
+# carrying a local copy of the same install/typecheck/test/build shape that
+# narduk-libs already solved. narduk-enterprises/workflows is private with
+# organization-scoped Actions access, so the private->private call resolves;
+# pinned to @v1 like every other consumer, never @main.
+#
+# THE JOB ID `ci` IS LOAD-BEARING. GitHub composes a called workflow's check
+# context as `<caller job id> / <called job name>`, and the reusable workflow's
+# last job is named exactly `Required`. Together they compose `ci / Required`,
+# which is the string the branch ruleset requires. Renaming this job silently
+# orphans the required check -- the check would simply never report, and GitHub
+# shows a permanently pending "Expected" status instead of a failure.
+#
+# WHAT DID *NOT* MOVE, AND WHY -- this is the evidence R-12 exists to produce.
+# `node-library.yml` has no browser capability and no audit capability, so two
+# jobs stay local and are named here rather than implied:
+#
+#   e2e   -> narduk-charts#14. Playwright still runs inline on GitHub-hosted
+#            ubuntu-latest, not on the dedicated proxmox-playwright-x64 pool.
+#            It cannot move yet: narduk-charts is not in the fleet manifest's
+#            `playwright-isolated` group (verified 2026-07-25 --
+#            earthdata-viewer, lakestat-us, narduk-libs, nvault,
+#            operator-portal, status-apps are). The shared browser workflow
+#            that would own this route is filed separately as M-3 and does not
+#            exist yet.
+#   audit -> narduk-charts#15. `npm audit --audit-level=high` is failing on an
+#            advisory. It is deliberately NOT part of `ci / Required`: the
+#            required gate is the code gate, and an unrelated upstream advisory
+#            should not be able to block every PR in the repo. The job still
+#            runs and is still visible; #15 still owns fixing it.
+#
+# `size` DID move, into the shared lane via `extra-scripts`. size-limit reads
+# dist/, so it needs `npm run build` to have already happened; as a separate
+# job it would have meant a second full install and build.
+#
+# RUNNER ROUTE (manifest-first, never hand-copied):
+#   python3 scripts/github_runner_fleet.py route \
+#     --repository narduk-enterprises/narduk-charts --visibility private \
+#     --workload linux-ci
+#   => {"group": "linux-ci",
+#       "labels": ["self-hosted","Linux","X64","proxmox","linux-ci"]}
+# narduk-enterprises is an ORG, so the `runner` input carries the route's
+# `runsOn` OBJECT verbatim -- group AND labels. Labels-only would be unpinned
+# debt and a real misroute risk, because bare [self-hosted, Linux, X64,
+# proxmox] also matches the credentialed deploy class. This also moves the
+# repo's main gate off GitHub-hosted runners, which is where a private repo's
+# Linux CI belongs.
 name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
+# Concurrency must live in the CALLER: workflow-level concurrency does not
+# propagate from a called reusable workflow, and the shared file declares none.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
-  verify:
-    name: Verify
+  ci:
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    permissions:
+      contents: read
+      packages: read
+    with:
+      node-version: "22"
+      package-manager: npm
+      # histoire 1.0.0-beta's peer ranges make a plain `npm ci` fail; this is
+      # the same flag the local workflow used before adoption.
+      install-args: "--legacy-peer-deps"
+      # size-limit, run after build in the same lane so it sees dist/.
+      extra-scripts: size
+      runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
+    secrets:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
+
+  # Stays local -- narduk-charts#14. See the header for why it cannot move yet.
+  e2e:
+    name: e2e
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -38,21 +107,33 @@ jobs:
           fi
           npm ci --legacy-peer-deps
 
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm run size
+      # No build step: playwright.config.ts serves the components through a
+      # vite dev server, so e2e never reads dist/.
       - run: npx playwright install chromium --with-deps
       - run: npm run test:e2e
 
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-evidence
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Stays local -- narduk-charts#15. Intentionally outside `ci / Required`.
   audit:
-    name: Audit
+    name: audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
