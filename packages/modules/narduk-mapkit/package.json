@@ -72,10 +72,11 @@
     "build": "tsc -p tsconfig.build.json",
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && node script/check_package_install.mjs",
+    "check:publint": "publint",
     "prepare": "tsc -p tsconfig.build.json",
     "pack:artifacts": "node script/pack_packages.mjs",
     "release:verify-published": "node script/verify_published_packages.mjs",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dist && pnpm run check:package && pnpm exec publint && pnpm --filter @narduk-geo/narduk-mapkit-nuxt run quality",
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dist && pnpm run check:package && pnpm run check:publint && pnpm --filter @narduk-geo/narduk-mapkit-nuxt run quality",
     "check:dist": "node script/check_dist_clean.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

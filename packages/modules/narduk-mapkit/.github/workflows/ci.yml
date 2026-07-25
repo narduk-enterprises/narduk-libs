@@ -1,3 +1,96 @@
+# Calls the shared node-library CI gate instead of carrying a local copy of
+# the checkout/corepack/setup-node/install/quality shape
+# (company-hq#278, D-WF-1: every app of a class uses that class's callable
+# from narduk-enterprises/workflows). Pinned to @v1; never @main.
+#
+# The calling job id MUST stay `ci`. GitHub composes a called workflow's check
+# context as `<caller job id> / <called job name>`, and the reusable workflow's
+# last job is named exactly `Required`, so this produces `ci / Required` --
+# the one string every adopting repo reports and branch protection can require
+# estate-wide.
+#
+# WHY node-library. Config class is `node-library`: this repo publishes two
+# packages (`@narduk-geo/narduk-mapkit` core + `@narduk-geo/narduk-mapkit-nuxt`
+# adapter) to GitHub Packages. It ships a Nuxt *module*, not a Nuxt app -- no
+# deployed surface, no wrangler, no Cloudflare account -- so nuxt-cloudflare
+# would buy inputs this gate has no use for. Publish/release deliberately stays
+# per-repo in release.yml by class policy; the callable does not cover it.
+#
+# WHY A PACKAGE MATRIX. This is a pnpm workspace with exactly two publishable
+# packages, and the old hand-rolled gate ran both through one monolithic
+# `pnpm run quality` script that chained the core gates and then shelled out to
+# `pnpm --filter ...-nuxt run quality`. `package-matrix` is the callable's input
+# for precisely that shape (it generalizes narduk-libs' package-gates matrix),
+# so each package now gets its own visible typecheck/test/build lane --
+# `package / core` and `package / nuxt` -- instead of one opaque green tick.
+# Both lanes still install the whole workspace (pnpm installs at the root
+# regardless), so the cost is one extra cached install, not extra coverage debt.
+#
+# RUNNER ROUTE: manifest-resolved, not hand-written.
+#   python3 scripts/github_runner_fleet.py route \
+#     --repository narduk-enterprises/narduk-mapkit --visibility private
+# returns the `linux-ci` ORGANIZATION group; its `runsOn` object is pasted
+# verbatim below. Org repos must pin the group -- a labels-only `runs-on` can
+# match the credentialed deploy class and land a PR job on the deploy host.
+# This also widens the label set the previous file carried by hand
+# (`[self-hosted, linux-ci]`) back to the manifest's full list.
+#
+# WHAT CHANGED IN THE GATE, LANE BY LANE (nothing dropped silently):
+#   corepack enable + prepare pnpm@10.33.4 -> pnpm/action-setup inside the
+#     callable, which reads the same pin from package.json `packageManager`.
+#   pnpm install --frozen-lockfile      -> callable's install step (identical).
+#   quality > typecheck                 -> `run-typecheck` lane, per package.
+#   quality > test                      -> `run-tests` lane, per package.
+#   quality > build                     -> `run-build` lane, per package.
+#   quality > check:dist                -> `extra-scripts` (needs build output;
+#                                          core-only, no-ops in the nuxt lane).
+#   quality > check:package             -> `extra-scripts`; present in BOTH
+#                                          packages, so each lane runs its own.
+#   quality > publint / pnpm exec publint
+#                                       -> `extra-scripts` as `check:publint`,
+#                                          a new named script in both packages
+#                                          (extra-scripts runs package scripts,
+#                                          not bare binaries). `pnpm run quality`
+#                                          still calls it, so local and CI stay
+#                                          the same commands.
+#   nuxt quality > test:cloudflare      -> `extra-scripts` (nuxt-only, no-ops in
+#                                          the core lane).
+#   pnpm run pack:artifacts             -> DROPPED with the upload it fed; see
+#                                          the residue note below.
+#   run-lint                          -> left ON although neither package has
+#                                          a `lint` script today; the callable
+#                                          runs it --if-present, so it no-ops now
+#                                          and gates the day someone adds one.
+#
+# >>> RESIDUE -- TWO STEPS ARE DROPPED, ON PURPOSE, AND THIS IS THE LOUD NOTE <<<
+#   `pnpm run pack:artifacts` and the actions/upload-artifact of `.pack/*.tgz`
+#   as `narduk-mapkit-packages-${{ github.sha }}` NO LONGER RUN IN CI. They were
+#   one unit: the pack existed to produce the tarballs the upload published, and
+#   the callable cannot upload artifacts and has no input for it. Evidence for
+#   dropping rather than keeping a second job:
+#     * `gh search code narduk-mapkit-packages --owner narduk-enterprises
+#       --owner narduk-geo` returns exactly ONE hit: the producing step itself.
+#       No workflow, script, or doc in either org downloads it.
+#     * release.yml does NOT consume it -- it re-runs `pnpm run quality &&
+#       pnpm run pack:artifacts` from source at the tag and publishes from that,
+#       so the published tarballs never came from this upload. That path is
+#       untouched, so the pre-publish pack still runs where it matters.
+#     * The pack's GATE value is subsumed: `check:package` in the nuxt package
+#       packs BOTH the core and the nuxt tarball, then installs them into a
+#       clean Nuxt/Cloudflare consumer and asserts real runtime behaviour --
+#       strictly more than pack:artifacts' "two .tgz appeared" assertion.
+#     * Running pack:artifacts in the core matrix lane is also not possible:
+#       the nuxt package's `prepack` (nuxt-module-build) needs
+#       packages/nuxt/.nuxt/tsconfig.json, which only exists after that
+#       package's own `dev:prepare`. The old monolith got that for free because
+#       nuxt's typecheck ran earlier in the same shell. That implicit ordering
+#       is a latent defect in `pnpm run pack:artifacts` (it cannot run from a
+#       clean checkout), masked in release.yml by `quality &&` running first.
+#   Keeping the upload would mean a second job with a second full install to
+#   produce a download nobody downloads. Recorded as accepted residue against
+#   #278; if a consumer ever appears it comes back as its own `needs: ci` job,
+#   not as an input to the shared callable.
+
 name: CI
 
 on:
@@ -6,39 +99,44 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Set concurrency in the CALLER: workflow-level concurrency does not propagate
+# from a called reusable workflow, and the workflows repo declares none. Also
+# keys on the PR number rather than the raw ref, so a PR's runs supersede each
+# other without a push to main cancelling a PR run that shares a ref shape.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Package quality
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, linux-ci]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-      - name: Enable Corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.33.4 --activate
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Run package quality gate
-        run: pnpm run quality
-      - name: Pack release candidates
-        run: pnpm run pack:artifacts
-      - name: Upload release candidates
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: narduk-mapkit-packages-${{ github.sha }}
-          path: .pack/*.tgz
-          if-no-files-found: error
-          include-hidden-files: true
+  ci:
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    # A called workflow cannot request MORE than the caller grants, and
+    # node-library.yml's package job asks for `packages: read` so it can hit the
+    # GitHub Packages registry. Without this the run does not fail a step -- it
+    # fails to START (`startup_failure`, no logs, no annotation).
+    permissions:
+      contents: read
+      packages: read
+    with:
+      # Verbatim `runsOn` from Config/github-runner-fleet.json via
+      # scripts/github_runner_fleet.py route (organization scope, linux-ci).
+      runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
+      node-version: "22"
+      package-manager: pnpm
+      run-lint: true
+      run-typecheck: true
+      run-tests: true
+      run-build: true
+      # One lane per publishable workspace package. `filter` is passed to
+      # `pnpm --filter`; "" runs the scripts at the repo root (the core package).
+      package-matrix: '[{"label":"core","filter":""},{"label":"nuxt","filter":"@narduk-geo/narduk-mapkit-nuxt"}]'
+      # Run after build, in the same lane, so they see the build output --
+      # check:dist compares the freshly built dist/ against the committed one,
+      # and the pack/install smokes need dist/ to exist. Each is --if-present,
+      # so a script a lane's package does not define simply no-ops there.
+      extra-scripts: "check:dist check:package check:publint test:cloudflare"
+    secrets:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
