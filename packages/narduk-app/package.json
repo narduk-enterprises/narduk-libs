@@ -29,6 +29,7 @@
   ],
   "scripts": {
     "build": "pnpm run typecheck",
+    "check:package": "publint --strict && pnpm pack --dry-run",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "lint": "eslint src tests --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
