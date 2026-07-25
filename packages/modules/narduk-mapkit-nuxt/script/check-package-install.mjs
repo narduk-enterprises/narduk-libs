@@ -11,6 +11,19 @@ const packDir = join(tempRoot, 'pack')
 const consumerDir = join(tempRoot, 'consumer')
 const registrySmoke = process.env.NARDUK_MAPKIT_REGISTRY_SMOKE === '1'
 
+// Install the fixture with THIS package's pinned npm, not whatever npm the
+// ambient Node happens to bundle. The fixture deliberately resolves a full
+// Nuxt dependency graph, so it is exposed to npm's peer resolver -- and the
+// npm 10.9.x bundled with Node 22 crashes on the current registry state of
+// that graph with `TypeError: Cannot read properties of null (reading
+// 'edgesOut')` inside arborist's #loadPeerSet. It is reproducible with
+// nothing but `npm install nuxt@4.4.8 vue@3.5.39` on npm 10.9.4, and npm 11
+// installs the same graph cleanly, so this is an upstream npm bug reached by
+// registry drift rather than anything about the packed MapKit tarballs.
+// Pinning the installer also makes the fixture reproducible instead of a
+// function of the runner's Node build.
+const npmBin = join(packageRoot, 'node_modules/.bin/npm')
+
 async function packageManifest(packageJsonPath) {
   return JSON.parse(await readFile(packageJsonPath, 'utf8'))
 }
@@ -152,7 +165,7 @@ const { mapkitReady } = useMapKit()
 `,
   )
 
-  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], consumerDir)
+  run(npmBin, ['install', '--ignore-scripts', '--no-audit', '--no-fund'], consumerDir)
   const installedLicense = await readFile(
     join(consumerDir, 'node_modules/@narduk-geo/narduk-mapkit-nuxt/LICENSE'),
     'utf8',

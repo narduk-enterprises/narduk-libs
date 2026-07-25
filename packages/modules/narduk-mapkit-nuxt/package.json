@@ -36,13 +36,14 @@
     "build": "nuxt-module-build build",
     "check:pack": "pnpm pack --pack-destination ../../.pack",
     "check:package": "node script/check-package-install.mjs",
+    "check:publint": "publint",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
     "prepack": "nuxt-module-build build",
     "test": "vitest run",
     "test:build": "pnpm run dev:prepare && nuxt build playground",
     "test:cloudflare": "node script/check-cloudflare-build.mjs",
     "typecheck": "pnpm run dev:prepare && vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && publint && pnpm run test:cloudflare && pnpm run check:package"
+    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:publint && pnpm run test:cloudflare && pnpm run check:package"
   },
   "dependencies": {
     "@narduk-geo/narduk-mapkit": "workspace:^",
@@ -54,6 +55,7 @@
     "@nuxt/schema": "^4.4.8",
     "@nuxt/test-utils": "^4.0.3",
     "@types/node": "^24.0.4",
+    "npm": "^11.7.0",
     "nuxt": "^4.4.8",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",
