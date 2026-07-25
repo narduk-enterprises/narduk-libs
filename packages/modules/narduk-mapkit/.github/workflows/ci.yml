@@ -103,9 +103,23 @@ on:
 # from a called reusable workflow, and the workflows repo declares none. Also
 # keys on the PR number rather than the raw ref, so a PR's runs supersede each
 # other without a push to main cancelling a PR run that shares a ref shape.
+#
+# cancel-in-progress IS SCOPED TO `pull_request` ON PURPOSE, AND THIS REPO IS
+# THE REASON. Superseded PR runs should die -- pushing a fixup must not leave
+# the previous commit's run holding one of the six linux-ci slots. A run on the
+# DEFAULT BRANCH must NOT be cancelled, and main here proved why: the adoption
+# lane found this repo's main HEAD (11f4cde) had had no COMPLETED CI run since
+# 2026-07-22, because its main run was cancelled by concurrency at 35s. It sat
+# genuinely red (an npm 10 peer-resolver crash) for three days, invisibly -- a
+# cancelled run reads exactly like a completed one in `gh run list` unless you
+# check the conclusion -- and the failure was only found when the adoption PR
+# inherited the blame for it (company-hq#278). Main runs now queue instead.
+#
+# release.yml is deliberately left with `cancel-in-progress: false`: a cancelled
+# publish is a corrupt release, so the publish path is never made cancellable.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
