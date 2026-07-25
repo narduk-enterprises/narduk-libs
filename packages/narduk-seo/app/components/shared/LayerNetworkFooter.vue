@@ -22,13 +22,20 @@ const props = withDefaults(defineProps<NetworkFooterProps>(), {
 
 const runtimeConfig = useRuntimeConfig()
 
+// No hardcoded hub hostname: the catalog link is configuration, not a constant.
 const resolvedCatalogUrl = computed(() => {
   if (props.catalogUrl) return props.catalogUrl
-  return readRuntimeConfigString(
-    runtimeConfig.public.publicCatalogBaseUrl,
-    'https://catalog.nard.uk',
-  )
+  return readRuntimeConfigString(runtimeConfig.public.publicCatalogBaseUrl, '')
 })
+
+/**
+ * The `/narduk-network` entry point is only meaningful when a directory
+ * endpoint is configured; otherwise the page can only render empty, so the
+ * footer omits the link entirely.
+ */
+const hasNetworkDirectory = computed(() =>
+  Boolean(readRuntimeConfigString(runtimeConfig.public.nardukNetworkDirectoryUrl, '')),
+)
 
 const resolvedOrganizationName = computed(() => {
   if (props.organizationName) return props.organizationName
@@ -37,6 +44,7 @@ const resolvedOrganizationName = computed(() => {
 
 /** Catalog hub index for published apps (see fleet schema tests using `/apps/...`). */
 const catalogAppsIndexUrl = computed(() => {
+  if (!resolvedCatalogUrl.value) return ''
   const base = resolvedCatalogUrl.value.replace(/\/$/, '')
   return `${base}/apps`
 })
@@ -58,6 +66,7 @@ const catalogAppsIndexUrl = computed(() => {
           <span class="sr-only">{{ resolvedOrganizationName }} —</span>
           Part of the
           <ULink
+            v-if="resolvedCatalogUrl"
             :to="resolvedCatalogUrl"
             external
             rel="noopener"
@@ -65,18 +74,20 @@ const catalogAppsIndexUrl = computed(() => {
           >
             {{ catalogLabel }}
           </ULink>
+          <span v-else class="font-medium text-default">{{ catalogLabel }}</span>
           network
         </span>
       </div>
       <div class="flex flex-wrap items-center gap-4">
         <ULink
+          v-if="hasNetworkDirectory"
           to="/narduk-network"
           class="font-medium text-default hover:text-primary underline-offset-2 hover:underline"
         >
           Narduk network
         </ULink>
         <ULink
-          v-if="showAppList"
+          v-if="showAppList && catalogAppsIndexUrl"
           :to="catalogAppsIndexUrl"
           external
           rel="noopener"

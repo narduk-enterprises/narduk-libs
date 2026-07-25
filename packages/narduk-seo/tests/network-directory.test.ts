@@ -1,18 +1,54 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 
 import {
-  NARDUK_DEFAULT_CATALOG_BASE_URL,
+  resolveNardukCatalogBaseUrl,
   resolveNardukNetworkDirectory,
   resolveNardukNetworkDirectoryUrl,
 } from '../server/utils/nardukNetworkDirectory'
 
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+
 describe('Narduk network directory', () => {
-  it('uses the independent catalog origin by default', () => {
-    expect(NARDUK_DEFAULT_CATALOG_BASE_URL).toBe('https://catalog.nard.uk')
-    expect(resolveNardukNetworkDirectoryUrl()).toBe('https://catalog.nard.uk/api/network.json')
-    expect(resolveNardukNetworkDirectoryUrl('https://example.com/catalog')).toBe(
-      'https://example.com/catalog/api/network.json',
+  it('has no default endpoint — an unconfigured directory resolves to null', () => {
+    expect(resolveNardukNetworkDirectoryUrl()).toBeNull()
+    expect(resolveNardukNetworkDirectoryUrl(null)).toBeNull()
+    expect(resolveNardukNetworkDirectoryUrl('')).toBeNull()
+    expect(resolveNardukNetworkDirectoryUrl('   ')).toBeNull()
+  })
+
+  it('uses the injected endpoint verbatim and rejects non-HTTPS values', () => {
+    expect(resolveNardukNetworkDirectoryUrl('https://example.com/api/network.json')).toBe(
+      'https://example.com/api/network.json',
     )
+    expect(resolveNardukNetworkDirectoryUrl('  https://example.com/api/network.json  ')).toBe(
+      'https://example.com/api/network.json',
+    )
+    expect(resolveNardukNetworkDirectoryUrl('http://example.com/api/network.json')).toBeNull()
+    expect(resolveNardukNetworkDirectoryUrl('not a url')).toBeNull()
+  })
+
+  it('resolves the catalog base URL without a built-in default', () => {
+    expect(resolveNardukCatalogBaseUrl()).toBeNull()
+    expect(resolveNardukCatalogBaseUrl('')).toBeNull()
+    expect(resolveNardukCatalogBaseUrl('https://example.com/')).toBe('https://example.com')
+  })
+
+  it('ships no hardcoded operator-console hostname in the directory runtime', () => {
+    const sources = [
+      'server/utils/nardukNetworkDirectory.ts',
+      'server/api/narduk-network/sites.get.ts',
+      'app/composables/useNardukNetworkDirectory.ts',
+      'app/components/shared/LayerNetworkFooter.vue',
+    ].map((relativePath) => readFileSync(join(packageRoot, relativePath), 'utf-8'))
+
+    for (const source of sources) {
+      expect(source).not.toContain('command.nard.uk')
+      expect(source).not.toContain('catalog.nard.uk')
+    }
   })
 
   it('filters private, unsafe, duplicate, and current-app entries', () => {

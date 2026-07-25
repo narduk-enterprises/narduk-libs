@@ -1,7 +1,5 @@
 import { z } from 'zod'
 
-export const NARDUK_DEFAULT_CATALOG_BASE_URL = 'https://catalog.nard.uk'
-
 const rawNardukNetworkSiteSchema = z
   .object({
     slug: z.string().trim().min(1),
@@ -65,15 +63,35 @@ function normalizeOrigin(value: null | string | undefined): null | string {
   }
 }
 
-export function resolveNardukCatalogBaseUrl(value: null | string | undefined): string {
-  const normalized = normalizeHttpsUrl(value ?? NARDUK_DEFAULT_CATALOG_BASE_URL)
-  return normalized ?? NARDUK_DEFAULT_CATALOG_BASE_URL
+/**
+ * Normalizes an optional catalog-hub base URL. There is no built-in default:
+ * this package must not pin every downstream app to one hostname.
+ */
+export function resolveNardukCatalogBaseUrl(value?: null | string): null | string {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  return normalizeHttpsUrl(trimmed)
 }
 
-export function resolveNardukNetworkDirectoryUrl(
-  catalogBaseUrl: null | string | undefined,
-): string {
-  return new URL('api/network.json', `${resolveNardukCatalogBaseUrl(catalogBaseUrl)}/`).href
+/**
+ * Resolves the injectable network-directory endpoint.
+ *
+ * The value is an absolute HTTPS URL supplied by the consuming app
+ * (`nardukSeo.networkDirectoryUrl`, or `NUXT_PUBLIC_NARDUK_NETWORK_DIRECTORY_URL`
+ * at runtime). **There is deliberately no default.** When it is unset this
+ * returns `null` and the directory feature disables itself: the server route
+ * performs no outbound fetch and `/narduk-network` renders an empty directory.
+ *
+ * Failing quiet is correct here — the directory is a marketing cross-link
+ * surface, not a gate — and it keeps a published library from generating
+ * traffic against a hostname its consumers never chose.
+ */
+export function resolveNardukNetworkDirectoryUrl(directoryUrl?: null | string): null | string {
+  const trimmed = directoryUrl?.trim()
+  if (!trimmed) return null
+
+  return normalizeHttpsUrl(trimmed)
 }
 
 export function resolveNardukNetworkDirectory(

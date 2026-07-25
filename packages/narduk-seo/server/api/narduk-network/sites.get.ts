@@ -1,5 +1,4 @@
 import {
-  NARDUK_DEFAULT_CATALOG_BASE_URL,
   resolveNardukCatalogBaseUrl,
   resolveNardukNetworkDirectory,
   resolveNardukNetworkDirectoryUrl,
@@ -7,10 +6,23 @@ import {
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
-  const catalogBaseUrl = resolveNardukCatalogBaseUrl(
-    runtimeConfig.public.publicCatalogBaseUrl || NARDUK_DEFAULT_CATALOG_BASE_URL,
+  const catalogUrl = resolveNardukCatalogBaseUrl(runtimeConfig.public.publicCatalogBaseUrl)
+  const directoryUrl = resolveNardukNetworkDirectoryUrl(
+    runtimeConfig.public.nardukNetworkDirectoryUrl,
   )
-  const directoryUrl = resolveNardukNetworkDirectoryUrl(catalogBaseUrl)
+  const emptyDirectory = {
+    ok: false,
+    configured: directoryUrl !== null,
+    catalogUrl,
+    directoryUrl,
+    updatedAt: null,
+    sites: [],
+  }
+
+  // Unconfigured is the default. No endpoint means no outbound subrequest at
+  // all — the directory just renders empty. See resolveNardukNetworkDirectoryUrl.
+  if (!directoryUrl) return emptyDirectory
+
   const currentAppUrl = runtimeConfig.public.appUrl || getRequestURL(event).origin
 
   try {
@@ -34,17 +46,12 @@ export default defineEventHandler(async (event) => {
 
     return {
       ok: true,
-      catalogUrl: catalogBaseUrl,
+      configured: true,
+      catalogUrl,
       directoryUrl,
       ...directory,
     }
   } catch {
-    return {
-      ok: false,
-      catalogUrl: catalogBaseUrl,
-      directoryUrl,
-      updatedAt: null,
-      sites: [],
-    }
+    return emptyDirectory
   }
 })

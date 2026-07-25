@@ -61,17 +61,43 @@ intentionally needs indexing in a non-production environment must opt in with
 
 ## Narduk network directory
 
-The SEO layer exposes a catalog-hub base URL on
-`runtimeConfig.public.publicCatalogBaseUrl`, resolved from the
-`PUBLIC_CATALOG_BASE_URL` env var (defaults to `https://catalog.nard.uk`).
-`LayerNetworkFooter` reads it for the hub link and for the single
-`/narduk-network` footer entry point. The SEO layer owns that crawlable
-directory page and adds it to the sitemap; it does not render an all-to-all list
-of sites in every footer.
+**The directory endpoint is injectable and has no default. It is off unless you
+configure it.**
 
-The network directory page fetches `api/network.json` from the configured
-catalog base URL (by default `https://catalog.nard.uk/api/network.json`). The
-catalog application owns curation, publication, and the public/indexable
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukSeo: {
+    networkDirectoryUrl: 'https://your-catalog.example.com/api/network.json',
+  },
+})
+```
+
+or, at runtime (build-once friendly):
+
+```
+NUXT_PUBLIC_NARDUK_NETWORK_DIRECTORY_URL=https://your-catalog.example.com/api/network.json
+```
+
+When it is unset, the feature disables itself by design:
+`/api/narduk-network/sites` makes **no outbound request**,
+`useNardukNetworkDirectory()` skips its fetch, `/narduk-network` renders an
+empty directory, and `LayerNetworkFooter` omits the `/narduk-network` link. This
+is intentional — the directory is a marketing cross-link surface, not a gate, so
+failing quiet is correct. A published package must never make every downstream
+app poll a hostname it did not choose.
+
+The value must be an absolute **HTTPS** URL; anything else resolves to "not
+configured".
+
+Separately, `runtimeConfig.public.publicCatalogBaseUrl` (env
+`PUBLIC_CATALOG_BASE_URL`) supplies the catalog-hub link that
+`LayerNetworkFooter` renders and the `isPartOf` JSON-LD wiring. It is a link
+target only — it never triggers a fetch — and the footer omits the hub link when
+it is unset. The SEO layer owns the crawlable `/narduk-network` page and adds it
+to the sitemap; it does not render an all-to-all list of sites in every footer.
+
+The catalog application owns curation, publication, and the public/indexable
 classification. The feed shape is:
 
 ```json
@@ -91,7 +117,7 @@ classification. The feed shape is:
 The layer validates the feed, keeps only HTTPS URLs, removes duplicates,
 excludes the current app origin, and skips entries explicitly marked
 `"public": false` or `"indexable": false`. If the feed cannot be loaded,
-`/narduk-network` still renders a catalog link instead of throwing.
+`/narduk-network` renders the empty state instead of throwing.
 
 The catalog publishes only public, canonical, indexable apps. Do not hardcode
 app lists inside this package.

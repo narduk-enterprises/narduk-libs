@@ -1,5 +1,11 @@
 interface SeoPublicRuntimeConfig {
   /**
+   * Absolute HTTPS endpoint serving the Narduk network directory feed for
+   * `/narduk-network`. Empty by design — an unset value disables the directory
+   * feature and suppresses the outbound fetch entirely.
+   */
+  nardukNetworkDirectoryUrl: string
+  /**
    * Build-baked flag for the production build-once indexing contract: when
    * true, runtime guards serve `noindex, nofollow` on any non-canonical
    * request host (e.g. `workers.dev` preview aliases) while the canonical

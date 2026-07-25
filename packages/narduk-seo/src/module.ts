@@ -104,6 +104,17 @@ export interface NardukSeoModuleOptions {
    */
   hostAwareIndexing?: boolean
   indexNonProduction?: boolean
+  /**
+   * Absolute HTTPS endpoint serving the Narduk network directory feed for
+   * `/narduk-network`. Also settable at runtime with
+   * `NUXT_PUBLIC_NARDUK_NETWORK_DIRECTORY_URL`.
+   *
+   * **There is no default, by design.** Leaving it unset disables the
+   * directory feature entirely: the `/api/narduk-network/sites` route makes no
+   * outbound request and `/narduk-network` renders an empty directory. This
+   * package will not fetch a hostname the consuming app never chose.
+   */
+  networkDirectoryUrl?: string
   seoModule?: boolean
   server?: boolean
 }
@@ -264,6 +275,11 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       '',
     )
     const publicCatalogBaseUrl = trimmedPublicCatalogBaseUrl || 'https://catalog.nard.uk'
+    // Injectable, no default: unset disables the network directory feature.
+    const nardukNetworkDirectoryUrl =
+      options.networkDirectoryUrl?.trim() ||
+      process.env.NUXT_PUBLIC_NARDUK_NETWORK_DIRECTORY_URL?.trim() ||
+      ''
     const browserConsolaShim = fileURLToPath(
       new URL('../app/shims/consola-browser.ts', import.meta.url),
     )
@@ -289,6 +305,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
       public: {
+        nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
