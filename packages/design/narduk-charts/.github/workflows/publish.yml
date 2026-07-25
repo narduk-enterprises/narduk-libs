@@ -12,7 +12,9 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
     timeout-minutes: 20
     permissions:
       contents: read
