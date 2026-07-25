@@ -51,9 +51,19 @@ on:
 
 # Set concurrency in the CALLER: workflow-level concurrency does not propagate
 # from a called reusable workflow, and the workflows repo declares none.
+#
+# cancel-in-progress IS SCOPED TO `pull_request` ON PURPOSE. Superseded PR runs
+# should die -- pushing a fixup must not leave the previous commit's run holding
+# one of the six linux-ci slots. A run on the DEFAULT BRANCH must NOT be
+# cancelled: cancelling it leaves main with no completed CI run, and a cancelled
+# run reads exactly like a completed one in `gh run list` unless you look at the
+# conclusion, so nothing looks wrong. narduk-mapkit sat red on main for three
+# days behind precisely that (company-hq#278, wave-2 finding: its main run was
+# cancelled by concurrency at 35s, and the pre-existing failure was only found
+# when an unrelated PR inherited the blame). Main runs now queue instead.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
