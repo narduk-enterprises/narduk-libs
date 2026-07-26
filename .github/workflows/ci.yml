@@ -190,6 +190,9 @@ jobs:
       # ./dist/index.d.ts but the file does not exist") when run before its
       # build, and passes after it.
       extra-scripts: "test:unit check:package"
+      # All eleven packages define both extra scripts as well as their enabled
+      # standard lanes. A missing name is a required failure, never a soft skip.
+      require-scripts: true
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
 
