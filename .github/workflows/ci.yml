@@ -146,7 +146,7 @@ permissions:
 
 jobs:
   ci:
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@d41bc5b
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
     # GitHub Packages registry. Without this the run does not fail a step -- it
@@ -190,6 +190,31 @@ jobs:
       # ./dist/index.d.ts but the file does not exist") when run before its
       # build, and passes after it.
       extra-scripts: "test:unit check:package"
+      # W-LIBS4: one install per linux-ci runner-sized batch, with each
+      # package still reported by label and JSONL result in the callable log.
+      package-batch-size: 3
+      package-batches: |
+        [
+          {"label":"batch-1", "packages":[
+            {"label":"create-narduk-app", "filter":"@narduk-enterprises/create-narduk-app"},
+            {"label":"narduk-app-tools", "filter":"@narduk-enterprises/narduk-app-tools"},
+            {"label":"narduk-app", "filter":"@narduk-enterprises/narduk-app"}
+          ]},
+          {"label":"batch-2", "packages":[
+            {"label":"narduk-platform", "filter":"@narduk-enterprises/narduk-platform"},
+            {"label":"narduk-testkit", "filter":"@narduk-enterprises/narduk-testkit"},
+            {"label":"narduk-core", "filter":"@narduk-enterprises/narduk-core"}
+          ]},
+          {"label":"batch-3", "packages":[
+            {"label":"narduk-auth", "filter":"@narduk-enterprises/narduk-auth"},
+            {"label":"narduk-seo", "filter":"@narduk-enterprises/narduk-seo"},
+            {"label":"narduk-analytics", "filter":"@narduk-enterprises/narduk-analytics"}
+          ]},
+          {"label":"batch-4", "packages":[
+            {"label":"narduk-ai", "filter":"@narduk-enterprises/narduk-ai"},
+            {"label":"narduk-uploads", "filter":"@narduk-enterprises/narduk-uploads"}
+          ]}
+        ]
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
 
