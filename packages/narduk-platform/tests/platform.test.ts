@@ -98,7 +98,7 @@ describe('neutral platform contracts', () => {
 
     expect(settings.rootDirectory).toBe('.')
     expect(settings.skipDependencyInstall).toBe(false)
-    expect(settings.requiredBuildSecrets).toEqual(['NARDUK_PLATFORM_GH_PACKAGES_READ'])
+    expect(settings.requiredBuildSecrets).toEqual(['GH_PACKAGES_READ'])
     expect(settings.requiredRuntimeVariables).toEqual(['SITE_URL'])
     expect(settings.targets.production.buildCommand).toBe('pnpm run cf:build')
     expect(settings.targets.production.deployCommand).toBe('pnpm run cf:deploy')

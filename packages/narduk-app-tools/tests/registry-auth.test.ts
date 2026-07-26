@@ -8,12 +8,12 @@ describe('registry-auth', () => {
       ['@narduk-geo:registry=https://registry.npmjs.org', 'auto-install-peers=false'].join('\n'),
       '//npm.pkg.github.com/:_authToken=stale\n',
       resolveRegistryConfig({
-        NARDUK_PLATFORM_GH_PACKAGES_READ: 'test-token',
+        GH_PACKAGES_READ: 'test-token',
       }),
     )
     expect(output).toContain('@narduk-enterprises:registry=https://npm.pkg.github.com')
     expect(output).toContain('@narduk-geo:registry=https://npm.pkg.github.com')
-    expect(output).toContain('${NARDUK_PLATFORM_GH_PACKAGES_READ}')
+    expect(output).toContain('${GH_PACKAGES_READ}')
     expect(output).not.toContain('test-token')
     expect(output).not.toContain('stale')
   })
@@ -25,7 +25,7 @@ describe('registry-auth', () => {
         '@loganrenz:registry=https://registry.npmjs.org',
       ].join('\n'),
       '',
-      resolveRegistryConfig({ NARDUK_PLATFORM_GH_PACKAGES_READ: 'test-token' }),
+      resolveRegistryConfig({ GH_PACKAGES_READ: 'test-token' }),
     )
 
     expect(output).toContain('@narduk-enterprises:registry=https://npm.pkg.github.com')
