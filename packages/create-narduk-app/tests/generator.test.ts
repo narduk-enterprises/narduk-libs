@@ -341,10 +341,10 @@ describe('create-narduk-app generation contract', () => {
       'pnpm install --frozen-lockfile',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      '${{ secrets.GH_PACKAGES_READ }}',
+      '${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}',
+      'GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
     )
 
     for (const file of files.filter((file) => file.path.endsWith('.json'))) {
