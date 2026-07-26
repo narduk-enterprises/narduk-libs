@@ -191,7 +191,7 @@ jobs:
       # build, and passes after it.
       extra-scripts: "test:unit check:package"
     secrets:
-      GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}
 
   contracts:
     # The old `repository-contracts` matrix lane, kept as its own job. See the
