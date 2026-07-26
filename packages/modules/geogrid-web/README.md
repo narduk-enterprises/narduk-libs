@@ -4,7 +4,7 @@ Web twin of [GeoGridKit](https://github.com/narduk-geo/GeoGridKit): decode gridd
 
 | | |
 |--|--|
-| Package | `@narduk-geo/geogrid-web` |
+| Package | `@narduk-enterprises/geogrid-web` |
 | Repo | `github.com/narduk-geo/GeoGridWeb` |
 | GPU | WebGL2 + Canvas2D fallback |
 | WebGPU | Not in v0.x |
@@ -20,15 +20,15 @@ Tile bakers, mosaic lattice, and vector styles are future work.
 
 ## Install
 
-GitHub Packages (`@narduk-geo` scope):
+GitHub Packages (`@narduk-enterprises` scope):
 
 ```ini
-@narduk-geo:registry=https://npm.pkg.github.com
+@narduk-enterprises:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
 ```sh
-pnpm add @narduk-geo/geogrid-web
+pnpm add @narduk-enterprises/geogrid-web
 ```
 
 ## Quick start
@@ -38,7 +38,7 @@ import {
   createGridOverlay,
   decodeTemporalChunk,
   type TemporalRasterManifest,
-} from '@narduk-geo/geogrid-web'
+} from '@narduk-enterprises/geogrid-web'
 
 const overlay = createGridOverlay({
   mode: 'scalar',
@@ -63,7 +63,7 @@ const frames = await decodeTemporalChunk(chunkBytes, manifest as TemporalRasterM
 overlay.renderAt(frames[0]!, frames[0]!, 0, manifest.bbox)
 ```
 
-Exports: `@narduk-geo/geogrid-web`, `/core`, `/render`, `/overlay`.
+Exports: `@narduk-enterprises/geogrid-web`, `/core`, `/render`, `/overlay`.
 
 ## What this package does *not* own
 

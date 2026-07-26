@@ -40,7 +40,7 @@ Initial extract from `earthdata-viewer` temporal playback (`temporalRaster`, `te
 
 ### Added
 
-- `@narduk-geo/geogrid-web` with `core` / `render` / `overlay` exports
+- `@narduk-enterprises/geogrid-web` with `core` / `render` / `overlay` exports
 - `decodeTemporalChunk` for `NARDUKTR1` / `earth-data-temporal-raster-v1`
 - `createGridOverlay` — WebGL2 primary, Canvas2D fallback
 - Shared `normalizeValue` / ramp sampling aligned with GeoGridKit intent
