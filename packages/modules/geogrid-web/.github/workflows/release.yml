@@ -12,7 +12,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   release:
@@ -20,14 +19,17 @@ jobs:
       group: linux-deploy
       labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     env:
       NODE_AUTH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           registry-url: https://npm.pkg.github.com
@@ -45,6 +47,7 @@ jobs:
         run: pnpm run quality
 
       - name: Verify release ref and package version
+        id: release
         shell: bash
         run: |
           set -euo pipefail
@@ -55,6 +58,20 @@ jobs:
             test "${GITHUB_EVENT_NAME}" = "workflow_dispatch"
             test "${GITHUB_REF}" = "refs/heads/main"
           fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Publish to GitHub Packages
-        run: pnpm publish --access public --no-git-checks
+      - name: Publish to GitHub Packages if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="https://npm.pkg.github.com"
+          package_name="$(node -p "require('./package.json').name")"
+          version="${{ steps.release.outputs.version }}"
+
+          if published_version="$(npm view "${package_name}@${version}" version --registry="${registry}" 2>/dev/null)"; then
+            test "${published_version}" = "${version}"
+            echo "::notice::${package_name}@${version} is already published; skipping publish."
+            exit 0
+          fi
+
+          pnpm publish --access public --no-git-checks
