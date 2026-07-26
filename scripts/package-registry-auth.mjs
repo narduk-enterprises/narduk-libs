@@ -22,11 +22,16 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const token = process.env.NARDUK_PLATFORM_GH_PACKAGES_READ
+// The shared node-library callable exposes its established secret interface
+// as NARDUK_PLATFORM_GH_PACKAGES_READ. That is an Actions-secret alias only;
+// Doppler/runtime consumers use GH_PACKAGES_READ (and callers map the live
+// Actions secret into this process). Keep the compatibility fallback here
+// until the callable interface itself changes.
+const token = process.env.GH_PACKAGES_READ || process.env.NARDUK_PLATFORM_GH_PACKAGES_READ
 
 if (!token) {
   process.stderr.write(
-    'NARDUK_PLATFORM_GH_PACKAGES_READ is empty; refusing to write an unauthenticated .npmrc.auth.\n',
+    'GH_PACKAGES_READ is empty; refusing to write an unauthenticated .npmrc.auth.\n',
   )
   process.exit(1)
 }

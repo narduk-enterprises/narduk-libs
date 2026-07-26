@@ -10,7 +10,7 @@ export interface RegistryAuthConfig {
   registryUrl: string
 }
 
-const READ_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_READ'
+const READ_TOKEN = 'GH_PACKAGES_READ'
 const WRITE_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_WRITE'
 const LEGACY_TOKEN = 'NARDUK_PLATFORM_GH_PACKAGES_RW'
 

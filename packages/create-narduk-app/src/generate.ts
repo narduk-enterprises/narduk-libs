@@ -261,7 +261,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         '@narduk-enterprises:registry=https://npm.pkg.github.com',
         '@narduk-geo:registry=https://npm.pkg.github.com',
-        '//npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ-UNCONFIGURED}',
+        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}',
       ),
     },
     {
@@ -310,7 +310,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "          scope: '@narduk-enterprises'",
         '      - run: pnpm install --frozen-lockfile',
         '        env:',
-        '          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '          GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
         '          NODE_AUTH_TOKEN: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
         '      - run: pnpm exec playwright install --with-deps chromium',
         '      - run: pnpm run quality',
@@ -342,7 +342,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run quality',
         '- pnpm run test',
         '',
-        'The committed `.npmrc` routes `@narduk-enterprises/*` and `@narduk-geo/*` to GitHub Packages and reads `NARDUK_PLATFORM_GH_PACKAGES_READ` from the process environment. It contains no credential value.',
+        'The committed `.npmrc` routes `@narduk-enterprises/*` and `@narduk-geo/*` to GitHub Packages and reads `GH_PACKAGES_READ` from the process environment. It contains no credential value.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',

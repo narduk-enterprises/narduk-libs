@@ -30,7 +30,7 @@ pnpm dlx @narduk-enterprises/create-narduk-app@0.1.4 harbor-notes \
 It supports `--force`, `--no-git`, and `--json`; it never mutates GitHub,
 Cloudflare, Doppler, or package registries. The JSON report is returned to the
 caller and is not persisted as scaffold metadata. Generated repositories commit
-a non-secret `.npmrc` that reads `NARDUK_PLATFORM_GH_PACKAGES_READ` from the
-process environment, and routes both `@narduk-enterprises/*` and `@narduk-geo/*`
-to GitHub Packages. The onboarding skill owns the first authenticated install
-and commits the resulting frozen lockfile before CI is enabled.
+a non-secret `.npmrc` that reads `GH_PACKAGES_READ` from the process
+environment, and routes both `@narduk-enterprises/*` and `@narduk-geo/*` to
+GitHub Packages. The onboarding skill owns the first authenticated install and
+commits the resulting frozen lockfile before CI is enabled.

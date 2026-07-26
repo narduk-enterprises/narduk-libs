@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
     env:
       VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
-      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
@@ -64,12 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}"
+          test -n "${GH_PACKAGES_READ:-}"
           umask 077
           cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
           @narduk-enterprises:registry=https://npm.pkg.github.com
           @narduk-geo:registry=https://npm.pkg.github.com
-          //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_READ}
+          //npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}
           EOF
 
       - name: Install dependencies
