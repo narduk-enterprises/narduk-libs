@@ -88,8 +88,14 @@ jobs:
       # histoire 1.0.0-beta's peer ranges make a plain `npm ci` fail; this is
       # the same flag the local workflow used before adoption.
       install-args: "--legacy-peer-deps"
+      # There is no lint script. Declare that lane off instead of allowing a
+      # required green job to claim it ran.
+      run-lint: false
       # size-limit, run after build in the same lane so it sees dist/.
       extra-scripts: size
+      # typecheck, test, build, and size are all real package scripts. A rename
+      # or typo in any one is a required failure, not a warning-only no-op.
+      require-scripts: true
       runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
