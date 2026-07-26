@@ -9,7 +9,7 @@ import { readWranglerScriptName, resolveAppDir, runDeploy } from './deploy.js'
 const DOPPLER_PROJECT = 'narduk'
 const DOPPLER_CONFIG = 'tokens'
 const DEFAULT_SECRET_KEYS = [
-  'NARDUK_PLATFORM_GH_PACKAGES_READ',
+  'GH_PACKAGES_READ',
   'NUXT_OG_IMAGE_SECRET',
   'NUXT_SESSION_PASSWORD',
 ] as const

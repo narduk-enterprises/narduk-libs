@@ -22,11 +22,11 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const token = process.env.NARDUK_PLATFORM_GH_PACKAGES_READ
+const token = process.env.GH_PACKAGES_READ
 
 if (!token) {
   process.stderr.write(
-    'NARDUK_PLATFORM_GH_PACKAGES_READ is empty; refusing to write an unauthenticated .npmrc.auth.\n',
+    'GH_PACKAGES_READ is empty; refusing to write an unauthenticated .npmrc.auth.\n',
   )
   process.exit(1)
 }

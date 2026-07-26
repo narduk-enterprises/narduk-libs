@@ -288,8 +288,8 @@ const APP_BASE: CatalogEntry[] = [
     note: 'Public opt-in flag that allows browser geolocation prompts via Permissions-Policy.',
   },
   {
-    key: 'NARDUK_PLATFORM_GH_PACKAGES_READ',
-    from: 'doppler:narduk/tokens/NARDUK_PLATFORM_GH_PACKAGES_READ',
+    key: 'GH_PACKAGES_READ',
+    from: 'doppler:narduk/tokens/GH_PACKAGES_READ',
     to: ['cf:build-secret'],
     scope: 'every-app',
     secret: true,

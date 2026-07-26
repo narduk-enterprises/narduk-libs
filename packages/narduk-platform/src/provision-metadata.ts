@@ -35,7 +35,7 @@ export function getCloudflareWorkersBuildsSettings(): CloudflareWorkersBuildsSet
     rootDirectory: '.',
     buildCachingEnabled: true,
     skipDependencyInstall: false,
-    requiredBuildSecrets: ['NARDUK_PLATFORM_GH_PACKAGES_READ'],
+    requiredBuildSecrets: ['GH_PACKAGES_READ'],
     requiredRuntimeVariables: ['SITE_URL'],
     targets: {
       production: {
