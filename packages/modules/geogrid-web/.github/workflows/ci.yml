@@ -91,3 +91,6 @@ jobs:
       run-tests: false
       run-build: false
       extra-scripts: quality
+      # The aggregate is the sole package gate. A rename or typo must fail the
+      # required context instead of turning the entire package job into a no-op.
+      require-scripts: true
