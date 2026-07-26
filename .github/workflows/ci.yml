@@ -323,6 +323,8 @@ jobs:
           --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
       - name: Prove packed artifacts in an external generated consumer
+        env:
+          CONSUMER_SMOKE_PROFILE_INTERNALS: "1"
         run: pnpm run release:consumer-smoke
 
       - name: Remove temporary registry auth
