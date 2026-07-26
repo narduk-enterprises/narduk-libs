@@ -57,10 +57,10 @@
 #                                          the core lane).
 #   pnpm run pack:artifacts             -> DROPPED with the upload it fed; see
 #                                          the residue note below.
-#   run-lint                          -> left ON although neither package has
-#                                          a `lint` script today; the callable
-#                                          runs it --if-present, so it no-ops now
-#                                          and gates the day someone adds one.
+#   run-lint                          -> OFF. Neither package has a `lint`
+#                                          script, so enabling it would create
+#                                          a required green lane that ran
+#                                          nothing.
 #
 # >>> RESIDUE -- TWO STEPS ARE DROPPED, ON PURPOSE, AND THIS IS THE LOUD NOTE <<<
 #   `pnpm run pack:artifacts` and the actions/upload-artifact of `.pack/*.tgz`
@@ -140,7 +140,7 @@ jobs:
       runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
       node-version: "22"
       package-manager: pnpm
-      run-lint: true
+      run-lint: false
       run-typecheck: true
       run-tests: true
       run-build: true
@@ -149,8 +149,10 @@ jobs:
       package-matrix: '[{"label":"core","filter":""},{"label":"nuxt","filter":"@narduk-geo/narduk-mapkit-nuxt"}]'
       # Run after build, in the same lane, so they see the build output --
       # check:dist compares the freshly built dist/ against the committed one,
-      # and the pack/install smokes need dist/ to exist. Each is --if-present,
-      # so a script a lane's package does not define simply no-ops there.
+      # and the pack/install smokes need dist/ to exist. This is deliberately
+      # a cross-package list: check:dist exists only at the root and
+      # test:cloudflare only in the Nuxt package. That prevents enabling
+      # require-scripts until the callable can express per-matrix-lane extras.
       extra-scripts: "check:dist check:package check:publint test:cloudflare"
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
