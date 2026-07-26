@@ -21,7 +21,6 @@ const consumerSmoke = args.has('--consumer-smoke')
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
-const profileInternals = process.env.CONSUMER_SMOKE_PROFILE_INTERNALS === '1'
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const ignoredGeneratedDirectories = new Set([
   '.git',
@@ -81,27 +80,14 @@ function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
 }
 
-function runTimed(label, callback) {
-  const startedAt = process.hrtime.bigint()
-  writeLine(`\n[consumer-smoke:timing] start ${label}`)
-  try {
-    return callback()
-  } finally {
-    const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000
-    writeLine(`[consumer-smoke:timing] end ${label}: ${durationSeconds.toFixed(3)}s`)
-  }
-}
-
 function runChecked(command, commandArgs, options) {
   const label = options.label || `${command} ${commandArgs.join(' ')}`
   writeLine(`\n[consumer-smoke] ${label}`)
-  const result = runTimed(label, () => {
-    return spawnSync(command, commandArgs, {
-      cwd: options.cwd,
-      encoding: 'utf8',
-      env: childEnvironment(options.env),
-      maxBuffer: 64 * 1024 * 1024,
-    })
+  const result = spawnSync(command, commandArgs, {
+    cwd: options.cwd,
+    encoding: 'utf8',
+    env: childEnvironment(options.env),
+    maxBuffer: 64 * 1024 * 1024,
   })
   const output = `${result.stdout || ''}${result.stderr || ''}`
   if (output) process.stdout.write(output)
@@ -310,26 +296,24 @@ if (packages.length === 0) {
   process.exit(1)
 }
 
-runTimed('strict package validation and dry-run pack listings', () => {
-  for (const { directory, manifest } of packages) {
-    if (!manifest.name?.startsWith('@narduk-enterprises/')) {
-      throw new Error(`Package ${directory} is outside the @narduk-enterprises scope.`)
-    }
-    if (!manifest.version) {
-      throw new Error(`Package ${manifest.name} has no version.`)
-    }
-    if (manifest.publishConfig?.registry !== 'https://npm.pkg.github.com') {
-      throw new Error(`Package ${manifest.name} must publish to GitHub Packages.`)
-    }
-
-    writeLine(`Checking ${manifest.name}@${manifest.version}`)
-    execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
-      cwd: root,
-      stdio: 'inherit',
-    })
-    execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+for (const { directory, manifest } of packages) {
+  if (!manifest.name?.startsWith('@narduk-enterprises/')) {
+    throw new Error(`Package ${directory} is outside the @narduk-enterprises scope.`)
   }
-})
+  if (!manifest.version) {
+    throw new Error(`Package ${manifest.name} has no version.`)
+  }
+  if (manifest.publishConfig?.registry !== 'https://npm.pkg.github.com') {
+    throw new Error(`Package ${manifest.name} must publish to GitHub Packages.`)
+  }
+
+  writeLine(`Checking ${manifest.name}@${manifest.version}`)
+  execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
+    cwd: root,
+    stdio: 'inherit',
+  })
+  execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+}
 
 if (!consumerSmoke) {
   writeLine(`Dry run passed for ${packages.length} independent package(s).`)
@@ -344,24 +328,20 @@ mkdirSync(tarballDirectory, { recursive: true })
 try {
   const tarballs = new Map()
 
-  runTimed('create coordinated package tarballs', () => {
-    for (const { directory, manifest } of packages) {
-      execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
-        cwd: directory,
-        stdio: 'inherit',
-      })
-      const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
-      const tarball = readdirSync(tarballDirectory).find((entry) => entry === expectedTarball)
-      if (!tarball) {
-        throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
-      }
-      tarballs.set(manifest.name, join(tarballDirectory, tarball))
+  for (const { directory, manifest } of packages) {
+    execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
+      cwd: directory,
+      stdio: 'inherit',
+    })
+    const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
+    const tarball = readdirSync(tarballDirectory).find((entry) => entry === expectedTarball)
+    if (!tarball) {
+      throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
     }
-  })
+    tarballs.set(manifest.name, join(tarballDirectory, tarball))
+  }
 
-  runTimed('verify packed internal dependency graph', () => {
-    assertPackedInternalDependencyGraph(packages, tarballs)
-  })
+  assertPackedInternalDependencyGraph(packages, tarballs)
 
   const dependencies = Object.fromEntries(
     packages.map(({ manifest }) => [
@@ -521,27 +501,10 @@ try {
       label: 'install the generated app browser fixture',
     })
   }
-  if (profileInternals) {
-    for (const script of ['format:check', 'lint', 'knip', 'typecheck', 'build']) {
-      runChecked('pnpm', ['run', script], {
-        cwd: generatedDirectory,
-        label: `profile generated app ${script}`,
-      })
-    }
-    runChecked('pnpm', ['--filter', 'web', 'run', 'test:unit'], {
-      cwd: generatedDirectory,
-      label: 'profile generated app unit tests',
-    })
-    runChecked('pnpm', ['exec', 'playwright', 'test'], {
-      cwd: generatedDirectory,
-      label: 'profile generated app browser test',
-    })
-  } else {
-    runChecked('pnpm', ['run', 'quality'], {
-      cwd: generatedDirectory,
-      label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
-    })
-  }
+  runChecked('pnpm', ['run', 'quality'], {
+    cwd: generatedDirectory,
+    label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
+  })
   assertNoRetiredBuiltReferences(generatedDirectory)
 
   const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
