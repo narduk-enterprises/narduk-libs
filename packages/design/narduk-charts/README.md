@@ -45,6 +45,26 @@ The bundled `style.css` is compiled with **Tailwind CSS v4**. Semantic colors ar
 | `--color-chart-tooltip-bg` | Tooltip background |
 | `--color-chart-tooltip-foreground` | Tooltip text |
 | `--color-chart-tooltip-border` | Tooltip border |
+| `--color-chart-series-1` … `-10` | Categorical series palette |
+
+#### Series palette
+
+The ten `--color-chart-series-*` tokens are the categorical palette. Every chart
+resolves an unstyled series to `var(--color-chart-series-N)`, so overriding the
+token repaints the data — and so each preset `theme` can carry its own palette.
+Passing an explicit `colors` prop bypasses the tokens entirely.
+
+```css
+/* Recolour every chart in the app, in every theme that doesn't override it. */
+:root {
+  --color-chart-series-1: var(--color-brand-600);
+  --color-chart-series-2: var(--color-brand-400);
+}
+```
+
+Each token also carries a literal fallback (`var(--color-chart-series-1, oklch(…))`)
+so a chart still renders in the default palette where the stylesheet isn't
+present — most importantly in a standalone `exportChartSvg` file.
 
 **Tailwind app:** extend your design system in global CSS (after `@import "tailwindcss"`):
 
@@ -55,6 +75,7 @@ The bundled `style.css` is compiled with **Tailwind CSS v4**. Semantic colors ar
   --color-chart-grid: var(--color-slate-200);
   --color-chart-axis: var(--color-slate-300);
   --color-chart-accent: var(--color-violet-500);
+  --color-chart-series-1: var(--color-indigo-500);
 }
 ```
 

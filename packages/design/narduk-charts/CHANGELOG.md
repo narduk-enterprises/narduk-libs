@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Categorical series palette is now themable: ten `--color-chart-series-1` … `--color-chart-series-10` tokens are declared in `@theme` and re-declared by `.narduk-chart--dark` and every preset `theme` class. Series colors resolve to `var(--color-chart-series-N, <literal>)` instead of a hard-coded array, so overriding a token repaints the data. An explicit `colors` prop still wins and is used verbatim. Each `var()` carries a literal fallback so a stylesheet-less `exportChartSvg` still renders the default palette.
+- Histoire story **Series palette**: all ten series under `default`, `dark`, `high-contrast`, `print`, `colorblind-safe` and `colorblind-safe · dark`.
+
+### Fixed
+
+- `theme="colorblind-safe"` repainted only text, grid and axis — the series kept the default palette and stayed exactly as unsafe. It now declares eight hues separated by lightness as well as hue (slots 9–10 wrap to 1–2), with a lifted variant for `dark` so the two darkest members aren't near-black on a near-black plot. `theme="high-contrast"` and `theme="print"` likewise carry their own series palettes.
+
+### Changed
+
+- **Series palette values.** The default palette moves from the Tailwind-ish hex array to a ten-hue OKLCH ramp. Series 1 and 2 are no longer blue and red: the most common two-series chart read as good vs bad and vibrated on white. Charts that never set `colors` will change appearance.
+- **Semantic token values** re-tuned on the same names: `--color-chart-text` and `--color-chart-muted` darker (axis labels legible at 10px), `--color-chart-grid` lighter so the grid recedes behind the data, `--color-chart-axis` and `--color-chart-frame` unified to one hairline value, `--color-chart-plot-tint` flattened to the surface color, `--color-chart-accent` aligned to series 1, and `--color-chart-up` / `--color-chart-down` matched in lightness. The dark block is retuned to the same neutral hue family.
+- Grid lines are a solid hairline — `stroke-dasharray`, `stroke-linecap` and the `0.72` opacity are gone. The dashes competed with `referenceLines` and `annotations`, which are genuinely dashed.
+- The volume pane's plot surface mixes further toward `--color-chart-grid`; with a flat plot tint the previous mix resolved to the same color as the price pane and the split disappeared.
+
 ## [2.3.0] - 2026-07-13
 
 ### Added

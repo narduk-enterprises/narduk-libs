@@ -412,3 +412,41 @@ describe('NardukLineChart volume pane', () => {
     expect(bars[1]!.attributes('fill')).toBe('var(--color-chart-down, #ef4444)')
   })
 })
+
+describe('NardukLineChart series palette is themable', () => {
+  const series = [
+    { name: 'A', data: [1, 2, 3] },
+    { name: 'B', data: [3, 2, 1] },
+  ]
+  const labels = ['x', 'y', 'z']
+
+  it('paints series from --color-chart-series-N so a theme class can override them', () => {
+    const w = mount(NardukLineChart, {
+      props: { series, labels, width: 300, height: 150, animate: false },
+    })
+
+    const paths = w.findAll('.narduk-line-path')
+    expect(paths[0]!.attributes('stroke')).toMatch(/^var\(--color-chart-series-1, /)
+    expect(paths[1]!.attributes('stroke')).toMatch(/^var\(--color-chart-series-2, /)
+  })
+
+  it('keeps the token under theme="colorblind-safe" — the class repaints it, not the component', () => {
+    const w = mount(NardukLineChart, {
+      props: { series, labels, width: 300, height: 150, animate: false, theme: 'colorblind-safe' },
+    })
+
+    expect(w.find('.narduk-chart--theme-colorblind-safe').exists()).toBe(true)
+    expect(w.findAll('.narduk-line-path')[0]!.attributes('stroke'))
+      .toMatch(/^var\(--color-chart-series-1, /)
+  })
+
+  it('still takes an explicit colors prop literally', () => {
+    const w = mount(NardukLineChart, {
+      props: { series, labels, width: 300, height: 150, animate: false, colors: ['#123456', '#654321'] },
+    })
+
+    const paths = w.findAll('.narduk-line-path')
+    expect(paths[0]!.attributes('stroke')).toBe('#123456')
+    expect(paths[1]!.attributes('stroke')).toBe('#654321')
+  })
+})

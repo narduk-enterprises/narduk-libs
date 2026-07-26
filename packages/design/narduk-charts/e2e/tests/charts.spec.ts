@@ -68,6 +68,43 @@ test.describe('performance harness', () => {
   })
 })
 
+test.describe('series palette tokens', () => {
+  const stroke = (testId: string, nth: number) =>
+    `[data-testid="${testId}"] .narduk-line-path >> nth=${nth}`
+
+  test('theme classes repaint the series, not just the chrome', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('.e2e-root', { timeout: 30_000 })
+    await page.waitForSelector('[data-testid="palette-cbs-section"] .narduk-line-path', {
+      timeout: 30_000,
+    })
+
+    const resolved = (sel: string) =>
+      page.locator(sel).evaluate(el => getComputedStyle(el).stroke)
+
+    const defaults = [
+      await resolved(stroke('palette-default-section', 0)),
+      await resolved(stroke('palette-default-section', 1)),
+    ]
+    const safe = [
+      await resolved(stroke('palette-cbs-section', 0)),
+      await resolved(stroke('palette-cbs-section', 1)),
+    ]
+
+    // Every stroke resolved to a real color — a var() the browser could not
+    // resolve would come back as `none` or the initial value.
+    for (const value of [...defaults, ...safe]) {
+      expect(value).toMatch(/^(rgb|color|oklch)/)
+    }
+
+    // The whole point of the token indirection: same markup, different palette.
+    expect(safe[0]).not.toBe(defaults[0])
+    expect(safe[1]).not.toBe(defaults[1])
+    // …and the two series stay distinguishable from each other within a theme.
+    expect(safe[0]).not.toBe(safe[1])
+  })
+})
+
 test.describe('visual regression', () => {
   test('line section baseline', async ({ page }) => {
     test.skip(!!process.env.CI, 'Screenshot baselines are generated per-OS; run locally with npm run test:e2e:update')

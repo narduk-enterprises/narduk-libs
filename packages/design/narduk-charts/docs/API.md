@@ -32,7 +32,12 @@ Types ship from `dist/index.d.ts`. Import paths:
 
 ## CSS variables
 
-Defined in the published stylesheet (see `@theme` in source `src/styles/chart.css`): `--color-chart-text`, `--color-chart-muted`, `--color-chart-grid`, `--color-chart-axis`, `--color-chart-surface`, `--color-chart-accent`, tooltip tokens.
+Defined in the published stylesheet (see `@theme` in source `src/styles/chart.css`): `--color-chart-text`, `--color-chart-muted`, `--color-chart-grid`, `--color-chart-axis`, `--color-chart-surface`, `--color-chart-frame`, `--color-chart-plot-tint`, `--color-chart-accent`, `--color-chart-up` / `-down`, tooltip tokens, and the ten-slot categorical palette `--color-chart-series-1` … `--color-chart-series-10`.
+
+Series colors resolve to `var(--color-chart-series-N, <literal>)` unless a `colors`
+prop is supplied, so `.narduk-chart--dark` and every preset `theme` class repaint
+the data along with the chrome. `theme="colorblind-safe"` declares eight hues
+separated by lightness as well as hue, wrapping slots 9–10 back to 1–2.
 
 ## Utilities
 

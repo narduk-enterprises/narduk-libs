@@ -72,6 +72,33 @@ const pieData = [
         {{ zoom.start.toFixed(2) }},{{ zoom.end.toFixed(2) }}
       </p>
     </section>
+    <!-- Same series, two theme classes: proves the palette tokens actually
+         resolve through an SVG presentation attribute at runtime. -->
+    <section
+      data-testid="palette-default-section"
+      style="margin-top: 32px"
+    >
+      <NardukLineChart
+        chart-title="Palette default"
+        :series="lineSeries"
+        :labels="lineLabels"
+        :width="480"
+        :height="200"
+      />
+    </section>
+    <section
+      data-testid="palette-cbs-section"
+      style="margin-top: 32px"
+    >
+      <NardukLineChart
+        chart-title="Palette colorblind-safe"
+        theme="colorblind-safe"
+        :series="lineSeries"
+        :labels="lineLabels"
+        :width="480"
+        :height="200"
+      />
+    </section>
     <section
       data-testid="bar-section"
       style="margin-top: 32px"
