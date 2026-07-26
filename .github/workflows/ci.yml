@@ -191,7 +191,7 @@ jobs:
       # build, and passes after it.
       extra-scripts: "test:unit check:package"
     secrets:
-      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
 
   contracts:
     # The old `repository-contracts` matrix lane, kept as its own job. See the
@@ -206,7 +206,7 @@ jobs:
       contents: read
       packages: read
     env:
-      GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}
+      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
     steps:
@@ -274,7 +274,7 @@ jobs:
       contents: read
       packages: read
     env:
-      GH_PACKAGES_READ: ${{ secrets.GH_PACKAGES_READ }}
+      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
