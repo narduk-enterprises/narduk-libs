@@ -63,14 +63,7 @@
 #     release-plan:check, format:check)     -> KEPT as the separate `contracts`
 #                                              job below (see CONTRACTS).
 #   per-lane NODE_OPTIONS                   -> .npmrc `node-options` (see HEAP).
-# package-artifacts + packed-consumer-smoke -> The same coordinated build,
-#                                              strict package validation,
-#                                              tarball creation, and external
-#                                              consumer proof. Build/pack now
-#                                              happen once on linux-ci; the
-#                                              verified tarballs transfer to
-#                                              the browser job instead of
-#                                              rebuilding there.
+# packed-consumer-smoke                     -> KEPT as a separate job.
 # verify                                    -> KEPT as the `verify` roll-up below.
 #
 # ------------------------------- TESTS --------------------------------------
@@ -314,83 +307,16 @@ jobs:
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
-  package-artifacts:
-    name: package / verified tarballs
-    needs: affected
-    if: needs.affected.outputs.packed-consumer == 'true'
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: read
-    env:
-      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
-      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
-      NPM_CONFIG_GLOBALCONFIG: /dev/null
-      NODE_OPTIONS: --max-old-space-size=3072
-      TURBO_CACHE_DIR: /srv/github-runners/_cache/turbo/narduk-libs
-      NARDUK_PACKAGE_PREP_CONCURRENCY: "4"
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          version: 10.33.4
-          dest: ${{ runner.temp }}/setup-pnpm
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22.22.3
-          package-manager-cache: false
-
-      - name: Configure GitHub Packages read auth
-        run: node ./scripts/package-registry-auth.mjs
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build coordinated release set
-        run: >-
-          pnpm exec turbo run build --filter='./packages/*'
-          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
-
-      - name: Prepare and verify release tarballs
-        run: >-
-          node scripts/release-packages.mjs --dry-run
-          --prepare-tarballs="${RUNNER_TEMP}/narduk-libs-release-tarballs"
-
-      - name: Upload verified release tarballs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: narduk-libs-release-tarballs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/narduk-libs-release-tarballs/*.tgz
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-
-      - name: Remove temporary registry auth
-        if: always()
-        run: |
-          if [ -e "${NPM_CONFIG_USERCONFIG}" ]; then
-            rm -- "${NPM_CONFIG_USERCONFIG}"
-          fi
-
   packed-consumer-smoke:
-    # This is the only lane that installs and launches a real browser
-    # (Playwright chromium, via the generated app's quality gate), so it stays
-    # on the dedicated playwright-isolated pool. The package-artifacts
-    # prerequisite performs the coordinated build, strict package validation,
-    # and real tarball creation once on linux-ci. This job consumes those exact
-    # verified tarballs and proves them in the external generated consumer.
+    # Unchanged by the #278 adoption. This is the only lane that installs and
+    # launches a real browser (Playwright chromium, via the generated app's
+    # `quality` gate inside scripts/release-packages.mjs), so it runs on the
+    # dedicated playwright-isolated pool. node-library.yml has NO browser lane
+    # and no input that could express one, so this job cannot move into the
+    # callable and stays here by design -- recorded as a kept-separate lane
+    # against #278, not as residue.
     name: package / packed-consumer-smoke
-    needs: [affected, package-artifacts]
+    needs: affected
     if: needs.affected.outputs.packed-consumer == 'true'
     runs-on:
       group: playwright-isolated
@@ -404,6 +330,12 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
+      # Publint, dry-run pack, and real tarball creation are independent per
+      # package. Bound the fan-out inside this one already-required job.
+      NARDUK_PACKAGE_PREP_CONCURRENCY: "4"
+      # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
+      # cache mount; keep the turbo cache workspace-local here.
+      TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
       # The pool's browser binaries are immutable under /opt (downloads are
       # deliberately blocked); Playwright must resolve them from there.
       PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
@@ -411,7 +343,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Materialize Changesets base branch
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$(git branch --show-current)" != "main" ]; then
+            git branch --force main origin/main
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -423,36 +362,35 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.22.3
-          package-manager-cache: false
 
       - name: Configure GitHub Packages read auth
         run: node ./scripts/package-registry-auth.mjs
 
-      - name: Download verified release tarballs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: narduk-libs-release-tarballs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/narduk-libs-release-tarballs
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build coordinated release set
+        run: >-
+          pnpm exec turbo run build --filter='./packages/*'
+          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
       - name: Prove packed artifacts in an external generated consumer
-        run: >-
-          node scripts/release-packages.mjs --dry-run --consumer-smoke
-          --tarball-directory="${RUNNER_TEMP}/narduk-libs-release-tarballs"
+        run: pnpm run release:consumer-smoke
 
       - name: Remove temporary registry auth
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
   verify:
-    # Repo-level roll-up over every top-level gate. `ci / Required` is the
-    # estate-uniform sub-context that covers the package lanes; this job also
-    # covers the planner, repository contracts, verified tarball preparation,
-    # and packed external consumer. It keeps the historical `verify` check
-    # name reporting across the context rename, so nothing that ever
-    # authorized on it can be left waiting on a context that stopped existing.
+    # Repo-level roll-up over all three top-level gates. `ci / Required` is the
+    # estate-uniform sub-context that covers the 11 package lanes; this job is
+    # what covers the two lanes the callable structurally cannot host. It also
+    # keeps the historical `verify` check name reporting across the context
+    # rename, so nothing that ever authorized on it can be left waiting on a
+    # context that stopped existing.
     name: verify
     if: always()
-    needs: [affected, ci, contracts, package-artifacts, packed-consumer-smoke]
+    needs: [affected, ci, contracts, packed-consumer-smoke]
     runs-on:
       group: linux-ci
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
@@ -466,7 +404,6 @@ jobs:
           CI_RESULT: ${{ needs.ci.result }}
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
           PACKED_CONSUMER_EXPECTED: ${{ needs.affected.outputs.packed-consumer }}
-          PACKAGE_ARTIFACTS_RESULT: ${{ needs.package-artifacts.result }}
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
         run: |
           set -euo pipefail
@@ -479,22 +416,12 @@ jobs:
             fi
           done
           if [ "${PACKED_CONSUMER_EXPECTED}" = "true" ]; then
-            if [ "${PACKAGE_ARTIFACTS_RESULT}" != "success" ]; then
-              echo "::error::PACKAGE_ARTIFACTS was required but reported '${PACKAGE_ARTIFACTS_RESULT}'"
-              status=1
-            fi
             if [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "success" ]; then
               echo "::error::PACKED_CONSUMER_SMOKE was required but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
               status=1
             fi
-          else
-            if [ "${PACKAGE_ARTIFACTS_RESULT}" != "skipped" ]; then
-              echo "::error::PACKAGE_ARTIFACTS was not applicable but reported '${PACKAGE_ARTIFACTS_RESULT}'"
-              status=1
-            fi
-            if [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "skipped" ]; then
-              echo "::error::PACKED_CONSUMER_SMOKE was not applicable but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
-              status=1
-            fi
+          elif [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "skipped" ]; then
+            echo "::error::PACKED_CONSUMER_SMOKE was not applicable but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
+            status=1
           fi
           exit "${status}"

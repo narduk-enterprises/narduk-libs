@@ -82,28 +82,6 @@ if (
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
-function argumentValue(name) {
-  const prefix = `${name}=`
-  const matches = process.argv.slice(2).filter((argument) => argument.startsWith(prefix))
-  if (matches.length > 1) throw new Error(`${name} may be passed only once.`)
-  if (matches.length === 0) return undefined
-  const value = matches[0].slice(prefix.length).trim()
-  if (!value) throw new Error(`${name} requires a non-empty path.`)
-  return resolve(value)
-}
-
-const preparedTarballDirectory = argumentValue('--prepare-tarballs')
-const suppliedTarballDirectory = argumentValue('--tarball-directory')
-if (preparedTarballDirectory && suppliedTarballDirectory) {
-  throw new Error('--prepare-tarballs and --tarball-directory are mutually exclusive.')
-}
-if (preparedTarballDirectory && consumerSmoke) {
-  throw new Error('--prepare-tarballs creates an artifact; it cannot also run consumer smoke.')
-}
-if (suppliedTarballDirectory && !consumerSmoke) {
-  throw new Error('--tarball-directory is valid only with --consumer-smoke.')
-}
-
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
   return { ...environment, ...overrides }
@@ -457,32 +435,19 @@ for (const { directory, manifest } of packages) {
   }
 }
 
-if (!suppliedTarballDirectory) {
-  await validatePackages(packages)
-}
+await validatePackages(packages)
 
-if (!consumerSmoke && !preparedTarballDirectory) {
+if (!consumerSmoke) {
   writeLine(`Dry run passed for ${packages.length} independent package(s).`)
   process.exit(0)
 }
 
-if (preparedTarballDirectory) {
-  const tarballs = await createTarballs(packages, preparedTarballDirectory)
-  assertPackedInternalDependencyGraph(packages, tarballs)
-  writeLine(
-    `Prepared and verified ${packages.length} independent package artifact(s) in ${preparedTarballDirectory}.`,
-  )
-  process.exit(0)
-}
-
 const consumerDirectory = mkdtempSync(join(tmpdir(), 'narduk-libs-consumer-'))
-const tarballDirectory = suppliedTarballDirectory || join(consumerDirectory, 'tarballs')
+const tarballDirectory = join(consumerDirectory, 'tarballs')
 const packageJsonPath = join(consumerDirectory, 'package.json')
 
 try {
-  const tarballs = suppliedTarballDirectory
-    ? collectTarballs(packages, tarballDirectory)
-    : await createTarballs(packages, tarballDirectory)
+  const tarballs = await createTarballs(packages, tarballDirectory)
 
   assertPackedInternalDependencyGraph(packages, tarballs)
 
