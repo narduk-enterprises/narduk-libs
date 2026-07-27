@@ -1,7 +1,9 @@
 # Calls the shared node-library CI gate instead of carrying a local copy of the
 # checkout/pnpm/setup-node/install/lint/typecheck/build/test shape
 # (company-hq#278, D-WF-1: every app of a class uses that class's callable from
-# narduk-enterprises/workflows). Pinned to @v1; never @main.
+# narduk-enterprises/workflows). Pinned to the exact commit currently named
+# `v1`; never @main or a moving major tag. This makes a callable update an
+# explicit change to this workflow, which is a full-fan-out trigger below.
 #
 # The calling job id MUST stay `ci`. GitHub composes a called workflow's check
 # context as `<caller job id> / <called job name>`, and the reusable workflow's
@@ -13,6 +15,14 @@
 # shape the callable's matrix + `Required` job turned into a template, so the
 # structural fit here is by construction. What follows is the accounting for
 # the details that did NOT generalize.
+#
+# AFFECTED SET: `affected` discovers every package from pnpm-workspace.yaml,
+# builds the dependency graph from the workspace package manifests, and passes
+# changed packages plus every transitive dependent to the callable. No package
+# list or dependency edge is maintained in YAML. Root dependency/config/tooling
+# files and this workflow force the complete matrix. Manual dispatch is always
+# complete. The selected and omitted package names are recorded in the planner
+# job summary.
 #
 # RUNNER ROUTE: manifest-resolved, not hand-written.
 #   python3 scripts/github_runner_fleet.py route \
@@ -145,8 +155,57 @@ permissions:
   contents: read
 
 jobs:
+  affected:
+    name: affected packages
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
+      full-run: ${{ steps.plan.outputs.full-run }}
+      affected-count: ${{ steps.plan.outputs.affected-count }}
+    steps:
+      - name: Check out source and comparison history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+
+      - name: Compute changed packages and transitive dependents
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          args=(--all)
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            args=(--base "${PR_BASE_SHA}" --head "${PR_HEAD_SHA}")
+          elif [ "${EVENT_NAME}" = "push" ] && [ -n "${PUSH_BASE_SHA}" ] &&
+            [ "${PUSH_BASE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+            args=(--base "${PUSH_BASE_SHA}" --head "${PUSH_HEAD_SHA}")
+          fi
+          node scripts/compute-affected-packages.mjs \
+            "${args[@]}" \
+            --github-output "${GITHUB_OUTPUT}" \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
   ci:
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    needs: affected
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@c8b5e164fc1bd680eb7644b4f4c093ef6033aad2 # v1
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
     # GitHub Packages registry. Without this the run does not fail a step -- it
@@ -167,23 +226,9 @@ jobs:
       # script name `test:unit`. See the TESTS section in the header.
       run-tests: false
       run-build: true
-      # One lane per publishable workspace package, same 11 labels the old
-      # `package-gates` matrix used. The 12th lane (repository-contracts) is the
-      # separate `contracts` job below.
-      package-matrix: |
-        [
-          {"label": "create-narduk-app", "filter": "@narduk-enterprises/create-narduk-app"},
-          {"label": "narduk-app-tools",  "filter": "@narduk-enterprises/narduk-app-tools"},
-          {"label": "narduk-app",        "filter": "@narduk-enterprises/narduk-app"},
-          {"label": "narduk-platform",   "filter": "@narduk-enterprises/narduk-platform"},
-          {"label": "narduk-testkit",    "filter": "@narduk-enterprises/narduk-testkit"},
-          {"label": "narduk-core",       "filter": "@narduk-enterprises/narduk-core"},
-          {"label": "narduk-auth",       "filter": "@narduk-enterprises/narduk-auth"},
-          {"label": "narduk-seo",        "filter": "@narduk-enterprises/narduk-seo"},
-          {"label": "narduk-analytics",  "filter": "@narduk-enterprises/narduk-analytics"},
-          {"label": "narduk-ai",         "filter": "@narduk-enterprises/narduk-ai"},
-          {"label": "narduk-uploads",    "filter": "@narduk-enterprises/narduk-uploads"}
-        ]
+      # Generated from pnpm-workspace.yaml and package.json dependency edges by
+      # `affected`; an empty matrix is a planner failure, never a green no-op.
+      package-matrix: ${{ needs.affected.outputs.matrix }}
       # Run after build, in the same lane, so they see the build output. This
       # ordering is load-bearing and was proven locally: `check:package` in
       # create-narduk-app fails publint ("pkg.exports[.].types is
@@ -251,6 +296,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm run versions:check
+          pnpm run ci-plan:test
           if [ "${IS_CHANGESET_RELEASE}" != "true" ]; then
             pnpm run release-plan:check
           fi
@@ -269,6 +315,8 @@ jobs:
     # callable and stays here by design -- recorded as a kept-separate lane
     # against #278, not as residue.
     name: package / packed-consumer-smoke
+    needs: affected
+    if: needs.affected.outputs.packed-consumer == 'true'
     runs-on:
       group: playwright-isolated
       labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
@@ -338,7 +386,7 @@ jobs:
     # context that stopped existing.
     name: verify
     if: always()
-    needs: [ci, contracts, packed-consumer-smoke]
+    needs: [affected, ci, contracts, packed-consumer-smoke]
     runs-on:
       group: linux-ci
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
@@ -348,17 +396,28 @@ jobs:
     steps:
       - name: Require every gate
         env:
+          AFFECTED_RESULT: ${{ needs.affected.result }}
           CI_RESULT: ${{ needs.ci.result }}
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          PACKED_CONSUMER_EXPECTED: ${{ needs.affected.outputs.packed-consumer }}
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
         run: |
           set -euo pipefail
           status=0
-          for gate in CI CONTRACTS PACKED_CONSUMER_SMOKE; do
+          for gate in AFFECTED CI CONTRACTS; do
             eval "result=\${${gate}_RESULT}"
             if [ "${result}" != "success" ]; then
               echo "::error::${gate} gate reported '${result}'"
               status=1
             fi
           done
+          if [ "${PACKED_CONSUMER_EXPECTED}" = "true" ]; then
+            if [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "success" ]; then
+              echo "::error::PACKED_CONSUMER_SMOKE was required but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
+              status=1
+            fi
+          elif [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "skipped" ]; then
+            echo "::error::PACKED_CONSUMER_SMOKE was not applicable but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
+            status=1
+          fi
           exit "${status}"
