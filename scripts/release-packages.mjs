@@ -312,7 +312,11 @@ for (const { directory, manifest } of packages) {
     cwd: root,
     stdio: 'inherit',
   })
-  execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+  // Consumer smoke creates and installs the real tarball immediately below;
+  // keep the listing-only pack for the standalone dry-run path.
+  if (!consumerSmoke) {
+    execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+  }
 }
 
 if (!consumerSmoke) {
