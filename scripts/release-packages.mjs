@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -18,6 +18,10 @@ const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
+const packagePreparationConcurrency = Number.parseInt(
+  process.env.NARDUK_PACKAGE_PREP_CONCURRENCY || '2',
+  10,
+)
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
@@ -68,8 +72,37 @@ if (!dryRun) {
   writeError('Refusing to run without --dry-run; this helper never publishes packages.')
   process.exit(1)
 }
+if (
+  !Number.isSafeInteger(packagePreparationConcurrency) ||
+  packagePreparationConcurrency < 1 ||
+  packagePreparationConcurrency > 8
+) {
+  throw new Error('NARDUK_PACKAGE_PREP_CONCURRENCY must be an integer between 1 and 8.')
+}
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
+
+function argumentValue(name) {
+  const prefix = `${name}=`
+  const matches = process.argv.slice(2).filter((argument) => argument.startsWith(prefix))
+  if (matches.length > 1) throw new Error(`${name} may be passed only once.`)
+  if (matches.length === 0) return undefined
+  const value = matches[0].slice(prefix.length).trim()
+  if (!value) throw new Error(`${name} requires a non-empty path.`)
+  return resolve(value)
+}
+
+const preparedTarballDirectory = argumentValue('--prepare-tarballs')
+const suppliedTarballDirectory = argumentValue('--tarball-directory')
+if (preparedTarballDirectory && suppliedTarballDirectory) {
+  throw new Error('--prepare-tarballs and --tarball-directory are mutually exclusive.')
+}
+if (preparedTarballDirectory && consumerSmoke) {
+  throw new Error('--prepare-tarballs creates an artifact; it cannot also run consumer smoke.')
+}
+if (suppliedTarballDirectory && !consumerSmoke) {
+  throw new Error('--tarball-directory is valid only with --consumer-smoke.')
+}
 
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
@@ -106,6 +139,64 @@ function runChecked(command, commandArgs, options) {
     }
   }
   return stripAnsi(output)
+}
+
+function runBuffered(command, commandArgs, options) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(command, commandArgs, {
+      cwd: options.cwd,
+      env: childEnvironment(options.env),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const output = []
+    child.stdout.on('data', (chunk) => output.push(chunk))
+    child.stderr.on('data', (chunk) => output.push(chunk))
+    child.on('error', rejectPromise)
+    child.on('close', (status) => {
+      const transcript = Buffer.concat(output).toString('utf8')
+      if (status === 0) {
+        resolvePromise(transcript)
+        return
+      }
+      const error = new Error(
+        `${options.label || `${command} ${commandArgs.join(' ')}`} failed with exit code ${status ?? 'unknown'}.`,
+      )
+      error.transcript = transcript
+      rejectPromise(error)
+    })
+  })
+}
+
+async function runBoundedPackageTasks(items, task) {
+  const results = new Array(items.length)
+  let nextIndex = 0
+  let firstFailure
+
+  async function worker() {
+    while (!firstFailure) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= items.length) return
+      try {
+        results[index] = await task(items[index])
+      } catch (error) {
+        firstFailure = { error, index }
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(packagePreparationConcurrency, items.length) }, () => worker()),
+  )
+
+  for (let index = 0; index < results.length; index += 1) {
+    if (results[index]) process.stdout.write(results[index])
+  }
+  if (firstFailure) {
+    const transcript = firstFailure.error?.transcript
+    if (transcript) process.stdout.write(transcript)
+    throw firstFailure.error
+  }
 }
 
 function relativeFileSpecifier(fromDirectory, targetPath) {
@@ -281,6 +372,64 @@ function assertPackedInternalDependencyGraph(packages, tarballs) {
   }
 }
 
+function collectTarballs(packages, tarballDirectory) {
+  const directoryEntries = readdirSync(tarballDirectory)
+  const expectedNames = new Set(
+    packages.map(
+      ({ manifest }) =>
+        `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`,
+    ),
+  )
+  const unexpectedTarballs = directoryEntries.filter(
+    (entry) => entry.endsWith('.tgz') && !expectedNames.has(entry),
+  )
+  if (unexpectedTarballs.length > 0) {
+    throw new Error(
+      `Tarball directory contains unexpected artifacts: ${unexpectedTarballs.join(', ')}.`,
+    )
+  }
+
+  return new Map(
+    packages.map(({ manifest }) => {
+      const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
+      if (!directoryEntries.includes(expectedTarball)) {
+        throw new Error(`Tarball directory is missing the artifact for ${manifest.name}.`)
+      }
+      return [manifest.name, join(tarballDirectory, expectedTarball)]
+    }),
+  )
+}
+
+async function validatePackages(packages) {
+  await runBoundedPackageTasks(packages, async ({ directory, manifest }) => {
+    const header = `\nChecking ${manifest.name}@${manifest.version}\n`
+    const publintOutput = await runBuffered('pnpm', ['exec', 'publint', directory, '--strict'], {
+      cwd: root,
+      label: `publint ${manifest.name}`,
+    })
+    const packOutput = await runBuffered('pnpm', ['pack', '--dry-run'], {
+      cwd: directory,
+      label: `pnpm pack --dry-run ${manifest.name}`,
+    })
+    return `${header}${publintOutput}${packOutput}`
+  })
+}
+
+async function createTarballs(packages, tarballDirectory) {
+  mkdirSync(tarballDirectory, { recursive: true })
+  if (readdirSync(tarballDirectory).length > 0) {
+    throw new Error(`Tarball output directory must be empty: ${tarballDirectory}`)
+  }
+  await runBoundedPackageTasks(packages, async ({ directory, manifest }) => {
+    const output = await runBuffered('pnpm', ['pack', '--pack-destination', tarballDirectory], {
+      cwd: directory,
+      label: `create tarball for ${manifest.name}`,
+    })
+    return `\nCreating tarball for ${manifest.name}@${manifest.version}\n${output}`
+  })
+  return collectTarballs(packages, tarballDirectory)
+}
+
 const packages = readdirSync(packageRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => {
@@ -306,40 +455,34 @@ for (const { directory, manifest } of packages) {
   if (manifest.publishConfig?.registry !== 'https://npm.pkg.github.com') {
     throw new Error(`Package ${manifest.name} must publish to GitHub Packages.`)
   }
-
-  writeLine(`Checking ${manifest.name}@${manifest.version}`)
-  execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
-    cwd: root,
-    stdio: 'inherit',
-  })
-  execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
 }
 
-if (!consumerSmoke) {
+if (!suppliedTarballDirectory) {
+  await validatePackages(packages)
+}
+
+if (!consumerSmoke && !preparedTarballDirectory) {
   writeLine(`Dry run passed for ${packages.length} independent package(s).`)
   process.exit(0)
 }
 
+if (preparedTarballDirectory) {
+  const tarballs = await createTarballs(packages, preparedTarballDirectory)
+  assertPackedInternalDependencyGraph(packages, tarballs)
+  writeLine(
+    `Prepared and verified ${packages.length} independent package artifact(s) in ${preparedTarballDirectory}.`,
+  )
+  process.exit(0)
+}
+
 const consumerDirectory = mkdtempSync(join(tmpdir(), 'narduk-libs-consumer-'))
-const tarballDirectory = join(consumerDirectory, 'tarballs')
+const tarballDirectory = suppliedTarballDirectory || join(consumerDirectory, 'tarballs')
 const packageJsonPath = join(consumerDirectory, 'package.json')
-mkdirSync(tarballDirectory, { recursive: true })
 
 try {
-  const tarballs = new Map()
-
-  for (const { directory, manifest } of packages) {
-    execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
-      cwd: directory,
-      stdio: 'inherit',
-    })
-    const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
-    const tarball = readdirSync(tarballDirectory).find((entry) => entry === expectedTarball)
-    if (!tarball) {
-      throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
-    }
-    tarballs.set(manifest.name, join(tarballDirectory, tarball))
-  }
+  const tarballs = suppliedTarballDirectory
+    ? collectTarballs(packages, tarballDirectory)
+    : await createTarballs(packages, tarballDirectory)
 
   assertPackedInternalDependencyGraph(packages, tarballs)
 
