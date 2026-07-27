@@ -1,11 +1,11 @@
 # GeoGridWeb
 
-Web twin of [GeoGridKit](https://github.com/narduk-geo/GeoGridKit): decode gridded geo payloads and render them as a **full-screen sibling canvas overlay** with **WebGL2** (primary) and **Canvas2D** (fallback).
+Web twin of [GeoGridKit](https://github.com/narduk-enterprises/GeoGridKit): decode gridded geo payloads and render them as a **full-screen sibling canvas overlay** with **WebGL2** (primary) and **Canvas2D** (fallback).
 
 | | |
 |--|--|
 | Package | `@narduk-enterprises/geogrid-web` |
-| Repo | `github.com/narduk-geo/GeoGridWeb` |
+| Repo | `github.com/narduk-enterprises/GeoGridWeb` |
 | GPU | WebGL2 + Canvas2D fallback |
 | WebGPU | Not in v0.x |
 

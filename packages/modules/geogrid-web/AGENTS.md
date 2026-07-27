@@ -1,12 +1,14 @@
 # Agent notes for GeoGridWeb
 
-Web twin of GeoGridKit (`@narduk-geo/geogrid-web`). Sibling of `GeoGridKit` in the
-`narduk-geo` org — not MapKit-specific (see `narduk-mapkit` for that).
+Web twin of GeoGridKit (`@narduk-enterprises/geogrid-web`). Sibling of
+`GeoGridKit` and `narduk-mapkit` under `narduk-enterprises` — not
+MapKit-specific.
 
-Cross-cutting infra & topology: **narduk-geo/geo-infrastructure**
+The `narduk-geo` GitHub organization and npm scope are retired. Do not restore
+either one. Current cross-cutting ownership:
 
-- Repo index: https://github.com/narduk-geo/geo-infrastructure/blob/main/docs/repo-index.md
-- Topology: https://github.com/narduk-geo/geo-infrastructure/blob/main/docs/topology.md
+- Portfolio and repository index: **narduk-enterprises/company-hq**
+- Data platform and geo pipeline topology: **narduk-enterprises/narduk-data**
 
 Extract source: `earthdata-viewer` `app/playback/temporal{Raster,WebGL,Canvas}.ts`.
 Consumers: earthdata-viewer (temporal overlay), future farm-analytics / web plotter.

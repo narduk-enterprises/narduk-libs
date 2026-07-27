@@ -5,11 +5,11 @@
   "description": "Web twin of GeoGridKit: gridded geo-data overlay render (WebGL2 + Canvas2D fallback).",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/narduk-geo/GeoGridWeb.git"
+    "url": "git+https://github.com/narduk-enterprises/GeoGridWeb.git"
   },
-  "homepage": "https://github.com/narduk-geo/GeoGridWeb#readme",
+  "homepage": "https://github.com/narduk-enterprises/GeoGridWeb#readme",
   "bugs": {
-    "url": "https://github.com/narduk-geo/GeoGridWeb/issues"
+    "url": "https://github.com/narduk-enterprises/GeoGridWeb/issues"
   },
   "license": "MIT",
   "keywords": [
