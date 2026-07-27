@@ -1,7 +1,8 @@
 # Calls the shared node-library CI gate instead of carrying a local copy of
 # the checkout/corepack/setup-node/install/quality shape
 # (company-hq#278, D-WF-1: every app of a class uses that class's callable
-# from narduk-enterprises/workflows). Pinned to @v1; never @main.
+# from narduk-enterprises/workflows). Pinned to the exact reviewed workflow
+# commit; never @main and never a moving tag before consumer proof.
 #
 # The calling job id MUST stay `ci`. GitHub composes a called workflow's check
 # context as `<caller job id> / <called job name>`, and the reusable workflow's
@@ -43,7 +44,7 @@
 #   quality > test                      -> `run-tests` lane, per package.
 #   quality > build                     -> `run-build` lane, per package.
 #   quality > check:dist                -> `extra-scripts` (needs build output;
-#                                          core-only, no-ops in the nuxt lane).
+#                                          declared only in the core lane).
 #   quality > check:package             -> `extra-scripts`; present in BOTH
 #                                          packages, so each lane runs its own.
 #   quality > publint / pnpm exec publint
@@ -53,8 +54,8 @@
 #                                          not bare binaries). `pnpm run quality`
 #                                          still calls it, so local and CI stay
 #                                          the same commands.
-#   nuxt quality > test:cloudflare      -> `extra-scripts` (nuxt-only, no-ops in
-#                                          the core lane).
+#   nuxt quality > test:cloudflare      -> `extra-scripts` (declared only in
+#                                          the Nuxt lane).
 #   pnpm run pack:artifacts             -> DROPPED with the upload it fed; see
 #                                          the residue note below.
 #   run-lint                          -> OFF. Neither package has a `lint`
@@ -126,7 +127,7 @@ permissions:
 
 jobs:
   ci:
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@v1
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@504febff46e6457711ffb2f36dcc65cd91f496c7
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` so it can hit the
     # GitHub Packages registry. Without this the run does not fail a step -- it
@@ -145,14 +146,13 @@ jobs:
       run-tests: true
       run-build: true
       # One lane per publishable workspace package. `filter` is passed to
-      # `pnpm --filter`; "" runs the scripts at the repo root (the core package).
-      package-matrix: '[{"label":"core","filter":""},{"label":"nuxt","filter":"@narduk-geo/narduk-mapkit-nuxt"}]'
-      # Run after build, in the same lane, so they see the build output --
-      # check:dist compares the freshly built dist/ against the committed one,
-      # and the pack/install smokes need dist/ to exist. This is deliberately
-      # a cross-package list: check:dist exists only at the root and
-      # test:cloudflare only in the Nuxt package. That prevents enabling
-      # require-scripts until the callable can express per-matrix-lane extras.
-      extra-scripts: "check:dist check:package check:publint test:cloudflare"
+      # `pnpm --filter`; "" runs scripts at the repo root. Each lane declares
+      # only the post-build gates its own package genuinely has:
+      #   core: check:dist, check:package, check:publint
+      #   nuxt: check:package, check:publint, test:cloudflare
+      # The callable defaults require-scripts to true, so every declaration is
+      # an enforced claim. There is intentionally no root test:cloudflare and
+      # no Nuxt check:dist.
+      package-matrix: '[{"label":"core","filter":"","extra-scripts":"check:dist check:package check:publint"},{"label":"nuxt","filter":"@narduk-geo/narduk-mapkit-nuxt","extra-scripts":"check:package check:publint test:cloudflare"}]'
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
