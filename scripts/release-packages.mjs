@@ -265,6 +265,21 @@ function assertPackedInternalDependencyGraph(packages, tarballs) {
       )
     }
 
+    const shipsDist = (packedManifest.files || []).some(
+      (entry) => entry === 'dist' || entry === 'dist/' || entry.startsWith('dist/'),
+    )
+    if (shipsDist) {
+      const listing = execFileSync('tar', ['-tzf', tarball], {
+        cwd: root,
+        encoding: 'utf8',
+      })
+      if (!listing.split('\n').some((entry) => entry.startsWith('package/dist/'))) {
+        throw new Error(
+          `${manifest.name} declares files: dist but the packed tarball contains no package/dist/ entries.`,
+        )
+      }
+    }
+
     for (const section of ['dependencies', 'optionalDependencies']) {
       for (const [dependencyName, dependencyVersion] of Object.entries(
         packedManifest[section] || {},
@@ -279,6 +294,41 @@ function assertPackedInternalDependencyGraph(packages, tarballs) {
       }
     }
   }
+}
+
+/**
+ * Consumer-smoke runs after an explicit coordinated turbo build. Re-running each
+ * package's prepack/prepare during pnpm pack rebuilds the same artifacts a second
+ * (and, with dry-run, a third) time on the playwright pool for zero proof gain.
+ * Pack with lifecycle scripts suppressed, but fail closed if a package that ships
+ * a compiled dist/ is missing that dist — so we never publish-shaped tarballs of
+ * empty build output.
+ */
+function assertCompiledDistPresent(packages) {
+  for (const { directory, manifest } of packages) {
+    const files = manifest.files || []
+    const shipsDist = files.some(
+      (entry) => entry === 'dist' || entry === 'dist/' || entry.startsWith('dist/'),
+    )
+    if (!shipsDist) continue
+    const distDirectory = join(directory, 'dist')
+    if (!existsSync(distDirectory) || !statSync(distDirectory).isDirectory()) {
+      throw new Error(
+        `${manifest.name} ships dist/ but dist/ is missing. Run the coordinated package build before release:consumer-smoke.`,
+      )
+    }
+    const distEntries = readdirSync(distDirectory)
+    if (distEntries.length === 0) {
+      throw new Error(
+        `${manifest.name} ships dist/ but dist/ is empty. Run the coordinated package build before release:consumer-smoke.`,
+      )
+    }
+  }
+}
+
+function packEnvironment() {
+  // pnpm pack honors npm's ignore-scripts config and skips prepack/prepare.
+  return childEnvironment({ npm_config_ignore_scripts: 'true' })
 }
 
 const packages = readdirSync(packageRoot, { withFileTypes: true })
@@ -312,13 +362,23 @@ for (const { directory, manifest } of packages) {
     cwd: root,
     stdio: 'inherit',
   })
-  execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+  // Standalone dry-run still exercises pack listing + lifecycle. Consumer smoke
+  // creates the real tarball immediately below from already-built artifacts, so
+  // a listing-only pack would only re-run prepack/prepare for no additional proof.
+  if (!consumerSmoke) {
+    execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
+  }
 }
 
 if (!consumerSmoke) {
   writeLine(`Dry run passed for ${packages.length} independent package(s).`)
   process.exit(0)
 }
+
+assertCompiledDistPresent(packages)
+writeLine(
+  `Packing ${packages.length} package(s) from coordinated build outputs (lifecycle scripts suppressed).`,
+)
 
 const consumerDirectory = mkdtempSync(join(tmpdir(), 'narduk-libs-consumer-'))
 const tarballDirectory = join(consumerDirectory, 'tarballs')
@@ -331,6 +391,7 @@ try {
   for (const { directory, manifest } of packages) {
     execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
       cwd: directory,
+      env: packEnvironment(),
       stdio: 'inherit',
     })
     const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
