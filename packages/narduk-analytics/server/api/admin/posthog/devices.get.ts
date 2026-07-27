@@ -1,3 +1,4 @@
+import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
 import { z } from 'zod'
 
 import {
