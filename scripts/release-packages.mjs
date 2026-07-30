@@ -26,9 +26,8 @@ const consumerSmoke = args.has('--consumer-smoke')
 // the root workspace devDependency, which package.json already pins exactly
 // to the pool-supported version (company-hq#343). Reading it here means a
 // future pool upgrade only has to change one file, not this script too.
-const PLAYWRIGHT_TOOLCHAIN_VERSION = JSON.parse(
-  readFileSync(join(root, 'package.json'), 'utf8'),
-).devDependencies?.['@playwright/test']
+const PLAYWRIGHT_TOOLCHAIN_VERSION = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  .devDependencies?.['@playwright/test']
 if (!PLAYWRIGHT_TOOLCHAIN_VERSION) {
   throw new Error('Root package.json must directly pin devDependencies["@playwright/test"].')
 }
@@ -201,7 +200,8 @@ function assertNoRetiredBuiltReferences(generatedDirectory) {
 async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, requiredBrowsers }) {
   const rows = []
   const summary = process.env.GITHUB_STEP_SUMMARY
-  const add = (label, value) => rows.push(`| ${label} | \`${String(value).replaceAll('|', '\\|')}\` |`)
+  const add = (label, value) =>
+    rows.push(`| ${label} | \`${String(value).replaceAll('|', '\\|')}\` |`)
   const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
   const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
   const fail = (message) => {
@@ -235,10 +235,13 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     }
 
     const manifest = readJson(join(cwd, 'package.json'))
-    const declared = manifest.devDependencies?.['@playwright/test'] ?? manifest.dependencies?.['@playwright/test']
+    const declared =
+      manifest.devDependencies?.['@playwright/test'] ?? manifest.dependencies?.['@playwright/test']
     if (!declared) fail('generated consumer package.json must directly pin @playwright/test')
     if (declared !== expectedVersion) {
-      fail(`generated consumer pin ${JSON.stringify(declared)} does not equal required exact version ${JSON.stringify(expectedVersion)}`)
+      fail(
+        `generated consumer pin ${JSON.stringify(declared)} does not equal required exact version ${JSON.stringify(expectedVersion)}`,
+      )
     }
 
     const localRequire = createRequire(join(cwd, 'package.json'))
@@ -280,7 +283,8 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     }
 
     const jobPath = process.env.PLAYWRIGHT_BROWSERS_PATH
-    if (!jobPath || !isAbsolute(jobPath)) fail('PLAYWRIGHT_BROWSERS_PATH must be the absolute image-backed guest path')
+    if (!jobPath || !isAbsolute(jobPath))
+      fail('PLAYWRIGHT_BROWSERS_PATH must be the absolute image-backed guest path')
     const resolvedJobPath = resolve(jobPath)
     const forbiddenRoots = [process.env.RUNNER_TEMP, process.env.GITHUB_WORKSPACE]
       .filter(Boolean)
@@ -306,10 +310,16 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     for (const engineName of requested) {
       const selection = supported[engineName]
       if (!selection) fail(`unsupported isolated browser ${JSON.stringify(engineName)}`)
-      const expected = consumerManifest.browsers.find((item) => item.name === selection.manifestName)
+      const expected = consumerManifest.browsers.find(
+        (item) => item.name === selection.manifestName,
+      )
       const observed = imageManifest.browsers.find((item) => item.name === selection.manifestName)
-      if (!expected || !observed) fail(`${selection.manifestName} is absent from a browser manifest`)
-      if (expected.revision !== observed.revision || expected.browserVersion !== observed.browserVersion) {
+      if (!expected || !observed)
+        fail(`${selection.manifestName} is absent from a browser manifest`)
+      if (
+        expected.revision !== observed.revision ||
+        expected.browserVersion !== observed.browserVersion
+      ) {
         fail(`${engineName} revision mismatch`)
       }
       const selected = join(
@@ -319,7 +329,8 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
       )
       if (!existsSync(selected)) fail(`${engineName} executable is missing: ${selected}`)
       const realized = realpathSync(selected)
-      if (!beneath(realized, imageBrowsersRoot)) fail(`${engineName} executable escapes immutable image: ${realized}`)
+      if (!beneath(realized, imageBrowsersRoot))
+        fail(`${engineName} executable escapes immutable image: ${realized}`)
       for (let path = realized; ; path = dirname(path)) {
         requireRootOwnedReadOnly(path, `${engineName} executable path`)
         if (path === imageBrowsersRoot) break
@@ -351,7 +362,10 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     throw error
   } finally {
     if (summary) {
-      appendFileSync(summary, `### Isolated Playwright toolchain (packed-consumer-smoke)\n\n| Field | Observed |\n|---|---|\n${rows.join('\n')}\n`)
+      appendFileSync(
+        summary,
+        `### Isolated Playwright toolchain (packed-consumer-smoke)\n\n| Field | Observed |\n|---|---|\n${rows.join('\n')}\n`,
+      )
     }
   }
 }
