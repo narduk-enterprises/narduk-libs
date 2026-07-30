@@ -9,6 +9,8 @@
  * objects as command tuples — regular Arrays are silently ignored.
  */
 
+import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
+
 import {
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,

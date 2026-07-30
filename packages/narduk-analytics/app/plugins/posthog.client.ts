@@ -1,3 +1,5 @@
+import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
+
 import {
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,

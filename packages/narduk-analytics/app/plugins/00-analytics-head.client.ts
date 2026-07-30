@@ -1,3 +1,5 @@
+import { defineNuxtPlugin, useHead, useRuntimeConfig } from '#imports'
+
 import {
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,
