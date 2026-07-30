@@ -508,6 +508,21 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
     }
 
+    // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
+    // collection contract before that installation so the icon server bundles
+    // Lucide instead of attempting runtime API fallback.
+    nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
+      provider: 'server',
+      fallbackToApi: false,
+      clientBundle: {
+        icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+      },
+      serverBundle: {
+        collections: ['lucide'],
+        remote: false,
+      },
+    })
+
     if (options.coreModules) {
       dedupeIconServerCollections({ options: nuxtOptions })
       await installModule('@pinia/nuxt')
@@ -602,14 +617,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
       preference: colorModePreference,
       fallback: 'dark',
-    })
-    nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
-      provider: 'server',
-      fallbackToApi: false,
-      serverBundle: {
-        collections: ['lucide'],
-        remote: false,
-      },
     })
     nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
       customLogger: createCoreViteBuildLogger(),

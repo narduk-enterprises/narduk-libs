@@ -157,8 +157,8 @@ function markdownProductSpec(spec: ProductSpec | undefined): string {
 
 function moduleList(capabilities: readonly Capability[]): string {
   const moduleNames = [
-    '@nuxt/ui',
     '@narduk-enterprises/narduk-core',
+    '@nuxt/ui',
     ...capabilities.map((capability) =>
       capability === 'mapkit'
         ? '@narduk-geo/narduk-mapkit-nuxt'

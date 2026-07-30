@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 describe('narduk-core module', () => {
   it('registers core aliases without relying on Nuxt layer inheritance', async () => {
-    const installModule = vi.fn()
+    const iconConfigAtNuxtUiInstall: unknown[] = []
+    const installModule = vi.fn((name: string) => {
+      if (name === '@nuxt/ui') {
+        iconConfigAtNuxtUiInstall.push(structuredClone(nuxt.options.icon))
+      }
+    })
     const addImportsDir = vi.fn()
     const addComponentsDir = vi.fn()
     const addPlugin = vi.fn()
@@ -80,6 +85,17 @@ describe('narduk-core module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
+    expect(iconConfigAtNuxtUiInstall[0]).toEqual({
+      provider: 'server',
+      fallbackToApi: false,
+      clientBundle: {
+        icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+      },
+      serverBundle: {
+        collections: ['lucide'],
+        remote: false,
+      },
+    })
     expect(installModule).toHaveBeenCalledWith('@nuxt/image')
     expect(addTemplate).toHaveBeenCalledWith({
       src: expect.stringContaining('/runtime/app/layouts/dashboard.vue'),
