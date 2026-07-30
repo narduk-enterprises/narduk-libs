@@ -750,7 +750,7 @@ try {
     // here, before `pnpm run quality` below ever launches the real suite.
     await assertIsolatedPlaywrightToolchain({
       cwd: generatedDirectory,
-      expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
+      expectedVersion: `${PLAYWRIGHT_TOOLCHAIN_VERSION}-deliberate-red-drill`,
       requiredBrowsers: ['chromium'],
     })
   } else {
