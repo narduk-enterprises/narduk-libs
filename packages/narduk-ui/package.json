@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "description": "Narduk shared interface library. Ships the Narduk Status Design System token layer and the instruments component family.",
   "type": "module",
