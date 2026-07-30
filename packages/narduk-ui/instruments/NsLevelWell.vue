@@ -13,21 +13,21 @@
  */
 import { computed } from "vue";
 
-import { MISSING, formatValue, positionPercent } from "../_core/measure";
+import { formatValue, MISSING, positionPercent } from "../_core/measure";
 
 const props = withDefaults(
   defineProps<{
-    value: number | null | undefined;
+    decimals?: number;
+    max?: number;
     /** Long-term median for this station, drawn as the dashed reference. */
     median: number;
-    name?: string;
-    min?: number;
-    max?: number;
-    decimals?: number;
-    unit?: string;
-    missingReason?: string;
     /** Label for the dashed line, e.g. "MED" or "30-YR". */
     medianLabel?: string;
+    min?: number;
+    missingReason?: string;
+    name?: string;
+    unit?: string;
+    value: number | null | undefined;
   }>(),
   { min: 0, max: 100, decimals: 1, medianLabel: "MED", unit: "%" },
 );

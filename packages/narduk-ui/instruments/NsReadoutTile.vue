@@ -9,21 +9,21 @@
  */
 import { computed } from "vue";
 
-import { MISSING, deltaDirection, formatDelta, formatValue } from "../_core/measure";
+import { deltaDirection, formatDelta, formatValue, MISSING } from "../_core/measure";
 
 const props = withDefaults(
   defineProps<{
-    label: string;
-    value: number | null | undefined;
-    unit?: string;
     decimals?: number;
     /** Change over the stated window, e.g. +0.32 ft / 24 h. */
     delta?: number | null;
     deltaUnit?: string;
     deltaWindow?: string;
+    label: string;
     /** Why the value is missing. Shown in place of the delta line. */
     missingReason?: string;
     size?: "md" | "lg";
+    unit?: string;
+    value: number | null | undefined;
   }>(),
   { decimals: 1, size: "md" },
 );

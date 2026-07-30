@@ -10,20 +10,20 @@
  */
 import { computed } from "vue";
 
-import { SIGNALS, classifySignal, formatAge, type SignalState } from "../_core/signal";
+import { classifySignal, formatAge, SIGNALS, type SignalState } from "../_core/signal";
 
 const props = withDefaults(
   defineProps<{
-    /** Explicit state. Omit to derive from observedAt + intervalMinutes. */
-    state?: SignalState;
-    observedAt?: Date | string | null;
     /** The source's own publishing interval, not an arbitrary threshold. */
     intervalMinutes?: number;
+    /** Injectable clock, for deterministic tests and stories. */
+    now?: Date;
+    observedAt?: Date | string | null;
     /** Append the age, e.g. "STALE · 3 d". The design system requires a stale
      *  value to be shown with its age rather than hidden. */
     showAge?: boolean;
-    /** Injectable clock, for deterministic tests and stories. */
-    now?: Date;
+    /** Explicit state. Omit to derive from observedAt + intervalMinutes. */
+    state?: SignalState;
   }>(),
   { showAge: false },
 );

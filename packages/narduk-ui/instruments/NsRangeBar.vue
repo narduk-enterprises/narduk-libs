@@ -17,26 +17,28 @@
  */
 import { computed } from "vue";
 
-import { MISSING, bandGeometry, formatValue, positionPercent, type Band } from "../_core/measure";
+import { type Band, bandGeometry, formatValue, MISSING, positionPercent } from "../_core/measure";
 
 const props = withDefaults(
   defineProps<{
-    /** The current observation. Null renders the missing variant. */
-    value: number | null | undefined;
     /** The reference this value is read against. Required by design. */
     band: Band;
-    min?: number;
-    max?: number;
     decimals?: number;
-    unit?: string;
     /** Optional forecast peak, drawn as a hollow marker. */
     forecast?: number | null;
+    label?: string;
+    max?: number;
+    min?: number;
     /** Why the value is missing. Required reading when value is null. */
     missingReason?: string;
-    label?: string;
+    unit?: string;
+    /** The current observation. Null renders the missing variant. */
+    value: number | null | undefined;
   }>(),
   { min: 0, max: 100, decimals: 1 },
 );
+
+defineOptions({ inheritAttrs: false });
 
 const present = computed(() => props.value != null && Number.isFinite(props.value));
 
@@ -70,7 +72,7 @@ const description = computed(() => {
 </script>
 
 <template>
-  <div class="ns-range" :class="{ 'ns-range--missing': !present }">
+  <div v-bind="$attrs" class="ns-range" :class="{ 'ns-range--missing': !present }">
     <span v-if="label" class="ns-range__label">{{ label }}</span>
 
     <div class="ns-range__track" role="img" :aria-label="description">
