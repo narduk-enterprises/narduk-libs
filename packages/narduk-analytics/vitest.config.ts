@@ -7,6 +7,11 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   root: packageRoot,
+  resolve: {
+    alias: {
+      '#imports': fileURLToPath(new URL('./tests/fixtures/nuxt-imports.ts', import.meta.url)),
+    },
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
