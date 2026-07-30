@@ -1,0 +1,42 @@
+{
+  "name": "@narduk-enterprises/status-runtime",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Shared build-time configuration for the five status applications.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/status-runtime"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "main": "index.mjs",
+  "files": [
+    "index.mjs",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{mjs,json,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}
