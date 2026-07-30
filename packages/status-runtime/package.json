@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/status-runtime",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": false,
   "description": "Shared build-time configuration for the five status applications.",
   "type": "module",

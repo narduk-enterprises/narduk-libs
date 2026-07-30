@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.1.6
+
+### Patch Changes
+
+- e030789: Configure the local Lucide server and core-header client bundles
+  before Nuxt UI installs its icon module, and generate the core module before
+  Nuxt UI so that ordering remains deterministic in packed consumers.
+
 ## 0.1.5
 
 ### Patch Changes
