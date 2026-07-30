@@ -1,5 +1,12 @@
 # @narduk-enterprises/status-runtime
 
+## 1.0.1
+
+### Patch Changes
+
+- a9ed7eb: Ship TypeScript declarations for the existing root runtime export so status app
+  Nuxt configuration typechecks against the published package.
+
 ## 1.0.0
 
 ### Major Changes
