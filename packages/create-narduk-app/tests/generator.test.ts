@@ -463,6 +463,10 @@ describe('create-narduk-app generation contract', () => {
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
       '<NuxtLayout>',
     )
+    const generatedNuxtConfig = await readFile(join(targetDir, 'apps/web/nuxt.config.ts'), 'utf8')
+    expect(generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-core'")).toBeLessThan(
+      generatedNuxtConfig.indexOf("'@nuxt/ui'"),
+    )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
     expect(generatedCi).toContain('actions/checkout@v7')
     expect(generatedCi).toContain('pnpm/action-setup@v6')
