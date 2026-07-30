@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.19.23
+
+### Patch Changes
+
+- d22cd3d: Import Nuxt runtime helpers explicitly in packaged analytics plugins
+  so consumer builds hydrate without relying on ambient package-source
+  auto-import transforms.
+
 ## 1.19.22
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.1.7
+
+### Patch Changes
+
+- d22cd3d: Import Nuxt runtime helpers explicitly in packaged analytics plugins
+  so consumer builds hydrate without relying on ambient package-source
+  auto-import transforms.
+
 ## 0.1.6
 
 ### Patch Changes
