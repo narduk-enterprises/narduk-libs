@@ -19,6 +19,8 @@ or Command control plane. The decommission ledger and archive gates live in
 - `@narduk-enterprises/narduk-uploads`
 - `@narduk-enterprises/narduk-ai`
 - `@narduk-enterprises/narduk-testkit`
+- `@narduk-enterprises/narduk-ui`
+- `@narduk-enterprises/status-runtime`
 - `@narduk-enterprises/create-narduk-app`
 
 ## Commands

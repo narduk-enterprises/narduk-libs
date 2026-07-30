@@ -1,0 +1,35 @@
+{
+  "name": "@narduk-enterprises/narduk-ui",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Narduk shared interface library. Ships the Narduk Status Design System token layer and the instruments component family.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/narduk-ui"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "sideEffects": [
+    "*.css",
+    "*.vue"
+  ],
+  "files": [
+    "tokens.css",
+    "instruments",
+    "_core",
+    "README.md"
+  ],
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./core": "./_core/index.ts",
+    "./instruments": "./instruments/index.ts",
+    "./instruments/*.vue": "./instruments/*.vue"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

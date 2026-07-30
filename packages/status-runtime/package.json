@@ -1,0 +1,27 @@
+{
+  "name": "@narduk-enterprises/status-runtime",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Shared build-time configuration for the five status applications.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/status-runtime"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "main": "index.mjs",
+  "files": [
+    "index.mjs",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

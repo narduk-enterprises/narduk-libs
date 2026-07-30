@@ -674,6 +674,8 @@ importers:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
+  packages/narduk-ui: {}
+
   packages/narduk-uploads:
     dependencies:
       '@nuxt/kit':
@@ -740,6 +742,8 @@ importers:
       wrangler:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
+
+  packages/status-runtime: {}
 
 packages:
 
