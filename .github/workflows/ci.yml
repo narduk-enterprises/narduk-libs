@@ -335,6 +335,14 @@ jobs:
       # The pool's browser binaries are immutable under /opt (downloads are
       # deliberately blocked); Playwright must resolve them from there.
       PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
+      # Consumed by assertIsolatedPlaywrightToolchain() in
+      # scripts/release-packages.mjs (company-hq#343 fail-closed preflight,
+      # same idiom as the workflows repo's shared callables). The function
+      # defaults to these exact values when unset, but they are declared
+      # explicitly here to match the other isolated-pool jobs' idiom.
+      PLAYWRIGHT_TOOLCHAIN_ROOT: /opt/playwright-ci
+      PLAYWRIGHT_TOOLCHAIN_OWNER_UID: "0"
+      PLAYWRIGHT_ALLOWED_BROWSER_PREFIX: /opt
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

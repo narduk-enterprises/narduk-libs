@@ -1,16 +1,20 @@
 import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -18,6 +22,15 @@ const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
+// Single source of truth for the generated packed-consumer's Playwright pin:
+// the root workspace devDependency, which package.json already pins exactly
+// to the pool-supported version (company-hq#343). Reading it here means a
+// future pool upgrade only has to change one file, not this script too.
+const PLAYWRIGHT_TOOLCHAIN_VERSION = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  .devDependencies?.['@playwright/test']
+if (!PLAYWRIGHT_TOOLCHAIN_VERSION) {
+  throw new Error('Root package.json must directly pin devDependencies["@playwright/test"].')
+}
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
@@ -167,6 +180,192 @@ function assertNoRetiredBuiltReferences(generatedDirectory) {
   for (const retiredAsset of ['apple-touch-icon.png', 'site.webmanifest']) {
     if (existsSync(join(outputDirectory, 'public', retiredAsset))) {
       throw new Error(`Generated consumer unexpectedly built retired PWA asset ${retiredAsset}.`)
+    }
+  }
+}
+
+// Fail-closed isolated-pool toolchain preflight (company-hq#343), adopted
+// from the same idiom the narduk-enterprises/workflows shared callables run
+// in their `Assert isolated Playwright toolchain` step
+// (reusable-browser-tests.yml / nuxt-cloudflare.yml). packed-consumer-smoke
+// is narduk-libs' only browser-launching lane -- it runs on the dedicated
+// playwright-isolated pool but is a Node script, not a workflow YAML job, so
+// this callable's browser preflight cannot be `uses:`-adopted directly; the
+// exact same checks are reproduced here instead of left absent. It proves
+// the generated consumer's exact @playwright/test pin, installed
+// package/core versions, and browsers.json manifest all equal the immutable
+// /opt/playwright-ci image, rejects a job-local browser path, then actually
+// launches the selected executable as a canary -- all BEFORE `pnpm run
+// quality` (which is what launches the real Playwright suite) ever starts.
+async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, requiredBrowsers }) {
+  const rows = []
+  const summary = process.env.GITHUB_STEP_SUMMARY
+  const add = (label, value) =>
+    rows.push(`| ${label} | \`${String(value).replaceAll('|', '\\|')}\` |`)
+  const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+  const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
+  const fail = (message) => {
+    throw new Error(message)
+  }
+  const beneath = (path, base) => {
+    const rel = relative(base, path)
+    return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
+  }
+  const ownerUid = Number(process.env.PLAYWRIGHT_TOOLCHAIN_OWNER_UID ?? '0')
+  const requireRootOwnedReadOnly = (path, label) => {
+    const observed = statSync(path)
+    if (observed.uid !== ownerUid || (observed.mode & 0o022) !== 0) {
+      fail(`${label} is not root-owned and read-only: ${path}`)
+    }
+  }
+
+  try {
+    if (!Number.isInteger(ownerUid) || ownerUid < 0) fail('invalid toolchain owner uid')
+    const imageRoot = resolve(process.env.PLAYWRIGHT_TOOLCHAIN_ROOT || '/opt/playwright-ci')
+    const imagePackagePath = join(imageRoot, 'npm/node_modules/playwright/package.json')
+    const imageManifestPath = join(imageRoot, 'npm/node_modules/playwright-core/browsers.json')
+    const imageBrowsersRoot = realpathSync(join(imageRoot, 'browsers'))
+    for (const [path, label] of [
+      [imagePackagePath, 'image Playwright package'],
+      [imageManifestPath, 'image browser manifest'],
+      [imageBrowsersRoot, 'image browser root'],
+    ]) {
+      if (!existsSync(path)) fail(`${label} is missing: ${path}`)
+      requireRootOwnedReadOnly(path, label)
+    }
+
+    const manifest = readJson(join(cwd, 'package.json'))
+    const declared =
+      manifest.devDependencies?.['@playwright/test'] ?? manifest.dependencies?.['@playwright/test']
+    if (!declared) fail('generated consumer package.json must directly pin @playwright/test')
+    if (declared !== expectedVersion) {
+      fail(
+        `generated consumer pin ${JSON.stringify(declared)} does not equal required exact version ${JSON.stringify(expectedVersion)}`,
+      )
+    }
+
+    const localRequire = createRequire(join(cwd, 'package.json'))
+    const testPackagePath = localRequire.resolve('@playwright/test/package.json')
+    const testRequire = createRequire(testPackagePath)
+    const playwrightPackagePath = testRequire.resolve('playwright/package.json')
+    const playwrightRequire = createRequire(playwrightPackagePath)
+    const corePackagePath = playwrightRequire.resolve('playwright-core/package.json')
+    const consumerPackage = readJson(testPackagePath)
+    const consumerPlaywrightPackage = readJson(playwrightPackagePath)
+    const consumerCorePackage = readJson(corePackagePath)
+    const consumerManifestPath = join(dirname(corePackagePath), 'browsers.json')
+    const consumerManifest = readJson(consumerManifestPath)
+    const imagePackage = readJson(imagePackagePath)
+    const imageManifest = readJson(imageManifestPath)
+    const consumerManifestSha = digest(consumerManifestPath)
+    const imageManifestSha = digest(imageManifestPath)
+    const versions = new Set([
+      expectedVersion,
+      consumerPackage.version,
+      consumerPlaywrightPackage.version,
+      consumerCorePackage.version,
+      imagePackage.version,
+    ])
+    add('required Playwright', expectedVersion)
+    add('consumer package pin', declared)
+    add('installed @playwright/test', consumerPackage.version)
+    add('installed playwright-core', consumerCorePackage.version)
+    add('image Playwright', imagePackage.version)
+    add('consumer browsers.json SHA-256', consumerManifestSha)
+    add('image browsers.json SHA-256', imageManifestSha)
+    if (versions.size !== 1) {
+      fail(
+        `Playwright version mismatch: expected=${expectedVersion}, test=${consumerPackage.version}, runtime=${consumerPlaywrightPackage.version}, core=${consumerCorePackage.version}, image=${imagePackage.version}`,
+      )
+    }
+    if (consumerManifestSha !== imageManifestSha) {
+      fail(`browser manifest mismatch: consumer=${consumerManifestSha}, image=${imageManifestSha}`)
+    }
+
+    const jobPath = process.env.PLAYWRIGHT_BROWSERS_PATH
+    if (!jobPath || !isAbsolute(jobPath))
+      fail('PLAYWRIGHT_BROWSERS_PATH must be the absolute image-backed guest path')
+    const resolvedJobPath = resolve(jobPath)
+    const forbiddenRoots = [process.env.RUNNER_TEMP, process.env.GITHUB_WORKSPACE]
+      .filter(Boolean)
+      .map((path) => resolve(path))
+    if (forbiddenRoots.some((base) => beneath(resolvedJobPath, base))) {
+      fail(`job-local browser path is forbidden: ${resolvedJobPath}`)
+    }
+    const allowedPrefix = resolve(process.env.PLAYWRIGHT_ALLOWED_BROWSER_PREFIX || '/opt')
+    if (!beneath(resolvedJobPath, allowedPrefix)) {
+      fail(`browser path must live under ${allowedPrefix}: ${resolvedJobPath}`)
+    }
+
+    const supported = {
+      chromium: {
+        manifestName: 'chromium-headless-shell',
+        executableParts: ['chrome-headless-shell-linux64', 'chrome-headless-shell'],
+      },
+      webkit: { manifestName: 'webkit', executableParts: ['pw_run.sh'] },
+    }
+    const requested = [...new Set(requiredBrowsers)]
+    if (!requested.length) fail('at least one browser engine is required')
+    const playwright = localRequire('@playwright/test')
+    for (const engineName of requested) {
+      const selection = supported[engineName]
+      if (!selection) fail(`unsupported isolated browser ${JSON.stringify(engineName)}`)
+      const expected = consumerManifest.browsers.find(
+        (item) => item.name === selection.manifestName,
+      )
+      const observed = imageManifest.browsers.find((item) => item.name === selection.manifestName)
+      if (!expected || !observed)
+        fail(`${selection.manifestName} is absent from a browser manifest`)
+      if (
+        expected.revision !== observed.revision ||
+        expected.browserVersion !== observed.browserVersion
+      ) {
+        fail(`${engineName} revision mismatch`)
+      }
+      const selected = join(
+        jobPath,
+        `${selection.manifestName.replaceAll('-', '_')}-${observed.revision}`,
+        ...selection.executableParts,
+      )
+      if (!existsSync(selected)) fail(`${engineName} executable is missing: ${selected}`)
+      const realized = realpathSync(selected)
+      if (!beneath(realized, imageBrowsersRoot))
+        fail(`${engineName} executable escapes immutable image: ${realized}`)
+      for (let path = realized; ; path = dirname(path)) {
+        requireRootOwnedReadOnly(path, `${engineName} executable path`)
+        if (path === imageBrowsersRoot) break
+        if (path === dirname(path)) fail(`${engineName} ancestry did not reach image root`)
+      }
+      const engine = playwright[engineName]
+      if (!engine?.launch) fail(`@playwright/test does not expose ${engineName}`)
+      const browser = await engine.launch({ headless: true, executablePath: selected })
+      try {
+        const page = await browser.newPage()
+        await page.setContent('<title>playwright-isolated-canary</title>')
+        if ((await page.title()) !== 'playwright-isolated-canary') {
+          fail(`${engineName} launch canary returned the wrong page title`)
+        }
+      } finally {
+        await browser.close()
+      }
+      add(`${engineName} executable`, realized)
+      add(`${engineName} launch canary`, 'passed')
+    }
+    add('status', 'PASS — exact immutable image toolchain selected; no installer invoked')
+    writeLine(`Playwright toolchain matched image ${imagePackage.version} (${imageManifestSha})`)
+  } catch (error) {
+    add('status', `FAIL — ${error.message}`)
+    writeError(`Playwright toolchain mismatch: ${error.message}`)
+    writeError(
+      'Change the consumer exact pin or rebuild/promote the pool image; job-time browser download is forbidden.',
+    )
+    throw error
+  } finally {
+    if (summary) {
+      appendFileSync(
+        summary,
+        `### Isolated Playwright toolchain (packed-consumer-smoke)\n\n| Field | Observed |\n|---|---|\n${rows.join('\n')}\n`,
+      )
     }
   }
 }
@@ -419,7 +618,14 @@ try {
         packageManager: 'pnpm@10.33.4',
         dependencies,
         devDependencies: {
-          '@playwright/test': '1.59.1',
+          // Must equal the pool-supported exact pin asserted by
+          // assertIsolatedPlaywrightToolchain below and the repo's own root/
+          // package devDependency pins (company-hq#343): the packed-consumer
+          // smoke launches this generated app's real Playwright suite on the
+          // playwright-isolated pool, and a stale pin here silently drifts
+          // this dev-only sandbox package.json out of the immutable image's
+          // supported version even though every other manifest is pinned.
+          '@playwright/test': PLAYWRIGHT_TOOLCHAIN_VERSION,
           eslint: '9.39.4',
           typescript: '5.9.3',
           vitest: '4.1.6',
@@ -553,9 +759,14 @@ try {
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    console.log(
-      `[consumer-smoke] using host-provided Playwright browsers at ${process.env.PLAYWRIGHT_BROWSERS_PATH}; skipping browser download`,
-    )
+    // Isolated-pool path: reject drift instead of trusting the env var alone.
+    // A stale pin or a wrong/job-local PLAYWRIGHT_BROWSERS_PATH must fail
+    // here, before `pnpm run quality` below ever launches the real suite.
+    await assertIsolatedPlaywrightToolchain({
+      cwd: generatedDirectory,
+      expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
+      requiredBrowsers: ['chromium'],
+    })
   } else {
     runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
       cwd: generatedDirectory,
