@@ -15,14 +15,13 @@
 # `node-library.yml` has no browser capability and no audit capability, so two
 # jobs stay local and are named here rather than implied:
 #
-#   e2e   -> narduk-charts#14. Playwright still runs inline on GitHub-hosted
-#            ubuntu-latest, not on the dedicated proxmox-playwright-x64 pool.
-#            It cannot move yet: narduk-charts is not in the fleet manifest's
-#            `playwright-isolated` group (verified 2026-07-25 --
-#            earthdata-viewer, lakestat-us, narduk-libs, nvault,
-#            operator-portal, status-apps are). The shared browser workflow
-#            that would own this route is filed separately as M-3 and does not
-#            exist yet.
+#   e2e   -> narduk-charts#14, RESOLVED. Now routed to the dedicated
+#            proxmox-playwright-x64 pool (playwright-isolated group), the same
+#            hand-rolled-job pattern narduk-libs' packed-consumer-smoke uses --
+#            node-library.yml still has no browser input, so this cannot move
+#            into the callable itself, only off GitHub-hosted. The shared
+#            browser workflow that would own this route (M-3) still does not
+#            exist; see the `e2e` job below for the manifest route evidence.
 #   audit -> narduk-charts#15. `npm audit --audit-level=high` is failing on an
 #            advisory. It is deliberately NOT part of `ci / Required`: the
 #            required gate is the code gate, and an unrelated upstream advisory
@@ -100,20 +99,31 @@ jobs:
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
 
-  # Stays local -- narduk-charts#14. See the header for why it cannot move yet.
+  # Routed to the dedicated browser pool -- narduk-charts#14. fleet#105 added
+  # narduk-charts to the playwright-isolated group's manifest membership, the
+  # live GitHub runner-group grant, and cycled the runners control-plane image
+  # (the exact pipeline narduk-libs used, fleet#252 / narduk-libs#23); this is
+  # the workflow half. Route resolved from the manifest, not hand-copied:
+  #   python3 scripts/github_runner_fleet.py route \
+  #     --repository narduk-enterprises/narduk-charts --visibility private \
+  #     --workload browser
+  #   => {"group": "playwright-isolated",
+  #       "labels": ["self-hosted","Linux","X64","proxmox-playwright-x64"]}
   e2e:
     name: e2e
-    # GitHub-hosted, and this is NOT one of the three named exceptions in
-    # company-hq/docs/CI-RUNNER-POLICY.md 2 -- saying so plainly rather than
-    # letting an unannotated `ubuntu-latest` pass for a forgotten pin. It is a
-    # recorded blocker: policy 5 reserves browser work for the
-    # `proxmox-playwright-x64` class, and narduk-charts is not in the fleet
-    # manifest's `playwright-isolated` group (re-verified 2026-07-25), so
-    # linux-ci would be the WRONG class rather than the missing one. The route
-    # addition is a fleet-manifest change (#155 flow), not something this
-    # workflow may assume; narduk-charts#14 owns it.
-    runs-on: ubuntu-latest
+    runs-on:
+      group: playwright-isolated
+      labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
     timeout-minutes: 30
+    env:
+      # The pool's browser binaries are immutable under /opt (downloads are
+      # deliberately blocked, and `playwright install --with-deps` needs sudo
+      # that the pool denies by design -- narduk-charts#14's original
+      # blocker); Playwright must resolve Chromium from there instead of
+      # installing it. Same path narduk-libs' packed-consumer-smoke lane uses
+      # and the shared reusable-browser-tests.yml callable's
+      # PLAYWRIGHT_TOOLCHAIN_ROOT constant.
+      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,8 +147,10 @@ jobs:
           npm ci --legacy-peer-deps
 
       # No build step: playwright.config.ts serves the components through a
-      # vite dev server, so e2e never reads dist/.
-      - run: npx playwright install chromium --with-deps
+      # vite dev server, so e2e never reads dist/. No install step either: the
+      # pool ships Chromium headless shell preinstalled (only project this
+      # repo runs -- see playwright.config.ts), resolved via
+      # PLAYWRIGHT_BROWSERS_PATH above.
       - run: npm run test:e2e
 
       # `!cancelled()` rather than `always()`. The point of this step is to keep
