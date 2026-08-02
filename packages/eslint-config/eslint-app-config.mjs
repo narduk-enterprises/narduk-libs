@@ -429,6 +429,24 @@ export function resolveCapabilityPackName(presetName) {
 }
 
 /**
+ * The pack names a `capabilityPacks` argument actually selects: an empty or
+ * omitted list falls through to `defaultCapabilityPresetOrder`, and a nested
+ * array flattens. `composeSharedConfigs` and the Tailwind theme guard below both
+ * read this, so "which packs did the app select?" cannot answer differently in
+ * the two places — a config entry attached for a pack that was never composed is
+ * how the `better-tailwindcss` plugin-resolution crash happened.
+ *
+ * Names are returned as requested, not canonicalised, because
+ * `composeSharedConfigs` reports an unknown pack using the caller's spelling.
+ *
+ * @param {Array<string | string[]>} presetNames
+ * @returns {string[]}
+ */
+function requestedCapabilityPackNames(presetNames) {
+  return presetNames.length === 0 ? defaultCapabilityPresetOrder : presetNames.flat()
+}
+
+/**
  * Compose the shared parser and community layers with one or more capability
  * packs. Prettier's disable config is always last.
  *
@@ -436,8 +454,7 @@ export function resolveCapabilityPackName(presetName) {
  * @returns {import('eslint').Linter.Config[]}
  */
 export function composeSharedConfigs(...presetNames) {
-  const requestedPresetNames =
-    presetNames.length === 0 ? defaultCapabilityPresetOrder : presetNames.flat()
+  const requestedPresetNames = requestedCapabilityPackNames(presetNames)
 
   const selectedCapabilityConfigs = requestedPresetNames.flatMap((presetName) => {
     const canonicalName = resolveCapabilityPackName(presetName)
@@ -494,21 +511,87 @@ const ADMIN_PRESET_OVERRIDES = [
   },
 ]
 
+/** Canonical name of the only pack that registers `better-tailwindcss`. */
+const DESIGN_SYSTEM_PACK = 'design-system'
+
 /**
- * Enable the three theme-resolving better-tailwindcss rules only when the app's
- * Tailwind entry point actually exists — without it they report a
- * misconfiguration banner per class instead of degrading quietly
- * (see configs/design-system.mjs).
+ * Nuxt UI 4 / narduk-template convention, and the entry point
+ * `createAppLintConfig` falls back to when the app names none. Mirrors the
+ * pack's own placeholder in configs/design-system.mjs.
+ */
+const DEFAULT_TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
+
+/**
+ * Did the app select the pack that registers `better-tailwindcss`?
+ *
+ * @param {Array<string | string[]>} capabilityPacks
+ */
+function selectsDesignSystemPack(capabilityPacks) {
+  return requestedCapabilityPackNames(capabilityPacks).some(
+    (presetName) => resolveCapabilityPackName(presetName) === DESIGN_SYSTEM_PACK,
+  )
+}
+
+/**
+ * Enable the three theme-resolving better-tailwindcss rules only when BOTH
+ * halves of the configuration are actually present:
+ *
+ * 1. **The app selected `design-system`.** It is the only pack that registers
+ *    the `better-tailwindcss` plugin (configs/design-system.mjs), and enabling a
+ *    plugin's rules without its plugin is not a soft failure: ESLint throws
+ *    `Key "rules": Key "better-tailwindcss/no-unknown-classes": Could not find
+ *    plugin "better-tailwindcss" in configuration.` while normalising the config,
+ *    before it lints a single file. v2 gated on file existence alone, so any app
+ *    that skipped the pack while keeping its stylesheet at the conventional
+ *    default path crashed out of the box — found by the first consumer
+ *    migration. (Only an *enabled* rule resolves its plugin; ESLint skips
+ *    validation at severity 0, which is why the content preset's
+ *    `better-tailwindcss/no-restricted-classes: 'off'` needs no such gate.)
+ * 2. **The entry point exists on disk.** Without it the rules do not degrade
+ *    quietly; the plugin's shared context reports a misconfiguration banner per
+ *    class (see configs/design-system.mjs).
+ *
+ * No pack means no override, whatever is on disk — an app that never mentioned
+ * Tailwind is silently correct. But no pack plus an *explicitly configured*
+ * entry point is a contradiction only the app can resolve, so it throws a named
+ * configuration error here at compose time rather than letting ESLint die inside
+ * plugin resolution with no mention of `capabilityPacks`.
  *
  * Severities match what the pack would have used: the two token gates that
  * replace bespoke v1 rules are errors; `enforce-canonical-classes` (the
  * `prefer-tailwind-var-shorthand` replacement) stays a warning.
+ *
+ * @param {object}                   options
+ * @param {string}                   [options.appRootDir]
+ * @param {Array<string | string[]>} options.capabilityPacks    as passed to `createAppLintConfig`
+ * @param {unknown}                  options.tailwindEntryPoint `undefined` when the app named none
  */
-function buildTailwindThemeOverride(appRootDir, tailwindEntryPoint) {
-  if (typeof tailwindEntryPoint !== 'string' || tailwindEntryPoint.length === 0) {
+function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntryPoint }) {
+  const entryPointWasProvided = tailwindEntryPoint !== undefined
+  const entryPoint = entryPointWasProvided ? tailwindEntryPoint : DEFAULT_TAILWIND_ENTRY_POINT
+  // A usable entry point is a non-empty string; null, '' and non-strings have
+  // always meant "no theme override" and still do.
+  const hasUsableEntryPoint = typeof entryPoint === 'string' && entryPoint.length > 0
+
+  if (!selectsDesignSystemPack(capabilityPacks)) {
+    // Only a value that asked for theme linting is a contradiction. An explicit
+    // null/''/non-string asked for the opposite, and stays silent.
+    if (entryPointWasProvided && hasUsableEntryPoint) {
+      throw new Error(
+        'tailwindEntryPoint requires the design-system capability pack, which registers ' +
+          'better-tailwindcss; without it ESLint aborts every run with ' +
+          '\'Could not find plugin "better-tailwindcss" in configuration\'. Received ' +
+          JSON.stringify(tailwindEntryPoint) +
+          ". Add 'design-system' to capabilityPacks, or drop tailwindEntryPoint.",
+      )
+    }
     return []
   }
-  const resolved = join(appRootDir ?? '.', tailwindEntryPoint)
+
+  if (!hasUsableEntryPoint) {
+    return []
+  }
+  const resolved = join(appRootDir ?? '.', entryPoint)
   if (!existsSync(resolved)) {
     return []
   }
@@ -798,6 +881,8 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {string[]}                              [options.allowedBrandIconFiles] accepted, inert in v2
  * @param {string[]}                              [options.utilityComposableFiles]
  * @param {string}                                [options.appRootDir]
+ * @param {string}                                [options.tailwindEntryPoint]  defaults to
+ *   `app/assets/css/main.css`; requires the `design-system` capability pack
  */
 export function createAppLintConfig({
   withNuxt,
@@ -812,7 +897,14 @@ export function createAppLintConfig({
   allowedBrandIconFiles = [],
   utilityComposableFiles = [],
   appRootDir = inferAppRootDirFromStack(),
-  tailwindEntryPoint = 'app/assets/css/main.css',
+  // Deliberately left without a destructuring default. The factory has to tell
+  // "the app said nothing about Tailwind" apart from "the app asked for Tailwind
+  // linting", and only an absent value proves the former — the two get different
+  // treatment when `design-system` is missing (silence vs. a named error).
+  // Comparing a supplied value against DEFAULT_TAILWIND_ENTRY_POINT would
+  // conflate them: an app that spells the default path out loud is still asking.
+  // The default is applied inside buildTailwindThemeOverride, after that check.
+  tailwindEntryPoint,
 } = {}) {
   if (typeof withNuxt !== 'function') {
     throw new TypeError('createAppLintConfig requires the app-local withNuxt() wrapper')
@@ -826,6 +918,15 @@ export function createAppLintConfig({
   const sanitizedSharedConfigs = sharedConfigsForApp
     .map(stripNuxtManagedPlugins)
     .map((config) => patchCorrectnessProjectServiceConfig(config, appRootDir))
+
+  // Composed here rather than inline below so a misconfiguration throws before
+  // the factory starts reading the app's component graph off disk — and after
+  // composeSharedConfigs, so an unknown pack name still reports itself first.
+  const tailwindThemeOverrides = buildTailwindThemeOverride({
+    appRootDir,
+    capabilityPacks,
+    tailwindEntryPoint,
+  })
 
   let appTypeOverrides = []
 
@@ -846,7 +947,7 @@ export function createAppLintConfig({
       ...additionalNuxtUiComponents,
     ]),
     ...buildUtilityComposableOverrides(utilityComposableFiles),
-    ...buildTailwindThemeOverride(appRootDir, tailwindEntryPoint),
+    ...tailwindThemeOverrides,
     ...appTypeOverrides,
     ...extraOverrides,
   )

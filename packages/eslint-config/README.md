@@ -144,6 +144,18 @@ createAppLintConfig({
 })
 ```
 
+**`tailwindEntryPoint` requires the `design-system` pack.** That pack is the
+only one that registers the `better-tailwindcss` plugin, and ESLint does not
+tolerate an enabled rule whose plugin is absent — it throws
+`Could not find plugin "better-tailwindcss" in configuration` while normalising
+the config and lints nothing at all. So the theme override attaches only when
+the pack is selected (`'designSystem'` counts) _and_ the entry point exists. An
+app that selects no `design-system` gets no override whatever sits at
+`app/assets/css/main.css`, and passing `tailwindEntryPoint` without the pack
+throws a named configuration error at compose time rather than at plugin
+resolution. `capabilityPacks` left empty selects the default preset order, which
+does include `design-system`.
+
 A standalone consumer composing by hand opts in explicitly:
 
 ```js
