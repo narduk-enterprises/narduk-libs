@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.19.31
+
+### Patch Changes
+
+- @narduk-enterprises/narduk-app@1.19.1
+- @narduk-enterprises/narduk-core@1.20.3
+
 ## 1.19.30
 
 ### Patch Changes

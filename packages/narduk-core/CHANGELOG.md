@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-core
 
+## 1.20.3
+
+### Patch Changes
+
+- Updated dependencies [048670e]
+  - @narduk-enterprises/eslint-config@2.0.1
+
 ## 1.20.2
 
 ### Patch Changes
