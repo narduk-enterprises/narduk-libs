@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.1.9
+
+### Patch Changes
+
+- 048670e: Track the @narduk-enterprises/eslint-config patch (the Tailwind theme
+  override now requires the design-system capability pack) in generator-owned
+  package pins.
+
 ## 0.1.8
 
 ### Patch Changes
