@@ -22,14 +22,32 @@ const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
+const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 // Single source of truth for the generated packed-consumer's Playwright pin:
 // the root workspace devDependency, which package.json already pins exactly
 // to the pool-supported version (company-hq#343). Reading it here means a
 // future pool upgrade only has to change one file, not this script too.
-const PLAYWRIGHT_TOOLCHAIN_VERSION = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  .devDependencies?.['@playwright/test']
+const PLAYWRIGHT_TOOLCHAIN_VERSION = rootManifest.devDependencies?.['@playwright/test']
 if (!PLAYWRIGHT_TOOLCHAIN_VERSION) {
   throw new Error('Root package.json must directly pin devDependencies["@playwright/test"].')
+}
+// Same single-source-of-truth reasoning as Playwright above, added after PR
+// #51 (run 30764151785) broke it: this consumer's own `eslint` devDependency
+// used to be a hardcoded '9.39.4' literal, which was correct back when the
+// whole workspace was on ESLint 9. That PR bumped root package.json and every
+// sibling package to eslint@^10.8.0 and gave the new
+// @narduk-enterprises/eslint-config package (a real `dependencies` entry of
+// narduk-core, so it and its own eslint-plugin-unicorn peer range are always
+// part of this install) a `peerDependencies.eslint: ^10.0.0` requirement --
+// but the hardcoded literal here still resolved eslint to 9.39.4 in the
+// packed consumer, so pnpm's peer-dependency check emitted WARN/✕ lines that
+// runChecked() (rejectWarnings defaults to true) correctly turned into a hard
+// failure. Reading the range straight from root/package.json keeps this pin
+// from silently drifting out of sync with the workspace's actual ESLint
+// major again.
+const WORKSPACE_ESLINT_VERSION_RANGE = rootManifest.devDependencies?.eslint
+if (!WORKSPACE_ESLINT_VERSION_RANGE) {
+  throw new Error('Root package.json must directly pin devDependencies.eslint.')
 }
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
@@ -626,7 +644,7 @@ try {
           // this dev-only sandbox package.json out of the immutable image's
           // supported version even though every other manifest is pinned.
           '@playwright/test': PLAYWRIGHT_TOOLCHAIN_VERSION,
-          eslint: '9.39.4',
+          eslint: WORKSPACE_ESLINT_VERSION_RANGE,
           typescript: '5.9.3',
           vitest: '4.1.6',
         },
