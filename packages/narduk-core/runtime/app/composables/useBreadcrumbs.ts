@@ -16,7 +16,7 @@
  * ```
  */
 
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- Required for isolated package execution where Nuxt auto-imports are unavailable.
+// Explicit import (not a Nuxt auto-import): required for isolated package execution where Nuxt auto-imports are unavailable.
 import { type MaybeRef, unref } from 'vue'
 
 export interface BreadcrumbItem {

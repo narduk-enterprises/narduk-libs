@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- AI admin tab is a cohesive configuration panel for model and prompt administration. */
 import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/formatBuildTimeLocal'
 
 const props = withDefaults(

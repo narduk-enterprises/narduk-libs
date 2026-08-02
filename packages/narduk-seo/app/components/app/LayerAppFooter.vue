@@ -23,7 +23,7 @@ const resolvedAppName = computed(() => {
 </script>
 
 <template>
-  <!-- eslint-disable-next-line narduk/no-native-layout -- layer scaffold: semantic landmark element -->
+  <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
   <footer class="border-t border-default">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <slot>

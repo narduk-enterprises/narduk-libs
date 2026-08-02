@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Mutation handler factory bundles request parsing, validation, auth, audit, and response shaping helpers that share generic types; splitting fragments the ergonomics of the single entry point consumers depend on. */
 import { createError, defineEventHandler, readBody } from 'h3'
 
 import { requireAdmin, requireAuth, requireAuthScopes } from '#layer/server/utils/auth'

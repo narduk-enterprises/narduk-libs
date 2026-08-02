@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- PostHog admin panel is a cohesive dashboard surface (filters + KPIs + charts + event table) meant to be used as a single operator view. */
 const filters = reactive({
   period: '30d',
   limit: 10,

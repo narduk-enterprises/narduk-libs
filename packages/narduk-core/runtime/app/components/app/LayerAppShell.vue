@@ -19,7 +19,7 @@
       <slot name="header"></slot>
 
       <!-- Main content -->
-      <!-- eslint-disable-next-line narduk/no-native-layout -- layer scaffold: semantic landmark element -->
+      <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
       <main id="main-content" class="flex-1">
         <slot></slot>
       </main>

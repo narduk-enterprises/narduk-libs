@@ -1,5 +1,4 @@
 /// <reference types="@cloudflare/workers-types" />
-/* eslint-disable narduk/file-size-budget -- Database utility owns the shared D1/Postgres compatibility boundary, schema selection, health probing, and app-schema bridge in one audited surface. */
 import { drizzle as drizzleD1, type DrizzleD1Database } from 'drizzle-orm/d1'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'

@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Persistent tab composable owns route-sync + storage-sync + initial-resolution as a single unit to prevent state divergence across tabs. */
 import {
   buildPersistentTabStorageKey,
   normalizePersistentTabValue,

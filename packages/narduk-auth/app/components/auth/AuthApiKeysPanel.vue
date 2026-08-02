@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- API keys management panel is a cohesive CRUD surface (list + create modal + rotate + revoke + schema) co-located so users can reason about the full lifecycle in one file; AppCopyButton is a Nuxt auto-import from the core layer. */
+/* eslint-disable max-lines -- API keys management panel is a cohesive CRUD surface (list + create modal + rotate + revoke + schema) co-located so users can reason about the full lifecycle in one file; AppCopyButton is a Nuxt auto-import from the core layer. */
 import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/formatBuildTimeLocal'
 import { z } from 'zod'
 

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Notification center is a cohesive popover UI (bell + badge + list + empty/loading/error states + actions) that needs state and template co-located for accessibility. */
 /**
  * AppNotificationCenter — bell icon + popover notification dropdown.
  *

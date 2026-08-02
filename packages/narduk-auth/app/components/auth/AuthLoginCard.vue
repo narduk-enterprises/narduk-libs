@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Login card owns schema + form state + provider flows + error mapping in one surface to keep the auth UX coherent; splitting scatters validation across files. */
 import { z } from 'zod'
 
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'

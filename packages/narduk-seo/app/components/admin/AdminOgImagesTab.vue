@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable vue/no-undef-components -- admin OG preview is a Nuxt auto-import from this layer */
 const { data: ogData, status: ogStatus, error: ogError } = useOgImageData()
 const ogSections = computed(() => normalizeOgPreviewSections(ogData.value))
 

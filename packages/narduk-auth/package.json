@@ -105,7 +105,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
-    "@narduk-enterprises/eslint-config": "1.2.17",
+    "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",
@@ -113,7 +113,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^9.39.4",
+    "eslint": "^10.8.0",
     "h3": "^1.15.11",
     "happy-dom": "^20.9.0",
     "nuxt": "^4.4.2",

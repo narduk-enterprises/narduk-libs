@@ -6,7 +6,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-geo/narduk-mapkit': '1.0.0',
   '@narduk-geo/narduk-mapkit-nuxt': '1.0.0',
   '@narduk-enterprises/narduk-app-tools': '0.1.2',
-  '@narduk-enterprises/eslint-config': '1.2.17',
+  '@narduk-enterprises/eslint-config': '1.2.19',
   '@narduk-enterprises/narduk-ai': '0.1.2',
   '@narduk-enterprises/narduk-analytics': '1.19.23',
   '@narduk-enterprises/narduk-auth': '1.19.29',
@@ -23,7 +23,16 @@ export const PACKAGE_VERSIONS = {
   'drizzle-kit': '0.31.10',
   'drizzle-orm': '0.45.2',
   esbuild: '0.28.1',
-  eslint: '9.39.4',
+  // @narduk-enterprises/eslint-config v2 (this workspace's own peer
+  // requirement, see packages/eslint-config/package.json) needs
+  // eslint@^10.0.0; this pin generates every new app's own devDependency, so
+  // it has to track the same major the config package now requires or every
+  // freshly scaffolded app fails its first `pnpm install` on an unmet peer.
+  // `versions:sync` does not cover this: it only re-pins the
+  // `@narduk-enterprises/*` package versions above, not third-party pins like
+  // this one, so it has to be bumped by hand alongside eslint-config's own
+  // major bumps.
+  eslint: '10.8.0',
   glob: '13.0.6',
   'happy-dom': '20.9.0',
   knip: '6.14.1',

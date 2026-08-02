@@ -9,7 +9,7 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- module setup executes before Nuxt runtime auto-imports exist.
+// Explicit import (not a Nuxt auto-import): module setup executes before Nuxt runtime auto-imports exist.
 import { validateXaiApiKey } from '../shared/utils/xaiRuntimeConfig'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-ai'

@@ -485,11 +485,26 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // Self-contained per @narduk-enterprises/eslint-config's own documented
+      // usage (see the JSDoc example atop eslint-app-config.mjs), not a
+      // re-export of the root array below. `createAppLintConfig()` -- unlike
+      // the bare `composeSharedConfigs()` the root file uses -- reads this
+      // app's generated `.nuxt/components.d.ts` and widens the
+      // `vue/no-undef-components` allowlist with every component Nuxt
+      // auto-registers (`@nuxt/ui`'s `UApp`, narduk-core's
+      // `addComponentsDir`-registered `LayerAppHeader`, ...). `withNuxt` only
+      // exists under apps/web/.nuxt (nuxt prepare runs here, not at the repo
+      // root), so this composition has to live here rather than being
+      // imported from the root config.
       path: 'apps/web/eslint.config.mjs',
       contents: text(
-        "import rootConfig from '../../eslint.config.mjs'",
+        "import withNuxt from './.nuxt/eslint.config.mjs'",
+        "import { createAppLintConfig } from '@narduk-enterprises/eslint-config/eslint-app-config'",
         '',
-        'export default rootConfig',
+        'export default createAppLintConfig({',
+        '  withNuxt,',
+        "  capabilityPacks: ['core', 'correctness', 'complexity', 'formatting'],",
+        '})',
       ),
     },
     {

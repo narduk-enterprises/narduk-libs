@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Core auth server utility groups session + cookie + user-resolution helpers that share database and config state; the single-file layout keeps the auth surface easy to audit. */
 import { and, eq, gt } from 'drizzle-orm'
 import { createError, deleteCookie, getCookie, getRequestHeader, setCookie } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'

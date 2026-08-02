@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- tests import the explicit package export directly.
+// Explicit import (not a Nuxt auto-import): tests import the explicit package export directly.
 import { buildXaiModelCatalog, pickPreferredModel } from '../app/utils/xaiModels'
 
 describe('xAI model catalog', () => {

@@ -1,4 +1,4 @@
-/* eslint-disable narduk/file-size-budget, no-console -- SSRF-safe URL validator keeps DNS resolution, validation, streaming fetch, redirect handling, and User-Agent fallback in a single module so the hardened fetch surface stays auditable end-to-end; debug logs are gated on unfurlDebug. */
+/* eslint-disable no-console -- debug logs are gated on unfurlDebug. */
 import { resolve4, resolve6 } from 'node:dns/promises'
 import { isIP } from 'node:net'
 

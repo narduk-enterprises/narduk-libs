@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Notifications composable owns the in-app + browser push integration (permission, subscription, list, mark-read) as one unit to prevent state-sync drift between pieces. */
 /**
  * Composable for in-app + browser push notifications.
  *

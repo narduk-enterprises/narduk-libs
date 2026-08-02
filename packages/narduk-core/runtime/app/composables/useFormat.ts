@@ -1,4 +1,3 @@
-/* eslint-disable narduk/require-use-prefix-for-composables -- standalone formatX helpers are pure utilities, not composables */
 import {
   formatDeterministicDate,
   formatDeterministicDateTime,

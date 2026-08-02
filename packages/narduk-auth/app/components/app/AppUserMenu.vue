@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- User menu is a cohesive dropdown (avatar + identity + menu items + sign-out confirm) meant to be understood as a single unit. */
 /**
  * AppUserMenu — Authenticated user dropdown menu.
  *
