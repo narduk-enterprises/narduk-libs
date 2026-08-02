@@ -82,10 +82,9 @@ describe('package manifest', () => {
    * as an exact string, so the check keeps meaning something after the release
    * commit lands and the manifest legitimately becomes 2.0.0.
    */
-  it('is still pre-2.0.0, with the major bump held in a changeset', () => {
+  it('holds the major in a changeset pre-release, and reads 2.x once consumed', () => {
     const [major] = pkg.version.split('.').map(Number)
     expect(Number.isFinite(major)).toBe(true)
-    expect(major).toBeLessThan(2)
 
     const changesets = readdirSync(new URL('../../../../.changeset', import.meta.url))
       .filter((entry) => entry.endsWith('.md') && entry !== 'README.md')
@@ -96,7 +95,16 @@ describe('package manifest', () => {
     const majorBump = changesets.some((body) =>
       /^'@narduk-enterprises\/eslint-config':\s*major$/m.test(body),
     )
-    expect(majorBump, 'no pending major changeset for @narduk-enterprises/eslint-config').toBe(true)
+
+    if (majorBump) {
+      // Feature-branch state: the manifest stays one release behind while the
+      // pending changeset carries the major (see the 3.0.0 trap above).
+      expect(major).toBeLessThan(2)
+    } else {
+      // Version-PR / released state: changesets consumed the entry into the
+      // manifest. Anything still pre-2 here means the major evaporated.
+      expect(major).toBeGreaterThanOrEqual(2)
+    }
   })
 
   it('peers ESLint 10 and vue-eslint-parser 10', () => {
