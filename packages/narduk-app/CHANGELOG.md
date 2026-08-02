@@ -1,6 +1,6 @@
-# @narduk-enterprises/narduk-auth
+# @narduk-enterprises/narduk-app
 
-## 1.19.30
+## 1.19.1
 
 ### Patch Changes
 
@@ -61,53 +61,3 @@
   `-ai`, `-uploads`) assign the portable-layer import rule in their own configs,
   and `narduk-core` and `-uploads` carry scoped, commented exceptions for the
   pre-existing conditions their newly-linted `runtime/server/**` trees surfaced.
-
-- Updated dependencies [95ec690]
-  - @narduk-enterprises/narduk-core@1.20.2
-  - @narduk-enterprises/narduk-app@1.19.1
-
-## 1.19.29
-
-### Patch Changes
-
-- Updated dependencies [e030789]
-  - @narduk-enterprises/narduk-core@1.20.1
-
-## 1.19.28
-
-### Patch Changes
-
-- e4c8262: Replace implicit reliance on `narduk-core`'s Nuxt auto-imports
-  (`useAppFetch`, `formatBuildTimeLocal`, `useLogger`, `requireAdmin`) with
-  explicit imports from `@narduk-enterprises/narduk-core/*` subpaths.
-
-  These composables/utils were previously called as bare globals, which only
-  resolves when a consuming app registers `narduk-core`'s Nuxt module with its
-  default options (`app: true`). A consumer that narrows the module surface (for
-  example `{ app: false, server: true }`, used by `spacex-ipo` to avoid a
-  component-registration collision with `narduk-seo`'s own `LayerAppFooter`)
-  fails `nuxt typecheck` with `Cannot find name 'useAppFetch'` the moment it
-  also depends on `narduk-seo` or `narduk-auth`, because those packages'
-  composables/components still assumed the global was present.
-
-  No behavior change: each site now imports the exact same function it was
-  already calling implicitly.
-
-  Bump `create-narduk-app` in step so its generated-app pins for `narduk-seo`,
-  `narduk-auth`, and `narduk-analytics` refresh to these patched versions.
-
-## 1.19.27
-
-### Patch Changes
-
-- 7848187: Replace the template-era dynamic database aliases with the private
-  `#narduk-core/schema` and `#narduk-core/postgres-runtime` Nuxt contracts. Core
-  now derives secure session-cookie defaults from the request protocol so local
-  HTTP development remains usable while HTTPS stays secure. Auth's packaged
-  runtime now imports its own composables and server helpers explicitly, with
-  boundary checks that prevent implicit template-era auto-import dependencies
-  from returning.
-- Updated dependencies [7848187]
-- Updated dependencies [7848187]
-- Updated dependencies [7848187]
-  - @narduk-enterprises/narduk-core@1.20.0
