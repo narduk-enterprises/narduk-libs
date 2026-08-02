@@ -55,6 +55,8 @@ const facebookUrl = computed(
 const copied = ref(false)
 
 async function copyLink() {
+  if (!import.meta.client) return
+
   try {
     await navigator.clipboard.writeText(fullUrl.value)
     copied.value = true

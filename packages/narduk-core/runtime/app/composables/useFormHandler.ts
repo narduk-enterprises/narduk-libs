@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Form handler composable is a single reusable submission primitive (state + submit + validation + error normalization) co-located for a stable imperative API. */
 /**
  * useFormHandler — Imperative API submission composable for cases where
  * `<UForm :schema :state>` is not suitable (e.g., multi-step flows, modal

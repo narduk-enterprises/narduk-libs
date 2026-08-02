@@ -38,7 +38,7 @@ const props = withDefaults(
 const copied = ref(false)
 
 async function copy() {
-  if (!props.text) return
+  if (!import.meta.client || !props.text) return
 
   try {
     await navigator.clipboard.writeText(props.text)

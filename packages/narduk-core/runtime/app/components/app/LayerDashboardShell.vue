@@ -1,6 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Dashboard shell is a single orchestration component coordinating sidebar + navbar + toolbar + scope-trail; splitting fragments slot wiring and shared layout state. */
-
 import { readRuntimeConfigString } from '../../utils/readRuntimeConfigString'
 
 interface DashboardNavItem {

@@ -95,7 +95,7 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.108",
-    "@narduk-enterprises/eslint-config": "1.2.17",
+    "@narduk-enterprises/eslint-config": "workspace:*",
     "@narduk-enterprises/narduk-platform": "workspace:*",
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/fonts": "^0.14.0",
@@ -126,7 +126,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^9.39.4",
+    "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
     "nuxt": "^4.4.2",
     "playwright": "1.61.1",

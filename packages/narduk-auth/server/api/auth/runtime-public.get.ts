@@ -20,20 +20,6 @@ function coerceStringEnv(env: Record<string, unknown>): Record<string, string | 
   return out
 }
 
-function envFromProcessRuntime(): Record<string, string | undefined> {
-  if (typeof process === 'undefined' || !process.env) {
-    return {}
-  }
-
-  return coerceStringEnv(
-    Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ) as Record<string, unknown>,
-  )
-}
-
 /** Same fields `resolveAuthEnvironment` reads, sourced from Nitro server runtimeConfig. */
 function envFromNuxtRuntime(event: H3Event): Record<string, string | undefined> {
   const c = useRuntimeConfig(event) as Record<string, unknown>
@@ -72,11 +58,15 @@ export default defineEventHandler((event) => {
   // `import 'cloudflare:workers'` because Nitro's prerenderer loads modules
   // under Node's default ESM loader, which cannot resolve the `cloudflare:`
   // URL scheme and crashes the build.
+  // `readWorkerRuntimeEnv` already returns `{ ...process.env, ...cloudflareBindings }`,
+  // so the separate lowest-priority `process.env` layer this handler used to build
+  // was fully shadowed by `fromH3` — every key it produced came from the same
+  // `process.env` and lost the merge. Removing it also removes the only direct
+  // `process.env` read in Worker runtime code (narduk/no-process-env-in-worker-runtime).
   const fromH3 = readWorkerRuntimeEnv(event) as Record<string, unknown>
   const fromNuxt = envFromNuxtRuntime(event)
-  const fromProcess = envFromProcessRuntime()
   // Lowest → highest priority so live Worker bindings win over build-time process env.
-  const merged = { ...fromProcess, ...fromNuxt, ...fromH3 }
+  const merged = { ...fromNuxt, ...fromH3 }
   const resolved = resolveAuthEnvironment(coerceStringEnv(merged))
   setAppResponseHeader(event, 'Cache-Control', 'private, no-store')
   return {

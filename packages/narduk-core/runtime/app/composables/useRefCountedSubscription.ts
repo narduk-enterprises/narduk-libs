@@ -1,4 +1,4 @@
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- Required for isolated Vitest execution where Nuxt auto-imports are unavailable.
+// Explicit import (not a Nuxt auto-import): required for isolated Vitest execution where Nuxt auto-imports are unavailable.
 import { reactive } from 'vue'
 
 /**

@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Prompt resolution is one deterministic pipeline: retrieval, trust-aware serialization, caching, and budget accounting are tested together. */
 import { escapeXmlAttribute, escapeXmlText } from './aiXmlEscape'
 
 import type {

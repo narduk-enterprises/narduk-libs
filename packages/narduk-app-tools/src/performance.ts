@@ -73,7 +73,7 @@ function extension(path: string): string {
 }
 
 function relativeAssetPath(appDir: string, path: string): string {
-  return relative(appDir, path).split('\\').join('/')
+  return relative(appDir, path).replaceAll('\\', '/')
 }
 
 function cssOffenders(source: string): CssRuleOffender[] {

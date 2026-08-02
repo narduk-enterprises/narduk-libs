@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Auth API composable groups all user-facing endpoints (login, register, logout, session, reset, confirm, MFA) that share types and error-mapping helpers; splitting would duplicate the type surface and make request parity harder to reason about. */
 export interface AuthUser {
   [key: string]: unknown
   aal?: 'aal1' | 'aal2' | null

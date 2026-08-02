@@ -76,7 +76,7 @@ export default definePublicMutation(
 
     for (const engine of engines) {
       try {
-        // eslint-disable-next-line narduk/no-await-in-loop-in-server -- Sequential pings are expected for IndexNow endpoints
+        // eslint-disable-next-line no-await-in-loop -- Sequential pings are expected for IndexNow endpoints
         const response = await fetch(engine, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json; charset=utf-8' },

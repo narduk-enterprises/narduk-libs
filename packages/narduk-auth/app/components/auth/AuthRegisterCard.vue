@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Register card owns schema + form state + provider flows + error mapping in one surface to keep registration UX coherent. */
 import { z } from 'zod'
 
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'

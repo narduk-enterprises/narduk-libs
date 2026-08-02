@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget, vue/no-undef-components -- OG preview lab is a single interactive debugging surface (controls + preview + metadata) meant to be used as a developer tool; splitting fragments the workflow; AdminOgImagePreview is a Nuxt auto-import. */
+/* eslint-disable max-lines -- OG preview lab is a single interactive debugging surface (controls + preview + metadata) meant to be used as a developer tool; splitting fragments the workflow. */
 import { useRuntimeConfig } from '#imports'
 
 import {

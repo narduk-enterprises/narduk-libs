@@ -1,6 +1,4 @@
-<script setup lang="ts">
-/* eslint-disable vue/no-undef-components -- admin panels are Nuxt auto-imports from this layer */
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <div class="space-y-6">

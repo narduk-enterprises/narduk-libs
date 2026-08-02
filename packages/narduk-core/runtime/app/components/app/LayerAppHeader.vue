@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Layer app header is a cohesive navigation surface (brand + nav + actions + mobile drawer) co-located for responsive behavior. */
 /**
  * A highly configurable, responsive layer application header.
  */
@@ -61,7 +60,7 @@ watch(
 </script>
 
 <template>
-  <!-- eslint-disable-next-line narduk/no-native-layout -- layer scaffold: semantic landmark element -->
+  <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
   <header class="sticky top-0 z-50 border-b border-default bg-default/80 backdrop-blur-xl">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
       <!-- Brand / Logo Area -->
@@ -79,7 +78,7 @@ watch(
       </slot>
 
       <!-- Desktop nav -->
-      <!-- eslint-disable-next-line narduk/no-native-layout -- layer scaffold: semantic landmark element -->
+      <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
       <nav class="hidden md:flex items-center gap-1" aria-label="Main navigation">
         <slot name="navigation">
           <template v-if="navLinks.length">
@@ -147,7 +146,7 @@ watch(
 
     <!-- Mobile nav drawer -->
     <Transition name="slide-down">
-      <!-- eslint-disable-next-line narduk/no-native-layout -- layer scaffold: semantic landmark element -->
+      <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
       <nav
         v-if="mobileMenuOpen"
         class="md:hidden border-t border-default bg-default/95 backdrop-blur-xl"

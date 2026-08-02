@@ -12,7 +12,7 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- Module setup runs in Node before Nuxt app auto-imports exist.
+// Explicit import (not a Nuxt auto-import): module setup runs in Node before Nuxt app auto-imports exist.
 import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../shared/utils/auth-environment'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-auth'

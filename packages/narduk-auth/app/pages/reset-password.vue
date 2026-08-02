@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Reset-password page owns the two-step recovery flow (request + confirm) plus schema and error mapping as a single cohesive auth surface. */
 import { z } from 'zod'
 
 import { sanitizeLocalRedirectPath } from '../utils/safeRedirectPath'

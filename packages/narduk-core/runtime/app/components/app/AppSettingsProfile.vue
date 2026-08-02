@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Settings profile card owns schema + form state + avatar upload + save flow in one cohesive surface. */
 /**
  * AppSettingsProfile — Reusable profile editing card.
  *
@@ -85,6 +84,9 @@ const initials = computed(() => {
 })
 
 function onFileSelect(event: Event) {
+  // Canvas resizing below needs `document`; the whole handler is client-only.
+  if (!import.meta.client) return
+
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
@@ -194,7 +196,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
             <p v-else class="text-xs text-dimmed">
               Square images work best. Max {{ Math.round(maxAvatarSize / 1024 / 1024) }}MB.
             </p>
-            <!-- eslint-disable-next-line narduk/no-native-input -- hidden file input for avatar upload -->
+            <!-- eslint-disable-next-line vue/no-restricted-html-elements -- hidden file input for avatar upload -->
             <input
               ref="fileInputRef"
               type="file"

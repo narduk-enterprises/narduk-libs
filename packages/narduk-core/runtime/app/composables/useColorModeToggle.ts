@@ -1,4 +1,4 @@
-// eslint-disable-next-line nuxt-redundant-auto-import/no-redundant-auto-import -- Packed package consumers compile this file outside the owning Nuxt source tree, so Vue APIs must be explicit.
+// Explicit import (not a Nuxt auto-import): packed package consumers compile this file outside the owning Nuxt source tree, so Vue APIs must be explicit.
 import { computed, onMounted, ref } from 'vue'
 
 import { useColorMode } from '#imports'

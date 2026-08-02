@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable narduk/file-size-budget -- Lightbox is a single orchestration component (overlay + media + keyboard nav + gesture handling) that needs its event wiring co-located. */
 /**
  * AppLightbox — Fullscreen image/video viewer with keyboard navigation.
  *

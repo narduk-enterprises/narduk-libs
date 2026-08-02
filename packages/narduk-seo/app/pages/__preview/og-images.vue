@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable vue/no-undef-components -- preview lab is a Nuxt auto-import from this layer */
 import { useRuntimeConfig } from '#imports'
 
 const runtimeConfig = useRuntimeConfig()

@@ -1,4 +1,3 @@
-/* eslint-disable narduk/file-size-budget -- Rate-limiting utility owns store + policy + header writing in one cohesive surface; splitting couples test fixtures tighter for little benefit. */
 import { createError, getHeader, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 

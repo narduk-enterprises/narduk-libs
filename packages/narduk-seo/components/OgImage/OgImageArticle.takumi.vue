@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/* eslint-disable max-lines -- Satori/Takumi renders this card without a CSS
+   engine, so every one of its 22 nodes carries a full inline `:style` object;
+   the length is the renderer's constraint, not structure that can be factored
+   out. v1's narduk/file-size-budget never reported here (its `/app/pages/`
+   gate could not match a relative filename); the core `max-lines` replacement
+   that supersedes it does, at 273 counted lines against a 250 component budget. */
 import {
   SEO_OG_IMAGE_BADGE_INK,
   SEO_OG_IMAGE_PRESET_GREEN,
