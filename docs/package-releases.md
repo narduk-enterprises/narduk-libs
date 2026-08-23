@@ -30,12 +30,12 @@ runbook and evidence exemplar.
 The Changesets run that only opens a release PR does not publish and therefore
 skips the post-publish registry proof.
 
-The org is on Team, so private repos inherit organization Actions secrets.
-The single packages-read PAT lives in Doppler `narduk/tokens:GH_PACKAGES_READ`
-and nvault `github/prd/narduk-enterprises-packages-read`. CI consumes it as
-the org secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, mapped into process env
-`GH_PACKAGES_READ`. Write stays `NARDUK_PLATFORM_GH_PACKAGES_WRITE`. Record
-only names and rotation time, never values.
+The org is on Team, so private repos inherit organization Actions secrets. The
+single packages-read PAT lives in Doppler `narduk/tokens:GH_PACKAGES_READ` and
+nvault `github/prd/narduk-enterprises-packages-read`. CI consumes it as the org
+secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, mapped into process env
+`GH_PACKAGES_READ`. Write stays `NARDUK_PLATFORM_GH_PACKAGES_WRITE`. Record only
+names and rotation time, never values.
 
 ## Failed or partial publish
 
