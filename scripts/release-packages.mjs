@@ -49,6 +49,18 @@ const WORKSPACE_ESLINT_VERSION_RANGE = rootManifest.devDependencies?.eslint
 if (!WORKSPACE_ESLINT_VERSION_RANGE) {
   throw new Error('Root package.json must directly pin devDependencies.eslint.')
 }
+// narduk-seo's Nuxt SEO plugins still peer on unhead 2. Nuxt 4.4 resolves
+// unhead 3 unless the workspace override is applied. The packed-consumer
+// sandbox is outside the workspace, so it must carry the same pin or pnpm
+// emits WARN/✕ lines that runChecked() turns into a hard failure. @unhead/vue
+// is a separate package with the same 2.x line; pin both from the workspace.
+const WORKSPACE_UNHEAD_VERSION = rootManifest.pnpm?.overrides?.unhead
+const WORKSPACE_UNHEAD_VUE_VERSION = rootManifest.pnpm?.overrides?.['@unhead/vue']
+if (!WORKSPACE_UNHEAD_VERSION || !WORKSPACE_UNHEAD_VUE_VERSION) {
+  throw new Error(
+    'Root package.json must pin pnpm.overrides.unhead and pnpm.overrides["@unhead/vue"].',
+  )
+}
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
@@ -440,6 +452,8 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
 
   rootManifest.pnpm = rootManifest.pnpm || {}
   rootManifest.pnpm.overrides = {
+    unhead: WORKSPACE_UNHEAD_VERSION,
+    '@unhead/vue': WORKSPACE_UNHEAD_VUE_VERSION,
     ...(rootManifest.pnpm.overrides || {}),
     ...tarballOverrides,
   }
