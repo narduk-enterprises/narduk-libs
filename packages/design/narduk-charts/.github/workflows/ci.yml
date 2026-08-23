@@ -136,7 +136,7 @@ jobs:
 
       - name: Install dependencies
         env:
-          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
         run: |
           set -euo pipefail
           if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
@@ -205,7 +205,7 @@ jobs:
 
       - name: Install dependencies
         env:
-          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+          NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
         run: |
           set -euo pipefail
           if [ -n "${NARDUK_PLATFORM_GH_PACKAGES_READ:-}" ]; then
