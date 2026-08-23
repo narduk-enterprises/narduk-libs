@@ -14,7 +14,7 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,9 +101,14 @@ const retiredReferencePattern = new RegExp(
   'i',
 )
 const forbiddenSourceReferencePattern = new RegExp(
-  ['workspace:', 'link:', 'file:/', 'git\\+', escapeRegExp(root)].join('|'),
+  ['workspace:', 'link:', 'file:/', escapeRegExp(root)].join('|'),
   'i',
 )
+// `git+` in a lockfile is usually package `repository.url` metadata
+// (`git+ssh://git@github.com/narduk-enterprises/narduk-libs.git`), not a git
+// dependency. Only treat it as forbidden when it is a specifier or resolution.
+const forbiddenGitDependencyLinePattern =
+  /(?:^\s*(?:specifier|version):\s*git\+)|(?:@[^\s'"]+@git\+)/u
 const warningOrErrorTokenPattern =
   /(?:^|[\s:[(])(?:warn(?:ing)?|error)(?=$|[\s:\])])|(?:deprecation|experimental|MaxListenersExceeded)Warning:/iu
 
@@ -181,11 +186,22 @@ function listGeneratedTextFiles(directory, options = {}) {
 function assertNoForbiddenGeneratedReferences(generatedDirectory) {
   const offenders = []
   for (const path of listGeneratedTextFiles(generatedDirectory)) {
+    const relativePath = relative(generatedDirectory, path)
     const contents = readFileSync(path, 'utf8')
     const retiredMatch = contents.match(retiredReferencePattern)
-    if (retiredMatch) offenders.push(`${relative(generatedDirectory, path)}: ${retiredMatch[0]}`)
+    if (retiredMatch) offenders.push(`${relativePath}: ${retiredMatch[0]}`)
     const sourceMatch = contents.match(forbiddenSourceReferencePattern)
-    if (sourceMatch) offenders.push(`${relative(generatedDirectory, path)}: ${sourceMatch[0]}`)
+    if (sourceMatch) offenders.push(`${relativePath}: ${sourceMatch[0]}`)
+    if (basename(path) === 'pnpm-lock.yaml') {
+      const gitDependencyLine = contents
+        .split('\n')
+        .find((line) => forbiddenGitDependencyLinePattern.test(line))
+      if (gitDependencyLine) {
+        offenders.push(`${relativePath}: ${gitDependencyLine.trim()}`)
+      }
+    } else if (/\bgit\+/iu.test(contents)) {
+      offenders.push(`${relativePath}: git+`)
+    }
   }
   if (offenders.length > 0) {
     throw new Error(`Generated consumer contains forbidden references:\n${offenders.join('\n')}`)
