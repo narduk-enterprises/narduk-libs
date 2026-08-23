@@ -261,7 +261,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         '@narduk-enterprises:registry=https://npm.pkg.github.com',
         '@narduk-geo:registry=https://npm.pkg.github.com',
-        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}',
+        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}',
       ),
     },
     {
