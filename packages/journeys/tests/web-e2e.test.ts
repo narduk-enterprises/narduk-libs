@@ -83,10 +83,14 @@ function attempt(
 
 beforeAll(async () => {
   execSync('pnpm run build', { cwd: packageRoot, stdio: 'ignore' })
-  // A fresh CI runner has no Playwright browsers; install is a fast no-op
-  // when the cache already holds this version. Kept inside the test so the
-  // suite carries its own prerequisite instead of assuming a prepared host.
-  execSync('pnpm exec playwright install chromium', { cwd: packageRoot, stdio: 'ignore' })
+  // A developer machine may lack Playwright browsers; install is a fast no-op
+  // when the cache already holds this version. On the estate's
+  // playwright-isolated CI pool the toolchain is immutable under /opt and
+  // downloads are deliberately blocked, so when PLAYWRIGHT_BROWSERS_PATH is
+  // pinned we resolve from it and must not attempt an install.
+  if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    execSync('pnpm exec playwright install chromium', { cwd: packageRoot, stdio: 'ignore' })
+  }
   world = createWorldServer()
   base = await world.listen()
   outRoot = mkdtempSync(join(tmpdir(), 'njr-e2e-'))

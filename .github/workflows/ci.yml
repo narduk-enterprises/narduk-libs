@@ -64,6 +64,11 @@
 #                                              job below (see CONTRACTS).
 #   per-lane NODE_OPTIONS                   -> .npmrc `node-options` (see HEAP).
 # packed-consumer-smoke                     -> KEPT as a separate job, unchanged.
+# journeys-e2e                              -> NEW browser lane (same reasoning as
+#                                              packed-consumer-smoke: node-library.yml
+#                                              has no browser lane), pool-routed,
+#                                              conditional on the journeys package
+#                                              being in the affected matrix.
 # verify                                    -> KEPT as the `verify` roll-up below.
 #
 # ------------------------------- TESTS --------------------------------------
@@ -385,6 +390,63 @@ jobs:
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
+  journeys-e2e:
+    # The @narduk-enterprises/journeys package's real-browser engine test
+    # (tests/web-e2e.test.ts): headless Chromium drives the built package
+    # against a fixture world in test and capture modes. The linux-ci package
+    # lane is browserless by design (see packed-consumer-smoke's comment), and
+    # the pool's toolchain is immutable under /opt with downloads blocked, so
+    # the suite resolves browsers via PLAYWRIGHT_BROWSERS_PATH and installs
+    # nothing. One job, one worker — proportionate to a sub-minute package
+    # suite; the sharded workflow contract in proxmox-playwright-ci is for app
+    # E2E fleets. runs-on is the same manifest-resolved route object
+    # packed-consumer-smoke pins. No deploy or production secrets: the one
+    # secret is the GitHub Packages read token the install already requires.
+    name: package / journeys-e2e
+    needs: affected
+    if: contains(needs.affected.outputs.matrix, '"label":"journeys"')
+    runs-on:
+      group: playwright-isolated
+      labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    env:
+      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
+      NPM_CONFIG_GLOBALCONFIG: /dev/null
+      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.33.4
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.3
+
+      - name: Configure GitHub Packages read auth
+        run: node ./scripts/package-registry-auth.mjs
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the journeys browser e2e
+        run: pnpm --filter @narduk-enterprises/journeys run test:e2e
+
+      - name: Remove temporary registry auth
+        if: always()
+        run: rm -f "${NPM_CONFIG_USERCONFIG}"
+
   verify:
     # Repo-level roll-up over all three top-level gates. `ci / Required` is the
     # estate-uniform sub-context that covers the 11 package lanes; this job is
@@ -394,7 +456,7 @@ jobs:
     # context that stopped existing.
     name: verify
     if: always()
-    needs: [affected, ci, contracts, packed-consumer-smoke]
+    needs: [affected, ci, contracts, packed-consumer-smoke, journeys-e2e]
     runs-on:
       group: linux-ci
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
@@ -409,6 +471,8 @@ jobs:
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
           PACKED_CONSUMER_EXPECTED: ${{ needs.affected.outputs.packed-consumer }}
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
+          JOURNEYS_E2E_EXPECTED: ${{ contains(needs.affected.outputs.matrix, '"label":"journeys"') }}
+          JOURNEYS_E2E_RESULT: ${{ needs.journeys-e2e.result }}
         run: |
           set -euo pipefail
           status=0
@@ -426,6 +490,15 @@ jobs:
             fi
           elif [ "${PACKED_CONSUMER_SMOKE_RESULT}" != "skipped" ]; then
             echo "::error::PACKED_CONSUMER_SMOKE was not applicable but reported '${PACKED_CONSUMER_SMOKE_RESULT}'"
+            status=1
+          fi
+          if [ "${JOURNEYS_E2E_EXPECTED}" = "true" ]; then
+            if [ "${JOURNEYS_E2E_RESULT}" != "success" ]; then
+              echo "::error::JOURNEYS_E2E was required but reported '${JOURNEYS_E2E_RESULT}'"
+              status=1
+            fi
+          elif [ "${JOURNEYS_E2E_RESULT}" != "skipped" ]; then
+            echo "::error::JOURNEYS_E2E was not applicable but reported '${JOURNEYS_E2E_RESULT}'"
             status=1
           fi
           exit "${status}"

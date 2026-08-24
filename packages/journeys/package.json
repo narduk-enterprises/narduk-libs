@@ -43,7 +43,9 @@
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "prettier": "pnpm run format:check",
-    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test": "pnpm run test:unit && pnpm run test:e2e"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.50.0"
