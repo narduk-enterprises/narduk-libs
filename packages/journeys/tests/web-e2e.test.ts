@@ -83,11 +83,15 @@ function attempt(
 
 beforeAll(async () => {
   execSync('pnpm run build', { cwd: packageRoot, stdio: 'ignore' })
+  // A fresh CI runner has no Playwright browsers; install is a fast no-op
+  // when the cache already holds this version. Kept inside the test so the
+  // suite carries its own prerequisite instead of assuming a prepared host.
+  execSync('pnpm exec playwright install chromium', { cwd: packageRoot, stdio: 'ignore' })
   world = createWorldServer()
   base = await world.listen()
   outRoot = mkdtempSync(join(tmpdir(), 'njr-e2e-'))
   digest = digestDirectory(fixtureDir)
-}, 120_000)
+}, 300_000)
 
 afterAll(async () => {
   await world?.close()
@@ -100,7 +104,7 @@ describe('the web adapter, end to end', () => {
     async () => {
       const run = await playwright({ JOURNEYS_MODE: 'test' })
       expect(run.output).toContain('happy-path')
-      expect(run.status).toBe(0)
+      expect(run.status, run.output).toBe(0)
 
       const happy = attempt('happy-path', 'test')
       expect(happy.manifest.verdict).toBe('passed')
@@ -122,7 +126,7 @@ describe('the web adapter, end to end', () => {
     { timeout: 180_000 },
     async () => {
       const run = await playwright({ JOURNEYS_MODE: 'capture' })
-      expect(run.status).toBe(0)
+      expect(run.status, run.output).toBe(0)
 
       const { directory, manifest } = attempt('happy-path', 'capture')
       expect(manifest.mode).toBe('capture')
@@ -171,7 +175,7 @@ describe('the web adapter, end to end', () => {
     { timeout: 180_000 },
     async () => {
       const run = await playwright({ JOURNEYS_MODE: 'test', NJR_BROKEN: '1' })
-      expect(run.status).not.toBe(0)
+      expect(run.status, run.output).not.toBe(0)
       const { manifest } = attempt('broken-selector', 'test')
       expect(manifest.verdict).toBe('failed')
       const failed = manifest.steps.find((step) => step.status === 'failed')
