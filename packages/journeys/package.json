@@ -1,0 +1,69 @@
+{
+  "name": "@narduk-enterprises/journeys",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Journey runner contract: repositories declare journeys and scenarios; the tool turns them into tests, screenshots, video and a walkthrough.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/journeys"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.js"
+    }
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md"
+  ],
+  "bin": {
+    "journeys": "./bin/journeys.mjs"
+  },
+  "scripts": {
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "prepack": "pnpm run build",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "lint": "eslint src tests bin --max-warnings 0",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "format": "pnpm run prettier:fix",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@playwright/test": "1.61.1",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}
