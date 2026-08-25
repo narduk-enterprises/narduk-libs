@@ -101,4 +101,67 @@ describe('buildWalkthrough', () => {
       buildWalkthrough(mixed, { ...options(outRoot), allowMixedAppRevision: true }),
     ).not.toThrow()
   })
+
+  it('lets two surfaces carry their own revision, environment and profile', () => {
+    // A web app and a phone app are two applications with two version schemes,
+    // and their runs file under different environments by construction. Making
+    // a cross-surface page demand the mixed-revision override every time would
+    // turn the guard into noise, which is how a guard stops being read.
+    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const both = catalog()
+    both.profiles.handset = { kind: 'apple', device: 'iPhone 16 Pro' }
+    both.journeys.push({
+      id: 'phone-journey',
+      title: 'On the phone',
+      surface: 'ios',
+      drive: 'driven',
+      role: 'visitor',
+      scenarios: ['base'],
+      outcome: 'The same load, in a hand.',
+      launchArgs: [],
+      start: { screen: 'the yard', requires: ['yard'] },
+      steps: [
+        {
+          id: 'open-start',
+          say: 'Open the start page',
+          press: { kind: 'tap', x: 10, y: 10 },
+          lands: { screen: 'start', requires: ['start'] },
+        },
+        {
+          id: 'finish',
+          say: 'Press Finish',
+          press: { kind: 'tap', x: 10, y: 20 },
+          lands: { screen: 'done', requires: ['done'] },
+        },
+      ],
+    })
+    promoted(outRoot)
+    const phone = passedCaptureManifest(DIGEST)
+    phone.journey = 'phone-journey'
+    phone.surface = 'ios'
+    phone.appRevision = 'ios-0.2.0-18'
+    phone.profile = { name: 'handset', device: 'iPhone 16 Pro' }
+    const paths = runPaths({
+      outRoot,
+      environment: 'handset-fixture',
+      surface: 'ios',
+      journeyId: 'phone-journey',
+      profileName: 'handset',
+      mode: 'capture',
+      runId: 'run-1',
+    })
+    writeAttempt(paths.attemptDirectory, phone, attemptFiles)
+    writeFileSync(paths.latestPath, 'run-1\n')
+
+    const { written, missing } = buildWalkthrough(both, {
+      ...options(outRoot),
+      environments: { ios: 'handset-fixture' },
+      profileNames: { ios: 'handset' },
+    })
+    expect(missing).toEqual([])
+    const html = readFileSync(written, 'utf8')
+    expect(html).toContain('On the phone')
+    expect(html).toContain('ios-0.2.0-18')
+    expect(html).toContain('fixture-r1')
+  })
 })

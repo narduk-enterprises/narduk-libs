@@ -56,15 +56,18 @@ const USAGE = `journeys <command>
   verify      --catalog <module> --run <dir>          verify one run attempt against the declaration
   promote     --catalog <module> --run <dir> --run-id <id> --latest <path>
   walkthrough --catalog <module> --out-root <dir> --env <name> --profile <name> --dest <dir>
-              [--profile-web <name>] [--profile-ios <name>] [--profile-macos <name>]
+              [--profile-<surface> <name>] [--env-<surface> <name>]
               [--allow-mixed-app-revision]
 
   --catalog-dir <dir>   directory whose files form the declaration digest
                         (default: the catalog module's directory)
   --profile-<surface>   the capture profile that surface's promoted runs live
-                        under, when it is not --profile. A catalog with web and
-                        handset journeys needs both, and the walkthrough is what
-                        publishes them together.
+                        under, when it is not --profile
+  --env-<surface>       the environment that surface's runs live under, when it
+                        is not --env. A web journey runs against a deployment
+                        and a handset journey against an in-app fixture world,
+                        so one story's two halves file under two names — these
+                        are what let the walkthrough assemble them onto one page.
 `
 
 export async function main(argv: string[]): Promise<number> {
@@ -118,15 +121,19 @@ export async function main(argv: string[]): Promise<number> {
           throw new Error('--out-root, --env, --profile and --dest are required')
         }
         const profileNames: Partial<Record<Surface, string>> = {}
+        const environments: Partial<Record<Surface, string>> = {}
         for (const surface of ['web', 'ios', 'macos'] as const) {
           const named = flags.named.get(`profile-${surface}`)
           if (named) profileNames[surface] = named
+          const env = flags.named.get(`env-${surface}`)
+          if (env) environments[surface] = env
         }
         const { written, missing } = buildWalkthrough(catalog, {
           outRoot,
           environment,
           profileName,
           profileNames,
+          environments,
           destination,
           currentDigest: digestDirectory(catalogDir),
           allowMixedAppRevision: flags.bare.has('allow-mixed-app-revision'),
