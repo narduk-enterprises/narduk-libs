@@ -235,7 +235,11 @@ describe('the Apple adapter, driven', () => {
     // web adapter's runs reach, through the same promotion gate.
     const { written, missing } = buildWalkthrough(options.catalog, {
       outRoot,
-      environment: 'fixture',
+      // The web half of a cross-surface story lives under its deployment's
+      // name; the handset half lives under the fixture world it actually ran
+      // against. One page, two environments.
+      environment: 'demo',
+      environments: { ios: 'fixture' },
       profileName: 'unused-web-profile',
       profileNames: { ios: 'phone' },
       currentDigest: DIGEST,
@@ -312,6 +316,68 @@ describe('the Apple adapter, driven', () => {
     const session = await runAppleJourneys(options)
     expect(session.results[0]!.manifest.steps.at(-1)?.id).toBe('mark-arrived')
     expect(session.results[0]!.manifest.steps.at(-1)?.error).toContain('nothing reading')
+  })
+
+  it('fails a beat whose landing was already true and whose gesture moved nothing', async () => {
+    // The hole the first live run found: a scroll beat's text reads the same
+    // before and after, so the landing passed instantly and the NEXT beat
+    // pressed a coordinate the scroll had not reached yet. Nothing was red.
+    const standStill = {
+      ...journey(),
+      steps: [
+        {
+          id: 'scroll-the-board',
+          say: 'Scroll down to the stations',
+          press: { kind: 'swipe' as const, from: { x: 201, y: 700 }, to: { x: 201, y: 200 } },
+          lands: { screen: 'the stations band', requires: ['WCF-TT-21'] as [string] },
+        },
+      ],
+    }
+    const { options } = harness('test', screens(), {
+      catalog: { ...fixtureCatalog(), journeys: [standStill] },
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.failed).toBe(1)
+    expect(session.results[0]!.manifest.steps[0]?.error).toContain('the screen never moved')
+  })
+
+  it('fails a beat that reads a screen still in motion', async () => {
+    // A decelerating scroll reads "right" long before it stops, and the next
+    // beat's coordinate is pressed against wherever it ends up.
+    const { options, device } = harness('test')
+    let ticks = 0
+    const honest = device.injector.describe.bind(device.injector)
+    Object.assign(device.injector, {
+      // Steady long enough for the launch to confirm its start landing, then
+      // never the same twice — a screen that never stops.
+      describe: () => (ticks++ < 3 ? honest() : `${honest()} | still-animating-${String(ticks)}`),
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.failed).toBe(1)
+    expect(session.results[0]!.manifest.steps[0]?.error).toContain('still moving')
+  })
+
+  it('lets a beat declare that standing still is the expected outcome', async () => {
+    const standStill = {
+      ...journey(),
+      steps: [
+        {
+          id: 'scroll-the-board',
+          say: 'Scroll down to the stations',
+          press: { kind: 'swipe' as const, from: { x: 201, y: 700 }, to: { x: 201, y: 200 } },
+          lands: {
+            screen: 'the stations band',
+            requires: ['WCF-TT-21'] as [string],
+            unchanged: true,
+          },
+        },
+      ],
+    }
+    const { options } = harness('test', screens(), {
+      catalog: { ...fixtureCatalog(), journeys: [standStill] },
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.failed).toBe(0)
   })
 
   it('fails when the launched world is not the one the journey declares', async () => {

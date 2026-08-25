@@ -209,6 +209,18 @@ export interface AppleLanding {
    * every screen still changed and nothing failed.
    */
   forbids?: string[]
+  /**
+   * Rare, and declared rather than assumed: this beat's gesture is expected to
+   * leave the screen exactly as it was.
+   *
+   * By default a landing must also prove the screen MOVED, because a predicate
+   * that was already true before the gesture proves nothing about the gesture —
+   * the first live run had a scroll beat pass instantly on text that was
+   * readable both before and after, and the beat after it then pressed a
+   * coordinate the scroll had not reached. Set this only where standing still
+   * is genuinely the expected outcome.
+   */
+  unchanged?: boolean
 }
 
 export interface AppleDrivenStep extends DeclaredStep {

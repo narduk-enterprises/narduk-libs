@@ -100,9 +100,12 @@ Verification derives its expectations from the declaration, never from the
 manifest under test. Promotion requires a passed run, hash-verified artefacts,
 and digest equality with the catalog as it stands now.
 
-`--profile-<surface>` is what makes one walkthrough carry both surfaces: web
-runs live under a web capture profile and handset runs under an Apple one, and
-the page assembles them together.
+`--profile-<surface>` and `--env-<surface>` are what make one walkthrough carry
+both surfaces: a web journey runs against a deployment under a web capture
+profile and a handset journey against an in-app fixture world under an Apple
+one, so the two halves of a story file under different names and the page
+assembles them anyway. The mixed-application-revision guard is per surface for
+the same reason.
 
 ## Apple surfaces
 
@@ -172,14 +175,16 @@ that beat must land on:
 
 What the adapter guarantees, and what it does not:
 
-| Guarantee                              | How                                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| The world is chosen, not stumbled into | `world.launchArgs(scenarioId)` + the journey's own `launchArgs`                                     |
-| No video of a screen nobody pressed    | `resolveInjector` THROWS when no injector is configured or installed                                |
-| One binary, named in the evidence      | `appPath` is required and hashed into every manifest                                                |
-| A wrong landing is a red run           | every beat polls the accessibility hierarchy for `requires`/`forbids` and fails when it never holds |
-| Two lanes cannot share a device        | the simulator is leased for the session, and a live rival lease is a hard refusal                   |
-| Modes cannot disagree                  | mode changes dwell, video and stills; the gestures and the landing assertions are identical         |
+| Guarantee                                      | How                                                                                                 |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| The world is chosen, not stumbled into         | `world.launchArgs(scenarioId)` + the journey's own `launchArgs`                                     |
+| No video of a screen nobody pressed            | `resolveInjector` THROWS when no injector is configured or installed                                |
+| One binary, named in the evidence              | `appPath` is required and hashed into every manifest                                                |
+| A wrong landing is a red run                   | every beat polls the accessibility hierarchy for `requires`/`forbids` and fails when it never holds |
+| A landing that was already true proves nothing | a beat must also prove the screen MOVED; `lands.unchanged` declares the rare exception              |
+| A beat never reads a screen mid-motion         | a landing must hold across two consecutive reads before the beat passes                             |
+| Two lanes cannot share a device                | the simulator is leased for the session, and a live rival lease is a hard refusal                   |
+| Modes cannot disagree                          | mode changes dwell, video and stills; the gestures and the landing assertions are identical         |
 
 - **`requires`/`forbids` read the hierarchy, not the pixels.** An element the
   app renders off-screen still reads as present. Tighten it where you need to by

@@ -16,10 +16,25 @@ export interface WalkthroughOptions {
    * surfaces instead of the web half only.
    */
   profileNames?: Partial<Record<Surface, string>>
+  /**
+   * Per-surface environments, for the same reason and a step further: a web
+   * journey runs against a deployment and a handset journey runs against an
+   * in-app fixture world, so their runs file under different environment names
+   * by construction. Without this the two halves of one story could never be
+   * assembled onto one page.
+   */
+  environments?: Partial<Record<Surface, string>>
   currentDigest: string
   /** Where the walkthrough page lands. */
   destination: string
-  /** Explicit override for assembling runs whose appRevision disagree (§4.3). */
+  /**
+   * Explicit override for assembling runs whose appRevision disagree (§4.3).
+   * The check is PER SURFACE: a walkthrough is evidence about one revision of
+   * one application, and the web app and the phone app are two applications
+   * with two version schemes. Requiring an override for every cross-surface
+   * page would turn the guard into noise, which is how a guard stops being
+   * read.
+   */
   allowMixedAppRevision?: boolean
 }
 
@@ -54,7 +69,7 @@ export function buildWalkthrough(
     }
     const paths = runPaths({
       outRoot: options.outRoot,
-      environment: options.environment,
+      environment: options.environments?.[journey.surface] ?? options.environment,
       surface: journey.surface,
       journeyId: journey.id,
       profileName,
@@ -83,12 +98,22 @@ export function buildWalkthrough(
     runs.push({ manifest, attemptDirectory })
   }
 
-  const revisions = [...new Set(runs.map((run) => run.manifest.appRevision))]
-  if (revisions.length > 1 && !options.allowMixedAppRevision) {
-    throw new Error(
-      `refusing to assemble a walkthrough across application revisions [${revisions.join(', ')}] ` +
-        'without an explicit override: a walkthrough is evidence about one revision, not a collage',
-    )
+  if (!options.allowMixedAppRevision) {
+    const bySurface = new Map<Surface, Set<string>>()
+    for (const run of runs) {
+      const seen = bySurface.get(run.manifest.surface) ?? new Set<string>()
+      seen.add(run.manifest.appRevision)
+      bySurface.set(run.manifest.surface, seen)
+    }
+    for (const [surface, revisions] of bySurface) {
+      if (revisions.size > 1) {
+        throw new Error(
+          `refusing to assemble a walkthrough across ${surface} application revisions ` +
+            `[${[...revisions].join(', ')}] without an explicit override: a walkthrough is ` +
+            'evidence about one revision, not a collage',
+        )
+      }
+    }
   }
 
   const sections = runs.map(({ manifest }) => {

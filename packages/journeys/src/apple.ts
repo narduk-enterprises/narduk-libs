@@ -178,17 +178,40 @@ interface LandingVerdict {
   message?: string
 }
 
-function readLanding(tree: string, landing: AppleLanding): LandingVerdict {
+/**
+ * A screen's identity, independent of how the injector happened to serialise
+ * it. `idb ui describe-all` emits its JSON object keys in a different order on
+ * every call, so raw text cannot answer "did the screen change?" — but the
+ * SORTED TOKEN MULTISET can, and it does so without this package knowing one
+ * thing about idb's schema. A scroll moves frame numbers and therefore changes
+ * it; a re-serialisation of the same screen does not.
+ */
+function fingerprint(tree: string): string {
+  return (tree.match(/[\w.-]+/g) ?? []).sort().join(' ')
+}
+
+function readLanding(tree: string, landing: AppleLanding, before?: string): LandingVerdict {
   const haystack = tree.toLowerCase()
   const missing = landing.requires.filter((needle) => !haystack.includes(needle.toLowerCase()))
   const forbidden = (landing.forbids ?? []).filter((needle) =>
     haystack.includes(needle.toLowerCase()),
   )
-  if (missing.length === 0 && forbidden.length === 0) return { landed: true, tree }
+  // A landing that was ALREADY TRUE before the gesture proves nothing about the
+  // gesture. Found by the first live run: a scroll beat whose text is readable
+  // both before and after passed instantly, and the next beat then pressed a
+  // coordinate the scroll had not reached yet. Requiring the screen to have
+  // MOVED is what turns that from a plausible video into a red run.
+  const stuck = before !== undefined && fingerprint(tree) === before
+  if (missing.length === 0 && forbidden.length === 0 && !stuck) return { landed: true, tree }
   const parts: string[] = []
   if (missing.length > 0) parts.push(`nothing reading ${missing.map(quote).join(', ')}`)
   if (forbidden.length > 0) {
     parts.push(`${forbidden.map(quote).join(', ')} still on screen, which this beat forbids`)
+  }
+  if (stuck && parts.length === 0) {
+    parts.push('the screen never moved, so the gesture landed nowhere')
+  } else if (stuck) {
+    parts.push('and the screen never moved')
   }
   return {
     landed: false,
@@ -201,17 +224,49 @@ function quote(value: string): string {
   return `"${value}"`
 }
 
-/** Poll the accessibility hierarchy until the landing holds, or give up loudly. */
+/**
+ * Poll the accessibility hierarchy until the landing holds AND THE SCREEN HAS
+ * STOPPED MOVING, or give up loudly.
+ *
+ * "Stopped moving" is two consecutive reads that agree, which is the honest
+ * definition available from outside the app and the one that matters: a beat
+ * that reads a decelerating scroll has verified a position the next beat's
+ * coordinate will not be pressed against. This is pacing for CORRECTNESS and is
+ * identical in both modes — narrative dwell is the separate, capture-only thing
+ * that happens after a beat has passed.
+ */
 async function awaitLanding(
   injector: AppleInjector,
   landing: AppleLanding,
-  options: { timeoutMs: number; sleep: (ms: number) => Promise<void>; now: () => number },
+  options: {
+    timeoutMs: number
+    sleep: (ms: number) => Promise<void>
+    now: () => number
+    /** The fingerprint before the gesture; the landing must differ from it. */
+    before?: string
+  },
 ): Promise<LandingVerdict> {
   const deadline = options.now() + options.timeoutMs
-  let verdict = readLanding(injector.describe(), landing)
-  while (!verdict.landed && options.now() < deadline) {
+  let previous: string | undefined
+  let verdict: LandingVerdict
+  for (;;) {
+    const tree = injector.describe()
+    const current = fingerprint(tree)
+    verdict = readLanding(tree, landing, options.before)
+    const settled = current === previous
+    if (verdict.landed && settled) return verdict
+    if (options.now() >= deadline) break
+    previous = current
     await options.sleep(400)
-    verdict = readLanding(injector.describe(), landing)
+  }
+  if (verdict.landed) {
+    return {
+      ...verdict,
+      landed: false,
+      message:
+        `landed on "${landing.screen}" but the screen was still moving when the beat's ` +
+        'time ran out, so the next beat would press a coordinate that has not settled',
+    }
   }
   return verdict
 }
@@ -424,6 +479,13 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
         endedMs: now() - clockStart,
       }
       steps.push(record)
+      // What the screen was BEFORE the gesture, so the landing can insist it
+      // moved. A `wait` beat performs nothing and is exempt by construction; so
+      // is a landing that declares `unchanged`.
+      const before =
+        step.press.kind === 'wait' || step.lands.unchanged
+          ? undefined
+          : fingerprint(injector.describe())
       try {
         performGesture(injector, step.press)
       } catch (error) {
@@ -436,6 +498,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
 
       // 4 · the landing, verified — identically in both modes (requirement 5).
       const verdict = await awaitLanding(injector, step.lands, {
+        before,
         timeoutMs: args.settleTimeoutMs,
         sleep,
         now,
