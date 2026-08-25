@@ -1,13 +1,21 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { Catalog, RunManifest } from './types.js'
+import type { Catalog, RunManifest, Surface } from './types.js'
 import { readRunManifest, runPaths, verifyRun } from './verify.js'
 
 export interface WalkthroughOptions {
   outRoot: string
   environment: string
+  /** The profile a surface uses when `profileNames` names none. */
   profileName: string
+  /**
+   * Per-surface profile names. A catalog that declares journeys on web AND on
+   * a handset has two capture profiles, and the walkthrough is the one output
+   * that must read both: this is what makes one journey run publish both
+   * surfaces instead of the web half only.
+   */
+  profileNames?: Partial<Record<Surface, string>>
   currentDigest: string
   /** Where the walkthrough page lands. */
   destination: string
@@ -34,13 +42,22 @@ export function buildWalkthrough(
   const runs: PromotedRun[] = []
   const missing: string[] = []
   for (const journey of catalog.journeys) {
-    if (journey.surface !== 'web') continue
+    const profileName = options.profileNames?.[journey.surface] ?? options.profileName
+    const profile = catalog.profiles[profileName]
+    const wantedKind = journey.surface === 'web' ? 'web' : 'apple'
+    if (!profile || profile.kind !== wantedKind) {
+      missing.push(
+        `${journey.id}: no ${wantedKind} capture profile for surface "${journey.surface}" ` +
+          `(resolved "${profileName}")`,
+      )
+      continue
+    }
     const paths = runPaths({
       outRoot: options.outRoot,
       environment: options.environment,
       surface: journey.surface,
       journeyId: journey.id,
-      profileName: options.profileName,
+      profileName,
       mode: 'capture',
       runId: 'unused',
     })
@@ -88,12 +105,25 @@ export function buildWalkthrough(
         return `<li><p>${escapeHtml(step.say)}${skipped}</p>${shot}</li>`
       })
       .join('\n')
+    const compromises = (journey?.compromises ?? [])
+      .map(
+        (compromise) =>
+          `<li>${escapeHtml(compromise.what)} — ${escapeHtml(compromise.why)} ` +
+          `<strong>Not shown:</strong> ${escapeHtml(compromise.cost)}</li>`,
+      )
+      .join('\n')
     return [
       `<section id="${manifest.journey}">`,
       `<h2>${escapeHtml(journey?.title ?? manifest.journey)}</h2>`,
-      `<p class="meta">as ${escapeHtml(journey?.role ?? '')} · world ${escapeHtml(
-        manifest.scenario.id,
-      )} · app ${escapeHtml(manifest.appRevision)} · run ${escapeHtml(manifest.startedAt)}</p>`,
+      `<p class="meta">${escapeHtml(manifest.surface)} · as ${escapeHtml(
+        journey?.role ?? '',
+      )} · world ${escapeHtml(manifest.scenario.id)} · app ${escapeHtml(
+        manifest.appRevision,
+      )} · run ${escapeHtml(manifest.startedAt)}</p>`,
+      // A declared compromise travels WITH the evidence it changed. A viewer who
+      // is not told what a capture withheld is being shown a fuller product than
+      // the one that ran (narduk-libs#70).
+      compromises ? `<ul class="compromises">${compromises}</ul>` : '',
       `<ol>${steps}</ol>`,
       `<p class="outcome">${escapeHtml(journey?.outcome ?? '')}</p>`,
       manifest.video

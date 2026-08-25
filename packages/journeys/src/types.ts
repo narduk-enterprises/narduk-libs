@@ -99,6 +99,24 @@ export interface WebStep extends DeclaredStep {
   appliesIf?(world: WorldQuery): Promise<Applicability>
 }
 
+/**
+ * A fidelity compromise this journey deliberately makes, and what it costs.
+ *
+ * Declared so a reviewer meets it in the catalog, the rehearsal and the
+ * walkthrough — never made ad hoc at capture time. narduk-libs#70 recorded the
+ * finding this exists for: a consumer reached for a launch argument that
+ * withdrew a whole class of on-screen checks in order to cross a gate, which
+ * was the right call and was invisible to everyone downstream of the video.
+ */
+export interface Compromise {
+  /** What was done. */
+  what: string
+  /** Why the journey could not be walked without it. */
+  why: string
+  /** What the viewer is therefore NOT seeing. */
+  cost: string
+}
+
 interface JourneyBase {
   /** kebab-case, stable; artefact identity derives from it. */
   id: string
@@ -106,6 +124,8 @@ interface JourneyBase {
   title: string
   /** Key into the audience table — the seat this journey is performed as. */
   role: string
+  /** Declared, reviewable fidelity compromises (see `Compromise`). */
+  compromises?: Compromise[]
   /**
    * Precondition worlds, by Scenario id — one or more. A journey is
    * parameterised across every scenario it declares; capture uses the FIRST as
@@ -133,12 +153,101 @@ export interface AppleBinding {
   xcMethod: string
 }
 
-export interface AppleJourney extends JourneyBase {
+/**
+ * A journey whose execution lives in a bound XCTest method (§2.4, §6.3): the
+ * runner runs the method, harvests the `.xcresult`, and verifies the executed
+ * marker sequence against this declaration. Drift is DETECTED, not impossible.
+ */
+export interface XcTestAppleJourney extends JourneyBase {
   surface: 'ios' | 'macos'
+  /** The default; state it or leave it out. */
+  drive?: 'xctest'
   /** Prose + id only; execution lives behind the binding (§2.4). */
   steps: DeclaredStep[]
   binding: AppleBinding
 }
+
+/**
+ * One gesture, in DEVICE POINTS. The adapter never invents a coordinate: a
+ * point comes from a screenshot of the exact screen the previous beat landed
+ * on, and `lands` is what stops a drifted one from quietly shifting every beat
+ * after it (narduk-libs#70, requirement 5).
+ */
+export type AppleGesture =
+  | { kind: 'tap'; x: number; y: number }
+  | {
+      kind: 'swipe'
+      from: { x: number; y: number }
+      to: { x: number; y: number }
+      /** Seconds; the injector's own default when absent. */
+      duration?: number
+    }
+  | { kind: 'type'; text: string }
+  /** No gesture: dwell on what the previous beat produced (an animation, a toast). */
+  | { kind: 'wait' }
+
+/**
+ * What a beat must land on — the Apple analogue of "a step that cannot find its
+ * control THROWS" (§2.3, narduk-libs#70 requirement 5).
+ *
+ * The predicate reads the accessibility hierarchy the injector reports, as
+ * text. Honest scope: that is a HIERARCHY check, not a visibility check — an
+ * element the app renders off-screen still reads as present. Tighten it, where
+ * a repository needs to, by giving the injector a `describe` template that
+ * filters to what is on screen; the contract here is deliberately the raw text
+ * so no injector's JSON schema is baked in.
+ */
+export interface AppleLanding {
+  /** Prose: the screen this beat lands on. Failure messages quote it. */
+  screen: string
+  /** Every one of these must be readable on the landing. */
+  requires: [string, ...string[]]
+  /**
+   * None of these may be readable. This is the guard for a control that pops
+   * FURTHER than the beat expected — the case that shifted three tail beats
+   * one step out of phase in the run narduk-libs#70 was written from, while
+   * every screen still changed and nothing failed.
+   */
+  forbids?: string[]
+}
+
+export interface AppleDrivenStep extends DeclaredStep {
+  /** What the beat does. */
+  press: AppleGesture
+  /** What it must land on, verified before the next beat runs. */
+  lands: AppleLanding
+}
+
+/**
+ * A journey the adapter drives itself: ONE launch, then presses (§6.3 as the
+ * first Apple consumer actually performs it — narduk-libs#70). The launch
+ * arguments select the world (requirement 1), an injector performs the
+ * gestures (requirement 2), `simctl io recordVideo` films it (requirement 3),
+ * and every beat verifies its landing (requirement 5).
+ *
+ * This is not a substitute for the XCTest binding: a bound method asserts from
+ * inside the app and belongs in the test suite; a driven journey walks the
+ * shipping build from outside and is what a continuous, uncut capture needs.
+ */
+export interface DrivenAppleJourney extends JourneyBase {
+  surface: 'ios' | 'macos'
+  drive: 'driven'
+  /**
+   * Journey-level launch arguments — the situation this walk starts from, on
+   * top of whatever the world hook contributes for the scenario.
+   */
+  launchArgs: string[]
+  /**
+   * What the launched world must show before a single press happens. This is
+   * the run's own evidence that the launch arguments produced the world the
+   * journey is about.
+   */
+  start: AppleLanding
+  steps: AppleDrivenStep[]
+  binding?: never
+}
+
+export type AppleJourney = XcTestAppleJourney | DrivenAppleJourney
 
 /** Discriminated by surface: invalid combinations are unrepresentable (§2.2). */
 export type Journey = WebJourney | AppleJourney
@@ -205,6 +314,12 @@ export interface AppleProfile {
   kind: 'apple'
   device: string
   orientation?: 'portrait' | 'landscape'
+  /**
+   * The handset's size in DEVICE POINTS. Declaring it lets the catalog reject
+   * a gesture aimed off the screen at load time rather than at 2 a.m. on a
+   * capture night.
+   */
+  points?: { width: number; height: number }
 }
 
 export type Profile = WebProfile | AppleProfile

@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import type { AppleJourney, Catalog, RunManifest, WebJourney } from '../src/types.js'
+import type {
+  Catalog,
+  DrivenAppleJourney,
+  RunManifest,
+  WebJourney,
+  XcTestAppleJourney,
+} from '../src/types.js'
 
 export function webJourney(overrides: Partial<WebJourney> = {}): WebJourney {
   return {
@@ -20,7 +26,7 @@ export function webJourney(overrides: Partial<WebJourney> = {}): WebJourney {
   }
 }
 
-export function appleJourney(overrides: Partial<AppleJourney> = {}): AppleJourney {
+export function appleJourney(overrides: Partial<XcTestAppleJourney> = {}): XcTestAppleJourney {
   return {
     id: 'scan-to-ticket',
     title: 'Scan to ticket',
@@ -36,6 +42,40 @@ export function appleJourney(overrides: Partial<AppleJourney> = {}): AppleJourne
     steps: [
       { id: 'open-scan', say: 'Open the scan tab' },
       { id: 'resolve', say: 'Resolve onto the job' },
+    ],
+    ...overrides,
+  }
+}
+
+/** The driven (simulator-orchestrated) shape the Apple adapter runs. */
+export function drivenJourney(overrides: Partial<DrivenAppleJourney> = {}): DrivenAppleJourney {
+  return {
+    id: 'phone-walk',
+    title: 'The phone walk',
+    surface: 'ios',
+    drive: 'driven',
+    role: 'visitor',
+    scenarios: ['base'],
+    outcome: 'One trailer is walked from the gate to its ticket.',
+    launchArgs: ['-uiFixtures', '1'],
+    start: { screen: 'the yard', requires: ['SCHEDULED FOR TODAY'] },
+    steps: [
+      {
+        id: 'open-sheet',
+        say: 'Open the trailer',
+        press: { kind: 'tap', x: 201, y: 258 },
+        lands: { screen: 'the sheet', requires: ['Mark arrived'] },
+      },
+      {
+        id: 'mark-arrived',
+        say: 'Mark it arrived',
+        press: { kind: 'tap', x: 201, y: 795 },
+        lands: {
+          screen: 'arrived',
+          requires: ['inbound staging'],
+          forbids: ['SCHEDULED FOR TODAY'],
+        },
+      },
     ],
     ...overrides,
   }

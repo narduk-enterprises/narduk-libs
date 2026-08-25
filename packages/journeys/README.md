@@ -92,7 +92,7 @@ re-checks after every journey.
 journeys verify   --catalog journeys/catalog.mjs --run <attempt-dir>
 journeys promote  --catalog journeys/catalog.mjs --run <attempt-dir> --latest <path>
 journeys walkthrough --catalog journeys/catalog.mjs --out-root .journeys/out \
-  --env local --profile desktop --dest .journeys/out/walkthrough
+  --env local --profile desktop --profile-ios phone --dest .journeys/out/walkthrough
 journeys rehearse --catalog journeys/catalog.mjs   # watermarked, declaration-only
 ```
 
@@ -100,10 +100,101 @@ Verification derives its expectations from the declaration, never from the
 manifest under test. Promotion requires a passed run, hash-verified artefacts,
 and digest equality with the catalog as it stands now.
 
+`--profile-<surface>` is what makes one walkthrough carry both surfaces: web
+runs live under a web capture profile and handset runs under an Apple one, and
+the page assembles them together.
+
 ## Apple surfaces
 
-This version ships the bind-and-verify primitives — `appleMarker`,
-`parseAppleMarkers`, `verifyAppleSequence` — and the declaration types. The
-simulator orchestrator is not built yet; the constraints it must obey live in
-`agent-infrastructure`'s `apple-test-execution` reference. macOS is reserved in
-the contract and unimplemented, deliberately.
+Two execution shapes, one declaration contract.
+
+**Bound to an XCTest method** (`drive: 'xctest'`, the default) — the journey
+declares prose and step ids, the Swift test performs them, and `appleMarker` /
+`parseAppleMarkers` / `verifyAppleSequence` verify the executed step-id sequence
+against the declaration afterwards. Drift is detected, not impossible.
+
+**Driven by this package** (`drive: 'driven'`) — one launch, then presses. This
+is what a continuous, uncut capture needs: a relaunch between beats can show two
+screens and stay silent about whether one leads to the other.
+
+```ts
+import {
+  runAppleJourneys,
+  createSimctlControl,
+  resolveInjector,
+} from '@narduk-enterprises/journeys/apple'
+
+await runAppleJourneys({
+  catalog,
+  world: {
+    launchArgs: (scenarioId) => ['-uiFixtures', '1', '-uiScenario', scenarioId],
+    appRevision: () => buildNumber,
+  },
+  control: createSimctlControl(udid),
+  injector: resolveInjector({ udid }),
+  appPath: process.env.IOS_APP_PATH, // required; never "newest in DerivedData"
+  bundleId: 'com.example.app',
+  outRoot,
+  environment,
+  profileName: 'phone',
+  declarationDigest,
+})
+```
+
+A driven journey declares the situation it starts from and, on every beat, what
+that beat must land on:
+
+```ts
+{
+  id: 'gate-to-gate',
+  surface: 'ios',
+  drive: 'driven',
+  launchArgs: ['-uiProceduresOff', '1'],
+  compromises: [{
+    what: 'procedures are switched off for this walk',
+    why: 'the board owns six of the eight signatures and a handset cannot sign them',
+    cost: 'no checklist card appears in this recording',
+  }],
+  start: { screen: 'the yard', requires: ['SCHEDULED FOR TODAY'] },
+  steps: [{
+    id: 'mark-arrived',
+    say: 'Mark it arrived',
+    press: { kind: 'tap', x: 201, y: 795 },
+    lands: {
+      screen: 'arrived, in inbound staging',
+      requires: ['inbound staging'],
+      forbids: ['SCHEDULED FOR TODAY'],
+    },
+    capture: { dwell: 5500 },
+  }],
+}
+```
+
+What the adapter guarantees, and what it does not:
+
+| Guarantee                              | How                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| The world is chosen, not stumbled into | `world.launchArgs(scenarioId)` + the journey's own `launchArgs`                                     |
+| No video of a screen nobody pressed    | `resolveInjector` THROWS when no injector is configured or installed                                |
+| One binary, named in the evidence      | `appPath` is required and hashed into every manifest                                                |
+| A wrong landing is a red run           | every beat polls the accessibility hierarchy for `requires`/`forbids` and fails when it never holds |
+| Two lanes cannot share a device        | the simulator is leased for the session, and a live rival lease is a hard refusal                   |
+| Modes cannot disagree                  | mode changes dwell, video and stills; the gestures and the landing assertions are identical         |
+
+- **`requires`/`forbids` read the hierarchy, not the pixels.** An element the
+  app renders off-screen still reads as present. Tighten it where you need to by
+  giving the injector a `describe` template that filters to what is on screen.
+- **Confirmation.** With no `world.confirm`, the run's confirmation is that the
+  launched world renders the journey's declared `start` landing — real, weaker
+  than a name, and recorded as `fresh-launch:start-landing` in the manifest so a
+  reader can tell the two apart.
+- **Injector.** Any command template works (`JOURNEYS_TAP_CMD` /
+  `JOURNEYS_SWIPE_CMD` / `JOURNEYS_DESCRIBE_CMD` / `JOURNEYS_TEXT_CMD`);
+  `fb-idb` is the documented default because it works headless and at a locked
+  login screen, and it is adopted only when `idb` is actually on PATH.
+- **Not yet:** cumulative Apple sequences (every journey gets a fresh launch),
+  the XCTest execution path (declare those journeys and run them through the
+  test suite), and macOS, which the contract reserves and nothing implements.
+- The execution constraints this obeys — one `xcodebuild` per host, the totals
+  line as the verdict, per-lane devices — are `agent-infrastructure`'s
+  `apple-test-execution` reference.

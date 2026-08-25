@@ -22,6 +22,10 @@
     "./web": {
       "types": "./dist/web.d.ts",
       "import": "./dist/web.js"
+    },
+    "./apple": {
+      "types": "./dist/apple.d.ts",
+      "import": "./dist/apple.js"
     }
   },
   "files": [

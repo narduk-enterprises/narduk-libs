@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url'
 import { defineCatalog } from '../define.js'
 import { digestDirectory } from '../digest.js'
 import { buildRehearsal } from '../rehearse.js'
-import type { Catalog } from '../types.js'
+import type { Catalog, Surface } from '../types.js'
 import { promoteRun, readRunManifest, verifyRun } from '../verify.js'
 import { buildWalkthrough } from '../walkthrough.js'
 
@@ -56,10 +56,15 @@ const USAGE = `journeys <command>
   verify      --catalog <module> --run <dir>          verify one run attempt against the declaration
   promote     --catalog <module> --run <dir> --run-id <id> --latest <path>
   walkthrough --catalog <module> --out-root <dir> --env <name> --profile <name> --dest <dir>
+              [--profile-web <name>] [--profile-ios <name>] [--profile-macos <name>]
               [--allow-mixed-app-revision]
 
   --catalog-dir <dir>   directory whose files form the declaration digest
                         (default: the catalog module's directory)
+  --profile-<surface>   the capture profile that surface's promoted runs live
+                        under, when it is not --profile. A catalog with web and
+                        handset journeys needs both, and the walkthrough is what
+                        publishes them together.
 `
 
 export async function main(argv: string[]): Promise<number> {
@@ -112,10 +117,16 @@ export async function main(argv: string[]): Promise<number> {
         if (!outRoot || !environment || !profileName || !destination) {
           throw new Error('--out-root, --env, --profile and --dest are required')
         }
+        const profileNames: Partial<Record<Surface, string>> = {}
+        for (const surface of ['web', 'ios', 'macos'] as const) {
+          const named = flags.named.get(`profile-${surface}`)
+          if (named) profileNames[surface] = named
+        }
         const { written, missing } = buildWalkthrough(catalog, {
           outRoot,
           environment,
           profileName,
+          profileNames,
           destination,
           currentDigest: digestDirectory(catalogDir),
           allowMixedAppRevision: flags.bare.has('allow-mixed-app-revision'),
