@@ -7,13 +7,11 @@
  * implementation; deviations found while building are recorded in the PR, not
  * silently absorbed.
  */
-import { createHash } from 'node:crypto'
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -24,6 +22,8 @@ import { spawnSync } from 'node:child_process'
 
 import { test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
+
+import { sha256File, videoSeconds } from './media.js'
 
 import type {
   Applicability,
@@ -38,7 +38,7 @@ import type {
   WorldQuery,
 } from './types.js'
 import { RUN_SCHEMA } from './types.js'
-import { expectedStepIds, runPaths } from './verify.js'
+import { expectedStepIds, makeRunId, runPaths } from './verify.js'
 
 export interface RegisterJourneysOptions {
   catalog: Catalog
@@ -56,10 +56,6 @@ export interface RegisterJourneysOptions {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-function sha256File(path: string): string {
-  return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`
-}
 
 /**
  * GET-only, same-origin, JSON-only — by construction (§2.3). A throw anywhere
@@ -141,15 +137,6 @@ function createContextApi(page: Page, base: string, mode: Mode): WebJourneyConte
   }
 }
 
-function runId(commit: string, startedAt: Date): string {
-  const stamp = startedAt
-    .toISOString()
-    .replaceAll(/[-:]/g, '')
-    .replace(/\..*$/, '')
-    .replace('T', '-')
-  return `${stamp}-${commit.slice(0, 8)}`
-}
-
 function toMp4(webmPath: string, mp4Path: string): boolean {
   const result = spawnSync('ffmpeg', [
     '-y',
@@ -168,24 +155,6 @@ function toMp4(webmPath: string, mp4Path: string): boolean {
     mp4Path,
   ])
   return result.status === 0 && existsSync(mp4Path)
-}
-
-function videoSeconds(path: string): number | null {
-  const result = spawnSync(
-    'ffprobe',
-    [
-      '-v',
-      'error',
-      '-show_entries',
-      'format=duration',
-      '-of',
-      'default=noprint_wrappers=1:nokey=1',
-      path,
-    ],
-    { encoding: 'utf8' },
-  )
-  const seconds = Number.parseFloat((result.stdout || '').trim())
-  return Number.isFinite(seconds) ? seconds : null
 }
 
 /**
@@ -239,7 +208,7 @@ interface RunJourneyArgs {
 async function runJourney(args: RunJourneyArgs): Promise<void> {
   const { journey, scenarioId, mode, commit, profile, options, browser } = args
   const startedAt = new Date()
-  const attemptId = runId(commit, startedAt)
+  const attemptId = makeRunId(commit, startedAt)
   const paths = runPaths({
     outRoot: options.outRoot,
     environment: options.environment,

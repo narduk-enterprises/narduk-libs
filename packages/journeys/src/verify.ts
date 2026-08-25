@@ -176,6 +176,20 @@ export function readRunManifest(runDirectory: string): RunManifest {
   return parsed as RunManifest
 }
 
+/**
+ * An attempt's identity: a UTC stamp and the commit it ran against (§4.3).
+ * Shared by every adapter so one journey's web and Apple attempts are named
+ * the same way.
+ */
+export function makeRunId(commit: string, startedAt: Date): string {
+  const stamp = startedAt
+    .toISOString()
+    .replaceAll(/[-:]/g, '')
+    .replace(/\..*$/, '')
+    .replace('T', '-')
+  return `${stamp}-${commit.slice(0, 8)}`
+}
+
 /** The canonical attempt-directory layout (§4.3). */
 export function runPaths(options: {
   outRoot: string

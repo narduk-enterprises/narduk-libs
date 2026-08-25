@@ -29,6 +29,16 @@ export function buildRehearsal(catalog: Catalog): string {
       lines.push(`${ordinal}. ${step.say}`)
     }
     lines.push('', `**Afterwards:** ${journey.outcome}`, '')
+    // A presenter rehearsing this walk is the person most likely to be asked
+    // "why didn't it show the checklist?" — so a declared compromise is part of
+    // the script, not a footnote in the catalog.
+    for (const compromise of journey.compromises ?? []) {
+      lines.push(
+        `> **Compromise:** ${compromise.what} — ${compromise.why} ` +
+          `Not shown: ${compromise.cost}`,
+        '',
+      )
+    }
   }
   lines.push(`> ${REHEARSAL_WATERMARK}`)
   return lines.join('\n')

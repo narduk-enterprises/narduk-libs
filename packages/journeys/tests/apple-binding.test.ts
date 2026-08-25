@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { appleMarker, parseAppleMarkers, verifyAppleSequence } from '../src/apple.js'
+import { appleMarker, parseAppleMarkers, verifyAppleSequence } from '../src/apple-binding.js'
 import { appleJourney } from './helpers.js'
 
 describe('apple binding', () => {

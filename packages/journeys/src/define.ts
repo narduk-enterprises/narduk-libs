@@ -1,12 +1,16 @@
 import type {
+  AppleGesture,
   AppleJourney,
+  AppleLanding,
   Audience,
   Catalog,
+  DrivenAppleJourney,
   Journey,
   Profile,
   Scenario,
   Sequence,
   Story,
+  XcTestAppleJourney,
 } from './types.js'
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -96,10 +100,22 @@ export function defineCatalog(catalog: Catalog): Catalog {
       }
     }
 
+    for (const compromise of journey.compromises ?? []) {
+      if (!compromise.what.trim() || !compromise.why.trim() || !compromise.cost.trim()) {
+        // A compromise with no stated cost is the ad-hoc flag under a new name.
+        note(`${where}: a declared compromise must state what, why AND what it costs`)
+      }
+    }
+
     if (journey.surface !== 'web') {
-      const binding = (journey as AppleJourney).binding
-      for (const field of ['xcTarget', 'xcClass', 'xcMethod'] as const) {
-        if (!binding[field]?.trim()) note(`${where}: binding.${field} is empty`)
+      const apple = journey as AppleJourney
+      if (apple.drive === 'driven') {
+        validateDrivenJourney(apple, catalog, note)
+      } else {
+        const binding = (apple as XcTestAppleJourney).binding
+        for (const field of ['xcTarget', 'xcClass', 'xcMethod'] as const) {
+          if (!binding?.[field]?.trim()) note(`${where}: binding.${field} is empty`)
+        }
       }
     }
   }
@@ -136,6 +152,76 @@ export function defineCatalog(catalog: Catalog): Catalog {
     throw new Error(`invalid journey catalog:\n- ${problems.join('\n- ')}`)
   }
   return catalog
+}
+
+function validateLanding(
+  landing: AppleLanding | undefined,
+  where: string,
+  note: (problem: string) => void,
+): void {
+  if (!landing) {
+    note(`${where}: declares no landing, so nothing could tell a wrong screen from a right one`)
+    return
+  }
+  if (!landing.screen.trim()) note(`${where}: landing names no screen`)
+  if (landing.requires.length === 0 || landing.requires.some((value) => !value.trim())) {
+    note(`${where}: landing must require at least one non-empty thing to read on screen`)
+  }
+  for (const forbidden of landing.forbids ?? []) {
+    if (landing.requires.includes(forbidden)) {
+      note(`${where}: landing both requires and forbids "${forbidden}"`)
+    }
+  }
+}
+
+/**
+ * A driven Apple journey's own gate: every beat has a gesture and a landing,
+ * and a coordinate that cannot be on the declared handset is rejected here
+ * rather than at 2 a.m. on a capture night.
+ */
+function validateDrivenJourney(
+  journey: DrivenAppleJourney,
+  catalog: Catalog,
+  note: (problem: string) => void,
+): void {
+  const where = `journey "${journey.id}"`
+  validateLanding(journey.start, `${where} start`, note)
+
+  // The point box comes from any apple profile the catalog declares for this
+  // surface; a catalog with none simply skips the bounds check.
+  const boxes = Object.values(catalog.profiles)
+    .filter((profile) => profile.kind === 'apple')
+    .map((profile) => profile.points)
+    .filter((points): points is { width: number; height: number } => points !== undefined)
+  const inside = (x: number, y: number): boolean =>
+    boxes.length === 0 || boxes.some((box) => x >= 0 && y >= 0 && x <= box.width && y <= box.height)
+
+  for (const step of journey.steps) {
+    const stepWhere = `${where} step "${step.id}"`
+    validateLanding(step.lands, `${stepWhere}`, note)
+    const gesture: AppleGesture | undefined = step.press
+    if (!gesture) {
+      note(`${stepWhere}: declares no gesture`)
+      continue
+    }
+    if (gesture.kind === 'tap' && !inside(gesture.x, gesture.y)) {
+      note(
+        `${stepWhere}: tap ${String(gesture.x)},${String(gesture.y)} is off every declared handset`,
+      )
+    }
+    if (gesture.kind === 'swipe') {
+      for (const point of [gesture.from, gesture.to]) {
+        if (!inside(point.x, point.y)) {
+          note(
+            `${stepWhere}: swipe point ${String(point.x)},${String(point.y)} is off every declared handset`,
+          )
+        }
+      }
+    }
+    if (gesture.kind === 'type' && !gesture.text) {
+      note(`${stepWhere}: types nothing`)
+    }
+  }
 }
 
 /** Identity helpers, for declaration-site type inference. */
