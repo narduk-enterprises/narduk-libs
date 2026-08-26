@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-ai",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": false,
   "type": "module",
   "description": "Reusable AI contracts, xAI helpers, prompt resolution, and admin configuration for Narduk Nuxt apps.",
