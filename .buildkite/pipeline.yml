@@ -36,21 +36,3 @@ steps:
     timeout_in_minutes: 45
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: GH_PACKAGES_READ
-
-  - label: ":rocket: Publish package release"
-    key: publish-release
-    if: build.branch == "main" && build.env("RELEASE_PUBLISH") == "true"
-    depends_on:
-      - quality
-      - packed-consumer
-    concurrency: 1
-    concurrency_group: narduk-libs-release
-    command: |
-      set -euo pipefail
-      source .buildkite/bootstrap.sh
-      source .buildkite/setup-registry.sh
-      pnpm install --frozen-lockfile
-      bash .buildkite/publish-release.sh
-    timeout_in_minutes: 45
-    secrets:
-      NARDUK_PLATFORM_GH_PACKAGES_READ: NARDUK_PLATFORM_GH_PACKAGES_WRITE
