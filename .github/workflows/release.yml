@@ -87,6 +87,34 @@ jobs:
           //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_WRITE}
           EOF
 
+      - name: Check release pull-request identity configuration
+        id: release-identity
+        shell: bash
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ secrets.NARDUK_LIBS_RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.NARDUK_LIBS_RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${RELEASE_APP_CLIENT_ID}" && -n "${RELEASE_APP_PRIVATE_KEY}" ]]; then
+            echo "configured=true" >> "${GITHUB_OUTPUT}"
+          elif [[ -z "${RELEASE_APP_CLIENT_ID}" && -z "${RELEASE_APP_PRIVATE_KEY}" ]]; then
+            echo "configured=false" >> "${GITHUB_OUTPUT}"
+            echo "::warning::No release GitHub App is configured; Changesets will use GITHUB_TOKEN and its generated PR will require manual workflow approval."
+          else
+            echo "::error::Configure both NARDUK_LIBS_RELEASE_APP_CLIENT_ID and NARDUK_LIBS_RELEASE_APP_PRIVATE_KEY, or neither."
+            exit 1
+          fi
+
+      - name: Mint a release pull-request token
+        id: release-app-token
+        if: steps.release-identity.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.NARDUK_LIBS_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NARDUK_LIBS_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Prepare or publish independently verified package versions
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
@@ -96,7 +124,10 @@ jobs:
           title: "chore: release packages"
           commit: "chore: release packages"
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          # A dedicated App token makes the release PR a normal same-repo PR,
+          # so CI starts without the GITHUB_TOKEN-created-PR approval pause.
+          # The built-in token remains a safe, explicit manual fallback.
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token || github.token }}
 
       - name: Verify immutable published package versions
         if: steps.changesets.outputs.published == 'true'

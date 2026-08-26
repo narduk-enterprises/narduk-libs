@@ -13,7 +13,7 @@
     "test": "pnpm --workspace-concurrency=2 -r --filter './packages/*' --if-present test:unit",
     "quality": "pnpm run versions:check && pnpm run release-plan:check && pnpm run quality:artifacts",
     "quality:artifacts": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test",
-    "ci-plan:test": "node --test scripts/compute-affected-packages.test.mjs",
+    "ci-plan:test": "node --test scripts/compute-affected-packages.test.mjs scripts/reuse-packed-consumer-proof.test.mjs",
     "changeset": "changeset",
     "pack:check": "node scripts/release-packages.mjs --dry-run",
     "release:dry-run": "node scripts/release-packages.mjs --dry-run",

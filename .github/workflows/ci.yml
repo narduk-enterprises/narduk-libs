@@ -63,7 +63,11 @@
 #     release-plan:check, format:check)     -> KEPT as the separate `contracts`
 #                                              job below (see CONTRACTS).
 #   per-lane NODE_OPTIONS                   -> .npmrc `node-options` (see HEAP).
-# packed-consumer-smoke                     -> KEPT as a separate job, unchanged.
+# packed-consumer-smoke                     -> KEPT as a separate job. Push runs
+#                                              reuse a successful same-tree PR
+#                                              proof; every mismatch or lookup
+#                                              failure falls back to an exact-SHA
+#                                              smoke on the push.
 # journeys-e2e                              -> NEW browser lane (same reasoning as
 #                                              packed-consumer-smoke: node-library.yml
 #                                              has no browser lane), pool-routed,
@@ -167,10 +171,14 @@ jobs:
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
     timeout-minutes: 5
     permissions:
+      checks: read
       contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
+      # Reuse is allowed only for an identical successful PR proof. If the
+      # proof step is skipped or cannot verify it, this remains true.
+      packed-consumer: ${{ steps.plan.outputs.packed-consumer == 'true' && steps.packed-proof.outputs.reused != 'true' }}
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
     steps:
@@ -207,6 +215,19 @@ jobs:
             "${args[@]}" \
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
+
+      - name: Reuse an identical pull-request packed proof
+        id: packed-proof
+        if: github.event_name == 'push' && steps.plan.outputs.packed-consumer == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/reuse-packed-consumer-proof.mjs
+          --repository "${GITHUB_REPOSITORY}"
+          --sha "${GITHUB_SHA}"
+          --base-branch "${GITHUB_REF_NAME}"
+          --github-output "${GITHUB_OUTPUT}"
+          --summary "${GITHUB_STEP_SUMMARY}"
 
   ci:
     needs: affected
@@ -312,7 +333,7 @@ jobs:
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
   packed-consumer-smoke:
-    # Unchanged by the #278 adoption. This is the only lane that installs and
+    # This is the only lane that installs and
     # launches a real browser (Playwright chromium, via the generated app's
     # `quality` gate inside scripts/release-packages.mjs), so it runs on the
     # dedicated playwright-isolated pool. node-library.yml has NO browser lane
@@ -352,14 +373,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0
-
-      - name: Materialize Changesets base branch
-        run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if [ "$(git branch --show-current)" != "main" ]; then
-            git branch --force main origin/main
-          fi
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9

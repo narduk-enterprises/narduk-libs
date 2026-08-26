@@ -30,6 +30,24 @@ runbook and evidence exemplar.
 The Changesets run that only opens a release PR does not publish and therefore
 skips the post-publish registry proof.
 
+CI keeps the real packed generated-app proof before publication without
+repeating it on an identical merge tree. A push reuses that proof only when the
+associated same-repository pull-request head has a successful
+`package / packed-consumer-smoke` check and GitHub reports the pull-request head
+and pushed commit have the exact same Git tree. If the lookup fails, the check
+is missing, or the trees differ, CI runs the packed consumer against the pushed
+SHA. Package gates and the release workflow's exact successful-CI-SHA check
+still run for every push.
+
+For unattended release-PR CI, install a repository-scoped GitHub App with only
+Contents (write) and Pull requests (write), then provide its client ID and
+private key as `NARDUK_LIBS_RELEASE_APP_CLIENT_ID` and
+`NARDUK_LIBS_RELEASE_APP_PRIVATE_KEY`. The workflow mints a short-lived
+installation token and revokes it after the job. If neither secret exists, the
+release safely falls back to `GITHUB_TOKEN`; GitHub then requires a maintainer
+to approve the generated Changesets PR workflow. A partial configuration fails
+before Changesets runs.
+
 The org is on Team, so private repos inherit organization Actions secrets. The
 single packages-read PAT lives in Doppler `narduk/tokens:GH_PACKAGES_READ` and
 nvault `github/prd/narduk-enterprises-packages-read`. CI consumes it as the org
