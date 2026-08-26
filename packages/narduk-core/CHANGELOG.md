@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 1.20.4
+
+### Patch Changes
+
+- 1d017c7: Persist sealed user-session cookies for 30 days by default so mobile
+  browsers do not discard authentication when the browser is backgrounded or
+  reclaimed. Callers can still provide a shorter or longer `maxAge` override.
+
 ## 1.20.3
 
 ### Patch Changes
