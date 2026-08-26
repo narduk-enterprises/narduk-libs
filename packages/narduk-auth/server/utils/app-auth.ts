@@ -22,6 +22,7 @@ export {
   deleteSupabaseAuthUser,
   getAuthUiState,
 } from '#narduk-auth-server/lib/app-auth/auth-flows'
+export { completeLocalEmailPassword } from '#narduk-auth-server/lib/app-auth/local-email-flow'
 export {
   updateProfile,
   changePassword,

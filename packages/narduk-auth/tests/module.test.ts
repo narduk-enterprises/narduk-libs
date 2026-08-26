@@ -51,7 +51,16 @@ describe('narduk-auth module', () => {
       src: expect.stringContaining('/app/layouts/blank.vue'),
     })
     expect(extendPages).toHaveBeenCalledTimes(1)
-    expect(extendRouteRules).toHaveBeenCalledWith('/login', expect.objectContaining({ ssr: false }))
+    expect(extendRouteRules).toHaveBeenCalledWith(
+      '/login',
+      expect.objectContaining({
+        ssr: false,
+        headers: expect.objectContaining({
+          'Cache-Control': 'private, no-store',
+          'X-Robots-Tag': 'noindex, nofollow',
+        }),
+      }),
+    )
 
     const appResolveState = {
       middleware: [{ name: 'auth', path: '/app-owned/auth.ts' }],

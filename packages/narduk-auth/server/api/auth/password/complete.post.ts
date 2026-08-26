@@ -6,12 +6,11 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { requestPasswordReset } from '#narduk-auth-server/utils/app-auth'
+import { completeLocalEmailPassword } from '#narduk-auth-server/utils/app-auth'
 
 const bodySchema = z.object({
-  email: z.string().email(),
-  captchaToken: z.string().min(1).optional(),
-  next: z.string().max(2048).optional(),
+  token: z.string().min(32).max(256),
+  newPassword: z.string().min(8).max(200),
 })
 
 export default definePublicMutation(
@@ -19,5 +18,5 @@ export default definePublicMutation(
     rateLimit: RATE_LIMIT_POLICIES.authPasswordReset,
     parseBody: withValidatedBody(bodySchema.parse),
   },
-  async ({ event, body }) => requestPasswordReset(event, requireMutationBody(body)),
+  async ({ event, body }) => completeLocalEmailPassword(event, requireMutationBody(body)),
 )

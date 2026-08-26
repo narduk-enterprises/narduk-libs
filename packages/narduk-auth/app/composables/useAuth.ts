@@ -73,8 +73,20 @@ export function useAuth() {
     return result
   }
 
-  async function requestPasswordReset(payload: { captchaToken?: string; email: string }) {
+  async function requestPasswordReset(payload: {
+    captchaToken?: string
+    email: string
+    next?: string
+  }) {
     return api.requestPasswordReset(payload)
+  }
+
+  async function completeLocalEmailPassword(payload: { newPassword: string; token: string }) {
+    const result = await api.completeLocalEmailPassword(payload)
+    if (result.user) {
+      await fetchSession()
+    }
+    return result
   }
 
   async function enrollMfa(payload: { friendlyName?: string }) {
@@ -102,6 +114,7 @@ export function useAuth() {
     changePassword,
     deleteAccount,
     requestPasswordReset,
+    completeLocalEmailPassword,
     enrollMfa,
     verifyMfa,
   }
