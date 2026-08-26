@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.1.11
+
+### Patch Changes
+
+- fa7670b: Render provider-aware login copy so email-only applications do not
+  advertise Sign in with Apple.
+
 ## 0.1.10
 
 ### Patch Changes

@@ -12,7 +12,11 @@ steps:
       source .buildkite/bootstrap.sh
       source .buildkite/setup-registry.sh
       pnpm install --frozen-lockfile
-      pnpm run quality
+      pnpm run versions:check
+      if [[ "${BUILDKITE_BRANCH}" != changeset-release/* ]]; then
+        pnpm run release-plan:check
+      fi
+      pnpm run quality:artifacts
       git diff --exit-code
       git diff --cached --exit-code
     timeout_in_minutes: 45
