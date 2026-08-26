@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useSeoMeta({
   title: 'Sign In',
-  description: 'Sign in with Apple or email to access your dashboard.',
+  description: 'Sign in to access your dashboard.',
   robots: 'noindex, nofollow',
 })
 

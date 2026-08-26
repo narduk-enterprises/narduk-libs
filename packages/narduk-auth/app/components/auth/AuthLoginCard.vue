@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { z } from 'zod'
 
+import { resolveLoginSubtitle } from '../../utils/loginCopy'
 import { resolveLocalRedirectRequest, withLocalRedirectQuery } from '../../utils/safeRedirectPath'
 import { toUserFacingError } from '../../utils/toUserFacingError'
 
@@ -12,7 +13,7 @@ const props = withDefaults(
   }>(),
   {
     title: 'Welcome back',
-    subtitle: 'Sign in with Apple first, or use email if you prefer.',
+    subtitle: undefined,
     redirectPath: undefined,
   },
 )
@@ -51,6 +52,7 @@ const effectiveAuthProviders = computed(
 const canUseApple = computed(
   () => effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple'),
 )
+const resolvedSubtitle = computed(() => resolveLoginSubtitle(canUseApple.value, props.subtitle))
 const canRegister = computed(() => config.public.authPublicSignup)
 const redirectRequest = computed(() =>
   resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
@@ -131,7 +133,7 @@ async function onAppleSignIn() {
           {{ title }}
         </h1>
         <p class="text-sm text-muted">
-          {{ subtitle }}
+          {{ resolvedSubtitle }}
         </p>
       </div>
     </template>
