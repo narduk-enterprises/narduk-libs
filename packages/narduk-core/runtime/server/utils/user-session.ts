@@ -11,6 +11,8 @@ export interface LayerUserSession extends Record<string, unknown> {
 
 type SessionData = Omit<LayerUserSession, 'id'>
 
+export const DEFAULT_USER_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
 export function resolveSessionConfig(
   event: H3Event,
   overrides: Partial<SessionConfig> = {},
@@ -21,6 +23,7 @@ export function resolveSessionConfig(
   return {
     name: 'nuxt-session',
     password,
+    maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
     ...configOverrides,
     cookie: {
       sameSite: 'lax',
