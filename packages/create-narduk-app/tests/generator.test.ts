@@ -346,6 +346,16 @@ describe('create-narduk-app generation contract', () => {
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       'GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
     )
+    // One credential, two names: the org secret maps into the single process
+    // env name the committed .npmrc reads. No second alias, and no setup-node
+    // registry-url writing a competing userconfig .npmrc (company-hq#488).
+    const generatedCi =
+      files.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
+    expect(generatedCi).not.toContain('NODE_AUTH_TOKEN')
+    expect(generatedCi).not.toContain('registry-url')
+    expect(generatedText).not.toContain('NODE_AUTH_TOKEN')
+    expect(generatedText).not.toContain('NPM_TOKEN')
+    expect(generatedText).not.toContain('GH_PACKAGES_TOKEN')
 
     for (const file of files.filter((file) => file.path.endsWith('.json'))) {
       expect(() => JSON.parse(file.contents), file.path).not.toThrow()

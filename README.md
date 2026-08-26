@@ -23,6 +23,55 @@ or Command control plane. The decommission ledger and archive gates live in
 - `@narduk-enterprises/status-runtime`
 - `@narduk-enterprises/create-narduk-app`
 
+## Consuming these packages
+
+These packages are private and published to GitHub Packages, so a consuming app
+needs read access before `pnpm install` resolves them.
+
+**One credential, two names.** A single packages-read PAT is reached under one
+name locally and a different name in CI. Do not add a third.
+
+| Where | Name                                                                                      | Source                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Local | process env `GH_PACKAGES_READ`                                                            | Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read` |
+| CI    | org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, **mapped into** `GH_PACKAGES_READ` | Organization secret, inherited by private repos (org is on Team)                                  |
+
+Commit an `.npmrc` that names the variable and holds no value:
+
+```ini
+@narduk-enterprises:registry=https://npm.pkg.github.com
+@narduk-geo:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}
+```
+
+In CI, map the org secret into that one name on the install step:
+
+```yaml
+- run: pnpm install --frozen-lockfile
+  env:
+    GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
+```
+
+`create-narduk-app` emits exactly these two shapes, so a generated app is born
+working. A literal `UNCONFIGURED` in an install error means the variable was
+never exported — the `.npmrc` is fine.
+
+Rules that make this stay one path:
+
+- **Keep the token process-local.** Export it for the install
+  (`nvault run -- pnpm install`, or a Doppler-provided value piped into the
+  command) — never persist it in `~/.npmrc`, `.npmrc`, or any committed file.
+- **No per-app aliases.** `HT_GH_PACKAGES_READ`, `NODE_AUTH_TOKEN`,
+  `GH_PACKAGES_TOKEN`, and `NPM_TOKEN` are all banned spellings of this one
+  credential; the estate is consolidating them away
+  ([company-hq#488](https://github.com/narduk-enterprises/company-hq/issues/488)).
+- **Write is a separate persona.** Publishing uses
+  `NARDUK_PLATFORM_GH_PACKAGES_WRITE`; never reach for it to read.
+
+Canonical policy: company-hq
+[`docs/SECRETS-MATRIX.md`](https://github.com/narduk-enterprises/company-hq/blob/main/docs/SECRETS-MATRIX.md).
+Release-side detail: [`docs/package-releases.md`](docs/package-releases.md).
+
 ## Commands
 
 ```sh
