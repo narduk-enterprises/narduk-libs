@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-auth",
-  "version": "1.19.31",
+  "version": "1.20.0",
   "private": false,
   "type": "module",
   "description": "Auth, user session, notification, and protected-route Nuxt module for Narduk Cloudflare apps.",
