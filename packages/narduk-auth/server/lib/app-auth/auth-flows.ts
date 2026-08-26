@@ -18,6 +18,12 @@ import {
   toSessionUser,
 } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
+import { requestLocalEmailPasswordLink } from './local-email-flow'
+import {
+  assertLocalEmailAttemptAllowed,
+  clearLocalEmailAttempts,
+  recordLocalEmailAttemptFailure,
+} from './local-email-throttle'
 import {
   clearCurrentSession,
   getCurrentSessionUser,
@@ -62,24 +68,19 @@ export async function loginUser(event: H3Event, body: LoginInput): Promise<AuthM
 }
 
 async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<AuthMutationResult> {
-  const log = useLogger(event).child('AppAuth')
   const db = useDatabase(event)
   const normalizedEmail = normalizeEmail(body.email)
+  await assertLocalEmailAttemptAllowed(event, 'login', normalizedEmail)
   const user = await getDatabaseRow<LocalUser>(
     db.select().from(users).where(eq(users.email, normalizedEmail)),
   )
 
-  if (!user?.passwordHash) {
-    log.warn('Local login failed', { email: normalizedEmail })
-    throw createError({
-      statusCode: 401,
-      statusMessage: 'Invalid email or password',
-    })
-  }
-
-  const isValid = await verifyUserPassword(body.password, user.passwordHash)
-  if (!isValid) {
-    log.warn('Local login failed', { email: normalizedEmail })
+  // A syntactically valid dummy hash keeps unknown-account work comparable to
+  // a real password check without recording personal email addresses in logs.
+  const passwordHash = user?.passwordHash ?? `${'0'.repeat(32)}:${'0'.repeat(64)}`
+  const isValid = await verifyUserPassword(body.password, passwordHash)
+  if (!user?.passwordHash || !isValid) {
+    await recordLocalEmailAttemptFailure(event, 'login', normalizedEmail)
     throw createError({
       statusCode: 401,
       statusMessage: 'Invalid email or password',
@@ -93,6 +94,7 @@ async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<Aut
     needsPasswordSetup: false,
   })
   await setCurrentSessionUser(event, sessionUser)
+  await clearLocalEmailAttempts(event, 'login', normalizedEmail)
 
   return {
     user: sessionUser,
@@ -171,7 +173,7 @@ async function registerWithLocalAuth(
   )
 
   if (existingUser) {
-    log.warn('Local registration rejected', { email: normalizedEmail })
+    log.warn('Local registration rejected for an existing address')
     throw createError({
       statusCode: 409,
       statusMessage: 'Email already in use',
@@ -457,10 +459,14 @@ export async function requestPasswordReset(
   body: PasswordResetRequest,
 ): Promise<AuthMutationResult> {
   const config = getAuthConfig(event)
-  if (config.backend !== 'supabase' || !isSupabaseConfigured(config)) {
+  if (config.backend === 'local') {
+    return requestLocalEmailPasswordLink(event, body)
+  }
+
+  if (!isSupabaseConfigured(config)) {
     throw createError({
-      statusCode: 501,
-      statusMessage: 'Password reset email is only available when Supabase auth is enabled.',
+      statusCode: 503,
+      statusMessage: 'Password reset is not configured for this app.',
     })
   }
 

@@ -16,8 +16,11 @@ import { defu } from 'defu'
 import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../shared/utils/auth-environment'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-auth'
-const NOINDEX_NOFOLLOW = { 'X-Robots-Tag': 'noindex, nofollow' as const }
-const AUTH_CLIENT_ROUTE_RULE = { ssr: false, headers: NOINDEX_NOFOLLOW } as const
+const AUTH_PRIVATE_HEADERS = {
+  'Cache-Control': 'private, no-store' as const,
+  'X-Robots-Tag': 'noindex, nofollow' as const,
+}
+const AUTH_CLIENT_ROUTE_RULE = { ssr: false, headers: AUTH_PRIVATE_HEADERS } as const
 const D1_QUERY_HELPER_AUTO_IMPORT_SOURCE_PATTERN = /(?:^|\/)server\/utils\/d1Query(?:\.ts)?$/
 const authApiKeyTextAutoImportSourcePattern = /(?:^|\/)server\/utils\/authApiKeyText(?:\.ts)?$/
 

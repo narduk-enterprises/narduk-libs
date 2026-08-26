@@ -31,6 +31,7 @@ export interface AuthMutationResult {
   message?: string
   nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent'
   redirectTo?: string
+  selfServeLink?: string
   user: AppSessionUser | null
 }
 
@@ -101,6 +102,12 @@ export interface LoginInput {
 export interface PasswordResetRequest {
   captchaToken?: string
   email: string
+  next?: string | null
+}
+
+export interface LocalEmailPasswordComplete {
+  newPassword: string
+  token: string
 }
 
 export interface UpdateProfileInput {

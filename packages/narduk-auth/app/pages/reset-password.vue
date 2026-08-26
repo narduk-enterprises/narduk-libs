@@ -6,7 +6,7 @@ import { toUserFacingError } from '../utils/toUserFacingError'
 
 const config = useRuntimeConfig()
 const route = useRoute()
-const { user, changePassword, requestPasswordReset } = useAuth()
+const { user, changePassword, completeLocalEmailPassword, requestPasswordReset } = useAuth()
 
 useSeoMeta({
   title: 'Reset Password',
@@ -21,8 +21,14 @@ const requestSchema = z.object({
 const updateSchema = z
   .object({
     currentPassword: z.string().optional(),
-    newPassword: z.string().min(8, 'Password must be at least 8 characters.'),
-    confirmPassword: z.string().min(8, 'Confirm your new password.'),
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters.')
+      .max(200, 'Password must be 200 characters or fewer.'),
+    confirmPassword: z
+      .string()
+      .min(8, 'Confirm your new password.')
+      .max(200, 'Password must be 200 characters or fewer.'),
   })
   .refine((value) => value.newPassword === value.confirmPassword, {
     path: ['confirmPassword'],
@@ -42,10 +48,15 @@ const updateState = reactive({
 const loading = ref(false)
 const successMsg = ref('')
 const errorMsg = ref('')
+const selfServeLink = ref('')
 
-const isRecoveryMode = computed(() => route.query.recovery === '1')
+const localEmailToken = computed(() =>
+  typeof route.query.token === 'string' ? route.query.token : '',
+)
+const isLocalEmailRecovery = computed(() => Boolean(localEmailToken.value))
+const isRecoveryMode = computed(() => route.query.recovery === '1' || isLocalEmailRecovery.value)
 const needsCurrentPassword = computed(
-  () => !user.value?.needsPasswordSetup && !isRecoveryMode.value,
+  () => !isLocalEmailRecovery.value && !user.value?.needsPasswordSetup && !isRecoveryMode.value,
 )
 const resolvedNextPath = computed(() =>
   sanitizeLocalRedirectPath(route.query.next, config.public.authRedirectPath),
@@ -55,10 +66,15 @@ async function onRequestReset() {
   loading.value = true
   errorMsg.value = ''
   successMsg.value = ''
+  selfServeLink.value = ''
 
   try {
-    const result = await requestPasswordReset({ email: requestState.email })
+    const result = await requestPasswordReset({
+      email: requestState.email,
+      next: resolvedNextPath.value,
+    })
     successMsg.value = result.message ?? 'Check your email for the reset link.'
+    selfServeLink.value = result.selfServeLink ?? ''
   } catch (error) {
     errorMsg.value = toUserFacingError(error, 'Unable to send the reset email.')
   } finally {
@@ -77,6 +93,15 @@ async function onUpdatePassword() {
   successMsg.value = ''
 
   try {
+    if (isLocalEmailRecovery.value) {
+      const result = await completeLocalEmailPassword({
+        token: localEmailToken.value,
+        newPassword: updateState.newPassword,
+      })
+      await navigateTo(result.redirectTo ?? resolvedNextPath.value, { replace: true })
+      return
+    }
+
     await changePassword({
       currentPassword: updateState.currentPassword || undefined,
       newPassword: updateState.newPassword,
@@ -124,6 +149,16 @@ async function onUpdatePassword() {
         :description="successMsg"
         class="mb-4"
       />
+
+      <UButton
+        v-if="selfServeLink"
+        :to="selfServeLink"
+        class="mb-4 w-full justify-center"
+        color="neutral"
+        variant="soft"
+      >
+        Continue with local setup link
+      </UButton>
 
       <UAlert
         v-if="errorMsg"

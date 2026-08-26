@@ -1,68 +1,22 @@
-export interface AuthUser {
-  [key: string]: unknown
-  aal?: 'aal1' | 'aal2' | null
-  authBackend?: 'local' | 'supabase'
-  authProvider?: string | null
-  authProviders?: string[]
-  authSessionId?: string | null
-  email: string
-  emailConfirmedAt?: string | null
-  id: string
-  isAdmin: boolean | null
-  name: string | null
-  needsPasswordSetup?: boolean
-  recoveryMode?: boolean
-}
+import type {
+  AuthApiKeyCreateInput,
+  AuthApiKeyCreateResponse,
+  AuthApiKeySummary,
+  AuthMutationResult,
+  AuthUser,
+  MfaEnrollmentResult,
+} from '../internal/auth-api-types'
 
-export interface AuthMutationResult {
-  message?: string
-  nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent'
-  redirectTo?: string
-  user: AuthUser | null
-}
-
-export interface MfaEnrollmentResult {
-  factorId: string
-  qrCodeDataUrl: string
-  qrCodeSvg: string
-  secret: string
-  uri: string
-}
-
-export interface AuthApiKeyScopeOption {
-  description: string
-  id: string
-  label: string
-}
-
-export interface AuthApiKeyTokenProfile {
-  description: string
-  expiresInDays?: number | null
-  id: string
-  label: string
-  name?: string
-  scopes?: string[]
-}
-
-export interface AuthApiKeySummary {
-  createdAt: string
-  expiresAt: number | null
-  id: string
-  keyPrefix: string
-  lastUsedAt: string | null
-  name: string
-  scopes: string[]
-}
-
-export interface AuthApiKeyCreateResponse extends AuthApiKeySummary {
-  rawKey: string
-}
-
-export interface AuthApiKeyCreateInput {
-  expiresInDays?: number | null
-  name: string
-  scopes?: string[]
-}
+export type {
+  AuthApiKeyCreateInput,
+  AuthApiKeyCreateResponse,
+  AuthApiKeyScopeOption,
+  AuthApiKeySummary,
+  AuthApiKeyTokenProfile,
+  AuthMutationResult,
+  AuthUser,
+  MfaEnrollmentResult,
+} from '../internal/auth-api-types'
 
 type EmailVerificationType =
   'signup' | 'invite' | 'magiclink' | 'recovery' | 'email_change' | 'email'
@@ -175,8 +129,16 @@ export function useAuthApi() {
     })
   }
 
-  function requestPasswordReset(payload: { captchaToken?: string; email: string }) {
+  function requestPasswordReset(payload: { captchaToken?: string; email: string; next?: string }) {
     return csrfFetch<AuthMutationResult>('/api/auth/password/reset', {
+      method: 'POST',
+      body: payload,
+      headers: csrfHeaders,
+    })
+  }
+
+  function completeLocalEmailPassword(payload: { newPassword: string; token: string }) {
+    return csrfFetch<AuthMutationResult>('/api/auth/password/complete', {
       method: 'POST',
       body: payload,
       headers: csrfHeaders,
@@ -213,6 +175,7 @@ export function useAuthApi() {
     createApiKey,
     revokeApiKey,
     requestPasswordReset,
+    completeLocalEmailPassword,
     enrollMfa,
     verifyMfa,
   }
