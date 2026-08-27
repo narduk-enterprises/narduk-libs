@@ -28,13 +28,15 @@ or Command control plane. The decommission ledger and archive gates live in
 These packages are private and published to GitHub Packages, so a consuming app
 needs read access before `pnpm install` resolves them.
 
-**One credential, two names.** A single packages-read PAT is reached under one
-name locally and a different name in CI. Do not add a third.
+**One credential, two names.** A single packages-read PAT is reached under
+`GH_PACKAGES_READ` wherever the variable name is ours to choose, and under the
+org-secret name only where GitHub fixes it. Do not add a third.
 
-| Where | Name                                                                                      | Source                                                                                            |
-| ----- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Local | process env `GH_PACKAGES_READ`                                                            | Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read` |
-| CI    | org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, **mapped into** `GH_PACKAGES_READ` | Organization secret, inherited by private repos (org is on Team)                                  |
+| Where          | Name                                                                                      | Source                                                                                            |
+| -------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Local          | process env `GH_PACKAGES_READ`                                                            | Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read` |
+| CI             | org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, **mapped into** `GH_PACKAGES_READ` | Organization secret, inherited by private repos (org is on Team)                                  |
+| Workers Builds | build secret `GH_PACKAGES_READ` — the name is ours to choose, so there is nothing to map  | Same PAT; the org-secret spelling here yields a literal `UNCONFIGURED`                            |
 
 Commit an `.npmrc` that names the variable and holds no value:
 
