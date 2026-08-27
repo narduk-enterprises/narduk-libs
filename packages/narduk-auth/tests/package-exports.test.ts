@@ -34,6 +34,56 @@ describe('narduk-auth package exports', () => {
     })
   })
 
+  it('only calls package API routes that actually exist', () => {
+    const apiRoot = join(packageRoot, 'server', 'api')
+    const knownRoutes = new Set(
+      listSourceFiles(apiRoot).map((path) => {
+        let route = path
+          .slice(apiRoot.length)
+          .replaceAll('\\', '/')
+          .replace(/\.(?:get|post|put|patch|delete)\.ts$/u, '')
+          .replace(/\.ts$/u, '')
+        if (route.endsWith('/index')) route = route.slice(0, -'/index'.length)
+        return `/api${route}`
+      }),
+    )
+
+    const failures: string[] = []
+    for (const sourcePath of listSourceFiles(join(packageRoot, 'app'))) {
+      const source = readFileSync(sourcePath, 'utf8')
+      for (const [, literal] of source.matchAll(/['"`](\/api\/[^'"`\s]*)['"`]/gu)) {
+        if (!literal || literal.includes('${')) continue
+        const route = literal.split('?')[0] ?? literal
+        if (!knownRoutes.has(route)) {
+          failures.push(`${sourcePath}: ${literal}`)
+        }
+      }
+    }
+
+    expect(failures).toEqual([])
+  })
+
+  it('keeps accountDeletion as a pure re-export of the bridge implementation', () => {
+    const source = readFileSync(join(packageRoot, 'server/utils/accountDeletion.ts'), 'utf8')
+    expect(source).toContain("from './accountDeletionBridge'")
+    expect(source).not.toMatch(/\basync function\b/u)
+  })
+
+  it('does not declare drizzle-kit scripts without a drizzle config', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      scripts: Record<string, string>
+    }
+    const drizzleScripts = Object.entries(packageJson.scripts).filter(([, command]) =>
+      command.includes('drizzle-kit'),
+    )
+    const hasConfig = ['drizzle.config.ts', 'drizzle.config.js', 'drizzle.config.json'].some(
+      (name) => existsSync(join(packageRoot, name)),
+    )
+    if (!hasConfig) {
+      expect(drizzleScripts).toEqual([])
+    }
+  })
+
   it('does not let type-only sibling imports suppress required runtime imports', () => {
     const failures: string[] = []
 

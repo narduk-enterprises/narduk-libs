@@ -52,7 +52,7 @@ export const authSessions = pgTable('auth_sessions', {
 export const authEmailLinks = pgTable('auth_email_links', {
   id: text('id').primaryKey(),
   email: text('email').notNull(),
-  purpose: text('purpose').notNull(),
+  purpose: text('purpose', { enum: ['setup', 'reset'] }).notNull(),
   tokenHash: text('token_hash').notNull().unique(),
   redirectPath: text('redirect_path').notNull(),
   expiresAt: integer('expires_at').notNull(),

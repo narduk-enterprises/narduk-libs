@@ -25,6 +25,12 @@
   auth, leaves the Supabase pathway unchanged, and explicitly does not replace
   or bypass Cloudflare Access as an app's outer gate.
 
+  **Upgrade note (added retroactively):** this release made
+  `drizzle/0002_local_email_auth.sql` mandatory for the default local backend —
+  every local email/password login now reads the `auth_local_email_attempts`
+  table it creates. A local-backend app upgrading past 1.19.x without applying
+  that migration fails every login until it runs. See README "Migrations".
+
 ## 1.19.31
 
 ### Patch Changes

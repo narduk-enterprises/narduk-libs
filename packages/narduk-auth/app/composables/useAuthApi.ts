@@ -59,13 +59,6 @@ export function useAuthApi() {
     })
   }
 
-  function loginAsTestUser() {
-    return csrfFetch<LegacyAuthMutationResult>('/api/auth/login-test', {
-      method: 'POST',
-      headers: csrfHeaders,
-    })
-  }
-
   function startOAuth(payload: { next?: string; provider: 'apple' }) {
     return csrfFetch<{ url: string }>('/api/auth/oauth/start', {
       method: 'POST',
@@ -165,7 +158,6 @@ export function useAuthApi() {
     login,
     register,
     logout,
-    loginAsTestUser,
     startOAuth,
     exchangeSession,
     updateProfile,

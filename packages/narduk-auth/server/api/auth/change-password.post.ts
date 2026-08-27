@@ -8,9 +8,11 @@ import {
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { changePassword } from '#narduk-auth-server/utils/app-auth'
 
+// currentPassword stays uncapped: it verifies an existing credential that may
+// predate the 200-character cap on new passwords.
 const bodySchema = z.object({
   currentPassword: z.string().min(1).optional(),
-  newPassword: z.string().min(8),
+  newPassword: z.string().min(8).max(200),
 })
 
 export default defineUserMutation(

@@ -65,6 +65,20 @@ export function sanitizeNextPath(value: string | null | undefined, fallback: str
   }
 }
 
+/**
+ * Builds a same-origin path (`/path?query`) so the result is safe for both
+ * server-side redirects and client-side `navigateTo` without `external: true`.
+ */
+export function buildAppPath(path: string, search?: Record<string, string | null | undefined>) {
+  const url = new URL(path, 'https://app.local')
+  for (const [key, value] of Object.entries(search ?? {})) {
+    if (value) {
+      url.searchParams.set(key, value)
+    }
+  }
+  return `${url.pathname}${url.search}${url.hash}`
+}
+
 export function buildAppUrl(
   baseUrl: string,
   path: string,

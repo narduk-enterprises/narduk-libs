@@ -1,5 +1,26 @@
 export type LocalEmailLinkPurpose = 'reset' | 'setup'
 
+function mentionsMissingAttemptsTable(message: string): boolean {
+  if (!message.includes('auth_local_email_attempts')) return false
+  return /no such table/iu.test(message) || /does not exist/iu.test(message)
+}
+
+/**
+ * Recognizes both the D1/SQLite ("no such table") and Postgres ("relation …
+ * does not exist") shapes, including messages wrapped in an error `cause`
+ * chain, so callers can surface the missing-0002-migration condition clearly.
+ */
+export function isMissingLocalEmailAttemptsTableError(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
+    const message =
+      'message' in current && typeof current.message === 'string' ? current.message : ''
+    if (mentionsMissingAttemptsTable(message)) return true
+    current = 'cause' in current ? current.cause : null
+  }
+  return false
+}
+
 const EMAIL_TOKEN_BYTES = 32
 const LOCKOUT_THRESHOLD = 5
 const MAX_LOCK_SECONDS = 15 * 60

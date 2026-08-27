@@ -7,6 +7,7 @@ import { toUserFacingError } from '../utils/toUserFacingError'
 const config = useRuntimeConfig()
 const route = useRoute()
 const { user, changePassword, completeLocalEmailPassword, requestPasswordReset } = useAuth()
+const { data: authRuntime } = useAuthRuntimePublic()
 
 useSeoMeta({
   title: 'Reset Password',
@@ -54,7 +55,17 @@ const localEmailToken = computed(() =>
   typeof route.query.token === 'string' ? route.query.token : '',
 )
 const isLocalEmailRecovery = computed(() => Boolean(localEmailToken.value))
-const isRecoveryMode = computed(() => route.query.recovery === '1' || isLocalEmailRecovery.value)
+// A bare `?recovery=1` (no token) is only ever produced by the Supabase
+// recovery redirect. On the local backend it must not hide the
+// current-password field: local changePassword always verifies it, so the
+// token-less recovery form could never succeed there. Only the
+// runtime-resolved backend may demote recovery mode: the build-time public
+// value can freeze 'local' while the deployed Worker actually runs Supabase.
+const isRecoveryMode = computed(
+  () =>
+    isLocalEmailRecovery.value ||
+    (route.query.recovery === '1' && authRuntime.value?.authBackend !== 'local'),
+)
 const needsCurrentPassword = computed(
   () => !isLocalEmailRecovery.value && !user.value?.needsPasswordSetup && !isRecoveryMode.value,
 )

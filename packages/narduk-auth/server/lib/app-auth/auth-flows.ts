@@ -11,6 +11,7 @@ import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-sessio
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import {
+  buildAppPath,
   buildAppUrl,
   isAuthProvider,
   normalizeEmail,
@@ -424,8 +425,10 @@ export async function exchangeSupabaseCode(
     requireExistingLink: !config.publicSignup && !permitsClosedSignupLink,
   })
   const next = sanitizeNextPath(body.next, config.redirectPath)
+  // Same-origin path, not an absolute URL: the client panel feeds this to
+  // navigateTo, which rejects absolute URLs without `external: true`.
   const redirectTo = isPasswordRecovery
-    ? buildAppUrl(config.appUrl, config.resetPath, { recovery: '1', next })
+    ? buildAppPath(config.resetPath, { recovery: '1', next })
     : next
   const persisted = await persistSupabaseSession(event, {
     authUser: data.user,

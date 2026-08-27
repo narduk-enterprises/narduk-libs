@@ -11,6 +11,7 @@ import {
   generateLocalEmailToken,
   hashLocalEmailValue,
   isEmailPreauthorized,
+  isMissingLocalEmailAttemptsTableError,
   localEmailLockSeconds,
   normalizeEmailAddress,
   sanitizeLocalEmailRedirect,
@@ -107,6 +108,33 @@ describe('local email authentication primitives', () => {
     expect(localEmailLockSeconds(5)).toBe(30)
     expect(localEmailLockSeconds(6)).toBe(60)
     expect(localEmailLockSeconds(20)).toBe(15 * 60)
+  })
+
+  it('classifies a missing auth_local_email_attempts table across dialects', () => {
+    expect(
+      isMissingLocalEmailAttemptsTableError(
+        new Error('D1_ERROR: no such table: auth_local_email_attempts: SQLITE_ERROR'),
+      ),
+    ).toBe(true)
+    expect(
+      isMissingLocalEmailAttemptsTableError(
+        new Error('relation "auth_local_email_attempts" does not exist'),
+      ),
+    ).toBe(true)
+    expect(
+      isMissingLocalEmailAttemptsTableError(
+        new Error('query failed', {
+          cause: new Error('no such table: auth_local_email_attempts'),
+        }),
+      ),
+    ).toBe(true)
+
+    expect(isMissingLocalEmailAttemptsTableError(new Error('no such table: users'))).toBe(false)
+    expect(
+      isMissingLocalEmailAttemptsTableError(new Error('auth_local_email_attempts row missing')),
+    ).toBe(false)
+    expect(isMissingLocalEmailAttemptsTableError('no such table')).toBe(false)
+    expect(isMissingLocalEmailAttemptsTableError(null)).toBe(false)
   })
 
   it('ships digest-only persistence and explicit additive provenance', () => {
