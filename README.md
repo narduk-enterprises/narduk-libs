@@ -28,21 +28,32 @@ or Command control plane. The decommission ledger and archive gates live in
 These packages are private and published to GitHub Packages, so a consuming app
 needs read access before `pnpm install` resolves them.
 
-**One credential, two names.** A single packages-read PAT is reached under one
-name locally and a different name in CI. Do not add a third.
+**One credential, two names.** A single packages-read PAT is reached under
+`GH_PACKAGES_READ` wherever the variable name is ours to choose, and under the
+org-secret name only where GitHub fixes it. Do not add a third.
 
-| Where | Name                                                                                      | Source                                                                                            |
-| ----- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Local | process env `GH_PACKAGES_READ`                                                            | Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read` |
-| CI    | org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, **mapped into** `GH_PACKAGES_READ` | Organization secret, inherited by private repos (org is on Team)                                  |
+| Where          | Name                                                                                      | Source                                                                                            |
+| -------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Local          | process env `GH_PACKAGES_READ`                                                            | Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read` |
+| CI             | org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ`, **mapped into** `GH_PACKAGES_READ` | Organization secret, inherited by private repos (org is on Team)                                  |
+| Workers Builds | build secret `GH_PACKAGES_READ` — the name is ours to choose, so there is nothing to map  | Same PAT; the org-secret spelling here leaves `GH_PACKAGES_READ` unset                            |
 
 Commit an `.npmrc` that names the variable and holds no value:
 
 ```ini
 @narduk-enterprises:registry=https://npm.pkg.github.com
 @narduk-geo:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}
+//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}
 ```
+
+The auth line is plain, with **no bash-style default**. npm does not implement
+default-value interpolation: it leaves the whole `${VAR-DEFAULT}` reference
+unsubstituted and sends it to the registry as the token, so
+`${GH_PACKAGES_READ-UNCONFIGURED}` fails
+`401 … cannot be authenticated with the token provided` even when the variable
+is set. pnpm does implement the default form, which is why that shape looked
+fine here. An unset variable under the plain form is a loud install-time error
+naming the variable, which is what you want.
 
 In CI, map the org secret into that one name on the install step:
 
@@ -52,9 +63,10 @@ In CI, map the org secret into that one name on the install step:
     GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
 ```
 
-`create-narduk-app` emits exactly these two shapes, so a generated app is born
-working. A literal `UNCONFIGURED` in an install error means the variable was
-never exported — the `.npmrc` is fine.
+`create-narduk-app` still emits the default form and its test pins that string;
+correcting the generator and the fleet's committed files is
+[company-hq#488](https://github.com/narduk-enterprises/company-hq/issues/488).
+Until then this section, not the generator output, is the shape to copy.
 
 Rules that make this stay one path:
 
