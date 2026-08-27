@@ -10,8 +10,8 @@ import { registerUser } from '#narduk-auth-server/utils/app-auth'
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().min(2),
+  password: z.string().min(8).max(200),
+  name: z.string().min(2).max(200),
   captchaToken: z.string().min(1).optional(),
   next: z.string().optional(),
 })

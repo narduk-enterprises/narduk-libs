@@ -18,6 +18,23 @@ Server code imports core-owned user, session, notification, and API-key tables
 through the private `#narduk-core/schema` alias registered by the core module.
 Apps continue to use their app-owned `#narduk-db` alias for combined schemas.
 
+## Migrations
+
+Apply every SQL file in `drizzle/` to the app database, in order:
+
+1. `drizzle/0001_auth_bridge.sql`
+2. `drizzle/0002_local_email_auth.sql`
+
+As of 1.20.0, `0002_local_email_auth.sql` is **required for the default local
+backend**, not just the optional email-link feature: every local email/password
+login reads and writes the `auth_local_email_attempts` lockout table it creates.
+Upgrading a local-backend app past 1.19.x without applying it breaks every login
+with an HTTP 500 that names the missing table. Sequence the migration with the
+version bump so it runs on deploy before traffic.
+
+The shipped migrations use the D1/SQLite dialect. The Postgres backend currently
+has no shipped DDL; a Postgres consumer must hand-translate them.
+
 ## Additive local email pathway
 
 The local email pathway is an application-level complement to Cloudflare Access,

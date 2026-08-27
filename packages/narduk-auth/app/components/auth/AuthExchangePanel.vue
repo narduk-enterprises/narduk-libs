@@ -19,8 +19,20 @@ const { exchangeSession } = useAuth()
 const status = ref<'loading' | 'error'>('loading')
 const errorMsg = ref('')
 
+const EMAIL_VERIFICATION_TYPES = [
+  'signup',
+  'invite',
+  'magiclink',
+  'recovery',
+  'email_change',
+  'email',
+] as const
+
 onMounted(async () => {
   const code = typeof route.query.code === 'string' ? route.query.code : ''
+  const tokenHash = typeof route.query.token_hash === 'string' ? route.query.token_hash : ''
+  const rawType = typeof route.query.type === 'string' ? route.query.type : ''
+  const verificationType = EMAIL_VERIFICATION_TYPES.find((type) => type === rawType)
   const next = typeof route.query.next === 'string' ? route.query.next : undefined
   const providerError =
     typeof route.query.error_description === 'string'
@@ -29,14 +41,23 @@ onMounted(async () => {
         ? route.query.error
         : ''
 
-  if (!code) {
+  // Supabase email links can carry either a PKCE `code` or a
+  // `token_hash` + `type` pair; both exchange into an app session.
+  let payload: Parameters<typeof exchangeSession>[0] | null = null
+  if (code) {
+    payload = { code, next }
+  } else if (tokenHash && verificationType) {
+    payload = { tokenHash, verificationType, next }
+  }
+
+  if (!payload) {
     status.value = 'error'
     errorMsg.value = providerError !== '' ? providerError : 'The auth callback is missing its code.'
     return
   }
 
   try {
-    const result = await exchangeSession({ code, next })
+    const result = await exchangeSession(payload)
     await navigateTo(result.redirectTo ?? config.public.authRedirectPath, { replace: true })
   } catch (error) {
     status.value = 'error'

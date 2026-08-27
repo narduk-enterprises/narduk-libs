@@ -5,7 +5,11 @@ import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/databa
 import { authLocalEmailAttempts } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 
-import { hashLocalEmailValue, localEmailLockSeconds } from './local-email-core'
+import {
+  hashLocalEmailValue,
+  isMissingLocalEmailAttemptsTableError,
+  localEmailLockSeconds,
+} from './local-email-core'
 
 import type { H3Event } from 'h3'
 
@@ -28,6 +32,17 @@ async function attemptKey(
   return hashLocalEmailValue(`${kind}\0${principal}\0${getClientIp(event)}`)
 }
 
+function rethrowThrottleError(error: unknown): never {
+  if (isMissingLocalEmailAttemptsTableError(error)) {
+    throw createError({
+      statusCode: 500,
+      statusMessage:
+        'The auth_local_email_attempts table is missing. Apply drizzle/0002_local_email_auth.sql (required since narduk-auth 1.20.0).',
+    })
+  }
+  throw error
+}
+
 function throwLocked(event: H3Event, lockedUntil: number, now: number): never {
   const retryAfter = Math.max(1, lockedUntil - now)
   setResponseHeader(event, 'Retry-After', retryAfter)
@@ -47,7 +62,7 @@ export async function assertLocalEmailAttemptAllowed(
   const appDb = useAuthBridgeDatabase(event)
   const attempt = await getDatabaseRow<LocalEmailAttempt>(
     appDb.select().from(authLocalEmailAttempts).where(eq(authLocalEmailAttempts.keyHash, keyHash)),
-  )
+  ).catch(rethrowThrottleError)
 
   if (attempt?.lockedUntil && attempt.lockedUntil > now) {
     throwLocked(event, attempt.lockedUntil, now)
@@ -63,7 +78,7 @@ export async function assertLocalEmailAttemptAllowed(
             lt(authLocalEmailAttempts.windowStartedAt, now - ATTEMPT_WINDOW_SECONDS),
           ),
         ),
-    )
+    ).catch(rethrowThrottleError)
   }
 }
 
@@ -99,7 +114,7 @@ export async function recordLocalEmailAttemptFailure(
         },
       })
       .returning(),
-  )
+  ).catch(rethrowThrottleError)
 
   if (!attempt) return
   const lockSeconds = localEmailLockSeconds(attempt.failures)
@@ -114,7 +129,7 @@ export async function recordLocalEmailAttemptFailure(
         updatedAt,
       })
       .where(eq(authLocalEmailAttempts.keyHash, keyHash)),
-  )
+  ).catch(rethrowThrottleError)
 }
 
 export async function clearLocalEmailAttempts(
@@ -126,5 +141,5 @@ export async function clearLocalEmailAttempts(
   const appDb = useAuthBridgeDatabase(event)
   await executeDatabaseQuery(
     appDb.delete(authLocalEmailAttempts).where(eq(authLocalEmailAttempts.keyHash, keyHash)),
-  )
+  ).catch(rethrowThrottleError)
 }

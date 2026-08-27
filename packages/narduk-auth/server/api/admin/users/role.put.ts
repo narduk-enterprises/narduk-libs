@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { z } from 'zod'
 
-import { useDatabase } from '#layer/server/utils/database'
+import { executeDatabaseQuery, useDatabase } from '#layer/server/utils/database'
 import {
   defineAdminMutation,
   requireMutationBody,
@@ -30,14 +30,20 @@ export default defineAdminMutation(
 
     const db = useDatabase(event)
 
-    await db
-      .update(users)
-      .set({
-        isAdmin: input.isAdmin,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(users.id, input.userId))
-      .run()
+    const updated = await executeDatabaseQuery<unknown[]>(
+      db
+        .update(users)
+        .set({
+          isAdmin: input.isAdmin,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(users.id, input.userId))
+        .returning(),
+    )
+
+    if (updated.length === 0) {
+      throw createError({ statusCode: 404, statusMessage: 'User not found.' })
+    }
 
     return { success: true }
   },

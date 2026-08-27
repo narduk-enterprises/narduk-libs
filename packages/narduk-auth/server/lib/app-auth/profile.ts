@@ -250,6 +250,8 @@ export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
 
   return {
     success: true,
-    aal: persisted?.aal ?? 'aal2',
+    // When the session could not be persisted (or carried no recognizable aal
+    // claim), report the weaker assurance level rather than asserting aal2.
+    aal: persisted?.aal ?? 'aal1',
   }
 }

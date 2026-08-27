@@ -17,11 +17,18 @@ export interface DeleteAccountBridgeInput {
 /**
  * Extension hooks for the account deletion flow.
  *
- * Apps that back user identity with an external provider can supply
- * `beforeDelete` to clean up the upstream identity before the local DB row is
- * removed.
+ * Apps that back user identity with an external provider (e.g. Supabase Auth)
+ * can supply `beforeDelete` to clean up the upstream identity before the local
+ * DB row is removed. If the hook throws, the deletion is aborted and the local
+ * user record is left intact.
  */
 export interface AccountDeletionBridgeHooks {
+  /**
+   * Called after credential verification but before the local DB row is
+   * deleted. Use this to remove the user from an external identity provider
+   * (e.g. `supabase.admin.deleteUser`). Throwing here will abort the entire
+   * deletion so the two sides stay in sync.
+   */
   beforeDelete?: (event: H3Event, userId: string) => Promise<void>
 }
 
