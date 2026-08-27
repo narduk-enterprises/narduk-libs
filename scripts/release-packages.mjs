@@ -17,6 +17,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
@@ -109,8 +111,6 @@ const forbiddenSourceReferencePattern = new RegExp(
 // dependency. Only treat it as forbidden when it is a specifier or resolution.
 const forbiddenGitDependencyLinePattern =
   /(?:^\s*(?:specifier|version):\s*git\+)|(?:@[^\s'"]+@git\+)/u
-const warningOrErrorTokenPattern =
-  /(?:^|[\s:[(])(?:warn(?:ing)?|error)(?=$|[\s:\])])|(?:deprecation|experimental|MaxListenersExceeded)Warning:/iu
 
 if (!dryRun) {
   writeError('Refusing to run without --dry-run; this helper never publishes packages.')
@@ -122,10 +122,6 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
   return { ...environment, ...overrides }
-}
-
-function stripAnsi(value) {
-  return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
 }
 
 function runChecked(command, commandArgs, options) {
@@ -144,13 +140,9 @@ function runChecked(command, commandArgs, options) {
     throw new Error(`${label} failed with exit code ${result.status ?? 'unknown'}.`)
   }
   if (options.rejectWarnings !== false) {
-    const findings = stripAnsi(output)
-      .split('\n')
-      .filter((line) => warningOrErrorTokenPattern.test(line))
+    const findings = collectWarningFindings(output)
     if (findings.length > 0) {
-      throw new Error(
-        `${label} emitted warning/error output:\n${findings.map((line) => line.trim()).join('\n')}`,
-      )
+      throw new Error(`${label} emitted warning/error output:\n${findings.join('\n')}`)
     }
   }
   return stripAnsi(output)

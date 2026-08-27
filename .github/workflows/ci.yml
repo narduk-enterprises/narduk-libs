@@ -301,7 +301,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm run versions:check
-          pnpm run ci-plan:test
+          pnpm run scripts:test
           if [ "${IS_CHANGESET_RELEASE}" != "true" ]; then
             pnpm run release-plan:check
           fi
