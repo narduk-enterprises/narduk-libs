@@ -39,6 +39,18 @@
       "types": "./dist/e2e/specs/users-api.d.ts",
       "import": "./dist/e2e/specs/users-api.js"
     },
+    "./e2e/fixture-server": {
+      "types": "./dist/e2e/fixture-server.d.ts",
+      "import": "./dist/e2e/fixture-server.js"
+    },
+    "./playwright/deterministic-capture": {
+      "types": "./dist/playwright/deterministic-capture.d.ts",
+      "import": "./dist/playwright/deterministic-capture.js"
+    },
+    "./playwright/request-accounting": {
+      "types": "./dist/playwright/request-accounting.d.ts",
+      "import": "./dist/playwright/request-accounting.js"
+    },
     "./playwright/ui-quality": {
       "types": "./dist/playwright/ui-quality.d.ts",
       "import": "./dist/playwright/ui-quality.js"
