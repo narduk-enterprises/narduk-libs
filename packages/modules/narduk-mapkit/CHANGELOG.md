@@ -53,6 +53,58 @@
   `examples/pin-scaling.ts`, including what MapKit JS actually provides and the
   MapKit JS 5 caveat that a map carrying a `TileOverlay` snaps to integral zoom
   levels.
+- Added `createMapKitCalloutController()` / `MapKitCalloutController`: anchored
+  callouts for map annotations, as a controller-owned overlay layer keyed to the
+  same identities `MapKitAnnotationRegistry` uses. `open()`, `close()`,
+  `closeAll()`, `toggle()`, `reposition()`, `repositionNow()`, `destroy()`,
+  `subscribe()`, `hostFor()`, `itemFor()`, `layoutFor()`, `isOpen()`,
+  `openKeys`, `size`, `mode`, `following`, and `destroyed` make up the surface.
+  `'single'` mode replaces the open callout, `'multi'` keeps them all. Nothing
+  is created until `open()` is called, and no DOM global is touched at import
+  time.
+- MapKit's native callout delegate (`calloutElementForAnnotation` and friends)
+  was evaluated and rejected, documented in the module, the README, and the Nuxt
+  adapter: it owns the element's lifetime with no teardown hook, so a framework
+  subtree mounted into it is orphaned rather than unmounted; it is bound to
+  `map.selectedAnnotation` so only one callout can ever be open; its anchor
+  offset is computed once with no edge-avoidance; and it requires the `mapkit`
+  global that this core deliberately does not import.
+- Added `layoutMapKitCallout()`, the pure placement function behind the
+  controller: flip on the main axis, shift on the cross axis with a caret that
+  tracks the shift, and clamp inside the container as a last resort, each
+  reported separately in the returned layout.
+- Callouts follow the camera through one shared animation frame rather than a
+  listener or frame loop per callout, and a flush projects and measures every
+  open callout before writing any of them, so N open callouts cost one forced
+  layout per frame. Frame scheduling is injectable through `frame`, and
+  `document` / `window` are injectable as elsewhere in the client.
+- Added the `render(context, host) => cleanup` content contract with an opt-in
+  `update(context, host)`: with an updater, re-opening an open key keeps the
+  mounted content and its cleanup alive; without one it tears the content down
+  and renders it again. `close()`, `closeAll()`, and `destroy()` all run the
+  cleanup.
+- Added dismissal options -- `closeOnEscape` and `closeOnMapClick` default on,
+  `closeOnDeselect` (narrowed to one callout with `keyForAnnotation`), and
+  `closeOnPan` off because the default is to follow the camera -- plus
+  `focusOnOpen` / `restoreFocus`, a configurable `role`, and `ariaLabel`.
+- Added `MAPKIT_CALLOUT_ATTRIBUTE`, `MAPKIT_CALLOUT_LAYER_ATTRIBUTE`,
+  `MAPKIT_CALLOUT_CARET_ATTRIBUTE`, `MAPKIT_CALLOUT_CONTENT_ATTRIBUTE`, and
+  `MAPKIT_CALLOUT_PLACEMENT_ATTRIBUTE`, so consumers can style callout chrome
+  without hardcoding the attribute names.
+- Added `AppMapKitCallout` to the Nuxt adapter: a slot-based component that
+  teleports its scoped slot into the controller-owned host, one Teleport per
+  open callout. A Teleport rather than a second mounted app, so the content
+  keeps its place in the component tree and Nuxt UI components still reach
+  `<UApp>`'s configuration through `provide`/`inject`.
+- Added `useMapKitCallouts()` for the same controls from anywhere inside the
+  map's subtree.
+- `AppMapKit` gained an opt-in `callouts` prop (default `false`) plus
+  `calloutMode`, `calloutPlacement`, `calloutAnchorOffset`,
+  `calloutFollowSelection`, and a `calloutOptions` passthrough; `callout-open`
+  and `callout-close` events; and `openCallout()` / `closeCallout()` /
+  `closeCallouts()` / `getCalloutController()` on its exposed handle. Selection
+  and callouts stay in step in both directions, and the controller is destroyed
+  before unmount so no teleported subtree is stranded.
 
 ## 1.5.0 - 2026-08-28
 

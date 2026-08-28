@@ -49,6 +49,11 @@ domain-specific behavior.
 - Two-mode fullscreen for a map surface: a fixed viewport overlay that works
   everywhere, the real Fullscreen API where it exists, and an automatic fallback
   from the second to the first.
+- Anchored annotation callouts as an overlay layer: single or multi open by
+  key, flip/shift/clamp edge-avoidance with a caret that tracks the flip,
+  camera-following through one shared animation frame, a
+  `render(item, host) => cleanup` content contract with opt-in in-place
+  updates, and dismissal on Escape, outside click, deselect, or pan.
 - Idempotent vector-overlay attachment and bounded tile-intersection caching.
 - Apple Maps access-token exchange, search, and geocoding helpers.
 - A separately published Nuxt adapter with no dependency on Narduk template
@@ -861,6 +866,120 @@ The component presents its own wrapper, refreshes MapKit geometry on every
 change, and exposes `enterFullscreen()`, `exitFullscreen()`, and
 `toggleFullscreen()` through its template ref.
 
+## Callouts
+
+`createMapKitCalloutController()` anchors app-owned content to map coordinates.
+It is an overlay layer rather than MapKit's own callout delegate, and it owns
+open/close/toggle by key, placement, edge-avoidance, following the camera, and
+dismissal -- never what a callout looks like.
+
+```ts
+import { createMapKitCalloutController } from '@narduk-geo/narduk-mapkit/client'
+
+const callouts = createMapKitCalloutController<Station, Station>({
+  // A positioned element. Use the wrapper holding the map plus its chrome.
+  container: mapWrapper,
+  // Subscribing to the map is what makes callouts follow a pan or a zoom.
+  map,
+  mode: 'single',
+  projectCoordinate: (station) =>
+    map.convertCoordinateToPointOnPage(new mapkit.Coordinate(station.lat, station.lng)),
+  render: (context, host) => {
+    const node = renderStationCard(context.item, context.close)
+    host.append(node)
+    // Always runs: on close, on a re-open without `update`, and on destroy().
+    return () => node.remove()
+  },
+})
+
+callouts.open({ coordinate: station, item: station, key: station.id })
+```
+
+### Why an overlay and not the callout delegate
+
+MapKit JS has a native hook -- `calloutEnabled` plus a `callout` delegate with
+`calloutElementForAnnotation()` and `calloutAnchorOffsetForAnnotation()`. It is
+the right answer for a static bubble of text, and it was rejected here for four
+reasons, worst first:
+
+1. **MapKit owns the element's lifetime and never says when it ends.** The
+   delegate is asked for an element each time the callout appears, and the
+   element is discarded on dismissal with no teardown callback and no update
+   hook. A framework subtree mounted into it -- a Vue Teleport, a React portal
+   -- is orphaned rather than unmounted, and its effects and listeners leak.
+2. **One callout, ever.** A native callout belongs to `map.selectedAnnotation`
+   and MapKit permits one selection, so comparing two markers side by side is
+   not expressible.
+3. **The anchor offset is computed once and never revisited**, so there is no
+   edge-avoidance: a marker near the top of the map gets a callout clipped by
+   the map's bounds instead of flipped below the pin.
+4. **It needs the `mapkit` global**, which this framework-agnostic,
+   Worker-safe core deliberately does not import.
+
+The cost is that positioning is ours. It is paid once per frame: a flush
+projects and measures every open callout before writing any of them, so N open
+callouts cost one forced layout, and a camera movement drives them all from one
+`requestAnimationFrame` loop rather than a listener per callout.
+
+### Placement
+
+`layoutMapKitCallout()` is exported on its own -- it is pure, and it is where
+the three corrections happen, each reported separately:
+
+- **flip** (main axis): `'above'` becomes `'below'` when the preferred side
+  cannot hold the box and the opposite side has more room. The caret moves to
+  the other edge with it.
+- **shift** (cross axis): the box slides to stay `edgePadding` clear of both
+  edges, and the caret slides the other way so it keeps pointing at the anchor,
+  stopping `caretSize` short of a corner.
+- **clamp** (both axes, last resort): a box larger than the container is pinned
+  inside it rather than allowed to overflow.
+
+An anchor that projects outside the container hides its callout instead of
+closing it, so panning a marker off-screen and back does not destroy the
+content. The layer is `pointer-events: none` and each callout re-enables its
+own, so the map stays draggable between them.
+
+### Content lifecycle
+
+`render(context, host)` mounts and returns the teardown. Re-opening an open key
+calls `update(context, host)` when one is supplied -- the mounted content and
+its cleanup survive -- and otherwise tears the content down and renders it
+again. `close()`, `closeAll()`, and `destroy()` all run the cleanup.
+
+Dismissal is a set of options: `closeOnEscape` and `closeOnMapClick` default on,
+`closeOnDeselect` closes on the map's `deselect` event (narrowed to one callout
+when `keyForAnnotation` is supplied), and `closeOnPan` is off because the
+default behaviour is to follow the camera instead. `focusOnOpen` moves focus
+into the callout and `restoreFocus` returns it on close.
+
+Every event carries `{ item, key, phase, reason }`, where `phase` is `'open'`,
+`'update'`, or `'close'` and `reason` separates `'api'`, `'toggle'`,
+`'escape'`, `'map-click'`, `'deselect'`, `'pan'`, `'replaced'`, and
+`'destroy'`.
+
+### In Nuxt
+
+`AppMapKit` wires the controller behind an opt-in prop, and `AppMapKitCallout`
+turns a Vue slot into the callout's contents:
+
+```vue
+<AppMapKit v-model:selected-id="selectedId" :items="stations" callouts>
+  <AppMapKitCallout :items="stations" v-slot="{ item, close }">
+    <UCard>
+      <template #header>{{ item.name }}</template>
+      {{ item.reading }}
+      <UButton @click="close">Close</UButton>
+    </UCard>
+  </AppMapKitCallout>
+</AppMapKit>
+```
+
+`callouts` defaults to `false`. The slot content is teleported into the
+controller-owned host, so it stays inside the page's own Vue tree: reactivity,
+`provide`/`inject`, `useNuxtApp()`, and Nuxt UI's app config all reach it. See
+the Nuxt adapter's README for the props, events, and exposed methods.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -892,6 +1011,7 @@ The `examples/` directory contains copyable integration patterns:
 - `render-coalescing.ts`
 - `fullscreen.ts`
 - `pin-scaling.ts`
+- `annotation-callouts.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -904,11 +1024,11 @@ in the app.
 | `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
 | `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
 | `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, zoom-adaptive pin scaling |
+| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
 | `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |
-| `@narduk-geo/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, composables, and token route |
+| `@narduk-geo/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route |
 
 ## Maintainer Migration Notes
 
@@ -923,8 +1043,9 @@ not part of the published package artifact. The short version:
    helpers.
 5. Replace template-layer MapKit components and composables with
    `@narduk-geo/narduk-mapkit-nuxt`.
-6. Keep app-specific marker DOM, callouts, panels, and native Swift renderers
-   outside this workspace.
+6. Keep app-specific marker DOM, callout *contents*, panels, and native Swift
+   renderers outside this workspace. Callout anchoring, edge-avoidance, and
+   lifecycle are the package's job; what a callout looks like is the app's.
 
 ## Security
 

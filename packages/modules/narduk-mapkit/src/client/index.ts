@@ -1,5 +1,6 @@
 export * from './mapkit.js'
 export * from './annotations.js'
+export * from './callouts.js'
 export * from './fullscreen.js'
 export * from './layers.js'
 export * from './layout.js'
