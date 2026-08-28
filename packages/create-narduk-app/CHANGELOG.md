@@ -1,5 +1,15 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.1.14
+
+### Patch Changes
+
+- 6575caf: Refresh the generated app's `@narduk-enterprises/narduk-testkit` pin
+  to the release that adds the deterministic-capture, request-accounting and
+  fixture-server subpaths. Generator behaviour is unchanged; this is the pin
+  refresh `release-plan:check` requires when a generator-owned package version
+  moves.
+
 ## 0.1.13
 
 ### Patch Changes
