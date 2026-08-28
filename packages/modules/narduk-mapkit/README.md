@@ -407,6 +407,160 @@ change can be applied in place.
 `get()` / `has()` / `list()` / `size` inspect the live set, and `destroy()`
 clears every annotation and makes the registry inert.
 
+## Pin Scaling
+
+`MapKitPinScalingController` is the presentation-side sibling of the annotation
+registry. The registry owns *which* annotations exist; this owns what they look
+like at the current zoom -- size, dot-versus-symbol, and rank culling -- over
+the registry's live annotations, by key.
+
+The usual implementation of this rewrites every marker's `innerHTML` and
+`cssText` on `region-change-end`. With a few thousand pins that is a few
+thousand subtree rebuilds per gesture, and because it can only run at the *end*
+of a gesture the markers pop rather than scale. This splits the problem:
+
+- **Continuous.** Size between thresholds is one number, published as CSS
+  custom properties on a single container element. A zoom gesture costs two
+  property writes per frame for *any* number of pins -- no element is created,
+  destroyed, or rewritten.
+- **Structural.** Dot mode and culling change only at thresholds, and they
+  depend on `(class, zoom)` rather than on the individual pin. So the latched
+  state lives per class, a frame costs O(classes), and only a class that
+  actually crossed touches its members. `changed` names exactly those keys.
+
+```ts
+import {
+  createMapKitPinScalingController,
+  mapKitZoomForSpan,
+} from '@narduk-geo/narduk-mapkit/client'
+
+const scaling = createMapKitPinScalingController<mapkit.Annotation>({
+  annotations: registry, // the MapKitAnnotationRegistry, unchanged
+  classes: {
+    'artificial-reef': { rank: 3 },
+    buoy: { rank: 4 },
+    launch: { dotBelowPx: 0, rank: 9 }, // never collapses to a dot
+    'oil-gas-platform': { rank: 2 },
+    'tx-state-platform': { rank: 1 }, // drops out first
+  },
+  container: mapWrapper,
+  onChange: (event) => {
+    for (const key of event.changed) paintPin(key, scaling.presentationFor(key)!)
+  },
+  readZoom: () =>
+    mapKitZoomForSpan({
+      longitudeDelta: map.region.span.longitudeDelta,
+      widthPx: map.element.clientWidth,
+    }),
+})
+
+scaling.reconcile(structures.map((s) => ({ classId: s.class, key: s.id })))
+
+map.addEventListener('zoom-start', () => scaling.beginGesture())
+map.addEventListener('zoom-end', () => scaling.endGesture())
+map.addEventListener('region-change-end', () => {
+  scaling.sample()
+  scaling.flushDeferred()
+})
+```
+
+The container carries `--mapkit-pin-size` (a `px` length) and
+`--mapkit-pin-scale` (unitless, relative to `referenceSizePx`). Scale with
+`transform`, which composites without layout or paint:
+
+```css
+.pin {
+  width: 26px; /* the size the artwork is authored at */
+  height: 26px;
+  transform: translate(-50%, -50%) scale(var(--mapkit-pin-scale, 1));
+}
+```
+
+### What MapKit JS actually provides
+
+MapKit JS publishes three documented bracket pairs and **no continuous camera
+event**: `region-change-start` / `region-change-end` (any region change,
+programmatic included), `zoom-start` / `zoom-end`, and `scroll-start` /
+`scroll-end` (user interaction only). The `end` of each pair fires after
+momentum settles, not on gesture release, and the only continuous event in the
+API is `dragging`, which is about annotation drags.
+
+So smooth scaling *during* a pinch is only possible by reading the camera once
+per animation frame between the brackets. That is exactly what `beginGesture()`
+starts and `endGesture()` stops, through the injectable frame scheduler -- and
+there is no polling at rest. A consumer that wires nothing but
+`region-change-end` still works; it degrades to end-of-gesture snapping.
+
+Zoom is derived, not read: `mapkit.Map` exposes no public `zoomLevel` and no
+`camera`. `mapKitZoomForSpan()` inverts the documented
+`region.span.longitudeDelta` against the rendered element width, using the same
+`worldSize(z) = 256 * 2 ** z` convention MapKit uses internally. Longitude
+rather than latitude, and span rather than `cameraDistance`, because in web
+mercator the x pixel position is linear in longitude at every latitude, so the
+ratio is latitude-invariant; `cameraDistance` is a metric distance whose
+conversion needs both a latitude correction and MapKit's own field-of-view
+constant, neither of which is public API.
+
+Culling writes `annotation.visible`, which is Apple's own documented advice for
+this problem -- *"if there's a dense cluster of annotations at low zoom levels,
+it's good practice to hide some annotations"* -- and, unlike
+`removeAnnotations()`, leaves the host object and its DOM element intact so the
+pin is not rebuilt when it returns.
+
+One caveat on MapKit JS 5: a map carrying a `TileOverlay` snaps to integral zoom
+levels there, so the camera reports whole numbers and the continuous path
+degrades to the same steps a `'step'` curve produces. MapKit JS 6 removed that
+snapping.
+
+### Hysteresis
+
+Every threshold is latched, so a camera parked on a boundary cannot thrash.
+Defaults are `dotPx: 1.5`, `rankZoom: 0.25`, and `stepZoom: 0.15`; all three are
+tunable through `hysteresis`. The three latches are exported as pure functions
+in their own right -- `latchedStepIndex()`, `latchedPinMode()`, and
+`cullProbeZoom()`.
+
+Culling is a predicate over zoom rather than a scalar band, so its deadband is
+applied to the *question*: a visible pin is asked whether it survives slightly
+further out, a hidden one whether it qualifies slightly further in. Because the
+rank floor is non-increasing, that makes both directions require real movement,
+and it collapses to two floor evaluations per frame however many pins there are.
+
+### Size curve
+
+`createMapKitPinSizeCurve()` builds a pure `zoom -> px` function from ascending
+anchors. The shipped anchors run 5px at z5 to 26px at z10, flat outside that
+range. `'linear'` (the default) hits each anchor exactly and grows continuously
+between them; `'step'` reproduces the classic `if (zoom <= 5) return 5` ladder
+for consumers rasterising artwork at fixed sizes. Any function of the same shape
+works, and a class may carry its own through `sizeCurve`, which publishes a
+scoped `--mapkit-pin-size-<class>` / `--mapkit-pin-scale-<class>` pair beside the
+base ones.
+
+### Scale, selection, and viewport
+
+- **`changed` never names a culled pin.** There is nothing on screen to repaint,
+  and it re-enters `changed` the moment its class becomes visible again -- so a
+  dot crossing that happens while a class is hidden costs nothing.
+- **`shouldPaint`** gates delivery, normally on the viewport. A refused key is
+  counted in `deferred` and released by `flushDeferred()` after a pan. Culling
+  still applies immediately; only the repaint waits.
+- **A selected pin is exempt** from culling and from dot mode, and a class flip
+  does not touch it. `select()`, `deselect()`, and `setSelection()` manage it.
+- **`visible` is written only when the controller is changing it.** A pin is
+  assumed visible when first tracked, so registering thousands of on-screen pins
+  writes no annotation state at all.
+- **`destroy()`** restores exactly the pins it culled, removes exactly the
+  properties it published, cancels the pending frame, and goes inert. It does
+  not touch the registry.
+
+Measured against 2,000 synthetic pins in four classes (`tests/scaling.test.ts`):
+a frame between thresholds is 2 property writes and 0 annotation writes; a
+repeated reading is 0 of both and emits nothing; a full z11 -> z4 sweep in 0.05
+steps writes `visible` exactly once per pin that actually left, and names no pin
+for repainting more than twice; and 200 ticks dithering across two thresholds
+produce zero writes and zero repaints.
+
 ## Temporal Layers
 
 ### Playback state primitives
@@ -737,6 +891,7 @@ The `examples/` directory contains copyable integration patterns:
 - `annotation-registry.ts`
 - `render-coalescing.ts`
 - `fullscreen.ts`
+- `pin-scaling.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -749,7 +904,7 @@ in the app.
 | `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
 | `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
 | `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation |
+| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, zoom-adaptive pin scaling |
 | `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |

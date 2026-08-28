@@ -12,5 +12,6 @@ These examples are small integration patterns, not standalone apps.
 - `annotation-registry.ts`: Keyed marker reconciliation so an unchanged marker is never rebuilt.
 - `render-coalescing.ts`: One flush per frame, skipped identical HTML writes, and focus preserved across a rewrite.
 - `fullscreen.ts`: Viewport-overlay and native fullscreen for a map wrapper, with the fallback path wired up.
+- `pin-scaling.ts`: Zoom-adaptive pin size, dot/symbol collapse, and rank culling over a keyed annotation set.
 
 Copy the pattern that matches your runtime, then keep app-specific data fetching, styles, and marker HTML in the app.

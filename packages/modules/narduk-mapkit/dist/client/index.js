@@ -6,6 +6,7 @@ export * from './layout.js';
 export * from './probe.js';
 export * from './render.js';
 export * from './runtime.js';
+export * from './scaling.js';
 export * from './temporal.js';
 export * from './timers.js';
 //# sourceMappingURL=index.js.map

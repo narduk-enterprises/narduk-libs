@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+- Added `MapKitPinScalingController` / `createMapKitPinScalingController()`:
+  zoom-adaptive size, dot-versus-symbol mode, and rank culling over the live
+  annotations of a `MapKitAnnotationRegistry`, addressed by key. It composes
+  with the registry rather than replacing it -- the registry keeps owning which
+  annotations exist, and the controller owns what they look like at the current
+  zoom.
+- Continuous scaling is published as CSS custom properties on one container
+  element (`MAPKIT_PIN_SIZE_PROPERTY` / `--mapkit-pin-size`, a `px` length, and
+  `MAPKIT_PIN_SCALE_PROPERTY` / `--mapkit-pin-scale`, unitless), so a zoom
+  gesture costs two property writes per frame for any number of pins and creates,
+  destroys, and rewrites nothing. Structural state is latched per *class* rather
+  than per pin, so a frame costs O(classes) and only a class that actually
+  crossed a threshold touches its members; the change event names exactly those
+  keys, batched into one frame, and never names a culled pin.
+- Every threshold is latched with tunable hysteresis (`dotPx` 1.5, `rankZoom`
+  0.25, `stepZoom` 0.15), and the three latches are exported as pure functions in
+  their own right: `latchedStepIndex()`, `latchedPinMode()`, and
+  `cullProbeZoom()`. Culling applies its deadband to the question rather than the
+  answer, which keeps it at two rank-floor evaluations per frame.
+- Added `createMapKitPinSizeCurve()`, `defaultMapKitPinSizeCurve`,
+  `defaultMapKitPinSizeStops` (5px at z5 to 26px at z10), and
+  `DEFAULT_MAPKIT_PIN_DOT_BELOW_PX`. A curve is a plain `(zoom) => px` function,
+  so consumers can supply their own, and a class may carry its own through
+  `sizeCurve`, which publishes a scoped `--mapkit-pin-size-<class>` /
+  `--mapkit-pin-scale-<class>` pair. `'linear'` interpolation is the default and
+  hits every anchor exactly; `'step'` reproduces the classic ladder.
+- Added `defaultMapKitPinRankFloor()` and the `MapKitPinRankFloor` shape: the
+  lowest class rank that survives a given zoom, so the least distinctive classes
+  drop out first as the camera pulls back.
+- Added `mapKitZoomForSpan()`, which derives a web-mercator zoom from the
+  documented `region.span.longitudeDelta` and the rendered element width.
+  `mapkit.Map` exposes no public `zoomLevel` and no `camera`, and
+  `cameraDistance` needs both a latitude correction and MapKit's own
+  field-of-view constant, so the span is the only public-API source.
+- `beginGesture()` / `endGesture()` follow the camera continuously through the
+  injectable frame scheduler. MapKit JS publishes only bracket pairs
+  (`region-change-start`/`-end`, `zoom-start`/`-end`, `scroll-start`/`-end`) and
+  no continuous camera event, so scaling during a pinch means reading the camera
+  once per animation frame between the brackets. There is no polling at rest, and
+  a consumer that wires nothing but `region-change-end` degrades to
+  end-of-gesture snapping.
+- `select()` / `deselect()` / `setSelection()` exempt a pin from culling and from
+  dot mode; `shouldPaint` defers repaints for pins outside the viewport and
+  `flushDeferred()` releases them after a pan, while culling still applies
+  immediately. `visible` is written only when the controller is changing it, and
+  `destroy()` restores exactly the pins it culled, removes exactly the properties
+  it published, and leaves the registry alone.
+- Documented the module, the README `Pin Scaling` section, and
+  `examples/pin-scaling.ts`, including what MapKit JS actually provides and the
+  MapKit JS 5 caveat that a map carrying a `TileOverlay` snaps to integral zoom
+  levels.
+
 ## 1.5.0 - 2026-08-28
 
 - Added `createMapKitFullscreenController()` / `MapKitFullscreenController`:
