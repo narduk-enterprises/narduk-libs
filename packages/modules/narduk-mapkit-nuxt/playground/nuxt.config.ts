@@ -1,5 +1,5 @@
 export default defineNuxtConfig({
-  modules: ['@narduk-geo/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
   compatibilityDate: '2026-07-14',
   devtools: { enabled: false },
   nitro: {

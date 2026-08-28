@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createMapKitCalloutController } from '@narduk-geo/narduk-mapkit/client'
+import { createMapKitCalloutController } from '@narduk-enterprises/narduk-mapkit/client'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, inject, nextTick, provide, shallowRef } from 'vue'
 
@@ -7,7 +7,7 @@ import { appMapKitCalloutInjectionKey } from '../src/runtime/callouts'
 import AppMapKitCallout from '../src/runtime/components/AppMapKitCallout.vue'
 
 import type { AppMapKitCalloutContext, AppMapKitCalloutEntry } from '../src/runtime/callouts'
-import type { MapKitCalloutController } from '@narduk-geo/narduk-mapkit/client'
+import type { MapKitCalloutController } from '@narduk-enterprises/narduk-mapkit/client'
 import type { InjectionKey, Ref } from 'vue'
 
 interface Station {

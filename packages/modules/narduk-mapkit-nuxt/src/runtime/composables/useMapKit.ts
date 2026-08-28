@@ -1,4 +1,4 @@
-import { initializeMapKit } from '@narduk-geo/narduk-mapkit/client'
+import { initializeMapKit } from '@narduk-enterprises/narduk-mapkit/client'
 import { useRuntimeConfig } from '#imports'
 import { readonly, ref } from 'vue'
 

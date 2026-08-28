@@ -105,7 +105,7 @@ try {
     await writeFile(
       join(consumerDir, '.npmrc'),
       [
-        '@narduk-geo:registry=https://npm.pkg.github.com',
+        '@narduk-enterprises:registry=https://npm.pkg.github.com',
         '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}',
         'registry=https://registry.npmjs.org/',
         '',
@@ -129,8 +129,8 @@ try {
         private: true,
         type: 'module',
         dependencies: {
-          '@narduk-geo/narduk-mapkit': coreSource,
-          '@narduk-geo/narduk-mapkit-nuxt': nuxtSource,
+          '@narduk-enterprises/narduk-mapkit': coreSource,
+          '@narduk-enterprises/narduk-mapkit-nuxt': nuxtSource,
           nuxt: '4.4.8',
           vue: '3.5.39',
         },
@@ -142,7 +142,7 @@ try {
   await writeFile(
     join(consumerDir, 'nuxt.config.ts'),
     `export default defineNuxtConfig({
-  modules: ['@narduk-geo/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
   compatibilityDate: '2026-07-14',
   nitro: { cloudflare: { nodeCompat: false } },
   sourcemap: false,
@@ -167,7 +167,7 @@ const { mapkitReady } = useMapKit()
 
   run(npmBin, ['install', '--ignore-scripts', '--no-audit', '--no-fund'], consumerDir)
   const installedLicense = await readFile(
-    join(consumerDir, 'node_modules/@narduk-geo/narduk-mapkit-nuxt/LICENSE'),
+    join(consumerDir, 'node_modules/@narduk-enterprises/narduk-mapkit-nuxt/LICENSE'),
     'utf8',
   )
   if (!installedLicense.startsWith('MIT License')) {

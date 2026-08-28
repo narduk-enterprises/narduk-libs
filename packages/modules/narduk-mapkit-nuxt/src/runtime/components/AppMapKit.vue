@@ -9,7 +9,7 @@ import {
   createMapKitCalloutController,
   createMapKitFullscreenController,
   refreshMapKitMapLayout,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 import { nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
 
 import { appMapKitCalloutInjectionKey } from '../callouts'
@@ -25,7 +25,7 @@ import type {
   MapKitFullscreenChangeEvent,
   MapKitFullscreenController,
   MapKitFullscreenMode,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 /**
  * AppMapKit — Reusable Apple MapKit JS map component.

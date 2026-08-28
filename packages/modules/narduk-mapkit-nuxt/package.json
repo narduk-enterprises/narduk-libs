@@ -1,17 +1,17 @@
 {
-  "name": "@narduk-geo/narduk-mapkit-nuxt",
-  "version": "1.6.0",
-  "description": "Nuxt component, composables, and token route for @narduk-geo/narduk-mapkit.",
+  "name": "@narduk-enterprises/narduk-mapkit-nuxt",
+  "version": "2.0.0",
+  "description": "Nuxt component, composables, and token route for @narduk-enterprises/narduk-mapkit.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/narduk-geo/narduk-mapkit.git",
+    "url": "git+https://github.com/narduk-enterprises/narduk-mapkit.git",
     "directory": "packages/nuxt"
   },
-  "homepage": "https://github.com/narduk-geo/narduk-mapkit#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-mapkit#readme",
   "bugs": {
-    "url": "https://github.com/narduk-geo/narduk-mapkit/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-mapkit/issues"
   },
   "exports": {
     ".": {
@@ -46,7 +46,7 @@
     "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:publint && pnpm run test:cloudflare && pnpm run check:package"
   },
   "dependencies": {
-    "@narduk-geo/narduk-mapkit": "workspace:^",
+    "@narduk-enterprises/narduk-mapkit": "workspace:^",
     "@nuxt/kit": "^4.4.8",
     "h3": "^1.15.4"
   },

@@ -1,5 +1,5 @@
-import { fetchMapKitToken } from '@narduk-geo/narduk-mapkit/client'
-import { isJwtExpired } from '@narduk-geo/narduk-mapkit/token'
+import { fetchMapKitToken } from '@narduk-enterprises/narduk-mapkit/client'
+import { isJwtExpired } from '@narduk-enterprises/narduk-mapkit/token'
 import { useRuntimeConfig } from '#imports'
 
 export function useMapkitToken() {

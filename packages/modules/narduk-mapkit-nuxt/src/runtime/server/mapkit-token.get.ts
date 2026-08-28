@@ -1,4 +1,4 @@
-import { issueMapKitTokenForRequest } from '@narduk-geo/narduk-mapkit/worker'
+import { issueMapKitTokenForRequest } from '@narduk-enterprises/narduk-mapkit/worker'
 import { useRuntimeConfig } from '#imports'
 import {
   defineEventHandler,
@@ -10,7 +10,7 @@ import {
 
 import { readMapKitRuntimeString } from './runtime-env'
 
-import type { MapKitRateLimitHook } from '@narduk-geo/narduk-mapkit/worker'
+import type { MapKitRateLimitHook } from '@narduk-enterprises/narduk-mapkit/worker'
 import type { H3Event } from 'h3'
 import type { MapKitRuntimeEnv } from './runtime-env'
 

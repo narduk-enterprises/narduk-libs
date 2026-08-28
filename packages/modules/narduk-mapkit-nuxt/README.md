@@ -1,18 +1,18 @@
-# @narduk-geo/narduk-mapkit-nuxt
+# @narduk-enterprises/narduk-mapkit-nuxt
 
-Nuxt integration for `@narduk-geo/narduk-mapkit`. It adds the `AppMapKit` and
+Nuxt integration for `@narduk-enterprises/narduk-mapkit`. It adds the `AppMapKit` and
 `AppMapKitCallout` components, `useMapKit`, `useMapKitCallouts`,
 `useMapkitToken`, and a Worker-compatible `GET /api/mapkit-token` route.
 
 ## Install
 
 ```sh
-pnpm add @narduk-geo/narduk-mapkit @narduk-geo/narduk-mapkit-nuxt
+pnpm add @narduk-enterprises/narduk-mapkit @narduk-enterprises/narduk-mapkit-nuxt
 ```
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['@narduk-geo/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
 })
 ```
 
