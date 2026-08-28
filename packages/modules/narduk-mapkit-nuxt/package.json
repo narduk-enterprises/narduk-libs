@@ -1,6 +1,6 @@
 {
   "name": "@narduk-geo/narduk-mapkit-nuxt",
-  "version": "1.1.2",
+  "version": "1.3.0",
   "description": "Nuxt component, composables, and token route for @narduk-geo/narduk-mapkit.",
   "license": "MIT",
   "type": "module",
