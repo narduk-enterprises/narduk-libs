@@ -18,6 +18,26 @@ export interface GridViewport {
   span: { latitudeDelta: number; longitudeDelta: number }
 }
 
+/**
+ * A ramp stop in the canonical model: a **normalized position** in `0…1` and
+ * 8-bit RGBA. This is the shape narduk-data's `shared/colorramp.py` stores and
+ * samples, and the shape the `./color` subpath's engine speaks throughout.
+ *
+ * Not to be confused with {@link ColorStop}, which carries a raw data value and
+ * belongs to the deprecated `core/color.ts` sampler.
+ */
+export interface RampStop {
+  position: number
+  rgba: [r: number, g: number, b: number, a: number]
+}
+
+/**
+ * A ramp stop keyed by raw data value with separate channel fields.
+ *
+ * @deprecated Reach for {@link RampStop} and the `./color` subpath. This shape
+ * is the input to the legacy `core/color.ts` sampler and is kept working for
+ * 0.1.x consumers.
+ */
 export interface ColorStop {
   value: number
   r: number

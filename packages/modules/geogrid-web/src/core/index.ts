@@ -6,6 +6,7 @@ export type {
   GridScale,
   GridValueRange,
   GridViewport,
+  RampStop,
 } from './models.js'
 export {
   isUsableViewport,
@@ -29,3 +30,19 @@ export type {
   TemporalRasterManifest,
 } from './decode/temporal.js'
 export { decodeTemporalChunk } from './decode/temporal.js'
+export {
+  decimatedGridUrl,
+  decodeGridBinary,
+  GRID_DECODE_LIMITS,
+  GRID_STRIDE_HEADER,
+  GridDecodeError,
+  gridBounds,
+  planeIndexOf,
+  readGridStride,
+} from './decode/grid.js'
+export type {
+  DecimatedGridUrlOptions,
+  DecodeGridOptions,
+  GridBinaryHeader,
+  GridScalarDataset,
+} from './decode/grid.js'

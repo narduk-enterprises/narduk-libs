@@ -1,0 +1,2201 @@
+{
+  "schema": "narduk-ramp-parity-v1",
+  "rampSpecVersion": 1,
+  "rounding": "half-to-even",
+  "source": "narduk-enterprises/narduk-data shared/colorramp.py",
+  "generator": "tests/fixtures/generate_ramp_parity.py",
+  "ramps": {
+    "afai": [
+      {
+        "position": 0.0,
+        "rgba": [
+          31,
+          78,
+          121,
+          60
+        ]
+      },
+      {
+        "position": 0.38,
+        "rgba": [
+          47,
+          120,
+          102,
+          95
+        ]
+      },
+      {
+        "position": 0.56,
+        "rgba": [
+          106,
+          166,
+          88,
+          135
+        ]
+      },
+      {
+        "position": 0.78,
+        "rgba": [
+          223,
+          186,
+          68,
+          180
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          168,
+          89,
+          48,
+          220
+        ]
+      }
+    ],
+    "cdl": [
+      {
+        "position": 0.0,
+        "rgba": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "position": 0.00392156862745098,
+        "rgba": [
+          255,
+          211,
+          0,
+          220
+        ]
+      },
+      {
+        "position": 0.0196078431372549,
+        "rgba": [
+          38,
+          112,
+          0,
+          220
+        ]
+      },
+      {
+        "position": 0.08235294117647059,
+        "rgba": [
+          226,
+          0,
+          124,
+          220
+        ]
+      },
+      {
+        "position": 0.09411764705882353,
+        "rgba": [
+          165,
+          112,
+          0,
+          220
+        ]
+      },
+      {
+        "position": 0.1411764705882353,
+        "rgba": [
+          128,
+          183,
+          90,
+          220
+        ]
+      },
+      {
+        "position": 0.23921568627450981,
+        "rgba": [
+          177,
+          168,
+          108,
+          210
+        ]
+      },
+      {
+        "position": 0.3215686274509804,
+        "rgba": [
+          153,
+          153,
+          153,
+          210
+        ]
+      },
+      {
+        "position": 0.43529411764705883,
+        "rgba": [
+          70,
+          107,
+          159,
+          210
+        ]
+      },
+      {
+        "position": 0.4745098039215686,
+        "rgba": [
+          153,
+          153,
+          153,
+          210
+        ]
+      },
+      {
+        "position": 0.5529411764705883,
+        "rgba": [
+          38,
+          115,
+          0,
+          210
+        ]
+      },
+      {
+        "position": 0.596078431372549,
+        "rgba": [
+          205,
+          179,
+          59,
+          210
+        ]
+      },
+      {
+        "position": 0.6901960784313725,
+        "rgba": [
+          133,
+          199,
+          126,
+          210
+        ]
+      },
+      {
+        "position": 0.7450980392156863,
+        "rgba": [
+          124,
+          175,
+          175,
+          210
+        ]
+      },
+      {
+        "position": 0.7647058823529411,
+        "rgba": [
+          183,
+          215,
+          193,
+          210
+        ]
+      },
+      {
+        "position": 0.996078431372549,
+        "rgba": [
+          38,
+          38,
+          38,
+          210
+        ]
+      }
+    ],
+    "chlorophyll": [
+      {
+        "position": 0.0,
+        "rgba": [
+          10,
+          28,
+          112,
+          238
+        ]
+      },
+      {
+        "position": 0.12,
+        "rgba": [
+          14,
+          60,
+          156,
+          238
+        ]
+      },
+      {
+        "position": 0.24,
+        "rgba": [
+          13,
+          98,
+          183,
+          240
+        ]
+      },
+      {
+        "position": 0.36,
+        "rgba": [
+          10,
+          140,
+          176,
+          242
+        ]
+      },
+      {
+        "position": 0.48,
+        "rgba": [
+          14,
+          172,
+          135,
+          244
+        ]
+      },
+      {
+        "position": 0.6,
+        "rgba": [
+          62,
+          190,
+          78,
+          246
+        ]
+      },
+      {
+        "position": 0.72,
+        "rgba": [
+          162,
+          199,
+          43,
+          248
+        ]
+      },
+      {
+        "position": 0.82,
+        "rgba": [
+          233,
+          190,
+          38,
+          250
+        ]
+      },
+      {
+        "position": 0.9,
+        "rgba": [
+          238,
+          130,
+          33,
+          252
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          160,
+          42,
+          46,
+          254
+        ]
+      }
+    ],
+    "current": [
+      {
+        "position": 0.0,
+        "rgba": [
+          30,
+          96,
+          150,
+          75
+        ]
+      },
+      {
+        "position": 0.3,
+        "rgba": [
+          52,
+          152,
+          156,
+          120
+        ]
+      },
+      {
+        "position": 0.58,
+        "rgba": [
+          93,
+          184,
+          85,
+          155
+        ]
+      },
+      {
+        "position": 0.82,
+        "rgba": [
+          240,
+          178,
+          65,
+          190
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          197,
+          70,
+          56,
+          220
+        ]
+      }
+    ],
+    "diverging": [
+      {
+        "position": 0.0,
+        "rgba": [
+          49,
+          90,
+          166,
+          190
+        ]
+      },
+      {
+        "position": 0.28,
+        "rgba": [
+          98,
+          152,
+          204,
+          150
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          245,
+          245,
+          220,
+          70
+        ]
+      },
+      {
+        "position": 0.72,
+        "rgba": [
+          232,
+          145,
+          70,
+          150
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          173,
+          55,
+          60,
+          190
+        ]
+      }
+    ],
+    "front": [
+      {
+        "position": 0.0,
+        "rgba": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "position": 0.22,
+        "rgba": [
+          55,
+          126,
+          184,
+          95
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          77,
+          175,
+          74,
+          135
+        ]
+      },
+      {
+        "position": 0.76,
+        "rgba": [
+          255,
+          211,
+          67,
+          180
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          228,
+          26,
+          28,
+          220
+        ]
+      }
+    ],
+    "kd490": [
+      {
+        "position": 0.0,
+        "rgba": [
+          8,
+          34,
+          108,
+          240
+        ]
+      },
+      {
+        "position": 0.1,
+        "rgba": [
+          13,
+          62,
+          152,
+          240
+        ]
+      },
+      {
+        "position": 0.2,
+        "rgba": [
+          17,
+          95,
+          178,
+          240
+        ]
+      },
+      {
+        "position": 0.3,
+        "rgba": [
+          18,
+          132,
+          181,
+          242
+        ]
+      },
+      {
+        "position": 0.4,
+        "rgba": [
+          22,
+          160,
+          158,
+          244
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          38,
+          175,
+          118,
+          246
+        ]
+      },
+      {
+        "position": 0.6,
+        "rgba": [
+          95,
+          183,
+          77,
+          248
+        ]
+      },
+      {
+        "position": 0.7,
+        "rgba": [
+          170,
+          180,
+          58,
+          248
+        ]
+      },
+      {
+        "position": 0.8,
+        "rgba": [
+          216,
+          158,
+          60,
+          250
+        ]
+      },
+      {
+        "position": 0.9,
+        "rgba": [
+          198,
+          111,
+          55,
+          250
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          134,
+          66,
+          41,
+          252
+        ]
+      }
+    ],
+    "mesi": [
+      {
+        "position": 0.0,
+        "rgba": [
+          29,
+          93,
+          120,
+          60
+        ]
+      },
+      {
+        "position": 0.3,
+        "rgba": [
+          52,
+          145,
+          134,
+          110
+        ]
+      },
+      {
+        "position": 0.58,
+        "rgba": [
+          126,
+          171,
+          88,
+          155
+        ]
+      },
+      {
+        "position": 0.82,
+        "rgba": [
+          224,
+          165,
+          67,
+          190
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          154,
+          67,
+          63,
+          220
+        ]
+      }
+    ],
+    "salinity": [
+      {
+        "position": 0.0,
+        "rgba": [
+          74,
+          94,
+          166,
+          120
+        ]
+      },
+      {
+        "position": 0.28,
+        "rgba": [
+          61,
+          153,
+          160,
+          140
+        ]
+      },
+      {
+        "position": 0.55,
+        "rgba": [
+          115,
+          181,
+          88,
+          160
+        ]
+      },
+      {
+        "position": 0.78,
+        "rgba": [
+          230,
+          188,
+          78,
+          185
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          186,
+          87,
+          68,
+          210
+        ]
+      }
+    ],
+    "spm": [
+      {
+        "position": 0.0,
+        "rgba": [
+          42,
+          92,
+          135,
+          100
+        ]
+      },
+      {
+        "position": 0.24,
+        "rgba": [
+          64,
+          145,
+          128,
+          125
+        ]
+      },
+      {
+        "position": 0.48,
+        "rgba": [
+          177,
+          172,
+          92,
+          150
+        ]
+      },
+      {
+        "position": 0.72,
+        "rgba": [
+          199,
+          123,
+          63,
+          175
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          126,
+          71,
+          52,
+          205
+        ]
+      }
+    ],
+    "sst": [
+      {
+        "position": 0.0,
+        "rgba": [
+          34,
+          52,
+          156,
+          234
+        ]
+      },
+      {
+        "position": 0.18,
+        "rgba": [
+          48,
+          116,
+          188,
+          236
+        ]
+      },
+      {
+        "position": 0.36,
+        "rgba": [
+          78,
+          180,
+          175,
+          238
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          238,
+          230,
+          178,
+          240
+        ]
+      },
+      {
+        "position": 0.66,
+        "rgba": [
+          248,
+          172,
+          66,
+          244
+        ]
+      },
+      {
+        "position": 0.82,
+        "rgba": [
+          224,
+          76,
+          46,
+          248
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          148,
+          26,
+          50,
+          252
+        ]
+      }
+    ],
+    "thermal": [
+      {
+        "position": 0.0,
+        "rgba": [
+          30,
+          45,
+          132,
+          108
+        ]
+      },
+      {
+        "position": 0.14,
+        "rgba": [
+          28,
+          90,
+          174,
+          120
+        ]
+      },
+      {
+        "position": 0.28,
+        "rgba": [
+          33,
+          146,
+          204,
+          134
+        ]
+      },
+      {
+        "position": 0.42,
+        "rgba": [
+          37,
+          176,
+          171,
+          148
+        ]
+      },
+      {
+        "position": 0.56,
+        "rgba": [
+          64,
+          184,
+          112,
+          162
+        ]
+      },
+      {
+        "position": 0.68,
+        "rgba": [
+          146,
+          200,
+          79,
+          176
+        ]
+      },
+      {
+        "position": 0.78,
+        "rgba": [
+          226,
+          205,
+          74,
+          190
+        ]
+      },
+      {
+        "position": 0.87,
+        "rgba": [
+          246,
+          166,
+          69,
+          202
+        ]
+      },
+      {
+        "position": 0.95,
+        "rgba": [
+          224,
+          98,
+          68,
+          214
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          125,
+          43,
+          113,
+          224
+        ]
+      }
+    ],
+    "truecolor": [],
+    "water_color_fused": [
+      {
+        "position": 0.0,
+        "rgba": [
+          5,
+          27,
+          82,
+          255
+        ]
+      },
+      {
+        "position": 0.2,
+        "rgba": [
+          11,
+          69,
+          133,
+          255
+        ]
+      },
+      {
+        "position": 0.4,
+        "rgba": [
+          22,
+          115,
+          139,
+          255
+        ]
+      },
+      {
+        "position": 0.6,
+        "rgba": [
+          55,
+          131,
+          83,
+          255
+        ]
+      },
+      {
+        "position": 0.82,
+        "rgba": [
+          142,
+          117,
+          68,
+          255
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          103,
+          71,
+          38,
+          255
+        ]
+      }
+    ],
+    "water_quality": [
+      {
+        "position": 0.0,
+        "rgba": [
+          9,
+          42,
+          108,
+          242
+        ]
+      },
+      {
+        "position": 0.1,
+        "rgba": [
+          16,
+          68,
+          148,
+          242
+        ]
+      },
+      {
+        "position": 0.2,
+        "rgba": [
+          24,
+          100,
+          176,
+          244
+        ]
+      },
+      {
+        "position": 0.3,
+        "rgba": [
+          32,
+          132,
+          186,
+          244
+        ]
+      },
+      {
+        "position": 0.4,
+        "rgba": [
+          40,
+          158,
+          158,
+          246
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          56,
+          172,
+          118,
+          246
+        ]
+      },
+      {
+        "position": 0.6,
+        "rgba": [
+          94,
+          176,
+          86,
+          248
+        ]
+      },
+      {
+        "position": 0.7,
+        "rgba": [
+          146,
+          172,
+          74,
+          248
+        ]
+      },
+      {
+        "position": 0.8,
+        "rgba": [
+          186,
+          160,
+          84,
+          250
+        ]
+      },
+      {
+        "position": 0.9,
+        "rgba": [
+          170,
+          122,
+          62,
+          252
+        ]
+      },
+      {
+        "position": 1.0,
+        "rgba": [
+          122,
+          82,
+          46,
+          252
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "kd490-log-mid-segment",
+      "ramp": "kd490",
+      "valueRange": [
+        0.01,
+        6.6
+      ],
+      "scale": "log",
+      "note": "mid-segment log sampling across the published KD490 domain",
+      "samples": [
+        {
+          "value": 0.01,
+          "normalized": 0.0,
+          "rgba": [
+            8,
+            34,
+            108,
+            240
+          ]
+        },
+        {
+          "value": 0.02,
+          "normalized": 0.10676549206037762,
+          "rgba": [
+            13,
+            64,
+            154,
+            240
+          ]
+        },
+        {
+          "value": 0.05,
+          "normalized": 0.24790179557946435,
+          "rgba": [
+            17,
+            113,
+            179,
+            241
+          ]
+        },
+        {
+          "value": 0.1,
+          "normalized": 0.35466728763984195,
+          "rgba": [
+            20,
+            147,
+            168,
+            243
+          ]
+        },
+        {
+          "value": 0.257,
+          "normalized": 0.500057156605481,
+          "rgba": [
+            38,
+            175,
+            118,
+            246
+          ]
+        },
+        {
+          "value": 0.5,
+          "normalized": 0.6025690832193064,
+          "rgba": [
+            97,
+            183,
+            77,
+            248
+          ]
+        },
+        {
+          "value": 1.0,
+          "normalized": 0.7093345752796839,
+          "rgba": [
+            174,
+            178,
+            58,
+            248
+          ]
+        },
+        {
+          "value": 2.0,
+          "normalized": 0.8161000673400616,
+          "rgba": [
+            213,
+            150,
+            59,
+            250
+          ]
+        },
+        {
+          "value": 6.6,
+          "normalized": 1.0,
+          "rgba": [
+            134,
+            66,
+            41,
+            252
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kd490-log-clamped-and-undefined",
+      "ramp": "kd490",
+      "valueRange": [
+        0.01,
+        6.6
+      ],
+      "scale": "log",
+      "note": "below range clamps to stop 0; above range clamps to the last stop; zero/negative on a log scale and any non-finite value are transparent",
+      "samples": [
+        {
+          "value": 0.001,
+          "normalized": 0.0,
+          "rgba": [
+            8,
+            34,
+            108,
+            240
+          ]
+        },
+        {
+          "value": 0.0,
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": -1.0,
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": 12.0,
+          "normalized": 1.0,
+          "rgba": [
+            134,
+            66,
+            41,
+            252
+          ]
+        },
+        {
+          "value": "NaN",
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": "Infinity",
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": "-Infinity",
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sst-linear-mid-segment",
+      "ramp": "sst",
+      "valueRange": [
+        -2.0,
+        35.0
+      ],
+      "scale": "linear",
+      "note": "mid-segment linear sampling",
+      "samples": [
+        {
+          "value": -2.0,
+          "normalized": 0.0,
+          "rgba": [
+            34,
+            52,
+            156,
+            234
+          ]
+        },
+        {
+          "value": 0.0,
+          "normalized": 0.05405405405405406,
+          "rgba": [
+            38,
+            71,
+            166,
+            235
+          ]
+        },
+        {
+          "value": 6.66,
+          "normalized": 0.23405405405405405,
+          "rgba": [
+            57,
+            135,
+            184,
+            237
+          ]
+        },
+        {
+          "value": 12.5,
+          "normalized": 0.3918918918918919,
+          "rgba": [
+            114,
+            191,
+            176,
+            238
+          ]
+        },
+        {
+          "value": 18.5,
+          "normalized": 0.5540540540540541,
+          "rgba": [
+            241,
+            210,
+            140,
+            241
+          ]
+        },
+        {
+          "value": 25.0,
+          "normalized": 0.7297297297297297,
+          "rgba": [
+            238,
+            130,
+            57,
+            246
+          ]
+        },
+        {
+          "value": 31.25,
+          "normalized": 0.8986486486486487,
+          "rgba": [
+            191,
+            54,
+            48,
+            250
+          ]
+        },
+        {
+          "value": 35.0,
+          "normalized": 1.0,
+          "rgba": [
+            148,
+            26,
+            50,
+            252
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sst-linear-clamped-and-undefined",
+      "ramp": "sst",
+      "valueRange": [
+        -2.0,
+        35.0
+      ],
+      "scale": "linear",
+      "note": "linear clamps both ends; NaN is transparent",
+      "samples": [
+        {
+          "value": -40.0,
+          "normalized": 0.0,
+          "rgba": [
+            34,
+            52,
+            156,
+            234
+          ]
+        },
+        {
+          "value": 100.0,
+          "normalized": 1.0,
+          "rgba": [
+            148,
+            26,
+            50,
+            252
+          ]
+        },
+        {
+          "value": "NaN",
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "front-first-stop-alpha-zero",
+      "ramp": "front",
+      "valueRange": [
+        0.0,
+        1.0
+      ],
+      "scale": "linear",
+      "note": "ramp whose first stop is alpha 0 \u2014 in-domain transparent, not missing",
+      "samples": [
+        {
+          "value": -0.5,
+          "normalized": 0.0,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": 0.0,
+          "normalized": 0.0,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "value": 0.11,
+          "normalized": 0.11,
+          "rgba": [
+            28,
+            63,
+            92,
+            48
+          ]
+        },
+        {
+          "value": 0.22,
+          "normalized": 0.22,
+          "rgba": [
+            55,
+            126,
+            184,
+            95
+          ]
+        },
+        {
+          "value": 0.5,
+          "normalized": 0.5,
+          "rgba": [
+            77,
+            175,
+            74,
+            135
+          ]
+        },
+        {
+          "value": 0.76,
+          "normalized": 0.76,
+          "rgba": [
+            255,
+            211,
+            67,
+            180
+          ]
+        },
+        {
+          "value": 1.0,
+          "normalized": 1.0,
+          "rgba": [
+            228,
+            26,
+            28,
+            220
+          ]
+        },
+        {
+          "value": 1.5,
+          "normalized": 1.0,
+          "rgba": [
+            228,
+            26,
+            28,
+            220
+          ]
+        },
+        {
+          "value": "NaN",
+          "normalized": null,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chlorophyll-log-narrow-subunit-range",
+      "ramp": "chlorophyll",
+      "valueRange": [
+        0.01,
+        0.5
+      ],
+      "scale": "log",
+      "note": "log layer whose entire value range sits inside 0..1",
+      "samples": [
+        {
+          "value": 0.01,
+          "normalized": 0.0,
+          "rgba": [
+            10,
+            28,
+            112,
+            238
+          ]
+        },
+        {
+          "value": 0.03,
+          "normalized": 0.2808297106493814,
+          "rgba": [
+            12,
+            112,
+            181,
+            241
+          ]
+        },
+        {
+          "value": 0.0707,
+          "normalized": 0.4999613952153701,
+          "rgba": [
+            22,
+            175,
+            126,
+            244
+          ]
+        },
+        {
+          "value": 0.15,
+          "normalized": 0.6922378005816026,
+          "rgba": [
+            139,
+            197,
+            51,
+            248
+          ]
+        },
+        {
+          "value": 0.5,
+          "normalized": 1.0,
+          "rgba": [
+            160,
+            42,
+            46,
+            254
+          ]
+        }
+      ]
+    },
+    {
+      "name": "identity-linear-positions",
+      "ramp": "water_quality",
+      "valueRange": [
+        0.0,
+        1.0
+      ],
+      "scale": "linear",
+      "note": "linear 0..1 range: normalization is the identity",
+      "samples": [
+        {
+          "value": 0.0,
+          "normalized": 0.0,
+          "rgba": [
+            9,
+            42,
+            108,
+            242
+          ]
+        },
+        {
+          "value": 0.05,
+          "normalized": 0.05,
+          "rgba": [
+            12,
+            55,
+            128,
+            242
+          ]
+        },
+        {
+          "value": 0.15,
+          "normalized": 0.15,
+          "rgba": [
+            20,
+            84,
+            162,
+            243
+          ]
+        },
+        {
+          "value": 0.25,
+          "normalized": 0.25,
+          "rgba": [
+            28,
+            116,
+            181,
+            244
+          ]
+        },
+        {
+          "value": 0.35,
+          "normalized": 0.35,
+          "rgba": [
+            36,
+            145,
+            172,
+            245
+          ]
+        },
+        {
+          "value": 0.45,
+          "normalized": 0.45,
+          "rgba": [
+            48,
+            165,
+            138,
+            246
+          ]
+        },
+        {
+          "value": 0.55,
+          "normalized": 0.55,
+          "rgba": [
+            75,
+            174,
+            102,
+            247
+          ]
+        },
+        {
+          "value": 0.65,
+          "normalized": 0.65,
+          "rgba": [
+            120,
+            174,
+            80,
+            248
+          ]
+        },
+        {
+          "value": 0.75,
+          "normalized": 0.75,
+          "rgba": [
+            166,
+            166,
+            79,
+            249
+          ]
+        },
+        {
+          "value": 0.85,
+          "normalized": 0.85,
+          "rgba": [
+            178,
+            141,
+            73,
+            251
+          ]
+        },
+        {
+          "value": 0.95,
+          "normalized": 0.95,
+          "rgba": [
+            146,
+            102,
+            54,
+            252
+          ]
+        },
+        {
+          "value": 1.0,
+          "normalized": 1.0,
+          "rgba": [
+            122,
+            82,
+            46,
+            252
+          ]
+        }
+      ]
+    }
+  ],
+  "positionCases": [
+    {
+      "name": "kd490-half-to-even",
+      "ramp": "kd490",
+      "note": "mid-segment positions; several channels land on an exact .5",
+      "samples": [
+        {
+          "position": 0.0,
+          "rgba": [
+            8,
+            34,
+            108,
+            240
+          ]
+        },
+        {
+          "position": 0.05,
+          "rgba": [
+            10,
+            48,
+            130,
+            240
+          ]
+        },
+        {
+          "position": 0.15,
+          "rgba": [
+            15,
+            78,
+            165,
+            240
+          ]
+        },
+        {
+          "position": 0.25,
+          "rgba": [
+            18,
+            114,
+            180,
+            241
+          ]
+        },
+        {
+          "position": 0.5,
+          "rgba": [
+            38,
+            175,
+            118,
+            246
+          ]
+        },
+        {
+          "position": 0.55,
+          "rgba": [
+            67,
+            179,
+            97,
+            247
+          ]
+        },
+        {
+          "position": 0.75,
+          "rgba": [
+            193,
+            169,
+            59,
+            249
+          ]
+        },
+        {
+          "position": 0.85,
+          "rgba": [
+            207,
+            135,
+            58,
+            250
+          ]
+        },
+        {
+          "position": 0.95,
+          "rgba": [
+            166,
+            89,
+            48,
+            251
+          ]
+        },
+        {
+          "position": 1.0,
+          "rgba": [
+            134,
+            66,
+            41,
+            252
+          ]
+        }
+      ]
+    },
+    {
+      "name": "front-half-to-even",
+      "ramp": "front",
+      "note": "segment midpoints of a 5-stop ramp",
+      "samples": [
+        {
+          "position": 0.11,
+          "rgba": [
+            28,
+            63,
+            92,
+            48
+          ]
+        },
+        {
+          "position": 0.36,
+          "rgba": [
+            66,
+            150,
+            129,
+            115
+          ]
+        },
+        {
+          "position": 0.63,
+          "rgba": [
+            166,
+            193,
+            70,
+            158
+          ]
+        },
+        {
+          "position": 0.88,
+          "rgba": [
+            242,
+            118,
+            48,
+            200
+          ]
+        }
+      ]
+    },
+    {
+      "name": "spm-clamped-outside-unit-interval",
+      "ramp": "spm",
+      "note": "positions outside 0..1 clamp to the terminal stop colors",
+      "samples": [
+        {
+          "position": -1.0,
+          "rgba": [
+            42,
+            92,
+            135,
+            100
+          ]
+        },
+        {
+          "position": -0.0001,
+          "rgba": [
+            42,
+            92,
+            135,
+            100
+          ]
+        },
+        {
+          "position": 1.0001,
+          "rgba": [
+            126,
+            71,
+            52,
+            205
+          ]
+        },
+        {
+          "position": 2.0,
+          "rgba": [
+            126,
+            71,
+            52,
+            205
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cdl-last-stop-below-one",
+      "ramp": "cdl",
+      "note": "ramp whose last stop position is below 1.0",
+      "samples": [
+        {
+          "position": 0.0,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "position": 0.5,
+          "rgba": [
+            116,
+            141,
+            103,
+            210
+          ]
+        },
+        {
+          "position": 0.996078431372549,
+          "rgba": [
+            38,
+            38,
+            38,
+            210
+          ]
+        },
+        {
+          "position": 0.999,
+          "rgba": [
+            38,
+            38,
+            38,
+            210
+          ]
+        },
+        {
+          "position": 1.0,
+          "rgba": [
+            38,
+            38,
+            38,
+            210
+          ]
+        }
+      ]
+    },
+    {
+      "name": "truecolor-empty-ramp",
+      "ramp": "truecolor",
+      "note": "a ramp with no stops samples fully transparent",
+      "samples": [
+        {
+          "position": 0.0,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "position": 0.5,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "position": 1.0,
+          "rgba": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ],
+  "wireStopCases": [
+    {
+      "ramp": "kd490",
+      "valueRange": [
+        0.01,
+        6.6
+      ],
+      "scale": "log",
+      "wire": [
+        {
+          "value": 0.01,
+          "r": 8,
+          "g": 34,
+          "b": 108,
+          "a": 240
+        },
+        {
+          "value": 0.019140549143497942,
+          "r": 13,
+          "g": 62,
+          "b": 152,
+          "a": 240
+        },
+        {
+          "value": 0.036636062151465976,
+          "r": 17,
+          "g": 95,
+          "b": 178,
+          "a": 240
+        },
+        {
+          "value": 0.07012343480343794,
+          "r": 18,
+          "g": 132,
+          "b": 181,
+          "a": 242
+        },
+        {
+          "value": 0.13422010499660786,
+          "r": 22,
+          "g": 160,
+          "b": 158,
+          "a": 244
+        },
+        {
+          "value": 0.2569046515733026,
+          "r": 38,
+          "g": 175,
+          "b": 118,
+          "a": 246
+        },
+        {
+          "value": 0.49172961086320144,
+          "r": 95,
+          "g": 183,
+          "b": 77,
+          "a": 248
+        },
+        {
+          "value": 0.9411974782040226,
+          "r": 170,
+          "g": 180,
+          "b": 58,
+          "a": 248
+        },
+        {
+          "value": 1.8015036585300435,
+          "r": 216,
+          "g": 158,
+          "b": 60,
+          "a": 250
+        },
+        {
+          "value": 3.4481769308285632,
+          "r": 198,
+          "g": 111,
+          "b": 55,
+          "a": 250
+        },
+        {
+          "value": 6.600000000000001,
+          "r": 134,
+          "g": 66,
+          "b": 41,
+          "a": 252
+        }
+      ],
+      "expectedPositions": [
+        0.0,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0
+      ]
+    },
+    {
+      "ramp": "sst",
+      "valueRange": [
+        -2.0,
+        35.0
+      ],
+      "scale": "linear",
+      "wire": [
+        {
+          "value": -2.0,
+          "r": 34,
+          "g": 52,
+          "b": 156,
+          "a": 234
+        },
+        {
+          "value": 4.66,
+          "r": 48,
+          "g": 116,
+          "b": 188,
+          "a": 236
+        },
+        {
+          "value": 11.32,
+          "r": 78,
+          "g": 180,
+          "b": 175,
+          "a": 238
+        },
+        {
+          "value": 16.5,
+          "r": 238,
+          "g": 230,
+          "b": 178,
+          "a": 240
+        },
+        {
+          "value": 22.42,
+          "r": 248,
+          "g": 172,
+          "b": 66,
+          "a": 244
+        },
+        {
+          "value": 28.34,
+          "r": 224,
+          "g": 76,
+          "b": 46,
+          "a": 248
+        },
+        {
+          "value": 35.0,
+          "r": 148,
+          "g": 26,
+          "b": 50,
+          "a": 252
+        }
+      ],
+      "expectedPositions": [
+        0.0,
+        0.18,
+        0.36,
+        0.5,
+        0.66,
+        0.82,
+        1.0
+      ]
+    },
+    {
+      "ramp": "chlorophyll",
+      "valueRange": [
+        0.01,
+        0.5
+      ],
+      "scale": "log",
+      "wire": [
+        {
+          "value": 0.01,
+          "r": 10,
+          "g": 28,
+          "b": 112,
+          "a": 238
+        },
+        {
+          "value": 0.015991028618608485,
+          "r": 14,
+          "g": 60,
+          "b": 156,
+          "a": 238
+        },
+        {
+          "value": 0.02557129962811556,
+          "r": 13,
+          "g": 98,
+          "b": 183,
+          "a": 240
+        },
+        {
+          "value": 0.040891138416820856,
+          "r": 10,
+          "g": 140,
+          "b": 176,
+          "a": 242
+        },
+        {
+          "value": 0.06538913646708631,
+          "r": 14,
+          "g": 172,
+          "b": 135,
+          "a": 244
+        },
+        {
+          "value": 0.10456395525912729,
+          "r": 62,
+          "g": 190,
+          "b": 78,
+          "a": 246
+        },
+        {
+          "value": 0.16720852010236018,
+          "r": 162,
+          "g": 199,
+          "b": 43,
+          "a": 248
+        },
+        {
+          "value": 0.24726087601068408,
+          "r": 233,
+          "g": 190,
+          "b": 38,
+          "a": 250
+        },
+        {
+          "value": 0.33812166890312073,
+          "r": 238,
+          "g": 130,
+          "b": 33,
+          "a": 252
+        },
+        {
+          "value": 0.49999999999999994,
+          "r": 160,
+          "g": 42,
+          "b": 46,
+          "a": 254
+        }
+      ],
+      "expectedPositions": [
+        0.0,
+        0.12,
+        0.24,
+        0.36,
+        0.48,
+        0.6,
+        0.72,
+        0.82,
+        0.9,
+        1.0
+      ]
+    },
+    {
+      "ramp": "front",
+      "valueRange": [
+        0.0,
+        1.0
+      ],
+      "scale": "linear",
+      "wire": [
+        {
+          "value": 0.0,
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0
+        },
+        {
+          "value": 0.22,
+          "r": 55,
+          "g": 126,
+          "b": 184,
+          "a": 95
+        },
+        {
+          "value": 0.5,
+          "r": 77,
+          "g": 175,
+          "b": 74,
+          "a": 135
+        },
+        {
+          "value": 0.76,
+          "r": 255,
+          "g": 211,
+          "b": 67,
+          "a": 180
+        },
+        {
+          "value": 1.0,
+          "r": 228,
+          "g": 26,
+          "b": 28,
+          "a": 220
+        }
+      ],
+      "expectedPositions": [
+        0.0,
+        0.22,
+        0.5,
+        0.76,
+        1.0
+      ]
+    }
+  ],
+  "luts": {
+    "sst@256": "IjSc6iI1neojN53qIzie6iM6n+okO5/qJDyg6iQ+oeokP6LqJUGi6iVCo+olQ6TqJkWk6yZGpesmSKbrJ0mm6ydKp+snTKjrJ02p6yhOqesoUKrrKFGr6ylTq+spVKzrKVWt6ypXresqWK7rKlqv6ytbsOsrXLDrK16x6ytfsussYbLrLGKz6yxjtOstZbTsLWa17C1otuwuabbsLmq37C5suOwvbbnsL2+57C9wuuwvcbvsMHO77DB0vOwxdrzsMXe77DJ4u+wzervsM3u77DR9uuw1frrsNX+67DaBuew3grnsN4O57DiFue05hrjtOYi47TqJuO07irftO4y37TyNt+08j7ftPZC27T6Rtu0+k7btP5S17UCWte1Al7XtQZi17UKatO1Cm7TtQ5207USes+1En7PtRaGz7Uais+1GpLLtR6Wy7kimsu5IqLHuSamx7kqrse5KrLHuS62w7kyvsO5MsLDuTbGw7k2zr+5PtK/uU7av7li3r+5cuK/uYbqv7mW7r+5qvbDubr6w7nO/sO53wbDvfMKw74DEsO+FxbDvicaw747IsO+SybDvl8uw75vMsO+gzbHvpM+x76nQse+t0rHvsdOx77bUse+61rHvv9ex78PZse/I2rHwzNux8NHdsfDV3rLw2uCy8N7hsvDj4rLw5+Sy8OzlsvDu5bHw7uSu8O/iq/Dv4ajw7+Cm8O/eo/Hw3aDx8Nud8fDam/Hw2Jjx8deV8fHWkvHx1JDx8dON8fLRivHy0Ify8s+F8vLNgvLzzH/y88p88vPJevLzx3fy9MZ08vTFcfL0w2/y9MJs8vTAafP1v2fz9b1k8/W8YfP1u17z9rlc8/a4WfP2tlbz9rVT8/e0UfP3sk7097FL9PevSPT4rkb0+KxD9PiqQvT3qEH09qZB9PajQPT1oUD09Z8/9fScP/Xzmj7185g+9fKVPfXykz318ZA89fGOPPXwjDv174k79e+HOvbuhTr27oI59u2AOfbsfjj27Hs49ut5N/brdzf26nQ29ulyNvbpcDX36G019+hrNPfnaDT352Yz9+ZkM/flYTL35V8y9+RdMffkWjH341gw+OJWMPjiUzD44VEv+OFPL/jgTC7430su+N1KLvjbSS742kgu+NhHLvjWRi/51UQv+dNDL/nRQi/50EEv+c5AL/nMPy/5yz4v+ck9L/nHPC/5xjsv+cQ6L/nCOTD6wTcw+r82MPq9NTD6vDQw+rozMPq4MjD6tzEw+rUwMPqzLzD6si4w+rAtMfuuKzH7rSox+6spMfuqKDH7qCcx+6YmMfulJTH7oyQx+6EjMfugIjH7niEx+5wfMvybHjL8mR0y/JccMvyWGzL8lBoy/A==",
+    "kd490@256": "CCJs8AgjbvAIJG/wCSVx8Akmc/AJJ3XwCSl28AkqePAKK3rwCix88AotffAKLn/wCi+B8AswgvALMYTwCzKG8As0iPALNYnwDDaL8Aw3jfAMOI/wDDmQ8Aw6kvANO5TwDTyV8A09l/ANP5nwDUCa8A1Bm/AOQ5zwDkSd8A5FnvAORp/wDkig8A5JofAOSqLwD0yj8A9NpPAPTqXwD0+m8A9Rp/APUqjwEFOp8BBVqvAQVqvwEFes8BBZrfAQWq7wEVuv8BFcsPARXrHwEV+y8BFgsvARYrLwEWOy8BFlsvARZrPwEWiz8BFps/ERa7PxEWyz8RFus/ERb7PxEXCz8RJytPESc7TxEnW08RJ2tPESeLTxEnm08RJ7tPESfLTyEn208hJ/tfISgLXyEoK18hKDtfIShbXyEoa08hKHs/ITiLLyE4mx8hOKsPITi6/zE4yu8xONrfMTjqzzFJCs8xSRq/MUkqrzFJOp8xSUqPMUlafzFZam8xWXpfMVmKTzFZmj9BWbo/QVnKL0Fp2h9BaeoPQWn5/0FqCe9BehnPQXoZv0GKKZ9BmimPQZo5b0GqSV9Bqkk/UbpZH1HKWQ9RymjvUdpo31HqeL9R6oivUfqIj1H6mG9SCphfUhqoP1IauC9SKrgPUjrH/2I6x99iSte/Ykrnr2Ja549iavd/Ynr3X2Ka909iywcvYusHD2MLBv9jKxbfY1sWz3N7Fq9zmyaPc7smf3PbJl90CzZPdCs2L3RLNg90a0X/dJtF33S7Rb9020WvdPtVj3UrVX+FS1VfhWtlP4WLZS+Fu2UPhdt0/4X7dN+GK3TPhlt0z4aLdL+Gu3Svhutkn4cbZJ+HS2SPh3tkf4ebZG+Hy2Rvh/tkX4grZE+IW1Q/iItUP4i7VC+I61QfiRtUD4lLVA+Je1P/iatT74nbU9+KC0PfijtDz4prQ7+Km0OvirtDr4rbM6+K+yOviwsTr4srA6+LSvOvi2rjv5uK47+bmtO/m7rDv5vas7+b+qO/nBqTv5wqg7+cSnO/nGpzv5yKY7+cqlO/nLpDv5zaM8+s+iPPrRoTz606E8+tSgPPrWnzz62J48+tecPPrXmjz61pg7+tWXO/rUlTv61JM7+tORO/rSjzr60o06+tGMOvrQijr60Ig6+s+GOfrOhDn6zYI5+s2BOfrMfzn6y304+st7OPrKeTj6yXc4+sh1OPrIdDf6x3I3+sZwN/rFbjf6wmw2+sBrNvq9aTX6u2c1+rhlNPq2ZDP7s2Iz+7FgMvuuXjL7rFwx+6lbMfunWTD7pFcw+6JVL/ufVC77nVIu+5pQLfuYTi37lU0s/JNLLPyQSSv8jkcr/ItGKvyJRCr8hkIp/A=="
+  },
+  "lutDigests": {
+    "sst@256": "67811c8ae8a61d9683bf7e67f1d13a5b3b33a07312e619c305cbb5bdc45679a1",
+    "kd490@256": "92529da529d843eaea3ccfb1217038190083ec73f0593408896902d7be53ce8b"
+  }
+}
