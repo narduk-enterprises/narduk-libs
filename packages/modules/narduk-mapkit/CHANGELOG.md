@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 - 2026-08-28
 
 - Added `MapKitPinScalingController` / `createMapKitPinScalingController()`:
   zoom-adaptive size, dot-versus-symbol mode, and rank culling over the live
