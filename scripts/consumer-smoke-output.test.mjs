@@ -90,3 +90,35 @@ test('a mixed run reports only the genuine findings, trimmed and in order', () =
 test('clean output produces no findings', () => {
   assert.deepEqual(collectWarningFindings('Done in 41.2s\nPackages: +1204\n'), [])
 })
+
+// The exact first lines that turned packed-consumer-smoke red on every run
+// after zod@4.5.1 published (2026-08-28, run 33203587597) -- narduk-libs#101.
+const observedZodPureNotice =
+  '[warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment'
+
+test('a Rollup PURE-annotation notice about third-party source does not fail the gate', () => {
+  assert.deepEqual(collectWarningFindings(observedZodPureNotice), [])
+  assert.deepEqual(
+    collectWarningFindings(
+      '[warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js (330:0): A comment',
+    ),
+    [],
+  )
+})
+
+test('the same notice about first-party source still fails the gate', () => {
+  const firstParty = '[warn] src/components/Chart.vue (12:0): A comment'
+  assert.deepEqual(collectWarningFindings(firstParty), [firstParty])
+})
+
+test('an error about a third-party path still fails the gate', () => {
+  const thirdPartyError =
+    '[error] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js (330:0): A comment'
+  assert.deepEqual(collectWarningFindings(thirdPartyError), [thirdPartyError])
+})
+
+test("the annotation body lines of Rollup's multi-line notice were never findings", () => {
+  const body =
+    'in "../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.'
+  assert.deepEqual(collectWarningFindings(body), [])
+})

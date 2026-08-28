@@ -59,6 +59,43 @@ const networkLatencyOnlyWarningPatterns = [
   /^\s*WARN\s+Tarball download average speed \d+ KiB\/s \(size \d+ KiB\) is below \d+ KiB\/s: \S+ \(GET\)$/u,
 ]
 
+/**
+ * Bundler warnings about THIRD-PARTY source that the bundler itself resolves
+ * on its success path. Same bar as the network patterns above: provably
+ * emitted from a success path, provably carrying no signal about the packed
+ * artifacts under test.
+ *
+ * The one entry so far is Rollup's misplaced-`@__PURE__`-annotation notice.
+ * `zod@4.5.1` (published 2026-08-28T17:58Z) ships three such comments, so the
+ * generated consumer's `vite build` prints, per occurrence:
+ *
+ *   [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js (330:0): A comment
+ *
+ *   (followed by the annotation comment itself on its own line)
+ *
+ *   in "…/node_modules/zod/v4/core/util.js" contains an annotation that Rollup
+ *   cannot interpret due to the position of the comment. The comment will be
+ *   removed to avoid issues.
+ *
+ * Only the first line carries a warn token, so only it reaches the findings.
+ * Rollup then drops the comment and completes the build — the artifact is
+ * unaffected, and the code being complained about is upstream's, addressable
+ * only by an upstream release. That combination turned every run of this gate
+ * red from 17:58Z onward with a diff that had nothing to do with it
+ * (narduk-libs#101, first hit run 33203587597).
+ *
+ * The pattern is anchored to the whole line and requires BOTH the
+ * `node_modules/` path segment and Rollup's exact first-line shape. A
+ * first-party file emitting the same notice (`[warn] src/… (1:0): A comment`)
+ * still fails the gate, as does any `[error]` about a third-party path. When a
+ * different third-party warning class breaks the train next, it gets its own
+ * entry here if and only if it clears the same bar — do not widen this one.
+ */
+const thirdPartyBundlerNoticePatterns = [
+  // [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment
+  /^\[warn\] \S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
+]
+
 export function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
 }
@@ -72,6 +109,14 @@ export function isNetworkLatencyOnlyWarning(line) {
 }
 
 /**
+ * True when `line` is a bundler notice about third-party source, resolved on
+ * the bundler's own success path, and therefore must not fail the gate.
+ */
+export function isThirdPartyBundlerNotice(line) {
+  return thirdPartyBundlerNoticePatterns.some((pattern) => pattern.test(line))
+}
+
+/**
  * Every warning/error-shaped line in `output` that the smoke gate should fail
  * on, trimmed, in order. Empty means the output is clean.
  */
@@ -79,5 +124,10 @@ export function collectWarningFindings(output) {
   return stripAnsi(output)
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => warningOrErrorTokenPattern.test(line) && !isNetworkLatencyOnlyWarning(line))
+    .filter(
+      (line) =>
+        warningOrErrorTokenPattern.test(line) &&
+        !isNetworkLatencyOnlyWarning(line) &&
+        !isThirdPartyBundlerNotice(line),
+    )
 }
