@@ -1,0 +1,338 @@
+import {
+  normalizeValue,
+  toValueRangeTuple,
+  type ValueRangeInput,
+} from '../color/normalize.js'
+import { rampLut } from '../color/ramp.js'
+import {
+  coastalFeather,
+  dataUvTransform,
+  displayValueFromEncoded,
+  sampleScalarBilinearSoft,
+  texelPositionFromUv,
+} from './math.js'
+import type {
+  GridBBox,
+  GridBBoxAnchor,
+  GridSampling,
+  GridScale,
+  GridValueKind,
+  GridValueRange,
+  GridViewport,
+  RampStop,
+} from './models.js'
+
+/**
+ * The scalar render path, on the CPU, with no canvas and no GL.
+ *
+ * ## Why this exists
+ *
+ * Both shipping backends draw through an API that only a browser has — a
+ * WebGL2 context or a 2D canvas — so neither can be asserted in a Node test.
+ * The result was that the *math* of the render path, which is the part most
+ * likely to be subtly wrong and least likely to be noticed, had no coverage at
+ * all: kernel weights, coverage rules, the log-scale normalization, the LUT
+ * lookup, the alpha composition. This module is that math, extracted and
+ * executable anywhere, and it is the reference the two backends are asserted
+ * against rather than a fourth opinion about how a grid should look.
+ *
+ * The parity contract the golden harness holds these to:
+ *
+ * - **Canvas2D === reference, exactly.** Both are CPU float paths running the
+ *   same functions, so any difference is a bug and the tolerance is zero.
+ * - **WebGL2 === reference, within a count or two per channel.** The GPU
+ *   samples the LUT with hardware linear filtering, whose subtexel weights are
+ *   fixed-point on most drivers, and rasterizes in `highp` rather than double.
+ *   Neither is worth chasing to the last bit; a drift beyond a couple of counts
+ *   is a real disagreement.
+ *
+ * ## Where it deviates from GeoGridKit, on purpose
+ *
+ * The kernel and the normalization are literal ports. Two things are not:
+ *
+ * 1. **Per-stop alpha flows through.** GeoGridKit's `ColorStop` is RGB-only, so
+ *    its fragment reads `lutColor(...).rgb` and drops the alpha channel. The
+ *    canonical `./color` engine carries RGBA, and ramps like FRONT put real
+ *    meaning in alpha, so it is composed into the output here.
+ * 2. **Output is non-premultiplied.** GeoGridKit writes premultiplied tiles;
+ *    the web backends run a `premultipliedAlpha: false` context with a
+ *    `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` blend, and this matches them.
+ *
+ * GeoGridKit's grid-edge feathering (`gridEdgeFade`, `gridEdgeFeatherCoverage`)
+ * is *not* ported. It is driven by tile uniforms this package has no analogue
+ * for, and the coastline stencil plays that role on web.
+ */
+
+/** Non-premultiplied RGBA8, row-major, top row first. */
+export interface ReferenceRaster {
+  width: number
+  height: number
+  pixels: Uint8ClampedArray
+}
+
+export interface ReferenceScalarLayer {
+  values: ArrayLike<number>
+  mask: ArrayLike<number>
+  width: number
+  height: number
+  /** `float32` samples are display units already; `encoded-u16` needs decoding. */
+  valueKind: GridValueKind
+}
+
+export interface ReferenceScalarStyle {
+  /** Canonical normalized-position stops. `normalizeWireStops` builds these. */
+  stops: readonly RampStop[]
+  valueRange: ValueRangeInput
+  scale: GridScale
+  /** Defaults to `soft`. */
+  sampling?: GridSampling
+  /**
+   * A flat multiplier on the output alpha, default `1`.
+   *
+   * The backends leave this alone: layer opacity is a CSS property on the
+   * canvas element, and applying it here as well would square it.
+   */
+  opacity?: number
+  /** LUT resolution. `256` matches GeoGridKit and should not normally change. */
+  lutCount?: number
+}
+
+export interface ReferenceTileOptions {
+  /** Output size. Defaults to the layer's own geometry. */
+  width?: number
+  height?: number
+  /** Defaults per {@link GridValueKind}: `cell-center` for `float32`. */
+  anchor?: GridBBoxAnchor
+}
+
+export interface ReferenceViewportOptions {
+  viewport: GridViewport
+  bbox: GridBBox
+  width: number
+  height: number
+  anchor?: GridBBoxAnchor
+  /** A second frame to blend toward, for temporal playback. */
+  blend?: ReferenceScalarBlend
+}
+
+/**
+ * Sample a baked LUT the way a `LINEAR` / `CLAMP_TO_EDGE` texture read does.
+ *
+ * GeoGridKit samples its 1×256 LUT at `(normalized, 0.5)` through a linear
+ * sampler, so the color for a position is an interpolation *between* two baked
+ * entries, offset by the half texel that separates a normalized coordinate from
+ * a texel center. Sampling `sampleRamp01` directly here instead would be
+ * marginally more accurate and would disagree with both GPUs.
+ */
+export function sampleLutLinear(lut: Uint8Array, position: number): [number, number, number, number] {
+  const count = lut.length / 4
+  if (count < 1) return [0, 0, 0, 0]
+  const coordinate = position * count - 0.5
+  const lower = Math.floor(coordinate)
+  const t = coordinate - lower
+  const i0 = clampIndex(lower, count) * 4
+  const i1 = clampIndex(lower + 1, count) * 4
+  return [
+    lerp(lut[i0]!, lut[i1]!, t),
+    lerp(lut[i0 + 1]!, lut[i1 + 1]!, t),
+    lerp(lut[i0 + 2]!, lut[i1 + 2]!, t),
+    lerp(lut[i0 + 3]!, lut[i1 + 3]!, t),
+  ]
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+function clampIndex(index: number, count: number): number {
+  if (index < 0) return 0
+  const last = count - 1
+  return index > last ? last : index
+}
+
+/** A second frame to blend toward, for temporal playback. */
+export interface ReferenceScalarBlend {
+  upper: ReferenceScalarLayer
+  progress: number
+}
+
+/**
+ * The per-pixel body of the scalar path: sample, blend, normalize, color,
+ * compose. Statement for statement, this is `scalarFragmentShader`'s `main`.
+ *
+ * Exported because both backends and the golden harness want the single-pixel
+ * answer without standing up a raster around it.
+ *
+ * The blend happens in **sample space** — encoded counts for the temporal
+ * dialect, display units for `float32` — and the decode runs once afterward.
+ * That ordering is load-bearing on a log layer: the wire quantization is linear
+ * in encoded space and geometric in display units, so decoding first and then
+ * mixing would walk between two frames along the wrong curve.
+ */
+export function referenceScalarPixel(
+  layer: ReferenceScalarLayer,
+  lut: Uint8Array,
+  style: ReferenceScalarStyle,
+  x: number,
+  y: number,
+  blend?: ReferenceScalarBlend,
+): [number, number, number, number] {
+  const sampling = style.sampling ?? 'soft'
+  const lower = sampleScalarBilinearSoft(
+    layer.values,
+    layer.mask,
+    layer.width,
+    layer.height,
+    x,
+    y,
+    sampling,
+  )
+  const upperLayer = blend?.upper
+  const upper = upperLayer
+    ? sampleScalarBilinearSoft(
+        upperLayer.values,
+        upperLayer.mask,
+        upperLayer.width,
+        upperLayer.height,
+        x,
+        y,
+        sampling,
+      )
+    : lower
+
+  const validLower = lower.coverage > 0
+  const validUpper = upper.coverage > 0
+  if (!validLower && !validUpper) return [0, 0, 0, 0]
+
+  const progress = blend ? Math.max(0, Math.min(1, blend.progress)) : 0
+  const rawLower = validLower ? lower.value : upper.value
+  const rawUpper = validUpper ? upper.value : lower.value
+  const raw = rawLower + (rawUpper - rawLower) * progress
+
+  const range = style.valueRange
+  if (!isDrawableRange(range)) return [0, 0, 0, 0]
+
+  const value =
+    layer.valueKind === 'float32'
+      ? raw
+      : displayValueFromEncoded(raw, toRange(range), style.scale)
+
+  const position = normalizeValue(value, range, style.scale)
+  if (position === null) return [0, 0, 0, 0]
+
+  const coverageLower = validLower ? lower.coverage : upper.coverage
+  const coverageUpper = validUpper ? upper.coverage : lower.coverage
+  const blended = coverageLower + (coverageUpper - coverageLower) * progress
+  const coverage = sampling === 'coastal' ? coastalFeather(blended) : blended
+
+  const color = sampleLutLinear(lut, position)
+  const alpha = (color[3] / 255) * coverage * (style.opacity ?? 1)
+  if (alpha <= 0) return [0, 0, 0, 0]
+  return [color[0], color[1], color[2], alpha * 255]
+}
+
+function toRange(range: ValueRangeInput): GridValueRange {
+  const [lowerBound, upperBound] = toValueRangeTuple(range)
+  return { lowerBound, upperBound }
+}
+
+/**
+ * Whether a value range can be rendered at all.
+ *
+ * `normalizeValue` **throws** on `lo >= hi`, matching the server's `raise`.
+ * Right for a pure function, wrong inside a render loop: the exception escapes
+ * through `requestAnimationFrame` and takes the frame with it, when the
+ * documented contract for a renderer handed a bad style is to draw nothing and
+ * keep running.
+ *
+ * Written `!(lo < hi)` rather than `lo >= hi` so a `NaN` bound is rejected too.
+ * Every comparison against `NaN` is false, so `NaN >= hi` would *pass* a
+ * `>=` guard and paint the entire layer the ramp's first color out of a range
+ * nobody can interpret. The GLSL guard in `normalizedScalar` is written
+ * identically and deliberately: a corrupt range has to produce the same nothing
+ * on both backends, or the CPU/GPU parity this module exists to anchor has a
+ * hole in it exactly where the inputs are worst.
+ */
+export function isDrawableRange(range: ValueRangeInput): boolean {
+  const [lowerBound, upperBound] = toValueRangeTuple(range)
+  return lowerBound < upperBound
+}
+
+/** Bake the LUT this style renders through. */
+export function referenceLut(style: ReferenceScalarStyle): Uint8Array {
+  return rampLut(style.stops, style.lutCount ?? 256)
+}
+
+/**
+ * Render a layer's full extent into a raster — the tile-shaped parity leg.
+ *
+ * Output pixel centers map to `uv = (i + 0.5) / size`, matching how a fragment
+ * shader sees a full-screen quad.
+ */
+export function referenceRenderScalarTile(
+  layer: ReferenceScalarLayer,
+  style: ReferenceScalarStyle,
+  options: ReferenceTileOptions = {},
+): ReferenceRaster {
+  const width = options.width ?? layer.width
+  const height = options.height ?? layer.height
+  const anchor = options.anchor ?? (layer.valueKind === 'float32' ? 'cell-center' : 'cell-edge')
+  const lut = referenceLut(style)
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const v = (py + 0.5) / height
+    const gy = texelPositionFromUv(v, layer.height, anchor)
+    for (let px = 0; px < width; px += 1) {
+      const u = (px + 0.5) / width
+      const gx = texelPositionFromUv(u, layer.width, anchor)
+      writePixel(pixels, (py * width + px) * 4, referenceScalarPixel(layer, lut, style, gx, gy))
+    }
+  }
+  return { width, height, pixels }
+}
+
+/**
+ * Render a layer as the backends blit it — through a viewport onto a screen.
+ *
+ * Screen pixels whose data UV falls outside `0…1` are transparent, which is the
+ * `uv` bounds check both fragment shaders open with.
+ */
+export function referenceRenderScalarViewport(
+  layer: ReferenceScalarLayer,
+  style: ReferenceScalarStyle,
+  options: ReferenceViewportOptions,
+): ReferenceRaster {
+  const { viewport, bbox, width, height } = options
+  const anchor = options.anchor ?? (layer.valueKind === 'float32' ? 'cell-center' : 'cell-edge')
+  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const lut = referenceLut(style)
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    for (let px = 0; px < width; px += 1) {
+      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue
+      const gx = texelPositionFromUv(u, layer.width, anchor)
+      const gy = texelPositionFromUv(v, layer.height, anchor)
+      writePixel(
+        pixels,
+        (py * width + px) * 4,
+        referenceScalarPixel(layer, lut, style, gx, gy, options.blend),
+      )
+    }
+  }
+  return { width, height, pixels }
+}
+
+function writePixel(
+  pixels: Uint8ClampedArray,
+  offset: number,
+  rgba: [number, number, number, number],
+): void {
+  pixels[offset] = Math.round(rgba[0])
+  pixels[offset + 1] = Math.round(rgba[1])
+  pixels[offset + 2] = Math.round(rgba[2])
+  pixels[offset + 3] = Math.round(rgba[3])
+}

@@ -1,5 +1,159 @@
 # Changelog
 
+## 0.3.0 — 2026-08-28
+
+The client-side scalar render path: plain `/grid` Float32 grids now render on
+web through the same value-space math GeoGridKit's Metal renderer uses.
+
+Existing callers keep compiling and keep working. The temporal player's *pixels*
+change, deliberately — see **Changed** below before assuming a regression.
+
+### Added
+
+- **`float32` frames render.** One `GridFrame` model
+  (`{ key, width, height, renderMode, valueKind, values, mask, channels? }`)
+  now serves both dialects: `encoded-u16` for the temporal raster and `float32`
+  for `/grid`. The backends accept either a `GridFrame` or a
+  `TemporalRasterFrame`; `gridFrameFromTemporal` is a rename, not a copy.
+- **`overlay.setScalarFrame(dataset, planeIndex?, options?)`** — the float32
+  front door. Defaults its extent to `gridBounds(header)` and its cache identity
+  to a content fingerprint of the plane.
+- **`sampleScalarBilinearSoft`** in `core/math.ts` — the 2×2 NaN-aware kernel
+  both backends and the reference renderer share, a literal port of GeoGridKit's
+  `sampleScalarBilinearSoft` / `sampleScalarBilinearCoastal`. Missing neighbors
+  are dropped and the surviving weights renormalized.
+- **`style.sampling: 'soft' | 'coastal'`.** `soft` (the default) draws a pixel
+  only where every contributing neighbor is finite; `coastal` reports the
+  surviving weight sum and feathers it with `smoothstep(0, 0.55, …)`, exactly as
+  GeoGridKit's `scalarFragment` does.
+- **`referenceRenderScalarTile` / `referenceRenderScalarViewport` /
+  `referenceScalarPixel`** in `core/reference-render.ts` — the whole scalar path
+  on the CPU with no canvas and no GL. Until now the render math had no Node
+  coverage at all, because every path into it required a browser. Canvas2D calls
+  `referenceScalarPixel` itself, so the fallback and the reference cannot drift.
+- **`GridBBoxAnchor`.** `/grid` extents span cell **centers** (`header.bbox`
+  equals `gridBounds(header)`, which the decoder's own tests assert, and which is
+  how GeoGridKit maps them); temporal manifests span cell **edges**. The two
+  differ by half a cell, so the anchor is now explicit — defaulted per value kind,
+  overridable per render — rather than assumed.
+- `style.rampStops` accepts canonical normalized-position stops directly.
+- `texelPositionFromUv`, `coastalFeather`, `sampleLutLinear`, `resolveRampStops`,
+  `styleLut`, `styleScale`, `RAMP_LUT_COUNT`, and the `core/frame.ts` adapters.
+
+### Changed
+
+- **The scalar kernel narrowed from a 3×3 radius-1.5 tent to 2×2 bilinear, and
+  the temporal player's pixels change accordingly. This is sharpening, not a
+  regression.** The old tent pulled in cells up to a cell and a half away and
+  smeared fronts the data resolves cleanly; the server's tiles and GeoGridKit
+  both use the 2×2 form, so the wider kernel was the web client disagreeing with
+  every other renderer in the estate about what the same bytes look like.
+
+  Measured on a synthetic 96×96 kd490-like scene with a sharp front and a ragged
+  coastline (script in the PR):
+
+  | | linear layer | log layer |
+  |--|--|--|
+  | pixels differing | 69.4% | 92.3% |
+  | mean channel delta | 3.24 | 32.49 |
+  | partially-transparent pixels | 101 → 0 | 101 → 0 |
+
+  The linear column is the kernel change alone, because on a linear layer the
+  old and new ramp interpolations are algebraically identical. The log column
+  carries the ramp-space correction below on top of it.
+
+- **Ramp interpolation moved from value space into position space.** The old
+  fragment shader lerped between two stops by raw data value; the canonical
+  engine — and `shared/colorramp.py`, which colored every published tile —
+  normalizes first and interpolates by position. On a log layer those are very
+  different curves, which is the bulk of the 32.49 mean delta above. Legacy
+  value-domain `style.ramp` stops are converted with `normalizeWireStops` rather
+  than sampled in place.
+- **The ramp is a 256×1 RGBA8 LUT texture, not a pair of uniform arrays.** The
+  old `MAX_RAMP_STOPS = 16` cap was already exactly filled by the CDL ramp, so
+  the next stop anyone added would have been dropped in silence. Per-stop alpha
+  now reaches the output; the old `vec3` uniform could not carry it. (GeoGridKit
+  drops LUT alpha because its `ColorStop` is RGB-only — this is a deliberate
+  divergence, not a porting slip.)
+- **Coverage no longer runs through `smoothstep(0.30, 0.70, …)`.** With the 2×2
+  kernel, `soft` coverage is binary and the smoothstep was shaping nothing;
+  `coastal` carries GeoGridKit's own `smoothstep(0, 0.55, …)` instead.
+- **Canvas2D rasterizes in screen space when magnified** past ~1.5 CSS pixels
+  per grid cell. It used to color cells and let `drawImage` scale the result,
+  which interpolates between *colors* — and a ramp is not a linear function of
+  value, so the midpoint between a blue cell and a red one came out muddy purple
+  where the ramp puts bright green. Below the threshold the cheap path stands.
+- **`frameContentKey` no longer collides, for two independent reasons.** Both
+  mattered, and only one of them was about floats:
+  1. *Truncation.* The integer mixer folds values in with `| 0`, which discards
+     a KD490 grid's entire fractional part and maps `NaN` — most of a gulf grid,
+     over land — onto `0`. Float planes now hash by their IEEE bits.
+  2. *Sampling density.* The hash walked a stride of `n / 64`, inspecting about
+     65 of a 512×512 grid's 262,144 cells. Two grids differing in **52,416**
+     cells were verified to fingerprint identically. It now reads every element.
+
+  The second is the more dangerous of the two: a temporal frame is keyed by its
+  date and the hash only guards against a re-decode, but a `/grid` frame has no
+  date, so the hash *is* the identity and a collision means the GPU keeps
+  drawing the previous dataset.
+
+  Reading every element costs ~5 ms on a 512×512 plane, which is free once per
+  decode and ruinous per frame, so `frameCacheKey` memoizes on plane identity —
+  ~0.00006 ms warm. Sound because neither decoder rewrites a plane in place; a
+  caller who does should pass its own `ScalarFrameOptions.key`, which is now
+  documented as the route for a publisher-supplied identity (ETag, `releaseId`).
+  Integer planes of 64 elements or fewer hash exactly as before, and the
+  temporal dialect's keys are pinned to a literal in a test.
+- **An unusable value range draws nothing instead of throwing or inverting.**
+  `normalizeValue` raises on `lo >= hi`, matching the server — right for a pure
+  function, fatal in a render loop, where the exception escapes through
+  `requestAnimationFrame` and takes the frame with it. Both CPU paths now guard
+  first. The GPU had the opposite bug: it tested only `x == y`, so an *inverted*
+  range fell through and rendered the ramp backwards. Both guards are written
+  `!(lo < hi)` so that a `NaN` bound is refused too, and so that a corrupt range
+  produces the same nothing on both backends rather than one painting and one
+  not.
+- **A non-finite normalized position can no longer index the LUT.** The shader's
+  `normalized < 0.0` test is false for `NaN` and let it through. `GridFrame` is
+  public, so a caller can hand over a mask claiming a `NaN` cell is real; the
+  test is now negated, which costs one token and needs no `isnan()`.
+- A missing WebGL uniform no longer throws. A driver may legitimately optimize
+  out a uniform, and `gl.uniform*` on a null location is a defined no-op; the
+  old behavior turned an optimizer difference into a dead overlay.
+- Shader compile/link failures no longer leak GL objects. `pipeline()` swallows
+  the throw and falls back to drawing nothing, so a shader failing on some
+  driver would otherwise leak a shader object per render attempt, forever.
+- Texture filtering is now chosen per uploaded format rather than per mode.
+  Unchanged in effect — the `rgb` pass keeps the hardware `LINEAR` magnification
+  it has had since 0.1.1, and every scalar plane stays `NEAREST` because
+  `texelFetch` ignores filter state — but stated explicitly, because `LINEAR` on
+  an `R16UI`/`R8UI` texture makes it *incomplete* and it samples black.
+- `GridStyle.ramp` and `GridOverlayStyleInput.ramp` are optional now that
+  `rampStops` exists. Code that *passes* `ramp` is unaffected; code that *reads*
+  `style.ramp` must handle `undefined`.
+
+### Deferred
+
+- The WebGL2 and Canvas2D backends are asserted against the reference renderer
+  by construction and by unit test, but not yet by a browser-context golden
+  harness — that is the C7 lane's, and it is why `referenceRenderScalar*` exists
+  in this one. No headless-GL dependency was added; the package stays
+  zero-runtime-dependency.
+- GeoGridKit's grid-edge feathering (`gridEdgeFade`, `gridEdgeFeatherCoverage`)
+  is not ported. It is driven by tile uniforms this package has no analogue for,
+  and the coastline stencil plays that role on web.
+- `bboxAnchor` is scalar-only. The `rgb` pass samples precolored planes with a
+  plain normalized `texture()` read and has no texel-space step to anchor, so
+  the field is accepted and ignored there; documented on the type.
+- Reviewed and deliberately left alone: the sample position is taken from the
+  lower frame's geometry when two frames disagree on size (no producer emits
+  that, and the alternative is guessing which is authoritative);
+  `getAttribLocation` runs per draw (one cached call per program would save
+  microseconds against a full-screen pass); `styleKey` fingerprints the stop
+  *count* rather than the stops (every `setStyle` already invalidates the raster
+  wholesale, so the key only has to separate frames within one style); and the
+  resolved ramp is recomputed rather than memoized (it is a handful of stops).
+
 ## 0.2.1 — 2026-08-28
 
 Post-merge adversarial-review fix-forward for `./color` and the `/grid` decoder
@@ -47,6 +201,7 @@ behavior changes.
   (`normalizeWireStops`).
 - A test for `normalizeValue`'s `NaN`-range-bound behavior, with the expected
   value captured by running narduk-data's own `shared/colorramp.py`.
+
 
 ## 0.2.0 — 2026-08-28
 

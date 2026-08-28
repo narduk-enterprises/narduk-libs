@@ -1,4 +1,11 @@
-import type { GridBBox, GridScale, GridValueRange, GridViewport } from './models.js'
+import type {
+  GridBBox,
+  GridBBoxAnchor,
+  GridSampling,
+  GridScale,
+  GridValueRange,
+  GridViewport,
+} from './models.js'
 
 /**
  * Normalize a display value into 0…1 for ramp lookup.
@@ -89,14 +96,59 @@ export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvT
   }
 }
 
+const bitsScratch = new DataView(new ArrayBuffer(8))
+
+/**
+ * A hashable 32-bit stand-in for a value the integer mixer cannot digest.
+ *
+ * The mixer below truncates with `| 0`, which is exactly right for the
+ * `0…65535` samples of an encoded-u16 plane and exactly wrong for a `float32`
+ * plane, where it discards the entire fractional part — a KD490 grid runs
+ * `0.01…6.6`, so truncation maps nearly every distinct cell onto `0`. Worse,
+ * `NaN | 0` is `0`, and a gulf grid is mostly `NaN` over land: fingerprinting
+ * one through the integer path collapses it toward a constant and lets two
+ * genuinely different grids share a cache entry.
+ *
+ * Folding the IEEE-754 halves together keeps every bit of the mantissa in play
+ * and gives `NaN` one stable, non-degenerate image.
+ */
+function hashableBits(value: number): number {
+  bitsScratch.setFloat64(0, value)
+  return (bitsScratch.getUint32(0) ^ bitsScratch.getUint32(4)) | 0
+}
+
+function mix(hash: number, value: number): number {
+  // Integers — every encoded-u16 and mask sample — take the original path, so
+  // the temporal dialect's fingerprints are byte-for-byte what they always were.
+  return (hash * 31 + (Number.isInteger(value) ? value : hashableBits(value))) | 0
+}
+
+/**
+ * Fold an entire plane into a 32-bit hash.
+ *
+ * This used to sample roughly 64 elements spread across the plane, which is a
+ * reasonable fingerprint for a *change detector* and a bad one for a **cache
+ * key**. On a 512×512 grid it inspected about 65 of 262,144 cells, so two grids
+ * differing in tens of thousands of cells could hash identically — and for a
+ * `/grid` frame the hash *is* the identity (there is no date to discriminate
+ * on, unlike a temporal frame), so a collision means the GPU keeps showing the
+ * previous dataset.
+ *
+ * Reading every element costs well under a millisecond even at 512², which is
+ * nothing against the texture upload it guards.
+ *
+ * The trailing re-mix of the last element is kept rather than tidied away: with
+ * the old stride it was the one thing guaranteeing the final cell was seen, and
+ * keeping it means every plane of 64 elements or fewer — every fixture, and the
+ * pinned temporal keys — hashes to exactly what it did before.
+ */
 function hashPlane(values: ArrayLike<number>, seed: number): number {
   const n = values.length
   let hash = (seed ^ (n * 83492791)) | 0
-  const step = Math.max(1, Math.floor(n / 64))
-  for (let i = 0; i < n; i += step) {
-    hash = (hash * 31 + (values[i] ?? 0)) | 0
+  for (let i = 0; i < n; i += 1) {
+    hash = mix(hash, values[i] ?? 0)
   }
-  if (n > 0) hash = (hash * 31 + (values[n - 1] ?? 0)) | 0
+  if (n > 0) hash = mix(hash, values[n - 1] ?? 0)
   return hash
 }
 
@@ -122,4 +174,131 @@ export function frameContentKey(
     hash = hashPlane(channels[2], hash ^ 0x33333333)
   }
   return `${date}|${width}x${height}|${values.length}|${mask.length}|${hash >>> 0}`
+}
+
+/** The result of one scalar kernel evaluation. */
+export interface ScalarSample {
+  /**
+   * Weighted mean of the finite neighbors, renormalized over the weights that
+   * actually survived. `0` when nothing survived — read `coverage` first.
+   */
+  value: number
+  /** `0…1`. See {@link GridSampling} for what each mode puts here. */
+  coverage: number
+  /** Sum of the surviving weights, before the mode's coverage rule is applied. */
+  weight: number
+}
+
+/**
+ * The 2×2 NaN-aware bilinear kernel — the one sampler every backend shares.
+ *
+ * `x` and `y` are continuous coordinates in **texel-center space**: integer `i`
+ * is the center of cell `i`, which is what {@link texelPositionFromUv}
+ * produces. Sampling outside the grid clamps to the edge cell, matching
+ * `CLAMP_TO_EDGE` and GeoGridKit's own clamp.
+ *
+ * One deliberate deviation from the Metal reference: it bails to zero coverage
+ * for a grid narrower or shorter than two cells, which would drop a legal 1×N
+ * `/grid` response on the floor. Here a single-cell axis simply puts all of its
+ * weight on the one cell it has.
+ *
+ * ## Why 2×2 and not a wider tent
+ *
+ * The kernel this replaces was a 3×3 radius-1.5 tent, which is a blur: it pulls
+ * in cells up to a cell and a half away and smears a front that the data
+ * resolves sharply. The server's tiles and GeoGridKit's Metal renderer both use
+ * this 2×2 form, so a wider kernel on web was not a different aesthetic — it
+ * was the web client disagreeing with every other renderer in the estate about
+ * what the same bytes look like.
+ *
+ * ## Why the weights are renormalized
+ *
+ * Missing neighbors are dropped from the average rather than substituted, and
+ * the surviving weights are divided by their own sum. Substituting a zero (or
+ * the range floor, or a neighbor's value) for a missing cell drags the average
+ * toward a number nobody measured — visible as a dark halo hugging every
+ * coastline. Renormalizing instead says the honest thing: this pixel is the
+ * mean of the real data near it, and `coverage` reports how much real data that
+ * was.
+ *
+ * A neighbor whose weight is exactly `0` — the right column when `fx` is `0`,
+ * say — is not "missing" in any sense that matters, so it never suppresses a
+ * `soft` sample. The test is on weight, not on presence, and the zero is exact
+ * in IEEE arithmetic rather than approximate, so the GLSL and TypeScript
+ * kernels agree without an epsilon.
+ */
+export function sampleScalarBilinearSoft(
+  values: ArrayLike<number>,
+  mask: ArrayLike<number>,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  mode: GridSampling = 'soft',
+): ScalarSample {
+  const maxX = width - 1
+  const maxY = height - 1
+  // Clamp the position before flooring, exactly as the Metal kernel does, so
+  // the fractional part outside the grid is the reference's and not a
+  // separately-derived one.
+  const px = x < 0 ? 0 : x > maxX ? maxX : x
+  const py = y < 0 ? 0 : y > maxY ? maxY : y
+  const baseX = Math.floor(px)
+  const baseY = Math.floor(py)
+  const fx = px - baseX
+  const fy = py - baseY
+
+  const x0 = baseX
+  const x1 = baseX + 1 > maxX ? maxX : baseX + 1
+  const y0 = baseY
+  const y1 = baseY + 1 > maxY ? maxY : baseY + 1
+
+  let accumulated = 0
+  let weight = 0
+  let missingWeight = 0
+
+  for (let corner = 0; corner < 4; corner += 1) {
+    const right = (corner & 1) === 1
+    const down = (corner & 2) === 2
+    const w = (right ? fx : 1 - fx) * (down ? fy : 1 - fy)
+    if (w <= 0) continue
+    const index = (down ? y1 : y0) * width + (right ? x1 : x0)
+    if (mask[index]) {
+      accumulated += w * (values[index] ?? 0)
+      weight += w
+    } else {
+      missingWeight += w
+    }
+  }
+
+  if (weight <= 0) return { value: 0, coverage: 0, weight: 0 }
+  return {
+    value: accumulated / weight,
+    coverage: mode === 'coastal' ? weight : missingWeight > 0 ? 0 : 1,
+    weight,
+  }
+}
+
+/**
+ * The feather GeoGridKit's `scalarFragment` applies to a `coastal` coverage.
+ *
+ * The kernel returns the raw surviving weight sum; the fragment is what shapes
+ * it into an alpha, and it does so with this smoothstep rather than using the
+ * weight directly. Keeping the two separate is not ceremony — it is what lets
+ * the kernel stay a literal port while the composition stays inspectable.
+ */
+export function coastalFeather(coverage: number): number {
+  const t = Math.max(0, Math.min(1, coverage / 0.55))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Map a normalized data-space coordinate onto the sampler's texel-center axis.
+ *
+ * The two anchors differ by exactly half a cell — see {@link GridBBoxAnchor}
+ * for why both exist. Getting this wrong does not fail; it misregisters every
+ * pixel by half a cell, which reads as a coastline that does not quite line up.
+ */
+export function texelPositionFromUv(uv: number, size: number, anchor: GridBBoxAnchor): number {
+  return anchor === 'cell-center' ? uv * (size - 1) : uv * size - 0.5
 }

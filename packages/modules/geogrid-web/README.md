@@ -130,7 +130,61 @@ dataset.masks[0]  // Uint8Array, 1 = real value, 0 = missing
 
 The per-plane mask is precomputed because GLSL's `isnan` is optimizer-fragile:
 under fast-math on several drivers `x != x` folds to `false` and every hole in
-the grid renders as garbage. Upload the mask as an R8 texture instead.
+the grid renders as garbage. The renderers upload it as an R8UI texture and let
+it, never `isnan`, decide which cells exist.
+
+Hand a decoded plane straight to an overlay:
+
+```ts
+overlay.setScalarFrame(dataset, planeIndexOf(dataset, 'kd490') ?? 0)
+```
+
+`setScalarFrame` defaults its extent to `gridBounds(header)`, which spans **cell
+centers** — the `/grid` contract's own meaning of extent. A temporal raster
+manifest's `bbox` spans cell **edges** instead. The two differ by exactly half a
+cell, which reads as a coastline that does not quite register, so the renderer
+never infers it: `bboxAnchor` is defaulted from the frame's value kind and can
+be overridden per render.
+
+## Scalar sampling
+
+Both backends run one 2×2 NaN-aware bilinear kernel, ported from GeoGridKit's
+`sampleScalarBilinearSoft` / `sampleScalarBilinearCoastal`. Missing neighbors
+are dropped from the average and the surviving weights renormalized — never
+substituted with a zero, which would drag a dark halo along every coastline.
+
+`style.sampling` picks what happens at the ragged edge:
+
+| | Coverage | Looks like |
+|--|--|--|
+| `soft` (default) | `1` only where every contributing neighbor is finite | a crisp hole edge; no pixel painted from a partial neighborhood |
+| `coastal` | the surviving weight sum, feathered by `smoothstep(0, 0.55, …)` | the last half cell fades out instead of ending on a step |
+
+The ramp is baked to a 256×1 RGBA8 LUT and sampled with `LINEAR` filtering, the
+same shape and size GeoGridKit uses. That replaced a 16-stop uniform array which
+the CDL ramp already filled exactly, and which interpolated in *value* space
+rather than position space — wrong on every log layer.
+
+### Verifying render math without a browser
+
+`referenceRenderScalarTile` / `referenceRenderScalarViewport` run the whole
+scalar path on the CPU with no canvas and no GL, so the kernel, the coverage
+rules, the log normalization and the LUT lookup are all assertable in a Node
+test:
+
+```ts
+import { referenceRenderScalarTile } from '@narduk-enterprises/geogrid-web/core'
+
+const raster = referenceRenderScalarTile(
+  { values, mask, width, height, valueKind: 'float32' },
+  { stops, valueRange: [0.01, 6.6], scale: 'log', sampling: 'coastal' },
+)
+```
+
+Canvas2D runs `referenceScalarPixel` itself rather than a copy, so the two agree
+exactly. WebGL2 agrees to within a count or two per channel — hardware LUT
+filtering uses fixed-point subtexel weights, and the fragment shader is `highp`
+rather than double.
 
 The two fixtures under `tests/fixtures/` are copied byte-for-byte from
 GeoGridKit's `GridHeaderConformanceTests`, and this decoder asserts the same

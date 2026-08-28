@@ -2,8 +2,12 @@ export type {
   ColorRamp,
   ColorStop,
   GridBBox,
+  GridBBoxAnchor,
+  GridFrame,
   GridRenderMode,
+  GridSampling,
   GridScale,
+  GridValueKind,
   GridValueRange,
   GridViewport,
   RampStop,
@@ -16,11 +20,38 @@ export {
 export {
   blendEncoded,
   blendedDisplayValue,
+  coastalFeather,
   dataUvTransform,
   displayValueFromEncoded,
   frameContentKey,
   normalizeValue,
+  sampleScalarBilinearSoft,
+  texelPositionFromUv,
+  type ScalarSample,
 } from './math.js'
+export {
+  defaultBBoxAnchor,
+  frameCacheKey,
+  gridFrameFromScalarDataset,
+  gridFrameFromTemporal,
+  isGridFrame,
+  toGridFrame,
+  type ScalarFrameOptions,
+} from './frame.js'
+export {
+  isDrawableRange,
+  referenceLut,
+  referenceRenderScalarTile,
+  referenceRenderScalarViewport,
+  referenceScalarPixel,
+  sampleLutLinear,
+  type ReferenceRaster,
+  type ReferenceScalarBlend,
+  type ReferenceScalarLayer,
+  type ReferenceScalarStyle,
+  type ReferenceTileOptions,
+  type ReferenceViewportOptions,
+} from './reference-render.js'
 export { TEMPORAL_DECODE_LIMITS } from './decode/temporal.js'
 export { rampLut, sampleRamp, type RGB } from './color.js'
 export type {
