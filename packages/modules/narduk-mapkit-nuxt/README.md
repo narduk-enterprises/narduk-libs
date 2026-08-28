@@ -1,8 +1,8 @@
 # @narduk-geo/narduk-mapkit-nuxt
 
-Nuxt integration for `@narduk-geo/narduk-mapkit`. It adds the `AppMapKit`
-component, `useMapKit`, `useMapkitToken`, and a Worker-compatible
-`GET /api/mapkit-token` route.
+Nuxt integration for `@narduk-geo/narduk-mapkit`. It adds the `AppMapKit` and
+`AppMapKitCallout` components, `useMapKit`, `useMapKitCallouts`,
+`useMapkitToken`, and a Worker-compatible `GET /api/mapkit-token` route.
 
 ## Install
 
@@ -54,6 +54,89 @@ Viewport mode positions with `position: fixed`, so no ancestor of the component
 may set `transform`, `filter`, `backdrop-filter`, `perspective`, or
 `contain: paint` -- any of those becomes the containing block and traps the map
 inside it.
+
+## Callouts
+
+Off by default. Opt in with `callouts`, then write the callout's contents as a
+slot on `<AppMapKitCallout>` inside the map:
+
+```vue
+<script setup lang="ts">
+const selectedId = ref<string | null>(null)
+</script>
+
+<template>
+  <div style="height: 420px">
+    <AppMapKit
+      v-model:selected-id="selectedId"
+      :items="stations"
+      :create-pin-element="createPin"
+      callouts
+    >
+      <AppMapKitCallout :items="stations" v-slot="{ item, close }">
+        <UCard>
+          <template #header>{{ item.name }}</template>
+          {{ item.reading }}
+          <UButton size="xs" @click="close">Close</UButton>
+        </UCard>
+      </AppMapKitCallout>
+    </AppMapKit>
+  </div>
+</template>
+```
+
+Selecting a pin opens its callout, and dismissing a callout clears the
+selection, so the two never disagree. Set `callout-follow-selection="false"` to
+drive callouts entirely from the exposed methods instead.
+
+### Nuxt UI inside a callout
+
+The slot is moved into the callout's host element with a `<Teleport>`, not
+mounted as a second Vue app, so the content keeps its place in the component
+tree. That is what makes Nuxt UI work: `UCard`, `UButton`, `UModal`, and the
+rest read their configuration from `<UApp>` through `provide`/`inject`, which a
+second app would not see. `useNuxtApp()`, the color mode, route state, and
+ordinary reactivity all reach the slot for the same reason.
+
+`:items` on `<AppMapKitCallout>` is optional and never read at runtime; it is
+the type witness that lets TypeScript infer the slot's `item`, which a child
+cannot pick up from its parent's generic.
+
+### Props, events, and methods
+
+| Prop | Default | Purpose |
+| --- | --- | --- |
+| `callouts` | `false` | Opt in. Nothing is constructed until it is `true`. |
+| `calloutMode` | `'single'` | `'multi'` keeps every open callout open. |
+| `calloutPlacement` | `'above'` | Preferred side; flips when cramped. |
+| `calloutAnchorOffset` | derived | Pixels added to the projected anchor. Defaults to clearing the pin, from `annotationSize`. |
+| `calloutFollowSelection` | `true` | Bind callouts to `selectedId` in both directions. |
+| `calloutOptions` | -- | The rest of the controller's options: `gap`, `edgePadding`, `flip`, `caretSize`, `closeOnEscape`, `closeOnMapClick`, `closeOnPan`, `closeOnDeselect`, `focusOnOpen`, `restoreFocus`, `role`, `ariaLabel`, `zIndex`, `hideOffscreen`, `keyForAnnotation`. |
+
+Events: `callout-open` (also fired when an open callout is re-opened with new
+data) and `callout-close`. Both carry `{ item, key, phase, reason }`.
+
+A template ref exposes `openCallout(key)`, `closeCallout(key)`,
+`closeCallouts()`, and `getCalloutController()`. Inside the map's own subtree,
+`useMapKitCallouts()` returns the same controls plus the reactive `entries`
+list, for a legend row or a keyboard shortcut that opens a callout.
+
+### Styling
+
+The component styles only the caret and leaves the callout's surface to the slot
+content, so a `UCard` is not stacked on a second background. Match the caret to
+that surface with custom properties on the map or any ancestor:
+
+```css
+.map-wrapper {
+  --mapkit-callout-caret-background: var(--ui-bg);
+  --mapkit-callout-caret-border: var(--ui-border);
+  --mapkit-callout-caret-size: 10px;
+  --mapkit-callout-max-width: 22rem;
+}
+```
+
+## Token route
 
 Runtime names accepted by the token route:
 

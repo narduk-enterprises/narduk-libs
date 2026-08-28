@@ -64,6 +64,10 @@ export default defineNuxtModule<NardukMapKitNuxtModuleOptions>({
         name: 'AppMapKit',
         filePath: resolver.resolve('./runtime/components/AppMapKit.vue'),
       })
+      addComponent({
+        name: 'AppMapKitCallout',
+        filePath: resolver.resolve('./runtime/components/AppMapKitCallout.vue'),
+      })
     }
 
     if (options.composables) {
@@ -71,6 +75,10 @@ export default defineNuxtModule<NardukMapKitNuxtModuleOptions>({
         {
           name: 'useMapKit',
           from: resolver.resolve('./runtime/composables/useMapKit'),
+        },
+        {
+          name: 'useMapKitCallouts',
+          from: resolver.resolve('./runtime/composables/useMapKitCallouts'),
         },
         {
           name: 'useMapkitToken',

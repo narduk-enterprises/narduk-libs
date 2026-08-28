@@ -6,14 +6,22 @@ declare const mapkit: any
 
 <script setup lang="ts" generic="T extends { id: string; lat: number; lng: number }">
 import {
+  createMapKitCalloutController,
   createMapKitFullscreenController,
   refreshMapKitMapLayout,
 } from '@narduk-geo/narduk-mapkit/client'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
 
+import { appMapKitCalloutInjectionKey } from '../callouts'
 import { useMapKit } from '../composables/useMapKit'
 
+import type { AppMapKitCalloutEntry } from '../callouts'
 import type {
+  MapKitCalloutController,
+  MapKitCalloutControllerOptions,
+  MapKitCalloutEvent,
+  MapKitCalloutMode,
+  MapKitCalloutPlacement,
   MapKitFullscreenChangeEvent,
   MapKitFullscreenController,
   MapKitFullscreenMode,
@@ -51,6 +59,34 @@ export interface GeoJSONFeatureCollection {
   type: 'FeatureCollection'
 }
 
+/** Where a callout points. The same shape `items` already carry. */
+export interface AppMapKitCalloutCoordinate {
+  lat: number
+  lng: number
+}
+
+/**
+ * Everything the callout controller accepts that this component does not own
+ * itself. `container`, `map`, `document`, and `window` are wired to the map;
+ * `mode` and `placement` have dedicated props; `render` and `update` are
+ * omitted because `<AppMapKitCallout>` teleports Vue content into the host
+ * instead of writing it imperatively.
+ */
+export type AppMapKitCalloutOptions = Partial<
+  Omit<
+    MapKitCalloutControllerOptions<unknown, AppMapKitCalloutCoordinate>,
+    | 'container'
+    | 'document'
+    | 'map'
+    | 'mode'
+    | 'placement'
+    | 'projectCoordinate'
+    | 'render'
+    | 'update'
+    | 'window'
+  >
+>
+
 export interface OverlayStyle {
   fillRule?: 'evenodd' | 'nonzero'
   fillColor: string
@@ -67,6 +103,29 @@ const props = withDefaults(
     boundingPadding?: number
     /** Text label to display at the center of the GeoJSON features. */
     centerLabel?: string
+    /**
+     * Opt in to anchored callouts rendered over the map. Off by default, so
+     * every existing consumer keeps MapKit's own (disabled) callout behaviour.
+     * Pair it with `<AppMapKitCallout>` in the default slot.
+     */
+    callouts?: boolean
+    /**
+     * Container-relative pixels added to a callout's projected anchor. Defaults
+     * to clearing the pin, derived from `annotationSize`.
+     */
+    calloutAnchorOffset?: { x: number; y: number }
+    /**
+     * Open the callout for the selected item, and clear the selection when its
+     * callout closes. Default `true`; turn it off to drive callouts entirely
+     * through the exposed `openCallout` / `closeCallout`.
+     */
+    calloutFollowSelection?: boolean
+    /** How many callouts may be open at once. Default `'single'`. */
+    calloutMode?: MapKitCalloutMode
+    /** The rest of the callout controller's options, applied at construction. */
+    calloutOptions?: AppMapKitCalloutOptions
+    /** Preferred side for every callout. Default `'above'`. */
+    calloutPlacement?: MapKitCalloutPlacement
     /** Lightweight circle overlays for rendering large point clouds. */
     circles?: Array<{ color: string; lat: number; lng: number; opacity?: number; radius: number }>
     /** Scale factor for dynamic radius (fraction of visible latitude span). */
@@ -145,10 +204,20 @@ const props = withDefaults(
     centerLabel: undefined,
     fullscreenControl: false,
     fullscreenMode: 'viewport',
+    callouts: false,
+    calloutAnchorOffset: undefined,
+    calloutFollowSelection: true,
+    calloutMode: 'single',
+    calloutOptions: undefined,
+    calloutPlacement: 'above',
   },
 )
 
 const emit = defineEmits<{
+  /** Emitted when a callout closes, whatever dismissed it. */
+  'callout-close': [event: MapKitCalloutEvent<T>]
+  /** Emitted when a callout opens, or an open one is re-opened with new data. */
+  'callout-open': [event: MapKitCalloutEvent<T>]
   /** Emitted when a GeoJSON polygon overlay is clicked. */
   'feature-select': [feature: GeoJSONFeature]
   /** Emitted whenever fullscreen presentation starts, ends, or falls back. */
@@ -519,6 +588,12 @@ function initMap() {
     }
   })
 
+  // A selection that predates the map -- a deep link, restored state -- gets no
+  // watcher tick, so open its callout once the map exists to project against.
+  if (props.callouts && props.calloutFollowSelection && selectedId.value) {
+    openCallout(selectedId.value)
+  }
+
   emit('map-ready', map)
 }
 
@@ -754,6 +829,10 @@ function zoomOut() {
 watch(selectedId, (newId) => {
   if (!map) return
   rebuildAnnotations()
+  if (props.callouts && props.calloutFollowSelection) {
+    if (newId) openCallout(newId)
+    else calloutController?.closeAll()
+  }
   if (props.suppressSelectionZoom) return
   if (newId) {
     const item = props.items.find((i) => i.id === newId)
@@ -781,6 +860,17 @@ watch(
     overviewRegion = computeBoundingRegion()
     if (overviewRegion) map.setRegionAnimated(overviewRegion, true)
     addAnnotations()
+  },
+  { deep: false },
+)
+
+// Re-open every open callout against the replaced items, so a callout whose
+// item object was swapped out shows the new data instead of a stale capture.
+// Registered after the annotation watcher so it sees the settled selection.
+watch(
+  () => props.items,
+  () => {
+    if (props.callouts) refreshCallouts()
   },
   { deep: false },
 )
@@ -834,6 +924,12 @@ onBeforeUnmount(() => {
   // the element goes away, so an unmount while presented cannot strand them.
   fullscreenController?.destroy()
   fullscreenController = null
+  // Before the map goes away: destroying the controller closes every callout,
+  // which empties `calloutEntries` and unmounts the teleported Vue subtrees
+  // rather than orphaning them inside a detached host.
+  calloutController?.destroy()
+  calloutController = null
+  calloutEntries.value = []
   colorSchemeObserver?.disconnect()
   colorSchemeObserver = null
   clearPinCleanups()
@@ -922,11 +1018,138 @@ async function toggleFullscreen() {
   await ensureFullscreenController()?.toggle(props.fullscreenMode)
 }
 
+// ── Callouts (opt-in) ────────────────────────────────────────
+
+/**
+ * Shallow on purpose. The array is replaced wholesale on every controller
+ * event, so deep reactivity would buy nothing -- and it would wrap each `host`
+ * DOM node in a reactive proxy, which is both wasteful and a well-known
+ * footgun. An item that is already reactive stays reactive; this only declines
+ * to add a second layer.
+ */
+const calloutEntries = shallowRef<AppMapKitCalloutEntry[]>([])
+let calloutController: MapKitCalloutController<T, AppMapKitCalloutCoordinate> | null = null
+
+/**
+ * Pin elements are centred on their coordinate and lifted 6px by
+ * `addAnnotations`, so the top of a pin sits half its height plus that offset
+ * above the coordinate. Anchoring there is what keeps a callout from covering
+ * the marker it belongs to.
+ */
+function calloutAnchorOffset(): { x: number; y: number } {
+  return props.calloutAnchorOffset ?? { x: 0, y: -(props.annotationSize.height / 2) - 6 }
+}
+
+/**
+ * Built on first use, so a consumer who never opts in pays nothing, and so the
+ * controller is never constructed during SSR where there is no document.
+ *
+ * The wrapper is the container rather than the canvas: it is the positioned,
+ * `overflow: hidden` box that also carries the status overlay and the
+ * fullscreen toggle, so callouts are clipped to the map and travel with it
+ * into fullscreen.
+ */
+function ensureCalloutController(): MapKitCalloutController<T, AppMapKitCalloutCoordinate> | null {
+  if (calloutController) return calloutController
+  if (!import.meta.client || !props.callouts || !mapWrapper.value || !map) return null
+
+  calloutController = createMapKitCalloutController<T, AppMapKitCalloutCoordinate>({
+    ...props.calloutOptions,
+    container: mapWrapper.value,
+    map,
+    mode: props.calloutMode,
+    placement: props.calloutPlacement,
+    projectCoordinate: (coordinate) => {
+      if (!map) return null
+      const point = map.convertCoordinateToPointOnPage(
+        new mapkit.Coordinate(coordinate.lat, coordinate.lng),
+      )
+      return point ? { x: point.x, y: point.y } : null
+    },
+  })
+  calloutController.subscribe(syncCallouts)
+  return calloutController
+}
+
+/**
+ * Rebuild the reactive entry list from the controller, then re-emit.
+ *
+ * The items come back from the controller rather than from `props.items` so a
+ * callout stays correct for an item that has since left the list, and so the
+ * host element and its data can never disagree.
+ */
+function syncCallouts(event: MapKitCalloutEvent<T>): void {
+  const controller = calloutController
+  if (!controller) return
+
+  const entries: AppMapKitCalloutEntry[] = []
+  for (const key of controller.openKeys) {
+    const host = controller.hostFor(key) as HTMLElement | null
+    const item = controller.itemFor(key)
+    if (host && item) entries.push({ host, item, key })
+  }
+  calloutEntries.value = entries
+
+  if (event.phase === 'close') {
+    emit('callout-close', event)
+    // A dismissal is also a deselection: Escape or an outside click should
+    // leave the pin unselected, or the same pin could not be re-opened.
+    if (props.calloutFollowSelection && selectedId.value === event.key) selectedId.value = null
+    return
+  }
+  emit('callout-open', event)
+}
+
+function openCallout(key: string): void {
+  const item = props.items.find((candidate) => candidate.id === key)
+  if (!item) return
+  ensureCalloutController()?.open({
+    anchorOffset: calloutAnchorOffset(),
+    coordinate: { lat: item.lat, lng: item.lng },
+    item,
+    key,
+  })
+}
+
+function closeCallout(key: string): void {
+  calloutController?.close(key)
+}
+
+function closeCallouts(): void {
+  calloutController?.closeAll()
+}
+
+/** Re-open every open callout with the current item for its key. */
+function refreshCallouts(): void {
+  const controller = calloutController
+  if (!controller) return
+  for (const key of controller.openKeys) {
+    const item = props.items.find((candidate) => candidate.id === key)
+    if (item) openCallout(key)
+    else controller.close(key)
+  }
+}
+
+function getCalloutController(): MapKitCalloutController<T, AppMapKitCalloutCoordinate> | null {
+  return calloutController
+}
+
+provide(appMapKitCalloutInjectionKey, {
+  close: (key?: string) => (key === undefined ? closeCallouts() : closeCallout(key)),
+  entries: calloutEntries,
+  open: openCallout,
+  reposition: () => calloutController?.reposition(),
+})
+
 defineExpose({
+  closeCallout,
+  closeCallouts,
   enterFullscreen,
   exitFullscreen,
+  getCalloutController,
   getMap,
   isFullscreen,
+  openCallout,
   scrollIntoView,
   setRegion,
   toggleFullscreen,
@@ -953,6 +1176,10 @@ defineExpose({
       class="mapkit-canvas"
       :class="{ 'mapkit-canvas--hidden': !mapkitReady }"
     />
+
+    <!-- Callout templates render nothing here; each teleports into the host
+         the controller created for it. -->
+    <slot />
 
     <button
       v-if="fullscreenControl"
@@ -1043,5 +1270,42 @@ defineExpose({
 .mapkit-fullscreen-toggle:focus-visible {
   outline: 2px solid Highlight;
   outline-offset: 2px;
+}
+
+/*
+ * Callout chrome. `:deep()` because the layer, frames, and carets are created
+ * imperatively by the controller and carry no scope attribute; the selectors
+ * are still anchored to this component's own wrapper.
+ *
+ * Deliberately unopinionated about the callout's surface: the slot content
+ * brings its own (a UCard, a panel, a bare div). Only the caret is drawn here,
+ * and every part of it is overridable through a custom property so it can be
+ * matched to that surface -- e.g. `--mapkit-callout-caret-background: var(--ui-bg)`.
+ */
+.mapkit-wrapper :deep([data-mapkit-callout]) {
+  max-width: var(--mapkit-callout-max-width, min(20rem, 100%));
+}
+
+.mapkit-wrapper :deep([data-mapkit-callout]:focus-visible) {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+.mapkit-wrapper :deep([data-mapkit-callout-caret]) {
+  background: var(--mapkit-callout-caret-background, Canvas);
+  border: 1px solid var(--mapkit-callout-caret-border, color-mix(in srgb, CanvasText 15%, transparent));
+  height: var(--mapkit-callout-caret-size, 10px);
+  /* The controller writes the caret's centre into `left`/`top`. */
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: var(--mapkit-callout-caret-size, 10px);
+}
+
+/*
+ * Positioned, and after the caret in document order, so the callout's own
+ * surface paints over the caret's inner half and leaves a triangle pointing at
+ * the anchor.
+ */
+.mapkit-wrapper :deep([data-mapkit-callout-content]) {
+  position: relative;
 }
 </style>
