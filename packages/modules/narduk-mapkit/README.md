@@ -3,9 +3,9 @@
 Canonical Apple MapKit JS workspace for Narduk web apps. It publishes two
 public, independently versioned packages through GitHub Packages:
 
-- `@narduk-geo/narduk-mapkit` — framework-neutral client, server, token,
+- `@narduk-enterprises/narduk-mapkit` — framework-neutral client, server, token,
   geometry, temporal, vector-overlay, and Apple Maps Server API helpers.
-- `@narduk-geo/narduk-mapkit-nuxt` — `AppMapKit`, `useMapKit`,
+- `@narduk-enterprises/narduk-mapkit-nuxt` — `AppMapKit`, `useMapKit`,
   `useMapkitToken`, Nuxt registration, and `/api/mapkit-token`.
 
 This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
@@ -64,23 +64,23 @@ domain-specific behavior.
 Configure the scoped registry with a GitHub token that has `read:packages`:
 
 ```ini
-@narduk-geo:registry=https://npm.pkg.github.com
+@narduk-enterprises:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
 ```sh
-pnpm add @narduk-geo/narduk-mapkit
+pnpm add @narduk-enterprises/narduk-mapkit
 ```
 
 Nuxt apps install both immutable releases:
 
 ```sh
-pnpm add @narduk-geo/narduk-mapkit @narduk-geo/narduk-mapkit-nuxt
+pnpm add @narduk-enterprises/narduk-mapkit @narduk-enterprises/narduk-mapkit-nuxt
 ```
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['@narduk-geo/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
 })
 ```
 
@@ -103,7 +103,7 @@ configuration.
 Mount the Fetch handler at your app's token endpoint:
 
 ```ts
-import { createMapKitTokenHandler } from '@narduk-geo/narduk-mapkit/node'
+import { createMapKitTokenHandler } from '@narduk-enterprises/narduk-mapkit/node'
 
 export const GET = createMapKitTokenHandler({
   allowedOrigins: ['http://localhost:3000', 'https://maps.example.com'],
@@ -131,7 +131,7 @@ configuration in Web-standard runtimes.
 Workers pass secrets through `fetch(request, env)`, not `process.env`:
 
 ```ts
-import { mapKitTokenResponseFromEnv } from '@narduk-geo/narduk-mapkit/worker'
+import { mapKitTokenResponseFromEnv } from '@narduk-enterprises/narduk-mapkit/worker'
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -174,7 +174,7 @@ import {
   geocodeAppleMaps,
   getAppleMapsAccessToken,
   searchAppleMaps,
-} from '@narduk-geo/narduk-mapkit/apple-maps'
+} from '@narduk-enterprises/narduk-mapkit/apple-maps'
 
 const serverConfig = {
   appId: 'maps.example.app',
@@ -201,7 +201,7 @@ fresh pre-signed auth JWT as `authToken`.
 ## Browser Boot
 
 ```ts
-import { initializeMapKit } from '@narduk-geo/narduk-mapkit/client'
+import { initializeMapKit } from '@narduk-enterprises/narduk-mapkit/client'
 
 await initializeMapKit({ tokenEndpoint: '/api/mapkit-token' })
 
@@ -219,7 +219,7 @@ import {
   MAPKIT_JS_V6_SCRIPT_URL,
   initializeMapKit,
   loadMapKitLibraries,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const mapkit = await initializeMapKit({
   scriptUrl: MAPKIT_JS_V6_SCRIPT_URL,
@@ -233,8 +233,8 @@ await loadMapKitLibraries(mapkit)
 Use package geometry to keep bounds logic out of app components:
 
 ```ts
-import { computeMapKitRegionForDrawables } from '@narduk-geo/narduk-mapkit/geometry'
-import { createMapKitRegionForPoints } from '@narduk-geo/narduk-mapkit/client'
+import { computeMapKitRegionForDrawables } from '@narduk-enterprises/narduk-mapkit/geometry'
+import { createMapKitRegionForPoints } from '@narduk-enterprises/narduk-mapkit/client'
 
 const plainRegion = computeMapKitRegionForDrawables({
   markers: [{ id: 'austin', lat: 30.2672, lng: -97.7431 }],
@@ -261,7 +261,7 @@ Map viewers can share tile overlay construction and fade-out cleanup:
 import {
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const nextOverlay = createMapKitTileOverlay(window.mapkit, '/tiles/{z}/{x}/{y}.png', {
   maximumZ: 10,
@@ -289,7 +289,7 @@ time, each with its own opacity and AOI bounds:
 import {
   MapKitLayerRegistry,
   regionForMapKitLayer,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const registry = new MapKitLayerRegistry({
   mapkit: window.mapkit,
@@ -362,7 +362,7 @@ destroys and rebuilds every marker on every render and makes them blink.
 Reconcile by key instead:
 
 ```ts
-import { MapKitAnnotationRegistry } from '@narduk-geo/narduk-mapkit/client'
+import { MapKitAnnotationRegistry } from '@narduk-enterprises/narduk-mapkit/client'
 
 const annotations = new MapKitAnnotationRegistry<mapkit.MarkerAnnotation>({ map })
 
@@ -437,7 +437,7 @@ of a gesture the markers pop rather than scale. This splits the problem:
 import {
   createMapKitPinScalingController,
   mapKitZoomForSpan,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const scaling = createMapKitPinScalingController<mapkit.Annotation>({
   annotations: registry, // the MapKitAnnotationRegistry, unchanged
@@ -578,7 +578,7 @@ import {
   boundedFrameCache,
   nextDrawableFrame,
   temporalProgress,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 // Advancing only when the current *and* next frames are decoded is what stops
 // a time-lapse from flashing an empty layer.
@@ -602,7 +602,7 @@ readiness-gated loop; the app owns the date strip, the play button, and the
 descriptor for each date:
 
 ```ts
-import { createTemporalLayerController } from '@narduk-geo/narduk-mapkit/client'
+import { createTemporalLayerController } from '@narduk-enterprises/narduk-mapkit/client'
 
 const controller = createTemporalLayerController({
   registry,
@@ -656,7 +656,7 @@ long-press-to-pin, pin dragging, and dismissal, and separates all of them from
 a map pan by movement slop and press duration:
 
 ```ts
-import { attachMapKitPointerProbe } from '@narduk-geo/narduk-mapkit/client'
+import { attachMapKitPointerProbe } from '@narduk-enterprises/narduk-mapkit/client'
 
 const probe = attachMapKitPointerProbe({
   element: mapElement,
@@ -709,7 +709,7 @@ full re-render. Two independent pieces cut that down, and they compose.
 animation frame:
 
 ```ts
-import { createMapKitRenderScheduler } from '@narduk-geo/narduk-mapkit/client'
+import { createMapKitRenderScheduler } from '@narduk-enterprises/narduk-mapkit/client'
 
 const scheduler = createMapKitRenderScheduler({
   onFlush: (regions) => {
@@ -740,7 +740,7 @@ identical, which is what makes a re-rendered readout blink:
 import {
   createMapKitFocusPreserver,
   createMapKitHtmlSlotRenderer,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const slots = createMapKitHtmlSlotRenderer<HTMLElement>()
 
@@ -790,7 +790,7 @@ Nothing happens until a consumer builds a controller and calls it:
 import {
   createMapKitFullscreenController,
   refreshMapKitMapLayout,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 const fullscreen = createMapKitFullscreenController({
   element: mapWrapper,
@@ -874,7 +874,7 @@ open/close/toggle by key, placement, edge-avoidance, following the camera, and
 dismissal -- never what a callout looks like.
 
 ```ts
-import { createMapKitCalloutController } from '@narduk-geo/narduk-mapkit/client'
+import { createMapKitCalloutController } from '@narduk-enterprises/narduk-mapkit/client'
 
 const callouts = createMapKitCalloutController<Station, Station>({
   // A positioned element. Use the wrapper holding the map plus its chrome.
@@ -989,7 +989,7 @@ import {
   buildMapKitPlaybackLineSlices,
   formatMapKitPlaybackDuration,
   mapKitPlaybackProgressToIndex,
-} from '@narduk-geo/narduk-mapkit/playback'
+} from '@narduk-enterprises/narduk-mapkit/playback'
 
 const index = mapKitPlaybackProgressToIndex(progress, route.length)
 const lines = buildMapKitPlaybackLineSlices(route, index)
@@ -1020,15 +1020,15 @@ in the app.
 
 | Export | Purpose |
 | --- | --- |
-| `@narduk-geo/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding |
-| `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
-| `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
-| `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
-| `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
-| `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
-| `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |
-| `@narduk-geo/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route |
+| `@narduk-enterprises/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding |
+| `@narduk-enterprises/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
+| `@narduk-enterprises/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
+| `@narduk-enterprises/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
+| `@narduk-enterprises/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
+| `@narduk-enterprises/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
+| `@narduk-enterprises/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
+| `@narduk-enterprises/narduk-mapkit/token` | Low-level JWT signing and decoding |
+| `@narduk-enterprises/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route |
 
 ## Maintainer Migration Notes
 
@@ -1042,7 +1042,7 @@ not part of the published package artifact. The short version:
 4. Move MapKit tile overlay construction and fade loops to `client` runtime
    helpers.
 5. Replace template-layer MapKit components and composables with
-   `@narduk-geo/narduk-mapkit-nuxt`.
+   `@narduk-enterprises/narduk-mapkit-nuxt`.
 6. Keep app-specific marker DOM, callout *contents*, panels, and native Swift
    renderers outside this workspace. Callout anchoring, edge-avoidance, and
    lifecycle are the package's job; what a callout looks like is the app's.
@@ -1088,5 +1088,5 @@ proof.
 
 There is no mutable `latest.tgz`, local publish poller, or absolute-path package
 channel. Local tarballs are disposable test artifacts only; consumers use
-immutable GitHub Packages releases with authenticated `@narduk-geo` registry
-access.
+immutable GitHub Packages releases with authenticated `@narduk-enterprises`
+registry access.

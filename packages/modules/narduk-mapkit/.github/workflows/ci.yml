@@ -11,7 +11,7 @@
 # estate-wide.
 #
 # WHY node-library. Config class is `node-library`: this repo publishes two
-# packages (`@narduk-geo/narduk-mapkit` core + `@narduk-geo/narduk-mapkit-nuxt`
+# packages (`@narduk-enterprises/narduk-mapkit` core + `@narduk-enterprises/narduk-mapkit-nuxt`
 # adapter) to GitHub Packages. It ships a Nuxt *module*, not a Nuxt app -- no
 # deployed surface, no wrangler, no Cloudflare account -- so nuxt-cloudflare
 # would buy inputs this gate has no use for. Publish/release deliberately stays
@@ -153,6 +153,6 @@ jobs:
       # The callable defaults require-scripts to true, so every declaration is
       # an enforced claim. There is intentionally no root test:cloudflare and
       # no Nuxt check:dist.
-      package-matrix: '[{"label":"core","filter":"","extra-scripts":"check:dist check:package check:publint"},{"label":"nuxt","filter":"@narduk-geo/narduk-mapkit-nuxt","extra-scripts":"check:package check:publint test:cloudflare"}]'
+      package-matrix: '[{"label":"core","filter":"","extra-scripts":"check:dist check:package check:publint"},{"label":"nuxt","filter":"@narduk-enterprises/narduk-mapkit-nuxt","extra-scripts":"check:package check:publint test:cloudflare"}]'
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}

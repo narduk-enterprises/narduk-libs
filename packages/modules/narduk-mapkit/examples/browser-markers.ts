@@ -1,6 +1,6 @@
-import { createMapKitRegionForPoints, initializeMapKit } from '@narduk-geo/narduk-mapkit/client'
+import { createMapKitRegionForPoints, initializeMapKit } from '@narduk-enterprises/narduk-mapkit/client'
 
-import type { MapKitPoint } from '@narduk-geo/narduk-mapkit'
+import type { MapKitPoint } from '@narduk-enterprises/narduk-mapkit'
 
 interface MapKitNamespace {
   Annotation: new (

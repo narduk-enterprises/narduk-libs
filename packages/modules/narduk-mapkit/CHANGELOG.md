@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.0 - 2026-08-28
+
+- **Breaking: npm scope renamed** from `@narduk-geo` to `@narduk-enterprises`.
+  `@narduk-geo/narduk-mapkit` is now `@narduk-enterprises/narduk-mapkit`, and
+  `@narduk-geo/narduk-mapkit-nuxt` is now `@narduk-enterprises/narduk-mapkit-nuxt`.
+  `@narduk-geo` is a retired estate npm scope (narduk-enterprises/company-hq
+  `DECISIONS.md`, 2026-07-25 estate-shape decision: "npm scope consolidates to
+  `@narduk-enterprises`"). Versions through 1.3.0 remain published under the
+  old `@narduk-geo` scope and are unaffected; this release is the first to
+  publish (on its own future tag) under `@narduk-enterprises`. Update the
+  scoped-registry line in `.npmrc` from `@narduk-geo:registry=...` to
+  `@narduk-enterprises:registry=...` and every import specifier from
+  `@narduk-geo/narduk-mapkit*` to `@narduk-enterprises/narduk-mapkit*`. No
+  runtime behavior changed — this is the identifier only.
+- Added a doc note to `docs/centralization-plan.md` (D1) recording that web
+  scalar/grid rendering lives in `GeoGridWeb`, not this package; the tile seam
+  (`createMapKitAsyncTileOverlay`, `MapKitTileOverlayImageSource`) stays a
+  plain structural type rather than a dependency.
+
 ## 1.6.0 - 2026-08-28
 
 - Added `MapKitPinScalingController` / `createMapKitPinScalingController()`:

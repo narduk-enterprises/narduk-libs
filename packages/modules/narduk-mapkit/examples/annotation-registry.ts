@@ -1,4 +1,4 @@
-import { MapKitAnnotationRegistry } from '@narduk-geo/narduk-mapkit/client'
+import { MapKitAnnotationRegistry } from '@narduk-enterprises/narduk-mapkit/client'
 
 interface Coordinate {
   latitude: number

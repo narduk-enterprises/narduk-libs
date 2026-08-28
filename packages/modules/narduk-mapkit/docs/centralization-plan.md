@@ -2,7 +2,7 @@
 
 This decision record began with the local and GitHub inventory run on July 4,
 2026 and was implemented on July 14, 2026. This repository is the canonical
-web MapKit source under the `narduk-geo` organization.
+web MapKit source under the `narduk-enterprises` organization.
 
 ## Inventory
 
@@ -23,7 +23,7 @@ Representative remote-only hits:
 
 ## Direction
 
-Keep `@narduk-geo/narduk-mapkit` framework-agnostic and web-focused:
+Keep `@narduk-enterprises/narduk-mapkit` framework-agnostic and web-focused:
 
 - Server: origin resolution, allowlists, explicit Worker config, token signing,
   and token caching. Process/Doppler resolution is isolated in the `/node`
@@ -33,7 +33,7 @@ Keep `@narduk-geo/narduk-mapkit` framework-agnostic and web-focused:
 - Playback: route progress, route slicing, duration formatting.
 - Apple Maps Server API: developer/access tokens, search, and geocoding.
 
-Publish `@narduk-geo/narduk-mapkit-nuxt` from this workspace as the one Nuxt
+Publish `@narduk-enterprises/narduk-mapkit-nuxt` from this workspace as the one Nuxt
 adapter. It owns the reusable `AppMapKit` component, composables, module
 registration, and H3 token route while depending on core for token and client
 behavior.
@@ -57,6 +57,25 @@ Swift rendering in the Nuxt adapter.
 7. For native Swift map code, align data contracts and tile semantics with
    this package, but keep native rendering in Swift packages such as
    `GeoGridKit`.
+
+### D1 — web scalar/grid rendering lives in GeoGridWeb, not here
+
+Decided during the 2026-08-28 water-quality-gulf migration
+(narduk-enterprises/narduk-data#276; this repo's side of it tracked as
+narduk-mapkit#25). This package has zero grid/scalar rendering code today and
+stays that way deliberately: web scalar rendering is centralized in
+`GeoGridWeb`, matching the native precedent above where rendering stays in the
+Swift package (`GeoGridKit`) rather than in this MapKit wrapper.
+
+The tile seam this package exposes is intentionally structural, not a
+dependency on any grid-rendering package: `createMapKitAsyncTileOverlay`
+(`src/client/runtime.ts:186-216`) accepts a per-tile `MapKitTileOverlayImageSource`
+— a plain function type resolving to `Promise<ImageSource> | ImageSource`
+(`src/client/runtime.ts:44-54`). `GeoGridWeb` (or any other renderer) plugs
+into that seam from the consumer side; no core changes were needed here to
+support it, and none should be — adding a grid/scalar decoder or renderer to
+this package would duplicate `GeoGridWeb`'s job and couple a framework-neutral
+MapKit wrapper to one product's rendering stack.
 
 ## Performance Targets
 

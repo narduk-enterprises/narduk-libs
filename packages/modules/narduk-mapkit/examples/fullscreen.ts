@@ -1,9 +1,9 @@
 import {
   createMapKitFullscreenController,
   refreshMapKitMapLayout,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
-import type { MapKitFullscreenMode } from '@narduk-geo/narduk-mapkit/client'
+import type { MapKitFullscreenMode } from '@narduk-enterprises/narduk-mapkit/client'
 
 interface FullscreenMapElements {
   /** The toggle the user presses. Usually rendered inside `wrapper`. */

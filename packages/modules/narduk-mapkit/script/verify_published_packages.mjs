@@ -43,7 +43,7 @@ for (const manifest of manifests) {
 
 execFileSync(
   'pnpm',
-  ['--filter', '@narduk-geo/narduk-mapkit-nuxt', 'run', 'check:package'],
+  ['--filter', '@narduk-enterprises/narduk-mapkit-nuxt', 'run', 'check:package'],
   {
     cwd: repoRoot,
     env: { ...process.env, NARDUK_MAPKIT_REGISTRY_SMOKE: '1' },

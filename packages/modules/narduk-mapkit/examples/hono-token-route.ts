@@ -1,4 +1,4 @@
-import { createMapKitTokenHandler } from '@narduk-geo/narduk-mapkit/node'
+import { createMapKitTokenHandler } from '@narduk-enterprises/narduk-mapkit/node'
 import { Hono } from 'hono'
 
 const app = new Hono()

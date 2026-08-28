@@ -1,7 +1,7 @@
-import { mapKitTokenResponseFromEnv } from '@narduk-geo/narduk-mapkit/worker'
+import { mapKitTokenResponseFromEnv } from '@narduk-enterprises/narduk-mapkit/worker'
 import { toWebRequest } from 'h3'
 
-import type { MapKitEnv } from '@narduk-geo/narduk-mapkit/worker'
+import type { MapKitEnv } from '@narduk-enterprises/narduk-mapkit/worker'
 
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig(event)

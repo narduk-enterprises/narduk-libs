@@ -1,9 +1,10 @@
 # Releasing the MapKit workspace
 
 Both packages publish from this repository to GitHub Packages under the
-repo-aligned `@narduk-geo` scope. GitHub requires authentication for npm-format
-package installs even when package visibility is public, so consumers route
-only `@narduk-geo/*` to `https://npm.pkg.github.com` and provide a read token.
+repo-aligned `@narduk-enterprises` scope. GitHub requires authentication for
+npm-format package installs even when package visibility is public, so
+consumers route only `@narduk-enterprises/*` to `https://npm.pkg.github.com`
+and provide a read token.
 
 ## Preconditions
 
@@ -33,8 +34,8 @@ not publish.
 ## Proof
 
 ```sh
-npm view @narduk-geo/narduk-mapkit version --registry https://npm.pkg.github.com
-npm view @narduk-geo/narduk-mapkit-nuxt version --registry https://npm.pkg.github.com
+npm view @narduk-enterprises/narduk-mapkit version --registry https://npm.pkg.github.com
+npm view @narduk-enterprises/narduk-mapkit-nuxt version --registry https://npm.pkg.github.com
 ```
 
 Both commands require an npm client auth entry backed by a GitHub token with

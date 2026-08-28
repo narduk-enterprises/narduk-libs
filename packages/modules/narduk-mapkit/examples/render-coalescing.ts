@@ -2,7 +2,7 @@ import {
   createMapKitFocusPreserver,
   createMapKitHtmlSlotRenderer,
   createMapKitRenderScheduler,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 interface MapPanels {
   legend: HTMLElement

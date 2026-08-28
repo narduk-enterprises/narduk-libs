@@ -2,9 +2,9 @@ import {
   createMapKitPinScalingController,
   MapKitAnnotationRegistry,
   mapKitZoomForSpan,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
-import type { MapKitPinPresentation } from '@narduk-geo/narduk-mapkit/client'
+import type { MapKitPinPresentation } from '@narduk-enterprises/narduk-mapkit/client'
 
 interface Structure {
   /** Whatever the app uses to rank a class: platform, reef, buoy, launch. */

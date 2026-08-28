@@ -1,13 +1,13 @@
 import {
   MapKitLayerRegistry,
   createTemporalLayerController,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 import type {
   MapKitLayerDescriptor,
   MapKitTileOverlayUrlTemplate,
   TemporalFrame,
-} from '@narduk-geo/narduk-mapkit/client'
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 interface TileOverlay {
   opacity: number

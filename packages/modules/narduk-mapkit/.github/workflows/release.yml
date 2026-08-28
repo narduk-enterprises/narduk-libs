@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://npm.pkg.github.com
-          scope: '@narduk-geo'
+          scope: '@narduk-enterprises'
 
       - name: Enable Corepack
         run: |
@@ -83,11 +83,11 @@ jobs:
           }
 
           publish_if_missing \
-            "@narduk-geo/narduk-mapkit" \
+            "@narduk-enterprises/narduk-mapkit" \
             pnpm publish --no-git-checks --access public --registry "${registry}"
           publish_if_missing \
-            "@narduk-geo/narduk-mapkit-nuxt" \
-            pnpm --filter @narduk-geo/narduk-mapkit-nuxt publish --no-git-checks --access public --registry "${registry}"
+            "@narduk-enterprises/narduk-mapkit-nuxt" \
+            pnpm --filter @narduk-enterprises/narduk-mapkit-nuxt publish --no-git-checks --access public --registry "${registry}"
 
       - name: Verify published consumer
         run: pnpm run release:verify-published
