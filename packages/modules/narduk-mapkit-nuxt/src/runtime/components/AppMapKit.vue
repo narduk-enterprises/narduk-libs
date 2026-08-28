@@ -5,9 +5,19 @@ declare const mapkit: any
 </script>
 
 <script setup lang="ts" generic="T extends { id: string; lat: number; lng: number }">
+import {
+  createMapKitFullscreenController,
+  refreshMapKitMapLayout,
+} from '@narduk-geo/narduk-mapkit/client'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useMapKit } from '../composables/useMapKit'
+
+import type {
+  MapKitFullscreenChangeEvent,
+  MapKitFullscreenController,
+  MapKitFullscreenMode,
+} from '@narduk-geo/narduk-mapkit/client'
 
 /**
  * AppMapKit — Reusable Apple MapKit JS map component.
@@ -76,6 +86,14 @@ const props = withDefaults(
     /** When true, circle radii scale dynamically with zoom level. */
     dynamicCircleRadius?: boolean
     fallbackCenter?: { lat: number; lng: number }
+    /** Opt in to a fullscreen toggle control rendered over the map. Off by default. */
+    fullscreenControl?: boolean
+    /**
+     * What the toggle requests. `'viewport'` (the default) makes the map a
+     * fixed overlay filling the browser viewport; `'fullscreen'` asks for the
+     * Fullscreen API and falls back to viewport where it is unavailable.
+     */
+    fullscreenMode?: MapKitFullscreenMode
     /** GeoJSON FeatureCollection with Polygon/MultiPolygon/LineString features. */
     geojson?: GeoJSONFeatureCollection | null
     /** When false, disables map rotation interaction. */
@@ -125,12 +143,16 @@ const props = withDefaults(
     suppressSelectionZoom: false,
     showsPointsOfInterest: true,
     centerLabel: undefined,
+    fullscreenControl: false,
+    fullscreenMode: 'viewport',
   },
 )
 
 const emit = defineEmits<{
   /** Emitted when a GeoJSON polygon overlay is clicked. */
   'feature-select': [feature: GeoJSONFeature]
+  /** Emitted whenever fullscreen presentation starts, ends, or falls back. */
+  'fullscreen-change': [event: MapKitFullscreenChangeEvent]
   /** Emitted when the map background is clicked (not a pin or overlay). */
   'map-click': [coords: { lat: number; lng: number }]
   /** Emitted once the internal `mapkit.Map` instance is ready for imperative camera control. */
@@ -145,6 +167,7 @@ const selectedId = defineModel<string | null>('selectedId', { default: null })
 
 const { mapkitReady, mapkitError } = useMapKit()
 const mapContainer = ref<HTMLElement | null>(null)
+const mapWrapper = ref<HTMLElement | null>(null)
 
 const pinCleanups: Array<() => void> = []
 const ownedPinAnnotations: Array<InstanceType<typeof mapkit.Annotation>> = []
@@ -807,6 +830,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // Restores the wrapper's inline styles and the document scroll lock before
+  // the element goes away, so an unmount while presented cannot strand them.
+  fullscreenController?.destroy()
+  fullscreenController = null
   colorSchemeObserver?.disconnect()
   colorSchemeObserver = null
   clearPinCleanups()
@@ -851,11 +878,64 @@ function getMap() {
   return map
 }
 
-defineExpose({ scrollIntoView, setRegion, zoomToFit, getMap })
+// ── Fullscreen (opt-in) ──────────────────────────────────────
+
+const isFullscreen = ref(false)
+let fullscreenController: MapKitFullscreenController | null = null
+
+/**
+ * Built on first use so a consumer who never opts in pays nothing, and so the
+ * controller is never constructed during SSR, where there is no document.
+ *
+ * The wrapper is the presented element rather than the canvas: it carries the
+ * status overlay and the toggle itself, so the map's own chrome comes along
+ * into fullscreen instead of being left behind on the page.
+ */
+function ensureFullscreenController(): MapKitFullscreenController | null {
+  if (fullscreenController) return fullscreenController
+  if (!import.meta.client || !mapWrapper.value) return null
+
+  fullscreenController = createMapKitFullscreenController({
+    defaultMode: props.fullscreenMode,
+    element: mapWrapper.value,
+    onLayout: () => {
+      if (map) refreshMapKitMapLayout(map)
+    },
+  })
+  fullscreenController.subscribe((event) => {
+    isFullscreen.value = event.active
+    emit('fullscreen-change', event)
+  })
+  return fullscreenController
+}
+
+/** The mode is passed per call so a changed `fullscreenMode` prop takes effect. */
+async function enterFullscreen(mode: MapKitFullscreenMode = props.fullscreenMode) {
+  await ensureFullscreenController()?.enter(mode)
+}
+
+async function exitFullscreen() {
+  await fullscreenController?.exit()
+}
+
+async function toggleFullscreen() {
+  await ensureFullscreenController()?.toggle(props.fullscreenMode)
+}
+
+defineExpose({
+  enterFullscreen,
+  exitFullscreen,
+  getMap,
+  isFullscreen,
+  scrollIntoView,
+  setRegion,
+  toggleFullscreen,
+  zoomToFit,
+})
 </script>
 
 <template>
-  <div class="mapkit-wrapper">
+  <div ref="mapWrapper" class="mapkit-wrapper">
     <div
       v-if="mapkitError"
       class="mapkit-status"
@@ -873,6 +953,30 @@ defineExpose({ scrollIntoView, setRegion, zoomToFit, getMap })
       class="mapkit-canvas"
       :class="{ 'mapkit-canvas--hidden': !mapkitReady }"
     />
+
+    <button
+      v-if="fullscreenControl"
+      type="button"
+      class="mapkit-fullscreen-toggle"
+      :aria-label="isFullscreen ? 'Exit fullscreen map' : 'View map fullscreen'"
+      :aria-pressed="isFullscreen"
+      @click="toggleFullscreen"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+      >
+        <path v-if="isFullscreen" d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
+        <path v-else d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -911,5 +1015,33 @@ defineExpose({ scrollIntoView, setRegion, zoomToFit, getMap })
 
 .mapkit-canvas--hidden {
   opacity: 0;
+}
+
+/* Sits above .mapkit-status so the control stays reachable while the map loads. */
+.mapkit-fullscreen-toggle {
+  align-items: center;
+  background: color-mix(in srgb, Canvas 88%, transparent);
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 0.375rem;
+  color: CanvasText;
+  cursor: pointer;
+  display: flex;
+  height: 2rem;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  width: 2rem;
+  z-index: 11;
+}
+
+.mapkit-fullscreen-toggle:hover {
+  background: color-mix(in srgb, Canvas 96%, transparent);
+}
+
+.mapkit-fullscreen-toggle:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
 }
 </style>

@@ -26,6 +26,35 @@ The component fills its parent, so the parent must have an explicit height:
 </template>
 ```
 
+## Fullscreen
+
+Off by default. Opt in with `fullscreen-control`, and the component renders a
+small toggle over the map:
+
+```vue
+<AppMapKit
+  :items="stations"
+  :create-pin-element="createPin"
+  fullscreen-control
+  fullscreen-mode="viewport"
+  @fullscreen-change="(event) => (isFullscreen = event.active)"
+/>
+```
+
+`fullscreenMode` is `'viewport'` (the default -- a fixed overlay filling the
+browser viewport, which works everywhere) or `'fullscreen'` (the Fullscreen API,
+falling back to viewport where it is unavailable, with `event.fallback` set).
+
+The component presents its own wrapper, so the map's status overlay and the
+toggle come along, and it refreshes MapKit geometry on every change. A template
+ref also exposes `enterFullscreen()`, `exitFullscreen()`, `toggleFullscreen()`,
+and an `isFullscreen` ref.
+
+Viewport mode positions with `position: fixed`, so no ancestor of the component
+may set `transform`, `filter`, `backdrop-filter`, `perspective`, or
+`contain: paint` -- any of those becomes the containing block and traps the map
+inside it.
+
 Runtime names accepted by the token route:
 
 - `APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY`
