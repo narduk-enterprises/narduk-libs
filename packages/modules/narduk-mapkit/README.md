@@ -46,6 +46,9 @@ domain-specific behavior.
 - Pointer probe plumbing: throttled hover, click-to-pin, touch tap-to-pin,
   long-press-to-pin with pan disambiguation, pin dragging, and dismissal from
   one engine-agnostic recognizer.
+- Two-mode fullscreen for a map surface: a fixed viewport overlay that works
+  everywhere, the real Fullscreen API where it exists, and an automatic fallback
+  from the second to the first.
 - Idempotent vector-overlay attachment and bounded tile-intersection caching.
 - Apple Maps access-token exchange, search, and geocoding helpers.
 - A separately published Nuxt adapter with no dependency on Narduk template
@@ -612,6 +615,98 @@ are available separately for a batch spanning several calls. Selection access
 is guarded, because reading `selectionStart` throws on input types that do not
 support it.
 
+## Fullscreen
+
+A map wants two different fullscreens, and only one of them works everywhere.
+
+`'viewport'` is the standard mode and the default: the element becomes a fixed
+overlay filling the browser viewport. `'fullscreen'` is the real Fullscreen API,
+which iPhone Safari does not implement for elements at all -- so an unsupported
+or rejected request falls back to viewport mode rather than failing, and says so
+in the change event.
+
+Nothing happens until a consumer builds a controller and calls it:
+
+```ts
+import {
+  createMapKitFullscreenController,
+  refreshMapKitMapLayout,
+} from '@narduk-geo/narduk-mapkit/client'
+
+const fullscreen = createMapKitFullscreenController({
+  element: mapWrapper,
+  // Runs after every geometry change, before the subscribers.
+  onLayout: () => refreshMapKitMapLayout(map),
+})
+
+fullscreen.subscribe((event) => {
+  button.setAttribute('aria-pressed', String(event.active))
+  if (event.fallback) console.info('native fullscreen unavailable:', event.fallbackCause)
+})
+
+await fullscreen.enter() // 'viewport'
+await fullscreen.enter('fullscreen') // native, or viewport with fallback: true
+await fullscreen.toggle()
+fullscreen.destroy()
+```
+
+Options are `element` (required), `defaultMode` (`'viewport'`), `zIndex`
+(`9999`), `lockScroll` (`true`), `exitOnEscape` (`true`, viewport only -- native
+fullscreen already owns Escape), `onLayout`, and injectable `document` /
+`window` handles.
+
+Mode semantics, which are the easy part to get wrong:
+
+- `enter(mode)` while already presenting that mode is a no-op and emits nothing.
+- `enter(mode)` while presenting the *other* mode switches in place and emits
+  exactly one event, not an exit followed by an enter.
+- `enter('fullscreen')` from viewport mode **stays** in viewport mode when the
+  request is unsupported or rejected; the one event emitted is the fallback. A
+  failed switch never leaves the consumer with nothing.
+- `toggle(mode)` exits whenever anything is active, whatever `mode` says. Use
+  `enter(mode)` to switch modes.
+
+Every change event carries `{ active, mode, reason, requestedMode, fallback,
+fallbackCause }`. `reason` separates a normal `enter` / `exit` from `escape`
+(the user dismissed viewport mode), `external-exit` (the browser ended native
+fullscreen on its own), `fallback`, and `destroy`.
+
+Viewport mode saves the element's inline `style.cssText`, appends the overlay
+geometry so the consumer's own inline styles survive, sets
+`data-mapkit-fullscreen="viewport"` as a styling hook, and hides document
+scrolling; exiting -- or `destroy()` while presented -- restores all of it.
+
+### The containing-block caveat
+
+`position: fixed` is resolved against the viewport **only while no ancestor
+establishes a containing block for fixed descendants**. An ancestor with
+`transform`, `filter`, `backdrop-filter`, `perspective`, or `contain: paint`
+becomes that containing block, and the "fullscreen" map is then trapped inside
+it -- usually as a slightly larger map still sitting in its card.
+
+The controller deliberately does **not** reparent the element to dodge this:
+moving a live MapKit canvas in the DOM tears down its context and loses map
+state. Apply the controller to a wrapper with no such ancestor -- normally the
+wrapper holding the map *plus its own chrome*, so overlaid controls and legends
+come along into fullscreen instead of being left behind.
+
+In Nuxt, `AppMapKit` does this for you behind an opt-in prop:
+
+```vue
+<AppMapKit
+  :items="stations"
+  :create-pin-element="createPin"
+  fullscreen-control
+  fullscreen-mode="viewport"
+  @fullscreen-change="onFullscreenChange"
+/>
+```
+
+`fullscreenControl` defaults to `false` and `fullscreenMode` to `'viewport'`.
+The component presents its own wrapper, refreshes MapKit geometry on every
+change, and exposes `enterFullscreen()`, `exitFullscreen()`, and
+`toggleFullscreen()` through its template ref.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -641,6 +736,7 @@ The `examples/` directory contains copyable integration patterns:
 - `pointer-probe.ts`
 - `annotation-registry.ts`
 - `render-coalescing.ts`
+- `fullscreen.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -653,7 +749,7 @@ in the app.
 | `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
 | `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
 | `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing |
+| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation |
 | `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |

@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.5.0 - 2026-08-28
+
+- Added `createMapKitFullscreenController()` / `MapKitFullscreenController`:
+  two-mode fullscreen presentation for a map surface. `'viewport'` -- the
+  default everywhere a default exists -- makes the element a fixed overlay
+  filling the browser viewport; `'fullscreen'` uses the Fullscreen API and falls
+  back to viewport mode when the API is missing (iPhone Safari has no element
+  fullscreen) or the request is refused, reporting the fallback in the change
+  event rather than failing. Viewport mode saves and restores the element's
+  inline `style.cssText`, sets `data-mapkit-fullscreen` as a styling hook, locks
+  and restores document scrolling, and exits on Escape; native mode tracks an
+  external exit through `fullscreenchange` and runs the same restore path.
+  `enter()`, `exit()`, `toggle()`, `destroy()`, `subscribe()`, `active`, `mode`,
+  and `supportsNativeFullscreen` make up the surface, and `document` / `window`
+  are injectable as in `MapKitClientOptions`. Nothing is presented until a
+  consumer constructs the controller and calls it, and no DOM global is touched
+  at import time.
+- Added the `onLayout` hook, called after every geometry change and before the
+  subscribers, so a consumer can settle layout with the existing
+  `refreshMapKitMapLayout(map)` before rendering chrome.
+- Added `MAPKIT_FULLSCREEN_ATTRIBUTE`, the `data-mapkit-fullscreen` attribute
+  name, so consumers can style the presented element without hardcoding it.
+- Documented the containing-block caveat in the module, the README, and the Nuxt
+  adapter: an ancestor with `transform`, `filter`, `backdrop-filter`,
+  `perspective`, or `contain: paint` becomes the containing block for a
+  fixed-position element and traps viewport mode inside it. The controller
+  deliberately does not reparent the element, because moving a live MapKit
+  canvas in the DOM loses map state.
+- `AppMapKit` gained an opt-in `fullscreenControl` prop (default `false`) plus
+  `fullscreenMode` (default `'viewport'`), a `fullscreen-change` event, and
+  `enterFullscreen()` / `exitFullscreen()` / `toggleFullscreen()` / `isFullscreen`
+  on its exposed handle. The component presents its own wrapper so the map
+  chrome comes along, refreshes MapKit geometry on every change, and destroys
+  the controller before unmount.
+
 ## 1.4.0 - 2026-08-28
 
 - Added `MapKitAnnotationRegistry`: keyed annotation reconciliation so an

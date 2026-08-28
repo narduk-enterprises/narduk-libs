@@ -11,5 +11,6 @@ These examples are small integration patterns, not standalone apps.
 - `pointer-probe.ts`: Hover, click/tap, long-press, and drag probe plumbing for a map readout.
 - `annotation-registry.ts`: Keyed marker reconciliation so an unchanged marker is never rebuilt.
 - `render-coalescing.ts`: One flush per frame, skipped identical HTML writes, and focus preserved across a rewrite.
+- `fullscreen.ts`: Viewport-overlay and native fullscreen for a map wrapper, with the fallback path wired up.
 
 Copy the pattern that matches your runtime, then keep app-specific data fetching, styles, and marker HTML in the app.
