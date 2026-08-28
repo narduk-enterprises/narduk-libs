@@ -17,4 +17,18 @@ export interface MapKitTimerScheduler {
 }
 /** `globalThis` timers plus `Date.now()`. Used when no scheduler is injected. */
 export declare const defaultMapKitTimerScheduler: MapKitTimerScheduler;
+/**
+ * Injectable animation-frame surface. Frame-paced primitives -- the overlay
+ * crossfade and the render scheduler -- share it so a test can drive frames by
+ * hand, and so a Worker or Node import never touches `requestAnimationFrame`.
+ */
+export interface MapKitFrameScheduler {
+    cancelAnimationFrame: (handle: number) => void;
+    requestAnimationFrame: (callback: FrameRequestCallback) => number;
+}
+/**
+ * `globalThis` animation frames, falling back to a ~60fps `setTimeout` where
+ * they do not exist (Workers, Node, headless test runs).
+ */
+export declare const defaultMapKitFrameScheduler: MapKitFrameScheduler;
 //# sourceMappingURL=timers.d.ts.map

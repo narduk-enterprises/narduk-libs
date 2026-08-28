@@ -9,5 +9,7 @@ These examples are small integration patterns, not standalone apps.
 - `layer-registry.ts`: Multiple live AOI tile overlays with independent opacity and replacement fades.
 - `temporal-layer-controller.ts`: Date-strip scrub plus readiness-gated looping over a dated tile layer.
 - `pointer-probe.ts`: Hover, click/tap, long-press, and drag probe plumbing for a map readout.
+- `annotation-registry.ts`: Keyed marker reconciliation so an unchanged marker is never rebuilt.
+- `render-coalescing.ts`: One flush per frame, skipped identical HTML writes, and focus preserved across a rewrite.
 
 Copy the pattern that matches your runtime, then keep app-specific data fetching, styles, and marker HTML in the app.

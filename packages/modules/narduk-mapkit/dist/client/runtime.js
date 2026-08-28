@@ -1,4 +1,5 @@
 import { computeMapKitRegionForLngLatBounds, computeMapKitRegionForPoints, normalizeMapKitPoint, normalizeMapKitSpan, } from '../geometry/geometry.js';
+import { defaultMapKitFrameScheduler } from './timers.js';
 function requireMapKitPoint(point) {
     const normalized = normalizeMapKitPoint(point);
     if (!normalized)
@@ -117,20 +118,6 @@ export function interpolateNumber(start, end, progress) {
 function finiteOpacity(value, fallback) {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
-function defaultRequestAnimationFrame(callback) {
-    const requestFrame = globalThis.requestAnimationFrame;
-    if (requestFrame)
-        return requestFrame.call(globalThis, callback);
-    return globalThis.setTimeout(() => callback(Date.now()), 16);
-}
-function defaultCancelAnimationFrame(handle) {
-    const cancelFrame = globalThis.cancelAnimationFrame;
-    if (cancelFrame) {
-        cancelFrame.call(globalThis, handle);
-        return;
-    }
-    globalThis.clearTimeout(handle);
-}
 export function crossfadeMapKitOverlayOpacity(options) {
     const durationMs = Math.max(0, options.durationMs ?? 520);
     const oldOverlays = uniqueMapKitOverlays(options.oldOverlays);
@@ -138,8 +125,8 @@ export function crossfadeMapKitOverlayOpacity(options) {
     const nextStartOpacity = finiteOpacity(options.nextOverlay.opacity, 0);
     const easing = options.easing ?? easeInOutQuad;
     const now = options.now ?? (() => Date.now());
-    const requestFrame = options.requestAnimationFrame ?? defaultRequestAnimationFrame;
-    const cancelFrame = options.cancelAnimationFrame ?? defaultCancelAnimationFrame;
+    const requestFrame = options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame;
+    const cancelFrame = options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame;
     const start = now();
     let frameHandle = null;
     let settled = false;

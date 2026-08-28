@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.0 - 2026-08-28
+
+- Added `MapKitAnnotationRegistry`: keyed annotation reconciliation so an
+  unchanged marker is never removed, re-added, or mutated. Each descriptor
+  carries a `key`, a consumer-defined `signature`, a `create()` factory, and an
+  optional in-place `update()` hook; `reconcile()` diffs against the previous
+  set, batches every removal into one `removeAnnotations` call and every
+  addition into one `addAnnotations` call, and makes no host call at all when
+  nothing changed. This replaces the `removeAnnotations(all)` +
+  `addAnnotations(next)` pattern that rebuilds and visibly blinks every marker
+  on each render.
+- Added `createMapKitRenderScheduler()`: coalesces many `mark(region)` calls
+  into one flush per animation frame, with `flushNow()`, `cancel()`,
+  `destroy()`, injected animation frames, and re-entrant marks deferred to a
+  follow-up frame rather than recursing.
+- Added `createMapKitHtmlSlotRenderer()`: remembers the last HTML written per
+  element in a `WeakMap` and skips byte-identical `innerHTML` writes, plus
+  `forget()` and `writeAll()`.
+- Added `createMapKitFocusPreserver()`: captures the focused element's stable
+  key and selection range before a batch of slot writes and restores it after,
+  so a rewrite does not drop the user's caret.
+- Added `MapKitFrameScheduler` / `defaultMapKitFrameScheduler` to `timers.js`
+  as the shared injectable animation-frame surface. `crossfadeMapKitOverlayOpacity()`
+  now uses it instead of its own private copy; behavior is unchanged.
+- Bumped `@narduk-geo/narduk-mapkit-nuxt` to the same version with no source
+  change; the release workflow requires both workspace packages to carry
+  identical versions.
+
 ## 1.3.0 - 2026-08-28
 
 - Added `createTemporalLayerController()` / `MapKitTemporalLayerController`,

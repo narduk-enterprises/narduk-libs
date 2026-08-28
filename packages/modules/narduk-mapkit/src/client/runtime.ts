@@ -4,6 +4,7 @@ import {
   normalizeMapKitPoint,
   normalizeMapKitSpan,
 } from '../geometry/geometry.js'
+import { defaultMapKitFrameScheduler } from './timers.js'
 
 import type {
   MapKitLngLatBounds,
@@ -271,21 +272,6 @@ function finiteOpacity(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-function defaultRequestAnimationFrame(callback: FrameRequestCallback): number {
-  const requestFrame = globalThis.requestAnimationFrame
-  if (requestFrame) return requestFrame.call(globalThis, callback)
-  return globalThis.setTimeout(() => callback(Date.now()), 16) as unknown as number
-}
-
-function defaultCancelAnimationFrame(handle: number): void {
-  const cancelFrame = globalThis.cancelAnimationFrame
-  if (cancelFrame) {
-    cancelFrame.call(globalThis, handle)
-    return
-  }
-  globalThis.clearTimeout(handle)
-}
-
 export function crossfadeMapKitOverlayOpacity<TOverlay extends MapKitOpacityTarget>(
   options: MapKitOverlayCrossfadeOptions<TOverlay>,
 ): MapKitOverlayCrossfadeController {
@@ -297,8 +283,10 @@ export function crossfadeMapKitOverlayOpacity<TOverlay extends MapKitOpacityTarg
   const nextStartOpacity = finiteOpacity(options.nextOverlay.opacity, 0)
   const easing = options.easing ?? easeInOutQuad
   const now = options.now ?? (() => Date.now())
-  const requestFrame = options.requestAnimationFrame ?? defaultRequestAnimationFrame
-  const cancelFrame = options.cancelAnimationFrame ?? defaultCancelAnimationFrame
+  const requestFrame =
+    options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame
+  const cancelFrame =
+    options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame
   const start = now()
   let frameHandle: number | null = null
   let settled = false

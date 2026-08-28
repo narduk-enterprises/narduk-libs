@@ -33,6 +33,11 @@ domain-specific behavior.
   and bounded replacement readiness.
 - A MapKit JS layer registry for multiple live AOI tile overlays with
   independent opacity, bounds-gated tile URLs, and replacement fades.
+- A keyed annotation registry that reconciles markers by signature, so an
+  unchanged marker is never removed, re-added, or mutated.
+- Render coalescing: many dirty-region marks collapse into one flush per
+  animation frame, identical HTML writes are skipped, and focus survives a
+  slot rewrite.
 - Temporal playback state for dated raster layers: frame readiness, decoded
   progress, and a bounded frame cache.
 - A temporal layer controller that binds a dated frame list to one registry
@@ -340,6 +345,65 @@ id into the next crossfade. Async replacements may activate immediately or on
 their first image, with a bounded timeout that guarantees stale overlays are
 retired. `unregister()` is a no-op for unknown ids.
 
+## Annotation Registry
+
+`MapKitAnnotationRegistry` is the marker-side sibling of the layer registry.
+MapKit JS does no diffing, so the obvious update is
+`map.removeAnnotations(all)` followed by `map.addAnnotations(next)` -- which
+destroys and rebuilds every marker on every render and makes them blink.
+Reconcile by key instead:
+
+```ts
+import { MapKitAnnotationRegistry } from '@narduk-geo/narduk-mapkit/client'
+
+const annotations = new MapKitAnnotationRegistry<mapkit.MarkerAnnotation>({ map })
+
+function render(buoys: Buoy[]): void {
+  annotations.reconcile(
+    buoys.map((buoy) => ({
+      key: buoy.id,
+      // Everything that changes how the marker looks or reads.
+      signature: `${buoy.lat},${buoy.lng}|${buoy.status}|${buoy.label}`,
+      create: () =>
+        new mapkit.MarkerAnnotation(new mapkit.Coordinate(buoy.lat, buoy.lng), {
+          color: statusColor(buoy.status),
+          title: buoy.label,
+        }),
+      update: (annotation) => {
+        annotation.coordinate = new mapkit.Coordinate(buoy.lat, buoy.lng)
+        annotation.color = statusColor(buoy.status)
+        annotation.title = buoy.label
+      },
+    })),
+  )
+}
+```
+
+Per key, one reconcile does exactly one of four things:
+
+| Key | Signature | Result |
+| --- | --- | --- |
+| present before and after | unchanged | untouched -- no remove, no re-add, no mutation |
+| present before and after | changed | `update()` in place, or recreate that key alone if no hook |
+| absent now | -- | removed |
+| new | -- | created |
+
+Removals batch into one `removeAnnotations` call and additions into one
+`addAnnotations` call; an empty set makes no call at all, so reconciling the
+same descriptors twice is a complete no-op. `reconcile()` returns
+`{ added, recreated, removed, unchanged, updated }`, which is the cheapest way
+to assert in a test that a pan or an opacity tick touched nothing.
+
+The `signature` is the finer-grained analogue of `layerSourceIdentity()`: the
+layer registry fingerprints a whole tile source and treats any change other
+than opacity as a full replace, while a signature is whatever string the
+consumer decides distinguishes one rendering of a marker from another, so a
+change can be applied in place.
+
+`register()` / `unregister()` handle one annotation outside a reconcile pass,
+`get()` / `has()` / `list()` / `size` inspect the live set, and `destroy()`
+clears every annotation and makes the registry inert.
+
 ## Temporal Layers
 
 ### Playback state primitives
@@ -473,6 +537,81 @@ machine is exercisable in Node without a browser or MapKit JS. Notes:
 - Set `touch-action: none` on the element so the browser does not consume the
   gesture as a scroll before the recognizer sees it.
 
+## Render Coalescing
+
+A map view usually has many small state changes and one render function that
+redraws everything, so each hover tick, opacity step, and date change costs a
+full re-render. Two independent pieces cut that down, and they compose.
+
+`createMapKitRenderScheduler()` collapses many marks into one flush per
+animation frame:
+
+```ts
+import { createMapKitRenderScheduler } from '@narduk-geo/narduk-mapkit/client'
+
+const scheduler = createMapKitRenderScheduler({
+  onFlush: (regions) => {
+    if (regions.has('markers')) renderMarkers()
+    if (regions.has('readout')) renderReadout()
+  },
+})
+
+scheduler.mark('markers')
+scheduler.mark('readout')
+scheduler.mark('markers') // still one flush, next frame
+
+scheduler.flushNow() // render synchronously instead of waiting
+scheduler.destroy()
+```
+
+`region` is a caller-defined string this package never interprets, so a
+consumer can redraw only what changed. Marking from inside `onFlush` schedules
+a follow-up frame rather than recursing. Animation frames are injectable, so
+the scheduler is deterministic under test and safe to import where
+`requestAnimationFrame` does not exist.
+
+`createMapKitHtmlSlotRenderer()` drops the DOM write when the markup did not
+change -- assigning `innerHTML` rebuilds the subtree even when the string is
+identical, which is what makes a re-rendered readout blink:
+
+```ts
+import {
+  createMapKitFocusPreserver,
+  createMapKitHtmlSlotRenderer,
+} from '@narduk-geo/narduk-mapkit/client'
+
+const slots = createMapKitHtmlSlotRenderer<HTMLElement>()
+
+slots.write(readoutElement, html) // true when it wrote, false when identical
+slots.writeAll([
+  { element: legendElement, html: legendHtml },
+  { element: readoutElement, html: readoutHtml },
+]) // returns how many slots actually changed
+```
+
+The remembered strings live in a `WeakMap`, so a detached element is
+collectable; call `forget(element)` for any slot something else has written to.
+
+`createMapKitFocusPreserver()` keeps the caret across a rewrite. Element
+identity cannot survive replacing `innerHTML`, so focus is restored by a stable
+key the render emits:
+
+```ts
+const focus = createMapKitFocusPreserver({
+  activeElement: () => document.activeElement,
+  identify: (element) =>
+    element instanceof HTMLElement ? (element.dataset.focusKey ?? null) : null,
+  resolve: (key) => panel.querySelector<HTMLElement>(`[data-focus-key="${key}"]`),
+})
+
+focus.preserve(() => slots.write(panel, panelHtml))
+```
+
+`preserve()` restores even when the write throws, and `capture()` / `restore()`
+are available separately for a batch spanning several calls. Selection access
+is guarded, because reading `selectionStart` throws on input types that do not
+support it.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -500,6 +639,8 @@ The `examples/` directory contains copyable integration patterns:
 - `layer-registry.ts`
 - `temporal-layer-controller.ts`
 - `pointer-probe.ts`
+- `annotation-registry.ts`
+- `render-coalescing.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -512,7 +653,7 @@ in the app.
 | `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
 | `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
 | `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer registries, crossfades, temporal playback and its layer controller, pointer probe plumbing |
+| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing |
 | `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |

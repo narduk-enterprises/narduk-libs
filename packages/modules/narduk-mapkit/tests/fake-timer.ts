@@ -1,4 +1,8 @@
-import type { MapKitTimerHandle, MapKitTimerScheduler } from '../src/client/timers.js'
+import type {
+  MapKitFrameScheduler,
+  MapKitTimerHandle,
+  MapKitTimerScheduler,
+} from '../src/client/timers.js'
 
 export interface FakeTimer extends MapKitTimerScheduler {
   /** Run every callback due within `ms`, then set the clock to that instant. */
@@ -53,4 +57,40 @@ export function createFakeTimer(startMs = 0): FakeTimer {
 /** Let queued promise callbacks settle without touching the fake clock. */
 export async function flushMicrotasks(): Promise<void> {
   for (let pass = 0; pass < 8; pass++) await Promise.resolve()
+}
+
+export interface FakeFrameScheduler extends MapKitFrameScheduler {
+  /** Number of frame callbacks queued and not yet run or cancelled. */
+  pending: () => number
+  /** Run every callback queued right now, once, with an advancing timestamp. */
+  runFrame: () => void
+}
+
+/**
+ * A deterministic animation-frame source for the render scheduler. Callbacks
+ * queued during a frame wait for the next `runFrame()` rather than running
+ * inside the current one, which is how a real browser paces them.
+ */
+export function createFakeFrameScheduler(startMs = 0): FakeFrameScheduler {
+  const frames = new Map<number, FrameRequestCallback>()
+  let nextHandle = 1
+  let timestamp = startMs
+
+  return {
+    cancelAnimationFrame(handle: number): void {
+      frames.delete(handle)
+    },
+    pending: () => frames.size,
+    requestAnimationFrame(callback: FrameRequestCallback): number {
+      const handle = nextHandle++
+      frames.set(handle, callback)
+      return handle
+    },
+    runFrame(): void {
+      const due = [...frames.values()]
+      frames.clear()
+      timestamp += 16
+      for (const callback of due) callback(timestamp)
+    },
+  }
 }
