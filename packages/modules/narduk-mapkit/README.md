@@ -33,6 +33,14 @@ domain-specific behavior.
   and bounded replacement readiness.
 - A MapKit JS layer registry for multiple live AOI tile overlays with
   independent opacity, bounds-gated tile URLs, and replacement fades.
+- Temporal playback state for dated raster layers: frame readiness, decoded
+  progress, and a bounded frame cache.
+- A temporal layer controller that binds a dated frame list to one registry
+  layer: scrub, step, readiness-gated looping over the last N dates, bounded
+  prefetch, change events, and a reduced-motion switch.
+- Pointer probe plumbing: throttled hover, click-to-pin, touch tap-to-pin,
+  long-press-to-pin with pan disambiguation, pin dragging, and dismissal from
+  one engine-agnostic recognizer.
 - Idempotent vector-overlay attachment and bounded tile-intersection caching.
 - Apple Maps access-token exchange, search, and geocoding helpers.
 - A separately published Nuxt adapter with no dependency on Narduk template
@@ -332,6 +340,139 @@ id into the next crossfade. Async replacements may activate immediately or on
 their first image, with a bounded timeout that guarantees stale overlays are
 retired. `unregister()` is a no-op for unknown ids.
 
+## Temporal Layers
+
+### Playback state primitives
+
+Three plain-data helpers describe a dated raster sequence. They hold no MapKit
+reference and are usable on their own:
+
+```ts
+import {
+  boundedFrameCache,
+  nextDrawableFrame,
+  temporalProgress,
+} from '@narduk-geo/narduk-mapkit/client'
+
+// Advancing only when the current *and* next frames are decoded is what stops
+// a time-lapse from flashing an empty layer.
+const next = nextDrawableFrame({ current, frameCount, readiness })
+
+// Fraction of the sequence that is decoded, for a load indicator.
+const decoded = temporalProgress({ current, frameCount, readiness })
+
+// Cap what stays warm, dropping the oldest insertion first.
+const warm = boundedFrameCache(frames, 8)
+```
+
+`FrameReadiness` is `'idle' | 'loading' | 'ready' | 'failed'` and
+`TemporalPlaybackState` is `{ current, frameCount, readiness }`.
+
+### Temporal layer controller
+
+`createTemporalLayerController` binds those primitives to one registry layer.
+It owns index state, readiness bookkeeping, bounded prefetch, and a
+readiness-gated loop; the app owns the date strip, the play button, and the
+descriptor for each date:
+
+```ts
+import { createTemporalLayerController } from '@narduk-geo/narduk-mapkit/client'
+
+const controller = createTemporalLayerController({
+  registry,
+  layerId: 'data',
+  frames: ['2026-08-24', { id: '2026-08-25', meta: { observedFraction: 0.62 } }],
+  descriptorForFrame: (frame) => ({
+    id: 'data',
+    urlTemplate: `/tiles/clarity/${frame.id}/{z}/{x}/{y}@{scale}x.png`,
+    bounds,
+  }),
+  crossfadeDurationMs: 400,
+  activateWhen: 'first-image',
+  prefetchFrame: (frame, index, signal) => warmTiles(frame.id, signal),
+  reducedMotion: media.matches,
+  onEvent: (event) => {
+    if (event.type === 'change') renderStrip(event.index, event.frame)
+    if (event.type === 'readiness') renderProgress(event.progress)
+  },
+})
+
+await controller.scrubToId('2026-08-25')
+await controller.stepBack()
+controller.play({ intervalMs: 900, windowSize: 7 })
+controller.pause()
+```
+
+Behavior worth knowing before wiring a UI to it:
+
+- **Readiness gating is opt-in.** Supplying `prefetchFrame` turns it on: the
+  loop will not advance onto a frame whose source has not resolved, and emits a
+  `stall` event instead. Without a readiness source every frame reads `ready`
+  and `replace()`'s own bounded first-image readiness is the only gate.
+- **Failed frames are skipped**, and a window in which every other frame failed
+  pauses with reason `stalled` rather than spinning.
+- **Reduced motion is a flag the consumer sets.** While it is on, `play()` is
+  refused (emitting a `pause` event with reason `reduced-motion`) and every
+  scrub crossfades in `0`ms. `setReducedMotion(true)` stops a running loop.
+- **Tracked readiness is bounded** by `maxTrackedFrames` (default `8`), and the
+  frame currently on screen is never the one evicted.
+- **Timers are injectable** through `timer`, so playback is testable without a
+  real clock.
+- `descriptorForFrame` must return a descriptor whose `id` equals `layerId`.
+  The controller throws rather than letting the registry reject the swap
+  mid-animation.
+
+## Pointer Probe
+
+`attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One
+recognizer covers desktop hover, click-to-pin, touch tap-to-pin,
+long-press-to-pin, pin dragging, and dismissal, and separates all of them from
+a map pan by movement slop and press duration:
+
+```ts
+import { attachMapKitPointerProbe } from '@narduk-geo/narduk-mapkit/client'
+
+const probe = attachMapKitPointerProbe({
+  element: mapElement,
+  coordinateForPoint: (sample) =>
+    map.convertPointOnPageToCoordinate(new DOMPoint(sample.page.x, sample.page.y)),
+  hoverThrottleMs: 90,
+  longPressDurationMs: 500,
+  moveSlopPx: 8,
+  isPinHandle: (target) => target instanceof Element && target.closest('.probe-pin') !== null,
+  onEvent: (event) => {
+    // { mode: 'hover' | 'pinned', phase, point, coordinate, pointer, source }
+    if (event.phase === 'dismiss') return clearReadout()
+    if (event.coordinate) renderReadout(event.mode, event.coordinate)
+  },
+})
+
+probe.dismiss()
+probe.setEnabled(false)
+probe.destroy()
+```
+
+The core stays engine-agnostic: it needs an element that supports
+`addEventListener` and one `coordinateForPoint` callback, so the whole state
+machine is exercisable in Node without a browser or MapKit JS. Notes:
+
+- **Phases** are `begin | move | end | cancel | dismiss`, `mode` is `hover` or
+  `pinned`, and `source` says what produced the event (`hover`, `click`, `tap`,
+  `long-press`, `drag`, `pan`, `programmatic`).
+- **Hover and pin drags share the `hoverThrottleMs` budget**, leading edge plus
+  a trailing sample so the final position is never lost.
+- **Pan disambiguation**: movement past `moveSlopPx` reclassifies a press as a
+  pan, cancels the pending long-press, and blocks the tap. A second concurrent
+  pointer (a pinch) does the same.
+- **Touch never hovers.** `hoverPointerTypes` defaults to `['mouse', 'pen']`
+  and `longPressPointerTypes` to `['touch', 'pen']`.
+- **A refused point is not a pin**: return `null` from `coordinateForPoint` and
+  the probe emits a `pinned` `cancel` instead of placing one.
+- Pin markup is app-owned, so a pin drag starts either from `isPinHandle` or
+  from an explicit `beginPinDrag(event)` call on the app's own pin element.
+- Set `touch-action: none` on the element so the browser does not consume the
+  gesture as a scroll before the recognizer sees it.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -357,6 +498,8 @@ The `examples/` directory contains copyable integration patterns:
 - `browser-markers.ts`
 - `tile-overlay-crossfade.ts`
 - `layer-registry.ts`
+- `temporal-layer-controller.ts`
+- `pointer-probe.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
@@ -369,7 +512,7 @@ in the app.
 | `@narduk-geo/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
 | `@narduk-geo/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
 | `@narduk-geo/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer registries, crossfades |
+| `@narduk-geo/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer registries, crossfades, temporal playback and its layer controller, pointer probe plumbing |
 | `@narduk-geo/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
 | `@narduk-geo/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
 | `@narduk-geo/narduk-mapkit/token` | Low-level JWT signing and decoding |

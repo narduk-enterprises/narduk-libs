@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.0 - 2026-08-28
+
+- Added `createTemporalLayerController()` / `MapKitTemporalLayerController`,
+  which binds the existing temporal playback primitives to one
+  `MapKitLayerRegistry` layer: scrub by index or date id, step, readiness-gated
+  looping over the last N dates at a configurable interval, bounded prefetch,
+  failed-frame skipping, change/readiness/stall/error events, and a
+  consumer-set reduced-motion flag that refuses looping and makes every scrub
+  instant.
+- Added `normalizeTemporalFrames()` and the `TemporalFrame` shape so a dated
+  sequence can carry per-date consumer metadata without the core knowing what
+  it means.
+- Added `attachMapKitPointerProbe()` / `MapKitPointerProbe`: unified pointer
+  plumbing for map probing with throttled hover (default 90ms), click-to-pin,
+  touch tap-to-pin, long-press-to-pin (default 500ms) with movement and
+  duration disambiguation from a pan, pin-drag repositioning, dismissal, and a
+  single `{ mode, phase, point, coordinate, pointer, source }` event surface.
+  It works against any element that supports `addEventListener` plus an
+  injected coordinate-conversion callback, so it stays engine-agnostic and
+  testable without MapKit JS.
+- Added `MapKitTimerScheduler` so both new primitives accept an injected
+  clock and are deterministic under test.
+- Documented the previously undocumented temporal playback primitives
+  (`nextDrawableFrame`, `temporalProgress`, `boundedFrameCache`,
+  `FrameReadiness`, `TemporalPlaybackState`) in the README.
+- Bumped `@narduk-geo/narduk-mapkit-nuxt` to the same version with no source
+  change; the release workflow requires both workspace packages to carry
+  identical versions.
+
 ## 1.2.0 - 2026-07-19
 
 - Added `MapKitLayerRegistry.reconcile()` for multi-dataset tile stacks: sync a
