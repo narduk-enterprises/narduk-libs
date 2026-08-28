@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-testkit",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "description": "Dev-only Vitest, Playwright, and UI-quality test helpers for Narduk apps.",

@@ -12,7 +12,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-auth': '1.21.0',
   '@narduk-enterprises/narduk-core': '1.20.4',
   '@narduk-enterprises/narduk-seo': '2.0.4',
-  '@narduk-enterprises/narduk-testkit': '1.0.1',
+  '@narduk-enterprises/narduk-testkit': '1.1.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.6.0',
