@@ -261,7 +261,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         '@narduk-enterprises:registry=https://npm.pkg.github.com',
         '@narduk-geo:registry=https://npm.pkg.github.com',
-        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}',
+        // PLAIN interpolation, no default. npm does not implement
+        // ${VAR-default} substitution: it leaves the whole reference
+        // unsubstituted and sends the literal string as the token, so the
+        // default form 401s even when GH_PACKAGES_READ is set correctly.
+        // pnpm does implement it, which is how the broken shape passed
+        // review twice -- the estate tests on pnpm. A committed file must
+        // work under whichever client runs it. See company-hq
+        // docs/SECRETS-MATRIX.md, 'One credential, two names'.
+        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}',
       ),
     },
     {

@@ -335,7 +335,7 @@ describe('create-narduk-app generation contract', () => {
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
       '@narduk-enterprises:registry=https://npm.pkg.github.com\n' +
         '@narduk-geo:registry=https://npm.pkg.github.com\n' +
-        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ-UNCONFIGURED}\n',
+        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}\n',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       'pnpm install --frozen-lockfile',
