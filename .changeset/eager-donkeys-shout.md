@@ -28,9 +28,12 @@ measured findings that each cause silent, hard-to-attribute screenshot churn on
   grows the viewport to the document instead, which is one paint and is stable —
   and stops stranding `position: fixed` chrome partway down a tall page.
 
-`captureStableScreenshot` also photographs twice and requires byte equality, and
-`expectRepeatableCapture` takes any capture closure so a suite can prove the app
-_boots_ to the same pixels twice. Masks carry a mandatory `reason`.
+`captureStableScreenshot` also photographs twice and requires byte equality —
+retrying the pair (re-settling between attempts, three times by default) so that
+a loaded CI runner slipping one paint into the gap is not a red test, while a
+screen that never comes to rest still fails and says so.
+`expectRepeatableCapture` takes any capture closure, so a suite can prove the
+app _boots_ to the same pixels twice. Masks carry a mandatory `reason`.
 
 **`playwright/request-accounting`** — `expectRequestCounts` and
 `readResourceRequests` assert the exact number of times each endpoint was

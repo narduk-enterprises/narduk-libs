@@ -197,13 +197,44 @@ describe('captureStableScreenshot', () => {
     expect(stub.screenshotOptions[1]).not.toHaveProperty('path')
   })
 
-  it('fails, by name, when the page is still moving', async () => {
+  it('re-settles and tries again when a capture pair disagrees, rather than failing on the spot', async () => {
+    // Pair one disagrees; pair two matches. A loaded runner slipping one paint into the gap must
+    // not turn into a red test, because "re-run it and it went away" is the whole problem here.
     const stub = stubPage({
-      screenshots: [new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4])],
+      screenshots: [
+        new Uint8Array([1]),
+        new Uint8Array([2]),
+        new Uint8Array([3]),
+        new Uint8Array([3]),
+      ],
+    })
+
+    await expect(captureStableScreenshot(stub.page)).resolves.toEqual(new Uint8Array([3]))
+    expect(stub.loadStates).toEqual(['networkidle', 'networkidle'])
+  })
+
+  it('fails, by name, when no pair ever agrees', async () => {
+    const stub = stubPage({
+      screenshots: [
+        new Uint8Array([1]),
+        new Uint8Array([2]),
+        new Uint8Array([3]),
+        new Uint8Array([4]),
+        new Uint8Array([5]),
+        new Uint8Array([6]),
+      ],
     })
 
     await expect(captureStableScreenshot(stub.page, { label: 'the dashboard' })).rejects.toThrow(
-      /the dashboard was still changing/,
+      /the dashboard was still changing.*3 consecutive capture pairs disagreed/s,
+    )
+  })
+
+  it('can be told to try exactly once', async () => {
+    const stub = stubPage({ screenshots: [new Uint8Array([1]), new Uint8Array([2])] })
+
+    await expect(captureStableScreenshot(stub.page, { attempts: 1 })).rejects.toThrow(
+      /1 consecutive capture pairs disagreed/,
     )
   })
 
@@ -226,10 +257,17 @@ describe('captureStableScreenshot', () => {
     expect(stub.viewports[0]).toEqual({ height: 16_384, width: 1280 })
   })
 
-  it('restores the viewport even when the two captures disagree', async () => {
+  it('restores the viewport even when no pair ever agrees', async () => {
     const stub = stubPage({
       documentHeight: 2400,
-      screenshots: [new Uint8Array([1]), new Uint8Array([2])],
+      screenshots: [
+        new Uint8Array([1]),
+        new Uint8Array([2]),
+        new Uint8Array([3]),
+        new Uint8Array([4]),
+        new Uint8Array([5]),
+        new Uint8Array([6]),
+      ],
     })
 
     await expect(captureStableScreenshot(stub.page, { fullPage: true })).rejects.toThrow()

@@ -50,6 +50,16 @@ export interface DeterministicPageOptions extends FreezeClockOptions {
 
 export interface StableScreenshotOptions extends VisualQuiescenceOptions {
   /**
+   * How many capture pairs to try before declaring the page unable to settle. Default 3.
+   *
+   * `waitForVisualQuiescence` returning does not guarantee nothing lands in the gap between the
+   * two captures — it says the page went quiet for `quietMs`, not that it is finished forever —
+   * and on a loaded CI runner something occasionally does. Re-settling and trying again separates
+   * the two cases that matter: a page that needed one more moment, and a page that genuinely never
+   * stops. Playwright's own `toHaveScreenshot` retries for the same reason.
+   */
+  attempts?: number
+  /**
    * Capture the whole document rather than the viewport.
    *
    * This does NOT use Playwright's `fullPage`. See {@link captureStableScreenshot} for the
@@ -269,11 +279,14 @@ export async function waitForVisualQuiescence(
  *
  * THE PAGE IS PHOTOGRAPHED TWICE and the two are required to be byte-identical. The first is
  * returned and written; the second exists only to prove the first was of a resting page. A
- * difference means something was still landing, and the spec says so where it happens instead of
- * leaving it for whoever next runs `git status`. This is cheap — a screenshot costs single-digit
- * milliseconds — and it is a different guarantee from re-running the suite: this catches a page
- * that is MOVING, re-running catches a page that BOOTS differently twice. Use
- * {@link expectRepeatableCapture} for the second one.
+ * difference means something was still landing — and rather than failing on the spot, the pair is
+ * re-settled and retried up to `attempts` times, because a quiet window is evidence rather than a
+ * guarantee and a loaded CI runner will occasionally slip something into the gap. Only a page that
+ * disagrees on every attempt fails, and it fails saying so.
+ *
+ * This is cheap — a screenshot costs single-digit milliseconds — and it is a different guarantee
+ * from re-running the suite: this catches a page that is MOVING, re-running catches a page that
+ * BOOTS differently twice. Use {@link expectRepeatableCapture} for the second one.
  */
 export async function captureStableScreenshot(
   page: Page,
@@ -305,14 +318,24 @@ export async function captureStableScreenshot(
     ...(options.maskColor ? { maskColor: options.maskColor } : {}),
   }
 
+  const attempts = Math.max(1, options.attempts ?? 3)
+
   try {
-    const written = await page.screenshot({ ...shot, path: options.path })
-    const again = await page.screenshot(shot)
-    expect(
-      sameBytes(again, written),
-      `${label} was still changing while it was being photographed — two consecutive captures of ` +
-        'a page at rest must be byte-identical',
-    ).toBe(true)
+    let written = await page.screenshot({ ...shot, path: options.path })
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const again = await page.screenshot(shot)
+      if (sameBytes(again, written)) return written
+      if (attempt === attempts) {
+        expect(
+          false,
+          `${label} was still changing while it was being photographed: ${attempts} consecutive ` +
+            'capture pairs disagreed, with a settle wait between each. Something on this screen ' +
+            'never comes to rest',
+        ).toBe(true)
+      }
+      await waitForVisualQuiescence(page, options)
+      written = await page.screenshot({ ...shot, path: options.path })
+    }
     return written
   } finally {
     if (grown) await page.setViewportSize(grown)
