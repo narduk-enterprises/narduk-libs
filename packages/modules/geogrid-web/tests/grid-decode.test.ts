@@ -433,6 +433,30 @@ describe('optional metadata is lenient', () => {
     expect(Array.from(dataset.planes[0]!)).toEqual([1, 2, 3, 4])
   })
 
+  it('defaults planeCount to 1 when the header omits it entirely', () => {
+    // An unnamed, single-plane grid from an older publisher may not stamp
+    // `planeCount` at all; `parseHeader` falls back to `raw.planeCount ?? 1`.
+    // Every other test in this file passes `planeCount` explicitly (even the
+    // "core geometry only" header above), so nothing else exercises the
+    // default itself.
+    const buffer = buildGrid(
+      {
+        layer: 'kd490',
+        width: 2,
+        height: 2,
+        lon0: -2,
+        lat0: 2,
+        dx: 1,
+        dy: -1,
+      },
+      [[1, 2, 3, 4]],
+    )
+    const dataset = decodeGridBinary(buffer)
+    expect(dataset.header.planeCount).toBe(1)
+    expect(dataset.planes).toHaveLength(1)
+    expect(Array.from(dataset.planes[0]!)).toEqual([1, 2, 3, 4])
+  })
+
   it('surfaces release metadata and provenance counts when present', () => {
     const buffer = buildGrid(
       baseHeader({

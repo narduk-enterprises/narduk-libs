@@ -39,11 +39,15 @@ import math
 import os
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from typing import Callable
 
 DEFAULT_DATA_ROOT = Path.home() / "code" / "narduk-enterprises" / "narduk-data"
+EARTH_DATA_PIPELINE_SRC = "tenants/geo/earth-data/services/earth-data-pipeline/src"
 LUT_RAMPS = ("sst", "kd490")
 LUT_COUNT = 256
+
+RampStopValue = Callable[[object, float], float]
 
 
 def load_colorramp(path: Path) -> ModuleType:
@@ -68,6 +72,30 @@ def load_colorramp(path: Path) -> ModuleType:
         sys.modules.pop(spec.name, None)
         raise
     return module
+
+
+def load_ramp_stop_value(data_root: Path) -> RampStopValue:
+    """Import the real ``earth_data_pipeline.catalog.ramp_stop_value``.
+
+    ``wire_stop_case`` below calls this function rather than re-deriving its
+    formula inline, per this file's own "nothing here re-implements ramp math"
+    contract above. ``catalog.py``'s own imports (``.bounds``, ``.color``,
+    ``.layers``, ``.layer_spec``) are pure stdlib, so importing it costs
+    nothing beyond putting the pipeline's ``src`` directory on ``sys.path`` --
+    no pipeline dependency install (numpy, xarray, ...) is required.
+    """
+    pipeline_src = data_root / EARTH_DATA_PIPELINE_SRC
+    if not (pipeline_src / "earth_data_pipeline" / "catalog.py").is_file():
+        raise SystemExit(
+            f"earth_data_pipeline.catalog not found under {pipeline_src}\n"
+            "Set NARDUK_DATA_ROOT to a narduk-data checkout that has it, or "
+            "pass --colorramp/--data-root explicitly."
+        )
+    if str(pipeline_src) not in sys.path:
+        sys.path.insert(0, str(pipeline_src))
+    from earth_data_pipeline.catalog import ramp_stop_value
+
+    return ramp_stop_value
 
 
 def ramp_stops(ramp) -> list[dict[str, object]]:
@@ -127,32 +155,41 @@ def position_case(
     }
 
 
-def wire_stop_case(cr: ModuleType, *, ramp_name: str, value_range, scale) -> dict:
+def wire_stop_case(
+    cr: ModuleType,
+    *,
+    ramp_name: str,
+    value_range,
+    scale,
+    ramp_stop_value: RampStopValue,
+) -> dict:
     """Round-trip the catalog wire shape: normalized -> data value -> normalized.
 
     ``catalog.py::ramp_stop_value`` denormalizes each stop position into data
     space for the wire; ``normalizeWireStops`` in TypeScript must invert it back
     to the ramp's own positions. Recording both ends pins that inverse.
+
+    Calls the real ``earth_data_pipeline.catalog.ramp_stop_value`` against a
+    minimal stand-in for its ``LayerSpec`` argument. That function only reads
+    ``spec.value_range`` and ``spec.scale``, and ``LayerSpec`` is a frozen,
+    slotted dataclass with a dozen other required fields (``id``, ``provider``,
+    ``ramp``, ``source_url``, ...) this fixture has no opinion about, so a
+    duck-typed stand-in carrying just the two fields the function reads is
+    proven bit-identical to constructing a real one.
     """
     ramp = cr.get_ramp(ramp_name)
     lo, hi = value_range
-    wire = []
-    for stop in ramp.stops:
-        if scale == "log" and lo > 0 and hi > 0:
-            value = float(
-                10 ** (math.log10(lo) + stop.position * (math.log10(hi) - math.log10(lo)))
-            )
-        else:
-            value = float(lo + stop.position * (hi - lo))
-        wire.append(
-            {
-                "value": value,
-                "r": int(stop.rgba[0]),
-                "g": int(stop.rgba[1]),
-                "b": int(stop.rgba[2]),
-                "a": int(stop.rgba[3]),
-            }
-        )
+    spec = SimpleNamespace(value_range=(lo, hi), scale=scale)
+    wire = [
+        {
+            "value": ramp_stop_value(spec, stop.position),
+            "r": int(stop.rgba[0]),
+            "g": int(stop.rgba[1]),
+            "b": int(stop.rgba[2]),
+            "a": int(stop.rgba[3]),
+        }
+        for stop in ramp.stops
+    ]
     return {
         "ramp": ramp_name,
         "valueRange": [lo, hi],
@@ -172,7 +209,7 @@ def build_lut(cr: ModuleType, ramp_name: str, count: int) -> bytes:
     return bytes(out)
 
 
-def build_fixture(cr: ModuleType) -> dict[str, object]:
+def build_fixture(cr: ModuleType, ramp_stop_value: RampStopValue) -> dict[str, object]:
     ramps = {name: ramp_stops(cr.get_ramp(name)) for name in cr.ramp_names()}
 
     cases = [
@@ -297,10 +334,34 @@ def build_fixture(cr: ModuleType) -> dict[str, object]:
     ]
 
     wire_stop_cases = [
-        wire_stop_case(cr, ramp_name="kd490", value_range=(0.01, 6.6), scale="log"),
-        wire_stop_case(cr, ramp_name="sst", value_range=(-2.0, 35.0), scale="linear"),
-        wire_stop_case(cr, ramp_name="chlorophyll", value_range=(0.01, 0.5), scale="log"),
-        wire_stop_case(cr, ramp_name="front", value_range=(0.0, 1.0), scale="linear"),
+        wire_stop_case(
+            cr,
+            ramp_name="kd490",
+            value_range=(0.01, 6.6),
+            scale="log",
+            ramp_stop_value=ramp_stop_value,
+        ),
+        wire_stop_case(
+            cr,
+            ramp_name="sst",
+            value_range=(-2.0, 35.0),
+            scale="linear",
+            ramp_stop_value=ramp_stop_value,
+        ),
+        wire_stop_case(
+            cr,
+            ramp_name="chlorophyll",
+            value_range=(0.01, 0.5),
+            scale="log",
+            ramp_stop_value=ramp_stop_value,
+        ),
+        wire_stop_case(
+            cr,
+            ramp_name="front",
+            value_range=(0.0, 1.0),
+            scale="linear",
+            ramp_stop_value=ramp_stop_value,
+        ),
     ]
 
     luts: dict[str, str] = {}
@@ -374,12 +435,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    path = args.colorramp
-    if path is None:
-        root = Path(os.environ.get("NARDUK_DATA_ROOT", DEFAULT_DATA_ROOT))
-        path = root / "shared" / "colorramp.py"
+    root = Path(os.environ.get("NARDUK_DATA_ROOT", DEFAULT_DATA_ROOT))
+    path = args.colorramp if args.colorramp is not None else root / "shared" / "colorramp.py"
 
-    fixture = encode(build_fixture(load_colorramp(path)))
+    fixture = encode(build_fixture(load_colorramp(path), load_ramp_stop_value(root)))
 
     if args.check:
         current = args.out.read_text(encoding="utf-8") if args.out.is_file() else ""

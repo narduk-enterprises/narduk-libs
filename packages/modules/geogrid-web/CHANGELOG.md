@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.2.1 — 2026-08-28
+
+Post-merge adversarial-review fix-forward for `./color` and the `/grid` decoder
+(0.2.0). No public API additions or removals; one public export's edge-case
+behavior changes.
+
+### Fixed
+
+- **`normalizeValue`'s degenerate-range guard now matches the server exactly.**
+  It was `if (!(lo < hi)) throw`, which diverges from narduk-data
+  `shared/colorramp.py`'s `if lo >= hi: raise` on a `NaN` bound: `!(lo < hi)`
+  is `true` for `NaN` (threw) while `lo >= hi` is `false` for `NaN` (the server
+  clamps instead of raising). The guard is now the literal `if (lo >= hi)`.
+  Fixing the guard alone surfaced a second, narrower divergence: with a `NaN`
+  bound let through, the final `Math.min(1, Math.max(0, raw))` clamp answers
+  `NaN` where the server's `min(1.0, max(0.0, raw))` answers `0.0` — Python's
+  builtin `max`/`min` keep their first argument on a `NaN` comparison, `Math.max`/
+  `Math.min` do not. `normalizeValue` now reproduces that order-sensitive
+  clamp so a degenerate `NaN` bound is byte-exact with the server end to end.
+- **`generate_ramp_parity.py`'s `wire_stop_case` now calls the real
+  `earth_data_pipeline.catalog.ramp_stop_value`** instead of re-deriving its
+  formula inline, restoring this file's own "nothing here re-implements ramp
+  math" contract. Regenerating `ramp-parity-v1.json` against the real function
+  produced a byte-identical fixture — the inline copy was accurate, just an
+  unnecessary and driftable duplicate.
+- **`roundHalfToEven` now throws `RangeError` on a non-finite input** (`NaN`,
+  `+Infinity`, `-Infinity`) instead of silently returning `NaN`/`Infinity`.
+  Python's `round()` — the reference this ports — raises on all three
+  (`ValueError` for `NaN`, `OverflowError` for `Infinity`), so a public export
+  documented as matching Python was quietly diverging exactly where Python is
+  loudest. The three internal call sites (the channel interpolation in
+  `sampleRamp01`) only ever pass an already-finite interpolated 8-bit channel
+  value, so this is a public-export contract fix with no internal-caller
+  fallout.
+
+### Added
+
+- A test pinning `decodeGridBinary`'s `planeCount` default: a header that
+  omits `planeCount` entirely now has an explicit assertion that it decodes as
+  `1`, matching `parseHeader`'s `raw.planeCount ?? 1`.
+- A direct test for `denormalizePosition` against the `wireStopCases` fixture.
+  Its docstring already claimed this coverage ("that round trip is pinned by
+  the wireStopCases fixture"), but no test called the function — every
+  existing `wireStopCases` consumer exercises the opposite direction
+  (`normalizeWireStops`).
+- A test for `normalizeValue`'s `NaN`-range-bound behavior, with the expected
+  value captured by running narduk-data's own `shared/colorramp.py`.
+
 ## 0.2.0 — 2026-08-28
 
 Canonical color-ramp engine and the `/grid` binary decoder. Nothing existing was

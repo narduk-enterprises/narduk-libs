@@ -34,8 +34,19 @@ const TRANSPARENT: RGBA8 = [0, 0, 0, 0]
  *
  * The subtraction below is exact for every double in the 8-bit channel domain,
  * so the tie test is a true tie test rather than a tolerance.
+ *
+ * @throws RangeError on a non-finite input. Python's `round()` — the reference
+ * this ports — raises on `NaN` (`ValueError`) and `Infinity`
+ * (`OverflowError`); `Math.floor`/arithmetic on a non-finite double instead
+ * quietly answers `NaN` or `Infinity`, which is not a rounding result at all.
+ * Every internal call site (the channel interpolation in {@link sampleRamp01})
+ * only ever passes an interpolated 8-bit channel value, which is always
+ * finite, so this is purely a public-export contract fix.
  */
 export function roundHalfToEven(value: number): number {
+  if (!Number.isFinite(value)) {
+    throw new RangeError('roundHalfToEven requires a finite number')
+  }
   const lower = Math.floor(value)
   const fraction = value - lower
   if (fraction > 0.5) return lower + 1

@@ -41,6 +41,13 @@ export function toValueRangeTuple(range: ValueRangeInput): readonly [number, num
  * equal but not bit-equal, and this engine is pinned byte-exact against the
  * server's output in `tests/color-parity.test.ts`.
  *
+ * The degenerate-range guard is `lo >= hi`, matching the server's
+ * `if lo >= hi: raise` verbatim — **not** `!(lo < hi)`, which looks equivalent
+ * but is not: comparisons with `NaN` are always `false` in both languages, so
+ * `NaN >= hi` is `false` (no throw, matching the server) while `!(NaN < hi)` is
+ * `true` (throws, a producer-visible divergence a degenerate `NaN` bound would
+ * hit in practice — see `tests/color-parity.test.ts`).
+ *
  * @throws RangeError when `lo >= hi`, matching the server's `ValueError`.
  */
 export function normalizeValue(
@@ -51,7 +58,7 @@ export function normalizeValue(
   if (!Number.isFinite(value)) return null
 
   const [lo, hi] = toValueRangeTuple(range)
-  if (!(lo < hi)) {
+  if (lo >= hi) {
     throw new RangeError('value range minimum must be less than maximum')
   }
 
@@ -63,7 +70,18 @@ export function normalizeValue(
     raw = (value - lo) / (hi - lo)
   }
 
-  return Math.min(1, Math.max(0, raw))
+  // A degenerate-but-not-rejected range (a non-finite bound, e.g. `NaN`, which
+  // the guard above lets through because `NaN >= hi` is `false`) can make `raw`
+  // itself `NaN`. The server's clamp is `min(1.0, max(0.0, raw))` using
+  // Python's builtin `max`/`min`, which keep the **first** argument when a
+  // comparison against `NaN` is involved: `max(0.0, nan)` is `0.0`, and
+  // `min(1.0, 0.0)` is `0.0`. `Math.max`/`Math.min` do not have that property —
+  // either one propagates `NaN` if any operand is `NaN` — so a literal
+  // `Math.min(1, Math.max(0, raw))` would answer `NaN` where the server answers
+  // `0`. The two comparisons below reproduce the server's exact order-sensitive
+  // semantics instead.
+  const clampedLow = raw > 0 ? raw : 0
+  return clampedLow < 1 ? clampedLow : 1
 }
 
 /**

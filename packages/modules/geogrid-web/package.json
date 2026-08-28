@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/geogrid-web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Web twin of GeoGridKit: gridded geo-data overlay render (WebGL2 + Canvas2D fallback).",
   "repository": {

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { sampleRamp as deprecatedSampleRamp } from '../src/core/color.js'
 import {
+  denormalizePosition,
   normalizeValue,
   normalizeWireStops,
   rampLut,
@@ -153,6 +154,19 @@ describe('normalizeValue matches the server', () => {
     expect(() => normalizeValue(1, [10, 1], 'linear')).toThrow(RangeError)
   })
 
+  it('does not throw on a NaN range bound, matching the server', () => {
+    // `!(lo < hi)` — the guard this replaced — is `true` for `NaN` bounds (JS
+    // and Python both make every comparison against `NaN` false, so `NaN < hi`
+    // is `false` and its negation is `true`), so the old guard threw here while
+    // the server's `if lo >= hi: raise` does not (`NaN >= hi` is also `false`).
+    // Expected value captured by running narduk-data's own
+    // `shared/colorramp.py`: `normalize_value(1, (nan, 10.0), 'linear')` is
+    // `0.0`, not `NaN` — Python's `min(1.0, max(0.0, raw))` keeps the first
+    // argument on a `NaN` comparison, which `normalizeValue` reproduces below.
+    expect(() => normalizeValue(1, [Number.NaN, 10], 'linear')).not.toThrow()
+    expect(normalizeValue(1, [Number.NaN, 10], 'linear')).toBe(0)
+  })
+
   it('answers null for a non-finite value before it inspects the range', () => {
     expect(normalizeValue(Number.NaN, [5, 5], 'linear')).toBeNull()
   })
@@ -184,6 +198,28 @@ describe('rampLut matches the server-baked LUTs', () => {
   it('samples position 0 for a single-entry LUT', () => {
     expect(Array.from(rampLut(stopsFor('kd490'), 1))).toEqual([8, 34, 108, 240])
   })
+})
+
+describe('denormalizePosition matches the server round trip', () => {
+  // `denormalizePosition`'s own docstring claims coverage from this fixture
+  // ("that round trip is pinned by the wireStopCases fixture"), but until now
+  // nothing actually called it: every wireStopCases consumer above runs
+  // `normalizeWireStops` (the inverse direction) and never calls
+  // `denormalizePosition` itself. This asserts the claimed direction directly:
+  // each wire case's `expectedPositions` (the server's own ramp stop
+  // positions) denormalized back through `denormalizePosition` must reproduce
+  // the `value` the server wrote onto the wire for that same stop.
+  for (const wireCase of fixture.wireStopCases) {
+    it(`${wireCase.ramp} (${wireCase.scale})`, () => {
+      wireCase.expectedPositions.forEach((position, index) => {
+        const expectedValue = wireCase.wire[index]!.value
+        const actual = denormalizePosition(position, wireCase.valueRange, wireCase.scale)
+        // Same tolerance as the other cross-language float comparisons in this
+        // file: log10 may differ by a ULP between CPython's libm and V8's.
+        expect(actual, `stop ${index}`).toBeCloseTo(expectedValue, 9)
+      })
+    })
+  }
 })
 
 describe('normalizeWireStops inverts the catalog wire encoding', () => {
@@ -298,6 +334,16 @@ describe('roundHalfToEven', () => {
     expect(roundHalfToEven(2.5000000001)).toBe(3)
     expect(roundHalfToEven(0)).toBe(0)
     expect(roundHalfToEven(255)).toBe(255)
+  })
+
+  it('throws on a non-finite input, matching Python round()', () => {
+    // Python's round() -- the reference this ports -- raises ValueError on NaN
+    // and OverflowError on +/-Infinity; Math.floor/arithmetic on a non-finite
+    // double would otherwise quietly answer NaN or Infinity instead of a
+    // rounding result.
+    expect(() => roundHalfToEven(Number.NaN)).toThrow(RangeError)
+    expect(() => roundHalfToEven(Number.POSITIVE_INFINITY)).toThrow(RangeError)
+    expect(() => roundHalfToEven(Number.NEGATIVE_INFINITY)).toThrow(RangeError)
   })
 })
 
