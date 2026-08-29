@@ -191,6 +191,73 @@ GeoGridKit's `GridHeaderConformanceTests`, and this decoder asserts the same
 header fields and the same plane, making it the fourth leg of that contract:
 Python producer, TypeScript producer (gonogo), Swift consumer, and this one.
 
+## Dynamic display range
+
+A layer has **two** ranges, and conflating them is the failure this API exists
+to prevent:
+
+| | What it is | What happens if you narrow it |
+|--|--|--|
+| `valueRange` | the wire/decode domain — the range an `encoded-u16` frame was quantized across | every cell **re-decodes to a value the publisher never wrote** |
+| `displayRange` | the render stretch — the range the ramp is spread over | the image stretches; the data is untouched |
+
+`displayRange` defaults to `valueRange`, so nothing changes until you ask for
+something. `core/stretch.ts` computes one from the data:
+
+```ts
+import { defaultViewportPercentileStretch } from '@narduk-enterprises/geogrid-web/core'
+
+const overlay = createGridOverlay({
+  style: { rampStops, valueRange: [0.01, 6.6], scale: 'log' },
+  stretch: defaultViewportPercentileStretch(), // 2nd–98th percentile
+})
+
+overlay.onDisplayRangeChange((range, meta) => {
+  legend.setRange(range) // meta carries { tier, sampleCount, stretch, reason }
+})
+overlay.setPlaying(true) // freezes the stretch for the duration of playback
+```
+
+The five stretches: `{ mode: 'fixed' }`, `{ mode: 'manual', range }`,
+`{ mode: 'viewport-minmax', pad? }`, `{ mode: 'viewport-percentile', lo, hi, pad? }`,
+and `{ mode: 'date-percentile', lo, hi }` (viewport-independent, and able to
+consume a server-published percentile table when a caller supplies one).
+
+The controller recomputes on viewport idle behind a **250 ms** debounce, applies
+a new range only when an endpoint moves more than **2%** of the current span
+(otherwise a percentile over a moving sample makes the colors visibly breathe
+while the operator holds still), and stays **frozen while playing** — a range
+recomputed per animation frame animates the ramp, so the colors move while the
+data does not. Anything requested mid-playback is applied on pause.
+
+### Cross-platform pin
+
+All of this mirrors GeoGridKit `Sources/GeoGridCore/Stretch.swift` exactly:
+Hyndman–Fan **type 7** percentiles (numpy's default), a deterministic
+`max(1, ceil(sqrt(candidates / 65536)))` stride applied on **both** axes, cell
+**centers** deciding the viewport intersection, and padding applied in the
+normalized space of the layer's own scale.
+`tests/fixtures/grid-stretch-parity-v1.json` pins the percentiles against numpy,
+and its first eight cases are byte-identical to the fixture GeoGridKit's own
+`StretchTests` reads. Change one side only by changing both.
+
+The stretch samples the float32 `/grid` dialect — the one that carries the
+geometry a viewport intersection needs. A temporal `encoded-u16` frame set
+through `setFrame` / `renderAt` renders normally but drives no stretch. When
+`setScalarFrame` is given a `bbox` override, that extent is what the stretch
+samples through, so a relocated plane is measured where it is drawn.
+
+`GridOverlay` is the single writer of `style.displayRange`. Setting it by hand —
+in the constructor or through `setStyle` — is adopted as the `manual` stretch it
+amounts to, so `currentDisplayRange()` always agrees with what is on screen;
+`setStyle({ displayRange: null })` clears it back to `valueRange`.
+
+The WebGL2 leg has no Node coverage: there is no GL context here and this
+package adds no dependency to invent one. What is asserted is the shader's
+*structure* — that it normalizes over `displayRange`, decodes over `valueRange`,
+and carries the same guards as the CPU reference. Pixel parity against a real
+GPU is the browser leg's job.
+
 ## What this package does *not* own
 
 - MapKit / MapLibre / Leaflet basemap setup

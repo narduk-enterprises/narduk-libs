@@ -82,7 +82,13 @@ export interface ReferenceScalarLayer {
 export interface ReferenceScalarStyle {
   /** Canonical normalized-position stops. `normalizeWireStops` builds these. */
   stops: readonly RampStop[]
+  /**
+   * The wire/decode domain. Decodes an `encoded-u16` sample and nothing else.
+   * Narrowing it mis-decodes the frame rather than stretching it.
+   */
   valueRange: ValueRangeInput
+  /** The render stretch. Defaults to {@link ReferenceScalarStyle.valueRange}. */
+  displayRange?: ValueRangeInput
   scale: GridScale
   /** Defaults to `soft`. */
   sampling?: GridSampling
@@ -209,15 +215,20 @@ export function referenceScalarPixel(
   const rawUpper = validUpper ? upper.value : lower.value
   const raw = rawLower + (rawUpper - rawLower) * progress
 
+  // The two ranges, and the two jobs they do. `valueRange` decodes the wire
+  // sample; `displayRange` spreads the ramp. They are the same object until a
+  // stretch says otherwise, so an unstretched layer takes exactly the path it
+  // always took — including both guards collapsing onto one range.
   const range = style.valueRange
-  if (!isDrawableRange(range)) return [0, 0, 0, 0]
+  const displayRange = style.displayRange ?? range
+  if (!isDrawableRange(range) || !isDrawableRange(displayRange)) return [0, 0, 0, 0]
 
   const value =
     layer.valueKind === 'float32'
       ? raw
       : displayValueFromEncoded(raw, toRange(range), style.scale)
 
-  const position = normalizeValue(value, range, style.scale)
+  const position = normalizeValue(value, displayRange, style.scale)
   if (position === null) return [0, 0, 0, 0]
 
   const coverageLower = validLower ? lower.coverage : upper.coverage

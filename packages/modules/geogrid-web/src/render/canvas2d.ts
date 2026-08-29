@@ -18,6 +18,7 @@ import {
   type GridBBox,
   type GridBBoxAnchor,
   type GridFrame,
+  type GridValueRange,
   type GridViewport,
 } from '../core/models.js'
 import { resolveRampStops, styleLut, styleScale } from './style.js'
@@ -181,10 +182,38 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     return frameCacheKey(frame)
   }
 
+  /**
+   * The range the ramp is spread over — the stretch, or the wire domain when
+   * there is none. Never the range an `encoded-u16` sample is decoded through;
+   * {@link Canvas2DGridBackend.displayValue} keeps that one.
+   */
+  private effectiveDisplayRange(): GridValueRange {
+    return this.style.displayRange ?? this.style.valueRange
+  }
+
+  /**
+   * The style component of the raster cache key.
+   *
+   * The display range is included as **defense in depth, not as the invalidation
+   * mechanism** — being precise about that, because the comment this replaces
+   * claimed otherwise and was wrong. Every style change arrives through
+   * {@link Canvas2DGridBackend.setStyle}, which drops the cached raster and both
+   * keys outright, so no two keys compared against each other are ever built
+   * from different styles. What this line actually buys is that the key stays
+   * honest if that clearing is ever relaxed; today it cannot be reached, and a
+   * test asserting otherwise would be asserting nothing.
+   */
   private styleKey(): string {
     const { valueRange, scale, sampling } = this.style
+    const display = this.effectiveDisplayRange()
     const stops = resolveRampStops(this.style)
-    return `${scale}|${valueRange.lowerBound}:${valueRange.upperBound}|${stops.length}|${sampling ?? 'soft'}`
+    return [
+      scale,
+      `${valueRange.lowerBound}:${valueRange.upperBound}`,
+      `${display.lowerBound}:${display.upperBound}`,
+      stops.length,
+      sampling ?? 'soft',
+    ].join('|')
   }
 
   private ensureLut(): Uint8Array {
@@ -197,6 +226,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       stops: resolveRampStops(this.style),
       valueRange: this.style.valueRange,
       scale: styleScale(this.style),
+      ...(this.style.displayRange !== undefined ? { displayRange: this.style.displayRange } : {}),
       ...(this.style.sampling !== undefined ? { sampling: this.style.sampling } : {}),
     }
   }
@@ -443,11 +473,12 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     // `normalizeValue` throws on a degenerate range, and this runs inside the
     // frame loop: a bad style has to draw nothing, not take the frame down with
     // it. `isDrawableRange` documents why the test is `!(lo < hi)`.
-    if (!isDrawableRange(this.style.valueRange)) {
+    const displayRange = this.effectiveDisplayRange()
+    if (!isDrawableRange(this.style.valueRange) || !isDrawableRange(displayRange)) {
       data[offset + 3] = 0
       return
     }
-    const position = normalizeValue(value, this.style.valueRange, styleScale(this.style))
+    const position = normalizeValue(value, displayRange, styleScale(this.style))
     if (position === null) {
       data[offset + 3] = 0
       return

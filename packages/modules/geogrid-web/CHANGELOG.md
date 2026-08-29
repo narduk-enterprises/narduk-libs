@@ -1,5 +1,106 @@
 # Changelog
 
+## 0.4.0 — 2026-08-28
+
+Dynamic display range: the ramp can now be stretched over a range computed from
+the data, held strictly apart from the range the data is *decoded* through.
+
+Nothing changes for a caller that does not ask. `displayRange` defaults to
+`valueRange`, and a style that omits it renders byte-for-byte what it rendered
+before — asserted, not assumed.
+
+### Added
+
+- **`GridStyle.displayRange`** — the render stretch, distinct from
+  `GridStyle.valueRange`, which stays the wire/decode domain. This split is the
+  point of the release: narrowing `valueRange` to "make the image pop" does not
+  re-spread the ramp, it re-decodes every `encoded-u16` cell to a value the
+  publisher never wrote. `tests/display-range-render.test.ts` pins both
+  behaviors side by side. Mirrors GeoGridKit's
+  `GridDatasetDescriptor.displayRange` / `effectiveDisplayRange`.
+- **`core/stretch.ts`** — the calculator, a mirror of GeoGridKit
+  `Sources/GeoGridCore/Stretch.swift` (`b13d61d`):
+  - `GridRangeStretch`: `fixed`, `manual`, `viewport-minmax`,
+    `viewport-percentile`, `date-percentile`.
+  - `percentileHF7` — Hyndman–Fan **type 7**, numpy's default.
+  - `stretchStride` — `max(1, ceil(sqrt(candidates / 65536)))`, applied on
+    **both** axes. One-axis striding disagrees with Swift about the sample
+    population by a factor of the stride, which moves a percentile.
+  - `sampleGridValues` / `gridIndexRange` — candidates are the cells whose
+    **centers** fall in the viewport∩grid intersection.
+  - `paddedRange` — padding in the normalized space of the layer's own scale, so
+    a 5% pad on a log layer widens by 5% of the decade span.
+  - `stretchDisplayRange` — the dispatch, returning `{ range, tier, sampleCount }`.
+- **`GridStretchController`, wired into `GridOverlay`.** New overlay API:
+  `setStretch`, `currentStretch`, `currentDisplayRange`, `onDisplayRangeChange`,
+  `setPlaying`. It recomputes on viewport idle behind a **250 ms** debounce,
+  applies a range only when an endpoint moves more than **2%** of the current
+  span, and stays **frozen while playing** — anything requested mid-playback is
+  applied on pause.
+- **`tests/fixtures/grid-stretch-parity-v1.json`** and its generator. The
+  percentile cases come from numpy, and the **first eight are byte-identical to
+  the fixture GeoGridKit's own `StretchTests` reads** — same generator code, same
+  seed, same draw order — so the two languages are pinned to literally the same
+  numbers rather than to two samples of the same idea.
+
+### Changed
+
+- The WebGL2 scalar shader normalizes over a new `displayRange` uniform;
+  `valueRange` keeps its one job, decoding an `encoded-u16` sample. Both are
+  guarded, and they collapse onto the same numbers on an unstretched layer.
+- The Canvas2D raster cache key now carries the display range, as defense in
+  depth rather than as the invalidation mechanism: `setStyle` already drops the
+  cached raster and both cache keys, which is what actually makes a stretch take
+  effect. Same-instance invalidation is asserted; the key line is belt to that
+  brace.
+- **`GridOverlay` is the single writer of `style.displayRange`.** A hand-set
+  `style.displayRange` — through the constructor or `setStyle` — is adopted as
+  the `{ mode: 'manual', range }` stretch it amounts to, rather than written
+  straight into the style. Writing it directly let `currentDisplayRange()`
+  report one range while the picture showed another, and left the controller's
+  hysteresis comparing against a range it had never computed, which could
+  silently stop a running stretch from ever applying again.
+- **`setScalarFrame`'s `bbox` override now reaches the stretch.** The effective
+  extent is handed to the sampler as its geometry, so a relocated plane is
+  sampled where it is drawn. Previously the sampler used the header's own
+  `lon0`/`dx` while the renderer used the override, and the resulting range was
+  computed from cells nobody was looking at — plausible, wrong, and unbounded in
+  the size of the override.
+- `setScalarFrame` accepts `dateStatistics`, so a `date-percentile` stretch can
+  consume a server-published table once one exists (#15).
+
+### Fixed
+
+- **`setPlaying(true)` no longer discards a viewport recompute that was still
+  debouncing.** Panning and starting playback inside the 250 ms window dropped
+  the pending request outright, so pausing afterwards never recomputed —
+  directly contradicting the freeze contract, which promises the request is
+  deferred rather than lost.
+- A `manual` stretch now applies before any frame has arrived. It needs no data,
+  and GeoGridKit's dispatch ignores the dataset for that case, so making an
+  operator-set range wait for a frame was this side's own invention.
+- An inverted or zero-width row in a published `dateStatistics` table is
+  reported `insufficient` and falls back to `valueRange`, rather than being
+  handed to the renderer as a range that would blank the layer.
+- `GridStretchController.destroy()` clears the applied range, so
+  `currentDisplayRange()` cannot keep reporting a stale one after teardown.
+
+### Notes
+
+- The stretch samples the float32 `/grid` dialect, the one carrying the geometry
+  a viewport intersection needs. A temporal `encoded-u16` frame set through
+  `setFrame` / `renderAt` renders exactly as before and drives no stretch.
+- The WebGL2 path has no Node coverage — there is no GL context in this
+  environment and this package takes on no dependency to invent one. What is
+  asserted is the shader's *structure*: that it normalizes over `displayRange`,
+  decodes over `valueRange`, and guards both the way the CPU reference does.
+  Pixel parity against a real GPU remains the browser leg's job.
+- One deliberate divergence from the Swift sampler, in the web client's favor:
+  gaps are decided by the decoder's per-plane mask rather than by `isFinite`
+  alone, so a grid naming a numeric `nodata` sentinel excludes it. GeoGridKit's
+  decoder stores `GridHeader.missing` as a `String` and never applies it, so on
+  every grid whose `missing` is `NaN` the two rules are the same rule.
+
 ## 0.3.0 — 2026-08-28
 
 The client-side scalar render path: plain `/grid` Float32 grids now render on

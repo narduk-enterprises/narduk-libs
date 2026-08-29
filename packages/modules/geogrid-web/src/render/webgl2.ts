@@ -314,6 +314,16 @@ export class WebGL2GridBackend implements GridRenderBackend {
       this.style.valueRange.lowerBound,
       this.style.valueRange.upperBound,
     )
+    // Two uniforms because they do two jobs: `valueRange` decodes an
+    // `encoded-u16` sample, `displayRange` spreads the ramp. Uploading a
+    // stretched range into `valueRange` would mis-decode every wire sample
+    // instead of stretching the image.
+    const displayRange = this.style.displayRange ?? this.style.valueRange
+    gl.uniform2f(
+      this.uniform(pipeline, 'displayRange'),
+      displayRange.lowerBound,
+      displayRange.upperBound,
+    )
     gl.uniform1i(this.uniform(pipeline, 'scaleLog'), this.style.scale === 'log' ? 1 : 0)
     gl.uniform1i(this.uniform(pipeline, 'coastal'), this.style.sampling === 'coastal' ? 1 : 0)
     bindTexture(gl, UNIT_LUT, this.ensureLut(), this.uniform(pipeline, 'lut'))
@@ -665,7 +675,21 @@ float stencilAlpha(vec2 screenUv) {
  * channel, and `displayValue` is the identity for `float32` because those
  * samples are already in display units.
  */
-function scalarFragmentShader(valueKind: GridValueKind): string {
+/**
+ * The scalar fragment source, exported so its **structure** can be asserted.
+ *
+ * There is no GL context in a Node test and this package takes no dependency to
+ * invent one, so the alternative to a structural check is no check at all — and
+ * the thing most worth checking is exactly the thing a reviewer cannot see by
+ * reading: whether this shader normalizes over `displayRange` while decoding
+ * over `valueRange`, and whether it guards both the way the CPU reference does.
+ * `tests/display-range-render.test.ts` asserts that. Full pixel parity against a
+ * real GPU remains the browser leg's job.
+ *
+ * Not re-exported from the package barrel: this is a seam for the repository's
+ * own tests, not API.
+ */
+export function scalarFragmentShader(valueKind: GridValueKind): string {
   const float32 = valueKind === 'float32'
   const sampler = float32 ? 'sampler2D' : 'usampler2D'
   const decode = float32
@@ -693,6 +717,7 @@ uniform float progress;
 uniform vec2 uvOffset;
 uniform vec2 uvScale;
 uniform vec2 valueRange;
+uniform vec2 displayRange;
 uniform int scaleLog;
 uniform int coastal;
 uniform int anchorCenter;
@@ -755,7 +780,15 @@ vec3 sampleScalar(${sampler} values, usampler2D mask, vec2 pos) {
   return vec3(valueSum / weightSum, cov, weightSum);
 }
 
-/** Port of normalizedScalar; -1.0 stands for "outside the sampling domain". */
+/**
+ * Port of normalizedScalar; -1.0 stands for "outside the sampling domain".
+ *
+ * Normalizes over displayRange, never valueRange -- the stretch is a render
+ * decision and the wire domain has already done its one job in displayValue
+ * above. Both are guarded, and both collapse onto the same numbers on an
+ * unstretched layer, so the CPU reference's twin guard stays a mirror.
+ * (No backticks in here: this whole shader lives inside a template literal.)
+ */
 float normalizedScalar(float value) {
   // Negated less-than rather than greater-or-equal, so a NaN bound is rejected
   // too: every comparison against NaN is false, so !(x < y) is true where
@@ -763,14 +796,15 @@ float normalizedScalar(float value) {
   // render the ramp backwards. The CPU guard is written the same way, on
   // purpose, so both paths agree on a corrupt range rather than one painting.
   if (!(valueRange.x < valueRange.y)) return -1.0;
+  if (!(displayRange.x < displayRange.y)) return -1.0;
   if (scaleLog == 1) {
-    if (value <= 0.0 || valueRange.x <= 0.0 || valueRange.y <= 0.0) return -1.0;
+    if (value <= 0.0 || displayRange.x <= 0.0 || displayRange.y <= 0.0) return -1.0;
     return clamp(
-      (log2(value) - log2(valueRange.x)) / (log2(valueRange.y) - log2(valueRange.x)),
+      (log2(value) - log2(displayRange.x)) / (log2(displayRange.y) - log2(displayRange.x)),
       0.0,
       1.0);
   }
-  return clamp((value - valueRange.x) / (valueRange.y - valueRange.x), 0.0, 1.0);
+  return clamp((value - displayRange.x) / (displayRange.y - displayRange.x), 0.0, 1.0);
 }
 
 void main() {
