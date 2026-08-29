@@ -3,7 +3,7 @@
   "rampSpecVersion": 1,
   "rounding": "half-to-even",
   "source": "narduk-enterprises/narduk-data shared/colorramp.py",
-  "generator": "tests/fixtures/generate_ramp_parity.py",
+  "generator": "scripts/generate_render_parity_fixtures.py",
   "ramps": {
     "afai": [
       {

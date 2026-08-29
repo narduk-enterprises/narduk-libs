@@ -22,10 +22,15 @@ import type { GridScale, RampStop } from '../src/core/models.js'
  * Byte-exact parity against the server engine.
  *
  * Every expected value in `ramp-parity-v1.json` was produced by running
- * narduk-data's `shared/colorramp.py` — see the generator checked in beside the
- * fixture. Nothing in this file recomputes an expectation; a failure here means
- * the TypeScript engine has drifted from the engine that colored every
- * published tile, which is the entire reason the fixture exists.
+ * narduk-data's `shared/colorramp.py`. The fixture is now vendored, verbatim,
+ * from narduk-data's own `fixtures/render-parity-v1/` pack — see
+ * `tests/fixtures/render-parity-v1/PROVENANCE.md` for the source commit and
+ * `tests/fixtures/vendor_render_parity.mjs` for how to re-vendor it — rather
+ * than generated locally; `tests/render-parity-manifest.test.ts` asserts the
+ * vendored bytes still match the pack's own manifest. Nothing in this file
+ * recomputes an expectation; a failure here means the TypeScript engine has
+ * drifted from the engine that colored every published tile, which is the
+ * entire reason the fixture exists.
  */
 
 interface ParityFixture {
@@ -74,7 +79,9 @@ function revive(node: unknown): unknown {
   return node
 }
 
-const fixturePath = fileURLToPath(new URL('./fixtures/ramp-parity-v1.json', import.meta.url))
+const fixturePath = fileURLToPath(
+  new URL('./fixtures/render-parity-v1/ramp-parity-v1.json', import.meta.url),
+)
 const fixture = revive(JSON.parse(readFileSync(fixturePath, 'utf8'))) as ParityFixture
 
 function stopsFor(name: string): RampStop[] {
