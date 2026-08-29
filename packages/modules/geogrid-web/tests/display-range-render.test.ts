@@ -874,7 +874,7 @@ describe('the WebGL2 scalar shader splits decode from normalize', () => {
 
   for (const valueKind of ['float32', 'encoded-u16'] as const) {
     it(`declares both uniforms and uses each for its own job (${valueKind})`, async () => {
-      const { scalarFragmentShader } = await import('../src/render/webgl2.js')
+      const { scalarFragmentShader } = await import('../src/render/gl.js')
       const source = scalarFragmentShader(valueKind)
 
       expect(source).toContain('uniform vec2 valueRange;')
@@ -898,7 +898,7 @@ describe('the WebGL2 scalar shader splits decode from normalize', () => {
   }
 
   it('decodes an encoded-u16 sample over the wire domain only', async () => {
-    const { scalarFragmentShader } = await import('../src/render/webgl2.js')
+    const { scalarFragmentShader } = await import('../src/render/gl.js')
     const decode = displayValueBody(scalarFragmentShader('encoded-u16'))
     expect(decode).toContain('valueRange.x')
     expect(decode).toContain('valueRange.y')
@@ -907,7 +907,7 @@ describe('the WebGL2 scalar shader splits decode from normalize', () => {
   })
 
   it('makes float32 decoding the identity, touching neither range', async () => {
-    const { scalarFragmentShader } = await import('../src/render/webgl2.js')
+    const { scalarFragmentShader } = await import('../src/render/gl.js')
     const decode = displayValueBody(scalarFragmentShader('float32'))
     expect(decode).toContain('float displayValue(float raw) { return raw; }')
   })

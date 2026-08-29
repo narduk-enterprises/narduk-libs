@@ -2,15 +2,43 @@
 
 ## 0.4.0 — 2026-08-28
 
-Dynamic display range: the ramp can now be stretched over a range computed from
-the data, held strictly apart from the range the data is *decoded* through.
+Two features, one release: the **Web-Mercator tile baker** and the **dynamic
+display range**. They met in the merge rather than in the plan, and they compose
+— a baked tile is stretched through `style.displayRange` exactly as the overlay
+is, because both now run the same fragment shader.
 
-Nothing changes for a caller that does not ask. `displayRange` defaults to
-`valueRange`, and a style that omits it renders byte-for-byte what it rendered
-before — asserted, not assumed.
+Additive on both counts. `displayRange` defaults to `valueRange`, no existing
+export changed shape, and a caller that asks for neither renders byte-for-byte
+what it rendered in 0.3.0.
 
 ### Added
 
+- **`./tile` subpath.** `createGridTileImageSource(...)` returns the
+  `(x, y, z, scale, data?) => Promise<OffscreenCanvas | null>` function a tiled
+  host consumes; `renderGridTile(source, style, { z, x, y, side })` bakes one
+  tile; `referenceRenderGridTile(...)` does it on the CPU and returns raw RGBA.
+  Also exported from the package root.
+- **Structural fit with narduk-mapkit, with zero new package edges.** The
+  returned function *is* `MapKitTileOverlayImageSource<OffscreenCanvas>`
+  structurally, by agreement rather than by import — neither package depends on
+  the other. `tests/tile-image-source.test.ts` restates narduk-mapkit's type
+  verbatim and assigns to it, so a signature change on either side fails this
+  repository's typecheck.
+- **Web-Mercator tile geometry** (`lonLatForTilePixel`, `tileBounds`,
+  `tileProjection`, `tileIntersectsBBox`), ported from GeoGridKit
+  `Sources/GeoGridRender/GridTileMath.swift` and pinned to
+  `tests/fixtures/tile-math-parity-v1.json` — 107 lon/lat/bounds values produced
+  by calling GeoGridKit itself through
+  `tests/fixtures/generate_tile_math_parity.sh`. Asserting a port against its own
+  arithmetic proves nothing; a tile whose pixel centers land half a pixel off the
+  Swift renderer's is two clients disagreeing about where the coastline is.
+- **`GridTileRenderer`** — a shared WebGL2 context, FBO and texture cache. One
+  renderer for a whole layer, because a browser caps live contexts near sixteen
+  and one grid should upload once rather than once per tile. Falls back to the
+  CPU path wherever OffscreenCanvas WebGL2 is unavailable.
+- **`toGridTileLayer`** places a decoded `/grid` dataset on its own
+  `gridBounds(header)` geometry — the same extent `overlay.setScalarFrame`
+  chooses, so a tile and the overlay cannot disagree about where a grid sits.
 - **`GridStyle.displayRange`** — the render stretch, distinct from
   `GridStyle.valueRange`, which stays the wire/decode domain. This split is the
   point of the release: narrowing `valueRange` to "make the image pop" does not
@@ -45,6 +73,17 @@ before — asserted, not assumed.
 
 ### Changed
 
+- The scalar fragment shader, the kernel, and the WebGL helpers moved to
+  `src/render/gl.ts` and are now shared by the overlay backend and the tile
+  baker rather than copied. The two differ in exactly one function — how a
+  screen UV becomes a data UV — which is the `projection` parameter. The GLSL is
+  otherwise unchanged, so the overlay renders the same pixels it did in 0.3.0.
+  This is also what makes the two features in this release compose for free:
+  `displayRange` landed in that one shader, so the tile baker got the stretch
+  without a second implementation to keep in step.
+- `script/check_package_exports.mjs` now also fails on the *reverse* drift: a
+  `src/<dir>/index.ts` with no matching subpath in the export map. The export map
+  is the one place a subpath's absence is invisible from inside the repo.
 - The WebGL2 scalar shader normalizes over a new `displayRange` uniform;
   `valueRange` keeps its one job, decoding an `encoded-u16` sample. Both are
   guarded, and they collapse onto the same numbers on an unstretched layer.
@@ -85,8 +124,37 @@ before — asserted, not assumed.
 - `GridStretchController.destroy()` clears the applied range, so
   `currentDisplayRange()` cannot keep reporting a stale one after teardown.
 
-### Notes
+### Notes for callers
 
+- **A tile carries its opacity in its pixels.** The overlay puts
+  `style.opacity` on the canvas element as CSS; a tile has no element, so it is
+  composed into the alpha. A host that also sets its own layer opacity squares
+  it — leave the host at `1`, or pass `opacity: 1` and let the host own it.
+- **`null` is reserved for "the grid for this tile could not be obtained".** An
+  empty tile — all nodata, or entirely outside the grid — is a fully transparent
+  canvas. A host reads the first non-null image as the layer becoming ready
+  (narduk-mapkit's `onFirstImage`, which `MapKitLayerRegistry` waits 1500 ms
+  for), and a basin-sized grid leaves most of the world's tiles empty.
+- Tile baking is scalar-only in 0.4.0; a precolored (`rgb`) frame throws. There
+  is no temporal blend in the tile path.
+- **The WebGL tile path's deep-zoom precision is bounded, not pinned.** The
+  README carries the table: registration error is ~0.11–0.15 px at `z15` and
+  ~3.7–5.3 px at `z20`. A range, because two independent float32 simulations
+  landed that far apart — and they also disagreed on which operation dominates
+  the error and on whether the per-tile reformulation beats the naive form at
+  low zoom. Nothing in this package can execute GLSL, so those two questions are
+  open (#17) rather than answered. What is not in doubt: a fraction of a pixel
+  through `z15` reaches no real layer, `z15` is far past any estate grid's
+  native resolution, and the CPU path is double throughout.
+- `createGridTileImageSource` throws `RangeError` for a `side * scale` above
+  8192px rather than attempting the bake.
+- **A tile bakes through `style.displayRange` too.** Hand the same style to
+  `createGridTileImageSource` that you hand the overlay and the two agree; the
+  stretch is not an overlay-only feature. What the tile path does *not* have is
+  `GridStretchController` — a tile source has no viewport and no idle event, so
+  a caller wanting a computed stretch on tiles reads
+  `overlay.currentDisplayRange()` (or calls `stretchDisplayRange` itself) and
+  passes the result in through the style resolver.
 - The stretch samples the float32 `/grid` dialect, the one carrying the geometry
   a viewport intersection needs. A temporal `encoded-u16` frame set through
   `setFrame` / `renderAt` renders exactly as before and drives no stretch.

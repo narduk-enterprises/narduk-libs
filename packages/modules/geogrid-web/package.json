@@ -2,7 +2,7 @@
   "name": "@narduk-enterprises/geogrid-web",
   "version": "0.4.0",
   "type": "module",
-  "description": "Web twin of GeoGridKit: gridded geo-data overlay render (WebGL2 + Canvas2D fallback).",
+  "description": "Web twin of GeoGridKit: gridded geo-data overlay and Web-Mercator tile render (WebGL2 + CPU fallback).",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/narduk-enterprises/GeoGridWeb.git"
@@ -17,7 +17,9 @@
     "geo",
     "grid",
     "map",
+    "mercator",
     "raster",
+    "tiles",
     "webgl",
     "webgl2"
   ],
@@ -48,6 +50,10 @@
     "./overlay": {
       "types": "./dist/overlay/index.d.ts",
       "import": "./dist/overlay/index.js"
+    },
+    "./tile": {
+      "types": "./dist/tile/index.d.ts",
+      "import": "./dist/tile/index.js"
     }
   },
   "scripts": {
