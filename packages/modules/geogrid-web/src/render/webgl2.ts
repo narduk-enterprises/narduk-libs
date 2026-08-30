@@ -12,11 +12,10 @@ import {
   createProgram,
   rgbFragmentShader,
   scalarFragmentShader,
-  setClampFilter,
   setClampNearest,
   vertexShader,
 } from './gl.js'
-import { RAMP_LUT_COUNT, styleLut } from './style.js'
+import { RAMP_LUT_COUNT, styleLut, styleSampling } from './style.js'
 import type {
   CreateBackendOptions,
   GridBackendRenderState,
@@ -65,8 +64,8 @@ interface Pipeline {
  * WebGL2 backend for compact temporal/static grids.
  *
  * Color mapping, inter-frame blend, masking, coverage, and viewport UV happen
- * in one fragment pass, through the same 2×2 NaN-aware kernel the CPU reference
- * renderer runs.
+ * in one fragment pass. Scalar and precolored RGB both use the same 2×2
+ * mask-aware shape as their CPU reference renderers.
  */
 export class WebGL2GridBackend implements GridRenderBackend {
   readonly kind = 'webgl2' as const
@@ -241,6 +240,10 @@ export class WebGL2GridBackend implements GridRenderBackend {
     gl.uniform2f(this.uniform(pipeline, 'uvScale'), uvScaleX, uvScaleY)
     gl.uniform1i(this.uniform(pipeline, 'anchorCenter'), anchor === 'cell-center' ? 1 : 0)
     gl.uniform1f(this.uniform(pipeline, 'progress'), Math.max(0, Math.min(1, state.progress)))
+    gl.uniform1i(
+      this.uniform(pipeline, 'coastal'),
+      styleSampling(this.style, this.mode) === 'coastal' ? 1 : 0,
+    )
     if (this.mode === 'scalar') this.uploadScalarStyle(pipeline)
 
     bindTexture(gl, UNIT_VALUES_0, lowerGpu.values[0]!, this.uniform(pipeline, 'values0'))
@@ -334,7 +337,6 @@ export class WebGL2GridBackend implements GridRenderBackend {
       displayRange.upperBound,
     )
     gl.uniform1i(this.uniform(pipeline, 'scaleLog'), this.style.scale === 'log' ? 1 : 0)
-    gl.uniform1i(this.uniform(pipeline, 'coastal'), this.style.sampling === 'coastal' ? 1 : 0)
     bindTexture(gl, UNIT_LUT, this.ensureLut(), this.uniform(pipeline, 'lut'))
   }
 
@@ -477,11 +479,11 @@ export class WebGL2GridBackend implements GridRenderBackend {
   }
 
   /**
-   * `R32F` with `NEAREST` filtering is core WebGL2 and needs no extension:
-   * `OES_texture_float_linear` only gates *filtered* reads, and every sample
-   * here is a `texelFetch`, which ignores filter state entirely. Filtering is
-   * done by hand precisely so a missing neighbor can be skipped — hardware
-   * bilinear cannot be told to drop a texel.
+   * Every plane is read with `texelFetch`, which ignores filter state. Spatial
+   * interpolation is done by hand so the companion mask can exclude a missing
+   * texel before weights are renormalized; hardware bilinear cannot be told to
+   * skip one. `NEAREST` makes that ownership explicit and keeps integer/float
+   * texture completeness independent of optional filtering extensions.
    */
   private createTexture(
     data: Uint16Array | Uint8Array | Float32Array,
@@ -492,20 +494,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     const texture = gl.createTexture()
     if (!texture) return null
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    // Filtering is per-use, not per-texture-format, and the distinction is load
-    // -bearing: the rgb pass samples its color planes with `texture()` and has
-    // always relied on hardware `LINEAR` magnification (documented in 0.1.1),
-    // while every scalar plane is read with `texelFetch` — which ignores filter
-    // state — precisely so a missing neighbor can be skipped by hand. Collapsing
-    // both onto `NEAREST` costs truecolor layers their smoothing and shows up as
-    // blocky imagery, not as an error.
-    // Keyed on the format actually uploaded below, not on the mode alone:
-    // `R8` is normalized and filterable, while `R16UI`/`R32F` are not (an
-    // integer texture with a LINEAR filter is *incomplete* and samples black,
-    // and R32F needs OES_texture_float_linear). Only the rgb pass's `R8` color
-    // planes qualify.
-    const filterable = this.mode === 'rgb' && data instanceof Uint8Array
-    setClampFilter(gl, filterable ? gl.LINEAR : gl.NEAREST)
+    setClampNearest(gl)
     // Tightly packed plane rows are not 4-byte aligned when width is odd (R16)
     // or width % 4 != 0 (R8). Default UNPACK_ALIGNMENT=4 would skew the texture.
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)

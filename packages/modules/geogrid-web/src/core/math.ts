@@ -189,6 +189,16 @@ export interface ScalarSample {
   weight: number
 }
 
+/** The result of one precolored RGB kernel evaluation. */
+export interface RgbSample {
+  /** Weighted mean of the real neighboring colors, in normalized RGB space. */
+  color: [red: number, green: number, blue: number]
+  /** `0…1`. See {@link GridSampling} for what each mode puts here. */
+  coverage: number
+  /** Sum of the surviving weights, before the mode's coverage rule is applied. */
+  weight: number
+}
+
 /**
  * The 2×2 NaN-aware bilinear kernel — the one sampler every backend shares.
  *
@@ -274,6 +284,71 @@ export function sampleScalarBilinearSoft(
   if (weight <= 0) return { value: 0, coverage: 0, weight: 0 }
   return {
     value: accumulated / weight,
+    coverage: mode === 'coastal' ? weight : missingWeight > 0 ? 0 : 1,
+    weight,
+  }
+}
+
+/**
+ * The RGB twin of {@link sampleScalarBilinearSoft}.
+ *
+ * Each channel is sampled from the same 2×2 neighborhood and the companion
+ * mask decides which texels may contribute. Missing texels are never read and
+ * never substituted with black; surviving weights are renormalized, while
+ * `coverage` reports how much real support remains. Inputs are 8-bit channel
+ * planes and the returned color is normalized to `0…1`, matching an `R8`
+ * texture read in WebGL2.
+ */
+export function sampleRgbBilinearSoft(
+  channels: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>],
+  mask: ArrayLike<number>,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  mode: GridSampling = 'soft',
+): RgbSample {
+  const maxX = width - 1
+  const maxY = height - 1
+  const px = x < 0 ? 0 : x > maxX ? maxX : x
+  const py = y < 0 ? 0 : y > maxY ? maxY : y
+  const baseX = Math.floor(px)
+  const baseY = Math.floor(py)
+  const fx = px - baseX
+  const fy = py - baseY
+
+  const x0 = baseX
+  const x1 = baseX + 1 > maxX ? maxX : baseX + 1
+  const y0 = baseY
+  const y1 = baseY + 1 > maxY ? maxY : baseY + 1
+
+  const accumulated: [number, number, number] = [0, 0, 0]
+  let weight = 0
+  let missingWeight = 0
+
+  for (let corner = 0; corner < 4; corner += 1) {
+    const right = (corner & 1) === 1
+    const down = (corner & 2) === 2
+    const sampleWeight = (right ? fx : 1 - fx) * (down ? fy : 1 - fy)
+    if (sampleWeight <= 0) continue
+    const index = (down ? y1 : y0) * width + (right ? x1 : x0)
+    if (mask[index]) {
+      accumulated[0] += sampleWeight * (channels[0][index] ?? 0)
+      accumulated[1] += sampleWeight * (channels[1][index] ?? 0)
+      accumulated[2] += sampleWeight * (channels[2][index] ?? 0)
+      weight += sampleWeight
+    } else {
+      missingWeight += sampleWeight
+    }
+  }
+
+  if (weight <= 0) return { color: [0, 0, 0], coverage: 0, weight: 0 }
+  return {
+    color: [
+      accumulated[0] / weight / 255,
+      accumulated[1] / weight / 255,
+      accumulated[2] / weight / 255,
+    ],
     coverage: mode === 'coastal' ? weight : missingWeight > 0 ? 0 : 1,
     weight,
   }

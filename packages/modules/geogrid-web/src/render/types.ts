@@ -47,7 +47,10 @@ export interface GridStyle {
   displayRange?: GridValueRange
   scale: GridScale | string
   opacity?: number
-  /** Coverage rule at holes and coastlines. Defaults to `soft`. */
+  /**
+   * Coverage rule at holes and coastlines. Defaults to `soft` for scalar and
+   * `coastal` for precolored RGB.
+   */
   sampling?: GridSampling
 }
 
@@ -61,9 +64,8 @@ export interface GridBackendRenderState {
    * for `float32`, `cell-edge` for the temporal dialect — so existing callers
    * keep the registration they have always had.
    *
-   * **Scalar mode only.** The `rgb` pass samples its precolored planes with a
-   * plain normalized `texture()` read and has no texel-space step to anchor, so
-   * this is accepted and ignored there rather than quietly changing something.
+   * Both scalar and RGB passes use the same texel-center transform before their
+   * mask-aware 2×2 kernels, so an explicit anchor applies to either mode.
    */
   bboxAnchor?: GridBBoxAnchor
 }

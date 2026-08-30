@@ -1,5 +1,5 @@
 import { normalizeWireStops, rampLut } from '../color/ramp.js'
-import type { GridScale, RampStop } from '../core/models.js'
+import type { GridRenderMode, GridSampling, GridScale, RampStop } from '../core/models.js'
 import type { GridStyle } from './types.js'
 
 /** The LUT resolution both backends and GeoGridKit bake at. */
@@ -8,6 +8,19 @@ export const RAMP_LUT_COUNT = 256
 /** `scale` is typed loosely on the wire; anything that is not `log` is linear. */
 export function styleScale(style: GridStyle): GridScale {
   return style.scale === 'log' ? 'log' : 'linear'
+}
+
+/**
+ * Resolve the mask-edge coverage rule for a render mode.
+ *
+ * Scalar keeps its historical crisp `soft` default. Precolored RGB keeps the
+ * fallback renderer's historical alpha-resampled edge as `coastal`: the color
+ * still comes only from real neighbors, while coverage fades across the last
+ * cell instead of exposing the source-grid staircase. Either mode can be made
+ * explicit with `style.sampling`.
+ */
+export function styleSampling(style: GridStyle, mode: GridRenderMode): GridSampling {
+  return style.sampling ?? (mode === 'rgb' ? 'coastal' : 'soft')
 }
 
 /**

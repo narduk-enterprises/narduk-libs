@@ -205,6 +205,22 @@ exactly. WebGL2 agrees to within a count or two per channel — hardware LUT
 filtering uses fixed-point subtexel weights, and the fragment shader is `highp`
 rather than double.
 
+## Precolored RGB sampling
+
+RGB frames use the same mask-aware 2×2 shape as scalar frames. Each real
+neighbor contributes its bilinear weight; missing neighbors are never read or
+substituted with black, and the surviving weights are renormalized before the
+two temporal frames are blended. `sampling: 'coastal'` (the RGB default) puts
+the surviving support into alpha and feathers it across the last cell. That
+smooths a coarse coastline without moving a color into an honest gap.
+
+`sampling: 'soft'` is available when a crisp all-four-neighbors-valid edge is
+required. `referenceRgbPixel`, `referenceRenderRgbTile`, and
+`referenceRenderRgbViewport` expose the CPU contract for tests and bounded
+render comparisons. WebGL2 implements it with explicit `texelFetch` reads;
+Canvas2D retains its premultiplied-alpha image resample, which already carries
+color and validity together and remains the fallback/control for this change.
+
 The two fixtures under `tests/fixtures/` are copied byte-for-byte from
 GeoGridKit's `GridHeaderConformanceTests`, and this decoder asserts the same
 header fields and the same plane, making it the fourth leg of that contract:

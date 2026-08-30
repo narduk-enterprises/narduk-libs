@@ -85,6 +85,15 @@ vec2 dataUv(vec2 screenUv) {
 `
 }
 
+function gridPositionSnippet(): string {
+  return `
+/** uv -> texel-center space; the two anchors differ by exactly half a cell. */
+vec2 gridPosition(vec2 uv, vec2 size) {
+  return anchorCenter == 1 ? uv * (size - 1.0) : uv * size - 0.5;
+}
+`
+}
+
 /**
  * The scalar pass, in whichever value dialect the frames arrived in.
  *
@@ -143,11 +152,7 @@ ${stencilSnippet()}
 out vec4 color;
 
 ${decode}
-
-/** uv -> texel-center space; the two anchors differ by exactly half a cell. */
-vec2 gridPosition(vec2 uv, vec2 size) {
-  return anchorCenter == 1 ? uv * (size - 1.0) : uv * size - 0.5;
-}
+${gridPositionSnippet()}
 
 /**
  * The 2x2 NaN-aware kernel. Literal port of GeoGridKit's
@@ -261,6 +266,8 @@ void main() {
 export function rgbFragmentShader(): string {
   return `#version 300 es
 precision highp float;
+precision highp int;
+precision highp sampler2D;
 precision highp usampler2D;
 in vec2 vUv;
 uniform sampler2D values0;
@@ -274,24 +281,77 @@ uniform sampler2D blue1;
 uniform float progress;
 uniform vec2 uvOffset;
 uniform vec2 uvScale;
+uniform int coastal;
+uniform int anchorCenter;
 ${stencilSnippet()}
+${gridPositionSnippet()}
 out vec4 color;
 
-vec3 rgbAt(sampler2D r, sampler2D g, sampler2D b, vec2 uv) {
-  return vec3(texture(r, uv).r, texture(g, uv).r, texture(b, uv).r);
+/**
+ * Mask-aware 2x2 RGB bilinear. Missing colors are never read or replaced with
+ * black; the real neighbors are renormalized and alpha carries their support.
+ */
+vec4 sampleRgb(sampler2D r, sampler2D g, sampler2D b, usampler2D mask, vec2 pos) {
+  vec2 size = vec2(textureSize(r, 0));
+  vec2 maxPos = size - 1.0;
+  vec2 p = clamp(pos, vec2(0.0), maxPos);
+  vec2 base = floor(p);
+  vec2 f = p - base;
+  ivec2 i0 = ivec2(base);
+  ivec2 i1 = ivec2(min(base + 1.0, maxPos));
+
+  float w[4];
+  w[0] = (1.0 - f.x) * (1.0 - f.y);
+  w[1] = f.x * (1.0 - f.y);
+  w[2] = (1.0 - f.x) * f.y;
+  w[3] = f.x * f.y;
+  ivec2 texels[4];
+  texels[0] = ivec2(i0.x, i0.y);
+  texels[1] = ivec2(i1.x, i0.y);
+  texels[2] = ivec2(i0.x, i1.y);
+  texels[3] = ivec2(i1.x, i1.y);
+
+  vec3 colorSum = vec3(0.0);
+  float weightSum = 0.0;
+  float missingWeight = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (w[i] <= 0.0) continue;
+    if (texelFetch(mask, texels[i], 0).r != uint(0)) {
+      colorSum += w[i] * vec3(
+        texelFetch(r, texels[i], 0).r,
+        texelFetch(g, texels[i], 0).r,
+        texelFetch(b, texels[i], 0).r);
+      weightSum += w[i];
+    } else {
+      missingWeight += w[i];
+    }
+  }
+  if (weightSum <= 0.0) return vec4(0.0);
+  float coverage = coastal == 1 ? weightSum : (missingWeight > 0.0 ? 0.0 : 1.0);
+  return vec4(colorSum / weightSum, coverage);
 }
 
 void main() {
   vec2 uv = uvOffset + vUv * uvScale;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { color = vec4(0.0); return; }
-  bool valid0 = texture(mask0, uv).r != uint(0);
-  bool valid1 = texture(mask1, uv).r != uint(0);
+  vec4 sampled0 = sampleRgb(
+    values0, green0, blue0, mask0,
+    gridPosition(uv, vec2(textureSize(values0, 0))));
+  vec4 sampled1 = sampleRgb(
+    values1, green1, blue1, mask1,
+    gridPosition(uv, vec2(textureSize(values1, 0))));
+  bool valid0 = sampled0.a > 0.0;
+  bool valid1 = sampled1.a > 0.0;
   if (!valid0 && !valid1) { color = vec4(0.0); return; }
-  vec3 first = rgbAt(values0, green0, blue0, uv);
-  vec3 second = rgbAt(values1, green1, blue1, uv);
+  vec3 first = sampled0.rgb;
+  vec3 second = sampled1.rgb;
   if (!valid0) first = second;
   if (!valid1) second = first;
-  float alpha = stencilAlpha(vUv);
+  float coverage0 = valid0 ? sampled0.a : sampled1.a;
+  float coverage1 = valid1 ? sampled1.a : sampled0.a;
+  float coverage = mix(coverage0, coverage1, progress);
+  if (coastal == 1) coverage = smoothstep(0.0, 0.55, coverage);
+  float alpha = coverage * stencilAlpha(vUv);
   if (alpha <= 0.0) { color = vec4(0.0); return; }
   color = vec4(mix(first, second, progress), alpha);
 }`

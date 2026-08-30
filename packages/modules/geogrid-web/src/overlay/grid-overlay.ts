@@ -45,7 +45,10 @@ export interface GridOverlayStyleInput {
   displayRange?: GridValueRange | readonly [number, number] | null
   scale: GridScale | string
   opacity?: number
-  /** Coverage rule at holes and coastlines. Defaults to `soft`. */
+  /**
+   * Coverage rule at holes and coastlines. Defaults to `soft` for scalar and
+   * `coastal` for precolored RGB.
+   */
   sampling?: GridSampling
 }
 
