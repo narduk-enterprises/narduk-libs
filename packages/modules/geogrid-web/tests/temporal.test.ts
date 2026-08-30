@@ -131,6 +131,8 @@ describe('decodeTemporalChunk', () => {
     expect(frames[0]?.renderMode).toBe('rgb')
     expect(frames[0]?.channels?.[0]).toHaveLength(5)
     expect(frames[0]?.channels?.[0]?.[0]).toBe(128)
+    expect(frames[0]?.values).toBe(frames[0]?.channels?.[0])
+    expect(frames[0]?.values.buffer).toBe(frames[0]?.channels?.[0].buffer)
   })
 
   it('rejects scalar uint8', async () => {

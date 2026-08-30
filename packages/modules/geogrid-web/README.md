@@ -78,6 +78,10 @@ const frames = await decodeTemporalChunk(chunkBytes, manifest as TemporalRasterM
 overlay.renderAt(frames[0]!, frames[0]!, 0, manifest.bbox)
 ```
 
+Decoded sample planes are immutable. On an RGB frame, `values` is the
+scalar-compatibility view of red and is the same `Uint8Array` as `channels[0]`;
+the alias avoids retaining a duplicate plane.
+
 Exports: `@narduk-enterprises/geogrid-web`, `/color`, `/core`, `/render`, `/overlay`, `/tile`.
 
 ## `/color` — the canonical ramp engine

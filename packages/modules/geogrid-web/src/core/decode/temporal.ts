@@ -48,6 +48,12 @@ export interface TemporalRasterManifest {
   coastlineStencil?: CoastlineStencilDescriptor
 }
 
+/**
+ * One decoded temporal frame.
+ *
+ * Sample planes are immutable after decode. For RGB frames, `values` is the
+ * scalar-compatibility view of red and aliases `channels[0]`.
+ */
 export interface TemporalRasterFrame {
   date: string
   width: number
@@ -135,46 +141,41 @@ export async function decodeTemporalChunk(
   if (values.length !== valuesBytes || masks.length !== masksBytes) {
     throw new Error('Temporal artifact chunk is truncated')
   }
-  return header.dates.map((date, frameIndex) => ({
-    date,
-    width: header.width,
-    height: header.height,
-    renderMode,
-    values:
-      renderMode === 'rgb'
-        ? new Uint8Array(
-            values.buffer,
-            values.byteOffset + frameIndex * pixelCount * 3,
-            pixelCount,
-          ).slice()
-        : new Uint16Array(
-            values.buffer,
-            values.byteOffset + frameIndex * pixelCount * 2,
-            pixelCount,
-          ).slice(),
-    ...(renderMode === 'rgb'
-      ? {
-          channels: [
-            new Uint8Array(
-              values.buffer,
-              values.byteOffset + frameIndex * pixelCount * 3,
-              pixelCount,
-            ).slice(),
-            new Uint8Array(
-              values.buffer,
-              values.byteOffset + (frameIndex * 3 + 1) * pixelCount,
-              pixelCount,
-            ).slice(),
-            new Uint8Array(
-              values.buffer,
-              values.byteOffset + (frameIndex * 3 + 2) * pixelCount,
-              pixelCount,
-            ).slice(),
-          ] as [Uint8Array, Uint8Array, Uint8Array],
-        }
-      : {}),
-    mask: masks.slice(frameIndex * pixelCount, (frameIndex + 1) * pixelCount),
-  }))
+  return header.dates.map((date, frameIndex) => {
+    const frameValuesOffset = values.byteOffset + frameIndex * pixelCount * planeCount
+    const mask = masks.slice(frameIndex * pixelCount, (frameIndex + 1) * pixelCount)
+    if (renderMode === 'rgb') {
+      const channels: [Uint8Array, Uint8Array, Uint8Array] = [
+        new Uint8Array(values.buffer, frameValuesOffset, pixelCount).slice(),
+        new Uint8Array(values.buffer, frameValuesOffset + pixelCount, pixelCount).slice(),
+        new Uint8Array(values.buffer, frameValuesOffset + pixelCount * 2, pixelCount).slice(),
+      ]
+      return {
+        date,
+        width: header.width,
+        height: header.height,
+        renderMode,
+        // `values` is the scalar compatibility plane. RGB renderers consume
+        // `channels`, and every package path treats decoded planes as immutable,
+        // so the red channel can satisfy both contracts without a second copy.
+        values: channels[0],
+        channels,
+        mask,
+      }
+    }
+    return {
+      date,
+      width: header.width,
+      height: header.height,
+      renderMode,
+      values: new Uint16Array(
+        values.buffer,
+        values.byteOffset + frameIndex * pixelCount * 2,
+        pixelCount,
+      ).slice(),
+      mask,
+    }
+  })
 }
 
 async function inflate(compressed: Uint8Array): Promise<Uint8Array> {

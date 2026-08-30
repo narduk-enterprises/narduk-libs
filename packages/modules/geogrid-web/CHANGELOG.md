@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1 — 2026-08-30
+
+### Fixed
+
+- RGB temporal decoding now aliases the scalar-compatibility `values` plane to
+  `channels[0]` instead of retaining a duplicate red plane. Decoded pixels,
+  masks, channel order, and renderer behavior are unchanged; retained RGB frame
+  storage drops from five to four bytes per pixel. Decoded sample planes are
+  now documented as immutable, matching the renderer cache contract already in
+  force.
+
 ## 0.4.0 — 2026-08-28
 
 Two features, one release: the **Web-Mercator tile baker** and the **dynamic
