@@ -4,8 +4,21 @@ import { describe, expect, it } from 'vitest'
 
 import {
   decodeTemporalChunk,
+  TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
   type TemporalRasterManifest,
 } from '../src/core/decode/temporal.js'
+
+function packChunk(header: Record<string, unknown>, raw: Uint8Array): ArrayBuffer {
+  const compressed = deflateSync(raw)
+  const headerBytes = new TextEncoder().encode(JSON.stringify(header))
+  const magic = new TextEncoder().encode('NARDUKTR1\0')
+  const out = new Uint8Array(magic.length + 4 + headerBytes.length + compressed.length)
+  out.set(magic, 0)
+  new DataView(out.buffer).setUint32(magic.length, headerBytes.length, true)
+  out.set(headerBytes, magic.length + 4)
+  out.set(compressed, magic.length + 4 + headerBytes.length)
+  return out.buffer
+}
 
 function buildChunk(options: {
   width: number
@@ -37,24 +50,73 @@ function buildChunk(options: {
   const raw = new Uint8Array(values.length + masks.length)
   raw.set(values, 0)
   raw.set(masks, values.length)
-  const compressed = deflateSync(raw)
-  const header = JSON.stringify({
+  return packChunk({
     dates,
     frameCount,
     width,
     height,
     planeCount,
     renderMode,
-  })
-  const headerBytes = new TextEncoder().encode(header)
-  const magic = new TextEncoder().encode('NARDUKTR1\0')
-  const out = new Uint8Array(magic.length + 4 + headerBytes.length + compressed.length)
-  out.set(magic, 0)
-  new DataView(out.buffer).setUint32(magic.length, headerBytes.length, true)
-  out.set(headerBytes, magic.length + 4)
-  out.set(compressed, magic.length + 4 + headerBytes.length)
-  return out.buffer
+  }, raw)
 }
+
+function buildComposedRgbChunk(options: {
+  planeCount?: number
+  maskCount?: number
+  extraRawBytes?: number
+  omitHeaderLayout?: boolean
+} = {}): ArrayBuffer {
+  const width = 2
+  const height = 1
+  const planeCount = options.planeCount ?? 7
+  const maskCount = options.maskCount ?? 2
+  const pixels = width * height
+  const values = new Uint8Array(planeCount * pixels)
+  const planes = [
+    [10, 11],
+    [20, 21],
+    [30, 31],
+    [110, 111],
+    [120, 121],
+    [130, 131],
+    [128, 255],
+  ]
+  for (let plane = 0; plane < Math.min(planeCount, planes.length); plane += 1) {
+    values.set(planes[plane]!, plane * pixels)
+  }
+  const masks = new Uint8Array(maskCount * pixels)
+  if (maskCount >= 1) masks.set([1, 0], 0)
+  if (maskCount >= 2) masks.set([0, 1], pixels)
+  const raw = new Uint8Array(values.length + masks.length + (options.extraRawBytes ?? 0))
+  raw.set(values)
+  raw.set(masks, values.length)
+  return packChunk(
+    {
+      dates: ['2020-01-01'],
+      frameCount: 1,
+      width,
+      height,
+      ...(options.omitHeaderLayout ? {} : { planeCount, maskCount }),
+      renderMode: 'rgb',
+    },
+    raw,
+  )
+}
+
+const composedManifest = (
+  overrides: Partial<TemporalRasterManifest> = {},
+): TemporalRasterManifest =>
+  baseManifest({
+    width: 2,
+    height: 1,
+    stride: 1,
+    dtype: 'uint8',
+    renderMode: 'rgb',
+    planeCount: 7,
+    maskCount: 2,
+    rgbComposition: TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
+    ...overrides,
+  })
 
 const baseManifest = (overrides: Partial<TemporalRasterManifest> = {}): TemporalRasterManifest => ({
   schema: 'earth-data-temporal-raster-v1',
@@ -133,6 +195,132 @@ describe('decodeTemporalChunk', () => {
     expect(frames[0]?.channels?.[0]?.[0]).toBe(128)
     expect(frames[0]?.values).toBe(frames[0]?.channels?.[0])
     expect(frames[0]?.values.buffer).toBe(frames[0]?.channels?.[0].buffer)
+    expect(frames[0]?.rgbComposition).toBeUndefined()
+  })
+
+  it('decodes base RGB, observed RGB, confidence and two distinct masks', async () => {
+    const [frame] = await decodeTemporalChunk(buildComposedRgbChunk(), composedManifest())
+    const composition = frame?.rgbComposition
+
+    expect(frame?.channels?.map((plane) => Array.from(plane))).toEqual([
+      [10, 11],
+      [20, 21],
+      [30, 31],
+    ])
+    expect(composition?.observedChannels.map((plane) => Array.from(plane))).toEqual([
+      [110, 111],
+      [120, 121],
+      [130, 131],
+    ])
+    expect(Array.from(composition?.confidence ?? [])).toEqual([128, 255])
+    expect(Array.from(composition?.baseMask ?? [])).toEqual([1, 0])
+    expect(Array.from(composition?.observedMask ?? [])).toEqual([0, 1])
+    expect(frame?.values).toBe(frame?.channels?.[0])
+    expect(frame?.mask).toBe(composition?.baseMask)
+    expect(frame?.channels).toBe(composition?.baseChannels)
+  })
+
+  it('rejects composed RGB unless both the manifest and chunk declare 7 planes and 2 masks', async () => {
+    await expect(
+      decodeTemporalChunk(
+        buildComposedRgbChunk({ planeCount: 3, maskCount: 1 }),
+        composedManifest({ planeCount: 3, maskCount: 1 }),
+      ),
+    ).rejects.toThrow('manifest must declare rgb, 7 planes, and 2 masks')
+    await expect(
+      decodeTemporalChunk(buildComposedRgbChunk(), composedManifest({ planeCount: 3 })),
+    ).rejects.toThrow('planeCount does not match manifest')
+    await expect(
+      decodeTemporalChunk(
+        buildComposedRgbChunk({ omitHeaderLayout: true }),
+        composedManifest(),
+      ),
+    ).rejects.toThrow('chunk header must mirror planeCount and maskCount')
+    const missingManifestLayout = composedManifest()
+    delete missingManifestLayout.planeCount
+    delete missingManifestLayout.maskCount
+    await expect(
+      decodeTemporalChunk(buildComposedRgbChunk(), missingManifestLayout),
+    ).rejects.toThrow('manifest must declare rgb, 7 planes, and 2 masks')
+  })
+
+  it('rejects any composition descriptor that tries to redefine the fixed wire mapping', async () => {
+    const badComposition = {
+      ...TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
+      observedChannels: [3, 4, 6],
+    }
+    await expect(
+      decodeTemporalChunk(
+        buildComposedRgbChunk(),
+        composedManifest({
+          rgbComposition: badComposition as unknown as NonNullable<
+            TemporalRasterManifest['rgbComposition']
+          >,
+        }),
+      ),
+    ).rejects.toThrow('composition descriptor is invalid')
+  })
+
+  it('rejects a composition descriptor on a scalar manifest instead of ignoring it', async () => {
+    await expect(
+      decodeTemporalChunk(
+        buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] }),
+        baseManifest({ rgbComposition: TEMPORAL_RGB_COMPOSITION_DESCRIPTOR }),
+      ),
+    ).rejects.toThrow('requires renderMode rgb')
+  })
+
+  it('rejects unsupported runtime manifest metadata before decompression', async () => {
+    const payload = buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] })
+    await expect(
+      decodeTemporalChunk(
+        payload,
+        baseManifest({ compression: 'brotli' as unknown as 'zlib' }),
+      ),
+    ).rejects.toThrow('compression is unsupported')
+  })
+
+  it('stops inflation when bytes exceed the declared layout', async () => {
+    await expect(
+      decodeTemporalChunk(buildComposedRgbChunk({ extraRawBytes: 1 }), composedManifest()),
+    ).rejects.toThrow('exceeds declared layout')
+  })
+
+  it('rejects a composed layout whose declared decoded bytes exceed the cap before inflate', async () => {
+    const width = 8192
+    const height = 8192
+    const payload = packChunk(
+      {
+        dates: ['2020-01-01'],
+        frameCount: 1,
+        width,
+        height,
+        planeCount: 7,
+        maskCount: 2,
+        renderMode: 'rgb',
+      },
+      new Uint8Array(),
+    )
+    await expect(
+      decodeTemporalChunk(payload, composedManifest({ width, height })),
+    ).rejects.toThrow('exceeds size limit')
+  })
+
+  it('rejects non-integer header geometry before allocation', async () => {
+    const payload = packChunk(
+      {
+        dates: ['2020-01-01'],
+        frameCount: 1,
+        width: 1.5,
+        height: 1,
+        planeCount: 1,
+        renderMode: 'scalar',
+      },
+      new Uint8Array(),
+    )
+    await expect(
+      decodeTemporalChunk(payload, baseManifest({ width: 1.5, height: 1 })),
+    ).rejects.toThrow('dimensions are out of allowed range')
   })
 
   it('rejects scalar uint8', async () => {

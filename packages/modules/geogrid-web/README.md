@@ -82,6 +82,61 @@ Decoded sample planes are immutable. On an RGB frame, `values` is the
 scalar-compatibility view of red and is the same `Uint8Array` as `channels[0]`;
 the alias avoids retaining a duplicate plane.
 
+### Scale-aware temporal RGB
+
+The v1 manifest stays backward compatible. A producer opts a precolored RGB
+artifact into scale-aware composition with this exact optional extension:
+
+```json
+{
+  "renderMode": "rgb",
+  "planeCount": 7,
+  "maskCount": 2,
+  "rgbComposition": {
+    "version": "base-observed-confidence-v1",
+    "blendSpace": "linear-srgb",
+    "baseChannels": [0, 1, 2],
+    "observedChannels": [3, 4, 5],
+    "confidenceChannel": 6,
+    "baseMask": 0,
+    "observedMask": 1,
+    "zoomWeights": [
+      { "maxZoom": 7, "weight": 0 },
+      { "zoom": 8, "weight": 0.25 },
+      { "zoom": 9, "weight": 0.6 },
+      { "minZoom": 10, "weight": 1 }
+    ]
+  }
+}
+```
+
+The chunk header mirrors `planeCount` and `maskCount` (and may repeat
+`renderMode`). Its raw zlib payload stores values frame-major, then plane-major
+within each frame;
+the two masks follow frame-major in base/observed order. The decoder rejects a
+descriptor that changes any mapping or anchor. Artifacts without the extension
+keep the original scalar `1/1` or RGB `3/1` layout and behavior.
+
+For an opted-in frame, `values`, `channels`, and `mask` still alias the base RGB
+and base mask for old consumers. New renderers read `rgbComposition`, sample
+the two masks independently, multiply the continuous zoom weight by observed
+confidence, and compose base/observed plus lower/upper dates in linear-sRGB.
+A real one-sided component remains real; only a pixel missing from both masks
+is transparent.
+
+The zoom weight is exactly `0` through z7, `0.25` at z8, `0.60` at z9, and `1`
+at z10 and above, with linear interpolation between anchors. Set
+`viewport.zoom` when the map exposes a continuous zoom. When that property is
+absent, both renderers derive `log2(360 * cssWidth / (256 * longitudeSpan))`;
+a present non-finite zoom or unusable derivation safely selects base-only.
+
+WebGL2 stores each date in two nearest-filtered RGBA8 textures: base RGB plus
+confidence, then observed RGB plus packed validity in alpha (`bit 0 = base`,
+`bit 1 = observed`). The shader fetches the mask byte with `texelFetch`, so
+flags never interpolate. Two temporal dates plus the coastline stencil use
+five fragment texture units. Canvas2D uses the same CPU reference math for the
+new contract, while legacy Canvas2D and WebGL paths remain unchanged.
+
 Exports: `@narduk-enterprises/geogrid-web`, `/color`, `/core`, `/render`, `/overlay`, `/tile`.
 
 ## `/color` — the canonical ramp engine

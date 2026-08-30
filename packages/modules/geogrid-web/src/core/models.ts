@@ -31,8 +31,9 @@ export type GridValueKind = 'encoded-u16' | 'float32'
  *
  * These are GeoGridKit's two Metal kernels under the names it gives them.
  * Scalar rendering defaults to `soft`. The explicit WebGL2 and CPU-reference
- * RGB kernels default to `coastal`; Canvas2D RGB keeps its fast historical
- * premultiplied-alpha image resample and does not switch kernels for this hint.
+ * RGB kernels default to `coastal`; legacy Canvas2D RGB keeps its fast
+ * historical premultiplied-alpha image resample and does not switch kernels
+ * for this hint. Scale-aware Canvas2D RGB runs the explicit reference kernel.
  */
 export type GridSampling = 'soft' | 'coastal'
 
@@ -60,6 +61,26 @@ export type GridSampling = 'soft' | 'coastal'
 export type GridBBoxAnchor = 'cell-center' | 'cell-edge'
 
 /**
+ * The optional scale-aware payload carried by a precolored temporal RGB frame.
+ *
+ * `baseChannels` is the stable overview field. `observedChannels` is the
+ * higher-resolution observation, and `confidence` is its `0…255` blend
+ * confidence. The two masks remain distinct: an absent observation must not
+ * punch a hole in a valid base, and a base gap must not make a real observed
+ * pixel disappear.
+ *
+ * All planes are immutable after decode. The renderers compose them in
+ * linear-sRGB; the byte planes themselves remain ordinary display-sRGB.
+ */
+export interface GridRgbComposition {
+  baseChannels: readonly [Uint8Array, Uint8Array, Uint8Array]
+  observedChannels: readonly [Uint8Array, Uint8Array, Uint8Array]
+  confidence: Uint8Array
+  baseMask: Uint8Array
+  observedMask: Uint8Array
+}
+
+/**
  * One renderable grid frame, in either value dialect.
  *
  * The render backends speak this rather than `TemporalRasterFrame` so that a
@@ -81,6 +102,8 @@ export interface GridFrame {
   /** `1` where the cell carries a real value, `0` where it is missing. */
   mask: Uint8Array
   channels?: readonly [Uint8Array, Uint8Array, Uint8Array]
+  /** Optional base + observed + confidence RGB payload. */
+  rgbComposition?: GridRgbComposition
 }
 
 /** Matches GeoGridKit `GridValueRange` (array-coded on the wire as [lo, hi]). */
@@ -95,6 +118,8 @@ export type GridBBox = readonly [west: number, south: number, east: number, nort
 export interface GridViewport {
   center: { latitude: number; longitude: number }
   span: { latitudeDelta: number; longitudeDelta: number }
+  /** Map zoom when the host exposes one. Otherwise the renderer derives it. */
+  zoom?: number
 }
 
 /**

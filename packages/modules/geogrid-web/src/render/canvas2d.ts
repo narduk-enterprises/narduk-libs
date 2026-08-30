@@ -3,13 +3,18 @@ import {
   blendEncoded,
   dataUvTransform,
   displayValueFromEncoded,
+  observationWeightForZoom,
   texelPositionFromUv,
+  viewportZoom,
 } from '../core/math.js'
 import { normalizeValue } from '../color/normalize.js'
 import {
   isDrawableRange,
+  referenceRgbCompositionPixel,
   referenceScalarPixel,
   sampleLutLinear,
+  type ReferenceRgbCompositionLayer,
+  type ReferenceRgbCompositionStyle,
   type ReferenceScalarLayer,
   type ReferenceScalarStyle,
 } from '../core/reference-render.js'
@@ -21,7 +26,7 @@ import {
   type GridValueRange,
   type GridViewport,
 } from '../core/models.js'
-import { resolveRampStops, styleLut, styleScale } from './style.js'
+import { resolveRampStops, styleLut, styleSampling, styleScale } from './style.js'
 import type {
   CreateBackendOptions,
   GridBackendRenderState,
@@ -56,9 +61,9 @@ const SCREEN_SPACE_PIXELS_PER_CELL = 1.5
  * So when a scalar layer is magnified past
  * {@link SCREEN_SPACE_PIXELS_PER_CELL}, this rasterizes in screen space: each
  * screen pixel bilinearly samples the *value* plane through the same NaN-aware
- * kernel the GPU uses, and only then looks up a color. Precolored RGB remains
- * a premultiplied-alpha canvas resample: it already interpolates color and
- * validity together without the WebGL path's separate NEAREST-mask step.
+ * kernel the GPU uses, and only then looks up a color. Legacy precolored RGB
+ * remains a premultiplied-alpha canvas resample. Scale-aware RGB needs
+ * linear-sRGB composition, so it runs the explicit CPU reference per pixel.
  */
 export class Canvas2DGridBackend implements GridRenderBackend {
   readonly kind = 'canvas2d' as const
@@ -148,6 +153,26 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const anchor = state.bboxAnchor ?? defaultBBoxAnchor(lower.valueKind)
     const size = this.ensureSize()
     if (!size) return
+
+    const lowerComposed = lower.rgbComposition !== undefined
+    const upperComposed = upper.rgbComposition !== undefined
+    if (this.mode === 'rgb' && lowerComposed !== upperComposed) {
+      this.clear()
+      return
+    }
+    if (this.mode === 'rgb' && lowerComposed && upperComposed) {
+      this.renderRgbCompositionScreen(
+        lower,
+        upper,
+        progress,
+        state.bbox,
+        anchor,
+        viewport,
+        size.rect.width,
+        size.dpr,
+      )
+      return
+    }
 
     if (this.mode === 'scalar' && this.shouldUseScreenSpace(lower, state.bbox, viewport, size.rect)) {
       this.renderScreenSpace(lower, upper, progress, state.bbox, anchor, viewport, size.dpr)
@@ -335,6 +360,94 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     this.lastRasterKey = ''
   }
 
+  /**
+   * Render scale-aware RGB per device pixel through the shared CPU reference.
+   *
+   * The legacy RGB fallback intentionally keeps its fast premultiplied-alpha
+   * `drawImage` contract. The additive composition cannot use that shortcut:
+   * Canvas would blend display-sRGB colors, while WebGL composes both detail
+   * and time in linear-sRGB. Running the reference here makes the new path
+   * exact across the two backends without moving a legacy pixel.
+   */
+  private renderRgbCompositionScreen(
+    lower: GridFrame,
+    upper: GridFrame,
+    progress: number,
+    bbox: GridBBox,
+    anchor: GridBBoxAnchor,
+    viewport: GridViewport,
+    cssWidth: number,
+    dpr: number,
+  ): void {
+    const lowerLayer = toReferenceRgbCompositionLayer(lower)
+    const upperLayer = toReferenceRgbCompositionLayer(upper)
+    if (!lowerLayer || !upperLayer) {
+      this.clear()
+      return
+    }
+    const width = this.canvasWidth
+    const height = this.canvasHeight
+    const observationWeight = observationWeightForZoom(viewportZoom(viewport, cssWidth))
+    const key = [
+      this.frameKey(lower),
+      this.frameKey(upper),
+      progress.toFixed(4),
+      this.styleKey(),
+      anchor,
+      `rgb-composition:${observationWeight}`,
+      `${width}x${height}`,
+      `${viewport.center.longitude},${viewport.center.latitude}`,
+      `${viewport.span.longitudeDelta},${viewport.span.latitudeDelta}`,
+      bbox.join(','),
+    ].join('|')
+    if (key === this.lastScreenKey) return
+
+    const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+    const image = new ImageData(width, height)
+    const style: ReferenceRgbCompositionStyle = {
+      observationWeight,
+      sampling: styleSampling(this.style, 'rgb'),
+    }
+    const blend = lower === upper ? undefined : { upper: upperLayer, progress }
+    const [pxMin, pxMax] = pixelSpan(uvOffsetX, uvScaleX, width)
+    const [pyMin, pyMax] = pixelSpan(uvOffsetY, uvScaleY, height)
+
+    for (let py = pyMin; py <= pyMax; py += 1) {
+      const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+      if (v < 0 || v > 1) continue
+      const gy = texelPositionFromUv(v, lower.height, anchor)
+      for (let px = pxMin; px <= pxMax; px += 1) {
+        const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+        if (u < 0 || u > 1) continue
+        const gx = texelPositionFromUv(u, lower.width, anchor)
+        const rgba = referenceRgbCompositionPixel(lowerLayer, style, gx, gy, blend)
+        if (rgba[3] <= 0) continue
+        const offset = (py * width + px) * 4
+        image.data[offset] = Math.round(rgba[0])
+        image.data[offset + 1] = Math.round(rgba[1])
+        image.data[offset + 2] = Math.round(rgba[2])
+        image.data[offset + 3] = Math.round(rgba[3])
+      }
+    }
+
+    this.context.setTransform(1, 0, 0, 1, 0, 0)
+    this.context.clearRect(0, 0, width, height)
+    this.context.putImageData(image, 0, 0)
+    this.context.setTransform(dpr, 0, 0, dpr, 0, 0)
+    this.clipToStencil(viewport)
+    this.lastScreenKey = key
+    this.lastRasterKey = ''
+    this.lastRaster = null
+  }
+
+  private clear(): void {
+    this.context.setTransform(1, 0, 0, 1, 0, 0)
+    this.context.clearRect(0, 0, Math.max(1, this.canvasWidth), Math.max(1, this.canvasHeight))
+    this.lastScreenKey = ''
+    this.lastRasterKey = ''
+    this.lastRaster = null
+  }
+
   private blit(
     image: HTMLCanvasElement,
     bbox: GridBBox,
@@ -499,6 +612,30 @@ function toReferenceLayer(frame: GridFrame): ReferenceScalarLayer {
     width: frame.width,
     height: frame.height,
     valueKind: frame.valueKind,
+  }
+}
+
+function toReferenceRgbCompositionLayer(frame: GridFrame): ReferenceRgbCompositionLayer | null {
+  const composition = frame.rgbComposition
+  if (!composition) return null
+  const pixelCount = frame.width * frame.height
+  const planes = [
+    ...composition.baseChannels,
+    ...composition.observedChannels,
+    composition.confidence,
+    composition.baseMask,
+    composition.observedMask,
+  ]
+  if (!Number.isSafeInteger(pixelCount) || pixelCount <= 0) return null
+  if (planes.some((plane) => plane.length !== pixelCount)) return null
+  return {
+    baseChannels: composition.baseChannels,
+    observedChannels: composition.observedChannels,
+    confidence: composition.confidence,
+    baseMask: composition.baseMask,
+    observedMask: composition.observedMask,
+    width: frame.width,
+    height: frame.height,
   }
 }
 

@@ -357,6 +357,148 @@ void main() {
 }`
 }
 
+/**
+ * Scale-aware temporal RGB shader.
+ *
+ * Each frame occupies two RGBA8 textures: base RGB + observed confidence, then
+ * observed RGB + a packed validity byte. Bit 0 of that byte is base-valid and
+ * bit 1 is observed-valid. All reads use `texelFetch`; the packed flags are
+ * never filtered. Base/detail composition and lower/upper temporal blend both
+ * happen in linear-sRGB before the final display-sRGB encode.
+ */
+export function rgbCompositionFragmentShader(): string {
+  return `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+in vec2 vUv;
+uniform sampler2D baseConfidence0;
+uniform sampler2D observedMasks0;
+uniform sampler2D baseConfidence1;
+uniform sampler2D observedMasks1;
+uniform float progress;
+uniform float observationWeight;
+uniform vec2 uvOffset;
+uniform vec2 uvScale;
+uniform int coastal;
+uniform int anchorCenter;
+${stencilSnippet()}
+${gridPositionSnippet()}
+out vec4 color;
+
+const int BASE_VALID = 1;
+const int OBSERVED_VALID = 2;
+
+struct ComponentSample {
+  vec3 color;
+  float confidence;
+  float coverage;
+};
+
+vec3 srgbToLinear(vec3 value) {
+  vec3 low = value / 12.92;
+  vec3 high = pow((value + 0.055) / 1.055, vec3(2.4));
+  return mix(low, high, step(vec3(0.04045), value));
+}
+
+vec3 linearToSrgb(vec3 value) {
+  vec3 bounded = clamp(value, vec3(0.0), vec3(1.0));
+  vec3 low = bounded * 12.92;
+  vec3 high = 1.055 * pow(bounded, vec3(1.0 / 2.4)) - 0.055;
+  return mix(low, high, step(vec3(0.0031308), bounded));
+}
+
+/** Mask-aware 2x2 sample. Packed validity is fetched as a byte, never filtered. */
+ComponentSample sampleComponent(
+  sampler2D colors,
+  sampler2D confidenceTexture,
+  sampler2D packedMasks,
+  int maskBit,
+  vec2 pos
+) {
+  vec2 size = vec2(textureSize(colors, 0));
+  vec2 maxPos = size - 1.0;
+  vec2 p = clamp(pos, vec2(0.0), maxPos);
+  vec2 base = floor(p);
+  vec2 f = p - base;
+  ivec2 i0 = ivec2(base);
+  ivec2 i1 = ivec2(min(base + 1.0, maxPos));
+
+  float w[4];
+  w[0] = (1.0 - f.x) * (1.0 - f.y);
+  w[1] = f.x * (1.0 - f.y);
+  w[2] = (1.0 - f.x) * f.y;
+  w[3] = f.x * f.y;
+  ivec2 texels[4];
+  texels[0] = ivec2(i0.x, i0.y);
+  texels[1] = ivec2(i1.x, i0.y);
+  texels[2] = ivec2(i0.x, i1.y);
+  texels[3] = ivec2(i1.x, i1.y);
+
+  vec3 colorSum = vec3(0.0);
+  float confidenceSum = 0.0;
+  float weightSum = 0.0;
+  float missingWeight = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (w[i] <= 0.0) continue;
+    int flags = int(round(texelFetch(packedMasks, texels[i], 0).a * 255.0));
+    if ((flags & maskBit) != 0) {
+      colorSum += w[i] * texelFetch(colors, texels[i], 0).rgb;
+      confidenceSum += w[i] * texelFetch(confidenceTexture, texels[i], 0).a;
+      weightSum += w[i];
+    } else {
+      missingWeight += w[i];
+    }
+  }
+  if (weightSum <= 0.0) return ComponentSample(vec3(0.0), 0.0, 0.0);
+  float coverage = coastal == 1 ? weightSum : (missingWeight > 0.0 ? 0.0 : 1.0);
+  return ComponentSample(colorSum / weightSum, confidenceSum / weightSum, coverage);
+}
+
+/** Compose one date in linear-sRGB while preserving independent support. */
+vec4 composeFrame(sampler2D baseConfidence, sampler2D observedMasks, vec2 pos) {
+  ComponentSample base = sampleComponent(
+    baseConfidence, baseConfidence, observedMasks, BASE_VALID, pos);
+  ComponentSample observed = sampleComponent(
+    observedMasks, baseConfidence, observedMasks, OBSERVED_VALID, pos);
+  bool validBase = base.coverage > 0.0;
+  bool validObserved = observed.coverage > 0.0;
+  if (!validBase && !validObserved) return vec4(0.0);
+  vec3 baseLinear = srgbToLinear(base.color);
+  vec3 observedLinear = srgbToLinear(observed.color);
+  if (!validBase) return vec4(observedLinear, observed.coverage);
+  if (!validObserved) return vec4(baseLinear, base.coverage);
+  float weight = clamp(observationWeight, 0.0, 1.0) * clamp(observed.confidence, 0.0, 1.0);
+  return vec4(
+    mix(baseLinear, observedLinear, weight),
+    mix(base.coverage, observed.coverage, weight));
+}
+
+void main() {
+  vec2 uv = uvOffset + vUv * uvScale;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    color = vec4(0.0);
+    return;
+  }
+  vec2 pos0 = gridPosition(uv, vec2(textureSize(baseConfidence0, 0)));
+  vec2 pos1 = gridPosition(uv, vec2(textureSize(baseConfidence1, 0)));
+  vec4 sampled0 = composeFrame(baseConfidence0, observedMasks0, pos0);
+  vec4 sampled1 = composeFrame(baseConfidence1, observedMasks1, pos1);
+  bool valid0 = sampled0.a > 0.0;
+  bool valid1 = sampled1.a > 0.0;
+  if (!valid0 && !valid1) { color = vec4(0.0); return; }
+  vec3 first = valid0 ? sampled0.rgb : sampled1.rgb;
+  vec3 second = valid1 ? sampled1.rgb : first;
+  float coverage0 = valid0 ? sampled0.a : sampled1.a;
+  float coverage1 = valid1 ? sampled1.a : coverage0;
+  float coverage = mix(coverage0, coverage1, progress);
+  if (coastal == 1) coverage = smoothstep(0.0, 0.55, coverage);
+  float alpha = coverage * stencilAlpha(vUv);
+  if (alpha <= 0.0) { color = vec4(0.0); return; }
+  color = vec4(linearToSrgb(mix(first, second, progress)), alpha);
+}`
+}
+
 export function setClampFilter(gl: WebGL2RenderingContext, filter: number): void {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter)
