@@ -103,7 +103,7 @@ artifact into scale-aware composition with this exact optional extension:
     "zoomWeights": [
       { "maxZoom": 7, "weight": 0 },
       { "zoom": 8, "weight": 0.25 },
-      { "zoom": 9, "weight": 0.6 },
+      { "zoom": 9, "weight": 0.4 },
       { "minZoom": 10, "weight": 1 }
     ]
   }
@@ -124,7 +124,7 @@ confidence, and compose base/observed plus lower/upper dates in linear-sRGB.
 A real one-sided component remains real; only a pixel missing from both masks
 is transparent.
 
-The zoom weight is exactly `0` through z7, `0.25` at z8, `0.60` at z9, and `1`
+The zoom weight is exactly `0` through z7, `0.25` at z8, `0.40` at z9, and `1`
 at z10 and above, with linear interpolation between anchors. Set
 `viewport.zoom` when the map exposes a continuous zoom. When that property is
 absent, both renderers derive `log2(360 * cssWidth / (256 * longitudeSpan))`;

@@ -220,6 +220,34 @@ describe('decodeTemporalChunk', () => {
     expect(frame?.channels).toBe(composition?.baseChannels)
   })
 
+  it('decodes the canonical bounded z9 weight emitted by the water-quality producer', async () => {
+    const decoded = decodeTemporalChunk(buildComposedRgbChunk(), composedManifest())
+    await expect(decoded).resolves.toHaveLength(1)
+    expect(TEMPORAL_RGB_COMPOSITION_DESCRIPTOR.zoomWeights[2].weight).toBe(0.4)
+  })
+
+  it('rejects the superseded z9 weight instead of weakening descriptor validation', async () => {
+    const unsupportedDescriptor = {
+      ...TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
+      zoomWeights: [
+        { maxZoom: 7, weight: 0 },
+        { zoom: 8, weight: 0.25 },
+        { zoom: 9, weight: 0.6 },
+        { minZoom: 10, weight: 1 },
+      ],
+    }
+    await expect(
+      decodeTemporalChunk(
+        buildComposedRgbChunk(),
+        composedManifest({
+          rgbComposition: unsupportedDescriptor as unknown as NonNullable<
+            TemporalRasterManifest['rgbComposition']
+          >,
+        }),
+      ),
+    ).rejects.toThrow('composition descriptor is invalid')
+  })
+
   it('rejects composed RGB unless both the manifest and chunk declare 7 planes and 2 masks', async () => {
     await expect(
       decodeTemporalChunk(

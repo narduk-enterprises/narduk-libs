@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 — 2026-08-30
+
+### Fixed
+
+- Temporal decoding and both render backends now use the water-quality
+  product's canonical z9 observation weight of `0.40`. This completes the
+  coordinated visual-contract change begun by the producer; other weight
+  profiles still fail closed and legacy scalar/RGB paths remain unchanged.
+
 ## 0.5.0 — 2026-08-30
 
 ### Added
