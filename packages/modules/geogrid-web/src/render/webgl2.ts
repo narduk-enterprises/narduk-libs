@@ -1,15 +1,21 @@
 import { toGridFrame, defaultBBoxAnchor, frameCacheKey } from '../core/frame.js'
-import { dataUvTransform } from '../core/math.js'
+import {
+  dataUvTransform,
+  observationWeightForZoom,
+  viewportZoom,
+} from '../core/math.js'
 import {
   isUsableViewport,
   type GridBBox,
   type GridFrame,
+  type GridRgbComposition,
   type GridValueKind,
   type GridViewport,
 } from '../core/models.js'
 import {
   bindTexture,
   createProgram,
+  rgbCompositionFragmentShader,
   rgbFragmentShader,
   scalarFragmentShader,
   setClampNearest,
@@ -36,11 +42,21 @@ const UNIT_BLUE_1 = 7
 const UNIT_STENCIL = 8
 const UNIT_LUT = 9
 
+const UNIT_COMPOSED_BASE_0 = 0
+const UNIT_COMPOSED_OBSERVED_0 = 1
+const UNIT_COMPOSED_BASE_1 = 2
+const UNIT_COMPOSED_OBSERVED_1 = 3
+const UNIT_COMPOSED_STENCIL = 4
+
+/** Two RGBA textures per frame plus the coastline stencil. */
+export const RGB_COMPOSITION_TEXTURE_UNIT_COUNT = 5
+
 interface GpuFrame {
   key: string
   contentKey: string
   valueKind: GridValueKind
-  mask: WebGLTexture
+  mask: WebGLTexture | null
+  rgbComposition: boolean
   values: WebGLTexture[]
   width: number
   height: number
@@ -74,6 +90,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private readonly buffer: WebGLBuffer
   private readonly mode: 'scalar' | 'rgb'
   private readonly maxGpuFrames: number
+  private readonly maxTextureUnits: number
   private readonly frames = new Map<string, GpuFrame>()
   private readonly pipelines = new Map<string, Pipeline>()
   private style: GridStyle
@@ -84,6 +101,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private opacity = 0.75
   private canvasWidth = 0
   private canvasHeight = 0
+  private canvasCssWidth = 0
   private stencilTexture: WebGLTexture | null = null
   private stencilBBox: GridBBox | null = null
   private readonly whiteStencil: WebGLTexture
@@ -118,6 +136,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     this.mode = options.mode
     this.style = options.style
     this.maxGpuFrames = Math.max(2, options.maxGpuFrames ?? DEFAULT_MAX_GPU_FRAMES)
+    this.maxTextureUnits = Number(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS))
     this.opacity = options.style.opacity ?? 0.75
     this.canvas.style.opacity = String(this.opacity)
     const buffer = gl.createBuffer()
@@ -201,8 +220,17 @@ export class WebGL2GridBackend implements GridRenderBackend {
       this.clearIfDrawn()
       return
     }
+    const composedRgb = this.mode === 'rgb' && Boolean(lower.rgbComposition)
+    if (this.mode === 'rgb' && Boolean(lower.rgbComposition) !== Boolean(upper.rgbComposition)) {
+      this.clearIfDrawn()
+      return
+    }
+    if (composedRgb && this.maxTextureUnits < RGB_COMPOSITION_TEXTURE_UNIT_COUNT) {
+      this.clearIfDrawn()
+      return
+    }
 
-    const pipeline = this.pipeline(lower.valueKind)
+    const pipeline = this.pipeline(lower.valueKind, composedRgb)
     if (!pipeline) {
       this.clearIfDrawn()
       return
@@ -246,17 +274,48 @@ export class WebGL2GridBackend implements GridRenderBackend {
     )
     if (this.mode === 'scalar') this.uploadScalarStyle(pipeline)
 
-    bindTexture(gl, UNIT_VALUES_0, lowerGpu.values[0]!, this.uniform(pipeline, 'values0'))
-    bindTexture(gl, UNIT_VALUES_1, upperGpu.values[0]!, this.uniform(pipeline, 'values1'))
-    bindTexture(gl, UNIT_MASK_0, lowerGpu.mask, this.uniform(pipeline, 'mask0'))
-    bindTexture(gl, UNIT_MASK_1, upperGpu.mask, this.uniform(pipeline, 'mask1'))
-    if (this.mode === 'rgb') {
+    if (composedRgb) {
+      gl.uniform1f(
+        this.uniform(pipeline, 'observationWeight'),
+        observationWeightForZoom(viewportZoom(viewport, this.canvasCssWidth)),
+      )
+      bindTexture(
+        gl,
+        UNIT_COMPOSED_BASE_0,
+        lowerGpu.values[0]!,
+        this.uniform(pipeline, 'baseConfidence0'),
+      )
+      bindTexture(
+        gl,
+        UNIT_COMPOSED_OBSERVED_0,
+        lowerGpu.values[1]!,
+        this.uniform(pipeline, 'observedMasks0'),
+      )
+      bindTexture(
+        gl,
+        UNIT_COMPOSED_BASE_1,
+        upperGpu.values[0]!,
+        this.uniform(pipeline, 'baseConfidence1'),
+      )
+      bindTexture(
+        gl,
+        UNIT_COMPOSED_OBSERVED_1,
+        upperGpu.values[1]!,
+        this.uniform(pipeline, 'observedMasks1'),
+      )
+    } else {
+      bindTexture(gl, UNIT_VALUES_0, lowerGpu.values[0]!, this.uniform(pipeline, 'values0'))
+      bindTexture(gl, UNIT_VALUES_1, upperGpu.values[0]!, this.uniform(pipeline, 'values1'))
+      bindTexture(gl, UNIT_MASK_0, lowerGpu.mask!, this.uniform(pipeline, 'mask0'))
+      bindTexture(gl, UNIT_MASK_1, upperGpu.mask!, this.uniform(pipeline, 'mask1'))
+    }
+    if (this.mode === 'rgb' && !composedRgb) {
       bindTexture(gl, UNIT_GREEN_0, lowerGpu.values[1]!, this.uniform(pipeline, 'green0'))
       bindTexture(gl, UNIT_GREEN_1, upperGpu.values[1]!, this.uniform(pipeline, 'green1'))
       bindTexture(gl, UNIT_BLUE_0, lowerGpu.values[2]!, this.uniform(pipeline, 'blue0'))
       bindTexture(gl, UNIT_BLUE_1, upperGpu.values[2]!, this.uniform(pipeline, 'blue1'))
     }
-    this.bindStencil(pipeline, viewport)
+    this.bindStencil(pipeline, viewport, composedRgb ? UNIT_COMPOSED_STENCIL : UNIT_STENCIL)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     this.hasDrawn = true
   }
@@ -275,7 +334,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     this.destroyed = true
     for (const frame of this.frames.values()) {
       frame.values.forEach((texture) => this.gl.deleteTexture(texture))
-      this.gl.deleteTexture(frame.mask)
+      if (frame.mask) this.gl.deleteTexture(frame.mask)
     }
     this.frames.clear()
     for (const pipeline of this.pipelines.values()) this.gl.deleteProgram(pipeline.program)
@@ -287,15 +346,19 @@ export class WebGL2GridBackend implements GridRenderBackend {
     this.canvas.remove()
   }
 
-  private pipeline(valueKind: GridValueKind): Pipeline | null {
-    const key = `${this.mode}:${this.mode === 'rgb' ? 'rgb' : valueKind}`
+  private pipeline(valueKind: GridValueKind, rgbComposition: boolean): Pipeline | null {
+    const key = `${this.mode}:${rgbComposition ? 'rgb-composition' : this.mode === 'rgb' ? 'rgb' : valueKind}`
     const cached = this.pipelines.get(key)
     if (cached) return cached
     try {
       const program = createProgram(
         this.gl,
         vertexShader(),
-        this.mode === 'rgb' ? rgbFragmentShader() : scalarFragmentShader(valueKind),
+        rgbComposition
+          ? rgbCompositionFragmentShader()
+          : this.mode === 'rgb'
+            ? rgbFragmentShader()
+            : scalarFragmentShader(valueKind),
       )
       const pipeline: Pipeline = { program, locations: new Map() }
       this.pipelines.set(key, pipeline)
@@ -389,14 +452,14 @@ export class WebGL2GridBackend implements GridRenderBackend {
     return this.lutTexture
   }
 
-  private bindStencil(pipeline: Pipeline, viewport: GridViewport): void {
+  private bindStencil(pipeline: Pipeline, viewport: GridViewport, textureUnit: number): void {
     const gl = this.gl
     const hasStencil = Boolean(this.stencilTexture && this.stencilBBox)
     gl.uniform1i(this.uniform(pipeline, 'useStencil'), hasStencil ? 1 : 0)
     if (!hasStencil || !this.stencilTexture || !this.stencilBBox) {
       gl.uniform2f(this.uniform(pipeline, 'stencilUvOffset'), 0, 0)
       gl.uniform2f(this.uniform(pipeline, 'stencilUvScale'), 1, 1)
-      bindTexture(gl, UNIT_STENCIL, this.whiteStencil, this.uniform(pipeline, 'stencil'))
+      bindTexture(gl, textureUnit, this.whiteStencil, this.uniform(pipeline, 'stencil'))
       return
     }
     const span = viewport.span
@@ -415,25 +478,32 @@ export class WebGL2GridBackend implements GridRenderBackend {
       span.longitudeDelta / width,
       span.latitudeDelta / height,
     )
-    bindTexture(gl, UNIT_STENCIL, this.stencilTexture, this.uniform(pipeline, 'stencil'))
+    bindTexture(gl, textureUnit, this.stencilTexture, this.uniform(pipeline, 'stencil'))
   }
 
   private ensureFrame(frame: GridFrame, protectedKeys: Set<string>): GpuFrame | null {
     const contentKey = frameCacheKey(frame)
     const cached = this.frames.get(frame.key)
-    if (cached && cached.contentKey === contentKey && cached.valueKind === frame.valueKind) {
+    const hasRgbComposition = this.mode === 'rgb' && frame.rgbComposition !== undefined
+    if (
+      cached &&
+      cached.contentKey === contentKey &&
+      cached.valueKind === frame.valueKind &&
+      cached.rgbComposition === hasRgbComposition
+    ) {
       this.frames.delete(frame.key)
       this.frames.set(frame.key, cached)
       return cached
     }
     if (cached) {
       cached.values.forEach((texture) => this.gl.deleteTexture(texture))
-      this.gl.deleteTexture(cached.mask)
+      if (cached.mask) this.gl.deleteTexture(cached.mask)
       this.frames.delete(frame.key)
     }
 
-    const valuePlanes: Array<Uint16Array | Uint8Array | Float32Array> =
-      this.mode === 'rgb'
+    const valuePlanes: Array<Uint16Array | Uint8Array | Float32Array> = hasRgbComposition
+      ? []
+      : this.mode === 'rgb'
         ? frame.channels
           ? [...frame.channels]
           : []
@@ -445,7 +515,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
             ? [frame.values]
             : []
     if (
-      (this.mode === 'rgb' && valuePlanes.length !== 3) ||
+      (this.mode === 'rgb' && !hasRgbComposition && valuePlanes.length !== 3) ||
       (this.mode === 'scalar' && valuePlanes.length !== 1)
     ) {
       return null
@@ -453,18 +523,31 @@ export class WebGL2GridBackend implements GridRenderBackend {
 
     const textures: WebGLTexture[] = []
     try {
-      for (const data of valuePlanes) {
-        const texture = this.createTexture(data!, frame.width, frame.height)
-        if (!texture) throw new Error('texture create failed')
-        textures.push(texture)
+      if (hasRgbComposition) {
+        const packed = this.createRgbCompositionTextures(
+          frame.rgbComposition!,
+          frame.width,
+          frame.height,
+        )
+        if (!packed) throw new Error('RGB composition texture create failed')
+        textures.push(...packed)
+      } else {
+        for (const data of valuePlanes) {
+          const texture = this.createTexture(data!, frame.width, frame.height)
+          if (!texture) throw new Error('texture create failed')
+          textures.push(texture)
+        }
       }
-      const mask = this.createMaskTexture(frame.mask, frame.width, frame.height)
-      if (!mask) throw new Error('mask create failed')
+      const mask = hasRgbComposition
+        ? null
+        : this.createMaskTexture(frame.mask, frame.width, frame.height)
+      if (!hasRgbComposition && !mask) throw new Error('mask create failed')
       const gpuFrame: GpuFrame = {
         key: frame.key,
         contentKey,
         valueKind: frame.valueKind,
         mask,
+        rgbComposition: hasRgbComposition,
         values: textures,
         width: frame.width,
         height: frame.height,
@@ -531,6 +614,76 @@ export class WebGL2GridBackend implements GridRenderBackend {
     return texture
   }
 
+  /**
+   * Pack seven value planes and two masks into two RGBA8 textures.
+   *
+   * Texture 0 is base RGB + observed confidence. Texture 1 is observed RGB +
+   * validity flags (`bit 0 = base`, `bit 1 = observed`). Both textures are
+   * NEAREST and the shader reads them with `texelFetch`, so the mask byte can
+   * never be interpolated into a third, fictitious state.
+   */
+  private createRgbCompositionTextures(
+    composition: GridRgbComposition,
+    width: number,
+    height: number,
+  ): [WebGLTexture, WebGLTexture] | null {
+    const pixelCount = width * height
+    const planes = [
+      ...composition.baseChannels,
+      ...composition.observedChannels,
+      composition.confidence,
+      composition.baseMask,
+      composition.observedMask,
+    ]
+    if (planes.some((plane) => plane.length !== pixelCount)) return null
+
+    const baseConfidence = new Uint8Array(pixelCount * 4)
+    const observedMasks = new Uint8Array(pixelCount * 4)
+    for (let index = 0; index < pixelCount; index += 1) {
+      const offset = index * 4
+      baseConfidence[offset] = composition.baseChannels[0][index] ?? 0
+      baseConfidence[offset + 1] = composition.baseChannels[1][index] ?? 0
+      baseConfidence[offset + 2] = composition.baseChannels[2][index] ?? 0
+      baseConfidence[offset + 3] = composition.confidence[index] ?? 0
+      observedMasks[offset] = composition.observedChannels[0][index] ?? 0
+      observedMasks[offset + 1] = composition.observedChannels[1][index] ?? 0
+      observedMasks[offset + 2] = composition.observedChannels[2][index] ?? 0
+      observedMasks[offset + 3] =
+        (composition.baseMask[index] ? 1 : 0) | (composition.observedMask[index] ? 2 : 0)
+    }
+
+    const baseTexture = this.createRgbaTexture(baseConfidence, width, height)
+    if (!baseTexture) return null
+    const observedTexture = this.createRgbaTexture(observedMasks, width, height)
+    if (!observedTexture) {
+      this.gl.deleteTexture(baseTexture)
+      return null
+    }
+    return [baseTexture, observedTexture]
+  }
+
+  private createRgbaTexture(data: Uint8Array, width: number, height: number): WebGLTexture | null {
+    const gl = this.gl
+    const texture = gl.createTexture()
+    if (!texture) return null
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    setClampNearest(gl)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+    return texture
+  }
+
   private evictFrames(protectedKeys: Set<string>): void {
     while (this.frames.size > this.maxGpuFrames) {
       let evicted = false
@@ -539,7 +692,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
         const frame = this.frames.get(key)
         if (!frame) continue
         frame.values.forEach((texture) => this.gl.deleteTexture(texture))
-        this.gl.deleteTexture(frame.mask)
+        if (frame.mask) this.gl.deleteTexture(frame.mask)
         this.frames.delete(key)
         evicted = true
         break
@@ -552,6 +705,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     const parent = this.canvas.parentElement
     if (!parent) return
     const rect = parent.getBoundingClientRect()
+    this.canvasCssWidth = rect.width
     const dpr = window.devicePixelRatio || 1
     const width = Math.max(1, Math.round(rect.width * dpr))
     const height = Math.max(1, Math.round(rect.height * dpr))

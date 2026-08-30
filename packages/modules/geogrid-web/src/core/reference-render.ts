@@ -8,8 +8,10 @@ import {
   coastalFeather,
   dataUvTransform,
   displayValueFromEncoded,
+  linearChannelToSrgb,
   sampleRgbBilinearSoft,
   sampleScalarBilinearSoft,
+  srgbChannelToLinear,
   texelPositionFromUv,
 } from './math.js'
 import type {
@@ -43,9 +45,10 @@ import type {
  * - **Canvas2D scalar === reference, exactly.** Both are CPU float paths
  *   running the same functions, so any difference is a bug and the tolerance
  *   is zero.
- * - **Canvas2D RGB is a separate fallback contract.** It scales a masked RGBA
- *   raster through the browser's premultiplied-alpha filter for playback
- *   speed; it does not implement the explicit RGB soft/coastal kernels here.
+ * - **Legacy Canvas2D RGB is a separate fallback contract.** It scales a
+ *   masked RGBA raster through the browser's premultiplied-alpha filter for
+ *   playback speed. Scale-aware RGB calls this reference directly and is
+ *   byte-exact with it.
  * - **WebGL2 === reference, within a count or two per channel.** The GPU
  *   samples the LUT with hardware linear filtering, whose subtexel weights are
  *   fixed-point on most drivers, and rasterizes in `highp` rather than double.
@@ -92,6 +95,18 @@ export interface ReferenceRgbLayer {
   height: number
 }
 
+/** Base/detail payload for the scale-aware temporal RGB contract. */
+export interface ReferenceRgbCompositionLayer {
+  baseChannels: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>]
+  observedChannels: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>]
+  /** `0…255`, spatially sampled through `observedMask`. */
+  confidence: ArrayLike<number>
+  baseMask: ArrayLike<number>
+  observedMask: ArrayLike<number>
+  width: number
+  height: number
+}
+
 export interface ReferenceScalarStyle {
   /** Canonical normalized-position stops. `normalizeWireStops` builds these. */
   stops: readonly RampStop[]
@@ -119,12 +134,19 @@ export interface ReferenceScalarStyle {
 export interface ReferenceRgbStyle {
   /**
    * Coverage at partial neighborhoods. The CPU reference and WebGL2 RGB kernel
-   * default to `coastal`. Canvas2D RGB uses its separate premultiplied-alpha
-   * image resample and does not consume this style.
+   * default to `coastal`. Legacy Canvas2D RGB uses its separate
+   * premultiplied-alpha image resample and does not consume this style;
+   * scale-aware Canvas2D RGB does.
    */
   sampling?: GridSampling
   /** Flat output-alpha multiplier, default `1`. */
   opacity?: number
+}
+
+/** Scale-aware RGB style resolved for the viewport's continuous zoom. */
+export interface ReferenceRgbCompositionStyle extends ReferenceRgbStyle {
+  /** Zoom anchor weight before per-pixel confidence, clamped to `0…1`. */
+  observationWeight: number
 }
 
 export interface ReferenceTileOptions {
@@ -138,6 +160,11 @@ export interface ReferenceTileOptions {
 export interface ReferenceRgbTileOptions extends ReferenceTileOptions {
   /** A second frame to blend toward, for temporal playback. */
   blend?: ReferenceRgbBlend
+}
+
+export interface ReferenceRgbCompositionTileOptions extends ReferenceTileOptions {
+  /** A second composed frame to blend toward, for temporal playback. */
+  blend?: ReferenceRgbCompositionBlend
 }
 
 export interface ReferenceViewportOptions {
@@ -159,6 +186,17 @@ export interface ReferenceRgbViewportOptions {
   anchor?: GridBBoxAnchor
   /** A second frame to blend toward, for temporal playback. */
   blend?: ReferenceRgbBlend
+}
+
+export interface ReferenceRgbCompositionViewportOptions {
+  viewport: GridViewport
+  bbox: GridBBox
+  width: number
+  height: number
+  /** RGB temporal manifests span cell edges, so this defaults to `cell-edge`. */
+  anchor?: GridBBoxAnchor
+  /** A second composed frame to blend toward, for temporal playback. */
+  blend?: ReferenceRgbCompositionBlend
 }
 
 /**
@@ -205,6 +243,12 @@ export interface ReferenceScalarBlend {
 /** A second RGB frame to blend toward. */
 export interface ReferenceRgbBlend {
   upper: ReferenceRgbLayer
+  progress: number
+}
+
+/** A second scale-aware RGB frame to blend toward. */
+export interface ReferenceRgbCompositionBlend {
+  upper: ReferenceRgbCompositionLayer
   progress: number
 }
 
@@ -265,6 +309,118 @@ export function referenceRgbPixel(
     (lowerColor[1] + (upperColor[1] - lowerColor[1]) * progress) * 255,
     (lowerColor[2] + (upperColor[2] - lowerColor[2]) * progress) * 255,
     alpha * 255,
+  ]
+}
+
+interface LinearRgbSample {
+  color: [red: number, green: number, blue: number]
+  coverage: number
+}
+
+/**
+ * Compose base and observed RGB, then blend temporal frames, entirely in
+ * linear-sRGB.
+ *
+ * Spatial support remains independently honest for the base and observation.
+ * If one component is absent the other real component wins without inventing
+ * a color; only two valid components use `observationWeight * confidence`.
+ * The same fallback is applied across time, so a missing date never fades a
+ * real neighboring date toward black or transparency.
+ */
+export function referenceRgbCompositionPixel(
+  layer: ReferenceRgbCompositionLayer,
+  style: ReferenceRgbCompositionStyle,
+  x: number,
+  y: number,
+  blend?: ReferenceRgbCompositionBlend,
+): [number, number, number, number] {
+  const lower = sampleRgbCompositionFrame(layer, style, x, y)
+  const upper = blend ? sampleRgbCompositionFrame(blend.upper, style, x, y) : lower
+  const validLower = lower.coverage > 0
+  const validUpper = upper.coverage > 0
+  if (!validLower && !validUpper) return [0, 0, 0, 0]
+
+  const progress = blend ? Math.max(0, Math.min(1, blend.progress)) : 0
+  const lowerColor = validLower ? lower.color : upper.color
+  const upperColor = validUpper ? upper.color : lower.color
+  const lowerCoverage = validLower ? lower.coverage : upper.coverage
+  const upperCoverage = validUpper ? upper.coverage : lower.coverage
+  const blendedCoverage = lowerCoverage + (upperCoverage - lowerCoverage) * progress
+  const sampling = style.sampling ?? 'coastal'
+  const coverage = sampling === 'coastal' ? coastalFeather(blendedCoverage) : blendedCoverage
+  const alpha = coverage * (style.opacity ?? 1)
+  if (alpha <= 0) return [0, 0, 0, 0]
+
+  return [
+    linearChannelToSrgb(lowerColor[0] + (upperColor[0] - lowerColor[0]) * progress) * 255,
+    linearChannelToSrgb(lowerColor[1] + (upperColor[1] - lowerColor[1]) * progress) * 255,
+    linearChannelToSrgb(lowerColor[2] + (upperColor[2] - lowerColor[2]) * progress) * 255,
+    alpha * 255,
+  ]
+}
+
+function sampleRgbCompositionFrame(
+  layer: ReferenceRgbCompositionLayer,
+  style: ReferenceRgbCompositionStyle,
+  x: number,
+  y: number,
+): LinearRgbSample {
+  const sampling = style.sampling ?? 'coastal'
+  const base = sampleRgbBilinearSoft(
+    layer.baseChannels,
+    layer.baseMask,
+    layer.width,
+    layer.height,
+    x,
+    y,
+    sampling,
+  )
+  const observed = sampleRgbBilinearSoft(
+    layer.observedChannels,
+    layer.observedMask,
+    layer.width,
+    layer.height,
+    x,
+    y,
+    sampling,
+  )
+  const confidence = sampleScalarBilinearSoft(
+    layer.confidence,
+    layer.observedMask,
+    layer.width,
+    layer.height,
+    x,
+    y,
+    sampling,
+  )
+  const validBase = base.coverage > 0
+  const validObserved = observed.coverage > 0 && confidence.coverage > 0
+  if (!validBase && !validObserved) return { color: [0, 0, 0], coverage: 0 }
+
+  const baseLinear = toLinearRgb(base.color)
+  const observedLinear = toLinearRgb(observed.color)
+  if (!validBase) return { color: observedLinear, coverage: observed.coverage }
+  if (!validObserved) return { color: baseLinear, coverage: base.coverage }
+
+  const zoomWeight = Math.max(0, Math.min(1, style.observationWeight))
+  const observedWeight = zoomWeight * Math.max(0, Math.min(1, confidence.value / 255))
+  return {
+    color: [
+      baseLinear[0] + (observedLinear[0] - baseLinear[0]) * observedWeight,
+      baseLinear[1] + (observedLinear[1] - baseLinear[1]) * observedWeight,
+      baseLinear[2] + (observedLinear[2] - baseLinear[2]) * observedWeight,
+    ],
+    coverage: base.coverage + (observed.coverage - base.coverage) * observedWeight,
+  }
+}
+
+function toLinearRgb(
+  color: readonly [number, number, number],
+): [red: number, green: number, blue: number] {
+  return [
+    srgbChannelToLinear(color[0]),
+    srgbChannelToLinear(color[1]),
+    srgbChannelToLinear(color[2]),
   ]
 }
 
@@ -436,6 +592,31 @@ export function referenceRenderRgbTile(
   return { width, height, pixels }
 }
 
+/** Render a scale-aware RGB layer through the CPU composition contract. */
+export function referenceRenderRgbCompositionTile(
+  layer: ReferenceRgbCompositionLayer,
+  style: ReferenceRgbCompositionStyle,
+  options: ReferenceRgbCompositionTileOptions = {},
+): ReferenceRaster {
+  const width = options.width ?? layer.width
+  const height = options.height ?? layer.height
+  const anchor = options.anchor ?? 'cell-edge'
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const gy = texelPositionFromUv((py + 0.5) / height, layer.height, anchor)
+    for (let px = 0; px < width; px += 1) {
+      const gx = texelPositionFromUv((px + 0.5) / width, layer.width, anchor)
+      writePixel(
+        pixels,
+        (py * width + px) * 4,
+        referenceRgbCompositionPixel(layer, style, gx, gy, options.blend),
+      )
+    }
+  }
+  return { width, height, pixels }
+}
+
 /**
  * Render a layer as the backends blit it — through a viewport onto a screen.
  *
@@ -492,6 +673,34 @@ export function referenceRenderRgbViewport(
         pixels,
         (py * width + px) * 4,
         referenceRgbPixel(layer, style, gx, gy, options.blend),
+      )
+    }
+  }
+  return { width, height, pixels }
+}
+
+/** Render scale-aware RGB through the viewport transform both backends use. */
+export function referenceRenderRgbCompositionViewport(
+  layer: ReferenceRgbCompositionLayer,
+  style: ReferenceRgbCompositionStyle,
+  options: ReferenceRgbCompositionViewportOptions,
+): ReferenceRaster {
+  const { viewport, bbox, width, height } = options
+  const anchor = options.anchor ?? 'cell-edge'
+  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    for (let px = 0; px < width; px += 1) {
+      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue
+      const gx = texelPositionFromUv(u, layer.width, anchor)
+      const gy = texelPositionFromUv(v, layer.height, anchor)
+      writePixel(
+        pixels,
+        (py * width + px) * 4,
+        referenceRgbCompositionPixel(layer, style, gx, gy, options.blend),
       )
     }
   }

@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { normalizeWireStops } from '../src/color/ramp.js'
-import { referenceRenderScalarViewport } from '../src/core/reference-render.js'
+import { observationWeightForZoom, viewportZoom } from '../src/core/math.js'
+import {
+  referenceRenderRgbCompositionViewport,
+  referenceRenderScalarViewport,
+  type ReferenceRgbCompositionLayer,
+} from '../src/core/reference-render.js'
 import type { GridBBox, GridFrame, GridSampling, GridViewport } from '../src/core/models.js'
 
 /**
@@ -208,6 +213,107 @@ async function renderRgbThroughBackend(sampling: GridSampling): Promise<Uint8Cla
   return image.data
 }
 
+function composedFrame(key: string, offset: number): GridFrame {
+  const width = 4
+  const height = 3
+  const size = width * height
+  const baseChannels = [
+    new Uint8Array(Array.from({ length: size }, (_, index) => 20 + offset + index * 3)),
+    new Uint8Array(Array.from({ length: size }, (_, index) => 70 + offset + index * 2)),
+    new Uint8Array(Array.from({ length: size }, (_, index) => 150 + offset - index * 2)),
+  ] as const
+  const observedChannels = [
+    new Uint8Array(Array.from({ length: size }, (_, index) => 150 + offset - index * 2)),
+    new Uint8Array(Array.from({ length: size }, (_, index) => 30 + offset + index * 4)),
+    new Uint8Array(Array.from({ length: size }, (_, index) => 45 + offset + index * 5)),
+  ] as const
+  const confidence = new Uint8Array(
+    Array.from({ length: size }, (_, index) => 80 + ((index * 29 + offset) % 176)),
+  )
+  const baseMask = new Uint8Array([1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1])
+  const observedMask = new Uint8Array([0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1])
+  const rgbComposition = {
+    baseChannels,
+    observedChannels,
+    confidence,
+    baseMask,
+    observedMask,
+  }
+  return {
+    key,
+    width,
+    height,
+    renderMode: 'rgb',
+    valueKind: 'encoded-u16',
+    values: baseChannels[0],
+    channels: baseChannels,
+    mask: baseMask,
+    rgbComposition,
+  }
+}
+
+function referenceCompositionLayer(frame: GridFrame): ReferenceRgbCompositionLayer {
+  const composition = frame.rgbComposition
+  if (!composition) throw new Error('test frame is missing RGB composition')
+  return {
+    ...composition,
+    width: frame.width,
+    height: frame.height,
+  }
+}
+
+const COMPOSITION_VIEWPORT: GridViewport = { ...VIEWPORT, zoom: 9.25 }
+
+async function renderRgbCompositionThroughBackend(
+  sampling: GridSampling,
+  viewport: GridViewport = COMPOSITION_VIEWPORT,
+): Promise<Uint8ClampedArray> {
+  const { Canvas2DGridBackend } = await import('../src/render/canvas2d.js')
+  const backend = Canvas2DGridBackend.create({
+    mode: 'rgb',
+    style: { valueRange: { lowerBound: 0, upperBound: 1 }, scale: 'linear', sampling },
+  })
+  const element = backend.element() as unknown as { parentElement: unknown }
+  element.parentElement = {
+    getBoundingClientRect: () => ({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }),
+  }
+  backend.setViewport(viewport)
+  captured.image = null
+  backend.render({
+    lower: composedFrame('lower', 0),
+    upper: composedFrame('upper', 12),
+    progress: 0.35,
+    bbox: BBOX,
+  })
+  const image = takeCapture()
+  if (!image) throw new Error('Canvas2D did not take its composed RGB screen-space path')
+  return image.data
+}
+
+function renderRgbCompositionThroughReference(
+  sampling: GridSampling,
+  viewport: GridViewport = COMPOSITION_VIEWPORT,
+): Uint8ClampedArray {
+  const lower = composedFrame('lower', 0)
+  const upper = composedFrame('upper', 12)
+  return referenceRenderRgbCompositionViewport(
+    referenceCompositionLayer(lower),
+    {
+      sampling,
+      observationWeight: observationWeightForZoom(
+        viewportZoom(viewport, CANVAS_WIDTH),
+      ),
+    },
+    {
+      viewport,
+      bbox: BBOX,
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      blend: { upper: referenceCompositionLayer(upper), progress: 0.35 },
+    },
+  ).pixels
+}
+
 describe('Canvas2D screen-space path === reference renderer', () => {
   for (const sampling of ['soft', 'coastal'] as const) {
     it(`is byte-identical for ${sampling} sampling`, async () => {
@@ -254,5 +360,34 @@ describe('Canvas2D RGB sampling boundary', () => {
     expect(soft).toEqual(coastal)
     expect(Array.from(soft).filter((_, index) => index % 4 === 3)).toContain(0)
     expect(Array.from(soft).filter((_, index) => index % 4 === 3)).toContain(255)
+  })
+})
+
+describe('Canvas2D scale-aware RGB === linear-sRGB CPU reference', () => {
+  for (const sampling of ['soft', 'coastal'] as const) {
+    it(`is byte-identical for ${sampling} sampling`, async () => {
+      const actual = await renderRgbCompositionThroughBackend(sampling)
+      const expected = renderRgbCompositionThroughReference(sampling)
+      let painted = 0
+      for (let index = 3; index < expected.length; index += 4) {
+        if (expected[index]! > 0) painted += 1
+      }
+      expect(painted).toBeGreaterThan(CANVAS_WIDTH * CANVAS_HEIGHT * 0.2)
+      expect(actual).toEqual(expected)
+    })
+  }
+
+
+  it('derives continuous zoom from CSS width when the host omits viewport.zoom', async () => {
+    const expectedZoom = 9.25
+    const longitudeDelta = (360 * CANVAS_WIDTH) / (256 * 2 ** expectedZoom)
+    const viewport: GridViewport = {
+      center: VIEWPORT.center,
+      span: { ...VIEWPORT.span, longitudeDelta },
+    }
+    expect(viewportZoom(viewport, CANVAS_WIDTH)).toBeCloseTo(expectedZoom, 12)
+    const actual = await renderRgbCompositionThroughBackend('coastal', viewport)
+    const expected = renderRgbCompositionThroughReference('coastal', viewport)
+    expect(actual).toEqual(expected)
   })
 })

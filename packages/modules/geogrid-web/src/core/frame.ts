@@ -37,6 +37,7 @@ export function gridFrameFromTemporal(frame: TemporalRasterFrame): GridFrame {
     values: frame.values,
     mask: frame.mask,
     ...(frame.channels ? { channels: frame.channels } : {}),
+    ...(frame.rgbComposition ? { rgbComposition: frame.rgbComposition } : {}),
   }
 }
 
@@ -48,6 +49,7 @@ export function toGridFrame(frame: GridFrame | TemporalRasterFrame): GridFrame {
 interface MemoizedKey {
   mask: object
   channel: object | null
+  composition: object | null
   key: string
 }
 
@@ -72,8 +74,16 @@ const contentKeys = new WeakMap<object, MemoizedKey>()
  */
 export function frameCacheKey(frame: GridFrame): string {
   const channel = frame.channels?.[0] ?? null
+  const composition = frame.rgbComposition ?? null
   const cached = contentKeys.get(frame.values)
-  if (cached && cached.mask === frame.mask && cached.channel === channel) return cached.key
+  if (
+    cached &&
+    cached.mask === frame.mask &&
+    cached.channel === channel &&
+    cached.composition === composition
+  ) {
+    return cached.key
+  }
   const key = frameContentKey(
     frame.key,
     frame.width,
@@ -81,8 +91,14 @@ export function frameCacheKey(frame: GridFrame): string {
     frame.values,
     frame.mask,
     frame.channels,
+    frame.rgbComposition,
   )
-  contentKeys.set(frame.values, { mask: frame.mask, channel, key })
+  contentKeys.set(frame.values, {
+    mask: frame.mask,
+    channel,
+    composition,
+    key,
+  })
   return key
 }
 

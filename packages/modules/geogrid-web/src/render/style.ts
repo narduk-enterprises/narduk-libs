@@ -17,7 +17,8 @@ export function styleScale(style: GridStyle): GridScale {
  * kernel defaults to `coastal`, matching the visual intent of the Canvas2D
  * fallback: color still comes only from real neighbors while coverage fades
  * across the last cell. An explicit `style.sampling` selects either explicit
- * kernel; Canvas2D RGB has no such kernel and does not call this resolver.
+ * kernel. Legacy Canvas2D RGB has no such kernel; scale-aware Canvas2D RGB
+ * calls the shared CPU reference and therefore does use this resolver.
  */
 export function styleSampling(style: GridStyle, mode: GridRenderMode): GridSampling {
   return style.sampling ?? (mode === 'rgb' ? 'coastal' : 'soft')

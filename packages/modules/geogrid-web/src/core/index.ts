@@ -5,6 +5,7 @@ export type {
   GridBBoxAnchor,
   GridFrame,
   GridRenderMode,
+  GridRgbComposition,
   GridSampling,
   GridScale,
   GridValueKind,
@@ -24,10 +25,14 @@ export {
   dataUvTransform,
   displayValueFromEncoded,
   frameContentKey,
+  linearChannelToSrgb,
+  observationWeightForZoom,
   normalizeValue,
   sampleRgbBilinearSoft,
   sampleScalarBilinearSoft,
+  srgbChannelToLinear,
   texelPositionFromUv,
+  viewportZoom,
   type RgbSample,
   type ScalarSample,
 } from './math.js'
@@ -44,14 +49,22 @@ export {
   isDrawableRange,
   referenceLut,
   referenceRenderRgbTile,
+  referenceRenderRgbCompositionTile,
+  referenceRenderRgbCompositionViewport,
   referenceRenderRgbViewport,
   referenceRenderScalarTile,
   referenceRenderScalarViewport,
   referenceRgbPixel,
+  referenceRgbCompositionPixel,
   referenceScalarPixel,
   sampleLutLinear,
   type ReferenceRaster,
   type ReferenceRgbBlend,
+  type ReferenceRgbCompositionBlend,
+  type ReferenceRgbCompositionLayer,
+  type ReferenceRgbCompositionStyle,
+  type ReferenceRgbCompositionTileOptions,
+  type ReferenceRgbCompositionViewportOptions,
   type ReferenceRgbLayer,
   type ReferenceRgbStyle,
   type ReferenceRgbTileOptions,
@@ -107,13 +120,18 @@ export type {
   GridViewportMinMaxStretch,
   GridViewportPercentileStretch,
 } from './stretch.js'
-export { TEMPORAL_DECODE_LIMITS } from './decode/temporal.js'
+export {
+  TEMPORAL_DECODE_LIMITS,
+  TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
+  TEMPORAL_RGB_COMPOSITION_VERSION,
+} from './decode/temporal.js'
 export { rampLut, sampleRamp, type RGB } from './color.js'
 export type {
   CoastlineStencilDescriptor,
   TemporalChunkDescriptor,
   TemporalRasterFrame,
   TemporalRasterManifest,
+  TemporalRgbCompositionDescriptor,
 } from './decode/temporal.js'
 export { decodeTemporalChunk } from './decode/temporal.js'
 export {

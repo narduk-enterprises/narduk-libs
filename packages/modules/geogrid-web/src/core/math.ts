@@ -3,6 +3,7 @@ import type {
   GridBBoxAnchor,
   GridSampling,
   GridScale,
+  GridRgbComposition,
   GridValueRange,
   GridViewport,
 } from './models.js'
@@ -96,6 +97,55 @@ export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvT
   }
 }
 
+/** Slippy-map tile width used to derive zoom from a visible longitude span. */
+const WEB_MERCATOR_TILE_CSS_PIXELS = 256
+
+/**
+ * Resolve a continuous map zoom for scale-aware RGB composition.
+ *
+ * A host-supplied finite zoom is authoritative. MapKit exposes only a region,
+ * so the fallback uses the Web-Mercator world-width identity
+ * `z = log2(360 * cssWidth / (256 * longitudeSpan))`. A bad viewport never
+ * promotes detail: `null` makes the caller choose the base-only weight.
+ */
+export function viewportZoom(viewport: GridViewport, cssWidth: number): number | null {
+  if (viewport.zoom !== undefined) {
+    return Number.isFinite(viewport.zoom) ? viewport.zoom : null
+  }
+  if (!(cssWidth > 0) || !Number.isFinite(cssWidth)) return null
+  const longitudeSpan = viewport.span.longitudeDelta
+  if (!(longitudeSpan > 0) || !Number.isFinite(longitudeSpan)) return null
+  const zoom = Math.log2((360 * cssWidth) / (WEB_MERCATOR_TILE_CSS_PIXELS * longitudeSpan))
+  return Number.isFinite(zoom) ? zoom : null
+}
+
+/**
+ * Observation contribution at a continuous map zoom.
+ *
+ * Exact anchors are `0` through z7, `0.25` at z8, `0.60` at z9 and `1` at
+ * z10 and above. Fractional zooms interpolate linearly between adjacent
+ * anchors so a pinch zoom cannot introduce a visible step.
+ */
+export function observationWeightForZoom(zoom: number | null | undefined): number {
+  if (zoom === null || zoom === undefined || !Number.isFinite(zoom) || zoom <= 7) return 0
+  if (zoom < 8) return (zoom - 7) * 0.25
+  if (zoom < 9) return 0.25 + (zoom - 8) * 0.35
+  if (zoom < 10) return 0.6 + (zoom - 9) * 0.4
+  return 1
+}
+
+/** Decode one normalized display-sRGB channel into linear-sRGB. */
+export function srgbChannelToLinear(channel: number): number {
+  const value = Math.max(0, Math.min(1, channel))
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+/** Encode one normalized linear-sRGB channel into display-sRGB. */
+export function linearChannelToSrgb(channel: number): number {
+  const value = Math.max(0, Math.min(1, channel))
+  return value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055
+}
+
 const bitsScratch = new DataView(new ArrayBuffer(8))
 
 /**
@@ -164,8 +214,26 @@ export function frameContentKey(
   values: ArrayLike<number>,
   mask: ArrayLike<number>,
   channels?: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>],
+  rgbComposition?: GridRgbComposition,
 ): string {
   let hash = (width * 73856093) ^ (height * 19349663)
+  if (rgbComposition) {
+    // The composed renderer reads this payload exclusively. Hash every
+    // render-relevant plane once; `values`, `mask`, and `channels` are legacy
+    // aliases of the base and intentionally do not make the same bytes walk
+    // the mixer a second or third time. The legacy branch below stays exactly
+    // unchanged, including its historical hash values.
+    hash = hashPlane(rgbComposition.baseChannels[0], hash ^ 0x41414141)
+    hash = hashPlane(rgbComposition.baseChannels[1], hash ^ 0x42424242)
+    hash = hashPlane(rgbComposition.baseChannels[2], hash ^ 0x43434343)
+    hash = hashPlane(rgbComposition.observedChannels[0], hash ^ 0x51515151)
+    hash = hashPlane(rgbComposition.observedChannels[1], hash ^ 0x52525252)
+    hash = hashPlane(rgbComposition.observedChannels[2], hash ^ 0x53535353)
+    hash = hashPlane(rgbComposition.confidence, hash ^ 0x61616161)
+    hash = hashPlane(rgbComposition.baseMask, hash ^ 0x71717171)
+    hash = hashPlane(rgbComposition.observedMask, hash ^ 0x72727272)
+    return `${date}|${width}x${height}|${values.length}|${mask.length}|${hash >>> 0}`
+  }
   hash = hashPlane(values, hash)
   hash = hashPlane(mask, hash)
   if (channels) {

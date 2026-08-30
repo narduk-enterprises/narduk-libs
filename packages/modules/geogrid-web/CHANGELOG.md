@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.5.0 — 2026-08-30
+
+### Added
+
+- Temporal RGB manifests can opt into the additive
+  `base-observed-confidence-v1` composition contract: base RGB, observed RGB,
+  one observed-confidence plane, and distinct base/observed validity masks.
+  Legacy scalar (`1` plane / `1` mask) and legacy RGB (`3` planes / `1` mask)
+  decode and render through their existing paths unchanged.
+- Scale-aware RGB uses an exact continuous zoom curve: `0` through z7, `0.25`
+  at z8, `0.60` at z9, and `1` at z10 and above, linearly interpolated between
+  anchors. An explicit finite host zoom wins; when zoom is absent, both
+  backends derive it from CSS width and viewport longitude span. Invalid input
+  fails safely to base-only.
+- WebGL2 packs each composed date into two nearest-filtered RGBA8 textures,
+  including an uninterpolated validity byte (`bit 0 = base`, `bit 1 =
+  observed`). Two dates plus the coastline stencil require five fragment
+  texture units, within WebGL2's minimum of sixteen. Canvas2D runs the same CPU
+  reference math for the additive path.
+
+### Changed
+
+- Base/observed composition and lower/upper temporal playback now blend in
+  linear-sRGB for opted-in frames, then encode to display-sRGB once. Each
+  component retains its own mask; one real side is never mixed with black and
+  a gap in both masks remains transparent.
+- Temporal decoding now validates the fixed plane/mask mapping, mirrored chunk
+  layout, runtime manifest envelope, integer geometry, compressed and decoded
+  size caps, and stops inflation as soon as bytes exceed the declared layout.
+
+### Notes for callers
+
+- This is an intentional render change only for manifests carrying
+  `rgbComposition`. Coordinate regeneration of the SHA-pinned render-parity
+  fixtures in all consuming repositories; do not hand-edit their pins.
+
 ## 0.4.2 — 2026-08-30
 
 ### Fixed
