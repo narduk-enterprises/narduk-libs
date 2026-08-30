@@ -1,3 +1,5 @@
+import { useNuxtApp } from '#imports'
+
 import type { PostHog } from 'posthog-js'
 
 /**

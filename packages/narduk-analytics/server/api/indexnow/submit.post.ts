@@ -20,7 +20,11 @@ const bodySchema = z.object({
  * POST /api/indexnow/submit
  * Body: { urls: string[] }   (optional — defaults to sitemap URLs)
  *
- * Submits URLs to IndexNow-compatible search engines (Bing, Yandex, Seznam, Naver).
+ * Submits URLs via the IndexNow protocol to https://api.indexnow.org/indexnow.
+ * Search engines that participate in IndexNow (Bing, Yandex, Seznam, Naver,
+ * and others) share this index, so a single submission typically propagates
+ * to all of them — that sharing happens between the participating engines,
+ * not as a direct ping this route makes to each one.
  * Requires INDEXNOW_KEY to be set.
  *
  * Usage after deploy:
@@ -71,7 +75,8 @@ export default definePublicMutation(
 
     const results: Array<{ engine: string; ok: boolean; status: number }> = []
 
-    // Bing is the primary IndexNow endpoint; it shares with Yandex, Seznam, Naver
+    // The generic IndexNow endpoint; participating engines (Bing, Yandex,
+    // Seznam, Naver) share this index rather than each requiring their own ping.
     const engines = ['https://api.indexnow.org/indexnow']
 
     for (const engine of engines) {

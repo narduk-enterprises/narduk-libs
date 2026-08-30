@@ -7,10 +7,13 @@ import {
   addServerScanDir,
   createResolver,
   defineNuxtModule,
+  hasNuxtModule,
+  installModule,
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-analytics'
+const CORE_PACKAGE_NAME = '@narduk-enterprises/narduk-core'
 
 interface MutableNuxtOptionsRecord {
   alias: Record<string, string>
@@ -87,6 +90,27 @@ function readAnalyticsLoadStrategy() {
   return ['immediate', 'idle', 'interaction', 'off'].includes(value) ? value : 'idle'
 }
 
+/**
+ * Analytics has a hard runtime dependency on narduk-core: the client plugins
+ * (`dependsOn: ['runtime-public']`) only receive `posthogPublicKey`,
+ * `gaMeasurementId`, and `deploymentTarget` from narduk-core's
+ * runtime-public overlay. An app that lists `narduk-analytics` without
+ * `narduk-core` gets no build error but silently loses all analytics.
+ *
+ * `hasNuxtModule` checks both already-installed modules and the app's
+ * configured `modules` array (regardless of install order), so this only
+ * installs narduk-core when it is genuinely absent — it does not
+ * double-install for the documented setup where an app already lists it.
+ */
+async function ensureNardukCoreInstalled(nuxt: Parameters<typeof hasNuxtModule>[1]): Promise<void> {
+  const alreadyPresent =
+    hasNuxtModule(CORE_PACKAGE_NAME, nuxt) || hasNuxtModule(`${CORE_PACKAGE_NAME}/nuxt`, nuxt)
+
+  if (alreadyPresent) return
+
+  await installModule(CORE_PACKAGE_NAME)
+}
+
 export default defineNuxtModule<NardukAnalyticsModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
@@ -97,12 +121,14 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
     app: true,
     server: true,
   },
-  setup(options, nuxt) {
+  async setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
     const nuxtOptions = nuxt.options as unknown as MutableNuxtOptionsRecord
     const analyticsRuntimeConfigTypesPath = fileURLToPath(
       new URL('../app/types/runtime-config.d.ts', import.meta.url),
     )
+
+    await ensureNardukCoreInstalled(nuxt)
 
     pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
     addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)

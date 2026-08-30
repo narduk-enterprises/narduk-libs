@@ -45,7 +45,6 @@
   "files": [
     "app/",
     "server/",
-    "shared/",
     "src/",
     "eslint.config.mjs",
     "nuxt.config.ts",
@@ -70,8 +69,6 @@
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "quality": "pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
-    "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
     "prettier": "pnpm run format:check",
@@ -81,6 +78,7 @@
     "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/kit": "^4.0.0",
     "defu": "^6.1.7",
+    "h3": "^1.15.11",
     "jose": "^6.2.3",
     "posthog-js": "^1.373.4",
     "zod": "^4.4.3"
@@ -94,7 +92,6 @@
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
     "nuxt": "^4.4.2",

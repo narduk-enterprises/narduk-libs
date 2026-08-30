@@ -1,12 +1,17 @@
 import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
 
 import {
+  isInternalAnalyticsTraffic,
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,
+  resolveAnalyticsEnvironment,
   runWithAnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
 
-import type { AnalyticsLoadStrategy } from '../utils/analyticsLoadStrategy'
+import type {
+  AnalyticsDeploymentTarget,
+  AnalyticsLoadStrategy,
+} from '../utils/analyticsLoadStrategy'
 import type { PostHog, Properties } from 'posthog-js'
 
 type LegacyNuxtWindow = Window & { $nuxt?: { $posthog?: PostHog } }
@@ -93,8 +98,12 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         app: appName,
       }
 
-      // Tag preview/staging deploys (.pages.dev URLs)
-      if (window.location.hostname.endsWith('.pages.dev')) {
+      const hostname = window.location.hostname
+      const deploymentTarget = runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget
+
+      // Tag internal/non-production traffic (deployment target first, preview
+      // hostname as a fallback for unset/misconfigured targets).
+      if (isInternalAnalyticsTraffic(hostname, deploymentTarget)) {
         superProperties.is_internal_user = true
       }
 
@@ -108,15 +117,7 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         superProperties.app_version = appVersion
       }
 
-      // Environment heuristic: preview (.pages.dev) / development (localhost) / production
-      const hostname = window.location.hostname
-      if (isLocalAnalyticsHost(hostname)) {
-        superProperties.environment = 'development'
-      } else if (hostname.endsWith('.pages.dev')) {
-        superProperties.environment = 'preview'
-      } else {
-        superProperties.environment = 'production'
-      }
+      superProperties.environment = resolveAnalyticsEnvironment(hostname, deploymentTarget)
 
       posthog.register(superProperties)
 
