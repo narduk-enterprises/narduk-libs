@@ -8,6 +8,7 @@ import {
   coastalFeather,
   dataUvTransform,
   displayValueFromEncoded,
+  sampleRgbBilinearSoft,
   sampleScalarBilinearSoft,
   texelPositionFromUv,
 } from './math.js'
@@ -23,7 +24,8 @@ import type {
 } from './models.js'
 
 /**
- * The scalar render path, on the CPU, with no canvas and no GL.
+ * The scalar and explicit mask-aware RGB render paths, on the CPU, with no
+ * canvas and no GL.
  *
  * ## Why this exists
  *
@@ -38,8 +40,12 @@ import type {
  *
  * The parity contract the golden harness holds these to:
  *
- * - **Canvas2D === reference, exactly.** Both are CPU float paths running the
- *   same functions, so any difference is a bug and the tolerance is zero.
+ * - **Canvas2D scalar === reference, exactly.** Both are CPU float paths
+ *   running the same functions, so any difference is a bug and the tolerance
+ *   is zero.
+ * - **Canvas2D RGB is a separate fallback contract.** It scales a masked RGBA
+ *   raster through the browser's premultiplied-alpha filter for playback
+ *   speed; it does not implement the explicit RGB soft/coastal kernels here.
  * - **WebGL2 === reference, within a count or two per channel.** The GPU
  *   samples the LUT with hardware linear filtering, whose subtexel weights are
  *   fixed-point on most drivers, and rasterizes in `highp` rather than double.
@@ -79,6 +85,13 @@ export interface ReferenceScalarLayer {
   valueKind: GridValueKind
 }
 
+export interface ReferenceRgbLayer {
+  channels: readonly [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>]
+  mask: ArrayLike<number>
+  width: number
+  height: number
+}
+
 export interface ReferenceScalarStyle {
   /** Canonical normalized-position stops. `normalizeWireStops` builds these. */
   stops: readonly RampStop[]
@@ -103,12 +116,28 @@ export interface ReferenceScalarStyle {
   lutCount?: number
 }
 
+export interface ReferenceRgbStyle {
+  /**
+   * Coverage at partial neighborhoods. The CPU reference and WebGL2 RGB kernel
+   * default to `coastal`. Canvas2D RGB uses its separate premultiplied-alpha
+   * image resample and does not consume this style.
+   */
+  sampling?: GridSampling
+  /** Flat output-alpha multiplier, default `1`. */
+  opacity?: number
+}
+
 export interface ReferenceTileOptions {
   /** Output size. Defaults to the layer's own geometry. */
   width?: number
   height?: number
   /** Defaults per {@link GridValueKind}: `cell-center` for `float32`. */
   anchor?: GridBBoxAnchor
+}
+
+export interface ReferenceRgbTileOptions extends ReferenceTileOptions {
+  /** A second frame to blend toward, for temporal playback. */
+  blend?: ReferenceRgbBlend
 }
 
 export interface ReferenceViewportOptions {
@@ -119,6 +148,17 @@ export interface ReferenceViewportOptions {
   anchor?: GridBBoxAnchor
   /** A second frame to blend toward, for temporal playback. */
   blend?: ReferenceScalarBlend
+}
+
+export interface ReferenceRgbViewportOptions {
+  viewport: GridViewport
+  bbox: GridBBox
+  width: number
+  height: number
+  /** RGB temporal manifests span cell edges, so this defaults to `cell-edge`. */
+  anchor?: GridBBoxAnchor
+  /** A second frame to blend toward, for temporal playback. */
+  blend?: ReferenceRgbBlend
 }
 
 /**
@@ -160,6 +200,72 @@ function clampIndex(index: number, count: number): number {
 export interface ReferenceScalarBlend {
   upper: ReferenceScalarLayer
   progress: number
+}
+
+/** A second RGB frame to blend toward. */
+export interface ReferenceRgbBlend {
+  upper: ReferenceRgbLayer
+  progress: number
+}
+
+/**
+ * The per-pixel body of the precolored RGB path.
+ *
+ * Spatial interpolation happens independently inside each frame through the
+ * mask-aware 2×2 kernel. The two real colors are then blended in time. If one
+ * frame has no support at a pixel, the other is used rather than blending
+ * toward black; the same fallback rule powers the scalar path.
+ */
+export function referenceRgbPixel(
+  layer: ReferenceRgbLayer,
+  style: ReferenceRgbStyle,
+  x: number,
+  y: number,
+  blend?: ReferenceRgbBlend,
+): [number, number, number, number] {
+  const sampling = style.sampling ?? 'coastal'
+  const lower = sampleRgbBilinearSoft(
+    layer.channels,
+    layer.mask,
+    layer.width,
+    layer.height,
+    x,
+    y,
+    sampling,
+  )
+  const upperLayer = blend?.upper
+  const upper = upperLayer
+    ? sampleRgbBilinearSoft(
+        upperLayer.channels,
+        upperLayer.mask,
+        upperLayer.width,
+        upperLayer.height,
+        x,
+        y,
+        sampling,
+      )
+    : lower
+
+  const validLower = lower.coverage > 0
+  const validUpper = upper.coverage > 0
+  if (!validLower && !validUpper) return [0, 0, 0, 0]
+
+  const progress = blend ? Math.max(0, Math.min(1, blend.progress)) : 0
+  const lowerColor = validLower ? lower.color : upper.color
+  const upperColor = validUpper ? upper.color : lower.color
+  const coverageLower = validLower ? lower.coverage : upper.coverage
+  const coverageUpper = validUpper ? upper.coverage : lower.coverage
+  const blendedCoverage = coverageLower + (coverageUpper - coverageLower) * progress
+  const coverage = sampling === 'coastal' ? coastalFeather(blendedCoverage) : blendedCoverage
+  const alpha = coverage * (style.opacity ?? 1)
+  if (alpha <= 0) return [0, 0, 0, 0]
+
+  return [
+    (lowerColor[0] + (upperColor[0] - lowerColor[0]) * progress) * 255,
+    (lowerColor[1] + (upperColor[1] - lowerColor[1]) * progress) * 255,
+    (lowerColor[2] + (upperColor[2] - lowerColor[2]) * progress) * 255,
+    alpha * 255,
+  ]
 }
 
 /**
@@ -303,6 +409,33 @@ export function referenceRenderScalarTile(
   return { width, height, pixels }
 }
 
+/** Render a precolored RGB layer through the mask-aware reference kernel. */
+export function referenceRenderRgbTile(
+  layer: ReferenceRgbLayer,
+  style: ReferenceRgbStyle,
+  options: ReferenceRgbTileOptions = {},
+): ReferenceRaster {
+  const width = options.width ?? layer.width
+  const height = options.height ?? layer.height
+  const anchor = options.anchor ?? 'cell-edge'
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const v = (py + 0.5) / height
+    const gy = texelPositionFromUv(v, layer.height, anchor)
+    for (let px = 0; px < width; px += 1) {
+      const u = (px + 0.5) / width
+      const gx = texelPositionFromUv(u, layer.width, anchor)
+      writePixel(
+        pixels,
+        (py * width + px) * 4,
+        referenceRgbPixel(layer, style, gx, gy, options.blend),
+      )
+    }
+  }
+  return { width, height, pixels }
+}
+
 /**
  * Render a layer as the backends blit it — through a viewport onto a screen.
  *
@@ -331,6 +464,34 @@ export function referenceRenderScalarViewport(
         pixels,
         (py * width + px) * 4,
         referenceScalarPixel(layer, lut, style, gx, gy, options.blend),
+      )
+    }
+  }
+  return { width, height, pixels }
+}
+
+/** Render an RGB layer through the same viewport transform as both backends. */
+export function referenceRenderRgbViewport(
+  layer: ReferenceRgbLayer,
+  style: ReferenceRgbStyle,
+  options: ReferenceRgbViewportOptions,
+): ReferenceRaster {
+  const { viewport, bbox, width, height } = options
+  const anchor = options.anchor ?? 'cell-edge'
+  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const pixels = new Uint8ClampedArray(width * height * 4)
+
+  for (let py = 0; py < height; py += 1) {
+    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    for (let px = 0; px < width; px += 1) {
+      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue
+      const gx = texelPositionFromUv(u, layer.width, anchor)
+      const gy = texelPositionFromUv(v, layer.height, anchor)
+      writePixel(
+        pixels,
+        (py * width + px) * 4,
+        referenceRgbPixel(layer, style, gx, gy, options.blend),
       )
     }
   }

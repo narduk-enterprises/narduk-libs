@@ -53,11 +53,12 @@ const SCREEN_SPACE_PIXELS_PER_CELL = 1.5
  * The error is largest exactly where a ramp is most informative, and it is
  * invisible in a unit test that only checks cell colors.
  *
- * So when the layer is magnified past {@link SCREEN_SPACE_PIXELS_PER_CELL},
- * this rasterizes in screen space: each screen pixel bilinearly samples the
- * *value* plane through the same NaN-aware kernel the GPU uses, and only then
- * looks up a color. That path runs {@link referenceScalarPixel} itself rather
- * than a copy of it, so the fallback and the reference renderer cannot drift.
+ * So when a scalar layer is magnified past
+ * {@link SCREEN_SPACE_PIXELS_PER_CELL}, this rasterizes in screen space: each
+ * screen pixel bilinearly samples the *value* plane through the same NaN-aware
+ * kernel the GPU uses, and only then looks up a color. Precolored RGB remains
+ * a premultiplied-alpha canvas resample: it already interpolates color and
+ * validity together without the WebGL path's separate NEAREST-mask step.
  */
 export class Canvas2DGridBackend implements GridRenderBackend {
   readonly kind = 'canvas2d' as const

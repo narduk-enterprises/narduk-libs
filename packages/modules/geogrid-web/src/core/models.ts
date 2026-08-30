@@ -17,7 +17,7 @@ export type GridRenderMode = 'scalar' | 'rgb'
 export type GridValueKind = 'encoded-u16' | 'float32'
 
 /**
- * Which coverage rule the scalar sampler applies at a hole or a coastline.
+ * Which coverage rule a mask-aware sampler applies at a hole or a coastline.
  *
  * Both run the same 2×2 bilinear kernel over the finite neighbors only, with
  * the surviving weights renormalized, and differ solely in the alpha reported:
@@ -30,6 +30,9 @@ export type GridValueKind = 'encoded-u16' | 'float32'
  *   built only from real neighbors; only the alpha ramps.
  *
  * These are GeoGridKit's two Metal kernels under the names it gives them.
+ * Scalar rendering defaults to `soft`. The explicit WebGL2 and CPU-reference
+ * RGB kernels default to `coastal`; Canvas2D RGB keeps its fast historical
+ * premultiplied-alpha image resample and does not switch kernels for this hint.
  */
 export type GridSampling = 'soft' | 'coastal'
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.2 — 2026-08-30
+
+### Fixed
+
+- Precolored RGB WebGL now samples a mask-aware 2×2 neighborhood instead of
+  combining hardware-LINEAR color planes with a NEAREST validity mask. Missing
+  colors are never read or substituted with black; real weights are
+  renormalized, so coarse coastlines no longer carry dark bleed or hard
+  nearest-mask stair-steps.
+- WebGL2 RGB coverage defaults to the honest `coastal` alpha feather already
+  implied by the Canvas2D fallback; `sampling: 'soft'` selects its explicit
+  crisp-edge kernel. The existing Canvas2D premultiplied-alpha resample remains
+  unchanged and always feathers RGB edges; it does not apply the RGB sampling
+  hint. Both paths preserve temporal fallback, gaps, and channel bounds.
+- Added CPU RGB reference renderers plus shader, temporal-blend, honest-gap,
+  channel-bound, and adjacent-viewport seam tests.
+
 ## 0.4.1 — 2026-08-30
 
 ### Fixed
