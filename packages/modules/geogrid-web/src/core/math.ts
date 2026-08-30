@@ -122,15 +122,15 @@ export function viewportZoom(viewport: GridViewport, cssWidth: number): number |
 /**
  * Observation contribution at a continuous map zoom.
  *
- * Exact anchors are `0` through z7, `0.25` at z8, `0.60` at z9 and `1` at
+ * Exact anchors are `0` through z7, `0.25` at z8, `0.40` at z9 and `1` at
  * z10 and above. Fractional zooms interpolate linearly between adjacent
  * anchors so a pinch zoom cannot introduce a visible step.
  */
 export function observationWeightForZoom(zoom: number | null | undefined): number {
   if (zoom === null || zoom === undefined || !Number.isFinite(zoom) || zoom <= 7) return 0
   if (zoom < 8) return (zoom - 7) * 0.25
-  if (zoom < 9) return 0.25 + (zoom - 8) * 0.35
-  if (zoom < 10) return 0.6 + (zoom - 9) * 0.4
+  if (zoom < 9) return 0.25 + (zoom - 8) * 0.15
+  if (zoom < 10) return 0.4 + (zoom - 9) * 0.6
   return 1
 }
 

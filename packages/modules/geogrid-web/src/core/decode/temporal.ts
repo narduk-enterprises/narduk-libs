@@ -27,7 +27,7 @@ export interface TemporalRgbCompositionDescriptor {
   zoomWeights: readonly [
     { maxZoom: 7; weight: 0 },
     { zoom: 8; weight: 0.25 },
-    { zoom: 9; weight: 0.6 },
+    { zoom: 9; weight: 0.4 },
     { minZoom: 10; weight: 1 },
   ]
 }
@@ -44,7 +44,7 @@ export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionDescript
   zoomWeights: [
     { maxZoom: 7, weight: 0 },
     { zoom: 8, weight: 0.25 },
-    { zoom: 9, weight: 0.6 },
+    { zoom: 9, weight: 0.4 },
     { minZoom: 10, weight: 1 },
   ],
 }
@@ -432,7 +432,7 @@ function hasCanonicalZoomWeights(value: unknown): boolean {
     value[1]?.zoom === 8 &&
     value[1]?.weight === 0.25 &&
     value[2]?.zoom === 9 &&
-    value[2]?.weight === 0.6 &&
+    value[2]?.weight === 0.4 &&
     value[3]?.minZoom === 10 &&
     value[3]?.weight === 1
   )

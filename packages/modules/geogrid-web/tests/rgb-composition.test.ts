@@ -45,12 +45,12 @@ describe('scale-aware zoom contract', () => {
       expect(observationWeightForZoom(zoom)).toBe(0)
     }
     expect(observationWeightForZoom(8)).toBe(0.25)
-    expect(observationWeightForZoom(9)).toBe(0.6)
+    expect(observationWeightForZoom(9)).toBe(0.4)
     expect(observationWeightForZoom(10)).toBe(1)
     expect(observationWeightForZoom(20)).toBe(1)
     expect(observationWeightForZoom(7.5)).toBe(0.125)
-    expect(observationWeightForZoom(8.5)).toBe(0.425)
-    expect(observationWeightForZoom(9.5)).toBe(0.8)
+    expect(observationWeightForZoom(8.5)).toBe(0.325)
+    expect(observationWeightForZoom(9.5)).toBe(0.7)
     expect(observationWeightForZoom(Number.NaN)).toBe(0)
   })
 
