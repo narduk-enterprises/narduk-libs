@@ -9,10 +9,11 @@
   colors are never read or substituted with black; real weights are
   renormalized, so coarse coastlines no longer carry dark bleed or hard
   nearest-mask stair-steps.
-- RGB coverage defaults to the honest `coastal` alpha feather already implied
-  by the Canvas2D fallback. `sampling: 'soft'` remains an explicit crisp-edge
-  option. The existing Canvas2D premultiplied-alpha resample remains unchanged;
-  both paths preserve temporal fallback, gaps, anchors, and channel bounds.
+- WebGL2 RGB coverage defaults to the honest `coastal` alpha feather already
+  implied by the Canvas2D fallback; `sampling: 'soft'` selects its explicit
+  crisp-edge kernel. The existing Canvas2D premultiplied-alpha resample remains
+  unchanged and always feathers RGB edges; it does not apply the RGB sampling
+  hint. Both paths preserve temporal fallback, gaps, and channel bounds.
 - Added CPU RGB reference renderers plus shader, temporal-blend, honest-gap,
   channel-bound, and adjacent-viewport seam tests.
 

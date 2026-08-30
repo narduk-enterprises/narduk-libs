@@ -48,8 +48,10 @@ export interface GridStyle {
   scale: GridScale | string
   opacity?: number
   /**
-   * Coverage rule at holes and coastlines. Defaults to `soft` for scalar and
-   * `coastal` for precolored RGB.
+   * Coverage rule at holes and coastlines. Scalar uses it in both backends and
+   * defaults to `soft`. Precolored RGB uses it in WebGL2 and defaults to
+   * `coastal`; the Canvas2D RGB fallback retains its premultiplied-alpha image
+   * resample regardless of this hint.
    */
   sampling?: GridSampling
 }
@@ -64,8 +66,9 @@ export interface GridBackendRenderState {
    * for `float32`, `cell-edge` for the temporal dialect — so existing callers
    * keep the registration they have always had.
    *
-   * Both scalar and RGB passes use the same texel-center transform before their
-   * mask-aware 2×2 kernels, so an explicit anchor applies to either mode.
+   * WebGL2 applies an explicit anchor to scalar and RGB. Canvas2D applies it to
+   * its scalar screen-space kernel; its historical RGB image resample remains
+   * cell-edge anchored.
    */
   bboxAnchor?: GridBBoxAnchor
 }

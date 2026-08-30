@@ -231,7 +231,7 @@ describe('RGB shader contract', () => {
     expect(shader).not.toContain('texture(mask0, uv)')
   })
 
-  it('keeps scalar crisp by default while RGB defaults to honest coastal coverage', () => {
+  it('keeps scalar crisp by default while explicit WebGL RGB defaults to coastal coverage', () => {
     expect(styleSampling(STYLE, 'scalar')).toBe('soft')
     expect(styleSampling(STYLE, 'rgb')).toBe('coastal')
     expect(styleSampling({ ...STYLE, sampling: 'soft' }, 'rgb')).toBe('soft')

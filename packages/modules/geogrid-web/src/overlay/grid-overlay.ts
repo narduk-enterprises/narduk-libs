@@ -46,8 +46,9 @@ export interface GridOverlayStyleInput {
   scale: GridScale | string
   opacity?: number
   /**
-   * Coverage rule at holes and coastlines. Defaults to `soft` for scalar and
-   * `coastal` for precolored RGB.
+   * Coverage rule at holes and coastlines. Scalar uses it in both backends and
+   * defaults to `soft`. RGB uses it in WebGL2 and defaults to `coastal`; the
+   * Canvas2D RGB fallback keeps its premultiplied-alpha image resample.
    */
   sampling?: GridSampling
 }

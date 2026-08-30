@@ -24,7 +24,8 @@ import type {
 } from './models.js'
 
 /**
- * The scalar render path, on the CPU, with no canvas and no GL.
+ * The scalar and explicit mask-aware RGB render paths, on the CPU, with no
+ * canvas and no GL.
  *
  * ## Why this exists
  *
@@ -39,8 +40,12 @@ import type {
  *
  * The parity contract the golden harness holds these to:
  *
- * - **Canvas2D === reference, exactly.** Both are CPU float paths running the
- *   same functions, so any difference is a bug and the tolerance is zero.
+ * - **Canvas2D scalar === reference, exactly.** Both are CPU float paths
+ *   running the same functions, so any difference is a bug and the tolerance
+ *   is zero.
+ * - **Canvas2D RGB is a separate fallback contract.** It scales a masked RGBA
+ *   raster through the browser's premultiplied-alpha filter for playback
+ *   speed; it does not implement the explicit RGB soft/coastal kernels here.
  * - **WebGL2 === reference, within a count or two per channel.** The GPU
  *   samples the LUT with hardware linear filtering, whose subtexel weights are
  *   fixed-point on most drivers, and rasterizes in `highp` rather than double.
@@ -113,9 +118,9 @@ export interface ReferenceScalarStyle {
 
 export interface ReferenceRgbStyle {
   /**
-   * Coverage at partial neighborhoods. RGB defaults to `coastal`, preserving
-   * the fallback renderer's long-standing alpha-resampled edge without reading
-   * or inventing a missing color.
+   * Coverage at partial neighborhoods. The CPU reference and WebGL2 RGB kernel
+   * default to `coastal`. Canvas2D RGB uses its separate premultiplied-alpha
+   * image resample and does not consume this style.
    */
   sampling?: GridSampling
   /** Flat output-alpha multiplier, default `1`. */

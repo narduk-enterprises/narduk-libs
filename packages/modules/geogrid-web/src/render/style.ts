@@ -13,11 +13,11 @@ export function styleScale(style: GridStyle): GridScale {
 /**
  * Resolve the mask-edge coverage rule for a render mode.
  *
- * Scalar keeps its historical crisp `soft` default. Precolored RGB keeps the
- * fallback renderer's historical alpha-resampled edge as `coastal`: the color
- * still comes only from real neighbors, while coverage fades across the last
- * cell instead of exposing the source-grid staircase. Either mode can be made
- * explicit with `style.sampling`.
+ * Scalar keeps its historical crisp `soft` default. The explicit WebGL2 RGB
+ * kernel defaults to `coastal`, matching the visual intent of the Canvas2D
+ * fallback: color still comes only from real neighbors while coverage fades
+ * across the last cell. An explicit `style.sampling` selects either explicit
+ * kernel; Canvas2D RGB has no such kernel and does not call this resolver.
  */
 export function styleSampling(style: GridStyle, mode: GridRenderMode): GridSampling {
   return style.sampling ?? (mode === 'rgb' ? 'coastal' : 'soft')

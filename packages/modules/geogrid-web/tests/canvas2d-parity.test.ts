@@ -174,6 +174,40 @@ function renderThroughReference(sampling: GridSampling): Uint8ClampedArray {
   ).pixels
 }
 
+async function renderRgbThroughBackend(sampling: GridSampling): Promise<Uint8ClampedArray> {
+  const { Canvas2DGridBackend } = await import('../src/render/canvas2d.js')
+  const width = 4
+  const height = 3
+  const red = new Uint8Array([20, 40, 0, 0, 30, 60, 90, 0, 40, 80, 120, 160])
+  const green = new Uint8Array([80, 90, 0, 0, 90, 100, 110, 0, 100, 110, 120, 130])
+  const blue = new Uint8Array([180, 160, 0, 0, 160, 140, 120, 0, 140, 120, 100, 80])
+  const mask = new Uint8Array([1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1])
+  const backend = Canvas2DGridBackend.create({
+    mode: 'rgb',
+    style: { valueRange: { lowerBound: 0, upperBound: 1 }, scale: 'linear', sampling },
+  })
+  const element = backend.element() as unknown as { parentElement: unknown }
+  element.parentElement = {
+    getBoundingClientRect: () => ({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }),
+  }
+  backend.setViewport(VIEWPORT)
+  const frame: GridFrame = {
+    key: `rgb-${sampling}`,
+    width,
+    height,
+    renderMode: 'rgb',
+    valueKind: 'encoded-u16',
+    values: red,
+    channels: [red, green, blue],
+    mask,
+  }
+  captured.image = null
+  backend.render({ lower: frame, upper: frame, progress: 0, bbox: BBOX })
+  const image = takeCapture()
+  if (!image) throw new Error('Canvas2D did not rasterize its RGB source image')
+  return image.data
+}
+
 describe('Canvas2D screen-space path === reference renderer', () => {
   for (const sampling of ['soft', 'coastal'] as const) {
     it(`is byte-identical for ${sampling} sampling`, async () => {
@@ -205,5 +239,20 @@ describe('Canvas2D screen-space path === reference renderer', () => {
     const coastal = countPainted(renderThroughReference('coastal'))
     // Coastal keeps the partially-covered edge cells that soft discards.
     expect(coastal).toBeGreaterThan(soft)
+  })
+})
+
+describe('Canvas2D RGB sampling boundary', () => {
+  it('keeps its fast premultiplied-alpha resample independent of the WebGL sampling hint', async () => {
+    const soft = await renderRgbThroughBackend('soft')
+    const coastal = await renderRgbThroughBackend('coastal')
+
+    // This equality is the documented backend boundary, not an accidental
+    // parity claim: Canvas scales this same masked RGBA image with its native
+    // premultiplied-alpha filter for either hint. WebGL2 and the CPU reference
+    // are the paths that select explicit soft/coastal RGB kernels.
+    expect(soft).toEqual(coastal)
+    expect(Array.from(soft).filter((_, index) => index % 4 === 3)).toContain(0)
+    expect(Array.from(soft).filter((_, index) => index % 4 === 3)).toContain(255)
   })
 })

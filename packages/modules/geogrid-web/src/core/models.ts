@@ -30,8 +30,9 @@ export type GridValueKind = 'encoded-u16' | 'float32'
  *   built only from real neighbors; only the alpha ramps.
  *
  * These are GeoGridKit's two Metal kernels under the names it gives them.
- * Scalar rendering defaults to `soft`; precolored RGB defaults to `coastal`
- * to retain the Canvas2D fallback's smooth alpha edge without inventing color.
+ * Scalar rendering defaults to `soft`. The explicit WebGL2 and CPU-reference
+ * RGB kernels default to `coastal`; Canvas2D RGB keeps its fast historical
+ * premultiplied-alpha image resample and does not switch kernels for this hint.
  */
 export type GridSampling = 'soft' | 'coastal'
 
