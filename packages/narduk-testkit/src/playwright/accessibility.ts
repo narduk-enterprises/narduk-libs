@@ -92,7 +92,7 @@ export function assertAgainstAccessibilityBaseline(
   info: TestInfo,
   results: AxeResults,
   baseline: AccessibilityBaseline,
-  options: AssertAgainstBaselineOptions = {}
+  options: AssertAgainstBaselineOptions = {},
 ): void {
   const key = options.key ?? info.title
   const where = options.baselinePath ?? 'the accessibility baseline'
@@ -105,15 +105,15 @@ export function assertAgainstAccessibilityBaseline(
     `NEW accessibility violation on "${key}" — ${JSON.stringify(
       describeViolations(results.violations.filter((v) => appeared.includes(v.id))),
       null,
-      1
-    )}`
+      1,
+    )}`,
   ).toEqual([])
 
   const fixed = known.filter((id) => !found.includes(id))
   expect(
     fixed,
-    `"${key}" no longer violates ${fixed.join(', ')} — remove it from ${where} `
-    + 'so the debt cannot be re-accrued'
+    `"${key}" no longer violates ${fixed.join(', ')} — remove it from ${where} ` +
+      'so the debt cannot be re-accrued',
   ).toEqual([])
 }
 
@@ -137,14 +137,14 @@ export interface TextZoomOptions {
  */
 export async function expectNoOverflowAtTextZoom(
   page: Page,
-  options: TextZoomOptions = {}
+  options: TextZoomOptions = {},
 ): Promise<void> {
   const percent = options.percent ?? 200
   await page.addStyleTag({ content: `html { font-size: ${percent}% !important }` })
   await page.waitForTimeout(150)
 
   const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - window.innerWidth
+    () => document.documentElement.scrollWidth - window.innerWidth,
   )
   expect(overflow, `sideways scroll at ${percent}% text`).toBeLessThanOrEqual(1)
 
@@ -160,7 +160,7 @@ export async function expectNoOverflowAtTextZoom(
  */
 export async function expectStateNotCarriedByColourAlone(
   page: Page,
-  selector: string
+  selector: string,
 ): Promise<void> {
   const indicators = page.locator(selector)
   const count = await indicators.count()
@@ -181,11 +181,14 @@ export async function expectStateNotCarriedByColourAlone(
  */
 export async function expectNoTransitionsUnderReducedMotion(
   page: Page,
-  selector: string
+  selector: string,
 ): Promise<void> {
-  const moving = await page.evaluate((sel) =>
-    Array.from(document.querySelectorAll<HTMLElement>(sel))
-      .map((node) => getComputedStyle(node).transitionDuration)
-      .filter((duration) => duration !== '0s' && duration !== ''), selector)
+  const moving = await page.evaluate(
+    (sel) =>
+      Array.from(document.querySelectorAll<HTMLElement>(sel))
+        .map((node) => getComputedStyle(node).transitionDuration)
+        .filter((duration) => duration !== '0s' && duration !== ''),
+    selector,
+  )
   expect(moving, 'a transition survived prefers-reduced-motion').toEqual([])
 }

@@ -106,7 +106,9 @@ import baseline from './accessibility-baseline.json' with { type: 'json' }
 
 test('has no new AA violation', async ({ page }) => {
   await page.goto('/')
-  const results = await new AxeBuilder({ page }).withTags([...WCAG_2_2_AA_TAGS]).analyze()
+  const results = await new AxeBuilder({ page })
+    .withTags([...WCAG_2_2_AA_TAGS])
+    .analyze()
   assertAgainstAccessibilityBaseline(test.info(), results, baseline, {
     baselinePath: 'tests/e2e/accessibility-baseline.json',
   })

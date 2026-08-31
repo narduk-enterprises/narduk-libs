@@ -15,12 +15,16 @@ import type { AxeResults } from './accessibility-types.js'
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 /** Enough of Playwright's TestInfo for the baseline assertion to key off. */
-const info = (title: string) => ({ title }) as unknown as Parameters<
-  typeof assertAgainstAccessibilityBaseline
->[0]
+const info = (title: string) =>
+  ({ title }) as unknown as Parameters<typeof assertAgainstAccessibilityBaseline>[0]
 
 const results = (...ids: string[]): AxeResults => ({
-  violations: ids.map((id) => ({ help: `${id} help`, id, impact: 'serious', nodes: [{ target: [`.${id}`] }] })),
+  violations: ids.map((id) => ({
+    help: `${id} help`,
+    id,
+    impact: 'serious',
+    nodes: [{ target: [`.${id}`] }],
+  })),
 })
 
 describe('the WCAG tag set', () => {
@@ -42,15 +46,19 @@ describe('the baseline assertion', () => {
     expect(() =>
       assertAgainstAccessibilityBaseline(info('/'), results('color-contrast'), {
         '/': ['color-contrast'],
-      })
+      }),
     ).not.toThrow()
   })
 
   it('fails on a rule the ledger does not allow — new debt cannot land silently', () => {
     expect(() =>
-      assertAgainstAccessibilityBaseline(info('/'), results('color-contrast', 'aria-required-attr'), {
-        '/': ['color-contrast'],
-      })
+      assertAgainstAccessibilityBaseline(
+        info('/'),
+        results('color-contrast', 'aria-required-attr'),
+        {
+          '/': ['color-contrast'],
+        },
+      ),
     ).toThrow(/NEW accessibility violation/)
   })
 
@@ -61,29 +69,39 @@ describe('the baseline assertion', () => {
      * inside a stale allowance without anyone noticing.
      */
     expect(() =>
-      assertAgainstAccessibilityBaseline(info('/'), results(), { '/': ['color-contrast'] })
+      assertAgainstAccessibilityBaseline(info('/'), results(), { '/': ['color-contrast'] }),
     ).toThrow(/no longer violates color-contrast/)
   })
 
   it('names the ledger file so the failure says what to edit', () => {
     expect(() =>
-      assertAgainstAccessibilityBaseline(info('/'), results(), { '/': ['color-contrast'] }, {
-        baselinePath: 'tests/e2e/a11y-baseline.json',
-      })
+      assertAgainstAccessibilityBaseline(
+        info('/'),
+        results(),
+        { '/': ['color-contrast'] },
+        {
+          baselinePath: 'tests/e2e/a11y-baseline.json',
+        },
+      ),
     ).toThrow(/tests\/e2e\/a11y-baseline\.json/)
   })
 
   it('keys off an explicit key when titles are not unique', () => {
     expect(() =>
-      assertAgainstAccessibilityBaseline(info('duplicate title'), results('color-contrast'), {
-        '/products': ['color-contrast'],
-      }, { key: '/products' })
+      assertAgainstAccessibilityBaseline(
+        info('duplicate title'),
+        results('color-contrast'),
+        {
+          '/products': ['color-contrast'],
+        },
+        { key: '/products' },
+      ),
     ).not.toThrow()
   })
 
   it('treats an unlisted surface as required to be clean', () => {
     expect(() =>
-      assertAgainstAccessibilityBaseline(info('/new-page'), results('color-contrast'), {})
+      assertAgainstAccessibilityBaseline(info('/new-page'), results('color-contrast'), {}),
     ).toThrow(/NEW accessibility violation/)
   })
 })
@@ -91,12 +109,14 @@ describe('the baseline assertion', () => {
 describe('describeViolations', () => {
   it('caps nodes at three so a failure stays readable in CI output', () => {
     const many = {
-      violations: [{
-        help: 'h',
-        id: 'color-contrast',
-        impact: 'serious',
-        nodes: [1, 2, 3, 4, 5].map((n) => ({ target: [`.n${n}`] })),
-      }],
+      violations: [
+        {
+          help: 'h',
+          id: 'color-contrast',
+          impact: 'serious',
+          nodes: [1, 2, 3, 4, 5].map((n) => ({ target: [`.n${n}`] })),
+        },
+      ],
     }
     expect(describeViolations(many.violations)[0]!.nodes).toEqual(['.n1', '.n2', '.n3'])
   })
