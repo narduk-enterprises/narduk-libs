@@ -393,6 +393,8 @@ uniform sampler2D baseConfidence1;
 uniform sampler2D observedMasks1;
 uniform float progress;
 uniform float observationWeight;
+uniform int supportModulatesWeight;
+uniform vec2 overviewCssSize;
 uniform vec2 uvOffset;
 uniform vec2 uvScale;
 uniform int coastal;
@@ -408,6 +410,7 @@ struct ComponentSample {
   vec3 color;
   float confidence;
   float coverage;
+  float support;
   bool nearestValid;
 };
 
@@ -446,7 +449,7 @@ ComponentSample sampleComponent(
   ivec2 nearest = clamp(ivec2(floor(p + vec2(0.5))), ivec2(0), ivec2(maxPos));
   int nearestFlags = int(round(texelFetch(packedMasks, nearest, 0).a * 255.0));
   if ((nearestFlags & maskBit) == 0) {
-    return ComponentSample(vec3(0.0), 0.0, 0.0, false);
+    return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, false);
   }
   vec2 base = floor(p);
   vec2 f = p - base;
@@ -479,17 +482,84 @@ ComponentSample sampleComponent(
       missingWeight += w[i];
     }
   }
-  if (weightSum <= 0.0) return ComponentSample(vec3(0.0), 0.0, 0.0, true);
+  if (weightSum <= 0.0) return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, true);
   float coverage = coastal == 1 ? weightSum : (missingWeight > 0.0 ? 0.0 : 1.0);
-  return ComponentSample(colorSum / weightSum, confidenceSum / weightSum, coverage, true);
+  return ComponentSample(colorSum / weightSum, confidenceSum / weightSum, coverage, weightSum, true);
+}
+
+ivec2 areaBoundary(vec2 sourceUv, ivec2 size, bool upper) {
+  vec2 bounded = clamp(sourceUv, vec2(0.0), vec2(1.0));
+  vec2 scale = anchorCenter == 1 ? vec2(size - 1) : vec2(size);
+  vec2 offset = anchorCenter == 1 ? vec2(0.0) : vec2(-0.5);
+  ivec2 boundary = clamp(ivec2(ceil(bounded * scale + offset)), ivec2(0), size);
+  if (upper && bounded.x >= 1.0) boundary.x = size.x;
+  if (upper && bounded.y >= 1.0) boundary.y = size.y;
+  return boundary;
+}
+
+/** Half-open area mean over real observed cells plus valid/full support. */
+ComponentSample sampleObservedArea(
+  sampler2D colors,
+  sampler2D confidenceTexture,
+  sampler2D packedMasks,
+  vec2 areaUv0,
+  vec2 areaUv1
+) {
+  ivec2 size = textureSize(colors, 0);
+  vec2 lowUv = clamp(min(areaUv0, areaUv1), vec2(0.0), vec2(1.0));
+  vec2 highUv = clamp(max(areaUv0, areaUv1), vec2(0.0), vec2(1.0));
+  if (any(lessThanEqual(highUv, lowUv))) {
+    return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, false);
+  }
+  ivec2 start = areaBoundary(lowUv, size, false);
+  ivec2 stop = areaBoundary(highUv, size, true);
+  ivec2 extent = max(stop - start, ivec2(0));
+  int fullArea = extent.x * extent.y;
+  if (fullArea <= 0) return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, false);
+
+  vec3 colorSum = vec3(0.0);
+  float confidenceSum = 0.0;
+  float supportCount = 0.0;
+  for (int row = start.y; row < stop.y; row++) {
+    for (int column = start.x; column < stop.x; column++) {
+      ivec2 texel = ivec2(column, row);
+      int flags = int(round(texelFetch(packedMasks, texel, 0).a * 255.0));
+      if ((flags & OBSERVED_VALID) == 0) continue;
+      colorSum += texelFetch(colors, texel, 0).rgb;
+      confidenceSum += texelFetch(confidenceTexture, texel, 0).a;
+      supportCount += 1.0;
+    }
+  }
+  if (supportCount <= 0.0) {
+    return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, false);
+  }
+  float support = supportCount / float(fullArea);
+  return ComponentSample(
+    colorSum / supportCount,
+    confidenceSum / supportCount,
+    1.0,
+    support,
+    true);
 }
 
 /** Compose one date in linear-sRGB while preserving independent support. */
-FrameSample composeFrame(sampler2D baseConfidence, sampler2D observedMasks, vec2 pos) {
+FrameSample composeFrame(
+  sampler2D baseConfidence,
+  sampler2D observedMasks,
+  vec2 pos,
+  vec2 areaUv0,
+  vec2 areaUv1
+) {
   ComponentSample base = sampleComponent(
     baseConfidence, baseConfidence, observedMasks, BASE_VALID, pos);
-  ComponentSample observed = sampleComponent(
-    observedMasks, baseConfidence, observedMasks, OBSERVED_VALID, pos);
+  ComponentSample observed;
+  if (supportModulatesWeight == 1) {
+    observed = sampleObservedArea(
+      observedMasks, baseConfidence, observedMasks, areaUv0, areaUv1);
+  } else {
+    observed = sampleComponent(
+      observedMasks, baseConfidence, observedMasks, OBSERVED_VALID, pos);
+  }
   bool validBase = base.nearestValid;
   bool validObserved = observed.nearestValid;
   if (!validBase && !validObserved) return FrameSample(vec3(0.0), 0.0, false);
@@ -498,6 +568,7 @@ FrameSample composeFrame(sampler2D baseConfidence, sampler2D observedMasks, vec2
   if (!validBase) return FrameSample(observedLinear, observed.coverage, true);
   if (!validObserved) return FrameSample(baseLinear, base.coverage, true);
   float weight = clamp(observationWeight, 0.0, 1.0) * clamp(observed.confidence, 0.0, 1.0);
+  if (supportModulatesWeight == 1) weight *= clamp(observed.support, 0.0, 1.0);
   return FrameSample(
     mix(baseLinear, observedLinear, weight),
     mix(base.coverage, observed.coverage, weight),
@@ -512,8 +583,16 @@ void main() {
   }
   vec2 pos0 = gridPosition(uv, vec2(textureSize(baseConfidence0, 0)));
   vec2 pos1 = gridPosition(uv, vec2(textureSize(baseConfidence1, 0)));
-  FrameSample sampled0 = composeFrame(baseConfidence0, observedMasks0, pos0);
-  FrameSample sampled1 = composeFrame(baseConfidence1, observedMasks1, pos1);
+  vec2 safeCssSize = max(overviewCssSize, vec2(1.0));
+  vec2 cssPixel = floor(vUv * safeCssSize);
+  vec2 screenUv0 = cssPixel / safeCssSize;
+  vec2 screenUv1 = min((cssPixel + 1.0) / safeCssSize, vec2(1.0));
+  vec2 areaUv0 = uvOffset + screenUv0 * uvScale;
+  vec2 areaUv1 = uvOffset + screenUv1 * uvScale;
+  FrameSample sampled0 = composeFrame(
+    baseConfidence0, observedMasks0, pos0, areaUv0, areaUv1);
+  FrameSample sampled1 = composeFrame(
+    baseConfidence1, observedMasks1, pos1, areaUv0, areaUv1);
   bool valid0 = sampled0.nearestValid;
   bool valid1 = sampled1.nearestValid;
   if (!valid0 && !valid1) { color = vec4(0.0); return; }

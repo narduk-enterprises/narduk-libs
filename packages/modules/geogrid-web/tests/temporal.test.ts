@@ -6,7 +6,33 @@ import {
   decodeTemporalChunk,
   TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
   type TemporalRasterManifest,
+  type TemporalRgbCompositionV2AreaAnchorDescriptor,
 } from '../src/core/decode/temporal.js'
+
+const PRODUCER_V2_DESCRIPTOR = {
+  version: 'base-observed-confidence-v2-area-anchor',
+  blendSpace: 'linear-srgb',
+  baseChannels: [0, 1, 2],
+  observedChannels: [3, 4, 5],
+  confidenceChannel: 6,
+  baseMask: 0,
+  observedMask: 1,
+  overviewAggregation: {
+    maxZoom: 7,
+    method: 'area-weighted-valid-water-support',
+    supportModulatesWeight: true,
+  },
+  scaleAwareRecipe: {
+    version: 'water-quality-v2-scale-aware-v2',
+    zoomWeights: { '0-7': 0.2, '8': 0.25, '9': 0.4, '10+': 1 },
+  },
+  zoomWeights: [
+    { maxZoom: 7, weight: 0.2 },
+    { zoom: 8, weight: 0.25 },
+    { zoom: 9, weight: 0.4 },
+    { minZoom: 10, weight: 1 },
+  ],
+} as const satisfies TemporalRgbCompositionV2AreaAnchorDescriptor
 
 function packChunk(header: Record<string, unknown>, raw: Uint8Array): ArrayBuffer {
   const compressed = deflateSync(raw)
@@ -118,6 +144,14 @@ const composedManifest = (
     ...overrides,
   })
 
+const composedV2Manifest = (
+  overrides: Partial<TemporalRasterManifest> = {},
+): TemporalRasterManifest =>
+  composedManifest({
+    rgbComposition: PRODUCER_V2_DESCRIPTOR,
+    ...overrides,
+  })
+
 const baseManifest = (overrides: Partial<TemporalRasterManifest> = {}): TemporalRasterManifest => ({
   schema: 'earth-data-temporal-raster-v1',
   layer: 'test',
@@ -224,6 +258,34 @@ describe('decodeTemporalChunk', () => {
     const decoded = decodeTemporalChunk(buildComposedRgbChunk(), composedManifest())
     await expect(decoded).resolves.toHaveLength(1)
     expect(TEMPORAL_RGB_COMPOSITION_DESCRIPTOR.zoomWeights[2].weight).toBe(0.4)
+  })
+
+  it('accepts the literal v2 area-anchor contract and propagates its render version', async () => {
+    const [frame] = await decodeTemporalChunk(buildComposedRgbChunk(), composedV2Manifest())
+    expect(frame?.rgbComposition?.version).toBe('base-observed-confidence-v2-area-anchor')
+  })
+
+  it.each([
+    ['method', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.method = 'point' }],
+    ['max zoom', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.maxZoom = 8 }],
+    ['support flag', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.supportModulatesWeight = false }],
+    ['recipe version', (descriptor: Record<string, any>) => { descriptor.scaleAwareRecipe.version = 'water-quality-v2-scale-aware-v1' }],
+    ['recipe weight', (descriptor: Record<string, any>) => { descriptor.scaleAwareRecipe.zoomWeights['0-7'] = 0 }],
+    ['anchor weight', (descriptor: Record<string, any>) => { descriptor.zoomWeights[0].weight = 0 }],
+    ['unknown metadata', (descriptor: Record<string, any>) => { descriptor.unrecognized = true }],
+  ])('rejects altered v2 %s metadata', async (_label, alter) => {
+    const descriptor = structuredClone(PRODUCER_V2_DESCRIPTOR) as unknown as Record<string, any>
+    alter(descriptor)
+    await expect(
+      decodeTemporalChunk(
+        buildComposedRgbChunk(),
+        composedV2Manifest({
+          rgbComposition: descriptor as unknown as NonNullable<
+            TemporalRasterManifest['rgbComposition']
+          >,
+        }),
+      ),
+    ).rejects.toThrow('composition descriptor is invalid')
   })
 
   it('rejects the superseded z9 weight instead of weakening descriptor validation', async () => {

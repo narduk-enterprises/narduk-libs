@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  areaSampleBoundsFromUv,
   frameContentKey,
   linearChannelToSrgb,
   nearestMaskValid,
   observationWeightForZoom,
+  observationSupportModulatesWeight,
   srgbChannelToLinear,
   viewportZoom,
 } from '../src/core/math.js'
@@ -70,6 +72,21 @@ describe('scale-aware zoom contract', () => {
     expect(observationWeightForZoom(Number.NaN)).toBe(0)
   })
 
+  it('uses the v2 overview anchor and enables support modulation only through z7', () => {
+    const version = 'base-observed-confidence-v2-area-anchor'
+    for (let zoom = 0; zoom <= 7; zoom += 1) {
+      expect(observationWeightForZoom(zoom, version)).toBe(0.2)
+      expect(observationSupportModulatesWeight(zoom, version)).toBe(true)
+    }
+    expect(observationWeightForZoom(7.5, version)).toBeCloseTo(0.225, 12)
+    expect(observationWeightForZoom(8, version)).toBe(0.25)
+    expect(observationWeightForZoom(9, version)).toBe(0.4)
+    expect(observationWeightForZoom(10, version)).toBe(1)
+    expect(observationSupportModulatesWeight(7.01, version)).toBe(false)
+    expect(observationWeightForZoom(Number.NaN, version)).toBe(0)
+    expect(observationSupportModulatesWeight(Number.NaN, version)).toBe(false)
+  })
+
   it('uses explicit zoom, otherwise derives continuous Web-Mercator zoom from CSS width and span', () => {
     const viewport: GridViewport = {
       center: { latitude: 0, longitude: 0 },
@@ -110,6 +127,40 @@ describe('linear-sRGB composition', () => {
     )
     const expected = linearChannelToSrgb(0.6 * (confidence / 255)) * 255
     expect(pixel[0]).toBeCloseTo(expected, 10)
+  })
+
+  it('area-averages sparse overview observations and modulates only their blend weight', () => {
+    const layer: ReferenceRgbCompositionLayer = {
+      baseChannels: [new Uint8Array(8), new Uint8Array(8), new Uint8Array(8)],
+      observedChannels: [
+        new Uint8Array([255, 0, 0, 0, 0, 0, 0, 0]),
+        new Uint8Array([255, 0, 0, 0, 0, 0, 0, 0]),
+        new Uint8Array([255, 0, 0, 0, 0, 0, 0, 0]),
+      ],
+      confidence: new Uint8Array([255, 0, 0, 0, 0, 0, 0, 0]),
+      baseMask: new Uint8Array(8).fill(1),
+      observedMask: new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0]),
+      width: 4,
+      height: 2,
+    }
+    const v2 = referenceRenderRgbCompositionTile(
+      layer,
+      { observationWeight: 0.2, supportModulatesWeight: true, sampling: 'soft' },
+      { width: 2, height: 1 },
+    )
+    const expected = linearChannelToSrgb(0.2 * 0.25) * 255
+    expect(v2.pixels[0]).toBeCloseTo(expected, 0)
+    expect(v2.pixels[1]).toBeCloseTo(expected, 0)
+    expect(v2.pixels[2]).toBeCloseTo(expected, 0)
+    expect(v2.pixels[3]).toBe(255)
+    expect(Array.from(v2.pixels.slice(4, 8))).toEqual([0, 0, 0, 255])
+
+    const v1 = referenceRenderRgbCompositionTile(
+      layer,
+      { observationWeight: 0, sampling: 'soft' },
+      { width: 2, height: 1 },
+    )
+    expect(Array.from(v1.pixels)).toEqual([0, 0, 0, 255, 0, 0, 0, 255])
   })
 
   it('blends lower and upper dates in linear light', () => {
@@ -277,6 +328,25 @@ describe('linear-sRGB composition', () => {
   })
 })
 
+describe('area overview bucket geometry', () => {
+  it('assigns shared-edge source centers to exactly one half-open bucket', () => {
+    const left = areaSampleBoundsFromUv(0, 0, 0.5, 1, 4, 2, 'cell-edge')
+    const right = areaSampleBoundsFromUv(0.5, 0, 1, 1, 4, 2, 'cell-edge')
+    expect(left).toEqual({ columnStart: 0, columnStop: 2, rowStart: 0, rowStop: 2 })
+    expect(right).toEqual({ columnStart: 2, columnStop: 4, rowStart: 0, rowStop: 2 })
+    expect(left.columnStop).toBe(right.columnStart)
+  })
+
+  it('keeps a clipped zero-area footprint empty', () => {
+    expect(areaSampleBoundsFromUv(1.1, 0, 1.1, 1, 4, 2, 'cell-center')).toEqual({
+      columnStart: 0,
+      columnStop: 0,
+      rowStart: 0,
+      rowStop: 2,
+    })
+  })
+})
+
 describe('composition cache identity', () => {
   const base = (): GridRgbComposition => ({
     baseChannels: [new Uint8Array([10]), new Uint8Array([20]), new Uint8Array([30])],
@@ -350,6 +420,11 @@ describe('packed WebGL composition contract', () => {
     expect(shader).toContain('if (!validBase) return FrameSample(observedLinear, observed.coverage, true);')
     expect(shader).toContain('if (!validObserved) return FrameSample(baseLinear, base.coverage, true);')
     expect(shader).toContain('smoothstep(0.25, 1.0, coverage)')
+    expect(shader).toContain('uniform int supportModulatesWeight;')
+    expect(shader).toContain('for (int row = start.y; row < stop.y; row++)')
+    expect(shader).toContain('colorSum / supportCount')
+    expect(shader).toContain('float support = supportCount / float(fullArea);')
+    expect(shader).toContain('weight *= clamp(observed.support, 0.0, 1.0)')
     expect(rgbFragmentShader()).not.toContain('observationWeight')
     expect(rgbFragmentShader()).not.toContain('baseConfidence0')
   })

@@ -60,6 +60,11 @@ export type GridSampling = 'soft' | 'coastal'
  */
 export type GridBBoxAnchor = 'cell-center' | 'cell-edge'
 
+/** Published scale-aware RGB composition contracts understood by the renderers. */
+export type GridRgbCompositionVersion =
+  | 'base-observed-confidence-v1'
+  | 'base-observed-confidence-v2-area-anchor'
+
 /**
  * The optional scale-aware payload carried by a precolored temporal RGB frame.
  *
@@ -73,6 +78,11 @@ export type GridBBoxAnchor = 'cell-center' | 'cell-edge'
  * linear-sRGB; the byte planes themselves remain ordinary display-sRGB.
  */
 export interface GridRgbComposition {
+  /**
+   * Rendering contract carried by the temporal manifest. Older callers that
+   * omit it retain the original v1 behavior.
+   */
+  version?: GridRgbCompositionVersion
   baseChannels: readonly [Uint8Array, Uint8Array, Uint8Array]
   observedChannels: readonly [Uint8Array, Uint8Array, Uint8Array]
   confidence: Uint8Array

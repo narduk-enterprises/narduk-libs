@@ -5,6 +5,7 @@ import {
 } from '../color/normalize.js'
 import { rampLut } from '../color/ramp.js'
 import {
+  areaSampleBoundsFromUv,
   coastalFeather,
   dataUvTransform,
   displayValueFromEncoded,
@@ -15,6 +16,9 @@ import {
   srgbChannelToLinear,
   texelPositionFromUv,
   validSideFeather,
+  type GridAreaSampleBounds,
+  type RgbSample,
+  type ScalarSample,
 } from './math.js'
 import type {
   GridBBox,
@@ -149,6 +153,8 @@ export interface ReferenceRgbStyle {
 export interface ReferenceRgbCompositionStyle extends ReferenceRgbStyle {
   /** Zoom anchor weight before per-pixel confidence, clamped to `0…1`. */
   observationWeight: number
+  /** Attenuate the overview anchor by the kernel's valid observed support. */
+  supportModulatesWeight?: boolean
 }
 
 export interface ReferenceTileOptions {
@@ -345,9 +351,19 @@ export function referenceRgbCompositionPixel(
   x: number,
   y: number,
   blend?: ReferenceRgbCompositionBlend,
+  overviewArea?: GridAreaSampleBounds,
+  upperOverviewArea?: GridAreaSampleBounds,
 ): [number, number, number, number] {
-  const lower = sampleRgbCompositionFrame(layer, style, x, y)
-  const upper = blend ? sampleRgbCompositionFrame(blend.upper, style, x, y) : lower
+  const lower = sampleRgbCompositionFrame(layer, style, x, y, overviewArea)
+  const upper = blend
+    ? sampleRgbCompositionFrame(
+        blend.upper,
+        style,
+        x,
+        y,
+        upperOverviewArea ?? overviewArea,
+      )
+    : lower
   const validLower = lower.nearestValid
   const validUpper = upper.nearestValid
   if (!validLower && !validUpper) return [0, 0, 0, 0]
@@ -376,6 +392,7 @@ function sampleRgbCompositionFrame(
   style: ReferenceRgbCompositionStyle,
   x: number,
   y: number,
+  overviewArea?: GridAreaSampleBounds,
 ): LinearRgbSample {
   const sampling = style.sampling ?? 'coastal'
   // This is the CPU reference for the shaders' `floor(p + .5)` hard gates.
@@ -389,13 +406,19 @@ function sampleRgbCompositionFrame(
     x,
     y,
   )
-  const hasObservedSupport = nearestMaskValid(
-    layer.observedMask,
-    layer.width,
-    layer.height,
-    x,
-    y,
-  )
+  const areaObserved =
+    style.supportModulatesWeight && overviewArea
+      ? sampleObservedArea(layer, overviewArea)
+      : null
+  const hasObservedSupport = areaObserved
+    ? areaObserved.rgb.weight > 0
+    : nearestMaskValid(
+        layer.observedMask,
+        layer.width,
+        layer.height,
+        x,
+        y,
+      )
   if (!hasBaseSupport && !hasObservedSupport) {
     return { color: [0, 0, 0], coverage: 0, nearestValid: false }
   }
@@ -411,7 +434,7 @@ function sampleRgbCompositionFrame(
         sampling,
       )
     : null
-  const observed = hasObservedSupport
+  const observed = areaObserved?.rgb ?? (hasObservedSupport
     ? sampleRgbBilinearSoft(
         layer.observedChannels,
         layer.observedMask,
@@ -421,8 +444,8 @@ function sampleRgbCompositionFrame(
         y,
         sampling,
       )
-    : null
-  const confidence = hasObservedSupport
+    : null)
+  const confidence = areaObserved?.confidence ?? (hasObservedSupport
     ? sampleScalarBilinearSoft(
         layer.confidence,
         layer.observedMask,
@@ -432,7 +455,7 @@ function sampleRgbCompositionFrame(
         y,
         sampling,
       )
-    : null
+    : null)
   // Validity is the independent nearest-support gate, not the soft-kernel
   // coverage. In `soft` mode a nearest-valid component can deliberately carry
   // zero edge alpha; GLSL still composes its real color and lets that coverage
@@ -447,7 +470,11 @@ function sampleRgbCompositionFrame(
   if (!validObserved) return { color: baseLinear!, coverage: base!.coverage, nearestValid: true }
 
   const zoomWeight = Math.max(0, Math.min(1, style.observationWeight))
-  const observedWeight = zoomWeight * Math.max(0, Math.min(1, confidence!.value / 255))
+  const supportWeight = style.supportModulatesWeight
+    ? Math.max(0, Math.min(1, observed!.weight))
+    : 1
+  const observedWeight =
+    zoomWeight * Math.max(0, Math.min(1, confidence!.value / 255)) * supportWeight
   return {
     color: [
       baseLinear![0] + (observedLinear![0] - baseLinear![0]) * observedWeight,
@@ -456,6 +483,57 @@ function sampleRgbCompositionFrame(
     ],
     coverage: base!.coverage + (observed!.coverage - base!.coverage) * observedWeight,
     nearestValid: true,
+  }
+}
+
+function sampleObservedArea(
+  layer: ReferenceRgbCompositionLayer,
+  area: GridAreaSampleBounds,
+): { rgb: RgbSample; confidence: ScalarSample } {
+  const fullArea =
+    (area.columnStop - area.columnStart) * (area.rowStop - area.rowStart)
+  if (fullArea <= 0) {
+    return {
+      rgb: { color: [0, 0, 0], coverage: 0, weight: 0 },
+      confidence: { value: 0, coverage: 0, weight: 0 },
+    }
+  }
+  const color: [number, number, number] = [0, 0, 0]
+  let confidence = 0
+  let support = 0
+  for (let row = area.rowStart; row < area.rowStop; row += 1) {
+    for (let column = area.columnStart; column < area.columnStop; column += 1) {
+      const index = row * layer.width + column
+      if (!layer.observedMask[index]) continue
+      color[0] += layer.observedChannels[0][index] ?? 0
+      color[1] += layer.observedChannels[1][index] ?? 0
+      color[2] += layer.observedChannels[2][index] ?? 0
+      confidence += layer.confidence[index] ?? 0
+      support += 1
+    }
+  }
+  if (support <= 0) {
+    return {
+      rgb: { color: [0, 0, 0], coverage: 0, weight: 0 },
+      confidence: { value: 0, coverage: 0, weight: 0 },
+    }
+  }
+  const supportFraction = support / fullArea
+  return {
+    rgb: {
+      color: [
+        color[0]! / support / 255,
+        color[1]! / support / 255,
+        color[2]! / support / 255,
+      ],
+      coverage: 1,
+      weight: supportFraction,
+    },
+    confidence: {
+      value: confidence / support,
+      coverage: 1,
+      weight: supportFraction,
+    },
   }
 }
 
@@ -655,7 +733,35 @@ export function referenceRenderRgbCompositionTile(
       writePixel(
         pixels,
         (py * width + px) * 4,
-        referenceRgbCompositionPixel(layer, style, gx, gy, options.blend),
+        referenceRgbCompositionPixel(
+          layer,
+          style,
+          gx,
+          gy,
+          options.blend,
+          style.supportModulatesWeight
+            ? areaSampleBoundsFromUv(
+                px / width,
+                py / height,
+                (px + 1) / width,
+                (py + 1) / height,
+                layer.width,
+                layer.height,
+                anchor,
+              )
+            : undefined,
+          style.supportModulatesWeight && options.blend
+            ? areaSampleBoundsFromUv(
+                px / width,
+                py / height,
+                (px + 1) / width,
+                (py + 1) / height,
+                options.blend.upper.width,
+                options.blend.upper.height,
+                anchor,
+              )
+            : undefined,
+        ),
       )
     }
   }
@@ -745,7 +851,35 @@ export function referenceRenderRgbCompositionViewport(
       writePixel(
         pixels,
         (py * width + px) * 4,
-        referenceRgbCompositionPixel(layer, style, gx, gy, options.blend),
+        referenceRgbCompositionPixel(
+          layer,
+          style,
+          gx,
+          gy,
+          options.blend,
+          style.supportModulatesWeight
+            ? areaSampleBoundsFromUv(
+                uvOffsetX + (px / width) * uvScaleX,
+                uvOffsetY + (py / height) * uvScaleY,
+                uvOffsetX + ((px + 1) / width) * uvScaleX,
+                uvOffsetY + ((py + 1) / height) * uvScaleY,
+                layer.width,
+                layer.height,
+                anchor,
+              )
+            : undefined,
+          style.supportModulatesWeight && options.blend
+            ? areaSampleBoundsFromUv(
+                uvOffsetX + (px / width) * uvScaleX,
+                uvOffsetY + (py / height) * uvScaleY,
+                uvOffsetX + ((px + 1) / width) * uvScaleX,
+                uvOffsetY + ((py + 1) / height) * uvScaleY,
+                options.blend.upper.width,
+                options.blend.upper.height,
+                anchor,
+              )
+            : undefined,
+        ),
       )
     }
   }

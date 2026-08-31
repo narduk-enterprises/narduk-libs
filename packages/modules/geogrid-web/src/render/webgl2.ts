@@ -2,6 +2,7 @@ import { toGridFrame, defaultBBoxAnchor, frameCacheKey } from '../core/frame.js'
 import {
   dataUvTransform,
   observationWeightForZoom,
+  observationSupportModulatesWeight,
   viewportZoom,
 } from '../core/math.js'
 import {
@@ -102,6 +103,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
   private canvasWidth = 0
   private canvasHeight = 0
   private canvasCssWidth = 0
+  private canvasCssHeight = 0
   private stencilTexture: WebGLTexture | null = null
   private stencilBBox: GridBBox | null = null
   private readonly whiteStencil: WebGLTexture
@@ -225,6 +227,14 @@ export class WebGL2GridBackend implements GridRenderBackend {
       this.clearIfDrawn()
       return
     }
+    const compositionVersion =
+      lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const upperCompositionVersion =
+      upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    if (composedRgb && compositionVersion !== upperCompositionVersion) {
+      this.clearIfDrawn()
+      return
+    }
     if (composedRgb && this.maxTextureUnits < RGB_COMPOSITION_TEXTURE_UNIT_COUNT) {
       this.clearIfDrawn()
       return
@@ -275,9 +285,19 @@ export class WebGL2GridBackend implements GridRenderBackend {
     if (this.mode === 'scalar') this.uploadScalarStyle(pipeline)
 
     if (composedRgb) {
+      const zoom = viewportZoom(viewport, this.canvasCssWidth)
       gl.uniform1f(
         this.uniform(pipeline, 'observationWeight'),
-        observationWeightForZoom(viewportZoom(viewport, this.canvasCssWidth)),
+        observationWeightForZoom(zoom, compositionVersion),
+      )
+      gl.uniform1i(
+        this.uniform(pipeline, 'supportModulatesWeight'),
+        observationSupportModulatesWeight(zoom, compositionVersion) ? 1 : 0,
+      )
+      gl.uniform2f(
+        this.uniform(pipeline, 'overviewCssSize'),
+        this.canvasCssWidth,
+        this.canvasCssHeight,
       )
       bindTexture(
         gl,
@@ -706,6 +726,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     if (!parent) return
     const rect = parent.getBoundingClientRect()
     this.canvasCssWidth = rect.width
+    this.canvasCssHeight = rect.height
     const dpr = window.devicePixelRatio || 1
     const width = Math.max(1, Math.round(rect.width * dpr))
     const height = Math.max(1, Math.round(rect.height * dpr))

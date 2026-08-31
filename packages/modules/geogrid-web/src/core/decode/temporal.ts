@@ -15,15 +15,21 @@ export const TEMPORAL_DECODE_LIMITS = {
 
 /** Fixed semantic order for the additive seven-plane RGB payload. */
 export const TEMPORAL_RGB_COMPOSITION_VERSION = 'base-observed-confidence-v1' as const
+export const TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION =
+  'base-observed-confidence-v2-area-anchor' as const
 
-export interface TemporalRgbCompositionDescriptor {
-  version: typeof TEMPORAL_RGB_COMPOSITION_VERSION
+interface TemporalRgbCompositionLayoutDescriptor {
   blendSpace: 'linear-srgb'
   baseChannels: readonly [0, 1, 2]
   observedChannels: readonly [3, 4, 5]
   confidenceChannel: 6
   baseMask: 0
   observedMask: 1
+}
+
+export interface TemporalRgbCompositionV1Descriptor
+  extends TemporalRgbCompositionLayoutDescriptor {
+  version: typeof TEMPORAL_RGB_COMPOSITION_VERSION
   zoomWeights: readonly [
     { maxZoom: 7; weight: 0 },
     { zoom: 8; weight: 0.25 },
@@ -32,8 +38,37 @@ export interface TemporalRgbCompositionDescriptor {
   ]
 }
 
+export interface TemporalRgbCompositionV2AreaAnchorDescriptor
+  extends TemporalRgbCompositionLayoutDescriptor {
+  version: typeof TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION
+  overviewAggregation: {
+    maxZoom: 7
+    method: 'area-weighted-valid-water-support'
+    supportModulatesWeight: true
+  }
+  scaleAwareRecipe: {
+    version: 'water-quality-v2-scale-aware-v2'
+    zoomWeights: {
+      '0-7': 0.2
+      '8': 0.25
+      '9': 0.4
+      '10+': 1
+    }
+  }
+  zoomWeights: readonly [
+    { maxZoom: 7; weight: 0.2 },
+    { zoom: 8; weight: 0.25 },
+    { zoom: 9; weight: 0.4 },
+    { minZoom: 10; weight: 1 },
+  ]
+}
+
+export type TemporalRgbCompositionDescriptor =
+  | TemporalRgbCompositionV1Descriptor
+  | TemporalRgbCompositionV2AreaAnchorDescriptor
+
 /** Canonical self-description emitted by the producer and validated here. */
-export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionDescriptor = {
+export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionV1Descriptor = {
   version: TEMPORAL_RGB_COMPOSITION_VERSION,
   blendSpace: 'linear-srgb',
   baseChannels: [0, 1, 2],
@@ -48,6 +83,38 @@ export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionDescript
     { minZoom: 10, weight: 1 },
   ],
 }
+
+/** Canonical support-aware overview descriptor emitted by narduk-data. */
+export const TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_DESCRIPTOR:
+  TemporalRgbCompositionV2AreaAnchorDescriptor = {
+    version: TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION,
+    blendSpace: 'linear-srgb',
+    baseChannels: [0, 1, 2],
+    observedChannels: [3, 4, 5],
+    confidenceChannel: 6,
+    baseMask: 0,
+    observedMask: 1,
+    overviewAggregation: {
+      maxZoom: 7,
+      method: 'area-weighted-valid-water-support',
+      supportModulatesWeight: true,
+    },
+    scaleAwareRecipe: {
+      version: 'water-quality-v2-scale-aware-v2',
+      zoomWeights: {
+        '0-7': 0.2,
+        '8': 0.25,
+        '9': 0.4,
+        '10+': 1,
+      },
+    },
+    zoomWeights: [
+      { maxZoom: 7, weight: 0.2 },
+      { zoom: 8, weight: 0.25 },
+      { zoom: 9, weight: 0.4 },
+      { minZoom: 10, weight: 1 },
+    ],
+  }
 
 export interface TemporalChunkDescriptor {
   firstFrame: number
@@ -269,6 +336,7 @@ export async function decodeTemporalChunk(
           frameMasksOffset + pixelCount * 2,
         )
         const composition: GridRgbComposition = {
+          version: rgbComposition.version,
           baseChannels: channels,
           observedChannels,
           confidence,
@@ -377,20 +445,25 @@ function parseRgbComposition(
   descriptor: unknown,
 ): TemporalRgbCompositionDescriptor | null {
   if (descriptor === undefined) return null
-  if (
-    !isRecord(descriptor) ||
-    descriptor.version !== TEMPORAL_RGB_COMPOSITION_VERSION ||
-    descriptor.blendSpace !== 'linear-srgb' ||
-    !hasNumberTuple(descriptor.baseChannels, [0, 1, 2]) ||
-    !hasNumberTuple(descriptor.observedChannels, [3, 4, 5]) ||
-    descriptor.confidenceChannel !== 6 ||
-    descriptor.baseMask !== 0 ||
-    descriptor.observedMask !== 1 ||
-    !hasCanonicalZoomWeights(descriptor.zoomWeights)
-  ) {
+  if (!isRecord(descriptor) || !hasCanonicalCompositionLayout(descriptor)) {
     throw new Error('Temporal RGB composition descriptor is invalid')
   }
-  return TEMPORAL_RGB_COMPOSITION_DESCRIPTOR
+  if (
+    descriptor.version === TEMPORAL_RGB_COMPOSITION_VERSION &&
+    hasCanonicalZoomWeights(descriptor.zoomWeights, 0, false)
+  ) {
+    return TEMPORAL_RGB_COMPOSITION_DESCRIPTOR
+  }
+  if (
+    descriptor.version === TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION &&
+    hasExactKeys(descriptor, V2_COMPOSITION_KEYS) &&
+    hasCanonicalZoomWeights(descriptor.zoomWeights, 0.2, true) &&
+    hasCanonicalOverviewAggregation(descriptor.overviewAggregation) &&
+    hasCanonicalScaleAwareRecipe(descriptor.scaleAwareRecipe)
+  ) {
+    return TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_DESCRIPTOR
+  }
+  throw new Error('Temporal RGB composition descriptor is invalid')
 }
 
 function validateManifestEnvelope(manifest: TemporalRasterManifest): void {
@@ -424,11 +497,46 @@ function hasNumberTuple(value: unknown, expected: readonly number[]): boolean {
   )
 }
 
-function hasCanonicalZoomWeights(value: unknown): boolean {
+const COMMON_COMPOSITION_KEYS = [
+  'version',
+  'blendSpace',
+  'baseChannels',
+  'observedChannels',
+  'confidenceChannel',
+  'baseMask',
+  'observedMask',
+  'zoomWeights',
+] as const
+const V2_COMPOSITION_KEYS = [
+  ...COMMON_COMPOSITION_KEYS,
+  'overviewAggregation',
+  'scaleAwareRecipe',
+] as const
+
+function hasCanonicalCompositionLayout(descriptor: Record<string, unknown>): boolean {
+  return (
+    descriptor.blendSpace === 'linear-srgb' &&
+    hasNumberTuple(descriptor.baseChannels, [0, 1, 2]) &&
+    hasNumberTuple(descriptor.observedChannels, [3, 4, 5]) &&
+    descriptor.confidenceChannel === 6 &&
+    descriptor.baseMask === 0 &&
+    descriptor.observedMask === 1
+  )
+}
+
+function hasCanonicalZoomWeights(
+  value: unknown,
+  overviewWeight: 0 | 0.2,
+  exact: boolean,
+): boolean {
   if (!Array.isArray(value) || value.length !== 4 || !value.every(isRecord)) return false
   return (
+    (!exact || hasExactKeys(value[0]!, ['maxZoom', 'weight'])) &&
+    (!exact || hasExactKeys(value[1]!, ['zoom', 'weight'])) &&
+    (!exact || hasExactKeys(value[2]!, ['zoom', 'weight'])) &&
+    (!exact || hasExactKeys(value[3]!, ['minZoom', 'weight'])) &&
     value[0]?.maxZoom === 7 &&
-    value[0]?.weight === 0 &&
+    value[0]?.weight === overviewWeight &&
     value[1]?.zoom === 8 &&
     value[1]?.weight === 0.25 &&
     value[2]?.zoom === 9 &&
@@ -436,6 +544,39 @@ function hasCanonicalZoomWeights(value: unknown): boolean {
     value[3]?.minZoom === 10 &&
     value[3]?.weight === 1
   )
+}
+
+function hasCanonicalOverviewAggregation(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ['maxZoom', 'method', 'supportModulatesWeight']) &&
+    value.maxZoom === 7 &&
+    value.method === 'area-weighted-valid-water-support' &&
+    value.supportModulatesWeight === true
+  )
+}
+
+function hasCanonicalScaleAwareRecipe(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ['version', 'zoomWeights']) ||
+    value.version !== 'water-quality-v2-scale-aware-v2' ||
+    !isRecord(value.zoomWeights) ||
+    !hasExactKeys(value.zoomWeights, ['0-7', '8', '9', '10+'])
+  ) {
+    return false
+  }
+  return (
+    value.zoomWeights['0-7'] === 0.2 &&
+    value.zoomWeights['8'] === 0.25 &&
+    value.zoomWeights['9'] === 0.4 &&
+    value.zoomWeights['10+'] === 1
+  )
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(record)
+  return keys.length === expected.length && expected.every((key) => Object.hasOwn(record, key))
 }
 
 function numberField(record: Record<string, unknown>, field: string): number {

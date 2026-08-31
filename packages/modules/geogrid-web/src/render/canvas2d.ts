@@ -1,9 +1,11 @@
 import { defaultBBoxAnchor, frameCacheKey, toGridFrame } from '../core/frame.js'
 import {
+  areaSampleBoundsFromUv,
   blendEncoded,
   dataUvTransform,
   displayValueFromEncoded,
   observationWeightForZoom,
+  observationSupportModulatesWeight,
   texelPositionFromUv,
   viewportZoom,
 } from '../core/math.js'
@@ -169,6 +171,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
         anchor,
         viewport,
         size.rect.width,
+        size.rect.height,
         size.dpr,
       )
       return
@@ -377,6 +380,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     anchor: GridBBoxAnchor,
     viewport: GridViewport,
     cssWidth: number,
+    cssHeight: number,
     dpr: number,
   ): void {
     const lowerLayer = toReferenceRgbCompositionLayer(lower)
@@ -385,17 +389,31 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       this.clear()
       return
     }
+    const compositionVersion =
+      lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const upperCompositionVersion =
+      upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    if (compositionVersion !== upperCompositionVersion) {
+      this.clear()
+      return
+    }
     const width = this.canvasWidth
     const height = this.canvasHeight
-    const observationWeight = observationWeightForZoom(viewportZoom(viewport, cssWidth))
+    const zoom = viewportZoom(viewport, cssWidth)
+    const observationWeight = observationWeightForZoom(zoom, compositionVersion)
+    const supportModulatesWeight = observationSupportModulatesWeight(
+      zoom,
+      compositionVersion,
+    )
     const key = [
       this.frameKey(lower),
       this.frameKey(upper),
       progress.toFixed(4),
       this.styleKey(),
       anchor,
-      `rgb-composition:${observationWeight}`,
+      `rgb-composition:${compositionVersion}:${observationWeight}:${supportModulatesWeight}`,
       `${width}x${height}`,
+      `${cssWidth}x${cssHeight}css`,
       `${viewport.center.longitude},${viewport.center.latitude}`,
       `${viewport.span.longitudeDelta},${viewport.span.latitudeDelta}`,
       bbox.join(','),
@@ -406,6 +424,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const image = new ImageData(width, height)
     const style: ReferenceRgbCompositionStyle = {
       observationWeight,
+      supportModulatesWeight,
       sampling: styleSampling(this.style, 'rgb'),
     }
     const blend = lower === upper ? undefined : { upper: upperLayer, progress }
@@ -420,7 +439,39 @@ export class Canvas2DGridBackend implements GridRenderBackend {
         const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
         if (u < 0 || u > 1) continue
         const gx = texelPositionFromUv(u, lower.width, anchor)
-        const rgba = referenceRgbCompositionPixel(lowerLayer, style, gx, gy, blend)
+        const cssColumn = Math.floor(((px + 0.5) / width) * cssWidth)
+        const cssRow = Math.floor(((py + 0.5) / height) * cssHeight)
+        const overviewArea = supportModulatesWeight
+          ? areaSampleBoundsFromUv(
+              uvOffsetX + (cssColumn / cssWidth) * uvScaleX,
+              uvOffsetY + (cssRow / cssHeight) * uvScaleY,
+              uvOffsetX + ((cssColumn + 1) / cssWidth) * uvScaleX,
+              uvOffsetY + ((cssRow + 1) / cssHeight) * uvScaleY,
+              lower.width,
+              lower.height,
+              anchor,
+            )
+          : undefined
+        const upperOverviewArea = supportModulatesWeight
+          ? areaSampleBoundsFromUv(
+              uvOffsetX + (cssColumn / cssWidth) * uvScaleX,
+              uvOffsetY + (cssRow / cssHeight) * uvScaleY,
+              uvOffsetX + ((cssColumn + 1) / cssWidth) * uvScaleX,
+              uvOffsetY + ((cssRow + 1) / cssHeight) * uvScaleY,
+              upper.width,
+              upper.height,
+              anchor,
+            )
+          : undefined
+        const rgba = referenceRgbCompositionPixel(
+          lowerLayer,
+          style,
+          gx,
+          gy,
+          blend,
+          overviewArea,
+          upperOverviewArea,
+        )
         if (rgba[3] <= 0) continue
         const offset = (py * width + px) * 4
         image.data[offset] = Math.round(rgba[0])
