@@ -423,6 +423,43 @@ export function sampleRgbBilinearSoft(
 }
 
 /**
+ * The integer texel selected by the legacy RGB validity sampler.
+ *
+ * The old shader read its `R8UI` mask through a nearest-filtered `texture()`
+ * lookup while colors used a linearly-filtered texture.  RGB now samples color
+ * through a valid-aware 2×2 kernel, but its visible footprint must remain a
+ * subset of that legacy mask footprint: a cosmetic edge pass must never turn a
+ * formerly transparent cell into data.  `x`/`y` are texel-center coordinates
+ * (`uv * size - 0.5` for cell-edge grids), hence `floor(x + 0.5)` is the same
+ * cell that the old nearest lookup selected away from measure-zero boundaries.
+ */
+export function nearestMaskValid(
+  mask: ArrayLike<number>,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): boolean {
+  const column = Math.max(0, Math.min(width - 1, Math.floor(x + 0.5)))
+  const row = Math.max(0, Math.min(height - 1, Math.floor(y + 0.5)))
+  return Boolean(mask[row * width + column])
+}
+
+/**
+ * Feather a surviving RGB kernel only inside the cell selected by the legacy
+ * nearest-validity rule.
+ *
+ * In a 2×2 kernel the selected cell can contribute as little as one quarter of
+ * the weight at a cell corner.  Remapping that honest support range gives the
+ * edge a visible, continuous fade without extending alpha across a cell whose
+ * nearest source mask is zero.  The caller owns the nearest-mask gate.
+ */
+export function validSideFeather(coverage: number): number {
+  const t = Math.max(0, Math.min(1, (coverage - 0.25) / 0.75))
+  return t * t * (3 - 2 * t)
+}
+
+/**
  * The feather GeoGridKit's `scalarFragment` applies to a `coastal` coverage.
  *
  * The kernel returns the raw surviving weight sum; the fragment is what shapes

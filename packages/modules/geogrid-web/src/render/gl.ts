@@ -291,10 +291,23 @@ out vec4 color;
  * Mask-aware 2x2 RGB bilinear. Missing colors are never read or replaced with
  * black; the real neighbors are renormalized and alpha carries their support.
  */
-vec4 sampleRgb(sampler2D r, sampler2D g, sampler2D b, usampler2D mask, vec2 pos) {
+struct RgbSample {
+  vec3 color;
+  float coverage;
+  bool nearestValid;
+};
+
+RgbSample sampleRgb(sampler2D r, sampler2D g, sampler2D b, usampler2D mask, vec2 pos) {
   vec2 size = vec2(textureSize(r, 0));
   vec2 maxPos = size - 1.0;
   vec2 p = clamp(pos, vec2(0.0), maxPos);
+  // Preserve the old R8UI NEAREST lookup exactly. This hard gate is before
+  // any RGB read: a valid 2x2 neighbor may improve a visible cell's color,
+  // but can never make the nearest-invalid cell visible.
+  ivec2 nearest = clamp(ivec2(floor(p + vec2(0.5))), ivec2(0), ivec2(maxPos));
+  if (texelFetch(mask, nearest, 0).r == uint(0)) {
+    return RgbSample(vec3(0.0), 0.0, false);
+  }
   vec2 base = floor(p);
   vec2 f = p - base;
   ivec2 i0 = ivec2(base);
@@ -326,31 +339,33 @@ vec4 sampleRgb(sampler2D r, sampler2D g, sampler2D b, usampler2D mask, vec2 pos)
       missingWeight += w[i];
     }
   }
-  if (weightSum <= 0.0) return vec4(0.0);
+  if (weightSum <= 0.0) return RgbSample(vec3(0.0), 0.0, true);
   float coverage = coastal == 1 ? weightSum : (missingWeight > 0.0 ? 0.0 : 1.0);
-  return vec4(colorSum / weightSum, coverage);
+  return RgbSample(colorSum / weightSum, coverage, true);
 }
 
 void main() {
   vec2 uv = uvOffset + vUv * uvScale;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { color = vec4(0.0); return; }
-  vec4 sampled0 = sampleRgb(
+  RgbSample sampled0 = sampleRgb(
     values0, green0, blue0, mask0,
     gridPosition(uv, vec2(textureSize(values0, 0))));
-  vec4 sampled1 = sampleRgb(
+  RgbSample sampled1 = sampleRgb(
     values1, green1, blue1, mask1,
     gridPosition(uv, vec2(textureSize(values1, 0))));
-  bool valid0 = sampled0.a > 0.0;
-  bool valid1 = sampled1.a > 0.0;
+  bool valid0 = sampled0.nearestValid;
+  bool valid1 = sampled1.nearestValid;
   if (!valid0 && !valid1) { color = vec4(0.0); return; }
-  vec3 first = sampled0.rgb;
-  vec3 second = sampled1.rgb;
+  vec3 first = sampled0.color;
+  vec3 second = sampled1.color;
   if (!valid0) first = second;
   if (!valid1) second = first;
-  float coverage0 = valid0 ? sampled0.a : sampled1.a;
-  float coverage1 = valid1 ? sampled1.a : sampled0.a;
+  float coverage0 = valid0 ? sampled0.coverage : sampled1.coverage;
+  float coverage1 = valid1 ? sampled1.coverage : sampled0.coverage;
   float coverage = mix(coverage0, coverage1, progress);
-  if (coastal == 1) coverage = smoothstep(0.0, 0.55, coverage);
+  // The valid0/valid1 check above is the hard legacy footprint gate. This only
+  // attenuates that already-visible footprint toward unsupported neighbors.
+  if (coastal == 1) coverage = smoothstep(0.25, 1.0, coverage);
   float alpha = coverage * stencilAlpha(vUv);
   if (alpha <= 0.0) { color = vec4(0.0); return; }
   color = vec4(mix(first, second, progress), alpha);
@@ -393,6 +408,13 @@ struct ComponentSample {
   vec3 color;
   float confidence;
   float coverage;
+  bool nearestValid;
+};
+
+struct FrameSample {
+  vec3 color;
+  float coverage;
+  bool nearestValid;
 };
 
 vec3 srgbToLinear(vec3 value) {
@@ -419,6 +441,13 @@ ComponentSample sampleComponent(
   vec2 size = vec2(textureSize(colors, 0));
   vec2 maxPos = size - 1.0;
   vec2 p = clamp(pos, vec2(0.0), maxPos);
+  // Match the previous packed-mask nearest lookup before reading a single
+  // color or confidence byte. Base and observed have independent support.
+  ivec2 nearest = clamp(ivec2(floor(p + vec2(0.5))), ivec2(0), ivec2(maxPos));
+  int nearestFlags = int(round(texelFetch(packedMasks, nearest, 0).a * 255.0));
+  if ((nearestFlags & maskBit) == 0) {
+    return ComponentSample(vec3(0.0), 0.0, 0.0, false);
+  }
   vec2 base = floor(p);
   vec2 f = p - base;
   ivec2 i0 = ivec2(base);
@@ -450,28 +479,29 @@ ComponentSample sampleComponent(
       missingWeight += w[i];
     }
   }
-  if (weightSum <= 0.0) return ComponentSample(vec3(0.0), 0.0, 0.0);
+  if (weightSum <= 0.0) return ComponentSample(vec3(0.0), 0.0, 0.0, true);
   float coverage = coastal == 1 ? weightSum : (missingWeight > 0.0 ? 0.0 : 1.0);
-  return ComponentSample(colorSum / weightSum, confidenceSum / weightSum, coverage);
+  return ComponentSample(colorSum / weightSum, confidenceSum / weightSum, coverage, true);
 }
 
 /** Compose one date in linear-sRGB while preserving independent support. */
-vec4 composeFrame(sampler2D baseConfidence, sampler2D observedMasks, vec2 pos) {
+FrameSample composeFrame(sampler2D baseConfidence, sampler2D observedMasks, vec2 pos) {
   ComponentSample base = sampleComponent(
     baseConfidence, baseConfidence, observedMasks, BASE_VALID, pos);
   ComponentSample observed = sampleComponent(
     observedMasks, baseConfidence, observedMasks, OBSERVED_VALID, pos);
-  bool validBase = base.coverage > 0.0;
-  bool validObserved = observed.coverage > 0.0;
-  if (!validBase && !validObserved) return vec4(0.0);
+  bool validBase = base.nearestValid;
+  bool validObserved = observed.nearestValid;
+  if (!validBase && !validObserved) return FrameSample(vec3(0.0), 0.0, false);
   vec3 baseLinear = srgbToLinear(base.color);
   vec3 observedLinear = srgbToLinear(observed.color);
-  if (!validBase) return vec4(observedLinear, observed.coverage);
-  if (!validObserved) return vec4(baseLinear, base.coverage);
+  if (!validBase) return FrameSample(observedLinear, observed.coverage, true);
+  if (!validObserved) return FrameSample(baseLinear, base.coverage, true);
   float weight = clamp(observationWeight, 0.0, 1.0) * clamp(observed.confidence, 0.0, 1.0);
-  return vec4(
+  return FrameSample(
     mix(baseLinear, observedLinear, weight),
-    mix(base.coverage, observed.coverage, weight));
+    mix(base.coverage, observed.coverage, weight),
+    true);
 }
 
 void main() {
@@ -482,17 +512,17 @@ void main() {
   }
   vec2 pos0 = gridPosition(uv, vec2(textureSize(baseConfidence0, 0)));
   vec2 pos1 = gridPosition(uv, vec2(textureSize(baseConfidence1, 0)));
-  vec4 sampled0 = composeFrame(baseConfidence0, observedMasks0, pos0);
-  vec4 sampled1 = composeFrame(baseConfidence1, observedMasks1, pos1);
-  bool valid0 = sampled0.a > 0.0;
-  bool valid1 = sampled1.a > 0.0;
+  FrameSample sampled0 = composeFrame(baseConfidence0, observedMasks0, pos0);
+  FrameSample sampled1 = composeFrame(baseConfidence1, observedMasks1, pos1);
+  bool valid0 = sampled0.nearestValid;
+  bool valid1 = sampled1.nearestValid;
   if (!valid0 && !valid1) { color = vec4(0.0); return; }
-  vec3 first = valid0 ? sampled0.rgb : sampled1.rgb;
-  vec3 second = valid1 ? sampled1.rgb : first;
-  float coverage0 = valid0 ? sampled0.a : sampled1.a;
-  float coverage1 = valid1 ? sampled1.a : coverage0;
+  vec3 first = valid0 ? sampled0.color : sampled1.color;
+  vec3 second = valid1 ? sampled1.color : first;
+  float coverage0 = valid0 ? sampled0.coverage : sampled1.coverage;
+  float coverage1 = valid1 ? sampled1.coverage : coverage0;
   float coverage = mix(coverage0, coverage1, progress);
-  if (coastal == 1) coverage = smoothstep(0.0, 0.55, coverage);
+  if (coastal == 1) coverage = smoothstep(0.25, 1.0, coverage);
   float alpha = coverage * stencilAlpha(vUv);
   if (alpha <= 0.0) { color = vec4(0.0); return; }
   color = vec4(linearToSrgb(mix(first, second, progress)), alpha);

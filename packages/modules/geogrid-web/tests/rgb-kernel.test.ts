@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  coastalFeather,
+  nearestMaskValid,
   sampleRgbBilinearSoft,
+  validSideFeather,
 } from '../src/core/math.js'
 import {
   referenceRenderRgbViewport,
@@ -129,10 +130,10 @@ describe('referenceRgbPixel', () => {
       2,
       2,
     )
-    const pixel = referenceRgbPixel(source, { sampling: 'coastal' }, 0.75, 0.5)
+    const pixel = referenceRgbPixel(source, { sampling: 'coastal' }, 0.49, 0.5)
 
     expect(pixel.slice(0, 3)).toEqual([204, 153, 51])
-    expect(pixel[3]).toBeCloseTo(coastalFeather(0.25) * 255, 10)
+    expect(pixel[3]).toBeCloseTo(validSideFeather(0.51) * 255, 10)
   })
 
   it('falls back to the frame with support instead of fading its color toward black', () => {
@@ -163,6 +164,100 @@ describe('referenceRgbPixel', () => {
     expect(pixel[0]).toBeLessThanOrEqual(220)
     expect(pixel[2]).toBeGreaterThanOrEqual(30)
     expect(pixel[2]).toBeLessThanOrEqual(200)
+  })
+})
+
+describe('RGB nearest-mask honesty gate', () => {
+  const edge = layer(
+    [204, 251],
+    [153, 17],
+    [51, 239],
+    [1, 0],
+    2,
+    1,
+  )
+
+  it('keeps alpha pointwise within the legacy nearest-mask footprint', () => {
+    for (let x = -0.5; x <= 1.5; x += 0.01) {
+      const legacyVisible = nearestMaskValid(edge.mask, edge.width, edge.height, x, 0)
+      const pixel = referenceRgbPixel(edge, { sampling: 'coastal' }, x, 0)
+      const legacyAlpha = legacyVisible ? 255 : 0
+      expect(pixel[3]).toBeLessThanOrEqual(legacyAlpha)
+      if (!legacyVisible) expect(pixel[3]).toBe(0)
+    }
+  })
+
+  it('feathers inside an already-visible edge cell without leaking across it', () => {
+    const interior = referenceRgbPixel(edge, { sampling: 'coastal' }, 0.1, 0)
+    const boundary = referenceRgbPixel(edge, { sampling: 'coastal' }, 0.49, 0)
+    const outside = referenceRgbPixel(edge, { sampling: 'coastal' }, 0.51, 0)
+
+    expect(interior[3]).toBeGreaterThan(boundary[3])
+    expect(boundary[3]).toBeGreaterThan(0)
+    expect(outside[3]).toBe(0)
+  })
+
+  it('uses the same strict edge on the reversed mask', () => {
+    const reversed = layer(
+      [251, 204],
+      [17, 153],
+      [239, 51],
+      [0, 1],
+      2,
+      1,
+    )
+
+    expect(referenceRgbPixel(reversed, { sampling: 'coastal' }, 0.49, 0)[3]).toBe(0)
+    const valid = referenceRgbPixel(reversed, { sampling: 'coastal' }, 0.51, 0)
+    expect(valid.slice(0, 3)).toEqual([204, 153, 51])
+    expect(valid[3]).toBeGreaterThan(0)
+  })
+
+  it('preserves temporal 00/10/01/11 nearest-support fallback', () => {
+    const frame = (valid: boolean, color: readonly [number, number, number]) =>
+      layer([color[0]], [color[1]], [color[2]], [valid ? 1 : 0], 1, 1)
+    const zero = frame(false, [251, 1, 252])
+    const lower = frame(true, [20, 40, 60])
+    const upper = frame(true, [200, 180, 160])
+
+    for (const progress of [0, 0.5, 1]) {
+      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
+        .toEqual([0, 0, 0, 0])
+      expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
+        .toEqual([20, 40, 60, 255])
+      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper, progress }))
+        .toEqual([200, 180, 160, 255])
+    }
+
+    expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0 }))
+      .toEqual([20, 40, 60, 255])
+    const atUpper = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 1 })
+    expect(atUpper[0]).toBeCloseTo(200, 12)
+    expect(atUpper[1]).toBeCloseTo(180, 12)
+    expect(atUpper[2]).toBeCloseTo(160, 12)
+    expect(atUpper[3]).toBe(255)
+    const both = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0.5 })
+    expect(both[0]).toBeCloseTo(110, 12)
+    expect(both[1]).toBeCloseTo(110, 12)
+    expect(both[2]).toBeCloseTo(110, 12)
+    expect(both[3]).toBe(255)
+  })
+
+  it('renormalizes only real RGB bytes while preserving a fully supported interior', () => {
+    const partial = referenceRgbPixel(edge, { sampling: 'coastal' }, 0.49, 0)
+    expect(partial.slice(0, 3)).toEqual([204, 153, 51])
+
+    const interior = layer(
+      [10, 110, 30, 130],
+      [20, 120, 40, 140],
+      [30, 130, 50, 150],
+      [1, 1, 1, 1],
+      2,
+      2,
+    )
+    expect(referenceRgbPixel(interior, { sampling: 'coastal' }, 0.5, 0.5)).toEqual([
+      70, 80, 90, 255,
+    ])
   })
 })
 
@@ -222,13 +317,23 @@ describe('RGB shader contract', () => {
   it('fetches a 2x2 masked neighborhood instead of combining LINEAR color with a NEAREST mask', () => {
     const shader = rgbFragmentShader()
 
-    expect(shader).toContain('vec4 sampleRgb(')
+    expect(shader).toContain('struct RgbSample')
+    expect(shader).toContain('RgbSample sampleRgb(')
     expect(shader).toContain('texelFetch(mask, texels[i], 0)')
     expect(shader).toContain('texelFetch(r, texels[i], 0)')
     expect(shader).toContain('colorSum / weightSum')
     expect(shader).toContain('gridPosition(uv, vec2(textureSize(values0, 0)))')
-    expect(shader).toContain('smoothstep(0.0, 0.55, coverage)')
+    expect(shader).toContain('ivec2 nearest = clamp(ivec2(floor(p + vec2(0.5)))')
+    expect(shader).toContain('if (texelFetch(mask, nearest, 0).r == uint(0))')
+    expect(shader).toContain('bool valid0 = sampled0.nearestValid;')
+    expect(shader).toContain('if (!valid0 && !valid1) { color = vec4(0.0); return; }')
+    expect(shader).toContain('smoothstep(0.25, 1.0, coverage)')
     expect(shader).not.toContain('texture(mask0, uv)')
+
+    const hardGate = shader.indexOf('if (texelFetch(mask, nearest, 0).r == uint(0))')
+    const firstColorRead = shader.indexOf('texelFetch(r, texels[i], 0)')
+    expect(hardGate).toBeGreaterThanOrEqual(0)
+    expect(hardGate).toBeLessThan(firstColorRead)
   })
 
   it('keeps scalar crisp by default while explicit WebGL RGB defaults to coastal coverage', () => {
