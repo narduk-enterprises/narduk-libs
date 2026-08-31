@@ -9,10 +9,12 @@ import {
   dataUvTransform,
   displayValueFromEncoded,
   linearChannelToSrgb,
+  nearestMaskValid,
   sampleRgbBilinearSoft,
   sampleScalarBilinearSoft,
   srgbChannelToLinear,
   texelPositionFromUv,
+  validSideFeather,
 } from './math.js'
 import type {
   GridBBox,
@@ -268,39 +270,48 @@ export function referenceRgbPixel(
   blend?: ReferenceRgbBlend,
 ): [number, number, number, number] {
   const sampling = style.sampling ?? 'coastal'
-  const lower = sampleRgbBilinearSoft(
-    layer.channels,
-    layer.mask,
-    layer.width,
-    layer.height,
-    x,
-    y,
-    sampling,
-  )
   const upperLayer = blend?.upper
-  const upper = upperLayer
+  const validLower = nearestMaskValid(layer.mask, layer.width, layer.height, x, y)
+  const validUpper = upperLayer
+    ? nearestMaskValid(upperLayer.mask, upperLayer.width, upperLayer.height, x, y)
+    : validLower
+  if (!validLower && !validUpper) return [0, 0, 0, 0]
+
+  // Preserve the legacy R8UI nearest-mask footprint. The new 2×2 kernel may
+  // see a valid neighbor across a boundary, but it is never even evaluated
+  // when the current nearest support cell is invalid.
+  const lower = validLower
     ? sampleRgbBilinearSoft(
-        upperLayer.channels,
-        upperLayer.mask,
-        upperLayer.width,
-        upperLayer.height,
+        layer.channels,
+        layer.mask,
+        layer.width,
+        layer.height,
         x,
         y,
         sampling,
       )
+    : null
+  const upper = upperLayer
+    ? validUpper
+      ? sampleRgbBilinearSoft(
+          upperLayer.channels,
+          upperLayer.mask,
+          upperLayer.width,
+          upperLayer.height,
+          x,
+          y,
+          sampling,
+        )
+      : null
     : lower
 
-  const validLower = lower.coverage > 0
-  const validUpper = upper.coverage > 0
-  if (!validLower && !validUpper) return [0, 0, 0, 0]
-
   const progress = blend ? Math.max(0, Math.min(1, blend.progress)) : 0
-  const lowerColor = validLower ? lower.color : upper.color
-  const upperColor = validUpper ? upper.color : lower.color
-  const coverageLower = validLower ? lower.coverage : upper.coverage
-  const coverageUpper = validUpper ? upper.coverage : lower.coverage
+  const lowerColor = validLower ? lower!.color : upper!.color
+  const upperColor = validUpper ? upper!.color : lower!.color
+  const coverageLower = validLower ? lower!.coverage : upper!.coverage
+  const coverageUpper = validUpper ? upper!.coverage : lower!.coverage
   const blendedCoverage = coverageLower + (coverageUpper - coverageLower) * progress
-  const coverage = sampling === 'coastal' ? coastalFeather(blendedCoverage) : blendedCoverage
+  const coverage = sampling === 'coastal' ? validSideFeather(blendedCoverage) : blendedCoverage
   const alpha = coverage * (style.opacity ?? 1)
   if (alpha <= 0) return [0, 0, 0, 0]
 
@@ -315,6 +326,7 @@ export function referenceRgbPixel(
 interface LinearRgbSample {
   color: [red: number, green: number, blue: number]
   coverage: number
+  nearestValid: boolean
 }
 
 /**
@@ -336,8 +348,8 @@ export function referenceRgbCompositionPixel(
 ): [number, number, number, number] {
   const lower = sampleRgbCompositionFrame(layer, style, x, y)
   const upper = blend ? sampleRgbCompositionFrame(blend.upper, style, x, y) : lower
-  const validLower = lower.coverage > 0
-  const validUpper = upper.coverage > 0
+  const validLower = lower.nearestValid
+  const validUpper = upper.nearestValid
   if (!validLower && !validUpper) return [0, 0, 0, 0]
 
   const progress = blend ? Math.max(0, Math.min(1, blend.progress)) : 0
@@ -347,7 +359,7 @@ export function referenceRgbCompositionPixel(
   const upperCoverage = validUpper ? upper.coverage : lower.coverage
   const blendedCoverage = lowerCoverage + (upperCoverage - lowerCoverage) * progress
   const sampling = style.sampling ?? 'coastal'
-  const coverage = sampling === 'coastal' ? coastalFeather(blendedCoverage) : blendedCoverage
+  const coverage = sampling === 'coastal' ? validSideFeather(blendedCoverage) : blendedCoverage
   const alpha = coverage * (style.opacity ?? 1)
   if (alpha <= 0) return [0, 0, 0, 0]
 
@@ -366,51 +378,82 @@ function sampleRgbCompositionFrame(
   y: number,
 ): LinearRgbSample {
   const sampling = style.sampling ?? 'coastal'
-  const base = sampleRgbBilinearSoft(
-    layer.baseChannels,
+  // This is the CPU reference for the shaders' `floor(p + .5)` hard gates.
+  // Do not even enter a component's color kernel when its current nearest
+  // support cell is invalid: the neighboring 2x2 weights may polish color,
+  // but they are not permission to create support.
+  const hasBaseSupport = nearestMaskValid(
     layer.baseMask,
     layer.width,
     layer.height,
     x,
     y,
-    sampling,
   )
-  const observed = sampleRgbBilinearSoft(
-    layer.observedChannels,
+  const hasObservedSupport = nearestMaskValid(
     layer.observedMask,
     layer.width,
     layer.height,
     x,
     y,
-    sampling,
   )
-  const confidence = sampleScalarBilinearSoft(
-    layer.confidence,
-    layer.observedMask,
-    layer.width,
-    layer.height,
-    x,
-    y,
-    sampling,
-  )
-  const validBase = base.coverage > 0
-  const validObserved = observed.coverage > 0 && confidence.coverage > 0
-  if (!validBase && !validObserved) return { color: [0, 0, 0], coverage: 0 }
+  if (!hasBaseSupport && !hasObservedSupport) {
+    return { color: [0, 0, 0], coverage: 0, nearestValid: false }
+  }
 
-  const baseLinear = toLinearRgb(base.color)
-  const observedLinear = toLinearRgb(observed.color)
-  if (!validBase) return { color: observedLinear, coverage: observed.coverage }
-  if (!validObserved) return { color: baseLinear, coverage: base.coverage }
+  const base = hasBaseSupport
+    ? sampleRgbBilinearSoft(
+        layer.baseChannels,
+        layer.baseMask,
+        layer.width,
+        layer.height,
+        x,
+        y,
+        sampling,
+      )
+    : null
+  const observed = hasObservedSupport
+    ? sampleRgbBilinearSoft(
+        layer.observedChannels,
+        layer.observedMask,
+        layer.width,
+        layer.height,
+        x,
+        y,
+        sampling,
+      )
+    : null
+  const confidence = hasObservedSupport
+    ? sampleScalarBilinearSoft(
+        layer.confidence,
+        layer.observedMask,
+        layer.width,
+        layer.height,
+        x,
+        y,
+        sampling,
+      )
+    : null
+  const validBase = base !== null && base.coverage > 0
+  const validObserved = observed !== null && confidence !== null && observed.coverage > 0 && confidence.coverage > 0
+  if (!validBase && !validObserved) {
+    return { color: [0, 0, 0], coverage: 0, nearestValid: true }
+  }
+
+  const baseLinear = validBase ? toLinearRgb(base.color) : null
+  const observedLinear = validObserved ? toLinearRgb(observed.color) : null
+  if (!validBase) return { color: observedLinear!, coverage: observed!.coverage, nearestValid: true }
+  if (!validObserved) return { color: baseLinear!, coverage: base.coverage, nearestValid: true }
 
   const zoomWeight = Math.max(0, Math.min(1, style.observationWeight))
-  const observedWeight = zoomWeight * Math.max(0, Math.min(1, confidence.value / 255))
+  const observedWeight = zoomWeight * Math.max(0, Math.min(1, confidence!.value / 255))
   return {
     color: [
-      baseLinear[0] + (observedLinear[0] - baseLinear[0]) * observedWeight,
-      baseLinear[1] + (observedLinear[1] - baseLinear[1]) * observedWeight,
-      baseLinear[2] + (observedLinear[2] - baseLinear[2]) * observedWeight,
+      baseLinear![0] + (observedLinear![0] - baseLinear![0]) * observedWeight,
+      baseLinear![1] + (observedLinear![1] - baseLinear![1]) * observedWeight,
+      baseLinear![2] + (observedLinear![2] - baseLinear![2]) * observedWeight,
     ],
-    coverage: base.coverage + (observed.coverage - base.coverage) * observedWeight,
+    coverage: base.coverage + (observed!.coverage - base.coverage) * observedWeight,
+    nearestValid: true,
   }
 }
 

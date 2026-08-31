@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   frameContentKey,
   linearChannelToSrgb,
+  nearestMaskValid,
   observationWeightForZoom,
   srgbChannelToLinear,
   viewportZoom,
@@ -35,6 +36,21 @@ function solidComposition(
     baseMask: [options.baseMask ?? 1],
     observedMask: [options.observedMask ?? 1],
     width: 1,
+    height: 1,
+  }
+}
+
+function edgeComposition(
+  baseMask: readonly number[],
+  observedMask: readonly number[],
+): ReferenceRgbCompositionLayer {
+  return {
+    baseChannels: [[40, 250], [80, 17], [120, 239]],
+    observedChannels: [[180, 3], [140, 4], [100, 5]],
+    confidence: [255, 255],
+    baseMask,
+    observedMask,
+    width: 2,
     height: 1,
   }
 }
@@ -139,6 +155,89 @@ describe('linear-sRGB composition', () => {
     expect(gap).toEqual([0, 0, 0, 0])
   })
 
+  it('keeps composed alpha within the union of current base and observed nearest support', () => {
+    const source = edgeComposition([1, 0], [1, 0])
+    for (let x = -0.5; x <= 1.5; x += 0.01) {
+      const legacyVisible =
+        nearestMaskValid(source.baseMask, source.width, source.height, x, 0) ||
+        nearestMaskValid(source.observedMask, source.width, source.height, x, 0)
+      const pixel = referenceRgbCompositionPixel(
+        source,
+        { observationWeight: 0, sampling: 'coastal' },
+        x,
+        0,
+      )
+      expect(pixel[3]).toBeLessThanOrEqual(legacyVisible ? 255 : 0)
+      if (!legacyVisible) expect(pixel).toEqual([0, 0, 0, 0])
+    }
+
+    const validEdge = referenceRgbCompositionPixel(
+      source,
+      { observationWeight: 0, sampling: 'coastal' },
+      0.49,
+      0,
+    )
+    expect(validEdge[0]).toBeCloseTo(40, 12)
+    expect(validEdge[1]).toBeCloseTo(80, 12)
+    expect(validEdge[2]).toBeCloseTo(120, 12)
+    expect(validEdge[3]).toBeGreaterThan(0)
+    expect(
+      referenceRgbCompositionPixel(source, { observationWeight: 0, sampling: 'coastal' }, 0.51, 0),
+    ).toEqual([0, 0, 0, 0])
+  })
+
+  it('applies base and observed gates independently, including the reversed sentinel edge', () => {
+    const baseOnly = edgeComposition([1, 0], [0, 0])
+    const observedOnly = edgeComposition([0, 0], [1, 0])
+    const reversed = edgeComposition([0, 1], [0, 1])
+
+    const basePixel = referenceRgbCompositionPixel(
+      baseOnly,
+      { observationWeight: 1, sampling: 'coastal' },
+      0.49,
+      0,
+    )
+    expect(basePixel[0]).toBeCloseTo(40, 12)
+    expect(basePixel[1]).toBeCloseTo(80, 12)
+    expect(basePixel[2]).toBeCloseTo(120, 12)
+    const observedPixel = referenceRgbCompositionPixel(
+      observedOnly,
+      { observationWeight: 1, sampling: 'coastal' },
+      0.49,
+      0,
+    )
+    expect(observedPixel[0]).toBeCloseTo(180, 12)
+    expect(observedPixel[1]).toBeCloseTo(140, 12)
+    expect(observedPixel[2]).toBeCloseTo(100, 12)
+    expect(
+      referenceRgbCompositionPixel(reversed, { observationWeight: 0, sampling: 'coastal' }, 0.49, 0),
+    ).toEqual([0, 0, 0, 0])
+    expect(
+      referenceRgbCompositionPixel(reversed, { observationWeight: 0, sampling: 'coastal' }, 0.51, 0)[3],
+    ).toBeGreaterThan(0)
+  })
+
+  it('preserves composed temporal 00/10/01/11 nearest-support fallback', () => {
+    const frame = (valid: boolean, color: readonly [number, number, number]) =>
+      solidComposition(color, color, { baseMask: valid ? 1 : 0, observedMask: valid ? 1 : 0 })
+    const zero = frame(false, [1, 2, 3])
+    const lower = frame(true, [20, 40, 60])
+    const upper = frame(true, [200, 180, 160])
+    const style = { observationWeight: 0, sampling: 'coastal' } as const
+
+    expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper: zero, progress: 0.5 }))
+      .toEqual([0, 0, 0, 0])
+    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper: zero, progress: 0.5 }))
+      .toEqual([20, 40, 60, 255])
+    expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper, progress: 0.5 }))
+      .toEqual([200, 180, 160, 255])
+    const both = referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0.5 })
+    expect(both[0]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(20 / 255) + srgbChannelToLinear(200 / 255)) / 2) * 255, 12)
+    expect(both[1]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(40 / 255) + srgbChannelToLinear(180 / 255)) / 2) * 255, 12)
+    expect(both[2]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(60 / 255) + srgbChannelToLinear(160 / 255)) / 2) * 255, 12)
+    expect(both[3]).toBe(255)
+  })
+
   it('keeps tile output bounded to byte channels', () => {
     const raster = referenceRenderRgbCompositionTile(
       solidComposition([3, 240, 40], [250, 2, 220]),
@@ -210,14 +309,24 @@ describe('packed WebGL composition contract', () => {
     expect(shader).toContain('texelFetch(packedMasks, texels[i], 0).a * 255.0')
     expect(shader).toContain('(flags & maskBit) != 0')
     expect(shader).not.toContain('texture(packedMasks')
+
+    expect(shader).toContain('ivec2 nearest = clamp(ivec2(floor(p + vec2(0.5)))')
+    expect(shader).toContain('if ((nearestFlags & maskBit) == 0)')
+    const hardGate = shader.indexOf('if ((nearestFlags & maskBit) == 0)')
+    const firstColorRead = shader.indexOf('texelFetch(colors, texels[i], 0).rgb')
+    expect(hardGate).toBeGreaterThanOrEqual(0)
+    expect(hardGate).toBeLessThan(firstColorRead)
   })
 
   it('composes detail and time between transfer-function calls while legacy RGB stays isolated', () => {
     const shader = rgbCompositionFragmentShader()
     expect(shader).toContain('mix(baseLinear, observedLinear, weight)')
     expect(shader).toContain('linearToSrgb(mix(first, second, progress))')
-    expect(shader).toContain('if (!validBase) return vec4(observedLinear, observed.coverage);')
-    expect(shader).toContain('if (!validObserved) return vec4(baseLinear, base.coverage);')
+    expect(shader).toContain('bool validBase = base.nearestValid;')
+    expect(shader).toContain('bool validObserved = observed.nearestValid;')
+    expect(shader).toContain('if (!validBase) return FrameSample(observedLinear, observed.coverage, true);')
+    expect(shader).toContain('if (!validObserved) return FrameSample(baseLinear, base.coverage, true);')
+    expect(shader).toContain('smoothstep(0.25, 1.0, coverage)')
     expect(rgbFragmentShader()).not.toContain('observationWeight')
     expect(rgbFragmentShader()).not.toContain('baseConfidence0')
   })

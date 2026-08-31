@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2 — 2026-08-31
+
+### Fixed
+
+- Precolored temporal RGB retains its mask-aware 2×2 color kernel, but now
+  gates final alpha by the legacy nearest-validity cell before applying a
+  valid-side-only support feather. Real neighboring samples can improve color
+  inside an already-visible cell; they cannot make a formerly transparent cell
+  visible. This is an intentional RGB render change. Regenerate the matching
+  cross-repository browser fixtures through their producer rather than editing
+  SHA pins by hand.
+
 ## 0.5.1 — 2026-08-30
 
 ### Fixed
