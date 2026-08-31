@@ -6,6 +6,7 @@ export type {
   GridFrame,
   GridRenderMode,
   GridRgbComposition,
+  GridRgbCompositionVersion,
   GridSampling,
   GridScale,
   GridValueKind,
@@ -21,6 +22,7 @@ export {
 export {
   blendEncoded,
   blendedDisplayValue,
+  areaSampleBoundsFromUv,
   coastalFeather,
   dataUvTransform,
   displayValueFromEncoded,
@@ -28,6 +30,7 @@ export {
   linearChannelToSrgb,
   nearestMaskValid,
   observationWeightForZoom,
+  observationSupportModulatesWeight,
   normalizeValue,
   sampleRgbBilinearSoft,
   sampleScalarBilinearSoft,
@@ -36,6 +39,7 @@ export {
   validSideFeather,
   viewportZoom,
   type RgbSample,
+  type GridAreaSampleBounds,
   type ScalarSample,
 } from './math.js'
 export {
@@ -126,6 +130,8 @@ export {
   TEMPORAL_DECODE_LIMITS,
   TEMPORAL_RGB_COMPOSITION_DESCRIPTOR,
   TEMPORAL_RGB_COMPOSITION_VERSION,
+  TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_DESCRIPTOR,
+  TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION,
 } from './decode/temporal.js'
 export { rampLut, sampleRamp, type RGB } from './color.js'
 export type {
@@ -134,6 +140,8 @@ export type {
   TemporalRasterFrame,
   TemporalRasterManifest,
   TemporalRgbCompositionDescriptor,
+  TemporalRgbCompositionV1Descriptor,
+  TemporalRgbCompositionV2AreaAnchorDescriptor,
 } from './decode/temporal.js'
 export { decodeTemporalChunk } from './decode/temporal.js'
 export {

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.3 — 2026-08-31
+
+### Added
+
+- Temporal RGB decoding now accepts the exact, fail-closed
+  `base-observed-confidence-v2-area-anchor` descriptor while preserving the
+  published v1 contract. At z7 and below, Canvas2D and WebGL2 reduce observed
+  RGB and confidence over half-open CSS-pixel source buckets, then attenuate
+  the `0.20` overview anchor by real observed support. V1 and v2 above z7 keep
+  their existing nearest-gated 2x2 sampling behavior.
+
+### Notes for callers
+
+- This is an intentional render change for v2 area-anchor manifests. Regenerate
+  coordinated SHA-pinned render fixtures through their producers; do not edit
+  pins by hand.
+
 ## 0.5.2 — 2026-08-31
 
 ### Fixed

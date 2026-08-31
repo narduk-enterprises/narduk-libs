@@ -1,13 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { normalizeWireStops } from '../src/color/ramp.js'
-import { observationWeightForZoom, viewportZoom } from '../src/core/math.js'
+import {
+  observationSupportModulatesWeight,
+  observationWeightForZoom,
+  viewportZoom,
+} from '../src/core/math.js'
 import {
   referenceRenderRgbCompositionViewport,
   referenceRenderScalarViewport,
   type ReferenceRgbCompositionLayer,
 } from '../src/core/reference-render.js'
-import type { GridBBox, GridFrame, GridSampling, GridViewport } from '../src/core/models.js'
+import type {
+  GridBBox,
+  GridFrame,
+  GridRgbCompositionVersion,
+  GridSampling,
+  GridViewport,
+} from '../src/core/models.js'
 
 /**
  * The parity contract, asserted rather than asserted-to.
@@ -213,7 +223,11 @@ async function renderRgbThroughBackend(sampling: GridSampling): Promise<Uint8Cla
   return image.data
 }
 
-function composedFrame(key: string, offset: number): GridFrame {
+function composedFrame(
+  key: string,
+  offset: number,
+  version?: GridRgbCompositionVersion,
+): GridFrame {
   const width = 4
   const height = 3
   const size = width * height
@@ -233,6 +247,7 @@ function composedFrame(key: string, offset: number): GridFrame {
   const baseMask = new Uint8Array([1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1])
   const observedMask = new Uint8Array([0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1])
   const rgbComposition = {
+    ...(version ? { version } : {}),
     baseChannels,
     observedChannels,
     confidence,
@@ -267,6 +282,7 @@ const COMPOSITION_VIEWPORT: GridViewport = { ...VIEWPORT, zoom: 9.25 }
 async function renderRgbCompositionThroughBackend(
   sampling: GridSampling,
   viewport: GridViewport = COMPOSITION_VIEWPORT,
+  version?: GridRgbCompositionVersion,
 ): Promise<Uint8ClampedArray> {
   const { Canvas2DGridBackend } = await import('../src/render/canvas2d.js')
   const backend = Canvas2DGridBackend.create({
@@ -280,8 +296,8 @@ async function renderRgbCompositionThroughBackend(
   backend.setViewport(viewport)
   captured.image = null
   backend.render({
-    lower: composedFrame('lower', 0),
-    upper: composedFrame('upper', 12),
+    lower: composedFrame('lower', 0, version),
+    upper: composedFrame('upper', 12, version),
     progress: 0.35,
     bbox: BBOX,
   })
@@ -293,16 +309,17 @@ async function renderRgbCompositionThroughBackend(
 function renderRgbCompositionThroughReference(
   sampling: GridSampling,
   viewport: GridViewport = COMPOSITION_VIEWPORT,
+  version?: GridRgbCompositionVersion,
 ): Uint8ClampedArray {
-  const lower = composedFrame('lower', 0)
-  const upper = composedFrame('upper', 12)
+  const lower = composedFrame('lower', 0, version)
+  const upper = composedFrame('upper', 12, version)
+  const zoom = viewportZoom(viewport, CANVAS_WIDTH)
   return referenceRenderRgbCompositionViewport(
     referenceCompositionLayer(lower),
     {
       sampling,
-      observationWeight: observationWeightForZoom(
-        viewportZoom(viewport, CANVAS_WIDTH),
-      ),
+      observationWeight: observationWeightForZoom(zoom, version),
+      supportModulatesWeight: observationSupportModulatesWeight(zoom, version),
     },
     {
       viewport,
@@ -332,6 +349,16 @@ describe('Canvas2D screen-space path === reference renderer', () => {
         if (actual[i] !== expected[i]) differing += 1
       }
       expect(differing).toBe(0)
+    })
+  }
+
+  for (const sampling of ['soft', 'coastal'] as const) {
+    it(`is byte-identical for v2 area overview with ${sampling} sampling`, async () => {
+      const version = 'base-observed-confidence-v2-area-anchor' as const
+      const viewport = { ...COMPOSITION_VIEWPORT, zoom: 7 }
+      const actual = await renderRgbCompositionThroughBackend(sampling, viewport, version)
+      const expected = renderRgbCompositionThroughReference(sampling, viewport, version)
+      expect(actual).toEqual(expected)
     })
   }
 

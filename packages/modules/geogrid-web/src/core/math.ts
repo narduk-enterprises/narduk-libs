@@ -4,6 +4,7 @@ import type {
   GridSampling,
   GridScale,
   GridRgbComposition,
+  GridRgbCompositionVersion,
   GridValueRange,
   GridViewport,
 } from './models.js'
@@ -81,6 +82,47 @@ export interface DataUvTransform {
   uvScaleY: number
 }
 
+export interface GridAreaSampleBounds {
+  columnStart: number
+  columnStop: number
+  rowStart: number
+  rowStop: number
+}
+
+/**
+ * Map one half-open output-pixel footprint in data UV to source-cell buckets.
+ * Every source cell center belongs to exactly one adjacent bucket.
+ */
+export function areaSampleBoundsFromUv(
+  u0: number,
+  v0: number,
+  u1: number,
+  v1: number,
+  width: number,
+  height: number,
+  anchor: GridBBoxAnchor,
+): GridAreaSampleBounds {
+  const lowU = Math.max(0, Math.min(1, Math.min(u0, u1)))
+  const highU = Math.max(0, Math.min(1, Math.max(u0, u1)))
+  const lowV = Math.max(0, Math.min(1, Math.min(v0, v1)))
+  const highV = Math.max(0, Math.min(1, Math.max(v0, v1)))
+  const bounds = (low: number, high: number, size: number): [number, number] => {
+    if (!(high > low)) return [0, 0]
+    if (size <= 1) return high > low ? [0, 1] : [0, 0]
+    const scale = anchor === 'cell-center' ? size - 1 : size
+    const offset = anchor === 'cell-center' ? 0 : -0.5
+    const start = Math.max(0, Math.min(size, Math.ceil(low * scale + offset)))
+    const stop =
+      high >= 1
+        ? size
+        : Math.max(0, Math.min(size, Math.ceil(high * scale + offset)))
+    return [start, Math.max(start, stop)]
+  }
+  const [columnStart, columnStop] = bounds(lowU, highU, width)
+  const [rowStart, rowStop] = bounds(lowV, highV, height)
+  return { columnStart, columnStop, rowStart, rowStop }
+}
+
 /** Map screen UV → data-bbox texture UV for a viewport (same math as WebGL/Canvas blit). */
 export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvTransform {
   const span = viewport.span
@@ -122,16 +164,41 @@ export function viewportZoom(viewport: GridViewport, cssWidth: number): number |
 /**
  * Observation contribution at a continuous map zoom.
  *
- * Exact anchors are `0` through z7, `0.25` at z8, `0.40` at z9 and `1` at
- * z10 and above. Fractional zooms interpolate linearly between adjacent
- * anchors so a pinch zoom cannot introduce a visible step.
+ * V1 uses `0` through z7; v2's area anchor uses `0.20`. Both use `0.25` at
+ * z8, `0.40` at z9 and `1` at z10 and above. Fractional zooms interpolate
+ * linearly between adjacent anchors so a pinch zoom cannot introduce a step.
  */
-export function observationWeightForZoom(zoom: number | null | undefined): number {
-  if (zoom === null || zoom === undefined || !Number.isFinite(zoom) || zoom <= 7) return 0
-  if (zoom < 8) return (zoom - 7) * 0.25
+export function observationWeightForZoom(
+  zoom: number | null | undefined,
+  version: GridRgbCompositionVersion = 'base-observed-confidence-v1',
+): number {
+  if (zoom === null || zoom === undefined || !Number.isFinite(zoom)) return 0
+  const overviewWeight =
+    version === 'base-observed-confidence-v1'
+      ? 0
+      : version === 'base-observed-confidence-v2-area-anchor'
+        ? 0.2
+        : null
+  if (overviewWeight === null) return 0
+  if (zoom <= 7) return overviewWeight
+  if (zoom < 8) return overviewWeight + (zoom - 7) * (0.25 - overviewWeight)
   if (zoom < 9) return 0.25 + (zoom - 8) * 0.15
   if (zoom < 10) return 0.4 + (zoom - 9) * 0.6
   return 1
+}
+
+/** Whether the validated recipe attenuates its overview anchor by real support. */
+export function observationSupportModulatesWeight(
+  zoom: number | null | undefined,
+  version: GridRgbCompositionVersion = 'base-observed-confidence-v1',
+): boolean {
+  return (
+    version === 'base-observed-confidence-v2-area-anchor' &&
+    zoom !== null &&
+    zoom !== undefined &&
+    Number.isFinite(zoom) &&
+    zoom <= 7
+  )
 }
 
 /** Decode one normalized display-sRGB channel into linear-sRGB. */
