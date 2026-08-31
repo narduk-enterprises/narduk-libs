@@ -43,6 +43,10 @@
       "types": "./dist/e2e/fixture-server.d.ts",
       "import": "./dist/e2e/fixture-server.js"
     },
+    "./playwright/accessibility": {
+      "types": "./dist/playwright/accessibility.d.ts",
+      "import": "./dist/playwright/accessibility.js"
+    },
     "./playwright/deterministic-capture": {
       "types": "./dist/playwright/deterministic-capture.d.ts",
       "import": "./dist/playwright/deterministic-capture.js"
@@ -104,7 +108,13 @@
   "dependencies": {
     "sharp": "^0.34.5"
   },
+  "peerDependenciesMeta": {
+    "@axe-core/playwright": {
+      "optional": true
+    }
+  },
   "peerDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": ">=1.50.0",
     "vitest": ">=2.0.0"
   },
