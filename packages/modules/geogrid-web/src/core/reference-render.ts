@@ -433,16 +433,18 @@ function sampleRgbCompositionFrame(
         sampling,
       )
     : null
-  const validBase = base !== null && base.coverage > 0
-  const validObserved = observed !== null && confidence !== null && observed.coverage > 0 && confidence.coverage > 0
-  if (!validBase && !validObserved) {
-    return { color: [0, 0, 0], coverage: 0, nearestValid: true }
-  }
+  // Validity is the independent nearest-support gate, not the soft-kernel
+  // coverage. In `soft` mode a nearest-valid component can deliberately carry
+  // zero edge alpha; GLSL still composes its real color and lets that coverage
+  // attenuate the final pixel. Keeping those notions separate is essential for
+  // CPU/WebGL parity at a partially supported edge.
+  const validBase = hasBaseSupport
+  const validObserved = hasObservedSupport
 
-  const baseLinear = validBase ? toLinearRgb(base.color) : null
-  const observedLinear = validObserved ? toLinearRgb(observed.color) : null
+  const baseLinear = validBase ? toLinearRgb(base!.color) : null
+  const observedLinear = validObserved ? toLinearRgb(observed!.color) : null
   if (!validBase) return { color: observedLinear!, coverage: observed!.coverage, nearestValid: true }
-  if (!validObserved) return { color: baseLinear!, coverage: base.coverage, nearestValid: true }
+  if (!validObserved) return { color: baseLinear!, coverage: base!.coverage, nearestValid: true }
 
   const zoomWeight = Math.max(0, Math.min(1, style.observationWeight))
   const observedWeight = zoomWeight * Math.max(0, Math.min(1, confidence!.value / 255))
@@ -452,7 +454,7 @@ function sampleRgbCompositionFrame(
       baseLinear![1] + (observedLinear![1] - baseLinear![1]) * observedWeight,
       baseLinear![2] + (observedLinear![2] - baseLinear![2]) * observedWeight,
     ],
-    coverage: base.coverage + (observed!.coverage - base.coverage) * observedWeight,
+    coverage: base!.coverage + (observed!.coverage - base!.coverage) * observedWeight,
     nearestValid: true,
   }
 }

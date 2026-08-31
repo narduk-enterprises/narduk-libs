@@ -217,19 +217,42 @@ describe('linear-sRGB composition', () => {
     ).toBeGreaterThan(0)
   })
 
+  it('keeps nearest-valid components in a partial soft edge while coverage attenuates alpha', () => {
+    const source = edgeComposition([1, 0], [1, 1])
+    const pixel = referenceRgbCompositionPixel(
+      source,
+      { observationWeight: 0.5, sampling: 'soft' },
+      0.49,
+      0,
+    )
+
+    // Base is nearest-valid but intentionally has zero soft coverage because
+    // its 2x2 neighborhood includes the right-hand gap. The shader still
+    // composes it with observed and returns the half coverage, not full alpha.
+    expect(pixel[3]).toBeCloseTo(127.5, 12)
+    expect(pixel.slice(0, 3)).not.toEqual([40, 80, 120])
+  })
+
   it('preserves composed temporal 00/10/01/11 nearest-support fallback', () => {
     const frame = (valid: boolean, color: readonly [number, number, number]) =>
       solidComposition(color, color, { baseMask: valid ? 1 : 0, observedMask: valid ? 1 : 0 })
-    const zero = frame(false, [1, 2, 3])
+    const zero = frame(false, [251, 1, 252])
     const lower = frame(true, [20, 40, 60])
     const upper = frame(true, [200, 180, 160])
     const style = { observationWeight: 0, sampling: 'coastal' } as const
 
-    expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper: zero, progress: 0.5 }))
-      .toEqual([0, 0, 0, 0])
-    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper: zero, progress: 0.5 }))
+    for (const progress of [0, 0.5, 1]) {
+      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper: zero, progress }))
+        .toEqual([0, 0, 0, 0])
+      expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper: zero, progress }))
+        .toEqual([20, 40, 60, 255])
+      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper, progress }))
+        .toEqual([200, 180, 160, 255])
+    }
+
+    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0 }))
       .toEqual([20, 40, 60, 255])
-    expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper, progress: 0.5 }))
+    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 1 }))
       .toEqual([200, 180, 160, 255])
     const both = referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0.5 })
     expect(both[0]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(20 / 255) + srgbChannelToLinear(200 / 255)) / 2) * 255, 12)

@@ -216,20 +216,27 @@ describe('RGB nearest-mask honesty gate', () => {
   it('preserves temporal 00/10/01/11 nearest-support fallback', () => {
     const frame = (valid: boolean, color: readonly [number, number, number]) =>
       layer([color[0]], [color[1]], [color[2]], [valid ? 1 : 0], 1, 1)
-    const zero = frame(false, [1, 2, 3])
+    const zero = frame(false, [251, 1, 252])
     const lower = frame(true, [20, 40, 60])
     const upper = frame(true, [200, 180, 160])
 
-    expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper: zero, progress: 0.5 }))
-      .toEqual([0, 0, 0, 0])
-    expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper: zero, progress: 0.5 }))
+    for (const progress of [0, 0.5, 1]) {
+      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
+        .toEqual([0, 0, 0, 0])
+      expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
+        .toEqual([20, 40, 60, 255])
+      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper, progress }))
+        .toEqual([200, 180, 160, 255])
+    }
+
+    expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0 }))
       .toEqual([20, 40, 60, 255])
-    expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper, progress: 0.5 }))
-      .toEqual([200, 180, 160, 255])
-    const both = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, {
-      upper,
-      progress: 0.5,
-    })
+    const atUpper = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 1 })
+    expect(atUpper[0]).toBeCloseTo(200, 12)
+    expect(atUpper[1]).toBeCloseTo(180, 12)
+    expect(atUpper[2]).toBeCloseTo(160, 12)
+    expect(atUpper[3]).toBe(255)
+    const both = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0.5 })
     expect(both[0]).toBeCloseTo(110, 12)
     expect(both[1]).toBeCloseTo(110, 12)
     expect(both[2]).toBeCloseTo(110, 12)
