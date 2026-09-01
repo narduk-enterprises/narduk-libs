@@ -128,20 +128,104 @@ export interface TextZoomOptions {
   mustRemainVisible?: string
   /** Percentage to scale the ROOT font size to. WCAG 1.4.4 asks for 200. */
   percent?: number
+  /**
+   * The element whose computed size proves the text actually scaled. Defaults
+   * to `body`, which is where a px-based type system betrays itself.
+   */
+  probe?: string
+  /**
+   * How much of the requested scaling must reach the probe, 0..1. At the
+   * default 0.5 a 200% request must produce at least 1.5x text.
+   *
+   * Not 1.0: `clamp()` ceilings and container queries can legitimately damp
+   * the top end, and a check that fails those would be retired rather than
+   * fixed. The value that matters is the floor — a page whose text does not
+   * move at all sits at 1.0x and fails at any tolerance above zero.
+   */
+  scaleTolerance?: number
+}
+
+/**
+ * Decide whether text scaled enough, given the sizes either side of the zoom.
+ *
+ * Pulled out of the Playwright helper deliberately: it is the entire judgement
+ * that check makes, and as long as it lived inside a browser call it could not
+ * be tested. That is how the original shipped unable to fail.
+ */
+export function textScalingVerdict(
+  before: number,
+  after: number,
+  percent: number,
+  scaleTolerance = 0.5,
+): { ok: boolean; actual: number; required: number; reason?: string } {
+  if (!(before > 0) || !(after > 0)) {
+    return {
+      actual: 0,
+      ok: false,
+      reason: 'a probe font size was zero or not a number',
+      required: 0,
+    }
+  }
+  const requested = percent / 100
+  const required = 1 + (requested - 1) * scaleTolerance
+  const actual = after / before
+  if (actual >= required) return { actual, ok: true, required }
+  return {
+    actual,
+    ok: false,
+    reason:
+      actual <= 1.0001
+        ? `text did not scale at all (${before}px before and after). The root font ` +
+          'size changed and nothing followed it, so this page cannot satisfy WCAG ' +
+          '1.4.4 by that route — typography is most likely declared in px rather ' +
+          'than rem. Note the overflow assertion below would have PASSED, because ' +
+          'nothing moved.'
+        : `text scaled ${actual.toFixed(2)}x against a required ${required.toFixed(2)}x`,
+    required,
+  }
 }
 
 /**
  * WCAG 1.4.4 is about scaling TEXT, so this scales the root font size rather
  * than the viewport — zooming a viewport out passes while real 200% text still
  * overflows, which is the version of this check that proves nothing.
+ *
+ * IT ALSO PROVES THE TEXT MOVED, and that half is not optional. The first
+ * version of this helper raised the root font size and went straight to the
+ * overflow assertion. On a page whose typography is declared in px, nothing
+ * scales — so there is no overflow, the assertion passes, and the helper
+ * reports WCAG 1.4.4 conformance for a page that has none. Found in production
+ * on 2026-09-01, on an app this very helper was written for.
+ *
+ * A check that cannot fail is worse than an absent one: it gets cited as
+ * evidence. So the probe is measured either side of the zoom and must actually
+ * have grown before the layout assertions are allowed to mean anything.
  */
 export async function expectNoOverflowAtTextZoom(
   page: Page,
   options: TextZoomOptions = {},
 ): Promise<void> {
   const percent = options.percent ?? 200
+  const probe = options.probe ?? 'body'
+
+  const sizeOf = () =>
+    page.evaluate((sel) => {
+      const node = document.querySelector(sel)
+      return node ? Number.parseFloat(getComputedStyle(node).fontSize) : Number.NaN
+    }, probe)
+
+  const before = await sizeOf()
+  expect(Number.isFinite(before), `probe "${probe}" was not found or has no font size`).toBe(true)
+
   await page.addStyleTag({ content: `html { font-size: ${percent}% !important }` })
   await page.waitForTimeout(150)
+
+  const after = await sizeOf()
+  const verdict = textScalingVerdict(before, after, percent, options.scaleTolerance)
+  expect(
+    verdict.ok,
+    `text did not respond to a ${percent}% root font size — ${verdict.reason}`,
+  ).toBe(true)
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
