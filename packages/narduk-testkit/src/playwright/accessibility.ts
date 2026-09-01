@@ -135,12 +135,18 @@ export interface TextZoomOptions {
   probe?: string
   /**
    * How much of the requested scaling must reach the probe, 0..1. At the
-   * default 0.5 a 200% request must produce at least 1.5x text.
+   * default 0.9 a 200% request must produce at least 1.9x text.
    *
-   * Not 1.0: `clamp()` ceilings and container queries can legitimately damp
-   * the top end, and a check that fails those would be retired rather than
-   * fixed. The value that matters is the floor — a page whose text does not
-   * move at all sits at 1.0x and fails at any tolerance above zero.
+   * Deliberately strict. An earlier draft defaulted to 0.5 on the argument
+   * that `clamp()` ceilings and container queries legitimately damp the top
+   * end — true, but the wrong default for a conformance check. Partial
+   * scaling is itself a 1.4.4 finding, and a lenient default hides it in
+   * every consumer at once. A page with a real ceiling passes
+   * `scaleTolerance` explicitly, which puts the deviation in that app's own
+   * test file where a reader can weigh it.
+   *
+   * Not 1.0, because sub-pixel rounding on a fractional base size should not
+   * fail a page that is behaving correctly.
    */
   scaleTolerance?: number
 }
@@ -156,7 +162,7 @@ export function textScalingVerdict(
   before: number,
   after: number,
   percent: number,
-  scaleTolerance = 0.5,
+  scaleTolerance = 0.9,
 ): { ok: boolean; actual: number; required: number; reason?: string } {
   if (!(before > 0) || !(after > 0)) {
     return {
