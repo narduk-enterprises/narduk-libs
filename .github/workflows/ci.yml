@@ -331,7 +331,28 @@ jobs:
       packages: read
     env:
       GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-      NODE_OPTIONS: --max-old-space-size=3072
+      # Keep the temp working set OFF the guest's RAM.
+      #
+      # The playwright pool's runner cycle exports TMPDIR into
+      # /run/playwright-ephemeral/job-tmp, and /run in those guests is a tmpfs
+      # sized 13G while the cgroup limit is 4096 MiB -- LXC sized that tmpfs
+      # against the host's 64 GiB, not the container's. So every byte this job
+      # writes to TMPDIR is guest memory, and `swap: 0` means none of it can be
+      # evicted. Installing and building a whole generated Nuxt app there, on
+      # top of the heap below, is what OOM-killed this lane twice on
+      # 2026-08-31/09-01 -- surfacing to GitHub as the misleading "The runner
+      # has received a shutdown signal" rather than as an out-of-memory error.
+      #
+      # TMPDIR is NOT set here. It is exported by the step below instead --
+      # see that step for why a job-level value cannot express it.
+      #
+      # Tracked upstream as fleet#196 and agent-infrastructure#1007; the
+      # override below is the repository's own half and stands however those
+      # land.
+      # 3072 was over-committed against a 4096 MiB guest even before TMPDIR is
+      # counted. 2048 leaves headroom for pnpm, esbuild workers and the browser
+      # the smoke launches, and no lane has needed the larger heap.
+      NODE_OPTIONS: --max-old-space-size=2048
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
       # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
@@ -353,6 +374,36 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+
+      - name: Point TMPDIR at disk, outside the checkout
+        # WHY THIS IS A STEP AND NOT A JOB-LEVEL `env:` VALUE.
+        #
+        # The destination has to satisfy three things at once, and only
+        # RUNNER_TEMP does:
+        #
+        #   on disk, not tmpfs  -- /run in these guests is a tmpfs sized 13G
+        #     inside a 4096 MiB cgroup, so the default TMPDIR makes every
+        #     temp byte guest RAM and OOM-kills this job mid-install.
+        #   OUTSIDE github.workspace -- a first attempt put it at
+        #     ${{ github.workspace }}/.job-tmp, and pnpm then walked up from
+        #     the generated consumer, found this repo's pnpm-workspace.yaml,
+        #     and resolved the consumer as a workspace member. The install
+        #     "succeeded" and left no node_modules in the consumer, failing
+        #     later with a confusing ENOENT on create-narduk-app/package.json.
+        #   expressible -- the `runner` context is unavailable in a job-level
+        #     `env:` block, where ${{ runner.temp }} silently expands to the
+        #     empty string and un-sets TMPDIR rather than failing.
+        #
+        # $RUNNER_TEMP is the same directory the `runner` context would name,
+        # readable as a plain shell variable at step level. Exporting through
+        # $GITHUB_ENV applies it to every later step, which is why this sits
+        # before all of them.
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP}/consumer-smoke"
+          mkdir -p "${tmp}"
+          echo "TMPDIR=${tmp}" >>"${GITHUB_ENV}"
+          df -h "${tmp}" | tail -1
 
       - name: Materialize Changesets base branch
         run: |

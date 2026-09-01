@@ -83,6 +83,56 @@ at the call site:
 
 ## Request accounting
 
+`playwright/accessibility` asserts a WCAG 2.2 AA claim against a recorded
+baseline instead of against zero. An app that has never run axe almost always
+has debt on its first run — usually contrast on state colours a design system
+produces, which is a token change and often a design decision rather than an
+engineering one. A gate that demands zero on day one gets disabled by the first
+person it blocks; a gate that only reports teaches nothing.
+
+So the ledger is asserted in both directions: a rule that fires and is not in
+the baseline fails, so new debt cannot land silently; and a rule in the baseline
+that no longer fires also fails, asking for the baseline to be lowered, so debt
+cannot be re-accrued behind a stale allowance. The file only ever shrinks.
+
+```ts
+import AxeBuilder from '@axe-core/playwright'
+import {
+  WCAG_2_2_AA_TAGS,
+  assertAgainstAccessibilityBaseline,
+} from '@narduk-enterprises/narduk-testkit/playwright/accessibility'
+
+import baseline from './accessibility-baseline.json' with { type: 'json' }
+
+test('has no new AA violation', async ({ page }) => {
+  await page.goto('/')
+  const results = await new AxeBuilder({ page })
+    .withTags([...WCAG_2_2_AA_TAGS])
+    .analyze()
+  assertAgainstAccessibilityBaseline(test.info(), results, baseline, {
+    baselinePath: 'tests/e2e/accessibility-baseline.json',
+  })
+})
+```
+
+The helpers take axe RESULTS rather than building the scan, so the app keeps
+control of `AxeBuilder` options and this package never imports axe —
+`@axe-core/playwright` is an optional peer for exactly that reason.
+
+Three properties axe has no rule for ship alongside it, each one a promise a
+design system can silently lose: `expectNoOverflowAtTextZoom` (scales the ROOT
+font size, because zooming a viewport out passes while real 200% text still
+overflows), `expectStateNotCarriedByColourAlone`, and
+`expectNoTransitionsUnderReducedMotion` — which asserts transitions are REMOVED
+rather than shortened, since a 40ms animation still animates and the people the
+setting exists for are the ones a shorter one does not help.
+
+Axe settles the mechanical half: contrast, accessible names, landmark and
+heading structure, invalid ARIA, form labelling. It cannot judge whether a
+reading order makes sense, whether an accessible name is useful, or whether a
+person using a screen reader can complete a task. A conformance claim resting on
+this alone should say so.
+
 `playwright/request-accounting` pins what a page costs, read from the browser's
 own Resource Timing entries rather than argued from the code:
 
