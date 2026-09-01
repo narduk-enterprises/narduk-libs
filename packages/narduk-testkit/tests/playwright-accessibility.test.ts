@@ -179,28 +179,31 @@ describe('textScalingVerdict', () => {
     expect(textScalingVerdict(16, 32, 200).ok).toBe(true)
   })
 
-  it('accepts damped scaling above the tolerance floor', () => {
-    // clamp() ceilings and container queries legitimately damp the top end.
-    const verdict = textScalingVerdict(16, 26, 200)
+  it('requires very nearly the full requested scaling by default', () => {
+    // 0.9 tolerance on a 200% request => 1.9x floor. A page that scales fully
+    // sits at 2.0x and clears it with room for sub-pixel rounding.
+    const verdict = textScalingVerdict(16, 30.4, 200)
     expect(verdict.ok).toBe(true)
-    expect(verdict.required).toBeCloseTo(1.5)
+    expect(verdict.required).toBeCloseTo(1.9)
   })
 
-  it('rejects scaling below the tolerance floor', () => {
-    const verdict = textScalingVerdict(16, 20, 200)
+  it('rejects PARTIAL scaling, not merely absent scaling', () => {
+    // A clamp() ceiling that damps 200% down to 1.6x is itself a 1.4.4
+    // finding. The default surfaces it rather than absorbing it.
+    const verdict = textScalingVerdict(16, 26, 200)
     expect(verdict.ok).toBe(false)
-    expect(verdict.reason).toMatch(/1\.25x against a required 1\.50x/)
+    expect(verdict.reason).toMatch(/1\.63x against a required 1\.90x/)
   })
 
-  it('honours a stricter tolerance', () => {
-    expect(textScalingVerdict(16, 26, 200, 1).ok).toBe(false)
-    expect(textScalingVerdict(16, 32, 200, 1).ok).toBe(true)
+  it('lets a consumer with a real ceiling loosen the floor explicitly', () => {
+    // Explicit, so the deviation is visible in that app's own test file.
+    expect(textScalingVerdict(16, 26, 200, 0.5).ok).toBe(true)
   })
 
   it('scales its requirement with the requested percentage', () => {
-    // 150% at the default tolerance requires 1.25x, not 1.5x.
-    expect(textScalingVerdict(16, 20, 150).ok).toBe(true)
-    expect(textScalingVerdict(16, 18, 150).ok).toBe(false)
+    // 150% at the default tolerance requires 1.45x, not 1.9x.
+    expect(textScalingVerdict(16, 24, 150).ok).toBe(true)
+    expect(textScalingVerdict(16, 20, 150).ok).toBe(false)
   })
 
   it('refuses a probe that measured nothing rather than dividing by zero', () => {
