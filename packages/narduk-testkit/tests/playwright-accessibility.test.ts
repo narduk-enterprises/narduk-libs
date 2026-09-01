@@ -8,6 +8,7 @@ import {
   WCAG_2_2_AA_TAGS,
   assertAgainstAccessibilityBaseline,
   describeViolations,
+  textScalingVerdict,
 } from '../src/playwright/accessibility.js'
 
 import type { AxeResults } from './accessibility-types.js'
@@ -148,5 +149,63 @@ describe('the published surface', () => {
      */
     const source = readFileSync(join(packageRoot, 'src/playwright/accessibility.ts'), 'utf8')
     expect(source).not.toContain("from '@axe-core/playwright'")
+  })
+})
+
+describe('textScalingVerdict', () => {
+  /*
+   * This is the judgement the text-zoom check makes, and the reason it is a
+   * separate function at all. The first version of that check raised the root
+   * font size and asserted only that nothing overflowed — which a page with
+   * px-declared typography passes trivially, because nothing moves. It could
+   * not fail, and it was cited as WCAG 1.4.4 evidence. Found in production on
+   * 2026-09-01.
+   */
+
+  it('fails a page whose text does not move at all — the defect that shipped', () => {
+    const verdict = textScalingVerdict(16, 16, 200)
+    expect(verdict.ok).toBe(false)
+    expect(verdict.actual).toBe(1)
+    expect(verdict.reason).toMatch(/did not scale at all/)
+  })
+
+  it('says plainly that the overflow assertion would have passed', () => {
+    // The failure message has to explain why the surrounding check looked
+    // green, or the next reader concludes the tool is broken.
+    expect(textScalingVerdict(16, 16, 200).reason).toMatch(/would have PASSED/)
+  })
+
+  it('passes text that scales fully with the root', () => {
+    expect(textScalingVerdict(16, 32, 200).ok).toBe(true)
+  })
+
+  it('accepts damped scaling above the tolerance floor', () => {
+    // clamp() ceilings and container queries legitimately damp the top end.
+    const verdict = textScalingVerdict(16, 26, 200)
+    expect(verdict.ok).toBe(true)
+    expect(verdict.required).toBeCloseTo(1.5)
+  })
+
+  it('rejects scaling below the tolerance floor', () => {
+    const verdict = textScalingVerdict(16, 20, 200)
+    expect(verdict.ok).toBe(false)
+    expect(verdict.reason).toMatch(/1\.25x against a required 1\.50x/)
+  })
+
+  it('honours a stricter tolerance', () => {
+    expect(textScalingVerdict(16, 26, 200, 1).ok).toBe(false)
+    expect(textScalingVerdict(16, 32, 200, 1).ok).toBe(true)
+  })
+
+  it('scales its requirement with the requested percentage', () => {
+    // 150% at the default tolerance requires 1.25x, not 1.5x.
+    expect(textScalingVerdict(16, 20, 150).ok).toBe(true)
+    expect(textScalingVerdict(16, 18, 150).ok).toBe(false)
+  })
+
+  it('refuses a probe that measured nothing rather than dividing by zero', () => {
+    expect(textScalingVerdict(0, 32, 200).ok).toBe(false)
+    expect(textScalingVerdict(16, Number.NaN, 200).ok).toBe(false)
+    expect(textScalingVerdict(16, Number.NaN, 200).reason).toMatch(/zero or not a number/)
   })
 })
