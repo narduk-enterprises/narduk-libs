@@ -22,6 +22,8 @@ or Command control plane. The decommission ledger and archive gates live in
 - `@narduk-enterprises/narduk-ui`
 - `@narduk-enterprises/status-runtime`
 - `@narduk-enterprises/create-narduk-app`
+- `@narduk-enterprises/journeys`
+- `@narduk-enterprises/eslint-config`
 
 ## Consuming these packages
 

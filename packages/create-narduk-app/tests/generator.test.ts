@@ -371,6 +371,27 @@ describe('create-narduk-app generation contract', () => {
     }
   })
 
+  it('does not scaffold an app-local health route that shadows narduk-core /api/health', () => {
+    // narduk-core is always an implicit module (moduleList()) and registers
+    // `runtime/server/api/health.get.ts` via addServerScanDir — a real
+    // DB-probing health check. Nitro resolves an app-local
+    // `server/api/*` file before a module's addServerScanDir contribution
+    // with the same route, so a generated `apps/web/server/api/health.get.ts`
+    // stub would silently shadow narduk-core's real check with a trivial
+    // `{ ok: true }` response in every scaffolded app. Regression coverage
+    // for that shadowing bug.
+    const files = buildGeneratedFiles({
+      appName: 'health-shadow-check',
+      capabilities: [],
+      noGit: true,
+      targetDir: '/tmp/health-shadow-check',
+    })
+    const paths = files.map((file) => file.path)
+
+    expect(paths).not.toContain('apps/web/server/api/health.get.ts')
+    expect(paths.some((path) => /(?:^|\/)server\/api\/health\.get\.ts$/u.test(path))).toBe(false)
+  })
+
   it('emits files already canonical under the generated Prettier contract', async () => {
     const files = buildGeneratedFiles({
       appName: 'format-check',
