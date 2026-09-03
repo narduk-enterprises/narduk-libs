@@ -1,7 +1,7 @@
 # Proposal: `@narduk-enterprises/narduk-shell`
 
 **Status:** proposed, not built. Written 2026-09-03 as part of the web-cf docs/libs audit
-(narduk-enterprises/company-hq#453). Filed as narduk-libs#\<issue\> for tracking; this file is
+(narduk-enterprises/company-hq#453). Filed as narduk-libs#119 for tracking; this file is
 the design note that issue points at.
 
 ## Why
