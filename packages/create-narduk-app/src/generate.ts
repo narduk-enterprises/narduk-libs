@@ -596,15 +596,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       }),
     },
     {
-      path: 'apps/web/server/api/health.get.ts',
-      contents: text(
-        'export default defineEventHandler(() => ({',
-        '  ok: true,',
-        '  app: ' + tsString(appName) + ',',
-        '}))',
-      ),
-    },
-    {
       path: 'apps/web/server/database/schema.ts',
       contents: text(
         "import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'",
