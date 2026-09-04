@@ -20,6 +20,7 @@
   "include": [
     "runtime/internal/**/*.ts",
     "runtime/app/composables/useAppViewGate.ts",
+    "runtime/server/utils/approximateLocation.ts",
     "runtime/server/utils/authApiKeyD1.ts",
     "runtime/server/utils/authApiKeyText.ts",
     "runtime/server/utils/kv.ts",
