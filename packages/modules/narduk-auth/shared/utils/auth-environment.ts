@@ -40,6 +40,26 @@ function parseAuthProviders(value: string | undefined) {
     .filter((provider, index, providers) => provider && providers.indexOf(provider) === index)
 }
 
+// Providers the local backend may opt into advertising alongside the always-on
+// `email` provider. This is an advertisement allowlist only: it does not
+// itself implement passkey or Apple sign-in for the local backend, and it
+// must never grow to include a name the package cannot yet authenticate.
+const LOCAL_AUTH_PROVIDER_ALLOWLIST = ['apple', 'passkey'] as const
+
+function parseLocalAuthProviders(value: string | undefined) {
+  const raw = (value ?? '').trim()
+  if (!raw) return []
+
+  const requested = raw
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter((provider, index, providers) => provider && providers.indexOf(provider) === index)
+
+  return requested.filter((provider): provider is (typeof LOCAL_AUTH_PROVIDER_ALLOWLIST)[number] =>
+    (LOCAL_AUTH_PROVIDER_ALLOWLIST as readonly string[]).includes(provider),
+  )
+}
+
 export function resolveAuthEnvironment(
   env: Record<string, string | undefined>,
 ): ResolvedAuthEnvironment {
@@ -85,7 +105,10 @@ export function resolveAuthEnvironment(
     appBackendPreset,
     authAuthorityUrl: supabaseUrl,
     authBackend,
-    authProviders: authBackend === 'supabase' ? parseAuthProviders(env.AUTH_PROVIDERS) : ['email'],
+    authProviders:
+      authBackend === 'supabase'
+        ? parseAuthProviders(env.AUTH_PROVIDERS)
+        : ['email', ...parseLocalAuthProviders(env.AUTH_LOCAL_PROVIDERS)],
     supabaseUrl,
     supabasePublishableKey,
     supabaseServiceRoleKey,
