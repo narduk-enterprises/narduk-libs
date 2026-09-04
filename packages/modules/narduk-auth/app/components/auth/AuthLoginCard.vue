@@ -132,7 +132,7 @@ async function onAppleSignIn() {
         <h1 class="text-2xl font-bold">
           {{ title }}
         </h1>
-        <p class="text-sm text-muted">
+        <p class="text-sm text-toned">
           {{ resolvedSubtitle }}
         </p>
       </div>
@@ -200,7 +200,7 @@ async function onAppleSignIn() {
         </UFormField>
 
         <div class="flex justify-end">
-          <ULink :to="resetLink" class="text-xs text-muted hover:text-primary">
+          <ULink :to="resetLink" class="text-xs text-toned hover:text-primary">
             Forgot your password?
           </ULink>
         </div>
@@ -218,7 +218,7 @@ async function onAppleSignIn() {
     </div>
 
     <template #footer>
-      <p class="text-center text-sm text-muted">
+      <p class="text-center text-sm text-toned">
         <template v-if="canRegister">
           Don&apos;t have an account?
           <ULink :to="registerLink" class="font-medium text-primary hover:underline">
