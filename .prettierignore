@@ -84,3 +84,6 @@ vendor/
 *.dump
 *.sql.gz
 *.tar.gz
+
+# ── Generated changelogs (written by changesets, not hand-authored) ────
+**/CHANGELOG.md
