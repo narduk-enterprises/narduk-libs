@@ -183,6 +183,7 @@ async function onAppleSignIn() {
           <UInput
             v-model="state.email"
             type="email"
+            autocomplete="email"
             placeholder="you@example.com"
             class="w-full"
             data-testid="auth-login-email"
@@ -193,6 +194,7 @@ async function onAppleSignIn() {
           <UInput
             v-model="state.password"
             type="password"
+            autocomplete="current-password"
             placeholder="••••••••"
             class="w-full"
             data-testid="auth-login-password"

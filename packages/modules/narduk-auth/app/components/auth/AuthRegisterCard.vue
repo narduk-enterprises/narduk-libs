@@ -163,6 +163,7 @@ async function onAppleSignIn() {
         <UFormField name="name" label="Name">
           <UInput
             v-model="state.name"
+            autocomplete="name"
             placeholder="Jane Doe"
             class="w-full"
             data-testid="auth-register-name"
@@ -173,6 +174,7 @@ async function onAppleSignIn() {
           <UInput
             v-model="state.email"
             type="email"
+            autocomplete="email"
             placeholder="you@example.com"
             class="w-full"
             data-testid="auth-register-email"
@@ -183,6 +185,7 @@ async function onAppleSignIn() {
           <UInput
             v-model="state.password"
             type="password"
+            autocomplete="new-password"
             placeholder="Create a strong password"
             class="w-full"
             data-testid="auth-register-password"
