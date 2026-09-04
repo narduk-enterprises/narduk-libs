@@ -1,5 +1,32 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.1
+
+### Patch Changes
+
+- ee7452c: Bump the generated app's pinned `@narduk-enterprises/narduk-auth`
+  version so new apps scaffold onto the release that consolidates the package's
+  same-origin redirect guards.
+- e5a0b33: Release alongside the `narduk-mapkit` / `narduk-mapkit-nuxt` patch
+  bumps so the generator's `PACKAGE_VERSIONS` pins for those two packages ship
+  at the versions they are synced to. `create-narduk-app` writes those pins
+  verbatim into every scaffolded app's `package.json`, so a release that moves
+  the pinned packages without republishing the generator leaves new apps pinned
+  to a version the generator no longer names. No behaviour change in the
+  generator itself.
+- 927f7e3: create-narduk-app: pick up the `@narduk-enterprises/narduk-app-tools`
+  minor release (`foundation:check`, D-WEBFOUND-2 Q5(a)/Q9(a)) so a freshly
+  scaffolded app pins the version that ships the new command. No generator
+  behavior changes; this is the release-plan companion changeset required
+  whenever a generator-owned package pin moves (company-hq#628).
+- d6e098e: Make the scaffolded `playwright.config.ts` port overridable via
+  `PLAYWRIGHT_PORT`, flowing into `baseURL`, the `webServer` url, and the
+  `webServer` command's `PORT` env. Previously the port was a fixed literal, so
+  when two or more agent lanes (or a lane plus the developer) worked the same
+  generated repo concurrently in separate worktrees, the second Playwright run
+  would silently attach to the first lane's dev server and test the wrong build
+  — with a green result (narduk-libs#62).
+
 ## 0.2.0
 
 ### Minor Changes
