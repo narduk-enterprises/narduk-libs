@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.0.5
+
+### Patch Changes
+
+- Updated dependencies [d6e098e]
+  - @narduk-enterprises/narduk-core@1.20.5
+
 ## 2.0.4
 
 ### Patch Changes

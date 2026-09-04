@@ -1,5 +1,76 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.22.0
+
+### Minor Changes
+
+- 1196849: Drop the published Postgres bridge surface:
+  `server/database/auth-bridge-pg-schema`, `server/database/pg-app-schema`, and
+  `server/database/pg-schema` are removed, along with the `typecheck:postgres`
+  gate in `quality:strict`. The package advertised a Postgres dialect it never
+  shipped migrations for (narduk-libs#94) — `useAuthBridgeDatabase` now calls
+  `createAppDatabase` with the D1 schema only, so a Postgres-backend build no
+  longer gets a type-checked-but-non-functional auth bridge; it gets a clear
+  absence instead.
+
+  Per operator decision:
+
+  > Logan, 2026-09-04: "Drop the published Postgres surface (Recommended)"
+
+  **Migration for a consumer importing the removed subpath:** if your app
+  imports
+  `@narduk-enterprises/narduk-auth/server/database/auth-bridge-pg-schema`
+  (directly or via your own `server/database/pg-app-schema.ts` re-export),
+  delete that import — it was unused scaffolding with no matching migration on
+  either side. One known consumer is tracked at
+  narduk-enterprises/been-sober-for#95.
+
+- ee7452c: Consolidate the package's four divergent same-origin redirect guards
+  onto one hardened implementation, `sanitizeSameOriginPath` in
+  `shared/utils/same-origin-path.ts`.
+
+  `app/utils/safeRedirectPath.ts`, `server/lib/app-auth/helpers.ts`,
+  `server/lib/app-auth/local-email-core.ts` and
+  `server/api/auth/session/exchange.get.ts` each carried their own copy of the
+  "is this a safe same-origin path?" check, and they did not agree. Only the
+  client-side copy rejected a bare (non-`/`-prefixed) value or a percent-encoded
+  backslash, so the advisory client check was strictly stricter than the
+  authoritative server checks it was meant to mirror — the weaker check sat on
+  the trust boundary that matters.
+
+  The consolidated guard takes the strictest rule any copy had, so the accepted
+  set can only narrow:
+
+  - a value that does not start with `/` is rejected rather than coerced into a
+    path (`next=example.com` no longer becomes `/example.com`);
+  - a percent-encoded backslash (`%5c`, any case) is rejected on the server as
+    it already was on the client;
+  - protocol-relative (`//host`), literal-backslash, and raw-control-character
+    values are rejected by explicit checks rather than only as a side effect of
+    URL normalization;
+  - malformed percent-encoding (`/%zz`, `/ok%`, `/a%2`) is rejected everywhere,
+    as only the local-email copy did (as a side effect of decoding);
+  - a non-string value is rejected rather than coerced.
+
+  `sanitizeLocalRedirectPath`, `sanitizeNextPath` and
+  `sanitizeLocalEmailRedirect` keep their names and signatures and now delegate
+  to the shared guard, so no importer has to change.
+
+  The auth-callback failure branch in `server/api/auth/session/exchange.get.ts`
+  now also runs the caller-supplied `next` through the guard before re-emitting
+  it on the error redirect, instead of passing it through verbatim.
+
+### Patch Changes
+
+- d6e098e: Set explicit `autocomplete` tokens on `AuthLoginCard` and
+  `AuthRegisterCard` credential fields (`email`, `current-password`,
+  `new-password`, `name`). `@nuxt/ui@4.6.0`'s `Input.vue` defaults
+  `autocomplete` to `"off"` when a consumer doesn't override it, which blocked
+  password managers from filling or saving credentials on every app using these
+  cards (narduk-libs#60).
+- Updated dependencies [d6e098e]
+  - @narduk-enterprises/narduk-core@1.20.5
+
 ## 1.21.1
 
 ### Patch Changes
