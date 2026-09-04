@@ -41,6 +41,7 @@
     "prebuild": "nuxt-module-build prepare",
     "prelint": "pnpm run dev:prepare",
     "prepack": "nuxt-module-build build",
+    "preprepack": "nuxt-module-build prepare",
     "pretest:unit": "pnpm run dev:prepare",
     "pretypecheck": "pnpm run dev:prepare",
     "test": "vitest run",
