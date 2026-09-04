@@ -1,0 +1,22 @@
+[
+  {
+    "name": "ESM main",
+    "path": "dist/narduk-charts.js",
+    "limit": "120 KB"
+  },
+  {
+    "name": "UMD main",
+    "path": "dist/narduk-charts.umd.cjs",
+    "limit": "95 KB"
+  },
+  {
+    "name": "Line entry",
+    "path": "dist/line.js",
+    "limit": "55 KB"
+  },
+  {
+    "name": "Candle entry",
+    "path": "dist/candle.js",
+    "limit": "48 KB"
+  }
+]
