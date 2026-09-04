@@ -2,7 +2,7 @@ import { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenRespons
 import type { MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult } from './handler.js';
 import type { MapKitServerConfig } from './shared-config.js';
 export * from './config.js';
-export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv, };
+export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv };
 export type { MapKitRateLimitContext, MapKitRateLimitDecision, MapKitRateLimitHook, MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult, } from './handler.js';
 /**
  * Node-only token resolver. It may read `process.env` and use the optional

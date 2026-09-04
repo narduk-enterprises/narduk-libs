@@ -32,14 +32,10 @@ export interface MapKitRegionConstructors<
 // Getting this wrong silently breaks any per-tile logic that reads z (e.g. bounds
 // gating), since z=1 (near-whole-earth) gets read instead of the real zoom.
 export type MapKitTileOverlayUrlTemplate =
-  | string
-  | ((x: number, y: number, z: number, scale: number) => string)
+  string | ((x: number, y: number, z: number, scale: number) => string)
 
 export type MapKitTileImageSource =
-  | HTMLImageElement
-  | HTMLCanvasElement
-  | ImageBitmap
-  | OffscreenCanvas
+  HTMLImageElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas
 
 export type MapKitTileOverlayImageSource<TImageSource = MapKitTileImageSource> = (
   x: number,
@@ -50,17 +46,13 @@ export type MapKitTileOverlayImageSource<TImageSource = MapKitTileImageSource> =
 ) => Promise<TImageSource | null>
 
 export type MapKitTileOverlaySource<TImageSource = MapKitTileImageSource> =
-  | MapKitTileOverlayUrlTemplate
-  | MapKitTileOverlayImageSource<TImageSource>
+  MapKitTileOverlayUrlTemplate | MapKitTileOverlayImageSource<TImageSource>
 
 export interface MapKitTileOverlayConstructors<
   TTileOverlay = unknown,
   TSource extends MapKitTileOverlaySource<unknown> = MapKitTileOverlaySource,
 > {
-  TileOverlay: Constructor<
-    [source: TSource, options?: MapKitTileOverlayOptions],
-    TTileOverlay
-  >
+  TileOverlay: Constructor<[source: TSource, options?: MapKitTileOverlayOptions], TTileOverlay>
 }
 
 export interface MapKitTileOverlayOptions {
@@ -167,7 +159,8 @@ export function createMapKitTileOverlay<
   source: TSource,
   options: MapKitTileOverlayOptions = {},
 ): TTileOverlay {
-  if (typeof source === 'string' && !source.trim()) throw new Error('tile overlay source is required')
+  if (typeof source === 'string' && !source.trim())
+    throw new Error('tile overlay source is required')
   if (typeof source !== 'string' && typeof source !== 'function') {
     throw new Error('tile overlay source is required')
   }
@@ -184,10 +177,7 @@ export interface MapKitAsyncTileOverlayLifecycle {
  * first usable image as a lifecycle event for safe layer replacement.
  */
 export function createMapKitAsyncTileOverlay<TTileOverlay, TImageSource>(
-  mapkit: MapKitTileOverlayConstructors<
-    TTileOverlay,
-    MapKitTileOverlayImageSource<TImageSource>
-  >,
+  mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlayImageSource<TImageSource>>,
   imageForTile: MapKitTileOverlayImageSource<TImageSource>,
   options: MapKitTileOverlayOptions = {},
   lifecycle: MapKitAsyncTileOverlayLifecycle = {},
@@ -320,6 +310,9 @@ export function crossfadeMapKitOverlayOpacity<TOverlay extends MapKitOpacityTarg
     const progress = durationMs === 0 ? 1 : Math.min(1, elapsed / durationMs)
     const eased = easing(progress)
     options.nextOverlay.opacity = interpolateNumber(nextStartOpacity, options.targetOpacity, eased)
+    // Rewriting this to `for…of` over `.entries()` is a control-flow change in
+    // a per-frame animation path, and differs on sparse arrays.
+    // eslint-disable-next-line unicorn/no-for-each -- narduk-libs#138
     oldOverlays.forEach((overlay, index) => {
       overlay.opacity = oldStartOpacities[index]! * (1 - eased)
     })

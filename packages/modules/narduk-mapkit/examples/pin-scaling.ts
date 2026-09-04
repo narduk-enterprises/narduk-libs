@@ -111,9 +111,8 @@ export function createScaledPinLayer(
     registry.reconcile(
       structures.map((structure) => ({
         create: () =>
-          new mapkit.Annotation(
-            new mapkit.Coordinate(structure.lat, structure.lng),
-            () => createPinElement(structure),
+          new mapkit.Annotation(new mapkit.Coordinate(structure.lat, structure.lng), () =>
+            createPinElement(structure),
           ),
         key: structure.id,
         // Zoom is deliberately absent: presentation is the scaling

@@ -24,6 +24,8 @@ export function useMapKit() {
         startPromise = null
         throw cause
       })
+    // Runtime expression left exactly as written upstream.
+    // eslint-disable-next-line unicorn/no-useless-undefined -- narduk-libs#138
     void startPromise.catch(() => undefined)
   }
 

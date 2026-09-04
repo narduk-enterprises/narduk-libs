@@ -1,7 +1,7 @@
 # @narduk-enterprises/narduk-mapkit-nuxt
 
-Nuxt integration for `@narduk-enterprises/narduk-mapkit`. It adds the `AppMapKit` and
-`AppMapKitCallout` components, `useMapKit`, `useMapKitCallouts`,
+Nuxt integration for `@narduk-enterprises/narduk-mapkit`. It adds the
+`AppMapKit` and `AppMapKitCallout` components, `useMapKit`, `useMapKitCallouts`,
 `useMapkitToken`, and a Worker-compatible `GET /api/mapkit-token` route.
 
 ## Install
@@ -104,14 +104,14 @@ cannot pick up from its parent's generic.
 
 ### Props, events, and methods
 
-| Prop | Default | Purpose |
-| --- | --- | --- |
-| `callouts` | `false` | Opt in. Nothing is constructed until it is `true`. |
-| `calloutMode` | `'single'` | `'multi'` keeps every open callout open. |
-| `calloutPlacement` | `'above'` | Preferred side; flips when cramped. |
-| `calloutAnchorOffset` | derived | Pixels added to the projected anchor. Defaults to clearing the pin, from `annotationSize`. |
-| `calloutFollowSelection` | `true` | Bind callouts to `selectedId` in both directions. |
-| `calloutOptions` | -- | The rest of the controller's options: `gap`, `edgePadding`, `flip`, `caretSize`, `closeOnEscape`, `closeOnMapClick`, `closeOnPan`, `closeOnDeselect`, `focusOnOpen`, `restoreFocus`, `role`, `ariaLabel`, `zIndex`, `hideOffscreen`, `keyForAnnotation`. |
+| Prop                     | Default    | Purpose                                                                                                                                                                                                                                                  |
+| ------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `callouts`               | `false`    | Opt in. Nothing is constructed until it is `true`.                                                                                                                                                                                                       |
+| `calloutMode`            | `'single'` | `'multi'` keeps every open callout open.                                                                                                                                                                                                                 |
+| `calloutPlacement`       | `'above'`  | Preferred side; flips when cramped.                                                                                                                                                                                                                      |
+| `calloutAnchorOffset`    | derived    | Pixels added to the projected anchor. Defaults to clearing the pin, from `annotationSize`.                                                                                                                                                               |
+| `calloutFollowSelection` | `true`     | Bind callouts to `selectedId` in both directions.                                                                                                                                                                                                        |
+| `calloutOptions`         | --         | The rest of the controller's options: `gap`, `edgePadding`, `flip`, `caretSize`, `closeOnEscape`, `closeOnMapClick`, `closeOnPan`, `closeOnDeselect`, `focusOnOpen`, `restoreFocus`, `role`, `ariaLabel`, `zIndex`, `hideOffscreen`, `keyForAnnotation`. |
 
 Events: `callout-open` (also fired when an open callout is re-opened with new
 data) and `callout-close`. Both carry `{ item, key, phase, reason }`.
@@ -149,8 +149,8 @@ Runtime names accepted by the token route:
 Cloudflare bindings are read from the request-scoped Nitro context. Nuxt
 runtime-config equivalents (`applePrivateKey`, `appleSecretKey`, `appleTeamId`,
 `appleKeyId`, `mapkitAllowedOrigins`, and `public.mapkitToken`) are supported as
-fallbacks. Missing credentials return `503` with `{ configured: false }`.
-The generated endpoint accepts GET only; other methods return `405` with
+fallbacks. Missing credentials return `503` with `{ configured: false }`. The
+generated endpoint accepts GET only; other methods return `405` with
 `Allow: GET`.
 
 Provider-specific rate limiting remains app-owned. A server middleware can set
@@ -161,7 +161,9 @@ export default defineEventHandler((event) => {
   event.context.nardukMapKit = {
     rateLimit: async ({ origin }) => {
       const allowed = await consumeAppRateLimit(origin)
-      return allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: 60 }
+      return allowed
+        ? { allowed: true }
+        : { allowed: false, retryAfterSeconds: 60 }
     },
   }
 })

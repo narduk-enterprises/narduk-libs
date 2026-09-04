@@ -1,6 +1,9 @@
 import { attachMapKitPointerProbe } from '@narduk-enterprises/narduk-mapkit/client'
 
-import type { MapKitProbeEvent, MapKitProbePointerSample } from '@narduk-enterprises/narduk-mapkit/client'
+import type {
+  MapKitProbeEvent,
+  MapKitProbePointerSample,
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 interface MapCoordinate {
   latitude: number

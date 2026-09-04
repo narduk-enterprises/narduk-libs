@@ -159,9 +159,10 @@ export async function mapKitTokenResponse(
         : { request, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) },
     )
     const status = result.status ?? (result.configured ? (result.token ? 200 : 403) : 503)
-    const headers = result.retryAfterSeconds === undefined
-      ? undefined
-      : { 'retry-after': String(result.retryAfterSeconds) }
+    const headers =
+      result.retryAfterSeconds === undefined
+        ? undefined
+        : { 'retry-after': String(result.retryAfterSeconds) }
     return jsonResponse(result, status, headers)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate MapKit token'
@@ -202,8 +203,7 @@ export function createMapKitTokenHandler(
   config?: MapKitServerConfig,
   options: MapKitTokenResponseOptions = {},
 ) {
-  return (request: Request): Promise<Response> =>
-    mapKitTokenResponse(request, config, options)
+  return (request: Request): Promise<Response> => mapKitTokenResponse(request, config, options)
 }
 
 export function clearMapKitTokenCacheForTests(): void {
@@ -222,7 +222,8 @@ function cacheMaxEntries(config: MapKitServerConfig): number {
 }
 
 function cacheRefreshWindowMs(config: MapKitServerConfig): number {
-  const refreshWindowMs = typeof config.cache === 'object' ? config.cache.refreshWindowMs : undefined
+  const refreshWindowMs =
+    typeof config.cache === 'object' ? config.cache.refreshWindowMs : undefined
   return typeof refreshWindowMs === 'number' &&
     Number.isFinite(refreshWindowMs) &&
     refreshWindowMs >= 0
@@ -246,9 +247,7 @@ async function signingMaterialFingerprint(privateKey: string): Promise<string> {
     'SHA-256',
     new TextEncoder().encode(normalizedPrivateKey),
   )
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function readCachedSignedToken(

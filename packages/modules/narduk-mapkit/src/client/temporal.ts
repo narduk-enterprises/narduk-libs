@@ -38,7 +38,8 @@ export function nextDrawableFrame(state: TemporalPlaybackState): number | null {
 export function temporalProgress(state: TemporalPlaybackState): number {
   if (state.frameCount < 1) return 0
   let ready = 0
-  for (let index = 0; index < state.frameCount; index++) if (state.readiness.get(index) === 'ready') ready++
+  for (let index = 0; index < state.frameCount; index++)
+    if (state.readiness.get(index) === 'ready') ready++
   return ready / state.frameCount
 }
 
@@ -49,7 +50,10 @@ export function temporalProgress(state: TemporalPlaybackState): number {
  * calling this, which is exactly what the temporal controller does with the
  * frame the map is currently showing.
  */
-export function boundedFrameCache<T>(entries: ReadonlyMap<number, T>, maxEntries: number): Map<number, T> {
+export function boundedFrameCache<T>(
+  entries: ReadonlyMap<number, T>,
+  maxEntries: number,
+): Map<number, T> {
   const result = new Map(entries)
   while (result.size > Math.max(1, maxEntries)) result.delete(result.keys().next().value!)
   return result
@@ -73,7 +77,7 @@ export type TemporalFrameInput<TMeta = unknown> = string | TemporalFrame<TMeta>
 
 /** Normalize a mixed id/frame list, dropping entries with an empty id. */
 export function normalizeTemporalFrames<TMeta = unknown>(
-  frames: readonly TemporalFrameInput<TMeta>[] | null | undefined,
+  frames: ReadonlyArray<TemporalFrameInput<TMeta>> | null | undefined,
 ): Array<TemporalFrame<TMeta>> {
   if (!Array.isArray(frames)) return []
   return frames.flatMap((frame) => {
@@ -160,7 +164,7 @@ export interface TemporalLayerControllerOptions<TMeta = unknown> {
    */
   descriptorForFrame: (frame: TemporalFrame<TMeta>, index: number) => MapKitLayerDescriptor
   /** Ordered oldest-to-newest dated frames. */
-  frames: readonly TemporalFrameInput<TMeta>[]
+  frames: ReadonlyArray<TemporalFrameInput<TMeta>>
   /**
    * Gate advancement on frame readiness. Defaults to `true` when
    * `prefetchFrame` is supplied and `false` otherwise, because without a
@@ -301,7 +305,7 @@ export class MapKitTemporalLayerController<TMeta = unknown> {
     return this.#frames[this.#index]
   }
 
-  get frames(): readonly TemporalFrame<TMeta>[] {
+  get frames(): ReadonlyArray<TemporalFrame<TMeta>> {
     return this.#frames
   }
 
@@ -372,7 +376,7 @@ export class MapKitTemporalLayerController<TMeta = unknown> {
    * longer identify the same dates), and the index is clamped or re-anchored
    * to the previously current frame id when it survives.
    */
-  setFrames(frames: readonly TemporalFrameInput<TMeta>[]): void {
+  setFrames(frames: ReadonlyArray<TemporalFrameInput<TMeta>>): void {
     const previousId = this.frame?.id
     if (this.#playing) this.pause('frames')
     this.#cancelPrefetch()
@@ -615,7 +619,11 @@ export class MapKitTemporalLayerController<TMeta = unknown> {
     this.#scrub = { controller, token }
 
     try {
-      await this.#registry.replace(this.#layerId, descriptor, this.#replaceOptions(controller, options))
+      await this.#registry.replace(
+        this.#layerId,
+        descriptor,
+        this.#replaceOptions(controller, options),
+      )
       if (token === this.#scrubToken) this.#setReadiness(index, 'ready')
     } catch (reasonValue) {
       if (token === this.#scrubToken) {
@@ -656,7 +664,9 @@ export class MapKitTemporalLayerController<TMeta = unknown> {
     this.#setReadiness(index, 'loading')
     const controller = new AbortController()
     const promise = prefetchFrame(frame, index, controller.signal)
+      // Readiness bookkeeping only; the chain is deliberately Promise<void>.
       .then(() => {
+        // eslint-disable-next-line promise/always-return -- narduk-libs#138
         if (!controller.signal.aborted) this.#setReadiness(index, 'ready')
       })
       .catch((reason: unknown) => {

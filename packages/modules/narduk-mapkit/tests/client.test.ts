@@ -16,7 +16,10 @@ import {
 import type { MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
 
 function tokenWithExp(exp: number): string {
-  const payload = btoa(JSON.stringify({ exp })).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+  const payload = btoa(JSON.stringify({ exp }))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '')
   return `eyJhbGciOiJFUzI1NiJ9.${payload}.sig`
 }
 
@@ -45,7 +48,7 @@ describe('browser MapKit initialization', () => {
   })
 
   it('loads MapKit JS 6 libraries through the initialized runtime', async () => {
-    const mapkit = { init: vi.fn(), load: vi.fn(async () => undefined) }
+    const mapkit = { init: vi.fn(), load: vi.fn(async () => {}) }
 
     await loadMapKitLibraries(mapkit, ['map', 'overlays'])
 
@@ -89,7 +92,9 @@ describe('browser MapKit initialization', () => {
 
     await expect(
       initializeMapKit({
-        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ error: 'no token' }), { status: 503 })),
+        fetchImpl: vi.fn(
+          async () => new Response(JSON.stringify({ error: 'no token' }), { status: 503 }),
+        ),
         mapkitGlobal: mapkit,
         tokenEndpoint: '/mapkit-token',
       }),
@@ -191,13 +196,22 @@ describe('browser MapKit runtime helpers', () => {
   it('reports the first MapKit JS 6 async tile image and contains tile errors', async () => {
     class AsyncTileOverlay {
       constructor(
-        readonly imageForTile: (x: number, y: number, z: number, scale: number) => Promise<object | null>,
+        readonly imageForTile: (
+          x: number,
+          y: number,
+          z: number,
+          scale: number,
+        ) => Promise<object | null>,
         readonly options: Record<string, unknown> = {},
       ) {}
     }
     const onFirstImage = vi.fn()
     const onError = vi.fn()
-    const images = [Promise.resolve({ image: 1 }), Promise.resolve({ image: 2 }), Promise.reject(new Error('tile'))]
+    const images = [
+      Promise.resolve({ image: 1 }),
+      Promise.resolve({ image: 2 }),
+      Promise.reject(new Error('tile')),
+    ]
     const overlay = createMapKitAsyncTileOverlay(
       { TileOverlay: AsyncTileOverlay },
       vi.fn(() => images.shift() ?? Promise.resolve(null)),

@@ -4,11 +4,7 @@ import {
   mapKitConfigFromEnv as mapKitConfigFromExplicitEnv,
 } from './shared-config.js'
 
-import type {
-  MapKitDopplerConfig,
-  MapKitEnv,
-  MapKitServerConfig,
-} from './shared-config.js'
+import type { MapKitDopplerConfig, MapKitEnv, MapKitServerConfig } from './shared-config.js'
 
 export {
   hasSigningConfig,
@@ -93,7 +89,10 @@ async function readDopplerSecrets(
   keys: readonly string[],
   options: MapKitDopplerConfig,
 ): Promise<Record<string, string | undefined>> {
+  // Bounded parallel reads over a fixed, caller-supplied list of secret NAMES
+  // -- not an N+1 query over rows. Believed a false positive.
   const results = await Promise.all(
+    // eslint-disable-next-line narduk/no-map-async-in-server -- narduk-libs#138
     keys.map(async (key) => [key, await readDopplerSecret(key, options)] as const),
   )
   return Object.fromEntries(results)

@@ -312,7 +312,12 @@ export function computeMapKitRegionForLngLatBounds(
 }
 
 export function collectMapKitPointsFromGeoJson(
-  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry | null | undefined,
+  input:
+    | MapKitGeoJsonFeature
+    | MapKitGeoJsonFeatureCollection
+    | MapKitGeoJsonGeometry
+    | null
+    | undefined,
 ): MapKitPoint[] {
   if (!input) return []
   if (isGeoJsonFeatureCollectionInput(input)) {
@@ -333,7 +338,9 @@ export function collectMapKitPointsFromGeoJson(
 function isGeoJsonFeatureCollectionInput(
   input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry,
 ): input is MapKitGeoJsonFeatureCollection {
-  return input.type === 'FeatureCollection' && Array.isArray((input as { features?: unknown }).features)
+  return (
+    input.type === 'FeatureCollection' && Array.isArray((input as { features?: unknown }).features)
+  )
 }
 
 function isGeoJsonFeatureInput(
@@ -343,13 +350,20 @@ function isGeoJsonFeatureInput(
 }
 
 export function computeMapKitRegionForGeoJson(
-  input: MapKitGeoJsonFeature | MapKitGeoJsonFeatureCollection | MapKitGeoJsonGeometry | null | undefined,
+  input:
+    | MapKitGeoJsonFeature
+    | MapKitGeoJsonFeatureCollection
+    | MapKitGeoJsonGeometry
+    | null
+    | undefined,
   options: MapKitRegionOptions = {},
 ): MapKitRegion | null {
   return computeMapKitRegionForPoints(collectMapKitPointsFromGeoJson(input), options)
 }
 
-function collectMarkerPoint(marker: MapKitMarkerDrawable | MapKitMarkerDrawableV2): MapKitPoint | null {
+function collectMarkerPoint(
+  marker: MapKitMarkerDrawable | MapKitMarkerDrawableV2,
+): MapKitPoint | null {
   return 'point' in marker ? normalizeMapKitPoint(marker.point) : normalizeMapKitPoint(marker)
 }
 
@@ -357,11 +371,15 @@ function collectLinePoints(line: MapKitLineDrawable | MapKitLineDrawableV2): Map
   return normalizeMapKitLineCoordinates('points' in line ? line.points : line.coordinates)
 }
 
-function collectPolygonPoints(polygon: MapKitPolygonDrawable | MapKitPolygonDrawableV2): MapKitPoint[] {
+function collectPolygonPoints(
+  polygon: MapKitPolygonDrawable | MapKitPolygonDrawableV2,
+): MapKitPoint[] {
   return normalizeMapKitPolygonCoordinates(polygon.rings).flatMap((ring) => [...ring])
 }
 
-function collectCirclePoint(circle: MapKitCircleDrawable | MapKitCircleDrawableV2): MapKitPoint | null {
+function collectCirclePoint(
+  circle: MapKitCircleDrawable | MapKitCircleDrawableV2,
+): MapKitPoint | null {
   if ('radiusMetres' in circle) return normalizeMapKitPoint(circle.center)
   const normalized = normalizeCircleOverlay(circle)
   return normalized?.center ? normalizeMapKitPoint(normalized.center) : null

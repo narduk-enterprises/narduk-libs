@@ -38,8 +38,9 @@ personal data.
   post-build gate requires committed `dist/` to match source exactly.
 - Run `pnpm run quality` before committing. It validates both packages,
   including a clean-room Nuxt build installed only from packed tarballs.
-- Keep `@narduk-enterprises/narduk-mapkit/worker` free of Node built-ins. Process and
-  Doppler CLI lookup belongs only in the explicit `/node` entry point.
+- Keep `@narduk-enterprises/narduk-mapkit/worker` free of Node built-ins.
+  Process and Doppler CLI lookup belongs only in the explicit `/node` entry
+  point.
 - Keep examples minimal and copyable. Do not move app styling, marker HTML,
   panels, domain data loading, or framework-specific workflows into core.
 
@@ -66,9 +67,9 @@ change before a public release.
 - Working tree is clean.
 - `pnpm run quality` passes from a clean checkout.
 - CI passes on the commit being released.
-- README, examples, changelog, package metadata, exports, types, and `files`
-  are correct.
+- README, examples, changelog, package metadata, exports, types, and `files` are
+  correct.
 - No real credentials, private source data, or internal-only migration notes are
   included in the package artifact.
-- The published artifact is traceable to a commit, version, changelog entry,
-  and CI run.
+- The published artifact is traceable to a commit, version, changelog entry, and
+  CI run.

@@ -4,20 +4,21 @@
 
 - **Breaking: npm scope renamed** from `@narduk-geo` to `@narduk-enterprises`.
   `@narduk-geo/narduk-mapkit` is now `@narduk-enterprises/narduk-mapkit`, and
-  `@narduk-geo/narduk-mapkit-nuxt` is now `@narduk-enterprises/narduk-mapkit-nuxt`.
-  `@narduk-geo` is a retired estate npm scope (narduk-enterprises/company-hq
-  `DECISIONS.md`, 2026-07-25 estate-shape decision: "npm scope consolidates to
-  `@narduk-enterprises`"). Versions through 1.3.0 remain published under the
-  old `@narduk-geo` scope and are unaffected; this release is the first to
-  publish (on its own future tag) under `@narduk-enterprises`. Update the
-  scoped-registry line in `.npmrc` from `@narduk-geo:registry=...` to
-  `@narduk-enterprises:registry=...` and every import specifier from
-  `@narduk-geo/narduk-mapkit*` to `@narduk-enterprises/narduk-mapkit*`. No
-  runtime behavior changed — this is the identifier only.
+  `@narduk-geo/narduk-mapkit-nuxt` is now
+  `@narduk-enterprises/narduk-mapkit-nuxt`. `@narduk-geo` is a retired estate
+  npm scope (narduk-enterprises/company-hq `DECISIONS.md`, 2026-07-25
+  estate-shape decision: "npm scope consolidates to `@narduk-enterprises`").
+  Versions through 1.3.0 remain published under the old `@narduk-geo` scope and
+  are unaffected; this release is the first to publish (on its own future tag)
+  under `@narduk-enterprises`. Update the scoped-registry line in `.npmrc` from
+  `@narduk-geo:registry=...` to `@narduk-enterprises:registry=...` and every
+  import specifier from `@narduk-geo/narduk-mapkit*` to
+  `@narduk-enterprises/narduk-mapkit*`. No runtime behavior changed — this is
+  the identifier only.
 - Added a doc note to `docs/centralization-plan.md` (D1) recording that web
   scalar/grid rendering lives in `GeoGridWeb`, not this package; the tile seam
-  (`createMapKitAsyncTileOverlay`, `MapKitTileOverlayImageSource`) stays a
-  plain structural type rather than a dependency.
+  (`createMapKitAsyncTileOverlay`, `MapKitTileOverlayImageSource`) stays a plain
+  structural type rather than a dependency.
 
 ## 1.6.0 - 2026-08-28
 
@@ -30,16 +31,16 @@
 - Continuous scaling is published as CSS custom properties on one container
   element (`MAPKIT_PIN_SIZE_PROPERTY` / `--mapkit-pin-size`, a `px` length, and
   `MAPKIT_PIN_SCALE_PROPERTY` / `--mapkit-pin-scale`, unitless), so a zoom
-  gesture costs two property writes per frame for any number of pins and creates,
-  destroys, and rewrites nothing. Structural state is latched per *class* rather
-  than per pin, so a frame costs O(classes) and only a class that actually
-  crossed a threshold touches its members; the change event names exactly those
-  keys, batched into one frame, and never names a culled pin.
+  gesture costs two property writes per frame for any number of pins and
+  creates, destroys, and rewrites nothing. Structural state is latched per
+  _class_ rather than per pin, so a frame costs O(classes) and only a class that
+  actually crossed a threshold touches its members; the change event names
+  exactly those keys, batched into one frame, and never names a culled pin.
 - Every threshold is latched with tunable hysteresis (`dotPx` 1.5, `rankZoom`
-  0.25, `stepZoom` 0.15), and the three latches are exported as pure functions in
-  their own right: `latchedStepIndex()`, `latchedPinMode()`, and
-  `cullProbeZoom()`. Culling applies its deadband to the question rather than the
-  answer, which keeps it at two rank-floor evaluations per frame.
+  0.25, `stepZoom` 0.15), and the three latches are exported as pure functions
+  in their own right: `latchedStepIndex()`, `latchedPinMode()`, and
+  `cullProbeZoom()`. Culling applies its deadband to the question rather than
+  the answer, which keeps it at two rank-floor evaluations per frame.
 - Added `createMapKitPinSizeCurve()`, `defaultMapKitPinSizeCurve`,
   `defaultMapKitPinSizeStops` (5px at z5 to 26px at z10), and
   `DEFAULT_MAPKIT_PIN_DOT_BELOW_PX`. A curve is a plain `(zoom) => px` function,
@@ -59,15 +60,15 @@
   injectable frame scheduler. MapKit JS publishes only bracket pairs
   (`region-change-start`/`-end`, `zoom-start`/`-end`, `scroll-start`/`-end`) and
   no continuous camera event, so scaling during a pinch means reading the camera
-  once per animation frame between the brackets. There is no polling at rest, and
-  a consumer that wires nothing but `region-change-end` degrades to
+  once per animation frame between the brackets. There is no polling at rest,
+  and a consumer that wires nothing but `region-change-end` degrades to
   end-of-gesture snapping.
-- `select()` / `deselect()` / `setSelection()` exempt a pin from culling and from
-  dot mode; `shouldPaint` defers repaints for pins outside the viewport and
+- `select()` / `deselect()` / `setSelection()` exempt a pin from culling and
+  from dot mode; `shouldPaint` defers repaints for pins outside the viewport and
   `flushDeferred()` releases them after a pan, while culling still applies
   immediately. `visible` is written only when the controller is changing it, and
-  `destroy()` restores exactly the pins it culled, removes exactly the properties
-  it published, and leaves the registry alone.
+  `destroy()` restores exactly the pins it culled, removes exactly the
+  properties it published, and leaves the registry alone.
 - Documented the module, the README `Pin Scaling` section, and
   `examples/pin-scaling.ts`, including what MapKit JS actually provides and the
   MapKit JS 5 caveat that a map carrying a `TileOverlay` snaps to integral zoom
@@ -155,10 +156,10 @@
   canvas in the DOM loses map state.
 - `AppMapKit` gained an opt-in `fullscreenControl` prop (default `false`) plus
   `fullscreenMode` (default `'viewport'`), a `fullscreen-change` event, and
-  `enterFullscreen()` / `exitFullscreen()` / `toggleFullscreen()` / `isFullscreen`
-  on its exposed handle. The component presents its own wrapper so the map
-  chrome comes along, refreshes MapKit geometry on every change, and destroys
-  the controller before unmount.
+  `enterFullscreen()` / `exitFullscreen()` / `toggleFullscreen()` /
+  `isFullscreen` on its exposed handle. The component presents its own wrapper
+  so the map chrome comes along, refreshes MapKit geometry on every change, and
+  destroys the controller before unmount.
 
 ## 1.4.0 - 2026-08-28
 
@@ -181,9 +182,10 @@
 - Added `createMapKitFocusPreserver()`: captures the focused element's stable
   key and selection range before a batch of slot writes and restores it after,
   so a rewrite does not drop the user's caret.
-- Added `MapKitFrameScheduler` / `defaultMapKitFrameScheduler` to `timers.js`
-  as the shared injectable animation-frame surface. `crossfadeMapKitOverlayOpacity()`
-  now uses it instead of its own private copy; behavior is unchanged.
+- Added `MapKitFrameScheduler` / `defaultMapKitFrameScheduler` to `timers.js` as
+  the shared injectable animation-frame surface.
+  `crossfadeMapKitOverlayOpacity()` now uses it instead of its own private copy;
+  behavior is unchanged.
 - Bumped `@narduk-geo/narduk-mapkit-nuxt` to the same version with no source
   change; the release workflow requires both workspace packages to carry
   identical versions.
@@ -194,22 +196,21 @@
   which binds the existing temporal playback primitives to one
   `MapKitLayerRegistry` layer: scrub by index or date id, step, readiness-gated
   looping over the last N dates at a configurable interval, bounded prefetch,
-  failed-frame skipping, change/readiness/stall/error events, and a
-  consumer-set reduced-motion flag that refuses looping and makes every scrub
-  instant.
+  failed-frame skipping, change/readiness/stall/error events, and a consumer-set
+  reduced-motion flag that refuses looping and makes every scrub instant.
 - Added `normalizeTemporalFrames()` and the `TemporalFrame` shape so a dated
-  sequence can carry per-date consumer metadata without the core knowing what
-  it means.
+  sequence can carry per-date consumer metadata without the core knowing what it
+  means.
 - Added `attachMapKitPointerProbe()` / `MapKitPointerProbe`: unified pointer
   plumbing for map probing with throttled hover (default 90ms), click-to-pin,
-  touch tap-to-pin, long-press-to-pin (default 500ms) with movement and
-  duration disambiguation from a pan, pin-drag repositioning, dismissal, and a
-  single `{ mode, phase, point, coordinate, pointer, source }` event surface.
-  It works against any element that supports `addEventListener` plus an
-  injected coordinate-conversion callback, so it stays engine-agnostic and
-  testable without MapKit JS.
-- Added `MapKitTimerScheduler` so both new primitives accept an injected
-  clock and are deterministic under test.
+  touch tap-to-pin, long-press-to-pin (default 500ms) with movement and duration
+  disambiguation from a pan, pin-drag repositioning, dismissal, and a single
+  `{ mode, phase, point, coordinate, pointer, source }` event surface. It works
+  against any element that supports `addEventListener` plus an injected
+  coordinate-conversion callback, so it stays engine-agnostic and testable
+  without MapKit JS.
+- Added `MapKitTimerScheduler` so both new primitives accept an injected clock
+  and are deterministic under test.
 - Documented the previously undocumented temporal playback primitives
   (`nextDrawableFrame`, `temporalProgress`, `boundedFrameCache`,
   `FrameReadiness`, `TemporalPlaybackState`) in the README.
@@ -220,8 +221,8 @@
 ## 1.2.0 - 2026-07-19
 
 - Added `MapKitLayerRegistry.reconcile()` for multi-dataset tile stacks: sync a
-  desired layer set in one call with independent opacity, register/unregister
-  by id, and replace only when the tile source identity changes.
+  desired layer set in one call with independent opacity, register/unregister by
+  id, and replace only when the tile source identity changes.
 - Added `layerSourceIdentity()` so consumers can fingerprint urlTemplate /
   bounds / z-range (or async `data`) without comparing opacity.
 
@@ -233,8 +234,8 @@
 
 ## 1.1.0 - 2026-07-16
 
-- Added MapKit JS 6 core-library loading and asynchronous
-  `Promise<ImageSource>` tile-overlay construction.
+- Added MapKit JS 6 core-library loading and asynchronous `Promise<ImageSource>`
+  tile-overlay construction.
 - Extended `MapKitLayerRegistry` to own async overlay replacement, first-image
   readiness, bounded fallback activation, error reporting, and stale-overlay
   retirement.
@@ -249,8 +250,8 @@
 - Added the `@narduk-geo/narduk-mapkit/apple-maps` access-token, search, and
   geocode API.
 - Added idempotent vector-overlay helpers from the preserved legacy checkout.
-- Added the Earthdata tile-intersection decision cache, bounded at 2,048
-  entries and shared across scale variants.
+- Added the Earthdata tile-intersection decision cache, bounded at 2,048 entries
+  and shared across scale variants.
 - Pointed package metadata at `github.com/narduk-geo/narduk-mapkit` and added
   public-npm, `publint`, Nuxt production-build, and packed-consumer gates.
 - Added `refreshMapKitMapLayout` so consumers can refresh MapKit viewport
@@ -266,33 +267,43 @@
 
 ## 0.3.1
 
-- Fixed a critical bug in `createBoundsGatedUrlTemplate`'s function-form `urlTemplate`:
-  real MapKit JS invokes it as `(x, y, z, scale)`, not `(x, y, scale, z)`. The wrong
-  order meant every bounds-gated overlay silently computed tile bounds using the
-  scale factor as the zoom level (almost always `1`), which gated out every real
-  tile request as out-of-bounds -- overlays rendered nothing, with no error.
-  Confirmed against the real MapKit JS SDK, not just documentation.
+- Fixed a critical bug in `createBoundsGatedUrlTemplate`'s function-form
+  `urlTemplate`: real MapKit JS invokes it as `(x, y, z, scale)`, not
+  `(x, y, scale, z)`. The wrong order meant every bounds-gated overlay silently
+  computed tile bounds using the scale factor as the zoom level (almost always
+  `1`), which gated out every real tile request as out-of-bounds -- overlays
+  rendered nothing, with no error. Confirmed against the real MapKit JS SDK, not
+  just documentation.
 
 ## 0.3.0
 
-- Added a MapKit JS layer registry for multiple live tile overlays with independent opacity.
-- Added bounds-gated tile URL templates that short-circuit outside-AOI tile requests to a transparent PNG.
-- Added AOI-aware layer region helpers that tighten default minimum spans for small layer bounds.
-- Added layer registry documentation and an example showing two simultaneous AOI raster layers.
+- Added a MapKit JS layer registry for multiple live tile overlays with
+  independent opacity.
+- Added bounds-gated tile URL templates that short-circuit outside-AOI tile
+  requests to a transparent PNG.
+- Added AOI-aware layer region helpers that tighten default minimum spans for
+  small layer bounds.
+- Added layer registry documentation and an example showing two simultaneous AOI
+  raster layers.
 
 ## 0.2.0
 
-- Added reusable MapKit JS runtime helpers for coordinates, regions, tile overlays, and cancellable overlay opacity crossfades.
-- Added shared region helpers for point lists, lng/lat bounds, GeoJSON, and common drawable collections.
+- Added reusable MapKit JS runtime helpers for coordinates, regions, tile
+  overlays, and cancellable overlay opacity crossfades.
+- Added shared region helpers for point lists, lng/lat bounds, GeoJSON, and
+  common drawable collections.
 - Added bounded server-side caching for origin-scoped signed MapKit JS tokens.
-- Coalesced concurrent browser token refreshes during MapKit authorization callbacks.
+- Coalesced concurrent browser token refreshes during MapKit authorization
+  callbacks.
 - Hardened signed-token cache partitioning across Apple private-key rotation.
 - Added Hono, Nuxt, browser marker, and animated tile overlay examples.
-- Added package export and clean-room tarball install smoke validation to the canonical quality gate.
+- Added package export and clean-room tarball install smoke validation to the
+  canonical quality gate.
 - Added contributor and security policy docs for production library maintenance.
 - Updated CI to run on push and pull requests with a portable Node job.
 - Updated package metadata and license for public open-source distribution.
 
 ## 0.1.1
 
-- Initial framework-agnostic MapKit JS token, browser initialization, geometry, and playback helpers.
+- Initial framework-agnostic MapKit JS token, browser initialization, geometry,
+  and playback helpers.

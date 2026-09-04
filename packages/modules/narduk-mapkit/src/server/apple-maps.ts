@@ -263,8 +263,11 @@ export async function searchAppleMaps(
   if (options.includeAddressCategories) {
     params.set('includeAddressCategories', options.includeAddressCategories)
   }
-  const location = options.searchLocation ??
-    (options.lat != null && options.lng != null ? { lat: options.lat, lng: options.lng } : undefined)
+  const location =
+    options.searchLocation ??
+    (options.lat != null && options.lng != null
+      ? { lat: options.lat, lng: options.lng }
+      : undefined)
   if (location) params.set('searchLocation', `${location.lat},${location.lng}`)
   if (options.limit) params.set('limit', String(options.limit))
   if (options.limitToCountries) params.set('limitToCountries', options.limitToCountries)

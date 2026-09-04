@@ -315,6 +315,8 @@ export class MapKitFullscreenController {
             return;
         const owner = this.#document;
         try {
+            // Equivalent to `() => {}`; this fold changes no runtime expression.
+            // eslint-disable-next-line unicorn/no-useless-undefined -- narduk-libs#138
             if (owner.exitFullscreen)
                 void Promise.resolve(owner.exitFullscreen()).catch(() => undefined);
             else

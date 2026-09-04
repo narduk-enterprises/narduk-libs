@@ -161,7 +161,10 @@ export const MAPKIT_CALLOUT_CONTENT_ATTRIBUTE = 'data-mapkit-callout-content';
 /** Set on the frame and the caret, valued with the resolved placement. */
 export const MAPKIT_CALLOUT_PLACEMENT_ATTRIBUTE = 'data-mapkit-callout-placement';
 function resolveDocument(options) {
-    const resolved = options.document ?? options.container.ownerDocument ?? options.window?.document ?? globalThis.document;
+    const resolved = options.document ??
+        options.container.ownerDocument ??
+        options.window?.document ??
+        globalThis.document;
     if (!resolved)
         throw new Error('A DOM document is required to render MapKit callouts');
     return resolved;

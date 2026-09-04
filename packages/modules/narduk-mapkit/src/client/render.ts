@@ -64,8 +64,10 @@ export interface MapKitRenderScheduler {
 export function createMapKitRenderScheduler(
   options: MapKitRenderSchedulerOptions,
 ): MapKitRenderScheduler {
-  const requestFrame = options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame
-  const cancelFrame = options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame
+  const requestFrame =
+    options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame
+  const cancelFrame =
+    options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame
 
   let regions = new Set<string>()
   let frameHandle: number | null = null

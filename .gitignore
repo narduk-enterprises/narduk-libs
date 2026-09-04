@@ -43,6 +43,11 @@ test-results/
 # ESLint plugin build artifacts (rebuilt via `pnpm run build:plugins`)
 packages/tooling/eslint-config/*/dist/
 packages/contracts/narduk-platform/dist/
+packages/modules/narduk-mapkit-nuxt/dist/
+# narduk-mapkit deliberately COMMITS its dist/ (git-dependency consumers
+# install it without a build step); only the Nuxt adapter's build output
+# above is ignored.
+.pack/
 # ESLint caches
 .eslint-results.json
 

@@ -109,13 +109,7 @@ export type MapKitCalloutOpenReason = 'open' | 'toggle'
  * - `replaced`: `'single'` mode, and another callout took its place.
  */
 export type MapKitCalloutCloseReason =
-  | 'api'
-  | 'deselect'
-  | 'destroy'
-  | 'escape'
-  | 'map-click'
-  | 'pan'
-  | 'replaced'
+  'api' | 'deselect' | 'destroy' | 'escape' | 'map-click' | 'pan' | 'replaced'
 
 export interface MapKitCalloutEvent<TItem = unknown> {
   readonly item: TItem
@@ -231,7 +225,11 @@ export function layoutMapKitCallout(input: MapKitCalloutLayoutInput): MapKitCall
   // The caret slides along the cross axis by exactly what the box shifted, so
   // it keeps pointing at the anchor, and stops `caretSize` short of each
   // corner so it never straddles a rounded edge.
-  const caretCross = clamp(crossAnchor - cross, caretSize, Math.max(caretSize, crossExtent - caretSize))
+  const caretCross = clamp(
+    crossAnchor - cross,
+    caretSize,
+    Math.max(caretSize, crossExtent - caretSize),
+  )
   const caretMain = before ? mainExtent : 0
 
   return {
@@ -491,7 +489,10 @@ function resolveDocument<TItem, TCoordinate>(
   options: MapKitCalloutControllerOptions<TItem, TCoordinate>,
 ): MapKitCalloutDocument {
   const resolved =
-    options.document ?? options.container.ownerDocument ?? options.window?.document ?? globalThis.document
+    options.document ??
+    options.container.ownerDocument ??
+    options.window?.document ??
+    globalThis.document
   if (!resolved) throw new Error('A DOM document is required to render MapKit callouts')
   return resolved
 }

@@ -75,6 +75,10 @@ onUpdated(() => callouts.reposition())
 </script>
 
 <template>
+  <!-- Fixing this means adding `defineOptions({ inheritAttrs: false })` or a
+       wrapper element, both of which change the component's rendered attribute
+       surface. Deferred rather than changed by the fold; the rule is scoped off
+       for this file in the repo-root eslint.config.mjs (narduk-libs#138). -->
   <Teleport v-for="entry in entries" :key="entry.key" :to="entry.host">
     <slot :callout-key="entry.key" :close="() => callouts.close(entry.key)" :item="entry.item" />
   </Teleport>

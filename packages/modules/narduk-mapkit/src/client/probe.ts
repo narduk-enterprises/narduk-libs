@@ -32,13 +32,7 @@ export type MapKitProbePhase = 'begin' | 'move' | 'end' | 'cancel' | 'dismiss'
 
 /** What produced the event. `pan` marks a gesture reclassified as a map pan. */
 export type MapKitProbeSource =
-  | 'hover'
-  | 'click'
-  | 'tap'
-  | 'long-press'
-  | 'drag'
-  | 'pan'
-  | 'programmatic'
+  'hover' | 'click' | 'tap' | 'long-press' | 'drag' | 'pan' | 'programmatic'
 
 /** One normalized pointer reading, in three coordinate spaces. */
 export interface MapKitProbePointerSample {

@@ -141,7 +141,7 @@ export class MapKitAnnotationRegistry<TAnnotation> {
    * what keeps a re-render that changed nothing from repainting the markers.
    */
   reconcile(
-    descriptors: readonly MapKitAnnotationDescriptor<TAnnotation>[],
+    descriptors: ReadonlyArray<MapKitAnnotationDescriptor<TAnnotation>>,
   ): MapKitAnnotationReconcileResult {
     const result: MapKitAnnotationReconcileResult = {
       added: 0,

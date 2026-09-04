@@ -121,7 +121,15 @@ describe('geometry helpers', () => {
     })
     expect(
       computeMapKitRegionForDrawables({
-        lines: [{ id: 'line', coordinates: [{ lat: 30.2, lng: -97.8 }, { lat: 30.3, lng: -97.7 }] }],
+        lines: [
+          {
+            id: 'line',
+            coordinates: [
+              { lat: 30.2, lng: -97.8 },
+              { lat: 30.3, lng: -97.7 },
+            ],
+          },
+        ],
       })?.span,
     ).toMatchObject({ latDelta: expect.any(Number), lngDelta: expect.any(Number) })
   })

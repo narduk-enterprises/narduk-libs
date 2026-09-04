@@ -101,7 +101,9 @@ interface FakeDocument extends MapKitCalloutDocument {
   listenerCount: (type?: string) => number
 }
 
-function createDocument(elementRect: Partial<MapKitCalloutRect> = DEFAULT_CALLOUT_SIZE): FakeDocument {
+function createDocument(
+  elementRect: Partial<MapKitCalloutRect> = DEFAULT_CALLOUT_SIZE,
+): FakeDocument {
   const listeners = new Map<string, Set<(event: any) => void>>()
   return {
     activeElement: null,
@@ -161,20 +163,24 @@ interface Coordinate {
 }
 
 function layerOf(container: FakeElement): FakeElement | null {
-  return container.children.find((child) => MAPKIT_CALLOUT_LAYER_ATTRIBUTE in child.attributes) ?? null
+  return (
+    container.children.find((child) => MAPKIT_CALLOUT_LAYER_ATTRIBUTE in child.attributes) ?? null
+  )
 }
 
 function frameOf(container: FakeElement, key: string): FakeElement | null {
-  return layerOf(container)?.children.find(
-    (child) => child.attributes[MAPKIT_CALLOUT_ATTRIBUTE] === key,
-  ) ?? null
+  return (
+    layerOf(container)?.children.find(
+      (child) => child.attributes[MAPKIT_CALLOUT_ATTRIBUTE] === key,
+    ) ?? null
+  )
 }
 
 interface Harness {
   container: FakeElement
   controller: MapKitCalloutController<Item, Coordinate>
   document: FakeDocument
-  events: MapKitCalloutEvent<Item>[]
+  events: Array<MapKitCalloutEvent<Item>>
   frames: ReturnType<typeof createFakeFrameScheduler>
   map: FakeMap
   /** Where the next `projectCoordinate` call lands, in page pixels. */
@@ -228,7 +234,10 @@ function createHarness(overrides: ControllerOptions = {}): Harness {
   return harness
 }
 
-function descriptor(id: string, name = id): {
+function descriptor(
+  id: string,
+  name = id,
+): {
   coordinate: Coordinate
   item: Item
   key: string
@@ -354,9 +363,9 @@ describe('MapKitCalloutController content lifecycle', () => {
     const host = harness.controller.hostFor('a')
     expect(host?.innerHTML).toBe('Alpha')
     expect((host as FakeElement).attributes).toHaveProperty(MAPKIT_CALLOUT_CONTENT_ATTRIBUTE)
-    expect(frame?.children.some((child) => MAPKIT_CALLOUT_CARET_ATTRIBUTE in child.attributes)).toBe(
-      true,
-    )
+    expect(
+      frame?.children.some((child) => MAPKIT_CALLOUT_CARET_ATTRIBUTE in child.attributes),
+    ).toBe(true)
 
     harness.frames.runFrame()
 
@@ -400,8 +409,8 @@ describe('MapKitCalloutController content lifecycle', () => {
         host.innerHTML = context.item.name
       },
     })
-    const hostBefore = (harness.controller.open(descriptor('a', 'Alpha')),
-    harness.controller.hostFor('a'))
+    const hostBefore =
+      (harness.controller.open(descriptor('a', 'Alpha')), harness.controller.hostFor('a'))
 
     harness.controller.open(descriptor('a', 'Alpha 2'))
 
@@ -417,7 +426,7 @@ describe('MapKitCalloutController content lifecycle', () => {
   })
 
   it('repositions after an update, because the coordinate may have moved', () => {
-    const harness = createHarness({ update: () => undefined })
+    const harness = createHarness({ update: () => {} })
     harness.controller.open(descriptor('a'))
     harness.frames.runFrame()
     expect(frameOf(harness.container, 'a')?.style.transform).toBe('translate(120px, 108px)')
@@ -866,7 +875,7 @@ describe('MapKitCalloutController teardown', () => {
     const harness = createHarness({
       render: (context) => {
         close = context.close
-        return undefined
+        return
       },
     })
     harness.controller.open(descriptor('a'))

@@ -158,6 +158,9 @@ export function crossfadeMapKitOverlayOpacity(options) {
         const progress = durationMs === 0 ? 1 : Math.min(1, elapsed / durationMs);
         const eased = easing(progress);
         options.nextOverlay.opacity = interpolateNumber(nextStartOpacity, options.targetOpacity, eased);
+        // Rewriting this to `for…of` over `.entries()` is a control-flow change in
+        // a per-frame animation path, and differs on sparse arrays.
+        // eslint-disable-next-line unicorn/no-for-each -- narduk-libs#138
         oldOverlays.forEach((overlay, index) => {
             overlay.opacity = oldStartOpacities[index] * (1 - eased);
         });

@@ -371,12 +371,7 @@ export interface MapKitPinPresentation {
  * - `sample`: a one-off zoom reading.
  */
 export type MapKitPinScalingReason =
-  | 'gesture'
-  | 'paint'
-  | 'pins'
-  | 'refresh'
-  | 'sample'
-  | 'selection'
+  'gesture' | 'paint' | 'pins' | 'refresh' | 'sample' | 'selection'
 
 export interface MapKitPinScalingChangeEvent {
   /**
@@ -486,6 +481,10 @@ export interface MapKitPinScalingOptions<TAnnotation = unknown> {
 const DEFAULT_DOT_HYSTERESIS_PX = 1.5
 const DEFAULT_RANK_HYSTERESIS_ZOOM = 0.25
 const DEFAULT_STEP_HYSTERESIS_ZOOM = 0.15
+// The explicit class spells out exactly what a CSS identifier may contain. The
+// autofix (/^[A-Z][\w-]*$/i) is equivalent, but it rewrites a runtime literal,
+// which this fold deliberately does not do.
+// eslint-disable-next-line regexp/prefer-w, regexp/use-ignore-case -- narduk-libs#138
 const CSS_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]*$/
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>()
 
@@ -581,7 +580,8 @@ export class MapKitPinScalingController<TAnnotation = unknown> {
 
   constructor(options: MapKitPinScalingOptions<TAnnotation> = {}) {
     this.#annotations = options.annotations
-    this.#cancelFrame = options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame
+    this.#cancelFrame =
+      options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame
     this.#configs = options.classes ?? {}
     this.#container = options.container
     this.#defaultClass = options.defaultClass ?? { rank: Number.MAX_SAFE_INTEGER }
@@ -589,7 +589,8 @@ export class MapKitPinScalingController<TAnnotation = unknown> {
     this.#onChange = options.onChange
     this.#rankFloor = options.rankFloor ?? defaultMapKitPinRankFloor
     this.#readZoom = options.readZoom
-    this.#requestFrame = options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame
+    this.#requestFrame =
+      options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame
     this.#setVisible = options.setVisible ?? defaultVisibilityWriter<TAnnotation>()
     this.#shouldPaint = options.shouldPaint
     this.#sizeCurve = options.sizeCurve ?? defaultMapKitPinSizeCurve
@@ -703,7 +704,12 @@ export class MapKitPinScalingController<TAnnotation = unknown> {
    * `registry.reconcile()`; it is the only O(pins) call in the controller.
    */
   reconcile(pins: Iterable<MapKitPinDescriptor>): MapKitPinScalingReconcileResult {
-    const result: MapKitPinScalingReconcileResult = { added: 0, removed: 0, unchanged: 0, updated: 0 }
+    const result: MapKitPinScalingReconcileResult = {
+      added: 0,
+      removed: 0,
+      unchanged: 0,
+      updated: 0,
+    }
     if (this.#destroyed) return result
 
     const desired = new Set<string>()
@@ -956,7 +962,12 @@ export class MapKitPinScalingController<TAnnotation = unknown> {
 
     this.#sizePx = this.#sizeCurve(zoom)
     this.#scale = this.#referenceSizePx > 0 ? this.#sizePx / this.#referenceSizePx : 1
-    this.#sizeStep = latchedStepIndex(this.#stepZooms, zoom, this.#sizeStep, this.#stepHysteresisZoom)
+    this.#sizeStep = latchedStepIndex(
+      this.#stepZooms,
+      zoom,
+      this.#sizeStep,
+      this.#stepHysteresisZoom,
+    )
 
     this.#publish(MAPKIT_PIN_SIZE_PROPERTY, formatSize(this.#sizePx))
     this.#publish(MAPKIT_PIN_SCALE_PROPERTY, formatScale(this.#scale))

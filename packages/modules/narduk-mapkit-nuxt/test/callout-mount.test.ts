@@ -87,7 +87,7 @@ function createHarness(): Harness {
   const context: AppMapKitCalloutContext = {
     close: (key) => (key === undefined ? controller.closeAll() : controller.close(key)),
     entries,
-    open: () => undefined,
+    open: () => {},
     reposition: () => controller.reposition(),
   }
 
@@ -101,10 +101,14 @@ function createHarness(): Harness {
           h(AppMapKitCallout, null, {
             default: (slotProps: { close: () => void; item: unknown }) => {
               const station = slotProps.item as Station
-              return h(CardLike, { onDismiss: slotProps.close }, {
-                default: () => station.reading,
-                header: () => station.name,
-              })
+              return h(
+                CardLike,
+                { onDismiss: slotProps.close },
+                {
+                  default: () => station.reading,
+                  header: () => station.name,
+                },
+              )
             },
           }),
         ])

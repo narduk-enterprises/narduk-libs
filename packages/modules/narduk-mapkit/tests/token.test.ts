@@ -1,4 +1,9 @@
-import { createAppleMapsAuthToken, createMapKitToken, decodeJwt, isJwtExpired } from '../src/token/index.js'
+import {
+  createAppleMapsAuthToken,
+  createMapKitToken,
+  decodeJwt,
+  isJwtExpired,
+} from '../src/token/index.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
 
 describe('MapKit JWT signing', () => {

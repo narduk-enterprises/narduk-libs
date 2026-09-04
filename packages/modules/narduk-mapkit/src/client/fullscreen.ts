@@ -65,12 +65,7 @@ export type MapKitFullscreenFallbackCause =
  * - `destroy`: `destroy()` tore an active session down.
  */
 export type MapKitFullscreenReason =
-  | 'destroy'
-  | 'enter'
-  | 'escape'
-  | 'exit'
-  | 'external-exit'
-  | 'fallback'
+  'destroy' | 'enter' | 'escape' | 'exit' | 'external-exit' | 'fallback'
 
 /** What the controller is presenting right now. */
 export interface MapKitFullscreenState {
@@ -466,6 +461,8 @@ export class MapKitFullscreenController {
     if (this.#nativeElement() !== this.#element) return
     const owner = this.#document
     try {
+      // Equivalent to `() => {}`; this fold changes no runtime expression.
+      // eslint-disable-next-line unicorn/no-useless-undefined -- narduk-libs#138
       if (owner.exitFullscreen) void Promise.resolve(owner.exitFullscreen()).catch(() => undefined)
       else owner.webkitExitFullscreen?.()
     } catch {

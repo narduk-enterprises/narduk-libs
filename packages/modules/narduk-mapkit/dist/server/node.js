@@ -1,7 +1,7 @@
 import { clearMapKitTokenCacheForTests, getOriginFromRequest, issueMapKitTokenForRequest as issueWorkerMapKitTokenForRequest, mapKitTokenResponse as workerMapKitTokenResponse, mapKitTokenResponseFromEnv, } from './handler.js';
 import { resolveMapKitServerConfig } from './config.js';
 export * from './config.js';
-export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv, };
+export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv };
 /**
  * Node-only token resolver. It may read `process.env` and use the optional
  * Doppler CLI fallback before delegating token creation to the Web Crypto

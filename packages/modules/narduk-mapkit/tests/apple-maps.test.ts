@@ -37,10 +37,11 @@ describe('Apple Maps Server API helpers', () => {
   })
 
   it('exchanges and caches access tokens by signing configuration', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ accessToken: 'access-token', expiresInSeconds: 1800 }), {
-        status: 200,
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ accessToken: 'access-token', expiresInSeconds: 1800 }), {
+          status: 200,
+        }),
     )
     const config = {
       authToken: unsignedTokenWithExp(Math.floor(Date.now() / 1000) + 1800),

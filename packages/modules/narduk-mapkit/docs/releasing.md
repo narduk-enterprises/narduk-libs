@@ -2,9 +2,9 @@
 
 Both packages publish from this repository to GitHub Packages under the
 repo-aligned `@narduk-enterprises` scope. GitHub requires authentication for
-npm-format package installs even when package visibility is public, so
-consumers route only `@narduk-enterprises/*` to `https://npm.pkg.github.com`
-and provide a read token.
+npm-format package installs even when package visibility is public, so consumers
+route only `@narduk-enterprises/*` to `https://npm.pkg.github.com` and provide a
+read token.
 
 ## Preconditions
 

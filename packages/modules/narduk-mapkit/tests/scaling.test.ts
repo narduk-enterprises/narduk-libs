@@ -3,7 +3,6 @@ import {
   createMapKitPinScalingController,
   createMapKitPinSizeCurve,
   cullProbeZoom,
-  defaultMapKitPinRankFloor,
   defaultMapKitPinSizeCurve,
   defaultMapKitPinSizeStops,
   latchedPinMode,
@@ -73,7 +72,7 @@ interface Harness {
 }
 
 function createHarness(
-  pins: readonly { classId: string; key: string }[],
+  pins: ReadonlyArray<{ classId: string; key: string }>,
   classes: Readonly<Record<string, MapKitPinClassConfig>>,
   overrides: Partial<MapKitPinScalingOptions<FakeAnnotation>> = {},
 ): Harness {
@@ -264,9 +263,7 @@ describe('MapKitPinScalingController continuous zoom', () => {
 
     expect(harness.container.sets).toBe(2)
     expect(harness.container.properties.get(MAPKIT_PIN_SIZE_PROPERTY)).toBe('23.60px')
-    expect(harness.container.properties.get(MAPKIT_PIN_SCALE_PROPERTY)).toBe(
-      (23.6 / 26).toFixed(3),
-    )
+    expect(harness.container.properties.get(MAPKIT_PIN_SCALE_PROPERTY)).toBe((23.6 / 26).toFixed(3))
     expect(harness.writes).toEqual([])
     expect(harness.events).toHaveLength(1)
     expect([...harness.events[0]!.changed]).toEqual([])
@@ -592,7 +589,10 @@ describe('MapKitPinScalingController culling', () => {
 
 describe('MapKitPinScalingController reconcile', () => {
   it('reports what changed in the tracked set', () => {
-    const harness = createHarness([{ classId: 'rig', key: 'a' }], { buoy: { rank: 4 }, rig: { rank: 2 } })
+    const harness = createHarness([{ classId: 'rig', key: 'a' }], {
+      buoy: { rank: 4 },
+      rig: { rank: 2 },
+    })
     expect(harness.controller.size).toBe(1)
 
     const result = harness.controller.reconcile([
@@ -684,9 +684,13 @@ describe('MapKitPinScalingController deferred painting', () => {
   })
 
   it('does not emit when nothing was released', () => {
-    const harness = createHarness([{ classId: 'rig', key: 'rig-1' }], { rig: { rank: 4 } }, {
-      shouldPaint: () => false,
-    })
+    const harness = createHarness(
+      [{ classId: 'rig', key: 'rig-1' }],
+      { rig: { rank: 4 } },
+      {
+        shouldPaint: () => false,
+      },
+    )
     harness.controller.sample(7)
     harness.controller.flushNow()
     harness.events.length = 0
@@ -762,7 +766,7 @@ describe('MapKitPinScalingController with MapKitAnnotationRegistry', () => {
     const registry = new MapKitAnnotationRegistry<FakeAnnotation>({
       map: {
         addAnnotations: (annotations) => added.push(...annotations),
-        removeAnnotations: () => undefined,
+        removeAnnotations: () => {},
       },
     })
     registry.reconcile([

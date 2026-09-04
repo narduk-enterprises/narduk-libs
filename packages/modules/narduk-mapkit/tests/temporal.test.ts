@@ -15,13 +15,38 @@ import type {
 
 describe('temporal playback helpers', () => {
   it('requires current and next frames to be ready', () => {
-    const readiness = new Map([[0, 'ready' as const], [1, 'loading' as const]])
+    const readiness = new Map([
+      [0, 'ready' as const],
+      [1, 'loading' as const],
+    ])
     expect(nextDrawableFrame({ current: 0, frameCount: 2, readiness })).toBeNull()
     readiness.set(1, 'ready')
     expect(nextDrawableFrame({ current: 0, frameCount: 2, readiness })).toBe(1)
   })
-  it('reports decoded readiness progress', () => { expect(temporalProgress({ current: 0, frameCount: 4, readiness: new Map([[0, 'ready'], [1, 'ready']]) })).toBe(0.5) })
-  it('keeps the cache bounded in insertion order', () => { expect([...boundedFrameCache(new Map([[0, 'a'], [1, 'b'], [2, 'c']]), 2).keys()]).toEqual([1, 2]) })
+  it('reports decoded readiness progress', () => {
+    expect(
+      temporalProgress({
+        current: 0,
+        frameCount: 4,
+        readiness: new Map([
+          [0, 'ready'],
+          [1, 'ready'],
+        ]),
+      }),
+    ).toBe(0.5)
+  })
+  it('keeps the cache bounded in insertion order', () => {
+    expect([
+      ...boundedFrameCache(
+        new Map([
+          [0, 'a'],
+          [1, 'b'],
+          [2, 'c'],
+        ]),
+        2,
+      ).keys(),
+    ]).toEqual([1, 2])
+  })
 })
 
 describe('normalizeTemporalFrames', () => {
@@ -288,9 +313,7 @@ describe('MapKitTemporalLayerController', () => {
     await flushMicrotasks()
 
     expect(controller.playing).toBe(false)
-    expect(
-      events.some((event) => event.type === 'pause' && event.reason === 'stalled'),
-    ).toBe(true)
+    expect(events.some((event) => event.type === 'pause' && event.reason === 'stalled')).toBe(true)
   })
 
   it('refuses to loop and scrubs instantly under reduced motion', async () => {

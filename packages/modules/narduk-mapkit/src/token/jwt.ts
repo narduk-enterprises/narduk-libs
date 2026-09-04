@@ -1,8 +1,4 @@
-import {
-  base64urlEncode,
-  derEcdsaSignatureToRaw,
-  importPrivateKeyForAppleMaps,
-} from './crypto.js'
+import { base64urlEncode, derEcdsaSignatureToRaw, importPrivateKeyForAppleMaps } from './crypto.js'
 
 export interface MapKitJwtOptions {
   expiresInSeconds?: number

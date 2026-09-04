@@ -73,7 +73,12 @@ function longitudeRanges(bounds) {
         return [[-180, 180]];
     const west = normalizeLongitudeForRange(westLng);
     const east = normalizeLongitudeForRange(eastLng);
-    return rawLngDelta >= 0 ? [[west, east]] : [[west, 180], [-180, east]];
+    return rawLngDelta >= 0
+        ? [[west, east]]
+        : [
+            [west, 180],
+            [-180, east],
+        ];
 }
 function rangesIntersect(first, second) {
     return first[0] <= second[1] && first[1] >= second[0];
@@ -230,7 +235,9 @@ export class MapKitLayerRegistry {
         // previous overlay can be retired.
         const replaceAtomically = crossfadeDurationMs === 0;
         let markReady = () => { };
-        const ready = new Promise((resolve) => { markReady = resolve; });
+        const ready = new Promise((resolve) => {
+            markReady = resolve;
+        });
         const nextOverlay = this.#createOverlay(descriptor, replaceAtomically ? targetOpacity : 0, markReady);
         this.#map.addTileOverlay(nextOverlay);
         entry.overlay = nextOverlay;
@@ -349,7 +356,10 @@ export class MapKitLayerRegistry {
                 crossfadeDurationMs,
                 ...(options.signal !== undefined ? { signal: options.signal } : {}),
             }).then(() => {
+                // Side-effecting continuation on a crossfade that resolves to void;
+                // returning a value would change the settled shape of `replacements`.
                 const current = this.#entries.get(descriptor.id);
+                // eslint-disable-next-line promise/always-return -- narduk-libs#138
                 if (current)
                     current.descriptor = descriptor;
             }));

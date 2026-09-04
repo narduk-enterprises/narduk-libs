@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable narduk/file-size-budget -- Apple MapKit integration is a single orchestration primitive (SDK loader + map + pins + GeoJSON overlays + selection + dark mode + lifecycle); the global imperative SDK forces state + effects + template to stay co-located to avoid races. */
+/* narduk/file-size-budget is an app-config rule that narduk-libs's shared config does not define, so this is kept as documentation rather than as a directive (narduk-libs#138). Apple MapKit integration is a single orchestration primitive (SDK loader + map + pins + GeoJSON overlays + selection + dark mode + lifecycle); the global imperative SDK forces state + effects + template to stay co-located to avoid races. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mapkit is a global injected by Apple's CDN script, no type definitions available
 declare const mapkit: any
 </script>
@@ -358,9 +358,9 @@ function extractAllPoints(geometry: GeoJSONGeometry): Array<[number, number]> {
 
 function defaultOverlayStyle(): OverlayStyle {
   return {
-    strokeColor: '#065f46', // eslint-disable-line narduk/no-inline-hex -- MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
+    strokeColor: '#065f46', // MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
     strokeOpacity: 1,
-    fillColor: '#10b981', // eslint-disable-line narduk/no-inline-hex -- MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
+    fillColor: '#10b981', // MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
     fillOpacity: 0.2,
     lineWidth: 1.5,
   }
@@ -368,10 +368,10 @@ function defaultOverlayStyle(): OverlayStyle {
 
 function defaultLineOverlayStyle(): OverlayStyle {
   return {
-    // eslint-disable-next-line narduk/no-inline-hex -- MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
+    // MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
     strokeColor: '#0284c7',
     strokeOpacity: 0.92,
-    // eslint-disable-next-line narduk/no-inline-hex -- MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
+    // MapKit Style API requires raw hex values; Tailwind utilities cannot be used in JS objects
     fillColor: '#000000',
     fillOpacity: 0,
     lineWidth: 3,
@@ -393,9 +393,11 @@ function buildPolygonRings(
   if (geometry.type === 'Polygon') {
     const rings = coords
       .filter(Array.isArray)
-      .map((sourceRing) => sourceRing
-        .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
-        .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])))
+      .map((sourceRing) =>
+        sourceRing
+          .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
+          .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])),
+      )
       .filter((ring) => ring.length >= 3)
     if (rings.length) polygons.push(rings)
   } else if (geometry.type === 'MultiPolygon') {
@@ -403,9 +405,11 @@ function buildPolygonRings(
       if (!Array.isArray(polygon)) continue
       const rings = polygon
         .filter(Array.isArray)
-        .map((sourceRing) => sourceRing
-          .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
-          .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])))
+        .map((sourceRing) =>
+          sourceRing
+            .filter((pt: unknown) => Array.isArray(pt) && (pt as number[]).length >= 2)
+            .map((pt: unknown) => new mapkit.Coordinate((pt as number[])[1], (pt as number[])[0])),
+        )
         .filter((ring) => ring.length >= 3)
       if (rings.length) polygons.push(rings)
     }
@@ -450,7 +454,7 @@ function buildClusterElement(cluster: {
   if (props.createClusterElement) {
     el = props.createClusterElement(cluster, count)
   } else {
-    // eslint-disable-next-line narduk/no-ssr-dom-access -- guarded by `import.meta.client` check above; document access is safe here
+    // Guarded by `import.meta.client` check above; document access is safe here
     el = document.createElement('div')
     el.className = 'mapkit-cluster'
     el.innerHTML = `<div class="mapkit-cluster-bubble"><span class="mapkit-cluster-count">${count}</span></div>`
@@ -1159,10 +1163,7 @@ defineExpose({
 
 <template>
   <div ref="mapWrapper" class="mapkit-wrapper">
-    <div
-      v-if="mapkitError"
-      class="mapkit-status"
-    >
+    <div v-if="mapkitError" class="mapkit-status">
       <strong>Map unavailable</strong>
       <span>{{ mapkitError }}</span>
     </div>
@@ -1293,7 +1294,8 @@ defineExpose({
 
 .mapkit-wrapper :deep([data-mapkit-callout-caret]) {
   background: var(--mapkit-callout-caret-background, Canvas);
-  border: 1px solid var(--mapkit-callout-caret-border, color-mix(in srgb, CanvasText 15%, transparent));
+  border: 1px solid
+    var(--mapkit-callout-caret-border, color-mix(in srgb, CanvasText 15%, transparent));
   height: var(--mapkit-callout-caret-size, 10px);
   /* The controller writes the caret's centre into `left`/`top`. */
   transform: translate(-50%, -50%) rotate(45deg);

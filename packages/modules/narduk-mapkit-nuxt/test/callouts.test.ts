@@ -40,7 +40,12 @@ describe('AppMapKit callout opt-in contract', () => {
     expect(source).toContain("emit('callout-close', event)")
     expect(source).toContain("'callout-open': [event: MapKitCalloutEvent<T>]")
     expect(source).toContain("'callout-close': [event: MapKitCalloutEvent<T>]")
-    for (const exposed of ['closeCallout', 'closeCallouts', 'getCalloutController', 'openCallout']) {
+    for (const exposed of [
+      'closeCallout',
+      'closeCallouts',
+      'getCalloutController',
+      'openCallout',
+    ]) {
       expect(source).toContain(`${exposed},`)
     }
   })

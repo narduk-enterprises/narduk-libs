@@ -35,8 +35,9 @@ interface MapKitLayerDescriptorBase<TData = unknown> {
   opacity?: number
 }
 
-export interface MapKitUrlLayerDescriptor<TData = unknown>
-  extends MapKitLayerDescriptorBase<TData> {
+export interface MapKitUrlLayerDescriptor<
+  TData = unknown,
+> extends MapKitLayerDescriptorBase<TData> {
   urlTemplate: string
 }
 
@@ -49,8 +50,7 @@ export interface MapKitAsyncLayerDescriptor<
 }
 
 export type MapKitLayerDescriptor<TData = unknown, TImageSource = MapKitTileImageSource> =
-  | MapKitUrlLayerDescriptor<TData>
-  | MapKitAsyncLayerDescriptor<TData, TImageSource>
+  MapKitUrlLayerDescriptor<TData> | MapKitAsyncLayerDescriptor<TData, TImageSource>
 
 export interface MapKitLayerRegionOptions extends MapKitRegionOptions {}
 
@@ -171,7 +171,12 @@ function longitudeRanges(bounds: MapKitLngLatBounds): ReadonlyArray<readonly [nu
 
   const west = normalizeLongitudeForRange(westLng)
   const east = normalizeLongitudeForRange(eastLng)
-  return rawLngDelta >= 0 ? [[west, east]] : [[west, 180], [-180, east]]
+  return rawLngDelta >= 0
+    ? [[west, east]]
+    : [
+        [west, 180],
+        [-180, east],
+      ]
 }
 
 function rangesIntersect(
@@ -286,7 +291,10 @@ export function regionForMapKitLayerBounds<TCoordinate, TSpan, TRegion>(
   bounds: MapKitLngLatBounds,
   options: MapKitLayerRegionOptions = {},
 ): TRegion {
-  const region = computeMapKitRegionForLngLatBounds(bounds, resolveLayerRegionOptions(bounds, options))
+  const region = computeMapKitRegionForLngLatBounds(
+    bounds,
+    resolveLayerRegionOptions(bounds, options),
+  )
   if (!region) throw new RangeError('layer bounds must contain finite lng/lat values')
   return createMapKitCoordinateRegion(mapkit, region)
 }
@@ -370,8 +378,14 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     // previous overlay can be retired.
     const replaceAtomically = crossfadeDurationMs === 0
     let markReady: () => void = () => {}
-    const ready = new Promise<void>((resolve) => { markReady = resolve })
-    const nextOverlay = this.#createOverlay(descriptor, replaceAtomically ? targetOpacity : 0, markReady)
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve
+    })
+    const nextOverlay = this.#createOverlay(
+      descriptor,
+      replaceAtomically ? targetOpacity : 0,
+      markReady,
+    )
     this.#map.addTileOverlay(nextOverlay)
     entry.overlay = nextOverlay
     entry.descriptor = descriptor
@@ -476,9 +490,8 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
       if (!desiredIds.has(id)) this.unregister(id)
     }
 
-    const crossfadeDurationMs =
-      options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs
-    const replacements: Promise<void>[] = []
+    const crossfadeDurationMs = options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs
+    const replacements: Array<Promise<void>> = []
 
     for (const descriptor of descriptors) {
       const entry = this.#entries.get(descriptor.id)
@@ -500,7 +513,10 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
           crossfadeDurationMs,
           ...(options.signal !== undefined ? { signal: options.signal } : {}),
         }).then(() => {
+          // Side-effecting continuation on a crossfade that resolves to void;
+          // returning a value would change the settled shape of `replacements`.
           const current = this.#entries.get(descriptor.id)
+          // eslint-disable-next-line promise/always-return -- narduk-libs#138
           if (current) current.descriptor = descriptor
         }),
       )

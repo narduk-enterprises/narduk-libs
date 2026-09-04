@@ -1,4 +1,7 @@
-import { createMapKitRegionForPoints, initializeMapKit } from '@narduk-enterprises/narduk-mapkit/client'
+import {
+  createMapKitRegionForPoints,
+  initializeMapKit,
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 import type { MapKitPoint } from '@narduk-enterprises/narduk-mapkit'
 
@@ -12,7 +15,10 @@ interface MapKitNamespace {
   CoordinateRegion: new (center: unknown, span: unknown) => unknown
   CoordinateSpan: new (latitudeDelta: number, longitudeDelta: number) => unknown
   FeatureVisibility: { Adaptive: unknown; Hidden: unknown }
-  Map: new (container: HTMLElement, options?: Record<string, unknown>) => {
+  Map: new (
+    container: HTMLElement,
+    options?: Record<string, unknown>,
+  ) => {
     region?: unknown
     showItems(items: unknown[], options?: Record<string, unknown>): void
   }

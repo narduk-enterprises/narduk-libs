@@ -11,10 +11,7 @@ export type MapKitTileImageSource = HTMLImageElement | HTMLCanvasElement | Image
 export type MapKitTileOverlayImageSource<TImageSource = MapKitTileImageSource> = (x: number, y: number, z: number, scale: number, data?: unknown) => Promise<TImageSource | null>;
 export type MapKitTileOverlaySource<TImageSource = MapKitTileImageSource> = MapKitTileOverlayUrlTemplate | MapKitTileOverlayImageSource<TImageSource>;
 export interface MapKitTileOverlayConstructors<TTileOverlay = unknown, TSource extends MapKitTileOverlaySource<unknown> = MapKitTileOverlaySource> {
-    TileOverlay: Constructor<[
-        source: TSource,
-        options?: MapKitTileOverlayOptions
-    ], TTileOverlay>;
+    TileOverlay: Constructor<[source: TSource, options?: MapKitTileOverlayOptions], TTileOverlay>;
 }
 export interface MapKitTileOverlayOptions {
     data?: unknown;

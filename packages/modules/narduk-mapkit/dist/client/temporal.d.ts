@@ -44,7 +44,7 @@ export interface TemporalFrame<TMeta = unknown> {
 /** A frame, or the bare id of a frame that carries no metadata. */
 export type TemporalFrameInput<TMeta = unknown> = string | TemporalFrame<TMeta>;
 /** Normalize a mixed id/frame list, dropping entries with an empty id. */
-export declare function normalizeTemporalFrames<TMeta = unknown>(frames: readonly TemporalFrameInput<TMeta>[] | null | undefined): Array<TemporalFrame<TMeta>>;
+export declare function normalizeTemporalFrames<TMeta = unknown>(frames: ReadonlyArray<TemporalFrameInput<TMeta>> | null | undefined): Array<TemporalFrame<TMeta>>;
 /**
  * The slice of `MapKitLayerRegistry` the controller needs.
  *
@@ -115,7 +115,7 @@ export interface TemporalLayerControllerOptions<TMeta = unknown> {
      */
     descriptorForFrame: (frame: TemporalFrame<TMeta>, index: number) => MapKitLayerDescriptor;
     /** Ordered oldest-to-newest dated frames. */
-    frames: readonly TemporalFrameInput<TMeta>[];
+    frames: ReadonlyArray<TemporalFrameInput<TMeta>>;
     /**
      * Gate advancement on frame readiness. Defaults to `true` when
      * `prefetchFrame` is supplied and `false` otherwise, because without a
@@ -182,7 +182,7 @@ export declare class MapKitTemporalLayerController<TMeta = unknown> {
     get destroyed(): boolean;
     /** The current frame, or `undefined` when the sequence is empty. */
     get frame(): TemporalFrame<TMeta> | undefined;
-    get frames(): readonly TemporalFrame<TMeta>[];
+    get frames(): ReadonlyArray<TemporalFrame<TMeta>>;
     get index(): number;
     get length(): number;
     get playing(): boolean;
@@ -205,7 +205,7 @@ export declare class MapKitTemporalLayerController<TMeta = unknown> {
      * longer identify the same dates), and the index is clamped or re-anchored
      * to the previously current frame id when it survives.
      */
-    setFrames(frames: readonly TemporalFrameInput<TMeta>[]): void;
+    setFrames(frames: ReadonlyArray<TemporalFrameInput<TMeta>>): void;
     /** Move to `index` and swap the layer's tile source. */
     scrubTo(index: number, options?: TemporalScrubOptions): Promise<void>;
     /** Move to the frame with `id`. Unknown ids are ignored. */

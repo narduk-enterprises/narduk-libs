@@ -9,7 +9,10 @@ interface MapKitNamespace {
   Coordinate: new (latitude: number, longitude: number) => unknown
   CoordinateRegion: new (center: unknown, span: unknown) => unknown
   CoordinateSpan: new (latitudeDelta: number, longitudeDelta: number) => unknown
-  Map: new (container: HTMLElement, options?: Record<string, unknown>) => {
+  Map: new (
+    container: HTMLElement,
+    options?: Record<string, unknown>,
+  ) => {
     addTileOverlay(overlay: TileOverlay): void
     region?: unknown
     removeTileOverlay(overlay: TileOverlay): void

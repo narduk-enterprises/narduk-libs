@@ -15,11 +15,7 @@ import type {
 import type { MapKitServerConfig } from './shared-config.js'
 
 export * from './config.js'
-export {
-  clearMapKitTokenCacheForTests,
-  getOriginFromRequest,
-  mapKitTokenResponseFromEnv,
-}
+export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv }
 export type {
   MapKitRateLimitContext,
   MapKitRateLimitDecision,
@@ -55,16 +51,13 @@ export async function mapKitTokenResponse(
     return workerMapKitTokenResponse(request, resolvedConfig, options)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate MapKit token'
-    return new Response(
-      JSON.stringify({ configured: false, error: message, token: '' }),
-      {
-        headers: {
-          'cache-control': 'no-store',
-          'content-type': 'application/json; charset=utf-8',
-        },
-        status: 500,
+    return new Response(JSON.stringify({ configured: false, error: message, token: '' }), {
+      headers: {
+        'cache-control': 'no-store',
+        'content-type': 'application/json; charset=utf-8',
       },
-    )
+      status: 500,
+    })
   }
 }
 

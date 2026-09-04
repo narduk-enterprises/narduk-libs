@@ -36,8 +36,8 @@ domain-specific behavior.
 - A keyed annotation registry that reconciles markers by signature, so an
   unchanged marker is never removed, re-added, or mutated.
 - Render coalescing: many dirty-region marks collapse into one flush per
-  animation frame, identical HTML writes are skipped, and focus survives a
-  slot rewrite.
+  animation frame, identical HTML writes are skipped, and focus survives a slot
+  rewrite.
 - Temporal playback state for dated raster layers: frame readiness, decoded
   progress, and a bounded frame cache.
 - A temporal layer controller that binds a dated frame list to one registry
@@ -49,11 +49,11 @@ domain-specific behavior.
 - Two-mode fullscreen for a map surface: a fixed viewport overlay that works
   everywhere, the real Fullscreen API where it exists, and an automatic fallback
   from the second to the first.
-- Anchored annotation callouts as an overlay layer: single or multi open by
-  key, flip/shift/clamp edge-avoidance with a caret that tracks the flip,
+- Anchored annotation callouts as an overlay layer: single or multi open by key,
+  flip/shift/clamp edge-avoidance with a caret that tracks the flip,
   camera-following through one shared animation frame, a
-  `render(item, host) => cleanup` content contract with opt-in in-place
-  updates, and dismissal on Escape, outside click, deselect, or pan.
+  `render(item, host) => cleanup` content contract with opt-in in-place updates,
+  and dismissal on Escape, outside click, deselect, or pan.
 - Idempotent vector-overlay attachment and bounded tile-intersection caching.
 - Apple Maps access-token exchange, search, and geocoding helpers.
 - A separately published Nuxt adapter with no dependency on Narduk template
@@ -263,11 +263,15 @@ import {
   crossfadeMapKitOverlayOpacity,
 } from '@narduk-enterprises/narduk-mapkit/client'
 
-const nextOverlay = createMapKitTileOverlay(window.mapkit, '/tiles/{z}/{x}/{y}.png', {
-  maximumZ: 10,
-  minimumZ: 3.33,
-  opacity: 0,
-})
+const nextOverlay = createMapKitTileOverlay(
+  window.mapkit,
+  '/tiles/{z}/{x}/{y}.png',
+  {
+    maximumZ: 10,
+    minimumZ: 3.33,
+    opacity: 0,
+  },
+)
 
 map.addTileOverlay(nextOverlay)
 
@@ -324,10 +328,9 @@ await registry.replace('vegetation', {
 })
 ```
 
-MapKit JS 6 consumers can register authenticated or cache-backed image
-providers directly. Waiting for the first usable image is bounded, so a
-provider that never signals readiness cannot leave the previous layer visible
-forever:
+MapKit JS 6 consumers can register authenticated or cache-backed image providers
+directly. Waiting for the first usable image is bounded, so a provider that
+never signals readiness cannot leave the previous layer visible forever:
 
 ```ts
 registry.register({
@@ -346,25 +349,26 @@ await registry.replace(
 )
 ```
 
-When `bounds` are present, tile URLs outside the layer extent resolve to a
-valid 1x1 transparent PNG data URI before any network request. `replace()`
-requires an already-registered id and folds any still-fading overlays for that
-id into the next crossfade. Async replacements may activate immediately or on
-their first image, with a bounded timeout that guarantees stale overlays are
-retired. `unregister()` is a no-op for unknown ids.
+When `bounds` are present, tile URLs outside the layer extent resolve to a valid
+1x1 transparent PNG data URI before any network request. `replace()` requires an
+already-registered id and folds any still-fading overlays for that id into the
+next crossfade. Async replacements may activate immediately or on their first
+image, with a bounded timeout that guarantees stale overlays are retired.
+`unregister()` is a no-op for unknown ids.
 
 ## Annotation Registry
 
 `MapKitAnnotationRegistry` is the marker-side sibling of the layer registry.
-MapKit JS does no diffing, so the obvious update is
-`map.removeAnnotations(all)` followed by `map.addAnnotations(next)` -- which
-destroys and rebuilds every marker on every render and makes them blink.
-Reconcile by key instead:
+MapKit JS does no diffing, so the obvious update is `map.removeAnnotations(all)`
+followed by `map.addAnnotations(next)` -- which destroys and rebuilds every
+marker on every render and makes them blink. Reconcile by key instead:
 
 ```ts
 import { MapKitAnnotationRegistry } from '@narduk-enterprises/narduk-mapkit/client'
 
-const annotations = new MapKitAnnotationRegistry<mapkit.MarkerAnnotation>({ map })
+const annotations = new MapKitAnnotationRegistry<mapkit.MarkerAnnotation>({
+  map,
+})
 
 function render(buoys: Buoy[]): void {
   annotations.reconcile(
@@ -389,12 +393,12 @@ function render(buoys: Buoy[]): void {
 
 Per key, one reconcile does exactly one of four things:
 
-| Key | Signature | Result |
-| --- | --- | --- |
-| present before and after | unchanged | untouched -- no remove, no re-add, no mutation |
-| present before and after | changed | `update()` in place, or recreate that key alone if no hook |
-| absent now | -- | removed |
-| new | -- | created |
+| Key                      | Signature | Result                                                     |
+| ------------------------ | --------- | ---------------------------------------------------------- |
+| present before and after | unchanged | untouched -- no remove, no re-add, no mutation             |
+| present before and after | changed   | `update()` in place, or recreate that key alone if no hook |
+| absent now               | --        | removed                                                    |
+| new                      | --        | created                                                    |
 
 Removals batch into one `removeAnnotations` call and additions into one
 `addAnnotations` call; an empty set makes no call at all, so reconciling the
@@ -403,10 +407,10 @@ same descriptors twice is a complete no-op. `reconcile()` returns
 to assert in a test that a pan or an opacity tick touched nothing.
 
 The `signature` is the finer-grained analogue of `layerSourceIdentity()`: the
-layer registry fingerprints a whole tile source and treats any change other
-than opacity as a full replace, while a signature is whatever string the
-consumer decides distinguishes one rendering of a marker from another, so a
-change can be applied in place.
+layer registry fingerprints a whole tile source and treats any change other than
+opacity as a full replace, while a signature is whatever string the consumer
+decides distinguishes one rendering of a marker from another, so a change can be
+applied in place.
 
 `register()` / `unregister()` handle one annotation outside a reconcile pass,
 `get()` / `has()` / `list()` / `size` inspect the live set, and `destroy()`
@@ -415,19 +419,19 @@ clears every annotation and makes the registry inert.
 ## Pin Scaling
 
 `MapKitPinScalingController` is the presentation-side sibling of the annotation
-registry. The registry owns *which* annotations exist; this owns what they look
+registry. The registry owns _which_ annotations exist; this owns what they look
 like at the current zoom -- size, dot-versus-symbol, and rank culling -- over
 the registry's live annotations, by key.
 
 The usual implementation of this rewrites every marker's `innerHTML` and
 `cssText` on `region-change-end`. With a few thousand pins that is a few
-thousand subtree rebuilds per gesture, and because it can only run at the *end*
+thousand subtree rebuilds per gesture, and because it can only run at the _end_
 of a gesture the markers pop rather than scale. This splits the problem:
 
-- **Continuous.** Size between thresholds is one number, published as CSS
-  custom properties on a single container element. A zoom gesture costs two
-  property writes per frame for *any* number of pins -- no element is created,
-  destroyed, or rewritten.
+- **Continuous.** Size between thresholds is one number, published as CSS custom
+  properties on a single container element. A zoom gesture costs two property
+  writes per frame for _any_ number of pins -- no element is created, destroyed,
+  or rewritten.
 - **Structural.** Dot mode and culling change only at thresholds, and they
   depend on `(class, zoom)` rather than on the individual pin. So the latched
   state lives per class, a frame costs O(classes), and only a class that
@@ -450,7 +454,8 @@ const scaling = createMapKitPinScalingController<mapkit.Annotation>({
   },
   container: mapWrapper,
   onChange: (event) => {
-    for (const key of event.changed) paintPin(key, scaling.presentationFor(key)!)
+    for (const key of event.changed)
+      paintPin(key, scaling.presentationFor(key)!)
   },
   readZoom: () =>
     mapKitZoomForSpan({
@@ -490,7 +495,7 @@ programmatic included), `zoom-start` / `zoom-end`, and `scroll-start` /
 momentum settles, not on gesture release, and the only continuous event in the
 API is `dragging`, which is about annotation drags.
 
-So smooth scaling *during* a pinch is only possible by reading the camera once
+So smooth scaling _during_ a pinch is only possible by reading the camera once
 per animation frame between the brackets. That is exactly what `beginGesture()`
 starts and `endGesture()` stops, through the injectable frame scheduler -- and
 there is no polling at rest. A consumer that wires nothing but
@@ -507,8 +512,8 @@ conversion needs both a latitude correction and MapKit's own field-of-view
 constant, neither of which is public API.
 
 Culling writes `annotation.visible`, which is Apple's own documented advice for
-this problem -- *"if there's a dense cluster of annotations at low zoom levels,
-it's good practice to hide some annotations"* -- and, unlike
+this problem -- _"if there's a dense cluster of annotations at low zoom levels,
+it's good practice to hide some annotations"_ -- and, unlike
 `removeAnnotations()`, leaves the host object and its DOM element intact so the
 pin is not rebuilt when it returns.
 
@@ -526,7 +531,7 @@ in their own right -- `latchedStepIndex()`, `latchedPinMode()`, and
 `cullProbeZoom()`.
 
 Culling is a predicate over zoom rather than a scalar band, so its deadband is
-applied to the *question*: a visible pin is asked whether it survives slightly
+applied to the _question_: a visible pin is asked whether it survives slightly
 further out, a hidden one whether it qualifies slightly further in. Because the
 rank floor is non-increasing, that makes both directions require real movement,
 and it collapses to two floor evaluations per frame however many pins there are.
@@ -539,8 +544,8 @@ range. `'linear'` (the default) hits each anchor exactly and grows continuously
 between them; `'step'` reproduces the classic `if (zoom <= 5) return 5` ladder
 for consumers rasterising artwork at fixed sizes. Any function of the same shape
 works, and a class may carry its own through `sizeCurve`, which publishes a
-scoped `--mapkit-pin-size-<class>` / `--mapkit-pin-scale-<class>` pair beside the
-base ones.
+scoped `--mapkit-pin-size-<class>` / `--mapkit-pin-scale-<class>` pair beside
+the base ones.
 
 ### Scale, selection, and viewport
 
@@ -596,10 +601,10 @@ const warm = boundedFrameCache(frames, 8)
 
 ### Temporal layer controller
 
-`createTemporalLayerController` binds those primitives to one registry layer.
-It owns index state, readiness bookkeeping, bounded prefetch, and a
-readiness-gated loop; the app owns the date strip, the play button, and the
-descriptor for each date:
+`createTemporalLayerController` binds those primitives to one registry layer. It
+owns index state, readiness bookkeeping, bounded prefetch, and a readiness-gated
+loop; the app owns the date strip, the play button, and the descriptor for each
+date:
 
 ```ts
 import { createTemporalLayerController } from '@narduk-enterprises/narduk-mapkit/client'
@@ -607,7 +612,10 @@ import { createTemporalLayerController } from '@narduk-enterprises/narduk-mapkit
 const controller = createTemporalLayerController({
   registry,
   layerId: 'data',
-  frames: ['2026-08-24', { id: '2026-08-25', meta: { observedFraction: 0.62 } }],
+  frames: [
+    '2026-08-24',
+    { id: '2026-08-25', meta: { observedFraction: 0.62 } },
+  ],
   descriptorForFrame: (frame) => ({
     id: 'data',
     urlTemplate: `/tiles/clarity/${frame.id}/{z}/{x}/{y}@{scale}x.png`,
@@ -644,16 +652,16 @@ Behavior worth knowing before wiring a UI to it:
   frame currently on screen is never the one evicted.
 - **Timers are injectable** through `timer`, so playback is testable without a
   real clock.
-- `descriptorForFrame` must return a descriptor whose `id` equals `layerId`.
-  The controller throws rather than letting the registry reject the swap
+- `descriptorForFrame` must return a descriptor whose `id` equals `layerId`. The
+  controller throws rather than letting the registry reject the swap
   mid-animation.
 
 ## Pointer Probe
 
 `attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One
 recognizer covers desktop hover, click-to-pin, touch tap-to-pin,
-long-press-to-pin, pin dragging, and dismissal, and separates all of them from
-a map pan by movement slop and press duration:
+long-press-to-pin, pin dragging, and dismissal, and separates all of them from a
+map pan by movement slop and press duration:
 
 ```ts
 import { attachMapKitPointerProbe } from '@narduk-enterprises/narduk-mapkit/client'
@@ -661,11 +669,14 @@ import { attachMapKitPointerProbe } from '@narduk-enterprises/narduk-mapkit/clie
 const probe = attachMapKitPointerProbe({
   element: mapElement,
   coordinateForPoint: (sample) =>
-    map.convertPointOnPageToCoordinate(new DOMPoint(sample.page.x, sample.page.y)),
+    map.convertPointOnPageToCoordinate(
+      new DOMPoint(sample.page.x, sample.page.y),
+    ),
   hoverThrottleMs: 90,
   longPressDurationMs: 500,
   moveSlopPx: 8,
-  isPinHandle: (target) => target instanceof Element && target.closest('.probe-pin') !== null,
+  isPinHandle: (target) =>
+    target instanceof Element && target.closest('.probe-pin') !== null,
   onEvent: (event) => {
     // { mode: 'hover' | 'pinned', phase, point, coordinate, pointer, source }
     if (event.phase === 'dismiss') return clearReadout()
@@ -690,8 +701,8 @@ machine is exercisable in Node without a browser or MapKit JS. Notes:
 - **Pan disambiguation**: movement past `moveSlopPx` reclassifies a press as a
   pan, cancels the pending long-press, and blocks the tap. A second concurrent
   pointer (a pinch) does the same.
-- **Touch never hovers.** `hoverPointerTypes` defaults to `['mouse', 'pen']`
-  and `longPressPointerTypes` to `['touch', 'pen']`.
+- **Touch never hovers.** `hoverPointerTypes` defaults to `['mouse', 'pen']` and
+  `longPressPointerTypes` to `['touch', 'pen']`.
 - **A refused point is not a pin**: return `null` from `coordinateForPoint` and
   the probe emits a `pinned` `cancel` instead of placing one.
 - Pin markup is app-owned, so a pin drag starts either from `isPinHandle` or
@@ -726,10 +737,10 @@ scheduler.flushNow() // render synchronously instead of waiting
 scheduler.destroy()
 ```
 
-`region` is a caller-defined string this package never interprets, so a
-consumer can redraw only what changed. Marking from inside `onFlush` schedules
-a follow-up frame rather than recursing. Animation frames are injectable, so
-the scheduler is deterministic under test and safe to import where
+`region` is a caller-defined string this package never interprets, so a consumer
+can redraw only what changed. Marking from inside `onFlush` schedules a
+follow-up frame rather than recursing. Animation frames are injectable, so the
+scheduler is deterministic under test and safe to import where
 `requestAnimationFrame` does not exist.
 
 `createMapKitHtmlSlotRenderer()` drops the DOM write when the markup did not
@@ -763,15 +774,16 @@ const focus = createMapKitFocusPreserver({
   activeElement: () => document.activeElement,
   identify: (element) =>
     element instanceof HTMLElement ? (element.dataset.focusKey ?? null) : null,
-  resolve: (key) => panel.querySelector<HTMLElement>(`[data-focus-key="${key}"]`),
+  resolve: (key) =>
+    panel.querySelector<HTMLElement>(`[data-focus-key="${key}"]`),
 })
 
 focus.preserve(() => slots.write(panel, panelHtml))
 ```
 
 `preserve()` restores even when the write throws, and `capture()` / `restore()`
-are available separately for a batch spanning several calls. Selection access
-is guarded, because reading `selectionStart` throws on input types that do not
+are available separately for a batch spanning several calls. Selection access is
+guarded, because reading `selectionStart` throws on input types that do not
 support it.
 
 ## Fullscreen
@@ -800,7 +812,8 @@ const fullscreen = createMapKitFullscreenController({
 
 fullscreen.subscribe((event) => {
   button.setAttribute('aria-pressed', String(event.active))
-  if (event.fallback) console.info('native fullscreen unavailable:', event.fallbackCause)
+  if (event.fallback)
+    console.info('native fullscreen unavailable:', event.fallbackCause)
 })
 
 await fullscreen.enter() // 'viewport'
@@ -817,7 +830,7 @@ fullscreen already owns Escape), `onLayout`, and injectable `document` /
 Mode semantics, which are the easy part to get wrong:
 
 - `enter(mode)` while already presenting that mode is a no-op and emits nothing.
-- `enter(mode)` while presenting the *other* mode switches in place and emits
+- `enter(mode)` while presenting the _other_ mode switches in place and emits
   exactly one event, not an exit followed by an enter.
 - `enter('fullscreen')` from viewport mode **stays** in viewport mode when the
   request is unsupported or rejected; the one event emitted is the fallback. A
@@ -825,10 +838,11 @@ Mode semantics, which are the easy part to get wrong:
 - `toggle(mode)` exits whenever anything is active, whatever `mode` says. Use
   `enter(mode)` to switch modes.
 
-Every change event carries `{ active, mode, reason, requestedMode, fallback,
-fallbackCause }`. `reason` separates a normal `enter` / `exit` from `escape`
-(the user dismissed viewport mode), `external-exit` (the browser ended native
-fullscreen on its own), `fallback`, and `destroy`.
+Every change event carries
+`{ active, mode, reason, requestedMode, fallback, fallbackCause }`. `reason`
+separates a normal `enter` / `exit` from `escape` (the user dismissed viewport
+mode), `external-exit` (the browser ended native fullscreen on its own),
+`fallback`, and `destroy`.
 
 Viewport mode saves the element's inline `style.cssText`, appends the overlay
 geometry so the consumer's own inline styles survive, sets
@@ -846,7 +860,7 @@ it -- usually as a slightly larger map still sitting in its card.
 The controller deliberately does **not** reparent the element to dodge this:
 moving a live MapKit canvas in the DOM tears down its context and loses map
 state. Apply the controller to a wrapper with no such ancestor -- normally the
-wrapper holding the map *plus its own chrome*, so overlaid controls and legends
+wrapper holding the map _plus its own chrome_, so overlaid controls and legends
 come along into fullscreen instead of being left behind.
 
 In Nuxt, `AppMapKit` does this for you behind an opt-in prop:
@@ -883,7 +897,9 @@ const callouts = createMapKitCalloutController<Station, Station>({
   map,
   mode: 'single',
   projectCoordinate: (station) =>
-    map.convertCoordinateToPointOnPage(new mapkit.Coordinate(station.lat, station.lng)),
+    map.convertCoordinateToPointOnPage(
+      new mapkit.Coordinate(station.lat, station.lng),
+    ),
   render: (context, host) => {
     const node = renderStationCard(context.item, context.close)
     host.append(node)
@@ -913,8 +929,8 @@ reasons, worst first:
 3. **The anchor offset is computed once and never revisited**, so there is no
    edge-avoidance: a marker near the top of the map gets a callout clipped by
    the map's bounds instead of flipped below the pin.
-4. **It needs the `mapkit` global**, which this framework-agnostic,
-   Worker-safe core deliberately does not import.
+4. **It needs the `mapkit` global**, which this framework-agnostic, Worker-safe
+   core deliberately does not import.
 
 The cost is that positioning is ours. It is paid once per frame: a flush
 projects and measures every open callout before writing any of them, so N open
@@ -954,9 +970,8 @@ default behaviour is to follow the camera instead. `focusOnOpen` moves focus
 into the callout and `restoreFocus` returns it on close.
 
 Every event carries `{ item, key, phase, reason }`, where `phase` is `'open'`,
-`'update'`, or `'close'` and `reason` separates `'api'`, `'toggle'`,
-`'escape'`, `'map-click'`, `'deselect'`, `'pan'`, `'replaced'`, and
-`'destroy'`.
+`'update'`, or `'close'` and `reason` separates `'api'`, `'toggle'`, `'escape'`,
+`'map-click'`, `'deselect'`, `'pan'`, `'replaced'`, and `'destroy'`.
 
 ### In Nuxt
 
@@ -1018,17 +1033,17 @@ in the app.
 
 ## API Surface
 
-| Export | Purpose |
-| --- | --- |
-| `@narduk-enterprises/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding |
-| `@narduk-enterprises/narduk-mapkit/server` | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache |
-| `@narduk-enterprises/narduk-mapkit/worker` | Explicit Worker-safe token entry point; never imports Node.js built-ins |
-| `@narduk-enterprises/narduk-mapkit/node` | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes |
-| `@narduk-enterprises/narduk-mapkit/client` | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
-| `@narduk-enterprises/narduk-mapkit/geometry` | Bounds, GeoJSON, drawable framing, distance, hit testing |
-| `@narduk-enterprises/narduk-mapkit/playback` | Route progress, line slicing, duration formatting |
-| `@narduk-enterprises/narduk-mapkit/token` | Low-level JWT signing and decoding |
-| `@narduk-enterprises/narduk-mapkit-nuxt` | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route |
+| Export                                         | Purpose                                                                                                                                                                                                                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/server`     | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                      |
+| `@narduk-enterprises/narduk-mapkit/worker`     | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                           |
+| `@narduk-enterprises/narduk-mapkit/node`       | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/client`     | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
+| `@narduk-enterprises/narduk-mapkit/geometry`   | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/playback`   | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
+| `@narduk-enterprises/narduk-mapkit/token`      | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
+| `@narduk-enterprises/narduk-mapkit-nuxt`       | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                        |
 
 ## Maintainer Migration Notes
 
@@ -1037,13 +1052,13 @@ not part of the published package artifact. The short version:
 
 1. Move token routes to `server` helpers.
 2. Move local script loaders to `initializeMapKit()`.
-3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client`
-   region helpers.
+3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client` region
+   helpers.
 4. Move MapKit tile overlay construction and fade loops to `client` runtime
    helpers.
 5. Replace template-layer MapKit components and composables with
    `@narduk-enterprises/narduk-mapkit-nuxt`.
-6. Keep app-specific marker DOM, callout *contents*, panels, and native Swift
+6. Keep app-specific marker DOM, callout _contents_, panels, and native Swift
    renderers outside this workspace. Callout anchoring, edge-avoidance, and
    lifecycle are the package's job; what a callout looks like is the app's.
 

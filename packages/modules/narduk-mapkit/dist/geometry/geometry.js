@@ -193,7 +193,7 @@ export function collectMapKitPointsFromGeoJson(input) {
     });
 }
 function isGeoJsonFeatureCollectionInput(input) {
-    return input.type === 'FeatureCollection' && Array.isArray(input.features);
+    return (input.type === 'FeatureCollection' && Array.isArray(input.features));
 }
 function isGeoJsonFeatureInput(input) {
     return input.type === 'Feature' && typeof input.geometry === 'object';

@@ -6,10 +6,7 @@ import {
 } from '../src/client/index.js'
 import { computeMapKitRegionForLngLatBounds } from '../src/geometry/index.js'
 
-import type {
-  MapKitTileOverlaySource,
-  MapKitTileOverlayUrlTemplate,
-} from '../src/client/index.js'
+import type { MapKitTileOverlaySource, MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
 
 describe('MapKit layer helpers', () => {
   class Coordinate {
@@ -62,12 +59,10 @@ describe('MapKit layer helpers', () => {
   })
 
   it('returns real tile URLs inside bounds and a transparent PNG outside bounds', () => {
-    const urlTemplate = createBoundsGatedUrlTemplate('/tiles/{z}/{x}/{y}@{scale}x.png', [
-      -100,
-      20,
-      -90,
-      30,
-    ])
+    const urlTemplate = createBoundsGatedUrlTemplate(
+      '/tiles/{z}/{x}/{y}@{scale}x.png',
+      [-100, 20, -90, 30],
+    )
 
     expect(typeof urlTemplate).toBe('function')
     const resolveTileUrl = urlTemplate as Exclude<MapKitTileOverlayUrlTemplate, string>
@@ -156,10 +151,13 @@ describe('MapKitLayerRegistry', () => {
       mapkit,
     })
 
-    await registry.reconcile([
-      { id: 'primary', opacity: 0.8, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
-      { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day1/{z}/{x}/{y}.png' },
-    ], { crossfadeDurationMs: 0 })
+    await registry.reconcile(
+      [
+        { id: 'primary', opacity: 0.8, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
+        { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day1/{z}/{x}/{y}.png' },
+      ],
+      { crossfadeDurationMs: 0 },
+    )
 
     expect(registry.list()).toEqual(['primary', 'companion'])
     expect(registry.get('primary')?.opacity).toBe(0.8)
@@ -167,10 +165,13 @@ describe('MapKitLayerRegistry', () => {
     expect(added).toHaveLength(2)
 
     const primaryOverlay = registry.get('primary')
-    await registry.reconcile([
-      { id: 'primary', opacity: 0.5, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
-      { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' },
-    ], { crossfadeDurationMs: 0 })
+    await registry.reconcile(
+      [
+        { id: 'primary', opacity: 0.5, urlTemplate: '/tiles/a/day1/{z}/{x}/{y}.png' },
+        { id: 'companion', opacity: 0.4, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' },
+      ],
+      { crossfadeDurationMs: 0 },
+    )
 
     // Opacity-only change reuses the overlay instance.
     expect(registry.get('primary')).toBe(primaryOverlay)
@@ -179,9 +180,10 @@ describe('MapKitLayerRegistry', () => {
     expect(registry.get('companion')).not.toBe(added[1])
     expect(removed).toContain(added[1])
 
-    await registry.reconcile([
-      { id: 'companion', opacity: 0.3, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' },
-    ], { crossfadeDurationMs: 0 })
+    await registry.reconcile(
+      [{ id: 'companion', opacity: 0.3, urlTemplate: '/tiles/b/day2/{z}/{x}/{y}.png' }],
+      { crossfadeDurationMs: 0 },
+    )
     expect(registry.list()).toEqual(['companion'])
     expect(registry.has('primary')).toBe(false)
     expect(removed).toContain(primaryOverlay)

@@ -255,6 +255,10 @@ export const MAPKIT_PIN_SCALE_PROPERTY = '--mapkit-pin-scale';
 const DEFAULT_DOT_HYSTERESIS_PX = 1.5;
 const DEFAULT_RANK_HYSTERESIS_ZOOM = 0.25;
 const DEFAULT_STEP_HYSTERESIS_ZOOM = 0.15;
+// The explicit class spells out exactly what a CSS identifier may contain. The
+// autofix (/^[A-Z][\w-]*$/i) is equivalent, but it rewrites a runtime literal,
+// which this fold deliberately does not do.
+// eslint-disable-next-line regexp/prefer-w, regexp/use-ignore-case -- narduk-libs#138
 const CSS_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const EMPTY_KEYS = new Set();
 /** Precedence when several causes coalesce into one frame; highest wins. */
@@ -329,7 +333,8 @@ export class MapKitPinScalingController {
     #zoom = null;
     constructor(options = {}) {
         this.#annotations = options.annotations;
-        this.#cancelFrame = options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame;
+        this.#cancelFrame =
+            options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame;
         this.#configs = options.classes ?? {};
         this.#container = options.container;
         this.#defaultClass = options.defaultClass ?? { rank: Number.MAX_SAFE_INTEGER };
@@ -337,7 +342,8 @@ export class MapKitPinScalingController {
         this.#onChange = options.onChange;
         this.#rankFloor = options.rankFloor ?? defaultMapKitPinRankFloor;
         this.#readZoom = options.readZoom;
-        this.#requestFrame = options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame;
+        this.#requestFrame =
+            options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame;
         this.#setVisible = options.setVisible ?? defaultVisibilityWriter();
         this.#shouldPaint = options.shouldPaint;
         this.#sizeCurve = options.sizeCurve ?? defaultMapKitPinSizeCurve;
@@ -443,7 +449,12 @@ export class MapKitPinScalingController {
      * `registry.reconcile()`; it is the only O(pins) call in the controller.
      */
     reconcile(pins) {
-        const result = { added: 0, removed: 0, unchanged: 0, updated: 0 };
+        const result = {
+            added: 0,
+            removed: 0,
+            unchanged: 0,
+            updated: 0,
+        };
         if (this.#destroyed)
             return result;
         const desired = new Set();

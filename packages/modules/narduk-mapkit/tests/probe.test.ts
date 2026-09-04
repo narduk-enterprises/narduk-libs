@@ -65,7 +65,7 @@ function setup(
   rect: { left: number; top: number } = { left: 0, top: 0 },
 ) {
   const element = createElement(rect)
-  const events: MapKitProbeEvent<MapKitPoint>[] = []
+  const events: Array<MapKitProbeEvent<MapKitPoint>> = []
   const timer = createFakeTimer()
   const probe = attachMapKitPointerProbe<MapKitPoint>({
     coordinateForPoint: identityCoordinate,
@@ -77,7 +77,7 @@ function setup(
   return { element, events, probe, timer }
 }
 
-function phases(events: readonly MapKitProbeEvent<MapKitPoint>[]): string[] {
+function phases(events: ReadonlyArray<MapKitProbeEvent<MapKitPoint>>): string[] {
   return events.map((event) => `${event.mode}:${event.phase}`)
 }
 

@@ -1,4 +1,7 @@
-import { createMapKitCalloutController, MapKitAnnotationRegistry } from '@narduk-enterprises/narduk-mapkit/client'
+import {
+  createMapKitCalloutController,
+  MapKitAnnotationRegistry,
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 import type { MapKitCalloutEvent } from '@narduk-enterprises/narduk-mapkit/client'
 

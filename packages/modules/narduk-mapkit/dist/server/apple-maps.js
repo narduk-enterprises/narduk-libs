@@ -151,7 +151,9 @@ export async function searchAppleMaps(query, options = {}) {
         params.set('includeAddressCategories', options.includeAddressCategories);
     }
     const location = options.searchLocation ??
-        (options.lat != null && options.lng != null ? { lat: options.lat, lng: options.lng } : undefined);
+        (options.lat != null && options.lng != null
+            ? { lat: options.lat, lng: options.lng }
+            : undefined);
     if (location)
         params.set('searchLocation', `${location.lat},${location.lng}`);
     if (options.limit)

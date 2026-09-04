@@ -33,6 +33,5 @@ export interface AppMapKitCalloutContext {
   reposition: () => void
 }
 
-export const appMapKitCalloutInjectionKey: InjectionKey<AppMapKitCalloutContext> = Symbol(
-  'narduk-mapkit-callouts',
-)
+export const appMapKitCalloutInjectionKey: InjectionKey<AppMapKitCalloutContext> =
+  Symbol('narduk-mapkit-callouts')

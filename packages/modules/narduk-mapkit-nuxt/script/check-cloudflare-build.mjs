@@ -63,12 +63,13 @@ async function assertStatus(worker, request, env, expectedStatus) {
 
 await rm(outputRoot, { force: true, recursive: true })
 run('pnpm', ['run', 'dev:prepare'])
-const buildOutput = run(
-  'pnpm',
-  ['exec', 'nuxt', 'build', 'playground'],
-  { NITRO_PRESET: 'cloudflare-module' },
-)
+const buildOutput = run('pnpm', ['exec', 'nuxt', 'build', 'playground'], {
+  NITRO_PRESET: 'cloudflare-module',
+})
 
+// Stripping ANSI SGR escapes from captured build output is exactly what this
+// control character is for.
+// eslint-disable-next-line no-control-regex -- intentional ANSI strip
 const normalizedOutput = buildOutput.replaceAll(/\u001B\[[0-9;]*m/g, '')
 if (/\bWARN\b|\bwarning\b/i.test(normalizedOutput)) {
   throw new Error('Cloudflare build emitted a warning; release builds must be warning-free.')
@@ -84,15 +85,19 @@ for (const path of builtFiles) {
   if (!/\.(?:mjs|js)$/.test(path)) continue
   const source = await readFile(path, 'utf8')
   if (
-    /(?:from\s*|import\s*\()\s*['"]node:[^'"]+|require\(\s*['"]node:[^'"]+/m.test(
-      source,
-    )
+    // The pattern is applied to a build artifact this script just produced, not
+    // to attacker-controlled input, and its `\s*` pair and `m` flag are left
+    // exactly as written upstream -- this fold rewrites no runtime expression.
+    // eslint-disable-next-line regexp/no-super-linear-backtracking, regexp/optimal-quantifier-concatenation, regexp/no-useless-flag -- narduk-libs#138
+    /(?:from\s*|import\s*\()\s*['"]node:[^'"]+|require\(\s*['"]node:[^'"]+/m.test(source)
   ) {
     forbiddenImports.push(path)
   }
 }
 if (forbiddenImports.length > 0) {
-  throw new Error(`Cloudflare bundle contains Node.js built-in imports:\n${forbiddenImports.join('\n')}`)
+  throw new Error(
+    `Cloudflare bundle contains Node.js built-in imports:\n${forbiddenImports.join('\n')}`,
+  )
 }
 
 const moduleUrl = `${pathToFileURL(join(serverRoot, 'index.mjs')).href}?gate=${Date.now()}`
@@ -101,12 +106,7 @@ if (!worker || typeof worker.fetch !== 'function') {
   throw new Error('Cloudflare module build does not export a fetch handler.')
 }
 
-await assertStatus(
-  worker,
-  new Request('https://worker.example/api/mapkit-token'),
-  {},
-  503,
-)
+await assertStatus(worker, new Request('https://worker.example/api/mapkit-token'), {}, 503)
 
 const bindings = {}
 Object.defineProperties(bindings, {

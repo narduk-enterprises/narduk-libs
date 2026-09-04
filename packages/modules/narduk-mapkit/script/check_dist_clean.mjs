@@ -1,10 +1,8 @@
 import { spawnSync } from 'node:child_process'
 
-const result = spawnSync(
-  'git',
-  ['status', '--porcelain', '--untracked-files=all', '--', 'dist'],
-  { encoding: 'utf8' },
-)
+const result = spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', 'dist'], {
+  encoding: 'utf8',
+})
 
 if (result.status !== 0) {
   process.stderr.write(result.stderr || 'Unable to inspect committed dist output.\n')

@@ -86,7 +86,7 @@ export declare class MapKitAnnotationRegistry<TAnnotation> {
      * Reconciling the same descriptors twice makes no host call at all, which is
      * what keeps a re-render that changed nothing from repainting the markers.
      */
-    reconcile(descriptors: readonly MapKitAnnotationDescriptor<TAnnotation>[]): MapKitAnnotationReconcileResult;
+    reconcile(descriptors: ReadonlyArray<MapKitAnnotationDescriptor<TAnnotation>>): MapKitAnnotationReconcileResult;
     /** Remove every annotation in one host call. */
     clear(): void;
     /**

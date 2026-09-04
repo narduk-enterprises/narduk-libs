@@ -15,9 +15,7 @@ import type { H3Event } from 'h3'
 import type { MapKitRuntimeEnv } from './runtime-env'
 
 function readProcessEnv(): MapKitRuntimeEnv {
-  const processValue = Reflect.get(globalThis, 'process') as
-    | { env?: MapKitRuntimeEnv }
-    | undefined
+  const processValue = Reflect.get(globalThis, 'process') as { env?: MapKitRuntimeEnv } | undefined
   return processValue?.env ?? {}
 }
 

@@ -1,4 +1,7 @@
-import { createMapKitFullscreenController, MAPKIT_FULLSCREEN_ATTRIBUTE } from '../src/client/index.js'
+import {
+  createMapKitFullscreenController,
+  MAPKIT_FULLSCREEN_ATTRIBUTE,
+} from '../src/client/index.js'
 
 import type {
   MapKitFullscreenChangeEvent,
@@ -86,13 +89,7 @@ function createDocument(): FakeDocument {
  * - `none`: no fullscreen API at all, as on iPhone Safari.
  */
 type NativeBehavior =
-  | 'change'
-  | 'none'
-  | 'promise-only'
-  | 'reject'
-  | 'silent-webkit'
-  | 'throw'
-  | 'webkit'
+  'change' | 'none' | 'promise-only' | 'reject' | 'silent-webkit' | 'throw' | 'webkit'
 
 interface FakeElement extends MapKitFullscreenElement {
   attribute: () => string | null
@@ -119,7 +116,12 @@ function createElement(
     style: { cssText: options.cssText ?? '' },
   }
 
-  if (native === 'change' || native === 'promise-only' || native === 'reject' || native === 'throw') {
+  if (
+    native === 'change' ||
+    native === 'promise-only' ||
+    native === 'reject' ||
+    native === 'throw'
+  ) {
     element.requestFullscreen = (): unknown => {
       element.requests += 1
       if (native === 'throw') throw new Error('fullscreen is disabled by permissions policy')
