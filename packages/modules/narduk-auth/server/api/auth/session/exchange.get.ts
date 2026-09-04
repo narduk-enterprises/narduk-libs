@@ -8,6 +8,8 @@ import {
   logAuthCallbackFailure,
 } from '#narduk-auth-server/utils/auth-callback'
 
+import { sanitizeSameOriginPath } from '../../../../shared/utils/same-origin-path'
+
 const emailVerificationTypeSchema = z.enum([
   'signup',
   'invite',
@@ -31,21 +33,6 @@ const querySchema = z.union([
   }),
 ])
 
-function sanitizeReturnPath(value: string | undefined, fallback: string) {
-  if (!value) return fallback
-
-  try {
-    const url = new URL(value, 'https://app.local')
-    if (url.origin !== 'https://app.local' || !url.pathname.startsWith('/')) {
-      return fallback
-    }
-
-    return `${url.pathname}${url.search}${url.hash}`
-  } catch {
-    return fallback
-  }
-}
-
 export default defineEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (value) => querySchema.safeParse(value))
   if (!query.success) {
@@ -58,7 +45,7 @@ export default defineEventHandler(async (event) => {
       authRedirectPath: string
     }
   }
-  const returnPath = sanitizeReturnPath(query.data.returnPath, config.public.authCallbackPath)
+  const returnPath = sanitizeSameOriginPath(query.data.returnPath, config.public.authCallbackPath)
 
   try {
     const result =
@@ -81,8 +68,12 @@ export default defineEventHandler(async (event) => {
     })
 
     const callbackUrl = new URL(returnPath, getRequestURL(event).origin)
-    if (query.data.next) {
-      callbackUrl.searchParams.set('next', query.data.next)
+    // Re-emit `next` only if it survives the same-origin guard: the failure
+    // branch hands it to the callback page, so an unsanitized value would make
+    // this endpoint a laundering step for a hostile redirect target.
+    const safeNext = query.data.next ? sanitizeSameOriginPath(query.data.next, '') : ''
+    if (safeNext) {
+      callbackUrl.searchParams.set('next', safeNext)
     }
     callbackUrl.searchParams.set('error', 'callback_exchange_failed')
     callbackUrl.searchParams.set('error_description', getAuthCallbackErrorMessage(error))

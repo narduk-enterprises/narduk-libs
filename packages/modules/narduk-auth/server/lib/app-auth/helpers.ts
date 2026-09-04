@@ -1,5 +1,7 @@
 import { readAppRequestHeader } from '@narduk-enterprises/narduk-app/server/http'
 
+import { sanitizeSameOriginPath } from '../../../shared/utils/same-origin-path'
+
 import type { User as LocalUser } from '#narduk-core/schema'
 import type { AppAuthProvider, AppSessionUser } from './types'
 import type { User as SupabaseUser } from '@supabase/auth-js'
@@ -51,18 +53,7 @@ export function decodeAccessTokenPayload(token: string): Record<string, unknown>
 }
 
 export function sanitizeNextPath(value: string | null | undefined, fallback: string) {
-  if (!value) return fallback
-
-  try {
-    const url = new URL(value, 'https://app.local')
-    if (url.origin !== 'https://app.local' || !url.pathname.startsWith('/')) {
-      return fallback
-    }
-
-    return `${url.pathname}${url.search}${url.hash}`
-  } catch {
-    return fallback
-  }
+  return sanitizeSameOriginPath(value, fallback)
 }
 
 /**

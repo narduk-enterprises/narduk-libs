@@ -1,3 +1,5 @@
+import { sanitizeSameOriginPath } from '../../../shared/utils/same-origin-path'
+
 export type LocalEmailLinkPurpose = 'reset' | 'setup'
 
 function mentionsMissingAttemptsTable(message: string): boolean {
@@ -74,17 +76,7 @@ export function sanitizeLocalEmailRedirect(
   value: string | null | undefined,
   fallback: string,
 ): string {
-  if (!value) return fallback
-
-  try {
-    const decoded = decodeURIComponent(value)
-    if (decoded.includes('\\')) return fallback
-    const url = new URL(value, 'https://app.local')
-    if (url.origin !== 'https://app.local' || !url.pathname.startsWith('/')) return fallback
-    return `${url.pathname}${url.search}${url.hash}`
-  } catch {
-    return fallback
-  }
+  return sanitizeSameOriginPath(value, fallback)
 }
 
 export function buildLocalEmailActionUrl(params: {
