@@ -10,10 +10,10 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
   and the deterministic one-shot app generator live in four families under
   `packages/`: `modules/` (Nuxt runtime modules and layers), `tooling/` (build,
   test and generator tooling), `design/` (the coded NE design system) and
-  `contracts/` (shared contracts). The layout is company-hq `D-WEBFOUND-2`
-  Q2 (a); `pnpm-workspace.yaml` is the single source of truth for where a
-  package lives, so scripts resolve package directories from it rather than
-  assuming `packages/<name>`.
+  `contracts/` (shared contracts). The layout is company-hq `D-WEBFOUND-2` Q2
+  (a); `pnpm-workspace.yaml` is the single source of truth for where a package
+  lives, so scripts resolve package directories from it rather than assuming
+  `packages/<name>`.
 - The app generator may create a new repository layout once. It must not manage
   that repository afterward and must not call Command, Cloudflare, GitHub, or
   Doppler directly.

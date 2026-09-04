@@ -9,10 +9,11 @@ admin surfaces now belong to `@narduk-enterprises/narduk-ai` in
 `packages/modules/narduk-ai/`.
 
 > [!NOTE] Public SEO and Schema.org capabilities have been moved to
-> `@narduk-enterprises/narduk-seo` in `packages/modules/narduk-seo/`. Internal SPA apps
-> and operator consoles can use only `@narduk-enterprises/narduk-core` without
-> loading public formatting dependencies. Public websites should explicitly
-> register the SEO package and use `useSeo(...)` for proper structured metadata.
+> `@narduk-enterprises/narduk-seo` in `packages/modules/narduk-seo/`. Internal
+> SPA apps and operator consoles can use only `@narduk-enterprises/narduk-core`
+> without loading public formatting dependencies. Public websites should
+> explicitly register the SEO package and use `useSeo(...)` for proper
+> structured metadata.
 
 Nitro OpenAPI generation is enabled here for all downstream apps. By default,
 production builds prerender `/_openapi.json`, while the Scalar and Swagger UI

@@ -215,23 +215,18 @@ test('resolves packages across the four-family layout and attributes nested path
         writeJson(join(root, 'packages', family, directory, 'package.json'), {
           name: `${scope}${directory}`,
           version: '1.0.0',
-          ...(family === 'tooling'
-            ? { dependencies: { [`${scope}core`]: 'workspace:*' } }
-            : {}),
+          ...(family === 'tooling' ? { dependencies: { [`${scope}core`]: 'workspace:*' } } : {}),
         })
       }
     }
 
     const workspace = loadWorkspace(root)
-    assert.deepEqual(
-      workspace.packages.map(({ relativeDirectory }) => relativeDirectory).sort(),
-      [
-        'packages/contracts/platform',
-        'packages/design/ui',
-        'packages/modules/core',
-        'packages/tooling/app-tools',
-      ],
-    )
+    assert.deepEqual(workspace.packages.map(({ relativeDirectory }) => relativeDirectory).sort(), [
+      'packages/contracts/platform',
+      'packages/design/ui',
+      'packages/modules/core',
+      'packages/tooling/app-tools',
+    ])
 
     const result = computeAffectedSet({
       root,

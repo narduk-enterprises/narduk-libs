@@ -230,14 +230,15 @@ overrides them, and those reasons are the specific ones:
   subpath resolved in the workspace and would have 404'd from the published
   tarball. Added, and `tests/composition/package-surface.test.ts` now asserts
   every export target is covered by `files`.
-- **`packages/tooling/eslint-config/eslint.config.mjs` added.** A flat config's relative
-  `files` globs resolve against the directory of the config that declares them,
-  so linted from the workspace root the shared tail's `narduk/rule-authoring`
-  entry (`src/rules/**`, where rule implementations legitimately traffic in
-  parser-specific `any`) could never match `packages/tooling/eslint-config/src/…`. The
-  package reported ~420 warnings it was explicitly exempt from. The local config
-  restores the intended scope and copies the root's `packages/**` relaxations
-  verbatim; nothing about what consumers receive changes.
+- **`packages/tooling/eslint-config/eslint.config.mjs` added.** A flat config's
+  relative `files` globs resolve against the directory of the config that
+  declares them, so linted from the workspace root the shared tail's
+  `narduk/rule-authoring` entry (`src/rules/**`, where rule implementations
+  legitimately traffic in parser-specific `any`) could never match
+  `packages/tooling/eslint-config/src/…`. The package reported ~420 warnings it
+  was explicitly exempt from. The local config restores the intended scope and
+  copies the root's `packages/**` relaxations verbatim; nothing about what
+  consumers receive changes.
 
 ## Adversarial-hardening record (2026-08-02)
 
