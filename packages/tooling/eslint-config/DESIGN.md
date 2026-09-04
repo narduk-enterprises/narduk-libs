@@ -112,7 +112,7 @@ SOLID core: `prefer-safe-parse-in-event-handlers`,
 ## Layout
 
 ```
-packages/eslint-config/
+packages/tooling/eslint-config/
   package.json  tsconfig.json  tsup.config.ts  DESIGN.md  README.md
   src/index.ts                  # plugin object: rules + pack re-exports
   eslint-app-config.mjs         # createAppLintConfig / composeSharedConfigs
@@ -230,11 +230,11 @@ overrides them, and those reasons are the specific ones:
   subpath resolved in the workspace and would have 404'd from the published
   tarball. Added, and `tests/composition/package-surface.test.ts` now asserts
   every export target is covered by `files`.
-- **`packages/eslint-config/eslint.config.mjs` added.** A flat config's relative
+- **`packages/tooling/eslint-config/eslint.config.mjs` added.** A flat config's relative
   `files` globs resolve against the directory of the config that declares them,
   so linted from the workspace root the shared tail's `narduk/rule-authoring`
   entry (`src/rules/**`, where rule implementations legitimately traffic in
-  parser-specific `any`) could never match `packages/eslint-config/src/…`. The
+  parser-specific `any`) could never match `packages/tooling/eslint-config/src/…`. The
   package reported ~420 warnings it was explicitly exempt from. The local config
   restores the intended scope and copies the root's `packages/**` relaxations
   verbatim; nothing about what consumers receive changes.

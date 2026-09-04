@@ -24,7 +24,7 @@ export const PACKAGE_VERSIONS = {
   'drizzle-orm': '0.45.2',
   esbuild: '0.28.1',
   // @narduk-enterprises/eslint-config v2 (this workspace's own peer
-  // requirement, see packages/eslint-config/package.json) needs
+  // requirement, see packages/tooling/eslint-config/package.json) needs
   // eslint@^10.0.0; this pin generates every new app's own devDependency, so
   // it has to track the same major the config package now requires or every
   // freshly scaffolded app fails its first `pnpm install` on an unmet peer.

@@ -23,7 +23,7 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
-    "directory": "packages/create-narduk-app"
+    "directory": "packages/tooling/create-narduk-app"
   },
   "publishConfig": {
     "access": "restricted",
@@ -32,8 +32,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "check:package": "publint --strict && pnpm pack --dry-run",
-    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
-    "format": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "format": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "lint": "eslint src tests --max-warnings 0",
     "prepack": "pnpm run build",
     "test:unit": "vitest run --config vitest.config.ts",

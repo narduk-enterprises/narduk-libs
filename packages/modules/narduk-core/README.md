@@ -6,10 +6,10 @@ First-class Nuxt package source in this workspace.
 
 Generic shell primitives such as `AppBreadcrumbs` live here; AI runtime and
 admin surfaces now belong to `@narduk-enterprises/narduk-ai` in
-`packages/narduk-ai/`.
+`packages/modules/narduk-ai/`.
 
 > [!NOTE] Public SEO and Schema.org capabilities have been moved to
-> `@narduk-enterprises/narduk-seo` in `packages/narduk-seo/`. Internal SPA apps
+> `@narduk-enterprises/narduk-seo` in `packages/modules/narduk-seo/`. Internal SPA apps
 > and operator consoles can use only `@narduk-enterprises/narduk-core` without
 > loading public formatting dependencies. Public websites should explicitly
 > register the SEO package and use `useSeo(...)` for proper structured metadata.

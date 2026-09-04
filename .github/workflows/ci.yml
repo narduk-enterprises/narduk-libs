@@ -99,7 +99,7 @@
 #   1. Its filter would have to be "" (repo root), and the callable's
 #      run-lint/run-typecheck/run-build switches are workflow-wide, not
 #      per-lane. A root lane would therefore also run root `lint`/`typecheck`/
-#      `build`, each of which is `turbo run ... --filter='./packages/*'` -- the
+#      `build`, each of which is `turbo run ... --filter='./packages/*/*'` -- the
 #      entire monorepo, serially, in one lane. That is precisely the monolith
 #      the 11-lane split exists to avoid.
 #   2. `pnpm run release-plan:check` shells out to `changeset status`, which
@@ -431,7 +431,7 @@ jobs:
 
       - name: Build coordinated release set
         run: >-
-          pnpm exec turbo run build --filter='./packages/*'
+          pnpm exec turbo run build --filter='./packages/*/*'
           --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
       - name: Prove packed artifacts in an external generated consumer

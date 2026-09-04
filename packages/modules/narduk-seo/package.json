@@ -7,7 +7,7 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
-    "directory": "packages/narduk-seo"
+    "directory": "packages/modules/narduk-seo"
   },
   "publishConfig": {
     "access": "restricted",
@@ -68,7 +68,7 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
-    "nuxt:prepare": "sh ../../scripts/ensure-generated-files.sh .nuxt/tsconfig.json .nuxt/tsconfig.shared.json .nuxt/tsconfig.node.json .nuxt/nuxt.shared.d.ts .nuxt/nuxt.node.d.ts .nuxt/eslint.config.mjs -- nuxt prepare",
+    "nuxt:prepare": "sh ../../../scripts/ensure-generated-files.sh .nuxt/tsconfig.json .nuxt/tsconfig.shared.json .nuxt/tsconfig.node.json .nuxt/nuxt.shared.d.ts .nuxt/nuxt.node.d.ts .nuxt/eslint.config.mjs -- nuxt prepare",
     "preview": "nuxt preview",
     "prepare": "nuxt prepare",
     "pretypecheck": "pnpm run nuxt:prepare",
@@ -81,9 +81,9 @@
     "quality": "pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
-    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "prettier": "pnpm run format:check",
-    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore"
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
   },
   "dependencies": {
     "@narduk-enterprises/narduk-core": "workspace:*",

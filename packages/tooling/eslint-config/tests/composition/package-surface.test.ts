@@ -86,10 +86,10 @@ describe('package manifest', () => {
     const [major] = pkg.version.split('.').map(Number)
     expect(Number.isFinite(major)).toBe(true)
 
-    const changesets = readdirSync(new URL('../../../../.changeset', import.meta.url))
+    const changesets = readdirSync(new URL('../../../../../.changeset', import.meta.url))
       .filter((entry) => entry.endsWith('.md') && entry !== 'README.md')
       .map((entry) =>
-        readFileSync(new URL(`../../../../.changeset/${entry}`, import.meta.url), 'utf8'),
+        readFileSync(new URL(`../../../../../.changeset/${entry}`, import.meta.url), 'utf8'),
       )
 
     const majorBump = changesets.some((body) =>

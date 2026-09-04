@@ -7,7 +7,7 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
-    "directory": "packages/status-runtime"
+    "directory": "packages/design/status-runtime"
   },
   "publishConfig": {
     "access": "restricted",
@@ -26,7 +26,7 @@
   "scripts": {
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
-    "format:check": "prettier --check --log-level warn \"**/*.{mjs,mts,json,md}\" --ignore-path ../../.gitignore --ignore-path ../../.prettierignore",
+    "format:check": "prettier --check --log-level warn \"**/*.{mjs,mts,json,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "lint": "eslint . --max-warnings 0",
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit --project tsconfig.json"

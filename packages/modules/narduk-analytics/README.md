@@ -14,7 +14,7 @@ This module has a hard runtime dependency on
 `deploymentTarget`, and `previewSafeMode` from the **runtime-public overlay**
 that only `narduk-core`'s `00-runtime-public.client` plugin and
 `/api/runtime/public` route provide
-(`packages/narduk-core/runtime/server/utils/runtime-public.ts`).
+(`packages/modules/narduk-core/runtime/server/utils/runtime-public.ts`).
 
 If `narduk-core` is not already installed, this module **installs it
 automatically** during `setup()` so analytics still works — you do not need to

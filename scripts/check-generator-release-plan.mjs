@@ -1,21 +1,25 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packagesRoot = join(root, 'packages')
 const generatorName = '@narduk-enterprises/create-narduk-app'
-const generatorManifestPath = join(packagesRoot, 'create-narduk-app', 'src', 'manifest.ts')
+
+// Package directories come from pnpm-workspace.yaml, not from a fixed
+// `packages/<name>` shape: the workspace is organized into the four families
+// modules/, tooling/, design/ and contracts/ (company-hq D-WEBFOUND-2 Q2 (a)).
+const workspace = loadWorkspace(root)
+const generator = workspace.byName.get(generatorName)
+if (!generator) throw new Error(`${generatorName} is not a workspace package.`)
+const generatorManifestPath = join(generator.directory, 'src', 'manifest.ts')
 
 const localPackageNames = new Set(
-  readdirSync(packagesRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) =>
-      JSON.parse(readFileSync(join(packagesRoot, entry.name, 'package.json'), 'utf8')),
-    )
-    .map((manifest) => manifest.name)
+  workspace.packages
+    .map(({ name }) => name)
     .filter((name) => typeof name === 'string' && name.startsWith('@narduk-enterprises/')),
 )
 

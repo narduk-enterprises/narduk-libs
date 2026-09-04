@@ -1,10 +1,17 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packagesRoot = join(root, 'packages')
-const generatorRoot = join(packagesRoot, 'create-narduk-app')
+// Package directories come from pnpm-workspace.yaml (four families, see
+// company-hq D-WEBFOUND-2 Q2 (a)), never from a fixed `packages/<name>` shape.
+const workspace = loadWorkspace(root)
+const generatorName = '@narduk-enterprises/create-narduk-app'
+const generator = workspace.byName.get(generatorName)
+if (!generator) throw new Error(`${generatorName} is not a workspace package.`)
+const generatorRoot = generator.directory
 const generatorPackagePath = join(generatorRoot, 'package.json')
 const generatorManifestPath = join(generatorRoot, 'src', 'manifest.ts')
 const generatorTypesPath = join(generatorRoot, 'src', 'types.ts')
@@ -15,9 +22,8 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const localVersions = new Map(
-  readdirSync(packagesRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => readJson(join(packagesRoot, entry.name, 'package.json')))
+  workspace.packages
+    .map(({ manifest }) => manifest)
     .filter((manifest) => manifest.name?.startsWith('@narduk-enterprises/') && manifest.version)
     .map((manifest) => [manifest.name, manifest.version]),
 )

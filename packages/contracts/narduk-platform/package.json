@@ -7,7 +7,7 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
-    "directory": "packages/narduk-platform"
+    "directory": "packages/contracts/narduk-platform"
   },
   "publishConfig": {
     "access": "restricted",
@@ -49,14 +49,14 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "check:package": "publint --strict && pnpm pack --dry-run",
-    "format:check": "node ../../tools/package-quality.mjs format:check",
-    "lint": "node ../../tools/package-quality.mjs lint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "node ../../../tools/package-quality.mjs format:check",
+    "lint": "node ../../../tools/package-quality.mjs lint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "prebuild": "node scripts/clean-dist.mjs",
     "prepack": "pnpm run build",
     "prepare": "node scripts/ensure-dist.mjs",
     "prepublishOnly": "pnpm run build",
     "test:unit": "vitest run",
-    "typecheck": "node ../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../tools/package-quality.mjs typecheck tsconfig.json"
+    "typecheck": "node ../../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../../tools/package-quality.mjs typecheck tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",

@@ -9,21 +9,36 @@ or Command control plane. The decommission ledger and archive gates live in
 
 ## Packages
 
-- `@narduk-enterprises/narduk-platform`
-- `@narduk-enterprises/narduk-app`
-- `@narduk-enterprises/narduk-app-tools`
+`packages/` is organized into four families (company-hq `D-WEBFOUND-2` Q2 (a),
+2026-09-04). Directory layout only -- published package names are unchanged and
+every package still releases independently through Changesets.
+
+### `packages/modules/` -- Nuxt runtime modules and layers
+
 - `@narduk-enterprises/narduk-core`
 - `@narduk-enterprises/narduk-auth`
 - `@narduk-enterprises/narduk-seo`
 - `@narduk-enterprises/narduk-analytics`
 - `@narduk-enterprises/narduk-uploads`
 - `@narduk-enterprises/narduk-ai`
+- `@narduk-enterprises/narduk-app`
+
+### `packages/tooling/` -- build, test and generator tooling
+
+- `@narduk-enterprises/narduk-app-tools`
 - `@narduk-enterprises/narduk-testkit`
-- `@narduk-enterprises/narduk-ui`
-- `@narduk-enterprises/status-runtime`
+- `@narduk-enterprises/eslint-config`
 - `@narduk-enterprises/create-narduk-app`
 - `@narduk-enterprises/journeys`
-- `@narduk-enterprises/eslint-config`
+
+### `packages/design/` -- the coded NE design system
+
+- `@narduk-enterprises/narduk-ui`
+- `@narduk-enterprises/status-runtime`
+
+### `packages/contracts/` -- shared contracts
+
+- `@narduk-enterprises/narduk-platform`
 
 ## Consuming these packages
 
