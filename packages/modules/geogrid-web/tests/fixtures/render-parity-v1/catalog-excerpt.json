@@ -1,0 +1,664 @@
+{
+  "datasets": [
+    {
+      "bakedRampVersion": 3,
+      "bbox": [
+        -95.2875,
+        27.3527,
+        -90.3375,
+        31.6586
+      ],
+      "canonicalId": "sst_filled",
+      "defaultRamp": "sst",
+      "deprecated": false,
+      "description": "Sea-surface temperature composited freshest-real-wins across the geostationary and polar tiers, with a coarse blended analysis filling only what no observation covers.",
+      "displayMaxZoom": 22,
+      "displayMinZoom": 0,
+      "gridURL": "grid?layer={layer}&date={date}&bbox={bbox}",
+      "id": "sst_filled",
+      "latestDate": "2026-01-15",
+      "nativeMaxZoom": 10,
+      "nativeMinZoom": 0,
+      "primaryForVariable": true,
+      "processingLevel": "fused-filled",
+      "ramp": [
+        {
+          "a": 108,
+          "b": 132,
+          "g": 45,
+          "r": 30,
+          "value": 284.0
+        },
+        {
+          "a": 120,
+          "b": 174,
+          "g": 90,
+          "r": 28,
+          "value": 287.36
+        },
+        {
+          "a": 134,
+          "b": 204,
+          "g": 146,
+          "r": 33,
+          "value": 290.72
+        },
+        {
+          "a": 148,
+          "b": 171,
+          "g": 176,
+          "r": 37,
+          "value": 294.08
+        },
+        {
+          "a": 162,
+          "b": 112,
+          "g": 184,
+          "r": 64,
+          "value": 297.44
+        },
+        {
+          "a": 176,
+          "b": 79,
+          "g": 200,
+          "r": 146,
+          "value": 300.32
+        },
+        {
+          "a": 190,
+          "b": 74,
+          "g": 205,
+          "r": 226,
+          "value": 302.72
+        },
+        {
+          "a": 202,
+          "b": 69,
+          "g": 166,
+          "r": 246,
+          "value": 304.88
+        },
+        {
+          "a": 214,
+          "b": 68,
+          "g": 98,
+          "r": 224,
+          "value": 306.8
+        },
+        {
+          "a": 224,
+          "b": 113,
+          "g": 43,
+          "r": 125,
+          "value": 308.0
+        }
+      ],
+      "rampSets": {
+        "sst": [
+          {
+            "a": 108,
+            "b": 132,
+            "g": 45,
+            "r": 30,
+            "value": 284.0
+          },
+          {
+            "a": 120,
+            "b": 174,
+            "g": 90,
+            "r": 28,
+            "value": 287.36
+          },
+          {
+            "a": 134,
+            "b": 204,
+            "g": 146,
+            "r": 33,
+            "value": 290.72
+          },
+          {
+            "a": 148,
+            "b": 171,
+            "g": 176,
+            "r": 37,
+            "value": 294.08
+          },
+          {
+            "a": 162,
+            "b": 112,
+            "g": 184,
+            "r": 64,
+            "value": 297.44
+          },
+          {
+            "a": 176,
+            "b": 79,
+            "g": 200,
+            "r": 146,
+            "value": 300.32
+          },
+          {
+            "a": 190,
+            "b": 74,
+            "g": 205,
+            "r": 226,
+            "value": 302.72
+          },
+          {
+            "a": 202,
+            "b": 69,
+            "g": 166,
+            "r": 246,
+            "value": 304.88
+          },
+          {
+            "a": 214,
+            "b": 68,
+            "g": 98,
+            "r": 224,
+            "value": 306.8
+          },
+          {
+            "a": 224,
+            "b": 113,
+            "g": 43,
+            "r": 125,
+            "value": 308.0
+          }
+        ]
+      },
+      "renderMode": "scalar",
+      "role": [
+        "product"
+      ],
+      "scale": "linear",
+      "seriesURL": "series/sst_filled.json",
+      "tileURLTemplate": "tiles/{layer}_{date}/{z}/{x}/{y}.png",
+      "title": "Sea-surface temperature \u2014 gap-filled",
+      "units": "K",
+      "urlBase": "document",
+      "validTime": "2026-01-15T00:00:00Z",
+      "valueRange": [
+        284.0,
+        308.0
+      ],
+      "valueStatistics": {
+        "basis": "identified-aoi-water",
+        "count": 1000,
+        "histogram": {
+          "binEdges": [
+            280.399994,
+            281.374994,
+            282.349995,
+            283.324995,
+            284.299995,
+            285.274996,
+            286.249996,
+            287.224997,
+            288.199997,
+            289.174997,
+            290.149998,
+            291.124998,
+            292.099998,
+            293.074999,
+            294.049999,
+            295.025,
+            296.0,
+            296.975,
+            297.950001,
+            298.925001,
+            299.900002,
+            300.875002,
+            301.850002,
+            302.825003,
+            303.800003,
+            304.775003,
+            305.750004,
+            306.725004,
+            307.700005,
+            308.675005,
+            309.650005,
+            310.625006,
+            311.600006
+          ],
+          "counts": [
+            3,
+            6,
+            10,
+            22,
+            20,
+            12,
+            26,
+            29,
+            51,
+            38,
+            20,
+            44,
+            48,
+            80,
+            58,
+            30,
+            60,
+            58,
+            80,
+            48,
+            43,
+            18,
+            31,
+            40,
+            26,
+            26,
+            12,
+            20,
+            22,
+            10,
+            6,
+            3
+          ],
+          "space": "linear"
+        },
+        "max": 311.600006,
+        "mean": 295.8362,
+        "min": 280.399994,
+        "percentiles": {
+          "1": 282.350006,
+          "2": 283.325012,
+          "25": 291.125,
+          "5": 284.787506,
+          "50": 296.0,
+          "75": 300.387512,
+          "95": 307.212494,
+          "98": 308.674988,
+          "99": 309.649994
+        },
+        "space": "linear",
+        "stddev": 6.53663
+      },
+      "variable": "sea_surface_temperature",
+      "variableGroup": "sst",
+      "visibility": "visible",
+      "zooms": [
+        0,
+        10
+      ]
+    },
+    {
+      "bakedRampVersion": 3,
+      "bbox": [
+        -95.2875,
+        27.3527,
+        -90.3375,
+        31.6586
+      ],
+      "canonicalId": "kd490_filled",
+      "defaultRamp": "kd490",
+      "deprecated": false,
+      "description": "Diffuse attenuation at 490 nm, composited from the observed source ladder and gap-filled inside identified AOI water by temporal reconstruction and a final coarse prior.",
+      "displayMaxZoom": 22,
+      "displayMinZoom": 0,
+      "gridURL": "grid?layer={layer}&date={date}&bbox={bbox}",
+      "id": "kd490_filled",
+      "latestDate": "2026-01-15",
+      "nativeMaxZoom": 10,
+      "nativeMinZoom": 0,
+      "primaryForVariable": true,
+      "processingLevel": "fused-filled",
+      "ramp": [
+        {
+          "a": 240,
+          "b": 108,
+          "g": 34,
+          "r": 8,
+          "value": 0.001
+        },
+        {
+          "a": 240,
+          "b": 152,
+          "g": 62,
+          "r": 13,
+          "value": 0.0025118864315095794
+        },
+        {
+          "a": 240,
+          "b": 178,
+          "g": 95,
+          "r": 17,
+          "value": 0.00630957344480193
+        },
+        {
+          "a": 242,
+          "b": 181,
+          "g": 132,
+          "r": 18,
+          "value": 0.015848931924611134
+        },
+        {
+          "a": 244,
+          "b": 158,
+          "g": 160,
+          "r": 22,
+          "value": 0.039810717055349734
+        },
+        {
+          "a": 246,
+          "b": 118,
+          "g": 175,
+          "r": 38,
+          "value": 0.1
+        },
+        {
+          "a": 248,
+          "b": 77,
+          "g": 183,
+          "r": 95,
+          "value": 0.25118864315095796
+        },
+        {
+          "a": 248,
+          "b": 58,
+          "g": 180,
+          "r": 170,
+          "value": 0.630957344480193
+        },
+        {
+          "a": 250,
+          "b": 60,
+          "g": 158,
+          "r": 216,
+          "value": 1.584893192461114
+        },
+        {
+          "a": 250,
+          "b": 55,
+          "g": 111,
+          "r": 198,
+          "value": 3.981071705534973
+        },
+        {
+          "a": 252,
+          "b": 41,
+          "g": 66,
+          "r": 134,
+          "value": 10.0
+        }
+      ],
+      "rampSets": {
+        "kd490": [
+          {
+            "a": 240,
+            "b": 108,
+            "g": 34,
+            "r": 8,
+            "value": 0.001
+          },
+          {
+            "a": 240,
+            "b": 152,
+            "g": 62,
+            "r": 13,
+            "value": 0.0025118864315095794
+          },
+          {
+            "a": 240,
+            "b": 178,
+            "g": 95,
+            "r": 17,
+            "value": 0.00630957344480193
+          },
+          {
+            "a": 242,
+            "b": 181,
+            "g": 132,
+            "r": 18,
+            "value": 0.015848931924611134
+          },
+          {
+            "a": 244,
+            "b": 158,
+            "g": 160,
+            "r": 22,
+            "value": 0.039810717055349734
+          },
+          {
+            "a": 246,
+            "b": 118,
+            "g": 175,
+            "r": 38,
+            "value": 0.1
+          },
+          {
+            "a": 248,
+            "b": 77,
+            "g": 183,
+            "r": 95,
+            "value": 0.25118864315095796
+          },
+          {
+            "a": 248,
+            "b": 58,
+            "g": 180,
+            "r": 170,
+            "value": 0.630957344480193
+          },
+          {
+            "a": 250,
+            "b": 60,
+            "g": 158,
+            "r": 216,
+            "value": 1.584893192461114
+          },
+          {
+            "a": 250,
+            "b": 55,
+            "g": 111,
+            "r": 198,
+            "value": 3.981071705534973
+          },
+          {
+            "a": 252,
+            "b": 41,
+            "g": 66,
+            "r": 134,
+            "value": 10.0
+          }
+        ],
+        "water-quality": [
+          {
+            "a": 242,
+            "b": 108,
+            "g": 42,
+            "r": 9,
+            "value": 0.001
+          },
+          {
+            "a": 242,
+            "b": 148,
+            "g": 68,
+            "r": 16,
+            "value": 0.0025118864315095794
+          },
+          {
+            "a": 244,
+            "b": 176,
+            "g": 100,
+            "r": 24,
+            "value": 0.00630957344480193
+          },
+          {
+            "a": 244,
+            "b": 186,
+            "g": 132,
+            "r": 32,
+            "value": 0.015848931924611134
+          },
+          {
+            "a": 246,
+            "b": 158,
+            "g": 158,
+            "r": 40,
+            "value": 0.039810717055349734
+          },
+          {
+            "a": 246,
+            "b": 118,
+            "g": 172,
+            "r": 56,
+            "value": 0.1
+          },
+          {
+            "a": 248,
+            "b": 86,
+            "g": 176,
+            "r": 94,
+            "value": 0.25118864315095796
+          },
+          {
+            "a": 248,
+            "b": 74,
+            "g": 172,
+            "r": 146,
+            "value": 0.630957344480193
+          },
+          {
+            "a": 250,
+            "b": 84,
+            "g": 160,
+            "r": 186,
+            "value": 1.584893192461114
+          },
+          {
+            "a": 252,
+            "b": 62,
+            "g": 122,
+            "r": 170,
+            "value": 3.981071705534973
+          },
+          {
+            "a": 252,
+            "b": 46,
+            "g": 82,
+            "r": 122,
+            "value": 10.0
+          }
+        ]
+      },
+      "renderMode": "scalar",
+      "role": [
+        "product"
+      ],
+      "scale": "log",
+      "seriesURL": "series/kd490_filled.json",
+      "tileURLTemplate": "tiles/{layer}_{date}/{z}/{x}/{y}.png",
+      "title": "KD490 \u2014 gap-filled",
+      "units": "m-1",
+      "urlBase": "document",
+      "validTime": "2026-01-15T00:00:00Z",
+      "valueRange": [
+        0.001,
+        10.0
+      ],
+      "valueStatistics": {
+        "basis": "identified-aoi-water",
+        "count": 998,
+        "histogram": {
+          "binEdges": [
+            -3.6,
+            -3.4375,
+            -3.275,
+            -3.1125,
+            -2.95,
+            -2.7875,
+            -2.625,
+            -2.4625,
+            -2.3,
+            -2.1375,
+            -1.975,
+            -1.8125,
+            -1.65,
+            -1.4875,
+            -1.325,
+            -1.1625,
+            -1.0,
+            -0.8375,
+            -0.675,
+            -0.5125,
+            -0.35,
+            -0.1875,
+            -0.025,
+            0.1375,
+            0.3,
+            0.4625,
+            0.625,
+            0.7875,
+            0.95,
+            1.1125,
+            1.275,
+            1.4375,
+            1.6
+          ],
+          "counts": [
+            5,
+            8,
+            12,
+            16,
+            10,
+            22,
+            40,
+            15,
+            51,
+            36,
+            42,
+            22,
+            74,
+            54,
+            58,
+            60,
+            60,
+            56,
+            26,
+            74,
+            43,
+            35,
+            28,
+            26,
+            26,
+            14,
+            34,
+            18,
+            14,
+            10,
+            6,
+            3
+          ],
+          "space": "log10"
+        },
+        "max": 1.6,
+        "mean": -1.025319,
+        "min": -3.6,
+        "percentiles": {
+          "1": -3.275,
+          "2": -3.1125,
+          "25": -1.8125,
+          "5": -2.86875,
+          "50": -1.0,
+          "75": -0.26875,
+          "95": 0.86875,
+          "98": 1.1125,
+          "99": 1.275
+        },
+        "space": "log10",
+        "stddev": 1.089628
+      },
+      "variable": "kd_490",
+      "variableGroup": "kd490",
+      "visibility": "visible",
+      "zooms": [
+        0,
+        10
+      ]
+    }
+  ],
+  "note": "Excerpt of the real catalog contract, produced by earth_data_pipeline.catalog.descriptor_for against the synthetic grids in this pack. Not a release: the date and the data are frozen fixtures.",
+  "productId": "water-quality-gulf",
+  "schemaVersion": 1
+}
