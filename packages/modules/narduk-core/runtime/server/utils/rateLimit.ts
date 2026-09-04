@@ -118,12 +118,6 @@ export const RATE_LIMIT_POLICIES = {
     MINUTE,
   ),
   showcaseAuthLogin: defineRateLimitPolicy('showcaseAuthLogin', 'auth-login', 60, MINUTE),
-  showcaseAuthLoginTest: defineRateLimitPolicy(
-    'showcaseAuthLoginTest',
-    'auth-login-test',
-    300,
-    MINUTE,
-  ),
   mapkitToken: defineRateLimitPolicy('mapkitToken', 'mapkit-token', 60, MINUTE),
 } as const satisfies Record<string, RateLimitPolicy>
 
