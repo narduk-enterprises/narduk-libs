@@ -170,11 +170,54 @@ test('test-only and release-metadata changes keep package gates but skip packed 
 test('unclassified repository files fail closed to a full package run', () => {
   const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
   try {
-    const result = computeAffectedSet({ root, changedFiles: ['docs/architecture.md'] })
+    const result = computeAffectedSet({ root, changedFiles: ['config/unknown.yaml'] })
     assert.deepEqual(names(result), ['one', 'two'])
     assert.equal(result.fullRun, true)
     assert.equal(result.packedConsumer, false)
     assert.match(result.reasons.join('\n'), /unclassified repository path/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('inert repository paths select no packages and do not force a full run', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const result = computeAffectedSet({
+      root,
+      changedFiles: ['docs/architecture.md', 'README.md', 'LICENSE'],
+    })
+    assert.deepEqual(names(result), [])
+    assert.equal(result.fullRun, false)
+    assert.equal(result.packedConsumer, false)
+    assert.equal(result.matrix.length, 0)
+    assert.deepEqual(result.skippedNames.sort(), [`${scope}one`, `${scope}two`].sort())
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an inert path mixed with a real package change only selects that package', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const result = computeAffectedSet({
+      root,
+      changedFiles: ['docs/architecture.md', 'packages/one/src/index.ts'],
+    })
+    assert.deepEqual(names(result), ['one'])
+    assert.equal(result.fullRun, false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a changeset-only diff with no package touched is inert, not a full run', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const result = computeAffectedSet({ root, changedFiles: ['.changeset/some-change.md'] })
+    assert.deepEqual(names(result), [])
+    assert.equal(result.fullRun, false)
+    assert.equal(result.matrix.length, 0)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
