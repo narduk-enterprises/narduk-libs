@@ -11,19 +11,11 @@ const data = [
 <template>
   <Story title="Pie chart">
     <Variant title="Pie">
-      <NardukPieChart
-        :data="data"
-        :height="320"
-      />
+      <NardukPieChart :data="data" :height="320" />
     </Variant>
 
     <Variant title="Donut + colorblind-safe">
-      <NardukPieChart
-        :data="data"
-        donut
-        :height="320"
-        theme="colorblind-safe"
-      />
+      <NardukPieChart :data="data" donut :height="320" theme="colorblind-safe" />
     </Variant>
   </Story>
 </template>

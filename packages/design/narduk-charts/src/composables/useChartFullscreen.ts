@@ -1,14 +1,17 @@
 import { ref, onMounted, onUnmounted, type Ref } from 'vue'
 
 function getFsElement(): Element | null {
-  return document.fullscreenElement
-    ?? (document as unknown as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
-    ?? null
+  return (
+    document.fullscreenElement ??
+    (document as unknown as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ??
+    null
+  )
 }
 
 async function requestFs(el: HTMLElement): Promise<void> {
-  const fn = el.requestFullscreen
-    ?? (el as unknown as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen
+  const fn =
+    el.requestFullscreen ??
+    (el as unknown as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen
   if (fn) await fn.call(el)
 }
 
@@ -54,7 +57,9 @@ export function useChartFullscreen(): {
     if (!getFsElement()) return
     try {
       await exitFs()
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   async function toggle(): Promise<boolean> {

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  layoutReferenceLabelXs,
-  layoutReferenceLabelYs,
-} from './refLabelLayout'
+import { layoutReferenceLabelXs, layoutReferenceLabelYs } from './refLabelLayout'
 
 describe('layoutReferenceLabelYs', () => {
   it('keeps isolated labels on the line', () => {

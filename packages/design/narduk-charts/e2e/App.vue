@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import {
-  NardukLineChart,
-  NardukBarChart,
-  NardukPieChart,
-  NardukCandleChart,
-} from '../src/index'
+import { NardukLineChart, NardukBarChart, NardukPieChart, NardukCandleChart } from '../src/index'
 import type { ChartSeries, CandleBar, CandleTimeDomain } from '../src/types'
 
 function makeCandleBars(n: number, stepMs = 60_000): CandleBar[] {
@@ -53,9 +48,7 @@ const pieData = [
 
 <template>
   <div class="e2e-root" style="padding: 24px; max-width: 720px">
-    <h1 style="font: 600 16px system-ui; margin-bottom: 16px">
-      E2E harness
-    </h1>
+    <h1 style="font: 600 16px system-ui; margin-bottom: 16px">E2E harness</h1>
     <section data-testid="line-section">
       <div data-testid="line-chart">
         <NardukLineChart
@@ -68,16 +61,11 @@ const pieData = [
           @zoom="zoom = $event"
         />
       </div>
-      <p data-testid="zoom-state">
-        {{ zoom.start.toFixed(2) }},{{ zoom.end.toFixed(2) }}
-      </p>
+      <p data-testid="zoom-state">{{ zoom.start.toFixed(2) }},{{ zoom.end.toFixed(2) }}</p>
     </section>
     <!-- Same series, two theme classes: proves the palette tokens actually
          resolve through an SVG presentation attribute at runtime. -->
-    <section
-      data-testid="palette-default-section"
-      style="margin-top: 32px"
-    >
+    <section data-testid="palette-default-section" style="margin-top: 32px">
       <NardukLineChart
         chart-title="Palette default"
         :series="lineSeries"
@@ -86,10 +74,7 @@ const pieData = [
         :height="200"
       />
     </section>
-    <section
-      data-testid="palette-cbs-section"
-      style="margin-top: 32px"
-    >
+    <section data-testid="palette-cbs-section" style="margin-top: 32px">
       <NardukLineChart
         chart-title="Palette colorblind-safe"
         theme="colorblind-safe"
@@ -99,10 +84,7 @@ const pieData = [
         :height="200"
       />
     </section>
-    <section
-      data-testid="bar-section"
-      style="margin-top: 32px"
-    >
+    <section data-testid="bar-section" style="margin-top: 32px">
       <div data-testid="bar-chart">
         <NardukBarChart
           chart-title="Bar E2E"
@@ -113,23 +95,12 @@ const pieData = [
         />
       </div>
     </section>
-    <section
-      data-testid="pie-section"
-      style="margin-top: 32px"
-    >
+    <section data-testid="pie-section" style="margin-top: 32px">
       <div data-testid="pie-chart">
-        <NardukPieChart
-          chart-title="Pie E2E"
-          :data="pieData"
-          :width="400"
-          :height="320"
-        />
+        <NardukPieChart chart-title="Pie E2E" :data="pieData" :width="400" :height="320" />
       </div>
     </section>
-    <section
-      data-testid="candle-section"
-      style="margin-top: 32px"
-    >
+    <section data-testid="candle-section" style="margin-top: 32px">
       <div data-testid="candle-chart">
         <NardukCandleChart
           chart-title="Candle E2E"

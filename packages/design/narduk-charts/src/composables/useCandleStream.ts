@@ -17,9 +17,7 @@ export function useCandleStream(
   initial: CandleBar[] = [],
   options?: CandleStreamOptions,
 ) {
-  const bars: Ref<CandleBar[]> = ref(
-    initial.length ? initial.slice(-maxBars) : [],
-  )
+  const bars: Ref<CandleBar[]> = ref(initial.length ? initial.slice(-maxBars) : [])
 
   let lastPushMs: number | null = null
 

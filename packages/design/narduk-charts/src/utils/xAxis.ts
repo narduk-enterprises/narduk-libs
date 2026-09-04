@@ -11,11 +11,11 @@ export function defaultTimeAxisLabel(tMs: number): string {
   return Number.isNaN(d.getTime())
     ? String(tMs)
     : d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
 }
 
 export function dedupeAdjacentAxisLabelIndices(

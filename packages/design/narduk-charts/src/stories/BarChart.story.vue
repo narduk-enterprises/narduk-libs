@@ -11,27 +11,22 @@ const logBars = [{ name: 'Hits', data: [3, 18, 420, 65] }]
 const logLabels = ['A', 'B', 'C', 'D']
 const barBands = [{ y0: 20, y1: 80, color: '#38bdf8', opacity: 0.15 }]
 const barVline = [{ type: 'vline' as const, xIndex: 1, dashed: true, label: 'v1' }]
-const wideLabels = ['North waterfront district', 'Central business corridor', 'South industrial zone']
+const wideLabels = [
+  'North waterfront district',
+  'Central business corridor',
+  'South industrial zone',
+]
 const wideSeries = [{ name: 'Acquisitions', data: [12, 28, 9] }]
 </script>
 
 <template>
   <Story title="Bar chart">
     <Variant title="Grouped">
-      <NardukBarChart
-        :series="series"
-        :labels="labels"
-        :height="300"
-      />
+      <NardukBarChart :series="series" :labels="labels" :height="300" />
     </Variant>
 
     <Variant title="Print theme">
-      <NardukBarChart
-        :series="series"
-        :labels="labels"
-        :height="300"
-        theme="print"
-      />
+      <NardukBarChart :series="series" :labels="labels" :height="300" theme="print" />
     </Variant>
 
     <Variant title="Log Y + band + vline">

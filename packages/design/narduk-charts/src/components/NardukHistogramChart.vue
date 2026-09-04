@@ -1,44 +1,47 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, useId } from 'vue'
-import { useChart } from '../composables/useChart'
-import { createYAxisMap } from '../utils/yScale'
-import { computeHistogramBins } from '../utils/math'
-import type { ChartTheme, HistogramBin } from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
-import { defaultHistogramLabel } from '../utils/chartA11y'
+import { computed, onMounted, ref, useId } from 'vue'
 
-const props = withDefaults(defineProps<{
-  values: number[]
-  /** Ignored when `bins` is set. */
-  binCount?: number
-  bins?: HistogramBin[]
-  width?: number
-  height?: number
-  dark?: boolean
-  theme?: ChartTheme
-  chartTitle?: string
-  chartDescription?: string
-  dir?: 'ltr' | 'rtl'
-  barColor?: string
-  animate?: boolean
-  respectReducedMotion?: boolean
-}>(), {
-  binCount: 8,
-  animate: true,
-  respectReducedMotion: true,
-})
+import { useChart } from '../composables/useChart'
+import { defaultHistogramLabel } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
+import { computeHistogramBins } from '../utils/math'
+import { createYAxisMap } from '../utils/yScale'
+
+import type { ChartTheme, HistogramBin } from '../types'
+
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    barColor?: string
+    /** Ignored when `bins` is set. */
+    binCount?: number
+    bins?: HistogramBin[]
+    chartDescription?: string
+    chartTitle?: string
+    dark?: boolean
+    dir?: 'ltr' | 'rtl'
+    height?: number
+    respectReducedMotion?: boolean
+    theme?: ChartTheme
+    values: number[]
+    width?: number
+  }>(),
+  {
+    binCount: 8,
+    animate: true,
+    respectReducedMotion: true,
+  },
+)
 
 const rawId = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const capId = `nc-hcap-${idSafe(rawId)}`
 const svgTitleId = `nc-ht-${idSafe(rawId)}`
 const svgDescId = `nc-hd-${idSafe(rawId)}`
 
 const containerRef = ref<HTMLElement | null>(null)
-const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } = useChart(
-  containerRef,
-  props,
-)
+const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
+  useChart(containerRef, props)
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
 const rootChartClasses = computed(() => {
@@ -54,8 +57,8 @@ const binsResolved = computed(() => {
   return computeHistogramBins(props.values, props.binCount)
 })
 
-const effectiveTitle = computed(() =>
-  props.chartTitle ?? defaultHistogramLabel(binsResolved.value.length),
+const effectiveTitle = computed(
+  () => props.chartTitle ?? defaultHistogramLabel(binsResolved.value.length),
 )
 
 const isEmpty = computed(() => binsResolved.value.length === 0 || props.values.length === 0)
@@ -86,11 +89,14 @@ const barRects = computed(() => {
   })
 })
 
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
   if (runAnimation.value) {
-    requestAnimationFrame(() => { animated.value = true })
+    requestAnimationFrame(() => {
+      animated.value = true
+    })
   } else {
     animated.value = true
   }
@@ -98,21 +104,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="capId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="capId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -124,12 +120,7 @@ onMounted(() => {
       :aria-label="chartTitle ? undefined : effectiveTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
-        No data
-      </div>
+      <div v-if="isEmpty" class="narduk-chart__empty">No data</div>
       <svg
         v-else-if="chartWidth > 0"
         :width="chartWidth"
@@ -138,10 +129,7 @@ onMounted(() => {
         :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
       >
         <title :id="svgTitleId">{{ effectiveTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescId">
           {{ chartDescription }}
         </desc>
         <g class="narduk-grid">
@@ -199,7 +187,9 @@ onMounted(() => {
 
 <style scoped>
 .narduk-hist-bar {
-  transition: y 0.5s ease, height 0.5s ease;
+  transition:
+    y 0.5s ease,
+    height 0.5s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

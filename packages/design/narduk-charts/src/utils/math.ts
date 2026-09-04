@@ -55,7 +55,7 @@ export function linearScale(
  * Convert a series of points into a smooth SVG cubic-bezier path
  * using Catmull-Rom → Bezier conversion (uniform parameterisation).
  */
-export function catmullRomPath(points: [number, number][]): string {
+export function catmullRomPath(points: Array<[number, number]>): string {
   if (points.length < 2) return ''
   if (points.length === 2) {
     return `M${points[0][0]},${points[0][1]}L${points[1][0]},${points[1][1]}`
@@ -80,7 +80,7 @@ export function catmullRomPath(points: [number, number][]): string {
   return d
 }
 
-export function straightPath(points: [number, number][]): string {
+export function straightPath(points: Array<[number, number]>): string {
   if (points.length < 2) return ''
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ')
 }
@@ -89,11 +89,11 @@ export function straightPath(points: [number, number][]): string {
  * Split a series into continuous segments wherever values are `null` or `NaN`.
  */
 export function segmentLinePoints(
-  data: (number | null)[],
+  data: Array<number | null>,
   toPoint: (index: number, value: number) => [number, number],
-): [number, number][][] {
-  const segments: [number, number][][] = []
-  let cur: [number, number][] = []
+): Array<Array<[number, number]>> {
+  const segments: Array<Array<[number, number]>> = []
+  let cur: Array<[number, number]> = []
   for (let i = 0; i < data.length; i++) {
     const v = data[i]
     if (v == null || Number.isNaN(v)) {
@@ -110,7 +110,7 @@ export function segmentLinePoints(
 }
 
 export function lineSegmentsToPaths(
-  segments: [number, number][][],
+  segments: Array<Array<[number, number]>>,
   smooth: boolean,
 ): string[] {
   return segments.map(seg =>
@@ -121,7 +121,7 @@ export function lineSegmentsToPaths(
 /** Close a line path down to a horizontal baseline (for area fill). */
 export function closeAreaUnderLine(
   lineD: string,
-  segment: [number, number][],
+  segment: Array<[number, number]>,
   yBaseline: number,
 ): string {
   if (!lineD || segment.length < 2) return ''
@@ -205,9 +205,7 @@ export function formatAxisTickValue(
   const relSpan = span / mag
   const abs = Math.abs(value)
   const step = options?.tickStep
-  const fineK =
-    relSpan < 0.12
-    || (step != null && step > 0 && step < 120)
+  const fineK = relSpan < 0.12 || (step != null && step > 0 && step < 120)
 
   if (abs >= 1_000_000) {
     const dec = relSpan < 0.05 ? 2 : 1
@@ -313,9 +311,7 @@ export function largestTriangleThreeBuckets(points: XYPoint[], threshold: number
     const pa = points[a]!
     for (let j = rangeStart; j < rangeEnd; j++) {
       const pj = points[j]!
-      const area = Math.abs(
-        (pa.x - avgX) * (pj.y - pa.y) - (pa.x - pj.x) * (avgY - pa.y),
-      ) * 0.5
+      const area = Math.abs((pa.x - avgX) * (pj.y - pa.y) - (pa.x - pj.x) * (avgY - pa.y)) * 0.5
       if (area > maxArea) {
         maxArea = area
         maxIdx = j

@@ -6,9 +6,13 @@
 
 ## Prerequisites
 
-- Root `.npmrc` scopes `@narduk-enterprises` to GitHub Packages (committed in this repo).
-- CI and publish workflows use the repository-owned `tools/configure-package-registry-auth.mjs` helper.
-- The publish workflow expects org secrets: `NARDUK_PLATFORM_GH_PACKAGES_READ` and `NARDUK_PLATFORM_GH_PACKAGES_WRITE`, or `NARDUK_PLATFORM_GH_PACKAGES_RW` for both.
+- Root `.npmrc` scopes `@narduk-enterprises` to GitHub Packages (committed in
+  this repo).
+- CI and publish workflows use the repository-owned
+  `tools/configure-package-registry-auth.mjs` helper.
+- The publish workflow expects org secrets: `NARDUK_PLATFORM_GH_PACKAGES_READ`
+  and `NARDUK_PLATFORM_GH_PACKAGES_WRITE`, or `NARDUK_PLATFORM_GH_PACKAGES_RW`
+  for both.
 
 ## Release Steps
 
@@ -38,14 +42,15 @@
 8. Push the tag to GitHub.
 9. Confirm the **Publish package** workflow completed in GitHub Actions. Note
    that its "Check published package version" step **skips** the publish when
-   the version already exists in the registry and the run still reports
-   success — so read that step's output, not just the run's conclusion.
+   the version already exists in the registry and the run still reports success
+   — so read that step's output, not just the run's conclusion.
 10. Confirm the version appears under the org packages and installs cleanly from
     a consumer app.
 
 ## Consumer Install Smoke
 
-Use a consumer app with GitHub Packages auth for the `@narduk-enterprises` scope:
+Use a consumer app with GitHub Packages auth for the `@narduk-enterprises`
+scope:
 
 ```bash
 npm install @narduk-enterprises/narduk-charts

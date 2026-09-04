@@ -11,9 +11,6 @@ const domainModel = defineModel<CandleTimeDomain | null>('domain', { default: nu
 
 <template>
   <div class="narduk-chart-stack min-w-0">
-    <slot
-      :domain="domainModel"
-      :domain-model="domainModel"
-    />
+    <slot :domain="domainModel" :domain-model="domainModel" />
   </div>
 </template>

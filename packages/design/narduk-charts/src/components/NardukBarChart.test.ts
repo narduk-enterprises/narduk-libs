@@ -37,7 +37,7 @@ describe('NardukBarChart', () => {
     expect(bw1).toBeGreaterThan(bw0)
 
     const tickTexts = w.findAll('.narduk-axis text').map(t => t.text().trim())
-    expect(tickTexts.some(t => !Number.isNaN(parseFloat(t.replace(/,/g, ''))))).toBe(true)
+    expect(tickTexts.some(t => !Number.isNaN(Number.parseFloat(t.replace(/,/g, ''))))).toBe(true)
   })
 
   it('defaults to vertical layout when orientation omitted', () => {

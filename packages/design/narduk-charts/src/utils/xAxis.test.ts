@@ -21,10 +21,7 @@ describe('xAxis helpers', () => {
   })
 
   it('dedupes adjacent formatted labels while preserving endpoints', () => {
-    const indices = dedupeAdjacentAxisLabelIndices(
-      [0, 1, 2, 3],
-      i => (i < 3 ? 'May 15' : 'May 16'),
-    )
+    const indices = dedupeAdjacentAxisLabelIndices([0, 1, 2, 3], i => (i < 3 ? 'May 15' : 'May 16'))
 
     expect(indices).toEqual([0, 3])
   })

@@ -11,7 +11,7 @@ export type ChartYScaleMode = 'linear' | 'log' | 'symlog'
 export interface ChartSeries {
   name: string
   /** Use `null` to break the line (gap) at that index. */
-  data: (number | null)[]
+  data: Array<number | null>
   color?: string
   /**
    * When the chart enables dual Y-axes, attach series to the left (`primary`)
@@ -79,7 +79,7 @@ export type ChartLineAnnotation =
 export interface LinePointClickPayload {
   index: number
   label: string
-  values: { seriesName: string; value: number | null }[]
+  values: Array<{ seriesName: string; value: number | null }>
 }
 
 /** Fractional X domain along category indices (`0` … `labels.length - 1`). */
@@ -139,7 +139,7 @@ export interface NardukLineChartProps {
    * additional series are ignored for the volume pane (documented, no runtime warning).
    * Omit to leave rendering unchanged.
    */
-  volume?: (number | null)[]
+  volume?: Array<number | null>
   /** Render a bottom volume histogram pane when `volume` has data. Default `false`. */
   showVolume?: boolean
   /**
@@ -392,12 +392,7 @@ export type CandleDrawing =
   | CandleFibRetracementDrawing
   | CandleRangeBoxDrawing
 
-export type CandleDrawingTool =
-  | 'trend'
-  | 'horizontal'
-  | 'fib_retracement'
-  | 'range'
-  | null
+export type CandleDrawingTool = 'trend' | 'horizontal' | 'fib_retracement' | 'range' | null
 
 export interface ExportChartOptions {
   filename?: string

@@ -38,10 +38,7 @@ export function serializeChartSvg(svg: SVGElement, embeddedCss?: string): string
 /**
  * Download the chart as an `.svg` file (browser only).
  */
-export function exportChartSvg(
-  svg: SVGElement | null,
-  options?: ExportChartOptions,
-): void {
+export function exportChartSvg(svg: SVGElement | null, options?: ExportChartOptions): void {
   if (!svg || typeof window === 'undefined') return
   const xml = serializeChartSvg(svg, options?.embeddedCss)
   const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
@@ -82,7 +79,7 @@ export function exportChartPng(
         }
         ctx.scale(scale, scale)
         ctx.drawImage(img, 0, 0, w, h)
-        canvas.toBlob((pngBlob) => {
+        canvas.toBlob(pngBlob => {
           URL.revokeObjectURL(url)
           if (!pngBlob) {
             reject(new Error('PNG encoding failed'))

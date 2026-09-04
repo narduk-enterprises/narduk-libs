@@ -19,13 +19,15 @@ const logLabels = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
 const buoyStart = Date.UTC(2026, 4, 14, 20, 0)
 const buoyTimes = Array.from({ length: 72 }, (_, i) => buoyStart + i * 60 * 60 * 1000)
 const buoyLabels = buoyTimes.map(t => new Date(t).toISOString())
-const buoySeries = [{
-  name: 'Wind · kt',
-  data: buoyTimes.map((_, i) => {
-    const ramp = Math.min(10, i / 4)
-    return Number((4 + ramp + Math.sin(i / 3) * 1.1 + Math.cos(i / 9) * 0.7).toFixed(1))
-  }),
-}]
+const buoySeries = [
+  {
+    name: 'Wind · kt',
+    data: buoyTimes.map((_, i) => {
+      const ramp = Math.min(10, i / 4)
+      return Number((4 + ramp + Math.sin(i / 3) * 1.1 + Math.cos(i / 9) * 0.7).toFixed(1))
+    }),
+  },
+]
 
 const bands = [{ y0: 6, y1: 10, color: '#22c55e', opacity: 0.15 }]
 const ann = [
@@ -37,28 +39,15 @@ const ann = [
 <template>
   <Story title="Line chart">
     <Variant title="Default">
-      <NardukLineChart
-        :series="series"
-        :labels="labels"
-        :height="320"
-      />
+      <NardukLineChart :series="series" :labels="labels" :height="320" />
     </Variant>
 
     <Variant title="High contrast theme">
-      <NardukLineChart
-        :series="series"
-        :labels="labels"
-        :height="320"
-        theme="high-contrast"
-      />
+      <NardukLineChart :series="series" :labels="labels" :height="320" theme="high-contrast" />
     </Variant>
 
     <Variant title="Empty slot">
-      <NardukLineChart
-        :series="[]"
-        :labels="[]"
-        :height="240"
-      >
+      <NardukLineChart :series="[]" :labels="[]" :height="240">
         <template #empty>
           <span>Custom empty message</span>
         </template>
@@ -66,21 +55,11 @@ const ann = [
     </Variant>
 
     <Variant title="Dual Y-axis">
-      <NardukLineChart
-        :series="dualSeries"
-        :labels="dualLabels"
-        :height="320"
-        dual-y-axis
-      />
+      <NardukLineChart :series="dualSeries" :labels="dualLabels" :height="320" dual-y-axis />
     </Variant>
 
     <Variant title="Log Y">
-      <NardukLineChart
-        :series="logSeries"
-        :labels="logLabels"
-        :height="300"
-        y-scale="log"
-      />
+      <NardukLineChart :series="logSeries" :labels="logLabels" :height="300" y-scale="log" />
     </Variant>
 
     <Variant title="Bands + annotations">
@@ -94,12 +73,7 @@ const ann = [
     </Variant>
 
     <Variant title="Zoom (drag box, ⌃/⌘ wheel, ⇧ pan, dbl-click reset)">
-      <NardukLineChart
-        :series="series"
-        :labels="labels"
-        :height="300"
-        zoomable
-      />
+      <NardukLineChart :series="series" :labels="labels" :height="300" zoomable />
     </Variant>
 
     <Variant title="Dense time series">

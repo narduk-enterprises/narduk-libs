@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NardukLineChart } from '@narduk-enterprises/narduk-charts'
+
 import type { ChartTheme } from '@narduk-enterprises/narduk-charts'
 
 /**
@@ -18,7 +19,7 @@ const twoSeries = [
   { name: 'Expenses', data: [31, 34, 36, 35, 40, 44, 43, 47] },
 ]
 
-const presets: { theme: ChartTheme, dark: boolean, title: string }[] = [
+const presets: Array<{ dark: boolean; theme: ChartTheme; title: string }> = [
   { theme: 'default', dark: false, title: 'default' },
   { theme: 'default', dark: true, title: 'dark' },
   { theme: 'high-contrast', dark: false, title: 'high-contrast' },
@@ -30,12 +31,13 @@ const presets: { theme: ChartTheme, dark: boolean, title: string }[] = [
 
 <template>
   <Story title="Series palette">
-    <Variant
-      v-for="p in presets"
-      :key="p.title"
-      :title="p.title"
-    >
-      <div :style="{ padding: '20px', background: p.dark ? 'oklch(16.5% 0.014 258)' : 'oklch(98.4% 0.003 258)' }">
+    <Variant v-for="p in presets" :key="p.title" :title="p.title">
+      <div
+        :style="{
+          padding: '20px',
+          background: p.dark ? 'oklch(16.5% 0.014 258)' : 'oklch(98.4% 0.003 258)',
+        }"
+      >
         <NardukLineChart
           :series="series"
           :labels="labels"

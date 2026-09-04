@@ -1,6 +1,6 @@
 import { ema } from './ema'
 
-function macdLine(closes: number[], fastPeriod: number, slowPeriod: number): (number | null)[] {
+function macdLine(closes: number[], fastPeriod: number, slowPeriod: number): Array<number | null> {
   const ef = ema(closes, fastPeriod)
   const es = ema(closes, slowPeriod)
   return closes.map((_, i) => {
@@ -17,9 +17,9 @@ export function macd(
   slowPeriod = 26,
   signalPeriod = 9,
 ): {
-  line: (number | null)[]
-  signal: (number | null)[]
-  hist: (number | null)[]
+  line: Array<number | null>
+  signal: Array<number | null>
+  hist: Array<number | null>
 } {
   const line = macdLine(closes, fastPeriod, slowPeriod)
   const filled: number[] = []

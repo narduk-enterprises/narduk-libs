@@ -21,12 +21,8 @@ export function defaultPieChartLabel(labels: string[]): string {
   return `Pie chart: ${labels.join(', ')}`
 }
 
-export function linePointSummary(
-  label: string,
-  series: ChartSeries[],
-  index: number,
-): string {
-  const parts = series.map((s) => {
+export function linePointSummary(label: string, series: ChartSeries[], index: number): string {
+  const parts = series.map(s => {
     const v = s.data[index]
     const t = v == null || Number.isNaN(v as number) ? 'no value' : formatValue(v as number)
     return `${s.name} ${t}`

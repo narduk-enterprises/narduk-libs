@@ -31,10 +31,7 @@ export function resolutionMsFromId(id: CandleResolutionId): number {
  * Merge sorted OHLC bars into fixed-width time buckets (UTC).
  * First bar in a bucket sets `o`; `h`/`l`/`c` aggregate; `v` sums when present.
  */
-export function aggregateCandlesToResolution(
-  bars: CandleBar[],
-  resolutionMs: number,
-): CandleBar[] {
+export function aggregateCandlesToResolution(bars: CandleBar[], resolutionMs: number): CandleBar[] {
   if (bars.length === 0 || resolutionMs <= 0) return []
   const sorted = [...bars].sort((a, b) => a.t - b.t)
   const out: CandleBar[] = []
@@ -54,8 +51,7 @@ export function aggregateCandlesToResolution(
         c: b.c,
         v: b.v,
       }
-    }
-    else if (acc) {
+    } else if (acc) {
       acc.h = Math.max(acc.h, b.h)
       acc.l = Math.min(acc.l, b.l)
       acc.c = b.c

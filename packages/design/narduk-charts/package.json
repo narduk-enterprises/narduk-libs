@@ -8,9 +8,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/narduk-charts.js",
-      "require": "./dist/narduk-charts.umd.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/narduk-charts.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/narduk-charts.umd.cjs"
+      }
     },
     "./line": {
       "types": "./dist/index.d.ts",
@@ -41,12 +46,15 @@
     "dist"
   ],
   "scripts": {
-    "package-registry:auth": "node tools/configure-package-registry-auth.mjs",
     "dev": "histoire dev",
-    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
-    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts",
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts && rm -f dist/entry-*.css",
+    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "test:watch": "vitest",
     "story:dev": "histoire dev",
     "story:build": "histoire build",
@@ -72,6 +80,7 @@
     "@size-limit/file": "^12.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/server-renderer": "^3.5.0",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^20.9.0",
     "histoire": "^1.0.0-beta.1",
@@ -104,13 +113,15 @@
   "author": "narduk",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/narduk-enterprises/narduk-charts.git"
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/design/narduk-charts"
   },
   "homepage": "https://charts.nard.uk",
   "bugs": {
     "url": "https://github.com/narduk-enterprises/narduk-charts/issues"
   },
   "publishConfig": {
+    "access": "restricted",
     "registry": "https://npm.pkg.github.com"
   }
 }

@@ -30,7 +30,8 @@ describe('NardukCandleChart time axis', () => {
       },
     })
 
-    const tickTexts = w.findAll('.narduk-axis text')
+    const tickTexts = w
+      .findAll('.narduk-axis text')
       .map(node => node.text().trim())
       .filter(text => /^\d{2}-\d{2}T/.test(text))
     expect(tickTexts.length).toBeLessThan(72)

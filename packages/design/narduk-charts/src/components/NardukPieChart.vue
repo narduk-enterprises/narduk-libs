@@ -1,64 +1,70 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, useId } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
-import { describeArc, easeOutCubic, formatValue } from '../utils/math'
-import { getColor } from '../utils/colors'
-import ChartTooltip from './ChartTooltip.vue'
-import ChartLegend from './ChartLegend.vue'
-import type {
-  PieDataItem,
-  LegendItem,
-  TooltipItem,
-  PieSliceClickPayload,
-  ChartTheme,
-} from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
 import { defaultPieChartLabel } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
+import { getColor } from '../utils/colors'
+import { describeArc, easeOutCubic, formatValue } from '../utils/math'
+
+import ChartLegend from './ChartLegend.vue'
+import ChartTooltip from './ChartTooltip.vue'
+
+import type {
+  ChartTheme,
+  LegendItem,
+  PieDataItem,
+  PieSliceClickPayload,
+  TooltipItem,
+} from '../types'
 
 interface SliceData {
-  path: string
   color: string
   item: PieDataItem
-  midAngle: number
-  percentage: number
   labelX: number
   labelY: number
+  midAngle: number
+  path: string
+  percentage: number
 }
 
-const props = withDefaults(defineProps<{
-  data: PieDataItem[]
-  width?: number
-  height?: number
-  donut?: boolean
-  innerRadius?: number
-  showLabels?: boolean
-  colors?: string[]
-  animate?: boolean
-  dark?: boolean
-  respectReducedMotion?: boolean
-  theme?: ChartTheme
-  chartTitle?: string
-  chartDescription?: string
-  legendGroupLabel?: string
-  dir?: 'ltr' | 'rtl'
-  /** Render the built-in legend below the chart. */
-  showLegend?: boolean
-  /** Render the donut center total/label (only when `donut` is also true). */
-  showCenterLabel?: boolean
-  /** Built-in hover/keyboard-focus cursor tooltip. */
-  showTooltip?: boolean
-}>(), {
-  donut: false,
-  innerRadius: 0.6,
-  showLabels: true,
-  animate: true,
-  respectReducedMotion: true,
-  legendGroupLabel: 'Data series',
-  showLegend: true,
-  showCenterLabel: true,
-  showTooltip: true,
-})
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    chartDescription?: string
+    chartTitle?: string
+    colors?: string[]
+    dark?: boolean
+    data: PieDataItem[]
+    dir?: 'ltr' | 'rtl'
+    donut?: boolean
+    height?: number
+    innerRadius?: number
+    legendGroupLabel?: string
+    respectReducedMotion?: boolean
+    /** Render the donut center total/label (only when `donut` is also true). */
+    showCenterLabel?: boolean
+    showLabels?: boolean
+    /** Render the built-in legend below the chart. */
+    showLegend?: boolean
+    /** Built-in hover/keyboard-focus cursor tooltip. */
+    showTooltip?: boolean
+    theme?: ChartTheme
+    width?: number
+  }>(),
+  {
+    donut: false,
+    innerRadius: 0.6,
+    showLabels: true,
+    animate: true,
+    respectReducedMotion: true,
+    legendGroupLabel: 'Data series',
+    showLegend: true,
+    showCenterLabel: true,
+    showTooltip: true,
+  },
+)
 
 const emit = defineEmits<{
   sliceClick: [payload: PieSliceClickPayload]
@@ -68,12 +74,12 @@ const emit = defineEmits<{
 
 defineSlots<{
   empty?: () => unknown
-  tooltip?: (props: { title: string; items: TooltipItem[]; visible: boolean }) => unknown
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
+  tooltip?: (props: { items: TooltipItem[]; title: string; visible: boolean }) => unknown
 }>()
 
 const pieA11yRaw = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const pieCaptionId = `nc-pcap-${idSafe(pieA11yRaw)}`
 const svgTitleId = `nc-pt-${idSafe(pieA11yRaw)}`
 const svgDescId = `nc-pd-${idSafe(pieA11yRaw)}`
@@ -82,11 +88,12 @@ const containerRef = ref<HTMLElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
 const focusedSliceIndex = ref(0)
 
-const effectiveChartTitle = computed(() =>
-  props.chartTitle ?? defaultPieChartLabel(props.data.map(d => d.label)),
+const effectiveChartTitle = computed(
+  () => props.chartTitle ?? defaultPieChartLabel(props.data.map(d => d.label)),
 )
 const { chartWidth, chartHeight, padding, isDark, effectiveAnimate } = useChart(
-  containerRef, props,
+  containerRef,
+  props,
   { top: 20, right: 20, bottom: 20, left: 20 },
 )
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
@@ -112,9 +119,7 @@ function toggleItem(label: string) {
   hiddenItems.value = next
 }
 
-const visibleData = computed(() =>
-  props.data.filter(d => !hiddenItems.value.has(d.label)),
-)
+const visibleData = computed(() => props.data.filter(d => !hiddenItems.value.has(d.label)))
 
 // ── Geometry ─────────────────────────────────────────────────
 
@@ -127,9 +132,7 @@ const outerRadius = computed(() => {
   return Math.max(20, Math.min(w, h) / 2 - 10)
 })
 
-const innerR = computed(() =>
-  props.donut ? outerRadius.value * props.innerRadius : 0,
-)
+const innerR = computed(() => (props.donut ? outerRadius.value * props.innerRadius : 0))
 
 // ── Animation ────────────────────────────────────────────────
 
@@ -157,12 +160,10 @@ onUnmounted(() => cancelAnimationFrame(rafId))
 
 // ── Slices ───────────────────────────────────────────────────
 
-const total = computed(() =>
-  visibleData.value.reduce((s, d) => s + d.value, 0),
-)
+const total = computed(() => visibleData.value.reduce((s, d) => s + d.value, 0))
 
-const isEmpty = computed(() =>
-  props.data.length === 0 || visibleData.value.length === 0 || total.value <= 0,
+const isEmpty = computed(
+  () => props.data.length === 0 || visibleData.value.length === 0 || total.value <= 0,
 )
 
 const slices = computed<SliceData[]>(() => {
@@ -202,7 +203,7 @@ const slices = computed<SliceData[]>(() => {
 
 watch(
   () => slices.value.length,
-  (n) => {
+  n => {
     if (focusedSliceIndex.value >= n) focusedSliceIndex.value = Math.max(0, n - 1)
   },
 )
@@ -266,11 +267,13 @@ function onSliceKeydown(e: KeyboardEvent, i: number) {
 
 function showSliceTooltip(i: number) {
   const s = slices.value[i]
-  showTooltip(8, 8, '', [{
-    color: s.color,
-    label: s.item.label,
-    value: `${formatValue(s.item.value)} (${s.percentage.toFixed(1)}%)`,
-  }])
+  showTooltip(8, 8, '', [
+    {
+      color: s.color,
+      label: s.item.label,
+      value: `${formatValue(s.item.value)} (${s.percentage.toFixed(1)}%)`,
+    },
+  ])
 }
 
 // ── Hover ────────────────────────────────────────────────────
@@ -308,11 +311,13 @@ function onMouseMove(event: MouseEvent) {
     if (angle >= cumAngle && angle < cumAngle + sweep) {
       hoverIndex.value = i
       const s = slices.value[i]
-      const items: TooltipItem[] = [{
-        color: s.color,
-        label: s.item.label,
-        value: `${formatValue(s.item.value)} (${s.percentage.toFixed(1)}%)`,
-      }]
+      const items: TooltipItem[] = [
+        {
+          color: s.color,
+          label: s.item.label,
+          value: `${formatValue(s.item.value)} (${s.percentage.toFixed(1)}%)`,
+        },
+      ]
       showTooltip(mouseX, mouseY, '', items)
       return
     }
@@ -366,21 +371,11 @@ function sliceTransform(index: number): string {
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="pieCaptionId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="pieCaptionId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -392,10 +387,7 @@ function sliceTransform(index: number): string {
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
+      <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
       <svg
@@ -409,116 +401,97 @@ function sliceTransform(index: number): string {
         @mouseleave="onMouseLeave"
       >
         <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescId">
           {{ chartDescription }}
         </desc>
-      <g v-for="(slice, i) in slices" :key="slice.item.label">
-        <path
-          v-if="slice.path"
-          class="narduk-pie-slice"
-          role="button"
-          :tabindex="focusedSliceIndex === i ? 0 : -1"
-          :data-nc-slice="i"
-          :aria-label="`${slice.item.label}, ${formatValue(slice.item.value)}, ${slice.percentage.toFixed(1)} percent`"
-          :d="slice.path"
-          :fill="slice.color"
-          :opacity="hoverIndex !== null && hoverIndex !== i ? 0.6 : 1"
-          :transform="sliceTransform(i)"
-          @focus="focusedSliceIndex = i"
-          @keydown="onSliceKeydown($event, i)"
-          @click="onSliceClick(slice, $event)"
-          @pointerenter="onSlicePointerEnter(i)"
-          @pointerleave="onSlicePointerLeave"
-        />
-      </g>
+        <g v-for="(slice, i) in slices" :key="slice.item.label">
+          <path
+            v-if="slice.path"
+            class="narduk-pie-slice"
+            role="button"
+            :tabindex="focusedSliceIndex === i ? 0 : -1"
+            :data-nc-slice="i"
+            :aria-label="`${slice.item.label}, ${formatValue(slice.item.value)}, ${slice.percentage.toFixed(1)} percent`"
+            :d="slice.path"
+            :fill="slice.color"
+            :opacity="hoverIndex !== null && hoverIndex !== i ? 0.6 : 1"
+            :transform="sliceTransform(i)"
+            @focus="focusedSliceIndex = i"
+            @keydown="onSliceKeydown($event, i)"
+            @click="onSliceClick(slice, $event)"
+            @pointerenter="onSlicePointerEnter(i)"
+            @pointerleave="onSlicePointerLeave"
+          />
+        </g>
 
-      <!-- Labels (shown after animation completes) -->
-      <g v-if="showLabels && progress >= 0.95">
+        <!-- Labels (shown after animation completes) -->
+        <g v-if="showLabels && progress >= 0.95">
+          <text
+            v-for="slice in slices"
+            :key="'lbl-' + slice.item.label"
+            class="narduk-pie-label"
+            :x="slice.labelX"
+            :y="slice.labelY - 6"
+            text-anchor="middle"
+            dominant-baseline="auto"
+          >
+            {{ slice.item.label }}
+          </text>
+          <text
+            v-for="slice in slices"
+            :key="'pct-' + slice.item.label"
+            class="narduk-pie-value"
+            :x="slice.labelX"
+            :y="slice.labelY + 8"
+            text-anchor="middle"
+            dominant-baseline="auto"
+          >
+            {{ slice.percentage.toFixed(1) }}%
+          </text>
+        </g>
+
+        <!-- Donut center label -->
         <text
-          v-for="slice in slices"
-          :key="'lbl-' + slice.item.label"
+          v-if="donut && showCenterLabel"
           class="narduk-pie-label"
-          :x="slice.labelX"
-          :y="slice.labelY - 6"
+          :x="cx"
+          :y="cy - 6"
           text-anchor="middle"
           dominant-baseline="auto"
+          font-size="20"
+          font-weight="700"
         >
-          {{ slice.item.label }}
+          {{ formatValue(total) }}
         </text>
         <text
-          v-for="slice in slices"
-          :key="'pct-' + slice.item.label"
+          v-if="donut && showCenterLabel"
           class="narduk-pie-value"
-          :x="slice.labelX"
-          :y="slice.labelY + 8"
+          :x="cx"
+          :y="cy + 14"
           text-anchor="middle"
           dominant-baseline="auto"
         >
-          {{ slice.percentage.toFixed(1) }}%
+          Total
         </text>
-      </g>
+      </svg>
 
-      <!-- Donut center label -->
-      <text
-        v-if="donut && showCenterLabel"
-        class="narduk-pie-label"
-        :x="cx"
-        :y="cy - 6"
-        text-anchor="middle"
-        dominant-baseline="auto"
-        font-size="20"
-        font-weight="700"
-      >
-        {{ formatValue(total) }}
-      </text>
-      <text
-        v-if="donut && showCenterLabel"
-        class="narduk-pie-value"
-        :x="cx"
-        :y="cy + 14"
-        text-anchor="middle"
-        dominant-baseline="auto"
-      >
-        Total
-      </text>
-    </svg>
-
-    <template v-if="!isEmpty">
-      <ChartLegend
-        v-if="showLegend"
-        :items="legendItems"
-        :group-label="legendGroupLabel"
-        @toggle="toggleItem"
-      >
-        <template
-          v-if="$slots['legend-item']"
-          #item="slotProps"
+      <template v-if="!isEmpty">
+        <ChartLegend
+          v-if="showLegend"
+          :items="legendItems"
+          :group-label="legendGroupLabel"
+          @toggle="toggleItem"
         >
-          <slot
-            name="legend-item"
-            v-bind="slotProps"
-          />
-        </template>
-      </ChartLegend>
-      <ChartTooltip
-        v-if="props.showTooltip"
-        v-bind="tooltip"
-        :chart-width="chartWidth"
-      >
-        <template
-          v-if="$slots.tooltip"
-          #content="slotProps"
-        >
-          <slot
-            name="tooltip"
-            v-bind="slotProps"
-          />
-        </template>
-      </ChartTooltip>
-    </template>
+          <template v-if="$slots['legend-item']" #item="slotProps">
+            <slot name="legend-item" v-bind="slotProps" />
+          </template>
+        </ChartLegend>
+        <ChartTooltip v-if="props.showTooltip" v-bind="tooltip" :chart-width="chartWidth">
+          <template v-if="$slots.tooltip" #content="slotProps">
+            <slot name="tooltip" v-bind="slotProps" />
+          </template>
+        </ChartTooltip>
+      </template>
     </div>
   </figure>
 </template>

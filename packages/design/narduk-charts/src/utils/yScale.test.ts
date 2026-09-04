@@ -79,7 +79,10 @@ describe('createYAxisMap pinned domains', () => {
 
   it('gives two charts with different data the same scale when handed the same bound', () => {
     const quiet = createYAxisMap('linear', [1, 2, 4], [], 100, { domainMin: 0, domainMax: 4_000 })
-    const busy = createYAxisMap('linear', [3_100, 4_000], [], 100, { domainMin: 0, domainMax: 4_000 })
+    const busy = createYAxisMap('linear', [3_100, 4_000], [], 100, {
+      domainMin: 0,
+      domainMax: 4_000,
+    })
     expect(quiet.domain).toEqual(busy.domain)
     // The quiet series must draw near the floor, not fill its own plot.
     expect(quiet.yFromBottom(4)).toBeLessThan(1)

@@ -1,4 +1,14 @@
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, unref, type Ref, type MaybeRef } from 'vue'
+import {
+  ref,
+  computed,
+  onMounted,
+  onUnmounted,
+  watch,
+  nextTick,
+  unref,
+  type Ref,
+  type MaybeRef,
+} from 'vue'
 import type { ChartPadding } from '../types'
 
 export interface UseChartProps {
@@ -33,9 +43,11 @@ export function useChart(
   })
 
   const plotWidth = computed(() =>
-    Math.max(0, chartWidth.value - padding.value.left - padding.value.right))
+    Math.max(0, chartWidth.value - padding.value.left - padding.value.right),
+  )
   const plotHeight = computed(() =>
-    Math.max(0, chartHeight.value - padding.value.top - padding.value.bottom))
+    Math.max(0, chartHeight.value - padding.value.top - padding.value.bottom),
+  )
 
   const systemPrefersDark = ref(false)
   const isDark = computed(() => props.dark ?? systemPrefersDark.value)
@@ -47,8 +59,12 @@ export function useChart(
   let mqlDark: MediaQueryList | null = null
   let mqlMotion: MediaQueryList | null = null
 
-  const onDarkChange = (e: MediaQueryListEvent) => { systemPrefersDark.value = e.matches }
-  const onMotionChange = (e: MediaQueryListEvent) => { prefersReducedMotion.value = e.matches }
+  const onDarkChange = (e: MediaQueryListEvent) => {
+    systemPrefersDark.value = e.matches
+  }
+  const onMotionChange = (e: MediaQueryListEvent) => {
+    prefersReducedMotion.value = e.matches
+  }
 
   function cancelResizeRaf() {
     if (resizeRaf) {
@@ -93,13 +109,16 @@ export function useChart(
     }
   })
 
-  watch(() => props.width, (w) => {
-    if (w !== undefined && observer) {
-      cancelResizeRaf()
-      observer.disconnect()
-      observer = null
-    }
-  })
+  watch(
+    () => props.width,
+    w => {
+      if (w !== undefined && observer) {
+        cancelResizeRaf()
+        observer.disconnect()
+        observer = null
+      }
+    },
+  )
 
   onUnmounted(() => {
     cancelResizeRaf()

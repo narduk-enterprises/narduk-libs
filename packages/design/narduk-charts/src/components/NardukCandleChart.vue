@@ -1,154 +1,153 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useId } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
+
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
+import { candleBarSummary, defaultCandleChartLabel, zoomKeyboardHint } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
 import {
-  formatValue,
-  formatAxisTickValue,
   aggregateCandlesDetailed,
-  candleTimeAtIndex,
   candleIndexAtTime,
+  candleTimeAtIndex,
+  formatAxisTickValue,
+  formatValue,
 } from '../utils/math'
-import {
-  defaultTimeAxisLabel,
-  selectEvenAxisLabelIndices,
-} from '../utils/xAxis'
+import { defaultTimeAxisLabel, selectEvenAxisLabelIndices } from '../utils/xAxis'
 import { createYAxisMap, dataValueFromBottomPx } from '../utils/yScale'
+
+import ChartTooltip from './ChartTooltip.vue'
+
 import type {
   CandleBar,
-  CandleTimeDomain,
-  CandleZoomRange,
+  CandleBarStyle,
   CandleClickPayload,
-  CandleReachedStartPayload,
   CandleDrawing,
   CandleDrawingTool,
   CandlePlotMetrics,
   CandlePriceDisplayMode,
-  CandleBarStyle,
+  CandleReachedStartPayload,
+  CandleTimeDomain,
+  CandleZoomRange,
   ChartTheme,
   ChartYScaleMode,
   TooltipItem,
 } from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
-import {
-  defaultCandleChartLabel,
-  candleBarSummary,
-  zoomKeyboardHint,
-} from '../utils/chartA11y'
-import ChartTooltip from './ChartTooltip.vue'
 
-const props = withDefaults(defineProps<{
-  bars: CandleBar[]
-  width?: number
-  height?: number
-  dark?: boolean
-  theme?: ChartTheme
-  showGrid?: boolean
-  animate?: boolean
-  respectReducedMotion?: boolean
-  chartTitle?: string
-  chartDescription?: string
-  dir?: 'ltr' | 'rtl'
-  /**
-   * Drag zoom box, Ctrl/Meta+wheel (or free wheel when `zoomWheelFree`), Shift+drag pan,
-   * double-click reset. Emits `zoom` and `update:domain`.
-   */
-  zoomable?: boolean
-  /** Minimum visible span along bar indices (default 3 bars). */
-  zoomMinPoints?: number
-  /** When true, wheel zoom does not require Ctrl/Meta. */
-  zoomWheelFree?: boolean
-  /** Cap drawn buckets from the visible window (aggregation). */
-  maxDrawBars?: number
-  showVolume?: boolean
-  /** Fraction of plot height for volume when `showVolume` is set. */
-  volumeFraction?: number
-  /** Time navigator under the plot. */
-  showBrush?: boolean
-  /** Controlled visible time window (ms); sync multiple charts via `v-model:domain`. */
-  domain?: CandleTimeDomain | null
-  formatTickValue?: (value: number) => string
-  formatTime?: (tMs: number) => string
-  bullColor?: string
-  bearColor?: string
-  /** Price / tick labels (OHLC, axis, HUD). Falls back to `formatTickValue` then `formatValue`. */
-  formatPrice?: (value: number) => string
-  /** Extra Y padding as a fraction of visible high−low (default 0.06). */
-  yPadFraction?: number
-  /** Pointer crosshair (magnetic X to bar); horizontal shows price at cursor. */
-  showCrosshair?: boolean
-  /** Snap vertical crosshair to the hovered bar center. */
-  crosshairMagnetic?: boolean
-  /** Latest close line + axis label (right). */
-  showLastPrice?: boolean
-  /** Subtle close-price polyline across the visible window. */
-  showCloseLine?: boolean
-  /** Faint verticals when UTC hour or calendar day changes between bars. */
-  showSessionGrid?: boolean
-  /** Top-left OHLC panel while hovering or focusing a bar. */
-  showOhlcHud?: boolean
-  /** Y-axis mapping in **display** space (`priceDisplayMode` applied first). */
-  yScale?: ChartYScaleMode
-  /** Used when `yScale` is `symlog`. */
-  symlogLinthresh?: number
-  /** Rebases OHLC into % or indexed units (forces linear Y). */
-  priceDisplayMode?: CandlePriceDisplayMode
-  /** Emphasize the rightmost (forming) bucket in the visible window. */
-  highlightFormingBar?: boolean
-  /** Candle bodies vs hollow (bull outline) vs OHLC bar ticks. */
-  candleStyle?: CandleBarStyle
-  /** Serializable overlays in raw price + time (ms) space. */
-  drawings?: CandleDrawing[]
-  /**
-   * When set, drag on the plot creates a drawing instead of a zoom box (wheel / shift-pan still zoom).
-   * Emits `update:drawings` with a new array.
-   */
-  drawingTool?: CandleDrawingTool
-}>(), {
-  showGrid: true,
-  animate: true,
-  respectReducedMotion: true,
-  zoomable: false,
-  zoomMinPoints: 3,
-  zoomWheelFree: false,
-  maxDrawBars: 512,
-  showVolume: false,
-  volumeFraction: 0.22,
-  showBrush: false,
-  domain: undefined,
-  yPadFraction: 0.06,
-  showCrosshair: true,
-  crosshairMagnetic: true,
-  showLastPrice: true,
-  showCloseLine: true,
-  showSessionGrid: false,
-  showOhlcHud: true,
-  yScale: 'linear',
-  symlogLinthresh: 1,
-  priceDisplayMode: 'absolute',
-  highlightFormingBar: false,
-  candleStyle: 'candle',
-  drawings: () => [],
-  drawingTool: null,
-})
-
-const showVolumePane = computed(() => props.showVolume === true)
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    bars: CandleBar[]
+    bearColor?: string
+    bullColor?: string
+    /** Candle bodies vs hollow (bull outline) vs OHLC bar ticks. */
+    candleStyle?: CandleBarStyle
+    chartDescription?: string
+    chartTitle?: string
+    /** Snap vertical crosshair to the hovered bar center. */
+    crosshairMagnetic?: boolean
+    dark?: boolean
+    dir?: 'ltr' | 'rtl'
+    /** Controlled visible time window (ms); sync multiple charts via `v-model:domain`. */
+    domain?: CandleTimeDomain | null
+    /** Serializable overlays in raw price + time (ms) space. */
+    drawings?: CandleDrawing[]
+    /**
+     * When set, drag on the plot creates a drawing instead of a zoom box (wheel / shift-pan still zoom).
+     * Emits `update:drawings` with a new array.
+     */
+    drawingTool?: CandleDrawingTool
+    /** Price / tick labels (OHLC, axis, HUD). Falls back to `formatTickValue` then `formatValue`. */
+    formatPrice?: (value: number) => string
+    formatTickValue?: (value: number) => string
+    formatTime?: (tMs: number) => string
+    height?: number
+    /** Emphasize the rightmost (forming) bucket in the visible window. */
+    highlightFormingBar?: boolean
+    /** Cap drawn buckets from the visible window (aggregation). */
+    maxDrawBars?: number
+    /** Rebases OHLC into % or indexed units (forces linear Y). */
+    priceDisplayMode?: CandlePriceDisplayMode
+    respectReducedMotion?: boolean
+    /** Time navigator under the plot. */
+    showBrush?: boolean
+    /** Subtle close-price polyline across the visible window. */
+    showCloseLine?: boolean
+    /** Pointer crosshair (magnetic X to bar); horizontal shows price at cursor. */
+    showCrosshair?: boolean
+    showGrid?: boolean
+    /** Latest close line + axis label (right). */
+    showLastPrice?: boolean
+    /** Top-left OHLC panel while hovering or focusing a bar. */
+    showOhlcHud?: boolean
+    /** Faint verticals when UTC hour or calendar day changes between bars. */
+    showSessionGrid?: boolean
+    showVolume?: boolean
+    /** Used when `yScale` is `symlog`. */
+    symlogLinthresh?: number
+    theme?: ChartTheme
+    /** Fraction of plot height for volume when `showVolume` is set. */
+    volumeFraction?: number
+    width?: number
+    /** Extra Y padding as a fraction of visible high−low (default 0.06). */
+    yPadFraction?: number
+    /** Y-axis mapping in **display** space (`priceDisplayMode` applied first). */
+    yScale?: ChartYScaleMode
+    /**
+     * Drag zoom box, Ctrl/Meta+wheel (or free wheel when `zoomWheelFree`), Shift+drag pan,
+     * double-click reset. Emits `zoom` and `update:domain`.
+     */
+    zoomable?: boolean
+    /** Minimum visible span along bar indices (default 3 bars). */
+    zoomMinPoints?: number
+    /** When true, wheel zoom does not require Ctrl/Meta. */
+    zoomWheelFree?: boolean
+  }>(),
+  {
+    showGrid: true,
+    animate: true,
+    respectReducedMotion: true,
+    zoomable: false,
+    zoomMinPoints: 3,
+    zoomWheelFree: false,
+    maxDrawBars: 512,
+    showVolume: false,
+    volumeFraction: 0.22,
+    showBrush: false,
+    domain: undefined,
+    yPadFraction: 0.06,
+    showCrosshair: true,
+    crosshairMagnetic: true,
+    showLastPrice: true,
+    showCloseLine: true,
+    showSessionGrid: false,
+    showOhlcHud: true,
+    yScale: 'linear',
+    symlogLinthresh: 1,
+    priceDisplayMode: 'absolute',
+    highlightFormingBar: false,
+    candleStyle: 'candle',
+    drawings: () => [],
+    drawingTool: null,
+  },
+)
 
 const emit = defineEmits<{
-  zoom: [range: CandleZoomRange]
-  'update:domain': [domain: CandleTimeDomain]
   barClick: [payload: CandleClickPayload]
-  'update:drawings': [drawings: CandleDrawing[]]
   /**
    * Visible domain's start reached/neared (within ~2 bars of) the earliest loaded bar.
    * Fires once per dataset identity; re-armed when earlier data arrives (bars[0].t changes).
    * Mirrors lightweight-charts' `subscribeVisibleTimeRangeChange` left-edge load-more pattern.
    */
   reachedStart: [payload: CandleReachedStartPayload]
+  'update:domain': [domain: CandleTimeDomain]
+  'update:drawings': [drawings: CandleDrawing[]]
+  zoom: [range: CandleZoomRange]
 }>()
 
+const showVolumePane = computed(() => props.showVolume === true)
+
 const rawId = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const plotClipId = `nc-cclip-${idSafe(rawId)}`
 const plotClipUrl = computed(() => `url(#${plotClipId})`)
 const captionElId = `nc-ccap-${idSafe(rawId)}`
@@ -164,15 +163,8 @@ const paddingOverrides = computed(() => ({
   right: props.showLastPrice !== false ? 68 : 24,
 }))
 
-const {
-  chartWidth,
-  chartHeight,
-  padding,
-  plotWidth,
-  plotHeight,
-  isDark,
-  effectiveAnimate,
-} = useChart(containerRef, props, paddingOverrides)
+const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
+  useChart(containerRef, props, paddingOverrides)
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
@@ -196,7 +188,7 @@ const minIndexSpan = computed(() => {
 
 watch(
   () => sortedBars.value.length,
-  (n) => {
+  n => {
     const full = Math.max(0, n - 1)
     xViewMin.value = 0
     xViewMax.value = full
@@ -205,9 +197,10 @@ watch(
   { immediate: true },
 )
 
+// eslint-disable-next-line narduk/prefer-shallow-watch -- narduk-libs#131, not fixed in this fold-move PR
 watch(
   () => props.domain,
-  (d) => {
+  d => {
     if (!d || sortedBars.value.length === 0) return
     const bars = sortedBars.value
     let a = candleIndexAtTime(bars, d.start)
@@ -295,8 +288,8 @@ const volumeInnerHeight = computed(() => {
   return Math.max(0, plotHeight.value - priceInnerHeight.value - volGap)
 })
 
-const volumeTop = computed(() =>
-  padding.value.top + priceInnerHeight.value + (showVolumePane.value ? volGap : 0),
+const volumeTop = computed(
+  () => padding.value.top + priceInnerHeight.value + (showVolumePane.value ? volGap : 0),
 )
 
 const mainPlotBottom = computed(() => {
@@ -339,9 +332,7 @@ function rawToDisplayPrice(raw: number): number {
   return (raw / ref) * 100
 }
 
-const visibleDisplayOhlcValues = computed(() =>
-  visibleOhlcValues.value.map(rawToDisplayPrice),
-)
+const visibleDisplayOhlcValues = computed(() => visibleOhlcValues.value.map(rawToDisplayPrice))
 
 const yAxisPadValues = computed(() => {
   const v = visibleDisplayOhlcValues.value
@@ -449,7 +440,7 @@ function rawPriceFromPricePaneSvgY(svgY: number): number | null {
   const ref = firstVisibleCloseRef.value
   if (!Number.isFinite(ref) || ref === 0) return display
   if (mode === 'percent') return ref * (1 + display / 100)
-  return ref * display / 100
+  return (ref * display) / 100
 }
 
 function xPos(index: number): number {
@@ -468,11 +459,11 @@ function xFromTimeMs(tMs: number): number {
 const drawBuckets = computed(() => {
   const bars = sortedBars.value
   const { i0, i1 } = visibleIndexBounds()
-  if (i1 < i0) return [] as { bar: CandleBar; midIdx: number; g0: number; g1: number }[]
+  if (i1 < i0) return [] as Array<{ bar: CandleBar; g0: number; g1: number; midIdx: number }>
   const slice = bars.slice(i0, i1 + 1)
   const cap = Math.max(2, props.maxDrawBars ?? 512)
   const detailed = aggregateCandlesDetailed(slice, Math.min(slice.length, cap))
-  return detailed.map((d) => {
+  return detailed.map(d => {
     const g0 = i0 + d.i0
     const g1 = i0 + d.i1
     const midIdx = (g0 + g1) / 2
@@ -488,7 +479,7 @@ const candleGeoms = computed(() => {
   const bodyW = Math.max(1, Math.min(18, slot * 0.68))
   const nBar = sortedBars.value.length
   const forming = props.highlightFormingBar === true && nBar > 0
-  return drawBuckets.value.map((d) => {
+  return drawBuckets.value.map(d => {
     const cx = xPos(d.midIdx)
     const { bar: b } = d
     const yh = yPriceRaw(b.h)
@@ -537,7 +528,7 @@ const volumeBars = computed(() => {
   if (!showVolumePane.value) return []
   const slot = plotWidth.value / Math.max(1, drawBuckets.value.length)
   const bodyW = Math.max(1, Math.min(18, slot * 0.68))
-  return drawBuckets.value.map((d) => {
+  return drawBuckets.value.map(d => {
     const v = d.bar.v ?? 0
     const h = (v / volumeMax.value) * volumeInnerHeight.value
     const y = volumeTop.value + volumeInnerHeight.value - h
@@ -561,9 +552,9 @@ const sessionVlineXs = computed(() => {
     const a = new Date(bars[i - 1]!.t)
     const b = new Date(bars[i]!.t)
     if (
-      a.getUTCHours() !== b.getUTCHours()
-      || a.getUTCDate() !== b.getUTCDate()
-      || a.getUTCMonth() !== b.getUTCMonth()
+      a.getUTCHours() !== b.getUTCHours() ||
+      a.getUTCDate() !== b.getUTCDate() ||
+      a.getUTCMonth() !== b.getUTCMonth()
     )
       xs.push(xPos(i))
   }
@@ -585,7 +576,7 @@ const closeLinePath = computed(() => {
 
 const lastPriceInfo = computed(() => {
   if (props.showLastPrice === false || sortedBars.value.length === 0) return null
-  const c = sortedBars.value[sortedBars.value.length - 1]!.c
+  const c = sortedBars.value.at(-1)!.c
   const d = yMap.value.domain
   const disp = rawToDisplayPrice(c)
   const y = yPriceRaw(c)
@@ -676,15 +667,15 @@ const pointerCrosshair = ref<{ plotX: number; priceY: number | null } | null>(nu
 const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 1] as const
 
 const trendDragStart = ref<{
-  t0: number
+  mode: 'trend' | 'fib_retracement'
   p0: number
   pointerId: number
-  mode: 'trend' | 'fib_retracement'
+  t0: number
 } | null>(null)
-const trendDragCurrent = ref<{ t1: number; p1: number } | null>(null)
+const trendDragCurrent = ref<{ p1: number; t1: number } | null>(null)
 
-const rangeDragStart = ref<{ t0: number; p0: number; pointerId: number } | null>(null)
-const rangeDragCurrent = ref<{ t1: number; p1: number } | null>(null)
+const rangeDragStart = ref<{ p0: number; pointerId: number; t0: number } | null>(null)
+const rangeDragCurrent = ref<{ p1: number; t1: number } | null>(null)
 
 function newDrawingId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -725,7 +716,11 @@ const rangePreviewPath = computed(() => {
 const drawingSvgItems = computed(() => {
   const pl = padding.value.left
   const pr = chartWidth.value - padding.value.right
-  const out: { key: string; d: string; variant: 'line' | 'fib' | 'rangeFill' | 'rangeStroke' }[] = []
+  const out: Array<{
+    d: string
+    key: string
+    variant: 'line' | 'fib' | 'rangeFill' | 'rangeStroke'
+  }> = []
   for (const d of props.drawings ?? []) {
     if (d.type === 'trend') {
       const x1 = xFromTimeMs(d.tStart)
@@ -733,12 +728,10 @@ const drawingSvgItems = computed(() => {
       const x2 = xFromTimeMs(d.tEnd)
       const y2 = yPriceRaw(d.priceEnd)
       out.push({ key: d.id, d: `M ${x1} ${y1} L ${x2} ${y2}`, variant: 'line' })
-    }
-    else if (d.type === 'horizontal') {
+    } else if (d.type === 'horizontal') {
       const y = yPriceRaw(d.price)
       out.push({ key: d.id, d: `M ${pl} ${y} L ${pr} ${y}`, variant: 'line' })
-    }
-    else if (d.type === 'fib_retracement') {
+    } else if (d.type === 'fib_retracement') {
       const pHigh = Math.max(d.priceStart, d.priceEnd)
       const pLow = Math.min(d.priceStart, d.priceEnd)
       for (const r of FIB_RATIOS) {
@@ -750,8 +743,7 @@ const drawingSvgItems = computed(() => {
           variant: 'fib',
         })
       }
-    }
-    else {
+    } else {
       const tLo = Math.min(d.tStart, d.tEnd)
       const tHi = Math.max(d.tStart, d.tEnd)
       const pTop = Math.max(d.priceTop, d.priceBottom)
@@ -832,12 +824,12 @@ function onPlotPointerDown(e: PointerEvent) {
 
   const tool = props.drawingTool
   if (
-    (tool === 'trend' || tool === 'fib_retracement')
-    && !e.shiftKey
-    && svgX >= pl
-    && svgX <= pr
-    && svgY >= pt
-    && svgY <= pb
+    (tool === 'trend' || tool === 'fib_retracement') &&
+    !e.shiftKey &&
+    svgX >= pl &&
+    svgX <= pr &&
+    svgY >= pt &&
+    svgY <= pb
   ) {
     e.preventDefault()
     const raw = rawPriceFromPricePaneSvgY(svgY)
@@ -853,7 +845,14 @@ function onPlotPointerDown(e: PointerEvent) {
     svg.setPointerCapture(e.pointerId)
     return
   }
-  if (tool === 'horizontal' && !e.shiftKey && svgX >= pl && svgX <= pr && svgY >= pt && svgY <= pb) {
+  if (
+    tool === 'horizontal' &&
+    !e.shiftKey &&
+    svgX >= pl &&
+    svgX <= pr &&
+    svgY >= pt &&
+    svgY <= pb
+  ) {
     e.preventDefault()
     const raw = rawPriceFromPricePaneSvgY(svgY)
     if (raw == null) return
@@ -903,8 +902,6 @@ function onPlotPointerMove(e: PointerEvent) {
   if (td && e.pointerId === td.pointerId) {
     const svgX = clientToSvgX(e, svg)
     const svgY = clientToSvgY(e, svg)
-    const pl = padding.value.left
-    const pr = pl + plotWidth.value
     const pt = padding.value.top
     const pb = pt + priceInnerHeight.value
     const cx = clampSvgXToPlot(svgX)
@@ -982,7 +979,9 @@ function onPlotPointerEnd(e: PointerEvent) {
     trendDragCurrent.value = null
     try {
       svg.releasePointerCapture(e.pointerId)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     suppressNextSvgClick.value = true
     if (cur && (Math.abs(cur.t1 - td.t0) > 0.5 || Math.abs(cur.p1 - td.p0) > 1e-9)) {
       const next =
@@ -1015,13 +1014,11 @@ function onPlotPointerEnd(e: PointerEvent) {
     rangeDragCurrent.value = null
     try {
       svg.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
     }
-    catch { /* ignore */ }
     suppressNextSvgClick.value = true
-    if (
-      cur
-      && (Math.abs(cur.t1 - rds.t0) > 0.5 || Math.abs(cur.p1 - rds.p0) > 1e-9)
-    ) {
+    if (cur && (Math.abs(cur.t1 - rds.t0) > 0.5 || Math.abs(cur.p1 - rds.p0) > 1e-9)) {
       emit('update:drawings', [
         ...(props.drawings ?? []),
         {
@@ -1041,7 +1038,9 @@ function onPlotPointerEnd(e: PointerEvent) {
     panPointerId = -1
     try {
       svg.releasePointerCapture(e.pointerId)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return
   }
   if (zoomBoxPhase.value === 'idle' || e.pointerId !== zoomBoxPointerId) return
@@ -1050,7 +1049,9 @@ function onPlotPointerEnd(e: PointerEvent) {
     suppressNextSvgClick.value = true
     try {
       svg.releasePointerCapture(e.pointerId)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   zoomBoxPhase.value = 'idle'
   zoomBoxPointerId = -1
@@ -1070,16 +1071,15 @@ function onTouchStart(e: TouchEvent) {
   if (!props.zoomable || e.touches.length !== 2) return
   e.preventDefault()
   const t = e.touches
-  pinchDist0 = Math.hypot(
-    t[0]!.clientX - t[1]!.clientX,
-    t[0]!.clientY - t[1]!.clientY,
-  )
+  pinchDist0 = Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY)
   pinchSpan0 = xViewMax.value - xViewMin.value
   const midX = (t[0]!.clientX + t[1]!.clientX) / 2
   const el = containerRef.value
   const svg = el?.querySelector('svg') as SVGSVGElement | undefined
   if (!svg || pinchDist0 <= 0) return
-  const svgX = (midX - svg.getBoundingClientRect().left) * (chartWidth.value / svg.getBoundingClientRect().width)
+  const svgX =
+    (midX - svg.getBoundingClientRect().left) *
+    (chartWidth.value / svg.getBoundingClientRect().width)
   pinchFocal = svgPlotXToDataIndex(svgX)
 }
 
@@ -1087,10 +1087,7 @@ function onTouchMove(e: TouchEvent) {
   if (!props.zoomable || e.touches.length !== 2 || pinchDist0 <= 0) return
   e.preventDefault()
   const t = e.touches
-  const d = Math.hypot(
-    t[0]!.clientX - t[1]!.clientX,
-    t[0]!.clientY - t[1]!.clientY,
-  )
+  const d = Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY)
   if (d <= 0) return
   const ratio = d / pinchDist0
   const full = xFullSpan.value
@@ -1188,13 +1185,11 @@ function onBrushPointerMove(e: PointerEvent) {
   if (brushPointerId !== e.pointerId) return
   const svg = e.currentTarget as SVGSVGElement
   const svgX = clientToSvgX(e, svg)
-  const pl = padding.value.left
   const pw = plotWidth.value
   const full = xFullSpan.value
   const dxIdx = pw > 0 ? ((svgX - brushPanStart) / pw) * full : 0
   let nmin = brushViewMin0 - dxIdx
   let nmax = brushViewMax0 - dxIdx
-  const span = nmax - nmin
   if (nmin < 0) {
     nmax -= nmin
     nmin = 0
@@ -1212,8 +1207,10 @@ function onBrushPointerUp(e: PointerEvent) {
   if (e.pointerId !== brushPointerId) return
   brushPointerId = -1
   try {
-    (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId)
-  } catch { /* ignore */ }
+    ;(e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
 }
 
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
@@ -1221,8 +1218,8 @@ const svgRef = ref<SVGSVGElement | null>(null)
 const activeIndex = ref<number | null>(null)
 const kbFocusIndex = ref<number | null>(null)
 
-const effectiveChartTitle = computed(() =>
-  props.chartTitle ?? defaultCandleChartLabel(sortedBars.value.length),
+const effectiveChartTitle = computed(
+  () => props.chartTitle ?? defaultCandleChartLabel(sortedBars.value.length),
 )
 
 function formatTimeLabel(t: number): string {
@@ -1255,9 +1252,9 @@ const crosshairPriceTagLayout = computed(() => {
   const rightX = cw - pr.right + 2
   const leftX = pr.left + 2
   const overlapLast =
-    props.showLastPrice !== false
-    && lastPriceInfo.value?.inView === true
-    && Math.abs(yCenter - lastPriceInfo.value.y) < 24
+    props.showLastPrice !== false &&
+    lastPriceInfo.value?.inView === true &&
+    Math.abs(yCenter - lastPriceInfo.value.y) < 24
   const rectX = overlapLast ? leftX : rightX
   return {
     rectX,
@@ -1332,7 +1329,8 @@ function showTooltipAtIndex(idx: number) {
     { color: bear.value, label: 'L', value: formatOhlcTooltipValue(b.l) },
     { color: bull.value, label: 'C', value: formatOhlcTooltipValue(b.c) },
   ]
-  if (b.v != null) items.push({ color: 'var(--color-chart-muted)', label: 'V', value: formatValue(b.v) })
+  if (b.v != null)
+    items.push({ color: 'var(--color-chart-muted)', label: 'V', value: formatValue(b.v) })
   showTooltip(px, py, formatTimeLabel(b.t), items)
 }
 
@@ -1348,7 +1346,8 @@ function updatePointerTooltipFromBar(nearest: number, mouseX: number, mouseY: nu
     { color: bear.value, label: 'L', value: formatOhlcTooltipValue(b.l) },
     { color: bull.value, label: 'C', value: formatOhlcTooltipValue(b.c) },
   ]
-  if (b.v != null) items.push({ color: 'var(--color-chart-muted)', label: 'V', value: formatValue(b.v) })
+  if (b.v != null)
+    items.push({ color: 'var(--color-chart-muted)', label: 'V', value: formatValue(b.v) })
   showTooltip(mouseX, mouseY, formatTimeLabel(b.t), items)
 }
 
@@ -1460,19 +1459,21 @@ function onMouseMove(event: MouseEvent) {
   activeIndex.value = nearest
   updatePointerTooltipFromBar(nearest, mouseX, mouseY)
 
-  if (props.showCrosshair !== false && svgX >= pl && svgX <= pr && svgY >= pt && svgY <= mainPlotBottom.value) {
+  if (
+    props.showCrosshair !== false &&
+    svgX >= pl &&
+    svgX <= pr &&
+    svgY >= pt &&
+    svgY <= mainPlotBottom.value
+  ) {
     const d = yMap.value.domain
     const inPrice = svgY >= pt && svgY <= pb
     let priceY: number | null = null
     if (inPrice && priceInnerHeight.value > 0) {
       const bottomPx = pb - svgY
-      priceY = dataValueFromBottomPx(
-        effectiveYScale.value,
-        bottomPx,
-        priceInnerHeight.value,
-        d,
-        { symlogLinthresh: props.symlogLinthresh ?? 1 },
-      )
+      priceY = dataValueFromBottomPx(effectiveYScale.value, bottomPx, priceInnerHeight.value, d, {
+        symlogLinthresh: props.symlogLinthresh ?? 1,
+      })
     }
     const plotX = props.crosshairMagnetic !== false ? xPos(nearest) : svgX
     pointerCrosshair.value = { plotX, priceY }
@@ -1484,6 +1485,7 @@ function onMouseMove(event: MouseEvent) {
 function onMouseLeave() {
   activeIndex.value = null
   pointerCrosshair.value = null
+  // eslint-disable-next-line narduk/no-ssr-dom-access -- narduk-libs#131, not fixed in this fold-move PR: guarded by a pointer/focus handler that only runs client-side in practice
   if (document.activeElement !== svgRef.value) {
     hideTooltip()
     kbFocusIndex.value = null
@@ -1515,7 +1517,7 @@ const xAxisLabelIndices = computed(() => {
     i1,
     plotWidth: plotWidth.value,
     minPxPerLabel: 112,
-    labelAt: (i) => formatTimeLabel(bars[i]!.t),
+    labelAt: i => formatTimeLabel(bars[i]!.t),
   })
 })
 
@@ -1534,10 +1536,14 @@ const svgAriaLabelledby = computed(() => {
   return parts.join(' ')
 })
 
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
-  if (runAnimation.value) requestAnimationFrame(() => { animated.value = true })
+  if (runAnimation.value)
+    requestAnimationFrame(() => {
+      animated.value = true
+    })
   else animated.value = true
 })
 
@@ -1570,21 +1576,11 @@ defineExpose({
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="captionElId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="captionElId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -1596,26 +1592,14 @@ defineExpose({
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="ariaDescribedBy"
     >
-      <div
-        v-if="zoomable"
-        :id="zoomHintElId"
-        class="narduk-sr-only"
-      >
+      <div v-if="zoomable" :id="zoomHintElId" class="narduk-sr-only">
         {{ zoomAriaHint }}
       </div>
-      <div
-        :id="liveRegionElId"
-        aria-live="polite"
-        aria-atomic="true"
-        class="narduk-sr-only"
-      >
+      <div :id="liveRegionElId" aria-live="polite" aria-atomic="true" class="narduk-sr-only">
         {{ liveSummary }}
       </div>
 
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
+      <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
       <svg
@@ -1640,20 +1624,12 @@ defineExpose({
         @dblclick="onPlotDblClick"
       >
         <title :id="svgTitleElId">{{ effectiveChartTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescElId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescElId">
           {{ chartDescription }}
         </desc>
         <defs>
           <clipPath :id="plotClipId">
-            <rect
-              x="0"
-              :y="padding.top"
-              :width="chartWidth"
-              :height="plotHeight"
-            />
+            <rect x="0" :y="padding.top" :width="chartWidth" :height="plotHeight" />
           </clipPath>
         </defs>
 
@@ -1675,10 +1651,7 @@ defineExpose({
           rx="10"
         />
         <g :clip-path="plotClipUrl">
-          <g
-            v-if="showGrid"
-            class="narduk-grid"
-          >
+          <g v-if="showGrid" class="narduk-grid">
             <line
               v-for="(t, ti) in yMap.ticks"
               :key="'g-' + ti"
@@ -1689,11 +1662,7 @@ defineExpose({
             />
           </g>
 
-          <g
-            v-if="sessionVlineXs.length"
-            class="narduk-candle-session"
-            pointer-events="none"
-          >
+          <g v-if="sessionVlineXs.length" class="narduk-candle-session" pointer-events="none">
             <line
               v-for="(vx, si) in sessionVlineXs"
               :key="'sv-' + si"
@@ -1713,10 +1682,7 @@ defineExpose({
           />
 
           <g class="narduk-candles">
-            <g
-              v-for="(c, ci) in candleGeoms"
-              :key="'c-' + ci"
-            >
+            <g v-for="(c, ci) in candleGeoms" :key="'c-' + ci">
               <template v-if="candleStyle === 'bar'">
                 <line
                   class="narduk-candle__wick"
@@ -1811,10 +1777,7 @@ defineExpose({
             class="narduk-candle-drawings"
             pointer-events="none"
           >
-            <template
-              v-for="p in drawingSvgItems"
-              :key="p.key"
-            >
+            <template v-for="p in drawingSvgItems" :key="p.key">
               <path
                 v-if="p.variant === 'rangeFill'"
                 class="narduk-candle-drawing narduk-candle-drawing--range-fill"
@@ -1844,10 +1807,7 @@ defineExpose({
             />
           </g>
 
-          <g
-            v-if="showVolumePane"
-            class="narduk-candle-volume"
-          >
+          <g v-if="showVolumePane" class="narduk-candle-volume">
             <rect
               :x="padding.left"
               :y="volumeTop"
@@ -1868,11 +1828,7 @@ defineExpose({
             />
           </g>
 
-          <g
-            v-if="crosshairPlot"
-            class="narduk-candle-crosshair"
-            pointer-events="none"
-          >
+          <g v-if="crosshairPlot" class="narduk-candle-crosshair" pointer-events="none">
             <line
               :x1="crosshairPlot.plotX"
               :x2="crosshairPlot.plotX"
@@ -1912,36 +1868,14 @@ defineExpose({
             pointer-events="none"
             :transform="hudTransform"
           >
-            <rect
-              x="0"
-              y="0"
-              width="124"
-              height="76"
-              rx="10"
-              class="narduk-candle-hud__bg"
-            />
-            <text
-              x="118"
-              y="14"
-              class="narduk-candle-hud__title"
-              text-anchor="end"
-            >
+            <rect x="0" y="0" width="124" height="76" rx="10" class="narduk-candle-hud__bg" />
+            <text x="118" y="14" class="narduk-candle-hud__title" text-anchor="end">
               {{ formatTimeLabel(hudBar.t) }}
             </text>
-            <text
-              x="118"
-              y="32"
-              class="narduk-candle-hud__row"
-              text-anchor="end"
-            >
+            <text x="118" y="32" class="narduk-candle-hud__row" text-anchor="end">
               O {{ formatPriceStr(hudBar.o) }} · H {{ formatPriceStr(hudBar.h) }}
             </text>
-            <text
-              x="118"
-              y="48"
-              class="narduk-candle-hud__row"
-              text-anchor="end"
-            >
+            <text x="118" y="48" class="narduk-candle-hud__row" text-anchor="end">
               L {{ formatPriceStr(hudBar.l) }} · C {{ formatPriceStr(hudBar.c) }}
             </text>
             <text
@@ -1955,17 +1889,10 @@ defineExpose({
             </text>
           </g>
 
-          <slot
-            v-if="$slots.overlay"
-            name="overlay"
-            :metrics="overlayPlotMetrics"
-          />
+          <slot v-if="$slots.overlay" name="overlay" :metrics="overlayPlotMetrics" />
         </g>
 
-        <g
-          v-if="showVolumePane"
-          class="narduk-axis"
-        >
+        <g v-if="showVolumePane" class="narduk-axis">
           <line
             :x1="padding.left"
             :y1="volumeTop"
@@ -2012,10 +1939,7 @@ defineExpose({
           </text>
         </g>
 
-        <g
-          v-if="showBrush"
-          class="narduk-candle-brush"
-        >
+        <g v-if="showBrush" class="narduk-candle-brush">
           <rect
             :x="padding.left"
             :y="brushTop"
@@ -2058,11 +1982,7 @@ defineExpose({
         />
       </svg>
 
-      <ChartTooltip
-        v-if="!isEmpty && !showOhlcHud"
-        v-bind="tooltip"
-        :chart-width="chartWidth"
-      />
+      <ChartTooltip v-if="!isEmpty && !showOhlcHud" v-bind="tooltip" :chart-width="chartWidth" />
     </div>
   </figure>
 </template>

@@ -1,7 +1,7 @@
 /** Wilder-smoothed RSI (same recursion as many trading platforms). */
-export function rsi(closes: number[], period = 14): (number | null)[] {
+export function rsi(closes: number[], period = 14): Array<number | null> {
   const p = Math.max(1, Math.floor(period))
-  const out: (number | null)[] = closes.map(() => null)
+  const out: Array<number | null> = closes.map(() => null)
   if (closes.length < p + 1) return out
 
   let gain = 0

@@ -11,7 +11,9 @@ describe('getColor series tokens', () => {
   it('carries a literal fallback for every slot, for stylesheet-less SVG export', () => {
     expect(DEFAULT_COLORS).toHaveLength(SERIES_TOKEN_COUNT)
     for (let i = 0; i < SERIES_TOKEN_COUNT; i++) {
-      expect(getColor(undefined, i)).toBe(`var(--color-chart-series-${i + 1}, ${DEFAULT_COLORS[i]})`)
+      expect(getColor(undefined, i)).toBe(
+        `var(--color-chart-series-${i + 1}, ${DEFAULT_COLORS[i]})`,
+      )
     }
   })
 
@@ -26,6 +28,8 @@ describe('getColor series tokens', () => {
   })
 
   it('never yields undefined for a negative index', () => {
-    expect(getColor(undefined, -1)).toBe(`var(--color-chart-series-${SERIES_TOKEN_COUNT}, ${DEFAULT_COLORS[SERIES_TOKEN_COUNT - 1]})`)
+    expect(getColor(undefined, -1)).toBe(
+      `var(--color-chart-series-${SERIES_TOKEN_COUNT}, ${DEFAULT_COLORS[SERIES_TOKEN_COUNT - 1]})`,
+    )
   })
 })

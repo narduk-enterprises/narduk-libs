@@ -8,10 +8,14 @@ const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 <template>
   <Story title="Brand backdrop">
     <Variant title="Behind chart (built SVG)">
-      <div class="relative min-h-[420px] overflow-hidden rounded-2xl border border-chart-frame bg-chart-surface p-6 shadow-sm">
+      <div
+        class="relative min-h-[420px] overflow-hidden rounded-2xl border border-chart-frame bg-chart-surface p-6 shadow-sm"
+      >
         <NardukBrandBackdrop />
         <div class="relative z-10 mx-auto max-w-3xl">
-          <p class="mb-2 text-center text-xs font-semibold uppercase tracking-wider text-chart-muted">
+          <p
+            class="mb-2 text-center text-xs font-semibold uppercase tracking-wider text-chart-muted"
+          >
             NardukCharts
           </p>
           <NardukLineChart

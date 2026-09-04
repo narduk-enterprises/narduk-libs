@@ -64,8 +64,14 @@ describe('segmentLinePoints', () => {
   it('splits on null', () => {
     const segs = segmentLinePoints([1, 2, null, 4, 5], (i, v) => [i, v])
     expect(segs.length).toBe(2)
-    expect(segs[0]).toEqual([[0, 1], [1, 2]])
-    expect(segs[1]).toEqual([[3, 4], [4, 5]])
+    expect(segs[0]).toEqual([
+      [0, 1],
+      [1, 2],
+    ])
+    expect(segs[1]).toEqual([
+      [3, 4],
+      [4, 5],
+    ])
   })
 
   it('splits on NaN', () => {
@@ -83,15 +89,38 @@ describe('lineSegmentsToPaths', () => {
   })
 
   it('builds straight paths', () => {
-    const paths = lineSegmentsToPaths([[[0, 0], [1, 1]]], false)
-    expect(paths[0]).toBe(straightPath([[0, 0], [1, 1]]))
+    const paths = lineSegmentsToPaths(
+      [
+        [
+          [0, 0],
+          [1, 1],
+        ],
+      ],
+      false,
+    )
+    expect(paths[0]).toBe(
+      straightPath([
+        [0, 0],
+        [1, 1],
+      ]),
+    )
   })
 })
 
 describe('closeAreaUnderLine', () => {
   it('closes to baseline', () => {
-    const d = straightPath([[0, 10], [10, 5]])
-    const closed = closeAreaUnderLine(d, [[0, 10], [10, 5]], 40)
+    const d = straightPath([
+      [0, 10],
+      [10, 5],
+    ])
+    const closed = closeAreaUnderLine(
+      d,
+      [
+        [0, 10],
+        [10, 5],
+      ],
+      40,
+    )
     expect(closed).toContain('L 10 40')
     expect(closed).toContain('L 0 40')
     expect(closed.endsWith('Z')).toBe(true)
@@ -122,7 +151,11 @@ describe('decimateCategoryData', () => {
 
 describe('largestTriangleThreeBuckets', () => {
   it('returns original when under threshold', () => {
-    const pts = [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 0 }]
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: 0 },
+    ]
     expect(largestTriangleThreeBuckets(pts, 10)).toEqual(pts)
   })
 

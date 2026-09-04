@@ -1,5 +1,5 @@
 /* Tailwind theme reference (palette utilities available to consumers who compose our CSS). */
-@import "tailwindcss/theme" theme(reference);
+@import 'tailwindcss/theme' theme(reference);
 
 /**
  * Chart design tokens (2026 palette — OKLCH, cool-neutral base).
@@ -75,14 +75,14 @@
       ui-sans-serif,
       system-ui,
       -apple-system,
-      "Segoe UI",
+      'Segoe UI',
       Roboto,
-      "Helvetica Neue",
+      'Helvetica Neue',
       Arial,
       sans-serif;
     font-feature-settings:
-      "kern" 1,
-      "tnum" 1;
+      'kern' 1,
+      'tnum' 1;
     /* Avoid native text-selection highlight over the whole plot when zoom/pan dragging */
     -webkit-user-select: none;
     user-select: none;
@@ -109,12 +109,11 @@
 
   .narduk-line-chart__svg,
   .narduk-candle-chart__svg {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in oklch, var(--color-chart-surface) 92%, var(--color-chart-plot-tint)),
-        color-mix(in oklch, var(--color-chart-surface) 84%, var(--color-chart-plot-tint))
-      );
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-chart-surface) 92%, var(--color-chart-plot-tint)),
+      color-mix(in oklch, var(--color-chart-surface) 84%, var(--color-chart-plot-tint))
+    );
     border: 1px solid var(--color-chart-frame);
     border-radius: 16px;
     box-sizing: border-box;
@@ -125,12 +124,11 @@
 
   .narduk-chart--dark .narduk-line-chart__svg,
   .narduk-chart--dark .narduk-candle-chart__svg {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in oklch, var(--color-chart-plot-tint) 88%, var(--color-chart-surface)),
-        color-mix(in oklch, var(--color-chart-plot-tint) 72%, var(--color-chart-surface))
-      );
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-chart-plot-tint) 88%, var(--color-chart-surface)),
+      color-mix(in oklch, var(--color-chart-plot-tint) 72%, var(--color-chart-surface))
+    );
     border-color: var(--color-chart-frame);
     box-shadow:
       inset 0 1px 0 color-mix(in oklch, oklch(100% 0 0) 10%, transparent),
@@ -580,7 +578,9 @@
   }
 
   .narduk-pie-slice {
-    transition: transform 0.2s ease, opacity 0.15s ease;
+    transition:
+      transform 0.2s ease,
+      opacity 0.15s ease;
     transform-origin: center;
     @apply cursor-pointer;
   }

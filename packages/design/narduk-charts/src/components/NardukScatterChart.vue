@@ -1,46 +1,49 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, useId } from 'vue'
-import { useChart } from '../composables/useChart'
-import { linearScale, niceScale, formatValue } from '../utils/math'
-import { getColor } from '../utils/colors'
-import type { ScatterSeries, ChartTheme } from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
-import { defaultScatterLabel } from '../utils/chartA11y'
+import { computed, onMounted, ref, useId } from 'vue'
 
-const props = withDefaults(defineProps<{
-  series: ScatterSeries[]
-  width?: number
-  height?: number
-  colors?: string[]
-  dark?: boolean
-  theme?: ChartTheme
-  chartTitle?: string
-  chartDescription?: string
-  dir?: 'ltr' | 'rtl'
-  pointRadius?: number
-  animate?: boolean
-  respectReducedMotion?: boolean
-}>(), {
-  pointRadius: 4,
-  animate: true,
-  respectReducedMotion: true,
-})
+import { useChart } from '../composables/useChart'
+import { defaultScatterLabel } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
+import { getColor } from '../utils/colors'
+import { formatValue, linearScale, niceScale } from '../utils/math'
+
+import type { ChartTheme, ScatterSeries } from '../types'
+
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    chartDescription?: string
+    chartTitle?: string
+    colors?: string[]
+    dark?: boolean
+    dir?: 'ltr' | 'rtl'
+    height?: number
+    pointRadius?: number
+    respectReducedMotion?: boolean
+    series: ScatterSeries[]
+    theme?: ChartTheme
+    width?: number
+  }>(),
+  {
+    pointRadius: 4,
+    animate: true,
+    respectReducedMotion: true,
+  },
+)
 
 const emit = defineEmits<{
-  pointClick: [payload: { seriesName: string; pointIndex: number; x: number; y: number }]
+  pointClick: [payload: { pointIndex: number; seriesName: string; x: number; y: number }]
 }>()
 
 const rawId = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const capId = `nc-scap-${idSafe(rawId)}`
 const svgTitleId = `nc-st-${idSafe(rawId)}`
 const svgDescId = `nc-sd-${idSafe(rawId)}`
 
 const containerRef = ref<HTMLElement | null>(null)
-const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } = useChart(
-  containerRef,
-  props,
-)
+const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
+  useChart(containerRef, props)
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
 const rootChartClasses = computed(() => {
@@ -71,8 +74,7 @@ const xScale = computed(() => {
   const s = niceScale(xmin, xmax, 6)
   return {
     ...s,
-    toPx: (x: number) =>
-      padding.value.left + linearScale(x, s.min, s.max, 0, plotWidth.value),
+    toPx: (x: number) => padding.value.left + linearScale(x, s.min, s.max, 0, plotWidth.value),
   }
 })
 
@@ -95,11 +97,14 @@ function resolveColor(s: ScatterSeries): string {
   return s.color || getColor(props.colors, idx)
 }
 
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
   if (runAnimation.value) {
-    requestAnimationFrame(() => { animated.value = true })
+    requestAnimationFrame(() => {
+      animated.value = true
+    })
   } else {
     animated.value = true
   }
@@ -111,21 +116,11 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="capId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="capId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -137,12 +132,7 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
       :aria-label="chartTitle ? undefined : effectiveTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
-        No data
-      </div>
+      <div v-if="isEmpty" class="narduk-chart__empty">No data</div>
       <svg
         v-else-if="chartWidth > 0"
         :width="chartWidth"
@@ -151,10 +141,7 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
         :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
       >
         <title :id="svgTitleId">{{ effectiveTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescId">
           {{ chartDescription }}
         </desc>
         <g class="narduk-grid">
@@ -205,10 +192,7 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
             {{ formatValue(t) }}
           </text>
         </g>
-        <g
-          v-for="(s, si) in series"
-          :key="s.name"
-        >
+        <g v-for="(s, si) in series" :key="s.name">
           <circle
             v-for="(p, pi) in s.points"
             :key="si + '-' + pi"

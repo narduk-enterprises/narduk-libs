@@ -1,208 +1,212 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, useId } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
+
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
-import {
-  segmentLinePoints,
-  lineSegmentsToPaths,
-  closeAreaUnderLine,
-  formatValue,
-  decimateCategoryData,
-} from '../utils/math'
-import {
-  defaultTimeAxisLabel,
-  selectEvenAxisLabelIndices,
-} from '../utils/xAxis'
-import { createYAxisMap } from '../utils/yScale'
-import { layoutReferenceLabelYs } from '../utils/refLabelLayout'
+import { defaultLineChartLabel, linePointSummary, zoomKeyboardHint } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
-import ChartTooltip from './ChartTooltip.vue'
+import {
+  closeAreaUnderLine,
+  decimateCategoryData,
+  formatValue,
+  lineSegmentsToPaths,
+  segmentLinePoints,
+} from '../utils/math'
+import { layoutReferenceLabelYs } from '../utils/refLabelLayout'
+import { defaultTimeAxisLabel, selectEvenAxisLabelIndices } from '../utils/xAxis'
+import { createYAxisMap } from '../utils/yScale'
+
 import ChartLegend from './ChartLegend.vue'
+import ChartTooltip from './ChartTooltip.vue'
+
 import type {
-  ChartSeries,
-  ChartReferenceLine,
-  ChartTheme,
-  ChartYAxisId,
-  ChartYScaleMode,
-  ChartYBand,
   ChartLineAnnotation,
+  ChartPadding,
+  ChartReferenceLine,
+  ChartSeries,
+  ChartTheme,
+  ChartXAxisType,
+  ChartYAxisId,
+  ChartYBand,
+  ChartYScaleMode,
   LegendItem,
-  TooltipItem,
   LinePointClickPayload,
   LineZoomRange,
-  ChartXAxisType,
-  ChartPadding,
+  TooltipItem,
 } from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
-import {
-  defaultLineChartLabel,
-  linePointSummary,
-  zoomKeyboardHint,
-} from '../utils/chartA11y'
 
-const props = withDefaults(defineProps<{
-  series: ChartSeries[]
-  labels: string[]
-  width?: number
-  height?: number
-  smooth?: boolean
-  showGrid?: boolean
-  showPoints?: boolean
-  /**
-   * Draw a marker for a value whose neighbours on both sides are `null`.
-   * Default `true`.
-   *
-   * A run of one point has nothing to draw a line between, so without this it
-   * renders as literally nothing — and a sparse series whose measured entries
-   * are all two or three apart is ENTIRELY such runs, which drew a blank plot
-   * beside a real total. A point rather than a line, because the difference is
-   * the honest one: a line asserts the entries between its ends, a point
-   * asserts only itself.
-   */
-  showIsolatedPoints?: boolean
-  /** Radius of `showPoints` / isolated-value markers, in px. Default `3`. */
-  pointRadius?: number
-  showArea?: boolean
-  /** Draw the X axis line and its tick labels. Default `true`. */
-  showXAxis?: boolean
-  /** Draw the Y axis line(s) and their tick labels. Default `true`. */
-  showYAxis?: boolean
-  /**
-   * Render the legend. Default `true`.
-   *
-   * `chrome: false` drops the card wrapper but never reached the legend, so a
-   * single-series chart embedded in a surface that already names its series
-   * carried a duplicate label — and, since a legend row is a series toggle, a
-   * duplicate focusable control per chart.
-   */
-  showLegend?: boolean
-  /**
-   * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
-   * additional series are ignored for the volume pane (documented, no runtime warning).
-   * Omit to leave rendering unchanged.
-   */
-  volume?: (number | null)[]
-  /** Render a bottom volume histogram pane when `volume` has data. Default `false`. */
-  showVolume?: boolean
-  /**
-   * Fraction of plot height reserved for the volume pane when `showVolume` is set.
-   * Clamped to 0.12–0.45, same default and semantics as `NardukCandleChart`.
-   */
-  volumeFraction?: number
-  colors?: string[]
-  animate?: boolean
-  dark?: boolean
-  respectReducedMotion?: boolean
-  referenceLines?: ChartReferenceLine[]
-  theme?: ChartTheme
-  /** Enable a second Y scale on the right; assign `series[].yAxis = 'secondary'`. */
-  dualYAxis?: boolean
-  /** Y scale for the primary (left) axis, or the only axis. */
-  yScale?: ChartYScaleMode
-  /** Y scale for the secondary (right) axis when `dualYAxis` is true. */
-  yScaleSecondary?: ChartYScaleMode
-  /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
-  linearFromZero?: boolean
-  /** Add proportional headroom/footroom to linear Y domains. */
-  linearPaddingRatio?: number
-  /** Linear threshold for `symlog` (matplotlib-style). */
-  symlogLinthresh?: number
-  /** Horizontal bands (Y in data space). */
-  yBands?: ChartYBand[]
-  /** Vertical lines, points, and labels in data space. */
-  annotations?: ChartLineAnnotation[]
-  /**
-   * X-axis zoom: **drag** on the plot to draw a zoom box, **Ctrl/Cmd + wheel**,
-   * **Shift + drag** to pan, **double-click** to reset. Emits `zoom` with fractional index range.
-   */
-  zoomable?: boolean
-  /** Rescale Y to data in the visible X window (when `zoomable`). */
-  zoomAutoY?: boolean
-  /** Minimum visible points along X when zooming in (default 3). */
-  zoomMinPoints?: number
-  /** Short visible title (figcaption) and primary accessible name when set. */
-  chartTitle?: string
-  /** Longer description for screen readers and SVG `<desc>`. */
-  chartDescription?: string
-  /** Render an off-screen data table for high-stakes accessibility. */
-  showDataTable?: boolean
-  /** Fieldset legend label for the series toggles (screen readers). */
-  legendGroupLabel?: string
-  /** Text direction for layout mirroring (e.g. RTL). */
-  dir?: 'ltr' | 'rtl'
-  /** Format category labels on the X axis. */
-  formatXLabel?: (label: string, index: number) => string
-  /** Format numeric Y-axis tick labels. */
-  formatTickValue?: (value: number) => string
-  /** Default `'category'`; use `'time'` with `times` for dense timestamp axes. */
-  xAxisType?: ChartXAxisType
-  /** Unix milliseconds aligned 1:1 with `labels` and series values. */
-  times?: number[]
-  /** Format timestamp labels when `xAxisType` is `'time'`. */
-  formatTime?: (timestamp: number) => string
-  /** Minimum horizontal spacing per X-axis label. Defaults to 112px for time axes, 50px for category axes. */
-  xAxisMinLabelPx?: number
-  /** Override chart padding, useful for compact axis-free previews. */
-  padding?: Partial<ChartPadding>
-  /**
-   * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
-   * intentionally zoom on decimated indices.
-   */
-  maxRenderPoints?: number
-  /**
-   * Card border/shadow/background wrapper styling. Set `false` for decorative or
-   * sparkline usage embedded in another surface (e.g. a table cell or KPI card).
-   */
-  chrome?: boolean
-  /** Built-in hover/keyboard-focus cursor tooltip. Set `false` when a consumer renders its own. */
-  showTooltip?: boolean
-  /**
-   * Keyboard focusability and interaction on the SVG root. Set `false` for purely
-   * decorative/sparkline charts—removes `tabindex` and marks the SVG `aria-hidden`.
-   */
-  focusable?: boolean
-  /**
-   * Pin the primary Y domain. Either end may be given on its own; the value is
-   * used EXACTLY rather than being rounded out to a nice tick, so a set of
-   * charts handed the same bound share one scale to the pixel.
-   */
-  yMin?: number
-  yMax?: number
-  /** The same pins for the right-hand scale when `dualYAxis` is enabled. */
-  yMinSecondary?: number
-  yMaxSecondary?: number
-  /** Y tick / gridline count. Default `6`; clamped to 2–12. */
-  yTickCount?: number
-}>(), {
-  smooth: true,
-  showGrid: true,
-  showPoints: false,
-  showIsolatedPoints: true,
-  pointRadius: 3,
-  showArea: false,
-  showXAxis: true,
-  showYAxis: true,
-  showLegend: true,
-  showVolume: false,
-  volumeFraction: 0.22,
-  animate: true,
-  respectReducedMotion: true,
-  dualYAxis: false,
-  yScale: 'linear',
-  yScaleSecondary: 'linear',
-  linearFromZero: true,
-  linearPaddingRatio: 0,
-  symlogLinthresh: 1,
-  zoomable: false,
-  zoomAutoY: true,
-  zoomMinPoints: 3,
-  showDataTable: false,
-  legendGroupLabel: 'Data series',
-  xAxisType: 'category',
-  chrome: true,
-  showTooltip: true,
-  focusable: true,
-})
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    /** Vertical lines, points, and labels in data space. */
+    annotations?: ChartLineAnnotation[]
+    /** Longer description for screen readers and SVG `<desc>`. */
+    chartDescription?: string
+    /** Short visible title (figcaption) and primary accessible name when set. */
+    chartTitle?: string
+    /**
+     * Card border/shadow/background wrapper styling. Set `false` for decorative or
+     * sparkline usage embedded in another surface (e.g. a table cell or KPI card).
+     */
+    chrome?: boolean
+    colors?: string[]
+    dark?: boolean
+    /** Text direction for layout mirroring (e.g. RTL). */
+    dir?: 'ltr' | 'rtl'
+    /** Enable a second Y scale on the right; assign `series[].yAxis = 'secondary'`. */
+    dualYAxis?: boolean
+    /**
+     * Keyboard focusability and interaction on the SVG root. Set `false` for purely
+     * decorative/sparkline charts—removes `tabindex` and marks the SVG `aria-hidden`.
+     */
+    focusable?: boolean
+    /** Format numeric Y-axis tick labels. */
+    formatTickValue?: (value: number) => string
+    /** Format timestamp labels when `xAxisType` is `'time'`. */
+    formatTime?: (timestamp: number) => string
+    /** Format category labels on the X axis. */
+    formatXLabel?: (label: string, index: number) => string
+    height?: number
+    labels: string[]
+    /** Fieldset legend label for the series toggles (screen readers). */
+    legendGroupLabel?: string
+    /** Include zero in positive linear Y domains. Disable for relative trend/detail charts. */
+    linearFromZero?: boolean
+    /** Add proportional headroom/footroom to linear Y domains. */
+    linearPaddingRatio?: number
+    /**
+     * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
+     * intentionally zoom on decimated indices.
+     */
+    maxRenderPoints?: number
+    /** Override chart padding, useful for compact axis-free previews. */
+    padding?: Partial<ChartPadding>
+    /** Radius of `showPoints` / isolated-value markers, in px. Default `3`. */
+    pointRadius?: number
+    referenceLines?: ChartReferenceLine[]
+    respectReducedMotion?: boolean
+    series: ChartSeries[]
+    showArea?: boolean
+    /** Render an off-screen data table for high-stakes accessibility. */
+    showDataTable?: boolean
+    showGrid?: boolean
+    /**
+     * Draw a marker for a value whose neighbours on both sides are `null`.
+     * Default `true`.
+     *
+     * A run of one point has nothing to draw a line between, so without this it
+     * renders as literally nothing — and a sparse series whose measured entries
+     * are all two or three apart is ENTIRELY such runs, which drew a blank plot
+     * beside a real total. A point rather than a line, because the difference is
+     * the honest one: a line asserts the entries between its ends, a point
+     * asserts only itself.
+     */
+    showIsolatedPoints?: boolean
+    /**
+     * Render the legend. Default `true`.
+     *
+     * `chrome: false` drops the card wrapper but never reached the legend, so a
+     * single-series chart embedded in a surface that already names its series
+     * carried a duplicate label — and, since a legend row is a series toggle, a
+     * duplicate focusable control per chart.
+     */
+    showLegend?: boolean
+    showPoints?: boolean
+    /** Built-in hover/keyboard-focus cursor tooltip. Set `false` when a consumer renders its own. */
+    showTooltip?: boolean
+    /** Render a bottom volume histogram pane when `volume` has data. Default `false`. */
+    showVolume?: boolean
+    /** Draw the X axis line and its tick labels. Default `true`. */
+    showXAxis?: boolean
+    /** Draw the Y axis line(s) and their tick labels. Default `true`. */
+    showYAxis?: boolean
+    smooth?: boolean
+    /** Linear threshold for `symlog` (matplotlib-style). */
+    symlogLinthresh?: number
+    theme?: ChartTheme
+    /** Unix milliseconds aligned 1:1 with `labels` and series values. */
+    times?: number[]
+    /**
+     * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
+     * additional series are ignored for the volume pane (documented, no runtime warning).
+     * Omit to leave rendering unchanged.
+     */
+    volume?: Array<number | null>
+    /**
+     * Fraction of plot height reserved for the volume pane when `showVolume` is set.
+     * Clamped to 0.12–0.45, same default and semantics as `NardukCandleChart`.
+     */
+    volumeFraction?: number
+    width?: number
+    /** Minimum horizontal spacing per X-axis label. Defaults to 112px for time axes, 50px for category axes. */
+    xAxisMinLabelPx?: number
+    /** Default `'category'`; use `'time'` with `times` for dense timestamp axes. */
+    xAxisType?: ChartXAxisType
+    /** Horizontal bands (Y in data space). */
+    yBands?: ChartYBand[]
+    yMax?: number
+    yMaxSecondary?: number
+    /**
+     * Pin the primary Y domain. Either end may be given on its own; the value is
+     * used EXACTLY rather than being rounded out to a nice tick, so a set of
+     * charts handed the same bound share one scale to the pixel.
+     */
+    yMin?: number
+    /** The same pins for the right-hand scale when `dualYAxis` is enabled. */
+    yMinSecondary?: number
+    /** Y scale for the primary (left) axis, or the only axis. */
+    yScale?: ChartYScaleMode
+    /** Y scale for the secondary (right) axis when `dualYAxis` is true. */
+    yScaleSecondary?: ChartYScaleMode
+    /** Y tick / gridline count. Default `6`; clamped to 2–12. */
+    yTickCount?: number
+    /**
+     * X-axis zoom: **drag** on the plot to draw a zoom box, **Ctrl/Cmd + wheel**,
+     * **Shift + drag** to pan, **double-click** to reset. Emits `zoom` with fractional index range.
+     */
+    zoomable?: boolean
+    /** Rescale Y to data in the visible X window (when `zoomable`). */
+    zoomAutoY?: boolean
+    /** Minimum visible points along X when zooming in (default 3). */
+    zoomMinPoints?: number
+  }>(),
+  {
+    smooth: true,
+    showGrid: true,
+    showPoints: false,
+    showIsolatedPoints: true,
+    pointRadius: 3,
+    showArea: false,
+    showXAxis: true,
+    showYAxis: true,
+    showLegend: true,
+    showVolume: false,
+    volumeFraction: 0.22,
+    animate: true,
+    respectReducedMotion: true,
+    dualYAxis: false,
+    yScale: 'linear',
+    yScaleSecondary: 'linear',
+    linearFromZero: true,
+    linearPaddingRatio: 0,
+    symlogLinthresh: 1,
+    zoomable: false,
+    zoomAutoY: true,
+    zoomMinPoints: 3,
+    showDataTable: false,
+    legendGroupLabel: 'Data series',
+    xAxisType: 'category',
+    chrome: true,
+    showTooltip: true,
+    focusable: true,
+  },
+)
+
+const emit = defineEmits<{
+  pointClick: [payload: LinePointClickPayload]
+  zoom: [range: LineZoomRange]
+}>()
 
 function decimatedIndices(length: number, maxPoints?: number): number[] | null {
   if (!maxPoints || length <= maxPoints || maxPoints < 2) return null
@@ -214,11 +218,6 @@ function decimatedIndices(length: number, maxPoints?: number): number[] | null {
 }
 
 const effIndexMap = computed(() => decimatedIndices(props.labels.length, props.maxRenderPoints))
-
-const emit = defineEmits<{
-  pointClick: [payload: LinePointClickPayload]
-  zoom: [range: LineZoomRange]
-}>()
 
 const effLabels = computed(() => {
   const m = props.maxRenderPoints
@@ -237,7 +236,7 @@ const effSeries = computed(() => {
 })
 
 const effTimes = computed(() => {
-  if (!props.times) return undefined
+  if (!props.times) return
   const map = effIndexMap.value
   if (!map) return props.times
   return map.map(i => props.times?.[i] ?? Number.NaN)
@@ -245,22 +244,23 @@ const effTimes = computed(() => {
 
 defineSlots<{
   empty?: () => unknown
-  tooltip?: (props: { title: string; items: TooltipItem[]; visible: boolean }) => unknown
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
+  tooltip?: (props: { items: TooltipItem[]; title: string; visible: boolean }) => unknown
 }>()
 
 /** Fractional category index window; sync with `NardukCandleChart` via mapped indices + `candleTimeAtIndex`. */
-const xWindowModel = defineModel<{ start: number; end: number } | undefined>('xWindow')
+const xWindowModel = defineModel<{ end: number; start: number } | undefined>('xWindow')
 
 const showRightAxis = computed(() => {
   if (!props.dualYAxis) return false
   return (
-    visibleSeries.value.some(s => s.yAxis === 'secondary')
-    || (props.referenceLines ?? []).some(r => r.yAxis === 'secondary')
-    || (props.yBands ?? []).some(b => b.yAxis === 'secondary')
-    || (props.annotations ?? []).some(
-      a => (a.type === 'point' || a.type === 'label')
-        && (a as { yAxis?: ChartYAxisId }).yAxis === 'secondary',
+    visibleSeries.value.some(s => s.yAxis === 'secondary') ||
+    (props.referenceLines ?? []).some(r => r.yAxis === 'secondary') ||
+    (props.yBands ?? []).some(b => b.yAxis === 'secondary') ||
+    (props.annotations ?? []).some(
+      a =>
+        (a.type === 'point' || a.type === 'label') &&
+        (a as { yAxis?: ChartYAxisId }).yAxis === 'secondary',
     )
   )
 })
@@ -275,15 +275,8 @@ const paddingOverrides = computed(() => {
 })
 
 const containerRef = ref<HTMLElement | null>(null)
-const {
-  chartWidth,
-  chartHeight,
-  padding,
-  plotWidth,
-  plotHeight,
-  isDark,
-  effectiveAnimate,
-} = useChart(containerRef, props, paddingOverrides)
+const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
+  useChart(containerRef, props, paddingOverrides)
 
 /**
  * Volume pane geometry mirrors `NardukCandleChart`'s `showVolume` / `volumeFraction`
@@ -291,17 +284,15 @@ const {
  * Volume is decimated with the same index map as `effLabels` / `effSeries` (`effIndexMap`)
  * so bars stay aligned under `maxRenderPoints` downsampling.
  */
-const effVolume = computed<(number | null)[] | undefined>(() => {
+const effVolume = computed<Array<number | null> | undefined>(() => {
   const vol = props.volume
-  if (!vol) return undefined
+  if (!vol) return
   const map = effIndexMap.value
   if (!map) return vol
   return map.map(i => vol[i] ?? null)
 })
 
-const showVolumePane = computed(() =>
-  props.showVolume === true && (props.volume?.length ?? 0) > 0,
-)
+const showVolumePane = computed(() => props.showVolume === true && (props.volume?.length ?? 0) > 0)
 
 const volGap = 6
 
@@ -317,14 +308,14 @@ const volumeInnerHeight = computed(() => {
   return Math.max(0, plotHeight.value - priceInnerHeight.value - volGap)
 })
 
-const volumeTop = computed(() =>
-  padding.value.top + priceInnerHeight.value + (showVolumePane.value ? volGap : 0),
+const volumeTop = computed(
+  () => padding.value.top + priceInnerHeight.value + (showVolumePane.value ? volGap : 0),
 )
 
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
 
 const plotClipIdRaw = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const plotClipId = `nc-clip-${idSafe(plotClipIdRaw)}`
 const plotClipUrl = computed(() => `url(#${plotClipId})`)
 const captionElId = `nc-cap-${idSafe(plotClipIdRaw)}`
@@ -339,7 +330,7 @@ const xViewMax = ref(1)
 
 watch(
   () => effLabels.value.length,
-  (n) => {
+  n => {
     const full = Math.max(0, n - 1)
     const w = xWindowModel.value
     if (w !== undefined && n > 1) {
@@ -352,9 +343,10 @@ watch(
   { immediate: true },
 )
 
+// eslint-disable-next-line narduk/prefer-shallow-watch -- narduk-libs#131, not fixed in this fold-move PR
 watch(
   () => xWindowModel.value,
-  (w) => {
+  w => {
     if (w === undefined || effLabels.value.length <= 1) return
     if (xViewMin.value === w.start && xViewMax.value === w.end) return
     clampViewWindow(w.start, w.end)
@@ -393,8 +385,7 @@ function emitZoomRange() {
   const r = { start: xViewMin.value, end: xViewMax.value }
   emit('zoom', r)
   const m = xWindowModel.value
-  if (m?.start !== r.start || m?.end !== r.end)
-    xWindowModel.value = r
+  if (m?.start !== r.start || m?.end !== r.end) xWindowModel.value = r
 }
 
 function resetZoom() {
@@ -655,9 +646,7 @@ function toggleSeries(name: string) {
   hiddenSeries.value = next
 }
 
-const visibleSeries = computed(() =>
-  effSeries.value.filter(s => !hiddenSeries.value.has(s.name)),
-)
+const visibleSeries = computed(() => effSeries.value.filter(s => !hiddenSeries.value.has(s.name)))
 
 const isEmpty = computed(() => {
   if (props.series.length === 0 || props.labels.length === 0) return true
@@ -679,9 +668,7 @@ const secondarySeriesList = computed(() => {
 })
 
 function numericValues(series: ChartSeries[]): number[] {
-  return series.flatMap(s =>
-    s.data.filter((v): v is number => v != null && !Number.isNaN(v)),
-  )
+  return series.flatMap(s => s.data.filter((v): v is number => v != null && !Number.isNaN(v)))
 }
 
 function visibleIndexBounds(): { i0: number; i1: number } {
@@ -694,7 +681,7 @@ function visibleIndexBounds(): { i0: number; i1: number } {
 
 function numericValuesSlice(series: ChartSeries[], i0: number, i1: number): number[] {
   if (i1 < i0) return []
-  return series.flatMap((s) => {
+  return series.flatMap(s => {
     const slice = s.data.slice(i0, i1 + 1)
     return slice.filter((v): v is number => v != null && !Number.isNaN(v))
   })
@@ -704,9 +691,10 @@ const yScaleOpts = computed(() => ({
   linearFromZero: props.linearFromZero,
   linearPaddingRatio: props.linearPaddingRatio,
   symlogLinthresh: props.symlogLinthresh,
-  maxTicks: props.yTickCount === undefined
-    ? undefined
-    : Math.min(12, Math.max(2, Math.round(props.yTickCount))),
+  maxTicks:
+    props.yTickCount === undefined
+      ? undefined
+      : Math.min(12, Math.max(2, Math.round(props.yTickCount))),
 }))
 
 /** Primary-axis pins. Kept separate so the secondary scale is not pinned too. */
@@ -732,10 +720,12 @@ const primaryMap = computed(() => {
     .filter(b => !useDual.value || (b.yAxis ?? 'primary') === 'primary')
     .flatMap(b => [b.y0, b.y1])
   const annY = (props.annotations ?? [])
-    .filter((a): a is Extract<ChartLineAnnotation, { type: 'point' | 'label' }> =>
-      a.type === 'point' || a.type === 'label')
+    .filter(
+      (a): a is Extract<ChartLineAnnotation, { type: 'point' | 'label' }> =>
+        a.type === 'point' || a.type === 'label',
+    )
     .filter(a => !useDual.value || (a.yAxis ?? 'primary') === 'primary')
-    .filter((a) => {
+    .filter(a => {
       if (!sliceY) return true
       const x = a.xIndex
       return x >= i0 && x <= i1
@@ -759,17 +749,15 @@ const secondaryMap = computed(() => {
   if (!useDual.value) return primaryMap.value
   const { i0, i1 } = visibleIndexBounds()
   const sliceY = zoomYActive.value
-  const refs = (props.referenceLines ?? [])
-    .filter(r => r.yAxis === 'secondary')
-    .map(r => r.value)
-  const bands = (props.yBands ?? [])
-    .filter(b => b.yAxis === 'secondary')
-    .flatMap(b => [b.y0, b.y1])
+  const refs = (props.referenceLines ?? []).filter(r => r.yAxis === 'secondary').map(r => r.value)
+  const bands = (props.yBands ?? []).filter(b => b.yAxis === 'secondary').flatMap(b => [b.y0, b.y1])
   const annY = (props.annotations ?? [])
-    .filter((a): a is Extract<ChartLineAnnotation, { type: 'point' | 'label' }> =>
-      a.type === 'point' || a.type === 'label')
+    .filter(
+      (a): a is Extract<ChartLineAnnotation, { type: 'point' | 'label' }> =>
+        a.type === 'point' || a.type === 'label',
+    )
     .filter(a => a.yAxis === 'secondary')
-    .filter((a) => {
+    .filter(a => {
       if (!sliceY) return true
       const x = a.xIndex
       return x >= i0 && x <= i1
@@ -833,7 +821,7 @@ function xPos(index: number): number {
 const yBaseline = computed(() => padding.value.top + priceInnerHeight.value)
 
 const seriesRender = computed(() =>
-  visibleSeries.value.map((s) => {
+  visibleSeries.value.map(s => {
     const segments = segmentLinePoints(s.data, (i, v) => [xPos(i), yPosForSeries(s, v)])
     const lineDs = lineSegmentsToPaths(segments, props.smooth)
     const areaDs = props.showArea
@@ -848,9 +836,10 @@ const seriesRender = computed(() =>
      * Skipped when `showPoints` already draws every value, so an isolated one
      * never gets two overlapping markers.
      */
-    const isolated = props.showIsolatedPoints && !props.showPoints
-      ? segments.filter(seg => seg.length === 1).map(seg => seg[0]!)
-      : []
+    const isolated =
+      props.showIsolatedPoints && !props.showPoints
+        ? segments.filter(seg => seg.length === 1).map(seg => seg[0]!)
+        : []
     return { segments, lineDs, areaDs, isolated }
   }),
 )
@@ -868,13 +857,14 @@ const VOLUME_NEUTRAL_COLOR = 'var(--color-chart-muted)'
 /** Neutral fallback at index 0 (no previous point) and for null volume/price entries. */
 function volumeBarFill(
   index: number,
-  data: (number | null)[],
+  data: Array<number | null>,
   rawVolume: number | null | undefined,
 ): string {
   if (index <= 0 || rawVolume == null) return VOLUME_NEUTRAL_COLOR
   const cur = data[index]
   const prev = data[index - 1]
-  if (cur == null || prev == null || Number.isNaN(cur) || Number.isNaN(prev)) return VOLUME_NEUTRAL_COLOR
+  if (cur == null || prev == null || Number.isNaN(cur) || Number.isNaN(prev))
+    return VOLUME_NEUTRAL_COLOR
   return cur >= prev ? VOLUME_BULL_COLOR : VOLUME_BEAR_COLOR
 }
 
@@ -920,8 +910,8 @@ const activeIndex = ref<number | null>(null)
 const kbFocusIndex = ref<number | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
 
-const effectiveChartTitle = computed(() =>
-  props.chartTitle ?? defaultLineChartLabel(props.series, props.labels.length),
+const effectiveChartTitle = computed(
+  () => props.chartTitle ?? defaultLineChartLabel(props.series, props.labels.length),
 )
 
 const ariaDescribedBy = computed(() => {
@@ -958,7 +948,7 @@ function formatTooltipTitle(i: number): string {
 }
 
 function showTooltipAtIndex(idx: number) {
-  const items: TooltipItem[] = visibleSeries.value.map((s) => {
+  const items: TooltipItem[] = visibleSeries.value.map(s => {
     const v = s.data[idx]
     return {
       color: resolveColor(s),
@@ -1090,6 +1080,7 @@ function onMouseMove(event: MouseEvent) {
 
 function onMouseLeave() {
   activeIndex.value = null
+  // eslint-disable-next-line narduk/no-ssr-dom-access -- narduk-libs#131, not fixed in this fold-move PR: guarded by a pointer/focus handler that only runs client-side in practice
   if (document.activeElement !== svgRef.value) {
     hideTooltip()
     kbFocusIndex.value = null
@@ -1117,11 +1108,14 @@ function onSvgClick(event: MouseEvent) {
   })
 }
 
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
   if (runAnimation.value) {
-    requestAnimationFrame(() => { animated.value = true })
+    requestAnimationFrame(() => {
+      animated.value = true
+    })
   } else {
     animated.value = true
   }
@@ -1156,7 +1150,7 @@ const xAxisLabelIndices = computed(() => {
   const step = available >= approxLabelWidth ? 1 : Math.ceil(approxLabelWidth / available)
   const out: number[] = []
   for (let i = i0; i <= i1; i += step) out.push(i)
-  if (out.length === 0 || out[out.length - 1] !== i1) out.push(i1)
+  if (out.length === 0 || out.at(-1) !== i1) out.push(i1)
   return out
 })
 
@@ -1169,18 +1163,21 @@ const secondaryBands = computed(() =>
 )
 
 const vlineAnnotations = computed(() =>
-  (props.annotations ?? []).filter((a): a is Extract<ChartLineAnnotation, { type: 'vline' }> =>
-    a.type === 'vline'),
+  (props.annotations ?? []).filter(
+    (a): a is Extract<ChartLineAnnotation, { type: 'vline' }> => a.type === 'vline',
+  ),
 )
 
 const pointAnnotations = computed(() =>
-  (props.annotations ?? []).filter((a): a is Extract<ChartLineAnnotation, { type: 'point' }> =>
-    a.type === 'point'),
+  (props.annotations ?? []).filter(
+    (a): a is Extract<ChartLineAnnotation, { type: 'point' }> => a.type === 'point',
+  ),
 )
 
 const labelAnnotations = computed(() =>
-  (props.annotations ?? []).filter((a): a is Extract<ChartLineAnnotation, { type: 'label' }> =>
-    a.type === 'label'),
+  (props.annotations ?? []).filter(
+    (a): a is Extract<ChartLineAnnotation, { type: 'label' }> => a.type === 'label',
+  ),
 )
 
 function bandRect(b: ChartYBand, axis: ChartYAxisId) {
@@ -1218,7 +1215,7 @@ const referenceLineLayouts = computed(() => {
     labeled.map(x => ({ id: x.i, lineY: x.lineY })),
     bounds,
   )
-  return lineYs.map((x) => ({
+  return lineYs.map(x => ({
     ref: x.ref,
     lineY: x.lineY,
     labelY: x.ref.label ? (map.get(x.i) ?? x.lineY) : x.lineY,
@@ -1237,21 +1234,11 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="captionElId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="captionElId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -1263,63 +1250,40 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="ariaDescribedBy"
     >
-      <div
-        v-if="zoomable"
-        :id="zoomHintElId"
-        class="narduk-sr-only"
-      >
+      <div v-if="zoomable" :id="zoomHintElId" class="narduk-sr-only">
         {{ zoomAriaHint }}
       </div>
-      <div
-        :id="liveRegionElId"
-        aria-live="polite"
-        aria-atomic="true"
-        class="narduk-sr-only"
-      >
+      <div :id="liveRegionElId" aria-live="polite" aria-atomic="true" class="narduk-sr-only">
         {{ liveSummary }}
       </div>
 
-      <table
-        v-if="showDataTable && !isEmpty"
-        class="narduk-sr-only"
-      >
-        <caption>{{ effectiveChartTitle }}</caption>
+      <table v-if="showDataTable && !isEmpty" class="narduk-sr-only">
+        <caption>
+          {{
+            effectiveChartTitle
+          }}
+        </caption>
         <thead>
           <tr>
-            <th scope="col">
-              Category
-            </th>
-            <th
-              v-for="s in series"
-              :key="s.name"
-              scope="col"
-            >
+            <th scope="col">Category</th>
+            <th v-for="s in series" :key="s.name" scope="col">
               {{ s.name }}
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="(lab, ri) in labels"
-            :key="ri"
-          >
+          <tr v-for="(lab, ri) in labels" :key="ri">
             <th scope="row">
               {{ formatXLabel ? formatXLabel(lab, ri) : lab }}
             </th>
-            <td
-              v-for="s in series"
-              :key="s.name"
-            >
+            <td v-for="s in series" :key="s.name">
               {{ s.data[ri] ?? '' }}
             </td>
           </tr>
         </tbody>
       </table>
 
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
+      <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
       <svg
@@ -1345,418 +1309,344 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         @dblclick="onPlotDblClick"
       >
         <title :id="svgTitleElId">{{ effectiveChartTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescElId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescElId">
           {{ chartDescription }}
         </desc>
-      <defs>
-        <clipPath :id="plotClipId">
-          <rect
-            x="0"
-            :y="padding.top"
-            :width="chartWidth"
-            :height="plotHeight"
-          />
-        </clipPath>
-      </defs>
+        <defs>
+          <clipPath :id="plotClipId">
+            <rect x="0" :y="padding.top" :width="chartWidth" :height="plotHeight" />
+          </clipPath>
+        </defs>
 
-      <rect
-        class="narduk-plot-surface narduk-plot-surface--line"
-        :x="padding.left"
-        :y="padding.top"
-        :width="plotWidth"
-        :height="priceInnerHeight"
-        rx="12"
-      />
-      <rect
-        v-if="showVolumePane"
-        class="narduk-plot-surface narduk-plot-surface--volume"
-        :x="padding.left"
-        :y="volumeTop"
-        :width="plotWidth"
-        :height="volumeInnerHeight"
-        rx="10"
-      />
-      <g :clip-path="plotClipUrl">
-      <!-- Y bands (behind grid) -->
-      <g
-        v-if="primaryBands.length"
-        class="narduk-y-bands"
-      >
         <rect
-          v-for="(b, bi) in primaryBands"
-          :key="'pb-' + bi"
-          class="narduk-y-band"
-          :x="bandRect(b, 'primary').x"
-          :y="bandRect(b, 'primary').y"
-          :width="bandRect(b, 'primary').w"
-          :height="bandRect(b, 'primary').h"
-          :fill="bandRect(b, 'primary').fill"
-          :opacity="bandRect(b, 'primary').opacity"
+          class="narduk-plot-surface narduk-plot-surface--line"
+          :x="padding.left"
+          :y="padding.top"
+          :width="plotWidth"
+          :height="priceInnerHeight"
+          rx="12"
         />
-      </g>
-      <g
-        v-if="secondaryBands.length"
-        class="narduk-y-bands"
-      >
         <rect
-          v-for="(b, bi) in secondaryBands"
-          :key="'sb-' + bi"
-          class="narduk-y-band"
-          :x="bandRect(b, 'secondary').x"
-          :y="bandRect(b, 'secondary').y"
-          :width="bandRect(b, 'secondary').w"
-          :height="bandRect(b, 'secondary').h"
-          :fill="bandRect(b, 'secondary').fill"
-          :opacity="bandRect(b, 'secondary').opacity"
-        />
-      </g>
-
-      <!-- Grid (primary scale) -->
-      <g
-        v-if="showGrid"
-        class="narduk-grid"
-      >
-        <line
-          v-for="(t, ti) in primaryMap.ticks"
-          :key="'g-' + ti"
-          :x1="padding.left"
-          :y1="yAtDataValue(t.value, 'primary')"
-          :x2="chartWidth - padding.right"
-          :y2="yAtDataValue(t.value, 'primary')"
-        />
-      </g>
-
-      <!-- Vertical guide annotations -->
-      <g
-        v-if="vlineAnnotations.length"
-        class="narduk-ann-vline"
-      >
-        <g
-          v-for="(vl, vi) in vlineAnnotations"
-          :key="'vl-' + vi"
-        >
-          <line
-            class="narduk-ref-line"
-            :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
-            :stroke="vl.color || 'var(--color-chart-muted)'"
-            :x1="xPos(vl.xIndex)"
-            :y1="padding.top"
-            :x2="xPos(vl.xIndex)"
-            :y2="chartHeight - padding.bottom"
-          />
-          <text
-            v-if="vl.label"
-            class="narduk-ref-label"
-            :x="xPos(vl.xIndex) + 4"
-            :y="padding.top + 12"
-          >
-            {{ vl.label }}
-          </text>
-        </g>
-      </g>
-
-      <!-- Reference lines -->
-      <g
-        v-if="referenceLineLayouts.length"
-        class="narduk-ref-lines"
-      >
-        <g
-          v-for="(layout, ri) in referenceLineLayouts"
-          :key="ri"
-        >
-          <line
-            class="narduk-ref-line"
-            :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
-            :stroke="layout.ref.color || 'var(--color-chart-muted)'"
-            :x1="padding.left"
-            :y1="layout.lineY"
-            :x2="chartWidth - padding.right"
-            :y2="layout.lineY"
-          />
-          <line
-            v-if="layout.ref.label && Math.abs(layout.labelY - layout.lineY) > 2"
-            class="narduk-ref-label-connector"
-            :x1="refLabelAnchorX"
-            :y1="layout.lineY"
-            :x2="refLabelAnchorX"
-            :y2="layout.labelY"
-          />
-          <text
-            v-if="layout.ref.label"
-            class="narduk-ref-label"
-            :x="refLabelAnchorX"
-            :y="layout.labelY"
-            dominant-baseline="middle"
-          >
-            {{ layout.ref.label }}
-          </text>
-        </g>
-      </g>
-
-      <!-- Series -->
-      <g
-        v-for="(s, si) in visibleSeries"
-        :key="s.name"
-      >
-        <path
-          v-for="(ad, ai) in seriesRender[si].areaDs"
-          v-show="ad"
-          :key="'a-' + ai"
-          class="narduk-area-path"
-          :d="ad"
-          :fill="resolveColor(s)"
-        />
-        <path
-          v-for="(d, pi) in seriesRender[si].lineDs"
-          v-show="d"
-          :key="'l-' + pi"
-          class="narduk-line-path"
-          :d="d"
-          :stroke="resolveColor(s)"
-          pathLength="1"
-          stroke-dasharray="1"
-          :stroke-dashoffset="animated ? 0 : 1"
-        />
-
-        <circle
-          v-if="showPoints"
-          v-for="(v, pi) in s.data"
-          :key="'p-' + s.name + '-' + pi"
-          v-show="v != null && !Number.isNaN(v)"
-          class="narduk-line-point"
-          :cx="xPos(pi)"
-          :cy="yPosForSeries(s, v as number)"
-          :r="pointRadius"
-          :fill="resolveColor(s)"
-        />
-
-        <!-- Values with no measured neighbour: drawn as themselves, never
-             joined up, and never silently dropped. -->
-        <circle
-          v-for="(pt, ii) in seriesRender[si].isolated"
-          :key="'iso-' + s.name + '-' + ii"
-          class="narduk-line-point narduk-line-point--isolated"
-          :cx="pt[0]"
-          :cy="pt[1]"
-          :r="pointRadius"
-          :fill="resolveColor(s)"
-        />
-      </g>
-
-      <!-- Volume -->
-      <g
-        v-if="showVolumePane"
-        class="narduk-line-volume"
-      >
-        <rect
+          v-if="showVolumePane"
+          class="narduk-plot-surface narduk-plot-surface--volume"
           :x="padding.left"
           :y="volumeTop"
           :width="plotWidth"
           :height="volumeInnerHeight"
-          class="narduk-line-volume__bg"
+          rx="10"
         />
-        <rect
-          v-for="(vb, vi) in volumeBars"
-          :key="'v-' + vi"
-          class="narduk-line-volume__bar"
-          :x="vb.x"
-          :y="vb.y"
-          :width="vb.w"
-          :height="vb.h"
-          :rx="Math.min(2, vb.w / 3)"
-          :fill="vb.fill"
-        />
-      </g>
+        <g :clip-path="plotClipUrl">
+          <!-- Y bands (behind grid) -->
+          <g v-if="primaryBands.length" class="narduk-y-bands">
+            <rect
+              v-for="(b, bi) in primaryBands"
+              :key="'pb-' + bi"
+              class="narduk-y-band"
+              :x="bandRect(b, 'primary').x"
+              :y="bandRect(b, 'primary').y"
+              :width="bandRect(b, 'primary').w"
+              :height="bandRect(b, 'primary').h"
+              :fill="bandRect(b, 'primary').fill"
+              :opacity="bandRect(b, 'primary').opacity"
+            />
+          </g>
+          <g v-if="secondaryBands.length" class="narduk-y-bands">
+            <rect
+              v-for="(b, bi) in secondaryBands"
+              :key="'sb-' + bi"
+              class="narduk-y-band"
+              :x="bandRect(b, 'secondary').x"
+              :y="bandRect(b, 'secondary').y"
+              :width="bandRect(b, 'secondary').w"
+              :height="bandRect(b, 'secondary').h"
+              :fill="bandRect(b, 'secondary').fill"
+              :opacity="bandRect(b, 'secondary').opacity"
+            />
+          </g>
 
-      <!-- Annotation markers -->
-      <g
-        v-if="pointAnnotations.length"
-        class="narduk-ann-points"
-      >
-        <g
-          v-for="(ap, pi) in pointAnnotations"
-          :key="'ap-' + pi"
-        >
-          <circle
-            class="narduk-ann-point"
-            :cx="xPos(ap.xIndex)"
-            :cy="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
-            :r="ap.radius ?? 5"
-            :fill="ap.color || 'var(--color-chart-text)'"
+          <!-- Grid (primary scale) -->
+          <g v-if="showGrid" class="narduk-grid">
+            <line
+              v-for="(t, ti) in primaryMap.ticks"
+              :key="'g-' + ti"
+              :x1="padding.left"
+              :y1="yAtDataValue(t.value, 'primary')"
+              :x2="chartWidth - padding.right"
+              :y2="yAtDataValue(t.value, 'primary')"
+            />
+          </g>
+
+          <!-- Vertical guide annotations -->
+          <g v-if="vlineAnnotations.length" class="narduk-ann-vline">
+            <g v-for="(vl, vi) in vlineAnnotations" :key="'vl-' + vi">
+              <line
+                class="narduk-ref-line"
+                :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
+                :stroke="vl.color || 'var(--color-chart-muted)'"
+                :x1="xPos(vl.xIndex)"
+                :y1="padding.top"
+                :x2="xPos(vl.xIndex)"
+                :y2="chartHeight - padding.bottom"
+              />
+              <text
+                v-if="vl.label"
+                class="narduk-ref-label"
+                :x="xPos(vl.xIndex) + 4"
+                :y="padding.top + 12"
+              >
+                {{ vl.label }}
+              </text>
+            </g>
+          </g>
+
+          <!-- Reference lines -->
+          <g v-if="referenceLineLayouts.length" class="narduk-ref-lines">
+            <g v-for="(layout, ri) in referenceLineLayouts" :key="ri">
+              <line
+                class="narduk-ref-line"
+                :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
+                :stroke="layout.ref.color || 'var(--color-chart-muted)'"
+                :x1="padding.left"
+                :y1="layout.lineY"
+                :x2="chartWidth - padding.right"
+                :y2="layout.lineY"
+              />
+              <line
+                v-if="layout.ref.label && Math.abs(layout.labelY - layout.lineY) > 2"
+                class="narduk-ref-label-connector"
+                :x1="refLabelAnchorX"
+                :y1="layout.lineY"
+                :x2="refLabelAnchorX"
+                :y2="layout.labelY"
+              />
+              <text
+                v-if="layout.ref.label"
+                class="narduk-ref-label"
+                :x="refLabelAnchorX"
+                :y="layout.labelY"
+                dominant-baseline="middle"
+              >
+                {{ layout.ref.label }}
+              </text>
+            </g>
+          </g>
+
+          <!-- Series -->
+          <g v-for="(s, si) in visibleSeries" :key="s.name">
+            <path
+              v-for="(ad, ai) in seriesRender[si].areaDs"
+              v-show="ad"
+              :key="'a-' + ai"
+              class="narduk-area-path"
+              :d="ad"
+              :fill="resolveColor(s)"
+            />
+            <path
+              v-for="(d, pi) in seriesRender[si].lineDs"
+              v-show="d"
+              :key="'l-' + pi"
+              class="narduk-line-path"
+              :d="d"
+              :stroke="resolveColor(s)"
+              pathLength="1"
+              stroke-dasharray="1"
+              :stroke-dashoffset="animated ? 0 : 1"
+            />
+
+            <circle
+              v-if="showPoints"
+              v-for="(v, pi) in s.data"
+              :key="'p-' + s.name + '-' + pi"
+              v-show="v != null && !Number.isNaN(v)"
+              class="narduk-line-point"
+              :cx="xPos(pi)"
+              :cy="yPosForSeries(s, v as number)"
+              :r="pointRadius"
+              :fill="resolveColor(s)"
+            />
+
+            <!-- Values with no measured neighbour: drawn as themselves, never
+             joined up, and never silently dropped. -->
+            <circle
+              v-for="(pt, ii) in seriesRender[si].isolated"
+              :key="'iso-' + s.name + '-' + ii"
+              class="narduk-line-point narduk-line-point--isolated"
+              :cx="pt[0]"
+              :cy="pt[1]"
+              :r="pointRadius"
+              :fill="resolveColor(s)"
+            />
+          </g>
+
+          <!-- Volume -->
+          <g v-if="showVolumePane" class="narduk-line-volume">
+            <rect
+              :x="padding.left"
+              :y="volumeTop"
+              :width="plotWidth"
+              :height="volumeInnerHeight"
+              class="narduk-line-volume__bg"
+            />
+            <rect
+              v-for="(vb, vi) in volumeBars"
+              :key="'v-' + vi"
+              class="narduk-line-volume__bar"
+              :x="vb.x"
+              :y="vb.y"
+              :width="vb.w"
+              :height="vb.h"
+              :rx="Math.min(2, vb.w / 3)"
+              :fill="vb.fill"
+            />
+          </g>
+
+          <!-- Annotation markers -->
+          <g v-if="pointAnnotations.length" class="narduk-ann-points">
+            <g v-for="(ap, pi) in pointAnnotations" :key="'ap-' + pi">
+              <circle
+                class="narduk-ann-point"
+                :cx="xPos(ap.xIndex)"
+                :cy="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
+                :r="ap.radius ?? 5"
+                :fill="ap.color || 'var(--color-chart-text)'"
+              />
+              <text
+                v-if="ap.label"
+                class="narduk-ref-label"
+                :x="xPos(ap.xIndex) + 8"
+                :y="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
+                dominant-baseline="middle"
+              >
+                {{ ap.label }}
+              </text>
+            </g>
+          </g>
+          <g v-if="labelAnnotations.length" class="narduk-ann-labels">
+            <text
+              v-for="(al, li) in labelAnnotations"
+              :key="'al-' + li"
+              class="narduk-ann-label"
+              :x="xPos(al.xIndex) + (al.dx ?? 0)"
+              :y="yAtDataValue(al.y, al.yAxis ?? 'primary') + (al.dy ?? 0)"
+              :fill="al.color || 'var(--color-chart-muted)'"
+            >
+              {{ al.text }}
+            </text>
+          </g>
+
+          <!-- Crosshair -->
+          <g v-if="displayIndex !== null">
+            <line
+              class="narduk-crosshair"
+              :x1="xPos(displayIndex)"
+              :y1="padding.top"
+              :x2="xPos(displayIndex)"
+              :y2="chartHeight - padding.bottom"
+            />
+            <circle
+              v-for="s in visibleSeries"
+              :key="s.name"
+              v-show="
+                s.data[displayIndex!] != null && !Number.isNaN(s.data[displayIndex!] as number)
+              "
+              class="narduk-line-point"
+              :cx="xPos(displayIndex)"
+              :cy="yPosForSeries(s, s.data[displayIndex!] as number)"
+              r="5"
+              :fill="resolveColor(s)"
+            />
+          </g>
+        </g>
+
+        <!-- Axes (unclipped so tick labels stay readable) -->
+        <g v-if="showVolumePane" class="narduk-axis">
+          <line
+            :x1="padding.left"
+            :y1="volumeTop"
+            :x2="chartWidth - padding.right"
+            :y2="volumeTop"
+          />
+        </g>
+
+        <g v-if="showYAxis" class="narduk-axis">
+          <line
+            :x1="padding.left"
+            :y1="padding.top"
+            :x2="padding.left"
+            :y2="chartHeight - padding.bottom"
           />
           <text
-            v-if="ap.label"
-            class="narduk-ref-label"
-            :x="xPos(ap.xIndex) + 8"
-            :y="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
+            v-for="(t, ti) in primaryTicksForDisplay"
+            :key="'py-' + ti"
+            :x="padding.left - 8"
+            :y="yAtDataValue(t.value, 'primary')"
+            text-anchor="end"
             dominant-baseline="middle"
           >
-            {{ ap.label }}
+            {{ t.label }}
           </text>
         </g>
-      </g>
-      <g
-        v-if="labelAnnotations.length"
-        class="narduk-ann-labels"
-      >
-        <text
-          v-for="(al, li) in labelAnnotations"
-          :key="'al-' + li"
-          class="narduk-ann-label"
-          :x="xPos(al.xIndex) + (al.dx ?? 0)"
-          :y="yAtDataValue(al.y, al.yAxis ?? 'primary') + (al.dy ?? 0)"
-          :fill="al.color || 'var(--color-chart-muted)'"
-        >
-          {{ al.text }}
-        </text>
-      </g>
 
-      <!-- Crosshair -->
-      <g v-if="displayIndex !== null">
-        <line
-          class="narduk-crosshair"
-          :x1="xPos(displayIndex)"
-          :y1="padding.top"
-          :x2="xPos(displayIndex)"
-          :y2="chartHeight - padding.bottom"
-        />
-        <circle
-          v-for="s in visibleSeries"
-          :key="s.name"
-          v-show="s.data[displayIndex!] != null && !Number.isNaN(s.data[displayIndex!] as number)"
-          class="narduk-line-point"
-          :cx="xPos(displayIndex)"
-          :cy="yPosForSeries(s, s.data[displayIndex!] as number)"
-          r="5"
-          :fill="resolveColor(s)"
-        />
-      </g>
-      </g>
-
-      <!-- Axes (unclipped so tick labels stay readable) -->
-      <g
-        v-if="showVolumePane"
-        class="narduk-axis"
-      >
-        <line
-          :x1="padding.left"
-          :y1="volumeTop"
-          :x2="chartWidth - padding.right"
-          :y2="volumeTop"
-        />
-      </g>
-
-      <g
-        v-if="showYAxis"
-        class="narduk-axis"
-      >
-        <line
-          :x1="padding.left"
-          :y1="padding.top"
-          :x2="padding.left"
-          :y2="chartHeight - padding.bottom"
-        />
-        <text
-          v-for="(t, ti) in primaryTicksForDisplay"
-          :key="'py-' + ti"
-          :x="padding.left - 8"
-          :y="yAtDataValue(t.value, 'primary')"
-          text-anchor="end"
-          dominant-baseline="middle"
-        >
-          {{ t.label }}
-        </text>
-      </g>
-
-      <g
-        v-if="showRightAxis && showYAxis"
-        class="narduk-axis narduk-axis--secondary"
-      >
-        <line
-          :x1="chartWidth - padding.right"
-          :y1="padding.top"
-          :x2="chartWidth - padding.right"
-          :y2="chartHeight - padding.bottom"
-        />
-        <text
-          v-for="(t, ti) in secondaryTicksForDisplay"
-          :key="'sy-' + ti"
-          :x="chartWidth - padding.right + 8"
-          :y="yAtDataValue(t.value, 'secondary')"
-          text-anchor="start"
-          dominant-baseline="middle"
-        >
-          {{ t.label }}
-        </text>
-      </g>
-
-      <g
-        v-if="showXAxis"
-        class="narduk-axis"
-      >
-        <line
-          :x1="padding.left"
-          :y1="chartHeight - padding.bottom"
-          :x2="chartWidth - padding.right"
-          :y2="chartHeight - padding.bottom"
-        />
-        <text
-          v-for="i in xAxisLabelIndices"
-          :key="'xl-' + i"
-          :x="xPos(i)"
-          :y="chartHeight - padding.bottom + 20"
-          text-anchor="middle"
-          dominant-baseline="hanging"
-        >
-          {{ formatXAxisLabel(i) }}
-        </text>
-      </g>
-
-      <rect
-        v-if="zoomBoxPreview"
-        class="narduk-zoom-box"
-        :x="zoomBoxPreview.x"
-        :y="zoomBoxPreview.y"
-        :width="zoomBoxPreview.w"
-        :height="zoomBoxPreview.h"
-      />
-    </svg>
-
-    <template v-if="!isEmpty && showLegend">
-      <ChartLegend
-        :items="legendItems"
-        :group-label="legendGroupLabel"
-        @toggle="toggleSeries"
-      >
-        <template
-          v-if="$slots['legend-item']"
-          #item="slotProps"
-        >
-          <slot
-            name="legend-item"
-            v-bind="slotProps"
+        <g v-if="showRightAxis && showYAxis" class="narduk-axis narduk-axis--secondary">
+          <line
+            :x1="chartWidth - padding.right"
+            :y1="padding.top"
+            :x2="chartWidth - padding.right"
+            :y2="chartHeight - padding.bottom"
           />
-        </template>
-      </ChartLegend>
-      <ChartTooltip
-        v-if="props.showTooltip"
-        v-bind="tooltip"
-        :chart-width="chartWidth"
-      >
-        <template
-          v-if="$slots.tooltip"
-          #content="slotProps"
-        >
-          <slot
-            name="tooltip"
-            v-bind="slotProps"
+          <text
+            v-for="(t, ti) in secondaryTicksForDisplay"
+            :key="'sy-' + ti"
+            :x="chartWidth - padding.right + 8"
+            :y="yAtDataValue(t.value, 'secondary')"
+            text-anchor="start"
+            dominant-baseline="middle"
+          >
+            {{ t.label }}
+          </text>
+        </g>
+
+        <g v-if="showXAxis" class="narduk-axis">
+          <line
+            :x1="padding.left"
+            :y1="chartHeight - padding.bottom"
+            :x2="chartWidth - padding.right"
+            :y2="chartHeight - padding.bottom"
           />
-        </template>
-      </ChartTooltip>
-    </template>
+          <text
+            v-for="i in xAxisLabelIndices"
+            :key="'xl-' + i"
+            :x="xPos(i)"
+            :y="chartHeight - padding.bottom + 20"
+            text-anchor="middle"
+            dominant-baseline="hanging"
+          >
+            {{ formatXAxisLabel(i) }}
+          </text>
+        </g>
+
+        <rect
+          v-if="zoomBoxPreview"
+          class="narduk-zoom-box"
+          :x="zoomBoxPreview.x"
+          :y="zoomBoxPreview.y"
+          :width="zoomBoxPreview.w"
+          :height="zoomBoxPreview.h"
+        />
+      </svg>
+
+      <template v-if="!isEmpty && showLegend">
+        <ChartLegend :items="legendItems" :group-label="legendGroupLabel" @toggle="toggleSeries">
+          <template v-if="$slots['legend-item']" #item="slotProps">
+            <slot name="legend-item" v-bind="slotProps" />
+          </template>
+        </ChartLegend>
+        <ChartTooltip v-if="props.showTooltip" v-bind="tooltip" :chart-width="chartWidth">
+          <template v-if="$slots.tooltip" #content="slotProps">
+            <slot name="tooltip" v-bind="slotProps" />
+          </template>
+        </ChartTooltip>
+      </template>
     </div>
   </figure>
 </template>

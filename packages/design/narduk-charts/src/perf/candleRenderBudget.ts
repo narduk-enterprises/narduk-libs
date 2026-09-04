@@ -20,7 +20,10 @@ export function recommendMaxDrawBars(options: {
 export type CandleRenderStrategy = 'svg-capped' | 'canvas' | 'lightweight-charts'
 
 /** Documented outcome of the perf gate (call from app setup or devtools). */
-export function suggestCandleRenderStrategy(barCount: number, maxDrawBars: number): CandleRenderStrategy {
+export function suggestCandleRenderStrategy(
+  barCount: number,
+  maxDrawBars: number,
+): CandleRenderStrategy {
   if (barCount <= maxDrawBars * 4) return 'svg-capped'
   if (barCount <= 50_000) return 'canvas'
   return 'lightweight-charts'

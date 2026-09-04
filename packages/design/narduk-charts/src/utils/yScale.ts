@@ -5,7 +5,7 @@ export interface YAxisMapResult {
   /** Map data value to distance from plot bottom (px), before `padding.top`. */
   yFromBottom: (value: number) => number
   /** Ticks in data space with precomputed label strings. */
-  ticks: { value: number; label: string }[]
+  ticks: Array<{ value: number; label: string }>
   domain: { min: number; max: number }
 }
 
@@ -20,9 +20,13 @@ const LOG_FLOOR = 1e-12
  * pinned domain, where the whole point is that the ends are the numbers the
  * caller named rather than the round ones nearby.
  */
-function evenTicks(min: number, max: number, count: number): { value: number; label: string }[] {
+function evenTicks(
+  min: number,
+  max: number,
+  count: number,
+): Array<{ value: number; label: string }> {
   const n = Math.max(2, Math.floor(count))
-  const ticks: { value: number; label: string }[] = []
+  const ticks: Array<{ value: number; label: string }> = []
   for (let i = 0; i < n; i++) {
     const value = min + ((max - min) * i) / (n - 1)
     ticks.push({ value, label: formatValue(value) })
@@ -128,9 +132,8 @@ export function createYAxisMap(
       const rawMax = Math.max(...vals)
       const paddingRatio = Math.max(0, options?.linearPaddingRatio ?? 0)
       const rawRange = rawMax - rawMin
-      const padding = rawRange > 0
-        ? rawRange * paddingRatio
-        : Math.max(Math.abs(rawMax), 1) * paddingRatio
+      const padding =
+        rawRange > 0 ? rawRange * paddingRatio : Math.max(Math.abs(rawMax), 1) * paddingRatio
       low = linearFromZero ? Math.min(0, rawMin - padding) : rawMin - padding
       high = rawMax + padding
     }
@@ -143,8 +146,7 @@ export function createYAxisMap(
     return {
       domain: { min: s.min, max: s.max },
       ticks: s.ticks.map(value => ({ value, label: formatValue(value) })),
-      yFromBottom: v =>
-        linearScale(v, s.min, s.max, 0, plotHeight),
+      yFromBottom: v => linearScale(v, s.min, s.max, 0, plotHeight),
     }
   }
 
@@ -172,11 +174,7 @@ export function createYAxisMap(
     if (pinMax !== null && pinMax > 0) maxV = pinMax
     const logMin = Math.log10(Math.max(minV, LOG_FLOOR))
     const logMax = Math.log10(Math.max(maxV, minV * 1.0001))
-    const tickVals = logTickValues(
-      10 ** logMin,
-      10 ** logMax,
-      maxTicks,
-    )
+    const tickVals = logTickValues(10 ** logMin, 10 ** logMax, maxTicks)
     const ticks = (tickVals.length ? tickVals : [10 ** logMin, 10 ** logMax]).map(value => ({
       value,
       label: formatValue(value),
@@ -208,24 +206,22 @@ export function createYAxisMap(
     const hi = hiRaw > lo ? hiRaw : lo + 1
     return {
       domain: { min: symlogInverse(lo, linthresh), max: symlogInverse(hi, linthresh) },
-      ticks: evenTicks(lo, hi, maxTicks).map((t) => {
+      ticks: evenTicks(lo, hi, maxTicks).map(t => {
         const value = symlogInverse(t.value, linthresh)
         return { value, label: formatValue(value) }
       }),
-      yFromBottom: v =>
-        linearScale(symlogForward(v, linthresh), lo, hi, 0, plotHeight),
+      yFromBottom: v => linearScale(symlogForward(v, linthresh), lo, hi, 0, plotHeight),
     }
   }
 
   const s = niceScale(tMin, tMax, maxTicks)
   return {
     domain: { min: symlogInverse(s.min, linthresh), max: symlogInverse(s.max, linthresh) },
-    ticks: s.ticks.map((t) => {
+    ticks: s.ticks.map(t => {
       const value = symlogInverse(t, linthresh)
       return { value, label: formatValue(value) }
     }),
-    yFromBottom: v =>
-      linearScale(symlogForward(v, linthresh), s.min, s.max, 0, plotHeight),
+    yFromBottom: v => linearScale(symlogForward(v, linthresh), s.min, s.max, 0, plotHeight),
   }
 }
 

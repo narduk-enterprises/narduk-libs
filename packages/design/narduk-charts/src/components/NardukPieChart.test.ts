@@ -42,7 +42,15 @@ describe('NardukPieChart consumer ergonomics (#9)', () => {
 
     const svg = w.find('svg').element as SVGSVGElement
     svg.getBoundingClientRect = () => ({
-      x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 300, width: 300, height: 300, toJSON: () => ({}),
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 300,
+      width: 300,
+      height: 300,
+      toJSON: () => ({}),
     })
     await w.find('svg').trigger('mousemove', { clientX: 150, clientY: 40 })
     expect(w.find('.narduk-tooltip').exists()).toBe(true)
@@ -78,7 +86,15 @@ describe('NardukPieChart consumer ergonomics (#9)', () => {
 
     const svg = w.find('svg').element as SVGSVGElement
     svg.getBoundingClientRect = () => ({
-      x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 300, width: 300, height: 300, toJSON: () => ({}),
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 300,
+      width: 300,
+      height: 300,
+      toJSON: () => ({}),
     })
     await w.find('svg').trigger('mousemove', { clientX: 150, clientY: 40 })
     expect(w.find('.narduk-tooltip').exists()).toBe(false)

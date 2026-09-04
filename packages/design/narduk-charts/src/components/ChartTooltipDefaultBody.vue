@@ -1,9 +1,10 @@
 <script setup lang="ts">
+/* eslint-disable narduk/no-attrs-on-fragment -- narduk-libs#131, not fixed in this fold-move PR: two root nodes forward fallthrough attrs ambiguously */
 import type { TooltipItem } from '../types'
 
 defineProps<{
-  title: string
   items: TooltipItem[]
+  title: string
 }>()
 </script>
 

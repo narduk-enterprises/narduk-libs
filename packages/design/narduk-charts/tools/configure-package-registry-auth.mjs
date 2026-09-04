@@ -61,7 +61,7 @@ function stripManagedAuthLines(content) {
   return content
     .split('\n')
     .filter(
-      (line) =>
+      line =>
         !line.includes('//npm.pkg.github.com/:_authToken=') &&
         !/\/\/[^/]+\/api\/packages\/.+\/npm\/:_authToken=/.test(line),
     )
@@ -93,14 +93,14 @@ function main() {
   const strippedContent = stripManagedAuthLines(existingContent)
   const retainedLines = strippedContent
     .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) =>
+    .filter(line => line.length > 0)
+    .map(line =>
       line.startsWith(`${PACKAGE_SCOPE}:registry=`) || line.startsWith('@loganrenz:registry=')
         ? registryLine
         : line,
     )
 
-  if (!retainedLines.some((line) => line.startsWith(`${PACKAGE_SCOPE}:registry=`))) {
+  if (!retainedLines.some(line => line.startsWith(`${PACKAGE_SCOPE}:registry=`))) {
     retainedLines.unshift(registryLine)
   }
 

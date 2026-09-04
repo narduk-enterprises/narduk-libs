@@ -42,28 +42,55 @@ function render(component: Component, props: Record<string, unknown>): Promise<s
 const labels = ['Mon', 'Tue', 'Wed', 'Thu']
 const series = [{ name: 'Revenue', data: [30, 40, 35, 50] }]
 
-const cases: [string, Component, Record<string, unknown>][] = [
+const cases: Array<[string, Component, Record<string, unknown>]> = [
   ['NardukLineChart', NardukLineChart, { series, labels, chartTitle: 'Line under SSR' }],
   ['NardukBarChart', NardukBarChart, { series, labels, chartTitle: 'Bar under SSR' }],
-  ['NardukPieChart', NardukPieChart, {
-    data: [{ label: 'A', value: 3 }, { label: 'B', value: 7 }],
-    chartTitle: 'Pie under SSR',
-  }],
-  ['NardukScatterChart', NardukScatterChart, {
-    series: [{ name: 'S', points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] }],
-    chartTitle: 'Scatter under SSR',
-  }],
-  ['NardukHistogramChart', NardukHistogramChart, {
-    values: [1, 2, 2, 3, 5, 8],
-    chartTitle: 'Histogram under SSR',
-  }],
-  ['NardukCandleChart', NardukCandleChart, {
-    bars: [
-      { t: 1_700_000_000_000, o: 1, h: 2, l: 0.5, c: 1.5 },
-      { t: 1_700_003_600_000, o: 1.5, h: 2.5, l: 1.2, c: 2 },
-    ],
-    chartTitle: 'Candle under SSR',
-  }],
+  [
+    'NardukPieChart',
+    NardukPieChart,
+    {
+      data: [
+        { label: 'A', value: 3 },
+        { label: 'B', value: 7 },
+      ],
+      chartTitle: 'Pie under SSR',
+    },
+  ],
+  [
+    'NardukScatterChart',
+    NardukScatterChart,
+    {
+      series: [
+        {
+          name: 'S',
+          points: [
+            { x: 1, y: 2 },
+            { x: 3, y: 4 },
+          ],
+        },
+      ],
+      chartTitle: 'Scatter under SSR',
+    },
+  ],
+  [
+    'NardukHistogramChart',
+    NardukHistogramChart,
+    {
+      values: [1, 2, 2, 3, 5, 8],
+      chartTitle: 'Histogram under SSR',
+    },
+  ],
+  [
+    'NardukCandleChart',
+    NardukCandleChart,
+    {
+      bars: [
+        { t: 1_700_000_000_000, o: 1, h: 2, l: 0.5, c: 1.5 },
+        { t: 1_700_003_600_000, o: 1.5, h: 2.5, l: 1.2, c: 2 },
+      ],
+      chartTitle: 'Candle under SSR',
+    },
+  ],
   ['NardukBrandBackdrop', NardukBrandBackdrop, {}],
 ]
 

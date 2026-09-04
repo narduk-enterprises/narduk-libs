@@ -79,8 +79,7 @@ test.describe('series palette tokens', () => {
       timeout: 30_000,
     })
 
-    const resolved = (sel: string) =>
-      page.locator(sel).evaluate(el => getComputedStyle(el).stroke)
+    const resolved = (sel: string) => page.locator(sel).evaluate(el => getComputedStyle(el).stroke)
 
     const defaults = [
       await resolved(stroke('palette-default-section', 0)),
@@ -107,7 +106,10 @@ test.describe('series palette tokens', () => {
 
 test.describe('visual regression', () => {
   test('line section baseline', async ({ page }) => {
-    test.skip(!!process.env.CI, 'Screenshot baselines are generated per-OS; run locally with npm run test:e2e:update')
+    test.skip(
+      !!process.env.CI,
+      'Screenshot baselines are generated per-OS; run locally with npm run test:e2e:update',
+    )
     await page.goto('/')
     await page.waitForSelector('.e2e-root', { timeout: 30_000 })
     const section = page.locator('[data-testid="line-section"]')

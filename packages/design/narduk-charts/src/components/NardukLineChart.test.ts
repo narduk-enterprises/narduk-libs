@@ -25,7 +25,8 @@ describe('NardukLineChart time axis', () => {
       },
     })
 
-    const tickTexts = w.findAll('.narduk-axis text')
+    const tickTexts = w
+      .findAll('.narduk-axis text')
       .map(node => node.text().trim())
       .filter(text => /^\d{2}-\d{2}T/.test(text))
     expect(tickTexts.length).toBeLessThan(72)
@@ -186,7 +187,15 @@ describe('NardukLineChart consumer ergonomics', () => {
     })
     const svg = w.find('svg').element as SVGSVGElement
     svg.getBoundingClientRect = () => ({
-      x: 0, y: 0, left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120, toJSON: () => ({}),
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 240,
+      bottom: 120,
+      width: 240,
+      height: 120,
+      toJSON: () => ({}),
     })
     await w.find('svg').trigger('mousemove', { clientX: 120, clientY: 60 })
     expect(w.find('.narduk-tooltip').exists()).toBe(true)
@@ -200,7 +209,15 @@ describe('NardukLineChart consumer ergonomics', () => {
     })
     const svg = w.find('svg').element as SVGSVGElement
     svg.getBoundingClientRect = () => ({
-      x: 0, y: 0, left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120, toJSON: () => ({}),
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 240,
+      bottom: 120,
+      width: 240,
+      height: 120,
+      toJSON: () => ({}),
     })
     await w.find('svg').trigger('mousemove', { clientX: 120, clientY: 60 })
     expect(w.find('.narduk-tooltip').exists()).toBe(false)
@@ -342,12 +359,12 @@ describe('NardukLineChart volume pane', () => {
     expect(points.length).toBeLessThan(n)
     expect(bars.length).toBe(points.length)
 
-    points.forEach((pt, i) => {
+    for (const [i, pt] of points.entries()) {
       const cx = Number(pt.attributes('cx'))
       const barX = Number(bars[i]!.attributes('x'))
       const barW = Number(bars[i]!.attributes('width'))
       expect(barX + barW / 2).toBeCloseTo(cx, 5)
-    })
+    }
   })
 
   it('renders zero-height, neutral-colored bars for null volume entries', () => {
@@ -436,13 +453,21 @@ describe('NardukLineChart series palette is themable', () => {
     })
 
     expect(w.find('.narduk-chart--theme-colorblind-safe').exists()).toBe(true)
-    expect(w.findAll('.narduk-line-path')[0]!.attributes('stroke'))
-      .toMatch(/^var\(--color-chart-series-1, /)
+    expect(w.findAll('.narduk-line-path')[0]!.attributes('stroke')).toMatch(
+      /^var\(--color-chart-series-1, /,
+    )
   })
 
   it('still takes an explicit colors prop literally', () => {
     const w = mount(NardukLineChart, {
-      props: { series, labels, width: 300, height: 150, animate: false, colors: ['#123456', '#654321'] },
+      props: {
+        series,
+        labels,
+        width: 300,
+        height: 150,
+        animate: false,
+        colors: ['#123456', '#654321'],
+      },
     })
 
     const paths = w.findAll('.narduk-line-path')
@@ -477,7 +502,8 @@ describe('NardukLineChart isolated values', () => {
       props: { series: sparse, labels: sparseLabels, width: 300, height: 150, animate: false },
     })
 
-    const points = w.findAll('.narduk-line-point--isolated')
+    const points = w
+      .findAll('.narduk-line-point--isolated')
       .map(p => ({ x: Number(p.attributes('cx')), y: Number(p.attributes('cy')) }))
     for (const point of points) {
       expect(Number.isFinite(point.x)).toBe(true)
@@ -602,10 +628,13 @@ describe('NardukLineChart axis suppression', () => {
       dualYAxis: true,
     }
 
-    expect(mount(NardukLineChart, { props: dual }).findAll('.narduk-axis--secondary')).toHaveLength(1)
+    expect(mount(NardukLineChart, { props: dual }).findAll('.narduk-axis--secondary')).toHaveLength(
+      1,
+    )
     expect(
-      mount(NardukLineChart, { props: { ...dual, showYAxis: false } })
-        .findAll('.narduk-axis--secondary'),
+      mount(NardukLineChart, { props: { ...dual, showYAxis: false } }).findAll(
+        '.narduk-axis--secondary',
+      ),
     ).toHaveLength(0)
   })
 })
@@ -619,11 +648,22 @@ describe('NardukLineChart pinned Y domain and tick count', () => {
       props: { ...base, series: [{ name: 'a', data: [1, 2, 3, 4] }], yMin: 0, yMax: 4_000 },
     })
     const busy = mount(NardukLineChart, {
-      props: { ...base, series: [{ name: 'a', data: [3_000, 3_400, 3_900, 4_000] }], yMin: 0, yMax: 4_000 },
+      props: {
+        ...base,
+        series: [{ name: 'a', data: [3_000, 3_400, 3_900, 4_000] }],
+        yMin: 0,
+        yMax: 4_000,
+      },
     })
 
     const yOf = (w: ReturnType<typeof mount>) =>
-      Number(w.find('.narduk-line-path').attributes('d')!.match(/-?\d+(\.\d+)?/g)![1])
+      Number(
+        w
+          .find('.narduk-line-path')
+          .attributes('d')!
+          // eslint-disable-next-line regexp/no-unused-capturing-group -- narduk-libs#131, not fixed in this fold-move PR: capturing group unused in this assertion regex
+          .match(/-?\d+(\.\d+)?/g)![1],
+      )
 
     // Self-normalised, both would start at the same height. Pinned, the quiet
     // series sits far below the busy one.
@@ -632,7 +672,13 @@ describe('NardukLineChart pinned Y domain and tick count', () => {
 
   it('renders exactly the requested number of Y tick labels', () => {
     const w = mount(NardukLineChart, {
-      props: { ...base, series: [{ name: 'a', data: [0, 500, 900] }], yMin: 0, yMax: 900, yTickCount: 3 },
+      props: {
+        ...base,
+        series: [{ name: 'a', data: [0, 500, 900] }],
+        yMin: 0,
+        yMax: 900,
+        yTickCount: 3,
+      },
     })
 
     const ticks = w.findAll('.narduk-axis')[0]!.findAll('text')

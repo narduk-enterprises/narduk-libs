@@ -17,9 +17,7 @@ export function useStreamingSeries(
   initial: number[] = [],
   options?: StreamingSeriesOptions,
 ) {
-  const values: Ref<number[]> = ref(
-    initial.length ? initial.slice(-maxPoints) : [],
-  )
+  const values: Ref<number[]> = ref(initial.length ? initial.slice(-maxPoints) : [])
 
   let lastPushMs: number | null = null
 

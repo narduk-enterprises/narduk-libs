@@ -63,26 +63,12 @@ export {
 } from './utils/candleResolution'
 export type { CandleResolutionId } from './utils/candleResolution'
 
-export {
-  sma,
-  ema,
-  vwap,
-  bollinger,
-  rsi,
-  macd,
-} from './studies'
+export { sma, ema, vwap, bollinger, rsi, macd } from './studies'
 export type { BollingerBandRow } from './studies'
 
-export {
-  recommendMaxDrawBars,
-  suggestCandleRenderStrategy,
-} from './perf/candleRenderBudget'
+export { recommendMaxDrawBars, suggestCandleRenderStrategy } from './perf/candleRenderBudget'
 export type { CandleRenderStrategy } from './perf/candleRenderBudget'
-export type {
-  DecimatedCategoryData,
-  XYPoint,
-  AggregatedCandleBucket,
-} from './utils/math'
+export type { DecimatedCategoryData, XYPoint, AggregatedCandleBucket } from './utils/math'
 
 export type {
   ChartSeries,

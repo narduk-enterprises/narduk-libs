@@ -1,94 +1,100 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
+
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
-import { formatValue } from '../utils/math'
-import { createYAxisMap } from '../utils/yScale'
-import { layoutReferenceLabelXs, layoutReferenceLabelYs } from '../utils/refLabelLayout'
+import { defaultBarChartLabel } from '../utils/chartA11y'
+import { chartThemeClass } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
-import ChartTooltip from './ChartTooltip.vue'
+import { formatValue } from '../utils/math'
+import { layoutReferenceLabelXs, layoutReferenceLabelYs } from '../utils/refLabelLayout'
+import { createYAxisMap } from '../utils/yScale'
+
 import ChartLegend from './ChartLegend.vue'
+import ChartTooltip from './ChartTooltip.vue'
+
 import type {
-  ChartSeries,
-  ChartReferenceLine,
-  ChartTheme,
-  ChartYScaleMode,
-  ChartYBand,
+  BarClickPayload,
   ChartLineAnnotation,
+  ChartReferenceLine,
+  ChartSeries,
+  ChartTheme,
+  ChartYBand,
+  ChartYScaleMode,
   LegendItem,
   TooltipItem,
-  BarClickPayload,
 } from '../types'
-import { chartThemeClass } from '../utils/chartTheme'
-import { defaultBarChartLabel } from '../utils/chartA11y'
 
 interface BarRect {
-  x: number
-  y: number
-  width: number
-  height: number
   color: string
-  value: number
-  seriesName: string
+  height: number
   label: string
   labelIndex: number
+  seriesName: string
+  value: number
+  width: number
+  x: number
+  y: number
 }
 
-const props = withDefaults(defineProps<{
-  series: ChartSeries[]
-  labels: string[]
-  width?: number
-  height?: number
-  stacked?: boolean
-  /** When `stacked`, rescale each category to 100%. */
-  stackedPercent?: boolean
-  colors?: string[]
-  animate?: boolean
-  barRadius?: number
-  dark?: boolean
-  respectReducedMotion?: boolean
-  referenceLines?: ChartReferenceLine[]
-  theme?: ChartTheme
-  yScale?: ChartYScaleMode
-  symlogLinthresh?: number
-  yBands?: ChartYBand[]
-  /**
-   * Line annotations. `type: 'vline'` is drawn **vertically** at the category
-   * center in vertical orientation; in **horizontal** orientation it becomes a
-   * **horizontal** guide across the plot at that category row (same `xIndex`).
-   */
-  annotations?: ChartLineAnnotation[]
-  chartTitle?: string
-  chartDescription?: string
-  showDataTable?: boolean
-  legendGroupLabel?: string
-  dir?: 'ltr' | 'rtl'
-  formatXLabel?: (label: string, index: number) => string
-  formatTickValue?: (value: number) => string
-  /**
-   * `vertical` (default): categories on the X axis, values on the Y axis.
-   * `horizontal`: categories on the Y axis, values on the X axis (bars grow +X from the left gutter).
-   * **Keyboard (horizontal):** ArrowUp/ArrowDown change category; ArrowLeft/ArrowRight change series within the category.
-   */
-  orientation?: 'vertical' | 'horizontal'
-  /**
-   * When `orientation` is `horizontal`, maximum width (px) for the left
-   * category gutter. The layout uses `min(estimatedWidth, this value)` with a
-   * 32px floor — i.e. a cap, not a minimum width override.
-   */
-  categoryLabelMaxWidth?: number
-}>(), {
-  stacked: false,
-  stackedPercent: false,
-  animate: true,
-  barRadius: 4,
-  respectReducedMotion: true,
-  yScale: 'linear',
-  symlogLinthresh: 1,
-  showDataTable: false,
-  legendGroupLabel: 'Data series',
-  orientation: 'vertical',
-})
+const props = withDefaults(
+  defineProps<{
+    animate?: boolean
+    /**
+     * Line annotations. `type: 'vline'` is drawn **vertically** at the category
+     * center in vertical orientation; in **horizontal** orientation it becomes a
+     * **horizontal** guide across the plot at that category row (same `xIndex`).
+     */
+    annotations?: ChartLineAnnotation[]
+    barRadius?: number
+    /**
+     * When `orientation` is `horizontal`, maximum width (px) for the left
+     * category gutter. The layout uses `min(estimatedWidth, this value)` with a
+     * 32px floor — i.e. a cap, not a minimum width override.
+     */
+    categoryLabelMaxWidth?: number
+    chartDescription?: string
+    chartTitle?: string
+    colors?: string[]
+    dark?: boolean
+    dir?: 'ltr' | 'rtl'
+    formatTickValue?: (value: number) => string
+    formatXLabel?: (label: string, index: number) => string
+    height?: number
+    labels: string[]
+    legendGroupLabel?: string
+    /**
+     * `vertical` (default): categories on the X axis, values on the Y axis.
+     * `horizontal`: categories on the Y axis, values on the X axis (bars grow +X from the left gutter).
+     * **Keyboard (horizontal):** ArrowUp/ArrowDown change category; ArrowLeft/ArrowRight change series within the category.
+     */
+    orientation?: 'vertical' | 'horizontal'
+    referenceLines?: ChartReferenceLine[]
+    respectReducedMotion?: boolean
+    series: ChartSeries[]
+    showDataTable?: boolean
+    stacked?: boolean
+    /** When `stacked`, rescale each category to 100%. */
+    stackedPercent?: boolean
+    symlogLinthresh?: number
+    theme?: ChartTheme
+    width?: number
+    yBands?: ChartYBand[]
+    yScale?: ChartYScaleMode
+  }>(),
+  {
+    stacked: false,
+    stackedPercent: false,
+    animate: true,
+    barRadius: 4,
+    respectReducedMotion: true,
+    yScale: 'linear',
+    symlogLinthresh: 1,
+    showDataTable: false,
+    legendGroupLabel: 'Data series',
+    orientation: 'vertical',
+  },
+)
 
 const emit = defineEmits<{
   barClick: [payload: BarClickPayload]
@@ -96,12 +102,12 @@ const emit = defineEmits<{
 
 defineSlots<{
   empty?: () => unknown
-  tooltip?: (props: { title: string; items: TooltipItem[]; visible: boolean }) => unknown
   'legend-item'?: (props: { item: LegendItem; toggle: () => void }) => unknown
+  tooltip?: (props: { items: TooltipItem[]; title: string; visible: boolean }) => unknown
 }>()
 
 const barA11yRaw = useId()
-const idSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '')
+const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const barCaptionId = `nc-bcap-${idSafe(barA11yRaw)}`
 const svgTitleId = `nc-bt-${idSafe(barA11yRaw)}`
 const svgDescId = `nc-bd-${idSafe(barA11yRaw)}`
@@ -110,8 +116,8 @@ const containerRef = ref<HTMLElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
 const focusedBarIndex = ref(0)
 
-const effectiveChartTitle = computed(() =>
-  props.chartTitle ?? defaultBarChartLabel(props.series, props.labels.length),
+const effectiveChartTitle = computed(
+  () => props.chartTitle ?? defaultBarChartLabel(props.series, props.labels.length),
 )
 
 function formatXAt(i: number): string {
@@ -124,8 +130,7 @@ const isHorizontal = computed(() => props.orientation === 'horizontal')
 const estimatedCategoryLabelWidth = computed(() => {
   if (!isHorizontal.value) return 56
   let maxLen = 0
-  for (let i = 0; i < props.labels.length; i++)
-    maxLen = Math.max(maxLen, formatXAt(i).length)
+  for (let i = 0; i < props.labels.length; i++) maxLen = Math.max(maxLen, formatXAt(i).length)
   const estimated = Math.min(320, Math.max(56, maxLen * 7 + 16))
   if (props.categoryLabelMaxWidth != null) {
     return Math.min(estimated, Math.max(32, props.categoryLabelMaxWidth))
@@ -141,11 +146,13 @@ function focusBarEl(index: number) {
 }
 
 function barTooltipItems(b: BarRect): TooltipItem[] {
-  return [{
-    color: b.color,
-    label: b.seriesName,
-    value: formatValue(b.value),
-  }]
+  return [
+    {
+      color: b.color,
+      label: b.seriesName,
+      value: formatValue(b.value),
+    },
+  ]
 }
 
 function focusBarAndTooltip(index: number) {
@@ -231,15 +238,11 @@ function onBarKeydown(e: KeyboardEvent, bi: number) {
 }
 const barPaddingOverrides = computed(() => {
   const right = (props.referenceLines ?? []).some(r => r.label) ? 34 : 24
-  if (isHorizontal.value)
-    return { right, left: estimatedCategoryLabelWidth.value }
+  if (isHorizontal.value) return { right, left: estimatedCategoryLabelWidth.value }
   return { right }
 })
-const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } = useChart(
-  containerRef,
-  props,
-  barPaddingOverrides,
-)
+const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
+  useChart(containerRef, props, barPaddingOverrides)
 const { tooltip, show: showTooltip, hide: hideTooltip } = useTooltip()
 
 const rootChartClasses = computed(() => {
@@ -263,9 +266,7 @@ function toggleSeries(name: string) {
   hiddenSeries.value = next
 }
 
-const visibleSeries = computed(() =>
-  props.series.filter(s => !hiddenSeries.value.has(s.name)),
-)
+const visibleSeries = computed(() => props.series.filter(s => !hiddenSeries.value.has(s.name)))
 
 const isEmpty = computed(() => {
   if (props.series.length === 0 || props.labels.length === 0) return true
@@ -286,9 +287,7 @@ function barValue(v: number | null | undefined): number {
 /** 100% mode implies stacked geometry even if the stacked prop is omitted. */
 const stackedLayout = computed(() => props.stacked || props.stackedPercent)
 
-const valueAxisSpan = computed(() =>
-  isHorizontal.value ? plotWidth.value : plotHeight.value,
-)
+const valueAxisSpan = computed(() => (isHorizontal.value ? plotWidth.value : plotHeight.value))
 
 const yMap = computed(() => {
   const refVals = (props.referenceLines ?? []).map(r => r.value)
@@ -315,13 +314,9 @@ const yMap = computed(() => {
     forMap = dataVals.length ? [...dataVals, 0] : [0]
   }
 
-  return createYAxisMap(
-    props.yScale,
-    forMap,
-    [...refVals, ...bandEdges],
-    valueAxisSpan.value,
-    { symlogLinthresh: props.symlogLinthresh },
-  )
+  return createYAxisMap(props.yScale, forMap, [...refVals, ...bandEdges], valueAxisSpan.value, {
+    symlogLinthresh: props.symlogLinthresh,
+  })
 })
 
 const yTicksForDisplay = computed(() =>
@@ -361,13 +356,14 @@ function xCenterForIndex(i: number): number {
 }
 
 const vlineAnnotations = computed(() =>
-  (props.annotations ?? []).filter((a): a is Extract<ChartLineAnnotation, { type: 'vline' }> =>
-    a.type === 'vline'),
+  (props.annotations ?? []).filter(
+    (a): a is Extract<ChartLineAnnotation, { type: 'vline' }> => a.type === 'vline',
+  ),
 )
 
 const referenceLineLayoutsVertical = computed(() => {
   if (isHorizontal.value)
-    return [] as { ref: ChartReferenceLine; lineY: number; labelY: number }[]
+    return [] as Array<{ labelY: number; lineY: number; ref: ChartReferenceLine }>
   const refs = props.referenceLines ?? []
   const lineYs = refs.map((ref, i) => ({
     ref,
@@ -395,7 +391,7 @@ const referenceLineLayoutsVertical = computed(() => {
 
 const referenceLineLayoutsHorizontal = computed(() => {
   if (!isHorizontal.value)
-    return [] as { ref: ChartReferenceLine; lineX: number; labelX: number }[]
+    return [] as Array<{ labelX: number; lineX: number; ref: ChartReferenceLine }>
   const refs = props.referenceLines ?? []
   const lineXs = refs.map((ref, i) => ({
     ref,
@@ -469,7 +465,7 @@ const bars = computed<BarRect[]>(() => {
       const barH = Math.max(1, (innerH - barGap * (numVisible - 1)) / numVisible)
       for (let li = 0; li < n; li++) {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
-        visibleSeries.value.forEach((s, si) => {
+        for (const [si, s] of visibleSeries.value.entries()) {
           const val = barValue(s.data[li])
           const w = valuePixelExtent(val)
           result.push({
@@ -483,7 +479,7 @@ const bars = computed<BarRect[]>(() => {
             label: props.labels[li]!,
             labelIndex: li,
           })
-        })
+        }
       }
     }
     return result
@@ -522,7 +518,7 @@ const bars = computed<BarRect[]>(() => {
     const barW = Math.max(1, (innerWidth - barGap * (numVisible - 1)) / numVisible)
     for (let li = 0; li < n; li++) {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
-      visibleSeries.value.forEach((s, si) => {
+      for (const [si, s] of visibleSeries.value.entries()) {
         const val = barValue(s.data[li])
         const barH = valuePixelExtent(val)
         result.push({
@@ -536,7 +532,7 @@ const bars = computed<BarRect[]>(() => {
           label: props.labels[li]!,
           labelIndex: li,
         })
-      })
+      }
     }
   }
 
@@ -545,7 +541,7 @@ const bars = computed<BarRect[]>(() => {
 
 watch(
   () => bars.value.length,
-  (n) => {
+  n => {
     if (focusedBarIndex.value >= n) focusedBarIndex.value = Math.max(0, n - 1)
   },
 )
@@ -563,18 +559,19 @@ function onMouseMove(event: MouseEvent) {
   const sx = mouseX * (chartWidth.value / rect.width)
   const sy = mouseY * (chartHeight.value / rect.height)
 
-  const hit = bars.value.find(b =>
-    sx >= b.x && sx <= b.x + b.width &&
-    sy >= b.y && sy <= b.y + b.height,
+  const hit = bars.value.find(
+    b => sx >= b.x && sx <= b.x + b.width && sy >= b.y && sy <= b.y + b.height,
   )
 
   if (hit) {
     hoverBar.value = hit
-    showTooltip(mouseX, mouseY, formatXAt(hit.labelIndex), [{
-      color: hit.color,
-      label: hit.seriesName,
-      value: formatValue(hit.value),
-    }])
+    showTooltip(mouseX, mouseY, formatXAt(hit.labelIndex), [
+      {
+        color: hit.color,
+        label: hit.seriesName,
+        value: formatValue(hit.value),
+      },
+    ])
   } else {
     hoverBar.value = null
     hideTooltip()
@@ -598,11 +595,14 @@ function onBarPointerDown(bar: BarRect, e: MouseEvent) {
 
 // ── Animation ────────────────────────────────────────────────
 
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
   if (runAnimation.value) {
-    requestAnimationFrame(() => { animated.value = true })
+    requestAnimationFrame(() => {
+      animated.value = true
+    })
   } else {
     animated.value = true
   }
@@ -661,8 +661,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
   const { x, y, width: w, height: h } = bar
   if (w <= 0 || h <= 0) return ''
   const rr = Math.min(r, h / 2, w / 2)
-  if (rr <= 0)
-    return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`
+  if (rr <= 0) return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`
   return [
     `M ${x} ${y}`,
     `L ${x + w - rr} ${y}`,
@@ -676,21 +675,11 @@ function horizontalBarRoundedPath(bar: BarRect): string {
 </script>
 
 <template>
-  <figure
-    class="narduk-chart-figure m-0 min-w-0"
-    :dir="dir"
-  >
-    <figcaption
-      v-if="chartTitle"
-      :id="barCaptionId"
-      class="narduk-chart__title"
-    >
+  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+    <figcaption v-if="chartTitle" :id="barCaptionId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
-    <p
-      v-if="chartDescription"
-      class="narduk-chart__description"
-    >
+    <p v-if="chartDescription" class="narduk-chart__description">
       {{ chartDescription }}
     </p>
     <div
@@ -702,43 +691,31 @@ function horizontalBarRoundedPath(bar: BarRect): string {
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <table
-        v-if="showDataTable && !isEmpty"
-        class="narduk-sr-only"
-      >
-        <caption>{{ effectiveChartTitle }}</caption>
+      <table v-if="showDataTable && !isEmpty" class="narduk-sr-only">
+        <caption>
+          {{
+            effectiveChartTitle
+          }}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Category</th>
-            <th
-              v-for="s in series"
-              :key="s.name"
-              scope="col"
-            >
+            <th v-for="s in series" :key="s.name" scope="col">
               {{ s.name }}
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="(lab, ri) in labels"
-            :key="ri"
-          >
+          <tr v-for="(lab, ri) in labels" :key="ri">
             <th scope="row">{{ formatXAt(ri) }}</th>
-            <td
-              v-for="s in series"
-              :key="s.name"
-            >
+            <td v-for="s in series" :key="s.name">
               {{ s.data[ri] ?? '' }}
             </td>
           </tr>
         </tbody>
       </table>
 
-      <div
-        v-if="isEmpty"
-        class="narduk-chart__empty"
-      >
+      <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
       <svg
@@ -752,339 +729,286 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         @mouseleave="onMouseLeave"
       >
         <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
-        <desc
-          v-if="chartDescription?.trim()"
-          :id="svgDescId"
-        >
+        <desc v-if="chartDescription?.trim()" :id="svgDescId">
           {{ chartDescription }}
         </desc>
-      <g
-        v-if="yBands?.length"
-        class="narduk-y-bands"
-      >
-        <rect
-          v-for="(b, bi) in yBands"
-          :key="'yb-' + bi"
-          class="narduk-y-band"
-          :x="bandRectBar(b).x"
-          :y="bandRectBar(b).y"
-          :width="bandRectBar(b).w"
-          :height="bandRectBar(b).h"
-          :fill="bandRectBar(b).fill"
-          :opacity="bandRectBar(b).opacity"
-        />
-      </g>
+        <g v-if="yBands?.length" class="narduk-y-bands">
+          <rect
+            v-for="(b, bi) in yBands"
+            :key="'yb-' + bi"
+            class="narduk-y-band"
+            :x="bandRectBar(b).x"
+            :y="bandRectBar(b).y"
+            :width="bandRectBar(b).w"
+            :height="bandRectBar(b).h"
+            :fill="bandRectBar(b).fill"
+            :opacity="bandRectBar(b).opacity"
+          />
+        </g>
 
-      <g
-        v-if="vlineAnnotations.length && !isHorizontal"
-        class="narduk-ann-vline"
-      >
-        <line
-          v-for="(vl, vi) in vlineAnnotations"
-          :key="'vl-' + vi"
-          class="narduk-ref-line"
-          :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
-          :stroke="vl.color || 'var(--color-chart-muted)'"
-          :x1="xCenterForIndex(vl.xIndex)"
-          :y1="padding.top"
-          :x2="xCenterForIndex(vl.xIndex)"
-          :y2="chartHeight - padding.bottom"
-        />
-      </g>
-
-      <!-- Horizontal mode: `vline` is a horizontal guide at the category row (`xIndex` → category). -->
-      <g
-        v-if="vlineAnnotations.length && isHorizontal"
-        class="narduk-ann-vline"
-      >
-        <line
-          v-for="(vl, vi) in vlineAnnotations"
-          :key="'vl-h-' + vi"
-          class="narduk-ref-line"
-          :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
-          :stroke="vl.color || 'var(--color-chart-muted)'"
-          :x1="padding.left"
-          :y1="yCenterForCategoryIndex(vl.xIndex)"
-          :x2="chartWidth - padding.right"
-          :y2="yCenterForCategoryIndex(vl.xIndex)"
-        />
-      </g>
-
-      <!-- Grid lines -->
-      <g
-        v-if="!isHorizontal"
-        class="narduk-grid"
-      >
-        <line
-          v-for="(t, ti) in yMap.ticks"
-          :key="'g-' + ti"
-          :x1="padding.left"
-          :y1="yPos(t.value)"
-          :x2="chartWidth - padding.right"
-          :y2="yPos(t.value)"
-        />
-      </g>
-      <g
-        v-else
-        class="narduk-grid"
-      >
-        <line
-          v-for="(t, ti) in yMap.ticks"
-          :key="'gh-' + ti"
-          :x1="xPosForValue(t.value)"
-          :y1="padding.top"
-          :x2="xPosForValue(t.value)"
-          :y2="chartHeight - padding.bottom"
-        />
-      </g>
-
-      <!-- Reference lines -->
-      <g
-        v-if="referenceLineLayoutsVertical.length"
-        class="narduk-ref-lines"
-      >
-        <g
-          v-for="(layout, ri) in referenceLineLayoutsVertical"
-          :key="'rv-' + ri"
-        >
+        <g v-if="vlineAnnotations.length && !isHorizontal" class="narduk-ann-vline">
           <line
+            v-for="(vl, vi) in vlineAnnotations"
+            :key="'vl-' + vi"
             class="narduk-ref-line"
-            :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
-            :stroke="layout.ref.color || 'var(--color-chart-muted)'"
-            :x1="padding.left"
-            :y1="layout.lineY"
-            :x2="chartWidth - padding.right"
-            :y2="layout.lineY"
+            :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
+            :stroke="vl.color || 'var(--color-chart-muted)'"
+            :x1="xCenterForIndex(vl.xIndex)"
+            :y1="padding.top"
+            :x2="xCenterForIndex(vl.xIndex)"
+            :y2="chartHeight - padding.bottom"
           />
-          <line
-            v-if="layout.ref.label && Math.abs(layout.labelY - layout.lineY) > 2"
-            class="narduk-ref-label-connector"
-            :x1="refLabelAnchorX"
-            :y1="layout.lineY"
-            :x2="refLabelAnchorX"
-            :y2="layout.labelY"
-          />
-          <text
-            v-if="layout.ref.label"
-            class="narduk-ref-label"
-            :x="refLabelAnchorX"
-            :y="layout.labelY"
-            dominant-baseline="middle"
-          >
-            {{ layout.ref.label }}
-          </text>
         </g>
-      </g>
-      <g
-        v-if="referenceLineLayoutsHorizontal.length"
-        class="narduk-ref-lines"
-      >
-        <g
-          v-for="(layout, ri) in referenceLineLayoutsHorizontal"
-          :key="'rh-' + ri"
-        >
+
+        <!-- Horizontal mode: `vline` is a horizontal guide at the category row (`xIndex` → category). -->
+        <g v-if="vlineAnnotations.length && isHorizontal" class="narduk-ann-vline">
           <line
+            v-for="(vl, vi) in vlineAnnotations"
+            :key="'vl-h-' + vi"
             class="narduk-ref-line"
-            :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
-            :stroke="layout.ref.color || 'var(--color-chart-muted)'"
-            :x1="layout.lineX"
-            :y1="padding.top"
-            :x2="layout.lineX"
-            :y2="chartHeight - padding.bottom"
-          />
-          <text
-            v-if="layout.ref.label"
-            class="narduk-ref-label"
-            :x="layout.labelX"
-            :y="refLabelTopY"
-            text-anchor="middle"
-            dominant-baseline="auto"
-          >
-            {{ layout.ref.label }}
-          </text>
-        </g>
-      </g>
-
-      <template v-if="!isHorizontal">
-        <!-- Y axis (numeric) -->
-        <g class="narduk-axis">
-          <line
+            :class="{ 'narduk-ref-line--dashed': vl.dashed !== false }"
+            :stroke="vl.color || 'var(--color-chart-muted)'"
             :x1="padding.left"
-            :y1="padding.top"
-            :x2="padding.left"
-            :y2="chartHeight - padding.bottom"
-          />
-          <text
-            v-for="(t, ti) in yTicksForDisplay"
-            :key="'yt-' + ti"
-            :x="padding.left - 8"
-            :y="yPos(t.value)"
-            text-anchor="end"
-            dominant-baseline="middle"
-          >
-            {{ t.label }}
-          </text>
-        </g>
-
-        <!-- X axis (categories) -->
-        <g class="narduk-axis">
-          <line
-            :x1="padding.left"
-            :y1="chartHeight - padding.bottom"
+            :y1="yCenterForCategoryIndex(vl.xIndex)"
             :x2="chartWidth - padding.right"
-            :y2="chartHeight - padding.bottom"
+            :y2="yCenterForCategoryIndex(vl.xIndex)"
           />
-          <text
-            v-for="(_, i) in labels"
-            :key="i"
-            :x="padding.left + (i + 0.5) * (plotWidth / labels.length)"
-            :y="chartHeight - padding.bottom + 20"
-            text-anchor="middle"
-            dominant-baseline="hanging"
-          >
-            {{ formatXAt(i) }}
-          </text>
         </g>
-      </template>
-      <template v-else>
-        <!-- Y axis spine + category labels -->
-        <g class="narduk-axis">
-          <line
-            :x1="padding.left"
-            :y1="padding.top"
-            :x2="padding.left"
-            :y2="chartHeight - padding.bottom"
-          />
-          <text
-            v-for="(_, i) in labels"
-            :key="'cat-' + i"
-            :x="padding.left - 8"
-            :y="yCenterForCategoryIndex(i)"
-            text-anchor="end"
-            dominant-baseline="middle"
-          >
-            {{ formatXAt(i) }}
-          </text>
-        </g>
-        <!-- X axis (numeric) -->
-        <g class="narduk-axis">
-          <line
-            :x1="padding.left"
-            :y1="chartHeight - padding.bottom"
-            :x2="chartWidth - padding.right"
-            :y2="chartHeight - padding.bottom"
-          />
-          <text
-            v-for="(t, ti) in yTicksForDisplay"
-            :key="'xt-' + ti"
-            :x="xPosForValue(t.value)"
-            :y="chartHeight - padding.bottom + 20"
-            text-anchor="middle"
-            dominant-baseline="hanging"
-          >
-            {{ t.label }}
-          </text>
-        </g>
-      </template>
 
-      <!-- Bars -->
-      <template
-        v-for="(bar, bi) in bars"
-        :key="'b-' + bi"
-      >
-        <rect
-          v-if="!isHorizontal"
-          class="narduk-bar-rect"
-          role="button"
-          :tabindex="focusedBarIndex === bi ? 0 : -1"
-          :data-nc-bar="bi"
-          :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
-          :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
-          :x="bar.x"
-          :y="animated ? bar.y : padding.top + plotHeight"
-          :width="bar.width"
-          :height="animated ? bar.height : 0"
-          :rx="barRadius"
-          :fill="bar.color"
-          @focus="focusedBarIndex = bi"
-          @keydown="onBarKeydown($event, bi)"
-          @click="onBarPointerDown(bar, $event)"
-        />
-        <g
-          v-else-if="barRadius > 0"
-          :transform="`translate(${bar.x}, ${bar.y})`"
-        >
-          <path
-            class="narduk-bar-rect narduk-bar-rect--hscale"
+        <!-- Grid lines -->
+        <g v-if="!isHorizontal" class="narduk-grid">
+          <line
+            v-for="(t, ti) in yMap.ticks"
+            :key="'g-' + ti"
+            :x1="padding.left"
+            :y1="yPos(t.value)"
+            :x2="chartWidth - padding.right"
+            :y2="yPos(t.value)"
+          />
+        </g>
+        <g v-else class="narduk-grid">
+          <line
+            v-for="(t, ti) in yMap.ticks"
+            :key="'gh-' + ti"
+            :x1="xPosForValue(t.value)"
+            :y1="padding.top"
+            :x2="xPosForValue(t.value)"
+            :y2="chartHeight - padding.bottom"
+          />
+        </g>
+
+        <!-- Reference lines -->
+        <g v-if="referenceLineLayoutsVertical.length" class="narduk-ref-lines">
+          <g v-for="(layout, ri) in referenceLineLayoutsVertical" :key="'rv-' + ri">
+            <line
+              class="narduk-ref-line"
+              :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
+              :stroke="layout.ref.color || 'var(--color-chart-muted)'"
+              :x1="padding.left"
+              :y1="layout.lineY"
+              :x2="chartWidth - padding.right"
+              :y2="layout.lineY"
+            />
+            <line
+              v-if="layout.ref.label && Math.abs(layout.labelY - layout.lineY) > 2"
+              class="narduk-ref-label-connector"
+              :x1="refLabelAnchorX"
+              :y1="layout.lineY"
+              :x2="refLabelAnchorX"
+              :y2="layout.labelY"
+            />
+            <text
+              v-if="layout.ref.label"
+              class="narduk-ref-label"
+              :x="refLabelAnchorX"
+              :y="layout.labelY"
+              dominant-baseline="middle"
+            >
+              {{ layout.ref.label }}
+            </text>
+          </g>
+        </g>
+        <g v-if="referenceLineLayoutsHorizontal.length" class="narduk-ref-lines">
+          <g v-for="(layout, ri) in referenceLineLayoutsHorizontal" :key="'rh-' + ri">
+            <line
+              class="narduk-ref-line"
+              :class="{ 'narduk-ref-line--dashed': layout.ref.dashed !== false }"
+              :stroke="layout.ref.color || 'var(--color-chart-muted)'"
+              :x1="layout.lineX"
+              :y1="padding.top"
+              :x2="layout.lineX"
+              :y2="chartHeight - padding.bottom"
+            />
+            <text
+              v-if="layout.ref.label"
+              class="narduk-ref-label"
+              :x="layout.labelX"
+              :y="refLabelTopY"
+              text-anchor="middle"
+              dominant-baseline="auto"
+            >
+              {{ layout.ref.label }}
+            </text>
+          </g>
+        </g>
+
+        <template v-if="!isHorizontal">
+          <!-- Y axis (numeric) -->
+          <g class="narduk-axis">
+            <line
+              :x1="padding.left"
+              :y1="padding.top"
+              :x2="padding.left"
+              :y2="chartHeight - padding.bottom"
+            />
+            <text
+              v-for="(t, ti) in yTicksForDisplay"
+              :key="'yt-' + ti"
+              :x="padding.left - 8"
+              :y="yPos(t.value)"
+              text-anchor="end"
+              dominant-baseline="middle"
+            >
+              {{ t.label }}
+            </text>
+          </g>
+
+          <!-- X axis (categories) -->
+          <g class="narduk-axis">
+            <line
+              :x1="padding.left"
+              :y1="chartHeight - padding.bottom"
+              :x2="chartWidth - padding.right"
+              :y2="chartHeight - padding.bottom"
+            />
+            <text
+              v-for="(_, i) in labels"
+              :key="i"
+              :x="padding.left + (i + 0.5) * (plotWidth / labels.length)"
+              :y="chartHeight - padding.bottom + 20"
+              text-anchor="middle"
+              dominant-baseline="hanging"
+            >
+              {{ formatXAt(i) }}
+            </text>
+          </g>
+        </template>
+        <template v-else>
+          <!-- Y axis spine + category labels -->
+          <g class="narduk-axis">
+            <line
+              :x1="padding.left"
+              :y1="padding.top"
+              :x2="padding.left"
+              :y2="chartHeight - padding.bottom"
+            />
+            <text
+              v-for="(_, i) in labels"
+              :key="'cat-' + i"
+              :x="padding.left - 8"
+              :y="yCenterForCategoryIndex(i)"
+              text-anchor="end"
+              dominant-baseline="middle"
+            >
+              {{ formatXAt(i) }}
+            </text>
+          </g>
+          <!-- X axis (numeric) -->
+          <g class="narduk-axis">
+            <line
+              :x1="padding.left"
+              :y1="chartHeight - padding.bottom"
+              :x2="chartWidth - padding.right"
+              :y2="chartHeight - padding.bottom"
+            />
+            <text
+              v-for="(t, ti) in yTicksForDisplay"
+              :key="'xt-' + ti"
+              :x="xPosForValue(t.value)"
+              :y="chartHeight - padding.bottom + 20"
+              text-anchor="middle"
+              dominant-baseline="hanging"
+            >
+              {{ t.label }}
+            </text>
+          </g>
+        </template>
+
+        <!-- Bars -->
+        <template v-for="(bar, bi) in bars" :key="'b-' + bi">
+          <rect
+            v-if="!isHorizontal"
+            class="narduk-bar-rect"
             role="button"
             :tabindex="focusedBarIndex === bi ? 0 : -1"
             :data-nc-bar="bi"
             :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
             :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
-            :d="horizontalBarRoundedPath({
-              ...bar,
-              x: 0,
-              y: 0,
-              width: bar.width,
-            })"
-            :style="horizontalRoundedPathAnimStyle(animated)"
+            :x="bar.x"
+            :y="animated ? bar.y : padding.top + plotHeight"
+            :width="bar.width"
+            :height="animated ? bar.height : 0"
+            :rx="barRadius"
             :fill="bar.color"
             @focus="focusedBarIndex = bi"
             @keydown="onBarKeydown($event, bi)"
             @click="onBarPointerDown(bar, $event)"
           />
-        </g>
-        <rect
-          v-else
-          class="narduk-bar-rect"
-          role="button"
-          :tabindex="focusedBarIndex === bi ? 0 : -1"
-          :data-nc-bar="bi"
-          :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
-          :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
-          :x="bar.x"
-          :y="bar.y"
-          :width="animated ? bar.width : 0"
-          :height="bar.height"
-          :fill="bar.color"
-          @focus="focusedBarIndex = bi"
-          @keydown="onBarKeydown($event, bi)"
-          @click="onBarPointerDown(bar, $event)"
-        />
-      </template>
-    </svg>
+          <g v-else-if="barRadius > 0" :transform="`translate(${bar.x}, ${bar.y})`">
+            <path
+              class="narduk-bar-rect narduk-bar-rect--hscale"
+              role="button"
+              :tabindex="focusedBarIndex === bi ? 0 : -1"
+              :data-nc-bar="bi"
+              :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+              :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
+              :d="
+                horizontalBarRoundedPath({
+                  ...bar,
+                  x: 0,
+                  y: 0,
+                  width: bar.width,
+                })
+              "
+              :style="horizontalRoundedPathAnimStyle(animated)"
+              :fill="bar.color"
+              @focus="focusedBarIndex = bi"
+              @keydown="onBarKeydown($event, bi)"
+              @click="onBarPointerDown(bar, $event)"
+            />
+          </g>
+          <rect
+            v-else
+            class="narduk-bar-rect"
+            role="button"
+            :tabindex="focusedBarIndex === bi ? 0 : -1"
+            :data-nc-bar="bi"
+            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+            :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
+            :x="bar.x"
+            :y="bar.y"
+            :width="animated ? bar.width : 0"
+            :height="bar.height"
+            :fill="bar.color"
+            @focus="focusedBarIndex = bi"
+            @keydown="onBarKeydown($event, bi)"
+            @click="onBarPointerDown(bar, $event)"
+          />
+        </template>
+      </svg>
 
-    <template v-if="!isEmpty">
-      <ChartLegend
-        :items="legendItems"
-        :group-label="legendGroupLabel"
-        @toggle="toggleSeries"
-      >
-        <template
-          v-if="$slots['legend-item']"
-          #item="slotProps"
-        >
-          <slot
-            name="legend-item"
-            v-bind="slotProps"
-          />
-        </template>
-      </ChartLegend>
-      <ChartTooltip
-        v-bind="tooltip"
-        :chart-width="chartWidth"
-      >
-        <template
-          v-if="$slots.tooltip"
-          #content="slotProps"
-        >
-          <slot
-            name="tooltip"
-            v-bind="slotProps"
-          />
-        </template>
-      </ChartTooltip>
-    </template>
+      <template v-if="!isEmpty">
+        <ChartLegend :items="legendItems" :group-label="legendGroupLabel" @toggle="toggleSeries">
+          <template v-if="$slots['legend-item']" #item="slotProps">
+            <slot name="legend-item" v-bind="slotProps" />
+          </template>
+        </ChartLegend>
+        <ChartTooltip v-bind="tooltip" :chart-width="chartWidth">
+          <template v-if="$slots.tooltip" #content="slotProps">
+            <slot name="tooltip" v-bind="slotProps" />
+          </template>
+        </ChartTooltip>
+      </template>
     </div>
   </figure>
 </template>

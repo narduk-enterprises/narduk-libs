@@ -1,23 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+
 import ChartTooltipDefaultBody from './ChartTooltipDefaultBody.vue'
+
 import type { TooltipItem } from '../types'
 
 const props = defineProps<{
+  chartWidth: number
+  items: TooltipItem[]
+  title: string
   visible: boolean
   x: number
   y: number
-  title: string
-  items: TooltipItem[]
-  chartWidth: number
 }>()
 
 defineSlots<{
-  content?: (props: {
-    title: string
-    items: TooltipItem[]
-    visible: boolean
-  }) => unknown
+  content?: (props: { items: TooltipItem[]; title: string; visible: boolean }) => unknown
 }>()
 
 const positionStyle = computed(() => {
@@ -32,18 +30,8 @@ const positionStyle = computed(() => {
 </script>
 
 <template>
-  <div
-    class="narduk-tooltip"
-    :style="positionStyle"
-    role="tooltip"
-    :aria-hidden="!visible"
-  >
-    <slot
-      name="content"
-      :title="title"
-      :items="items"
-      :visible="visible"
-    >
+  <div class="narduk-tooltip" :style="positionStyle" role="tooltip" :aria-hidden="!visible">
+    <slot name="content" :title="title" :items="items" :visible="visible">
       <ChartTooltipDefaultBody :title="title" :items="items" />
     </slot>
   </div>

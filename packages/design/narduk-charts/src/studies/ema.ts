@@ -1,8 +1,8 @@
 /** Exponential moving average; seeds with SMA of first `period` closes. */
-export function ema(values: number[], period: number): (number | null)[] {
+export function ema(values: number[], period: number): Array<number | null> {
   const p = Math.max(1, Math.floor(period))
   const alpha = 2 / (p + 1)
-  const out: (number | null)[] = new Array(values.length).fill(null)
+  const out: Array<number | null> = new Array(values.length).fill(null)
   if (values.length < p) return out
   let s = 0
   for (let j = 0; j < p; j++) s += values[j]!
