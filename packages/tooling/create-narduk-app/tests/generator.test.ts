@@ -512,9 +512,23 @@ describe('create-narduk-app generation contract', () => {
     expect(wranglerConfig).toContain('"no_bundle": true')
     expect(wranglerConfig).toContain('"find_additional_modules": true')
     expect(wranglerConfig).toContain('"base_dir": ".output/server"')
-    expect(await readFile(join(targetDir, 'playwright.config.ts'), 'utf8')).toContain(
+    const generatedPlaywrightConfig = await readFile(
+      join(targetDir, 'playwright.config.ts'),
+      'utf8',
+    )
+    expect(generatedPlaywrightConfig).toContain(
       'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000',
     )
+    // narduk-libs#62: the port must be overridable by PLAYWRIGHT_PORT and
+    // flow into baseURL, the webServer url, AND the webServer command's PORT
+    // env — otherwise two concurrent worktrees silently attach to the same
+    // fixed port and one test run exercises the other lane's app.
+    expect(generatedPlaywrightConfig).toContain(
+      'const port = Number(process.env.PLAYWRIGHT_PORT) || 4377',
+    )
+    expect(generatedPlaywrightConfig).toContain('baseURL: `http://127.0.0.1:${port}`')
+    expect(generatedPlaywrightConfig).toContain('url: `http://127.0.0.1:${port}`')
+    expect(generatedPlaywrightConfig).toContain('`PORT=${port} NUXT_SESSION_PASSWORD=')
     expect(
       await readFile(join(targetDir, 'apps/web/drizzle/0000_app_records.sql'), 'utf8'),
     ).toContain('CREATE TABLE `app_records`')
