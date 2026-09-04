@@ -1,5 +1,11 @@
 # Narduk Template Decommission Foundations — Implementation Plan
 
+> **Historical record.** This plan describes the completed foundation wave and
+> is kept as written. Its `packages/<name>/**` scope paths predate the
+> four-family layout (`packages/modules|tooling|design|contracts/<name>`,
+> company-hq `D-WEBFOUND-2` Q2 (a), 2026-09-04); see `README.md` for where each
+> package lives now.
+
 ## Mission
 
 Establish `narduk-libs` as the independently releasable source of shared runtime
