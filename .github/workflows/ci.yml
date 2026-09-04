@@ -161,11 +161,14 @@ permissions:
 
 jobs:
   affected:
+    # timeout-minutes raised from 5: the linux-ci runner class's capacity hook
+    # can block a started job up to 900s waiting for a free execution slot,
+    # and that wait counts against this job's own timeout (fleet#276).
     name: affected packages
     runs-on:
       group: linux-ci
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:
@@ -613,7 +616,7 @@ jobs:
     runs-on:
       group: linux-ci
       labels: [self-hosted, Linux, X64, proxmox, linux-ci]
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
