@@ -10,6 +10,7 @@ import {
   parsePerformanceBudgetArgs,
   runPerformanceBudgetCheck,
 } from './performance.js'
+import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 
 function usage(): string {
   return [
@@ -24,6 +25,8 @@ function usage(): string {
     '  doctor                              Check app-local prerequisites',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
+    '  foundation:check [--checkout <dir>] [--json [path]]',
+    '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
   ].join('\n')
 }
 
@@ -116,6 +119,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       const outputs = await generateFavicons(parseFaviconArgs(rest))
       console.log(`[assets] wrote ${outputs.length} favicon assets`)
       return 0
+    }
+    if (command === 'foundation:check') {
+      const { exitCode } = await runFoundationCheckCommand(parseFoundationCheckArgs(rest))
+      return exitCode
     }
     throw new Error(`Unknown command: ${command}\n\n${usage()}`)
   } catch (error) {
