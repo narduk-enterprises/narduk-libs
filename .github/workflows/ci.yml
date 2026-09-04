@@ -423,6 +423,53 @@ jobs:
         with:
           node-version: 22.22.3
 
+      # UNLIKE the linux-ci group's `ci` matrix (see node-library.yml's R8
+      # comment), this pool's guests are ephemeral one-job sandboxes -- no
+      # other lane ever writes into this same filesystem while this job runs,
+      # so there is no shared-store torn-archive hazard here. `actions/cache`
+      # is therefore the ONLY way to carry a warm pnpm store between runs on
+      # this pool at all (there is no persistent local store to fall back on),
+      # unlike linux-ci where it would be actively unsound.
+      #
+      # This job's own `pnpm install` AND scripts/release-packages.mjs's two
+      # nested installs (`consumerDirectory`, `generatedDirectory`, both under
+      # $TMPDIR outside the checkout) inherit this env var as child processes,
+      # so one restored store warms every install this job makes -- the
+      # generated app pulls in the same Nuxt/Vue/etc. dependency tree the
+      # workspace root already resolves, just re-materialized into a fresh
+      # tree from packed tarballs.
+      - name: Resolve pnpm store cache directory
+        id: pnpm-store
+        run: |
+          set -euo pipefail
+          store="${RUNNER_TEMP}/pnpm-store"
+          mkdir -p "${store}"
+          echo "npm_config_store_dir=${store}" >>"${GITHUB_ENV}"
+          echo "path=${store}" >>"${GITHUB_OUTPUT}"
+
+      - name: Restore pnpm store cache
+        id: pnpm-store-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: narduk-libs-consumer-smoke-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            narduk-libs-consumer-smoke-pnpm-store-${{ runner.os }}-
+
+      # Same ephemeral-pool reasoning as the pnpm store above. Turbo's own
+      # content hashing makes a stale or partial restore harmless -- a task
+      # whose inputs changed just misses and rebuilds, exactly as it would
+      # with an empty cache-dir -- so the key only needs to always resolve to
+      # the most recent entry, never an exact match.
+      - name: Restore turbo build cache
+        id: turbo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.turbo-cache
+          key: narduk-libs-packed-consumer-turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            narduk-libs-packed-consumer-turbo-${{ runner.os }}-
+
       - name: Configure GitHub Packages read auth
         run: node ./scripts/package-registry-auth.mjs
 
@@ -436,6 +483,28 @@ jobs:
 
       - name: Prove packed artifacts in an external generated consumer
         run: pnpm run release:consumer-smoke
+
+      # Only the default branch writes, same reasoning as node-library.yml's
+      # `Save dependency cache`: a cache entry keyed off a PR's own merge ref
+      # or commit is restorable only by that same PR (pnpm store) or never
+      # read again (turbo, keyed on this exact sha) -- write it once, on
+      # main, so every PR restores a warm entry via restore-keys instead of
+      # each one paying to create and immediately orphan its own.
+      - name: Save pnpm store cache
+        if: >-
+          steps.pnpm-store-cache.outputs.cache-hit != 'true'
+          && github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
+
+      - name: Save turbo build cache
+        if: github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.turbo-cache
+          key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
       - name: Remove temporary registry auth
         if: always()
@@ -485,6 +554,28 @@ jobs:
         with:
           node-version: 22.22.3
 
+      # Same ephemeral-pool reasoning as packed-consumer-smoke's identically
+      # named step above: this pool has no persistent local store at all, and
+      # (unlike linux-ci) no concurrent lane ever shares this guest's
+      # filesystem while this job runs, so `actions/cache` is sound here.
+      - name: Resolve pnpm store cache directory
+        id: pnpm-store
+        run: |
+          set -euo pipefail
+          store="${RUNNER_TEMP}/pnpm-store"
+          mkdir -p "${store}"
+          echo "npm_config_store_dir=${store}" >>"${GITHUB_ENV}"
+          echo "path=${store}" >>"${GITHUB_OUTPUT}"
+
+      - name: Restore pnpm store cache
+        id: pnpm-store-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-
+
       - name: Configure GitHub Packages read auth
         run: node ./scripts/package-registry-auth.mjs
 
@@ -493,6 +584,17 @@ jobs:
 
       - name: Run the journeys browser e2e
         run: pnpm --filter @narduk-enterprises/journeys run test:e2e
+
+      # Only the default branch writes -- see packed-consumer-smoke's
+      # identically reasoned `Save pnpm store cache` step above.
+      - name: Save pnpm store cache
+        if: >-
+          steps.pnpm-store-cache.outputs.cache-hit != 'true'
+          && github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
 
       - name: Remove temporary registry auth
         if: always()
