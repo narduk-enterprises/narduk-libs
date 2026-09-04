@@ -32,8 +32,9 @@ Upgrading a local-backend app past 1.19.x without applying it breaks every login
 with an HTTP 500 that names the missing table. Sequence the migration with the
 version bump so it runs on deploy before traffic.
 
-The shipped migrations use the D1/SQLite dialect. The Postgres backend currently
-has no shipped DDL; a Postgres consumer must hand-translate them.
+The shipped migrations use the D1/SQLite dialect only. This module does not
+publish a Postgres schema or migrations for the auth bridge tables
+(narduk-libs#94) — it is D1-only.
 
 ## Additive local email pathway
 
