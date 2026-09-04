@@ -11,7 +11,6 @@ export default defineConfig({
     // Nuxt layer aliases resolved to lightweight stubs so server route modules
     // can be imported and their body contracts exercised without a Nuxt app.
     alias: {
-      '#layer/server/database/pg-schema': join(packageRoot, 'tests/stubs/layer-pg-schema.ts'),
       '#layer/server/database/schema': join(packageRoot, 'tests/stubs/layer-schema.ts'),
       '#layer/server/utils/database': join(packageRoot, 'tests/stubs/layer-database.ts'),
       '#layer/server/utils/mutation': join(packageRoot, 'tests/stubs/layer-mutation.ts'),
