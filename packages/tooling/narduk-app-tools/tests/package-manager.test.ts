@@ -1,10 +1,15 @@
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { resolvePnpmInvocation, spawnPnpmSync } from '../src/package-manager.js'
+import {
+  resolvePnpmInvocation,
+  resolveWranglerInvocation,
+  spawnPnpmSync,
+  spawnWranglerSync,
+} from '../src/package-manager.js'
 
 const tempDirs: string[] = []
 
@@ -81,5 +86,61 @@ describe('package-manager invocation', () => {
       expect(result.status).toBe(0)
       expect(JSON.parse(result.stdout)).toEqual(['exec', 'wrangler', invocation])
     }
+  })
+})
+
+describe('wrangler invocation', () => {
+  it('spawns the consumer-local wrangler binary directly, bypassing npm exec argument mangling', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-wrangler-local-bin-'))
+    tempDirs.push(root)
+    const binDir = join(root, 'node_modules', '.bin')
+    mkdirSync(binDir, { recursive: true })
+    const wranglerBin = join(binDir, 'wrangler')
+    writeFileSync(
+      wranglerBin,
+      `#!${process.execPath}\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))`,
+    )
+    chmodSync(wranglerBin, 0o755)
+
+    expect(resolveWranglerInvocation(root)).toEqual({
+      argsPrefix: [],
+      command: wranglerBin,
+    })
+
+    // An npm-based consumer sets npm_execpath to npm-cli.js. Under the old
+    // `spawnPnpmSync(['exec', 'wrangler', ...])` routing this would either
+    // invoke `npm exec` (which drops the `--command` flag's value) or crash
+    // outright. spawnWranglerSync must resolve and run the binary directly,
+    // so the args array — `--command` included — reaches wrangler intact
+    // regardless of which package manager is active.
+    const env = {
+      npm_execpath: '/usr/local/lib/node_modules/npm/bin/npm-cli.js',
+      PATH: '',
+    }
+    const result = spawnWranglerSync(root, ['d1', 'execute', 'db', '--command', 'SELECT 1'], {
+      cwd: root,
+      encoding: 'utf8',
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual(['d1', 'execute', 'db', '--command', 'SELECT 1'])
+  })
+
+  it('falls back to Node module resolution when no local .bin/wrangler exists', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'narduk-app-wrangler-require-resolve-')))
+    tempDirs.push(root)
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'consumer' }))
+    const wranglerDir = join(root, 'node_modules', 'wrangler', 'bin')
+    mkdirSync(wranglerDir, { recursive: true })
+    const wranglerEntrypoint = join(wranglerDir, 'wrangler.js')
+    writeFileSync(wranglerEntrypoint, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))')
+
+    expect(resolveWranglerInvocation(root)).toEqual({
+      argsPrefix: [wranglerEntrypoint],
+      command: process.execPath,
+    })
   })
 })

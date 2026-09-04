@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
-import { spawnPnpmSync } from './package-manager.js'
+import { spawnWranglerSync } from './package-manager.js'
 
 export const MIGRATION_LEDGER_TABLE = '_narduk_migrations'
 export const MIGRATION_CONFIG_VERSION = 1
@@ -612,13 +612,13 @@ export function parseWranglerJson<T>(output: string): WranglerResult<T> {
 }
 
 function runWrangler(args: string[], cwd: string, json: boolean): string {
-  const result = spawnPnpmSync(['exec', 'wrangler', ...args], {
+  const result = spawnWranglerSync(cwd, args, {
     cwd,
     encoding: 'utf8',
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  if (result.error) throw new Error(`Could not run pnpm exec wrangler: ${result.error.message}`)
+  if (result.error) throw new Error(`Could not run wrangler: ${result.error.message}`)
   if (result.status !== 0) {
     throw new Error((result.stderr || result.stdout || `wrangler exited ${result.status}`).trim())
   }

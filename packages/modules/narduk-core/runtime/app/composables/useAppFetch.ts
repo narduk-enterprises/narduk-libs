@@ -6,6 +6,8 @@
  * (POST, PUT, PATCH, DELETE). Use this in Pinia stores instead of raw `$fetch`.
  */
 
+import { useRequestFetch } from '#imports'
+
 import { MUTATION_METHODS } from '../utils/mutationMethods'
 
 export function useAppFetch() {
