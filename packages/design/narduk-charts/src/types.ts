@@ -62,6 +62,8 @@ export type ChartLineAnnotation =
       color?: string
       label?: string
       yAxis?: ChartYAxisId
+      /** Marker radius in px. Default `5`; shrink it for compact charts. */
+      radius?: number
     }
   | {
       type: 'label'
@@ -105,7 +107,33 @@ export interface NardukLineChartProps {
   smooth?: boolean
   showGrid?: boolean
   showPoints?: boolean
+  /**
+   * Draw a marker for a value whose neighbours on both sides are `null`.
+   * Default `true` — such a value has no line to belong to and would otherwise
+   * render as nothing at all.
+   */
+  showIsolatedPoints?: boolean
+  /** Radius of `showPoints` / isolated-value markers, in px. Default `3`. */
+  pointRadius?: number
   showArea?: boolean
+  /** Draw the X axis line and its tick labels. Default `true`. */
+  showXAxis?: boolean
+  /** Draw the Y axis line(s) and their tick labels. Default `true`. */
+  showYAxis?: boolean
+  /** Render the legend. Default `true`; `chrome: false` does not reach it. */
+  showLegend?: boolean
+  /**
+   * Pin the primary Y domain. Either end may be given on its own; the value is
+   * used EXACTLY rather than rounded out to a nice tick, so a set of charts
+   * handed the same bound share one scale to the pixel.
+   */
+  yMin?: number
+  yMax?: number
+  /** The same pins for the right-hand scale when `dualYAxis` is enabled. */
+  yMinSecondary?: number
+  yMaxSecondary?: number
+  /** Y tick / gridline count. Default `6`; clamped to 2–12. */
+  yTickCount?: number
   /**
    * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
    * additional series are ignored for the volume pane (documented, no runtime warning).

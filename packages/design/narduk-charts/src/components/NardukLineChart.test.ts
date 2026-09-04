@@ -450,3 +450,200 @@ describe('NardukLineChart series palette is themable', () => {
     expect(paths[1]!.attributes('stroke')).toBe('#654321')
   })
 })
+
+describe('NardukLineChart isolated values', () => {
+  /*
+   * A series whose measured entries never neighbour one another. Every run is
+   * a run of one, so before the fix the chart drew NOTHING: `segmentLinePoints`
+   * splits at each null and `lineSegmentsToPaths` returns '' below two points.
+   */
+  const sparse = [{ name: 'users', data: [5, null, 7, null, 9] }]
+  const sparseLabels = ['1', '2', '3', '4', '5']
+
+  it('draws a marker for every value with no measured neighbour', () => {
+    const w = mount(NardukLineChart, {
+      props: { series: sparse, labels: sparseLabels, width: 300, height: 150, animate: false },
+    })
+
+    // The regression: every line path is empty, so the markers are the only
+    // thing standing between this data and a blank plot.
+    const drawn = w.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== '')
+    expect(drawn).toHaveLength(0)
+    expect(w.findAll('.narduk-line-point--isolated')).toHaveLength(3)
+  })
+
+  it('places each marker at its own value, not at a shared or collapsed position', () => {
+    const w = mount(NardukLineChart, {
+      props: { series: sparse, labels: sparseLabels, width: 300, height: 150, animate: false },
+    })
+
+    const points = w.findAll('.narduk-line-point--isolated')
+      .map(p => ({ x: Number(p.attributes('cx')), y: Number(p.attributes('cy')) }))
+    for (const point of points) {
+      expect(Number.isFinite(point.x)).toBe(true)
+      expect(Number.isFinite(point.y)).toBe(true)
+    }
+    // x ascends with the index; y rises with the value (SVG y grows downward).
+    expect(points[0]!.x).toBeLessThan(points[1]!.x)
+    expect(points[1]!.x).toBeLessThan(points[2]!.x)
+    expect(points[0]!.y).toBeGreaterThan(points[2]!.y)
+  })
+
+  it('leaves a genuine two-point run as a line rather than a pair of markers', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'users', data: [5, 6, null, 9] }],
+        labels: ['1', '2', '3', '4'],
+        width: 300,
+        height: 150,
+        animate: false,
+      },
+    })
+
+    // The [5, 6] run draws a line; only the trailing 9 is isolated.
+    expect(w.findAll('.narduk-line-point--isolated')).toHaveLength(1)
+    const drawn = w.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== '')
+    expect(drawn.length).toBeGreaterThan(0)
+  })
+
+  it('defers to showPoints so an isolated value never gets two overlapping markers', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: sparse,
+        labels: sparseLabels,
+        width: 300,
+        height: 150,
+        animate: false,
+        showPoints: true,
+      },
+    })
+
+    expect(w.findAll('.narduk-line-point--isolated')).toHaveLength(0)
+    expect(w.findAll('.narduk-line-point').length).toBeGreaterThan(0)
+  })
+
+  it('can be turned off, and honours pointRadius when on', () => {
+    const off = mount(NardukLineChart, {
+      props: {
+        series: sparse,
+        labels: sparseLabels,
+        width: 300,
+        height: 150,
+        animate: false,
+        showIsolatedPoints: false,
+      },
+    })
+    expect(off.findAll('.narduk-line-point--isolated')).toHaveLength(0)
+
+    const small = mount(NardukLineChart, {
+      props: {
+        series: sparse,
+        labels: sparseLabels,
+        width: 300,
+        height: 150,
+        animate: false,
+        pointRadius: 1.5,
+      },
+    })
+    expect(small.find('.narduk-line-point--isolated').attributes('r')).toBe('1.5')
+  })
+})
+
+describe('NardukLineChart axis suppression', () => {
+  const series = [{ name: 'users', data: [4, 9, 6, 11] }]
+  const labels = ['1', '2', '3', '4']
+  const base = { series, labels, width: 300, height: 150, animate: false }
+
+  it('draws both axes by default', () => {
+    const w = mount(NardukLineChart, { props: base })
+    expect(w.findAll('.narduk-axis').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('removes the axis lines AND their tick labels, not just the lines', () => {
+    const w = mount(NardukLineChart, {
+      props: { ...base, showXAxis: false, showYAxis: false, showGrid: false },
+    })
+
+    expect(w.findAll('.narduk-axis')).toHaveLength(0)
+    // The series itself must survive: this is a sparkline, not an empty chart.
+    const drawn = w.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== '')
+    expect(drawn.length).toBeGreaterThan(0)
+  })
+
+  it('suppresses each axis independently', () => {
+    const noY = mount(NardukLineChart, { props: { ...base, showYAxis: false } })
+    expect(noY.findAll('.narduk-axis')).toHaveLength(1)
+
+    const noX = mount(NardukLineChart, { props: { ...base, showXAxis: false } })
+    expect(noX.findAll('.narduk-axis')).toHaveLength(1)
+  })
+
+  it('drops the legend on request, and keeps it by default', () => {
+    const withLegend = mount(NardukLineChart, { props: base })
+    expect(withLegend.findAll('.narduk-legend, [class*="legend"]').length).toBeGreaterThan(0)
+
+    const without = mount(NardukLineChart, { props: { ...base, showLegend: false } })
+    expect(without.findAll('.narduk-legend, [class*="legend"]')).toHaveLength(0)
+    // The series must survive: this drops chrome, not data.
+    const drawn = without.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== '')
+    expect(drawn.length).toBeGreaterThan(0)
+  })
+
+  it('takes the right-hand axis with it under dualYAxis', () => {
+    const dual = {
+      series: [
+        { name: 'a', data: [1, 2, 3, 4] },
+        { name: 'b', data: [100, 200, 300, 400], yAxis: 'secondary' as const },
+      ],
+      labels,
+      width: 300,
+      height: 150,
+      animate: false,
+      dualYAxis: true,
+    }
+
+    expect(mount(NardukLineChart, { props: dual }).findAll('.narduk-axis--secondary')).toHaveLength(1)
+    expect(
+      mount(NardukLineChart, { props: { ...dual, showYAxis: false } })
+        .findAll('.narduk-axis--secondary'),
+    ).toHaveLength(0)
+  })
+})
+
+describe('NardukLineChart pinned Y domain and tick count', () => {
+  const labels = ['1', '2', '3', '4']
+  const base = { labels, width: 300, height: 150, animate: false }
+
+  it('draws a quiet and a busy series on one shared scale', () => {
+    const quiet = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: 'a', data: [1, 2, 3, 4] }], yMin: 0, yMax: 4_000 },
+    })
+    const busy = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: 'a', data: [3_000, 3_400, 3_900, 4_000] }], yMin: 0, yMax: 4_000 },
+    })
+
+    const yOf = (w: ReturnType<typeof mount>) =>
+      Number(w.find('.narduk-line-path').attributes('d')!.match(/-?\d+(\.\d+)?/g)![1])
+
+    // Self-normalised, both would start at the same height. Pinned, the quiet
+    // series sits far below the busy one.
+    expect(yOf(quiet)).toBeGreaterThan(yOf(busy))
+  })
+
+  it('renders exactly the requested number of Y tick labels', () => {
+    const w = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: 'a', data: [0, 500, 900] }], yMin: 0, yMax: 900, yTickCount: 3 },
+    })
+
+    const ticks = w.findAll('.narduk-axis')[0]!.findAll('text')
+    expect(ticks).toHaveLength(3)
+    expect(ticks.map((t: { text: () => string }) => t.text())).toEqual(['0', '450', '900'])
+  })
+
+  it('clamps an absurd tick count instead of rendering hundreds of labels', () => {
+    const w = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: 'a', data: [0, 100] }], yTickCount: 500 },
+    })
+    expect(w.findAll('.narduk-axis')[0]!.findAll('text').length).toBeLessThanOrEqual(12)
+  })
+})

@@ -284,6 +284,16 @@
     transition: r 0.15s ease;
   }
 
+  /*
+   * A value with no measured neighbour sits on empty plot rather than on a
+   * line, so it needs less separation than a marker riding the stroke it
+   * shares a colour with — and at the small radii a sparkline uses, the
+   * 2px halo would swallow the mark itself.
+   */
+  .narduk-line-point--isolated {
+    stroke-width: 1;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .narduk-line-path {
       filter: none;

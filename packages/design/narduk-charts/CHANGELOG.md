@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-04
+
+### Added
+
+- **`NardukLineChart` can render a sparkline.** `showXAxis` and `showYAxis` (both default `true`) suppress an axis line *and* its tick labels; under `dualYAxis`, `showYAxis: false` takes the right-hand axis with it. Previously the two `narduk-axis` groups had no guard at all — `showGrid` covered only the gridlines and `chrome: false` only the card wrapper — so a small axis-free trend mark was impossible and consumers kept hand-rolled SVG instead. (narduk-charts#28)
+- **`NardukLineChart` accepts a pinned Y domain.** `yMin` / `yMax` (and `yMinSecondary` / `yMaxSecondary`, matching the existing `yScale` / `yScaleSecondary` pairing) are threaded into `createYAxisMap` as new `domainMin` / `domainMax` options. A pinned end is used **exactly** and does not pass through `niceScale`, so a grid of charts handed one bound shares a scale to the pixel, and a ceiling stated as a series' own maximum stays that number instead of the round one above it. Either end may be pinned alone; unset ends keep today's derived behaviour. Honoured in all three scale modes — `log` clamps a non-positive floor it cannot represent, and `symlog` transforms the bounds before spacing ticks evenly in transformed space. (narduk-charts#29)
+- `NardukLineChart` `showLegend` (default `true`). `chrome: false` never reached the legend, so a single-series chart embedded in a surface that already names its series carried a duplicate label — and, since a legend row is a series toggle, a duplicate focusable control per chart. On a grid of small tiles the legend could be taller than the mark it labelled. (narduk-charts#34)
+- `NardukLineChart` `yTickCount` (default `6`, clamped 2–12) forwards to `createYAxisMap`'s `maxTicks`, which the component previously never passed. (narduk-charts#30)
+- `NardukLineChart` `pointRadius` (default `3`) sizes `showPoints` and isolated-value markers; the `point` annotation takes an optional per-annotation `radius` (default `5`). Both exist so a compact chart is not forced to carry desktop-sized markers.
+- **SSR render coverage.** A new `src/ssr.test.ts` renders all seven exported components through `@vue/server-renderer` in the `node` environment — no `window`, no `document` — and asserts real markup, the server-side accessible `<title>`/`<desc>`, and the sparkline configuration. The library's DOM-free posture was previously inspection-only: every other suite gives the components a DOM. (narduk-charts#31)
+- README: a **sparkline recipe** under `NardukLineChart`, and props-table rows for all of the above.
+
+### Fixed
+
+- **A value isolated between two `null`s rendered as nothing at all.** `segmentLinePoints` splits the series at every `null` and `lineSegmentsToPaths` returns `''` for a run shorter than two points, so a sparse series whose measured entries never neighbour one another drew a completely blank plot beside a real, non-zero total — the data silently invisible, with no gap, no marker and no absent state. Such values are now drawn as markers (`showIsolatedPoints`, default `true`; ignored when `showPoints` already draws every value). A point rather than a line, because a line asserts the entries between its ends while a point asserts only itself. **This changes the appearance of charts that currently render nothing for such values — which is the defect.** (narduk-charts#27)
+- `main`'s `package.json` said `2.3.0` while `2.4.0` was tagged and published: the `2.4.0` release commit was cut on a branch that never merged back, so the repository misreported its own released version and 2.4.0's shipped notes sat under `## [Unreleased]`. Those notes are filed under `## [2.4.0]` below and the version now leads the registry. `docs/RELEASE.md` gains the step that was skipped. No library source was missing from `main`. (narduk-charts#32)
+
+## [2.4.0] - 2026-07-26
+
 ### Added
 
 - Categorical series palette is now themable: ten `--color-chart-series-1` … `--color-chart-series-10` tokens are declared in `@theme` and re-declared by `.narduk-chart--dark` and every preset `theme` class. Series colors resolve to `var(--color-chart-series-N, <literal>)` instead of a hard-coded array, so overriding a token repaints the data. An explicit `colors` prop still wins and is used verbatim. Each `var()` carries a literal fallback so a stylesheet-less `exportChartSvg` still renders the default palette.

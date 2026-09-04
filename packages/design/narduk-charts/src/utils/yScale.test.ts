@@ -64,3 +64,72 @@ describe('dataValueFromBottomPx', () => {
     expect(mid).toBeLessThan(100)
   })
 })
+
+describe('createYAxisMap pinned domains', () => {
+  it('uses a pinned linear ceiling exactly, without rounding it out to a nice tick', () => {
+    // 4_237 is deliberately not a round number: the derived path runs it
+    // through niceScale and reports a rounder ceiling, which is the defect —
+    // an axis label beside a table of the same figure shows a second number.
+    const m = createYAxisMap('linear', [120, 4_237], [], 200, { domainMin: 0, domainMax: 4_237 })
+    expect(m.domain.min).toBe(0)
+    expect(m.domain.max).toBe(4_237)
+    expect(m.yFromBottom(4_237)).toBe(200)
+    expect(m.yFromBottom(0)).toBe(0)
+  })
+
+  it('gives two charts with different data the same scale when handed the same bound', () => {
+    const quiet = createYAxisMap('linear', [1, 2, 4], [], 100, { domainMin: 0, domainMax: 4_000 })
+    const busy = createYAxisMap('linear', [3_100, 4_000], [], 100, { domainMin: 0, domainMax: 4_000 })
+    expect(quiet.domain).toEqual(busy.domain)
+    // The quiet series must draw near the floor, not fill its own plot.
+    expect(quiet.yFromBottom(4)).toBeLessThan(1)
+    expect(busy.yFromBottom(4_000)).toBe(100)
+  })
+
+  it('honours one pinned end while still deriving the other', () => {
+    const m = createYAxisMap('linear', [40, 90], [], 100, { domainMax: 100 })
+    expect(m.domain.max).toBe(100)
+    // linearFromZero defaults on, so the derived floor is still 0.
+    expect(m.domain.min).toBe(0)
+  })
+
+  it('spreads ticks evenly across a pinned domain and honours maxTicks', () => {
+    const m = createYAxisMap('linear', [0, 900], [], 100, {
+      domainMin: 0,
+      domainMax: 900,
+      maxTicks: 3,
+    })
+    expect(m.ticks.map(t => t.value)).toEqual([0, 450, 900])
+  })
+
+  it('guards a degenerate pinned domain rather than dividing by zero', () => {
+    const m = createYAxisMap('linear', [0], [], 100, { domainMin: 5, domainMax: 5 })
+    expect(m.domain.max).toBeGreaterThan(m.domain.min)
+    expect(Number.isFinite(m.yFromBottom(5))).toBe(true)
+  })
+
+  it('pins a domain even when the chart was handed no values at all', () => {
+    const m = createYAxisMap('linear', [], [], 100, { domainMin: 0, domainMax: 50 })
+    expect(m.domain).toEqual({ min: 0, max: 50 })
+  })
+
+  it('pins a log domain, ignoring a non-positive floor a log axis cannot take', () => {
+    const m = createYAxisMap('log', [5, 500], [], 100, { domainMin: 0, domainMax: 1_000 })
+    expect(m.domain.max).toBeCloseTo(1_000, 6)
+    expect(m.domain.min).toBeGreaterThan(0)
+    expect(m.yFromBottom(1_000)).toBeCloseTo(100, 6)
+  })
+
+  it('pins a symlog domain in data space, spacing ticks evenly in transformed space', () => {
+    const m = createYAxisMap('symlog', [-40, 80], [], 100, { domainMin: -100, domainMax: 100 })
+    expect(m.domain.min).toBeCloseTo(-100, 4)
+    expect(m.domain.max).toBeCloseTo(100, 4)
+    expect(m.yFromBottom(-100)).toBeCloseTo(0, 6)
+    expect(m.yFromBottom(100)).toBeCloseTo(100, 6)
+  })
+
+  it('leaves the derived path untouched when no bound is given', () => {
+    const derived = createYAxisMap('linear', [0, 4_237], [], 200)
+    expect(derived.domain.max).toBeGreaterThan(4_237)
+  })
+})

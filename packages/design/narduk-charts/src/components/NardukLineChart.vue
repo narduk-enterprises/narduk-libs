@@ -48,7 +48,34 @@ const props = withDefaults(defineProps<{
   smooth?: boolean
   showGrid?: boolean
   showPoints?: boolean
+  /**
+   * Draw a marker for a value whose neighbours on both sides are `null`.
+   * Default `true`.
+   *
+   * A run of one point has nothing to draw a line between, so without this it
+   * renders as literally nothing — and a sparse series whose measured entries
+   * are all two or three apart is ENTIRELY such runs, which drew a blank plot
+   * beside a real total. A point rather than a line, because the difference is
+   * the honest one: a line asserts the entries between its ends, a point
+   * asserts only itself.
+   */
+  showIsolatedPoints?: boolean
+  /** Radius of `showPoints` / isolated-value markers, in px. Default `3`. */
+  pointRadius?: number
   showArea?: boolean
+  /** Draw the X axis line and its tick labels. Default `true`. */
+  showXAxis?: boolean
+  /** Draw the Y axis line(s) and their tick labels. Default `true`. */
+  showYAxis?: boolean
+  /**
+   * Render the legend. Default `true`.
+   *
+   * `chrome: false` drops the card wrapper but never reached the legend, so a
+   * single-series chart embedded in a surface that already names its series
+   * carried a duplicate label — and, since a legend row is a series toggle, a
+   * duplicate focusable control per chart.
+   */
+  showLegend?: boolean
   /**
    * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
    * additional series are ignored for the volume pane (documented, no runtime warning).
@@ -134,11 +161,28 @@ const props = withDefaults(defineProps<{
    * decorative/sparkline charts—removes `tabindex` and marks the SVG `aria-hidden`.
    */
   focusable?: boolean
+  /**
+   * Pin the primary Y domain. Either end may be given on its own; the value is
+   * used EXACTLY rather than being rounded out to a nice tick, so a set of
+   * charts handed the same bound share one scale to the pixel.
+   */
+  yMin?: number
+  yMax?: number
+  /** The same pins for the right-hand scale when `dualYAxis` is enabled. */
+  yMinSecondary?: number
+  yMaxSecondary?: number
+  /** Y tick / gridline count. Default `6`; clamped to 2–12. */
+  yTickCount?: number
 }>(), {
   smooth: true,
   showGrid: true,
   showPoints: false,
+  showIsolatedPoints: true,
+  pointRadius: 3,
   showArea: false,
+  showXAxis: true,
+  showYAxis: true,
+  showLegend: true,
   showVolume: false,
   volumeFraction: 0.22,
   animate: true,
@@ -660,6 +704,20 @@ const yScaleOpts = computed(() => ({
   linearFromZero: props.linearFromZero,
   linearPaddingRatio: props.linearPaddingRatio,
   symlogLinthresh: props.symlogLinthresh,
+  maxTicks: props.yTickCount === undefined
+    ? undefined
+    : Math.min(12, Math.max(2, Math.round(props.yTickCount))),
+}))
+
+/** Primary-axis pins. Kept separate so the secondary scale is not pinned too. */
+const primaryPins = computed(() => ({
+  domainMin: props.yMin,
+  domainMax: props.yMax,
+}))
+
+const secondaryPins = computed(() => ({
+  domainMin: props.yMinSecondary,
+  domainMax: props.yMaxSecondary,
 }))
 
 const zoomYActive = computed(() => props.zoomable && props.zoomAutoY)
@@ -693,7 +751,7 @@ const primaryMap = computed(() => {
     seriesVals,
     [...refs, ...bands, ...annY],
     priceInnerHeight.value,
-    yScaleOpts.value,
+    { ...yScaleOpts.value, ...primaryPins.value },
   )
 })
 
@@ -727,7 +785,7 @@ const secondaryMap = computed(() => {
     seriesVals,
     [...refs, ...bands, ...annY],
     priceInnerHeight.value,
-    yScaleOpts.value,
+    { ...yScaleOpts.value, ...secondaryPins.value },
   )
 })
 
@@ -781,7 +839,19 @@ const seriesRender = computed(() =>
     const areaDs = props.showArea
       ? lineDs.map((d, i) => closeAreaUnderLine(d, segments[i], yBaseline.value))
       : []
-    return { segments, lineDs, areaDs }
+    /*
+     * `lineSegmentsToPaths` returns '' for a run of one — there is nothing to
+     * draw a line between — so those values are collected here and drawn as
+     * markers instead. Without this they render as nothing at all, which is
+     * how a sparse series produced a blank plot beside a real total.
+     *
+     * Skipped when `showPoints` already draws every value, so an isolated one
+     * never gets two overlapping markers.
+     */
+    const isolated = props.showIsolatedPoints && !props.showPoints
+      ? segments.filter(seg => seg.length === 1).map(seg => seg[0]!)
+      : []
+    return { segments, lineDs, areaDs, isolated }
   }),
 )
 
@@ -1459,7 +1529,19 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           class="narduk-line-point"
           :cx="xPos(pi)"
           :cy="yPosForSeries(s, v as number)"
-          r="3"
+          :r="pointRadius"
+          :fill="resolveColor(s)"
+        />
+
+        <!-- Values with no measured neighbour: drawn as themselves, never
+             joined up, and never silently dropped. -->
+        <circle
+          v-for="(pt, ii) in seriesRender[si].isolated"
+          :key="'iso-' + s.name + '-' + ii"
+          class="narduk-line-point narduk-line-point--isolated"
+          :cx="pt[0]"
+          :cy="pt[1]"
+          :r="pointRadius"
           :fill="resolveColor(s)"
         />
       </g>
@@ -1502,7 +1584,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             class="narduk-ann-point"
             :cx="xPos(ap.xIndex)"
             :cy="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
-            r="5"
+            :r="ap.radius ?? 5"
             :fill="ap.color || 'var(--color-chart-text)'"
           />
           <text
@@ -1567,7 +1649,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         />
       </g>
 
-      <g class="narduk-axis">
+      <g
+        v-if="showYAxis"
+        class="narduk-axis"
+      >
         <line
           :x1="padding.left"
           :y1="padding.top"
@@ -1587,7 +1672,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
       </g>
 
       <g
-        v-if="showRightAxis"
+        v-if="showRightAxis && showYAxis"
         class="narduk-axis narduk-axis--secondary"
       >
         <line
@@ -1608,7 +1693,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         </text>
       </g>
 
-      <g class="narduk-axis">
+      <g
+        v-if="showXAxis"
+        class="narduk-axis"
+      >
         <line
           :x1="padding.left"
           :y1="chartHeight - padding.bottom"
@@ -1637,7 +1725,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
       />
     </svg>
 
-    <template v-if="!isEmpty">
+    <template v-if="!isEmpty && showLegend">
       <ChartLegend
         :items="legendItems"
         :group-label="legendGroupLabel"

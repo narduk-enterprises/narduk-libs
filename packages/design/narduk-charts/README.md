@@ -116,7 +116,15 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `smooth` | `boolean` | `true` | Catmull-Rom curve smoothing |
 | `showGrid` | `boolean` | `true` | Show horizontal grid lines |
 | `showPoints` | `boolean` | `false` | Always show data points |
+| `showIsolatedPoints` | `boolean` | `true` | Draw a marker for a value whose neighbours on both sides are `null`. Such a value has no line to belong to, so without this it renders as nothing at all. Ignored when `showPoints` already draws every value |
+| `pointRadius` | `number` | `3` | Radius (px) of `showPoints` / isolated-value markers |
 | `showArea` | `boolean` | `false` | Fill area under each line to the plot bottom |
+| `showXAxis` | `boolean` | `true` | Draw the X axis line and its tick labels |
+| `showYAxis` | `boolean` | `true` | Draw the Y axis line(s) and their tick labels |
+| `showLegend` | `boolean` | `true` | Render the legend. `chrome: false` does not reach it; set `false` when the surrounding surface already names the series |
+| `yMin` / `yMax` | `number` | — | Pin the primary Y domain. Either end may be given alone. The value is used **exactly** — it is not rounded out to a nice tick — so charts handed the same bound share one scale to the pixel |
+| `yMinSecondary` / `yMaxSecondary` | `number` | — | The same pins for the right-hand scale under `dualYAxis` |
+| `yTickCount` | `number` | `6` | Y tick / gridline count, clamped to 2–12 |
 | `volume` | `(number \| null)[]` | — | Volume values aligned index-for-index with `labels`. Applies to `series[0]` only in multi-series charts (documented, no runtime warning). Omit to leave rendering unchanged |
 | `showVolume` | `boolean` | `false` | Render a bottom volume histogram pane when `volume` has data—mirrors `NardukCandleChart`'s volume pane sizing, bar styling, and bull/bear coloring. Bars decimate/window identically to the plotted series (same `maxRenderPoints` index pipeline), so they stay aligned under downsampling and `zoomable` pan/zoom |
 | `volumeFraction` | `number` | `0.22` | Fraction of plot height reserved for the volume pane when `showVolume` is set (clamped 0.12–0.45, same semantics as `NardukCandleChart`) |
@@ -160,6 +168,44 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 | `empty` | — | Custom content when there is no plottable data |
 | `tooltip` | `{ title, items, visible }` | Replace default tooltip body |
 | `legend-item` | `{ item, toggle }` | Custom legend row (`toggle` shows/hides the series) |
+
+#### Recipe: sparkline
+
+A trend mark small enough to sit inside a tile whose surrounding markup already
+carries the label, the value and the scale legend. `chrome: false` drops the
+card wrapper, `showXAxis` / `showYAxis` drop the axis lines **and** their tick
+labels, and `padding` reclaims the gutters they were holding.
+
+```vue
+<NardukLineChart
+  :series="[{ name: domain, data }]"
+  :labels="labels"
+  :height="46"
+  :y-min="0"
+  :y-max="gridMax"
+  :padding="{ top: 4, right: 4, bottom: 4, left: 4 }"
+  :chrome="false"
+  :show-x-axis="false"
+  :show-y-axis="false"
+  :show-legend="false"
+  :show-grid="false"
+  :show-tooltip="false"
+  :smooth="false"
+  :point-radius="1.5"
+  :chart-title="`${domain}: ${value}`"
+/>
+```
+
+`yMax` is the load-bearing prop when a **grid** of these is drawn together.
+Without it each tile derives its own domain, so a property with four events and
+one with four thousand draw the same shape and the set reads as unrelated
+pictures wearing a shared layout. Compute the maximum once across the whole
+grid and hand every tile the same number.
+
+Pair it with a `null` per missing entry rather than a compacted array: `null`
+breaks the line where the data breaks, and `showIsolatedPoints` (on by default)
+draws the values that end up with no measured neighbour, which would otherwise
+be invisible.
 
 ---
 
