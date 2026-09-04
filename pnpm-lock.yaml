@@ -597,7 +597,7 @@ importers:
   packages/modules/narduk-mapkit-nuxt:
     dependencies:
       '@narduk-enterprises/narduk-mapkit':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../narduk-mapkit
       '@nuxt/kit':
         specifier: ^4.4.8
