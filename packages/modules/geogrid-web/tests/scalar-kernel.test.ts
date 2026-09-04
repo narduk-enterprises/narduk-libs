@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  coastalFeather,
-  sampleScalarBilinearSoft,
-  texelPositionFromUv,
-} from '../src/core/math.js'
+import { coastalFeather, sampleScalarBilinearSoft, texelPositionFromUv } from '../src/core/math.js'
 
 /**
  * The kernel is a literal port of GeoGridKit's `sampleScalarBilinearSoft` and

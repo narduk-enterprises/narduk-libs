@@ -157,9 +157,7 @@ export interface GridOverlay {
   setPlaying(playing: boolean): void
 }
 
-function toValueRange(
-  input: GridValueRange | readonly [number, number],
-): GridValueRange {
+function toValueRange(input: GridValueRange | readonly [number, number]): GridValueRange {
   return Array.isArray(input)
     ? valueRangeFromTuple(input as [number, number])
     : (input as GridValueRange)
@@ -228,12 +226,8 @@ class GridOverlayImpl implements GridOverlay {
       valueRange: this.style.valueRange,
       scale: styleScale(this.style),
       ...(options.stretch !== undefined ? { stretch: options.stretch } : {}),
-      ...(options.stretchDebounceMs !== undefined
-        ? { debounceMs: options.stretchDebounceMs }
-        : {}),
-      ...(options.stretchHysteresis !== undefined
-        ? { hysteresis: options.stretchHysteresis }
-        : {}),
+      ...(options.stretchDebounceMs !== undefined ? { debounceMs: options.stretchDebounceMs } : {}),
+      ...(options.stretchHysteresis !== undefined ? { hysteresis: options.stretchHysteresis } : {}),
       ...(options.stretchTimers !== undefined ? { timers: options.stretchTimers } : {}),
     })
     // Registered first, so the style is already updated by the time any caller's
@@ -392,9 +386,7 @@ class GridOverlayImpl implements GridOverlay {
         dataset,
         planeIndex,
         ...(options.bbox !== undefined ? { bounds: options.bbox, anchor } : {}),
-        ...(options.dateStatistics !== undefined
-          ? { dateStatistics: options.dateStatistics }
-          : {}),
+        ...(options.dateStatistics !== undefined ? { dateStatistics: options.dateStatistics } : {}),
       })
     } finally {
       this.adoptingSource = false

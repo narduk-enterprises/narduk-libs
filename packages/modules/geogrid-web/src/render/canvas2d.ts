@@ -177,7 +177,10 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       return
     }
 
-    if (this.mode === 'scalar' && this.shouldUseScreenSpace(lower, state.bbox, viewport, size.rect)) {
+    if (
+      this.mode === 'scalar' &&
+      this.shouldUseScreenSpace(lower, state.bbox, viewport, size.rect)
+    ) {
       this.renderScreenSpace(lower, upper, progress, state.bbox, anchor, viewport, size.dpr)
       return
     }
@@ -389,10 +392,8 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       this.clear()
       return
     }
-    const compositionVersion =
-      lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
-    const upperCompositionVersion =
-      upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const compositionVersion = lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const upperCompositionVersion = upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
     if (compositionVersion !== upperCompositionVersion) {
       this.clear()
       return
@@ -401,10 +402,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const height = this.canvasHeight
     const zoom = viewportZoom(viewport, cssWidth)
     const observationWeight = observationWeightForZoom(zoom, compositionVersion)
-    const supportModulatesWeight = observationSupportModulatesWeight(
-      zoom,
-      compositionVersion,
-    )
+    const supportModulatesWeight = observationSupportModulatesWeight(zoom, compositionVersion)
     const key = [
       this.frameKey(lower),
       this.frameKey(upper),
@@ -583,7 +581,12 @@ export class Canvas2DGridBackend implements GridRenderBackend {
 
   private rasterizeBlend(lower: GridFrame, upper: GridFrame, progress: number): HTMLCanvasElement {
     const image = new ImageData(lower.width, lower.height)
-    if (lower.renderMode === 'rgb' && upper.renderMode === 'rgb' && lower.channels && upper.channels) {
+    if (
+      lower.renderMode === 'rgb' &&
+      upper.renderMode === 'rgb' &&
+      lower.channels &&
+      upper.channels
+    ) {
       for (let i = 0; i < lower.channels[0].length; i += 1) {
         const offset = i * 4
         const lowerValid = Boolean(lower.mask[i])

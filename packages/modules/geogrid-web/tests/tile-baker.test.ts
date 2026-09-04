@@ -46,7 +46,15 @@ function frame(
       mask[index] = value === null ? 0 : 1
     }
   }
-  return { key: `${width}x${height}`, width, height, renderMode: 'scalar', valueKind: 'float32', values, mask }
+  return {
+    key: `${width}x${height}`,
+    width,
+    height,
+    renderMode: 'scalar',
+    valueKind: 'float32',
+    values,
+    mask,
+  }
 }
 
 function layer(
@@ -85,23 +93,31 @@ function row(pixels: Uint8ClampedArray, side: number, rowIndex: number, channel 
 describe('renderGridTile canvas contract', () => {
   it('sizes the canvas to the requested pixel side', () => {
     for (const side of [64, 256, 512]) {
-      const canvas = renderGridTile(layer(8, 8, (column) => column), style(7), {
-        z: 12,
-        x: 1024,
-        y: 1690,
-        side,
-      })
+      const canvas = renderGridTile(
+        layer(8, 8, (column) => column),
+        style(7),
+        {
+          z: 12,
+          x: 1024,
+          y: 1690,
+          side,
+        },
+      )
       expect(canvasSize(canvas)).toEqual({ width: side, height: side })
     }
   })
 
   it('returns a transparent canvas — never null — for an all-nodata grid', () => {
-    const canvas = renderGridTile(layer(8, 8, () => null), style(7), {
-      z: 12,
-      x: 1024,
-      y: 1690,
-      side: 32,
-    })
+    const canvas = renderGridTile(
+      layer(8, 8, () => null),
+      style(7),
+      {
+        z: 12,
+        x: 1024,
+        y: 1690,
+        side: 32,
+      },
+    )
     expect(canvas).not.toBeNull()
     expect(canvasSize(canvas)).toEqual({ width: 32, height: 32 })
     expect(alphas(canvasPixels(canvas)).every((alpha) => alpha === 0)).toBe(true)
@@ -109,22 +125,30 @@ describe('renderGridTile canvas contract', () => {
 
   it('returns a transparent canvas for a tile that misses the grid entirely', () => {
     // z6/50/26 is on the far side of the planet from the Gulf.
-    const canvas = renderGridTile(layer(8, 8, (column) => column), style(7), {
-      z: 6,
-      x: 50,
-      y: 26,
-      side: 32,
-    })
+    const canvas = renderGridTile(
+      layer(8, 8, (column) => column),
+      style(7),
+      {
+        z: 6,
+        x: 50,
+        y: 26,
+        side: 32,
+      },
+    )
     expect(alphas(canvasPixels(canvas)).every((alpha) => alpha === 0)).toBe(true)
   })
 
   it('draws something for a tile that does hit the grid', () => {
-    const canvas = renderGridTile(layer(8, 8, (column) => column), style(7), {
-      z: 6,
-      x: 16,
-      y: 26,
-      side: 32,
-    })
+    const canvas = renderGridTile(
+      layer(8, 8, (column) => column),
+      style(7),
+      {
+        z: 6,
+        x: 16,
+        y: 26,
+        side: 32,
+      },
+    )
     expect(alphas(canvasPixels(canvas)).some((alpha) => alpha > 0)).toBe(true)
   })
 
@@ -197,8 +221,9 @@ describe('tile geometry drives the samples', () => {
           texelPositionFromUv(v, source.frame.height, 'cell-center'),
         )
         for (let channel = 0; channel < 4; channel += 1) {
-          expect(Math.abs(raster.pixels[offset + channel]! - Math.round(expected[channel]!))
-            ).toBeLessThanOrEqual(1)
+          expect(
+            Math.abs(raster.pixels[offset + channel]! - Math.round(expected[channel]!)),
+          ).toBeLessThanOrEqual(1)
         }
         compared += 1
       }
@@ -301,7 +326,11 @@ describe('overzoom', () => {
   }
 
   function middleRow(tile: { z: number; x: number; y: number; side: number }): number[] {
-    return row(referenceRenderGridTile(source, tightRange(tile), tile).pixels, tile.side, tile.side / 2)
+    return row(
+      referenceRenderGridTile(source, tightRange(tile), tile).pixels,
+      tile.side,
+      tile.side / 2,
+    )
   }
 
   /** What a renderer that cropped and magnified an ancestor tile would produce. */
@@ -384,8 +413,9 @@ describe('opacity', () => {
     const fadedAlphas = alphas(faded.pixels)
     expect(fadedAlphas.some((alpha) => alpha > 0)).toBe(true)
     for (let index = 0; index < opaqueAlphas.length; index += 1) {
-      expect(Math.abs(fadedAlphas[index]! - Math.round(opaqueAlphas[index]! * 0.5))
-        ).toBeLessThanOrEqual(1)
+      expect(
+        Math.abs(fadedAlphas[index]! - Math.round(opaqueAlphas[index]! * 0.5)),
+      ).toBeLessThanOrEqual(1)
     }
   })
 

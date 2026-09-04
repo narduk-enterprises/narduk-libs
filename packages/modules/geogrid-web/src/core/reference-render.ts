@@ -1,8 +1,4 @@
-import {
-  normalizeValue,
-  toValueRangeTuple,
-  type ValueRangeInput,
-} from '../color/normalize.js'
+import { normalizeValue, toValueRangeTuple, type ValueRangeInput } from '../color/normalize.js'
 import { rampLut } from '../color/ramp.js'
 import {
   areaSampleBoundsFromUv,
@@ -216,7 +212,10 @@ export interface ReferenceRgbCompositionViewportOptions {
  * a texel center. Sampling `sampleRamp01` directly here instead would be
  * marginally more accurate and would disagree with both GPUs.
  */
-export function sampleLutLinear(lut: Uint8Array, position: number): [number, number, number, number] {
+export function sampleLutLinear(
+  lut: Uint8Array,
+  position: number,
+): [number, number, number, number] {
   const count = lut.length / 4
   if (count < 1) return [0, 0, 0, 0]
   const coordinate = position * count - 0.5
@@ -287,15 +286,7 @@ export function referenceRgbPixel(
   // see a valid neighbor across a boundary, but it is never even evaluated
   // when the current nearest support cell is invalid.
   const lower = validLower
-    ? sampleRgbBilinearSoft(
-        layer.channels,
-        layer.mask,
-        layer.width,
-        layer.height,
-        x,
-        y,
-        sampling,
-      )
+    ? sampleRgbBilinearSoft(layer.channels, layer.mask, layer.width, layer.height, x, y, sampling)
     : null
   const upper = upperLayer
     ? validUpper
@@ -356,13 +347,7 @@ export function referenceRgbCompositionPixel(
 ): [number, number, number, number] {
   const lower = sampleRgbCompositionFrame(layer, style, x, y, overviewArea)
   const upper = blend
-    ? sampleRgbCompositionFrame(
-        blend.upper,
-        style,
-        x,
-        y,
-        upperOverviewArea ?? overviewArea,
-      )
+    ? sampleRgbCompositionFrame(blend.upper, style, x, y, upperOverviewArea ?? overviewArea)
     : lower
   const validLower = lower.nearestValid
   const validUpper = upper.nearestValid
@@ -399,26 +384,12 @@ function sampleRgbCompositionFrame(
   // Do not even enter a component's color kernel when its current nearest
   // support cell is invalid: the neighboring 2x2 weights may polish color,
   // but they are not permission to create support.
-  const hasBaseSupport = nearestMaskValid(
-    layer.baseMask,
-    layer.width,
-    layer.height,
-    x,
-    y,
-  )
+  const hasBaseSupport = nearestMaskValid(layer.baseMask, layer.width, layer.height, x, y)
   const areaObserved =
-    style.supportModulatesWeight && overviewArea
-      ? sampleObservedArea(layer, overviewArea)
-      : null
+    style.supportModulatesWeight && overviewArea ? sampleObservedArea(layer, overviewArea) : null
   const hasObservedSupport = areaObserved
     ? areaObserved.rgb.weight > 0
-    : nearestMaskValid(
-        layer.observedMask,
-        layer.width,
-        layer.height,
-        x,
-        y,
-      )
+    : nearestMaskValid(layer.observedMask, layer.width, layer.height, x, y)
   if (!hasBaseSupport && !hasObservedSupport) {
     return { color: [0, 0, 0], coverage: 0, nearestValid: false }
   }
@@ -434,28 +405,32 @@ function sampleRgbCompositionFrame(
         sampling,
       )
     : null
-  const observed = areaObserved?.rgb ?? (hasObservedSupport
-    ? sampleRgbBilinearSoft(
-        layer.observedChannels,
-        layer.observedMask,
-        layer.width,
-        layer.height,
-        x,
-        y,
-        sampling,
-      )
-    : null)
-  const confidence = areaObserved?.confidence ?? (hasObservedSupport
-    ? sampleScalarBilinearSoft(
-        layer.confidence,
-        layer.observedMask,
-        layer.width,
-        layer.height,
-        x,
-        y,
-        sampling,
-      )
-    : null)
+  const observed =
+    areaObserved?.rgb ??
+    (hasObservedSupport
+      ? sampleRgbBilinearSoft(
+          layer.observedChannels,
+          layer.observedMask,
+          layer.width,
+          layer.height,
+          x,
+          y,
+          sampling,
+        )
+      : null)
+  const confidence =
+    areaObserved?.confidence ??
+    (hasObservedSupport
+      ? sampleScalarBilinearSoft(
+          layer.confidence,
+          layer.observedMask,
+          layer.width,
+          layer.height,
+          x,
+          y,
+          sampling,
+        )
+      : null)
   // Validity is the independent nearest-support gate, not the soft-kernel
   // coverage. In `soft` mode a nearest-valid component can deliberately carry
   // zero edge alpha; GLSL still composes its real color and lets that coverage
@@ -466,7 +441,8 @@ function sampleRgbCompositionFrame(
 
   const baseLinear = validBase ? toLinearRgb(base!.color) : null
   const observedLinear = validObserved ? toLinearRgb(observed!.color) : null
-  if (!validBase) return { color: observedLinear!, coverage: observed!.coverage, nearestValid: true }
+  if (!validBase)
+    return { color: observedLinear!, coverage: observed!.coverage, nearestValid: true }
   if (!validObserved) return { color: baseLinear!, coverage: base!.coverage, nearestValid: true }
 
   const zoomWeight = Math.max(0, Math.min(1, style.observationWeight))
@@ -490,8 +466,7 @@ function sampleObservedArea(
   layer: ReferenceRgbCompositionLayer,
   area: GridAreaSampleBounds,
 ): { rgb: RgbSample; confidence: ScalarSample } {
-  const fullArea =
-    (area.columnStop - area.columnStart) * (area.rowStop - area.rowStart)
+  const fullArea = (area.columnStop - area.columnStart) * (area.rowStop - area.rowStart)
   if (fullArea <= 0) {
     return {
       rgb: { color: [0, 0, 0], coverage: 0, weight: 0 },
@@ -521,11 +496,7 @@ function sampleObservedArea(
   const supportFraction = support / fullArea
   return {
     rgb: {
-      color: [
-        color[0]! / support / 255,
-        color[1]! / support / 255,
-        color[2]! / support / 255,
-      ],
+      color: [color[0]! / support / 255, color[1]! / support / 255, color[2]! / support / 255],
       coverage: 1,
       weight: supportFraction,
     },
@@ -609,9 +580,7 @@ export function referenceScalarPixel(
   if (!isDrawableRange(range) || !isDrawableRange(displayRange)) return [0, 0, 0, 0]
 
   const value =
-    layer.valueKind === 'float32'
-      ? raw
-      : displayValueFromEncoded(raw, toRange(range), style.scale)
+    layer.valueKind === 'float32' ? raw : displayValueFromEncoded(raw, toRange(range), style.scale)
 
   const position = normalizeValue(value, displayRange, style.scale)
   if (position === null) return [0, 0, 0, 0]

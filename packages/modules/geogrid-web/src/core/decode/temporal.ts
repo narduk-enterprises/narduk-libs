@@ -27,8 +27,7 @@ interface TemporalRgbCompositionLayoutDescriptor {
   observedMask: 1
 }
 
-export interface TemporalRgbCompositionV1Descriptor
-  extends TemporalRgbCompositionLayoutDescriptor {
+export interface TemporalRgbCompositionV1Descriptor extends TemporalRgbCompositionLayoutDescriptor {
   version: typeof TEMPORAL_RGB_COMPOSITION_VERSION
   zoomWeights: readonly [
     { maxZoom: 7; weight: 0 },
@@ -38,8 +37,7 @@ export interface TemporalRgbCompositionV1Descriptor
   ]
 }
 
-export interface TemporalRgbCompositionV2AreaAnchorDescriptor
-  extends TemporalRgbCompositionLayoutDescriptor {
+export interface TemporalRgbCompositionV2AreaAnchorDescriptor extends TemporalRgbCompositionLayoutDescriptor {
   version: typeof TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION
   overviewAggregation: {
     maxZoom: 7
@@ -64,8 +62,7 @@ export interface TemporalRgbCompositionV2AreaAnchorDescriptor
 }
 
 export type TemporalRgbCompositionDescriptor =
-  | TemporalRgbCompositionV1Descriptor
-  | TemporalRgbCompositionV2AreaAnchorDescriptor
+  TemporalRgbCompositionV1Descriptor | TemporalRgbCompositionV2AreaAnchorDescriptor
 
 /** Canonical self-description emitted by the producer and validated here. */
 export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionV1Descriptor = {
@@ -85,8 +82,8 @@ export const TEMPORAL_RGB_COMPOSITION_DESCRIPTOR: TemporalRgbCompositionV1Descri
 }
 
 /** Canonical support-aware overview descriptor emitted by narduk-data. */
-export const TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_DESCRIPTOR:
-  TemporalRgbCompositionV2AreaAnchorDescriptor = {
+export const TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_DESCRIPTOR: TemporalRgbCompositionV2AreaAnchorDescriptor =
+  {
     version: TEMPORAL_RGB_COMPOSITION_V2_AREA_ANCHOR_VERSION,
     blendSpace: 'linear-srgb',
     baseChannels: [0, 1, 2],
@@ -290,12 +287,7 @@ export async function decodeTemporalChunk(
     throw new Error('Legacy temporal frames require maskCount 1')
   }
   const bytesPerSample = renderMode === 'rgb' ? 1 : 2
-  const valuesBytes = checkedProduct(
-    header.frameCount,
-    pixelCount,
-    planeCount,
-    bytesPerSample,
-  )
+  const valuesBytes = checkedProduct(header.frameCount, pixelCount, planeCount, bytesPerSample)
   const masksBytes = checkedProduct(header.frameCount, pixelCount, maskCount)
   const expectedDecompressed = valuesBytes + masksBytes
   if (
@@ -384,7 +376,9 @@ export async function decodeTemporalChunk(
 
 async function inflate(compressed: Uint8Array, expectedBytes: number): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') {
-    throw new Error('Temporal playback requires deflate decompression support (DecompressionStream)')
+    throw new Error(
+      'Temporal playback requires deflate decompression support (DecompressionStream)',
+    )
   }
   const ownedBuffer = new Uint8Array(compressed).buffer as ArrayBuffer
   const stream = new Blob([ownedBuffer]).stream().pipeThrough(new DecompressionStream('deflate'))
@@ -441,9 +435,7 @@ function parseHeader(bytes: Uint8Array): TemporalChunkHeader {
   }
 }
 
-function parseRgbComposition(
-  descriptor: unknown,
-): TemporalRgbCompositionDescriptor | null {
+function parseRgbComposition(descriptor: unknown): TemporalRgbCompositionDescriptor | null {
   if (descriptor === undefined) return null
   if (!isRecord(descriptor) || !hasCanonicalCompositionLayout(descriptor)) {
     throw new Error('Temporal RGB composition descriptor is invalid')
@@ -524,11 +516,7 @@ function hasCanonicalCompositionLayout(descriptor: Record<string, unknown>): boo
   )
 }
 
-function hasCanonicalZoomWeights(
-  value: unknown,
-  overviewWeight: 0 | 0.2,
-  exact: boolean,
-): boolean {
+function hasCanonicalZoomWeights(value: unknown, overviewWeight: 0 | 0.2, exact: boolean): boolean {
   if (!Array.isArray(value) || value.length !== 4 || !value.every(isRecord)) return false
   return (
     (!exact || hasExactKeys(value[0]!, ['maxZoom', 'weight'])) &&

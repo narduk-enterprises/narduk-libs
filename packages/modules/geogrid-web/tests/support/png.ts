@@ -214,7 +214,8 @@ export function decodePng(buffer: Uint8Array): DecodedPng {
       pixels[dstOffset] = palette![paletteOffset]!
       pixels[dstOffset + 1] = palette![paletteOffset + 1]!
       pixels[dstOffset + 2] = palette![paletteOffset + 2]!
-      pixels[dstOffset + 3] = transparency && index < transparency.byteLength ? transparency[index]! : 255
+      pixels[dstOffset + 3] =
+        transparency && index < transparency.byteLength ? transparency[index]! : 255
     }
   }
 

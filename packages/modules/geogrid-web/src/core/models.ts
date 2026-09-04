@@ -62,8 +62,7 @@ export type GridBBoxAnchor = 'cell-center' | 'cell-edge'
 
 /** Published scale-aware RGB composition contracts understood by the renderers. */
 export type GridRgbCompositionVersion =
-  | 'base-observed-confidence-v1'
-  | 'base-observed-confidence-v2-area-anchor'
+  'base-observed-confidence-v1' | 'base-observed-confidence-v2-area-anchor'
 
 /**
  * The optional scale-aware payload carried by a precolored temporal RGB frame.
@@ -173,7 +172,9 @@ export function valueRangeToTuple(range: GridValueRange): [number, number] {
   return [range.lowerBound, range.upperBound]
 }
 
-export function isUsableViewport(viewport: GridViewport | null | undefined): viewport is GridViewport {
+export function isUsableViewport(
+  viewport: GridViewport | null | undefined,
+): viewport is GridViewport {
   if (!viewport) return false
   const { latitudeDelta, longitudeDelta } = viewport.span
   return (

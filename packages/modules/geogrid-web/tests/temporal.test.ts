@@ -76,22 +76,27 @@ function buildChunk(options: {
   const raw = new Uint8Array(values.length + masks.length)
   raw.set(values, 0)
   raw.set(masks, values.length)
-  return packChunk({
-    dates,
-    frameCount,
-    width,
-    height,
-    planeCount,
-    renderMode,
-  }, raw)
+  return packChunk(
+    {
+      dates,
+      frameCount,
+      width,
+      height,
+      planeCount,
+      renderMode,
+    },
+    raw,
+  )
 }
 
-function buildComposedRgbChunk(options: {
-  planeCount?: number
-  maskCount?: number
-  extraRawBytes?: number
-  omitHeaderLayout?: boolean
-} = {}): ArrayBuffer {
+function buildComposedRgbChunk(
+  options: {
+    planeCount?: number
+    maskCount?: number
+    extraRawBytes?: number
+    omitHeaderLayout?: boolean
+  } = {},
+): ArrayBuffer {
   const width = 2
   const height = 1
   const planeCount = options.planeCount ?? 7
@@ -173,9 +178,9 @@ const baseManifest = (overrides: Partial<TemporalRasterManifest> = {}): Temporal
 
 describe('decodeTemporalChunk', () => {
   it('rejects non-temporal payloads before decompress', async () => {
-    await expect(decodeTemporalChunk(new Uint8Array([1, 2, 3]).buffer, baseManifest())).rejects.toThrow(
-      'Invalid temporal artifact magic',
-    )
+    await expect(
+      decodeTemporalChunk(new Uint8Array([1, 2, 3]).buffer, baseManifest()),
+    ).rejects.toThrow('Invalid temporal artifact magic')
   })
 
   it('decodes a synthetic scalar chunk including odd widths', async () => {
@@ -265,16 +270,56 @@ describe('decodeTemporalChunk', () => {
     expect(frame?.rgbComposition?.version).toBe('base-observed-confidence-v2-area-anchor')
   })
 
+  /* eslint-disable @typescript-eslint/no-explicit-any -- each mutator reaches into a
+     structuredClone of the descriptor fixture through a different dynamic property path
+     to exercise one rejection branch; narrowing this to a real descriptor union is
+     tracked in narduk-libs#144 rather than fixed here. */
   it.each([
-    ['method', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.method = 'point' }],
-    ['max zoom', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.maxZoom = 8 }],
-    ['support flag', (descriptor: Record<string, any>) => { descriptor.overviewAggregation.supportModulatesWeight = false }],
-    ['recipe version', (descriptor: Record<string, any>) => { descriptor.scaleAwareRecipe.version = 'water-quality-v2-scale-aware-v1' }],
-    ['recipe weight', (descriptor: Record<string, any>) => { descriptor.scaleAwareRecipe.zoomWeights['0-7'] = 0 }],
-    ['anchor weight', (descriptor: Record<string, any>) => { descriptor.zoomWeights[0].weight = 0 }],
-    ['unknown metadata', (descriptor: Record<string, any>) => { descriptor.unrecognized = true }],
+    [
+      'method',
+      (descriptor: Record<string, any>) => {
+        descriptor.overviewAggregation.method = 'point'
+      },
+    ],
+    [
+      'max zoom',
+      (descriptor: Record<string, any>) => {
+        descriptor.overviewAggregation.maxZoom = 8
+      },
+    ],
+    [
+      'support flag',
+      (descriptor: Record<string, any>) => {
+        descriptor.overviewAggregation.supportModulatesWeight = false
+      },
+    ],
+    [
+      'recipe version',
+      (descriptor: Record<string, any>) => {
+        descriptor.scaleAwareRecipe.version = 'water-quality-v2-scale-aware-v1'
+      },
+    ],
+    [
+      'recipe weight',
+      (descriptor: Record<string, any>) => {
+        descriptor.scaleAwareRecipe.zoomWeights['0-7'] = 0
+      },
+    ],
+    [
+      'anchor weight',
+      (descriptor: Record<string, any>) => {
+        descriptor.zoomWeights[0].weight = 0
+      },
+    ],
+    [
+      'unknown metadata',
+      (descriptor: Record<string, any>) => {
+        descriptor.unrecognized = true
+      },
+    ],
   ])('rejects altered v2 %s metadata', async (_label, alter) => {
     const descriptor = structuredClone(PRODUCER_V2_DESCRIPTOR) as unknown as Record<string, any>
+    /* eslint-enable @typescript-eslint/no-explicit-any -- scope ends with the fixture setup above */
     alter(descriptor)
     await expect(
       decodeTemporalChunk(
@@ -321,10 +366,7 @@ describe('decodeTemporalChunk', () => {
       decodeTemporalChunk(buildComposedRgbChunk(), composedManifest({ planeCount: 3 })),
     ).rejects.toThrow('planeCount does not match manifest')
     await expect(
-      decodeTemporalChunk(
-        buildComposedRgbChunk({ omitHeaderLayout: true }),
-        composedManifest(),
-      ),
+      decodeTemporalChunk(buildComposedRgbChunk({ omitHeaderLayout: true }), composedManifest()),
     ).rejects.toThrow('chunk header must mirror planeCount and maskCount')
     const missingManifestLayout = composedManifest()
     delete missingManifestLayout.planeCount
@@ -363,10 +405,7 @@ describe('decodeTemporalChunk', () => {
   it('rejects unsupported runtime manifest metadata before decompression', async () => {
     const payload = buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] })
     await expect(
-      decodeTemporalChunk(
-        payload,
-        baseManifest({ compression: 'brotli' as unknown as 'zlib' }),
-      ),
+      decodeTemporalChunk(payload, baseManifest({ compression: 'brotli' as unknown as 'zlib' })),
     ).rejects.toThrow('compression is unsupported')
   })
 
@@ -391,9 +430,9 @@ describe('decodeTemporalChunk', () => {
       },
       new Uint8Array(),
     )
-    await expect(
-      decodeTemporalChunk(payload, composedManifest({ width, height })),
-    ).rejects.toThrow('exceeds size limit')
+    await expect(decodeTemporalChunk(payload, composedManifest({ width, height }))).rejects.toThrow(
+      'exceeds size limit',
+    )
   })
 
   it('rejects non-integer header geometry before allocation', async () => {

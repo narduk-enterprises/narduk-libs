@@ -1,11 +1,5 @@
 import { gridBounds, type GridBinaryHeader, type GridScalarDataset } from './decode/grid.js'
-import type {
-  GridBBox,
-  GridBBoxAnchor,
-  GridScale,
-  GridValueRange,
-  GridViewport,
-} from './models.js'
+import type { GridBBox, GridBBoxAnchor, GridScale, GridValueRange, GridViewport } from './models.js'
 
 /**
  * Dynamic display range — the *render* stretch, held apart from the wire domain.
@@ -632,10 +626,7 @@ export interface GridDisplayRangeMeta {
   fallback: boolean
 }
 
-export type GridDisplayRangeListener = (
-  range: GridValueRange,
-  meta: GridDisplayRangeMeta,
-) => void
+export type GridDisplayRangeListener = (range: GridValueRange, meta: GridDisplayRangeMeta) => void
 
 /** The data a stretch is computed from. */
 export interface GridStretchSource {
@@ -954,11 +945,7 @@ function sameResult(a: GridStretchResult | null, b: GridStretchResult | null): b
  * The span is the *current* one, not the candidate's: the question being asked
  * is "is this a visible change to what the operator is looking at now".
  */
-function movedEnough(
-  current: GridValueRange,
-  next: GridValueRange,
-  threshold: number,
-): boolean {
+function movedEnough(current: GridValueRange, next: GridValueRange, threshold: number): boolean {
   const span = current.upperBound - current.lowerBound
   if (!(span > 0)) return true
   const limit = span * threshold

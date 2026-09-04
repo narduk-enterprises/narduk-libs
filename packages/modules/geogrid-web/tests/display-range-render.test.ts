@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { displayValueFromEncoded } from '../src/core/math.js'
 import { normalizeValue } from '../src/color/normalize.js'
 import { rampLut } from '../src/color/ramp.js'
+import type { GridScalarDataset } from '../src/core/decode/grid.js'
 import {
   referenceRenderScalarViewport,
   referenceScalarPixel,
@@ -335,7 +336,7 @@ const DATASET_LON0 = -95
 const DATASET_LAT0 = 30
 const DATASET_BBOX = datasetBounds(DATASET_LON0, DATASET_LAT0, DATASET_DX, DATASET_DY)
 
-function rampDataset(): import('../src/core/decode/grid.js').GridScalarDataset {
+function rampDataset(): GridScalarDataset {
   const { values, mask } = rampGrid()
   return {
     header: {
@@ -543,7 +544,7 @@ describe('GridOverlay drives the stretch end to end', () => {
    * answered a plausible range computed from cells nobody was looking at, with
    * an error that grows without bound as the override moves away.
    */
-  it('stretches through setScalarFrame\'s bbox override, not the header', async () => {
+  it("stretches through setScalarFrame's bbox override, not the header", async () => {
     const { createGridOverlay } = await import('../src/overlay/grid-overlay.js')
 
     // The viewport covers the western half of the *overridden* extent.
@@ -758,7 +759,9 @@ function expectedMinifiedRaster(displayRange: GridValueRange): Uint8ClampedArray
   return pixels
 }
 
-async function renderMinified(displayRange: GridValueRange | undefined): Promise<Uint8ClampedArray> {
+async function renderMinified(
+  displayRange: GridValueRange | undefined,
+): Promise<Uint8ClampedArray> {
   const { Canvas2DGridBackend } = await import('../src/render/canvas2d.js')
   const { values, mask } = minifiedGrid()
   const backend = Canvas2DGridBackend.create({
@@ -887,10 +890,7 @@ describe('the WebGL2 scalar shader splits decode from normalize', () => {
       expect(normalize).toContain('if (!(displayRange.x < displayRange.y)) return -1.0;')
       // …and the arithmetic reads only the display range. A stray `valueRange`
       // outside the guard line is the exact regression this catches.
-      const arithmetic = normalize.replace(
-        'if (!(valueRange.x < valueRange.y)) return -1.0;',
-        '',
-      )
+      const arithmetic = normalize.replace('if (!(valueRange.x < valueRange.y)) return -1.0;', '')
       expect(arithmetic).not.toContain('valueRange')
       expect(arithmetic).toContain('displayRange.x')
       expect(arithmetic).toContain('displayRange.y')

@@ -38,25 +38,25 @@ interface ParityFixture {
   rampSpecVersion: number
   rounding: string
   ramps: Record<string, RampStop[]>
-  cases: {
+  cases: Array<{
     name: string
     ramp: string
     valueRange: [number, number]
     scale: GridScale
-    samples: { value: number; normalized: number | null; rgba: number[] }[]
-  }[]
-  positionCases: {
+    samples: Array<{ value: number; normalized: number | null; rgba: number[] }>
+  }>
+  positionCases: Array<{
     name: string
     ramp: string
-    samples: { position: number; rgba: number[] }[]
-  }[]
-  wireStopCases: {
+    samples: Array<{ position: number; rgba: number[] }>
+  }>
+  wireStopCases: Array<{
     ramp: string
     valueRange: [number, number]
     scale: GridScale
     wire: RampStopWire[]
     expectedPositions: number[]
-  }[]
+  }>
   luts: Record<string, string>
   lutDigests: Record<string, string>
 }
@@ -218,13 +218,13 @@ describe('denormalizePosition matches the server round trip', () => {
   // the `value` the server wrote onto the wire for that same stop.
   for (const wireCase of fixture.wireStopCases) {
     it(`${wireCase.ramp} (${wireCase.scale})`, () => {
-      wireCase.expectedPositions.forEach((position, index) => {
+      for (const [index, position] of wireCase.expectedPositions.entries()) {
         const expectedValue = wireCase.wire[index]!.value
         const actual = denormalizePosition(position, wireCase.valueRange, wireCase.scale)
         // Same tolerance as the other cross-language float comparisons in this
         // file: log10 may differ by a ULP between CPython's libm and V8's.
         expect(actual, `stop ${index}`).toBeCloseTo(expectedValue, 9)
-      })
+      }
     })
   }
 })
@@ -236,10 +236,10 @@ describe('normalizeWireStops inverts the catalog wire encoding', () => {
       const registry = stopsFor(wireCase.ramp)
 
       expect(stops).toHaveLength(registry.length)
-      stops.forEach((stop, index) => {
+      for (const [index, stop] of stops.entries()) {
         expect(stop.position, `stop ${index}`).toBeCloseTo(wireCase.expectedPositions[index]!, 12)
         expect(stop.rgba, `stop ${index}`).toEqual(registry[index]!.rgba)
-      })
+      }
     })
   }
 
@@ -280,9 +280,7 @@ describe('normalizeWireStops inverts the catalog wire encoding', () => {
     // The failure this guards is silent: a log layer ranged inside 0..1 has
     // every wire stop value below 1.0 while every one of them is a data value.
     // A max<=1 heuristic reads those as positions and squashes the whole ramp.
-    const chlorophyll = fixture.wireStopCases.find(
-      (entry) => entry.ramp === 'chlorophyll',
-    )!
+    const chlorophyll = fixture.wireStopCases.find((entry) => entry.ramp === 'chlorophyll')!
 
     it('does not mistake a sub-unit log layer’s data values for positions', () => {
       expect(chlorophyll.wire.every((stop) => stop.value <= 1)).toBe(true)

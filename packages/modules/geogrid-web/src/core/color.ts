@@ -55,9 +55,7 @@ export function sampleRamp(stops: readonly ColorStop[], value: number): RGB {
  * why the `./color` subpath is not re-exported from the package root.
  */
 export function rampLut(ramp: ColorRamp | readonly ColorStop[], count = 256): RGB[] {
-  const stops: readonly ColorStop[] = Array.isArray(ramp)
-    ? ramp
-    : (ramp as ColorRamp).stops
+  const stops: readonly ColorStop[] = Array.isArray(ramp) ? ramp : (ramp as ColorRamp).stops
   if (stops.length === 0 || count <= 0) return []
   const first = stops[0]!
   const last = stops[stops.length - 1]!

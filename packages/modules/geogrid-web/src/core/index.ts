@@ -14,11 +14,7 @@ export type {
   GridViewport,
   RampStop,
 } from './models.js'
-export {
-  isUsableViewport,
-  valueRangeFromTuple,
-  valueRangeToTuple,
-} from './models.js'
+export { isUsableViewport, valueRangeFromTuple, valueRangeToTuple } from './models.js'
 export {
   blendEncoded,
   blendedDisplayValue,

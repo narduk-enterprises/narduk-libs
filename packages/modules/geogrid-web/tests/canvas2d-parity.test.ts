@@ -404,7 +404,6 @@ describe('Canvas2D scale-aware RGB === linear-sRGB CPU reference', () => {
     })
   }
 
-
   it('derives continuous zoom from CSS width when the host omits viewport.zoom', async () => {
     const expectedZoom = 9.25
     const longitudeDelta = (360 * CANVAS_WIDTH) / (256 * 2 ** expectedZoom)

@@ -1,12 +1,7 @@
 import { gridBounds, type GridScalarDataset } from '../core/decode/grid.js'
 import { defaultBBoxAnchor, frameCacheKey, gridFrameFromScalarDataset } from '../core/frame.js'
 import { texelPositionFromUv } from '../core/math.js'
-import type {
-  GridBBox,
-  GridBBoxAnchor,
-  GridFrame,
-  GridValueKind,
-} from '../core/models.js'
+import type { GridBBox, GridBBoxAnchor, GridFrame, GridValueKind } from '../core/models.js'
 import {
   referenceScalarPixel,
   type ReferenceRaster,
@@ -644,9 +639,8 @@ export class GridTileRenderer {
 
     const gl = this.gl
     const values = frame.values
-    const usable = frame.valueKind === 'float32'
-      ? values instanceof Float32Array
-      : values instanceof Uint16Array
+    const usable =
+      frame.valueKind === 'float32' ? values instanceof Float32Array : values instanceof Uint16Array
     if (!usable) return null
 
     let valueTexture: WebGLTexture | null = null
@@ -659,12 +653,27 @@ export class GridTileRenderer {
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
       if (values instanceof Float32Array) {
         gl.texImage2D(
-          gl.TEXTURE_2D, 0, gl.R32F, frame.width, frame.height, 0, gl.RED, gl.FLOAT, values,
+          gl.TEXTURE_2D,
+          0,
+          gl.R32F,
+          frame.width,
+          frame.height,
+          0,
+          gl.RED,
+          gl.FLOAT,
+          values,
         )
       } else {
         gl.texImage2D(
-          gl.TEXTURE_2D, 0, gl.R16UI, frame.width, frame.height, 0,
-          gl.RED_INTEGER, gl.UNSIGNED_SHORT, values as Uint16Array,
+          gl.TEXTURE_2D,
+          0,
+          gl.R16UI,
+          frame.width,
+          frame.height,
+          0,
+          gl.RED_INTEGER,
+          gl.UNSIGNED_SHORT,
+          values as Uint16Array,
         )
       }
 
@@ -673,8 +682,15 @@ export class GridTileRenderer {
       gl.bindTexture(gl.TEXTURE_2D, maskTexture)
       setClampNearest(gl)
       gl.texImage2D(
-        gl.TEXTURE_2D, 0, gl.R8UI, frame.width, frame.height, 0,
-        gl.RED_INTEGER, gl.UNSIGNED_BYTE, frame.mask,
+        gl.TEXTURE_2D,
+        0,
+        gl.R8UI,
+        frame.width,
+        frame.height,
+        0,
+        gl.RED_INTEGER,
+        gl.UNSIGNED_BYTE,
+        frame.mask,
       )
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
     } catch {
@@ -854,8 +870,7 @@ export function renderGridTile(
 ): OffscreenCanvas {
   const backend = options.backend ?? 'auto'
   if (backend !== 'cpu') {
-    const renderer =
-      options.renderer !== undefined ? options.renderer : sharedGridTileRenderer()
+    const renderer = options.renderer !== undefined ? options.renderer : sharedGridTileRenderer()
     const raster = renderer?.render(source, style, options) ?? null
     if (raster) return rasterToCanvas(raster)
     if (backend === 'webgl2') {

@@ -5,7 +5,8 @@
   "description": "Web twin of GeoGridKit: gridded geo-data overlay and Web-Mercator tile render (WebGL2 + CPU fallback).",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/narduk-enterprises/GeoGridWeb.git"
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/geogrid-web"
   },
   "homepage": "https://github.com/narduk-enterprises/GeoGridWeb#readme",
   "bugs": {
@@ -59,14 +60,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check:exports": "node script/check_package_exports.mjs",
-    "check:package": "node script/check_package_exports.mjs",
+    "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
     "prepare": "tsc -p tsconfig.build.json",
-    "quality": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:package && pnpm exec publint",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^24.0.4",
+    "@types/node": "^22.19.19",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"
@@ -75,8 +78,7 @@
     "node": ">=20"
   },
   "publishConfig": {
-    "access": "public",
+    "access": "restricted",
     "registry": "https://npm.pkg.github.com"
-  },
-  "packageManager": "pnpm@10.33.4"
+  }
 }

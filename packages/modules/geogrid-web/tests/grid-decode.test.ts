@@ -94,9 +94,7 @@ describe('checked-in fixtures still match their GeoGridKit pins', () => {
     it(name, () => {
       const buffer = loadFixture(fixture.file)
       expect(buffer.byteLength).toBe(fixture.byteCount)
-      expect(createHash('sha256').update(new Uint8Array(buffer)).digest('hex')).toBe(
-        fixture.sha256,
-      )
+      expect(createHash('sha256').update(new Uint8Array(buffer)).digest('hex')).toBe(fixture.sha256)
       // Envelope layout: 4-byte length prefix + header JSON + 48 payload bytes.
       expect(buffer.byteLength).toBe(4 + fixture.headerBytes + 48)
     })
@@ -374,9 +372,9 @@ describe('fails closed on a malformed payload', () => {
     expect(() => decodeGridBinary(buildGrid(baseHeader({ width: 0 }), [[]]))).toThrow(
       /width must be a positive integer/,
     )
-    expect(() =>
-      decodeGridBinary(buildGrid(baseHeader({ height: -1 }), [[1, 2, 3, 4]])),
-    ).toThrow(/height must be a positive integer/)
+    expect(() => decodeGridBinary(buildGrid(baseHeader({ height: -1 }), [[1, 2, 3, 4]]))).toThrow(
+      /height must be a positive integer/,
+    )
     expect(() =>
       decodeGridBinary(buildGrid(baseHeader({ dx: 0, width: 2 }), [[1, 2, 3, 4]])),
     ).toThrow(/dx cannot be zero/)

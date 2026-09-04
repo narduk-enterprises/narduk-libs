@@ -262,15 +262,19 @@ describe('referenceRenderScalarViewport', () => {
   }
 
   it('leaves everything outside the data bbox transparent', () => {
-    const raster = referenceRenderScalarViewport(layer([50, 50, 50, 50], [1, 1, 1, 1], 2, 2), style, {
-      viewport: {
-        center: { latitude: 0, longitude: 0 },
-        span: { latitudeDelta: 4, longitudeDelta: 4 },
+    const raster = referenceRenderScalarViewport(
+      layer([50, 50, 50, 50], [1, 1, 1, 1], 2, 2),
+      style,
+      {
+        viewport: {
+          center: { latitude: 0, longitude: 0 },
+          span: { latitudeDelta: 4, longitudeDelta: 4 },
+        },
+        bbox: [-1, -1, 1, 1],
+        width: 16,
+        height: 16,
       },
-      bbox: [-1, -1, 1, 1],
-      width: 16,
-      height: 16,
-    })
+    )
     // The data covers the middle half of the viewport, so the corners are empty.
     expect(raster.pixels[3]).toBe(0)
     expect(raster.pixels[raster.pixels.length - 1]).toBe(0)
@@ -409,7 +413,9 @@ describe('frameContentKey — float32 planes', () => {
 
   it('is stable for identical float content', () => {
     const values = () => new Float32Array([0.1, 0.2, Number.NaN, 0.4])
-    expect(frameContentKey('k', 2, 2, values(), mask)).toBe(frameContentKey('k', 2, 2, values(), mask))
+    expect(frameContentKey('k', 2, 2, values(), mask)).toBe(
+      frameContentKey('k', 2, 2, values(), mask),
+    )
   })
 
   it('separates two large planes differing well away from the sampled stride', () => {

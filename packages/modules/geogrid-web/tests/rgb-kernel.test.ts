@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  nearestMaskValid,
-  sampleRgbBilinearSoft,
-  validSideFeather,
-} from '../src/core/math.js'
+import { nearestMaskValid, sampleRgbBilinearSoft, validSideFeather } from '../src/core/math.js'
 import {
   referenceRenderRgbViewport,
   referenceRgbPixel,
@@ -36,14 +32,7 @@ const STYLE: GridStyle = {
 }
 
 describe('sampleRgbBilinearSoft', () => {
-  const shoreline = layer(
-    [204, 0, 204, 0],
-    [153, 0, 153, 0],
-    [51, 0, 51, 0],
-    [1, 0, 1, 0],
-    2,
-    2,
-  )
+  const shoreline = layer([204, 0, 204, 0], [153, 0, 153, 0], [51, 0, 51, 0], [1, 0, 1, 0], 2, 2)
 
   it('renormalizes over real colors instead of blending a missing texel as black', () => {
     const sample = sampleRgbBilinearSoft(
@@ -87,15 +76,7 @@ describe('sampleRgbBilinearSoft', () => {
   })
 
   it('reports an honest gap when no real neighbor survives', () => {
-    const empty = sampleRgbBilinearSoft(
-      shoreline.channels,
-      [0, 0, 0, 0],
-      2,
-      2,
-      0.5,
-      0.5,
-      'coastal',
-    )
+    const empty = sampleRgbBilinearSoft(shoreline.channels, [0, 0, 0, 0], 2, 2, 0.5, 0.5, 'coastal')
     expect(empty).toEqual({ color: [0, 0, 0], coverage: 0, weight: 0 })
   })
 
@@ -110,26 +91,17 @@ describe('sampleRgbBilinearSoft', () => {
     )
 
     expect(
-      sampleRgbBilinearSoft(separated.channels, separated.mask, 5, 1, 1, 0, 'coastal')
-        .coverage,
+      sampleRgbBilinearSoft(separated.channels, separated.mask, 5, 1, 1, 0, 'coastal').coverage,
     ).toBe(0)
     expect(
-      sampleRgbBilinearSoft(separated.channels, separated.mask, 5, 1, 2.5, 0, 'coastal')
-        .coverage,
+      sampleRgbBilinearSoft(separated.channels, separated.mask, 5, 1, 2.5, 0, 'coastal').coverage,
     ).toBe(0)
   })
 })
 
 describe('referenceRgbPixel', () => {
   it('feathers only alpha while preserving the measured edge color', () => {
-    const source = layer(
-      [204, 0, 204, 0],
-      [153, 0, 153, 0],
-      [51, 0, 51, 0],
-      [1, 0, 1, 0],
-      2,
-      2,
-    )
+    const source = layer([204, 0, 204, 0], [153, 0, 153, 0], [51, 0, 51, 0], [1, 0, 1, 0], 2, 2)
     const pixel = referenceRgbPixel(source, { sampling: 'coastal' }, 0.49, 0.5)
 
     expect(pixel.slice(0, 3)).toEqual([204, 153, 51])
@@ -155,8 +127,22 @@ describe('referenceRgbPixel', () => {
   })
 
   it('blends adjacent real frames without channel overshoot', () => {
-    const lower = layer([20, 20, 20, 20], [40, 40, 40, 40], [200, 200, 200, 200], [1, 1, 1, 1], 2, 2)
-    const upper = layer([220, 220, 220, 220], [100, 100, 100, 100], [30, 30, 30, 30], [1, 1, 1, 1], 2, 2)
+    const lower = layer(
+      [20, 20, 20, 20],
+      [40, 40, 40, 40],
+      [200, 200, 200, 200],
+      [1, 1, 1, 1],
+      2,
+      2,
+    )
+    const upper = layer(
+      [220, 220, 220, 220],
+      [100, 100, 100, 100],
+      [30, 30, 30, 30],
+      [1, 1, 1, 1],
+      2,
+      2,
+    )
     const pixel = referenceRgbPixel(lower, {}, 0.5, 0.5, { upper, progress: 0.25 })
 
     expect(pixel).toEqual([70, 55, 157.5, 255])
@@ -168,14 +154,7 @@ describe('referenceRgbPixel', () => {
 })
 
 describe('RGB nearest-mask honesty gate', () => {
-  const edge = layer(
-    [204, 251],
-    [153, 17],
-    [51, 239],
-    [1, 0],
-    2,
-    1,
-  )
+  const edge = layer([204, 251], [153, 17], [51, 239], [1, 0], 2, 1)
 
   it('keeps alpha pointwise within the legacy nearest-mask footprint', () => {
     for (let x = -0.5; x <= 1.5; x += 0.01) {
@@ -198,14 +177,7 @@ describe('RGB nearest-mask honesty gate', () => {
   })
 
   it('uses the same strict edge on the reversed mask', () => {
-    const reversed = layer(
-      [251, 204],
-      [17, 153],
-      [239, 51],
-      [0, 1],
-      2,
-      1,
-    )
+    const reversed = layer([251, 204], [17, 153], [239, 51], [0, 1], 2, 1)
 
     expect(referenceRgbPixel(reversed, { sampling: 'coastal' }, 0.49, 0)[3]).toBe(0)
     const valid = referenceRgbPixel(reversed, { sampling: 'coastal' }, 0.51, 0)
@@ -221,16 +193,20 @@ describe('RGB nearest-mask honesty gate', () => {
     const upper = frame(true, [200, 180, 160])
 
     for (const progress of [0, 0.5, 1]) {
-      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
-        .toEqual([0, 0, 0, 0])
-      expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }))
-        .toEqual([20, 40, 60, 255])
-      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper, progress }))
-        .toEqual([200, 180, 160, 255])
+      expect(
+        referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }),
+      ).toEqual([0, 0, 0, 0])
+      expect(
+        referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper: zero, progress }),
+      ).toEqual([20, 40, 60, 255])
+      expect(referenceRgbPixel(zero, { sampling: 'coastal' }, 0, 0, { upper, progress })).toEqual([
+        200, 180, 160, 255,
+      ])
     }
 
-    expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0 }))
-      .toEqual([20, 40, 60, 255])
+    expect(referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 0 })).toEqual(
+      [20, 40, 60, 255],
+    )
     const atUpper = referenceRgbPixel(lower, { sampling: 'coastal' }, 0, 0, { upper, progress: 1 })
     expect(atUpper[0]).toBeCloseTo(200, 12)
     expect(atUpper[1]).toBeCloseTo(180, 12)
@@ -275,33 +251,45 @@ describe('RGB viewport parity', () => {
       height,
     )
     const bbox = [-1, -1, 1, 1] as const
-    const full = referenceRenderRgbViewport(source, {}, {
-      viewport: {
-        center: { latitude: 0, longitude: 0 },
-        span: { latitudeDelta: 2, longitudeDelta: 2 },
+    const full = referenceRenderRgbViewport(
+      source,
+      {},
+      {
+        viewport: {
+          center: { latitude: 0, longitude: 0 },
+          span: { latitudeDelta: 2, longitudeDelta: 2 },
+        },
+        bbox,
+        width: 64,
+        height: 24,
       },
-      bbox,
-      width: 64,
-      height: 24,
-    })
-    const left = referenceRenderRgbViewport(source, {}, {
-      viewport: {
-        center: { latitude: 0, longitude: -0.5 },
-        span: { latitudeDelta: 2, longitudeDelta: 1 },
+    )
+    const left = referenceRenderRgbViewport(
+      source,
+      {},
+      {
+        viewport: {
+          center: { latitude: 0, longitude: -0.5 },
+          span: { latitudeDelta: 2, longitudeDelta: 1 },
+        },
+        bbox,
+        width: 32,
+        height: 24,
       },
-      bbox,
-      width: 32,
-      height: 24,
-    })
-    const right = referenceRenderRgbViewport(source, {}, {
-      viewport: {
-        center: { latitude: 0, longitude: 0.5 },
-        span: { latitudeDelta: 2, longitudeDelta: 1 },
+    )
+    const right = referenceRenderRgbViewport(
+      source,
+      {},
+      {
+        viewport: {
+          center: { latitude: 0, longitude: 0.5 },
+          span: { latitudeDelta: 2, longitudeDelta: 1 },
+        },
+        bbox,
+        width: 32,
+        height: 24,
       },
-      bbox,
-      width: 32,
-      height: 24,
-    })
+    )
 
     for (let y = 0; y < full.height; y += 1) {
       const fullRow = full.pixels.slice(y * 64 * 4, (y + 1) * 64 * 4)

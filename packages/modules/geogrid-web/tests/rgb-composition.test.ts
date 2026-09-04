@@ -16,10 +16,7 @@ import {
   type ReferenceRgbCompositionLayer,
 } from '../src/core/reference-render.js'
 import type { GridRgbComposition, GridViewport } from '../src/core/models.js'
-import {
-  rgbCompositionFragmentShader,
-  rgbFragmentShader,
-} from '../src/render/gl.js'
+import { rgbCompositionFragmentShader, rgbFragmentShader } from '../src/render/gl.js'
 import { RGB_COMPOSITION_TEXTURE_UNIT_COUNT } from '../src/render/webgl2.js'
 
 function solidComposition(
@@ -47,8 +44,16 @@ function edgeComposition(
   observedMask: readonly number[],
 ): ReferenceRgbCompositionLayer {
   return {
-    baseChannels: [[40, 250], [80, 17], [120, 239]],
-    observedChannels: [[180, 3], [140, 4], [100, 5]],
+    baseChannels: [
+      [40, 250],
+      [80, 17],
+      [120, 239],
+    ],
+    observedChannels: [
+      [180, 3],
+      [140, 4],
+      [100, 5],
+    ],
     confidence: [255, 255],
     baseMask,
     observedMask,
@@ -261,10 +266,20 @@ describe('linear-sRGB composition', () => {
     expect(observedPixel[1]).toBeCloseTo(140, 12)
     expect(observedPixel[2]).toBeCloseTo(100, 12)
     expect(
-      referenceRgbCompositionPixel(reversed, { observationWeight: 0, sampling: 'coastal' }, 0.49, 0),
+      referenceRgbCompositionPixel(
+        reversed,
+        { observationWeight: 0, sampling: 'coastal' },
+        0.49,
+        0,
+      ),
     ).toEqual([0, 0, 0, 0])
     expect(
-      referenceRgbCompositionPixel(reversed, { observationWeight: 0, sampling: 'coastal' }, 0.51, 0)[3],
+      referenceRgbCompositionPixel(
+        reversed,
+        { observationWeight: 0, sampling: 'coastal' },
+        0.51,
+        0,
+      )[3],
     ).toBeGreaterThan(0)
   })
 
@@ -293,22 +308,39 @@ describe('linear-sRGB composition', () => {
     const style = { observationWeight: 0, sampling: 'coastal' } as const
 
     for (const progress of [0, 0.5, 1]) {
-      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper: zero, progress }))
-        .toEqual([0, 0, 0, 0])
-      expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper: zero, progress }))
-        .toEqual([20, 40, 60, 255])
-      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper, progress }))
-        .toEqual([200, 180, 160, 255])
+      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper: zero, progress })).toEqual([
+        0, 0, 0, 0,
+      ])
+      expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper: zero, progress })).toEqual([
+        20, 40, 60, 255,
+      ])
+      expect(referenceRgbCompositionPixel(zero, style, 0, 0, { upper, progress })).toEqual([
+        200, 180, 160, 255,
+      ])
     }
 
-    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0 }))
-      .toEqual([20, 40, 60, 255])
-    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 1 }))
-      .toEqual([200, 180, 160, 255])
+    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0 })).toEqual([
+      20, 40, 60, 255,
+    ])
+    expect(referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 1 })).toEqual([
+      200, 180, 160, 255,
+    ])
     const both = referenceRgbCompositionPixel(lower, style, 0, 0, { upper, progress: 0.5 })
-    expect(both[0]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(20 / 255) + srgbChannelToLinear(200 / 255)) / 2) * 255, 12)
-    expect(both[1]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(40 / 255) + srgbChannelToLinear(180 / 255)) / 2) * 255, 12)
-    expect(both[2]).toBeCloseTo(linearChannelToSrgb((srgbChannelToLinear(60 / 255) + srgbChannelToLinear(160 / 255)) / 2) * 255, 12)
+    expect(both[0]).toBeCloseTo(
+      linearChannelToSrgb((srgbChannelToLinear(20 / 255) + srgbChannelToLinear(200 / 255)) / 2) *
+        255,
+      12,
+    )
+    expect(both[1]).toBeCloseTo(
+      linearChannelToSrgb((srgbChannelToLinear(40 / 255) + srgbChannelToLinear(180 / 255)) / 2) *
+        255,
+      12,
+    )
+    expect(both[2]).toBeCloseTo(
+      linearChannelToSrgb((srgbChannelToLinear(60 / 255) + srgbChannelToLinear(160 / 255)) / 2) *
+        255,
+      12,
+    )
     expect(both[3]).toBe(255)
   })
 
@@ -417,8 +449,12 @@ describe('packed WebGL composition contract', () => {
     expect(shader).toContain('linearToSrgb(mix(first, second, progress))')
     expect(shader).toContain('bool validBase = base.nearestValid;')
     expect(shader).toContain('bool validObserved = observed.nearestValid;')
-    expect(shader).toContain('if (!validBase) return FrameSample(observedLinear, observed.coverage, true);')
-    expect(shader).toContain('if (!validObserved) return FrameSample(baseLinear, base.coverage, true);')
+    expect(shader).toContain(
+      'if (!validBase) return FrameSample(observedLinear, observed.coverage, true);',
+    )
+    expect(shader).toContain(
+      'if (!validObserved) return FrameSample(baseLinear, base.coverage, true);',
+    )
     expect(shader).toContain('smoothstep(0.25, 1.0, coverage)')
     expect(shader).toContain('uniform int supportModulatesWeight;')
     expect(shader).toContain('for (int row = start.y; row < stop.y; row++)')

@@ -112,10 +112,7 @@ export function areaSampleBoundsFromUv(
     const scale = anchor === 'cell-center' ? size - 1 : size
     const offset = anchor === 'cell-center' ? 0 : -0.5
     const start = Math.max(0, Math.min(size, Math.ceil(low * scale + offset)))
-    const stop =
-      high >= 1
-        ? size
-        : Math.max(0, Math.min(size, Math.ceil(high * scale + offset)))
+    const stop = high >= 1 ? size : Math.max(0, Math.min(size, Math.ceil(high * scale + offset)))
     return [start, Math.max(start, stop)]
   }
   const [columnStart, columnStop] = bounds(lowU, highU, width)

@@ -3,10 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { GridBBox, GridFrame, RampStop } from '../src/core/models.js'
 import type { GridStyle } from '../src/render/types.js'
 import { renderGridTile, type GridTileLayer } from '../src/tile/baker.js'
-import {
-  createGridTileImageSource,
-  type GridTileRequest,
-} from '../src/tile/image-source.js'
+import { createGridTileImageSource, type GridTileRequest } from '../src/tile/image-source.js'
 import {
   canvasHasContext,
   canvasPixels,
@@ -261,8 +258,11 @@ describe('structural fit with a tiled host', () => {
    * `tsc`, which runs in the same gate.
    */
   it('is assignable to narduk-mapkit’s image-source type with no import', async () => {
-    const imageForTile: MapKitTileOverlayImageSource<OffscreenCanvas> =
-      createGridTileImageSource({ source: layer(), style: STYLE, side: 16 })
+    const imageForTile: MapKitTileOverlayImageSource<OffscreenCanvas> = createGridTileImageSource({
+      source: layer(),
+      style: STYLE,
+      side: 16,
+    })
     const widened: MapKitTileOverlayImageSource = imageForTile
     expect(await widened(16, 26, 6, 1)).not.toBeNull()
   })

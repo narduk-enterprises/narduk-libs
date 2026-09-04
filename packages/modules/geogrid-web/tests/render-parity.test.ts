@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { normalizeValue } from '../src/color/normalize.js'
 import { rampLut, roundHalfToEven, type RGBA8 } from '../src/color/ramp.js'
@@ -132,7 +132,9 @@ function loadGrid(layer: string): GridScalarDataset {
 
 function loadGolden(layer: string, tileSpec: string): ReturnType<typeof decodePng> {
   const [z, x, y] = tileSpec.split('/')
-  const bytes = readFileSync(fileURLToPath(new URL(`expected/${layer}/${z}_${x}_${y}.png`, PACK_URL)))
+  const bytes = readFileSync(
+    fileURLToPath(new URL(`expected/${layer}/${z}_${x}_${y}.png`, PACK_URL)),
+  )
   return decodePng(bytes)
 }
 
@@ -273,24 +275,28 @@ function maxChannelDelta(a: Uint8ClampedArray, b: Uint8Array | Uint8ClampedArray
   return worst
 }
 
-describe.each(manifest.layers)('Tier 1a — server-parity render matches %s golden tiles', (layer) => {
-  const dataset = loadGrid(layer)
-  const { valueRange, scale } = catalogDataset(layer)
-  const stops = rampStopsFor(LAYER_RAMP[layer]!)
+describe.each(manifest.layers)(
+  'Tier 1a — server-parity render matches %s golden tiles',
+  (layer) => {
+    const dataset = loadGrid(layer)
+    const { valueRange, scale } = catalogDataset(layer)
+    const stops = rampStopsFor(LAYER_RAMP[layer]!)
 
-  it.each(manifest.tiles)('tile %s is within tolerance', (tileSpec) => {
-    const tile = parseTileSpec(tileSpec)
-    const golden = loadGolden(layer, tileSpec)
-    expect(golden.width).toBe(TILE_SIDE)
-    expect(golden.height).toBe(TILE_SIDE)
+    it.each(manifest.tiles)('tile %s is within tolerance', (tileSpec) => {
+      const tile = parseTileSpec(tileSpec)
+      const golden = loadGolden(layer, tileSpec)
+      expect(golden.width).toBe(TILE_SIDE)
+      expect(golden.height).toBe(TILE_SIDE)
 
-    const rendered = renderServerParityTile(dataset, valueRange, scale, stops, tile)
-    const delta = maxChannelDelta(rendered, golden.pixels)
-    // eslint-disable-next-line no-console -- the actual measured delta is part of the contract's evidence trail.
-    console.log(`Tier 1a  ${layer} ${tileSpec}: max|delta| = ${delta}/255`)
-    expect(delta, `${layer} ${tileSpec} max per-channel delta`).toBeLessThanOrEqual(TIER1_TOLERANCE)
-  })
-})
+      const rendered = renderServerParityTile(dataset, valueRange, scale, stops, tile)
+      const delta = maxChannelDelta(rendered, golden.pixels)
+      console.log(`Tier 1a  ${layer} ${tileSpec}: max|delta| = ${delta}/255`)
+      expect(delta, `${layer} ${tileSpec} max per-channel delta`).toBeLessThanOrEqual(
+        TIER1_TOLERANCE,
+      )
+    })
+  },
+)
 
 /**
  * Tier 1b — the package's actual PRODUCTION tile renderer, measured (not
@@ -368,37 +374,45 @@ const TIER1B_MEASURED_MAX_DELTA: Record<string, Record<string, number>> = {
   },
 }
 
-describe.each(manifest.layers)('Tier 1b — production renderer vs %s golden tiles (measured)', (layer) => {
-  const dataset = loadGrid(layer)
-  const { valueRange, scale } = catalogDataset(layer)
-  const stops = rampStopsFor(LAYER_RAMP[layer]!)
+describe.each(manifest.layers)(
+  'Tier 1b — production renderer vs %s golden tiles (measured)',
+  (layer) => {
+    const dataset = loadGrid(layer)
+    const { valueRange, scale } = catalogDataset(layer)
+    const stops = rampStopsFor(LAYER_RAMP[layer]!)
 
-  const style: GridStyle = {
-    rampStops: stops,
-    valueRange: { lowerBound: valueRange[0], upperBound: valueRange[1] },
-    scale,
-  }
+    const style: GridStyle = {
+      rampStops: stops,
+      valueRange: { lowerBound: valueRange[0], upperBound: valueRange[1] },
+      scale,
+    }
 
-  it.each(manifest.tiles)('tile %s measured delta is within the committed ratchet', (tileSpec) => {
-    const tile = parseTileSpec(tileSpec)
-    const golden = loadGolden(layer, tileSpec)
+    it.each(manifest.tiles)(
+      'tile %s measured delta is within the committed ratchet',
+      (tileSpec) => {
+        const tile = parseTileSpec(tileSpec)
+        const golden = loadGolden(layer, tileSpec)
 
-    const raster = referenceRenderGridTile(dataset, style, { ...tile, side: TILE_SIDE })
-    const delta = maxChannelDelta(raster.pixels, golden.pixels)
-    // eslint-disable-next-line no-console -- the actual measured delta is part of the contract's evidence trail.
-    console.log(`Tier 1b  ${layer} ${tileSpec}: max|delta| = ${delta}/255 (production renderer, not gated at ${TIER1_TOLERANCE})`)
+        const raster = referenceRenderGridTile(dataset, style, { ...tile, side: TILE_SIDE })
+        const delta = maxChannelDelta(raster.pixels, golden.pixels)
+        console.log(
+          `Tier 1b  ${layer} ${tileSpec}: max|delta| = ${delta}/255 (production renderer, not gated at ${TIER1_TOLERANCE})`,
+        )
 
-    // Ratchet, not a parity gate: this bound is *measured* from the three
-    // structural divergences named above, not derived from first principles.
-    // Exact equality (not `<=`) so a regression AND an accidental drift the
-    // other way both force a deliberate update to the pinned number above —
-    // see the module comment for why exact equality is safe for this
-    // pure-CPU, no-GPU render path. The renderer catching up to the server's
-    // exact geometry, quantization and alpha rule is tracked separately (it
-    // is a product decision, not something this harness should silently
-    // paper over by loosening the number).
-    const bound = TIER1B_MEASURED_MAX_DELTA[layer]?.[tileSpec]
-    if (bound === undefined) throw new Error(`no committed Tier 1b ratchet for ${layer} ${tileSpec}`)
-    expect(delta, `${layer} ${tileSpec} production-renderer delta`).toBe(bound)
-  })
-})
+        // Ratchet, not a parity gate: this bound is *measured* from the three
+        // structural divergences named above, not derived from first principles.
+        // Exact equality (not `<=`) so a regression AND an accidental drift the
+        // other way both force a deliberate update to the pinned number above —
+        // see the module comment for why exact equality is safe for this
+        // pure-CPU, no-GPU render path. The renderer catching up to the server's
+        // exact geometry, quantization and alpha rule is tracked separately (it
+        // is a product decision, not something this harness should silently
+        // paper over by loosening the number).
+        const bound = TIER1B_MEASURED_MAX_DELTA[layer]?.[tileSpec]
+        if (bound === undefined)
+          throw new Error(`no committed Tier 1b ratchet for ${layer} ${tileSpec}`)
+        expect(delta, `${layer} ${tileSpec} production-renderer delta`).toBe(bound)
+      },
+    )
+  },
+)

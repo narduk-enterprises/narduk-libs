@@ -81,19 +81,16 @@ describe('GridTileMath parity with GeoGridKit', () => {
     expect(table.bounds.length).toBeGreaterThan(5)
   })
 
-  it.each(table.pixels)(
-    'lonLatForTilePixel z$z/$x/$y side $side at ($pixelX, $pixelY)',
-    (row) => {
-      const coordinate = lonLatForTilePixel(
-        { z: row.z, x: row.x, y: row.y, side: row.side },
-        row.pixelX,
-        row.pixelY,
-      )
-      expect(coordinate).not.toBeNull()
-      expect(Math.abs(coordinate!.longitude - row.longitude)).toBeLessThanOrEqual(DEGREE_TOLERANCE)
-      expect(Math.abs(coordinate!.latitude - row.latitude)).toBeLessThanOrEqual(DEGREE_TOLERANCE)
-    },
-  )
+  it.each(table.pixels)('lonLatForTilePixel z$z/$x/$y side $side at ($pixelX, $pixelY)', (row) => {
+    const coordinate = lonLatForTilePixel(
+      { z: row.z, x: row.x, y: row.y, side: row.side },
+      row.pixelX,
+      row.pixelY,
+    )
+    expect(coordinate).not.toBeNull()
+    expect(Math.abs(coordinate!.longitude - row.longitude)).toBeLessThanOrEqual(DEGREE_TOLERANCE)
+    expect(Math.abs(coordinate!.latitude - row.latitude)).toBeLessThanOrEqual(DEGREE_TOLERANCE)
+  })
 
   it.each(table.centers)(
     'lonLatForTilePixelCenter z$z/$x/$y side $side at ($column, $row)',
@@ -135,7 +132,9 @@ describe('tile geometry edges', () => {
     expect(lonLatForTilePixel({ z: 3, x: 1, y: 1, side: 0 }, 0, 0)).toBeNull()
     expect(lonLatForTilePixel({ z: 3, x: 1, y: 1, side: Number.NaN }, 0, 0)).toBeNull()
     expect(lonLatForTilePixel({ z: 3, x: 1, y: 1, side: 256 }, Number.NaN, 0)).toBeNull()
-    expect(lonLatForTilePixel({ z: 3, x: 1, y: 1, side: 256 }, 0, Number.POSITIVE_INFINITY)).toBeNull()
+    expect(
+      lonLatForTilePixel({ z: 3, x: 1, y: 1, side: 256 }, 0, Number.POSITIVE_INFINITY),
+    ).toBeNull()
     expect(tileBounds({ z: 3, x: 1, y: 1, side: 0 })).toBeNull()
   })
 
@@ -160,9 +159,7 @@ describe('tileProjection', () => {
   it('refuses a degenerate or inverted bbox rather than inventing a mapping', () => {
     expect(tileProjection({ z: 6, x: 16, y: 26, side: 256 }, [-92, 28, -92, 32])).toBeNull()
     expect(tileProjection({ z: 6, x: 16, y: 26, side: 256 }, [-92, 32, -88, 28])).toBeNull()
-    expect(
-      tileProjection({ z: 6, x: 16, y: 26, side: 256 }, [Number.NaN, 28, -88, 32]),
-    ).toBeNull()
+    expect(tileProjection({ z: 6, x: 16, y: 26, side: 256 }, [Number.NaN, 28, -88, 32])).toBeNull()
     expect(tileProjection({ z: 6, x: 16, y: 26, side: 0 }, bbox)).toBeNull()
   })
 

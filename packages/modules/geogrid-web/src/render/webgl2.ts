@@ -227,10 +227,8 @@ export class WebGL2GridBackend implements GridRenderBackend {
       this.clearIfDrawn()
       return
     }
-    const compositionVersion =
-      lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
-    const upperCompositionVersion =
-      upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const compositionVersion = lower.rgbComposition?.version ?? 'base-observed-confidence-v1'
+    const upperCompositionVersion = upper.rgbComposition?.version ?? 'base-observed-confidence-v1'
     if (composedRgb && compositionVersion !== upperCompositionVersion) {
       this.clearIfDrawn()
       return
@@ -353,7 +351,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     if (this.destroyed) return
     this.destroyed = true
     for (const frame of this.frames.values()) {
-      frame.values.forEach((texture) => this.gl.deleteTexture(texture))
+      for (const texture of frame.values) this.gl.deleteTexture(texture)
       if (frame.mask) this.gl.deleteTexture(frame.mask)
     }
     this.frames.clear()
@@ -516,7 +514,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
       return cached
     }
     if (cached) {
-      cached.values.forEach((texture) => this.gl.deleteTexture(texture))
+      for (const texture of cached.values) this.gl.deleteTexture(texture)
       if (cached.mask) this.gl.deleteTexture(cached.mask)
       this.frames.delete(frame.key)
     }
@@ -576,7 +574,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
       this.evictFrames(protectedKeys)
       return gpuFrame
     } catch {
-      textures.forEach((texture) => this.gl.deleteTexture(texture))
+      for (const texture of textures) this.gl.deleteTexture(texture)
       return null
     }
   }
@@ -629,7 +627,17 @@ export class WebGL2GridBackend implements GridRenderBackend {
     gl.bindTexture(gl.TEXTURE_2D, texture)
     setClampNearest(gl)
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, width, height, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, data)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R8UI,
+      width,
+      height,
+      0,
+      gl.RED_INTEGER,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
     return texture
   }
@@ -689,17 +697,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
     gl.bindTexture(gl.TEXTURE_2D, texture)
     setClampNearest(gl)
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      width,
-      height,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      data,
-    )
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data)
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
     return texture
   }
@@ -711,7 +709,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
         if (protectedKeys.has(key)) continue
         const frame = this.frames.get(key)
         if (!frame) continue
-        frame.values.forEach((texture) => this.gl.deleteTexture(texture))
+        for (const texture of frame.values) this.gl.deleteTexture(texture)
         if (frame.mask) this.gl.deleteTexture(frame.mask)
         this.frames.delete(key)
         evicted = true

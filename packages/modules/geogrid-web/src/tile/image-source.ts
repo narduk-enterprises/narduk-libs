@@ -1,10 +1,9 @@
 import type { GridStyle } from '../render/types.js'
 import {
-  GridTileRenderer,
   blankTileCanvas,
   renderGridTile,
   toGridTileLayer,
-  type GridTileRenderOptions,
+  type GridTileRenderer,
   type GridTileSource,
 } from './baker.js'
 import { tileIntersectsBBox, type GridTileKey } from './mercator.js'

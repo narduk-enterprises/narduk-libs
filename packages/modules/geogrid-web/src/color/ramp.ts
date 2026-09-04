@@ -197,8 +197,7 @@ export function normalizeWireStops(
 ): RampStop[] {
   const domain = options.domain ?? 'value'
   const alreadyNormalized =
-    domain === 'normalized' ||
-    (domain === 'auto' && stopsLookNormalized(stops, valueRange))
+    domain === 'normalized' || (domain === 'auto' && stopsLookNormalized(stops, valueRange))
 
   const converted = stops.map((stop): RampStop => {
     const position = alreadyNormalized
@@ -216,10 +215,7 @@ export function normalizeWireStops(
   return converted.sort((left, right) => left.position - right.position)
 }
 
-function stopsLookNormalized(
-  stops: readonly RampStopWire[],
-  valueRange: ValueRangeInput,
-): boolean {
+function stopsLookNormalized(stops: readonly RampStopWire[], valueRange: ValueRangeInput): boolean {
   if (stops.length === 0) return false
   const [lo, hi] = toValueRangeTuple(valueRange)
   const rangeInsideUnitInterval = lo >= 0 && hi <= 1
