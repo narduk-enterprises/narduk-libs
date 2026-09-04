@@ -1,0 +1,93 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: narduk-mapkit-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NODE_AUTH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          registry-url: https://npm.pkg.github.com
+          scope: '@narduk-enterprises'
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.4 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release candidate
+        run: pnpm run quality && pnpm run pack:artifacts
+
+      - name: Verify release ref and package versions
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_version="$(node -p "require('./package.json').version")"
+          nuxt_version="$(node -p "require('./packages/nuxt/package.json').version")"
+          test "${core_version}" = "${nuxt_version}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            test "${GITHUB_REF_NAME}" = "v${core_version}"
+          else
+            test "${GITHUB_EVENT_NAME}" = "workflow_dispatch"
+            test "${GITHUB_REF}" = "refs/heads/main"
+          fi
+          echo "version=${core_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish missing immutable packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="https://npm.pkg.github.com"
+          version="${{ steps.release.outputs.version }}"
+
+          publish_if_missing() {
+            local package_name="$1"
+            shift
+            local published_version
+            if published_version="$(npm view "${package_name}@${version}" version --registry="${registry}" 2>/dev/null)"; then
+              test "${published_version}" = "${version}"
+              echo "${package_name}@${version} is already published; skipping."
+              return
+            fi
+
+            "$@"
+          }
+
+          publish_if_missing \
+            "@narduk-enterprises/narduk-mapkit" \
+            pnpm publish --no-git-checks --access public --registry "${registry}"
+          publish_if_missing \
+            "@narduk-enterprises/narduk-mapkit-nuxt" \
+            pnpm --filter @narduk-enterprises/narduk-mapkit-nuxt publish --no-git-checks --access public --registry "${registry}"
+
+      - name: Verify published consumer
+        run: pnpm run release:verify-published

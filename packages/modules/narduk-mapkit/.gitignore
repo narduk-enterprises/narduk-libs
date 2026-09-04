@@ -1,0 +1,14 @@
+# dist/ is committed so git-dependency consumers work without a build step
+# (e.g. environments with npm allow-scripts that block the prepare build).
+.codex/
+.nuxt/
+.output/
+.pack/
+packages/nuxt/dist/
+node_modules/
+coverage/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
