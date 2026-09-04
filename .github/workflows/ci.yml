@@ -213,7 +213,7 @@ jobs:
 
   ci:
     needs: affected
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@1ec40483ca3faebe2adb478ac0652ddbbb44e427 # v1
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@b7668b506664ba4c3ed745cb0a79d8e19137d689 # v1
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
     # GitHub Packages registry. Without this the run does not fail a step -- it
