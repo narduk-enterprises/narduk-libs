@@ -1,5 +1,40 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.0
+
+### Minor Changes
+
+- 0fd5ee9: create-narduk-app: fix the `mapkit` capability to scaffold the live
+  `@narduk-enterprises/narduk-mapkit` / `@narduk-enterprises/narduk-mapkit-nuxt`
+  packages at `2.0.0` instead of the dead `@narduk-geo/narduk-mapkit*` scope
+  pinned at `1.0.0` (narduk-libs#123). The `@narduk-geo` scope has not published
+  since 1.1.1 and cannot publish again (narduk-mapkit#17); narduk-mapkit
+  republished under `@narduk-enterprises` at `2.0.0` on 2026-08-28. A freshly
+  scaffolded mapkit app previously installed a frozen, unpatchable dependency
+  from a scope that no longer resolves for new consumers.
+
+  The generated `.npmrc` now routes only `@narduk-enterprises/*` to GitHub
+  Packages — the `@narduk-geo:registry=...` line is dropped, since every scoped
+  package a generated app depends on now lives under `@narduk-enterprises`. The
+  generated README note and the generated Renovate `matchPackageNames` group are
+  updated to match.
+
+### Patch Changes
+
+- 7883246: create-narduk-app: stop scaffolding a health-check stub that shadows
+  narduk-core's real one.
+
+  Every generated app includes `@narduk-enterprises/narduk-core` as an implicit
+  module (`moduleList()`), which registers a real DB-probing `/api/health` route
+  via `addServerScanDir`. The generator also wrote an app-local
+  `apps/web/server/api/health.get.ts` returning a trivial `{ ok: true }` stub —
+  Nitro resolves an app-local `server/api/*` route before a module's scanned
+  contribution with the same path, so every scaffolded app silently lost the
+  real auth-table/D1/Postgres health check behind a stub that always says OK
+  (company-hq#453 R4 audit finding). The generator no longer emits that file;
+  narduk-core's own health route is now what a generated app actually serves.
+  Patch: removes generated output only, no exported API changed.
+
 ## 0.1.15
 
 ### Patch Changes
