@@ -22,6 +22,9 @@ every package still releases independently through Changesets.
 - `@narduk-enterprises/narduk-uploads`
 - `@narduk-enterprises/narduk-ai`
 - `@narduk-enterprises/narduk-app`
+- `@narduk-enterprises/geogrid-web` -- framework-agnostic gridded geo-data
+  overlay and Web-Mercator tile render (WebGL2 + CPU fallback), not
+  Nuxt-specific
 
 ### `packages/tooling/` -- build, test and generator tooling
 

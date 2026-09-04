@@ -1,0 +1,108 @@
+{
+  "coastlineClip": false,
+  "date": "2026-01-15",
+  "files": {
+    "catalog-excerpt.json": {
+      "bytes": 14132,
+      "sha256": "d7fab2b6fec57c042328e71bbad6e2190a61970615b43917ef5d4d32fb6a6260"
+    },
+    "expected/kd490_filled/10_241_417.png": {
+      "bytes": 2416,
+      "sha256": "1a92e383890f74f6eaa4aedf341522139ef893b0227edc16d56a6d5d72b0916a"
+    },
+    "expected/kd490_filled/10_241_431.png": {
+      "bytes": 1209,
+      "sha256": "1e7e6f405b1ac6696c4022e1ab30f1f7de06cc45c0326252dae43f23021030c9"
+    },
+    "expected/kd490_filled/6_15_26.png": {
+      "bytes": 5770,
+      "sha256": "4255acc8e396895acb5efa42599461812a823d9baa21ac17b1a897c5c78033d8"
+    },
+    "expected/kd490_filled/9_121_208.png": {
+      "bytes": 1972,
+      "sha256": "9afce821a5e67de9337f34452888670b929262bd9da840de4233372bfc0fc681"
+    },
+    "expected/kd490_filled/9_121_209.png": {
+      "bytes": 2481,
+      "sha256": "98e86e4d942602ba15c7c6844393fe0467799354725f717128648e982ef9fc2f"
+    },
+    "expected/sst_filled/10_241_417.png": {
+      "bytes": 2279,
+      "sha256": "b14d0a59cc1bd0992cbf8b2aa10070a01ffa99c27760172cc461a5585b2aadf1"
+    },
+    "expected/sst_filled/10_241_431.png": {
+      "bytes": 1209,
+      "sha256": "0283e54ff3aa844883b9fae908a715779a4d23731fd6af1a77109674e0287356"
+    },
+    "expected/sst_filled/6_15_26.png": {
+      "bytes": 4760,
+      "sha256": "10ac722400fb78106a04b6e63ae14b9a6f913e53ef049c3ea548fd2cc0d14a43"
+    },
+    "expected/sst_filled/9_121_208.png": {
+      "bytes": 1782,
+      "sha256": "39146c7d8195232a2869275e017929bc6576e32e805ab09fa8019a7d4cc42846"
+    },
+    "expected/sst_filled/9_121_209.png": {
+      "bytes": 2205,
+      "sha256": "e067844e678e14b18bf468a51ed16ba500650dcf6f96f319da4754dcc332fa16"
+    },
+    "grids/kd490_filled_2026-01-15.bin": {
+      "bytes": 4697,
+      "sha256": "8dfb0586ed80ac141bb6f17f690c93047e452124b252e32eb47fc7f7b5f6db7a"
+    },
+    "grids/kd490_filled_2026-01-15.bin.sha256": {
+      "bytes": 65,
+      "sha256": "3d0e815a627080763d977f0d95230b939c2bb269e55081a475e7294aec2cbbb8"
+    },
+    "grids/sst_filled_2026-01-15.bin": {
+      "bytes": 4714,
+      "sha256": "862cdb9a1a0d1adde29a12da898b82c1dd68d7194f8b6a6f8d1a9aa896d30603"
+    },
+    "grids/sst_filled_2026-01-15.bin.sha256": {
+      "bytes": 65,
+      "sha256": "cfc10996c012752a927568ec1f03ab856529b937299dcca494e44211aaa27a88"
+    },
+    "ramp-parity-v1.json": {
+      "bytes": 38770,
+      "sha256": "564f1eb37a24967db782490950e42161bcdbb1c42af08b4661bb5e28823d68a1"
+    }
+  },
+  "generator": "scripts/generate_render_parity_fixtures.py",
+  "grid": {
+    "bbox": [
+      -95.2875,
+      27.3527,
+      -90.3375,
+      31.6586
+    ],
+    "height": 33,
+    "positionRange": [
+      -0.15,
+      1.15
+    ],
+    "rowOrder": "north-to-south",
+    "width": 33
+  },
+  "layers": [
+    "sst_filled",
+    "kd490_filled"
+  ],
+  "productId": "water-quality-gulf",
+  "rampPaletteSteps": 128,
+  "schema": "narduk-render-parity-v1",
+  "source": "narduk-enterprises/narduk-data",
+  "tileSize": 256,
+  "tiles": [
+    "6/15/26",
+    "9/121/209",
+    "9/121/208",
+    "10/241/417",
+    "10/241/431"
+  ],
+  "tolerance": {
+    "tier0": "byte-exact",
+    "tier1ChannelsOf255": 4
+  },
+  "validTime": "2026-01-15T00:00:00Z",
+  "version": 1
+}

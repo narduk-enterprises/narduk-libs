@@ -1,0 +1,84 @@
+{
+  "name": "@narduk-enterprises/geogrid-web",
+  "version": "0.5.3",
+  "type": "module",
+  "description": "Web twin of GeoGridKit: gridded geo-data overlay and Web-Mercator tile render (WebGL2 + CPU fallback).",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/geogrid-web"
+  },
+  "homepage": "https://github.com/narduk-enterprises/GeoGridWeb#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/GeoGridWeb/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "canvas",
+    "geo",
+    "grid",
+    "map",
+    "mercator",
+    "raster",
+    "tiles",
+    "webgl",
+    "webgl2"
+  ],
+  "sideEffects": false,
+  "files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "dist/"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./color": {
+      "types": "./dist/color/index.d.ts",
+      "import": "./dist/color/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./render": {
+      "types": "./dist/render/index.d.ts",
+      "import": "./dist/render/index.js"
+    },
+    "./overlay": {
+      "types": "./dist/overlay/index.d.ts",
+      "import": "./dist/overlay/index.js"
+    },
+    "./tile": {
+      "types": "./dist/tile/index.d.ts",
+      "import": "./dist/tile/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:exports": "node script/check_package_exports.mjs",
+    "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "prepare": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "publint": "^0.3.21",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  }
+}
