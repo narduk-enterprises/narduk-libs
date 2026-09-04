@@ -155,11 +155,11 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-ai']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-ai'],
     )
-    expect(dependencies['@narduk-geo/narduk-mapkit']).toBe(
-      PACKAGE_VERSIONS['@narduk-geo/narduk-mapkit'],
+    expect(dependencies['@narduk-enterprises/narduk-mapkit']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-mapkit'],
     )
-    expect(dependencies['@narduk-geo/narduk-mapkit-nuxt']).toBe(
-      PACKAGE_VERSIONS['@narduk-geo/narduk-mapkit-nuxt'],
+    expect(dependencies['@narduk-enterprises/narduk-mapkit-nuxt']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-mapkit-nuxt'],
     )
     expect(dependencies['@narduk-enterprises/narduk-app-tools']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-app-tools'],
@@ -171,10 +171,15 @@ describe('create-narduk-app generation contract', () => {
       true,
     )
     expect(files.get('apps/web/nuxt.config.ts')).toContain("'@narduk-enterprises/narduk-ai'")
-    expect(files.get('apps/web/nuxt.config.ts')).toContain("'@narduk-geo/narduk-mapkit-nuxt'")
+    expect(files.get('apps/web/nuxt.config.ts')).toContain(
+      "'@narduk-enterprises/narduk-mapkit-nuxt'",
+    )
     expect(files.get('apps/web/nuxt.config.ts')).toContain('zeroRuntime: true')
     expect(files.get('apps/web/app/pages/index.vue')).toContain('useWebPageSchema')
-    expect(knipConfig.ignoreDependencies).toContain('@narduk-geo/narduk-mapkit')
+    expect(knipConfig.ignoreDependencies).toContain('@narduk-enterprises/narduk-mapkit')
+    // narduk-libs#123: the mapkit capability must never scaffold the dead
+    // @narduk-geo scope (superseded by @narduk-enterprises/narduk-mapkit@2.x).
+    expect([...files.values()].some((contents) => contents.includes('@narduk-geo'))).toBe(false)
   })
 
   it('rejects permanently unsupported capabilities with actionable guidance', () => {
@@ -334,7 +339,6 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedText).not.toContain('provision.json')
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
       '@narduk-enterprises:registry=https://npm.pkg.github.com\n' +
-        '@narduk-geo:registry=https://npm.pkg.github.com\n' +
         '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}\n',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
@@ -462,7 +466,7 @@ describe('create-narduk-app generation contract', () => {
     const knipConfig = JSON.parse(await readFile(join(targetDir, 'knip.json'), 'utf8')) as {
       ignoreDependencies: string[]
     }
-    expect(knipConfig.ignoreDependencies).not.toContain('@narduk-geo/narduk-mapkit')
+    expect(knipConfig.ignoreDependencies).not.toContain('@narduk-enterprises/narduk-mapkit')
     const webPackage = JSON.parse(
       await readFile(join(targetDir, 'apps/web/package.json'), 'utf8'),
     ) as {

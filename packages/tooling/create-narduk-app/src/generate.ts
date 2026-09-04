@@ -161,7 +161,7 @@ function moduleList(capabilities: readonly Capability[]): string {
     '@nuxt/ui',
     ...capabilities.map((capability) =>
       capability === 'mapkit'
-        ? '@narduk-geo/narduk-mapkit-nuxt'
+        ? '@narduk-enterprises/narduk-mapkit-nuxt'
         : '@narduk-enterprises/narduk-' + capability,
     ),
   ]
@@ -232,7 +232,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     : []
   const knipIgnoreDependencies = [
     '@iconify-json/lucide',
-    ...(capabilities.includes('mapkit') ? ['@narduk-geo/narduk-mapkit'] : []),
+    ...(capabilities.includes('mapkit') ? ['@narduk-enterprises/narduk-mapkit'] : []),
     'vue-tsc',
   ]
 
@@ -260,7 +260,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.npmrc',
       contents: text(
         '@narduk-enterprises:registry=https://npm.pkg.github.com',
-        '@narduk-geo:registry=https://npm.pkg.github.com',
         // PLAIN interpolation, no default. npm does not implement
         // ${VAR-default} substitution: it leaves the whole reference
         // unsubstituted and sends the literal string as the token, so the
@@ -349,7 +348,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run quality',
         '- pnpm run test',
         '',
-        'The committed `.npmrc` routes `@narduk-enterprises/*` and `@narduk-geo/*` to GitHub Packages and reads `GH_PACKAGES_READ` from the process environment. It contains no credential value.',
+        'The committed `.npmrc` routes `@narduk-enterprises/*` to GitHub Packages and reads `GH_PACKAGES_READ` from the process environment. It contains no credential value.',
         '',
         'One credential, two names: locally export `GH_PACKAGES_READ` into the process environment for the install only (Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read`); in CI the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` is mapped into `GH_PACKAGES_READ`. Never write the token into `~/.npmrc` and never add a per-app alias for it.',
         '',
@@ -782,7 +781,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    },',
         '    {',
         '      "groupName": "narduk mapkit",',
-        '      "matchPackageNames": ["@narduk-geo/narduk-mapkit", "@narduk-geo/narduk-mapkit-nuxt"],',
+        '      "matchPackageNames": [',
+        '        "@narduk-enterprises/narduk-mapkit",',
+        '        "@narduk-enterprises/narduk-mapkit-nuxt"',
+        '      ],',
         '      "rangeStrategy": "pin"',
         '    }',
         '  ]',
