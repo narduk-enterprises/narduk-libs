@@ -1,0 +1,116 @@
+{
+  "name": "@narduk-enterprises/narduk-charts",
+  "version": "2.5.0",
+  "description": "NardukCharts — Vue 3 SVG charting for dashboards and trading-grade market UIs (TypeScript, themable, accessible). Package: @narduk-enterprises/narduk-charts.",
+  "type": "module",
+  "main": "./dist/narduk-charts.umd.cjs",
+  "module": "./dist/narduk-charts.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/narduk-charts.js",
+      "require": "./dist/narduk-charts.umd.cjs"
+    },
+    "./line": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/line.js"
+    },
+    "./bar": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/bar.js"
+    },
+    "./pie": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/pie.js"
+    },
+    "./candle": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/candle.js"
+    },
+    "./studies": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/studies.js"
+    },
+    "./style.css": "./dist/narduk-charts.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "package-registry:auth": "node tools/configure-package-registry-auth.mjs",
+    "dev": "histoire dev",
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
+    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "story:dev": "histoire dev",
+    "story:build": "histoire build",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:update": "playwright test --project=chromium --update-snapshots",
+    "size": "size-limit",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "//overrides": "Security-only pins for transitive advisories (narduk-charts#15, recurrence closed by narduk-charts#35). Each stays INSIDE its dependent's declared major so no consumer range is broken, with one deliberate exception: brace-expansion 5.x is dual ESM/CJS and still satisfies minimatch's require() (bumped 5.0.8 -> 5.0.9, GHSA-rgw5-rvv9-x895); fast-uri stays on 3.x for ajv (bumped 3.1.4 -> 3.1.7, GHSA-7p8r-x3mc-p8w7 and siblings); nanoid stays on 3.x for postcss (added 3.3.18, GHSA-2v37-7h3g-55p8); postcss stays on 8.x for vite/tailwind. js-yaml is the exception: GHSA-5p4m-2wfm-xmqj's fix was never backported to the 3.x/4.x line gray-matter (a histoire dev-only transitive dep) declares, so it is pinned to 5.4.1 across the major -- safe because no CI or build script invokes histoire/gray-matter's YAML parsing path, only local `story:dev`/`story:build`. Drop an entry once every dependent resolves a fixed version on its own.",
+  "overrides": {
+    "brace-expansion": "^5.0.9",
+    "fast-uri": "^3.1.7",
+    "postcss": "^8.5.18",
+    "nanoid": "^3.3.18",
+    "js-yaml": "^5.4.1"
+  },
+  "devDependencies": {
+    "@histoire/plugin-vue": "^1.0.0-beta.1",
+    "@playwright/test": "1.61.1",
+    "@size-limit/file": "^12.0.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.9.0",
+    "histoire": "^1.0.0-beta.1",
+    "sharp": "^0.35.3",
+    "size-limit": "^12.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "~5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^3.0.0",
+    "vue": "^3.5.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "chart",
+    "charts",
+    "svg",
+    "line-chart",
+    "bar-chart",
+    "pie-chart",
+    "donut-chart",
+    "data-visualization",
+    "typescript",
+    "composition-api",
+    "tailwindcss"
+  ],
+  "license": "MIT",
+  "author": "narduk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/narduk-enterprises/narduk-charts.git"
+  },
+  "homepage": "https://charts.nard.uk",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-charts/issues"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}

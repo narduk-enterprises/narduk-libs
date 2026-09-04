@@ -1,0 +1,28 @@
+# Migrations
+
+**Branding:** The product name is **NardukCharts**; local component work runs in **Histoire** (`pnpm dev`). Import paths and the package name remain **`@narduk-enterprises/narduk-charts`** (no change required for consumers).
+
+Breaking changes are listed here and in `CHANGELOG.md` with semver bumps.
+
+## Policy
+
+- **Patch:** bugfixes only, no intentional breaking changes.
+- **Minor:** new features; deprecations may warn in dev.
+- **Major:** breaking API or default behavior changes — each major section below describes required app updates.
+
+## 2.0.0
+
+- **Package name** is now **`@narduk-enterprises/narduk-charts`** (published to **GitHub Packages** at `https://npm.pkg.github.com`). Replace imports and `npm install` / lockfile entries:
+  - `narduk-charts` → `@narduk-enterprises/narduk-charts`
+  - `narduk-charts/style.css` → `@narduk-enterprises/narduk-charts/style.css`
+  - `narduk-charts/line` (and other subpaths) → `@narduk-enterprises/narduk-charts/line`, etc.
+- Configure the `@narduk-enterprises` scope in `.npmrc` to use `https://npm.pkg.github.com/` (see this repo’s root `.npmrc`).
+- For installs and publishing, use a GitHub token with `read:packages` / `write:packages` via this repository's `tools/configure-package-registry-auth.mjs` helper.
+
+## 1.x
+
+- Subpath imports `@narduk-enterprises/narduk-charts/line`, `/bar`, `/pie` are additive; the root export is unchanged (pre-2.0 these were documented as `narduk-charts/line`, …).
+- `ChartLegend` is now a `<fieldset>` with a screen-reader legend; visual layout is unchanged except focus rings on interactive elements.
+- Line chart keyboard focus is on the SVG; arrow keys move the active category when focused.
+
+_No breaking changes in the initial commercial roadmap drop._

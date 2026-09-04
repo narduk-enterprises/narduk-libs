@@ -1,0 +1,80 @@
+name: Publish package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on:
+      group: linux-deploy
+      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
+      NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
+      NPM_CONFIG_GLOBALCONFIG: /dev/null
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure package registry auth
+        run: node ./tools/configure-package-registry-auth.mjs
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Verify
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+          npm run size
+
+      - name: Check published package version
+        id: package-version
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          echo "name=${package_name}" >> "$GITHUB_OUTPUT"
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
+
+          if npm view "${package_name}@${package_version}" version --registry https://npm.pkg.github.com > /dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${package_name}@${package_version} is already published; skipping npm publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rewrite .npmrc.auth with WRITE token for publish
+        if: steps.package-version.outputs.published != 'true'
+        env:
+          PACKAGE_REGISTRY_PREFER_WRITE: '1'
+        run: node ./tools/configure-package-registry-auth.mjs
+
+      - name: Publish to GitHub Packages
+        if: steps.package-version.outputs.published != 'true'
+        run: npm publish --access public --registry https://npm.pkg.github.com
+
+      - name: Confirm package already published
+        if: steps.package-version.outputs.published == 'true'
+        run: |
+          echo "Package ${{ steps.package-version.outputs.name }}@${{ steps.package-version.outputs.version }} is already published."
