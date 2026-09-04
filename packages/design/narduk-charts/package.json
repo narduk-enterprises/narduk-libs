@@ -43,7 +43,7 @@
   "scripts": {
     "package-registry:auth": "node tools/configure-package-registry-auth.mjs",
     "dev": "histoire dev",
-    "build": "vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && rm -f dist/entry-*.css",
     "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
@@ -58,11 +58,13 @@
   "peerDependencies": {
     "vue": "^3.3.0"
   },
-  "//overrides": "Security-only pins for transitive advisories (narduk-charts#15). Each stays INSIDE its dependent's declared major, so no consumer range is broken: brace-expansion 5.x is dual ESM/CJS and still satisfies minimatch's require(); fast-uri stays on 3.x for ajv; postcss stays on 8.x for vite/tailwind. Drop an entry once every dependent resolves a fixed version on its own.",
+  "//overrides": "Security-only pins for transitive advisories (narduk-charts#15, recurrence closed by narduk-charts#35). Each stays INSIDE its dependent's declared major so no consumer range is broken, with one deliberate exception: brace-expansion 5.x is dual ESM/CJS and still satisfies minimatch's require() (bumped 5.0.8 -> 5.0.9, GHSA-rgw5-rvv9-x895); fast-uri stays on 3.x for ajv (bumped 3.1.4 -> 3.1.7, GHSA-7p8r-x3mc-p8w7 and siblings); nanoid stays on 3.x for postcss (added 3.3.18, GHSA-2v37-7h3g-55p8); postcss stays on 8.x for vite/tailwind. js-yaml is the exception: GHSA-5p4m-2wfm-xmqj's fix was never backported to the 3.x/4.x line gray-matter (a histoire dev-only transitive dep) declares, so it is pinned to 5.4.1 across the major -- safe because no CI or build script invokes histoire/gray-matter's YAML parsing path, only local `story:dev`/`story:build`. Drop an entry once every dependent resolves a fixed version on its own.",
   "overrides": {
-    "brace-expansion": "^5.0.8",
-    "fast-uri": "^3.1.4",
-    "postcss": "^8.5.18"
+    "brace-expansion": "^5.0.9",
+    "fast-uri": "^3.1.7",
+    "postcss": "^8.5.18",
+    "nanoid": "^3.3.18",
+    "js-yaml": "^5.4.1"
   },
   "devDependencies": {
     "@histoire/plugin-vue": "^1.0.0-beta.1",
