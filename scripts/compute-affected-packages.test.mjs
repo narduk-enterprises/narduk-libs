@@ -191,3 +191,50 @@ test('an explicit full run cannot produce an empty matrix', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('resolves packages across the four-family layout and attributes nested paths', () => {
+  // company-hq D-WEBFOUND-2 Q2 (a): packages/ carries one directory level per
+  // family, so the workspace loader must resolve several `<family>/*` globs and
+  // `packageForPath` must attribute a nested file to its own package.
+  const root = mkdtempSync(join(tmpdir(), 'narduk-libs-affected-families-'))
+  try {
+    writeFileSync(
+      join(root, 'pnpm-workspace.yaml'),
+      'packages:\n  - "packages/modules/*"\n  - "packages/tooling/*"\n  - "packages/design/*"\n  - "packages/contracts/*"\n',
+    )
+    const families = {
+      modules: ['core'],
+      tooling: ['app-tools'],
+      design: ['ui'],
+      contracts: ['platform'],
+    }
+    for (const [family, directories] of Object.entries(families)) {
+      mkdirSync(join(root, 'packages', family), { recursive: true })
+      for (const directory of directories) {
+        mkdirSync(join(root, 'packages', family, directory))
+        writeJson(join(root, 'packages', family, directory, 'package.json'), {
+          name: `${scope}${directory}`,
+          version: '1.0.0',
+          ...(family === 'tooling' ? { dependencies: { [`${scope}core`]: 'workspace:*' } } : {}),
+        })
+      }
+    }
+
+    const workspace = loadWorkspace(root)
+    assert.deepEqual(workspace.packages.map(({ relativeDirectory }) => relativeDirectory).sort(), [
+      'packages/contracts/platform',
+      'packages/design/ui',
+      'packages/modules/core',
+      'packages/tooling/app-tools',
+    ])
+
+    const result = computeAffectedSet({
+      root,
+      changedFiles: ['packages/modules/core/src/module.ts'],
+    })
+    assert.equal(result.fullRun, false)
+    assert.deepEqual(names(result).sort(), ['app-tools', 'core'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

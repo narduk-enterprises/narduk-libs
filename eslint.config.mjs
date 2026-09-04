@@ -10,7 +10,7 @@ export default [
       'artifacts/**',
       'node_modules/**',
       'output/**',
-      'packages/*/dist/**',
+      'packages/*/*/dist/**',
       'playwright-report/**',
       'vendor/**',
     ],

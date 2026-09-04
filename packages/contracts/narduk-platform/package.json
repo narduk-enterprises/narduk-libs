@@ -1,0 +1,69 @@
+{
+  "name": "@narduk-enterprises/narduk-platform",
+  "version": "2.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Neutral environment, onboarding, package-registry, and provider contracts for independent Narduk apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/contracts/narduk-platform"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./env-catalog": {
+      "types": "./dist/env-catalog.d.ts",
+      "default": "./dist/env-catalog.js"
+    },
+    "./package-registry": {
+      "types": "./dist/package-registry.d.ts",
+      "default": "./dist/package-registry.js"
+    },
+    "./provision-env-contract": {
+      "types": "./dist/provision-env-contract.d.ts",
+      "default": "./dist/provision-env-contract.js"
+    },
+    "./provision-metadata": {
+      "types": "./dist/provision-metadata.d.ts",
+      "default": "./dist/provision-metadata.js"
+    },
+    "./provider-console": {
+      "types": "./dist/provider-console.d.ts",
+      "default": "./dist/provider-console.js"
+    },
+    "./onboarding-metadata": {
+      "types": "./dist/provision-metadata.d.ts",
+      "default": "./dist/provision-metadata.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json && node scripts/fix-esm-imports.mjs",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "node ../../../tools/package-quality.mjs format:check",
+    "lint": "node ../../../tools/package-quality.mjs lint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "prebuild": "node scripts/clean-dist.mjs",
+    "prepack": "pnpm run build",
+    "prepare": "node scripts/ensure-dist.mjs",
+    "prepublishOnly": "pnpm run build",
+    "test:unit": "vitest run",
+    "typecheck": "node ../../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../../tools/package-quality.mjs typecheck tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

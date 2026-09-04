@@ -1,0 +1,156 @@
+{
+  "name": "@narduk-enterprises/eslint-config",
+  "version": "2.0.1",
+  "private": false,
+  "type": "module",
+  "description": "Consolidated ESLint plugin and capability packs for Nuxt 4, Vue 3, Tailwind v4, and Nuxt UI v4 projects.",
+  "license": "UNLICENSED",
+  "author": "Narduk Enterprises",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/tooling/eslint-config"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "keywords": [
+    "eslint",
+    "eslint-plugin",
+    "eslintconfig",
+    "nuxt",
+    "vue",
+    "nuxt-ui",
+    "tailwind",
+    "pinia"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./eslint-app-config": {
+      "import": "./eslint-app-config.mjs"
+    },
+    "./eslint-nuxt-flat-fragments": "./eslint-nuxt-flat-fragments.mjs",
+    "./config": {
+      "import": "./eslint-app-config.mjs"
+    },
+    "./config/core": {
+      "import": "./configs/core.mjs"
+    },
+    "./config/design-system": {
+      "import": "./configs/design-system.mjs"
+    },
+    "./config/nuxt-ui": {
+      "import": "./configs/nuxt-ui.mjs"
+    },
+    "./config/seo": {
+      "import": "./configs/seo.mjs"
+    },
+    "./config/cloudflare": {
+      "import": "./configs/cloudflare.mjs"
+    },
+    "./config/server": {
+      "import": "./configs/server.mjs"
+    },
+    "./config/auth": {
+      "import": "./configs/auth.mjs"
+    },
+    "./config/template": {
+      "import": "./configs/template.mjs"
+    },
+    "./config/correctness": {
+      "import": "./configs/correctness.mjs"
+    },
+    "./config/a11y": {
+      "import": "./configs/a11y.mjs"
+    },
+    "./config/complexity": {
+      "import": "./configs/complexity.mjs"
+    },
+    "./config/formatting": {
+      "import": "./configs/formatting.mjs"
+    },
+    "./config/e2e": {
+      "import": "./configs/e2e.mjs"
+    },
+    "./config/monorepo": {
+      "import": "./configs/monorepo.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "configs/",
+    "dist/",
+    "eslint-app-config.mjs",
+    "eslint-nuxt-flat-fragments.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepack": "pnpm run build",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "quality": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test:unit",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0",
+    "tailwindcss": "^4.1.17",
+    "vue-eslint-parser": "^10.0.0"
+  },
+  "peerDependenciesMeta": {
+    "tailwindcss": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
+    "@nuxt/eslint-plugin": "^1.16.0",
+    "@typescript-eslint/utils": "^8.65.0",
+    "@vitest/eslint-plugin": "^1.6.25",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-better-tailwindcss": "^4.7.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-no-only-tests": "^3.4.0",
+    "eslint-plugin-perfectionist": "^5.10.0",
+    "eslint-plugin-pinia": "^0.4.2",
+    "eslint-plugin-playwright": "^2.11.0",
+    "eslint-plugin-promise": "^7.3.0",
+    "eslint-plugin-regexp": "^3.1.1",
+    "eslint-plugin-security": "^4.0.1",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "eslint-plugin-unicorn": "^72.0.0",
+    "eslint-plugin-vue": "^10.10.0",
+    "eslint-plugin-vuejs-accessibility": "^2.5.0",
+    "typescript-eslint": "^8.65.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/rule-tester": "^8.65.0",
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "publint": "^0.3.21",
+    "tailwindcss": "^4.2.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6",
+    "vue-eslint-parser": "^10.4.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

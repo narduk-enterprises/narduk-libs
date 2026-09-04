@@ -1,0 +1,54 @@
+{
+  "name": "@narduk-enterprises/narduk-ui",
+  "version": "0.1.1",
+  "private": false,
+  "description": "Narduk shared interface library. Ships the Narduk Status Design System token layer and the instruments component family.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/design/narduk-ui"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "sideEffects": [
+    "*.css",
+    "*.vue"
+  ],
+  "files": [
+    "tokens.css",
+    "instruments",
+    "_core",
+    "README.md"
+  ],
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./core": "./_core/index.ts",
+    "./instruments": "./instruments/index.ts",
+    "./instruments/*.vue": "./instruments/*.vue"
+  },
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "test:unit": "vitest run",
+    "typecheck": "vue-tsc --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.2.5"
+  },
+  "peerDependencies": {
+    "vue": ">=3.5.0"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

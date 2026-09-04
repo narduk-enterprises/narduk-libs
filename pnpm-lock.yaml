@@ -60,7 +60,7 @@ importers:
         version: 2.31.0(@types/node@22.20.0)
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:packages/eslint-config
+        version: link:packages/tooling/eslint-config
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
@@ -86,135 +86,44 @@ importers:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
-  packages/create-narduk-app:
-    devDependencies:
-      '@narduk-enterprises/eslint-config':
-        specifier: workspace:*
-        version: link:../eslint-config
-      '@types/node':
-        specifier: 22.19.19
-        version: 22.19.19
-      eslint:
-        specifier: 9.39.4
-        version: 9.39.4(jiti@2.7.0)
-      prettier:
-        specifier: 3.8.3
-        version: 3.8.3
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.6
-        version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-
-  packages/eslint-config:
-    dependencies:
-      '@eslint-community/eslint-plugin-eslint-comments':
-        specifier: ^4.7.2
-        version: 4.7.2(eslint@10.8.0(jiti@2.7.0))
-      '@nuxt/eslint-plugin':
-        specifier: ^1.16.0
-        version: 1.16.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/utils':
-        specifier: ^8.59.3
-        version: 8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
-      '@vitest/eslint-plugin':
-        specifier: ^1.6.25
-        version: 1.6.25(@typescript-eslint/eslint-plugin@8.65.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)(vitest@4.1.6)
-      eslint-config-prettier:
-        specifier: ^10.1.8
-        version: 10.1.8(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-better-tailwindcss:
-        specifier: ^4.7.0
-        version: 4.7.0(eslint@10.8.0(jiti@2.7.0))(tailwindcss@4.3.2)(typescript@5.9.3)
-      eslint-plugin-import-x:
-        specifier: ^4.17.1
-        version: 4.17.1(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-no-only-tests:
-        specifier: ^3.4.0
-        version: 3.4.0
-      eslint-plugin-perfectionist:
-        specifier: ^5.10.0
-        version: 5.10.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
-      eslint-plugin-pinia:
-        specifier: ^0.4.2
-        version: 0.4.2(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-playwright:
-        specifier: ^2.11.0
-        version: 2.11.0(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-promise:
-        specifier: ^7.3.0
-        version: 7.3.0(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-regexp:
-        specifier: ^3.1.1
-        version: 3.1.1(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-security:
-        specifier: ^4.0.1
-        version: 4.0.1
-      eslint-plugin-sonarjs:
-        specifier: ^4.2.0
-        version: 4.2.0(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-unicorn:
-        specifier: ^72.0.0
-        version: 72.0.0(eslint@10.8.0(jiti@2.7.0))
-      eslint-plugin-vue:
-        specifier: ^10.10.0
-        version: 10.10.0(@stylistic/eslint-plugin@5.10.0(eslint@10.8.0(jiti@2.7.0)))(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(vue-eslint-parser@10.4.1(eslint@10.8.0(jiti@2.7.0)))
-      eslint-plugin-vuejs-accessibility:
-        specifier: ^2.5.0
-        version: 2.5.0(eslint@10.8.0(jiti@2.7.0))(globals@17.7.0)
-      typescript-eslint:
-        specifier: ^8.65.0
-        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+  packages/contracts/narduk-platform:
     devDependencies:
       '@types/node':
         specifier: ^22.19.19
-        version: 22.19.19
-      '@typescript-eslint/parser':
-        specifier: ^8.65.0
-        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/rule-tester':
-        specifier: ^8.65.0
-        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+        version: 22.20.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.6
+        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+
+  packages/design/narduk-ui:
+    devDependencies:
       eslint:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
-      publint:
-        specifier: ^0.3.21
-        version: 0.3.21
-      tailwindcss:
-        specifier: ^4.2.1
-        version: 4.3.2
-      tsup:
-        specifier: ^8.5.1
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.22)(tsx@4.23.0)(typescript@5.9.3)(yaml@2.8.4)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: 4.1.6
-        version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-      vue-eslint-parser:
-        specifier: ^10.4.1
-        version: 10.4.1(eslint@10.8.0(jiti@2.7.0))
+        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vue:
+        specifier: ^3.5.39
+        version: 3.5.39(typescript@5.9.3)
+      vue-tsc:
+        specifier: ^3.2.5
+        version: 3.3.6(typescript@5.9.3)
 
-  packages/journeys:
+  packages/design/status-runtime:
     devDependencies:
-      '@narduk-enterprises/eslint-config':
-        specifier: workspace:*
-        version: link:../eslint-config
-      '@playwright/test':
-        specifier: 1.61.1
-        version: 1.61.1
       '@types/node':
         specifier: ^22.19.19
         version: 22.19.19
-      '@vitest/coverage-v8':
-        specifier: 4.1.6
-        version: 4.1.6(vitest@4.1.6)
       eslint:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
@@ -228,7 +137,7 @@ importers:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
-  packages/narduk-ai:
+  packages/modules/narduk-ai:
     dependencies:
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
@@ -254,7 +163,7 @@ importers:
         version: 4.20260511.1
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.40)(@vue/server-renderer@3.5.39(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(happy-dom@20.10.6)(magicast@0.5.3)(playwright-core@1.61.1)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.6)
@@ -298,7 +207,7 @@ importers:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
 
-  packages/narduk-analytics:
+  packages/modules/narduk-analytics:
     dependencies:
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
@@ -327,7 +236,7 @@ importers:
         version: 4.20260511.1
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.40)(@vue/server-renderer@3.5.39(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(happy-dom@20.10.6)(magicast@0.5.3)(playwright-core@1.61.1)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.6)
@@ -377,11 +286,11 @@ importers:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
 
-  packages/narduk-app:
+  packages/modules/narduk-app:
     devDependencies:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@types/node':
         specifier: ^22.19.19
         version: 22.20.0
@@ -401,38 +310,7 @@ importers:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
-  packages/narduk-app-tools:
-    dependencies:
-      jsonc-parser:
-        specifier: ^3.3.1
-        version: 3.3.1
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
-    devDependencies:
-      '@narduk-enterprises/eslint-config':
-        specifier: workspace:*
-        version: link:../eslint-config
-      '@types/node':
-        specifier: ^22.19.19
-        version: 22.20.0
-      '@vitest/coverage-v8':
-        specifier: 4.1.6
-        version: 4.1.6(vitest@4.1.6)
-      eslint:
-        specifier: ^10.8.0
-        version: 10.8.0(jiti@2.7.0)
-      prettier:
-        specifier: ^3.8.3
-        version: 3.9.4
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.6
-        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-
-  packages/narduk-auth:
+  packages/modules/narduk-auth:
     dependencies:
       '@narduk-enterprises/narduk-app':
         specifier: workspace:*
@@ -467,7 +345,7 @@ importers:
         version: 4.20260511.1
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.40)(@vue/server-renderer@3.5.39(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(happy-dom@20.10.6)(magicast@0.5.3)(playwright-core@1.61.1)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.6)
@@ -520,17 +398,17 @@ importers:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
 
-  packages/narduk-core:
+  packages/modules/narduk-core:
     dependencies:
       '@iconify-json/lucide':
         specifier: ^1.2.108
         version: 1.2.116
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@narduk-enterprises/narduk-platform':
         specifier: workspace:*
-        version: link:../narduk-platform
+        version: link:../../contracts/narduk-platform
       '@nuxt/eslint':
         specifier: ^1.15.2
         version: 1.16.0(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(@vue/compiler-sfc@3.5.40)(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(eslint@10.8.0(jiti@2.7.0))(magicast@0.5.3)(oxc-parser@0.140.0)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
@@ -644,19 +522,7 @@ importers:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
 
-  packages/narduk-platform:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.19.19
-        version: 22.20.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.6
-        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-
-  packages/narduk-seo:
+  packages/modules/narduk-seo:
     dependencies:
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
@@ -709,7 +575,7 @@ importers:
     devDependencies:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.40)(@vue/server-renderer@3.5.39(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(happy-dom@20.10.6)(magicast@0.5.3)(playwright-core@1.61.1)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.6)
@@ -756,65 +622,7 @@ importers:
         specifier: ^3.2.5
         version: 3.3.6(typescript@5.9.3)
 
-  packages/narduk-testkit:
-    dependencies:
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
-    devDependencies:
-      '@narduk-enterprises/eslint-config':
-        specifier: workspace:*
-        version: link:../eslint-config
-      '@playwright/test':
-        specifier: 1.61.1
-        version: 1.61.1
-      '@supabase/supabase-js':
-        specifier: ^2.105.4
-        version: 2.110.1
-      '@types/node':
-        specifier: ^22.19.19
-        version: 22.20.0
-      '@vitest/coverage-v8':
-        specifier: 4.1.6
-        version: 4.1.6(vitest@4.1.6)
-      eslint:
-        specifier: ^10.8.0
-        version: 10.8.0(jiti@2.7.0)
-      h3:
-        specifier: ^1.15.11
-        version: 1.15.11
-      prettier:
-        specifier: ^3.8.3
-        version: 3.9.4
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.6
-        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-
-  packages/narduk-ui:
-    devDependencies:
-      eslint:
-        specifier: ^10.8.0
-        version: 10.8.0(jiti@2.7.0)
-      prettier:
-        specifier: ^3.8.3
-        version: 3.8.3
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.6
-        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-      vue:
-        specifier: ^3.5.39
-        version: 3.5.39(typescript@5.9.3)
-      vue-tsc:
-        specifier: ^3.2.5
-        version: 3.3.6(typescript@5.9.3)
-
-  packages/narduk-uploads:
+  packages/modules/narduk-uploads:
     dependencies:
       '@nuxt/kit':
         specifier: ^4.0.0
@@ -828,7 +636,7 @@ importers:
         version: 4.20260511.1
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
-        version: link:../eslint-config
+        version: link:../../tooling/eslint-config
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
         version: link:../narduk-core
@@ -881,11 +689,135 @@ importers:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)
 
-  packages/status-runtime:
+  packages/tooling/create-narduk-app:
+    devDependencies:
+      '@narduk-enterprises/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@types/node':
+        specifier: 22.19.19
+        version: 22.19.19
+      eslint:
+        specifier: 9.39.4
+        version: 9.39.4(jiti@2.7.0)
+      prettier:
+        specifier: 3.8.3
+        version: 3.8.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.6
+        version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+
+  packages/tooling/eslint-config:
+    dependencies:
+      '@eslint-community/eslint-plugin-eslint-comments':
+        specifier: ^4.7.2
+        version: 4.7.2(eslint@10.8.0(jiti@2.7.0))
+      '@nuxt/eslint-plugin':
+        specifier: ^1.16.0
+        version: 1.16.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/utils':
+        specifier: ^8.59.3
+        version: 8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+      '@vitest/eslint-plugin':
+        specifier: ^1.6.25
+        version: 1.6.25(@typescript-eslint/eslint-plugin@8.65.0(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)(vitest@4.1.6)
+      eslint-config-prettier:
+        specifier: ^10.1.8
+        version: 10.1.8(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-better-tailwindcss:
+        specifier: ^4.7.0
+        version: 4.7.0(eslint@10.8.0(jiti@2.7.0))(tailwindcss@4.3.2)(typescript@5.9.3)
+      eslint-plugin-import-x:
+        specifier: ^4.17.1
+        version: 4.17.1(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-no-only-tests:
+        specifier: ^3.4.0
+        version: 3.4.0
+      eslint-plugin-perfectionist:
+        specifier: ^5.10.0
+        version: 5.10.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+      eslint-plugin-pinia:
+        specifier: ^0.4.2
+        version: 0.4.2(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-playwright:
+        specifier: ^2.11.0
+        version: 2.11.0(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-promise:
+        specifier: ^7.3.0
+        version: 7.3.0(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-regexp:
+        specifier: ^3.1.1
+        version: 3.1.1(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-security:
+        specifier: ^4.0.1
+        version: 4.0.1
+      eslint-plugin-sonarjs:
+        specifier: ^4.2.0
+        version: 4.2.0(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-unicorn:
+        specifier: ^72.0.0
+        version: 72.0.0(eslint@10.8.0(jiti@2.7.0))
+      eslint-plugin-vue:
+        specifier: ^10.10.0
+        version: 10.10.0(@stylistic/eslint-plugin@5.10.0(eslint@10.8.0(jiti@2.7.0)))(@typescript-eslint/parser@8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.8.0(jiti@2.7.0))(vue-eslint-parser@10.4.1(eslint@10.8.0(jiti@2.7.0)))
+      eslint-plugin-vuejs-accessibility:
+        specifier: ^2.5.0
+        version: 2.5.0(eslint@10.8.0(jiti@2.7.0))(globals@17.7.0)
+      typescript-eslint:
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^22.19.19
         version: 22.19.19
+      '@typescript-eslint/parser':
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/rule-tester':
+        specifier: ^8.65.0
+        version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.0(jiti@2.7.0)
+      prettier:
+        specifier: ^3.8.3
+        version: 3.8.3
+      publint:
+        specifier: ^0.3.21
+        version: 0.3.21
+      tailwindcss:
+        specifier: ^4.2.1
+        version: 4.3.2
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.22)(tsx@4.23.0)(typescript@5.9.3)(yaml@2.8.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.6
+        version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vue-eslint-parser:
+        specifier: ^10.4.1
+        version: 10.4.1(eslint@10.8.0(jiti@2.7.0))
+
+  packages/tooling/journeys:
+    devDependencies:
+      '@narduk-enterprises/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@playwright/test':
+        specifier: 1.61.1
+        version: 1.61.1
+      '@types/node':
+        specifier: ^22.19.19
+        version: 22.19.19
+      '@vitest/coverage-v8':
+        specifier: 4.1.6
+        version: 4.1.6(vitest@4.1.6)
       eslint:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
@@ -898,6 +830,74 @@ importers:
       vitest:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+
+  packages/tooling/narduk-app-tools:
+    dependencies:
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
+    devDependencies:
+      '@narduk-enterprises/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@types/node':
+        specifier: ^22.19.19
+        version: 22.20.0
+      '@vitest/coverage-v8':
+        specifier: 4.1.6
+        version: 4.1.6(vitest@4.1.6)
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.0(jiti@2.7.0)
+      prettier:
+        specifier: ^3.8.3
+        version: 3.9.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.6
+        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+
+  packages/tooling/narduk-testkit:
+    dependencies:
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
+    devDependencies:
+      '@narduk-enterprises/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@playwright/test':
+        specifier: 1.61.1
+        version: 1.61.1
+      '@supabase/supabase-js':
+        specifier: ^2.105.4
+        version: 2.110.1
+      '@types/node':
+        specifier: ^22.19.19
+        version: 22.20.0
+      '@vitest/coverage-v8':
+        specifier: 4.1.6
+        version: 4.1.6(vitest@4.1.6)
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.0(jiti@2.7.0)
+      h3:
+        specifier: ^1.15.11
+        version: 1.15.11
+      prettier:
+        specifier: ^3.8.3
+        version: 3.9.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.6
+        version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
 packages:
 

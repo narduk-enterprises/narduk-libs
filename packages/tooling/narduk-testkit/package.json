@@ -1,0 +1,136 @@
+{
+  "name": "@narduk-enterprises/narduk-testkit",
+  "version": "1.2.0",
+  "private": false,
+  "type": "module",
+  "description": "Dev-only Vitest, Playwright, and UI-quality test helpers for Narduk apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/tooling/narduk-testkit"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./e2e/fixtures": {
+      "types": "./dist/e2e/fixtures.d.ts",
+      "import": "./dist/e2e/fixtures.js"
+    },
+    "./e2e/contracts/auth": {
+      "types": "./dist/e2e/contracts/auth.d.ts",
+      "import": "./dist/e2e/contracts/auth.js"
+    },
+    "./e2e/contracts/notifications": {
+      "types": "./dist/e2e/contracts/notifications.d.ts",
+      "import": "./dist/e2e/contracts/notifications.js"
+    },
+    "./e2e/contracts/user-profile": {
+      "types": "./dist/e2e/contracts/user-profile.d.ts",
+      "import": "./dist/e2e/contracts/user-profile.js"
+    },
+    "./e2e/specs/users-api": {
+      "types": "./dist/e2e/specs/users-api.d.ts",
+      "import": "./dist/e2e/specs/users-api.js"
+    },
+    "./e2e/fixture-server": {
+      "types": "./dist/e2e/fixture-server.d.ts",
+      "import": "./dist/e2e/fixture-server.js"
+    },
+    "./playwright/accessibility": {
+      "types": "./dist/playwright/accessibility.d.ts",
+      "import": "./dist/playwright/accessibility.js"
+    },
+    "./playwright/deterministic-capture": {
+      "types": "./dist/playwright/deterministic-capture.d.ts",
+      "import": "./dist/playwright/deterministic-capture.js"
+    },
+    "./playwright/request-accounting": {
+      "types": "./dist/playwright/request-accounting.d.ts",
+      "import": "./dist/playwright/request-accounting.js"
+    },
+    "./playwright/ui-quality": {
+      "types": "./dist/playwright/ui-quality.d.ts",
+      "import": "./dist/playwright/ui-quality.js"
+    },
+    "./playwright/ui-quality-analyzer": {
+      "types": "./dist/playwright/ui-quality-analyzer.d.ts",
+      "import": "./dist/playwright/ui-quality-analyzer.js"
+    },
+    "./server/kit/smoke": {
+      "types": "./dist/server/kit/smoke.d.ts",
+      "import": "./dist/server/kit/smoke.js"
+    },
+    "./server/kit/canonical-host": {
+      "types": "./dist/server/kit/canonical-host.d.ts",
+      "import": "./dist/server/kit/canonical-host.js"
+    },
+    "./server/kit/auth-session-refresh": {
+      "types": "./dist/server/kit/auth-session-refresh.d.ts",
+      "import": "./dist/server/kit/auth-session-refresh.js"
+    },
+    "./server/kit/auth-session-stability": {
+      "types": "./dist/server/kit/auth-session-stability.d.ts",
+      "import": "./dist/server/kit/auth-session-stability.js"
+    },
+    "./server/kit/managed-supabase": {
+      "types": "./dist/server/kit/managed-supabase.d.ts",
+      "import": "./dist/server/kit/managed-supabase.js"
+    }
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md"
+  ],
+  "bin": {
+    "narduk-testkit": "./bin/narduk-testkit.mjs"
+  },
+  "scripts": {
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "prepack": "pnpm run build",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint src tests bin --max-warnings 0",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "format": "pnpm run prettier:fix",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  },
+  "peerDependenciesMeta": {
+    "@axe-core/playwright": {
+      "optional": true
+    }
+  },
+  "peerDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": ">=1.50.0",
+    "vitest": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@playwright/test": "1.61.1",
+    "@supabase/supabase-js": "^2.105.4",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^10.8.0",
+    "h3": "^1.15.11",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

@@ -41,8 +41,8 @@ test-results/
 .playwright-mcp/
 
 # ESLint plugin build artifacts (rebuilt via `pnpm run build:plugins`)
-packages/eslint-config/*/dist/
-packages/narduk-platform/dist/
+packages/tooling/eslint-config/*/dist/
+packages/contracts/narduk-platform/dist/
 # ESLint caches
 .eslint-results.json
 

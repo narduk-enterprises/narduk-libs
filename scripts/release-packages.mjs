@@ -17,10 +17,10 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
@@ -570,13 +570,8 @@ function packEnvironment() {
   return childEnvironment({ npm_config_ignore_scripts: 'true' })
 }
 
-const packages = readdirSync(packageRoot, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => {
-    const directory = join(packageRoot, entry.name)
-    const manifest = readJson(join(directory, 'package.json'))
-    return { directory, manifest }
-  })
+const packages = loadWorkspace(root)
+  .packages.map(({ directory, manifest }) => ({ directory, manifest }))
   .filter(({ manifest }) => manifest.private !== true)
   .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name))
 
