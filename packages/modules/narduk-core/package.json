@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-core",
-  "version": "1.20.5",
+  "version": "1.21.0",
   "private": false,
   "type": "module",
   "description": "Core Nuxt module, Worker runtime helpers, UI primitives, and database utilities for Narduk Cloudflare apps.",

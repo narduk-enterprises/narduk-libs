@@ -1,5 +1,35 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.2
+
+### Patch Changes
+
+- 8b48dba: Companion release for the narduk-core patch that moves
+  `@narduk-enterprises/eslint-config` from a runtime dependency to an optional
+  peerDependency (narduk-libs#154). No generator behavior change; this bumps the
+  generator alongside its pinned `@narduk-enterprises/narduk-core` version per
+  `scripts/check-generator-release-plan.mjs`.
+- 74ca377: Bump the generated app's pinned
+  `@narduk-enterprises/narduk-mapkit-nuxt` version so new apps scaffold onto the
+  release that fixes the package's publish-time build.
+- cc5bbbb: Release alongside the `narduk-app` minor bump (the new HTTP error +
+  requestBody contract). `@narduk-enterprises/narduk-auth` depends on
+  `@narduk-enterprises/narduk-app` via `workspace:*`, so Changesets'
+  `updateInternalDependencies: "patch"` policy cascades a patch release to
+  narduk-auth — which is itself a generator-owned pinned package
+  (`create-narduk-app`'s `PACKAGE_VERSIONS`). This keeps the generator's pin in
+  sync with that cascaded release. No behavior change in the generator itself.
+- 0f2262a: Release alongside the `narduk-core` minor bump
+  (`readApproximateLocation`) so the generator's `PACKAGE_VERSIONS` pin for that
+  package ships at the version it is synced to. `create-narduk-app` writes that
+  pin verbatim into every scaffolded app's `package.json`, so a release that
+  moves the pinned package without republishing the generator leaves new apps
+  pinned to a version the generator no longer names. No behavior change in the
+  generator itself.
+- 1721a1c: Pick up the `@narduk-enterprises/narduk-auth` minor release (opt-in
+  `AUTH_LOCAL_PROVIDERS` advertisement for the local auth backend) in the
+  generator's pinned package versions. No generator behavior changes.
+
 ## 0.2.1
 
 ### Patch Changes

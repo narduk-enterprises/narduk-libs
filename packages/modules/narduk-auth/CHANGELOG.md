@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.23.0
+
+### Minor Changes
+
+- 1721a1c: Let the local backend advertise additional auth providers through an
+  explicit opt-in `AUTH_LOCAL_PROVIDERS` env var (comma-separated, filtered
+  against a known allowlist of `apple` and `passkey`). Unset, `authProviders`
+  still resolves to exactly `['email']` for every existing consumer — this is
+  preparatory plumbing for upcoming passkey (narduk-libs#125) UI work and adds
+  no new authentication behavior on its own.
+
+### Patch Changes
+
+- Updated dependencies [cc5bbbb]
+- Updated dependencies [0f2262a]
+- Updated dependencies [8b48dba]
+  - @narduk-enterprises/narduk-app@1.20.0
+  - @narduk-enterprises/narduk-core@1.21.0
+
 ## 1.22.0
 
 ### Minor Changes
