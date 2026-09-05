@@ -482,9 +482,6 @@ importers:
       '@iconify-json/lucide':
         specifier: ^1.2.108
         version: 1.2.116
-      '@narduk-enterprises/eslint-config':
-        specifier: workspace:*
-        version: link:../../tooling/eslint-config
       '@narduk-enterprises/narduk-platform':
         specifier: workspace:*
         version: link:../../contracts/narduk-platform
@@ -549,6 +546,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 4.20260511.1
         version: 4.20260511.1
+      '@narduk-enterprises/eslint-config':
+        specifier: workspace:*
+        version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.40)(@vue/server-renderer@3.5.39(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0)(magicast@0.5.3)(playwright-core@1.61.1)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.6)
@@ -11618,7 +11618,7 @@ snapshots:
       semver: 7.8.5
       tinyglobby: 0.2.17
       ufo: 1.6.4
-      unctx: 3.0.0(magic-string@1.0.0)(oxc-parser@0.140.0)(unplugin@3.3.0(esbuild@0.28.1)(rollup@4.62.2)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
+      unctx: 3.0.0(magic-string@1.0.0)(oxc-parser@0.140.0)(unplugin@3.3.0(esbuild@0.28.1)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
       untyped: 2.0.0
     transitivePeerDependencies:
       - magic-string

@@ -95,7 +95,6 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.108",
-    "@narduk-enterprises/eslint-config": "workspace:*",
     "@narduk-enterprises/narduk-platform": "workspace:*",
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/fonts": "^0.14.0",
@@ -119,6 +118,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
+    "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",
@@ -138,11 +138,15 @@
     "wrangler": "^4.90.1"
   },
   "peerDependencies": {
+    "@narduk-enterprises/eslint-config": ">=1.2.17 <3",
     "nuxt": ">=3.16.0",
     "vue": ">=3.5.0",
     "wrangler": ">=4.90.1"
   },
   "peerDependenciesMeta": {
+    "@narduk-enterprises/eslint-config": {
+      "optional": true
+    },
     "wrangler": {
       "optional": true
     }
