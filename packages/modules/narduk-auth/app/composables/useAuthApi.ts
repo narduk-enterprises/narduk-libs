@@ -1,11 +1,19 @@
+/* eslint-disable max-lines -- single typed transport for every /api/auth endpoint (session, MFA, API keys, passkeys); splitting it by feature would fragment one wire contract across files and make an endpoint drift silently. */
 import type {
   AuthApiKeyCreateInput,
   AuthApiKeyCreateResponse,
   AuthApiKeySummary,
   AuthMutationResult,
+  AuthPasskeySummary,
   AuthUser,
   MfaEnrollmentResult,
 } from '../internal/auth-api-types'
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/browser'
 
 export type {
   AuthApiKeyCreateInput,
@@ -14,6 +22,8 @@ export type {
   AuthApiKeySummary,
   AuthApiKeyTokenProfile,
   AuthMutationResult,
+  AuthPasskeySummary,
+  AuthRuntimePublic,
   AuthUser,
   MfaEnrollmentResult,
 } from '../internal/auth-api-types'
@@ -154,6 +164,50 @@ export function useAuthApi() {
     })
   }
 
+  function passkeyRegistrationOptions() {
+    return csrfFetch<PublicKeyCredentialCreationOptionsJSON>(
+      '/api/auth/passkeys/registration/options',
+      { method: 'POST', headers: csrfHeaders },
+    )
+  }
+
+  function passkeyRegistrationVerify(payload: {
+    name?: string | null
+    response: RegistrationResponseJSON
+  }) {
+    return csrfFetch<AuthPasskeySummary>('/api/auth/passkeys/registration/verify', {
+      method: 'POST',
+      body: payload,
+      headers: csrfHeaders,
+    })
+  }
+
+  function passkeyAuthenticationOptions() {
+    return csrfFetch<PublicKeyCredentialRequestOptionsJSON>(
+      '/api/auth/passkeys/authentication/options',
+      { method: 'POST', headers: csrfHeaders },
+    )
+  }
+
+  function passkeyAuthenticationVerify(payload: { response: AuthenticationResponseJSON }) {
+    return csrfFetch<{ user: AuthUser }>('/api/auth/passkeys/authentication/verify', {
+      method: 'POST',
+      body: payload,
+      headers: csrfHeaders,
+    })
+  }
+
+  function listPasskeys() {
+    return csrfFetch<AuthPasskeySummary[]>('/api/auth/passkeys')
+  }
+
+  function revokePasskey(id: string) {
+    return csrfFetch<{ success: boolean }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: csrfHeaders,
+    })
+  }
+
   return {
     login,
     register,
@@ -170,5 +224,11 @@ export function useAuthApi() {
     completeLocalEmailPassword,
     enrollMfa,
     verifyMfa,
+    passkeyRegistrationOptions,
+    passkeyRegistrationVerify,
+    passkeyAuthenticationOptions,
+    passkeyAuthenticationVerify,
+    listPasskeys,
+    revokePasskey,
   }
 }

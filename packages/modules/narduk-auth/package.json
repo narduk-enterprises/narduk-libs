@@ -92,6 +92,8 @@
     "@narduk-enterprises/narduk-app": "workspace:*",
     "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/kit": "^4.0.0",
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.3",
     "@supabase/auth-js": "^2.105.4",
     "@supabase/supabase-js": "^2.105.4",
     "defu": "^6.1.7",

@@ -126,6 +126,12 @@ describe('create-narduk-app generation contract', () => {
         glob: PACKAGE_VERSIONS.glob,
         'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'],
       },
+      peerDependencyRules: {
+        // nuxt-auth-utils' optional passkey helpers still peer on
+        // `@simplewebauthn/*@^11`; narduk-auth ships its own exact-pinned v13
+        // and never calls them (narduk-libs#125 D3).
+        allowAny: ['@simplewebauthn/browser', '@simplewebauthn/server'],
+      },
       allowedDeprecatedVersions: {
         '@esbuild-kit/core-utils': '*',
         '@esbuild-kit/esm-loader': '*',

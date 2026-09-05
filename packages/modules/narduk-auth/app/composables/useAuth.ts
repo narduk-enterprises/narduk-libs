@@ -1,3 +1,5 @@
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
+
 import { type AuthMutationResult, type AuthUser, useAuthApi } from './useAuthApi'
 
 type EmailVerificationType =
@@ -89,6 +91,28 @@ export function useAuth() {
     return result
   }
 
+  /**
+   * Passkey sign-in.
+   *
+   * Discoverable-credential only: the ceremony takes no email, so the browser
+   * shows the platform's own account picker and the server never learns which
+   * account was attempted unless the assertion verifies.
+   */
+  async function signInWithPasskey() {
+    const optionsJSON = await api.passkeyAuthenticationOptions()
+    const response = await startAuthentication({ optionsJSON })
+    const result = await api.passkeyAuthenticationVerify({ response })
+    await fetchSession()
+    return result
+  }
+
+  /** Enrol a new passkey for the signed-in user. Requires an existing session. */
+  async function registerPasskey(payload: { name?: string | null } = {}) {
+    const optionsJSON = await api.passkeyRegistrationOptions()
+    const response = await startRegistration({ optionsJSON })
+    return api.passkeyRegistrationVerify({ name: payload.name ?? null, response })
+  }
+
   async function enrollMfa(payload: { friendlyName?: string }) {
     return api.enrollMfa(payload)
   }
@@ -117,5 +141,9 @@ export function useAuth() {
     completeLocalEmailPassword,
     enrollMfa,
     verifyMfa,
+    signInWithPasskey,
+    registerPasskey,
+    listPasskeys: api.listPasskeys,
+    revokePasskey: api.revokePasskey,
   }
 }

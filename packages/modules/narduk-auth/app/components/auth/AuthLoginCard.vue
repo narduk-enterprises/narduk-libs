@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { z } from 'zod'
 
 import { resolveLoginSubtitle } from '../../utils/loginCopy'
@@ -24,7 +25,7 @@ const emit = defineEmits<{
 
 const config = useRuntimeConfig()
 const route = useRoute()
-const { login, startOAuth } = useAuth()
+const { login, startOAuth, signInWithPasskey } = useAuth()
 
 const { data: authRuntime } = useAuthRuntimePublic()
 
@@ -40,6 +41,14 @@ const state = reactive({
 
 const loading = ref(false)
 const appleLoading = ref(false)
+const passkeyLoading = ref(false)
+// WebAuthn is a browser API: on the server this is always false, so the button
+// renders only after hydration rather than flashing an affordance the visiting
+// browser cannot honour.
+const browserHasWebAuthn = ref(false)
+onMounted(() => {
+  browserHasWebAuthn.value = browserSupportsWebAuthn()
+})
 const errorMsg = ref('')
 const infoMsg = ref('')
 
@@ -52,7 +61,16 @@ const effectiveAuthProviders = computed(
 const canUseApple = computed(
   () => effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple'),
 )
-const resolvedSubtitle = computed(() => resolveLoginSubtitle(canUseApple.value, props.subtitle))
+// `passkeysEnabled` is the server's own answer to "would a ceremony succeed?" —
+// backend, provider opt-in AND a valid Relying Party binding. Falling back to
+// the provider list alone would show a button that 501s on the first click, so
+// an unresolved runtime answer hides the affordance rather than guessing.
+const canUsePasskey = computed(
+  () => browserHasWebAuthn.value && authRuntime.value?.passkeysEnabled === true,
+)
+const resolvedSubtitle = computed(() =>
+  resolveLoginSubtitle(canUseApple.value, props.subtitle, canUsePasskey.value),
+)
 const canRegister = computed(() => config.public.authPublicSignup)
 const redirectRequest = computed(() =>
   resolveLocalRedirectRequest(props.redirectPath, route.query.next, config.public.authRedirectPath),
@@ -104,6 +122,28 @@ async function onSubmit() {
     errorMsg.value = toUserFacingError(error, 'Invalid email or password.')
   } finally {
     loading.value = false
+  }
+}
+
+async function onPasskeySignIn() {
+  passkeyLoading.value = true
+  errorMsg.value = ''
+
+  try {
+    await signInWithPasskey()
+    await navigateTo(resolvedRedirectPath.value, { replace: true })
+  } catch (error) {
+    // A user who dismisses the platform sheet gets no error banner: cancelling
+    // is a choice, not a failure.
+    if (
+      error instanceof Error &&
+      (error.name === 'NotAllowedError' || error.name === 'AbortError')
+    ) {
+      return
+    }
+    errorMsg.value = toUserFacingError(error, 'Passkey sign-in did not complete.')
+  } finally {
+    passkeyLoading.value = false
   }
 }
 
@@ -169,8 +209,21 @@ async function onAppleSignIn() {
         Continue with Apple
       </UButton>
 
+      <UButton
+        v-if="canUsePasskey"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-fingerprint"
+        class="w-full justify-center"
+        :loading="passkeyLoading"
+        data-testid="auth-login-passkey"
+        @click="onPasskeySignIn"
+      >
+        Sign in with a passkey
+      </UButton>
+
       <div
-        v-if="canUseApple"
+        v-if="canUseApple || canUsePasskey"
         class="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-dimmed"
       >
         <span class="h-px flex-1 bg-default" />
