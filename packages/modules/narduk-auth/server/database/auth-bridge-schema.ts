@@ -77,3 +77,45 @@ export type AuthUserLink = typeof authUserLinks.$inferSelect
 export type AuthSession = typeof authSessions.$inferSelect
 export type AuthEmailLink = typeof authEmailLinks.$inferSelect
 export type AuthLocalEmailAttempt = typeof authLocalEmailAttempts.$inferSelect
+
+/**
+ * Registered passkeys (WebAuthn credentials) for the local backend.
+ *
+ * `id` is the base64url credential ID and is the primary key because
+ * discoverable-credential authentication resolves a credential before it knows
+ * which user is signing in. `rpId` is stored so authentication can refuse a
+ * credential minted under a different Relying Party ID.
+ */
+export const authWebauthnCredentials = sqliteTable('auth_webauthn_credentials', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  publicKey: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  transports: text('transports').notNull().default('[]'),
+  deviceType: text('device_type', { enum: ['singleDevice', 'multiDevice'] })
+    .notNull()
+    .default('singleDevice'),
+  backedUp: integer('backed_up', { mode: 'boolean' }).notNull().default(false),
+  rpId: text('rp_id').notNull(),
+  name: text('name'),
+  createdAt: text('created_at')
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  lastUsedAt: text('last_used_at'),
+})
+
+/** Digest-only, single-use, TTL-bounded WebAuthn ceremony challenges. */
+export const authWebauthnChallenges = sqliteTable('auth_webauthn_challenges', {
+  challengeHash: text('challenge_hash').primaryKey(),
+  purpose: text('purpose', { enum: ['registration', 'authentication'] }).notNull(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: integer('expires_at').notNull(),
+  createdAt: text('created_at')
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+})
+
+export type AuthWebauthnCredential = typeof authWebauthnCredentials.$inferSelect
+export type AuthWebauthnChallenge = typeof authWebauthnChallenges.$inferSelect

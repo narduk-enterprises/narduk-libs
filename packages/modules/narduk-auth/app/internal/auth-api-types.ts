@@ -64,3 +64,19 @@ export interface AuthApiKeyCreateInput {
   name: string
   scopes?: string[]
 }
+
+export interface AuthPasskeySummary {
+  backedUp: boolean
+  createdAt: string
+  deviceType: 'multiDevice' | 'singleDevice'
+  id: string
+  lastUsedAt: string | null
+  name: string | null
+  transports: string[]
+}
+
+export interface AuthRuntimePublic {
+  authBackend: 'local' | 'supabase'
+  authProviders: string[]
+  passkeysEnabled: boolean
+}

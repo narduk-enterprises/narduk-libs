@@ -226,6 +226,11 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
           path: '/settings/api-keys',
           file: resolver.resolve('../app/pages/settings/api-keys.vue'),
         })
+        addPageIfMissing(pages, {
+          name: 'settings-passkeys',
+          path: '/settings/passkeys',
+          file: resolver.resolve('../app/pages/settings/passkeys.vue'),
+        })
       })
     }
 

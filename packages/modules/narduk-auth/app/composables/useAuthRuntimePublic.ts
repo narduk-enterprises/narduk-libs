@@ -1,8 +1,7 @@
+import type { AuthRuntimePublic } from '../internal/auth-api-types'
+
 export function useAuthRuntimePublic() {
-  return useFetch<{
-    authBackend: 'local' | 'supabase'
-    authProviders: string[]
-  }>('/api/auth/runtime-public', {
+  return useFetch<AuthRuntimePublic>('/api/auth/runtime-public', {
     key: 'auth-runtime-public',
   })
 }
