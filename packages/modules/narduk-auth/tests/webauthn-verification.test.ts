@@ -2,6 +2,7 @@ import { isoBase64URL } from '@simplewebauthn/server/helpers'
 import { describe, expect, it } from 'vitest'
 
 import {
+  assertPasskeyManagementPrincipal,
   evaluateSignatureCounter,
   isClaimedChallengeUsable,
   normalizePasskeyName,
@@ -140,5 +141,34 @@ describe('parseTransports and normalizePasskeyName', () => {
     expect(normalizePasskeyName(null)).toBeNull()
     expect(normalizePasskeyName(undefined)).toBeNull()
     expect(normalizePasskeyName('x'.repeat(500))).toHaveLength(100)
+  })
+})
+
+describe('assertPasskeyManagementPrincipal', () => {
+  // Executed, not grepped. The route-guard suite proves the call site exists;
+  // this proves the call does something, so a guard quietly turned into a
+  // no-op fails here rather than shipping.
+  it('refuses an API-key principal with 403', () => {
+    let thrown: unknown
+    try {
+      assertPasskeyManagementPrincipal({ authMethod: 'api-key' })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeDefined()
+    expect((thrown as { statusCode?: number }).statusCode).toBe(403)
+  })
+
+  it('permits an interactive session principal', () => {
+    expect(() => assertPasskeyManagementPrincipal({ authMethod: 'session' })).not.toThrow()
+  })
+
+  it('permits a principal whose method is absent rather than failing open on api-key', () => {
+    // `requireAuth` always sets authMethod, so an absent one is a caller that
+    // is not requireAuth's output. It must not be mistaken for an API key —
+    // and, equally, an unrecognised value must not be silently refused.
+    expect(() => assertPasskeyManagementPrincipal({})).not.toThrow()
+    expect(() => assertPasskeyManagementPrincipal({ authMethod: undefined })).not.toThrow()
+    expect(() => assertPasskeyManagementPrincipal({ authMethod: 'API-KEY' })).not.toThrow()
   })
 })

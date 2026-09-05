@@ -175,6 +175,11 @@ in the zone**, including any future or compromised subdomain. Do not do it
   `required` so sign-in needs no identifier.
 - **Sign-in reveals nothing.** The authentication endpoints take no email, send
   no `allowCredentials`, and answer every failure with one generic `401`.
+- **The challenge table has an absolute ceiling.** The sign-in options endpoint
+  is necessarily public and inserts a row per call, and its rate limit is keyed
+  on the client IP — so a caller rotating addresses is otherwise bounded only by
+  how many they hold. Past 5,000 live challenges, ceremonies refuse with 503;
+  email + password login touches neither table and keeps working.
 - **Clone detection fails closed.** A signature counter that does not strictly
   increase is refused, except for the authenticator that reports `0` always; the
   new counter is written conditionally on the counter that was verified against.

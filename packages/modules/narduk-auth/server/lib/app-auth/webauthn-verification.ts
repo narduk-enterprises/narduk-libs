@@ -1,4 +1,5 @@
 import { isoBase64URL } from '@simplewebauthn/server/helpers'
+import { createError } from 'h3'
 
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server'
 
@@ -99,4 +100,28 @@ export function isClaimedChallengeUsable(
   if (!row) return false
   if (row.purpose !== expectedPurpose) return false
   return row.expiresAt > nowSeconds
+}
+
+/**
+ * Passkey management is a **session-only** capability.
+ *
+ * `requireAuth` accepts an API-key bearer as a first-class principal, so
+ * without this guard a leaked or over-scoped API key could enrol a passkey —
+ * turning a revocable machine token into a persistent interactive login — or
+ * delete the passkeys of the account it belongs to. An API key is a machine
+ * credential; changing which authenticators can sign in as a human is not a
+ * machine action.
+ *
+ * It lives in this module rather than beside the ceremonies so a test can call
+ * it directly. A guard whose only coverage is "the call site still appears in
+ * the source" is satisfied by a no-op body, which is exactly the regression it
+ * exists to prevent.
+ */
+export function assertPasskeyManagementPrincipal(user: { authMethod?: string }): void {
+  if (user.authMethod === 'api-key') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Passkeys can only be managed from an interactive session, not an API key.',
+    })
+  }
 }

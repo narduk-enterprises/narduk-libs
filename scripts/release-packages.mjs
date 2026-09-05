@@ -64,6 +64,23 @@ if (!WORKSPACE_UNHEAD_VERSION || !WORKSPACE_UNHEAD_VUE_VERSION) {
   )
 }
 
+// narduk-core depends on nuxt-auth-utils, whose OPTIONAL passkey helpers still
+// declare `@simplewebauthn/*@^11` — a range upstream has not moved since 2024.
+// narduk-auth implements WebAuthn itself against its own exact-pinned v13
+// (narduk-libs#125 D3) and never calls those helpers, so the two versions never
+// meet at runtime. This sandbox is outside the workspace, so it must carry the
+// same peer rule the workspace root declares or pnpm emits the WARN/✕ lines
+// runChecked() turns into a hard failure. Read from root/package.json for the
+// same reason as the pins above: one place to change.
+const WORKSPACE_PEER_ALLOW_ANY = (rootManifest.pnpm?.peerDependencyRules?.allowAny ?? []).filter(
+  (name) => name.startsWith('@simplewebauthn/'),
+)
+if (WORKSPACE_PEER_ALLOW_ANY.length === 0) {
+  throw new Error(
+    'Root package.json must list the @simplewebauthn/* packages in pnpm.peerDependencyRules.allowAny.',
+  )
+}
+
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -670,6 +687,9 @@ try {
             'eslint-plugin-vitest>@typescript-eslint/utils': '8.64.0',
             '@nuxt/eslint': '1.15.2',
             glob: '13.0.6',
+          },
+          peerDependencyRules: {
+            allowAny: WORKSPACE_PEER_ALLOW_ANY,
           },
         },
       },

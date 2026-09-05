@@ -201,6 +201,20 @@ export function createRootPackageManifest(
           ? { 'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'] }
           : {}),
       },
+      ...(capabilities.includes('auth')
+        ? {
+            peerDependencyRules: {
+              // narduk-core depends on nuxt-auth-utils, whose OPTIONAL passkey
+              // helpers still declare `@simplewebauthn/*@^11` — a range upstream
+              // has not moved since 2024. narduk-auth implements WebAuthn itself
+              // against its own exact-pinned v13 (narduk-libs#125 D3) and never
+              // calls those helpers, so the two versions never meet at runtime.
+              // Without this, every auth-capable app's first `pnpm install`
+              // reports an unmet peer for a feature it does not use.
+              allowAny: ['@simplewebauthn/browser', '@simplewebauthn/server'],
+            },
+          }
+        : {}),
       allowedDeprecatedVersions: {
         '@esbuild-kit/core-utils': '*',
         '@esbuild-kit/esm-loader': '*',

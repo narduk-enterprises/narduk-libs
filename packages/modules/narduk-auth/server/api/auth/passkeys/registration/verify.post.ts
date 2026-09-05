@@ -13,21 +13,29 @@ import {
 
 import type { RegistrationResponseJSON } from '@simplewebauthn/server'
 
-const registrationResponseSchema = z.object({
-  id: z.string().min(1).max(1024),
-  rawId: z.string().min(1).max(1024),
-  type: z.literal('public-key'),
-  authenticatorAttachment: z.string().max(32).optional(),
-  clientExtensionResults: z.record(z.string(), z.unknown()).optional(),
-  response: z.object({
-    attestationObject: z.string().min(1).max(32_768),
-    clientDataJSON: z.string().min(1).max(8192),
-    authenticatorData: z.string().max(32_768).optional(),
-    publicKey: z.string().max(8192).optional(),
-    publicKeyAlgorithm: z.number().optional(),
-    transports: z.array(z.string().max(32)).max(16).optional(),
-  }),
-})
+const registrationResponseSchema = z
+  .object({
+    id: z.string().min(1).max(1024),
+    rawId: z.string().min(1).max(1024),
+    type: z.literal('public-key'),
+    authenticatorAttachment: z.string().max(32).optional(),
+    clientExtensionResults: z.record(z.string(), z.unknown()).optional(),
+    response: z.object({
+      attestationObject: z.string().min(1).max(32_768),
+      clientDataJSON: z.string().min(1).max(8192),
+      authenticatorData: z.string().max(32_768).optional(),
+      publicKey: z.string().max(8192).optional(),
+      publicKeyAlgorithm: z.number().optional(),
+      transports: z.array(z.string().max(32)).max(16).optional(),
+    }),
+  })
+  // The WebAuthn spec defines `id` as the base64url encoding of `rawId`. A body
+  // where they disagree is malformed; catching it here keeps the verifier from
+  // being handed a credential whose two identifiers point at different rows.
+  .refine((value) => value.id === value.rawId, {
+    message: 'id and rawId must encode the same credential',
+    path: ['rawId'],
+  })
 
 const bodySchema = z.object({
   name: z.string().max(100).nullable().optional(),

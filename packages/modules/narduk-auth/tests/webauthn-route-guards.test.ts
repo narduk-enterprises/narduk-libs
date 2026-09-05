@@ -123,11 +123,23 @@ describe('passkey ceremony invariants in webauthn-core', () => {
   )
 
   it('claims the challenge before verifying, so a failed attempt is burned', () => {
-    const claimIndex = source.indexOf('consumeWebauthnChallenge')
-    const verifyIndex = source.indexOf('verifyRegistrationResponse({')
-    expect(claimIndex).toBeGreaterThan(-1)
-    expect(verifyIndex).toBeGreaterThan(-1)
-    expect(claimIndex).toBeLessThan(verifyIndex)
+    // Both ceremonies, not just registration: the authentication path is the
+    // one an anonymous caller can reach.
+    for (const verifier of ['verifyRegistrationResponse({', 'verifyAuthenticationResponse({']) {
+      const verifyIndex = source.indexOf(verifier)
+      expect(verifyIndex).toBeGreaterThan(-1)
+      const claimIndex = source.lastIndexOf('consumeWebauthnChallenge', verifyIndex)
+      expect(claimIndex).toBeGreaterThan(-1)
+      expect(claimIndex).toBeLessThan(verifyIndex)
+    }
+  })
+
+  it('does not carry its own copy of the API-key guard', () => {
+    // The guard lives in webauthn-verification.ts so a test can execute it.
+    // A second definition here would be the one the routes actually call while
+    // the executable test kept passing against the other.
+    expect(source).not.toContain('export function assertPasskeyManagementPrincipal')
+    expect(source).toContain('export { assertPasskeyManagementPrincipal }')
   })
 
   it('requires user verification on both ceremonies', () => {

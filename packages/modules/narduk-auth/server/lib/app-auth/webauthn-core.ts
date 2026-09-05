@@ -29,6 +29,7 @@ import { toSessionUser } from './helpers'
 import { setCurrentSessionUser } from './session'
 import { consumeWebauthnChallenge, issueWebauthnChallenge } from './webauthn-challenges'
 import {
+  assertPasskeyManagementPrincipal,
   evaluateSignatureCounter,
   normalizePasskeyName,
   parseTransports,
@@ -38,6 +39,11 @@ import {
 import type { AppSessionUser } from './types'
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server'
 import type { H3Event } from 'h3'
+
+// Re-exported so the routes keep one import site for the passkey surface; the
+// implementation lives in webauthn-verification.ts because it is directly
+// unit-testable there.
+export { assertPasskeyManagementPrincipal }
 
 type CredentialRow = typeof authWebauthnCredentials.$inferSelect
 
@@ -89,25 +95,6 @@ export function requireWebauthnConfig(event: H3Event): ResolvedWebauthnConfig {
     })
   }
   return config
-}
-
-/**
- * Passkey management is a **session-only** capability.
- *
- * `requireAuth` accepts an API-key bearer as a first-class principal, so
- * without this guard a leaked or over-scoped API key could enrol a passkey —
- * turning a revocable machine token into a persistent interactive login, or
- * delete the passkeys of the account it belongs to. An API key is a machine
- * credential; changing which authenticators can sign in as a human is not a
- * machine action.
- */
-export function assertPasskeyManagementPrincipal(user: { authMethod?: string }): void {
-  if (user.authMethod === 'api-key') {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Passkeys can only be managed from an interactive session, not an API key.',
-    })
-  }
 }
 
 // ─── Row mapping ─────────────────────────────────────────────
@@ -277,6 +264,19 @@ export async function finishPasskeyRegistration(
   }
 
   const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo
+
+  // Re-checked here, not only at `startPasskeyRegistration`: two ceremonies
+  // started concurrently both pass the opening check and would both insert.
+  // This narrows the window to the verification itself rather than to the whole
+  // round trip through the authenticator.
+  const stored = await listCredentialRows(event, user.id)
+  if (stored.length >= MAX_PASSKEYS_PER_USER) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `This account already has the maximum of ${MAX_PASSKEYS_PER_USER} passkeys.`,
+    })
+  }
+
   const appDb = useAuthBridgeDatabase(event)
   const row = {
     id: credential.id,

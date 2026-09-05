@@ -77,7 +77,9 @@
       "allowAny": [
         "eslint",
         "citty",
-        "@cloudflare/workers-types"
+        "@cloudflare/workers-types",
+        "@simplewebauthn/browser",
+        "@simplewebauthn/server"
       ],
       "ignoreMissing": [
         "@tiptap/y-tiptap",

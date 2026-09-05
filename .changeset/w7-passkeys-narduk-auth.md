@@ -40,7 +40,9 @@ verification is required and credentials are discoverable, so sign-in carries no
 identifier, no `allowCredentials`, and one generic 401 for every failure; a
 signature counter that does not strictly increase is refused and the new counter
 is written conditionally on the one verified against; RP ID and origins never
-come from the request host.
+come from the request host; and the challenge table carries an absolute live-row
+ceiling, because the public sign-in options endpoint's rate limit is keyed on
+the client IP and a caller rotating addresses is otherwise unbounded.
 
 Also corrects the README's stale claim that the local email pathway is "a
 complement to Cloudflare Access, not a replacement for it" — company-hq
