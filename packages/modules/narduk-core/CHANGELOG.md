@@ -1,5 +1,50 @@
 # @narduk-enterprises/narduk-core
 
+## 1.21.0
+
+### Minor Changes
+
+- 0f2262a: Add `readApproximateLocation(event)`
+  (`@narduk-enterprises/narduk-core/server/utils/approximateLocation`),
+  narduk-libs#76 Wave 2's "Cloudflare approximate IP location helper".
+
+  Reads the visitor's approximate location from whichever Cloudflare signal the
+  runtime exposes — Nitro's `cloudflare_module` request-`cf` object (preferred;
+  always populated on a real Cloudflare deployment) or the `cf-ip*` request
+  headers a zone adds only when "Add visitor location headers" is enabled — and
+  returns the same `{ label, lat, lon, source: 'ip' }` shape either way, or
+  `null` when neither signal carries usable coordinates.
+
+  Extracted from riverstatus `server/api/v1/location/approximate.get.ts`
+  (`readCloudflareLocation`, request-`cf` reader) and borderwaitstat-us
+  `server/api/geo/ip.get.ts` (`cf-ip*` header reader); the borderwaitstat-us
+  version's Vercel-header fallback is app-specific migration cruft and was not
+  carried over. This is the library half only — an app's own
+  `server/api/.../*.get.ts` route still owns its URL path and response envelope
+  and now calls this helper instead of reading Cloudflare signals itself;
+  consumer migrations are tracked as follow-ups, not included in this change.
+
+### Patch Changes
+
+- 8b48dba: Move `@narduk-enterprises/eslint-config` out of narduk-core's runtime
+  `dependencies`. Since 1.20.2 it was pinned there at `workspace:*`, which
+  publishes as the current eslint-config major, so a patch bump of narduk-core
+  silently dragged consumers from eslint-config v1 onto v2 and broke `lint` for
+  anyone who hadn't migrated yet (narduk-libs#154, surfaced by been-sober-for PR
+  #96).
+
+  narduk-core re-exports `eslint-app-config.mjs` and
+  `eslint-nuxt-flat-fragments.mjs`, which import from
+  `@narduk-enterprises/eslint-config`, as public subpath exports for consumers'
+  own ESLint configs, so it is not a pure `devDependency` — it is now an
+  **optional peerDependency** (`>=1.2.17 <3`), matching the range of
+  eslint-config majors the re-exported fragments are known to work with. It also
+  stays a `devDependency` for narduk-core's own `lint`/`build`. Consumers who
+  don't use those re-exported fragments no longer get eslint-config forced onto
+  them at all; consumers who do must bring their own compatible eslint-config
+  version instead of receiving whatever major narduk-core last published
+  against.
+
 ## 1.20.5
 
 ### Patch Changes
