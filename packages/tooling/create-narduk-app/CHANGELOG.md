@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.9
+
+### Patch Changes
+
+- 6197f80: Refresh generated app manifests alongside the upcoming shared runtime
+  releases so their package pins include the new core media-CSP support.
+- 1b3e90f: Regenerate application dependency pins for the media CSP release of
+  narduk-core and its dependent packages.
+
 ## 0.2.8
 
 ### Patch Changes
