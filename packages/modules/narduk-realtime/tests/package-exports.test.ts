@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { UPGRADE_ROUTER_MODULE } from '../src/worker-entry.js'
+
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 interface PackageManifest {
@@ -40,6 +42,21 @@ describe('narduk-realtime package surface', () => {
       types: './dist/server/durable-object.d.ts',
       import: './dist/server/durable-object.js',
     })
+  })
+
+  // The upgrade router is imported by the GENERATED Worker entry under exactly
+  // this specifier (`UPGRADE_ROUTER_MODULE`), so a rename here breaks every
+  // built app that declares an upgrade.
+  it('exposes the upgrade router and the principal helper the router writes', () => {
+    expect(manifest.exports['./worker/upgrade-router']).toEqual({
+      types: './dist/worker/upgrade-router.d.ts',
+      import: './dist/worker/upgrade-router.js',
+    })
+    expect(manifest.exports['./worker/principal']).toEqual({
+      types: './dist/worker/principal.d.ts',
+      import: './dist/worker/principal.js',
+    })
+    expect(`${manifest.name}/worker/upgrade-router`).toBe(UPGRADE_ROUTER_MODULE)
   })
 
   // Everything the exports map names has to be inside a `files` entry, or the
