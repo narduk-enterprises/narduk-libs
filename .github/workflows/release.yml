@@ -28,10 +28,9 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main')
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
-    timeout-minutes: 20
+    # Secrets-free gate before the privileged self-hosted release (policy §2.2).
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
     env:

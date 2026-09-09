@@ -37,6 +37,16 @@ release SHA retained in main history and latest attempt. A version commit's CI
 continues independently of later main pushes; the release checks out that exact
 verified commit. Ordinary iterations still cancel superseded runs.
 
+The planner, `ci / Required`, `verify`, and release `verify-ci` jobs run on
+GitHub's `ubuntu-slim` runners. They hold no repository secrets, perform no
+package install, and gate the privileged self-hosted publication, fitting
+company-hq's CI runner policy §2 exception 2. Their short work no longer queues
+behind package builds. Package batches and repository contracts remain on the
+manifest's `linux-ci` route; browser tests and packed consumers retain their
+isolated browser route; publication retains `linux-deploy`. The callable's
+`required-runner` input changes only its aggregate, preserving its check name
+and failure rules.
+
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and
 performs both its initial and frozen installs. On a main push only, the
