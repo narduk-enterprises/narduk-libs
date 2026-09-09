@@ -1,5 +1,6 @@
 import { createError, getHeader, getRequestURL, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
+import { z } from 'zod'
 
 import { createNativeAuth } from '../lib/app-auth/native-core'
 
@@ -19,7 +20,22 @@ export function nativeAuthClients(event: H3Event) {
       statusMessage: 'Native sessions currently require local authentication.',
     })
   }
-  return clients
+  const parsed = z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        redirectUris: z.array(z.string().url()).min(1),
+      }),
+    )
+    .safeParse(clients)
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Native sign-in is not configured correctly.',
+    })
+  }
+  return parsed.data
 }
 
 export function useNativeAuth(event: H3Event) {

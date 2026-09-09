@@ -87,6 +87,15 @@ describe('native authorization and email verification request boundaries', () =>
     expect(() => nativeAuthClients(event())).toThrow()
   })
 
+  it('parses the configured native client allowlist at the consuming app boundary', () => {
+    expect(nativeAuthClients(event())).toEqual(state.config.authNativeClients)
+    const client = state.config.authNativeClients[0]!
+    const saved = client.redirectUris
+    client.redirectUris = ['not a URL']
+    expect(() => nativeAuthClients(event())).toThrow('not configured correctly')
+    client.redirectUris = saved
+  })
+
   it('does not treat an email address or disabled verification feature as proof', async () => {
     expect(await getLocalEmailVerification(event(), 'owner', OWNER_EMAIL)).toBeNull()
     state.config.authLocalEmailVerification = false
