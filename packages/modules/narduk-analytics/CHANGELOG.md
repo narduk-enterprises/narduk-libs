@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.19.30
+
+### Patch Changes
+
+- Updated dependencies [6297a08]
+  - @narduk-enterprises/narduk-core@1.23.0
+
 ## 1.19.29
 
 ### Patch Changes

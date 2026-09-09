@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.3.0
+
+### Minor Changes
+
+- 6297a08: Route core logging through the shared Narduk Logging package while
+  retaining old imports, calls, scopes and legacy verbosity. New generated apps
+  configure service identity, info-level logging and request completion
+  summaries explicitly.
+
 ## 0.2.9
 
 ### Patch Changes
