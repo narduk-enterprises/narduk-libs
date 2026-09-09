@@ -180,4 +180,20 @@ describe('client ingestion', () => {
       ).status,
     ).toBe(403)
   })
+
+  it('rejects deeply nested JSON and oversized individual records before recursive validation', async () => {
+    const { sink, options: config } = setup()
+    const nested =
+      '{"schemaVersion":1,"records":[' + '['.repeat(12000) + '0' + ']'.repeat(12000) + ']}'
+    expect((await receiveClientLogs(request([], { body: nested }), config)).status).toBe(400)
+    expect(
+      (
+        await receiveClientLogs(
+          request([{ ...record, data: { ...record.data, unsafe: 'x'.repeat(17000) } }]),
+          config,
+        )
+      ).status,
+    ).toBe(400)
+    expect(sink.records).toHaveLength(0)
+  })
 })

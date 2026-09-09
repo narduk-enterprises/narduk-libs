@@ -7,6 +7,26 @@ const batchSchema = z
   .strict()
 const MAX_BODY = 64 * 1024
 
+// JSON.parse accepts deeply nested input that can exhaust a recursive validator's stack.
+// Inspect iteratively before Zod and enforce the same per-record limit as producers.
+function boundedPayload(value: unknown): boolean {
+  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
+  let visited = 0
+  while (pending.length) {
+    const item = pending.pop()!
+    if (++visited > 4096 || item.depth > 12) return false
+    if (item.value && typeof item.value === 'object') {
+      for (const child of Object.values(item.value))
+        pending.push({ value: child, depth: item.depth + 1 })
+    }
+  }
+  if (value && typeof value === 'object' && 'records' in value && Array.isArray(value.records)) {
+    const encoder = new TextEncoder()
+    return value.records.every((record) => encoder.encode(JSON.stringify(record)).length <= 16384)
+  }
+  return false
+}
+
 export interface ClientIngestionOptions {
   logger: Logger
   mode?: 'authenticated' | 'anonymous'
@@ -66,6 +86,7 @@ export async function receiveClientLogs(
   } catch (error) {
     return reply(error instanceof RangeError ? 413 : 400)
   }
+  if (!boundedPayload(payload)) return reply(400)
   const result = batchSchema.safeParse(payload)
   if (!result.success) return reply(400)
   const log = options.logger.withContext({ source: 'client' })

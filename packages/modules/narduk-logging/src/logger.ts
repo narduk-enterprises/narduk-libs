@@ -33,11 +33,11 @@ export function resolveLogLevel(
 }
 
 function identity(value: string | undefined, name: string, limit: number): string {
-  // eslint-disable-next-line no-control-regex -- Identity labels must reject control characters.
   if (
     typeof value !== 'string' ||
     !value.trim() ||
     value.length > limit ||
+    // eslint-disable-next-line no-control-regex -- Identity labels must reject control characters.
     /[\u0000-\u001f\u007f]/.test(value)
   ) {
     throw new TypeError(

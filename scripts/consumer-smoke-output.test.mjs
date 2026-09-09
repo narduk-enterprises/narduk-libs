@@ -98,6 +98,7 @@ const observedZodPureNotice =
 
 test('a Rollup PURE-annotation notice about third-party source does not fail the gate', () => {
   assert.deepEqual(collectWarningFindings(observedZodPureNotice), [])
+  assert.deepEqual(collectWarningFindings(observedZodPureNotice.replace('[warn]', 'WARN ')), [])
   assert.deepEqual(
     collectWarningFindings(
       '[warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js (330:0): A comment',
@@ -109,6 +110,9 @@ test('a Rollup PURE-annotation notice about third-party source does not fail the
 test('the same notice about first-party source still fails the gate', () => {
   const firstParty = '[warn] src/components/Chart.vue (12:0): A comment'
   assert.deepEqual(collectWarningFindings(firstParty), [firstParty])
+  assert.deepEqual(collectWarningFindings(firstParty.replace('[warn]', 'WARN ')), [
+    firstParty.replace('[warn]', 'WARN '),
+  ])
 })
 
 test('an error about a third-party path still fails the gate', () => {

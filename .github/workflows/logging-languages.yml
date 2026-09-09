@@ -1,0 +1,50 @@
+name: Logging languages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python artifacts
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: false
+      - name: Check Python contract, adapters, wheel and source installs
+        working-directory: packages/modules/narduk-logging/python
+        run: uv run --locked --all-extras python scripts/quality.py
+
+  swift-linux:
+    name: Swift Linux artifacts
+    runs-on:
+      group: linux-ci
+      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14.7"
+      - name: Select and verify the declared fleet Swift toolchain
+        run: |
+          set -euo pipefail
+          toolchain=/opt/narduk/swift/6.3.3/usr/bin
+          test -x "${toolchain}/swift"
+          "${toolchain}/swift" --version | tee "${RUNNER_TEMP}/narduk-swift-version.txt"
+          grep -q 'Swift version 6.3.3' "${RUNNER_TEMP}/narduk-swift-version.txt"
+          echo "${toolchain}" >> "${GITHUB_PATH}"
+      - name: Check Swift contract, Linux adapters and version-tag consumer
+        run: python packages/modules/narduk-logging/scripts/swift-quality.py

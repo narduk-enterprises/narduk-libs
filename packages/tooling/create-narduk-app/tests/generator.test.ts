@@ -106,6 +106,14 @@ describe('create-narduk-app generation contract', () => {
       unknown
     >
     const dependencies = collectVersionedDependencies(webManifest)
+    expect(dependencies['@narduk-enterprises/narduk-logging']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-logging'],
+    )
+    expect(files.get('apps/web/nuxt.config.ts')).toContain('nardukLogging: {')
+    expect(files.get('apps/web/nuxt.config.ts')).toContain("service: 'capability-check'")
+    expect(files.get('apps/web/nuxt.config.ts')).toContain("level: 'info'")
+    expect(files.get('apps/web/nuxt.config.ts')).toContain('requestLogging: true')
+    expect(files.get('docs/logging.md')).toContain('useLogger(event)')
     const knipConfig = JSON.parse(files.get('knip.json') ?? '') as {
       ignoreDependencies: string[]
     }

@@ -1,23 +1,23 @@
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 
-import { createMemorySink } from '@narduk-enterprises/narduk-logging/testing'
 import { installNitroLogging } from '@narduk-enterprises/narduk-logging/h3'
+import { createMemorySink } from '@narduk-enterprises/narduk-logging/testing'
 import { createEvent, setResponseStatus } from 'h3'
 import { createHooks } from 'hookable'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import errorPlugin from '../runtime/server/plugins/error-logger'
 import requestMiddleware from '../runtime/server/middleware/requestLogger'
+import errorPlugin from '../runtime/server/plugins/error-logger'
 import {
   ensureRequestId,
-  resolveLogLevel,
   resolveLoggingOptions,
+  resolveLogLevel,
   useLogger,
 } from '../runtime/server/utils/logger'
 import { sanitizeErrorForLog, sanitizeUrlForLog } from '../runtime/server/utils/logSanitizer'
 
-import type { LogLevel, Logger } from '../runtime/server/utils/logger'
+import type { Logger, LogLevel } from '../runtime/server/utils/logger'
 import type { H3Event } from 'h3'
 
 const config = vi.hoisted(() => ({ current: {} as Record<string, unknown> }))
@@ -91,9 +91,9 @@ describe('legacy logging compatibility', () => {
     const sink = createMemorySink()
     config.current = { logLevel: 'info', nardukLogging: { sinks: [sink] } }
     const hooks = createHooks<{
-      request(event: H3Event): void
       afterResponse(event: H3Event): void
       error(error: Error, context: { event?: H3Event; tags?: string[] }): void
+      request(event: H3Event): void
     }>()
     // These are real Hookable hooks; the plugin only needs the structural Nitro surface.
     const nitro = { hooks }
@@ -118,9 +118,9 @@ describe('legacy logging compatibility', () => {
     const sink = createMemorySink()
     config.current = { logLevel: 'silent', nardukLogging: { sinks: [sink] } }
     const hooks = createHooks<{
-      request(event: H3Event): void
       afterResponse(event: H3Event): void
       error(error: Error, context: { event?: H3Event }): void
+      request(event: H3Event): void
     }>()
     const install = errorPlugin as (host: { hooks: typeof hooks }) => void
     install({ hooks })

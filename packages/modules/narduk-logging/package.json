@@ -67,13 +67,15 @@
     "./schema.json": "./schema/log-record.schema.json"
   },
   "scripts": {
+    "prepare": "pnpm run build",
+    "quality": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run check:package",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit",
     "lint": "node ../../../tools/package-quality.mjs lint 'src/**/*.ts' 'tests/**/*.ts' 'examples/**/*.ts'",
     "format:check": "prettier --check --log-level warn '**/*.{ts,mts,js,mjs,json,md,yaml,yml}' --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "test:unit": "vitest run",
-    "check:package": "publint --strict && pnpm pack --dry-run",
+    "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run && pnpm run test:consumer",
     "schema:write": "pnpm run build && node scripts/write-schema.mjs",
     "test:consumer": "node scripts/consumer-smoke.mjs"
   },

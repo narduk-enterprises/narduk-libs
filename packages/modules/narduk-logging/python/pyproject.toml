@@ -27,6 +27,9 @@ dev = ["pytest>=8,<10", "ruff>=0.12,<1", "pyright>=1.1.400,<2", "jsonschema>=4,<
 [tool.hatch.build.targets.wheel]
 packages = ["src/narduk_logging"]
 
+[tool.hatch.build.targets.sdist.force-include]
+"../schema" = "schema"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

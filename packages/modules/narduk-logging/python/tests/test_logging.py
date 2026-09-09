@@ -24,6 +24,8 @@ from narduk_logging.cli import main
 from narduk_logging.sinks import encode_record
 
 SCHEMA_DIR = Path(__file__).parents[2] / "schema"
+if not SCHEMA_DIR.exists():
+    SCHEMA_DIR = Path(__file__).parents[1] / "schema"
 FIXTURES = json.loads((SCHEMA_DIR / "fixtures.json").read_text())
 SCHEMA = json.loads((SCHEMA_DIR / "log-record.schema.json").read_text())
 
@@ -250,3 +252,23 @@ def test_dagster_one_application_event_with_run_context():
     assert len(records) == 1
     assert records[0]["data"]["runId"] == result.run_id
     assert records[0]["data"]["job"] == "fixture_job"
+
+
+def test_explicit_dagster_asset_context():
+    from dagster import AssetExecutionContext, asset, materialize
+
+    from narduk_logging.dagster import bind_dagster_context
+
+    sink = MemorySink()
+
+    @asset
+    def synthetic_asset(context: AssetExecutionContext):
+        log = bind_dagster_context(logger(sink), context)
+        log.info("Asset checked")
+        return 42
+
+    result = materialize([synthetic_asset])
+    assert result.success
+    assert len(sink.records) == 1
+    assert sink.records[0]["data"]["runId"] == result.run_id
+    assert sink.records[0]["data"]["assets"] == ["synthetic_asset"]

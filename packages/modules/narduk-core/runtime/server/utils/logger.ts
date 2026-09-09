@@ -3,6 +3,7 @@ import { useLogger as useSharedLogger } from '@narduk-enterprises/narduk-logging
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { readRuntimeString } from './runtime-env'
+import { readWorkerRuntimeEnv } from './worker-env'
 
 import type { Logger as SharedLogger } from '@narduk-enterprises/narduk-logging'
 import type { RequestLoggingOptions } from '@narduk-enterprises/narduk-logging/h3'
@@ -50,7 +51,7 @@ export function resolveLoggingOptions(event?: H3Event): RequestLoggingOptions {
   const publicConfig = (config.public ?? {}) as Record<string, unknown>
   const legacy = event ? resolveLogLevel(event) : resolveSharedLevel(config.logLevel, 'warn')
   const configured = resolveSharedLevel(settings.level, legacy)
-  const override = event ? readRuntimeString(event, 'LOG_LEVEL') : process.env.LOG_LEVEL
+  const override = readWorkerRuntimeEnv(event).LOG_LEVEL
   return {
     ...settings,
     service:

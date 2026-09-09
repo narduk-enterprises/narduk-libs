@@ -41,6 +41,7 @@ jobs:
       packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
+      logging-languages: ${{ steps.plan.outputs.logging-languages }}
     steps:
       - name: Check out source and comparison history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -75,6 +76,12 @@ jobs:
             "${args[@]}" \
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
+          node scripts/logging-ci-plan.mjs "${args[@]}"
+
+  logging-languages:
+    needs: affected
+    if: needs.affected.outputs.logging-languages == 'true'
+    uses: ./.github/workflows/logging-languages.yml
 
   ci:
     needs: affected
@@ -436,7 +443,8 @@ jobs:
     # Complete acceptance boundary, including integrations outside the callable.
     name: verify
     if: always()
-    needs: [affected, ci, contracts, packed-consumer-smoke, package-browser-tests]
+    needs:
+      [affected, ci, contracts, packed-consumer-smoke, package-browser-tests, logging-languages]
     # Secrets-free gate before the privileged self-hosted release (policy §2.2).
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -453,9 +461,19 @@ jobs:
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
           BROWSER_EXPECTED: ${{ needs.affected.outputs.browser-packages != '[]' }}
           BROWSER_RESULT: ${{ needs.package-browser-tests.result }}
+          LOGGING_EXPECTED: ${{ needs.affected.outputs.logging-languages }}
+          LOGGING_RESULT: ${{ needs.logging-languages.result }}
         run: |
           set -euo pipefail
           status=0
+          if [ "${LOGGING_EXPECTED}" = "true" ]; then
+            test "${LOGGING_RESULT}" = success || status=1
+          elif [ "${LOGGING_EXPECTED}" = "false" ]; then
+            test "${LOGGING_RESULT}" = skipped || status=1
+          else
+            echo "::error::Planner did not report logging language applicability"
+            status=1
+          fi
           if ! [[ "${AFFECTED_COUNT}" =~ ^[0-9]+$ ]]; then
             echo "::error::Planner did not report a valid package count"
             status=1
