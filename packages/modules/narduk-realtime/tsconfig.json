@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // `@cloudflare/workers-types` supplies both the `cloudflare:workers`
+    // module declaration that `src/server/durable-object.ts` imports and the
+    // Worker globals it uses (`WebSocketRequestResponsePair`,
+    // `DurableObjectState`, `WebSocket`). It is a build-time type dependency
+    // only -- nothing here imports the package at runtime.
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}
