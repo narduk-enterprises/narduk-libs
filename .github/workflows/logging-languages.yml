@@ -38,13 +38,17 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14.7"
-      - name: Select and verify the declared fleet Swift toolchain
-        run: |
-          set -euo pipefail
-          toolchain=/opt/narduk/swift/6.3.3/usr/bin
-          test -x "${toolchain}/swift"
-          "${toolchain}/swift" --version | tee "${RUNNER_TEMP}/narduk-swift-version.txt"
-          grep -q 'Swift version 6.3.3' "${RUNNER_TEMP}/narduk-swift-version.txt"
-          echo "${toolchain}" >> "${GITHUB_PATH}"
+      - name: Provision and verify Swift 6.3.3
+        run: python scripts/install-swift-linux.py
       - name: Check Swift contract, Linux adapters and version-tag consumer
         run: python packages/modules/narduk-logging/scripts/swift-quality.py
+      - name: Remove the job-local Swift fallback
+        if: always()
+        run: |
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "narduk-logging-swift"
+          if root.exists():
+              shutil.rmtree(root)
+          PY
