@@ -132,8 +132,7 @@ const forbiddenSourceReferencePattern = new RegExp(
 // `git+` in a lockfile is usually package `repository.url` metadata
 // (`git+ssh://git@github.com/narduk-enterprises/narduk-libs.git`), not a git
 // dependency. Only treat it as forbidden when it is a specifier or resolution.
-const forbiddenGitDependencyLinePattern =
-  /^\s*(?:specifier|version):\s*git\+|@[^\s'"]+@git\+/u
+const forbiddenGitDependencyLinePattern = /^\s*(?:specifier|version):\s*git\+|@[^\s'"]+@git\+/u
 
 if (!dryRun) {
   writeError('Refusing to run without --dry-run; this helper never publishes packages.')
