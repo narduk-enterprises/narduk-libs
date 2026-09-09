@@ -1,5 +1,7 @@
 ---
+'@narduk-enterprises/narduk-ui': patch
 ---
 
-Add the private code-to-design preview builder and clarify the existing token
-source-of-truth comment. No published package behavior changes.
+Provide neutral accent defaults for consumers without a product `data-app`
+scope, keeping range and level-well fills visible. Product accent overrides
+retain precedence.
