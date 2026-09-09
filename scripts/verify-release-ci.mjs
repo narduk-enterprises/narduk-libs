@@ -2,9 +2,16 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export function verifyReleaseEvidence({ sha, repository, currentMain, runs, jobs }) {
-  if (!/^[a-f0-9]{40}$/u.test(sha) || sha !== currentMain)
-    throw new Error('Release SHA must equal current main')
+export function verifyReleaseEvidence({ sha, repository, currentMain, comparison, runs, jobs }) {
+  if (
+    !/^[a-f0-9]{40}$/u.test(sha) ||
+    !/^[a-f0-9]{40}$/u.test(currentMain) ||
+    (sha !== currentMain &&
+      (comparison?.status !== 'ahead' ||
+        comparison.base_commit?.sha !== sha ||
+        comparison.merge_base_commit?.sha !== sha))
+  )
+    throw new Error('Release SHA must be a verified commit retained in main history')
   const run = [...runs]
     .filter(
       (entry) => entry.head_sha === sha && entry.event === 'push' && entry.head_branch === 'main',
@@ -43,6 +50,8 @@ function main() {
   if (!/^[a-f0-9]{40}$/u.test(sha || '') || !/^[\w.-]+\/[\w.-]+$/u.test(repository || ''))
     throw new Error('Invalid release inputs')
   const currentMain = api(`repos/${repository}/git/ref/heads/main`).object.sha
+  const comparison =
+    sha === currentMain ? undefined : api(`repos/${repository}/compare/${sha}...${currentMain}`)
   const runs = api(
     `repos/${repository}/actions/workflows/ci.yml/runs?event=push&head_sha=${sha}&per_page=100`,
   ).workflow_runs
@@ -52,7 +61,7 @@ function main() {
         `repos/${repository}/actions/runs/${latest.id}/attempts/${latest.run_attempt}/jobs?per_page=100`,
       ).jobs
     : []
-  const runId = verifyReleaseEvidence({ sha, repository, currentMain, runs, jobs })
+  const runId = verifyReleaseEvidence({ sha, repository, currentMain, comparison, runs, jobs })
   console.log(`Verified full CI for ${sha}: https://github.com/${repository}/actions/runs/${runId}`)
 }
 

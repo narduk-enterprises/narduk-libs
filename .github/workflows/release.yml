@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       verified-sha:
-        description: Exact current main commit to publish
+        description: Exact CI-verified commit retained in main history
         required: true
         type: string
   workflow_run:
@@ -28,10 +28,9 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main')
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
-    timeout-minutes: 20
+    # Secrets-free gate before the privileged self-hosted release (policy §2.2).
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
     env:
@@ -74,17 +73,19 @@ jobs:
       - name: Check out verified main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: main
+          ref: ${{ needs.verify-ci.outputs.sha }}
           fetch-depth: 0
 
-      - name: Require the exact current main SHA
+      - name: Require the exact verified SHA retained in main
         shell: bash
         run: |
           set -euo pipefail
           [[ "${VERIFIED_SHA}" =~ ^[0-9a-f]{40}$ ]]
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           test "$(git rev-parse HEAD)" = "${VERIFIED_SHA}"
-          test "$(git rev-parse origin/main)" = "${VERIFIED_SHA}"
+          git merge-base --is-ancestor "${VERIFIED_SHA}" origin/main
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -127,8 +128,19 @@ jobs:
           //npm.pkg.github.com/:_authToken=${NARDUK_PLATFORM_GH_PACKAGES_WRITE}
           EOF
 
-      - name: Prepare or publish independently verified package versions
-        id: changesets
+      - name: Select publication or current-main version preparation
+        id: release-mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if test "$(git rev-parse origin/main)" = "${VERIFIED_SHA}"; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          fi
+          node --input-type=module -e "import { readdirSync, appendFileSync } from 'node:fs'; const pending = readdirSync('.changeset').some(name => name.endsWith('.md') && name !== 'README.md'); appendFileSync(process.env.GITHUB_OUTPUT, 'publish=' + !pending + '\\n')"
+
+      - name: Prepare or publish the independently verified package versions
+        if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm run release:version
@@ -139,7 +151,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify immutable published package versions
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.release-mode.outputs.publish == 'true'
         run: pnpm run release:verify-published
 
       - name: Remove temporary registry auth
