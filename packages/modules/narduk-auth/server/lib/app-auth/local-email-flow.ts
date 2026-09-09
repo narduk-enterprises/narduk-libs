@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import { createError } from 'h3'
+import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
@@ -7,6 +8,9 @@ import { hashUserPassword } from '#layer/server/utils/password'
 import { authEmailLinks } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 import { type User as LocalUser, users } from '#narduk-core/schema'
+
+import { useNativeAuth } from '../../utils/native-auth'
+import { recordLocalEmailVerification } from '../../utils/verified-email'
 
 import { toSessionUser } from './helpers'
 import {
@@ -190,11 +194,16 @@ export async function completeLocalEmailPassword(
     throw createError({ statusCode: 500, statusMessage: 'Failed to complete password setup.' })
   }
 
+  await recordLocalEmailVerification(event, user.id, link.email, consumedAt)
+  if (useRuntimeConfig(event).authNativeClients?.length) {
+    await useNativeAuth(event).revokeUser(user.id)
+  }
   const sessionUser = toSessionUser(user, {
     authBackend: 'local',
     authProvider: 'email',
     authProviders: ['email'],
     needsPasswordSetup: false,
+    emailConfirmedAt: consumedAt,
   })
   await setCurrentSessionUser(event, sessionUser)
   await clearLocalEmailAttempts(event, 'complete', tokenHash)

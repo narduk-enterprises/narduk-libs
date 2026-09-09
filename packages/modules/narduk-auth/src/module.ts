@@ -182,6 +182,11 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       })
       extendPages((pages) => {
         addPageIfMissing(pages, {
+          name: 'auth-native',
+          path: '/auth/native',
+          file: resolver.resolve('../app/pages/auth/native.vue'),
+        })
+        addPageIfMissing(pages, {
           name: 'auth-callback',
           path: '/auth/callback',
           file: resolver.resolve('../app/pages/auth/callback.vue'),
@@ -262,6 +267,8 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       authAnonKey: supabasePublishableKey,
       authServiceRoleKey: supabaseServiceRoleKey,
       authStorageKey: process.env.AUTH_STORAGE_KEY || 'web-auth',
+      authNativeClients: [],
+      authLocalEmailVerification: false,
       turnstileSecretKey: process.env.TURNSTILE_SECRET_KEY || '',
       supabaseUrl,
       supabasePublishableKey,
