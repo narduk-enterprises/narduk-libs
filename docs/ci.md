@@ -52,20 +52,35 @@ outside the workspace, checks testkit exports/CLI, generates a fresh app, and
 performs both its initial and frozen installs. On a main push only, the
 expensive generated-app quality, migration, performance and Wrangler checks can
 reuse the associated merged PR's successful proof. This extends draft PR #80's
-lookup with an exact fingerprint of the tested Git tree, tarball bytes, both
-resolved consumer lockfiles, generated sources, Node binary/version, pnpm
-version, and the verified browser image/native system packages. Each missing or
-changed input runs the full proof. PR, manual and local runs always execute all
-checks.
+lookup with an exact fingerprint of the tested Git tree, installed archive
+contents, both resolved consumer lockfiles, generated sources, Node
+binary/version, pnpm version, and the verified browser image/native system
+packages. Each missing or changed input runs the full proof. PR, manual and
+local runs always execute all checks.
+
+Archive comparison includes every member path, type, mode, owner, link and file
+content. Only the packed `package/package.json` object-key order is
+canonicalized: pnpm can reorder resolved workspace dependency keys between
+identical packs. Archive transport headers/order are excluded. The corresponding
+local tarball checksums in comparison copies of both lockfiles use that content
+digest; all registry resolution bytes remain exact. Actual installs still use
+the original fresh tarballs and lockfiles. Invalid or duplicate archive
+members/manifests fail.
 
 Proof lookup accepts only the latest successful CI run/attempt for that
 same-repo PR head, its successful packed-consumer job, and one unexpired
 seven-day artifact. It cannot reuse a receipt that itself reused a proof. Lookup
 failures fall back to execution, with a twenty-second total lookup budget. The
 current commit still gets its own required consumer job; its log identifies any
-accepted prior run. Phase timings are written to the job summary. Only digests
-and provenance are retained in the proof artifact; registry authentication files
-are excluded.
+accepted prior run. Generated quality runs as individually timed format, lint,
+unused-code, typecheck, build, unit and browser phases, derived from the actual
+generated scripts. Lifecycle hooks and more complex shell commands stay intact.
+Package validation and packing run two packages at a time; all compiled outputs
+come from the preceding coordinated build. Phase timings appear in both logs and
+the job summary. Per-package and generated-file digests identify proof
+mismatches while retaining every content and dependency check. Only digests and
+provenance are retained in the proof artifact; registry authentication files are
+excluded.
 
 Use focused validation after meaningful edits, then the relevant integration
 proof at the final candidate. A result is reusable locally only while its
@@ -73,3 +88,8 @@ source, command and relevant environment are unchanged. Report which gates
 actually ran. Compare admission, setup/install, cache transport and useful work
 separately when changing CI; summed job-minutes are pool demand, not end-to-end
 latency or CPU utilization.
+
+Lightweight planner and completion jobs use the organization variable
+`CI_LIGHTWEIGHT_RUNNER` (JSON runner specification, default `"ubuntu-slim"`).
+The shared workflow consumes the same variable, so changing lightweight capacity
+does not require another workflow edit in this repository.
