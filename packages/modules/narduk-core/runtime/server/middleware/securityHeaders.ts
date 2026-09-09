@@ -106,6 +106,11 @@ export default defineEventHandler((event) => {
     mergeCspSources(BASELINE_WORKER_SRC, parseCspSources(config.public.cspWorkerSrc)),
   )
 
+  const finalMediaSrc = buildDirective(
+    'media-src',
+    mergeCspSources(["'self'"], parseCspSources(config.public.cspMediaSrc)),
+  )
+
   const diagnosticHeaders: Record<string, string> = {}
   if (appVersion) diagnosticHeaders['X-App-Version'] = appVersion
   if (buildVersion) diagnosticHeaders['X-Build-Version'] = buildVersion
@@ -128,6 +133,7 @@ export default defineEventHandler((event) => {
       finalConnectSrc,
       finalFrameSrc,
       finalWorkerSrc,
+      finalMediaSrc,
       "frame-ancestors 'none'",
     ].join('; '),
     ...diagnosticHeaders,
