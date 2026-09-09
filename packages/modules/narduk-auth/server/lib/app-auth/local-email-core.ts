@@ -2,6 +2,26 @@ import { sanitizeSameOriginPath } from '../../../shared/utils/same-origin-path'
 
 export type LocalEmailLinkPurpose = 'reset' | 'setup'
 
+/** The response-link shortcut is only for a matching loopback fixture origin. */
+export function isLocalEmailSelfServeOrigin(appUrl: string, requestUrl: string): boolean {
+  try {
+    const app = new URL(appUrl)
+    const request = new URL(requestUrl)
+    const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+    return (
+      ['http:', 'https:'].includes(app.protocol) &&
+      loopbackHosts.has(app.hostname) &&
+      app.origin === request.origin &&
+      !app.username &&
+      !app.password &&
+      !request.username &&
+      !request.password
+    )
+  } catch {
+    return false
+  }
+}
+
 function mentionsMissingAttemptsTable(message: string): boolean {
   if (!message.includes('auth_local_email_attempts')) return false
   return /no such table/iu.test(message) || /does not exist/iu.test(message)
