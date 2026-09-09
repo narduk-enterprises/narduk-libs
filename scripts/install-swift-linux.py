@@ -16,7 +16,13 @@ URL = f"https://download.swift.org/swift-{VERSION}-release/ubuntu2404/swift-{VER
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> str:
-    return subprocess.check_output(args, text=True, env=env, stderr=subprocess.STDOUT)
+    try:
+        return subprocess.check_output(
+            args, text=True, env=env, stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as error:
+        print(error.output, flush=True)
+        raise
 
 
 def verify(binary: Path) -> bool:
@@ -73,11 +79,14 @@ def main() -> None:
         download(URL, archive)
         download(URL + ".sig", signature)
         download("https://www.swift.org/keys/all-keys.asc", keys)
-        keyring = root / "keyring"
-        keyring.mkdir(mode=0o700)
-        env = dict(os.environ, GNUPGHOME=str(keyring))
-        run("gpg", "--batch", "--import", str(keys), env=env)
-        run("gpg", "--batch", "--verify", str(signature), str(archive), env=env)
+        # Runner work paths can exceed GPG's Unix socket length limit. Keep
+        # this isolated public keyring short even when RUNNER_TEMP is long.
+        with tempfile.TemporaryDirectory(
+            prefix="narduk-swift-keys-", dir="/tmp"
+        ) as keyring:
+            env = dict(os.environ, GNUPGHOME=keyring)
+            run("gpg", "--batch", "--import", str(keys), env=env)
+            run("gpg", "--batch", "--verify", str(signature), str(archive), env=env)
         with tarfile.open(archive) as package:
             package.extractall(root, filter="data")
         archive.unlink()
