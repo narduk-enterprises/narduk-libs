@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createCiWorkflow } from '../src/ci-workflow.js'
+import { createCiRegistryAuthScript, createCiWorkflow } from '../src/ci-workflow.js'
+import { buildGeneratedFiles } from '../src/generate.js'
 import { createRootPackageManifest } from '../src/manifest.js'
 
 describe('generated CI boundaries', () => {
@@ -42,6 +43,47 @@ describe('generated CI boundaries', () => {
     const actions = [...workflow.matchAll(/uses: [^@\s]+@(\S+)/gu)]
     expect(new Set(actions.map((action) => action[0].split('@')[0])).size).toBe(5)
     for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
+  })
+
+  it('private registry bootstrap runs before dependencies and refuses unsafe existing targets', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'narduk-private-ci-auth-'))
+    try {
+      const generated = buildGeneratedFiles({
+        appName: 'private-ci-auth',
+        targetDir: directory,
+        noGit: true,
+        visibility: 'private',
+      })
+      const script = generated.find((file) => file.path === 'scripts/package-registry-auth.mjs')!
+      expect(script.contents).toBe(createCiRegistryAuthScript())
+      const executable = join(directory, 'bootstrap.mjs')
+      const target = join(directory, '.npmrc.auth')
+      await writeFile(executable, script.contents)
+      const run = (token: string) =>
+        spawnSync(process.execPath, [executable], {
+          cwd: directory,
+          encoding: 'utf8',
+          env: { ...process.env, NARDUK_PLATFORM_GH_PACKAGES_READ: token },
+        })
+      expect(run('').status).toBe(1)
+      expect(run('test-value\nextra-line').status).toBe(1)
+      expect(await readdir(directory)).toEqual(['bootstrap.mjs'])
+      const success = run('test-value')
+      expect(success.status, success.stderr).toBe(0)
+      expect(success.stdout + success.stderr).not.toContain('test-value')
+      expect((await stat(target)).mode & 0o777).toBe(0o600)
+      expect(await readFile(target, 'utf8')).toBe('//npm.pkg.github.com/:_authToken=test-value\n')
+      expect(run('replacement').status).toBe(1)
+      expect(await readFile(target, 'utf8')).toContain('test-value')
+      await rm(target)
+      const sentinel = join(directory, 'sentinel')
+      await writeFile(sentinel, 'untouched')
+      await symlink(sentinel, target)
+      expect(run('replacement').status).toBe(1)
+      expect(await readFile(sentinel, 'utf8')).toBe('untouched')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('the emitted public install removes private auth on success and failure', async () => {

@@ -36,6 +36,26 @@ function setupSteps(): string[] {
   ]
 }
 
+// The shared workflow invokes this before dependencies exist, then removes
+// its exact ignored output on every install outcome. Exclusive creation also
+// refuses stale files and symlinks instead of overwriting an unknown target.
+export function createCiRegistryAuthScript(): string {
+  return [
+    "import { writeFileSync } from 'node:fs'",
+    '',
+    'const token = process.env.NARDUK_PLATFORM_GH_PACKAGES_READ?.trim()',
+    'if (!token || /[\\r\\n]/u.test(token)) {',
+    "  throw new Error('Missing or invalid NARDUK_PLATFORM_GH_PACKAGES_READ')",
+    '}',
+    '',
+    "writeFileSync('.npmrc.auth', `//npm.pkg.github.com/:_authToken=${token}\\n`, {",
+    '  mode: 0o600,',
+    "  flag: 'wx',",
+    '})',
+    '',
+  ].join('\n')
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
