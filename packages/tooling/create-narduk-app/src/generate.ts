@@ -258,18 +258,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       path: '.npmrc',
-      contents: text(
-        '@narduk-enterprises:registry=https://npm.pkg.github.com',
-        // PLAIN interpolation, no default. npm does not implement
-        // ${VAR-default} substitution: it leaves the whole reference
-        // unsubstituted and sends the literal string as the token, so the
-        // default form 401s even when GH_PACKAGES_READ is set correctly.
-        // pnpm does implement it, which is how the broken shape passed
-        // review twice -- the estate tests on pnpm. A committed file must
-        // work under whichever client runs it. See company-hq
-        // docs/SECRETS-MATRIX.md, 'One credential, two names'.
-        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}',
-      ),
+      // SCOPE ROUTING ONLY. The committed file carries no `_authToken` line at
+      // all -- not even an env reference. pnpm 10 warns 'Failed to replace env
+      // in config' whenever the variable is absent (every `pnpm install` that
+      // does not need the registry, which is most of them), and pnpm 11 drops
+      // env interpolation in .npmrc entirely. npm never implemented the
+      // `${VAR-default}` form either. Auth is supplied per process instead:
+      // locally by the `gh-packages-run` helper, in CI by the userconfig the
+      // generated workflow writes to the runner temp directory. See
+      // agent-infrastructure docs/agents/credentials.md, 'GitHub Packages
+      // read', and company-hq docs/SECRETS-MATRIX.md.
+      contents: text('@narduk-enterprises:registry=https://npm.pkg.github.com'),
     },
     {
       path: '.prettierignore',
@@ -313,11 +312,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '        with:',
         '          node-version: 22.22.3',
         '          cache: pnpm',
-        '      # The committed .npmrc already routes both scopes and reads',
-        '      # GH_PACKAGES_READ. CI maps the org secret into that single name.',
-        '      - run: pnpm install --frozen-lockfile',
+        '      # The committed .npmrc carries scope routing only, so registry auth is',
+        '      # supplied per process: the org secret is written to a userconfig under',
+        '      # RUNNER_TEMP for this one install. It never reaches the repository, the',
+        '      # runner home directory, or any other step.',
+        '      - name: Install workspace',
         '        env:',
         '          GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '        run: |',
+        '          umask 077',
+        '          printf "//npm.pkg.github.com/:_authToken=%s\\n" "$GH_PACKAGES_READ" > "$RUNNER_TEMP/npmrc-auth"',
+        '          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth" pnpm install --frozen-lockfile',
         '      - run: pnpm exec playwright install --with-deps chromium',
         '      - run: pnpm run quality',
       ),
@@ -348,9 +353,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run quality',
         '- pnpm run test',
         '',
-        'The committed `.npmrc` routes `@narduk-enterprises/*` to GitHub Packages and reads `GH_PACKAGES_READ` from the process environment. It contains no credential value.',
+        'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
-        'One credential, two names: locally export `GH_PACKAGES_READ` into the process environment for the install only (Doppler `narduk/tokens:GH_PACKAGES_READ`, or nvault `github/prd/narduk-enterprises-packages-read`); in CI the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` is mapped into `GH_PACKAGES_READ`. Never write the token into `~/.npmrc` and never add a per-app alias for it.',
+        'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In CI the generated workflow writes the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` into a userconfig under `$RUNNER_TEMP` and points `NPM_CONFIG_USERCONFIG` at it for the install step only. Never write the token into `~/.npmrc`, into the repository, or into a per-app alias.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
@@ -548,6 +553,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  devServer: {',
         '    port: localPort,',
         '  },',
+        // `site` belongs to nuxt-site-config, which only reaches the app through
+        // @nuxtjs/seo (the seo capability). Emitting it unconditionally makes a
+        // core-only or auth-only scaffold fail `nuxt typecheck` with TS2353,
+        // because `site` is then not a NuxtConfig key at all (narduk-libs#172).
         ...(capabilities.includes('seo')
           ? [
               '  fonts: {',
@@ -556,13 +565,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '  sitemap: {',
               '    zeroRuntime: true,',
               '  },',
+              '  site: {',
+              '    name: appName,',
+              '    url: siteUrl,',
+              '  },',
+              "  routeRules: { '/': { prerender: true } },",
             ]
           : []),
-        '  site: {',
-        '    name: appName,',
-        '    url: siteUrl,',
-        '  },',
-        ...(capabilities.includes('seo') ? ["  routeRules: { '/': { prerender: true } },"] : []),
         '  runtimeConfig: {',
         "    xaiApiKey: process.env.XAI_API_KEY || '',",
         '    public: {',
@@ -630,6 +639,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  }',
         '}',
       ),
+    },
+    {
+      // Nuxt's own recommendation for a typed `server/` tree. The shared eslint
+      // config's `narduk/correctness-type-aware` pack runs typescript-eslint's
+      // project service, which resolves each file through the nearest
+      // tsconfig.json; `apps/web/tsconfig.json` extends `.nuxt/tsconfig.json`,
+      // whose `include` deliberately excludes `server/**`. Without this file the
+      // first server directory an app adds (server/durable/, server/tasks/, ...)
+      // fails lint with "was not found by the project service".
+      path: 'apps/web/server/tsconfig.json',
+      contents: text('{', '  "extends": "../.nuxt/tsconfig.server.json"', '}'),
     },
     {
       path: 'apps/web/vitest.config.ts',

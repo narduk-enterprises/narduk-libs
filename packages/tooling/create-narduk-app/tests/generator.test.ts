@@ -343,12 +343,24 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedText).not.toContain('postinstall')
     expect(generatedText).not.toContain('git+')
     expect(generatedText).not.toContain('provision.json')
+    // narduk-libs#172 siblings: the committed .npmrc is scope routing ONLY.
+    // pnpm 10 warns 'Failed to replace env in config' on an unresolved
+    // ${VAR} and pnpm 11 removes .npmrc env interpolation outright, so the
+    // file must carry no _authToken line at all -- not even an env reference.
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
-      '@narduk-enterprises:registry=https://npm.pkg.github.com\n' +
-        '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}\n',
+      '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       'pnpm install --frozen-lockfile',
+    )
+    // The token reaches the install through a process-scoped userconfig under
+    // RUNNER_TEMP, never through the committed .npmrc and never through
+    // ~/.npmrc.
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
+      'printf "//npm.pkg.github.com/:_authToken=%s\\n" "$GH_PACKAGES_READ" > "$RUNNER_TEMP/npmrc-auth"',
+    )
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
+      'NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth" pnpm install --frozen-lockfile',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       '${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
@@ -539,6 +551,87 @@ describe('create-narduk-app generation contract', () => {
       await readFile(join(targetDir, 'apps/web/drizzle/0000_app_records.sql'), 'utf8'),
     ).toContain('CREATE TABLE `app_records`')
     expect(await stat(join(targetDir, 'apps/web/wrangler.jsonc'))).toBeDefined()
+  })
+})
+
+describe('generated app typecheck and lint surfaces', () => {
+  const capabilitySets: Array<{ capabilities: string[]; label: string }> = [
+    { capabilities: [], label: 'core-only' },
+    { capabilities: ['auth'], label: 'auth-only' },
+    { capabilities: ['analytics', 'uploads', 'ai', 'mapkit'], label: 'no-seo capabilities' },
+    { capabilities: ['seo'], label: 'seo-only' },
+    {
+      capabilities: ['auth', 'seo', 'analytics', 'uploads', 'ai', 'mapkit'],
+      label: 'every capability',
+    },
+  ]
+
+  function generate(capabilities: string[]): Map<string, string> {
+    return asFileMap(
+      buildGeneratedFiles({
+        appName: 'surface-check',
+        capabilities,
+        noGit: true,
+        targetDir: '/tmp/surface-check',
+      }),
+    )
+  }
+
+  // narduk-libs#172: `site` is a nuxt-site-config key that only reaches the app
+  // through @nuxtjs/seo. Emitting it for every capability set made a core-only
+  // or auth-only scaffold fail `nuxt typecheck` with TS2353 on its first run.
+  it('emits the nuxt-site-config `site` block only for an seo scaffold', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const nuxtConfig = generate(capabilities).get('apps/web/nuxt.config.ts') ?? ''
+      const hasSeo = capabilities.includes('seo')
+
+      expect(nuxtConfig.includes('  site: {'), label).toBe(hasSeo)
+      expect(nuxtConfig.includes('zeroRuntime: true'), label).toBe(hasSeo)
+      expect(nuxtConfig.includes("routeRules: { '/': { prerender: true } }"), label).toBe(hasSeo)
+      // The consts the seo block reads stay used by runtimeConfig either way, so
+      // dropping the block never leaves an unused binding behind.
+      expect(nuxtConfig).toContain('      appName,')
+      expect(nuxtConfig).toContain('      siteUrl,')
+    }
+  })
+
+  // The shared eslint config's type-aware pack resolves each file through the
+  // nearest tsconfig.json. apps/web/tsconfig.json extends .nuxt/tsconfig.json,
+  // whose include excludes server/**, so without this file the first server
+  // directory an app adds fails lint with "was not found by the project
+  // service".
+  it('emits a server tsconfig for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+
+      expect([...files.keys()], label).toContain('apps/web/server/tsconfig.json')
+      expect(files.get('apps/web/server/tsconfig.json'), label).toBe(
+        '{\n  "extends": "../.nuxt/tsconfig.server.json"\n}\n',
+      )
+    }
+  })
+
+  it('keeps registry auth out of the committed .npmrc for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const npmrc = files.get('.npmrc') ?? ''
+      const ci = files.get('.github/workflows/ci.yml') ?? ''
+      const readme = files.get('README.md') ?? ''
+
+      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.pkg.github.com\n')
+      expect(npmrc, label).not.toContain('_authToken')
+      expect(npmrc, label).not.toContain('${')
+      expect(ci, label).toContain('umask 077')
+      expect(ci, label).toContain('NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth"')
+      expect(ci, label).toContain(
+        'GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+      )
+      // The retired Doppler/nvault fallback wording is gone; the README now
+      // documents the process-scoped path only.
+      expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
+      expect(readme, label).toContain('NPM_CONFIG_USERCONFIG')
+      expect(readme, label).toContain('gh-packages-run')
+    }
   })
 })
 
