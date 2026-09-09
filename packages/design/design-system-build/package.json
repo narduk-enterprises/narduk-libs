@@ -9,7 +9,8 @@
     "build": "nuxt generate && node --experimental-strip-types scripts/build.mts",
     "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions scripts/*.mts",
     "lint": "eslint . --max-warnings 0",
-    "test:unit": "node --experimental-strip-types --test scripts/build.test.mts"
+    "test:unit": "node --experimental-strip-types --test scripts/build.test.mts",
+    "check:package": "node --experimental-strip-types scripts/check-package.mts"
   },
   "devDependencies": {
     "@narduk-enterprises/narduk-ui": "workspace:*",
