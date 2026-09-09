@@ -146,9 +146,7 @@ describe('create-narduk-app generation contract', () => {
         'workerd',
       ],
     })
-    expect(files.get('.github/workflows/ci.yml')).toContain(
-      'runs-on: [self-hosted, Linux, proxmox]',
-    )
+    expect(files.get('.github/workflows/ci.yml')).toContain('"group":"linux-ci"')
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
     )
@@ -350,23 +348,13 @@ describe('create-narduk-app generation contract', () => {
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
       '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
     )
+    // Private apps delegate install/cleanup and the fail-closed aggregate to
+    // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'pnpm install --frozen-lockfile',
-    )
-    // The token reaches the install through a process-scoped userconfig under
-    // RUNNER_TEMP, never through the committed .npmrc and never through
-    // ~/.npmrc.
-    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'printf "//npm.pkg.github.com/:_authToken=%s\\n" "$GH_PACKAGES_READ" > "$RUNNER_TEMP/npmrc-auth"',
+      'nuxt-cloudflare.yml@9070db7244649bf192d392a5b96eb1656997c84c',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth" pnpm install --frozen-lockfile',
-    )
-    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      '${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
-    )
-    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+      'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
     )
     // One credential, two names: the org secret maps into the single process
     // env name the committed .npmrc reads. No second alias, and no setup-node
@@ -521,11 +509,11 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@nuxt/ui'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('actions/checkout@v7')
-    expect(generatedCi).toContain('pnpm/action-setup@v6')
-    expect(generatedCi).toContain('dest: ${{ runner.temp }}/setup-pnpm')
-    expect(generatedCi).toContain('actions/setup-node@v7')
-    expect(generatedCi).not.toMatch(/actions\/(?:checkout|setup-node)@v4/u)
+    expect(generatedCi).toContain('nuxt-cloudflare.yml@9070db7244649bf192d392a5b96eb1656997c84c')
+    expect(generatedCi).toContain('require-scripts: true')
+    expect(generatedCi).toContain('run-tests: true')
+    expect(generatedCi).toContain('run-e2e: true')
+    expect(generatedCi).not.toMatch(/@v\d/u)
     const wranglerConfig = await readFile(join(targetDir, 'apps/web/wrangler.jsonc'), 'utf8')
     expect(wranglerConfig).toContain('"no_bundle": true')
     expect(wranglerConfig).toContain('"find_additional_modules": true')
@@ -621,10 +609,9 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.pkg.github.com\n')
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
-      expect(ci, label).toContain('umask 077')
-      expect(ci, label).toContain('NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth"')
+      expect(ci, label).toContain('nuxt-cloudflare.yml@9070db7244649bf192d392a5b96eb1656997c84c')
       expect(ci, label).toContain(
-        'GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
       )
       // The retired Doppler/nvault fallback wording is gone; the README now
       // documents the process-scoped path only.

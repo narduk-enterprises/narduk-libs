@@ -855,7 +855,7 @@ try {
     cwd: root,
     encoding: 'utf8',
   }).trim()
-  const fingerprint = fingerprintInputs({
+  const proofInputs = {
     schemaVersion: 1,
     tree,
     tarballs: Object.fromEntries([...tarballs].map(([name, path]) => [name, fileDigest(path)])),
@@ -873,10 +873,14 @@ try {
       arch: process.arch,
     },
     pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
-    imageIdentity,
+    imageIdentity: imageIdentity ?? null,
     nodeOptions: process.env.NODE_OPTIONS || '',
-  })
-  const prior = await lookupConsumerProof({ tree, fingerprint })
+  }
+  const fingerprint = fingerprintInputs(proofInputs)
+  const inputDigests = Object.fromEntries(
+    Object.entries(proofInputs).map(([key, value]) => [key, fingerprintInputs(value)]),
+  )
+  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests })
   if (prior) {
     writeLine(
       `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
@@ -938,6 +942,7 @@ try {
           runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
           tree,
           fingerprint,
+          inputDigests,
           completedAt: new Date().toISOString(),
           ...(prior ? { prior } : {}),
         },

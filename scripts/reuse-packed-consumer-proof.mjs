@@ -51,6 +51,7 @@ export async function findReusablePackedConsumerProof({
   sha,
   tree,
   fingerprint,
+  inputDigests = {},
   baseBranch = 'main',
   requestJson,
   readArtifact,
@@ -117,6 +118,13 @@ export async function findReusablePackedConsumerProof({
     const proof = await readArtifact(matches[0].id)
     if (matchesProof(proof, { repository, run, tree, fingerprint, now }))
       return { runId: run.id, runAttempt: run.run_attempt, pullRequest: pull.number, fingerprint }
+    const changed = Object.keys(inputDigests).filter(
+      (key) => proof?.inputDigests?.[key] !== inputDigests[key],
+    )
+    if (changed.length)
+      console.log(
+        `[consumer-smoke] Prior proof input differences: ${changed.join(', ')}; executing the full proof.`,
+      )
   }
   return undefined
 }
