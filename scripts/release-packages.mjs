@@ -505,6 +505,27 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
 }
 
 function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
+  const loggingPlugin = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'app',
+    'plugins',
+    'logging.client.ts',
+  )
+  mkdirSync(dirname(loggingPlugin), { recursive: true })
+  writeFileSync(
+    loggingPlugin,
+    [
+      "import { createBrowserLogger } from '@narduk-enterprises/narduk-logging/browser'",
+      '',
+      'export default defineNuxtPlugin(() => {',
+      "  const logger = createBrowserLogger({ service: 'packed-seo-browser', environment: 'test' })",
+      "  logger.info('Synthetic logging check', { check: 'seo-browser' })",
+      '})',
+      '',
+    ].join('\n'),
+  )
   const appPath = join(generatedDirectory, 'apps', 'web', 'app', 'app.vue')
   writeFileSync(
     appPath,

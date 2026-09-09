@@ -1,0 +1,45 @@
+[
+  {
+    "name": "ordinary fields",
+    "input": { "count": 3, "ok": true, "optional": null },
+    "expected": { "count": 3, "ok": true, "optional": null }
+  },
+  {
+    "name": "nested credentials and personal fields",
+    "input": {
+      "password": "synthetic",
+      "nested": {
+        "access_token": "synthetic",
+        "email": "example@example.invalid",
+        "tokenCount": 4
+      },
+      "body": "synthetic"
+    },
+    "expected": {
+      "password": "[REDACTED]",
+      "nested": { "access_token": "[REDACTED]", "email": "[REDACTED]", "tokenCount": 4 },
+      "body": "[REDACTED]"
+    }
+  },
+  {
+    "name": "URL credentials query and fragment",
+    "input": {
+      "url": "https://example:synthetic@example.invalid/items?token=synthetic#private",
+      "relativeUrl": "/items?token=synthetic"
+    },
+    "expected": { "url": "https://example.invalid/items", "relativeUrl": "/items" }
+  },
+  {
+    "name": "terminal and line controls",
+    "input": { "event": "first\nsecond\u001b[31m", "nested": ["a\tb", 4] },
+    "expected": { "event": "first second [31m", "nested": ["a b", 4] }
+  },
+  {
+    "name": "unsupported URLs",
+    "input": {
+      "url": "file:///private/data?key=synthetic",
+      "callbackUrl": "https://[invalid?token=synthetic"
+    },
+    "expected": { "url": "[unsupported URL]", "callbackUrl": "[invalid URL]" }
+  }
+]

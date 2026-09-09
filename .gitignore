@@ -68,6 +68,15 @@ __pycache__/
 .codegraph/
 .cursor/rules/codegraph.mdc
 
+# Logging package build and language environments
+packages/modules/narduk-logging/dist/
+packages/modules/narduk-logging/python/dist/
+packages/modules/narduk-logging/python/.venv/
+packages/modules/narduk-logging/python/.pytest_cache/
+packages/modules/narduk-logging/python/.ruff_cache/
+.build/
+.swiftpm/
+
 # Local audit snapshots
 artifacts/
 .ci-evidence/
