@@ -2,6 +2,8 @@
 
 import { cwd, stderr as processStderr, stdout as processStdout } from 'node:process'
 import { resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { createNardukApp } from './generate.js'
 import { CreateNardukAppError } from './types.js'
@@ -204,7 +206,19 @@ export async function runCli(options: CreateNardukAppCliOptions = {}): Promise<n
   }
 }
 
-if (import.meta.url === 'file://' + process.argv[1]) {
+function isMainModule(): boolean {
+  const entrypoint = process.argv[1]
+  if (!entrypoint) return false
+
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entrypoint)
+  } catch {
+    // An imported module can have no filesystem entrypoint (for example node -e).
+    return false
+  }
+}
+
+if (isMainModule()) {
   const exitCode = await runCli()
   process.exitCode = exitCode
 }
