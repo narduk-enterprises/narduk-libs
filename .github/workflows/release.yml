@@ -84,6 +84,8 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           test "$(git rev-parse HEAD)" = "${VERIFIED_SHA}"
           git merge-base --is-ancestor "${VERIFIED_SHA}" origin/main
+          # Changesets resolves its base against a local ref after this detached checkout.
+          git branch --force main "${VERIFIED_SHA}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
