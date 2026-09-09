@@ -12,6 +12,9 @@ node_modules
 .nitro
 .turbo
 .cache
+.build/
+.swiftpm/
+**/.venv/
 .wrangler
 .fleet
 dist

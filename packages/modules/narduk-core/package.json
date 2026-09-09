@@ -96,6 +96,7 @@
   "dependencies": {
     "@iconify-json/lucide": "^1.2.108",
     "@narduk-enterprises/narduk-platform": "workspace:*",
+    "@narduk-enterprises/narduk-logging": "workspace:*",
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/fonts": "^0.14.0",
     "@nuxt/image": "^2.0.0",
@@ -117,6 +118,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "hookable": "5.5.3",
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",

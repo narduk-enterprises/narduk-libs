@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "narduk-logging"
+version = "0.1.0"
+description = "Structured logging and safe diagnostics for Narduk Python applications."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["structlog>=26.1,<27"]
+readme = "README.md"
+
+[project.urls]
+Repository = "https://github.com/narduk-enterprises/narduk-libs"
+
+[project.scripts]
+narduk-log = "narduk_logging.cli:main"
+
+[project.optional-dependencies]
+otlp = ["opentelemetry-sdk>=1.38,<2", "opentelemetry-exporter-otlp-proto-http>=1.38,<2"]
+dagster = ["dagster>=1.11,<2"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "pyright>=1.1.400,<2", "jsonschema>=4,<5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/narduk_logging"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

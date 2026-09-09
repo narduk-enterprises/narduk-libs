@@ -16,6 +16,7 @@ every package still releases independently through Changesets.
 ### `packages/modules/` -- Nuxt runtime modules and layers
 
 - `@narduk-enterprises/narduk-core`
+- [`narduk-logging`](packages/modules/narduk-logging/README.md) -- shared TypeScript, Swift, and Python structured logging
 - `@narduk-enterprises/narduk-auth`
 - `@narduk-enterprises/narduk-seo`
 - `@narduk-enterprises/narduk-analytics`
