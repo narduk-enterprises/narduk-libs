@@ -140,7 +140,8 @@ tests own time, ids, and tokens. Operations:
 
 Failures throw `TenancyError` with `code` in
 `not_found | forbidden | conflict | invalid | expired | last_owner`. The last
-owner of an org can be neither demoted nor removed.
+owner of an org can be neither demoted nor removed, including concurrent changes
+to different owners. The final-owner predicate executes inside the mutation.
 
 ### Invites
 
@@ -149,10 +150,16 @@ once and only its SHA-256 digest is stored. `acceptInvite({ token, userId })` is
 single-use, expiry-checked, revocation-checked, and idempotent for the accepting
 user — a second user presenting the same token gets `conflict`.
 
-**An invite records the email it was addressed to; acceptance binds to whoever
-presents the token.** This package does not compare the two, because it has no
-access to the consumer's verified-email state. If an app wants the invite email
-to be binding, it checks that before calling `acceptInvite`.
+**The consumer owns email verification.** Pass the identity provider's verified
+address as `acceptInvite({ token, userId, verifiedEmail })` to enforce a
+matching invite address before any mutation. Never populate `verifiedEmail` from
+an unverified request body. Omitting it preserves the bearer-invitation
+contract: acceptance binds to the token presenter without an email comparison.
+
+Claiming an invitation, granting membership, applying an optional override, and
+recording their audit events execute in one transaction. Concurrent presenters
+cannot both win; a failed write rolls back the claim so it can be retried. A
+replayed accepted token never restores a subsequently removed membership.
 
 Accepting promotes an existing membership when the invite role is higher, and
 never demotes. A resource-scoped invite additionally writes a narrowing override
@@ -160,12 +167,13 @@ for that resource.
 
 ### Database typing
 
-The service is typed against the D1-shaped drizzle surface (`LayerDatabase` in
-narduk-core is exactly this shape) and only ever awaits `.get()`, `.all()` and
-`.run()`. That makes it dialect-neutral in behaviour: the synchronous
-better-sqlite3 driver returns values that `await` resolves unchanged, which is
-how this package's own tests run the shipped migration against real in-memory
-SQLite behind one cast.
+The service accepts the D1-shaped drizzle database (`LayerDatabase` in
+narduk-core). Atomic invitation acceptance uses Drizzle's D1 `batch()`; direct
+better-sqlite3 consumers use their driver's synchronous transaction. Pass the
+real database object, including its batch/client capability, rather than a
+wrapper exposing only query-builder methods. Unsupported adapters fail before
+claiming an invitation. Tests run the shipped migration against real in-memory
+SQLite behind one documented type adapter.
 
 ## Guards
 

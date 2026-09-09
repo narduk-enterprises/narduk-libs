@@ -10,6 +10,8 @@ import {
   tenancySupportGrants,
 } from '../database/tenancy-schema'
 
+import { claimInviteMembership } from './tenancy-accept-invite'
+import { preservesAnOwner } from './tenancy-atomic'
 import { TenancyError } from './tenancy-error'
 
 import type {
@@ -149,6 +151,8 @@ export interface CreateInviteInput {
 export interface AcceptInviteInput {
   token: string
   userId: string
+  /** An address verified by the consumer's identity provider, never request-body proof. */
+  verifiedEmail?: string
 }
 
 export interface AcceptInviteResult {
@@ -278,18 +282,6 @@ export function createTenancy(
     return membership
   }
 
-  /** True when `userId` is the only owner left in the org. */
-  async function isLastOwner(orgId: string, userId: string): Promise<boolean> {
-    const owners = await db
-      .select({ userId: tenancyMemberships.userId })
-      .from(tenancyMemberships)
-      .where(and(eq(tenancyMemberships.orgId, orgId), eq(tenancyMemberships.role, 'owner')))
-      // Two rows is all the evidence "more than one owner" needs.
-      .limit(2)
-      .all()
-    return owners.length === 1 && owners[0]?.userId === userId
-  }
-
   async function insertMembership(input: AddMemberInput): Promise<TenancyMembership> {
     const timestamp = now()
     const membership: TenancyMembership = {
@@ -317,12 +309,23 @@ export function createTenancy(
     role: TenancyRole,
     actorUserId?: string | null,
   ): Promise<TenancyMembership> {
-    const updated: TenancyMembership = { ...membership, role, updatedAt: now() }
-    await db
-      .update(tenancyMemberships)
-      .set({ role, updatedAt: updated.updatedAt })
-      .where(eq(tenancyMemberships.id, membership.id))
-      .run()
+    const updated = first(
+      await db
+        .update(tenancyMemberships)
+        .set({ role, updatedAt: now() })
+        .where(
+          and(
+            eq(tenancyMemberships.id, membership.id),
+            role === 'owner' ? undefined : preservesAnOwner(membership.orgId, membership.userId),
+          ),
+        )
+        .returning()
+        .all(),
+    )
+    if (!updated) {
+      await requireMembership(membership.orgId, membership.userId)
+      throw new TenancyError('last_owner', `Org ${membership.orgId} must keep at least one owner.`)
+    }
     await audit({
       orgId: membership.orgId,
       actorUserId,
@@ -454,27 +457,6 @@ export function createTenancy(
     )
   }
 
-  async function ensureInviteMembership(
-    invite: TenancyInvite,
-    userId: string,
-  ): Promise<TenancyMembership> {
-    const existing = await findMembership(invite.orgId, userId)
-    if (!existing) {
-      return insertMembership({
-        orgId: invite.orgId,
-        userId,
-        role: invite.role,
-        actorUserId: userId,
-      })
-    }
-    // An invite may promote, never silently demote: a user who is already an
-    // admin does not lose that by accepting a `viewer` invite.
-    if (roleRank(invite.role) > roleRank(existing.role)) {
-      return updateMembershipRole(existing, invite.role, userId)
-    }
-    return existing
-  }
-
   async function acceptedInviteResult(
     invite: TenancyInvite,
     userId: string,
@@ -567,17 +549,11 @@ export function createTenancy(
     async setMemberRole(input) {
       const membership = await requireMembership(input.orgId, input.userId)
       if (membership.role === input.role) return membership
-      if (membership.role === 'owner' && (await isLastOwner(input.orgId, input.userId))) {
-        throw new TenancyError('last_owner', `Org ${input.orgId} must keep at least one owner.`)
-      }
       return updateMembershipRole(membership, input.role, input.actorUserId)
     },
 
     async removeMember(input) {
       const membership = await requireMembership(input.orgId, input.userId)
-      if (membership.role === 'owner' && (await isLastOwner(input.orgId, input.userId))) {
-        throw new TenancyError('last_owner', `Org ${input.orgId} must keep at least one owner.`)
-      }
 
       // A membership is the only thing an override can narrow, so the two are
       // removed together rather than leaving orphan override rows behind.
@@ -591,6 +567,22 @@ export function createTenancy(
           ),
         )
         .all()
+      const removed = first(
+        await db
+          .delete(tenancyMemberships)
+          .where(
+            and(
+              eq(tenancyMemberships.id, membership.id),
+              preservesAnOwner(input.orgId, input.userId),
+            ),
+          )
+          .returning()
+          .all(),
+      )
+      if (!removed) {
+        await requireMembership(input.orgId, input.userId)
+        throw new TenancyError('last_owner', `Org ${input.orgId} must keep at least one owner.`)
+      }
       await db
         .delete(tenancyResourceRoleOverrides)
         .where(
@@ -600,7 +592,6 @@ export function createTenancy(
           ),
         )
         .run()
-      await db.delete(tenancyMemberships).where(eq(tenancyMemberships.id, membership.id)).run()
       await audit({
         orgId: input.orgId,
         actorUserId: input.actorUserId,
@@ -717,6 +708,12 @@ export function createTenancy(
       const userId = requireText(input.userId, 'userId')
       const invite = await findInviteByToken(requireText(input.token, 'token'))
       if (!invite) throw new TenancyError('not_found', 'Invite token does not match any invite.')
+      if (
+        input.verifiedEmail !== undefined &&
+        requireText(input.verifiedEmail, 'verifiedEmail').toLowerCase() !== invite.email
+      ) {
+        throw new TenancyError('forbidden', 'The verified email does not match this invitation.')
+      }
 
       if (invite.acceptedAt !== null) {
         // Idempotent for the accepting user; a second user may not reuse it.
@@ -731,37 +728,12 @@ export function createTenancy(
         throw new TenancyError('expired', `Invite ${invite.id} expired.`)
       }
 
-      await db
-        .update(tenancyInvites)
-        .set({ acceptedAt, acceptedByUserId: userId })
-        .where(eq(tenancyInvites.id, invite.id))
-        .run()
-      const accepted: TenancyInvite = { ...invite, acceptedAt, acceptedByUserId: userId }
-
-      const membership = await ensureInviteMembership(accepted, userId)
-      const override =
-        accepted.resourceKind && accepted.resourceId
-          ? await upsertOverride(
-              {
-                orgId: accepted.orgId,
-                userId,
-                actorUserId: userId,
-                resource: { kind: accepted.resourceKind, id: accepted.resourceId },
-                role: accepted.role,
-              },
-              membership,
-            )
-          : null
-
-      await audit({
-        orgId: accepted.orgId,
-        actorUserId: userId,
-        action: 'invite.accept',
-        subjectKind: 'invite',
-        subjectId: accepted.id,
-        details: { userId, role: accepted.role, email: accepted.email },
-      })
-      return { invite: accepted, membership, override, alreadyAccepted: false }
+      const claimed = await claimInviteMembership(db, invite, userId, acceptedAt, nextId)
+      const accepted = await findInviteByToken(input.token)
+      if (!accepted || accepted.acceptedByUserId !== userId) {
+        throw new TenancyError('conflict', 'The invitation changed while it was being accepted.')
+      }
+      return { ...(await acceptedInviteResult(accepted, userId)), alreadyAccepted: !claimed }
     },
 
     async revokeInvite(input) {
@@ -780,11 +752,29 @@ export function createTenancy(
       if (invite.revokedAt !== null) return invite
 
       const revokedAt = now()
-      await db
-        .update(tenancyInvites)
-        .set({ revokedAt })
-        .where(eq(tenancyInvites.id, invite.id))
-        .run()
+      const revoked = first(
+        await db
+          .update(tenancyInvites)
+          .set({ revokedAt })
+          .where(
+            and(
+              eq(tenancyInvites.id, invite.id),
+              isNull(tenancyInvites.acceptedAt),
+              isNull(tenancyInvites.revokedAt),
+            ),
+          )
+          .returning()
+          .all(),
+      )
+      if (!revoked) {
+        const current = first(
+          await db.select().from(tenancyInvites).where(eq(tenancyInvites.id, invite.id)).all(),
+        )
+        if (current?.acceptedAt !== null || !current) {
+          throw new TenancyError('conflict', `Invite ${invite.id} has already been accepted.`)
+        }
+        return current
+      }
       await audit({
         orgId: invite.orgId,
         actorUserId: input.actorUserId,
