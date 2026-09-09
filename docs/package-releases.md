@@ -16,23 +16,30 @@ runbook and evidence exemplar.
 2. Open or update the release PR by merging the package change to `main`. The CI
    workflow runs package gates, repository contracts and applicable browser and
    packed generated-app checks. The release workflow verifies successful full CI
-   (`verify`) for the exact current main SHA and latest run attempt in a
-   read-only job before the release job receives write permissions. Manual
-   dispatch must pass the same proof; merely naming current main is
-   insufficient.
+   (`verify`) for the exact release SHA and latest run attempt in a read-only
+   job before the release job receives write permissions. Manual dispatch must
+   pass the same proof. The commit must remain in main's history; a later merge
+   does not invalidate its completed tests. Version commits have their own CI
+   concurrency group so later development cannot cancel them.
 3. Let app CI validate the release PR from a fresh frozen install. The packed
    consumer gate must prove every runtime dependency between local packages was
    rewritten from `workspace:*` to the exact coordinated release version; this
    prevents stale core, auth, or platform versions from entering the graph.
-4. Review and merge the release PR. Changesets publishes only the versions in
-   that release plan.
-5. When Changesets reports `published=true`, the workflow waits for registry
+4. Review and merge the release PR. Changesets publishes the exact checked-out
+   version commit, which must contain no pending changesets. Registry preflight
+   refuses unpublished versions that would move `latest` backwards. A commit
+   with pending changesets may prepare a version PR only while it is current
+   main.
+5. For a publication commit, including retries, the workflow waits for registry
    propagation, resolves every publishable manifest at its exact version, and
    performs both an initial and frozen external consumer install. A release is
    not complete until this proof passes.
 
-The Changesets run that only opens a release PR does not publish and therefore
-skips the post-publish registry proof.
+The Changesets run that only opens a release PR skips the registry proof.
+Superseded preparation commits leave the current version PR alone. An already
+published version commit still repeats registry verification on retry, so a
+previous verification failure cannot turn green merely because publication is
+now a no-op.
 
 Publishing uses `NARDUK_PLATFORM_GH_PACKAGES_WRITE`; record only names and
 rotation time, never values. The read credential, and which name it answers to

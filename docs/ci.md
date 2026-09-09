@@ -33,7 +33,9 @@ all applicable integration jobs. Keep `ci / Required` while adopting `verify` in
 repository protection. Empty docs/release-metadata selection is intentional;
 planner failure, cancellation, missing expected output and failed mandatory work
 must fail the aggregate. Release accepts only successful full CI for the exact
-current main SHA and latest attempt.
+release SHA retained in main history and latest attempt. A version commit's CI
+continues independently of later main pushes; the release checks out that exact
+verified commit. Ordinary iterations still cancel superseded runs.
 
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and
