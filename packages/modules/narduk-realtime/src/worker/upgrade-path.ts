@@ -12,10 +12,27 @@
 /** A parsed path segment. */
 export type UpgradePathSegment = { kind: 'static'; value: string } | { kind: 'param'; name: string }
 
-/** Result of parsing a pattern: either the compiled segments or why it failed. */
-export type UpgradePathParse =
-  | { ok: true; segments: UpgradePathSegment[]; params: string[] }
-  | { ok: false; reason: string }
+/** A pattern that parsed, with the parameter names it declares. */
+export interface UpgradePathParsed {
+  ok: true
+  segments: UpgradePathSegment[]
+  params: string[]
+}
+
+/** A pattern that did not parse, and why. */
+export interface UpgradePathRejected {
+  ok: false
+  reason: string
+}
+
+/**
+ * Result of parsing a pattern.
+ *
+ * Spelled as two named arms rather than an inline union so that the two Prettier
+ * versions in this workspace (3.8.3 in the package, 3.9.4 at the root) cannot
+ * disagree about how to wrap it -- they do, for an inline union of this width.
+ */
+export type UpgradePathParse = UpgradePathParsed | UpgradePathRejected
 
 /** A route parameter name. Same shape h3 accepts, and a JavaScript identifier. */
 const PARAM_PATTERN = /^[A-Za-z_$][\w$]*$/u

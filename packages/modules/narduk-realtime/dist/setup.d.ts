@@ -1,4 +1,5 @@
-import type { NitroEntryContext, ResolvedDurableObject, RollupEntryConfig } from './worker-entry.js';
+import type { NardukRealtimeUpgrade } from './options.js';
+import type { NitroEntryContext, ResolvedDurableObject, ResolvedUpgrade, RollupEntryConfig } from './worker-entry.js';
 /** The Nitro instance surface used to register the rollup hook. */
 export interface NitroHookHost {
     hooks: {
@@ -19,13 +20,33 @@ export interface NitroHookHost {
 export interface NuxtHookRegistry {
     hook(name: 'nitro:init', handler: (nitro: NitroHookHost) => void): void;
 }
+/** What the module wired into the Worker build. */
+export interface RealtimeInstallation {
+    durableObjects: ResolvedDurableObject[];
+    upgrades: ResolvedUpgrade[];
+}
+/** Everything the module reads out of its options plus the app's root. */
+export interface RealtimeInstallOptions {
+    durableObjects?: Record<string, string> | undefined;
+    upgrades?: readonly NardukRealtimeUpgrade[] | undefined;
+    rootDir: string;
+    hooks: NuxtHookRegistry;
+}
+/**
+ * Wire the declared Durable Objects and upgrade routes into the Worker build.
+ *
+ * Resolution happens here rather than inside the build hook so that a typo in a
+ * class name, a missing module, or an upgrade route whose `idFrom` names no
+ * parameter fails the configuration immediately instead of midway through a
+ * Cloudflare build -- or, worse, at request time on a deployed Worker. Returns
+ * what was wired so a caller (and the tests) can see exactly that.
+ */
+export declare function installRealtimeWorkerEntry(options: RealtimeInstallOptions): RealtimeInstallation;
 /**
  * Wire the declared Durable Objects into the Cloudflare Worker build.
  *
- * Resolution happens here rather than inside the build hook so that a typo in a
- * class name or a missing module fails the configuration immediately instead of
- * midway through a Cloudflare build. Returns the resolved objects so a caller
- * (and the tests) can see exactly what was wired.
+ * The 0.1.0 entry point, kept for callers that only export classes.
+ * {@link installRealtimeWorkerEntry} is the full surface.
  */
 export declare function installDurableObjectExports(durableObjects: Record<string, string>, rootDir: string, hooks: NuxtHookRegistry): ResolvedDurableObject[];
 //# sourceMappingURL=setup.d.ts.map

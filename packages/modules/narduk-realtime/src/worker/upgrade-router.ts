@@ -104,10 +104,19 @@ export interface UpgradeAuthorizeContext<Env = unknown> {
   authorizeViaRoute(request: Request, routePath?: string): Promise<UpgradeRouteProbe>
 }
 
-/** An authoriser's verdict: a refusal to send back, or a go-ahead. */
-export type UpgradeAuthorizeResult =
-  | Response
-  | { ok: true; headers?: Record<string, string> | undefined }
+/** A go-ahead, optionally adding headers only this router can set. */
+export interface UpgradeAllowed {
+  ok: true
+  headers?: Record<string, string> | undefined
+}
+
+/**
+ * An authoriser's verdict: a `Response` to send back verbatim, or a go-ahead.
+ *
+ * Two named arms rather than an inline union, for the Prettier-version reason
+ * documented on `UpgradePathParse`.
+ */
+export type UpgradeAuthorizeResult = Response | UpgradeAllowed
 
 /** An upgrade authoriser. */
 export type UpgradeAuthorizer<Env = unknown> = (

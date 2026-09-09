@@ -106,6 +106,7 @@ export type {
 // be typed from the package it already imports. Types only: no Worker runtime
 // code is pulled into the build-time module.
 export type {
+  UpgradeAllowed,
   UpgradeAuthorizeContext,
   UpgradeAuthorizeResult,
   UpgradeAuthorizer,

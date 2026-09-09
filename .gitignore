@@ -80,3 +80,6 @@ packages/modules/narduk-logging/python/.ruff_cache/
 # Local audit snapshots
 artifacts/
 .ci-evidence/
+
+# Per-lane evidence transcripts (packed-consumer fixtures, gate tails)
+.lane-evidence/

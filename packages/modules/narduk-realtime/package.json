@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "Durable Object build wiring and a hibernating WebSocket base class for Narduk Cloudflare apps.",
+  "description": "Durable Object build wiring, a WebSocket upgrade router, and a hibernating WebSocket base class for Narduk Cloudflare apps.",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
