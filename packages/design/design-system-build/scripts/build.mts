@@ -4,6 +4,9 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
+import postcss, { type Container } from 'postcss'
+import { parse as parseTemplate, NodeTypes, type TemplateChildNode } from '@vue/compiler-dom'
+import { parse as parseVue } from 'vue/compiler-sfc'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -22,8 +25,64 @@ function elements(node: Node): Element[] {
   ]
 }
 
-function document(title: string, body: string, css: string) {
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${css}"></head><body><main class="gallery" data-app="lakestat">${body}</main></body></html>\n`
+function document(title: string, body: string, prefix: string) {
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${prefix}tokens.css"><link rel="stylesheet" href="${prefix}styles.css"></head><body><main class="gallery">${body}</main></body></html>\n`
+}
+
+/** Retain selectors, media queries and cascade layers around the token declarations. */
+export function splitStyles(css: string) {
+  const styles = postcss.parse(css)
+  const tokens = styles.clone()
+  styles.walkDecls(/^--ns-/, (declaration) => {
+    declaration.remove()
+  })
+  tokens.walkDecls((declaration) => {
+    if (!declaration.prop.startsWith('--ns-')) declaration.remove()
+  })
+  tokens.walkComments((comment) => {
+    comment.remove()
+  })
+  function prune(container: Container) {
+    container.each((node) => {
+      if ('nodes' in node && node.nodes) {
+        prune(node as Container)
+        if (!node.nodes.length && !(node.type === 'atrule' && node.name === 'layer')) node.remove()
+      } else if (container === tokens && node.type === 'atrule' && node.name !== 'layer')
+        node.remove()
+    })
+  }
+  prune(tokens)
+  prune(styles)
+  return { tokens: tokens.toString(), styles: styles.toString() }
+}
+
+/** Component coverage comes from Vue tags inside each authored gallery section. */
+export function galleryCoverage(source: string): Record<string, string[]> {
+  const { descriptor, errors } = parseVue(source)
+  if (errors.length || !descriptor.template) throw new Error('Invalid Vue gallery')
+  const result: Record<string, string[]> = {}
+  function visit(nodes: TemplateChildNode[], owner?: Set<string>) {
+    for (const node of nodes) {
+      if (node.type !== NodeTypes.ELEMENT) continue
+      const marker = node.props.find(
+        (prop) => prop.type === NodeTypes.ATTRIBUTE && prop.name === 'data-design-card',
+      )
+      let components = owner
+      if (marker?.type === NodeTypes.ATTRIBUTE) {
+        const id = marker.value?.content
+        if (!id || result[id] || owner) throw new Error('Invalid or nested gallery card')
+        components = new Set<string>()
+        result[id] = []
+        visit(node.children, components)
+        result[id] = [...components].sort()
+        continue
+      }
+      if (/^(?:Ns|U)[A-Z]/.test(node.tag)) components?.add(node.tag)
+      visit(node.children, components)
+    }
+  }
+  visit(parseTemplate(descriptor.template.content).children)
+  return result
 }
 
 /** Only the controlled, prerendered Vue gallery supplies markup. No canvas input. */
@@ -36,7 +95,8 @@ export function renderBundle(html: string, css: string) {
   const nodes = elements(parse(html))
   const sections = nodes.filter((node) => attributes(node)['data-design-card'])
   if (sections.length === 0) throw new Error('No prerendered design cards found')
-  const files: Record<string, string> = { 'tokens.css': css }
+  const split = splitStyles(css)
+  const files: Record<string, string> = { 'tokens.css': split.tokens, 'styles.css': split.styles }
   const cards: Card[] = []
   const bodies: string[] = []
   for (const section of sections) {
@@ -67,7 +127,7 @@ export function renderBundle(html: string, css: string) {
     }
     const body = serializeOuter(section)
     files[path] =
-      `<!-- @dsCard group="${escape(card.group)}" name="${escape(card.name)}" subtitle="${escape(card.subtitle)}" viewport="${card.viewport}" -->\n${document(card.name, body, '../tokens.css')}`
+      `<!-- @dsCard group="${escape(card.group)}" name="${escape(card.name)}" subtitle="${escape(card.subtitle)}" viewport="${card.viewport}" -->\n${document(card.name, body, '../')}`
     cards.push(card)
     bodies.push(body)
   }
@@ -75,7 +135,7 @@ export function renderBundle(html: string, css: string) {
     'NE Base — coded system preview',
     '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue. narduk-shell is not yet available in the coded library.</p></header>' +
       bodies.join('\n'),
-    'tokens.css',
+    '',
   )
   files['_ds_manifest.json'] = json({
     namespace: 'Narduk_NE_Base',
@@ -83,7 +143,7 @@ export function renderBundle(html: string, css: string) {
     startingPoints: [],
     cards,
     templates: [],
-    globalCssPaths: ['tokens.css'],
+    globalCssPaths: ['tokens.css', 'styles.css'],
     hasThumbnailHtml: false,
   })
   return { files, cards }
@@ -132,6 +192,11 @@ export async function build() {
     .map((node) => node.childNodes.map((child) => ('value' in child ? child.value : '')).join(''))
     .join('\n')
   const { files, cards } = renderBundle(html, `${css}\n${inline}\n`)
+  const componentsByCard = galleryCoverage(await readFile(join(packageRoot, 'app/app.vue'), 'utf8'))
+  const renderedIds = cards.map((card) => card.path.slice('cards/'.length, -'.html'.length)).sort()
+  if (json(Object.keys(componentsByCard).sort()) !== json(renderedIds))
+    throw new Error('Authored gallery and rendered cards differ')
+  const components = [...new Set(Object.values(componentsByCard).flat())].sort()
   const require = createRequire(import.meta.url)
   const uiRoot = dirname(require.resolve('@narduk-enterprises/narduk-ui/tokens.css'))
   const [uiPackage, nuxtUiPackage] = await Promise.all([
@@ -166,8 +231,10 @@ export async function build() {
     },
     coverage: {
       cards: cards.length,
-      instruments: ['NsFreshnessChip', 'NsReadoutTile', 'NsRangeBar', 'NsLevelWell'],
-      nuxtUi: ['UButton', 'UBadge', 'UInput', 'UAlert'],
+      componentsByCard,
+      instruments: components.filter((name) => name.startsWith('Ns')),
+      nuxtUi: components.filter((name) => name.startsWith('U')),
+      appScope: null,
       missing: ['narduk-shell (not yet present in narduk-libs)'],
       scope:
         'shared instruments and explicitly configured Nuxt UI baseline fixtures; app-specific variants and legacy NE Base templates are not included',

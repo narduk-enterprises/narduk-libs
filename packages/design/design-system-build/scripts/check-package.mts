@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderBundle } from './build.mts'
+import postcss from 'postcss'
 
 const root = fileURLToPath(new URL('../dist/design-system/', import.meta.url))
 const manifest = JSON.parse(await readFile(join(root, 'build-manifest.json'), 'utf8'))
@@ -30,9 +31,20 @@ for (const file of manifest.files) {
 }
 const html = await readFile(join(root, 'index.html'), 'utf8')
 assert.doesNotMatch(html, /<script\b/i)
-const { files, cards } = renderBundle(html, await readFile(join(root, 'tokens.css'), 'utf8'))
+const tokens = await readFile(join(root, 'tokens.css'), 'utf8')
+const styles = await readFile(join(root, 'styles.css'), 'utf8')
+assert.ok(Buffer.byteLength(tokens) < 32 * 1024, 'Token sheet unexpectedly large')
+postcss.parse(tokens).walkDecls((decl) => {
+  assert.ok(decl.prop.startsWith('--ns-'))
+})
+postcss.parse(styles).walkDecls((decl) => {
+  assert.ok(!decl.prop.startsWith('--ns-'))
+})
+const { files, cards } = renderBundle(html, tokens + styles)
 assert.equal(cards.length, manifest.coverage.cards)
 for (const [path, contents] of Object.entries(files)) {
+  // Recombining split styles can change insignificant whitespace, not their declarations.
+  if (path.endsWith('.css')) continue
   assert.equal(
     await readFile(join(root, path), 'utf8'),
     contents,

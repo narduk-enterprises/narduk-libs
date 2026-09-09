@@ -8,7 +8,7 @@ import {
 </script>
 
 <template>
-  <main class="gallery" data-app="lakestat">
+  <main class="gallery">
     <header>
       <p class="mono">NARDUK ENTERPRISES / CODED SYSTEM</p>
       <h1>NE Base preview</h1>

@@ -33,6 +33,11 @@
   --ns-sunk: #eef1f3; /* wells, inputs, missing */
   --ns-paper: #f4f6f7; /* page ground */
 
+  /* Neutral base for shared previews and consumers without a product scope. */
+  --ns-accent: var(--ns-ink-3);
+  --ns-accent-deep: var(--ns-ink-2);
+  --ns-accent-soft: var(--ns-sunk);
+
   /* ---- signal — shared across all five, never restyled per app ------------
    * Live   observation inside the source's own publishing interval
    * Aging  past interval but inside 3x; still shown, flagged
