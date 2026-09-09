@@ -10,6 +10,8 @@ import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-dat
 import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-session-stability'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
+import { getLocalEmailVerification } from '../../utils/verified-email'
+
 import {
   buildAppPath,
   buildAppUrl,
@@ -92,6 +94,7 @@ async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<Aut
     authBackend: 'local',
     authProvider: user.appleId ? 'apple' : 'email',
     authProviders: user.appleId ? ['apple', 'email'] : ['email'],
+    emailConfirmedAt: await getLocalEmailVerification(event, user.id, user.email),
     needsPasswordSetup: false,
   })
   await setCurrentSessionUser(event, sessionUser)

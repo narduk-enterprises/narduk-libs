@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-tenancy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Generic organization, membership, role, invite, and time-boxed support-grant tenancy for Narduk Nuxt apps on D1.",

@@ -128,6 +128,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
+    "nitropack": "2.13.4",
     "nuxt": "^4.4.2",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",

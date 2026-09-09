@@ -7,6 +7,8 @@ import { hashUserPassword, verifyUserPassword } from '#layer/server/utils/passwo
 import { replaceLayerUserSession } from '#layer/server/utils/user-session'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
+import { useNativeAuth } from '../../utils/native-auth'
+
 import { encodeQrCodeDataUrl } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
 import {
@@ -195,6 +197,9 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
       .where(eq(users.id, sessionUser.id)),
   )
 
+  if (useRuntimeConfig(event).authNativeClients?.length) {
+    await useNativeAuth(event).revokeUser(sessionUser.id)
+  }
   return { success: true }
 }
 

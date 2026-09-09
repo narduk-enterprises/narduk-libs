@@ -1,5 +1,28 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.8
+
+### Patch Changes
+
+- b342b11: Generate three Chromium shards for private and public apps. Require
+  public static checks, browser shards and merged reports to succeed; retain
+  failure screenshots and videos alongside retry traces. Preserve the pinned
+  shared workflow and separated private runner routes introduced in #181.
+- 48e71ca: Add opt-in browser authorization for native clients using one-time
+  S256 PKCE codes, rotating opaque credentials, and revocable D1 sessions.
+  Persist optional local email verification proof for consumers that bind
+  invitations to verified addresses. Existing consumers retain their current
+  behavior until enabling the features after applying the additive migration.
+
+## 0.2.7
+
+### Patch Changes
+
+- ef064f2: Generate pinned CI with bounded concurrency and timeouts. Private
+  apps use the shared Nuxt workflow with separate Linux and isolated-browser
+  routes; public apps remain GitHub-hosted. Preserve every quality gate and
+  clean temporary registry auth.
+
 ## 0.2.6
 
 ### Patch Changes

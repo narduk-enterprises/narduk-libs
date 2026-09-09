@@ -602,6 +602,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
         cspConnectSrc: process.env.CSP_CONNECT_SRC || '',
         cspFrameSrc: process.env.CSP_FRAME_SRC || '',
         cspWorkerSrc: process.env.CSP_WORKER_SRC || '',
+        cspMediaSrc: process.env.CSP_MEDIA_SRC || '',
         allowGeolocation,
       },
     })

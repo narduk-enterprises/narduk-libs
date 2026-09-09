@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/create-narduk-app",
-  "version": "0.2.6",
+  "version": "0.2.8",
   "private": false,
   "description": "Deterministic, filesystem-only Narduk app generator.",
   "type": "module",
@@ -45,7 +45,8 @@
     "eslint": "9.39.4",
     "prettier": "3.8.3",
     "typescript": "5.9.3",
-    "vitest": "4.1.6"
+    "vitest": "4.1.6",
+    "yaml": "2.8.4"
   },
   "engines": {
     "node": ">=22"

@@ -70,6 +70,7 @@ interface CorePublicRuntimeConfig {
   cspConnectSrc: string
   cspFrameSrc: string
   cspWorkerSrc: string
+  cspMediaSrc: string
   enforceCanonicalHost: boolean
   /** Set at build time for "latest build" checks (e.g. CI or curl script). */
   buildVersion: string

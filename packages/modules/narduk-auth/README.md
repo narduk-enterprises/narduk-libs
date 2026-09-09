@@ -1,5 +1,78 @@
 # @narduk-enterprises/narduk-auth
 
+## Native app sign-in (opt-in, local backend)
+
+Apply `drizzle/0004_native_auth.sql` after the existing auth migrations, then
+configure explicit native clients and optional persistent email verification:
+
+```ts
+runtimeConfig: {
+  authBackend: 'local',
+  authNativeClients: [{
+    id: 'my-mac-app',
+    name: 'My Mac App',
+    redirectUris: ['com.example.myapp:/auth'],
+  }],
+  authLocalEmailVerification: true,
+}
+```
+
+An empty client list disables native endpoints. Existing apps need neither the
+new migration nor new behavior unless they opt in. Native sessions currently
+support the local backend only; Supabase sessions and their MFA lifecycle are
+not silently converted into independent native credentials.
+
+The native client creates a cryptographically random state and PKCE verifier,
+then opens `/auth/native` in the system authentication browser with query fields
+`clientId`, `redirectUri`, `state`, `codeChallenge`, and
+`codeChallengeMethod=S256`. The challenge is the unpadded base64url SHA-256 of
+the verifier. The signed-in user explicitly connects the named client. The
+server checks the exact configured callback, same-origin browser POST, current
+account, recovery state, and configured MFA requirement before issuing a code.
+
+Validate the callback origin/path and original state in the native app. Exchange
+the code within 60 seconds using `POST /api/auth/native/token` with JSON fields
+`clientId`, `redirectUri`, `code`, and `codeVerifier`. Token responses contain
+`tokenType`, `accessToken`, `refreshToken`, `expiresIn`, `refreshExpiresAt`, and
+`sessionId`. Send `X-Requested-With: XMLHttpRequest` on native POST requests to
+satisfy the shared CSRF middleware; code issuance additionally requires a real
+same-origin browser `Origin` header. These are app authentication endpoints, not
+a general OAuth authorization server or discovery protocol.
+
+Access credentials last five minutes. `POST /api/auth/native/refresh` accepts
+`clientId` and `refreshToken` and atomically rotates both credentials. Serialize
+refreshes in the client; the previous credentials immediately stop working. The
+absolute session lifetime is 30 days. Keep credentials in Keychain or the
+platform's equivalent, never preferences, logs, or URLs. A lost refresh response
+requires browser sign-in again. `POST /api/auth/native/revoke` takes the same
+body and revokes that session. Password reset/change revokes all native sessions
+when the feature is enabled; deleting an account cascades to its credentials.
+
+Protected product APIs explicitly call `getNativeAuthSession(event)` from
+`server/utils/native-auth`, load the current account, and apply their own
+membership/resource permissions. Native bearer credentials do not implicitly
+authorize existing browser routes, API-key routes, or organization operations.
+Long-lived media connections must separately revalidate current membership and
+session revocation. Never replace those checks with UI visibility.
+
+The public `createNativeAuth` service in `server/lib/app-auth/native-core`
+supports a Drizzle SQLite/D1 database for controlled server consumers. The
+caller must authenticate the `userId` supplied to `issueCode`. Code exchange and
+refresh each use one conditional SQL update, preventing replay and partial
+claims. Only credential digests are persisted.
+
+With `authLocalEmailVerification: true`, a successful emailed password setup or
+reset stores proof tied to the user and normalized email. Password login only
+reads that proof. Consumers accepting email-bound invitations must call
+`getLocalEmailVerification(event, userId, currentAccountEmail)` from
+`server/utils/verified-email`; a supplied address or ordinary password login is
+not email proof. Existing accounts establish proof by completing an emailed
+password reset. Changing the address invalidates the old proof.
+
+The protocol follows the system-browser and PKCE protections described by
+[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252) and
+[RFC 7636](https://www.rfc-editor.org/rfc/rfc7636).
+
 Auth, user session, protected-route capabilities, and self-service API token
 management for Narduk Nuxt applications.
 

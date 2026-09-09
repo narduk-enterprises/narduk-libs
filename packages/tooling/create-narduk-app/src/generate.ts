@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
-import { createCiWorkflow } from './ci-workflow.js'
+import { createCiRegistryAuthScript, createCiWorkflow } from './ci-workflow.js'
 
 import {
   createMigrationSourcesManifest,
@@ -251,6 +251,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '.data',
         'coverage',
         'playwright-report',
+        'blob-report',
+        'all-blob-reports',
         'test-results',
         '.env',
         '.env.*',
@@ -281,6 +283,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '.wrangler.deploy.production.json',
         'coverage',
         'playwright-report',
+        'blob-report',
+        'all-blob-reports',
         'pnpm-lock.yaml',
         'test-results',
       ),
@@ -289,6 +293,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
+    ...(visibility === 'private'
+      ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
+      : []),
     {
       path: 'AGENTS.md',
       contents: text(
@@ -317,7 +324,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
-        'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In CI the generated workflow writes the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` into a userconfig under `$RUNNER_TEMP` and points `NPM_CONFIG_USERCONFIG` at it for the install step only. Never write the token into `~/.npmrc`, into the repository, or into a per-app alias.',
+        'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In private CI the pinned shared workflow invokes `scripts/package-registry-auth.mjs` before installation and removes its ignored `.npmrc.auth` output on every install outcome. Public CI uses a unique temporary userconfig under `$RUNNER_TEMP`. Both supply the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` through `NPM_CONFIG_USERCONFIG` only for installation. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
@@ -721,6 +728,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  use: {',
         '    baseURL: `http://127.0.0.1:${port}`,',
         "    trace: 'on-first-retry',",
+        "    screenshot: 'only-on-failure',",
+        "    video: 'retain-on-failure',",
         '  },',
         '  webServer: {',
         '    command: `PORT=${port} NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 pnpm --filter web run dev:test`,',

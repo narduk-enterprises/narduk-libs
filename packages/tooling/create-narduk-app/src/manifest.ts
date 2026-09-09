@@ -9,7 +9,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/eslint-config': '2.0.1',
   '@narduk-enterprises/narduk-ai': '0.1.7',
   '@narduk-enterprises/narduk-analytics': '1.19.28',
-  '@narduk-enterprises/narduk-auth': '1.24.1',
+  '@narduk-enterprises/narduk-auth': '1.25.0',
   '@narduk-enterprises/narduk-core': '1.21.0',
   '@narduk-enterprises/narduk-seo': '2.0.6',
   '@narduk-enterprises/narduk-testkit': '1.2.0',
@@ -164,8 +164,9 @@ export function createRootPackageManifest(
       knip: 'knip',
       lint: 'pnpm --filter web run lint',
       'performance-budget': 'pnpm --filter web run performance-budget',
-      quality:
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test',
+      quality: 'pnpm run quality:static && pnpm run test:e2e',
+      'quality:static':
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test:unit',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
