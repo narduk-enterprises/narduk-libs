@@ -105,4 +105,41 @@ describe('narduk-analytics module', () => {
 
     expect(installModule).not.toHaveBeenCalled()
   })
+
+  it('keeps session replay off by default while preserving explicit build opt-in', async () => {
+    const previous = process.env.POSTHOG_SESSION_REPLAY_ENABLED
+    try {
+      delete process.env.POSTHOG_SESSION_REPLAY_ENABLED
+      mockNuxtKit(() => true)
+      let mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      let nuxt = makeNuxt()
+      await mod.setup({ app: false, server: false }, nuxt)
+      expect(nuxt.options.runtimeConfig.public.posthogSessionReplayEnabled).toBe(false)
+
+      vi.resetModules()
+      process.env.POSTHOG_SESSION_REPLAY_ENABLED = 'false'
+      mockNuxtKit(() => true)
+      mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      nuxt = makeNuxt()
+      await mod.setup({ app: false, server: false }, nuxt)
+      expect(nuxt.options.runtimeConfig.public.posthogSessionReplayEnabled).toBe(false)
+
+      vi.resetModules()
+      process.env.POSTHOG_SESSION_REPLAY_ENABLED = 'true'
+      mockNuxtKit(() => true)
+      mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      nuxt = makeNuxt()
+      await mod.setup({ app: false, server: false }, nuxt)
+      expect(nuxt.options.runtimeConfig.public.posthogSessionReplayEnabled).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.POSTHOG_SESSION_REPLAY_ENABLED
+      else process.env.POSTHOG_SESSION_REPLAY_ENABLED = previous
+    }
+  })
 })
