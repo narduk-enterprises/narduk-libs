@@ -32,7 +32,12 @@ const ENUM_COLUMNS = [
     schema.devicesCredentials.credentialClass,
     CREDENTIAL_CLASSES,
   ],
-  ['devices_sessions', 'credential_class', schema.devicesSessions.credentialClass, CREDENTIAL_CLASSES],
+  [
+    'devices_sessions',
+    'credential_class',
+    schema.devicesSessions.credentialClass,
+    CREDENTIAL_CLASSES,
+  ],
   [
     'devices_auth_attempts',
     'subject_kind',
@@ -57,7 +62,10 @@ const TABLES = [
 function checkValues(table: string, column: string): string[] {
   const block = statements.slice(statements.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`))
   const body = block.slice(0, block.indexOf(');'))
-  const check = new RegExp(String.raw`${column} TEXT NOT NULL CHECK \(${column} IN \(([^)]+)\)\)`, 'u')
+  const check = new RegExp(
+    String.raw`${column} TEXT NOT NULL CHECK \(${column} IN \(([^)]+)\)\)`,
+    'u',
+  )
   const match = body.match(check)
   expect(match, `${table}.${column} has no CHECK constraint`).not.toBeNull()
   return [...(match?.[1] ?? '').matchAll(/'([^']+)'/gu)].map((entry) => entry[1] ?? '')
@@ -129,10 +137,23 @@ describe('devices schema/migration parity', () => {
     ).toThrow(/CHECK constraint failed/u)
     expect(() =>
       sqlite
-        .prepare(
-          'INSERT INTO devices_devices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        )
-        .run('d-1', 'o', 'vessel', 'v', 'i', 'fp', 'sha256-v1', 'pk', '1', 'pending', 0, 1, null, 1),
+        .prepare('INSERT INTO devices_devices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(
+          'd-1',
+          'o',
+          'vessel',
+          'v',
+          'i',
+          'fp',
+          'sha256-v1',
+          'pk',
+          '1',
+          'pending',
+          0,
+          1,
+          null,
+          1,
+        ),
     ).toThrow(/CHECK constraint failed/u)
   })
 

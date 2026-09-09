@@ -6,7 +6,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createDevices } from '../server/utils/devices'
 
-import { ALGORITHM, createDeviceKey, FINGERPRINT, MIGRATION_PATH, ORG, VESSEL } from './support/database'
+import {
+  ALGORITHM,
+  createDeviceKey,
+  FINGERPRINT,
+  MIGRATION_PATH,
+  ORG,
+  VESSEL,
+} from './support/database'
 
 describe('D1 integration', () => {
   const runtime = new Miniflare({

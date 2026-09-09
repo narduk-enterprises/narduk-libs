@@ -85,15 +85,17 @@ describe('verifyEd25519', () => {
         signature,
       }),
     ).toBe(false)
+    expect(await verifyEd25519({ message, publicKey: new Uint8Array(31), signature })).toBe(false)
     expect(
-      await verifyEd25519({ message, publicKey: new Uint8Array(31), signature }),
-    ).toBe(false)
-    expect(
-      await verifyEd25519({ message, publicKey: new Uint8Array(raw), signature: signature.slice(1) }),
+      await verifyEd25519({
+        message,
+        publicKey: new Uint8Array(raw),
+        signature: signature.slice(1),
+      }),
     ).toBe(false)
     // A structurally valid but wrong key never throws, it just fails.
-    expect(
-      await verifyEd25519({ message, publicKey: new Uint8Array(32).fill(1), signature }),
-    ).toBe(false)
+    expect(await verifyEd25519({ message, publicKey: new Uint8Array(32).fill(1), signature })).toBe(
+      false,
+    )
   })
 })

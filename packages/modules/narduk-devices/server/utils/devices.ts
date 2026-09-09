@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, lt } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt } from 'drizzle-orm'
 
 import { DEVICES_LOCKOUT_POLICY } from '../../shared/utils/lockout-policy'
 import {
@@ -18,13 +18,13 @@ import { createLockoutGate, type LockoutSubject } from './devices-lockout'
 import {
   base64UrlDecode,
   canonicalBytes,
+  type CanonicalValue,
   ED25519_PUBLIC_KEY_BYTES,
   isBase64Url,
   randomBase64Url,
   sha256Hex,
-  verifyEd25519,
-  type CanonicalValue,
   type SignatureVerifier,
+  verifyEd25519,
 } from './devices-signing'
 
 import type {
@@ -38,8 +38,8 @@ import type {
   DeviceCredential,
   DevicesAuditAction,
   DevicesAuditEvent,
-  DevicesResourceRef,
   DeviceSession,
+  DevicesResourceRef,
   IssuedCredential,
 } from '../../shared/types/devices'
 import type { SQL } from 'drizzle-orm'
@@ -354,8 +354,7 @@ export function createDevices(
   ): Promise<void> {
     const crossed = await lockouts.record(subjects, outcome)
     for (const threshold of crossed) {
-      // One audit row per crossed threshold, in order; the list is at most two long.
-      // eslint-disable-next-line no-await-in-loop
+      // eslint-disable-next-line no-await-in-loop -- one audit row per crossed threshold, in order; the list is at most two long
       await audit({
         orgId: context.orgId,
         action: 'security.lockout',
@@ -390,7 +389,12 @@ export function createDevices(
 
   async function findClaimToken(id: string): Promise<ClaimToken | undefined> {
     return first(
-      await db.select().from(devicesClaimTokens).where(eq(devicesClaimTokens.id, id)).limit(1).all(),
+      await db
+        .select()
+        .from(devicesClaimTokens)
+        .where(eq(devicesClaimTokens.id, id))
+        .limit(1)
+        .all(),
     )
   }
 
@@ -672,10 +676,16 @@ export function createDevices(
       // hardware is not a new device (docs/09 G2 negative test).
       const keyHolder = first(
         await db
-          .select({ id: devicesDevices.id, hardwareFingerprint: devicesDevices.hardwareFingerprint })
+          .select({
+            id: devicesDevices.id,
+            hardwareFingerprint: devicesDevices.hardwareFingerprint,
+          })
           .from(devicesDevices)
           .where(
-            and(eq(devicesDevices.publicKey, devicePublicKey), eq(devicesDevices.status, 'claimed')),
+            and(
+              eq(devicesDevices.publicKey, devicePublicKey),
+              eq(devicesDevices.status, 'claimed'),
+            ),
           )
           .limit(1)
           .all(),
@@ -721,7 +731,11 @@ export function createDevices(
         },
       })
       await recordAttempt(subjects, 'success', { orgId: token.orgId })
-      return { claimSessionId: session.id, status: 'pending_user_approval', expiresAt: session.expiresAt }
+      return {
+        claimSessionId: session.id,
+        status: 'pending_user_approval',
+        expiresAt: session.expiresAt,
+      }
     },
 
     async getClaimSession(claimSessionId) {
@@ -744,7 +758,8 @@ export function createDevices(
         throw new DevicesError('expired', `Claim session ${session.id} expired.`)
       }
       const token = await findClaimToken(session.claimTokenId)
-      if (!token) throw new DevicesError('not_found', 'The claim token behind this session is gone.')
+      if (!token)
+        throw new DevicesError('not_found', 'The claim token behind this session is gone.')
       if (
         token.orgId !== input.orgId ||
         !sameResource({ kind: token.resourceKind, id: token.resourceId }, input.resource)
@@ -800,7 +815,8 @@ export function createDevices(
         throw new DevicesError('not_found', `Claim session ${input.claimSessionId} does not exist.`)
       }
       const token = await findClaimToken(session.claimTokenId)
-      if (!token) throw new DevicesError('not_found', 'The claim token behind this session is gone.')
+      if (!token)
+        throw new DevicesError('not_found', 'The claim token behind this session is gone.')
 
       const subjects: LockoutSubject[] = [
         { kind: 'token', subject: token.tokenHash },
@@ -843,7 +859,8 @@ export function createDevices(
         }
         return fail('expired')
       }
-      if (session.hardwareFingerprint !== input.hardwareFingerprint) return fail('hardware_mismatch')
+      if (session.hardwareFingerprint !== input.hardwareFingerprint)
+        return fail('hardware_mismatch')
       if (
         token.orgId !== input.orgId ||
         !sameResource({ kind: token.resourceKind, id: token.resourceId }, input.resource)
@@ -1066,7 +1083,8 @@ export function createDevices(
 
     async heartbeat(input) {
       const session = await findSession(input.sessionId)
-      if (!session) throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
+      if (!session)
+        throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
       if (session.revokedAt !== null) {
         throw new DevicesError('revoked', `Session ${session.id} was revoked.`)
       }
@@ -1087,14 +1105,14 @@ export function createDevices(
         revocationGeneration: session.revocationGeneration,
         deviceRevocationGeneration: device.revocationGeneration,
         stale:
-          device.status !== 'claimed' ||
-          device.revocationGeneration > session.revocationGeneration,
+          device.status !== 'claimed' || device.revocationGeneration > session.revocationGeneration,
       }
     },
 
     async revokeSession(input) {
       const session = await findSession(input.sessionId)
-      if (!session) throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
+      if (!session)
+        throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
       if (session.revokedAt !== null) return session
       const revokedAt = now()
       await revokeSessionsWhere(eq(devicesSessions.id, session.id), revokedAt)
@@ -1123,7 +1141,9 @@ export function createDevices(
       await db
         .update(devicesCredentials)
         .set({ revokedAt })
-        .where(and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)))
+        .where(
+          and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)),
+        )
         .run()
       const revokedSessions = await revokeSessionsWhere(
         eq(devicesSessions.deviceId, device.id),
@@ -1162,7 +1182,11 @@ export function createDevices(
       const version = (first(current)?.version ?? 0) + 1
       const rotatedAt = now()
       const revocationGeneration = device.revocationGeneration + 1
-      const { issued, prepared } = await prepareCredential(input.credentialClass, version, expiresAt)
+      const { issued, prepared } = await prepareCredential(
+        input.credentialClass,
+        version,
+        expiresAt,
+      )
 
       await db
         .update(devicesCredentials)

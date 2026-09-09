@@ -129,9 +129,9 @@ describe('claim ceremony', () => {
     expect(
       await devices.startClaim({ ...base, claimToken: 'nope-'.repeat(8), idempotencyKey: 'a' }),
     ).toMatchObject({ claimSessionId: null, status: 'invalid_token' })
-    expect(await devices.startClaim({ ...base, claimToken: 'short', idempotencyKey: 'b' })).toMatchObject(
-      { status: 'invalid_token' },
-    )
+    expect(
+      await devices.startClaim({ ...base, claimToken: 'short', idempotencyKey: 'b' }),
+    ).toMatchObject({ status: 'invalid_token' })
     expect(
       await codeOf(
         devices.startClaim({
@@ -352,9 +352,9 @@ describe('claim completion', () => {
     expect(
       await harness.devices.completeClaim({ ...complete, approvedByUserId: 'admin-2' }),
     ).toMatchObject({ status: 'unauthorized_user' })
-    expect(
-      await harness.devices.completeClaim({ ...complete, orgId: 'org-2' }),
-    ).toMatchObject({ status: 'unauthorized_user' })
+    expect(await harness.devices.completeClaim({ ...complete, orgId: 'org-2' })).toMatchObject({
+      status: 'unauthorized_user',
+    })
     expect(
       await harness.devices.completeClaim({
         ...complete,
@@ -392,16 +392,18 @@ describe('claim completion', () => {
       await codeOf(harness.devices.issueApprovalToken({ ...base, claimSessionId: 'missing' })),
     ).toBe('not_found')
     expect(
-      await codeOf(harness.devices.completeClaim({
-        claimSessionId: 'missing',
-        orgId: ORG,
-        resource: VESSEL,
-        installationId: 'inst-1',
-        hardwareFingerprint: FINGERPRINT,
-        userApprovalToken: 'x',
-        approvedByUserId: 'owner-1',
-        idempotencyKey: 'complete-x',
-      })),
+      await codeOf(
+        harness.devices.completeClaim({
+          claimSessionId: 'missing',
+          orgId: ORG,
+          resource: VESSEL,
+          installationId: 'inst-1',
+          hardwareFingerprint: FINGERPRINT,
+          userApprovalToken: 'x',
+          approvedByUserId: 'owner-1',
+          idempotencyKey: 'complete-x',
+        }),
+      ),
     ).toBe('not_found')
   })
 

@@ -47,8 +47,7 @@ export async function completeClaimAtomically(
   nextId: () => string,
 ): Promise<boolean> {
   const text = (value: string, alias: string) => sql<string>`${value}`.as(alias)
-  const nullable = (value: string | null, alias: string) =>
-    sql<string | null>`${value}`.as(alias)
+  const nullable = (value: string | null, alias: string) => sql<string | null>`${value}`.as(alias)
   const numeric = (value: number | null, alias: string) => sql<number>`${value}`.as(alias)
   const deviceExists = sql`EXISTS (SELECT 1 FROM devices_devices WHERE id = ${input.deviceId})`
 
@@ -107,50 +106,54 @@ export async function completeClaimAtomically(
     .returning({ id: devicesClaimTokens.id })
 
   const credentials = input.credentials.map((credential) =>
-    db.insert(devicesCredentials).select(
+    db
+      .insert(devicesCredentials)
+      .select(
+        db
+          .select({
+            id: text(credential.id, 'id'),
+            deviceId: devicesDevices.id,
+            credentialClass: text(credential.credentialClass, 'credential_class'),
+            secretHash: text(credential.secretHash, 'secret_hash'),
+            fingerprint: text(credential.fingerprint, 'fingerprint'),
+            version: numeric(credential.version, 'version'),
+            issuedAt: numeric(input.completedAt, 'issued_at'),
+            expiresAt: numeric(credential.expiresAt, 'expires_at'),
+            revokedAt: numeric(null, 'revoked_at'),
+          })
+          .from(devicesDevices)
+          .where(eq(devicesDevices.id, input.deviceId)),
+      )
+      .returning({ id: devicesCredentials.id }),
+  )
+
+  const audit = db
+    .insert(devicesAuditEvents)
+    .select(
       db
         .select({
-          id: text(credential.id, 'id'),
-          deviceId: devicesDevices.id,
-          credentialClass: text(credential.credentialClass, 'credential_class'),
-          secretHash: text(credential.secretHash, 'secret_hash'),
-          fingerprint: text(credential.fingerprint, 'fingerprint'),
-          version: numeric(credential.version, 'version'),
-          issuedAt: numeric(input.completedAt, 'issued_at'),
-          expiresAt: numeric(credential.expiresAt, 'expires_at'),
-          revokedAt: numeric(null, 'revoked_at'),
+          id: text(nextId(), 'id'),
+          orgId: nullable(input.token.orgId, 'org_id'),
+          actorUserId: nullable(input.approvedByUserId, 'actor_user_id'),
+          action: text('claim.complete', 'action'),
+          subjectKind: text('device', 'subject_kind'),
+          subjectId: devicesDevices.id,
+          detailsJson: text(
+            JSON.stringify({
+              claimSessionId: input.claimSessionId,
+              claimTokenId: input.token.id,
+              installationId: input.installationId,
+              resourceKind: input.token.resourceKind,
+              resourceId: input.token.resourceId,
+              credentialIds: input.credentials.map((credential) => credential.id),
+            }),
+            'details_json',
+          ),
+          createdAt: numeric(input.completedAt, 'created_at'),
         })
         .from(devicesDevices)
         .where(eq(devicesDevices.id, input.deviceId)),
     )
-    .returning({ id: devicesCredentials.id }),
-  )
-
-  const audit = db.insert(devicesAuditEvents).select(
-    db
-      .select({
-        id: text(nextId(), 'id'),
-        orgId: nullable(input.token.orgId, 'org_id'),
-        actorUserId: nullable(input.approvedByUserId, 'actor_user_id'),
-        action: text('claim.complete', 'action'),
-        subjectKind: text('device', 'subject_kind'),
-        subjectId: devicesDevices.id,
-        detailsJson: text(
-          JSON.stringify({
-            claimSessionId: input.claimSessionId,
-            claimTokenId: input.token.id,
-            installationId: input.installationId,
-            resourceKind: input.token.resourceKind,
-            resourceId: input.token.resourceId,
-            credentialIds: input.credentials.map((credential) => credential.id),
-          }),
-          'details_json',
-        ),
-        createdAt: numeric(input.completedAt, 'created_at'),
-      })
-      .from(devicesDevices)
-      .where(eq(devicesDevices.id, input.deviceId)),
-  )
     .returning({ id: devicesAuditEvents.id })
 
   const [inserted] = await runDevicesBatch(db, [

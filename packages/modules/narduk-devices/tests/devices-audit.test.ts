@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { AUDIT_EVENTS_MAX_LIMIT } from '../server/utils/devices'
 import { DEVICES_AUDIT_ACTIONS } from '../shared/types/devices'
 
-import { claimDevice, createTestHarness, ORG, signedOpen, startPendingClaim } from './support/database'
+import {
+  claimDevice,
+  createTestHarness,
+  ORG,
+  signedOpen,
+  startPendingClaim,
+} from './support/database'
 
 describe('audit trail', () => {
   it('writes a row for every mutation the package performs', async () => {
@@ -33,20 +39,22 @@ describe('audit trail', () => {
     const events = await devices.listAuditEvents({ orgId: ORG, limit: AUDIT_EVENTS_MAX_LIMIT })
     const actions = events.map((event) => event.action)
     // Several mutations share one clock tick, so compare as a multiset.
-    expect([...actions].sort()).toEqual([
-      'claim_token.create',
-      'claim.start',
-      'claim.approve',
-      'claim.complete',
-      'challenge.issue',
-      'session.open',
-      'session.revoke',
-      'credential.rotate',
-      'device.revoke',
-      'claim_token.create',
-      'claim.start',
-      'claim_token.revoke',
-    ].sort())
+    expect([...actions].sort()).toEqual(
+      [
+        'claim_token.create',
+        'claim.start',
+        'claim.approve',
+        'claim.complete',
+        'challenge.issue',
+        'session.open',
+        'session.revoke',
+        'credential.rotate',
+        'device.revoke',
+        'claim_token.create',
+        'claim.start',
+        'claim_token.revoke',
+      ].sort(),
+    )
     // Every action the vocabulary names is exercised except the security
     // lockout, which the lockout suite covers.
     const exercised = new Set(actions)
@@ -84,7 +92,6 @@ describe('audit trail', () => {
     const claimed = await claimDevice(harness)
     for (let index = 0; index < 3; index += 1) {
       clock.advance(1)
-      // eslint-disable-next-line no-await-in-loop
       await devices.issueChallenge({ deviceId: claimed.deviceId })
     }
     const all = await devices.listAuditEvents({ orgId: ORG })

@@ -22,7 +22,11 @@ export class DevicesError extends Error {
   /** Populated for `rate_limited`; seconds until the subject may retry. */
   readonly retryAfterSeconds: number | undefined
 
-  constructor(code: DevicesErrorCode, message: string, options: { retryAfterSeconds?: number } = {}) {
+  constructor(
+    code: DevicesErrorCode,
+    message: string,
+    options: { retryAfterSeconds?: number } = {},
+  ) {
     super(message)
     this.name = 'DevicesError'
     this.code = code

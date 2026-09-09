@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import { createDevices } from '../server/utils/devices'
 
-import { claimDevice, createTestHarness, FINGERPRINT, ORG, signedOpen, startPendingClaim, VESSEL } from './support/database'
+import {
+  claimDevice,
+  createTestHarness,
+  FINGERPRINT,
+  ORG,
+  signedOpen,
+  startPendingClaim,
+  VESSEL,
+} from './support/database'
 import { codeOf } from './support/expect'
 
 describe('concurrent completion', () => {
@@ -87,7 +95,10 @@ describe('concurrent completion', () => {
     const { devices } = harness
     const claimed = await claimDevice(harness)
     const { input } = await signedOpen(harness, claimed, 'command')
-    const results = await Promise.allSettled([devices.openSession(input), devices.openSession(input)])
+    const results = await Promise.allSettled([
+      devices.openSession(input),
+      devices.openSession(input),
+    ])
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
   })
 

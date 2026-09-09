@@ -33,7 +33,6 @@ describe('lockouts', () => {
       idempotencyKey: 'complete-1',
     }
     for (let attempt = 1; attempt <= perTokenOrDevice.failures; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
       expect((await devices.completeClaim(complete)).status, `attempt ${attempt}`).toBe(
         'approval_required',
       )
@@ -71,9 +70,7 @@ describe('lockouts', () => {
     const { devices, clock } = harness
     const claimed = await claimDevice(harness)
     for (let attempt = 1; attempt <= perTokenOrDevice.failures; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
       const { input } = await signedOpen(harness, claimed, 'command')
-      // eslint-disable-next-line no-await-in-loop
       const error = await errorOf(devices.openSession({ ...input, signature: 'A'.repeat(86) }))
       expect(error.code, `attempt ${attempt}`).toBe('unauthorized')
       clock.advance(1000)
@@ -107,7 +104,6 @@ describe('lockouts', () => {
 
     // Every guess is a different token, so no per-token lockout fires.
     for (let n = 1; n <= perAccountOrIp.failures; n += 1) {
-      // eslint-disable-next-line no-await-in-loop
       expect((await attempt(n)).status, `attempt ${n}`).toBe('invalid_token')
       clock.advance(1000)
     }
@@ -129,7 +125,6 @@ describe('lockouts', () => {
     // After the first cooldown, twenty more failures inside the hour escalate.
     clock.advance(perAccountOrIp.cooldownSeconds * 1000)
     for (let n = 22; n <= 41; n += 1) {
-      // eslint-disable-next-line no-await-in-loop
       expect((await attempt(n)).status, `attempt ${n}`).toBe('invalid_token')
     }
     const escalated = await attempt(42)

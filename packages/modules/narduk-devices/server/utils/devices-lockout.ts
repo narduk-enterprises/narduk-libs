@@ -1,8 +1,8 @@
 import { and, desc, eq, gt } from 'drizzle-orm'
 
 import {
-  DEVICES_LOCKOUT_POLICY,
   cooldownSecondsFor,
+  DEVICES_LOCKOUT_POLICY,
   evaluateLockout,
   type LockoutRule,
 } from '../../shared/utils/lockout-policy'
@@ -81,9 +81,7 @@ export function createLockoutGate(
       let worst: LockoutState | null = null
       for (const subject of subjects) {
         const rule = lockoutRuleFor(subject.kind)
-        // Subjects are evaluated one after another on purpose: each is a
-        // separate, tiny, index-backed read and the list is at most four long.
-        // eslint-disable-next-line no-await-in-loop
+        // eslint-disable-next-line no-await-in-loop -- each subject is a separate, tiny, index-backed read and the list is at most four long
         const verdict = evaluateLockout(rule, await failuresInWindow(subject, rule), now())
         if (verdict.locked && (!worst || verdict.retryAfterSeconds > worst.retryAfterSeconds)) {
           worst = { subject, retryAfterSeconds: verdict.retryAfterSeconds }
@@ -113,7 +111,7 @@ export function createLockoutGate(
       for (const subject of subjects) {
         const rule = lockoutRuleFor(subject.kind)
         if (!rule.escalates) continue
-        // eslint-disable-next-line no-await-in-loop
+        // eslint-disable-next-line no-await-in-loop -- at most four subjects, one bounded read each
         const failures = (await failuresInWindow(subject, rule)).length
         if (failures > 0 && failures % rule.failures === 0) {
           crossed.push({ subject, failures, cooldownSeconds: cooldownSecondsFor(rule, failures) })

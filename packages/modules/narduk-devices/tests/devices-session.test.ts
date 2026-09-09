@@ -112,20 +112,18 @@ describe('device sessions', () => {
       { resource: { kind: 'vessel', id: 'vessel-2' } },
       { credentialVersion: 2 },
     ]) {
-      // eslint-disable-next-line no-await-in-loop
       const { input } = await signedOpen(harness, claimed, 'command', override)
-      // eslint-disable-next-line no-await-in-loop
       const error = await errorOf(devices.openSession(input))
       expect(error.code).toBe('unauthorized')
       expect(error.message).toContain('binding')
     }
     const unknown = await signedOpen(harness, claimed, 'command')
-    expect(
-      await codeOf(devices.openSession({ ...unknown.input, deviceId: 'ghost' })),
-    ).toBe('unauthorized')
-    expect(
-      await codeOf(devices.openSession({ ...unknown.input, credentialId: 'ghost' })),
-    ).toBe('unauthorized')
+    expect(await codeOf(devices.openSession({ ...unknown.input, deviceId: 'ghost' }))).toBe(
+      'unauthorized',
+    )
+    expect(await codeOf(devices.openSession({ ...unknown.input, credentialId: 'ghost' }))).toBe(
+      'unauthorized',
+    )
     expect(await codeOf(devices.issueChallenge({ deviceId: 'ghost' }))).toBe('not_found')
   })
 
@@ -181,7 +179,10 @@ describe('device sessions', () => {
     expect(await codeOf(devices.heartbeat({ sessionId: 'ghost' }))).toBe('not_found')
 
     const second = await devices.openSession((await signedOpen(harness, claimed, 'ingest')).input)
-    const device = await devices.revokeDevice({ deviceId: claimed.deviceId, actorUserId: 'owner-1' })
+    const device = await devices.revokeDevice({
+      deviceId: claimed.deviceId,
+      actorUserId: 'owner-1',
+    })
     expect(device).toMatchObject({ status: 'revoked', revocationGeneration: 1 })
     expect(await devices.getSession(second.sessionId)).toBeNull()
     expect(await devices.listDevices({ orgId: 'org-1' })).toEqual([])
@@ -268,7 +269,9 @@ describe('device sessions', () => {
     ).toBe('invalid')
     await devices.revokeDevice({ deviceId: claimed.deviceId })
     expect(
-      await codeOf(devices.rotateCredential({ deviceId: claimed.deviceId, credentialClass: 'ingest' })),
+      await codeOf(
+        devices.rotateCredential({ deviceId: claimed.deviceId, credentialClass: 'ingest' }),
+      ),
     ).toBe('revoked')
   })
 

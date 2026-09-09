@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
+import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,8 +7,8 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 
 import {
-  createDevices,
   type CanonicalSessionRequest,
+  createDevices,
   type DevicesDatabase,
   type DevicesService,
   type DevicesServiceOptions,
@@ -64,7 +64,9 @@ export function createDeviceKey(): TestDeviceKey {
     publicKey: base64UrlEncode(new Uint8Array(raw)),
     sign: (request) =>
       base64UrlEncode(
-        new Uint8Array(sign(null, canonicalBytes(request as unknown as CanonicalValue), privateKey)),
+        new Uint8Array(
+          sign(null, canonicalBytes(request as unknown as CanonicalValue), privateKey),
+        ),
       ),
   }
 }

@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   DEVICES_DENIED_ERROR_CODE,
   DEVICES_UNAUTHORIZED_ERROR_CODE,
+  type DeviceSessionResolver,
   readBearerSessionId,
   requireDeviceSession,
-  type DeviceSessionResolver,
 } from '../server/utils/guards'
 
 import { claimDevice, createTestHarness, signedOpen } from './support/database'
