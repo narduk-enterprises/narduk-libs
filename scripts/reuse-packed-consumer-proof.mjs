@@ -46,6 +46,34 @@ export function matchesProof(proof, { repository, run, tree, fingerprint, now })
   )
 }
 
+export function readProofArchive(archive) {
+  // Python is part of both isolated browser images; unzip is not. Read one
+  // bounded member in memory without extracting any artifact-controlled path.
+  return JSON.parse(
+    execFileSync(
+      'python3',
+      [
+        '-c',
+        `import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    members = archive.infolist()
+    if len(members) != 1 or members[0].filename != "proof.json":
+        raise ValueError("Expected one proof.json member")
+    if not 0 < members[0].file_size <= 65536:
+        raise ValueError("Proof exceeds its size bound")
+    with archive.open(members[0]) as proof:
+        content = proof.read(65537)
+    if len(content) > 65536:
+        raise ValueError("Proof exceeds its size bound")
+    sys.stdout.buffer.write(content)
+`,
+        archive,
+      ],
+      { encoding: 'utf8', maxBuffer: 65536, timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] },
+    ),
+  )
+}
+
 export async function findReusablePackedConsumerProof({
   repository,
   sha,
@@ -167,14 +195,7 @@ export async function lookupConsumerProof(options, environment = process.env) {
         try {
           const archive = join(directory, 'proof.zip')
           writeFileSync(archive, bytes)
-          // Read one bounded JSON member; never extract artifact paths.
-          return JSON.parse(
-            execFileSync('unzip', ['-p', archive, 'proof.json'], {
-              encoding: 'utf8',
-              maxBuffer: 65536,
-              timeout: 5000,
-            }),
-          )
+          return readProofArchive(archive)
         } finally {
           rmSync(directory, { recursive: true, force: true })
         }
