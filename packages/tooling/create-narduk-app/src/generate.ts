@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { createCiWorkflow } from './ci-workflow.js'
 
 import {
   createMigrationSourcesManifest,
@@ -286,46 +287,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       path: '.github/workflows/ci.yml',
-      contents: text(
-        'name: CI',
-        '',
-        'on:',
-        '  push:',
-        '    branches: [main]',
-        '  pull_request:',
-        '',
-        'permissions:',
-        '  contents: read',
-        '',
-        'jobs:',
-        '  quality:',
-        visibility === 'private'
-          ? '    runs-on: [self-hosted, Linux, proxmox]'
-          : '    runs-on: ubuntu-latest',
-        '    steps:',
-        '      - uses: actions/checkout@v7',
-        '      - uses: pnpm/action-setup@v6',
-        '        with:',
-        '          version: 10.33.4',
-        '          dest: ${{ runner.temp }}/setup-pnpm',
-        '      - uses: actions/setup-node@v7',
-        '        with:',
-        '          node-version: 22.22.3',
-        '          cache: pnpm',
-        '      # The committed .npmrc carries scope routing only, so registry auth is',
-        '      # supplied per process: the org secret is written to a userconfig under',
-        '      # RUNNER_TEMP for this one install. It never reaches the repository, the',
-        '      # runner home directory, or any other step.',
-        '      - name: Install workspace',
-        '        env:',
-        '          GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
-        '        run: |',
-        '          umask 077',
-        '          printf "//npm.pkg.github.com/:_authToken=%s\\n" "$GH_PACKAGES_READ" > "$RUNNER_TEMP/npmrc-auth"',
-        '          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc-auth" pnpm install --frozen-lockfile',
-        '      - run: pnpm exec playwright install --with-deps chromium',
-        '      - run: pnpm run quality',
-      ),
+      contents: createCiWorkflow(visibility),
     },
     {
       path: 'AGENTS.md',

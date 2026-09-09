@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "contractOwnership": "app-owned",
+  "repository": {
+    "owner": "narduk-enterprises",
+    "name": "narduk-libs",
+    "visibility": "private",
+    "owners": ["loganrenz"],
+    "defaultBranch": "main",
+    "lifecycleState": "ci",
+    "criticality": "high"
+  },
+  "surfaces": ["library", "cli"],
+  "environments": [
+    {
+      "name": "local",
+      "deploymentTargets": []
+    }
+  ],
+  "ci": {
+    "checks": [
+      {
+        "name": "verify",
+        "runner": {
+          "class": "proxmox-linux",
+          "runsOn": {
+            "group": "linux-ci",
+            "labels": ["self-hosted", "Linux", "X64", "proxmox", "linux-ci"]
+          }
+        },
+        "testLayers": ["lint", "typecheck", "unit", "contract", "integration", "browser"],
+        "events": ["pull_request", "push_default", "workflow_dispatch"]
+      }
+    ]
+  },
+  "release": {
+    "strategy": "signed-package",
+    "promotion": "Changesets publishes immutable package versions after successful exact-main CI and verifies the installed registry artifacts.",
+    "recovery": {
+      "mode": "fix-forward"
+    },
+    "evidence": ["docs/package-releases.md"]
+  },
+  "migrations": {
+    "nardukTemplate": {
+      "status": "not-applicable",
+      "evidence": []
+    },
+    "nvault": {
+      "status": "not-applicable",
+      "evidence": []
+    },
+    "providerCutover": {
+      "status": "not-applicable",
+      "evidence": []
+    }
+  },
+  "exceptions": [],
+  "bootstrap": {
+    "install": ["pnpm install --frozen-lockfile"]
+  },
+  "policies": [
+    {
+      "id": "CI-COMMANDS",
+      "statement": "Use pnpm ci:plan, pnpm ci:affected, pnpm ci:full and pnpm release:consumer-smoke. ci:batch runs every selected package gate in CI; quality retains the broad artifact-check entry point. The complete required aggregate is verify; retain ci / Required during adoption.",
+      "source": "docs/ci.md",
+      "enforcement": {
+        "mechanism": "scripts/ci-packages.mjs and scripts/ci-packages.test.mjs",
+        "runsAt": "local commands and CI",
+        "rejects": "invalid selections, missing package gates and nonzero gate exits"
+      }
+    }
+  ]
+}

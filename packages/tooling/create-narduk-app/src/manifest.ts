@@ -167,6 +167,8 @@ export function createRootPackageManifest(
       quality:
         'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
+      'test:unit': 'pnpm --filter web run test:unit',
+      'test:e2e': 'playwright test',
       typecheck: 'pnpm --filter web run typecheck',
     },
     devDependencies: {

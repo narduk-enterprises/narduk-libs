@@ -33,6 +33,33 @@ function names(result) {
   return result.affectedNames.map((name) => name.replace(scope, ''))
 }
 
+test('browser suites follow the affected dependency graph and declared scripts', () => {
+  const root = createWorkspace([
+    { directory: 'base' },
+    {
+      directory: 'charts',
+      manifest: {
+        dependencies: { [`${scope}base`]: 'workspace:*' },
+        scripts: { 'test:e2e': 'playwright test' },
+      },
+    },
+    { directory: 'journeys', manifest: { scripts: { 'test:e2e': 'node tests/web.mjs' } } },
+  ])
+  try {
+    assert.deepEqual(
+      computeAffectedSet({ root, changedFiles: ['packages/base/index.ts'] }).browserPackages,
+      [`${scope}charts`],
+    )
+    assert.deepEqual(
+      computeAffectedSet({ root, changedFiles: [], forceAll: true }).browserPackages,
+      [`${scope}charts`, `${scope}journeys`],
+    )
+    assert.deepEqual(computeAffectedSet({ root, changedFiles: ['README.md'] }).browserPackages, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('builds the dependency graph from every workspace dependency section', () => {
   const root = createWorkspace([
     { directory: 'base' },

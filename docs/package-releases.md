@@ -13,9 +13,13 @@ runbook and evidence exemplar.
 ## Normal release
 
 1. Add a Changeset for every publishable package whose public artifact changes.
-2. Open or update the release PR by merging the package change to `main`. The
-   release workflow runs quality, strict package checks, and the packed
-   generated-app consumer smoke before Changesets receives write credentials.
+2. Open or update the release PR by merging the package change to `main`. The CI
+   workflow runs package gates, repository contracts and applicable browser and
+   packed generated-app checks. The release workflow verifies successful full CI
+   (`verify`) for the exact current main SHA and latest run attempt in a
+   read-only job before the release job receives write permissions. Manual
+   dispatch must pass the same proof; merely naming current main is
+   insufficient.
 3. Let app CI validate the release PR from a fresh frozen install. The packed
    consumer gate must prove every runtime dependency between local packages was
    rewritten from `workspace:*` to the exact coordinated release version; this
