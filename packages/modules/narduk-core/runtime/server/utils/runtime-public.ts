@@ -184,7 +184,6 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
     posthogSessionReplayEnabled: readRuntimeBoolean(event, 'POSTHOG_SESSION_REPLAY_ENABLED', {
       config,
       fallback: readPublic(config, 'posthogSessionReplayEnabled'),
-      defaultValue: true,
     }),
     posthogSurveysEnabled: readRuntimeBoolean(event, 'POSTHOG_SURVEYS_ENABLED', {
       config,
