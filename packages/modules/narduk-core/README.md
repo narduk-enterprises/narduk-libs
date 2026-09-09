@@ -27,6 +27,17 @@ that intentionally need user-location prompts can set
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
 blocked.
 
+## Media security policy
+
+Media stays restricted to the application origin by default. Set
+`runtimeConfig.public.cspMediaSrc` (or `CSP_MEDIA_SRC` at build time /
+`NUXT_PUBLIC_CSP_MEDIA_SRC` at runtime) to a comma-separated list of additional
+sources, such as `blob:,https://media.example.com`. Browser MSE players
+typically need `blob:` here and the media origin in `cspConnectSrc` for manifest
+and segment fetches; native HLS needs the media origin in `cspMediaSrc`. These
+options extend only their named directives and leave scripts, frames, and
+workers unchanged.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
