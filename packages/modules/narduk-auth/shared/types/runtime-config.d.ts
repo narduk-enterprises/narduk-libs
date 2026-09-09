@@ -1,4 +1,8 @@
+import type { NativeAuthClient } from './native-auth'
+
 interface AuthRuntimeConfig {
+  authNativeClients: NativeAuthClient[]
+  authLocalEmailVerification: boolean
   appBackendPreset: 'default' | 'managed-supabase'
   authBackend: 'local' | 'supabase'
   authAuthorityUrl: string

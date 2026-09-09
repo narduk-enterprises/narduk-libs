@@ -50,6 +50,9 @@
     },
     "./shared/types/*": {
       "types": "./shared/types/*.d.ts"
+    },
+    "./shared/types/native-auth": {
+      "types": "./shared/types/native-auth.ts"
     }
   },
   "files": [
@@ -113,6 +116,7 @@
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
     "happy-dom": "^20.9.0",
+    "miniflare": "4.20260701.0",
     "nuxt": "^4.4.2",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",
