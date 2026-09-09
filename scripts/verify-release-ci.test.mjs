@@ -1,6 +1,61 @@
 import assert from 'node:assert/strict'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { verifyReleaseEvidence } from './verify-release-ci.mjs'
+
+test('a detached release checkout gives Changesets its verified local base', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/release.yml', import.meta.url),
+    'utf8',
+  )
+  const step = workflow
+    .split('      - name: Require the exact verified SHA retained in main\n')[1]
+    .split('      - name: Set up pnpm\n')[0]
+  const script = step
+    .split('        run: |\n')[1]
+    .split('\n')
+    .map((line) => line.replace(/^          /u, ''))
+    .join('\n')
+  const root = mkdtempSync(join(tmpdir(), 'narduk-release-base-'))
+  const source = join(root, 'source')
+  const checkout = join(root, 'checkout')
+  const git = (cwd, ...args) =>
+    execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  try {
+    mkdirSync(source)
+    git(source, 'init', '--quiet', '--initial-branch=main')
+    git(source, 'config', 'user.name', 'Release fixture')
+    git(source, 'config', 'user.email', 'release@example.invalid')
+    git(source, 'commit', '--quiet', '--allow-empty', '-m', 'Verified commit')
+    const verified = git(source, 'rev-parse', 'HEAD')
+    git(source, 'commit', '--quiet', '--allow-empty', '-m', 'Later main commit')
+    const latest = git(source, 'rev-parse', 'HEAD')
+    mkdirSync(checkout)
+    git(checkout, 'init', '--quiet', '--initial-branch=fixture')
+    git(checkout, 'remote', 'add', 'origin', source)
+    git(checkout, 'fetch', '--quiet', 'origin', verified)
+    git(checkout, 'checkout', '--quiet', '--detach', 'FETCH_HEAD')
+    assert.equal(
+      spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: checkout })
+        .status,
+      1,
+    )
+    execFileSync('bash', ['-c', script], {
+      cwd: checkout,
+      env: { ...process.env, VERIFIED_SHA: verified },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    assert.equal(git(checkout, 'rev-parse', 'HEAD'), verified)
+    assert.equal(git(checkout, 'rev-parse', 'main'), verified)
+    assert.equal(git(checkout, 'rev-parse', 'origin/main'), latest)
+    assert.equal(git(checkout, 'merge-base', 'HEAD', 'main'), verified)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 function evidence() {
   const sha = 'a'.repeat(40)
