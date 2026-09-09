@@ -11,9 +11,10 @@ import { hostAwareNoindexRule, isNonCanonicalIndexingHost } from '../../shared/h
  * canonical site host stay indexable, while the same version served from any
  * other host (for example a route-free `workers.dev` preview alias) gets a
  * `noindex, nofollow` response header at request time. Rendered pages get
- * their header + meta from the sibling app plugin via @nuxtjs/robots (which
- * owns X-Robots-Tag on HTML responses); this middleware covers everything
- * else (APIs, assets). No-op unless the build enabled the flag.
+ * their header + meta from the sibling app plugin via @nuxtjs/robots; client
+ * navigation keeps its robots meta tag through Nuxt's app-safe head API. This
+ * middleware covers everything else (APIs, assets). No-op unless the build
+ * enabled the flag.
  */
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig(event)

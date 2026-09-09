@@ -1,3 +1,4 @@
+import { getRequestURL } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import {
@@ -120,47 +121,68 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
     config,
     fallbackList: readPublic(config, 'authProviders') as unknown[],
   })
-  const deploymentTarget = normalizeDeploymentTarget(
+  const configuredDeploymentTarget = normalizeDeploymentTarget(
     readRuntimeString(event, 'NARDUK_DEPLOY_TARGET', {
       config,
       fallback: readPublic(config, 'deploymentTarget'),
     }),
   )
+  const requestHostname = getRequestURL(event, { xForwardedHost: false }).hostname.toLowerCase()
+  let canonicalHostname = ''
+  try {
+    canonicalHostname = new URL(appUrl).hostname.toLowerCase()
+  } catch {
+    // An unset canonical URL must not enable collection on a preview alias.
+  }
+  const previewHostname =
+    requestHostname !== canonicalHostname &&
+    (requestHostname.endsWith('.workers.dev') || requestHostname.endsWith('.pages.dev'))
+  // One immutable production version is first exercised through a preview
+  // alias. Suppression follows the request host without baking preview-only
+  // bindings into the version that will later receive production traffic.
+  const deploymentTarget = previewHostname ? 'preview' : configuredDeploymentTarget
+  const previewSafeMode =
+    deploymentTarget !== 'production' ||
+    readRuntimeBoolean(event, 'NARDUK_PREVIEW_SAFE_MODE', {
+      config,
+      fallback: readPublic(config, 'previewSafeMode'),
+    })
 
   return {
     appUrl,
     siteUrl: appUrl,
     appName: trimRuntimeString(readPublic(config, 'appName')),
     deploymentTarget,
-    previewSafeMode:
-      deploymentTarget === 'preview' ||
-      readRuntimeBoolean(event, 'NARDUK_PREVIEW_SAFE_MODE', {
-        config,
-        fallback: readPublic(config, 'previewSafeMode'),
-      }),
-    analyticsLoadStrategy: normalizeAnalyticsLoadStrategy(
-      readRuntimeStringFromKeys(
-        event,
-        ['NUXT_PUBLIC_ANALYTICS_LOAD_STRATEGY', 'ANALYTICS_LOAD_STRATEGY'],
-        {
+    previewSafeMode,
+    analyticsLoadStrategy: previewSafeMode
+      ? 'off'
+      : normalizeAnalyticsLoadStrategy(
+          readRuntimeStringFromKeys(
+            event,
+            ['NUXT_PUBLIC_ANALYTICS_LOAD_STRATEGY', 'ANALYTICS_LOAD_STRATEGY'],
+            {
+              config,
+              fallback: readPublic(config, 'analyticsLoadStrategy'),
+            },
+          ),
+        ),
+    posthogPublicKey: previewSafeMode
+      ? ''
+      : readRuntimeString(event, 'POSTHOG_PUBLIC_KEY', {
           config,
-          fallback: readPublic(config, 'analyticsLoadStrategy'),
-        },
-      ),
-    ),
-    posthogPublicKey: readRuntimeString(event, 'POSTHOG_PUBLIC_KEY', {
-      config,
-      fallback: readPublic(config, 'posthogPublicKey'),
-    }),
+          fallback: readPublic(config, 'posthogPublicKey'),
+        }),
     posthogHost:
       readRuntimeString(event, 'POSTHOG_HOST', {
         config,
         fallback: readPublic(config, 'posthogHost'),
       }) || DEFAULT_POSTHOG_HOST,
-    gaMeasurementId: readRuntimeString(event, 'GA_MEASUREMENT_ID', {
-      config,
-      fallback: readPublic(config, 'gaMeasurementId'),
-    }),
+    gaMeasurementId: previewSafeMode
+      ? ''
+      : readRuntimeString(event, 'GA_MEASUREMENT_ID', {
+          config,
+          fallback: readPublic(config, 'gaMeasurementId'),
+        }),
     allowGeolocation: readRuntimeBoolean(event, 'NUXT_PUBLIC_ALLOW_GEOLOCATION', {
       config,
       fallback: readPublic(config, 'allowGeolocation'),
@@ -181,10 +203,12 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
       config,
       fallback: readPublic(config, 'posthogFeatureFlagsEnabled'),
     }),
-    posthogSessionReplayEnabled: readRuntimeBoolean(event, 'POSTHOG_SESSION_REPLAY_ENABLED', {
-      config,
-      fallback: readPublic(config, 'posthogSessionReplayEnabled'),
-    }),
+    posthogSessionReplayEnabled:
+      !previewSafeMode &&
+      readRuntimeBoolean(event, 'POSTHOG_SESSION_REPLAY_ENABLED', {
+        config,
+        fallback: readPublic(config, 'posthogSessionReplayEnabled'),
+      }),
     posthogSurveysEnabled: readRuntimeBoolean(event, 'POSTHOG_SURVEYS_ENABLED', {
       config,
       fallback: readPublic(config, 'posthogSurveysEnabled'),
