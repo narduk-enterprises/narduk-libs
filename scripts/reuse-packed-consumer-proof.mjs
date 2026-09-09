@@ -80,6 +80,7 @@ export async function findReusablePackedConsumerProof({
   tree,
   fingerprint,
   inputDigests = {},
+  inputFiles = {},
   baseBranch = 'main',
   requestJson,
   readArtifact,
@@ -153,6 +154,17 @@ export async function findReusablePackedConsumerProof({
       console.log(
         `[consumer-smoke] Prior proof input differences: ${changed.join(', ')}; executing the full proof.`,
       )
+    for (const [kind, files] of Object.entries(inputFiles)) {
+      const previous = proof?.inputFiles?.[kind]
+      if (!previous) continue
+      const changedFiles = [...new Set([...Object.keys(files), ...Object.keys(previous)])].filter(
+        (name) => previous[name] !== files[name],
+      )
+      if (changedFiles.length)
+        console.log(
+          `[consumer-smoke] Changed ${kind}: ${changedFiles.slice(0, 20).join(', ')}${changedFiles.length > 20 ? ' (truncated)' : ''}`,
+        )
+    }
   }
   return undefined
 }

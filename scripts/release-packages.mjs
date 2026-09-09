@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   appendFileSync,
@@ -16,6 +16,9 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
@@ -24,6 +27,8 @@ import {
   fingerprintInputs,
   lookupConsumerProof,
 } from './reuse-packed-consumer-proof.mjs'
+
+const execFileAsync = promisify(execFile)
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = new Set(process.argv.slice(2))
@@ -159,6 +164,7 @@ function runChecked(command, commandArgs, options) {
   const output = `${result.stdout || ''}${result.stderr || ''}`
   timings.push({ label, seconds: (performance.now() - started) / 1000 })
   if (output) process.stdout.write(output)
+  writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`${label} failed with exit code ${result.status ?? 'unknown'}.`)
@@ -648,15 +654,12 @@ for (const { directory, manifest } of packages) {
     throw new Error(`Package ${manifest.name} must publish to GitHub Packages.`)
   }
 
-  writeLine(`Checking ${manifest.name}@${manifest.version}`)
-  execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
-    cwd: root,
-    stdio: 'inherit',
-  })
-  // Standalone dry-run still exercises pack listing + lifecycle. Consumer smoke
-  // creates the real tarball immediately below from already-built artifacts, so
-  // a listing-only pack would only re-run prepack/prepare for no additional proof.
   if (!consumerSmoke) {
+    writeLine(`Checking ${manifest.name}@${manifest.version}`)
+    execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
+      cwd: root,
+      stdio: 'inherit',
+    })
     execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
   }
 }
@@ -679,19 +682,43 @@ mkdirSync(tarballDirectory, { recursive: true })
 try {
   const tarballs = new Map()
 
-  for (const { directory, manifest } of packages) {
-    execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
-      cwd: directory,
-      env: packEnvironment(),
-      stdio: 'inherit',
-    })
-    const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
-    const tarball = readdirSync(tarballDirectory).find((entry) => entry === expectedTarball)
-    if (!tarball) {
-      throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+  const packStarted = performance.now()
+  const packed = await mapPackages(packages, async ({ directory, manifest }) => {
+    const label = `validate and pack ${manifest.name}@${manifest.version}`
+    writeLine(`[consumer-smoke] ${label}`)
+    try {
+      const lint = await execFileAsync('pnpm', ['exec', 'publint', directory, '--strict'], {
+        cwd: root,
+        env: childEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      const pack = await execFileAsync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
+        cwd: directory,
+        env: packEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
+      const path = join(tarballDirectory, expectedTarball)
+      if (!existsSync(path)) throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+      return {
+        name: manifest.name,
+        path,
+        output: `${lint.stdout}${lint.stderr}${pack.stdout}${pack.stderr}`,
+      }
+    } catch (error) {
+      if (error.stdout) process.stdout.write(error.stdout)
+      if (error.stderr) process.stderr.write(error.stderr)
+      throw new Error(`${label} failed`, { cause: error })
     }
-    tarballs.set(manifest.name, join(tarballDirectory, tarball))
+  })
+  for (const { name, path, output } of packed) {
+    tarballs.set(name, path)
+    if (output) process.stdout.write(output)
   }
+  timings.push({
+    label: 'validate and pack all packages (two at a time)',
+    seconds: (performance.now() - packStarted) / 1000,
+  })
 
   assertPackedInternalDependencyGraph(packages, tarballs)
 
@@ -870,21 +897,24 @@ try {
     })
   }
   // Resolve and install both external consumers before considering reuse. A
-  // floating registry dependency or a different packed byte forces execution,
+  // floating registry dependency or different installed package content forces execution,
   // even when GitHub reports identical source trees across the merge.
   const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
     cwd: root,
     encoding: 'utf8',
   }).trim()
+  const packedInputs = new Map([...tarballs].map(([name, path]) => [name, packedInput(path)]))
   const proofInputs = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tree,
-    tarballs: Object.fromEntries([...tarballs].map(([name, path]) => [name, fileDigest(path)])),
-    consumerLock: fileDigest(join(consumerDirectory, 'pnpm-lock.yaml')),
+    tarballs: Object.fromEntries([...packedInputs].map(([name, input]) => [name, input.digest])),
+    consumerLock: consumerLockDigest(join(consumerDirectory, 'pnpm-lock.yaml'), packedInputs),
     generatedSources: Object.fromEntries(
       listGeneratedTextFiles(generatedDirectory).map((path) => [
         relative(generatedDirectory, path),
-        fileDigest(path),
+        basename(path) === 'pnpm-lock.yaml'
+          ? consumerLockDigest(path, packedInputs)
+          : fileDigest(path),
       ]),
     ),
     node: {
@@ -901,16 +931,27 @@ try {
   const inputDigests = Object.fromEntries(
     Object.entries(proofInputs).map(([key, value]) => [key, fingerprintInputs(value)]),
   )
-  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests })
+  const inputFiles = {
+    tarballs: proofInputs.tarballs,
+    generatedSources: proofInputs.generatedSources,
+  }
+  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests, inputFiles })
   if (prior) {
     writeLine(
       `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
     )
   } else {
-    runChecked('pnpm', ['run', 'quality'], {
-      cwd: generatedDirectory,
-      label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
-    })
+    for (const phase of qualityPhases(readJson(join(generatedDirectory, 'package.json')).scripts)) {
+      if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
+      try {
+        runChecked('pnpm', ['run', phase], {
+          cwd: generatedDirectory,
+          label: `generated app ${phase}`,
+        })
+      } finally {
+        if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
+      }
+    }
     assertNoRetiredBuiltReferences(generatedDirectory)
 
     const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
@@ -964,6 +1005,7 @@ try {
           tree,
           fingerprint,
           inputDigests,
+          inputFiles,
           completedAt: new Date().toISOString(),
           ...(prior ? { prior } : {}),
         },
@@ -977,6 +1019,8 @@ try {
     `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
   )
 } finally {
+  for (const { label, seconds } of timings)
+    writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,

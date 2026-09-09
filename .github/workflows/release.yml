@@ -29,7 +29,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main')
     # Secrets-free gate before the privileged self-hosted release (policy §2.2).
-    runs-on: ubuntu-slim
+    runs-on: ${{ fromJSON(vars.CI_LIGHTWEIGHT_RUNNER || '"ubuntu-slim"') }}
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
