@@ -93,7 +93,7 @@ const networkLatencyOnlyWarningPatterns = [
  */
 const thirdPartyBundlerNoticePatterns = [
   // [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment
-  /^\[warn\] \S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
+  /^(?:\[warn\]|WARN)\s+\S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
 ]
 
 export function stripAnsi(value) {

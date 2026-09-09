@@ -4,7 +4,11 @@
  * Provides full type safety for `useRuntimeConfig()` across the layer and
  * all downstream apps. Eliminates the need for `as any` or `as string` casts.
  */
+import type { RequestLoggingOptions } from '@narduk-enterprises/narduk-logging/h3'
+
 interface CoreRuntimeConfig {
+  /** Explicit logging identity and controls; absent level retains legacy logLevel behavior. */
+  nardukLogging?: Partial<Omit<RequestLoggingOptions, 'sinks' | 'clock' | 'context'>>
   /** SQL backend: D1 (default) or Postgres via Hyperdrive. */
   databaseBackend: 'd1' | 'postgres'
   /** Wrangler Hyperdrive binding name; used by `useHyperdriveConnectionString`. */

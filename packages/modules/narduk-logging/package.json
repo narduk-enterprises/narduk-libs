@@ -1,0 +1,131 @@
+{
+  "name": "@narduk-enterprises/narduk-logging",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Structured, private-by-default logging for Narduk applications, services, and jobs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-logging"
+  },
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-logging#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "docs",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./h3": {
+      "types": "./dist/h3.d.ts",
+      "import": "./dist/h3.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt.d.ts",
+      "import": "./dist/nuxt.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./schema.json": "./schema/log-record.schema.json"
+  },
+  "scripts": {
+    "prepare": "pnpm run build",
+    "quality": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run check:package",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "node ../../../tools/package-quality.mjs lint 'src/**/*.ts' 'tests/**/*.ts' 'examples/**/*.ts'",
+    "format:check": "prettier --check --log-level warn '**/*.{ts,mts,js,mjs,json,md,yaml,yml}' --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "test:unit": "vitest run",
+    "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run && pnpm run test:consumer",
+    "schema:write": "pnpm run build && node scripts/write-schema.mjs",
+    "test:consumer": "node scripts/consumer-smoke.mjs"
+  },
+  "dependencies": {
+    "consola": "3.4.2",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@nuxt/kit": "^4.0.0",
+    "h3": "^1.15.11",
+    "nitropack": "^2.13.4",
+    "@opentelemetry/api-logs": "^0.208.0",
+    "@opentelemetry/sdk-logs": "^0.208.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
+    "@opentelemetry/resources": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nuxt/kit": {
+      "optional": true
+    },
+    "h3": {
+      "optional": true
+    },
+    "nitropack": {
+      "optional": true
+    },
+    "@opentelemetry/api-logs": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-logs": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-logs-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/resources": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "hookable": "5.5.3",
+    "@nuxt/kit": "^4.0.0",
+    "h3": "^1.15.11",
+    "nitropack": "^2.13.4",
+    "@opentelemetry/api-logs": "^0.208.0",
+    "@opentelemetry/sdk-logs": "^0.208.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
+    "@opentelemetry/resources": "^2.0.0",
+    "@types/node": "^22.19.19",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  }
+}
