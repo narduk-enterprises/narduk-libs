@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.3.1
+
+### Patch Changes
+
+- 1cdd600: Run the generator when its CLI path contains spaces or resolves
+  through a symlink, including macOS `/tmp`. Keep programmatic imports inert.
+
 ## 0.3.0
 
 ### Minor Changes
