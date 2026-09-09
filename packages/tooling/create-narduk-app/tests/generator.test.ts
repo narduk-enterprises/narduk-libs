@@ -59,7 +59,7 @@ describe('create-narduk-app generation contract', () => {
     expect([...first.keys()]).toEqual([...second.keys()])
     expect(first).toEqual(second)
     expect(first.has('create-narduk-app-report.json')).toBe(false)
-    expect(first.get('.github/workflows/ci.yml')).toContain('runs-on: ubuntu-latest')
+    expect(first.get('.github/workflows/ci.yml')).toContain('runs-on: ubuntu-24.04')
     expect([...first.values()].join('\n')).not.toContain('/one/target')
     expect([...first.values()].join('\n')).not.toContain('/two/target')
   })
@@ -462,8 +462,8 @@ describe('create-narduk-app generation contract', () => {
     const rootPackage = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
-    expect(rootPackage.scripts.quality).toContain('pnpm run format:check')
-    expect(rootPackage.scripts.quality).toContain('pnpm run knip')
+    expect(rootPackage.scripts['quality:static']).toContain('pnpm run format:check')
+    expect(rootPackage.scripts['quality:static']).toContain('pnpm run knip')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
     expect(rootPackage.scripts['cf:build']).toBe('pnpm --filter web run cf:build')

@@ -18,6 +18,7 @@ describe('generated CI boundaries', () => {
     expect(workflow).toContain('require-scripts: true')
     expect(workflow).toContain('run-tests: true')
     expect(workflow).toContain('run-e2e: true')
+    expect(workflow).toContain('e2e-shards: 3')
     expect(workflow).toContain("extra-scripts: 'format:check lint knip'")
     expect(workflow).toContain('e2e-install-browsers: false')
     expect(workflow).not.toContain('e2e-browsers-path:')
@@ -31,7 +32,7 @@ describe('generated CI boundaries', () => {
 
   it('public callers stay hosted, pin every action and retain the complete quality command', () => {
     const workflow = createCiWorkflow('public')
-    expect(workflow).toContain('runs-on: ubuntu-latest')
+    expect(workflow).toContain('runs-on: ubuntu-24.04')
     expect(workflow).not.toContain('self-hosted')
     expect(workflow).not.toContain('narduk-enterprises/workflows')
     expect(workflow).toContain('timeout-minutes: 30')
@@ -39,7 +40,7 @@ describe('generated CI boundaries', () => {
     expect(workflow).toContain('persist-credentials: false')
     expect(workflow).toContain('pnpm run quality')
     const actions = [...workflow.matchAll(/uses: [^@\s]+@(\S+)/gu)]
-    expect(actions).toHaveLength(3)
+    expect(new Set(actions.map((action) => action[0].split('@')[0])).size).toBe(5)
     for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
   })
 

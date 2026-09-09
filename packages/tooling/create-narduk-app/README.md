@@ -47,3 +47,11 @@ Public generated apps run every quality check on GitHub-hosted Ubuntu. Action
 references are pinned, superseded runs cancel, jobs time out, and temporary
 registry auth is removed even if installation fails. Existing generated apps
 remain app-owned; generating a new version does not update them.
+
+Generated CI uses three Chromium shards and one worker per shard for both
+visibilities. Private apps call the pinned shared workflow with `linux-ci` and
+`playwright-isolated`; public apps run every job on GitHub-hosted Ubuntu. The
+public required aggregate accepts only successful static checks, all browser
+shards and merged evidence. Failure screenshots, retry traces and retained
+failure videos are attached to the reports. `quality:static` includes format,
+lint, knip, typecheck, build and unit tests; `quality` adds browser tests.

@@ -164,8 +164,9 @@ export function createRootPackageManifest(
       knip: 'knip',
       lint: 'pnpm --filter web run lint',
       'performance-budget': 'pnpm --filter web run performance-budget',
-      quality:
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test',
+      quality: 'pnpm run quality:static && pnpm run test:e2e',
+      'quality:static':
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test:unit',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
