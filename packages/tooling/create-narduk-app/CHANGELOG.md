@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.7
+
+### Patch Changes
+
+- ef064f2: Generate pinned CI with bounded concurrency and timeouts. Private
+  apps use the shared Nuxt workflow with separate Linux and isolated-browser
+  routes; public apps remain GitHub-hosted. Preserve every quality gate and
+  clean temporary registry auth.
+
 ## 0.2.6
 
 ### Patch Changes
