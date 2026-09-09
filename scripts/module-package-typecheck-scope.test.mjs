@@ -29,16 +29,15 @@ test('narduk-core publishes the shared server-only module typescript fragment', 
   const manifest = JSON.parse(readFileSync(join(coreDirectory, 'package.json'), 'utf8'))
   const entry = manifest.exports['./nuxt-module-package-config']
   assert.deepEqual(entry, {
-    types: './nuxt-module-package-config.ts',
-    import: './nuxt-module-package-config.ts',
+    types: './src/nuxt-module-package-config.ts',
+    import: './src/nuxt-module-package-config.ts',
   })
-  assert.ok(
-    manifest.files.includes('nuxt-module-package-config.ts'),
-    'the fragment must be in the published files list',
-  )
+  // `src/` is already published and is inside narduk-core's tsconfig project
+  // (tsconfig.layer-tooling.json `include`), which a package-root file is not.
+  assert.ok(manifest.files.includes('src/'), 'the fragment must be in the published files list')
 
   const { modulePackageTypeScript, modulePackageTsConfigExclude } = await import(
-    join(coreDirectory, 'nuxt-module-package-config.ts')
+    join(coreDirectory, 'src/nuxt-module-package-config.ts')
   )
   assert.deepEqual([...modulePackageTsConfigExclude], ['../eslint.config.mjs'])
   assert.deepEqual(modulePackageTypeScript(), {

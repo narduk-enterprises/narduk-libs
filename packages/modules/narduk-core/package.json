@@ -49,8 +49,8 @@
       "import": "./eslint-nuxt-flat-fragments.mjs"
     },
     "./nuxt-module-package-config": {
-      "types": "./nuxt-module-package-config.ts",
-      "import": "./nuxt-module-package-config.ts"
+      "types": "./src/nuxt-module-package-config.ts",
+      "import": "./src/nuxt-module-package-config.ts"
     },
     "./internal/*": {
       "import": "./runtime/internal/*.ts"
@@ -72,7 +72,6 @@
     "eslint-capability-packs.mjs",
     "eslint-nuxt-flat-fragments.mjs",
     "eslint.config.mjs",
-    "nuxt-module-package-config.ts",
     "nuxt.config.ts",
     "tsconfig.layer-tooling.json",
     "tsconfig.json",
