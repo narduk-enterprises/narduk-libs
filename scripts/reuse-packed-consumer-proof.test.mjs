@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import {
   fingerprintInputs,
   findReusablePackedConsumerProof,
   lookupConsumerProof,
   matchesProof,
+  readProofArchive,
 } from './reuse-packed-consumer-proof.mjs'
 
 const repository = 'narduk-enterprises/narduk-libs'
@@ -222,4 +227,47 @@ test('local, PR, dispatch and non-main runs cannot reuse a proof', async () => {
     { GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/feature' },
   ])
     assert.equal(await lookupConsumerProof({}, environment), undefined)
+})
+
+test('reads a single bounded receipt without unzip or extracting archive paths', (context) => {
+  const directory = mkdtempSync(join(tmpdir(), 'narduk-proof-archive-test-'))
+  context.after(() => rmSync(directory, { recursive: true, force: true }))
+  const archive = join(directory, 'proof.zip')
+  const writeArchive = (entries) => {
+    execFileSync(
+      'python3',
+      [
+        '-W',
+        'ignore',
+        '-c',
+        `import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for name, content in json.load(sys.stdin):
+        archive.writestr(name, content)
+`,
+        archive,
+      ],
+      { input: JSON.stringify(entries) },
+    )
+  }
+  writeArchive([['proof.json', JSON.stringify(proof)]])
+  assert.deepEqual(readProofArchive(archive), proof)
+  for (const entries of [
+    [],
+    [['elsewhere.json', '{}']],
+    [['../proof.json', '{}']],
+    [
+      ['proof.json', '{}'],
+      ['proof.json', '{}'],
+    ],
+    [['proof.json', ' '.repeat(65537)]],
+    [['proof.json', '']],
+    [['proof.json', 'not json']],
+  ]) {
+    writeArchive(entries)
+    assert.throws(() => readProofArchive(archive))
+    assert.deepEqual(readdirSync(directory), ['proof.zip'])
+  }
+  writeFileSync(archive, 'not a ZIP file')
+  assert.throws(() => readProofArchive(archive))
 })
