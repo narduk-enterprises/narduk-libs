@@ -62,7 +62,10 @@ test('every server-only module package scopes nuxt typecheck through the shared 
     if (existsSync(join(workspacePackage.directory, 'app'))) continue
 
     const configPath = join(workspacePackage.directory, 'nuxt.config.ts')
-    assert.ok(existsSync(configPath), `${workspacePackage.name} runs nuxt typecheck without a config`)
+    assert.ok(
+      existsSync(configPath),
+      `${workspacePackage.name} runs nuxt typecheck without a config`,
+    )
     const config = readFileSync(configPath, 'utf8')
     // An explicit srcDir keeps the generated include away from the package
     // root, so those packages are not affected by #176.

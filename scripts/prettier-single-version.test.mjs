@@ -29,9 +29,7 @@ function resolvedPrettier(directory) {
 }
 
 test('root pnpm.overrides pins exactly one prettier version', () => {
-  const rootManifest = JSON.parse(
-    readFileSync(join(repoRoot, 'package.json'), 'utf8'),
-  )
+  const rootManifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))
   const pinned = rootManifest.pnpm?.overrides?.prettier
   assert.ok(pinned, 'root package.json must pin prettier in pnpm.overrides')
   assert.match(pinned, /^\d+\.\d+\.\d+$/u, 'the prettier override must be an exact version')
