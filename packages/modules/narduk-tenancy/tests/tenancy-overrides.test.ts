@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { TenancyError } from '../server/utils/tenancy-error'
-
 import { createTestHarness } from './support/database'
+import { codeOf } from './support/expect'
 
+const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'user-1' }
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 
 describe('resource role overrides', () => {
   it('narrows the org role on one resource only', async () => {
     const { tenancy } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin' })
     await tenancy.setResourceRoleOverride({
       orgId: org.id,
@@ -36,19 +36,19 @@ describe('resource role overrides', () => {
 
   it('refuses an override more privileged than the org role', async () => {
     const { tenancy } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
 
-    const raise = tenancy.setResourceRoleOverride({
-      orgId: org.id,
-      userId: 'user-2',
-      resource: VESSEL,
-      role: 'admin',
-    })
-    await expect(raise).rejects.toBeInstanceOf(TenancyError)
-    await raise.catch((error: unknown) => {
-      expect((error as TenancyError).code).toBe('invalid')
-    })
+    expect(
+      await codeOf(
+        tenancy.setResourceRoleOverride({
+          orgId: org.id,
+          userId: 'user-2',
+          resource: VESSEL,
+          role: 'admin',
+        }),
+      ),
+    ).toBe('invalid')
 
     // An equal role is not a raise, so it is allowed and records the intent.
     const same = await tenancy.setResourceRoleOverride({
@@ -62,22 +62,22 @@ describe('resource role overrides', () => {
 
   it('requires a membership before an override exists', async () => {
     const { tenancy } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
-    const missing = tenancy.setResourceRoleOverride({
-      orgId: org.id,
-      userId: 'ghost',
-      resource: VESSEL,
-      role: 'viewer',
-    })
-    await missing.catch((error: unknown) => {
-      expect((error as TenancyError).code).toBe('not_found')
-    })
-    await expect(missing).rejects.toBeInstanceOf(TenancyError)
+    const org = await tenancy.createOrg(ACME)
+    expect(
+      await codeOf(
+        tenancy.setResourceRoleOverride({
+          orgId: org.id,
+          userId: 'ghost',
+          resource: VESSEL,
+          role: 'viewer',
+        }),
+      ),
+    ).toBe('not_found')
   })
 
   it('updates an existing override in place and clears it', async () => {
     const { tenancy } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin' })
 
     const first = await tenancy.setResourceRoleOverride({
@@ -100,20 +100,16 @@ describe('resource role overrides', () => {
       await tenancy.resolveRole({ orgId: org.id, userId: 'user-2', resource: VESSEL }),
     ).toMatchObject({ role: 'admin', source: 'membership' })
 
-    const clearAgain = tenancy.clearResourceRoleOverride({
-      orgId: org.id,
-      userId: 'user-2',
-      resource: VESSEL,
-    })
-    await clearAgain.catch((error: unknown) => {
-      expect((error as TenancyError).code).toBe('not_found')
-    })
-    await expect(clearAgain).rejects.toBeInstanceOf(TenancyError)
+    expect(
+      await codeOf(
+        tenancy.clearResourceRoleOverride({ orgId: org.id, userId: 'user-2', resource: VESSEL }),
+      ),
+    ).toBe('not_found')
   })
 
   it('reports no role at all for a non-member', async () => {
     const { tenancy } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     expect(await tenancy.resolveRole({ orgId: org.id, userId: 'stranger' })).toEqual({
       role: null,
       source: 'none',

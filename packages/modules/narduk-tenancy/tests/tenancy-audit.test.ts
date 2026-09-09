@@ -5,15 +5,21 @@ import { TENANCY_AUDIT_ACTIONS } from '../shared/types/tenancy'
 
 import { createTestHarness } from './support/database'
 
+const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'owner-1' }
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 
 describe('audit trail', () => {
   it('writes a row for every mutation the package performs', async () => {
     const { tenancy, clock } = createTestHarness({ tokens: ['t1', 't2'] })
 
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     clock.advance(1)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin', actorUserId: 'user-1' })
+    await tenancy.addMember({
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'admin',
+      actorUserId: 'user-1',
+    })
     clock.advance(1)
     await tenancy.setMemberRole({
       orgId: org.id,
@@ -80,7 +86,7 @@ describe('audit trail', () => {
 
   it('never records the raw invite token', async () => {
     const { tenancy } = createTestHarness({ tokens: ['super-secret-token'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.createInvite({
       orgId: org.id,
       email: 'a@example.com',
@@ -94,7 +100,7 @@ describe('audit trail', () => {
 
   it('returns newest first, clamps the limit, and pages with before', async () => {
     const { tenancy, clock } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     clock.advance(10)
     await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
 

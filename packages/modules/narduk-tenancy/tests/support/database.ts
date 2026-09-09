@@ -5,14 +5,18 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 
-import { createTenancy, type TenancyDatabase, type TenancyService } from '../../server/utils/tenancy'
+import {
+  createTenancy,
+  type TenancyDatabase,
+  type TenancyService,
+} from '../../server/utils/tenancy'
 
 export const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '../..')
 export const MIGRATION_PATH = join(packageRoot, 'drizzle/0001_tenancy.sql')
 
 export interface TestClock {
-  now: () => number
   advance: (milliseconds: number) => void
+  now: () => number
   set: (milliseconds: number) => void
 }
 
@@ -38,10 +42,10 @@ export function createTestIdGenerator(prefix = 'id'): () => string {
 }
 
 export interface TestHarness {
-  sqlite: Database.Database
-  db: TenancyDatabase
-  tenancy: TenancyService
   clock: TestClock
+  db: TenancyDatabase
+  sqlite: Database.Database
+  tenancy: TenancyService
 }
 
 /**

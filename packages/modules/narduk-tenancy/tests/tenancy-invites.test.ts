@@ -2,26 +2,18 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 
 import { tenancyInvites } from '../server/database/tenancy-schema'
-import { TenancyError } from '../server/utils/tenancy-error'
 
 import { createTestHarness } from './support/database'
+import { codeOf } from './support/expect'
 
+const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'user-1' }
+const CREW_EMAIL = 'crew@example.com'
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
-
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise
-    throw new Error('expected the call to reject')
-  } catch (error) {
-    expect(error).toBeInstanceOf(TenancyError)
-    return (error as TenancyError).code
-  }
-}
 
 describe('invites', () => {
   it('returns the raw token once and stores only its digest', async () => {
     const { tenancy, db } = createTestHarness({ tokens: ['secret-token'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     const { invite, token } = await tenancy.createInvite({
       orgId: org.id,
       email: ' Crew@Example.COM ',
@@ -30,20 +22,24 @@ describe('invites', () => {
     })
 
     expect(token).toBe('secret-token')
-    expect(invite.email).toBe('crew@example.com')
+    expect(invite.email).toBe(CREW_EMAIL)
     expect(invite.tokenHash).not.toContain(token)
     expect(invite.tokenHash).toMatch(/^[0-9a-f]{64}$/u)
 
-    const stored = await db.select().from(tenancyInvites).where(eq(tenancyInvites.id, invite.id)).all()
+    const stored = await db
+      .select()
+      .from(tenancyInvites)
+      .where(eq(tenancyInvites.id, invite.id))
+      .all()
     expect(JSON.stringify(stored)).not.toContain('secret-token')
   })
 
   it('creates a membership on acceptance and binds it to the accepting user, not the email', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.createInvite({
       orgId: org.id,
-      email: 'crew@example.com',
+      email: CREW_EMAIL,
       role: 'crew',
       invitedByUserId: 'user-1',
     })
@@ -60,10 +56,10 @@ describe('invites', () => {
 
   it('is idempotent for the accepting user and a conflict for anyone else', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.createInvite({
       orgId: org.id,
-      email: 'crew@example.com',
+      email: CREW_EMAIL,
       role: 'crew',
       invitedByUserId: 'user-1',
     })
@@ -78,9 +74,11 @@ describe('invites', () => {
 
   it('rejects an unknown, expired or revoked token', async () => {
     const { tenancy, clock } = createTestHarness({ tokens: ['expired', 'revoked'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
 
-    expect(await codeOf(tenancy.acceptInvite({ token: 'nope', userId: 'user-9' }))).toBe('not_found')
+    expect(await codeOf(tenancy.acceptInvite({ token: 'nope', userId: 'user-9' }))).toBe(
+      'not_found',
+    )
 
     await tenancy.createInvite({
       orgId: org.id,
@@ -90,7 +88,9 @@ describe('invites', () => {
       ttlMs: 1000,
     })
     clock.advance(1001)
-    expect(await codeOf(tenancy.acceptInvite({ token: 'expired', userId: 'user-9' }))).toBe('expired')
+    expect(await codeOf(tenancy.acceptInvite({ token: 'expired', userId: 'user-9' }))).toBe(
+      'expired',
+    )
 
     const { invite } = await tenancy.createInvite({
       orgId: org.id,
@@ -100,7 +100,9 @@ describe('invites', () => {
     })
     const revoked = await tenancy.revokeInvite({ inviteId: invite.id, actorUserId: 'user-1' })
     expect(revoked.revokedAt).toBe(clock.now())
-    expect(await codeOf(tenancy.acceptInvite({ token: 'revoked', userId: 'user-9' }))).toBe('invalid')
+    expect(await codeOf(tenancy.acceptInvite({ token: 'revoked', userId: 'user-9' }))).toBe(
+      'invalid',
+    )
 
     // Revoking twice is idempotent; revoking an accepted invite is a conflict.
     expect((await tenancy.revokeInvite({ inviteId: invite.id })).revokedAt).toBe(revoked.revokedAt)
@@ -109,7 +111,7 @@ describe('invites', () => {
 
   it('refuses a malformed email, a past expiry and an unknown org', async () => {
     const { tenancy, clock } = createTestHarness()
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
 
     expect(
       await codeOf(
@@ -146,11 +148,11 @@ describe('invites', () => {
 
   it('creates a narrowing override for a resource-scoped invite', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.addMember({ orgId: org.id, userId: 'user-9', role: 'admin' })
     await tenancy.createInvite({
       orgId: org.id,
-      email: 'crew@example.com',
+      email: CREW_EMAIL,
       role: 'viewer',
       resource: VESSEL,
       invitedByUserId: 'user-1',
@@ -167,11 +169,11 @@ describe('invites', () => {
 
   it('promotes an existing member when the invite role is higher', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
-    const org = await tenancy.createOrg({ slug: 'acme', name: 'Acme', createdByUserId: 'user-1' })
+    const org = await tenancy.createOrg(ACME)
     await tenancy.addMember({ orgId: org.id, userId: 'user-9', role: 'viewer' })
     await tenancy.createInvite({
       orgId: org.id,
-      email: 'crew@example.com',
+      email: CREW_EMAIL,
       role: 'operator',
       invitedByUserId: 'user-1',
     })

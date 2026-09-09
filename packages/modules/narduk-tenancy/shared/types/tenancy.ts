@@ -5,8 +5,8 @@ import type { TenancyRole } from '../utils/roles'
  * `id` and never resolves either. The first consumer maps `kind: 'vessel'`.
  */
 export interface TenancyResourceRef {
-  kind: string
   id: string
+  kind: string
 }
 
 /**
@@ -15,73 +15,73 @@ export interface TenancyResourceRef {
  * across that boundary and imports nothing from narduk-auth.
  */
 export interface TenancyOrg {
-  id: string
-  slug: string
-  name: string
-  createdByUserId: string
   createdAt: number
+  createdByUserId: string
+  id: string
+  name: string
+  slug: string
   updatedAt: number
 }
 
 export interface TenancyMembership {
+  createdAt: number
   id: string
   orgId: string
-  userId: string
   role: TenancyRole
-  createdAt: number
   updatedAt: number
+  userId: string
 }
 
 export interface TenancyResourceRoleOverride {
+  createdAt: number
   id: string
   orgId: string
-  resourceKind: string
   resourceId: string
-  userId: string
+  resourceKind: string
   role: TenancyRole
-  createdAt: number
   updatedAt: number
+  userId: string
 }
 
 export interface TenancyInvite {
-  id: string
-  orgId: string
-  email: string
-  role: TenancyRole
-  resourceKind: string | null
-  resourceId: string | null
-  tokenHash: string
-  invitedByUserId: string
-  expiresAt: number
   acceptedAt: number | null
   acceptedByUserId: string | null
-  revokedAt: number | null
   createdAt: number
+  email: string
+  expiresAt: number
+  id: string
+  invitedByUserId: string
+  orgId: string
+  resourceId: string | null
+  resourceKind: string | null
+  revokedAt: number | null
+  role: TenancyRole
+  tokenHash: string
 }
 
 export interface TenancySupportGrant {
+  createdAt: number
+  expiresAt: number
+  grantedByUserId: string
+  granteeUserId: string
   id: string
   orgId: string
-  resourceKind: string | null
-  resourceId: string | null
-  granteeUserId: string
-  scopeJson: string
   reason: string
-  grantedByUserId: string
-  expiresAt: number
+  resourceId: string | null
+  resourceKind: string | null
   revokedAt: number | null
-  createdAt: number
+  scopeJson: string
 }
 
 export interface TenancyAuditEvent {
+  action: string
+  actorUserId: string | null
+  createdAt: number
+  detailsJson: string
   id: string
   orgId: string
-  actorUserId: string | null
-  action: string
-  subjectKind: string
   subjectId: string
-  detailsJson: string
-  createdAt: number
+  subjectKind: string
 }
 
 /**

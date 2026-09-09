@@ -1,10 +1,9 @@
 import { createError } from 'h3'
 
-import type { TenancyResourceRef, TenancySupportGrant } from '../../shared/types/tenancy'
 import { roleAtLeast, type TenancyRole } from '../../shared/utils/roles'
 
+import type { TenancyResourceRef, TenancySupportGrant } from '../../shared/types/tenancy'
 import type { TenancyService } from './tenancy'
-
 import type { H3Event } from 'h3'
 
 export const TENANCY_UNAUTHENTICATED_ERROR_CODE = 'unauthenticated'
@@ -20,11 +19,11 @@ export type TenancyRoleResolver = Pick<TenancyService, 'resolveRole'>
 export type TenancyUserResolver = (event: H3Event) => Promise<string | null> | string | null
 
 export interface RequireOrgRoleOptions {
-  orgId: string
   minimum: TenancyRole
+  orgId: string
+  resolveUserId: TenancyUserResolver
   resource?: TenancyResourceRef
   tenancy: TenancyRoleResolver
-  resolveUserId: TenancyUserResolver
 }
 
 export interface RequireSupportGrantOrRoleOptions extends RequireOrgRoleOptions {
@@ -36,9 +35,9 @@ export interface RequireSupportGrantOrRoleOptions extends RequireOrgRoleOptions 
 }
 
 export interface TenancyGuardResult {
-  userId: string
   role: TenancyRole | null
   supportGrant?: TenancySupportGrant
+  userId: string
 }
 
 function unauthenticated(): Error {
@@ -57,10 +56,7 @@ function denied(): Error {
   })
 }
 
-async function requireUserId(
-  event: H3Event,
-  resolveUserId: TenancyUserResolver,
-): Promise<string> {
+async function requireUserId(event: H3Event, resolveUserId: TenancyUserResolver): Promise<string> {
   const userId = await resolveUserId(event)
   if (!userId) throw unauthenticated()
   return userId

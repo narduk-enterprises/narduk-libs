@@ -13,11 +13,13 @@ import { createTestHarness } from './support/database'
 import type { H3Event } from 'h3'
 
 const event = {} as H3Event
+const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'owner-1' }
+const DIAGNOSTICS_SCOPE = 'diagnostics:read'
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 
 interface ThrownH3Error {
-  statusCode: number
   data?: { errorCode?: string }
+  statusCode: number
 }
 
 async function thrown(promise: Promise<unknown>): Promise<ThrownH3Error> {
@@ -31,11 +33,7 @@ async function thrown(promise: Promise<unknown>): Promise<ThrownH3Error> {
 
 async function seed() {
   const harness = createTestHarness()
-  const org = await harness.tenancy.createOrg({
-    slug: 'acme',
-    name: 'Acme',
-    createdByUserId: 'owner-1',
-  })
+  const org = await harness.tenancy.createOrg(ACME)
   await harness.tenancy.addMember({ orgId: org.id, userId: 'crew-1', role: 'crew' })
   await harness.tenancy.setResourceRoleOverride({
     orgId: org.id,
@@ -130,7 +128,7 @@ describe('requireOrgRole', () => {
       granteeUserId: 'support-1',
       grantedByUserId: 'owner-1',
       reason: 'Ticket 42',
-      scope: ['diagnostics:read'],
+      scope: [DIAGNOSTICS_SCOPE],
       ttlSeconds: 600,
     })
 
@@ -166,7 +164,7 @@ describe('requireSupportGrantOrRole', () => {
       requireSupportGrantOrRole(event, {
         orgId: org.id,
         minimum: 'crew',
-        scope: 'diagnostics:read',
+        scope: DIAGNOSTICS_SCOPE,
         tenancy,
         resolveUserId: () => 'crew-1',
       }),
@@ -180,7 +178,7 @@ describe('requireSupportGrantOrRole', () => {
       granteeUserId: 'support-1',
       grantedByUserId: 'owner-1',
       reason: 'Ticket 42',
-      scope: ['diagnostics:read'],
+      scope: [DIAGNOSTICS_SCOPE],
       ttlSeconds: 600,
     })
 
@@ -188,11 +186,14 @@ describe('requireSupportGrantOrRole', () => {
       requireSupportGrantOrRole(event, {
         orgId: org.id,
         minimum: 'viewer',
-        scope: 'diagnostics:read',
+        scope: DIAGNOSTICS_SCOPE,
         tenancy,
         resolveUserId: () => 'support-1',
       }),
-    ).resolves.toMatchObject({ role: null, supportGrant: expect.objectContaining({ reason: 'Ticket 42' }) })
+    ).resolves.toMatchObject({
+      role: null,
+      supportGrant: expect.objectContaining({ reason: 'Ticket 42' }),
+    })
 
     const wrongScope = await thrown(
       requireSupportGrantOrRole(event, {
@@ -211,7 +212,7 @@ describe('requireSupportGrantOrRole', () => {
       requireSupportGrantOrRole(event, {
         orgId: org.id,
         minimum: 'viewer',
-        scope: 'diagnostics:read',
+        scope: DIAGNOSTICS_SCOPE,
         tenancy,
         resolveUserId: () => 'support-1',
       }),

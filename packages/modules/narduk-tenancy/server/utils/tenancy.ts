@@ -1,16 +1,5 @@
 import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
 
-import type {
-  TenancyAuditAction,
-  TenancyAuditEvent,
-  TenancyInvite,
-  TenancyMembership,
-  TenancyOrg,
-  TenancyResourceRef,
-  TenancyResourceRoleOverride,
-  TenancyRoleResolution,
-  TenancySupportGrant,
-} from '../../shared/types/tenancy'
 import { narrowerRole, roleRank, type TenancyRole } from '../../shared/utils/roles'
 import {
   tenancyAuditEvents,
@@ -23,6 +12,17 @@ import {
 
 import { TenancyError } from './tenancy-error'
 
+import type {
+  TenancyAuditAction,
+  TenancyAuditEvent,
+  TenancyInvite,
+  TenancyMembership,
+  TenancyOrg,
+  TenancyResourceRef,
+  TenancyResourceRoleOverride,
+  TenancyRoleResolution,
+  TenancySupportGrant,
+} from '../../shared/types/tenancy'
 import type { SQL } from 'drizzle-orm'
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core'
 
@@ -43,10 +43,10 @@ export type TenancyDatabase = Pick<
 >
 
 export interface TenancyServiceOptions {
-  /** Millisecond epoch clock. Injectable so tests own time. */
-  now?: () => number
   /** Primary-key generator. Defaults to `crypto.randomUUID()`. */
   idGenerator?: () => string
+  /** Millisecond epoch clock. Injectable so tests own time. */
+  now?: () => number
   /** Invite token generator. Defaults to 256 random bits, hex encoded. */
   tokenGenerator?: () => string
 }
@@ -58,10 +58,28 @@ export const AUDIT_EVENTS_MAX_LIMIT = 200
 export const SUPPORT_GRANT_LIST_MAX_LIMIT = 200
 
 const ORG_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
 
+/**
+ * Explicitly `T | undefined` regardless of the project's index-access strictness,
+ * so every "row missing" branch below narrows honestly.
+ */
 function first<T>(rows: T[]): T | undefined {
-  return rows.length > 0 ? rows[0] : undefined
+  return rows.at(0)
+}
+
+/**
+ * A deliberately small address check: one `@`, a non-empty local part, and a
+ * dotted domain. Written without a regex because the obvious one
+ * (`[^\s@]+@[^\s@]+\.[^\s@]+`) backtracks super-linearly on hostile input.
+ * Deliverability is the consumer's problem; this only rejects nonsense.
+ */
+function isEmailAddress(value: string): boolean {
+  const parts = value.split('@')
+  if (parts.length !== 2) return false
+  const [local = '', domain = ''] = parts
+  if (local.length === 0 || domain.length < 3) return false
+  if (domain.startsWith('.') || domain.endsWith('.') || !domain.includes('.')) return false
+  return !/\s/u.test(value)
 }
 
 function requireText(value: string, field: string): string {
@@ -87,15 +105,15 @@ function defaultTokenGenerator(): string {
 }
 
 export interface CreateOrgInput {
-  slug: string
-  name: string
   createdByUserId: string
+  name: string
+  slug: string
 }
 
 export interface MemberInput {
+  actorUserId?: string | null
   orgId: string
   userId: string
-  actorUserId?: string | null
 }
 
 export interface AddMemberInput extends MemberInput {
@@ -113,18 +131,18 @@ export interface ClearResourceRoleOverrideInput extends MemberInput {
 
 export interface ResolveRoleInput {
   orgId: string
-  userId: string
   resource?: TenancyResourceRef
+  userId: string
 }
 
 export interface CreateInviteInput {
-  orgId: string
   email: string
-  role: TenancyRole
-  resource?: TenancyResourceRef
-  invitedByUserId: string
   /** Absolute millisecond epoch expiry. Takes precedence over `ttlMs`. */
   expiresAt?: number
+  invitedByUserId: string
+  orgId: string
+  resource?: TenancyResourceRef
+  role: TenancyRole
   ttlMs?: number
 }
 
@@ -134,58 +152,58 @@ export interface AcceptInviteInput {
 }
 
 export interface AcceptInviteResult {
+  alreadyAccepted: boolean
   invite: TenancyInvite
   membership: TenancyMembership
   override: TenancyResourceRoleOverride | null
-  alreadyAccepted: boolean
 }
 
 export interface CreateSupportGrantInput {
-  orgId: string
-  granteeUserId: string
   grantedByUserId: string
+  granteeUserId: string
+  orgId: string
   reason: string
+  resource?: TenancyResourceRef
   scope?: readonly string[]
   ttlSeconds: number
-  resource?: TenancyResourceRef
 }
 
 export interface ListSupportGrantsInput {
-  orgId: string
-  userId?: string
-  resource?: TenancyResourceRef
   limit?: number
+  orgId: string
+  resource?: TenancyResourceRef
+  userId?: string
 }
 
 export interface ListAuditEventsInput {
-  orgId: string
-  limit?: number
   /** Millisecond epoch; returns events strictly older than this. */
   before?: number
+  limit?: number
+  orgId: string
 }
 
 export interface TenancyService {
-  createOrg: (input: CreateOrgInput) => Promise<TenancyOrg>
-  getOrg: (orgId: string) => Promise<TenancyOrg | null>
-  listOrgsForUser: (userId: string) => Promise<TenancyOrg[]>
+  acceptInvite: (input: AcceptInviteInput) => Promise<AcceptInviteResult>
   addMember: (input: AddMemberInput) => Promise<TenancyMembership>
-  setMemberRole: (input: AddMemberInput) => Promise<TenancyMembership>
+  clearResourceRoleOverride: (input: ClearResourceRoleOverrideInput) => Promise<void>
+  createInvite: (input: CreateInviteInput) => Promise<{ invite: TenancyInvite; token: string }>
+  createOrg: (input: CreateOrgInput) => Promise<TenancyOrg>
+  createSupportGrant: (input: CreateSupportGrantInput) => Promise<TenancySupportGrant>
+  getOrg: (orgId: string) => Promise<TenancyOrg | null>
+  listActiveSupportGrants: (input: ListSupportGrantsInput) => Promise<TenancySupportGrant[]>
+  listAuditEvents: (input: ListAuditEventsInput) => Promise<TenancyAuditEvent[]>
+  listOrgsForUser: (userId: string) => Promise<TenancyOrg[]>
   removeMember: (input: MemberInput) => Promise<void>
+  resolveRole: (input: ResolveRoleInput) => Promise<TenancyRoleResolution>
+  revokeInvite: (input: { actorUserId?: string | null; inviteId: string }) => Promise<TenancyInvite>
+  revokeSupportGrant: (input: {
+    actorUserId?: string | null
+    grantId: string
+  }) => Promise<TenancySupportGrant>
+  setMemberRole: (input: AddMemberInput) => Promise<TenancyMembership>
   setResourceRoleOverride: (
     input: ResourceRoleOverrideInput,
   ) => Promise<TenancyResourceRoleOverride>
-  clearResourceRoleOverride: (input: ClearResourceRoleOverrideInput) => Promise<void>
-  resolveRole: (input: ResolveRoleInput) => Promise<TenancyRoleResolution>
-  createInvite: (input: CreateInviteInput) => Promise<{ invite: TenancyInvite; token: string }>
-  acceptInvite: (input: AcceptInviteInput) => Promise<AcceptInviteResult>
-  revokeInvite: (input: { inviteId: string; actorUserId?: string | null }) => Promise<TenancyInvite>
-  createSupportGrant: (input: CreateSupportGrantInput) => Promise<TenancySupportGrant>
-  revokeSupportGrant: (input: {
-    grantId: string
-    actorUserId?: string | null
-  }) => Promise<TenancySupportGrant>
-  listActiveSupportGrants: (input: ListSupportGrantsInput) => Promise<TenancySupportGrant[]>
-  listAuditEvents: (input: ListAuditEventsInput) => Promise<TenancyAuditEvent[]>
 }
 
 /**
@@ -194,7 +212,7 @@ export interface TenancyService {
  * Nothing here reads ambient request state, environment variables, or another
  * package's session: the consumer owns identity and passes user ids in.
  */
-// eslint-disable-next-line sonarjs/cognitive-complexity -- one factory holding the closure over db/clock; each returned operation is small.
+
 export function createTenancy(
   db: TenancyDatabase,
   options: TenancyServiceOptions = {},
@@ -204,12 +222,12 @@ export function createTenancy(
   const nextToken = options.tokenGenerator ?? defaultTokenGenerator
 
   async function audit(input: {
-    orgId: string
-    actorUserId?: string | null
     action: TenancyAuditAction
-    subjectKind: string
-    subjectId: string
+    actorUserId?: string | null
     details?: Record<string, unknown>
+    orgId: string
+    subjectId: string
+    subjectKind: string
   }): Promise<void> {
     await db
       .insert(tenancyAuditEvents)
@@ -227,7 +245,9 @@ export function createTenancy(
   }
 
   async function findOrg(orgId: string): Promise<TenancyOrg | undefined> {
-    return first(await db.select().from(tenancyOrgs).where(eq(tenancyOrgs.id, orgId)).limit(1).all())
+    return first(
+      await db.select().from(tenancyOrgs).where(eq(tenancyOrgs.id, orgId)).limit(1).all(),
+    )
   }
 
   async function requireOrg(orgId: string): Promise<TenancyOrg> {
@@ -649,7 +669,7 @@ export function createTenancy(
     async createInvite(input) {
       await requireOrg(input.orgId)
       const email = requireText(input.email, 'email').toLowerCase()
-      if (!EMAIL_PATTERN.test(email)) {
+      if (!isEmailAddress(email)) {
         throw new TenancyError('invalid', 'email is not a valid address.')
       }
       const issuedAt = now()

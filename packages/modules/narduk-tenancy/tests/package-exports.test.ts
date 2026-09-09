@@ -7,13 +7,13 @@ import { describe, expect, it } from 'vitest'
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 
 interface PackageManifest {
-  name: string
-  version: string
-  private: boolean
-  publishConfig: { access: string; registry: string }
+  dependencies: Record<string, string>
   exports: Record<string, string | { import?: string; types?: string }>
   files: string[]
-  dependencies: Record<string, string>
+  name: string
+  private: boolean
+  publishConfig: { access: string; registry: string }
+  version: string
 }
 
 const manifest = JSON.parse(
@@ -90,11 +90,7 @@ describe('narduk-tenancy package boundary', () => {
   })
 
   it('keeps runtime dependencies minimal and independent of narduk-auth', () => {
-    expect(Object.keys(manifest.dependencies).sort()).toEqual([
-      '@nuxt/kit',
-      'drizzle-orm',
-      'h3',
-    ])
+    expect(Object.keys(manifest.dependencies).sort()).toEqual(['@nuxt/kit', 'drizzle-orm', 'h3'])
 
     const sources = ['server', 'shared', 'src'].flatMap((directory) =>
       listFiles(join(packageRoot, directory)),
