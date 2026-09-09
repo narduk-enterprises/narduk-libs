@@ -32,6 +32,7 @@
   },
   "pnpm": {
     "overrides": {
+      "prettier": "3.9.4",
       "drizzle-orm": "0.45.2",
       "esbuild": ">=0.25.0",
       "serialize-javascript": ">=7.0.5",
