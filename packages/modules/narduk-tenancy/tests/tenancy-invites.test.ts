@@ -11,6 +11,74 @@ const CREW_EMAIL = 'crew@example.com'
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 
 describe('invites', () => {
+  it('checks a consumer-verified email before consuming the invitation', async () => {
+    const { tenancy } = createTestHarness({ tokens: ['verified-only'] })
+    const org = await tenancy.createOrg(ACME)
+    const { token } = await tenancy.createInvite({
+      orgId: org.id,
+      email: CREW_EMAIL,
+      role: 'viewer',
+      invitedByUserId: 'user-1',
+    })
+    expect(
+      await codeOf(
+        tenancy.acceptInvite({
+          token,
+          userId: 'user-9',
+          verifiedEmail: 'someone-else@example.com',
+        }),
+      ),
+    ).toBe('forbidden')
+    expect((await tenancy.resolveRole({ orgId: org.id, userId: 'user-9' })).role).toBeNull()
+    const accepted = await tenancy.acceptInvite({
+      token,
+      userId: 'user-9',
+      verifiedEmail: ' Crew@Example.COM ',
+    })
+    expect(accepted.membership.role).toBe('viewer')
+  })
+
+  it('rolls back a failed acceptance so a retry can grant membership', async () => {
+    const { tenancy, sqlite } = createTestHarness({ tokens: ['retryable'] })
+    const org = await tenancy.createOrg(ACME)
+    const { token } = await tenancy.createInvite({
+      orgId: org.id,
+      email: CREW_EMAIL,
+      role: 'viewer',
+      invitedByUserId: 'user-1',
+    })
+    sqlite.exec(
+      "CREATE TRIGGER fail_member BEFORE INSERT ON tenancy_memberships WHEN NEW.user_id = 'user-9' BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END;",
+    )
+    await expect(tenancy.acceptInvite({ token, userId: 'user-9' })).rejects.toThrow(
+      'simulated write failure',
+    )
+    expect(
+      (await tenancy.listAuditEvents({ orgId: org.id })).some(
+        ({ action }) => action === 'invite.accept',
+      ),
+    ).toBe(false)
+    sqlite.exec('DROP TRIGGER fail_member;')
+    const accepted = await tenancy.acceptInvite({ token, userId: 'user-9' })
+    expect(accepted.alreadyAccepted).toBe(false)
+    expect(accepted.membership.userId).toBe('user-9')
+  })
+
+  it('does not restore removed membership when an accepted token is replayed', async () => {
+    const { tenancy } = createTestHarness({ tokens: ['once'] })
+    const org = await tenancy.createOrg(ACME)
+    const { token } = await tenancy.createInvite({
+      orgId: org.id,
+      email: CREW_EMAIL,
+      role: 'viewer',
+      invitedByUserId: 'user-1',
+    })
+    await tenancy.acceptInvite({ token, userId: 'user-9' })
+    await tenancy.removeMember({ orgId: org.id, userId: 'user-9' })
+    expect(await codeOf(tenancy.acceptInvite({ token, userId: 'user-9' }))).toBe('not_found')
+    expect((await tenancy.resolveRole({ orgId: org.id, userId: 'user-9' })).role).toBeNull()
+  })
+
   it('returns the raw token once and stores only its digest', async () => {
     const { tenancy, db } = createTestHarness({ tokens: ['secret-token'] })
     const org = await tenancy.createOrg(ACME)
