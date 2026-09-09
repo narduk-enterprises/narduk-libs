@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: write
   packages: write
   pull-requests: write
@@ -36,7 +37,6 @@ jobs:
     env:
       VERIFIED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified-sha || github.event.workflow_run.head_sha }}
       GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-      NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
       NODE_OPTIONS: --max-old-space-size=3072
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
@@ -68,6 +68,11 @@ jobs:
           node-version: 22.22.3
           cache: pnpm
 
+      - name: Verify successful full CI for this exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-release-ci.mjs
+
       - name: Configure GitHub Packages read auth
         shell: bash
         run: |
@@ -84,6 +89,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Configure GitHub Packages write auth
+        env:
+          NARDUK_PLATFORM_GH_PACKAGES_WRITE: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_WRITE || secrets.NARDUK_PLATFORM_GH_PACKAGES_RW }}
         shell: bash
         run: |
           set -euo pipefail

@@ -3,6 +3,8 @@ import { appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } fr
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { batchPackages, packageGates } from './ci-package-plan.mjs'
+
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dependencySections = [
   'dependencies',
@@ -40,7 +42,7 @@ export function readWorkspacePatterns(root) {
     if (inPackages && /^\S/u.test(line) && line.trim() !== '') break
     if (!inPackages) continue
 
-    const match = line.match(/^\s+-\s+(.+)$/u)
+    const match = line.match(/^\s+-\s+(\S.*)$/u)
     if (!match) continue
     const pattern = stripYamlScalar(match[1])
     if (pattern) patterns.push(pattern)
@@ -258,6 +260,12 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
 
   return {
     matrix,
+    batches: batchPackages(
+      matrix,
+      JSON.parse(readFileSync(join(scriptRoot, 'scripts/ci-package-durations.json'), 'utf8'))
+        .gateSeconds,
+    ),
+    packageGates,
     changedNames: [...changedNames].sort(),
     affectedNames: [...affectedNames].sort(),
     skippedNames,
@@ -292,6 +300,7 @@ export function renderSummary(result) {
     '## Affected package plan',
     '',
     `**Mode:** ${mode}`,
+    `**Install batches:** ${result.batches.length}; **gates per package:** ${packageGates.join(', ')}`,
     '',
     '### Directly changed packages',
     '',
@@ -375,6 +384,7 @@ function main() {
       options.githubOutput,
       [
         `matrix=${JSON.stringify(result.matrix)}`,
+        `batches=${JSON.stringify(result.batches)}`,
         `packed-consumer=${result.packedConsumer}`,
         `full-run=${result.fullRun}`,
         `affected-count=${result.affectedNames.length}`,

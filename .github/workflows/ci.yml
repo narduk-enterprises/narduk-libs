@@ -1,146 +1,8 @@
-# Calls the shared node-library CI gate instead of carrying a local copy of the
-# checkout/pnpm/setup-node/install/lint/typecheck/build/test shape
-# (company-hq#278, D-WF-1: every app of a class uses that class's callable from
-# narduk-enterprises/workflows). Pinned to the exact commit currently named
-# `v1`; never @main or a moving major tag. This makes a callable update an
-# explicit change to this workflow, which is a full-fan-out trigger below.
-#
-# The calling job id MUST stay `ci`. GitHub composes a called workflow's check
-# context as `<caller job id> / <called job name>`, and the reusable workflow's
-# last job is named exactly `Required`, so this produces `ci / Required` -- the
-# one string every adopting repo reports.
-#
-# SPECIAL STANDING: node-library.yml's `package-matrix` input was GENERALIZED
-# FROM this file. The old `package-gates` matrix + `verify` aggregator is the
-# shape the callable's matrix + `Required` job turned into a template, so the
-# structural fit here is by construction. What follows is the accounting for
-# the details that did NOT generalize.
-#
-# AFFECTED SET: `affected` discovers every package from pnpm-workspace.yaml,
-# builds the dependency graph from the workspace package manifests, and passes
-# changed packages plus every transitive dependent to the callable. No package
-# list or dependency edge is maintained in YAML. Root dependency/config/tooling
-# files and this workflow force the complete matrix. Manual dispatch is always
-# complete. The selected and omitted package names are recorded in the planner
-# job summary.
-#
-# RUNNER ROUTE: manifest-resolved, not hand-written.
-#   python3 scripts/github_runner_fleet.py route \
-#     --repository narduk-enterprises/narduk-libs --visibility private
-# returns the `linux-ci` ORGANIZATION group; its `runsOn` object is pasted
-# verbatim below. Org repos must pin the group -- a labels-only `runs-on` can
-# match the credentialed deploy class and land a PR job on the deploy host.
-# This also widens the label set the previous file carried by hand
-# (`[self-hosted, linux-ci]`) back to the manifest's full list.
-#
-# ============================ LANE-BY-LANE ACCOUNTING ========================
-# Every step of the hand-rolled gate, and where it went. Nothing is dropped
-# silently; the two genuine losses are called out under RESIDUE below.
-#
-# package-gates matrix (12 lanes) -> `ci` (11 lanes) + `contracts` (1 job)
-#   checkout / pnpm 10.33.4 / node 22.22.3  -> callable's equivalent steps.
-#                                              pnpm/action-setup reads the same
-#                                              pin from `packageManager`.
-#   Configure GitHub Packages read auth     -> scripts/package-registry-auth.mjs,
-#                                              the exact path the callable probes
-#                                              for. narduk-libs CANNOT take the
-#                                              callable's "no auth script, skip"
-#                                              branch: the root devDependency
-#                                              @narduk-enterprises/eslint-config
-#                                              comes from GitHub Packages and the
-#                                              install 401s without a token.
-#   pnpm install --frozen-lockfile          -> callable's install step (identical).
-#   turbo run lint    --filter=<pkg>        -> `run-lint` lane (see TURBO below).
-#   turbo run typecheck --filter=<pkg>      -> `run-typecheck` lane.
-#   turbo run build   --filter=<pkg>        -> `run-build` lane.
-#   pnpm --filter <pkg> run test:unit       -> `extra-scripts`, NOT `run-tests`
-#                                              (see TESTS below).
-#   publint <dir> --strict
-#     && pnpm --dir <dir> pack --dry-run    -> `extra-scripts` as `check:package`,
-#                                              a new script in all 11 packages.
-#   Remove temporary registry auth          -> DROPPED; see RESIDUE.
-#   contracts lane (versions:check,
-#     release-plan:check, format:check)     -> KEPT as the separate `contracts`
-#                                              job below (see CONTRACTS).
-#   per-lane NODE_OPTIONS                   -> .npmrc `node-options` (see HEAP).
-# packed-consumer-smoke                     -> KEPT as a separate job, unchanged.
-# journeys-e2e                              -> NEW browser lane (same reasoning as
-#                                              packed-consumer-smoke: node-library.yml
-#                                              has no browser lane), pool-routed,
-#                                              conditional on the journeys package
-#                                              being in the affected matrix.
-# verify                                    -> KEPT as the `verify` roll-up below.
-#
-# ------------------------------- TESTS --------------------------------------
-# `run-tests: false` IS NOT A DISABLED TEST GATE -- read this before reacting.
-# Not one of the 11 packages defines a script called `test`; they all define
-# `test:unit` (root `pnpm run test` fans out to `-r --if-present test:unit`).
-# The callable's test lane runs `run --if-present test`, so leaving
-# `run-tests: true` would have matched nothing in all 11 lanes and silently
-# turned every unit test into a green no-op. That is the exact silent loss this
-# adoption is supposed to prevent, so tests run through `extra-scripts` under
-# their real name instead, which also preserves the ORIGINAL STEP ORDER:
-# lint -> typecheck -> build -> test:unit -> check:package. Aliasing `test` to
-# `test:unit` in 11 packages would have let `run-tests: true` be literally true,
-# but the callable runs tests BEFORE build, and reordering a gate is a bigger
-# behaviour change than renaming where it is declared.
-#
-# ------------------------------- HEAP ---------------------------------------
-# The old matrix set a per-package NODE_OPTIONS heap ceiling (1024-2560 MiB) as
-# job `env:`. The callable has no env input, so it moved to `node-options` in
-# .npmrc, where it also governs a developer's local run -- see the long note in
-# that file for why a single 3072 MiB ceiling is non-regressive against every
-# value the old workflows used, including the 3072 that packed-consumer-smoke
-# and release.yml still set.
-#
-# ------------------------------ CONTRACTS -----------------------------------
-# The repository-contracts lane is a SEPARATE JOB, not a `package-matrix` lane,
-# for three independent reasons:
-#   1. Its filter would have to be "" (repo root), and the callable's
-#      run-lint/run-typecheck/run-build switches are workflow-wide, not
-#      per-lane. A root lane would therefore also run root `lint`/`typecheck`/
-#      `build`, each of which is `turbo run ... --filter='./packages/*/*'` -- the
-#      entire monorepo, serially, in one lane. That is precisely the monolith
-#      the 11-lane split exists to avoid.
-#   2. `pnpm run release-plan:check` shells out to `changeset status`, which
-#      resolves .changeset/config.json's `baseBranch: main` against a LOCAL
-#      `main` ref. That needs `fetch-depth: 0` plus the base-branch
-#      materialization step below; the callable checks out at depth 1 with
-#      `persist-credentials: false` and has no input for either.
-#   3. It carries an `IS_CHANGESET_RELEASE` condition that skips
-#      release-plan:check on `changeset-release/*` branches -- release
-#      machinery, which stays per-repo by class policy, and which the callable
-#      deliberately does not model.
-# The gate is NOT weakened: the same three checks run on the same events, they
-# are simply reported as `contracts` rather than as a matrix lane.
-#
-# ------------------------------- TURBO --------------------------------------
-# The callable invokes each package's own scripts, so CI no longer goes through
-# `turbo run` and no longer uses the shared host cache at
-# /srv/github-runners/_cache/turbo/narduk-libs. Correctness is unaffected and
-# was verified rather than assumed: turbo.json gives `^build` to the `build`
-# task ONLY (lint/typecheck depend on `nuxt:prepare`/`eslint:typegen`, which
-# each package re-runs itself via its own `prelint`/`pretypecheck` hooks), and
-# the one cross-package BUILD artifact -- narduk-platform's dist/, consumed by
-# narduk-core -- is materialized at install time by narduk-platform's own
-# `prepare` lifecycle script (scripts/ensure-dist.mjs), confirmed on a clean
-# `pnpm install --frozen-lockfile` locally. Root `pnpm run build` still uses
-# turbo for developers. The lost CI cache is a SPEED regression only, recorded
-# against #278.
-#
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> RESIDUE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-# 1. `rm -f .npmrc.auth` no longer runs in the matrix lanes. The callable
-#    writes the credential (via the script above) but has no teardown step and
-#    a caller cannot inject one into a called workflow. On these PERSISTENT
-#    self-hosted runners the 0600 file therefore survives between runs, until
-#    the next actions/checkout `git clean -ffdx` removes it. Mitigated but not
-#    eliminated: the file is mode 0600, gitignored, and the token is a
-#    read-only packages credential. The `contracts` and `packed-consumer-smoke`
-#    jobs below still clean up after themselves. This is a gap in the CALLABLE,
-#    reported against #278 rather than worked around here.
-# 2. The shared turbo cache (see TURBO above) -- speed only, not coverage.
-# ============================================================================
-
+# The shared callable installs once per bounded batch. Repository-owned
+# ci:batch runs the same strict package gates as ci:affected/ci:full locally.
+# Selection remains dependency-aware; verify covers packages, contracts and
+# every applicable browser/consumer gate. Keep ci / Required during migration.
+# Runner routes are resolved from fleet; no host-specific tuning belongs here.
 name: CI
 
 on:
@@ -173,6 +35,7 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      batches: ${{ steps.plan.outputs.batches }}
       packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
@@ -213,7 +76,7 @@ jobs:
 
   ci:
     needs: affected
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@b7668b506664ba4c3ed745cb0a79d8e19137d689 # v1
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@df265f1cb9884589dedc89a964b33c3d62be66be # ci batch metadata (canary)
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
     # GitHub Packages registry. Without this the run does not fail a step -- it
@@ -228,23 +91,13 @@ jobs:
       # Exact version the old workflow pinned, matching the root `volta.node`.
       node-version: "22.22.3"
       package-manager: pnpm
-      run-lint: true
-      run-typecheck: true
-      # NOT a disabled gate -- unit tests run via extra-scripts under their real
-      # script name `test:unit`. See the TESTS section in the header.
+      # All five package gates execute inside ci:batch, in their original order.
+      run-lint: false
+      run-typecheck: false
       run-tests: false
-      run-build: true
-      # Generated from pnpm-workspace.yaml and package.json dependency edges by
-      # `affected`; an empty matrix is a planner failure, never a green no-op.
-      package-matrix: ${{ needs.affected.outputs.matrix }}
-      # Run after build, in the same lane, so they see the build output. This
-      # ordering is load-bearing and was proven locally: `check:package` in
-      # create-narduk-app fails publint ("pkg.exports[.].types is
-      # ./dist/index.d.ts but the file does not exist") when run before its
-      # build, and passes after it.
-      extra-scripts: "test:unit check:package"
-      # All eleven packages define both extra scripts as well as their enabled
-      # standard lanes. A missing name is a required failure, never a soft skip.
+      run-build: false
+      package-matrix: ${{ needs.affected.outputs.batches }}
+      extra-scripts: "ci:batch"
       require-scripts: true
     secrets:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
