@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-ui
 
+## 0.1.2
+
+### Patch Changes
+
+- 6197f80: Provide neutral accent defaults for consumers without a product `data-app`
+  scope, keeping range and level-well fills visible. Product accent overrides
+  retain precedence.
+
 ## 0.1.1
 
 ### Patch Changes

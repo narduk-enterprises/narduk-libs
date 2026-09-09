@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 1.22.0
+
+### Minor Changes
+
+- def589f: Add an opt-in cspMediaSrc configuration for video and audio origins,
+  including blob-backed MSE playback, while retaining same-origin media by
+  default.
+
 ## 1.21.0
 
 ### Minor Changes
