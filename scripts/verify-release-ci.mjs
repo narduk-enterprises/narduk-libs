@@ -32,7 +32,7 @@ export function verifyReleaseEvidence({ sha, repository, currentMain, runs, jobs
 }
 
 function api(path) {
-  const result = spawnSync('gh', ['api', path], { encoding: 'utf8' })
+  const result = spawnSync('gh', ['api', path], { encoding: 'utf8', timeout: 30_000 })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`Unable to read CI evidence (${result.status})`)
   return JSON.parse(result.stdout)

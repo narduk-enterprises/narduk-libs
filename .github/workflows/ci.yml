@@ -76,7 +76,7 @@ jobs:
 
   ci:
     needs: affected
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@df265f1cb9884589dedc89a964b33c3d62be66be # ci batch metadata (canary)
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@9070db7244649bf192d392a5b96eb1656997c84c # package batch metadata
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
     # GitHub Packages registry. Without this the run does not fail a step -- it
@@ -457,12 +457,7 @@ jobs:
         run: rm -f "${NPM_CONFIG_USERCONFIG}"
 
   verify:
-    # Repo-level roll-up over all three top-level gates. `ci / Required` is the
-    # estate-uniform sub-context that covers the 11 package lanes; this job is
-    # what covers the two lanes the callable structurally cannot host. It also
-    # keeps the historical `verify` check name reporting across the context
-    # rename, so nothing that ever authorized on it can be left waiting on a
-    # context that stopped existing.
+    # Complete acceptance boundary, including integrations outside the callable.
     name: verify
     if: always()
     needs: [affected, ci, contracts, packed-consumer-smoke, journeys-e2e]
@@ -478,6 +473,7 @@ jobs:
           AFFECTED_RESULT: ${{ needs.affected.result }}
           CI_RESULT: ${{ needs.ci.result }}
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          AFFECTED_COUNT: ${{ needs.affected.outputs.affected-count }}
           PACKED_CONSUMER_EXPECTED: ${{ needs.affected.outputs.packed-consumer }}
           PACKED_CONSUMER_SMOKE_RESULT: ${{ needs.packed-consumer-smoke.result }}
           JOURNEYS_E2E_EXPECTED: ${{ contains(needs.affected.outputs.matrix, '"label":"journeys"') }}
@@ -485,6 +481,14 @@ jobs:
         run: |
           set -euo pipefail
           status=0
+          if ! [[ "${AFFECTED_COUNT}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Planner did not report a valid package count"
+            status=1
+          fi
+          case "${PACKED_CONSUMER_EXPECTED}" in
+            true|false) ;;
+            *) echo "::error::Planner did not report consumer applicability"; status=1 ;;
+          esac
           for gate in AFFECTED CI CONTRACTS; do
             eval "result=\${${gate}_RESULT}"
             if [ "${result}" != "success" ]; then
