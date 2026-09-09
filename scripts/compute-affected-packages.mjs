@@ -260,6 +260,10 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
 
   return {
     matrix,
+    browserPackages: workspace.packages
+      .filter(({ name, manifest }) => affectedNames.has(name) && manifest.scripts?.['test:e2e'])
+      .map(({ name }) => name)
+      .sort(),
     batches: batchPackages(
       matrix,
       JSON.parse(readFileSync(join(scriptRoot, 'scripts/ci-package-durations.json'), 'utf8'))
@@ -385,6 +389,7 @@ function main() {
       [
         `matrix=${JSON.stringify(result.matrix)}`,
         `batches=${JSON.stringify(result.batches)}`,
+        `browser-packages=${JSON.stringify(result.browserPackages)}`,
         `packed-consumer=${result.packedConsumer}`,
         `full-run=${result.fullRun}`,
         `affected-count=${result.affectedNames.length}`,

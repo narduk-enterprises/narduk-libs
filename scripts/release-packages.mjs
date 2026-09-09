@@ -19,6 +19,11 @@ import { fileURLToPath } from 'node:url'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
+import {
+  fileDigest,
+  fingerprintInputs,
+  lookupConsumerProof,
+} from './reuse-packed-consumer-proof.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = new Set(process.argv.slice(2))
@@ -83,6 +88,7 @@ if (WORKSPACE_PEER_ALLOW_ANY.length === 0) {
 
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
+const timings = []
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const ignoredGeneratedDirectories = new Set([
   '.git',
@@ -127,7 +133,7 @@ const forbiddenSourceReferencePattern = new RegExp(
 // (`git+ssh://git@github.com/narduk-enterprises/narduk-libs.git`), not a git
 // dependency. Only treat it as forbidden when it is a specifier or resolution.
 const forbiddenGitDependencyLinePattern =
-  /(?:^\s*(?:specifier|version):\s*git\+)|(?:@[^\s'"]+@git\+)/u
+  /^\s*(?:specifier|version):\s*git\+|@[^\s'"]+@git\+/u
 
 if (!dryRun) {
   writeError('Refusing to run without --dry-run; this helper never publishes packages.')
@@ -144,6 +150,7 @@ function childEnvironment(overrides = {}) {
 function runChecked(command, commandArgs, options) {
   const label = options.label || `${command} ${commandArgs.join(' ')}`
   writeLine(`\n[consumer-smoke] ${label}`)
+  const started = performance.now()
   const result = spawnSync(command, commandArgs, {
     cwd: options.cwd,
     encoding: 'utf8',
@@ -151,6 +158,7 @@ function runChecked(command, commandArgs, options) {
     maxBuffer: 64 * 1024 * 1024,
   })
   const output = `${result.stdout || ''}${result.stderr || ''}`
+  timings.push({ label, seconds: (performance.now() - started) / 1000 })
   if (output) process.stdout.write(output)
   if (result.error) throw result.error
   if (result.status !== 0) {
@@ -362,6 +370,7 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     const requested = [...new Set(requiredBrowsers)]
     if (!requested.length) fail('at least one browser engine is required')
     const playwright = localRequire('@playwright/test')
+    const executableDigests = {}
     for (const engineName of requested) {
       const selection = supported[engineName]
       if (!selection) fail(`unsupported isolated browser ${JSON.stringify(engineName)}`)
@@ -405,9 +414,20 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
       }
       add(`${engineName} executable`, realized)
       add(`${engineName} launch canary`, 'passed')
+      executableDigests[engineName] = fileDigest(realized)
     }
     add('status', 'PASS — exact immutable image toolchain selected; no installer invoked')
     writeLine(`Playwright toolchain matched image ${imagePackage.version} (${imageManifestSha})`)
+    return {
+      manifest: imageManifestSha,
+      package: fileDigest(imagePackagePath),
+      executables: executableDigests,
+      os: fileDigest('/etc/os-release'),
+      // Browser revision alone does not identify its native library inputs.
+      systemPackages: createHash('sha256')
+        .update(execFileSync('dpkg-query', ['-W', '-f=${binary:Package}=${Version}\n']))
+        .digest('hex'),
+    }
   } catch (error) {
     add('status', `FAIL — ${error.message}`)
     writeError(`Playwright toolchain mismatch: ${error.message}`)
@@ -813,11 +833,12 @@ try {
   })
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
+  let imageIdentity
   if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
     // Isolated-pool path: reject drift instead of trusting the env var alone.
     // A stale pin or a wrong/job-local PLAYWRIGHT_BROWSERS_PATH must fail
     // here, before `pnpm run quality` below ever launches the real suite.
-    await assertIsolatedPlaywrightToolchain({
+    imageIdentity = await assertIsolatedPlaywrightToolchain({
       cwd: generatedDirectory,
       expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
       requiredBrowsers: ['chromium'],
@@ -828,50 +849,113 @@ try {
       label: 'install the generated app browser fixture',
     })
   }
-  runChecked('pnpm', ['run', 'quality'], {
-    cwd: generatedDirectory,
-    label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
+  // Resolve and install both external consumers before considering reuse. A
+  // floating registry dependency or a different packed byte forces execution,
+  // even when GitHub reports identical source trees across the merge.
+  const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  const fingerprint = fingerprintInputs({
+    schemaVersion: 1,
+    tree,
+    tarballs: Object.fromEntries([...tarballs].map(([name, path]) => [name, fileDigest(path)])),
+    consumerLock: fileDigest(join(consumerDirectory, 'pnpm-lock.yaml')),
+    generatedSources: Object.fromEntries(
+      listGeneratedTextFiles(generatedDirectory).map((path) => [
+        relative(generatedDirectory, path),
+        fileDigest(path),
+      ]),
+    ),
+    node: {
+      version: process.version,
+      executable: fileDigest(process.execPath),
+      platform: process.platform,
+      arch: process.arch,
+    },
+    pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
+    imageIdentity,
+    nodeOptions: process.env.NODE_OPTIONS || '',
   })
-  assertNoRetiredBuiltReferences(generatedDirectory)
+  const prior = await lookupConsumerProof({ tree, fingerprint })
+  if (prior) {
+    writeLine(
+      `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
+    )
+  } else {
+    runChecked('pnpm', ['run', 'quality'], {
+      cwd: generatedDirectory,
+      label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
+    })
+    assertNoRetiredBuiltReferences(generatedDirectory)
 
-  const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
-    cwd: generatedDirectory,
-    label: 'apply generated app migrations to a fresh local D1 database',
-  })
-  const firstMigrationMatch = firstMigration.match(
-    /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
-  )
-  if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
-    throw new Error('Fresh generated app migration did not apply at least one migration.')
+    const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'apply generated app migrations to a fresh local D1 database',
+    })
+    const firstMigrationMatch = firstMigration.match(
+      /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
+    )
+    if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
+      throw new Error('Fresh generated app migration did not apply at least one migration.')
+    }
+
+    const secondMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'prove generated app migrations are idempotent',
+    })
+    const secondMigrationMatch = secondMigration.match(
+      /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
+    )
+    if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
+      throw new Error('Second generated app migration was not an empty idempotent run.')
+    }
+
+    runChecked('pnpm', ['run', 'performance-budget'], {
+      cwd: generatedDirectory,
+      label: 'enforce generated app performance budgets',
+    })
+    const deployDryRun = runChecked('pnpm', ['run', 'deploy:dry-run'], {
+      cwd: generatedDirectory,
+      label: 'build the generated Worker with Wrangler deploy dry-run',
+    })
+    if (!deployDryRun.includes('--dry-run: exiting now.')) {
+      throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
+    }
+    assertNoForbiddenGeneratedReferences(generatedDirectory)
   }
 
-  const secondMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
-    cwd: generatedDirectory,
-    label: 'prove generated app migrations are idempotent',
-  })
-  const secondMigrationMatch = secondMigration.match(
-    /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
-  )
-  if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
-    throw new Error('Second generated app migration was not an empty idempotent run.')
+  if (process.env.GITHUB_RUN_ID && imageIdentity) {
+    const evidenceDirectory = join(root, '.ci-evidence', 'packed-consumer-proof')
+    mkdirSync(evidenceDirectory, { recursive: true })
+    writeFileSync(
+      join(evidenceDirectory, 'proof.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: prior ? 'reused' : 'executed',
+          repository: process.env.GITHUB_REPOSITORY,
+          runId: Number(process.env.GITHUB_RUN_ID),
+          runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+          tree,
+          fingerprint,
+          completedAt: new Date().toISOString(),
+          ...(prior ? { prior } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+    )
   }
-
-  runChecked('pnpm', ['run', 'performance-budget'], {
-    cwd: generatedDirectory,
-    label: 'enforce generated app performance budgets',
-  })
-  const deployDryRun = runChecked('pnpm', ['run', 'deploy:dry-run'], {
-    cwd: generatedDirectory,
-    label: 'build the generated Worker with Wrangler deploy dry-run',
-  })
-  if (!deployDryRun.includes('--dry-run: exiting now.')) {
-    throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
-  }
-  assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   writeLine(
     `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
   )
 } finally {
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `\n### Consumer phase timings\n\n| Phase | Seconds |\n| --- | ---: |\n${timings.map(({ label, seconds }) => `| ${label} | ${seconds.toFixed(1)} |`).join('\n')}\n`,
+    )
   rmSync(consumerDirectory, { recursive: true, force: true })
 }

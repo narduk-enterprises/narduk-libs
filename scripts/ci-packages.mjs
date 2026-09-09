@@ -12,6 +12,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 import { packageGates } from './ci-package-plan.mjs'
 
 export function runPackageGates(names, workspace, execute = spawnSync) {
+  return runGates(names, workspace, packageGates, execute)
+}
+
+export function runBrowserGates(names, workspace, execute = spawnSync) {
+  return runGates(names, workspace, ['test:e2e'], execute)
+}
+
+function runGates(names, workspace, gates, execute) {
   if (!Array.isArray(names) || names.length === 0 || new Set(names).size !== names.length) {
     throw new Error('A batch must contain a nonempty, unique package selection.')
   }
@@ -20,7 +28,7 @@ export function runPackageGates(names, workspace, execute = spawnSync) {
   for (const name of names) {
     const entry = workspace.byName.get(name)
     if (!entry) throw new Error(`Unknown workspace package: ${name}`)
-    for (const gate of packageGates) {
+    for (const gate of gates) {
       if (
         typeof entry.manifest.scripts?.[gate] !== 'string' ||
         !entry.manifest.scripts[gate].trim()
@@ -31,7 +39,7 @@ export function runPackageGates(names, workspace, execute = spawnSync) {
   }
   const results = []
   for (const name of names) {
-    for (const gate of packageGates) {
+    for (const gate of gates) {
       const started = performance.now()
       console.log(`::group::${name} / ${gate}`)
       const result = execute('pnpm', ['--filter', name, 'run', gate], {
@@ -87,18 +95,26 @@ function localPlan(args) {
 function main() {
   const args = process.argv.slice(2)
   const batchMode = args.length === 1 && args[0] === '--batch'
+  const browserMode = args.length === 1 && args[0] === '--browser'
   const workspace = loadWorkspace(root)
-  const plan = batchMode ? undefined : localPlan(args)
+  const plan = batchMode || browserMode ? undefined : localPlan(args)
   if (plan) console.log(JSON.stringify({ ...plan, packageGates }, null, 2))
   if (plan?.plan) return
-  const names = batchMode
-    ? JSON.parse(process.env.PACKAGE_MATRIX_JSON || 'null')?.packages
-    : plan.affectedNames
-  if (!batchMode) {
+  const names = browserMode
+    ? JSON.parse(process.env.BROWSER_PACKAGES_JSON || 'null')
+    : batchMode
+      ? JSON.parse(process.env.PACKAGE_MATRIX_JSON || 'null')?.packages
+      : plan.affectedNames
+  if (plan) {
     for (const script of ['versions:check', 'release-plan:check', 'format:check', 'scripts:test'])
       run('pnpm', ['run', script])
   }
-  const results = !batchMode && names.length === 0 ? [] : runPackageGates(names, workspace)
+  const results =
+    plan && names.length === 0
+      ? []
+      : browserMode
+        ? runBrowserGates(names, workspace)
+        : runPackageGates(names, workspace)
   const summary = results
     .map(
       ({ name, gate, status, seconds }) =>
@@ -114,11 +130,12 @@ function main() {
     process.exitCode = 1
     return
   }
-  if (!batchMode) {
-    for (const name of plan.affectedNames) {
-      if (workspace.byName.get(name).manifest.scripts?.['test:e2e'])
-        run('pnpm', ['--filter', name, 'run', 'test:e2e'])
-    }
+  if (plan) {
+    if (
+      plan.browserPackages.length &&
+      runBrowserGates(plan.browserPackages, workspace).some(({ status }) => status !== 0)
+    )
+      throw new Error('A package browser gate failed')
     if (plan.packedConsumer) {
       run('pnpm', ['run', 'build'])
       run('pnpm', ['run', 'release:consumer-smoke'])

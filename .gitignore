@@ -70,3 +70,4 @@ __pycache__/
 
 # Local audit snapshots
 artifacts/
+.ci-evidence/

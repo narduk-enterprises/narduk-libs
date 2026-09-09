@@ -7,6 +7,10 @@ workspace. Selection uses `pnpm-workspace.yaml` and transitive dependents;
 shared tooling/configuration changes select every package. The plan prints
 reasons and all five package gates.
 
+The plan also selects every affected package declaring `test:e2e`. Actions runs
+those suites together on the isolated browser pool with one installation; this
+includes both journeys and narduk-charts. Local commands use the same list.
+
 `pnpm ci:affected` executes that plan. `pnpm ci:full` executes the complete
 workspace. Both run repository contracts, strict package gates and applicable
 browser/packed consumer checks. Browser tooling must be installed locally; CI
@@ -30,6 +34,26 @@ repository protection. Empty docs/release-metadata selection is intentional;
 planner failure, cancellation, missing expected output and failed mandatory work
 must fail the aggregate. Release accepts only successful full CI for the exact
 current main SHA and latest attempt.
+
+The packed consumer always builds/packs packages, installs every packed package
+outside the workspace, checks testkit exports/CLI, generates a fresh app, and
+performs both its initial and frozen installs. On a main push only, the
+expensive generated-app quality, migration, performance and Wrangler checks can
+reuse the associated merged PR's successful proof. This extends draft PR #80's
+lookup with an exact fingerprint of the tested Git tree, tarball bytes, both
+resolved consumer lockfiles, generated sources, Node binary/version, pnpm
+version, and the verified browser image/native system packages. Each missing or
+changed input runs the full proof. PR, manual and local runs always execute all
+checks.
+
+Proof lookup accepts only the latest successful CI run/attempt for that
+same-repo PR head, its successful packed-consumer job, and one unexpired
+seven-day artifact. It cannot reuse a receipt that itself reused a proof. Lookup
+failures fall back to execution, with a twenty-second total lookup budget. The
+current commit still gets its own required consumer job; its log identifies any
+accepted prior run. Phase timings are written to the job summary. Only digests
+and provenance are retained in the proof artifact; registry authentication files
+are excluded.
 
 Use focused validation after meaningful edits, then the relevant integration
 proof at the final candidate. A result is reusable locally only while its

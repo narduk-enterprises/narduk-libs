@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { batchPackages, packageGates } from './ci-package-plan.mjs'
-import { runPackageGates } from './ci-packages.mjs'
+import { runBrowserGates, runPackageGates } from './ci-packages.mjs'
 
 const names = ['one', 'two', 'three']
 const workspace = () => ({
@@ -12,6 +12,23 @@ const workspace = () => ({
       { manifest: { scripts: Object.fromEntries(packageGates.map((gate) => [gate, 'true'])) } },
     ]),
   ),
+})
+
+test('browser selection executes each declared suite and rejects missing scripts or unknown packages', () => {
+  const browserWorkspace = workspace()
+  for (const entry of browserWorkspace.byName.values()) entry.manifest.scripts['test:e2e'] = 'true'
+  const calls = []
+  const execute = (command, args) => {
+    calls.push([command, ...args])
+    return { status: args[1] === 'two' ? 7 : 0 }
+  }
+  const results = runBrowserGates(names, browserWorkspace, execute)
+  assert.equal(calls.length, 3)
+  assert.equal(results[1].status, 7)
+  assert.ok(calls.every((call) => call.at(-1) === 'test:e2e'))
+  assert.throws(() => runBrowserGates(['missing'], browserWorkspace, execute), /Unknown workspace/)
+  delete browserWorkspace.byName.get('one').manifest.scripts['test:e2e']
+  assert.throws(() => runBrowserGates(names, browserWorkspace, execute), /missing required script/)
 })
 
 test('full and narrow plans select every package exactly once in at most four install batches', () => {

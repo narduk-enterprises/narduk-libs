@@ -24,8 +24,8 @@ const green = {
   AFFECTED_COUNT: '21',
   PACKED_CONSUMER_EXPECTED: 'true',
   PACKED_CONSUMER_SMOKE_RESULT: 'success',
-  JOURNEYS_E2E_EXPECTED: 'true',
-  JOURNEYS_E2E_RESULT: 'success',
+  BROWSER_EXPECTED: 'true',
+  BROWSER_RESULT: 'success',
 }
 const run = (env) =>
   spawnSync('bash', ['-e', '-o', 'pipefail', '-c', shell], {
@@ -40,8 +40,8 @@ test('full and explicitly empty plans pass the actual final aggregate', () => {
       AFFECTED_COUNT: '0',
       PACKED_CONSUMER_EXPECTED: 'false',
       PACKED_CONSUMER_SMOKE_RESULT: 'skipped',
-      JOURNEYS_E2E_EXPECTED: 'false',
-      JOURNEYS_E2E_RESULT: 'skipped',
+      BROWSER_EXPECTED: 'false',
+      BROWSER_RESULT: 'skipped',
     }).status,
     0,
   )
@@ -53,7 +53,7 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
     'CI_RESULT',
     'CONTRACTS_RESULT',
     'PACKED_CONSUMER_SMOKE_RESULT',
-    'JOURNEYS_E2E_RESULT',
+    'BROWSER_RESULT',
   ]) {
     for (const value of ['failure', 'cancelled', 'skipped', ''])
       assert.notEqual(run({ [field]: value }).status, 0, `${field}=${value}`)
@@ -64,5 +64,6 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
     0,
   )
   assert.notEqual(run({ PACKED_CONSUMER_EXPECTED: 'false' }).status, 0)
-  assert.notEqual(run({ JOURNEYS_E2E_EXPECTED: 'false' }).status, 0)
+  assert.notEqual(run({ BROWSER_EXPECTED: 'false' }).status, 0)
+  assert.notEqual(run({ BROWSER_EXPECTED: '', BROWSER_RESULT: 'skipped' }).status, 0)
 })
