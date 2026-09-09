@@ -28,10 +28,17 @@ const coreDirectory = join(repoRoot, 'packages/modules/narduk-core')
 test('narduk-core publishes the shared server-only module typescript fragment', async () => {
   const manifest = JSON.parse(readFileSync(join(coreDirectory, 'package.json'), 'utf8'))
   const entry = manifest.exports['./nuxt-module-package-config']
-  assert.deepEqual(entry, {
-    types: './src/nuxt-module-package-config.ts',
-    import: './src/nuxt-module-package-config.ts',
-  })
+  const conditions = Object.keys(entry)
+  const fragmentTarget = './src/nuxt-module-package-config.ts'
+  // narduk-libs#210 review nit: pin the properties this guard cares about, not
+  // the exact object — `types` first so TypeScript resolves it, and both live
+  // conditions pointing at the published source file. Adding a `require`
+  // condition later is legitimate and must not fail this test.
+  assert.equal(conditions[0], 'types', 'the `types` condition must be declared first')
+  assert.ok(conditions.includes('import'), 'the fragment needs an `import` condition')
+  for (const condition of ['types', 'import']) {
+    assert.equal(entry[condition], fragmentTarget)
+  }
   // `src/` is already published and is inside narduk-core's tsconfig project
   // (tsconfig.layer-tooling.json `include`), which a package-root file is not.
   assert.ok(manifest.files.includes('src/'), 'the fragment must be in the published files list')
