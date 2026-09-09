@@ -18,7 +18,7 @@ Repository = "https://github.com/narduk-enterprises/narduk-libs"
 narduk-log = "narduk_logging.cli:main"
 
 [project.optional-dependencies]
-otlp = ["opentelemetry-sdk>=1.38,<2", "opentelemetry-exporter-otlp-proto-http>=1.38,<2"]
+otlp = ["opentelemetry-sdk>=1.44,<2", "opentelemetry-exporter-otlp-proto-http>=1.44,<2"]
 dagster = ["dagster>=1.11,<2"]
 
 [dependency-groups]

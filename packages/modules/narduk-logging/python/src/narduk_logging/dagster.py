@@ -49,7 +49,8 @@ def bind_dagster_context(
     base: Logger, context: OpExecutionContext | AssetExecutionContext
 ) -> Logger:
     """Bind explicit job/asset context without routing an event back through context.log."""
-    fields: dict[str, object] = {"runId": context.run_id, "job": context.job_name}
+    run_id = context.run.run_id if isinstance(context, AssetExecutionContext) else context.run_id
+    fields: dict[str, object] = {"runId": run_id, "job": context.job_name}
     if context.has_assets_def:
         fields["assets"] = sorted(key.to_user_string() for key in context.assets_def.keys)
     return base.with_context(source="job", data=fields)
