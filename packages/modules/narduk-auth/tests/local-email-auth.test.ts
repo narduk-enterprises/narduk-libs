@@ -11,6 +11,7 @@ import {
   generateLocalEmailToken,
   hashLocalEmailValue,
   isEmailPreauthorized,
+  isLocalEmailSelfServeOrigin,
   isMissingLocalEmailAttemptsTableError,
   localEmailLockSeconds,
   normalizeEmailAddress,
@@ -21,6 +22,25 @@ import {
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 describe('local email authentication primitives', () => {
+  it('preserves same-origin local fixture password links and rejects public or mismatched origins', () => {
+    for (const origin of ['http://127.0.0.1:3042', 'http://localhost:3217', 'http://[::1]:3043']) {
+      expect(isLocalEmailSelfServeOrigin(origin, `${origin}/api/auth/password/reset`)).toBe(true)
+    }
+    for (const [app, request] of [
+      ['https://kids.nard.uk', 'https://kids.nard.uk/api/auth/password/reset'],
+      ['http://127.0.0.1:3042', 'https://kids.nard.uk/api/auth/password/reset'],
+      ['https://kids.nard.uk', 'http://127.0.0.1:3042/api/auth/password/reset'],
+      ['http://localhost.evil.test', 'http://localhost.evil.test/api/auth/password/reset'],
+      ['http://127.0.0.1:3042', 'http://127.0.0.1:3043/api/auth/password/reset'],
+      ['http://127.0.0.1:3042', 'https://127.0.0.1:3042/api/auth/password/reset'],
+      ['http://user:secret@localhost', 'http://localhost/api/auth/password/reset'],
+      ['file:///etc/passwd', 'file:///etc/passwd'],
+      ['invalid', 'http://localhost/api/auth/password/reset'],
+    ]) {
+      expect(isLocalEmailSelfServeOrigin(app!, request!)).toBe(false)
+    }
+  })
+
   it('creates unique 256-bit base64url tokens and stores deterministic SHA-256 digests', async () => {
     const tokens = Array.from({ length: 64 }, () => generateLocalEmailToken())
 
