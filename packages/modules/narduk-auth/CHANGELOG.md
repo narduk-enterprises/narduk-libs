@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.24.1
+
+### Patch Changes
+
+- 46c9165: Restrict self-serve password links to requests whose origin matches a
+  configured loopback app URL. Public deployments fail before issuing a token
+  when the development shortcut is enabled. Local Nuxt and Wrangler fixtures
+  remain supported.
+
 ## 1.24.0
 
 ### Minor Changes
