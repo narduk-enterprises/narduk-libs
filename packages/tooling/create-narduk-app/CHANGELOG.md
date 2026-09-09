@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.2.5
+
+### Patch Changes
+
+- 46c9165: Restrict self-serve password links to requests whose origin matches a
+  configured loopback app URL. Public deployments fail before issuing a token
+  when the development shortcut is enabled. Local Nuxt and Wrangler fixtures
+  remain supported.
+
 ## 0.2.4
 
 ### Patch Changes
