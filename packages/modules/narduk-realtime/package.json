@@ -30,6 +30,14 @@
     "./server/durable-object": {
       "types": "./dist/server/durable-object.d.ts",
       "import": "./dist/server/durable-object.js"
+    },
+    "./worker/upgrade-router": {
+      "types": "./dist/worker/upgrade-router.d.ts",
+      "import": "./dist/worker/upgrade-router.js"
+    },
+    "./worker/principal": {
+      "types": "./dist/worker/principal.d.ts",
+      "import": "./dist/worker/principal.js"
     }
   },
   "files": [
