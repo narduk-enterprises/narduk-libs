@@ -30,6 +30,24 @@ test('release accepts successful full CI on exact current main and current attem
   assert.equal(verifyReleaseEvidence(evidence()), 7)
 })
 
+test('a later merge does not invalidate full CI for a retained main ancestor', () => {
+  const input = evidence()
+  input.currentMain = 'b'.repeat(40)
+  input.comparison = {
+    status: 'ahead',
+    base_commit: { sha: input.sha },
+    merge_base_commit: { sha: input.sha },
+  }
+  assert.equal(verifyReleaseEvidence(input), 7)
+  for (const comparison of [
+    { ...input.comparison, status: 'diverged' },
+    { ...input.comparison, base_commit: { sha: 'c'.repeat(40) } },
+    { ...input.comparison, merge_base_commit: { sha: 'c'.repeat(40) } },
+  ]) {
+    assert.throws(() => verifyReleaseEvidence({ ...input, comparison }))
+  }
+})
+
 test('release rejects absent, stale, failed, foreign and incomplete evidence', () => {
   const mutations = [
     (e) => {
