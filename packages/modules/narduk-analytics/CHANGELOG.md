@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.19.31
+
+### Patch Changes
+
+- aaf5549: Change the shared PostHog session replay default to off. Apps can
+  continue to opt in with `POSTHOG_SESSION_REPLAY_ENABLED=true`; the build
+  default and Worker runtime overlay now agree.
+- Updated dependencies [aaf5549]
+  - @narduk-enterprises/narduk-core@1.23.1
+
 ## 1.19.30
 
 ### Patch Changes
