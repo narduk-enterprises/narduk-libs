@@ -1,8 +1,9 @@
 /*
  * Narduk Status Design System v1.0 — token layer
  *
- * Source of truth: "Narduk Status Design System.dc.html", section 10 (Token layer),
- * which names this file's destination verbatim as packages/status-tokens/tokens.css.
+ * Source of truth: this coded library (company-hq D-WEBFOUND-2 Q3).
+ * The design-system-build gallery renders these tokens and Vue components
+ * one way into NE Base previews. Canvas exports are downstream references.
  *
  * Rules carried over from the handoff, in order of importance:
  *   1. Ink, surface, signal, type, depth and geometry are SHARED. Never override per app.

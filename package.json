@@ -27,7 +27,8 @@
     "ci:plan": "node scripts/ci-packages.mjs --plan",
     "ci:affected": "node scripts/ci-packages.mjs",
     "ci:full": "node scripts/ci-packages.mjs --all",
-    "ci:batch": "node scripts/ci-packages.mjs --batch"
+    "ci:batch": "node scripts/ci-packages.mjs --batch",
+    "design-system:build": "pnpm --filter @narduk-enterprises/design-system-build build"
   },
   "pnpm": {
     "overrides": {

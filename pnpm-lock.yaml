@@ -98,6 +98,36 @@ importers:
         specifier: 4.1.6
         version: 4.1.6(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
+  packages/design/design-system-build:
+    devDependencies:
+      '@narduk-enterprises/narduk-ui':
+        specifier: workspace:*
+        version: link:../narduk-ui
+      '@nuxt/eslint':
+        specifier: ^1.15.2
+        version: 1.16.0(@typescript-eslint/utils@8.63.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3))(@vue/compiler-sfc@3.5.40)(crossws@0.4.9(srvx@0.11.21))(esbuild@0.28.1)(eslint@10.8.0(jiti@2.7.0))(magicast@0.5.3)(oxc-parser@0.140.0)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
+      '@nuxt/ui':
+        specifier: 4.6.0
+        version: 4.6.0(@tiptap/extensions@3.27.3(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3))(change-case@5.4.4)(db0@0.3.4(better-sqlite3@12.11.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260511.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(postgres@3.4.9)))(embla-carousel@8.6.0)(esbuild@0.28.1)(ioredis@5.11.1)(magicast@0.5.3)(oxc-parser@0.140.0)(rollup@4.62.2)(typescript@5.9.3)(valibot@1.4.2(typescript@5.9.3))(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue-router@5.1.0(@vue/compiler-sfc@3.5.40)(esbuild@0.28.1)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))(rollup@4.62.2)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3))(zod@4.4.3)
+      '@types/node':
+        specifier: ^22.19.19
+        version: 22.20.0
+      nuxt:
+        specifier: ^4.4.2
+        version: 4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@22.20.0)(@vue/compiler-sfc@3.5.40)(better-sqlite3@12.11.1)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.11.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260511.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(postgres@3.4.9)))(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260511.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(postgres@3.4.9))(esbuild@0.28.1)(eslint@10.8.0(jiti@2.7.0))(ioredis@5.11.1)(lightningcss@1.32.0)(magicast@0.5.3)(optionator@0.9.4)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3)))(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.21)(terser@5.48.0)(tsx@4.23.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue-tsc@3.3.6(typescript@5.9.3))(yaml@2.8.4)
+      parse5:
+        specifier: ^7.3.0
+        version: 7.3.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vue:
+        specifier: ^3.5.39
+        version: 3.5.39(typescript@5.9.3)
+      vue-tsc:
+        specifier: ^3.2.5
+        version: 3.3.6(typescript@5.9.3)
+
   packages/design/narduk-charts:
     devDependencies:
       '@histoire/plugin-vue':
@@ -9730,6 +9760,13 @@ packages:
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
+
+  entities@6.0.1:
+    resolution: {integrity: sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==}
+    engines: {node: '>=0.12'}
+
+  parse5@7.3.0:
+    resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
 
 snapshots:
 
@@ -21665,3 +21702,9 @@ snapshots:
   zod@4.4.3: {}
 
   zwitch@2.0.4: {}
+
+  entities@6.0.1: {}
+
+  parse5@7.3.0:
+    dependencies:
+      entities: 6.0.1
