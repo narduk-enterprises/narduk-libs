@@ -105,6 +105,27 @@ export const AUDIT_EVENTS_DEFAULT_LIMIT = 50
 export const AUDIT_EVENTS_MAX_LIMIT = 200
 export const DEVICE_LIST_MAX_LIMIT = 200
 
+/**
+ * How many times one claim session's completion may be replayed into a fresh
+ * credential set (Logan's per-session cap, 2026-09-10).
+ *
+ * This is a bound on churn and audit noise, *not* the control that makes the
+ * re-issue path safe: one re-issue is already a complete credential set, so a
+ * cap on its own would only turn unlimited takeover into N takeovers. Safety
+ * comes from `deviceProof` — the Ed25519 signature, request binding and
+ * single-use nonce `completeClaimWithRecordedApproval` requires before it will
+ * re-issue at all (narduk-libs#228 review H1). The cap sits on top of that.
+ */
+export const MAX_REISSUES_PER_CLAIM_SESSION = 3
+
+/**
+ * What a caller that lost the re-issue compare-and-swap is told to wait. The
+ * loser is a device replaying its *own* completion, so the answer has to be
+ * retryable: a terminal status there bricks a device whose credentials the
+ * winning attempt already rotated (narduk-libs#228 review H3).
+ */
+export const REISSUE_CONTENTION_RETRY_AFTER_SECONDS = 1
+
 const CREDENTIAL_FINGERPRINT_DOMAIN = 'narduk-devices:credential-fingerprint:'
 
 /**
@@ -112,9 +133,10 @@ const CREDENTIAL_FINGERPRINT_DOMAIN = 'narduk-devices:credential-fingerprint:'
  *
  * `timestamp` and `now` are millisecond epochs; `seconds` is the half-width of
  * the window in seconds, so the default accepts +/-5 minutes. `openSession`
- * applies exactly this function, so a consumer running its own signed exchange
- * before any device session exists — a claim handoff, for instance — bounds
- * skew identically instead of re-deriving the rule.
+ * and the `deviceProof` check both call exactly this function, so a consumer
+ * running its own signed exchange before any device session exists — a claim
+ * handoff, for instance — bounds skew identically instead of re-deriving the
+ * rule. `tests/devices-session.test.ts` pins the two together at the boundary.
  */
 export function isWithinTimestampSkew(
   timestamp: number,
@@ -262,13 +284,50 @@ export interface CompleteClaimInput {
    * Serve a replay of an already-completed claim carrying this exact
    * `idempotencyKey`, inside the claim session's remaining lifetime, with a
    * fresh equivalent credential set rather than `already_completed` and an
-   * empty array. Default `false`: 0.1.0 callers keep the behaviour they have.
-   * See `completeClaimWithRecordedApproval`, where it defaults to `true`.
+   * empty array. Default `false` on both completion paths.
+   *
+   * Re-issuing **rotates the device's live credentials and revokes every
+   * session opened with the superseded ones**, so enabling it hands whoever
+   * satisfies `canReissue` the device's only working credential set. On this
+   * path the raw approval token is that proof; on
+   * `completeClaimWithRecordedApproval` a `deviceProof` is required. Either
+   * way, authenticate the caller before you turn it on.
    */
   reissueOnIdempotentReplay?: boolean
   remote?: RemoteContext
   resource: DevicesResourceRef
   userApprovalToken: string
+}
+
+/**
+ * The bytes a device signs to prove, to this library, that it holds the private
+ * key its claim session recorded.
+ *
+ * Canonical JSON, exactly like `CanonicalSessionRequest`: sorted keys, no
+ * whitespace, UTF-8 (`canonicalBytes`). Every field is bound to resolved state
+ * or to the completion request itself, so a captured proof cannot be re-aimed
+ * at a different session, device, installation or idempotency key; `nonce` is
+ * burned in `devices_scoped_nonces` on first use, so the capture cannot be
+ * replayed either.
+ */
+export interface CanonicalCompletionRequest {
+  claimSessionId: string
+  /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
+  devicePublicKey: string
+  hardwareFingerprint: string
+  idempotencyKey: string
+  installationId: string
+  /** Single use, per claim session. Any unguessable value the device picks. */
+  nonce: string
+  /** Millisecond epoch; must be inside `timestampSkewSeconds` of server time. */
+  timestamp: number
+}
+
+/** A device's Ed25519 proof over `canonicalBytes(canonicalRequest)`. */
+export interface DeviceCompletionProof {
+  canonicalRequest: CanonicalCompletionRequest
+  /** Base64url signature; verified against the claim session's recorded key. */
+  signature: string
 }
 
 /**
@@ -282,24 +341,43 @@ export interface CompleteClaimInput {
  * key it presents, and the org and resource are read from the claim token
  * rather than supplied by the caller.
  *
- * Authenticating the device is the consumer's job — verify the signed request
- * before calling. This call only asserts that the key presented is the key the
- * claim session was started with.
+ * **Authenticate the device first.** `claimSessionId`, `devicePublicKey`,
+ * `hardwareFingerprint` and `idempotencyKey` all travel on the wire, so on
+ * their own they are not a secret: without `deviceProof` this call proves only
+ * that the caller knows the values the handoff carried. Either pass
+ * `deviceProof` and let the library verify the device, or verify the signed
+ * request yourself before calling (narduk-libs#228 review H1).
  */
 export interface CompleteClaimWithRecordedApprovalInput {
   claimSessionId: string
   /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
   devicePublicKey: string
+  /**
+   * The device's signature over this request, verified in-library against the
+   * key the claim session recorded, bound to every field below, and single-use.
+   * Optional for a first completion; **required** for
+   * `reissueOnIdempotentReplay`, which rotates live credentials.
+   */
+  deviceProof?: DeviceCompletionProof
   hardwareFingerprint: string
   idempotencyKey: string
   installationId: string
-  /** Default `true` here: the device is the recipient, so a lost response must be recoverable. */
+  /**
+   * Serve a replay of this completion with a fresh equivalent credential set.
+   * Default `false`, and refused outright without `deviceProof`: a re-issue
+   * revokes the genuine device's credentials and sessions, so a caller that
+   * has proved nothing must never be able to trigger one.
+   */
   reissueOnIdempotentReplay?: boolean
   remote?: RemoteContext
 }
 
 export interface CompleteClaimResult {
-  /** Secrets are present only on `completed`; a replay returns metadata-free `[]`. */
+  /**
+   * Live secrets, returned exactly once. A first completion returns them; so
+   * does a re-issued replay (`status: 'completed'`, a *fresh* set at the next
+   * version, the superseded one revoked). Every other status returns `[]`.
+   */
   credentials: IssuedCredential[]
   deviceId?: string
   retryAfterSeconds?: number
@@ -438,6 +516,13 @@ export interface DevicesService {
    * Complete a claim from the device side, using the approval recorded on the
    * claim session. No raw approval token is required, so no approval bearer
    * ever has to be persisted by the consumer.
+   *
+   * **Authenticate the device before, or with, this call.** Every value it
+   * compares travels on the wire; pass `deviceProof` to have the library
+   * verify the device's Ed25519 signature, bind it to this request and burn its
+   * nonce, or verify the signed request yourself first. `deviceProof` is
+   * mandatory for `reissueOnIdempotentReplay`, which rotates live credentials
+   * and revokes the device's sessions (narduk-libs#228 review H1).
    */
   completeClaimWithRecordedApproval: (
     input: CompleteClaimWithRecordedApprovalInput,
@@ -454,8 +539,18 @@ export interface DevicesService {
    * The active credential a bare bearer secret names, resolved by digest
    * against the unique `secret_hash` index, or null. The mirror of
    * `getSessionByToken`, for a client that presents only the secret.
+   *
+   * Completion-issued secrets do not expire, so this is a long-lived bearer:
+   * pass `remote` from every HTTP route. A resolution that fails counts against
+   * the lockout and a locked subject is refused, which is what makes a
+   * credential-stuffing sweep across a fleet both bounded and visible in the
+   * `security.lockout` audit trail (narduk-libs#228 review M2). A successful
+   * resolution writes nothing — this is a per-request read path.
    */
-  getCredentialBySecret: (secret: string) => Promise<DeviceCredential | null>
+  getCredentialBySecret: (
+    secret: string,
+    options?: { remote?: RemoteContext },
+  ) => Promise<DeviceCredential | null>
   getDevice: (deviceId: string) => Promise<Device | null>
   /** The active (unexpired, unrevoked) session named by its row id, or null. */
   getSession: (sessionId: string) => Promise<DeviceSession | null>
@@ -504,7 +599,7 @@ export function createDevices(
   const approvalTtlMs = (options.approvalTtlSeconds ?? APPROVAL_DEFAULT_TTL_SECONDS) * 1000
   const challengeTtlMs = (options.challengeTtlSeconds ?? CHALLENGE_DEFAULT_TTL_SECONDS) * 1000
   const sessionTtlMs = (options.sessionTtlSeconds ?? SESSION_DEFAULT_TTL_SECONDS) * 1000
-  const skewMs = (options.timestampSkewSeconds ?? TIMESTAMP_SKEW_DEFAULT_SECONDS) * 1000
+  const skewSeconds = options.timestampSkewSeconds ?? TIMESTAMP_SKEW_DEFAULT_SECONDS
   const lockouts = createLockoutGate(db, now, nextId)
 
   async function audit(input: {
@@ -793,11 +888,13 @@ export function createDevices(
     /**
      * May this caller be served a replay of the completion it already made?
      *
-     * Must bind the caller at least as strongly as `authorize` does, or a
-     * replay would be a cheaper route to a live credential set than the
-     * completion itself. It deliberately does *not* require the approval to
-     * still be unexpired: approvals live five minutes, the recovery window is
-     * the claim session's fifteen.
+     * Exactly `authorize` minus its approval-expiry clause, and never less:
+     * a replay rotates live credentials, so it must not be a cheaper route to
+     * a credential set than the completion itself. The one relaxation is
+     * deliberate — approvals live five minutes, the recovery window is the
+     * claim session's fifteen — and every other clause `authorize` applies,
+     * including whatever secret or signature proves the caller, applies here
+     * too (narduk-libs#228 review L2).
      */
     canReissue: (session: ClaimSession, token: ClaimToken) => boolean | Promise<boolean>
     claimSessionId: string
@@ -809,33 +906,141 @@ export function createDevices(
   }
 
   /**
+   * Claim a single-use `(scope, nonce)`. `true` is a first presentation,
+   * `false` a replay. One insert, decided by the UNIQUE index.
+   */
+  async function consumeScopedNonce(
+    scope: string,
+    nonce: string,
+    expiresAt: number,
+  ): Promise<boolean> {
+    const inserted = await db
+      .insert(devicesScopedNonces)
+      .values({ id: nextId(), scope, nonce, expiresAt, createdAt: now() })
+      .onConflictDoNothing()
+      .returning({ id: devicesScopedNonces.id })
+      .all()
+    return inserted.length > 0
+  }
+
+  /**
+   * Does this proof show the caller holds the private key the claim session
+   * recorded, for this exact request, once?
+   *
+   * The same three legs `openSession` verifies, in the same order: bind every
+   * signed field to resolved state, verify the Ed25519 signature against the
+   * *recorded* key, then burn the nonce. Burning last means an unsigned guess
+   * cannot spend the genuine device's nonce, and burning at all means a
+   * captured claim handoff is spent rather than replayable
+   * (narduk-libs#228 review H1).
+   */
+  async function completionProofVerifies(
+    session: ClaimSession,
+    bound: {
+      devicePublicKey: string
+      hardwareFingerprint: string
+      idempotencyKey: string
+      installationId: string
+    },
+    proof: DeviceCompletionProof,
+  ): Promise<boolean> {
+    const request = proof.canonicalRequest
+    if (
+      request.claimSessionId !== session.id ||
+      request.devicePublicKey !== session.publicKey ||
+      request.devicePublicKey !== bound.devicePublicKey ||
+      request.hardwareFingerprint !== bound.hardwareFingerprint ||
+      request.idempotencyKey !== bound.idempotencyKey ||
+      request.installationId !== bound.installationId ||
+      request.nonce.trim().length === 0
+    ) {
+      return false
+    }
+    if (!isWithinTimestampSkew(request.timestamp, now(), skewSeconds)) return false
+    // Decoded without throwing: a malformed proof is an authentication
+    // failure the caller's lockout counts, never an uncaught DOMException.
+    const signatureBytes = tryBase64UrlDecode(proof.signature)
+    const publicKeyBytes = tryBase64UrlDecode(session.publicKey)
+    if (!signatureBytes || publicKeyBytes?.length !== ED25519_PUBLIC_KEY_BYTES) return false
+    const verified = await verifySignature({
+      message: canonicalBytes(request as unknown as CanonicalValue),
+      publicKey: publicKeyBytes,
+      signature: signatureBytes,
+    })
+    if (!verified) return false
+    return consumeScopedNonce(
+      `narduk-devices:claim-completion:${session.id}`,
+      request.nonce,
+      session.expiresAt,
+    )
+  }
+
+  /**
+   * Has this claim session already been replayed `MAX_REISSUES_PER_CLAIM_SESSION`
+   * times? Counted from the audit rows the re-issue itself writes — a device row
+   * is created by exactly one claim session, so its `claim.reissue` events are
+   * that session's — and the read is bounded by the cap rather than by history.
+   *
+   * Two concurrent replays can both pass this check and one will still lose the
+   * compare-and-swap, so the cap bounds churn; it is not, and cannot be, the
+   * control that makes an unauthenticated re-issue safe.
+   */
+  async function reissueCapReached(deviceId: string): Promise<boolean> {
+    const served = await db
+      .select({ id: devicesAuditEvents.id })
+      .from(devicesAuditEvents)
+      .where(
+        and(
+          eq(devicesAuditEvents.action, 'claim.reissue'),
+          eq(devicesAuditEvents.subjectKind, 'device'),
+          eq(devicesAuditEvents.subjectId, deviceId),
+        ),
+      )
+      .limit(MAX_REISSUES_PER_CLAIM_SESSION)
+      .all()
+    return served.length >= MAX_REISSUES_PER_CLAIM_SESSION
+  }
+
+  /**
+   * Why a replay was not served with a fresh set. `contended` is deliberately
+   * separate from `not_serviceable`: the caller lost the compare-and-swap to a
+   * concurrent replay of its own request, and its credentials were rotated by
+   * the winner, so the honest answer is "retry", not a terminal status
+   * (narduk-libs#228 review H3).
+   */
+  type ReplayOutcome =
+    | { kind: 'capped' }
+    | { kind: 'contended' }
+    | { kind: 'not_serviceable' }
+    | { kind: 'served'; result: CompleteClaimResult }
+
+  /**
    * Serve a replayed completion with a fresh equivalent credential set.
    *
    * Only the digests of the original secrets were ever stored, so the first
    * result cannot be re-served verbatim without keeping a live bearer in the
    * database in the clear. Instead every active credential is rotated to its
    * next version inside one transaction and the new set is returned, so the
-   * device recovers and the superseded secrets die together. Returns null when
-   * the replay is not serviceable, in which case the caller reports
-   * `already_completed` exactly as 0.1.0 did.
+   * device recovers and the superseded secrets die together.
    */
   async function reissueForReplay(
     session: ClaimSession,
     idempotencyKey: string,
-  ): Promise<CompleteClaimResult | null> {
-    if (session.completionIdempotencyKey !== idempotencyKey) return null
-    if (session.deviceId === null) return null
+  ): Promise<ReplayOutcome> {
+    if (session.completionIdempotencyKey !== idempotencyKey) return { kind: 'not_serviceable' }
+    if (session.deviceId === null) return { kind: 'not_serviceable' }
     // Recovery is bounded by the claim session, never open-ended.
-    if (session.expiresAt <= now()) return null
+    if (session.expiresAt <= now()) return { kind: 'not_serviceable' }
     const device = await findDevice(session.deviceId)
-    if (!device || device.status !== 'claimed') return null
+    if (!device || device.status !== 'claimed') return { kind: 'not_serviceable' }
+    if (await reissueCapReached(device.id)) return { kind: 'capped' }
 
     const active = await db
       .select()
       .from(devicesCredentials)
       .where(and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)))
       .all()
-    if (active.length === 0) return null
+    if (active.length === 0) return { kind: 'not_serviceable' }
     const ordered = [...active].sort(
       (a, b) =>
         CREDENTIAL_CLASSES.indexOf(a.credentialClass) -
@@ -854,16 +1059,20 @@ export function createDevices(
         claimSessionId: session.id,
         idempotencyKey,
         credentials: prepared.map((entry) => entry.prepared),
+        lockExpiresAt: session.expiresAt,
         reissuedAt,
       },
       nextId,
     )
-    if (!won) return null
+    if (!won) return { kind: 'contended' }
     // Fresh secrets, returned exactly once; only their digests were stored.
     return {
-      status: 'completed',
-      deviceId: device.id,
-      credentials: prepared.map((entry) => entry.issued),
+      kind: 'served',
+      result: {
+        status: 'completed',
+        deviceId: device.id,
+        credentials: prepared.map((entry) => entry.issued),
+      },
     }
   }
 
@@ -933,8 +1142,11 @@ export function createDevices(
       }
     }
 
-    const fail = async (status: ClaimCompleteStatus): Promise<CompleteClaimResult> => {
-      await recordAttempt(subjects, 'failure', { orgId: token.orgId, reason: status })
+    const fail = async (
+      status: ClaimCompleteStatus,
+      reason: string = status,
+    ): Promise<CompleteClaimResult> => {
+      await recordAttempt(subjects, 'failure', { orgId: token.orgId, reason })
       return { status, credentials: [] }
     }
     const alreadyCompleted = (completed: ClaimSession): CompleteClaimResult => ({
@@ -944,13 +1156,34 @@ export function createDevices(
     })
 
     if (session.status === 'claimed') {
-      if (run.reissue && (await run.canReissue(session, token))) {
-        const reissued = await reissueForReplay(session, idempotencyKey)
-        if (reissued) {
-          await recordAttempt(subjects, 'success', { orgId: token.orgId })
-          return reissued
+      if (!run.reissue) return alreadyCompleted(session)
+      // An operator who revokes the claim token after completion expects the
+      // claim to be dead, re-issues included (narduk-libs#228 review L1).
+      if (token.revokedAt !== null) return fail('revoked')
+      if (!(await run.canReissue(session, token))) {
+        // A refused replay is a failed authentication attempt: it counts
+        // against the lockout and leaves an attempt row, exactly like every
+        // other refusal here, instead of being unlimited and untraced
+        // (narduk-libs#228 review H2). No `deviceId` either — a caller that
+        // proved nothing learns nothing.
+        return fail('already_completed', 'reissue_refused')
+      }
+      const outcome = await reissueForReplay(session, idempotencyKey)
+      if (outcome.kind === 'served') {
+        await recordAttempt(subjects, 'success', { orgId: token.orgId })
+        return outcome.result
+      }
+      if (outcome.kind === 'contended') {
+        // The winner rotated this device's credentials, so a terminal status
+        // here would brick it. Retry is the recovery (review H3).
+        return {
+          status: 'rate_limited',
+          credentials: [],
+          retryAfterSeconds: REISSUE_CONTENTION_RETRY_AFTER_SECONDS,
+          ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
         }
       }
+      if (outcome.kind === 'capped') return fail('already_completed', 'reissue_cap')
       return alreadyCompleted(session)
     }
     const blocker = await completionBlocker(session, token, run.hardwareFingerprint)
@@ -1350,9 +1583,22 @@ export function createDevices(
 
     async completeClaimWithRecordedApproval(input) {
       const devicePublicKey = requireText(input.devicePublicKey, 'devicePublicKey')
+      const reissue = input.reissueOnIdempotentReplay ?? false
+      const proof = input.deviceProof
+      if (reissue && proof === undefined) {
+        // Refused loudly rather than served: a re-issue revokes the genuine
+        // device's credentials and sessions and hands the caller live secrets,
+        // and every value below travels on the wire, so without a proof the
+        // capability is device takeover by whoever saw the handoff
+        // (narduk-libs#228 review H1).
+        throw new DevicesError(
+          'invalid',
+          'reissueOnIdempotentReplay requires deviceProof: re-issuing rotates the device\u2019s live credentials, so the caller must prove it holds the claim session key.',
+        )
+      }
       // The key is public material, so a plain comparison leaks nothing: this
-      // binds the caller to the device that started the claim, and the consumer
-      // is the layer that authenticates it (verify the signed request first).
+      // binds the caller to the device that started the claim. It is a binding
+      // check, never an authentication — `proves` is what authenticates.
       const bindsDevice = (session: ClaimSession): boolean =>
         session.publicKey === devicePublicKey &&
         session.hardwareFingerprint === input.hardwareFingerprint
@@ -1361,18 +1607,35 @@ export function createDevices(
         session.approvalOrgId === token.orgId &&
         session.approvalResourceKind === token.resourceKind &&
         session.approvalResourceId === token.resourceId
+      // Evaluated last on every path, so a caller refused by a cheaper check
+      // never spends the nonce it presented.
+      const proves = async (session: ClaimSession): Promise<boolean> =>
+        proof !== undefined &&
+        (await completionProofVerifies(
+          session,
+          {
+            devicePublicKey,
+            hardwareFingerprint: input.hardwareFingerprint,
+            idempotencyKey: input.idempotencyKey,
+            installationId: input.installationId,
+          },
+          proof,
+        ))
 
       return runCompleteClaim({
         claimSessionId: input.claimSessionId,
         hardwareFingerprint: input.hardwareFingerprint,
         idempotencyKey: input.idempotencyKey,
         installationId: input.installationId,
-        reissue: input.reissueOnIdempotentReplay ?? true,
+        reissue,
         remote: input.remote,
         accountSubject: (session) => session.approvalUserId,
-        canReissue: (session, token) =>
-          bindsDevice(session) && approvalMatchesToken(session, token),
-        authorize: (session, token) => {
+        canReissue: async (session, token) =>
+          bindsDevice(session) &&
+          session.approvalTokenHash !== null &&
+          approvalMatchesToken(session, token) &&
+          (await proves(session)),
+        authorize: async (session, token) => {
           if (!bindsDevice(session)) return { ok: false, status: 'hardware_mismatch' }
           if (
             session.approvalTokenHash === null ||
@@ -1383,6 +1646,9 @@ export function createDevices(
             return { ok: false, status: 'approval_required' }
           }
           if (!approvalMatchesToken(session, token)) {
+            return { ok: false, status: 'unauthorized_user' }
+          }
+          if (proof !== undefined && !(await proves(session))) {
             return { ok: false, status: 'unauthorized_user' }
           }
           // No raw approval token crosses this boundary: the recorded approval
@@ -1399,18 +1665,24 @@ export function createDevices(
       // Same shape as the session replay check: an insert that lands is a first
       // presentation, one that conflicts on (scope, nonce) is a replay. A row
       // past its expiry still refuses until `pruneExpired` removes it, which is
-      // the safe direction.
-      const inserted = await db
-        .insert(devicesScopedNonces)
-        .values({ id: nextId(), scope, nonce, expiresAt, createdAt: now() })
-        .onConflictDoNothing()
-        .returning({ id: devicesScopedNonces.id })
-        .all()
-      return inserted.length > 0
+      // the safe direction. `deviceProof` burns its nonce through the same
+      // primitive, under a `narduk-devices:`-prefixed scope.
+      return consumeScopedNonce(scope, nonce, expiresAt)
     },
 
-    async getCredentialBySecret(secret) {
-      if (secret.length === 0) return null
+    async getCredentialBySecret(secret, options = {}) {
+      // A completion-issued secret never expires and names no device to the
+      // caller, so a stuffing sweep across a fleet used to leave no trace at
+      // all. Failures are counted against the presented account/IP and a
+      // locked subject is refused; a success writes nothing, because this is a
+      // per-request read path (narduk-libs#228 review M2).
+      const subjects = remoteSubjects(options.remote)
+      if (await lockouts.check(subjects)) return null
+      const refuse = async (): Promise<null> => {
+        await recordAttempt(subjects, 'failure', { orgId: null, reason: 'credential secret' })
+        return null
+      }
+      if (secret.length === 0) return refuse()
       const secretHash = await sha256Hex(secret)
       const credential = first(
         await db
@@ -1420,11 +1692,16 @@ export function createDevices(
           .limit(1)
           .all(),
       )
-      // The unique index already made this an equality seek; the constant-time
-      // compare keeps the confirmation independent of the stored digest.
-      if (!credential || !timingSafeEqualHex(secretHash, credential.secretHash)) return null
-      if (credential.revokedAt !== null) return null
-      if (credential.expiresAt !== null && credential.expiresAt <= now()) return null
+      // What protects this lookup is a 256-bit secret and an equality seek on
+      // its SHA-256 digest against a UNIQUE index: at most one row can match,
+      // and it matched exactly. Re-comparing a digest the index already
+      // equated cannot return false, so the constant-time call that used to
+      // sit here documented a guard that was not the one doing the work
+      // (narduk-libs#228 review M1). `verifyCredentialSecret` is where
+      // `timingSafeEqualHex` is load-bearing: there the row is fetched by id.
+      if (!credential) return refuse()
+      if (credential.revokedAt !== null) return refuse()
+      if (credential.expiresAt !== null && credential.expiresAt <= now()) return refuse()
       return credential
     },
 
@@ -1517,7 +1794,10 @@ export function createDevices(
       if (!requestBindsTo(request, device, credential)) {
         return fail('unauthorized', 'request binding mismatch')
       }
-      if (!Number.isFinite(request.timestamp) || Math.abs(request.timestamp - now()) > skewMs) {
+      // The exported helper, not a second copy of the rule: a consumer
+      // bounding its own pre-device exchange with `assertTimestampSkew`
+      // gets the window this path enforces (narduk-libs#228 review M4).
+      if (!isWithinTimestampSkew(request.timestamp, now(), skewSeconds)) {
         return fail('unauthorized', 'timestamp outside skew window')
       }
       const challenge = await findChallenge(request.challengeId)

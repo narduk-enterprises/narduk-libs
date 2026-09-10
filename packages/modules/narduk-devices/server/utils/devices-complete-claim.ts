@@ -5,6 +5,7 @@ import {
   devicesClaimSessions,
   devicesCredentials,
   devicesDevices,
+  devicesScopedNonces,
   devicesSessions,
 } from '../database/devices-schema'
 
@@ -162,6 +163,8 @@ export interface ReissueCredentialsInput {
   credentials: readonly PreparedCredential[]
   device: Device
   idempotencyKey: string
+  /** When the single-writer row may be pruned: the claim session's expiry. */
+  lockExpiresAt: number
   reissuedAt: number
 }
 
@@ -178,11 +181,25 @@ export interface ReissueCredentialsInput {
  * device that already had the first set is handed a working replacement rather
  * than an empty array it treats as fatal.
  *
- * Concurrency is settled before the batch by a compare-and-swap on the device's
- * `revocation_generation`: exactly one caller moves it from the generation it
- * observed, and every statement in the batch is conditional on the device
- * carrying the generation that caller wrote. A loser re-reads and reports the
- * completion as already served.
+ * Concurrency is settled *inside* the batch, by a single-writer row keyed
+ * `(narduk-devices:reissue:<deviceId>, <observed generation>)` in
+ * `devices_scoped_nonces`: two callers that read the same generation contend
+ * for one UNIQUE key and exactly one insert lands. Every later statement is
+ * conditional on that row carrying this call's id, so the loser mutates
+ * nothing — including the generation bump, which is now one of the gated
+ * statements rather than an awaited compare-and-swap outside the transaction.
+ *
+ * Two properties come from putting the check and the write in one unit
+ * (narduk-libs#228 review H3). A batch that throws rolls the lock row back with
+ * everything else, so a transient D1 failure no longer leaves the generation
+ * incremented with nothing rotated. And the winner is identified by a row only
+ * this call could have written, rather than by a generation value a concurrent
+ * winner would have written too — gating on the value alone would let a loser
+ * revoke the credentials the winner had just inserted.
+ *
+ * A loser is *not* terminal: `false` here becomes a retryable status, because
+ * the loser is a device replaying its own completion and the winner has
+ * already rotated the credentials it was holding.
  */
 export async function reissueCredentialsAtomically(
   db: DevicesDatabase,
@@ -191,28 +208,35 @@ export async function reissueCredentialsAtomically(
 ): Promise<boolean> {
   const { device, reissuedAt } = input
   const nextGeneration = device.revocationGeneration + 1
+  const lockId = nextId()
 
-  // Compare-and-swap: the single writer wins here, before anything is revoked.
-  const owned = await db
-    .update(devicesDevices)
-    .set({ revocationGeneration: nextGeneration })
-    .where(
-      and(
-        eq(devicesDevices.id, device.id),
-        eq(devicesDevices.revocationGeneration, device.revocationGeneration),
-        eq(devicesDevices.status, 'claimed'),
-      ),
-    )
-    .returning({ id: devicesDevices.id })
-    .all()
-  if (owned.length === 0) return false
+  // Statement one of the batch: the single-writer claim. Two callers that read
+  // the same generation contend for one UNIQUE (scope, nonce) key.
+  const claimWriter = db
+    .insert(devicesScopedNonces)
+    .values({
+      id: lockId,
+      scope: `narduk-devices:reissue:${device.id}`,
+      nonce: String(device.revocationGeneration),
+      expiresAt: input.lockExpiresAt,
+      createdAt: reissuedAt,
+    })
+    .onConflictDoNothing()
+    .returning({ id: devicesScopedNonces.id })
 
   const text = (value: string, alias: string) => sql<string>`${value}`.as(alias)
   const nullable = (value: string | null, alias: string) => sql<string | null>`${value}`.as(alias)
   const numeric = (value: number | null, alias: string) => sql<number>`${value}`.as(alias)
-  // Every later statement is conditional on the generation this caller wrote,
-  // so a device revoked between the swap and the batch mutates nothing.
-  const stillOurs = sql`EXISTS (SELECT 1 FROM devices_devices WHERE id = ${device.id} AND revocation_generation = ${nextGeneration} AND status = 'claimed')`
+  // Every later statement is conditional on *this call* holding the writer row
+  // and on the device still being claimed, so a loser — or a device revoked
+  // between the read and the batch — mutates nothing.
+  const stillOurs = sql`EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE id = ${lockId}) AND EXISTS (SELECT 1 FROM devices_devices WHERE id = ${device.id} AND status = 'claimed')`
+
+  const bumpGeneration = db
+    .update(devicesDevices)
+    .set({ revocationGeneration: nextGeneration })
+    .where(and(eq(devicesDevices.id, device.id), stillOurs))
+    .returning({ id: devicesDevices.id })
 
   const revokeCredentials = db
     .update(devicesCredentials)
@@ -243,12 +267,7 @@ export async function reissueCredentialsAtomically(
             revokedAt: numeric(null, 'revoked_at'),
           })
           .from(devicesDevices)
-          .where(
-            and(
-              eq(devicesDevices.id, device.id),
-              eq(devicesDevices.revocationGeneration, nextGeneration),
-            ),
-          ),
+          .where(and(eq(devicesDevices.id, device.id), stillOurs)),
       )
       .returning({ id: devicesCredentials.id }),
   )
@@ -286,23 +305,21 @@ export async function reissueCredentialsAtomically(
           createdAt: numeric(reissuedAt, 'created_at'),
         })
         .from(devicesDevices)
-        .where(
-          and(
-            eq(devicesDevices.id, device.id),
-            eq(devicesDevices.revocationGeneration, nextGeneration),
-          ),
-        ),
+        .where(and(eq(devicesDevices.id, device.id), stillOurs)),
     )
     .returning({ id: devicesAuditEvents.id })
 
-  const [, ...rest] = await runDevicesBatch(db, [
+  const [claimed, ...rest] = await runDevicesBatch(db, [
+    claimWriter,
+    bumpGeneration,
     revokeCredentials,
     ...inserts,
     revokeSessions,
     audit,
   ])
-  // The inserts are the proof: an empty first insert means the device stopped
-  // carrying our generation between the swap and the batch.
-  const insertedCredentials = rest.slice(0, inserts.length) as Array<Array<{ id: string }>>
+  if ((claimed as Array<{ id: string }>).length === 0) return false
+  // The inserts are the proof: an empty insert means the device stopped being
+  // claimed inside the transaction, so nothing was rotated.
+  const insertedCredentials = rest.slice(2, 2 + inserts.length) as Array<Array<{ id: string }>>
   return insertedCredentials.every((rows) => rows.length > 0)
 }

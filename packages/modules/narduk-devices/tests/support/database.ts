@@ -7,7 +7,9 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 
 import {
+  type CanonicalCompletionRequest,
   type CanonicalSessionRequest,
+  type CompleteClaimWithRecordedApprovalInput,
   createDevices,
   type DevicesDatabase,
   type DevicesService,
@@ -32,8 +34,20 @@ export const MIGRATION_PATHS: string[] = readdirSync(MIGRATION_DIR)
 
 export const MIGRATION_SQL = MIGRATION_PATHS.map((path) => readFileSync(path, 'utf8')).join('\n')
 
-/** The first migration, still named on its own where a test asserts about it. */
-export const MIGRATION_PATH = join(MIGRATION_DIR, '0001_devices.sql')
+/**
+ * Every published migration as executable statements, in order, with comments
+ * stripped — what a runner that cannot execute a whole file at once needs (the
+ * D1-shaped `binding.batch`). Derived from `MIGRATION_PATHS` for the same
+ * reason: naming one file let `0002` ship without the D1 driver ever executing
+ * it (narduk-libs#228 review M6).
+ */
+export const MIGRATION_STATEMENTS: string[] = MIGRATION_PATHS.flatMap((path) =>
+  readFileSync(path, 'utf8')
+    .replaceAll(/--[^\n]*/gu, '')
+    .split(';')
+    .map((value) => value.trim())
+    .filter(Boolean),
+)
 
 export interface TestClock {
   advance: (milliseconds: number) => void
@@ -68,21 +82,21 @@ export interface TestDeviceKey {
   /** Raw 32-byte public key, base64url. */
   publicKey: string
   sign: (request: CanonicalSessionRequest) => string
+  /** The same signature over any canonical body — the completion proof's, say. */
+  signCanonical: (value: CanonicalValue) => string
 }
 
 export function createDeviceKey(): TestDeviceKey {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519')
   const jwk = publicKey.export({ format: 'jwk' })
   const raw = Buffer.from(jwk.x ?? '', 'base64url')
+  const signCanonical = (value: CanonicalValue) =>
+    base64UrlEncode(new Uint8Array(sign(null, canonicalBytes(value), privateKey)))
   return {
     privateKey,
     publicKey: base64UrlEncode(new Uint8Array(raw)),
-    sign: (request) =>
-      base64UrlEncode(
-        new Uint8Array(
-          sign(null, canonicalBytes(request as unknown as CanonicalValue), privateKey),
-        ),
-      ),
+    sign: (request) => signCanonical(request as unknown as CanonicalValue),
+    signCanonical,
   }
 }
 
@@ -137,6 +151,58 @@ export const ORG = 'org-1'
 export const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 export const FINGERPRINT = 'sha256:fingerprint-1'
 export const ALGORITHM = 'sha256-v1'
+
+let nonceCounter = 0
+
+export interface CompletionRequestOptions {
+  claimSessionId: string
+  devicePublicKey?: string
+  hardwareFingerprint?: string
+  idempotencyKey: string
+  installationId?: string
+  key: TestDeviceKey
+  nonce?: string
+  timestamp?: number
+}
+
+/**
+ * A device-side completion request and the Ed25519 proof the library verifies,
+ * with the defaults `startPendingClaim` produces. A test that attacks one field
+ * overrides exactly that field, leaving every other binding intact.
+ */
+export function completionRequest(
+  harness: TestHarness,
+  options: CompletionRequestOptions,
+): {
+  canonicalRequest: CanonicalCompletionRequest
+  input: CompleteClaimWithRecordedApprovalInput
+} {
+  nonceCounter += 1
+  const canonicalRequest: CanonicalCompletionRequest = {
+    claimSessionId: options.claimSessionId,
+    devicePublicKey: options.devicePublicKey ?? options.key.publicKey,
+    hardwareFingerprint: options.hardwareFingerprint ?? FINGERPRINT,
+    idempotencyKey: options.idempotencyKey,
+    installationId: options.installationId ?? 'inst-1',
+    nonce: options.nonce ?? `proof-nonce-${nonceCounter}`,
+    timestamp: options.timestamp ?? harness.clock.now(),
+  }
+  return {
+    canonicalRequest,
+    input: {
+      claimSessionId: canonicalRequest.claimSessionId,
+      devicePublicKey: canonicalRequest.devicePublicKey,
+      hardwareFingerprint: canonicalRequest.hardwareFingerprint,
+      idempotencyKey: canonicalRequest.idempotencyKey,
+      installationId: canonicalRequest.installationId,
+      deviceProof: {
+        canonicalRequest,
+        signature: options.key.signCanonical(canonicalRequest as unknown as CanonicalValue),
+      },
+      reissueOnIdempotentReplay: true,
+    },
+  }
+}
 
 /** Mint a token and start a claim for a fresh device; returns everything a completion needs. */
 export async function startPendingClaim(

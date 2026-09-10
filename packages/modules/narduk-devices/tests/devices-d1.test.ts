@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-
 import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -10,7 +8,7 @@ import {
   ALGORITHM,
   createDeviceKey,
   FINGERPRINT,
-  MIGRATION_PATH,
+  MIGRATION_STATEMENTS,
   ORG,
   VESSEL,
 } from './support/database'
@@ -26,12 +24,9 @@ describe('D1 integration', () => {
 
   beforeAll(async () => {
     binding = await runtime.getD1Database('DB')
-    const statements = readFileSync(MIGRATION_PATH, 'utf8')
-      .replaceAll(/--[^\n]*/g, '')
-      .split(';')
-      .map((value) => value.trim())
-      .filter(Boolean)
-    await binding.batch(statements.map((statement) => binding.prepare(statement)))
+    // Every shipped migration, not just 0001: a new table or index has to
+    // survive the D1 driver, not only better-sqlite3.
+    await binding.batch(MIGRATION_STATEMENTS.map((statement) => binding.prepare(statement)))
   })
 
   afterAll(async () => {
@@ -127,5 +122,16 @@ describe('D1 integration', () => {
         credentialId: ingest?.credentialId ?? '',
       }),
     ).rejects.toMatchObject({ code: 'unauthorized' })
+
+    // 0002's own additions, exercised on the D1 driver rather than assumed:
+    // the UNIQUE secret_hash index resolves a bare bearer, and the scoped
+    // nonce table refuses a replay.
+    expect(await devices.getCredentialBySecret(command?.secret ?? '')).toMatchObject({
+      id: command?.credentialId,
+    })
+    expect(await devices.getCredentialBySecret('not-a-secret')).toBeNull()
+    const nonce = { scope: `claim-handoff:${claimSessionId}`, nonce: 'n-1', expiresAt: Date.now() + 60_000 }
+    expect(await devices.consumeNonce(nonce)).toBe(true)
+    expect(await devices.consumeNonce(nonce)).toBe(false)
   }, 30_000)
 })
