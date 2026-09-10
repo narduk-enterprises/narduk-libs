@@ -107,8 +107,8 @@ export function socialPreviewFiles(
       path: 'apps/web/tests/e2e/social-previews.spec.ts',
       contents: `import { fileURLToPath } from 'node:url'
 
-import { expect, test } from '@playwright/test'
 import { checkSocialPreviews, readSocialPreviewConfig } from '@narduk-enterprises/narduk-app-tools'
+import { expect, test } from '@playwright/test'
 
 test('share previews are present in HTML and resolve to real images', async ({ baseURL }) => {
   test.setTimeout(180_000)
