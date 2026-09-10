@@ -49,11 +49,21 @@ The planner, `ci / Required`, `verify`, and release `verify-ci` jobs run on
 GitHub's `ubuntu-slim` runners. They hold no repository secrets, perform no
 package install, and gate the privileged self-hosted publication, fitting
 company-hq's CI runner policy §2 exception 2. Their short work no longer queues
-behind package builds. Package batches and repository contracts remain on the
-manifest's `linux-ci` route; browser tests and packed consumers retain their
-isolated browser route; publication retains `linux-deploy`. The callable's
-`required-runner` input changes only its aggregate, preserving its check name
-and failure rules.
+behind package builds. Package batches, repository contracts and logging
+language checks all honor the same `BLACKSMITH_RUNNERS_ENABLED` switch.
+Blacksmith is kept enabled for `narduk-libs` through persistent repository
+variables: `BLACKSMITH_RUNNERS_ENABLED=true` and
+`BLACKSMITH_LINUX_LABEL=blacksmith-4vcpu-ubuntu-2404`. This repository override
+leaves the organization default unchanged and applies to subsequent PR, main and
+manual runs. These jobs need public package/toolchain endpoints, with only
+read-only package credentials; they do not need the tailnet or deploy access.
+Setting the switch to `false` returns every ordinary Linux job to the complete
+manifest `linux-ci` group and labels. Cancel and rerun unfinished jobs after
+changing the switch: queued jobs keep their original route. This is manual
+provider selection, not automatic queue-depth routing. Browser tests and packed
+consumers retain their isolated browser route; publication retains
+`linux-deploy`. The callable's `required-runner` input changes only its
+aggregate, preserving its check name and failure rules.
 
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and

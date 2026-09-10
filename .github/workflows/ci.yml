@@ -116,9 +116,9 @@ jobs:
     # Repository-wide preflight: a failed contract cannot produce a releasable
     # result, so reject it before reserving package and browser runner slots.
     name: contracts
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
+    # Share the package callable's persistent repository switch and rollback.
+    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
     timeout-minutes: 30
     permissions:
       contents: read

@@ -9,9 +9,9 @@ permissions:
 jobs:
   python:
     name: Python artifacts
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
+    # Share the package callable's persistent repository switch and rollback.
+    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -27,9 +27,9 @@ jobs:
 
   swift-linux:
     name: Swift Linux artifacts
-    runs-on:
-      group: linux-ci
-      labels: [self-hosted, Linux, X64, proxmox, linux-ci]
+    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
+    # Share the package callable's persistent repository switch and rollback.
+    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
