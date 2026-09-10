@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, lt, lte } from 'drizzle-orm'
 
-import { CREDENTIAL_CLASSES } from '../../shared/types/devices'
+import { CREDENTIAL_CLASSES, DEVICES_INTERNAL_NONCE_PREFIX } from '../../shared/types/devices'
 import { DEVICES_LOCKOUT_POLICY } from '../../shared/utils/lockout-policy'
 import {
   devicesAuditEvents,
@@ -18,7 +18,9 @@ import {
 import {
   completeClaimAtomically,
   type PreparedCredential,
+  type ReissueOutcome,
   reissueCredentialsAtomically,
+  type ScopedNonceRef,
 } from './devices-complete-claim'
 import { DevicesError } from './devices-error'
 import {
@@ -119,12 +121,50 @@ export const DEVICE_LIST_MAX_LIMIT = 200
 export const MAX_REISSUES_PER_CLAIM_SESSION = 3
 
 /**
- * What a caller that lost the re-issue compare-and-swap is told to wait. The
- * loser is a device replaying its *own* completion, so the answer has to be
- * retryable: a terminal status there bricks a device whose credentials the
- * winning attempt already rotated (narduk-libs#228 review H3).
+ * The window a caller that lost the re-issue compare-and-swap is told to wait
+ * within. The loser is a device replaying its *own* completion, so the answer
+ * has to be retryable: a terminal status there bricks a device whose
+ * credentials the winning attempt already rotated (narduk-libs#228 review H3).
  */
-export const REISSUE_CONTENTION_RETRY_AFTER_SECONDS = 1
+export const REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN = 2
+export const REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX = 5
+
+/**
+ * What a caller that lost the re-issue compare-and-swap is told to wait.
+ *
+ * Jittered across a small window rather than fixed. A constant hint is not a
+ * leak — it carries nothing about the winner — but a fixed one second on a boat
+ * uplink mostly guarantees the same two callers collide again
+ * (narduk-libs#228 second review L2). `random` must be uniform on `[0, 1)`; the
+ * value it produces is a scheduling hint, never a security parameter, and is
+ * drawn from nothing the request contains.
+ */
+export function reissueRetryAfterSeconds(random: () => number = Math.random): number {
+  const span = REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX - REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN
+  const offset = Math.min(Math.max(random(), 0), 0.999_999_999)
+  return REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN + Math.floor(offset * (span + 1))
+}
+
+/**
+ * The longest life `consumeNonce` will accept for a caller-supplied nonce.
+ *
+ * `pruneExpired` reclaims a scoped nonce only once its `expiresAt` has passed,
+ * so an unbounded expiry is an unprunable row in a table this package now
+ * depends on for its own locking (narduk-libs#228 second review L3). Refused
+ * loudly rather than clamped: silently shortening a caller's replay window
+ * would re-open replay for that caller without telling it.
+ *
+ * Seven days, not a tight bound: the job is to keep a row *reachable* by the
+ * prune, not to police retention. A consumer holding a claim-handoff nonce for
+ * a day past its claim session is well inside it; the wedge this refuses wrote
+ * rows ten years out.
+ */
+export const SCOPED_NONCE_MAX_TTL_SECONDS = 604_800
+
+/** Where one claim session's completion proofs are single-use. */
+function completionNonceScope(claimSessionId: string): string {
+  return `${DEVICES_INTERNAL_NONCE_PREFIX}claim-completion:${claimSessionId}`
+}
 
 const CREDENTIAL_FINGERPRINT_DOMAIN = 'narduk-devices:credential-fingerprint:'
 
@@ -474,13 +514,46 @@ export interface PruneExpiredResult {
 
 /**
  * A single-use nonce for a signed exchange this package does not itself model
- * — the leg before any device session exists. `scope` is opaque: namespace it
- * so two exchanges cannot collide, for example `claim-handoff:<claimSessionId>`.
+ * — the leg before any device session exists.
  */
+/**
+ * A `RemoteContext` that actually resolves to a lockout subject.
+ *
+ * `remoteSubjects({})` is the empty list, so an options bag that merely *has* a
+ * `remote` key can still be blind. Requiring one of the two fields at the type
+ * level makes the blind case a compile error rather than a silent one
+ * (narduk-libs#228 second review M1).
+ */
+export type AttributableRemoteContext =
+  | (RemoteContext & { accountKey: string })
+  | (RemoteContext & { ip: string })
+
+/**
+ * Who a failed bare-secret resolution is counted against. Required, and with no
+ * default: a caller must either name a subject or say out loud that it has
+ * none, because an unattributed lookup silently disables the whole sweep
+ * counter (narduk-libs#228 second review M1).
+ */
+export type CredentialSecretLookupOptions =
+  | { remote: AttributableRemoteContext; unattributed?: never }
+  | { remote?: never; unattributed: true }
+
 export interface ConsumeNonceInput {
-  /** Millisecond epoch after which the nonce may be forgotten by `pruneExpired`. */
+  /**
+   * Millisecond epoch after which the nonce may be forgotten by `pruneExpired`.
+   * At most `SCOPED_NONCE_MAX_TTL_SECONDS` ahead of now; further out is refused
+   * with `DevicesError('invalid')`, because a row the prune can never reach is
+   * permanent (narduk-libs#228 second review L3).
+   */
   expiresAt: number
   nonce: string
+  /**
+   * Opaque to this package, with one reservation: a scope starting with
+   * `DEVICES_INTERNAL_NONCE_PREFIX` (`narduk-devices:`) is refused, because the
+   * package writes its own completion-proof and re-issue-lock rows under that
+   * prefix in the same table. Namespace yours so two exchanges cannot collide,
+   * for example `claim-handoff:<claimSessionId>`.
+   */
   scope: string
 }
 
@@ -541,15 +614,25 @@ export interface DevicesService {
    * `getSessionByToken`, for a client that presents only the secret.
    *
    * Completion-issued secrets do not expire, so this is a long-lived bearer:
-   * pass `remote` from every HTTP route. A resolution that fails counts against
-   * the lockout and a locked subject is refused, which is what makes a
+   * pass `remote` from every HTTP route, or say `unattributed: true` and accept
+   * that nothing is counted. A secret that names **no row at all** counts
+   * against the lockout and a locked subject is refused, which is what makes a
    * credential-stuffing sweep across a fleet both bounded and visible in the
-   * `security.lockout` audit trail (narduk-libs#228 review M2). A successful
-   * resolution writes nothing — this is a per-request read path.
+   * `security.lockout` audit trail (narduk-libs#228 review M2).
+   *
+   * A secret that names a **revoked or expired row** returns null and counts
+   * nothing. That is not leniency, it is the difference between a guess and a
+   * known-good credential gone stale: devices aboard one vessel share a public
+   * IP, the edge presents its bearer on every ingest request, and a re-issue or
+   * an operator rotation is exactly what makes one device's secret stale. Under
+   * the old rule a single device retrying yesterday's secret refused its
+   * healthy neighbours 99.7% of the time with no attacker present
+   * (narduk-libs#228 second review H1). A successful resolution writes nothing
+   * either — this is a per-request read path.
    */
   getCredentialBySecret: (
     secret: string,
-    options?: { remote?: RemoteContext },
+    options: CredentialSecretLookupOptions,
   ) => Promise<DeviceCredential | null>
   getDevice: (deviceId: string) => Promise<Device | null>
   /** The active (unexpired, unrevoked) session named by its row id, or null. */
@@ -898,6 +981,13 @@ export function createDevices(
      */
     canReissue: (session: ClaimSession, token: ClaimToken) => boolean | Promise<boolean>
     claimSessionId: string
+    /**
+     * The single-use row the re-issue batch must burn atomically with the serve,
+     * or null on a path that authenticates with a bearer and carries no proof.
+     * Read after `canReissue` has already verified the signature, so it only
+     * ever names a nonce this caller is entitled to spend.
+     */
+    completionProofNonce: (session: ClaimSession) => ScopedNonceRef | null
     hardwareFingerprint: string
     idempotencyKey: string
     installationId: string
@@ -925,16 +1015,23 @@ export function createDevices(
 
   /**
    * Does this proof show the caller holds the private key the claim session
-   * recorded, for this exact request, once?
+   * recorded, for this exact request?
    *
-   * The same three legs `openSession` verifies, in the same order: bind every
-   * signed field to resolved state, verify the Ed25519 signature against the
-   * *recorded* key, then burn the nonce. Burning last means an unsigned guess
-   * cannot spend the genuine device's nonce, and burning at all means a
-   * captured claim handoff is spent rather than replayable
-   * (narduk-libs#228 review H1).
+   * The first two legs `openSession` verifies, in the same order: bind every
+   * signed field to resolved state, then verify the Ed25519 signature against
+   * the *recorded* key. Single use is the caller's third leg, because where the
+   * nonce is burned differs by path:
+   *
+   * - a **first completion** burns it here, before the completion batch, so a
+   *   captured first-completion proof cannot later be turned into a re-issue;
+   * - a **re-issue** burns it *inside* the re-issue batch, so a caller that
+   *   loses the single-writer race spends nothing and its own retry of the
+   *   identical payload is admitted (narduk-libs#228 second review H2).
+   *
+   * Either way this function is evaluated last on every path, so a caller
+   * refused by a cheaper check never reaches the nonce at all.
    */
-  async function completionProofVerifies(
+  async function completionProofBinds(
     session: ClaimSession,
     bound: {
       devicePublicKey: string
@@ -967,12 +1064,19 @@ export function createDevices(
       publicKey: publicKeyBytes,
       signature: signatureBytes,
     })
-    if (!verified) return false
-    return consumeScopedNonce(
-      `narduk-devices:claim-completion:${session.id}`,
-      request.nonce,
-      session.expiresAt,
-    )
+    return verified
+  }
+
+  /** The single-use row a completion proof's nonce occupies for this session. */
+  function completionProofNonceRef(
+    session: ClaimSession,
+    proof: DeviceCompletionProof,
+  ): ScopedNonceRef {
+    return {
+      scope: completionNonceScope(session.id),
+      nonce: proof.canonicalRequest.nonce,
+      expiresAt: session.expiresAt,
+    }
   }
 
   /**
@@ -1012,6 +1116,7 @@ export function createDevices(
     | { kind: 'capped' }
     | { kind: 'contended' }
     | { kind: 'not_serviceable' }
+    | { kind: 'proof_spent' }
     | { kind: 'served'; result: CompleteClaimResult }
 
   /**
@@ -1026,6 +1131,7 @@ export function createDevices(
   async function reissueForReplay(
     session: ClaimSession,
     idempotencyKey: string,
+    proofNonce: ScopedNonceRef | null,
   ): Promise<ReplayOutcome> {
     if (session.completionIdempotencyKey !== idempotencyKey) return { kind: 'not_serviceable' }
     if (session.deviceId === null) return { kind: 'not_serviceable' }
@@ -1052,7 +1158,7 @@ export function createDevices(
       ),
     )
     const reissuedAt = now()
-    const won = await reissueCredentialsAtomically(
+    const outcome: ReissueOutcome = await reissueCredentialsAtomically(
       db,
       {
         device,
@@ -1060,11 +1166,12 @@ export function createDevices(
         idempotencyKey,
         credentials: prepared.map((entry) => entry.prepared),
         lockExpiresAt: session.expiresAt,
+        proofNonce,
         reissuedAt,
       },
       nextId,
     )
-    if (!won) return { kind: 'contended' }
+    if (outcome !== 'served') return { kind: outcome }
     // Fresh secrets, returned exactly once; only their digests were stored.
     return {
       kind: 'served',
@@ -1128,15 +1235,18 @@ export function createDevices(
     session: ClaimSession,
     token: ClaimToken,
     ctx: {
-      alreadyCompleted: (completed: ClaimSession) => CompleteClaimResult
+      alreadyCompleted: (completed: ClaimSession, discloseDeviceId: boolean) => CompleteClaimResult
       fail: (status: ClaimCompleteStatus, reason?: string) => Promise<CompleteClaimResult>
       idempotencyKey: string
       recordSuccess: () => Promise<void>
       run: CompleteClaimRun
     },
   ): Promise<CompleteClaimResult> {
-    // Not opted in: exactly 0.1.0's answer, and nothing is rotated.
-    if (!ctx.run.reissue) return ctx.alreadyCompleted(session)
+    // Not opted in: exactly 0.1.0's answer, nothing is rotated — and nothing is
+    // disclosed either. This is the branch an unauthenticated caller reaches by
+    // default, so it must not hand back the `deviceId` that names the library's
+    // own re-issue lock scope (narduk-libs#228 second review H3).
+    if (!ctx.run.reissue) return ctx.alreadyCompleted(session, false)
     // An operator who revokes the claim token after completion expects the
     // claim to be dead, re-issues included (narduk-libs#228 review L1).
     if (token.revokedAt !== null) return ctx.fail('revoked')
@@ -1147,23 +1257,40 @@ export function createDevices(
       // `deviceId` either — a caller that proved nothing learns nothing.
       return ctx.fail('already_completed', 'reissue_refused')
     }
-    const outcome = await reissueForReplay(session, ctx.idempotencyKey)
+    // Past `canReissue` the caller is authenticated: it either signed this
+    // exact request with the key the claim session recorded, or presented the
+    // raw approval token. Every outcome below is therefore a *served or not
+    // serviceable* answer to a genuine device — never a guess — so none of them
+    // advances a lockout counter (narduk-libs#228 second review H2, M4).
+    const proofNonce = ctx.run.completionProofNonce(session)
+    const outcome = await reissueForReplay(session, ctx.idempotencyKey, proofNonce)
     if (outcome.kind === 'served') {
       await ctx.recordSuccess()
       return outcome.result
     }
     if (outcome.kind === 'contended') {
       // The winner rotated this device's credentials, so a terminal status here
-      // would brick it. Retry is the recovery (review H3).
+      // would brick it. Retry is the recovery (review H3) — and because the
+      // proof's nonce is burned inside the winning batch, this caller spent
+      // nothing and may resend the identical signed payload.
       return {
         status: 'rate_limited',
         credentials: [],
-        retryAfterSeconds: REISSUE_CONTENTION_RETRY_AFTER_SECONDS,
+        retryAfterSeconds: reissueRetryAfterSeconds(),
         ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
       }
     }
-    if (outcome.kind === 'capped') return ctx.fail('already_completed', 'reissue_cap')
-    return ctx.alreadyCompleted(session)
+    // `proof_spent`: this exact signed request was already served. `capped`:
+    // the claim session has had its `MAX_REISSUES_PER_CLAIM_SESSION` re-issues.
+    // `not_serviceable`: nothing left to rotate. All three are terminal for
+    // *this* request; a fresh proof is what recovers, inside the cap.
+    //
+    // None of them discloses `deviceId`. A replay is the one branch a wire
+    // capture can reach — an Ed25519 signature over a fixed message is
+    // replayable by anyone who saw it, and `proof_spent` is precisely the
+    // signal that says this payload has been seen before — so the replay path
+    // tells a caller its outcome and nothing else.
+    return ctx.alreadyCompleted(session, false)
   }
 
   async function runCompleteClaim(run: CompleteClaimRun): Promise<CompleteClaimResult> {
@@ -1171,6 +1298,22 @@ export function createDevices(
     const idempotencyKey = requireText(run.idempotencyKey, 'idempotencyKey')
     const session = await findClaimSession(run.claimSessionId)
     if (!session) {
+      // Naming a session id that does not exist is a failed authentication
+      // attempt, not a free oracle: it is counted against whatever remote
+      // subject the caller presented, and a locked subject gets the same
+      // `rate_limited` answer every other refusal here gets
+      // (narduk-libs#228 second review L1). The `not_found` throw itself is
+      // unchanged — it is the documented contract for an unknown id.
+      const remote = remoteSubjects(run.remote)
+      const enumerating = await lockouts.check(remote)
+      if (enumerating) {
+        return {
+          status: 'rate_limited',
+          credentials: [],
+          retryAfterSeconds: enumerating.retryAfterSeconds,
+        }
+      }
+      await recordAttempt(remote, 'failure', { orgId: null, reason: 'claim session not found' })
       throw new DevicesError('not_found', `Claim session ${run.claimSessionId} does not exist.`)
     }
     const token = await findClaimToken(session.claimTokenId)
@@ -1200,10 +1343,26 @@ export function createDevices(
       await recordAttempt(subjects, 'failure', { orgId: token.orgId, reason })
       return { status, credentials: [] }
     }
-    const alreadyCompleted = (completed: ClaimSession): CompleteClaimResult => ({
+    /**
+     * `discloseDeviceId` is true only for a caller that ran the full
+     * authorization for a *first* completion and merely lost the race to
+     * another equally authorized attempt — a caller that would have been handed
+     * `deviceId` had it won.
+     *
+     * Every replay answer passes false. `deviceId` names the scope of the
+     * library's own re-issue lock, and handing it to a caller that proved
+     * nothing is what let an attacker aim pre-inserted rows at the recovery
+     * path (narduk-libs#228 second review H3).
+     */
+    const alreadyCompleted = (
+      completed: ClaimSession,
+      discloseDeviceId: boolean,
+    ): CompleteClaimResult => ({
       status: 'already_completed',
       credentials: [],
-      ...(completed.deviceId === null ? {} : { deviceId: completed.deviceId }),
+      ...(discloseDeviceId && completed.deviceId !== null
+        ? { deviceId: completed.deviceId }
+        : {}),
     })
 
     if (session.status === 'claimed') {
@@ -1241,7 +1400,9 @@ export function createDevices(
     )
     if (!won) {
       const current = await findClaimSession(session.id)
-      if (current?.status === 'claimed') return alreadyCompleted(current)
+      // Authorized: this caller passed `run.authorize` and merely lost the
+      // completion race to a concurrent, equally authorized attempt.
+      if (current?.status === 'claimed') return alreadyCompleted(current, true)
       if (current?.status === 'revoked') return fail('revoked')
       return fail('expired')
     }
@@ -1590,6 +1751,9 @@ export function createDevices(
         reissue: input.reissueOnIdempotentReplay ?? false,
         remote: input.remote,
         accountSubject: () => approvedByUserId,
+        // This path proves the caller with the raw approval token, not a
+        // single-use signed proof, so there is no nonce for the batch to burn.
+        completionProofNonce: () => null,
         canReissue: async (session, token) =>
           session.hardwareFingerprint === input.hardwareFingerprint &&
           orgAndResourceMatch(token) &&
@@ -1636,20 +1800,30 @@ export function createDevices(
         session.approvalOrgId === token.orgId &&
         session.approvalResourceKind === token.resourceKind &&
         session.approvalResourceId === token.resourceId
+      const boundFields = {
+        devicePublicKey,
+        hardwareFingerprint: input.hardwareFingerprint,
+        idempotencyKey: input.idempotencyKey,
+        installationId: input.installationId,
+      }
       // Evaluated last on every path, so a caller refused by a cheaper check
-      // never spends the nonce it presented.
-      const proves = async (session: ClaimSession): Promise<boolean> =>
-        proof !== undefined &&
-        (await completionProofVerifies(
-          session,
-          {
-            devicePublicKey,
-            hardwareFingerprint: input.hardwareFingerprint,
-            idempotencyKey: input.idempotencyKey,
-            installationId: input.installationId,
-          },
-          proof,
-        ))
+      // never reaches the nonce it presented.
+      const binds = async (session: ClaimSession): Promise<boolean> =>
+        proof !== undefined && (await completionProofBinds(session, boundFields, proof))
+      /**
+       * A **first** completion spends the proof here, outside the completion
+       * batch. That burn is load-bearing: without it a captured
+       * first-completion proof still satisfies every re-issue binding — same
+       * session, same key, same idempotency key — and would buy a fresh
+       * credential set (narduk-libs#228 review H1). The re-issue path burns in
+       * its own batch instead; see `completionProofNonce` below.
+       */
+      const proves = async (session: ClaimSession): Promise<boolean> => {
+        if (proof === undefined) return false
+        if (!(await binds(session))) return false
+        const ref = completionProofNonceRef(session, proof)
+        return consumeScopedNonce(ref.scope, ref.nonce, ref.expiresAt)
+      }
 
       return runCompleteClaim({
         claimSessionId: input.claimSessionId,
@@ -1659,11 +1833,13 @@ export function createDevices(
         reissue,
         remote: input.remote,
         accountSubject: (session) => session.approvalUserId,
+        completionProofNonce: (session) =>
+          proof === undefined ? null : completionProofNonceRef(session, proof),
         canReissue: async (session, token) =>
           bindsDevice(session) &&
           session.approvalTokenHash !== null &&
           approvalMatchesToken(session, token) &&
-          (await proves(session)),
+          (await binds(session)),
         authorize: async (session, token) => {
           if (!bindsDevice(session)) return { ok: false, status: 'hardware_mismatch' }
           if (
@@ -1691,27 +1867,54 @@ export function createDevices(
       const scope = requireText(input.scope, 'scope')
       const nonce = requireText(input.nonce, 'nonce')
       const expiresAt = requirePositiveInteger(input.expiresAt, 'expiresAt')
+      // The package writes its own single-use rows into this table — the
+      // completion-proof nonce and the re-issue single-writer lock — so the
+      // prefix that names them is reserved. Without this, a consumer that
+      // forwards an attacker-influenced scope lets the attacker pre-insert the
+      // lock rows the recovery path needs and wedge it permanently
+      // (narduk-libs#228 second review H3).
+      if (scope.startsWith(DEVICES_INTERNAL_NONCE_PREFIX)) {
+        throw new DevicesError(
+          'invalid',
+          `scope must not start with "${DEVICES_INTERNAL_NONCE_PREFIX}": that prefix is reserved for this package's own single-use rows.`,
+        )
+      }
+      // A caller-chosen expiry `pruneExpired` can never reach is a permanent
+      // row in a table the package depends on (second review L3). Refused
+      // rather than clamped: clamping would silently shorten the caller's own
+      // replay window instead of telling it.
+      if (expiresAt > now() + SCOPED_NONCE_MAX_TTL_SECONDS * 1000) {
+        throw new DevicesError(
+          'invalid',
+          `expiresAt must be no more than ${String(SCOPED_NONCE_MAX_TTL_SECONDS)} seconds ahead: a nonce pruneExpired cannot reclaim is a permanent row.`,
+        )
+      }
       // Same shape as the session replay check: an insert that lands is a first
       // presentation, one that conflicts on (scope, nonce) is a replay. A row
       // past its expiry still refuses until `pruneExpired` removes it, which is
       // the safe direction. `deviceProof` burns its nonce through the same
-      // primitive, under a `narduk-devices:`-prefixed scope.
+      // primitive, under a reserved `narduk-devices:`-prefixed scope.
       return consumeScopedNonce(scope, nonce, expiresAt)
     },
 
-    async getCredentialBySecret(secret, options = {}) {
+    async getCredentialBySecret(secret, options) {
       // A completion-issued secret never expires and names no device to the
       // caller, so a stuffing sweep across a fleet used to leave no trace at
       // all. Failures are counted against the presented account/IP and a
       // locked subject is refused; a success writes nothing, because this is a
       // per-request read path (narduk-libs#228 review M2).
-      const subjects = remoteSubjects(options.remote)
+      const subjects = options.unattributed === true ? [] : remoteSubjects(options.remote)
       if (await lockouts.check(subjects)) return null
-      const refuse = async (): Promise<null> => {
+      /**
+       * A *guess*: the presented secret matches no row in the table. Only this
+       * shape advances the counter, because only this shape is what a
+       * credential-stuffing sweep produces.
+       */
+      const guessed = async (): Promise<null> => {
         await recordAttempt(subjects, 'failure', { orgId: null, reason: 'credential secret' })
         return null
       }
-      if (secret.length === 0) return refuse()
+      if (secret.length === 0) return guessed()
       const secretHash = await sha256Hex(secret)
       const credential = first(
         await db
@@ -1728,9 +1931,15 @@ export function createDevices(
       // sit here documented a guard that was not the one doing the work
       // (narduk-libs#228 review M1). `verifyCredentialSecret` is where
       // `timingSafeEqualHex` is load-bearing: there the row is fetched by id.
-      if (!credential) return refuse()
-      if (credential.revokedAt !== null) return refuse()
-      if (credential.expiresAt !== null && credential.expiresAt <= now()) return refuse()
+      if (!credential) return guessed()
+      // Stale, not a guess. The caller has already proved it held this exact
+      // secret; a revoked or expired row is a known-good credential the fleet
+      // rotated out from under it. Counting that against the vessel's shared IP
+      // takes every camera aboard offline for a rotation nobody attacked
+      // (narduk-libs#228 second review H1). Refuse the credential, count
+      // nothing, and leave the neighbours served.
+      if (credential.revokedAt !== null) return null
+      if (credential.expiresAt !== null && credential.expiresAt <= now()) return null
       return credential
     },
 

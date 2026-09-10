@@ -17,7 +17,7 @@ describe('credential lookup by bare secret', () => {
     const harness = createTestHarness()
     const claimed = await claimDevice(harness)
 
-    const ingest = await harness.devices.getCredentialBySecret(claimed.ingest.secret)
+    const ingest = await harness.devices.getCredentialBySecret(claimed.ingest.secret, { unattributed: true })
     expect(ingest).toMatchObject({
       id: claimed.ingest.credentialId,
       credentialClass: 'ingest',
@@ -25,7 +25,7 @@ describe('credential lookup by bare secret', () => {
       version: 1,
     })
 
-    const command = await harness.devices.getCredentialBySecret(claimed.command.secret)
+    const command = await harness.devices.getCredentialBySecret(claimed.command.secret, { unattributed: true })
     expect(command).toMatchObject({
       id: claimed.command.credentialId,
       credentialClass: 'command',
@@ -41,7 +41,7 @@ describe('credential lookup by bare secret', () => {
     await claimDevice(harness)
     const candidates = ['', 'not-a-secret', ' ', 'a'.repeat(4096)]
     const resolved = await Promise.all(
-      candidates.map(async (candidate) => harness.devices.getCredentialBySecret(candidate)),
+      candidates.map(async (candidate) => harness.devices.getCredentialBySecret(candidate, { unattributed: true })),
     )
     expect(resolved).toEqual([null, null, null, null])
   })
@@ -56,14 +56,14 @@ describe('credential lookup by bare secret', () => {
       actorUserId: 'owner-1',
     })
 
-    await expect(harness.devices.getCredentialBySecret(claimed.ingest.secret)).resolves.toBeNull()
-    await expect(harness.devices.getCredentialBySecret(rotated.secret)).resolves.toMatchObject({
+    await expect(harness.devices.getCredentialBySecret(claimed.ingest.secret, { unattributed: true })).resolves.toBeNull()
+    await expect(harness.devices.getCredentialBySecret(rotated.secret, { unattributed: true })).resolves.toMatchObject({
       id: rotated.credentialId,
       version: 2,
     })
     // The other class is untouched.
     await expect(
-      harness.devices.getCredentialBySecret(claimed.command.secret),
+      harness.devices.getCredentialBySecret(claimed.command.secret, { unattributed: true }),
     ).resolves.not.toBeNull()
   })
 
@@ -77,17 +77,17 @@ describe('credential lookup by bare secret', () => {
       actorUserId: 'owner-1',
       expiresAt,
     })
-    await expect(harness.devices.getCredentialBySecret(issued.secret)).resolves.not.toBeNull()
+    await expect(harness.devices.getCredentialBySecret(issued.secret, { unattributed: true })).resolves.not.toBeNull()
     harness.clock.set(expiresAt)
-    await expect(harness.devices.getCredentialBySecret(issued.secret)).resolves.toBeNull()
+    await expect(harness.devices.getCredentialBySecret(issued.secret, { unattributed: true })).resolves.toBeNull()
   })
 
   it('stops resolving every credential of a revoked device', async () => {
     const harness = createTestHarness()
     const claimed = await claimDevice(harness)
     await harness.devices.revokeDevice({ deviceId: claimed.deviceId, actorUserId: 'owner-1' })
-    await expect(harness.devices.getCredentialBySecret(claimed.ingest.secret)).resolves.toBeNull()
-    await expect(harness.devices.getCredentialBySecret(claimed.command.secret)).resolves.toBeNull()
+    await expect(harness.devices.getCredentialBySecret(claimed.ingest.secret, { unattributed: true })).resolves.toBeNull()
+    await expect(harness.devices.getCredentialBySecret(claimed.command.secret, { unattributed: true })).resolves.toBeNull()
   })
 
   it('refuses to store two credentials behind one digest', async () => {
@@ -148,9 +148,12 @@ describe('credential lookup by bare secret', () => {
       harness.devices.getCredentialBySecret(claimed.ingest.secret, { remote }),
     ).resolves.toBeNull()
     // ...and the lockout is scoped to the subject, not to the credential: the
-    // device's own secret still resolves from anywhere else.
+    // device's own secret still resolves from another IP, which is a counted
+    // subject in its own right rather than an unattributed lookup.
     await expect(
-      harness.devices.getCredentialBySecret(claimed.ingest.secret),
+      harness.devices.getCredentialBySecret(claimed.ingest.secret, {
+        remote: { ip: '198.51.100.9' },
+      }),
     ).resolves.not.toBeNull()
   })
 

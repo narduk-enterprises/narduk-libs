@@ -9,10 +9,13 @@ import {
   devicesSessions,
 } from '../database/devices-schema'
 
+import { DEVICES_INTERNAL_NONCE_PREFIX } from '../../shared/types/devices'
+
 import { runDevicesBatch } from './devices-atomic'
 
 import type { ClaimToken, CredentialClass, Device } from '../../shared/types/devices'
 import type { DevicesDatabase } from './devices'
+import type { BatchItem } from 'drizzle-orm/batch'
 
 export interface PreparedCredential {
   credentialClass: CredentialClass
@@ -165,8 +168,34 @@ export interface ReissueCredentialsInput {
   idempotencyKey: string
   /** When the single-writer row may be pruned: the claim session's expiry. */
   lockExpiresAt: number
+  /**
+   * The device proof's single-use nonce, burned **inside this batch** so it is
+   * spent if and only if the re-issue is actually served
+   * (narduk-libs#228 second review H2). Null on the completion path that
+   * authenticates with a raw approval token and carries no proof.
+   */
+  proofNonce: ScopedNonceRef | null
   reissuedAt: number
 }
+
+/** A `(scope, nonce)` pair in `devices_scoped_nonces`, with its prune horizon. */
+export interface ScopedNonceRef {
+  expiresAt: number
+  nonce: string
+  scope: string
+}
+
+/**
+ * Why a re-issue was not served, or that it was.
+ *
+ * `contended` and `proof_spent` are deliberately distinct. A contended caller
+ * lost the single-writer race and spent **nothing**, so resending the identical
+ * signed payload is a legitimate retry and will work. A `proof_spent` caller
+ * presented a proof that verified but had already been redeemed, which is a
+ * retry of a request that was already served — not a guess, and so not a
+ * lockout failure either.
+ */
+export type ReissueOutcome = 'contended' | 'proof_spent' | 'served'
 
 /**
  * Re-issue every active credential of an already-completed claim, atomically.
@@ -205,32 +234,88 @@ export async function reissueCredentialsAtomically(
   db: DevicesDatabase,
   input: ReissueCredentialsInput,
   nextId: () => string,
-): Promise<boolean> {
-  const { device, reissuedAt } = input
+): Promise<ReissueOutcome> {
+  const { device, proofNonce, reissuedAt } = input
   const nextGeneration = device.revocationGeneration + 1
   const lockId = nextId()
-
-  // Statement one of the batch: the single-writer claim. Two callers that read
-  // the same generation contend for one UNIQUE (scope, nonce) key.
-  const claimWriter = db
-    .insert(devicesScopedNonces)
-    .values({
-      id: lockId,
-      scope: `narduk-devices:reissue:${device.id}`,
-      nonce: String(device.revocationGeneration),
-      expiresAt: input.lockExpiresAt,
-      createdAt: reissuedAt,
-    })
-    .onConflictDoNothing()
-    .returning({ id: devicesScopedNonces.id })
+  const proofNonceId = nextId()
 
   const text = (value: string, alias: string) => sql<string>`${value}`.as(alias)
   const nullable = (value: string | null, alias: string) => sql<string | null>`${value}`.as(alias)
   const numeric = (value: number | null, alias: string) => sql<number>`${value}`.as(alias)
-  // Every later statement is conditional on *this call* holding the writer row
-  // and on the device still being claimed, so a loser — or a device revoked
-  // between the read and the batch — mutates nothing.
-  const stillOurs = sql`EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE id = ${lockId}) AND EXISTS (SELECT 1 FROM devices_devices WHERE id = ${device.id} AND status = 'claimed')`
+
+  const heldLock = sql`EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE id = ${lockId})`
+  const deviceClaimed = sql`EXISTS (SELECT 1 FROM devices_devices WHERE id = ${device.id} AND status = 'claimed')`
+  // Statement one refuses outright when the proof has already been redeemed,
+  // so a spent proof never takes the lock and therefore cannot wedge the
+  // generation it observed.
+  const proofUnspent =
+    proofNonce === null
+      ? sql`1 = 1`
+      : sql`NOT EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE scope = ${proofNonce.scope} AND nonce = ${proofNonce.nonce})`
+  const burnedProof =
+    proofNonce === null
+      ? null
+      : sql`EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE id = ${proofNonceId})`
+
+  // Statement one of the batch: the single-writer claim. Two callers that read
+  // the same generation contend for one UNIQUE (scope, nonce) key. It selects
+  // from the device row so the insert can carry a WHERE clause; the row is
+  // already known to exist, so the clause is the only thing deciding.
+  const claimWriter = db
+    .insert(devicesScopedNonces)
+    .select(
+      db
+        .select({
+          id: text(lockId, 'id'),
+          scope: text(`${DEVICES_INTERNAL_NONCE_PREFIX}reissue:${device.id}`, 'scope'),
+          nonce: text(String(device.revocationGeneration), 'nonce'),
+          expiresAt: numeric(input.lockExpiresAt, 'expires_at'),
+          createdAt: numeric(reissuedAt, 'created_at'),
+        })
+        .from(devicesDevices)
+        .where(and(eq(devicesDevices.id, device.id), proofUnspent)),
+    )
+    .onConflictDoNothing()
+    .returning({ id: devicesScopedNonces.id })
+
+  /**
+   * The proof's nonce, burned only once this call holds the lock and the device
+   * is still claimed. Spending it here rather than in the caller is what makes
+   * "spent" mean "served": a contended attempt rolls nothing forward, so the
+   * device's own retry of the identical payload is admitted
+   * (narduk-libs#228 second review H2).
+   */
+  const proofWriter =
+    proofNonce === null
+      ? null
+      : db
+          .insert(devicesScopedNonces)
+          .select(
+            db
+              .select({
+                id: text(proofNonceId, 'id'),
+                scope: text(proofNonce.scope, 'scope'),
+                nonce: text(proofNonce.nonce, 'nonce'),
+                expiresAt: numeric(proofNonce.expiresAt, 'expires_at'),
+                createdAt: numeric(reissuedAt, 'created_at'),
+              })
+              .from(devicesDevices)
+              .where(
+                and(eq(devicesDevices.id, device.id), sql`${heldLock} AND ${deviceClaimed}`),
+              ),
+          )
+          .onConflictDoNothing()
+          .returning({ id: devicesScopedNonces.id })
+
+  // Every later statement is conditional on *this call* holding the writer row,
+  // having burned its own proof nonce, and on the device still being claimed,
+  // so a loser — or a device revoked between the read and the batch — mutates
+  // nothing.
+  const stillOurs =
+    burnedProof === null
+      ? sql`${heldLock} AND ${deviceClaimed}`
+      : sql`${heldLock} AND ${burnedProof} AND ${deviceClaimed}`
 
   const bumpGeneration = db
     .update(devicesDevices)
@@ -309,17 +394,49 @@ export async function reissueCredentialsAtomically(
     )
     .returning({ id: devicesAuditEvents.id })
 
-  const [claimed, ...rest] = await runDevicesBatch(db, [
+  const statements = [
     claimWriter,
+    ...(proofWriter === null ? [] : [proofWriter]),
     bumpGeneration,
     revokeCredentials,
     ...inserts,
     revokeSessions,
     audit,
-  ])
-  if ((claimed as Array<{ id: string }>).length === 0) return false
+  ] as unknown as [BatchItem<'sqlite'>, ...Array<BatchItem<'sqlite'>>]
+  const firstCredentialInsert = (proofWriter === null ? 1 : 2) + 2
+  const results = (await runDevicesBatch(db, statements)) as unknown as Array<Array<{ id: string }>>
+
+  if ((results[0] ?? []).length === 0) {
+    // Statement one landed nothing: either the proof was already redeemed — in
+    // which case its row is there to be found — or another writer holds the
+    // lock for this generation, which spends nothing and is retryable.
+    return (await proofAlreadySpent(db, proofNonce)) ? 'proof_spent' : 'contended'
+  }
   // The inserts are the proof: an empty insert means the device stopped being
   // claimed inside the transaction, so nothing was rotated.
-  const insertedCredentials = rest.slice(2, 2 + inserts.length) as Array<Array<{ id: string }>>
-  return insertedCredentials.every((rows) => rows.length > 0)
+  const insertedCredentials = results.slice(
+    firstCredentialInsert,
+    firstCredentialInsert + inserts.length,
+  )
+  return insertedCredentials.every((rows) => rows.length > 0) ? 'served' : 'contended'
+}
+
+/** Is this proof's `(scope, nonce)` already recorded as redeemed? */
+async function proofAlreadySpent(
+  db: DevicesDatabase,
+  proofNonce: ScopedNonceRef | null,
+): Promise<boolean> {
+  if (proofNonce === null) return false
+  const rows = await db
+    .select({ id: devicesScopedNonces.id })
+    .from(devicesScopedNonces)
+    .where(
+      and(
+        eq(devicesScopedNonces.scope, proofNonce.scope),
+        eq(devicesScopedNonces.nonce, proofNonce.nonce),
+      ),
+    )
+    .limit(1)
+    .all()
+  return rows.length > 0
 }

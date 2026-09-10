@@ -126,10 +126,10 @@ describe('D1 integration', () => {
     // 0002's own additions, exercised on the D1 driver rather than assumed:
     // the UNIQUE secret_hash index resolves a bare bearer, and the scoped
     // nonce table refuses a replay.
-    expect(await devices.getCredentialBySecret(command?.secret ?? '')).toMatchObject({
+    expect(await devices.getCredentialBySecret(command?.secret ?? '', { unattributed: true })).toMatchObject({
       id: command?.credentialId,
     })
-    expect(await devices.getCredentialBySecret('not-a-secret')).toBeNull()
+    expect(await devices.getCredentialBySecret('not-a-secret', { unattributed: true })).toBeNull()
     const nonce = {
       scope: `claim-handoff:${claimSessionId}`,
       nonce: 'n-1',

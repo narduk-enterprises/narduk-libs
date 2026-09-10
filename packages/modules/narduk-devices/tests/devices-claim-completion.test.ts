@@ -81,7 +81,7 @@ describe('device-side completion with no plaintext bearer', () => {
     })
     // Both secrets are live and resolvable by the bearer the edge presents.
     for (const credential of completed.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 
@@ -268,10 +268,10 @@ describe('idempotent completion replay', () => {
     }
     // The superseded secrets are dead and the new ones are live.
     for (const secret of firstSecrets) {
-      await expect(harness.devices.getCredentialBySecret(secret)).resolves.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(secret, { unattributed: true })).resolves.toBeNull()
     }
     for (const credential of replay.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 
@@ -308,14 +308,11 @@ describe('idempotent completion replay', () => {
     harness.clock.advance(DEVICES_LOCKOUT_POLICY.claimTokenTtlSeconds * 1000 + 1)
     // Signed at the advanced clock, so the skew window is not what refuses it.
     const replay = await harness.devices.completeClaimWithRecordedApproval(proven())
-    expect(replay).toEqual({
-      status: 'already_completed',
-      credentials: [],
-      deviceId: first.deviceId,
-    })
+    expect(replay).toEqual({ status: 'already_completed', credentials: [] })
+    expect(replay).not.toHaveProperty('deviceId')
     // Nothing was rotated, so the device keeps what it already has.
     await expect(
-      harness.devices.getCredentialBySecret(first.credentials[0]?.secret ?? ''),
+      harness.devices.getCredentialBySecret(first.credentials[0]?.secret ?? '', { unattributed: true }),
     ).resolves.not.toBeNull()
   })
 
@@ -332,7 +329,7 @@ describe('idempotent completion replay', () => {
     expect(first.status).toBe('completed')
 
     // A proven device asking about a *different* completion: nothing to
-    // re-issue, and it is told what it already knows.
+    // re-issue, and the replay path answers with the status alone.
     const otherKey = await harness.devices.completeClaimWithRecordedApproval(
       completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
@@ -340,11 +337,8 @@ describe('idempotent completion replay', () => {
         key: claim.key,
       }).input,
     )
-    expect(otherKey).toEqual({
-      status: 'already_completed',
-      credentials: [],
-      deviceId: first.deviceId,
-    })
+    expect(otherKey).toEqual({ status: 'already_completed', credentials: [] })
+    expect(otherKey).not.toHaveProperty('deviceId')
 
     // An attacker holding every on-wire value — session id, device public key,
     // fingerprint, idempotency key — but not the private key. The refusal
@@ -374,7 +368,7 @@ describe('idempotent completion replay', () => {
 
     // ...and the device's own credentials survive both attempts.
     for (const credential of first.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 
@@ -394,11 +388,11 @@ describe('idempotent completion replay', () => {
     const first = await harness.devices.completeClaim(request)
     expect(first.status).toBe('completed')
 
-    // Default: unchanged from 0.1.0.
+    // Default: 0.1.0's answer, minus the `deviceId` it used to disclose to a
+    // caller that had proved nothing (narduk-libs#228 second review H3).
     await expect(harness.devices.completeClaim(request)).resolves.toEqual({
       status: 'already_completed',
       credentials: [],
-      deviceId: first.deviceId,
     })
 
     // Opted in: served, and only for a caller still holding the approval token.
@@ -456,7 +450,7 @@ describe('idempotent completion replay', () => {
     const winner = a.status === 'completed' ? a : b
     expect(winner.credentials).toHaveLength(2)
     for (const credential of winner.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
     // ...and the generation moved exactly once, not once per caller.
     expect((await harness.devices.getDevice(first.deviceId ?? ''))?.revocationGeneration).toBe(1)
@@ -478,7 +472,7 @@ describe('idempotent completion replay', () => {
     expect(retry.status).toBe('completed')
     expect(retry.credentials).toHaveLength(2)
     for (const credential of retry.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
     expect(liveCounts()).toEqual([
       { credential_class: 'command', live: 1 },
@@ -547,14 +541,15 @@ describe('re-issue is off by default and gated on a device proof', () => {
     expect(first.status).toBe('completed')
 
     const replay = await harness.devices.completeClaimWithRecordedApproval(request)
-    expect(replay).toEqual({
-      status: 'already_completed',
-      credentials: [],
-      deviceId: first.deviceId,
-    })
+    // Status and nothing else. `deviceId` names the scope of this package's own
+    // re-issue lock rows, so the default replay branch — the one an
+    // unauthenticated caller reaches — stops handing it out
+    // (narduk-libs#228 second review H3).
+    expect(replay).toEqual({ status: 'already_completed', credentials: [] })
+    expect(replay).not.toHaveProperty('deviceId')
     // The device keeps exactly what it was issued: nothing was revoked.
     for (const credential of first.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
     expect((await harness.devices.getDevice(first.deviceId ?? ''))?.revocationGeneration).toBe(0)
   })
@@ -592,7 +587,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
       credentials: [],
     })
     for (const credential of first.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 
@@ -655,7 +650,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
     expect(capped).toEqual({ status: 'already_completed', credentials: [] })
     // The cap refuses further churn; it does not take away what the device has.
     for (const credential of last.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 
@@ -735,7 +730,7 @@ describe('a refused replay is counted like every other refusal', () => {
 
     // ...and the genuine device's credentials were never at risk.
     for (const credential of first.credentials) {
-      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+      await expect(harness.devices.getCredentialBySecret(credential.secret, { unattributed: true })).resolves.not.toBeNull()
     }
   })
 })
