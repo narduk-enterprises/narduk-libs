@@ -1,5 +1,25 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.19.32
+
+### Patch Changes
+
+- e202cfd: Disable analytics identifiers, loading, and replay on noncanonical
+  Workers/Pages preview hosts and explicit nonproduction deployments. The same
+  immutable version keeps production analytics when promoted to its canonical
+  hostname.
+
+  Avoid a client lifecycle warning while retaining noindex robots metadata on
+  noncanonical hosts.
+
+- e202cfd: Send GA4 pageviews with manual events after the initial route and
+  successful SPA path changes. The Google tag is now configured once without
+  automatic pageview emission, preventing repeated configuration from dropping
+  SPA views.
+- Updated dependencies [e202cfd]
+- Updated dependencies [37c03e2]
+  - @narduk-enterprises/narduk-core@1.23.2
+
 ## 1.19.31
 
 ### Patch Changes
