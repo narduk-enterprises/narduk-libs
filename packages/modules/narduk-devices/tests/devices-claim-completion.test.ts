@@ -451,6 +451,21 @@ describe('idempotent completion replay', () => {
     expect(loser.retryAfterSeconds).toBeGreaterThan(0)
     expect(loser.deviceId).toBe(first.deviceId)
 
+    // The loser mutated *nothing*, which live counts alone cannot see: a loser
+    // that revoked the winner's fresh set and inserted its own would leave one
+    // live credential per class too, while the caller told `completed` walks
+    // away holding dead secrets. Only resolving the winner's own returned
+    // secrets distinguishes the two, so this is what pins the compare-and-set
+    // being inside the batch rather than beside it (narduk-libs#228 H3).
+    const winner = a.status === 'completed' ? a : b
+    expect(winner.credentials).toHaveLength(2)
+    for (const credential of winner.credentials) {
+      // eslint-disable-next-line no-await-in-loop -- two credentials, asserted in order
+      await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
+    }
+    // ...and the generation moved exactly once, not once per caller.
+    expect((await harness.devices.getDevice(first.deviceId ?? ''))?.revocationGeneration).toBe(1)
+
     const liveCounts = () =>
       harness.sqlite
         .prepare(

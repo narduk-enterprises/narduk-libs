@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { sha256Hex, timingSafeEqualHex } from '../server/utils/devices-signing'
+import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import { claimDevice, createTestHarness } from './support/database'
 
@@ -111,6 +112,47 @@ describe('credential lookup by bare secret', () => {
     expect(timingSafeEqualHex(digest, `b${digest.slice(1)}`)).toBe(false)
     expect(timingSafeEqualHex(digest, `${digest.slice(0, 63)}b`)).toBe(false)
     expect(timingSafeEqualHex(digest, digest.slice(0, 63))).toBe(false)
+  })
+
+  /**
+   * narduk-libs#228 M2. A completion-issued secret never expires, so this
+   * resolver is a permanent bearer — and it used to record nothing at all, so
+   * a credential-stuffing sweep across a fleet left no trace anywhere and ran
+   * unbounded. Guessing a 256-bit secret is infeasible; being unable to *see*
+   * someone try is the part that had to change.
+   */
+  it('counts a failed bare-secret resolution against the lockout and refuses once locked', async () => {
+    const harness = createTestHarness()
+    const claimed = await claimDevice(harness)
+    const remote = { ip: '203.0.113.44' }
+    const failures = () =>
+      (
+        harness.sqlite
+          .prepare("SELECT COUNT(*) AS n FROM devices_auth_attempts WHERE outcome = 'failure'")
+          .get() as { n: number }
+      ).n
+    const before = failures()
+
+    for (let n = 0; n < DEVICES_LOCKOUT_POLICY.perAccountOrIp.failures; n += 1) {
+      // eslint-disable-next-line no-await-in-loop -- the counter is sequential by definition
+      await expect(
+        harness.devices.getCredentialBySecret(`guess-${String(n)}`, { remote }),
+      ).resolves.toBeNull()
+      harness.clock.advance(1000)
+    }
+    // Every miss left a row, which is what the sweep used to avoid entirely.
+    expect(failures() - before).toBe(DEVICES_LOCKOUT_POLICY.perAccountOrIp.failures)
+
+    // Locked: even the genuine secret is refused from this IP, so the sweep is
+    // bounded rather than merely logged.
+    await expect(
+      harness.devices.getCredentialBySecret(claimed.ingest.secret, { remote }),
+    ).resolves.toBeNull()
+    // ...and the lockout is scoped to the subject, not to the credential: the
+    // device's own secret still resolves from anywhere else.
+    await expect(
+      harness.devices.getCredentialBySecret(claimed.ingest.secret),
+    ).resolves.not.toBeNull()
   })
 
   it('keeps verifyCredentialSecret working for a caller that knows the id', async () => {
