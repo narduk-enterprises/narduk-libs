@@ -80,4 +80,84 @@ describe('item 5 -- shared CI', () => {
     writeConformantBaseline(root)
     expect(subCheckStatus(await run(root), '5.2')).toBe('pass')
   })
+
+  it('5.2 accepts a grouping .github/dependabot.yml with no renovate.json (D-TOOLCHAIN-1, narduk-libs#233)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/renovate.json`, { force: true })
+    expect(subCheckStatus(await run(root), '5.2')).toBe('fail')
+
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    schedule:',
+        '      interval: "weekly"',
+        '    groups:',
+        '      narduk-internal:',
+        '        patterns:',
+        '          - "@narduk-enterprises/*"',
+      ].join('\n'),
+    )
+    expect(subCheckStatus(await run(root), '5.2')).toBe('pass')
+  })
+
+  it('5.2 accepts a delegating (ignore) .github/dependabot.yml with no renovate.json', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/renovate.json`, { force: true })
+
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    schedule:',
+        '      interval: "weekly"',
+        '    ignore:',
+        '      - dependency-name: "@narduk-enterprises/*"',
+      ].join('\n'),
+    )
+    expect(subCheckStatus(await run(root), '5.2')).toBe('pass')
+  })
+
+  it('5.2 fails (not throws) on invalid YAML in .github/dependabot.yml, with no renovate.json', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/renovate.json`, { force: true })
+
+    writeFile(root, '.github/dependabot.yml', 'updates: [\n  - this is not: valid: yaml')
+    expect(subCheckStatus(await run(root), '5.2')).toBe('fail')
+  })
+
+  it('5.2 fails a .github/dependabot.yml that never names the estate scope, with no renovate.json', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/renovate.json`, { force: true })
+
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    schedule:',
+        '      interval: "weekly"',
+      ].join('\n'),
+    )
+    expect(subCheckStatus(await run(root), '5.2')).toBe('fail')
+  })
 })
