@@ -15,6 +15,7 @@ import {
   ORG,
   signedOpen,
   startPendingClaim,
+  type TestDeviceKey,
   type TestHarness,
   VESSEL,
 } from './support/database'
@@ -23,8 +24,11 @@ const HANDOFF_KEY = 'handoff-1'
 const ATTACKER_IP = '203.0.113.9'
 
 /** Mint, start and approve, stopping short of completion. */
-async function approvedClaim(harness: TestHarness, remote?: { ip?: string }) {
-  const pending = await startPendingClaim(harness, remote ? { remote } : {})
+async function approvedClaim(harness: TestHarness, remote?: { ip?: string }, key?: TestDeviceKey) {
+  const pending = await startPendingClaim(harness, {
+    ...(remote ? { remote } : {}),
+    ...(key ? { key } : {}),
+  })
   const approval = await harness.devices.issueApprovalToken({
     claimSessionId: pending.claimSessionId,
     orgId: ORG,
@@ -886,35 +890,39 @@ describe('every proof-binding clause is pinned', () => {
 
   it('refuses a fresh, unspent proof re-aimed at another claim session', async () => {
     const harness = createTestHarness()
+    // One device identity, two claim sessions: the *same* Ed25519 key, the same
+    // hardware fingerprint, the same idempotency key. A device re-claimed after
+    // a revocation looks exactly like this, and it is the only shape in which a
+    // captured proof is re-aimable at all — with two identities the key binding
+    // refuses it first, and `claimSessionId` is never the clause under test.
     const key = createDeviceKey()
-    // Two claim sessions for the same device identity, recording the same key,
-    // the same fingerprint and completed under the same idempotency key.
-    const one = await approvedClaim(harness)
-    const two = await approvedClaim(harness)
+    const one = await approvedClaim(harness, undefined, key)
+    const two = await approvedClaim(harness, undefined, key)
     for (const claim of [one, two]) {
       expect(
         (await harness.devices.completeClaimWithRecordedApproval(provenReplay(harness, claim)()))
           .status,
       ).toBe('completed')
     }
+    expect(one.key.publicKey).toBe(two.key.publicKey)
 
     // A proof minted for session one, never presented there, aimed at session
-    // two. Its nonce is unspent in session two's scope, so single use cannot
-    // refuse it: only the `claimSessionId` binding can.
+    // two. Every other bound field matches session two exactly and the
+    // signature verifies against the key session two recorded; its nonce is
+    // unspent in session two's scope, so single use cannot refuse it either.
+    // `request.claimSessionId !== session.id` is the only clause left.
     const forSessionOne = completionRequest(harness, {
       claimSessionId: one.claimSessionId,
       idempotencyKey: HANDOFF_KEY,
-      key: one.key,
+      key,
     })
     harness.clock.advance(1000)
     const reAimed = await harness.devices.completeClaimWithRecordedApproval({
       ...forSessionOne.input,
       claimSessionId: two.claimSessionId,
-      devicePublicKey: two.key.publicKey,
     })
     expect(reAimed.status).toBe('already_completed')
     expect(reAimed.credentials).toHaveLength(0)
-    expect(key.publicKey).not.toBe(one.key.publicKey)
   })
 
   it('rotates nothing once the device stops being claimed', async () => {
@@ -926,17 +934,73 @@ describe('every proof-binding clause is pinned', () => {
     const deviceId = first.deviceId ?? ''
     const generation = (await harness.devices.getDevice(deviceId))?.revocationGeneration
 
-    // Straight into the batch's `stillOurs` device-claimed leg: the row is
-    // marked revoked underneath the service, so `reissueForReplay`'s own status
-    // read still sees `claimed` and the batch is what has to refuse.
+    // Revoked out of band, before the call: `reissueForReplay`'s own status
+    // read refuses this one (`not_serviceable`) and the batch is never built.
+    // The batch's own leg is a *different* guard; the test below drives it.
     harness.sqlite
       .prepare("UPDATE devices_devices SET status = 'revoked' WHERE id = ?")
       .run(deviceId)
     harness.clock.advance(1000)
     const refused = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(refused.credentials).toHaveLength(0)
+    expect(refused).not.toHaveProperty('deviceId')
     expect((await harness.devices.getDevice(deviceId))?.revocationGeneration).toBe(generation)
     // Nothing was revoked either: the device keeps the set it was issued.
+    for (const credential of first.credentials) {
+      await expect(
+        harness.devices.getCredentialBySecret(credential.secret, { unattributed: true }),
+      ).resolves.not.toBeNull()
+    }
+  })
+
+  it('rotates nothing when the device is revoked inside the batch\u2019s own window', async () => {
+    const harness = createTestHarness()
+    const claim = await approvedClaim(harness)
+    const request = {
+      claimSessionId: claim.claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      installationId: 'inst-1',
+      hardwareFingerprint: FINGERPRINT,
+      userApprovalToken: claim.approval.token,
+      approvedByUserId: 'owner-1',
+      idempotencyKey: 'complete-toctou',
+      reissueOnIdempotentReplay: true,
+    }
+    const first = await harness.devices.completeClaim(request)
+    expect(first.status).toBe('completed')
+    const deviceId = first.deviceId ?? ''
+    const generation = (await harness.devices.getDevice(deviceId))?.revocationGeneration
+
+    // The approval-token path carries no completion-proof nonce, so `stillOurs`
+    // is `heldLock AND deviceClaimed` and that second leg is the only thing
+    // standing between an operator's revocation and a rotation. Reaching it
+    // means revoking the device *after* the service read its status and
+    // *before* the batch commits, so the driver's transaction is where the
+    // revocation is injected \u2014 one shot, then the wrapper stands down.
+    const client = harness.sqlite as unknown as {
+      transaction: (callback: () => unknown[]) => () => unknown[]
+    }
+    const original = client.transaction.bind(harness.sqlite)
+    let armed = true
+    client.transaction = (callback) => {
+      const run = original(callback)
+      return () => {
+        if (armed) {
+          armed = false
+          harness.sqlite
+            .prepare("UPDATE devices_devices SET status = 'revoked' WHERE id = ?")
+            .run(deviceId)
+        }
+        return run()
+      }
+    }
+    harness.clock.advance(1000)
+    const raced = await harness.devices.completeClaim(request)
+    expect(armed).toBe(false)
+    expect(raced.credentials).toHaveLength(0)
+    expect((await harness.devices.getDevice(deviceId))?.revocationGeneration).toBe(generation)
+    // The set the device is holding is untouched: no half-applied rotation.
     for (const credential of first.credentials) {
       await expect(
         harness.devices.getCredentialBySecret(credential.secret, { unattributed: true }),

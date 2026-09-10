@@ -11,12 +11,12 @@ Close the four claim-completion gaps the first device-side consumer hit.
   never expire, so this is a long-lived bearer: the second argument is
   **required** and is a discriminated union — `{ remote }`, whose
   `AttributableRemoteContext` will not compile without an `accountKey` or an
-  `ip`, or `{ unattributed: true }` for a queue consumer or a test that means
-  to count nothing. A secret matching **no row** counts against the lockout and
-  a locked subject is refused; a secret matching a **revoked or expired** row is
-  refused but counts nothing, because that is a known-good credential gone
-  stale rather than a guess, and sharing one counter meant one stale secret
-  could take a whole vessel's shared IP off the air.
+  `ip`, or `{ unattributed: true }` for a queue consumer or a test that means to
+  count nothing. A secret matching **no row** counts against the lockout and a
+  locked subject is refused; a secret matching a **revoked or expired** row is
+  refused but counts nothing, because that is a known-good credential gone stale
+  rather than a guess, and sharing one counter meant one stale secret could take
+  a whole vessel's shared IP off the air.
 - `completeClaimWithRecordedApproval(input)` completes a claim from the device
   side using the `approval_*` columns already on the claim session, so a
   consumer no longer has to persist a raw approval bearer between the approve
@@ -36,13 +36,13 @@ Close the four claim-completion gaps the first device-side consumer hit.
   `MAX_REISSUES_PER_CLAIM_SESSION` bounds churn on top of those controls without
   being what makes the path safe. Two racing replays yield one winner and one
   retryable `rate_limited`, never a terminal status; `retryAfterSeconds` there
-  is jittered across `REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN`..`_MAX`
-  (2–5 s, also exposed as `reissueRetryAfterSeconds()`) so a fleet that lost the
-  same race does not resynchronise into the next one. Only a **served**
-  re-issue burns the proof's nonce — the burn happens inside the winning
-  transaction — so a contended or refused caller may resend the identical
-  signed bytes. Past the binding check no replay outcome advances a lockout
-  counter: a device retrying a lost response cannot lock itself out.
+  is jittered across `REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN`..`_MAX` (2–5
+  s, also exposed as `reissueRetryAfterSeconds()`) so a fleet that lost the same
+  race does not resynchronise into the next one. Only a **served** re-issue
+  burns the proof's nonce — the burn happens inside the winning transaction — so
+  a contended or refused caller may resend the identical signed bytes. Past the
+  binding check no replay outcome advances a lockout counter: a device retrying
+  a lost response cannot lock itself out.
 - `assertTimestampSkew` / `isWithinTimestampSkew` are exported and are now the
   single implementation `openSession` and the `deviceProof` check both call, and
   `consumeNonce({ scope, nonce, expiresAt })` gives a generic single-use nonce
@@ -64,6 +64,6 @@ patch: `DevicesAuditAction` gains `'claim.reissue'` (an exhaustive `switch` or
 handled); `PruneExpiredResult` gains a required `scopedNonces` (an exhaustive
 `toEqual` on a prune result must add it); `getCredentialBySecret`'s second
 argument is required, so a bare `getCredentialBySecret(secret)` no longer
-compiles; and `already_completed` on a *replay* no longer carries `deviceId`
+compiles; and `already_completed` on a _replay_ no longer carries `deviceId`
 (only the first-completion race loser does), because that branch is reachable
 without proving anything.
