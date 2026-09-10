@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 
+import { DEVICES_INTERNAL_NONCE_PREFIX } from '../../shared/types/devices'
 import {
   devicesAuditEvents,
   devicesClaimSessions,
@@ -8,8 +9,6 @@ import {
   devicesScopedNonces,
   devicesSessions,
 } from '../database/devices-schema'
-
-import { DEVICES_INTERNAL_NONCE_PREFIX } from '../../shared/types/devices'
 
 import { runDevicesBatch } from './devices-atomic'
 
@@ -301,9 +300,7 @@ export async function reissueCredentialsAtomically(
                 createdAt: numeric(reissuedAt, 'created_at'),
               })
               .from(devicesDevices)
-              .where(
-                and(eq(devicesDevices.id, device.id), sql`${heldLock} AND ${deviceClaimed}`),
-              ),
+              .where(and(eq(devicesDevices.id, device.id), sql`${heldLock} AND ${deviceClaimed}`)),
           )
           .onConflictDoNothing()
           .returning({ id: devicesScopedNonces.id })

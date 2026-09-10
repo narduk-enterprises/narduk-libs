@@ -18,8 +18,8 @@ import {
 import {
   completeClaimAtomically,
   type PreparedCredential,
-  type ReissueOutcome,
   reissueCredentialsAtomically,
+  type ReissueOutcome,
   type ScopedNonceRef,
 } from './devices-complete-claim'
 import { DevicesError } from './devices-error'
@@ -140,7 +140,8 @@ export const REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX = 5
  * drawn from nothing the request contains.
  */
 export function reissueRetryAfterSeconds(random: () => number = Math.random): number {
-  const span = REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX - REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN
+  const span =
+    REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX - REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN
   const offset = Math.min(Math.max(random(), 0), 0.999_999_999)
   return REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN + Math.floor(offset * (span + 1))
 }
@@ -349,6 +350,13 @@ export interface CompleteClaimInput {
  * at a different session, device, installation or idempotency key; `nonce` is
  * burned in `devices_scoped_nonces` on first use, so the capture cannot be
  * replayed either.
+ *
+ * "First use" means *first served use*. On the re-issue path the burn happens
+ * inside the winning transaction, gated on the single-writer lock, so a caller
+ * that loses the race or is refused before the batch has spent nothing and may
+ * resend the identical bytes after `retryAfterSeconds`. A device only needs a
+ * fresh `nonce` once a re-issue was actually served on this one
+ * (narduk-libs#228 second review H2).
  */
 export interface CanonicalCompletionRequest {
   claimSessionId: string
@@ -407,6 +415,13 @@ export interface CompleteClaimWithRecordedApprovalInput {
    * Default `false`, and refused outright without `deviceProof`: a re-issue
    * revokes the genuine device's credentials and sessions, so a caller that
    * has proved nothing must never be able to trigger one.
+   *
+   * Past the binding check the caller is authenticated, so no outcome of a
+   * replay advances a lockout counter — a device retrying a lost response
+   * cannot lock itself out. A contended replay answers `rate_limited` with a
+   * jittered `retryAfterSeconds` and may be resent verbatim; at
+   * `MAX_REISSUES_PER_CLAIM_SESSION` it answers `already_completed` with an
+   * empty array and no `deviceId` (narduk-libs#228 second review H2, M4).
    */
   reissueOnIdempotentReplay?: boolean
   remote?: RemoteContext
@@ -525,8 +540,7 @@ export interface PruneExpiredResult {
  * (narduk-libs#228 second review M1).
  */
 export type AttributableRemoteContext =
-  | (RemoteContext & { accountKey: string })
-  | (RemoteContext & { ip: string })
+  (RemoteContext & { accountKey: string }) | (RemoteContext & { ip: string })
 
 /**
  * Who a failed bare-secret resolution is counted against. Required, and with no
@@ -1360,9 +1374,7 @@ export function createDevices(
     ): CompleteClaimResult => ({
       status: 'already_completed',
       credentials: [],
-      ...(discloseDeviceId && completed.deviceId !== null
-        ? { deviceId: completed.deviceId }
-        : {}),
+      ...(discloseDeviceId && completed.deviceId !== null ? { deviceId: completed.deviceId } : {}),
     })
 
     if (session.status === 'claimed') {

@@ -13,7 +13,7 @@ import {
   startPendingClaim,
   VESSEL,
 } from './support/database'
-import { errorOf } from './support/expect'
+import { codeOf, errorOf } from './support/expect'
 
 const { perTokenOrDevice, perAccountOrIp } = DEVICES_LOCKOUT_POLICY
 
@@ -215,5 +215,54 @@ describe('lockouts', () => {
       'token',
       'token',
     ])
+  })
+})
+
+/**
+ * narduk-libs#228 second review L1: an unknown `claimSessionId` threw
+ * `not_found` before the lockout was ever consulted, so a caller could tell a
+ * real claim session id from an invented one at no cost and with no trace. The
+ * throw is still the documented answer for an id that does not exist — what
+ * changed is that reaching it is counted and eventually refused.
+ */
+describe('claim-session enumeration is counted, not free', () => {
+  const REMOTE = { ip: '203.0.113.55' }
+  const guess = (harness: ReturnType<typeof createTestHarness>, n: number) =>
+    harness.devices.completeClaim({
+      claimSessionId: `invented-${String(n)}`,
+      orgId: ORG,
+      resource: VESSEL,
+      installationId: 'inst-1',
+      hardwareFingerprint: FINGERPRINT,
+      userApprovalToken: 'whatever',
+      approvedByUserId: 'owner-1',
+      idempotencyKey: `probe-${String(n)}`,
+      remote: REMOTE,
+    })
+
+  it('records a failure per invented id and refuses uniformly once locked', async () => {
+    const harness = createTestHarness()
+    const attempts = () =>
+      (
+        harness.sqlite
+          .prepare(
+            "SELECT COUNT(*) AS n FROM devices_auth_attempts WHERE outcome = 'failure' AND subject = ?",
+          )
+          .get(REMOTE.ip) as { n: number }
+      ).n
+
+    for (let n = 0; n < perAccountOrIp.failures; n += 1) {
+      expect(await codeOf(guess(harness, n))).toBe('not_found')
+      harness.clock.advance(1000)
+    }
+    expect(attempts()).toBe(perAccountOrIp.failures)
+
+    // Past the threshold the answer stops distinguishing anything at all: the
+    // same `rate_limited` a real, locked session gets.
+    await expect(guess(harness, 999)).resolves.toEqual(
+      expect.objectContaining({ status: 'rate_limited', credentials: [] }),
+    )
+    // ...and no further row is written for a refusal the gate already answered.
+    expect(attempts()).toBe(perAccountOrIp.failures)
   })
 })

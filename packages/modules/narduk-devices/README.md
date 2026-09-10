@@ -193,9 +193,11 @@ could not be honoured
   completion.
 - `completeClaim` is atomic (device, session, both credentials, audit row in one
   D1 batch / better-sqlite3 transaction). Two concurrent completions produce one
-  device; the loser and every later replay get `already_completed` with
-  `deviceId` and an empty `credentials` array — secrets are returned only on
-  first completion.
+  device; the loser gets `already_completed` with `deviceId` and an empty
+  `credentials` array — secrets are returned only on first completion. A
+  *later* replay is a different caller: it gets the same status and empty array
+  but **no `deviceId`**, because that branch is reachable without proving
+  anything (narduk-libs#228).
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
@@ -315,19 +317,43 @@ gate it:
    `reissueOnIdempotentReplay: true` without `deviceProof` throws
    `DevicesError('invalid')` — it is not silently downgraded. On
    `completeClaim`, the raw approval token is already that proof.
-3. **A refusal is a failed authentication.** It records an attempt, counts
-   against the lockout and returns no `deviceId`, so guessing at the four
-   on-wire values is bounded and visible instead of unlimited and untraced.
+3. **A refusal is a failed authentication — a refusal, and nothing else.** A
+   replay that fails the binding check records an attempt, counts against the
+   lockout and returns no `deviceId`, so guessing at the four on-wire values is
+   bounded and visible instead of unlimited and untraced. Once the binding
+   check passes the caller is authenticated, and every outcome after that point
+   — served, contended, capped, already-spent proof, nothing left to rotate —
+   is an answer to a genuine device, so **none of them touches a lockout
+   counter**. A device that retries a lost response cannot lock itself out.
 4. **A per-claim-session cap** (`MAX_REISSUES_PER_CLAIM_SESSION`) bounds churn
    and audit noise. It is _not_ what makes the path safe: one re-issue is
    already a complete credential set, so a cap alone would only turn unlimited
-   takeover into N takeovers. Conditions 1–3 are the control.
+   takeover into N takeovers. Conditions 1–3 are the control. **At the cap a
+   device sees `already_completed` with an empty `credentials` array and no
+   `deviceId`** — the same shape as a replay that never opted in, and not a
+   failure: no attempt row, no lockout counter. The cap is terminal for the
+   claim session, not for the device; recovery is a new claim ceremony, and
+   until then the credentials from the last served re-issue remain the live
+   set.
 
 Two replays that race resolve to one winner and one `rate_limited` with
 `retryAfterSeconds`, never to a terminal status: the loser is a device replaying
 its own completion, and the winner has already rotated the credentials it was
 holding, so telling it "already completed" would brick exactly the device this
 path exists to rescue.
+
+**The loser may resend the identical signed payload.** The proof's nonce is
+burned *inside* the winning batch, gated on the single-writer lock, so a
+contended replay spends nothing: its nonce is still unspent when it returns, and
+the same bytes replayed after `retryAfterSeconds` are served (narduk-libs#228
+second review H2). A retry only needs a *fresh* proof once one was actually
+served: that is `proof_spent`, and the device signs a new request to recover.
+`retryAfterSeconds` on contention is drawn uniformly from
+`[REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN,
+REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MAX]` (2–5 s, via the exported
+`reissueRetryAfterSeconds()`), so a fleet that all lost the same race does not
+resynchronise into the next one. It is jitter, not a measurement: the value is
+independent of how much work the request did, so it leaks no timing.
 
 ### Replay primitives for a pre-device exchange
 
@@ -356,6 +382,19 @@ by `devices_scoped_nonces` and its UNIQUE `(scope, nonce)` index; a spent nonce
 keeps being refused until `pruneExpired` removes it, which is the safe
 direction. Namespace the scope so two exchanges cannot collide.
 
+Two scope rules are enforced rather than documented:
+
+- **`narduk-devices:` is reserved** (`DEVICES_INTERNAL_NONCE_PREFIX`). The same
+  table holds the library's own rows — the completion-proof nonce
+  (`narduk-devices:claim-completion:<claimSessionId>`) and the re-issue
+  single-writer lock (`narduk-devices:reissue:<deviceId>`) — so a caller scope
+  starting with that prefix throws `DevicesError('invalid')` instead of
+  pre-empting a row the claim ceremony depends on.
+- **`expiresAt` is capped** at `SCOPED_NONCE_MAX_TTL_SECONDS` (7 days) past
+  now. `pruneExpired` reclaims a nonce only once it expires, so an
+  accidentally-decade-long TTL is a row that never leaves the table; the cap is
+  refused up front rather than accumulated.
+
 This table exists rather than nullable columns on `devices_replay_entries`
 because SQLite treats every NULL inside a UNIQUE index as distinct: a nullable
 five-column key would never conflict, and every replay would be silently
@@ -366,7 +405,7 @@ accepted.
 | The client presents                | Resolve with                                       |
 | ---------------------------------- | -------------------------------------------------- |
 | a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
-| a raw credential secret, no id     | `getCredentialBySecret(secret, { remote })`        |
+| a raw credential secret, no id     | `getCredentialBySecret(secret, options)`           |
 | a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
 
 None accepts a revoked or expired row, and none puts the presented bearer into a
@@ -386,12 +425,33 @@ with `expiresAt: null` (the re-issue path preserves it), so
 `getCredentialBySecret`'s expiry check never fires and a leaked secret — from a
 device filesystem, a support bundle, a proxy log — stays live until someone
 revokes it. Prefer trading it for a 30-minute session via `openSession` where
-the edge can. Where it cannot, **pass `remote` from every route**: a failed
-resolution is recorded against the presented account and IP and a locked subject
-is refused, which is what makes a credential-stuffing sweep across a fleet both
-bounded and visible in the `security.lockout` audit trail. Without `remote`
-there are no subjects to count, so the sweep is invisible again. A successful
-resolution writes nothing — this is a per-request read path.
+the edge can. Where it cannot, **pass `remote` from every route**: an
+unresolvable secret is recorded against the presented account and IP and a
+locked subject is refused, which is what makes a credential-stuffing sweep
+across a fleet both bounded and visible in the `security.lockout` audit trail. A
+successful resolution writes nothing — this is a per-request read path.
+
+The second argument is **required**, and is a discriminated union rather than an
+optional `remote`, because a missing `remote` is indistinguishable at runtime
+from a route that forgot it:
+
+```ts
+// An HTTP route. `AttributableRemoteContext` requires at least one of
+// `accountKey` / `ip`, so `{ remote: {} }` does not compile.
+await devices.getCredentialBySecret(secret, { remote: { ip: event.context.ip } })
+
+// A queue consumer or a test, saying so on purpose: no subjects, no counting.
+await devices.getCredentialBySecret(secret, { unattributed: true })
+```
+
+**Only an unknown digest counts.** A secret that resolves to a row which is
+revoked, or past its `expiresAt`, is refused — but it is a known-good credential
+gone stale, not a guess, so it records no attempt and advances no counter.
+Credential stuffing produces digests that match nothing; a fleet rotating or
+retiring credentials produces digests that match a dead row. Sharing one counter
+between them meant a single boat's stale camera credential could lock the boat's
+IP and take every healthy device behind it off the air (narduk-libs#228 second
+review H1).
 
 ### Pruning
 
