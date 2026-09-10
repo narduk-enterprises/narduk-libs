@@ -2,6 +2,7 @@
 # ci:batch runs the same strict package gates as ci:affected/ci:full locally.
 # Selection remains dependency-aware; verify covers packages, contracts and
 # every applicable browser/consumer gate. Keep ci / Required during migration.
+# Planning and contracts run first; expensive jobs fan out only after both pass.
 # Runner routes are resolved from fleet; no host-specific tuning belongs here.
 name: CI
 
@@ -79,12 +80,12 @@ jobs:
           node scripts/logging-ci-plan.mjs "${args[@]}"
 
   logging-languages:
-    needs: affected
+    needs: [affected, contracts]
     if: needs.affected.outputs.logging-languages == 'true'
     uses: ./.github/workflows/logging-languages.yml
 
   ci:
-    needs: affected
+    needs: [affected, contracts]
     uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@8cd24c16a1054723e599f62edbfccfcaa8ed0e8c # central lightweight gate route
     # A called workflow cannot request MORE than the caller grants, and
     # node-library.yml's package job asks for `packages: read` to reach the
@@ -112,9 +113,8 @@ jobs:
       NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
 
   contracts:
-    # The old `repository-contracts` matrix lane, kept as its own job. See the
-    # CONTRACTS section in the header for the three reasons it cannot be a
-    # package-matrix lane. Unchanged in substance from the lane it replaces.
+    # Repository-wide preflight: a failed contract cannot produce a releasable
+    # result, so reject it before reserving package and browser runner slots.
     name: contracts
     runs-on:
       group: linux-ci
@@ -185,7 +185,7 @@ jobs:
     # callable and stays here by design -- recorded as a kept-separate lane
     # against #278, not as residue.
     name: package / packed-consumer-smoke
-    needs: affected
+    needs: [affected, contracts]
     if: needs.affected.outputs.packed-consumer == 'true'
     runs-on:
       group: playwright-isolated
@@ -357,7 +357,7 @@ jobs:
     # Every selected package declaring test:e2e shares this one install. This
     # includes journeys and charts; general package batches never launch browsers.
     name: package / browser tests
-    needs: affected
+    needs: [affected, contracts]
     if: needs.affected.outputs.browser-packages != '[]'
     runs-on:
       group: playwright-isolated

@@ -35,6 +35,46 @@ const run = (env) =>
     encoding: 'utf8',
   })
 
+test('expensive jobs require successful preflight without serializing each other', () => {
+  const jobSource = workflow.split('\njobs:\n')[1]
+  assert.ok(jobSource, 'the workflow must declare jobs')
+  const jobs = [...jobSource.matchAll(/^  ([\w-]+):\s*$/gm)].map((match, index, matches) => ({
+    name: match[1],
+    source: jobSource.slice(match.index, matches[index + 1]?.index),
+  }))
+  const preflight = ['affected', 'contracts']
+  const executionJobs = jobs.filter(({ name }) => ![...preflight, 'verify'].includes(name))
+  assert.ok(executionJobs.length > 0, 'the workflow must include execution gates')
+  for (const { name, source } of executionJobs) {
+    const declaration = source.match(/^    needs:\s*(\[[\s\S]*?\]|[\w-]+)/m)?.[1]
+    const needs = declaration?.match(/[\w-]+/g) ?? []
+    assert.deepEqual(needs.sort(), [...preflight].sort(), `${name} must wait only for preflight`)
+    const condition = source.match(/^    if:([^\n]*(?:\n {6,}[^\n]*)*)/m)?.[1] ?? ''
+    assert.doesNotMatch(
+      condition,
+      /\b(?:always|failure|cancelled)\s*\(/,
+      `${name} must not bypass successful preflight`,
+    )
+  }
+  for (const { name, source } of jobs.filter(({ name }) => preflight.includes(name))) {
+    assert.doesNotMatch(source, /^    (?:needs|if):/m, `${name} must run unconditionally`)
+  }
+})
+
+test('failed preflight and skipped execution jobs cannot turn the final aggregate green', () => {
+  for (const result of ['failure', 'cancelled', 'skipped']) {
+    const outcome = run({
+      CONTRACTS_RESULT: result,
+      CI_RESULT: 'skipped',
+      PACKED_CONSUMER_SMOKE_RESULT: 'skipped',
+      BROWSER_RESULT: 'skipped',
+      LOGGING_RESULT: 'skipped',
+    })
+    assert.notEqual(outcome.status, 0)
+    assert.match(outcome.stdout, new RegExp(`CONTRACTS gate reported '${result}'`))
+  }
+})
+
 test('full and explicitly empty plans pass the actual final aggregate', () => {
   assert.equal(run({}).status, 0)
   assert.equal(
