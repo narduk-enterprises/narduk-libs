@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.2
+
+### Patch Changes
+
+- 05515cd: Add the required `mapkit_js` scope to dynamically signed MapKit JS
+  tokens so Apple accepts the token at its JavaScript bootstrap endpoint.
+
 ## 2.0.1
 
 ### Patch Changes

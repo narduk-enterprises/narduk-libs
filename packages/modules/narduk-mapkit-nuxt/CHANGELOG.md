@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-mapkit-nuxt
 
+## 2.0.4
+
+### Patch Changes
+
+- 05515cd: Add the required `mapkit_js` scope to dynamically signed MapKit JS
+  tokens so Apple accepts the token at its JavaScript bootstrap endpoint.
+- Updated dependencies [05515cd]
+  - @narduk-enterprises/narduk-mapkit@2.0.2
+
 ## 2.0.3
 
 ### Patch Changes
