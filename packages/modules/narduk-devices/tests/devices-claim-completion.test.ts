@@ -92,6 +92,19 @@ describe('device-side completion with no plaintext bearer', () => {
         harness.devices.getCredentialBySecret(credential.secret, { unattributed: true }),
       ).resolves.not.toBeNull()
     }
+    // The invariant `canReissue`'s approval leg leans on: nothing reaches
+    // `status = 'claimed'` without a recorded approval. It holds by inspection
+    // today \u2014 `completeClaimAtomically` is the only writer of that status and
+    // both `authorize` implementations demand a non-null hash \u2014 which is exactly
+    // the kind of thing a refactor breaks in silence, so it is asserted rather
+    // than reasoned (narduk-libs#228 second review, note 5).
+    expect(
+      harness.sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM devices_claim_sessions WHERE status = 'claimed' AND approval_token_hash IS NULL",
+        )
+        .get(),
+    ).toEqual({ n: 0 })
   })
 
   it('refuses before an approval is recorded', async () => {
@@ -885,6 +898,45 @@ describe('every proof-binding clause is pinned', () => {
       await expect(
         harness.devices.getCredentialBySecret(credential.secret, { unattributed: true }),
       ).resolves.not.toBeNull()
+    }
+  })
+
+  it('refuses a first completion whose proof was signed over other values', async () => {
+    // The mirror of the envelope rewrites above, on a *first* completion. There
+    // the request binding is the only check standing: nothing has been claimed
+    // yet, so `reissueForReplay`'s idempotency-key check has nothing to compare
+    // against, and `bindsDevice` sees the real envelope in every case.
+    const signedBodyRewrites: Array<[string, Record<string, string>]> = [
+      ['hardwareFingerprint', { hardwareFingerprint: 'sha256:not-this-device' }],
+      ['idempotencyKey', { idempotencyKey: 'handoff-EVIL' }],
+      ['installationId', { installationId: 'inst-EVIL' }],
+      ['nonce', { nonce: '   ' }],
+    ]
+    for (const [field, signedOver] of signedBodyRewrites) {
+      // A fresh harness per case: a first completion is available only once.
+      const harness = createTestHarness()
+      const claim = await approvedClaim(harness)
+      const signed = completionRequest(harness, {
+        claimSessionId: claim.claimSessionId,
+        idempotencyKey: HANDOFF_KEY,
+        key: claim.key,
+        ...signedOver,
+      })
+      const refused = await harness.devices.completeClaimWithRecordedApproval({
+        ...signed.input,
+        // Every envelope value is the genuine one: only the signed body lies.
+        hardwareFingerprint: FINGERPRINT,
+        idempotencyKey: HANDOFF_KEY,
+        installationId: 'inst-1',
+      })
+      expect(refused.status, field).toBe('unauthorized_user')
+      expect(refused.credentials, field).toHaveLength(0)
+      expect(refused, field).not.toHaveProperty('deviceId')
+      // Nothing was claimed, so the genuine device can still complete.
+      const genuine = await harness.devices.completeClaimWithRecordedApproval(
+        provenReplay(harness, claim)(),
+      )
+      expect(genuine.status, field).toBe('completed')
     }
   })
 
