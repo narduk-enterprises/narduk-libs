@@ -121,6 +121,10 @@ export const devicesCredentials = sqliteTable(
   },
   (table) => [
     index('devices_credentials_device_class_idx').on(table.deviceId, table.credentialClass),
+    // UNIQUE so a bare bearer secret resolves to at most one credential by
+    // digest, exactly as `devices_sessions_token_hash_idx` does for a session
+    // bearer. Ships in `drizzle/0002_claim_completion.sql`.
+    uniqueIndex('devices_credentials_secret_hash_idx').on(table.secretHash),
   ],
 )
 
@@ -235,6 +239,31 @@ export const devicesAuditEvents = sqliteTable(
   ],
 )
 
+/**
+ * Single-use nonces for signed exchanges that happen before any device or
+ * credential row exists — the claim handoff leg, for instance. `scope` is
+ * opaque to this package: the consumer names the exchange it is protecting,
+ * and the UNIQUE (scope, nonce) index is the replay check.
+ *
+ * Deliberately not `devices_replay_entries` with widened columns: that key is
+ * five NOT NULL columns, and SQLite treats every NULL inside a UNIQUE index as
+ * distinct, so a nullable variant would accept every replay silently.
+ */
+export const devicesScopedNonces = sqliteTable(
+  'devices_scoped_nonces',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope').notNull(),
+    nonce: text('nonce').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('devices_scoped_nonces_key_idx').on(table.scope, table.nonce),
+    index('devices_scoped_nonces_expires_at_idx').on(table.expiresAt),
+  ],
+)
+
 export type DeviceRow = typeof devicesDevices.$inferSelect
 export type ClaimTokenRow = typeof devicesClaimTokens.$inferSelect
 export type ClaimSessionRow = typeof devicesClaimSessions.$inferSelect
@@ -244,3 +273,4 @@ export type DeviceChallengeRow = typeof devicesChallenges.$inferSelect
 export type DeviceReplayEntryRow = typeof devicesReplayEntries.$inferSelect
 export type DeviceAuthAttemptRow = typeof devicesAuthAttempts.$inferSelect
 export type DevicesAuditEventRow = typeof devicesAuditEvents.$inferSelect
+export type DevicesScopedNonceRow = typeof devicesScopedNonces.$inferSelect

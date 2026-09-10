@@ -82,7 +82,11 @@ describe('opportunistic pruning', () => {
     expect(counts(harness).authAttempts).toBe(6)
 
     // An explicit prune reports nothing to do while the window still covers them.
-    expect(await devices.pruneExpired()).toEqual({ authAttempts: 0, replayEntries: 0 })
+    expect(await devices.pruneExpired()).toEqual({
+      authAttempts: 0,
+      replayEntries: 0,
+      scopedNonces: 0,
+    })
 
     clock.advance(DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000 + 1)
     const minted = await devices.createClaimToken({
@@ -101,7 +105,11 @@ describe('opportunistic pruning', () => {
     expect(started.status).toBe('pending_user_approval')
     // Only this start's own success row survives.
     expect(counts(harness).authAttempts).toBe(1)
-    expect(await devices.pruneExpired()).toEqual({ authAttempts: 0, replayEntries: 0 })
+    expect(await devices.pruneExpired()).toEqual({
+      authAttempts: 0,
+      replayEntries: 0,
+      scopedNonces: 0,
+    })
   })
 
   it('accepts an explicit cutoff', async () => {

@@ -1,5 +1,5 @@
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,7 +18,22 @@ import { base64UrlEncode, canonicalBytes } from '../../server/utils/devices-sign
 import type { CanonicalValue } from '../../server/utils/devices-signing'
 
 export const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '../..')
-export const MIGRATION_PATH = join(packageRoot, 'drizzle/0001_devices.sql')
+export const MIGRATION_DIR = join(packageRoot, 'drizzle')
+
+/**
+ * Every published migration, in the lexical order a consumer's runner applies
+ * them. Discovered rather than listed, so a new file cannot be shipped without
+ * the suite executing it.
+ */
+export const MIGRATION_PATHS: string[] = readdirSync(MIGRATION_DIR)
+  .filter((entry) => entry.endsWith('.sql'))
+  .sort()
+  .map((entry) => join(MIGRATION_DIR, entry))
+
+export const MIGRATION_SQL = MIGRATION_PATHS.map((path) => readFileSync(path, 'utf8')).join('\n')
+
+/** The first migration, still named on its own where a test asserts about it. */
+export const MIGRATION_PATH = join(MIGRATION_DIR, '0001_devices.sql')
 
 export interface TestClock {
   advance: (milliseconds: number) => void
@@ -96,7 +111,7 @@ export function createTestHarness(
 ): TestHarness {
   const sqlite = new Database(':memory:')
   sqlite.pragma('foreign_keys = ON')
-  sqlite.exec(readFileSync(MIGRATION_PATH, 'utf8'))
+  sqlite.exec(MIGRATION_SQL)
 
   const { secrets = [], tokens = [], ...serviceOptions } = options
   const clock = createTestClock()

@@ -14,9 +14,10 @@ import {
   DEVICE_STATUSES,
 } from '../shared/types/devices'
 
-import { createTestHarness, MIGRATION_PATH } from './support/database'
+import { createTestHarness, MIGRATION_PATHS, MIGRATION_SQL } from './support/database'
 
-const migration = readFileSync(MIGRATION_PATH, 'utf8')
+/** Every published migration concatenated, comments stripped. */
+const migration = MIGRATION_SQL
 const statements = migration
   .split('\n')
   .filter((line) => !line.trimStart().startsWith('--'))
@@ -55,6 +56,7 @@ const TABLES = [
   'devices_sessions',
   'devices_challenges',
   'devices_replay_entries',
+  'devices_scoped_nonces',
   'devices_auth_attempts',
   'devices_audit_events',
 ]
@@ -99,6 +101,20 @@ describe('devices schema/migration parity', () => {
       .filter((value) => typeof value === 'object')
       .map((table) => getTableName(table))
     expect([...declared].sort()).toEqual([...TABLES].sort())
+  })
+
+  it('ships every migration as an additive, re-runnable file', () => {
+    expect(MIGRATION_PATHS.length).toBeGreaterThanOrEqual(2)
+    for (const path of MIGRATION_PATHS) {
+      const file = readFileSync(path, 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+      const creates = file.match(/CREATE (?:TABLE|UNIQUE INDEX|INDEX)/gu) ?? []
+      const guarded = file.match(/CREATE (?:TABLE|UNIQUE INDEX|INDEX) IF NOT EXISTS/gu) ?? []
+      expect(guarded, `${path} has an unguarded CREATE`).toHaveLength(creates.length)
+      expect(file, `${path} mutates an existing table`).not.toMatch(/ALTER TABLE|DROP TABLE/iu)
+    }
   })
 
   it('stays additive and D1-only', () => {
@@ -221,5 +237,34 @@ describe('devices schema/migration parity', () => {
     const insert = sqlite.prepare('INSERT INTO devices_replay_entries VALUES (?, ?, ?, ?, ?, ?, ?)')
     insert.run('r-1', 'd', 1, 'c', 'n', 'h', 9)
     expect(() => insert.run('r-2', 'd', 1, 'c', 'n', 'h', 9)).toThrow(/UNIQUE constraint failed/u)
+  })
+
+  it('makes a scoped nonce single-use, with no nullable column in its key', () => {
+    const { sqlite } = createTestHarness()
+    const insert = sqlite.prepare('INSERT INTO devices_scoped_nonces VALUES (?, ?, ?, ?, ?)')
+    insert.run('n-1', 'claim-handoff:cs-1', 'nonce-1', 9, 1)
+    expect(() => insert.run('n-2', 'claim-handoff:cs-1', 'nonce-1', 9, 1)).toThrow(
+      /UNIQUE constraint failed/u,
+    )
+    // A different scope is a different exchange.
+    expect(() => insert.run('n-3', 'claim-handoff:cs-2', 'nonce-1', 9, 1)).not.toThrow()
+    // Both key columns are NOT NULL: SQLite treats NULLs inside a UNIQUE index
+    // as distinct, so a nullable key would accept every replay.
+    const columns = sqlite.prepare('PRAGMA table_info(devices_scoped_nonces)').all() as Array<{
+      name: string
+      notnull: number
+    }>
+    for (const name of ['scope', 'nonce', 'expires_at']) {
+      expect(columns.find((column) => column.name === name)?.notnull, name).toBe(1)
+    }
+  })
+
+  it('resolves a credential secret through a unique digest index', () => {
+    const { sqlite } = createTestHarness()
+    const indexes = sqlite
+      .prepare('SELECT name, "unique" FROM pragma_index_list(\'devices_credentials\')')
+      .all() as Array<{ name: string; unique: number }>
+    const secretHash = indexes.find((index) => index.name === 'devices_credentials_secret_hash_idx')
+    expect(secretHash?.unique, 'secret_hash index must be UNIQUE').toBe(1)
   })
 })

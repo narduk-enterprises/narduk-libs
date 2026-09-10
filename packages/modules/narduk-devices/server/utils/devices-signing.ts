@@ -87,6 +87,23 @@ export async function sha256Hex(value: string | Uint8Array): Promise<string> {
   return toHex(new Uint8Array(digest))
 }
 
+/**
+ * Constant-time equality for the fixed-width hex digests this package compares
+ * (`sha256Hex` output). The runtime cost is independent of where the two values
+ * first differ, so a caller probing a bearer cannot learn a prefix from how long
+ * the refusal took. Length is compared first and non-secretly: every digest this
+ * package stores is the same width, so an unequal length is a malformed input,
+ * not a partial match.
+ */
+export function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let difference = 0
+  for (let index = 0; index < a.length; index += 1) {
+    difference |= a.charCodeAt(index) ^ b.charCodeAt(index)
+  }
+  return difference === 0
+}
+
 export function randomBase64Url(bytes: number): string {
   return base64UrlEncode(globalThis.crypto.getRandomValues(new Uint8Array(bytes)))
 }

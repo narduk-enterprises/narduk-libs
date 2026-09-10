@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, lt, lte } from 'drizzle-orm'
 
+import { CREDENTIAL_CLASSES } from '../../shared/types/devices'
 import { DEVICES_LOCKOUT_POLICY } from '../../shared/utils/lockout-policy'
 import {
   devicesAuditEvents,
@@ -10,10 +11,15 @@ import {
   devicesCredentials,
   devicesDevices,
   devicesReplayEntries,
+  devicesScopedNonces,
   devicesSessions,
 } from '../database/devices-schema'
 
-import { completeClaimAtomically, type PreparedCredential } from './devices-complete-claim'
+import {
+  completeClaimAtomically,
+  type PreparedCredential,
+  reissueCredentialsAtomically,
+} from './devices-complete-claim'
 import { DevicesError } from './devices-error'
 import {
   createLockoutGate,
@@ -27,6 +33,7 @@ import {
   randomBase64Url,
   sha256Hex,
   type SignatureVerifier,
+  timingSafeEqualHex,
   tryBase64UrlDecode,
   verifyEd25519,
 } from './devices-signing'
@@ -99,6 +106,45 @@ export const AUDIT_EVENTS_MAX_LIMIT = 200
 export const DEVICE_LIST_MAX_LIMIT = 200
 
 const CREDENTIAL_FINGERPRINT_DOMAIN = 'narduk-devices:credential-fingerprint:'
+
+/**
+ * Is a signed request's timestamp inside the accepted skew window?
+ *
+ * `timestamp` and `now` are millisecond epochs; `seconds` is the half-width of
+ * the window in seconds, so the default accepts +/-5 minutes. `openSession`
+ * applies exactly this function, so a consumer running its own signed exchange
+ * before any device session exists — a claim handoff, for instance — bounds
+ * skew identically instead of re-deriving the rule.
+ */
+export function isWithinTimestampSkew(
+  timestamp: number,
+  now: number,
+  seconds: number = TIMESTAMP_SKEW_DEFAULT_SECONDS,
+): boolean {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new DevicesError('invalid', 'The skew window must be a non-negative number of seconds.')
+  }
+  if (!Number.isFinite(timestamp) || !Number.isFinite(now)) return false
+  return Math.abs(timestamp - now) <= seconds * 1000
+}
+
+/**
+ * `isWithinTimestampSkew` as a guard: refuses with `unauthorized`, the same
+ * code `openSession` throws for a request outside the window. The message
+ * carries neither timestamp, so it stays loggable verbatim.
+ */
+export function assertTimestampSkew(
+  timestamp: number,
+  now: number,
+  seconds: number = TIMESTAMP_SKEW_DEFAULT_SECONDS,
+): void {
+  if (!isWithinTimestampSkew(timestamp, now, seconds)) {
+    throw new DevicesError(
+      'unauthorized',
+      'The request timestamp is outside the accepted skew window.',
+    )
+  }
+}
 
 /**
  * Explicitly `T | undefined` regardless of the project's index-access strictness,
@@ -212,9 +258,44 @@ export interface CompleteClaimInput {
   idempotencyKey: string
   installationId: string
   orgId: string
+  /**
+   * Serve a replay of an already-completed claim carrying this exact
+   * `idempotencyKey`, inside the claim session's remaining lifetime, with a
+   * fresh equivalent credential set rather than `already_completed` and an
+   * empty array. Default `false`: 0.1.0 callers keep the behaviour they have.
+   * See `completeClaimWithRecordedApproval`, where it defaults to `true`.
+   */
+  reissueOnIdempotentReplay?: boolean
   remote?: RemoteContext
   resource: DevicesResourceRef
   userApprovalToken: string
+}
+
+/**
+ * Completion driven by the *device*, on the strength of the approval already
+ * recorded on the claim session by `issueApprovalToken`.
+ *
+ * `completeClaim` needs the raw approval token, which forces any ceremony where
+ * the device collects its own credentials to persist an approval bearer in the
+ * clear between the two legs. This input needs no bearer at all: the approval
+ * columns on the row are the authorization, the device is bound by the public
+ * key it presents, and the org and resource are read from the claim token
+ * rather than supplied by the caller.
+ *
+ * Authenticating the device is the consumer's job — verify the signed request
+ * before calling. This call only asserts that the key presented is the key the
+ * claim session was started with.
+ */
+export interface CompleteClaimWithRecordedApprovalInput {
+  claimSessionId: string
+  /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
+  devicePublicKey: string
+  hardwareFingerprint: string
+  idempotencyKey: string
+  installationId: string
+  /** Default `true` here: the device is the recipient, so a lost response must be recoverable. */
+  reissueOnIdempotentReplay?: boolean
+  remote?: RemoteContext
 }
 
 export interface CompleteClaimResult {
@@ -310,6 +391,19 @@ export interface HeartbeatResult {
 export interface PruneExpiredResult {
   authAttempts: number
   replayEntries: number
+  scopedNonces: number
+}
+
+/**
+ * A single-use nonce for a signed exchange this package does not itself model
+ * — the leg before any device session exists. `scope` is opaque: namespace it
+ * so two exchanges cannot collide, for example `claim-handoff:<claimSessionId>`.
+ */
+export interface ConsumeNonceInput {
+  /** Millisecond epoch after which the nonce may be forgotten by `pruneExpired`. */
+  expiresAt: number
+  nonce: string
+  scope: string
 }
 
 export interface ActorInput {
@@ -340,8 +434,28 @@ export interface ListAuditEventsInput {
 
 export interface DevicesService {
   completeClaim: (input: CompleteClaimInput) => Promise<CompleteClaimResult>
+  /**
+   * Complete a claim from the device side, using the approval recorded on the
+   * claim session. No raw approval token is required, so no approval bearer
+   * ever has to be persisted by the consumer.
+   */
+  completeClaimWithRecordedApproval: (
+    input: CompleteClaimWithRecordedApprovalInput,
+  ) => Promise<CompleteClaimResult>
+  /**
+   * Claim a single-use nonce for an arbitrary signed exchange. `true` is a
+   * first presentation, `false` a replay. Backed by the same
+   * insert-or-conflict check `openSession` uses, over `devices_scoped_nonces`.
+   */
+  consumeNonce: (input: ConsumeNonceInput) => Promise<boolean>
   createClaimToken: (input: CreateClaimTokenInput) => Promise<CreateClaimTokenResult>
   getClaimSession: (claimSessionId: string) => Promise<ClaimSession | null>
+  /**
+   * The active credential a bare bearer secret names, resolved by digest
+   * against the unique `secret_hash` index, or null. The mirror of
+   * `getSessionByToken`, for a client that presents only the secret.
+   */
+  getCredentialBySecret: (secret: string) => Promise<DeviceCredential | null>
   getDevice: (deviceId: string) => Promise<Device | null>
   /** The active (unexpired, unrevoked) session named by its row id, or null. */
   getSession: (sessionId: string) => Promise<DeviceSession | null>
@@ -548,12 +662,21 @@ export function createDevices(
       .where(lte(devicesReplayEntries.expiresAt, at))
       .returning({ id: devicesReplayEntries.id })
       .all()
+    const scopedNonces = await db
+      .delete(devicesScopedNonces)
+      .where(lte(devicesScopedNonces.expiresAt, at))
+      .returning({ id: devicesScopedNonces.id })
+      .all()
     const authAttempts = await db
       .delete(devicesAuthAttempts)
       .where(lt(devicesAuthAttempts.at, at - DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000))
       .returning({ id: devicesAuthAttempts.id })
       .all()
-    return { replayEntries: replayEntries.length, authAttempts: authAttempts.length }
+    return {
+      replayEntries: replayEntries.length,
+      scopedNonces: scopedNonces.length,
+      authAttempts: authAttempts.length,
+    }
   }
 
   /** Pruning is housekeeping: it must never turn into an authentication failure. */
@@ -651,6 +774,218 @@ export function createDevices(
       .returning({ id: devicesSessions.id })
       .all()
     return revoked.length
+  }
+
+  /**
+   * Path-specific authorization for a completion. Returned, never thrown: a
+   * refusal is one of the wire statuses and counts against the lockout.
+   */
+  type ApprovalOutcome =
+    { approvedByUserId: string; ok: true } | { ok: false; status: ClaimCompleteStatus }
+
+  interface CompleteClaimRun {
+    /** The account the lockout counts this attempt against, or null if none is known yet. */
+    accountSubject: (session: ClaimSession) => string | null
+    authorize: (
+      session: ClaimSession,
+      token: ClaimToken,
+    ) => ApprovalOutcome | Promise<ApprovalOutcome>
+    /**
+     * May this caller be served a replay of the completion it already made?
+     *
+     * Must bind the caller at least as strongly as `authorize` does, or a
+     * replay would be a cheaper route to a live credential set than the
+     * completion itself. It deliberately does *not* require the approval to
+     * still be unexpired: approvals live five minutes, the recovery window is
+     * the claim session's fifteen.
+     */
+    canReissue: (session: ClaimSession, token: ClaimToken) => boolean | Promise<boolean>
+    claimSessionId: string
+    hardwareFingerprint: string
+    idempotencyKey: string
+    installationId: string
+    reissue: boolean
+    remote: RemoteContext | undefined
+  }
+
+  /**
+   * Serve a replayed completion with a fresh equivalent credential set.
+   *
+   * Only the digests of the original secrets were ever stored, so the first
+   * result cannot be re-served verbatim without keeping a live bearer in the
+   * database in the clear. Instead every active credential is rotated to its
+   * next version inside one transaction and the new set is returned, so the
+   * device recovers and the superseded secrets die together. Returns null when
+   * the replay is not serviceable, in which case the caller reports
+   * `already_completed` exactly as 0.1.0 did.
+   */
+  async function reissueForReplay(
+    session: ClaimSession,
+    idempotencyKey: string,
+  ): Promise<CompleteClaimResult | null> {
+    if (session.completionIdempotencyKey !== idempotencyKey) return null
+    if (session.deviceId === null) return null
+    // Recovery is bounded by the claim session, never open-ended.
+    if (session.expiresAt <= now()) return null
+    const device = await findDevice(session.deviceId)
+    if (!device || device.status !== 'claimed') return null
+
+    const active = await db
+      .select()
+      .from(devicesCredentials)
+      .where(and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)))
+      .all()
+    if (active.length === 0) return null
+    const ordered = [...active].sort(
+      (a, b) =>
+        CREDENTIAL_CLASSES.indexOf(a.credentialClass) -
+        CREDENTIAL_CLASSES.indexOf(b.credentialClass),
+    )
+    const prepared = await Promise.all(
+      ordered.map((credential) =>
+        prepareCredential(credential.credentialClass, credential.version + 1, credential.expiresAt),
+      ),
+    )
+    const reissuedAt = now()
+    const won = await reissueCredentialsAtomically(
+      db,
+      {
+        device,
+        claimSessionId: session.id,
+        idempotencyKey,
+        credentials: prepared.map((entry) => entry.prepared),
+        reissuedAt,
+      },
+      nextId,
+    )
+    if (!won) return null
+    // Fresh secrets, returned exactly once; only their digests were stored.
+    return {
+      status: 'completed',
+      deviceId: device.id,
+      credentials: prepared.map((entry) => entry.issued),
+    }
+  }
+
+  /**
+   * The state-machine refusal a completion attempt hits before authorization is
+   * even considered, or null to proceed. An unmarked session that has run out of
+   * time is marked expired on the way through.
+   */
+  async function completionBlocker(
+    session: ClaimSession,
+    token: ClaimToken,
+    hardwareFingerprint: string,
+  ): Promise<ClaimCompleteStatus | null> {
+    if (session.status === 'revoked' || token.revokedAt !== null) return 'revoked'
+    // Single use: the token was consumed when this session redeemed it, so a
+    // consumption naming any other session means the token is already spent
+    // (narduk-libs#212 review finding 3).
+    if (token.consumedAt !== null && token.consumedByClaimSessionId !== session.id) return 'revoked'
+    if (session.status === 'expired' || session.expiresAt <= now()) {
+      if (session.status !== 'expired') {
+        await db
+          .update(devicesClaimSessions)
+          .set({ status: 'expired' })
+          .where(
+            and(
+              eq(devicesClaimSessions.id, session.id),
+              eq(devicesClaimSessions.status, 'pending_user_approval'),
+            ),
+          )
+          .run()
+      }
+      return 'expired'
+    }
+    if (session.hardwareFingerprint !== hardwareFingerprint) return 'hardware_mismatch'
+    return null
+  }
+
+  /**
+   * Everything both completion paths share: state machine, lockouts, replay
+   * handling and the atomic write. The two differ only in who they count the
+   * attempt against and how they prove the completion was authorized.
+   */
+  async function runCompleteClaim(run: CompleteClaimRun): Promise<CompleteClaimResult> {
+    const installationId = requireText(run.installationId, 'installationId')
+    const idempotencyKey = requireText(run.idempotencyKey, 'idempotencyKey')
+    const session = await findClaimSession(run.claimSessionId)
+    if (!session) {
+      throw new DevicesError('not_found', `Claim session ${run.claimSessionId} does not exist.`)
+    }
+    const token = await findClaimToken(session.claimTokenId)
+    if (!token) throw new DevicesError('not_found', 'The claim token behind this session is gone.')
+
+    const account = run.accountSubject(session)
+    const subjects: LockoutSubject[] = [
+      { kind: 'token', subject: token.tokenHash },
+      ...(account === null ? [] : [{ kind: 'account' as const, subject: account }]),
+      ...remoteSubjects(run.remote).filter(
+        (subject) => account === null || subject.kind !== 'account',
+      ),
+    ]
+    const locked = await lockouts.check(subjects)
+    if (locked) {
+      return {
+        status: 'rate_limited',
+        credentials: [],
+        retryAfterSeconds: locked.retryAfterSeconds,
+      }
+    }
+
+    const fail = async (status: ClaimCompleteStatus): Promise<CompleteClaimResult> => {
+      await recordAttempt(subjects, 'failure', { orgId: token.orgId, reason: status })
+      return { status, credentials: [] }
+    }
+    const alreadyCompleted = (completed: ClaimSession): CompleteClaimResult => ({
+      status: 'already_completed',
+      credentials: [],
+      ...(completed.deviceId === null ? {} : { deviceId: completed.deviceId }),
+    })
+
+    if (session.status === 'claimed') {
+      if (run.reissue && (await run.canReissue(session, token))) {
+        const reissued = await reissueForReplay(session, idempotencyKey)
+        if (reissued) {
+          await recordAttempt(subjects, 'success', { orgId: token.orgId })
+          return reissued
+        }
+      }
+      return alreadyCompleted(session)
+    }
+    const blocker = await completionBlocker(session, token, run.hardwareFingerprint)
+    if (blocker !== null) return fail(blocker)
+
+    const approval = await run.authorize(session, token)
+    if (!approval.ok) return fail(approval.status)
+
+    const completedAt = now()
+    const deviceId = nextId()
+    const ingest = await prepareCredential('ingest', 1, null)
+    const command = await prepareCredential('command', 1, null)
+    const won = await completeClaimAtomically(
+      db,
+      {
+        claimSessionId: session.id,
+        token,
+        deviceId,
+        installationId,
+        approvedByUserId: approval.approvedByUserId,
+        idempotencyKey,
+        completedAt,
+        credentials: [ingest.prepared, command.prepared],
+      },
+      nextId,
+    )
+    if (!won) {
+      const current = await findClaimSession(session.id)
+      if (current?.status === 'claimed') return alreadyCompleted(current)
+      if (current?.status === 'revoked') return fail('revoked')
+      return fail('expired')
+    }
+    await recordAttempt(subjects, 'success', { orgId: token.orgId })
+    // Secrets are returned exactly once; only their digests were stored.
+    return { status: 'completed', deviceId, credentials: [ingest.issued, command.issued] }
   }
 
   return {
@@ -973,115 +1308,124 @@ export function createDevices(
 
     async completeClaim(input) {
       const approvedByUserId = requireText(input.approvedByUserId, 'approvedByUserId')
-      const installationId = requireText(input.installationId, 'installationId')
-      const idempotencyKey = requireText(input.idempotencyKey, 'idempotencyKey')
-      const session = await findClaimSession(input.claimSessionId)
-      if (!session) {
-        throw new DevicesError('not_found', `Claim session ${input.claimSessionId} does not exist.`)
-      }
-      const token = await findClaimToken(session.claimTokenId)
-      if (!token)
-        throw new DevicesError('not_found', 'The claim token behind this session is gone.')
+      const orgAndResourceMatch = (token: ClaimToken): boolean =>
+        token.orgId === input.orgId &&
+        sameResource({ kind: token.resourceKind, id: token.resourceId }, input.resource)
+      const approvalMatchesActor = (session: ClaimSession): boolean =>
+        session.approvalUserId === approvedByUserId &&
+        session.approvalOrgId === input.orgId &&
+        session.approvalResourceKind === input.resource.kind &&
+        session.approvalResourceId === input.resource.id
+      const presentedApprovalMatches = async (session: ClaimSession): Promise<boolean> =>
+        session.approvalTokenHash !== null &&
+        timingSafeEqualHex(await sha256Hex(input.userApprovalToken), session.approvalTokenHash)
 
-      const subjects: LockoutSubject[] = [
-        { kind: 'token', subject: token.tokenHash },
-        { kind: 'account', subject: approvedByUserId },
-        ...remoteSubjects(input.remote).filter((subject) => subject.kind !== 'account'),
-      ]
-      const locked = await lockouts.check(subjects)
-      if (locked) {
-        return {
-          status: 'rate_limited',
-          credentials: [],
-          retryAfterSeconds: locked.retryAfterSeconds,
-        }
-      }
-
-      const fail = async (status: ClaimCompleteStatus): Promise<CompleteClaimResult> => {
-        await recordAttempt(subjects, 'failure', { orgId: token.orgId, reason: status })
-        return { status, credentials: [] }
-      }
-      const alreadyCompleted = (completed: ClaimSession): CompleteClaimResult => ({
-        status: 'already_completed',
-        credentials: [],
-        ...(completed.deviceId === null ? {} : { deviceId: completed.deviceId }),
-      })
-
-      if (session.status === 'claimed') return alreadyCompleted(session)
-      if (session.status === 'revoked' || token.revokedAt !== null) return fail('revoked')
-      // Single use: the token was consumed when this session redeemed it, so a
-      // consumption naming any other session means the token is already spent
-      // (narduk-libs#212 review finding 3).
-      if (token.consumedAt !== null && token.consumedByClaimSessionId !== session.id) {
-        return fail('revoked')
-      }
-      if (session.status === 'expired' || session.expiresAt <= now()) {
-        if (session.status !== 'expired') {
-          await db
-            .update(devicesClaimSessions)
-            .set({ status: 'expired' })
-            .where(
-              and(
-                eq(devicesClaimSessions.id, session.id),
-                eq(devicesClaimSessions.status, 'pending_user_approval'),
-              ),
-            )
-            .run()
-        }
-        return fail('expired')
-      }
-      if (session.hardwareFingerprint !== input.hardwareFingerprint)
-        return fail('hardware_mismatch')
-      if (
-        token.orgId !== input.orgId ||
-        !sameResource({ kind: token.resourceKind, id: token.resourceId }, input.resource)
-      ) {
-        return fail('unauthorized_user')
-      }
-      if (
-        session.approvalTokenHash === null ||
-        session.approvalExpiresAt === null ||
-        session.approvalExpiresAt <= now() ||
-        (await sha256Hex(input.userApprovalToken)) !== session.approvalTokenHash
-      ) {
-        return fail('approval_required')
-      }
-      if (
-        session.approvalUserId !== approvedByUserId ||
-        session.approvalOrgId !== input.orgId ||
-        session.approvalResourceKind !== input.resource.kind ||
-        session.approvalResourceId !== input.resource.id
-      ) {
-        return fail('unauthorized_user')
-      }
-
-      const completedAt = now()
-      const deviceId = nextId()
-      const ingest = await prepareCredential('ingest', 1, null)
-      const command = await prepareCredential('command', 1, null)
-      const won = await completeClaimAtomically(
-        db,
-        {
-          claimSessionId: session.id,
-          token,
-          deviceId,
-          installationId,
-          approvedByUserId,
-          idempotencyKey,
-          completedAt,
-          credentials: [ingest.prepared, command.prepared],
+      return runCompleteClaim({
+        claimSessionId: input.claimSessionId,
+        hardwareFingerprint: input.hardwareFingerprint,
+        idempotencyKey: input.idempotencyKey,
+        installationId: input.installationId,
+        reissue: input.reissueOnIdempotentReplay ?? false,
+        remote: input.remote,
+        accountSubject: () => approvedByUserId,
+        canReissue: async (session, token) =>
+          session.hardwareFingerprint === input.hardwareFingerprint &&
+          orgAndResourceMatch(token) &&
+          (await presentedApprovalMatches(session)) &&
+          approvalMatchesActor(session),
+        authorize: async (session, token) => {
+          if (!orgAndResourceMatch(token)) return { ok: false, status: 'unauthorized_user' }
+          if (
+            session.approvalExpiresAt === null ||
+            session.approvalExpiresAt <= now() ||
+            !(await presentedApprovalMatches(session))
+          ) {
+            return { ok: false, status: 'approval_required' }
+          }
+          if (!approvalMatchesActor(session)) return { ok: false, status: 'unauthorized_user' }
+          return { ok: true, approvedByUserId }
         },
-        nextId,
+      })
+    },
+
+    async completeClaimWithRecordedApproval(input) {
+      const devicePublicKey = requireText(input.devicePublicKey, 'devicePublicKey')
+      // The key is public material, so a plain comparison leaks nothing: this
+      // binds the caller to the device that started the claim, and the consumer
+      // is the layer that authenticates it (verify the signed request first).
+      const bindsDevice = (session: ClaimSession): boolean =>
+        session.publicKey === devicePublicKey &&
+        session.hardwareFingerprint === input.hardwareFingerprint
+      const approvalMatchesToken = (session: ClaimSession, token: ClaimToken): boolean =>
+        session.approvalUserId !== null &&
+        session.approvalOrgId === token.orgId &&
+        session.approvalResourceKind === token.resourceKind &&
+        session.approvalResourceId === token.resourceId
+
+      return runCompleteClaim({
+        claimSessionId: input.claimSessionId,
+        hardwareFingerprint: input.hardwareFingerprint,
+        idempotencyKey: input.idempotencyKey,
+        installationId: input.installationId,
+        reissue: input.reissueOnIdempotentReplay ?? true,
+        remote: input.remote,
+        accountSubject: (session) => session.approvalUserId,
+        canReissue: (session, token) =>
+          bindsDevice(session) && approvalMatchesToken(session, token),
+        authorize: (session, token) => {
+          if (!bindsDevice(session)) return { ok: false, status: 'hardware_mismatch' }
+          if (
+            session.approvalTokenHash === null ||
+            session.approvalUserId === null ||
+            session.approvalExpiresAt === null ||
+            session.approvalExpiresAt <= now()
+          ) {
+            return { ok: false, status: 'approval_required' }
+          }
+          if (!approvalMatchesToken(session, token)) {
+            return { ok: false, status: 'unauthorized_user' }
+          }
+          // No raw approval token crosses this boundary: the recorded approval
+          // on the row is the authorization.
+          return { ok: true, approvedByUserId: session.approvalUserId }
+        },
+      })
+    },
+
+    async consumeNonce(input) {
+      const scope = requireText(input.scope, 'scope')
+      const nonce = requireText(input.nonce, 'nonce')
+      const expiresAt = requirePositiveInteger(input.expiresAt, 'expiresAt')
+      // Same shape as the session replay check: an insert that lands is a first
+      // presentation, one that conflicts on (scope, nonce) is a replay. A row
+      // past its expiry still refuses until `pruneExpired` removes it, which is
+      // the safe direction.
+      const inserted = await db
+        .insert(devicesScopedNonces)
+        .values({ id: nextId(), scope, nonce, expiresAt, createdAt: now() })
+        .onConflictDoNothing()
+        .returning({ id: devicesScopedNonces.id })
+        .all()
+      return inserted.length > 0
+    },
+
+    async getCredentialBySecret(secret) {
+      if (secret.length === 0) return null
+      const secretHash = await sha256Hex(secret)
+      const credential = first(
+        await db
+          .select()
+          .from(devicesCredentials)
+          .where(eq(devicesCredentials.secretHash, secretHash))
+          .limit(1)
+          .all(),
       )
-      if (!won) {
-        const current = await findClaimSession(session.id)
-        if (current?.status === 'claimed') return alreadyCompleted(current)
-        if (current?.status === 'revoked') return fail('revoked')
-        return fail('expired')
-      }
-      await recordAttempt(subjects, 'success', { orgId: token.orgId })
-      // Secrets are returned exactly once; only their digests were stored.
-      return { status: 'completed', deviceId, credentials: [ingest.issued, command.issued] }
+      // The unique index already made this an equality seek; the constant-time
+      // compare keeps the confirmation independent of the stored digest.
+      if (!credential || !timingSafeEqualHex(secretHash, credential.secretHash)) return null
+      if (credential.revokedAt !== null) return null
+      if (credential.expiresAt !== null && credential.expiresAt <= now()) return null
+      return credential
     },
 
     async getDevice(deviceId) {
@@ -1444,7 +1788,8 @@ export function createDevices(
       ) {
         return null
       }
-      return (await sha256Hex(input.secret)) === credential.secretHash ? credential : null
+      const secretHash = await sha256Hex(input.secret)
+      return timingSafeEqualHex(secretHash, credential.secretHash) ? credential : null
     },
 
     async listAuditEvents(input = {}) {

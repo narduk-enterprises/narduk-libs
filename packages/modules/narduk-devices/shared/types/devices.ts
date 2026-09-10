@@ -199,6 +199,7 @@ export const DEVICES_AUDIT_ACTIONS = [
   'claim.start',
   'claim.approve',
   'claim.complete',
+  'claim.reissue',
   'challenge.issue',
   'session.open',
   'session.revoke',

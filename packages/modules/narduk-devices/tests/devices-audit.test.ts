@@ -6,6 +6,7 @@ import { DEVICES_AUDIT_ACTIONS } from '../shared/types/devices'
 import {
   claimDevice,
   createTestHarness,
+  FINGERPRINT,
   ORG,
   signedOpen,
   startPendingClaim,
@@ -30,6 +31,15 @@ describe('audit trail', () => {
       actorUserId: 'owner-1',
     })
     clock.advance(1)
+    // A replayed completion re-issues rather than serving an empty array.
+    await devices.completeClaimWithRecordedApproval({
+      claimSessionId: claimed.claimSessionId,
+      devicePublicKey: claimed.key.publicKey,
+      hardwareFingerprint: FINGERPRINT,
+      installationId: 'inst-1',
+      idempotencyKey: `complete-${claimed.claimSessionId}`,
+    })
+    clock.advance(1)
     await devices.revokeDevice({ deviceId: claimed.deviceId, actorUserId: 'owner-1' })
     clock.advance(1)
     const pending = await startPendingClaim(harness)
@@ -45,6 +55,7 @@ describe('audit trail', () => {
         'claim.start',
         'claim.approve',
         'claim.complete',
+        'claim.reissue',
         'challenge.issue',
         'session.open',
         'session.revoke',
