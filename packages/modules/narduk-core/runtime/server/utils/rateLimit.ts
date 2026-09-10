@@ -1,6 +1,7 @@
-import { createError, getHeader, setResponseHeader } from 'h3'
+import { createError, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { getClientIp } from './client-ip'
 import { readWorkerRuntimeEnv } from './worker-env'
 
 import type { H3Event } from 'h3'
@@ -182,12 +183,12 @@ export function resolveRateLimitPolicy(event: H3Event, policy: RateLimitPolicy):
   }
 }
 
-function getClientIp(event: H3Event): string {
-  const cf = getHeader(event, 'cf-connecting-ip')?.trim()
-  if (cf) return cf
-  const fromForwarded = getHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim()
-  if (fromForwarded) return fromForwarded
-  return '127.0.0.1'
+/**
+ * The layer's shared resolver, with `x-forwarded-for` trusted as this file always has; the
+ * placeholder keeps a request with no address at all in one bucket rather than unlimited.
+ */
+function rateLimitClientIp(event: H3Event): string {
+  return getClientIp(event, { trustForwardedFor: true }) ?? '127.0.0.1'
 }
 
 /**
@@ -205,7 +206,7 @@ export function enforceRateLimit(
   maxRequests: number,
   windowMs: number,
 ): void {
-  const ip = getClientIp(event)
+  const ip = rateLimitClientIp(event)
   const key = `${namespace}:${ip}`
 
   if (!buckets.has(namespace)) {
@@ -251,7 +252,7 @@ async function enforceCloudflareRateLimit(event: H3Event, policy: RateLimitPolic
   const limiter = getCloudflareRateLimiter(event, policy)
   if (!limiter) return
 
-  const ip = getClientIp(event)
+  const ip = rateLimitClientIp(event)
   const key = `${policy.namespace}:${ip}`
   const { success } = await limiter.limit({ key })
 
