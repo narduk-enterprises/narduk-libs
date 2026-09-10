@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.0.10
+
+### Patch Changes
+
+- e202cfd: Disable analytics identifiers, loading, and replay on noncanonical
+  Workers/Pages preview hosts and explicit nonproduction deployments. The same
+  immutable version keeps production analytics when promoted to its canonical
+  hostname.
+
+  Avoid a client lifecycle warning while retaining noindex robots metadata on
+  noncanonical hosts.
+
+- Updated dependencies [e202cfd]
+- Updated dependencies [37c03e2]
+  - @narduk-enterprises/narduk-core@1.23.2
+
 ## 2.0.9
 
 ### Patch Changes
