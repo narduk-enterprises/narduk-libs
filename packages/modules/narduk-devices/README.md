@@ -64,13 +64,15 @@ app's `migrations.sources.json`:
 }
 ```
 
-`drizzle/0001_devices.sql` is `CREATE TABLE IF NOT EXISTS` throughout with no
-down-migration, so a Worker rolled back to a version without devices simply
-ignores the tables.
+Both migration files are `CREATE ... IF NOT EXISTS` throughout, with no
+`ALTER TABLE` and no down-migration, so a Worker rolled back to a version
+without devices simply ignores the tables and re-running is safe.
+`0002_claim_completion.sql` adds the UNIQUE `devices_credentials.secret_hash`
+index and the `devices_scoped_nonces` table.
 
 ## Schema
 
-Nine tables, all prefixed `devices_`. Timestamps are millisecond epoch integers.
+Ten tables, all prefixed `devices_`. Timestamps are millisecond epoch integers.
 No secret is stored in the clear: claim tokens, approval tokens and credential
 secrets are SHA-256 digests.
 
@@ -223,6 +225,104 @@ enumeration _across_ different tokens, which is precisely what the per-IP rule
 exists for. A malformed device public key is counted as a failure too, so a
 malformed key is not a free attempt.
 
+### Device-side completion
+
+`completeClaim` takes the **raw** approval token, which suits a ceremony where
+the approving browser also completes. It does not suit one where the _device_
+collects its own credentials: the app would have to keep an approval bearer in
+the clear between the two legs. `completeClaimWithRecordedApproval` completes on
+the `approval_*` columns `issueApprovalToken` already wrote, so no raw approval
+token ever leaves the library:
+
+```ts
+// The device presents a signed request; the consumer verifies the signature,
+// bounds the timestamp, consumes the nonce, and only then completes.
+const completed = await devices.completeClaimWithRecordedApproval({
+  claimSessionId,
+  devicePublicKey, // must equal the key the claim session recorded
+  hardwareFingerprint,
+  installationId, // minted by the cloud
+  idempotencyKey,
+  remote: { ip },
+})
+// → { status: 'completed', deviceId, credentials: [ingest, command] }
+```
+
+**Authenticating the device is the consumer's job.** This call binds the caller
+to the claim session's recorded public key and hardware fingerprint; it does not
+verify a signature. Verify the signed request first (`verifyEd25519` over
+`canonicalBytes`), then call. A mismatch is `hardware_mismatch` and counts
+against the lockout.
+
+`approval_required` covers "not approved yet" and "the approval expired";
+`unauthorized_user` covers an approval recorded for a different org or resource
+than the claim token names.
+
+#### A lost completion response
+
+`completion_idempotency_key` is read, not merely written. A replay carrying the
+**same** `idempotencyKey`, from a caller that still satisfies the binding
+checks, inside the claim session's remaining lifetime, is served — otherwise a
+device whose response was lost could never obtain its credentials, and a client
+that treats any non-`completed` status as terminal is bricked by a dropped
+packet.
+
+The replay is served with a **fresh equivalent** set at the next version, not
+with the original secrets. Only their digests were ever stored, and retaining a
+reversible copy would mean a live bearer sitting in D1 in the clear for the rest
+of the claim session. Re-issuing rotates every active credential and revokes any
+session opened with a superseded secret, in one transaction, so a device that
+did receive the first response and replays anyway is handed a working
+replacement rather than a broken one. Past the claim session's lifetime the
+answer returns to `already_completed` with an empty array.
+
+`completeClaim` keeps 0.1.0's behaviour by default; pass
+`reissueOnIdempotentReplay: true` to opt that path in as well.
+
+### Replay primitives for a pre-device exchange
+
+A signed exchange that happens _before_ any device or credential row exists —
+the claim handoff leg, for instance — cannot use `devices_replay_entries`, whose
+key is (device, credential version, challenge, nonce, request hash). Two
+primitives cover it:
+
+```ts
+import { assertTimestampSkew } from '@narduk-enterprises/narduk-devices/server/utils/devices'
+
+// Same rule openSession applies internally; default window is +/-5 minutes.
+assertTimestampSkew(body.signedAt, Date.now()) // throws DevicesError('unauthorized')
+
+// Single-use nonce, scoped by the consumer. `true` is a first presentation.
+const fresh = await devices.consumeNonce({
+  scope: `claim-handoff:${claimSessionId}`,
+  nonce: body.nonce,
+  expiresAt: claimSession.expiresAt + 24 * 60 * 60 * 1000,
+})
+if (!fresh) return refuse()
+```
+
+`isWithinTimestampSkew` is the same check as a boolean. `consumeNonce` is backed
+by `devices_scoped_nonces` and its UNIQUE `(scope, nonce)` index; a spent nonce
+keeps being refused until `pruneExpired` removes it, which is the safe
+direction. Namespace the scope so two exchanges cannot collide.
+
+This table exists rather than nullable columns on `devices_replay_entries`
+because SQLite treats every NULL inside a UNIQUE index as distinct: a nullable
+five-column key would never conflict, and every replay would be silently
+accepted.
+
+### Bearer resolution
+
+| The client presents                | Resolve with                                       |
+| ---------------------------------- | -------------------------------------------------- |
+| a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
+| a raw credential secret, no id     | `getCredentialBySecret(secret)`                    |
+| a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
+
+All three resolve by SHA-256 digest against a UNIQUE index and confirm in
+constant time; none accepts a revoked or expired row, and none puts the
+presented bearer into a message, an error or an audit row.
+
 ### Pruning
 
 `devices_replay_entries` and `devices_auth_attempts` grow with traffic, so
@@ -233,8 +333,8 @@ than a `LIMIT` (D1's SQLite is built without
 `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads is ever
 removed. The opportunistic call swallows its own errors — housekeeping must not
 fail an authentication — so a consumer that wants the counts, or a cron sweep,
-calls `pruneExpired({ before })` and gets `{ authAttempts, replayEntries }`
-back.
+calls `pruneExpired({ before })` and gets
+`{ authAttempts, replayEntries, scopedNonces }` back.
 
 ### Sessions
 
@@ -382,14 +482,18 @@ read on its own. Never log the bearer.
 
 The `userApprovalToken` the contract carries is minted by `issueApprovalToken`
 from the owner/admin's fresh session, after the consumer has checked the role
-with narduk-tenancy.
+with narduk-tenancy. A ceremony where the **device** collects its own
+credentials never puts that token on the wire at all — see
+[Device-side completion](#device-side-completion) — and an edge that presents
+only a raw credential secret as its bearer resolves through
+`getCredentialBySecret` rather than `requireDeviceSession`.
 
 ## Audit
 
 Every mutation writes one `devices_audit_events` row:
-`claim_token.create|revoke`, `claim.start|approve|complete`, `challenge.issue`,
-`session.open|revoke`, `device.revoke`, `credential.rotate`, and
-`security.lockout` when an account or IP crosses the escalating threshold.
+`claim_token.create|revoke`, `claim.start|approve|complete|reissue`,
+`challenge.issue`, `session.open|revoke`, `device.revoke`, `credential.rotate`,
+and `security.lockout` when an account or IP crosses the escalating threshold.
 `heartbeat` is liveness, not a mutation worth a row. Raw tokens and secrets are
 never recorded — a `session.*` row names the session's non-bearer `id`, never
 the `sessionToken`. `listAuditEvents` returns newest first with a clamped limit
