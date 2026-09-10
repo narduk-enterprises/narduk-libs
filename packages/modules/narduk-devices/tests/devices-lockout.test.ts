@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { lockoutSubjectFor } from '../server/utils/devices-lockout'
 import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import {
@@ -115,7 +116,14 @@ describe('lockouts', () => {
       (event) => event.action === 'security.lockout',
     )
     expect(lockouts).toHaveLength(1)
-    expect(lockouts[0]).toMatchObject({ orgId: null, subjectKind: 'ip', subjectId: remote.ip })
+    // The stored subject is namespaced by operation, so this counter is the
+    // claim ceremony's own and cannot gate `getCredentialBySecret`
+    // (narduk-libs#228 third review HIGH-4).
+    expect(lockouts[0]).toMatchObject({
+      orgId: null,
+      subjectKind: 'ip',
+      subjectId: lockoutSubjectFor('claim', remote.ip),
+    })
     expect(JSON.parse(lockouts[0]?.detailsJson ?? '{}')).toEqual({
       failures: 20,
       cooldownSeconds: 900,
@@ -205,7 +213,7 @@ describe('lockouts', () => {
       .prepare('SELECT subject_kind, subject FROM devices_auth_attempts ORDER BY subject_kind')
       .all() as Array<{ subject: string; subject_kind: string }>
     expect(attempts.filter((row) => row.subject_kind === 'account')).toEqual([
-      { subject_kind: 'account', subject: 'owner-1' },
+      { subject_kind: 'account', subject: lockoutSubjectFor('claim', 'owner-1') },
     ])
     // The earlier successful start recorded its token; the failed completion
     // recorded token, approver account and IP.
@@ -248,7 +256,7 @@ describe('claim-session enumeration is counted, not free', () => {
           .prepare(
             "SELECT COUNT(*) AS n FROM devices_auth_attempts WHERE outcome = 'failure' AND subject = ?",
           )
-          .get(REMOTE.ip) as { n: number }
+          .get(lockoutSubjectFor('claim', REMOTE.ip)) as { n: number }
       ).n
 
     for (let n = 0; n < perAccountOrIp.failures; n += 1) {

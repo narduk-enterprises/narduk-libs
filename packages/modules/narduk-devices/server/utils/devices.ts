@@ -26,6 +26,8 @@ import { DevicesError } from './devices-error'
 import {
   createLockoutGate,
   DEVICES_LOCKOUT_MAX_WINDOW_SECONDS,
+  type LockoutPurpose,
+  lockoutSubjectFor,
   type LockoutSubject,
 } from './devices-lockout'
 import {
@@ -745,10 +747,24 @@ export function createDevices(
     }
   }
 
-  function remoteSubjects(remote: RemoteContext | undefined): LockoutSubject[] {
+  /**
+   * The account/IP subjects a caller's `remote` resolves to, **namespaced by
+   * the operation counting them** (`lockoutSubjectFor`).
+   *
+   * `purpose` is required rather than defaulted: the whole failure mode HIGH-4
+   * describes is one path silently writing into another's counter, and a
+   * default is exactly how a new call site would inherit somebody else's
+   * (narduk-libs#228 third review HIGH-4).
+   */
+  function remoteSubjects(
+    remote: RemoteContext | undefined,
+    purpose: LockoutPurpose,
+  ): LockoutSubject[] {
     const subjects: LockoutSubject[] = []
-    if (remote?.accountKey) subjects.push({ kind: 'account', subject: remote.accountKey })
-    if (remote?.ip) subjects.push({ kind: 'ip', subject: remote.ip })
+    if (remote?.accountKey) {
+      subjects.push({ kind: 'account', subject: lockoutSubjectFor(purpose, remote.accountKey) })
+    }
+    if (remote?.ip) subjects.push({ kind: 'ip', subject: lockoutSubjectFor(purpose, remote.ip) })
     return subjects
   }
 
@@ -1318,7 +1334,7 @@ export function createDevices(
       // `rate_limited` answer every other refusal here gets
       // (narduk-libs#228 second review L1). The `not_found` throw itself is
       // unchanged — it is the documented contract for an unknown id.
-      const remote = remoteSubjects(run.remote)
+      const remote = remoteSubjects(run.remote, 'claim')
       const enumerating = await lockouts.check(remote)
       if (enumerating) {
         return {
@@ -1336,8 +1352,13 @@ export function createDevices(
     const account = run.accountSubject(session)
     const subjects: LockoutSubject[] = [
       { kind: 'token', subject: token.tokenHash },
-      ...(account === null ? [] : [{ kind: 'account' as const, subject: account }]),
-      ...remoteSubjects(run.remote).filter(
+      // Namespaced exactly like a `remote` account key: the approving account
+      // is the same kind of subject, so it must not share a counter with the
+      // credential lookup either (narduk-libs#228 third review HIGH-4).
+      ...(account === null
+        ? []
+        : [{ kind: 'account' as const, subject: lockoutSubjectFor('claim', account) }]),
+      ...remoteSubjects(run.remote, 'claim').filter(
         (subject) => account === null || subject.kind !== 'account',
       ),
     ]
@@ -1530,7 +1551,7 @@ export function createDevices(
       const tokenHash = await sha256Hex(claimToken)
       const subjects: LockoutSubject[] = [
         { kind: 'token', subject: tokenHash },
-        ...remoteSubjects(input.remote),
+        ...remoteSubjects(input.remote, 'claim'),
       ]
       const locked = await lockouts.check(subjects)
       if (locked) {
@@ -1915,7 +1936,30 @@ export function createDevices(
       // all. Failures are counted against the presented account/IP and a
       // locked subject is refused; a success writes nothing, because this is a
       // per-request read path (narduk-libs#228 review M2).
-      const subjects = options.unattributed === true ? [] : remoteSubjects(options.remote)
+      //
+      // The subjects are namespaced `credential:` so that nothing else — least
+      // of all the claim ceremony's unauthenticated unknown-session counter —
+      // can lock the vessel's ingest lookup (third review HIGH-4).
+      //
+      // The ternary is the runtime backstop for the type: `unattributed: true`
+      // means *count nothing*, and a JavaScript caller that also passes a
+      // `remote` the union forbids must still count nothing rather than have
+      // its explicit opt-out silently overridden.
+      const subjects =
+        options.unattributed === true ? [] : remoteSubjects(options.remote, 'credential')
+      // `AttributableRemoteContext` is satisfied by `{ ip: '' }` — `''` is a
+      // `string` — and `remoteSubjects` gates on truthiness, so a consumer
+      // writing `ip: getRequestIP(event) ?? ''` to satisfy the type compiles
+      // straight into the blind lookup that type exists to forbid, and nothing
+      // at runtime said so. A caller that asked to attribute and supplied
+      // nothing to attribute to is a bug, not an unattributed lookup
+      // (narduk-libs#228 third review MEDIUM-5).
+      if (options.unattributed !== true && subjects.length === 0) {
+        throw new DevicesError(
+          'invalid',
+          'getCredentialBySecret: `remote` resolved to no lockout subject. Pass a non-empty `accountKey` or `ip`, or ask for `{ unattributed: true }` on purpose.',
+        )
+      }
       if (await lockouts.check(subjects)) return null
       /**
        * A *guess*: the presented secret matches no row in the table. Only this
@@ -2007,7 +2051,7 @@ export function createDevices(
       await pruneOpportunistically()
       const subjects: LockoutSubject[] = [
         { kind: 'device', subject: input.deviceId },
-        ...remoteSubjects(input.remote),
+        ...remoteSubjects(input.remote, 'session'),
       ]
       const locked = await lockouts.check(subjects)
       if (locked) {
