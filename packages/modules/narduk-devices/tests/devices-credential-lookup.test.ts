@@ -134,7 +134,6 @@ describe('credential lookup by bare secret', () => {
     const before = failures()
 
     for (let n = 0; n < DEVICES_LOCKOUT_POLICY.perAccountOrIp.failures; n += 1) {
-      // eslint-disable-next-line no-await-in-loop -- the counter is sequential by definition
       await expect(
         harness.devices.getCredentialBySecret(`guess-${String(n)}`, { remote }),
       ).resolves.toBeNull()

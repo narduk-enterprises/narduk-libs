@@ -7,9 +7,9 @@ Close the four claim-completion gaps the first device-side consumer hit.
 - `getCredentialBySecret(secret, { remote })` resolves an active credential from
   a bare bearer secret by digest, backed by a new UNIQUE
   `devices_credentials.secret_hash` index. An edge that presents only the
-  secret, with no credential id, had no lookup at all. Completion-issued
-  secrets never expire, so this is a long-lived bearer: pass `remote` and a
-  failed resolution counts against the lockout and is refused when locked.
+  secret, with no credential id, had no lookup at all. Completion-issued secrets
+  never expire, so this is a long-lived bearer: pass `remote` and a failed
+  resolution counts against the lockout and is refused when locked.
 - `completeClaimWithRecordedApproval(input)` completes a claim from the device
   side using the `approval_*` columns already on the claim session, so a
   consumer no longer has to persist a raw approval bearer between the approve
@@ -24,11 +24,11 @@ Close the four claim-completion gaps the first device-side consumer hit.
   serving a replay rotates the device's live credentials and revokes its
   sessions, so an unauthenticated caller who could trigger one would take the
   device over, not merely deny it service. On
-  `completeClaimWithRecordedApproval` the option throws without `deviceProof`;
-  a refused replay records a failed attempt and counts against the lockout; and
-  `MAX_REISSUES_PER_CLAIM_SESSION` bounds churn on top of those controls
-  without being what makes the path safe. Two racing replays yield one winner
-  and one retryable `rate_limited`, never a terminal status.
+  `completeClaimWithRecordedApproval` the option throws without `deviceProof`; a
+  refused replay records a failed attempt and counts against the lockout; and
+  `MAX_REISSUES_PER_CLAIM_SESSION` bounds churn on top of those controls without
+  being what makes the path safe. Two racing replays yield one winner and one
+  retryable `rate_limited`, never a terminal status.
 - `assertTimestampSkew` / `isWithinTimestampSkew` are exported and are now the
   single implementation `openSession` and the `deviceProof` check both call, and
   `consumeNonce({ scope, nonce, expiresAt })` gives a generic single-use nonce

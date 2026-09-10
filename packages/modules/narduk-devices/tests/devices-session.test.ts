@@ -121,7 +121,7 @@ describe('device sessions', () => {
     for (const offset of offsets) {
       const timestamp = clock.now() + offset
       helper.push(isWithinTimestampSkew(timestamp, clock.now(), skewSeconds))
-      // eslint-disable-next-line no-await-in-loop -- one challenge per attempt; the sweep is sequential by definition
+
       const refusal = await opens(timestamp)
       // A refusal must be *this* rule, not some other check that happens to
       // reject: anything else would make the two look equal by accident.

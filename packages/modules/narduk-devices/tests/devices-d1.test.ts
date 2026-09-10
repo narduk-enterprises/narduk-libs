@@ -130,7 +130,11 @@ describe('D1 integration', () => {
       id: command?.credentialId,
     })
     expect(await devices.getCredentialBySecret('not-a-secret')).toBeNull()
-    const nonce = { scope: `claim-handoff:${claimSessionId}`, nonce: 'n-1', expiresAt: Date.now() + 60_000 }
+    const nonce = {
+      scope: `claim-handoff:${claimSessionId}`,
+      nonce: 'n-1',
+      expiresAt: Date.now() + 60_000,
+    }
     expect(await devices.consumeNonce(nonce)).toBe(true)
     expect(await devices.consumeNonce(nonce)).toBe(false)
   }, 30_000)

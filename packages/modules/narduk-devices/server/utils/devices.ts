@@ -350,8 +350,6 @@ export interface DeviceCompletionProof {
  */
 export interface CompleteClaimWithRecordedApprovalInput {
   claimSessionId: string
-  /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
-  devicePublicKey: string
   /**
    * The device's signature over this request, verified in-library against the
    * key the claim session recorded, bound to every field below, and single-use.
@@ -359,6 +357,8 @@ export interface CompleteClaimWithRecordedApprovalInput {
    * `reissueOnIdempotentReplay`, which rotates live credentials.
    */
   deviceProof?: DeviceCompletionProof
+  /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
+  devicePublicKey: string
   hardwareFingerprint: string
   idempotencyKey: string
   installationId: string
@@ -1115,6 +1115,57 @@ export function createDevices(
    * handling and the atomic write. The two differ only in who they count the
    * attempt against and how they prove the completion was authorized.
    */
+  /**
+   * The `status = 'claimed'` branch of a completion: someone is replaying a
+   * claim that already finished.
+   *
+   * Its own function because every clause here is a security decision and they
+   * read better together than folded into the completion path. 0.1.0 answered
+   * this branch with one unconditional `already_completed`; everything below is
+   * what it costs to answer it with live credentials instead.
+   */
+  async function replayCompletion(
+    session: ClaimSession,
+    token: ClaimToken,
+    ctx: {
+      alreadyCompleted: (completed: ClaimSession) => CompleteClaimResult
+      fail: (status: ClaimCompleteStatus, reason?: string) => Promise<CompleteClaimResult>
+      idempotencyKey: string
+      recordSuccess: () => Promise<void>
+      run: CompleteClaimRun
+    },
+  ): Promise<CompleteClaimResult> {
+    // Not opted in: exactly 0.1.0's answer, and nothing is rotated.
+    if (!ctx.run.reissue) return ctx.alreadyCompleted(session)
+    // An operator who revokes the claim token after completion expects the
+    // claim to be dead, re-issues included (narduk-libs#228 review L1).
+    if (token.revokedAt !== null) return ctx.fail('revoked')
+    if (!(await ctx.run.canReissue(session, token))) {
+      // A refused replay is a failed authentication attempt: it counts against
+      // the lockout and leaves an attempt row, exactly like every other refusal
+      // here, instead of being unlimited and untraced (review H2). No
+      // `deviceId` either — a caller that proved nothing learns nothing.
+      return ctx.fail('already_completed', 'reissue_refused')
+    }
+    const outcome = await reissueForReplay(session, ctx.idempotencyKey)
+    if (outcome.kind === 'served') {
+      await ctx.recordSuccess()
+      return outcome.result
+    }
+    if (outcome.kind === 'contended') {
+      // The winner rotated this device's credentials, so a terminal status here
+      // would brick it. Retry is the recovery (review H3).
+      return {
+        status: 'rate_limited',
+        credentials: [],
+        retryAfterSeconds: REISSUE_CONTENTION_RETRY_AFTER_SECONDS,
+        ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
+      }
+    }
+    if (outcome.kind === 'capped') return ctx.fail('already_completed', 'reissue_cap')
+    return ctx.alreadyCompleted(session)
+  }
+
   async function runCompleteClaim(run: CompleteClaimRun): Promise<CompleteClaimResult> {
     const installationId = requireText(run.installationId, 'installationId')
     const idempotencyKey = requireText(run.idempotencyKey, 'idempotencyKey')
@@ -1156,35 +1207,13 @@ export function createDevices(
     })
 
     if (session.status === 'claimed') {
-      if (!run.reissue) return alreadyCompleted(session)
-      // An operator who revokes the claim token after completion expects the
-      // claim to be dead, re-issues included (narduk-libs#228 review L1).
-      if (token.revokedAt !== null) return fail('revoked')
-      if (!(await run.canReissue(session, token))) {
-        // A refused replay is a failed authentication attempt: it counts
-        // against the lockout and leaves an attempt row, exactly like every
-        // other refusal here, instead of being unlimited and untraced
-        // (narduk-libs#228 review H2). No `deviceId` either — a caller that
-        // proved nothing learns nothing.
-        return fail('already_completed', 'reissue_refused')
-      }
-      const outcome = await reissueForReplay(session, idempotencyKey)
-      if (outcome.kind === 'served') {
-        await recordAttempt(subjects, 'success', { orgId: token.orgId })
-        return outcome.result
-      }
-      if (outcome.kind === 'contended') {
-        // The winner rotated this device's credentials, so a terminal status
-        // here would brick it. Retry is the recovery (review H3).
-        return {
-          status: 'rate_limited',
-          credentials: [],
-          retryAfterSeconds: REISSUE_CONTENTION_RETRY_AFTER_SECONDS,
-          ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
-        }
-      }
-      if (outcome.kind === 'capped') return fail('already_completed', 'reissue_cap')
-      return alreadyCompleted(session)
+      return replayCompletion(session, token, {
+        alreadyCompleted,
+        fail,
+        idempotencyKey,
+        recordSuccess: async () => recordAttempt(subjects, 'success', { orgId: token.orgId }),
+        run,
+      })
     }
     const blocker = await completionBlocker(session, token, run.hardwareFingerprint)
     if (blocker !== null) return fail(blocker)

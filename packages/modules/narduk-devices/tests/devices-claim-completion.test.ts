@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
-
 import { MAX_REISSUES_PER_CLAIM_SESSION } from '../server/utils/devices'
-import { DEVICES_LOCKOUT_POLICY as POLICY } from '../shared/utils/lockout-policy'
+import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import {
   claimDevice,
@@ -18,6 +16,9 @@ import {
   VESSEL,
 } from './support/database'
 
+const HANDOFF_KEY = 'handoff-1'
+const ATTACKER_IP = '203.0.113.9'
+
 /** Mint, start and approve, stopping short of completion. */
 async function approvedClaim(harness: TestHarness, remote?: { ip?: string }) {
   const pending = await startPendingClaim(harness, remote ? { remote } : {})
@@ -29,6 +30,16 @@ async function approvedClaim(harness: TestHarness, remote?: { ip?: string }) {
     approvedByUserId: 'owner-1',
   })
   return { ...pending, approval }
+}
+
+/** The claim's own proved replay request, freshly signed and nonced each call. */
+function provenReplay(harness: TestHarness, claim: Awaited<ReturnType<typeof approvedClaim>>) {
+  return () =>
+    completionRequest(harness, {
+      claimSessionId: claim.claimSessionId,
+      idempotencyKey: HANDOFF_KEY,
+      key: claim.key,
+    }).input
 }
 
 /**
@@ -48,7 +59,7 @@ describe('device-side completion with no plaintext bearer', () => {
       devicePublicKey: claim.key.publicKey,
       hardwareFingerprint: FINGERPRINT,
       installationId: 'inst-1',
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
     })
 
     expect(completed.status).toBe('completed')
@@ -83,7 +94,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: pending.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toEqual({ status: 'approval_required', credentials: [] })
   })
@@ -98,7 +109,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: claim.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toEqual({ status: 'approval_required', credentials: [] })
   })
@@ -114,7 +125,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: attacker.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toEqual({ status: 'hardware_mismatch', credentials: [] })
 
@@ -124,7 +135,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: claim.key.publicKey,
         hardwareFingerprint: 'sha256:other-hardware',
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toEqual({ status: 'hardware_mismatch', credentials: [] })
 
@@ -135,14 +146,14 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: claim.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toMatchObject({ status: 'completed' })
   })
 
   it('keeps the claim lockout policy: the sixth failure inside the window is rate limited', async () => {
     const harness = createTestHarness()
-    const claim = await approvedClaim(harness, { ip: '203.0.113.9' })
+    const claim = await approvedClaim(harness, { ip: ATTACKER_IP })
     const attacker = createDeviceKey()
     const attempt = async () =>
       harness.devices.completeClaimWithRecordedApproval({
@@ -150,8 +161,8 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: attacker.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
-        remote: { ip: '203.0.113.9' },
+        idempotencyKey: HANDOFF_KEY,
+        remote: { ip: ATTACKER_IP },
       })
 
     const statuses: string[] = []
@@ -178,8 +189,8 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: claim.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
-        remote: { ip: '203.0.113.9' },
+        idempotencyKey: HANDOFF_KEY,
+        remote: { ip: ATTACKER_IP },
       }),
     ).resolves.toMatchObject({ status: 'rate_limited' })
   })
@@ -194,7 +205,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: expired.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).resolves.toEqual({ status: 'expired', credentials: [] })
 
@@ -222,7 +233,7 @@ describe('device-side completion with no plaintext bearer', () => {
         devicePublicKey: createDeviceKey().publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
       }),
     ).rejects.toMatchObject({ code: 'not_found' })
   })
@@ -238,12 +249,7 @@ describe('idempotent completion replay', () => {
   it('serves a replayed handoff with a fresh, working credential set', async () => {
     const harness = createTestHarness()
     const claim = await approvedClaim(harness)
-    const proven = () =>
-      completionRequest(harness, {
-        claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
-        key: claim.key,
-      }).input
+    const proven = provenReplay(harness, claim)
     const first = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(first.status).toBe('completed')
 
@@ -295,12 +301,7 @@ describe('idempotent completion replay', () => {
   it('refuses to re-issue past the claim session lifetime', async () => {
     const harness = createTestHarness()
     const claim = await approvedClaim(harness)
-    const proven = () =>
-      completionRequest(harness, {
-        claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
-        key: claim.key,
-      }).input
+    const proven = provenReplay(harness, claim)
     const first = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(first.status).toBe('completed')
 
@@ -324,7 +325,7 @@ describe('idempotent completion replay', () => {
     const first = await harness.devices.completeClaimWithRecordedApproval(
       completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         key: claim.key,
       }).input,
     )
@@ -352,7 +353,7 @@ describe('idempotent completion replay', () => {
     const forged = completionRequest(harness, {
       claimSessionId: claim.claimSessionId,
       devicePublicKey: claim.key.publicKey,
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
       key: attacker,
     }).input
     expect(await harness.devices.completeClaimWithRecordedApproval(forged)).toEqual({
@@ -363,7 +364,7 @@ describe('idempotent completion replay', () => {
     // ...and so is a proof that is honest about a key the session never recorded.
     const wrongKey = completionRequest(harness, {
       claimSessionId: claim.claimSessionId,
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
       key: attacker,
     }).input
     expect(await harness.devices.completeClaimWithRecordedApproval(wrongKey)).toEqual({
@@ -428,12 +429,7 @@ describe('idempotent completion replay', () => {
   it('re-issues at most one set per race, and the loser is told to retry, not that it is done', async () => {
     const harness = createTestHarness()
     const claim = await approvedClaim(harness)
-    const proven = () =>
-      completionRequest(harness, {
-        claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
-        key: claim.key,
-      }).input
+    const proven = provenReplay(harness, claim)
     const first = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(first.status).toBe('completed')
 
@@ -460,7 +456,6 @@ describe('idempotent completion replay', () => {
     const winner = a.status === 'completed' ? a : b
     expect(winner.credentials).toHaveLength(2)
     for (const credential of winner.credentials) {
-      // eslint-disable-next-line no-await-in-loop -- two credentials, asserted in order
       await expect(harness.devices.getCredentialBySecret(credential.secret)).resolves.not.toBeNull()
     }
     // ...and the generation moved exactly once, not once per caller.
@@ -497,7 +492,7 @@ describe('idempotent completion replay', () => {
     const completed = await harness.devices.completeClaimWithRecordedApproval(
       completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         key: claim.key,
       }).input,
     )
@@ -505,7 +500,7 @@ describe('idempotent completion replay', () => {
     const replay = await harness.devices.completeClaimWithRecordedApproval(
       completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         key: claim.key,
       }).input,
     )
@@ -546,7 +541,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
       devicePublicKey: claim.key.publicKey,
       hardwareFingerprint: FINGERPRINT,
       installationId: 'inst-1',
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
     }
     const first = await harness.devices.completeClaimWithRecordedApproval(request)
     expect(first.status).toBe('completed')
@@ -573,7 +568,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
         devicePublicKey: claim.key.publicKey,
         hardwareFingerprint: FINGERPRINT,
         installationId: 'inst-1',
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         reissueOnIdempotentReplay: true,
       }),
     ).rejects.toMatchObject({ code: 'invalid' })
@@ -584,7 +579,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
     const claim = await approvedClaim(harness)
     const captured = completionRequest(harness, {
       claimSessionId: claim.claimSessionId,
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
       key: claim.key,
     }).input
     const first = await harness.devices.completeClaimWithRecordedApproval(captured)
@@ -607,7 +602,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
     const first = await harness.devices.completeClaimWithRecordedApproval(
       completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         key: claim.key,
       }).input,
     )
@@ -617,7 +612,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
     // rewritten, the signature is not, and the binding catches it.
     const reaimed = completionRequest(harness, {
       claimSessionId: claim.claimSessionId,
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
       installationId: 'inst-1',
       key: claim.key,
     }).input
@@ -630,7 +625,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
 
     const stale = completionRequest(harness, {
       claimSessionId: claim.claimSessionId,
-      idempotencyKey: 'handoff-1',
+      idempotencyKey: HANDOFF_KEY,
       key: claim.key,
       timestamp: harness.clock.now() - 301_000,
     }).input
@@ -643,19 +638,14 @@ describe('re-issue is off by default and gated on a device proof', () => {
   it('caps re-issues per claim session', async () => {
     const harness = createTestHarness()
     const claim = await approvedClaim(harness)
-    const proven = () =>
-      completionRequest(harness, {
-        claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
-        key: claim.key,
-      }).input
+    const proven = provenReplay(harness, claim)
     const first = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(first.status).toBe('completed')
 
     let last = first
     for (let n = 0; n < MAX_REISSUES_PER_CLAIM_SESSION; n += 1) {
       harness.clock.advance(1000)
-      // eslint-disable-next-line no-await-in-loop -- the cap is sequential by definition
+
       last = await harness.devices.completeClaimWithRecordedApproval(proven())
       expect(last.status).toBe('completed')
     }
@@ -672,12 +662,7 @@ describe('re-issue is off by default and gated on a device proof', () => {
   it('refuses to re-issue once the claim token is revoked', async () => {
     const harness = createTestHarness()
     const claim = await approvedClaim(harness)
-    const proven = () =>
-      completionRequest(harness, {
-        claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
-        key: claim.key,
-      }).input
+    const proven = provenReplay(harness, claim)
     expect((await harness.devices.completeClaimWithRecordedApproval(proven())).status).toBe(
       'completed',
     )
@@ -703,14 +688,14 @@ describe('re-issue is off by default and gated on a device proof', () => {
 describe('a refused replay is counted like every other refusal', () => {
   it('locks out a caller guessing against a completed claim session', async () => {
     const harness = createTestHarness()
-    const claim = await approvedClaim(harness, { ip: '203.0.113.9' })
+    const claim = await approvedClaim(harness, { ip: ATTACKER_IP })
     const first = await harness.devices.completeClaimWithRecordedApproval({
       ...completionRequest(harness, {
         claimSessionId: claim.claimSessionId,
-        idempotencyKey: 'handoff-1',
+        idempotencyKey: HANDOFF_KEY,
         key: claim.key,
       }).input,
-      remote: { ip: '203.0.113.9' },
+      remote: { ip: ATTACKER_IP },
     })
     expect(first.status).toBe('completed')
 
@@ -720,25 +705,29 @@ describe('a refused replay is counted like every other refusal', () => {
         ...completionRequest(harness, {
           claimSessionId: claim.claimSessionId,
           devicePublicKey: claim.key.publicKey,
-          idempotencyKey: 'handoff-1',
+          idempotencyKey: HANDOFF_KEY,
           key: attacker,
         }).input,
-        remote: { ip: '203.0.113.9' },
+        remote: { ip: ATTACKER_IP },
       })
 
     const statuses: string[] = []
-    for (let n = 0; n < POLICY.perTokenOrDevice.failures; n += 1) {
-      // eslint-disable-next-line no-await-in-loop -- the counter is sequential by definition
+    for (let n = 0; n < DEVICES_LOCKOUT_POLICY.perTokenOrDevice.failures; n += 1) {
       statuses.push((await guess()).status)
       harness.clock.advance(1000)
     }
-    expect(statuses).toEqual(Array.from({ length: POLICY.perTokenOrDevice.failures }, () => 'already_completed'))
+    expect(statuses).toEqual(
+      Array.from(
+        { length: DEVICES_LOCKOUT_POLICY.perTokenOrDevice.failures },
+        () => 'already_completed',
+      ),
+    )
 
     // Every refusal left an attempt row, so the counter reaches its threshold.
     const failures = harness.sqlite
       .prepare("SELECT COUNT(*) AS n FROM devices_auth_attempts WHERE outcome = 'failure'")
       .get() as { n: number }
-    expect(failures.n).toBeGreaterThanOrEqual(POLICY.perTokenOrDevice.failures)
+    expect(failures.n).toBeGreaterThanOrEqual(DEVICES_LOCKOUT_POLICY.perTokenOrDevice.failures)
 
     const locked = await guess()
     expect(locked.status).toBe('rate_limited')

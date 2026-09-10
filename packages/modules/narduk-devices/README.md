@@ -85,13 +85,16 @@ secrets are SHA-256 digests.
 | `devices_sessions`       | opened device sessions: bearer digest, revocation generation, last seen     |
 | `devices_challenges`     | cloud-issued session-open challenges                                        |
 | `devices_replay_entries` | replay cache keyed by (device, credential version, challenge, nonce, hash)  |
+| `devices_scoped_nonces`  | single-use `(scope, nonce)` for an exchange with no device row yet          |
 | `devices_auth_attempts`  | every auth attempt per subject (`token`, `device`, `account`, `ip`)         |
 | `devices_audit_events`   | one row per mutation                                                        |
 
-Two uniqueness constraints carry security weight rather than tidiness:
+Three uniqueness constraints carry security weight rather than tidiness:
 `devices_claim_sessions(claim_token_id)` is UNIQUE, so one claim token redeems
 into exactly one claim session; `devices_sessions(token_hash)` is UNIQUE, and it
-is a digest — the session bearer itself is never stored.
+is a digest — the session bearer itself is never stored; and
+`devices_scoped_nonces(scope, nonce)` is UNIQUE, which _is_ the replay check —
+an insert that lands is a first presentation, one that conflicts is a replay.
 
 The drizzle schema is exported from
 `@narduk-enterprises/narduk-devices/server/database/devices-schema`, and
@@ -302,8 +305,8 @@ answer returns to `already_completed` with an empty array.
 
 **`reissueOnIdempotentReplay` is off by default on both completion paths**, and
 that default is load-bearing rather than conservative. A served re-issue hands
-the caller the device's only live credential set *and revokes the genuine
-device's*, so whoever can satisfy the check owns the device. Four conditions
+the caller the device's only live credential set _and revokes the genuine
+device's_, so whoever can satisfy the check owns the device. Four conditions
 gate it:
 
 1. **Opt in explicitly.** Default `false`. A consumer following the example
@@ -316,7 +319,7 @@ gate it:
    against the lockout and returns no `deviceId`, so guessing at the four
    on-wire values is bounded and visible instead of unlimited and untraced.
 4. **A per-claim-session cap** (`MAX_REISSUES_PER_CLAIM_SESSION`) bounds churn
-   and audit noise. It is *not* what makes the path safe: one re-issue is
+   and audit noise. It is _not_ what makes the path safe: one re-issue is
    already a complete credential set, so a cap alone would only turn unlimited
    takeover into N takeovers. Conditions 1–3 are the control.
 
@@ -360,14 +363,14 @@ accepted.
 
 ### Bearer resolution
 
-| The client presents                | Resolve with                                          |
-| ---------------------------------- | ----------------------------------------------------- |
-| a session token from `openSession` | `getSessionByToken(sessionToken)`                     |
-| a raw credential secret, no id     | `getCredentialBySecret(secret, { remote })`           |
-| a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })`    |
+| The client presents                | Resolve with                                       |
+| ---------------------------------- | -------------------------------------------------- |
+| a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
+| a raw credential secret, no id     | `getCredentialBySecret(secret, { remote })`        |
+| a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
 
-None accepts a revoked or expired row, and none puts the presented bearer into
-a message, an error or an audit row.
+None accepts a revoked or expired row, and none puts the presented bearer into a
+message, an error or an audit row.
 
 What protects the two digest lookups is a 256-bit secret and an equality seek
 against a UNIQUE index: at most one row can match, and it matched exactly.
@@ -384,11 +387,11 @@ with `expiresAt: null` (the re-issue path preserves it), so
 device filesystem, a support bundle, a proxy log — stays live until someone
 revokes it. Prefer trading it for a 30-minute session via `openSession` where
 the edge can. Where it cannot, **pass `remote` from every route**: a failed
-resolution is recorded against the presented account and IP and a locked
-subject is refused, which is what makes a credential-stuffing sweep across a
-fleet both bounded and visible in the `security.lockout` audit trail. Without
-`remote` there are no subjects to count, so the sweep is invisible again. A
-successful resolution writes nothing — this is a per-request read path.
+resolution is recorded against the presented account and IP and a locked subject
+is refused, which is what makes a credential-stuffing sweep across a fleet both
+bounded and visible in the `security.lockout` audit trail. Without `remote`
+there are no subjects to count, so the sweep is invisible again. A successful
+resolution writes nothing — this is a per-request read path.
 
 ### Pruning
 
