@@ -39,6 +39,7 @@ export async function createMapKitToken(options) {
         iat: issuedAt,
         exp: issuedAt + expiresInSeconds,
         origin,
+        scope: 'mapkit_js',
     });
 }
 export async function createAppleMapsAuthToken(options) {
