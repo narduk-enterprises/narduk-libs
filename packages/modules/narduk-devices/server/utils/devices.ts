@@ -599,11 +599,45 @@ export interface ListAuditEventsInput {
   subject?: { id: string; kind: string }
 }
 
+/**
+ * What both completion methods answer for a `claimSessionId` that does not
+ * exist — deliberately **two** outcomes, not one.
+ *
+ * - Normally the call **throws** `DevicesError('not_found')`. That is the
+ *   documented contract for an unknown id and has not changed.
+ * - Once the caller's own subjects are locked, the call **returns**
+ *   `{ status: 'rate_limited', credentials: [], retryAfterSeconds }` instead —
+ *   the same answer a real but locked session gets, so past the threshold the
+ *   response stops distinguishing a real id from an invented one.
+ *
+ * Be explicit about what that is and is not: it is **rate-limiting on
+ * enumeration**, not a uniform refusal. Below the threshold the two answers
+ * still differ, so the first `perAccountOrIp.failures` probes do tell a real id
+ * from an invented one; what changed is that they are counted, audited, and
+ * eventually refused rather than free and untraced (narduk-libs#228 second
+ * review L1, third review LOW-5).
+ *
+ * Uniformity was considered and rejected: answering `rate_limited` always would
+ * break the `not_found` contract every existing consumer branches on, and
+ * answering `not_found` always would hand the enumeration oracle straight back.
+ * Handle both outcomes — a `catch` for `not_found` and a `rate_limited` status
+ * check — on any route that accepts a caller-supplied `claimSessionId`.
+ *
+ * The counter behind it is namespaced `claim:` and is not the one
+ * `getCredentialBySecret` reads (third review HIGH-4).
+ */
 export interface DevicesService {
+  /**
+   * Complete a claim with the raw approval bearer.
+   *
+   * An unknown `claimSessionId` is bimodal: see the note above this interface.
+   */
   completeClaim: (input: CompleteClaimInput) => Promise<CompleteClaimResult>
   /**
    * Complete a claim from the device side, using the approval recorded on the
-   * claim session. No raw approval token is required, so no approval bearer
+   * claim session.
+   *
+   * An unknown `claimSessionId` is bimodal: see the note above this interface. No raw approval token is required, so no approval bearer
    * ever has to be persisted by the consumer.
    *
    * **Authenticate the device before, or with, this call.** Every value it

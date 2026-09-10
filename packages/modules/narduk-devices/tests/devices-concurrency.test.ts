@@ -7,6 +7,7 @@ import { createDevices, type DevicesDatabase } from '../server/utils/devices'
 import {
   ALGORITHM,
   claimDevice,
+  completionRequest,
   createDeviceKey,
   createTestHarness,
   createTestIdGenerator,
@@ -101,6 +102,89 @@ describe('concurrent completion', () => {
       .prepare('SELECT consumed_at FROM devices_claim_tokens')
       .all() as Array<{ consumed_at: number | null }>
     expect(tokens[0]?.consumed_at).not.toBeNull()
+  })
+
+  /**
+   * narduk-libs#228 third review LOW-4. The race-loser branch used to pass a
+   * bare `true` for `discloseDeviceId`, justified as "a caller that ran the
+   * full authorization". On `completeClaimWithRecordedApproval` that rationale
+   * does not hold: `authorize` verifies a proof only `if (proof !== undefined)`,
+   * so a *first* completion with no proof is authorized on the recorded
+   * approval plus four values that all travel on the wire — authorized, but
+   * having proved nothing. `deviceId` names the scope of the library's own
+   * re-issue lock, which is why H3 stopped handing it to callers like that.
+   */
+  it('tells a proof-less race loser nothing it did not already know', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const pending = await startPendingClaim(harness)
+    await devices.issueApprovalToken({
+      claimSessionId: pending.claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      hardwareFingerprint: FINGERPRINT,
+      approvedByUserId: 'owner-1',
+    })
+    // No `deviceProof`, so no possession is proved. Every field below is on the
+    // wire in the handoff this path models.
+    const complete = (idempotencyKey: string) =>
+      devices.completeClaimWithRecordedApproval({
+        claimSessionId: pending.claimSessionId,
+        devicePublicKey: pending.key.publicKey,
+        hardwareFingerprint: FINGERPRINT,
+        installationId: 'inst-1',
+        idempotencyKey,
+      })
+
+    const results = await Promise.all([complete('race-a'), complete('race-b')])
+    expect(results.map((result) => result.status).sort()).toEqual([
+      'already_completed',
+      'completed',
+    ])
+    const loser = results.find((result) => result.status === 'already_completed')
+    // The loser really is the race loser, not a replay: a replay of a
+    // completion this session already made is reached only on a later call.
+    expect(loser?.credentials).toEqual([])
+    expect(loser?.deviceId).toBeUndefined()
+  })
+
+  /**
+   * The other half of LOW-4: disclosure is gated on *proof*, not switched off.
+   * A loser that signed this exact request is a device that would have been
+   * handed `deviceId` had it won, and still is.
+   */
+  it('still hands the race loser deviceId when it proved possession', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const pending = await startPendingClaim(harness)
+    await devices.issueApprovalToken({
+      claimSessionId: pending.claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      hardwareFingerprint: FINGERPRINT,
+      approvedByUserId: 'owner-1',
+    })
+    const complete = (idempotencyKey: string) => {
+      const { input } = completionRequest(harness, {
+        claimSessionId: pending.claimSessionId,
+        idempotencyKey,
+        key: pending.key,
+      })
+      return devices.completeClaimWithRecordedApproval({
+        ...input,
+        reissueOnIdempotentReplay: false,
+      })
+    }
+
+    const results = await Promise.all([complete('proved-a'), complete('proved-b')])
+    expect(results.map((result) => result.status).sort()).toEqual([
+      'already_completed',
+      'completed',
+    ])
+    const winner = results.find((result) => result.status === 'completed')
+    const loser = results.find((result) => result.status === 'already_completed')
+    expect(loser?.credentials).toEqual([])
+    expect(loser?.deviceId).toBe(winner?.deviceId)
   })
 
   it('lets exactly one of two concurrent starts redeem a claim token', async () => {

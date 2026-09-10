@@ -193,11 +193,16 @@ could not be honoured
   completion.
 - `completeClaim` is atomic (device, session, both credentials, audit row in one
   D1 batch / better-sqlite3 transaction). Two concurrent completions produce one
-  device; the loser gets `already_completed` with `deviceId` and an empty
-  `credentials` array — secrets are returned only on first completion. A _later_
-  replay is a different caller: it gets the same status and empty array but **no
-  `deviceId`**, because that branch is reachable without proving anything
-  (narduk-libs#228).
+  device; the loser gets `already_completed` with an empty `credentials` array —
+  secrets are returned only on first completion — and with `deviceId` **only if
+  it presented a secret only the device could hold**: the raw approval token on
+  `completeClaim`, or `deviceProof` on `completeClaimWithRecordedApproval`. A
+  first completion on the recorded-approval path without `deviceProof` is
+  authorized on four values that all travel on the wire, so it is authorized
+  having proved nothing and learns no `deviceId` when it loses (narduk-libs#228
+  third review LOW-4). A _later_ replay is a different caller again: same status
+  and empty array, never a `deviceId`, because that branch is reachable without
+  proving anything (narduk-libs#228).
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
@@ -222,6 +227,35 @@ token's digest plus `remote.accountKey` / `remote.ip`; `completeClaim` counts
 the token, `approvedByUserId` as the account, and `remote.ip`; `openSession`
 counts the device plus `remote.*`. The attempt row is written and the window
 counted in one transaction, so no concurrent failure goes uncounted.
+
+**Account and IP subjects are namespaced by operation.** The stored subject is
+`<purpose>:<accountKey|ip>` — `claim:` for `startClaim` and both completion
+paths, `credential:` for `getCredentialBySecret`, `session:` for `openSession`
+(`lockoutSubjectFor`, `server/utils/devices-lockout`) — and a
+`security.lockout` audit row carries that same namespaced value in `subjectId`.
+An account key or an IP identifies a *caller*, not a capability, so without the
+namespace one path's counter gates another's: a completion naming a
+`claimSessionId` that does not exist carries no token, no approval and no proof,
+and so has no per-token subject to cap it at five, and twenty of them from one
+address locked the vessel's whole ingest path (narduk-libs#228 third review
+HIGH-4). Token and device subjects are deliberately *not* namespaced: a token
+digest is only ever presented to the claim ceremony, a device id only to
+`openSession`, and `startClaim` and completion are meant to share the token
+counter — that is what bounds guessing across the two legs of one ceremony.
+
+**An unknown `claimSessionId` has two possible answers.** A completion call
+normally **throws** `DevicesError('not_found')` — unchanged, and still the
+contract for an id that does not exist — but once the caller's subjects are
+locked it **returns** `{ status: 'rate_limited', credentials: [],
+retryAfterSeconds }` instead, the same answer a real but locked session gets.
+Handle both on any route that accepts a caller-supplied id. Call it what it is:
+rate-limiting on *enumeration*, not a uniform refusal. Below the threshold the
+two answers still differ, so the first twenty probes do distinguish a real id
+from an invented one; what changed is that they are counted, audited and
+eventually refused instead of free and untraced. Uniformity was considered and
+rejected — always `rate_limited` breaks the `not_found` contract consumers
+branch on, always `not_found` hands the oracle straight back (third review
+LOW-5).
 
 **Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
 caller (a queue consumer, a test) can omit it. Without it the presented token's
@@ -445,14 +479,30 @@ await devices.getCredentialBySecret(secret, {
 await devices.getCredentialBySecret(secret, { unattributed: true })
 ```
 
-**Only an unknown digest counts.** A secret that resolves to a row which is
-revoked, or past its `expiresAt`, is refused — but it is a known-good credential
-gone stale, not a guess, so it records no attempt and advances no counter.
-Credential stuffing produces digests that match nothing; a fleet rotating or
-retiring credentials produces digests that match a dead row. Sharing one counter
-between them meant a single boat's stale camera credential could lock the boat's
-IP and take every healthy device behind it off the air (narduk-libs#228 second
-review H1).
+**Only an unknown digest counts — and only this path writes the counter this
+path reads.** A secret that resolves to a row which is revoked, or past its
+`expiresAt`, is refused — but it is a known-good credential gone stale, not a
+guess, so it records no attempt and advances no counter. Credential stuffing
+produces digests that match nothing; a fleet rotating or retiring credentials
+produces digests that match a dead row. Sharing one counter between them meant a
+single boat's stale camera credential could lock the boat's IP and take every
+healthy device behind it off the air (narduk-libs#228 second review H1).
+
+The second half of that sentence is the one the first fix left untrue. Subjects
+here are namespaced `credential:` (see §Lockouts), so the claim ceremony — whose
+unknown-session branch is unauthenticated and has no per-token subject capping
+it — can no longer drive the counter this per-request lookup reads. Twenty
+completions naming session ids that do not exist used to take every camera on
+the vessel dark; now they lock only `claim:<ip>` (third review HIGH-4).
+
+**`remote` must resolve to a subject.** `AttributableRemoteContext` is satisfied
+by `{ ip: '' }` — `''` is a `string` — and an empty field yields no subject at
+all, so `remote: { ip: getRequestIP(event) ?? '' }`, written to satisfy the
+type, would compile straight into the blind lookup the type exists to forbid. A
+call whose `remote` resolves to zero subjects now throws
+`DevicesError('invalid')`: a caller that asked to attribute and supplied nothing
+to attribute to is a bug, not an unattributed lookup. Where a route genuinely
+has no IP, say so with `{ unattributed: true }` (third review MEDIUM-5).
 
 ### Pruning
 

@@ -49,6 +49,36 @@ Close the four claim-completion gaps the first device-side consumer hit.
   over the new `devices_scoped_nonces` table, for a signed exchange that happens
   before any device session exists.
 
+Lockout subjects for an account key or an IP are **namespaced by operation**:
+the stored `devices_auth_attempts.subject` is `<purpose>:<accountKey|ip>` —
+`claim:`, `credential:` or `session:` — and a `security.lockout` audit row
+carries that same value in `subjectId`. An account key or an IP identifies a
+caller, not a capability, so an unnamespaced counter let one operation gate
+another: a completion naming a `claimSessionId` that does not exist is
+unauthenticated and, alone among completion refusals, carries no per-token
+subject to cap it, so twenty of them from one address locked the shared per-IP
+counter `getCredentialBySecret` reads on a vessel's per-request ingest path.
+`lockoutSubjectFor` (`server/utils/devices-lockout`) is exported for a consumer
+that reads those subjects back out of the audit trail. Token and device subjects
+are unchanged and deliberately not namespaced.
+
+An unknown `claimSessionId` is counted against that `claim:` counter, which
+makes both completion methods bimodal for an id that does not exist: they throw
+`DevicesError('not_found')` as before, but answer
+`{ status: 'rate_limited', credentials: [], retryAfterSeconds }` once the
+caller's subjects are locked. Both outcomes are now documented on the service
+type and in the README, named for what they are — rate-limiting on enumeration,
+not a uniform refusal — so a route accepting a caller-supplied id can handle
+each.
+
+`getCredentialBySecret` now throws `DevicesError('invalid')` when
+`options.remote` resolves to no lockout subject at all. `{ ip: '' }` satisfies
+`AttributableRemoteContext` — `''` is a `string` — so
+`remote: { ip: getRequestIP(event) ?? '' }` compiled into exactly the blind
+lookup the required-argument type was added to forbid. A caller that asks to
+attribute and supplies nothing to attribute to is a bug; `{ unattributed: true }`
+remains the way to say "count nothing" on purpose.
+
 `consumeNonce` now reserves the `narduk-devices:` scope prefix
 (`DEVICES_INTERNAL_NONCE_PREFIX`) for the package's own completion-proof and
 re-issue-lock rows, and refuses an `expiresAt` more than
@@ -64,6 +94,8 @@ patch: `DevicesAuditAction` gains `'claim.reissue'` (an exhaustive `switch` or
 handled); `PruneExpiredResult` gains a required `scopedNonces` (an exhaustive
 `toEqual` on a prune result must add it); `getCredentialBySecret`'s second
 argument is required, so a bare `getCredentialBySecret(secret)` no longer
-compiles; and `already_completed` on a _replay_ no longer carries `deviceId`
-(only the first-completion race loser does), because that branch is reachable
-without proving anything.
+compiles; and `already_completed` no longer carries `deviceId` on a _replay_ at
+all, nor on a first-completion race loser that proved nothing — the raw approval
+token on `completeClaim`, or `deviceProof` on
+`completeClaimWithRecordedApproval`, is what earns it, because `deviceId` names
+the scope of the library's own re-issue lock.
