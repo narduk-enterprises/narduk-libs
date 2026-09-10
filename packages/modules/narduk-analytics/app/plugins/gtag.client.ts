@@ -50,24 +50,40 @@ export default defineNuxtPlugin({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- gtag must be attached to window for GA4 to pick it up; no type definition exists
       ;(window as any).gtag = gtag
 
+      // Google tags accept one config command for a destination. It establishes
+      // the tag without emitting a page view; this plugin owns the complete
+      // initial + successful SPA navigation page-view lifecycle below.
       gtag('js', new Date())
-      gtag('config', measurementId)
+      gtag('config', measurementId, { send_page_view: false })
 
       const script = document.createElement('script')
       script.async = true
       script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`
       document.head.appendChild(script)
 
-      // SPA navigations. The initial page_view comes from gtag('config') above.
-      router.afterEach((to) => {
-        void nextTick(() => {
-          gtag('config', measurementId, {
-            page_path: to.fullPath,
-            page_location: window.location.origin + to.fullPath,
-            page_title: document.title,
-          })
+      // `to.path` deliberately excludes query and hash data. It also lets us
+      // ignore hash-only transitions and hydration's duplicate route callback.
+      let lastTrackedPath: string | undefined
+      const trackPageview = (path: string) => {
+        if (path === lastTrackedPath) return
+
+        lastTrackedPath = path
+        gtag('event', 'page_view', {
+          page_path: path,
+          page_location: window.location.origin + path,
+          page_title: document.title,
         })
+      }
+
+      // Nuxt may invoke afterEach while it hydrates, or only after it becomes
+      // ready. Cover both orderings and deduplicate the shared initial route.
+      router.afterEach((to, _from, failure) => {
+        if (failure) return
+        void nextTick(() => trackPageview(to.path))
       })
+      void router
+        .isReady()
+        .then(() => nextTick(() => trackPageview(router.currentRoute.value.path)))
     })
   },
 })
