@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "Durable Object build wiring and a hibernating WebSocket base class for Narduk Cloudflare apps.",
+  "description": "Durable Object build wiring, a WebSocket upgrade router, and a hibernating WebSocket base class for Narduk Cloudflare apps.",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
@@ -30,6 +30,14 @@
     "./server/durable-object": {
       "types": "./dist/server/durable-object.d.ts",
       "import": "./dist/server/durable-object.js"
+    },
+    "./worker/upgrade-router": {
+      "types": "./dist/worker/upgrade-router.d.ts",
+      "import": "./dist/worker/upgrade-router.js"
+    },
+    "./worker/principal": {
+      "types": "./dist/worker/principal.d.ts",
+      "import": "./dist/worker/principal.js"
     }
   },
   "files": [
@@ -38,8 +46,9 @@
   ],
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
-    "build": "tsc --project tsconfig.build.json",
-    "check:package": "publint --strict && pnpm pack --dry-run",
+    "build": "tsc --project tsconfig.build.json && node scripts/check-dist-clean.mjs",
+    "check:dist": "node scripts/check-dist-clean.mjs",
+    "check:package": "node scripts/check-dist-clean.mjs && publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
     "lint": "eslint src tests --max-warnings 0",
     "lint:strict": "eslint src tests --max-warnings 0",

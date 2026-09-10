@@ -71,4 +71,11 @@ export declare class HibernatingDurableObject<Env = unknown> extends DurableObje
      */
     webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): void;
 }
+/**
+ * Re-exported so a Durable Object reads the router-set principal from the same
+ * module it already imports -- `./worker/principal` carries no
+ * `cloudflare:workers` import, so a route may import it too.
+ */
+export { NARDUK_ROUTER_HEADER_PREFIX, PRINCIPAL_HEADER, principalFromRequest, } from '../worker/principal.js';
+export type { PrincipalCarrier } from '../worker/principal.js';
 //# sourceMappingURL=durable-object.d.ts.map

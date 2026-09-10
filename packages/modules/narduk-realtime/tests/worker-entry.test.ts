@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildWorkerEntrySource,
   createWorkerEntryHook,
+  UPGRADE_ROUTER_MODULE,
   WORKER_ENTRY_FILENAME,
 } from '../src/worker-entry.js'
 import type { NitroEntryContext, RollupEntryConfig } from '../src/worker-entry.js'
@@ -103,5 +104,164 @@ describe('worker entry hook', () => {
         { className: 'QuoteDO', modulePath: '/app/server/it\'s "quoted".ts' },
       ]),
     ).toContain('export { QuoteDO } from "/app/server/it\'s \\"quoted\\".ts"')
+  })
+})
+
+describe('worker entry upgrade router wiring', () => {
+  const VESSEL_UPGRADE = {
+    path: '/api/app/vessels/:vesselId/live',
+    binding: 'VESSEL_DO',
+    idFrom: 'vesselId',
+    forwardHeaders: ['cf-connecting-ip'],
+    authorizeModulePath: '/app/server/upgrades/vessel-live.ts',
+  }
+
+  // The 0.1.0 shape, unchanged: an app that declares no upgrade must not import
+  // the router, `nitropack/runtime`, or anything else new.
+  it('emits the plain re-export when no upgrade is declared', () => {
+    const source = buildWorkerEntrySource('/nitro/entry.mjs', [
+      { className: 'VesselDO', modulePath: '/app/server/durable/vessel.ts' },
+    ])
+
+    expect(source).toBe(
+      [
+        'export { default } from "/nitro/entry.mjs"',
+        'export { VesselDO } from "/app/server/durable/vessel.ts"',
+        '',
+      ].join('\n'),
+    )
+    expect(source).not.toContain('createUpgradeRouter')
+    expect(source).not.toContain('nitropack/runtime')
+  })
+
+  it('wraps the Nitro handler and configures every declared upgrade', () => {
+    expect(
+      buildWorkerEntrySource(
+        '/nitro/entry.mjs',
+        [{ className: 'VesselDO', modulePath: '/app/server/durable/vessel.ts' }],
+        [VESSEL_UPGRADE],
+      ),
+    ).toBe(
+      [
+        'import { useNitroApp } from "nitropack/runtime"',
+        `import { createUpgradeRouter, withUpgradeRouter } from "${UPGRADE_ROUTER_MODULE}"`,
+        'import nardukRealtimeHandler from "/nitro/entry.mjs"',
+        'import nardukRealtimeAuthorize0 from "/app/server/upgrades/vessel-live.ts"',
+        'export { VesselDO } from "/app/server/durable/vessel.ts"',
+        '',
+        'const nardukRealtimeRouter = createUpgradeRouter({',
+        '  localFetch: (path, init) => useNitroApp().localFetch(path, init),',
+        '  upgrades: [',
+        '    {',
+        '      path: "/api/app/vessels/:vesselId/live",',
+        '      binding: "VESSEL_DO",',
+        '      idFrom: "vesselId",',
+        '      forwardHeaders: ["cf-connecting-ip"],',
+        '      authorize: nardukRealtimeAuthorize0,',
+        '    },',
+        '  ],',
+        '})',
+        '',
+        'export default withUpgradeRouter(nardukRealtimeHandler, nardukRealtimeRouter)',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('omits the authorize key and its import for a route without an authoriser', () => {
+    const source = buildWorkerEntrySource(
+      '/nitro/entry.mjs',
+      [],
+      [
+        {
+          path: '/api/edge/v1/session',
+          binding: 'FLEET_DO',
+          idFrom: 'name:fleet',
+          forwardHeaders: [],
+          allowUnauthenticated: true,
+        },
+      ],
+    )
+
+    expect(source).not.toContain('nardukRealtimeAuthorize')
+    expect(source).toContain('      idFrom: "name:fleet",')
+    expect(source).toContain('      forwardHeaders: [],')
+    // Without this the runtime router's own fail-closed check would refuse the
+    // route the app deliberately declared unauthenticated.
+    expect(source).toContain('      allowUnauthenticated: true,')
+  })
+
+  it('emits the origin policy only when the app declared one', () => {
+    const withPolicy = buildWorkerEntrySource(
+      '/nitro/entry.mjs',
+      [],
+      [
+        {
+          ...VESSEL_UPGRADE,
+          allowedOrigins: ['https://app.test', 'https://console.test'],
+          allowMissingOrigin: true,
+        },
+      ],
+    )
+
+    expect(withPolicy).toContain(
+      '      allowedOrigins: ["https://app.test","https://console.test"],',
+    )
+    expect(withPolicy).toContain('      allowMissingOrigin: true,')
+
+    const withoutPolicy = buildWorkerEntrySource('/nitro/entry.mjs', [], [VESSEL_UPGRADE])
+    expect(withoutPolicy).not.toContain('allowedOrigins')
+    expect(withoutPolicy).not.toContain('allowMissingOrigin')
+    expect(withoutPolicy).not.toContain('allowUnauthenticated')
+  })
+
+  it('numbers one authoriser import per route that has one', () => {
+    const source = buildWorkerEntrySource(
+      '/nitro/entry.mjs',
+      [],
+      [
+        { path: '/api/a/:id', binding: 'A_DO', idFrom: 'id', forwardHeaders: [] },
+        { ...VESSEL_UPGRADE, path: '/api/b/:id', idFrom: 'id' },
+      ],
+    )
+
+    expect(source).toContain(
+      'import nardukRealtimeAuthorize1 from "/app/server/upgrades/vessel-live.ts"',
+    )
+    expect(source).not.toContain('nardukRealtimeAuthorize0')
+    expect(source).toContain('      authorize: nardukRealtimeAuthorize1,')
+  })
+
+  // An app can declare an upgrade without exporting any class of its own (the
+  // object may live in a package), so the hook must still write the entry.
+  it('writes the entry for an upgrade-only configuration', async () => {
+    const buildDir = await makeBuildDir()
+    const rollupConfig: RollupEntryConfig = { input: '/original/input.mjs' }
+
+    createWorkerEntryHook([], [VESSEL_UPGRADE])(nitro(CLOUDFLARE_ENTRY, buildDir), rollupConfig)
+
+    const entryPath = join(buildDir, WORKER_ENTRY_FILENAME)
+    expect(rollupConfig.input).toBe(entryPath)
+    expect(await readFile(entryPath, 'utf8')).toContain('createUpgradeRouter({')
+  })
+
+  it('leaves the prerenderer build untouched for an upgrade-only configuration', async () => {
+    const buildDir = await makeBuildDir()
+    const rollupConfig: RollupEntryConfig = { input: '/original/input.mjs' }
+
+    createWorkerEntryHook([], [VESSEL_UPGRADE])(nitro(PRERENDER_ENTRY, buildDir), rollupConfig)
+
+    expect(rollupConfig.input).toBe('/original/input.mjs')
+    expect(existsSync(join(buildDir, WORKER_ENTRY_FILENAME))).toBe(false)
+  })
+
+  it('escapes an authoriser path that would otherwise break the generated module', () => {
+    expect(
+      buildWorkerEntrySource(
+        '/nitro/entry.mjs',
+        [],
+        [{ ...VESSEL_UPGRADE, authorizeModulePath: '/app/it\'s "quoted".ts' }],
+      ),
+    ).toContain('import nardukRealtimeAuthorize0 from "/app/it\'s \\"quoted\\".ts"')
   })
 })

@@ -108,4 +108,10 @@ export class HibernatingDurableObject extends DurableObject {
         ws.close(echoable ? code : NORMAL_CLOSURE, reason);
     }
 }
+/**
+ * Re-exported so a Durable Object reads the router-set principal from the same
+ * module it already imports -- `./worker/principal` carries no
+ * `cloudflare:workers` import, so a route may import it too.
+ */
+export { NARDUK_ROUTER_HEADER_PREFIX, PRINCIPAL_HEADER, principalFromRequest, } from '../worker/principal.js';
 //# sourceMappingURL=durable-object.js.map

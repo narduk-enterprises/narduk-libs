@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { UPGRADE_ROUTER_MODULE } from '../src/worker-entry.js'
+
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 interface PackageManifest {
@@ -13,6 +15,7 @@ interface PackageManifest {
   name: string
   publishConfig: { access: string; registry: string }
   private: boolean
+  scripts: Record<string, string>
   version: string
 }
 
@@ -42,6 +45,21 @@ describe('narduk-realtime package surface', () => {
     })
   })
 
+  // The upgrade router is imported by the GENERATED Worker entry under exactly
+  // this specifier (`UPGRADE_ROUTER_MODULE`), so a rename here breaks every
+  // built app that declares an upgrade.
+  it('exposes the upgrade router and the principal helper the router writes', () => {
+    expect(manifest.exports['./worker/upgrade-router']).toEqual({
+      types: './dist/worker/upgrade-router.d.ts',
+      import: './dist/worker/upgrade-router.js',
+    })
+    expect(manifest.exports['./worker/principal']).toEqual({
+      types: './dist/worker/principal.d.ts',
+      import: './dist/worker/principal.js',
+    })
+    expect(`${manifest.name}/worker/upgrade-router`).toBe(UPGRADE_ROUTER_MODULE)
+  })
+
   // Everything the exports map names has to be inside a `files` entry, or the
   // published tarball resolves to nothing on the consumer's side.
   it('ships every export target in the tarball', () => {
@@ -60,6 +78,14 @@ describe('narduk-realtime package surface', () => {
   // @cloudflare/workers-types stays a type-only devDependency.
   it('adds no runtime dependency beyond @nuxt/kit', () => {
     expect(Object.keys(manifest.dependencies)).toEqual(['@nuxt/kit'])
+  })
+
+  // This package's `dist/` is committed, so a refactor pushed without a rebuild
+  // hands a git-dependency consumer type errors on exports `src` clearly
+  // declares -- which is exactly what happened before the check was wired in.
+  it('checks the committed dist output on every build and package check', () => {
+    expect(manifest.scripts.build).toContain('scripts/check-dist-clean.mjs')
+    expect(manifest.scripts['check:package']).toContain('scripts/check-dist-clean.mjs')
   })
 
   it('starts at the first minor of its own line', () => {
