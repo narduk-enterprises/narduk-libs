@@ -182,6 +182,20 @@ filter yourself and non-production traffic out of dashboards (Project Settings â
 `00-analytics-head.client` additionally preconnects to the PostHog/GA origins
 when the strategy is `immediate`.
 
+## GA4 pageviews
+
+`gtag.client` configures the Google tag once with `send_page_view: false`, then
+emits one manual `page_view` after the initial route is ready and after each
+successful path change. The event uses the route pathname only, so query values
+and hash fragments do not reach GA and query-only/hash-only navigation does not
+create another pageview.
+
+This module owns those GA4 pageviews. Keep the stream's Enhanced Measurement
+`pageChangesEnabled` setting disabled so browser-history measurement cannot add
+duplicate SPA events if Enhanced Measurement is enabled later. Preserve all
+other Enhanced Measurement settings; provider configuration remains outside this
+module.
+
 ## Development
 
 ```sh
