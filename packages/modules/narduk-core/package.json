@@ -48,6 +48,10 @@
     "./eslint-nuxt-flat-fragments": {
       "import": "./eslint-nuxt-flat-fragments.mjs"
     },
+    "./nuxt-module-package-config": {
+      "types": "./src/nuxt-module-package-config.ts",
+      "import": "./src/nuxt-module-package-config.ts"
+    },
     "./internal/*": {
       "import": "./runtime/internal/*.ts"
     },

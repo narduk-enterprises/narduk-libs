@@ -3,13 +3,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let runtimeConfigValue: Record<string, unknown> = {}
+interface Route {
+  fullPath?: string
+  path: string
+}
+type AfterEach = (to: Route, from: Route, failure?: unknown) => void
+
+let afterEach: AfterEach | undefined
+let currentRoute: { value: Route } = { value: { path: '/' } }
 
 vi.mock('#imports', () => ({
   defineNuxtPlugin: <T>(definition: T): T => definition,
   nextTick: (callback?: () => unknown): Promise<unknown> =>
     callback ? Promise.resolve().then(callback) : Promise.resolve(),
   useHead: vi.fn(),
-  useRouter: () => ({ afterEach: vi.fn() }),
+  useRouter: () => ({
+    afterEach: (handler: AfterEach) => {
+      afterEach = handler
+    },
+    currentRoute,
+    isReady: () => Promise.resolve(),
+  }),
   useRuntimeConfig: () => runtimeConfigValue,
 }))
 
@@ -37,6 +51,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   document.cookie = ''
   setLocation('example.com')
+  afterEach = undefined
+  currentRoute = { value: { path: '/' } }
   runtimeConfigValue = {
     public: {
       analyticsLoadStrategy: 'off',
@@ -137,7 +153,7 @@ describe('gtag.client — enabled path', () => {
     expect(document.head.querySelector('script[src*="googletagmanager"]')).toBeNull()
   })
 
-  it('injects the gtag.js script and configures the measurement id on the enabled path', async () => {
+  it('configures Google once and emits deduplicated manual pageviews for the initial and successful SPA paths', async () => {
     runtimeConfigValue = {
       public: {
         analyticsLoadStrategy: 'immediate',
@@ -149,9 +165,43 @@ describe('gtag.client — enabled path', () => {
     const plugin = (await import('../app/plugins/gtag.client')).default
     plugin.setup?.()
 
+    // Nuxt can report the hydrated route through afterEach before isReady();
+    // both paths must still produce the one initial pageview.
+    afterEach?.({ path: '/' }, { path: '/' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    afterEach?.({ path: '/ports', fullPath: '/ports?tab=private#details' }, { path: '/' })
+    afterEach?.({ path: '/ports', fullPath: '/ports#comments' }, { path: '/ports' })
+    afterEach?.({ path: '/failed' }, { path: '/ports' }, new Error('cancelled'))
+    await Promise.resolve()
+    await Promise.resolve()
+
     const script = document.head.querySelector('script[src*="googletagmanager"]')
     expect(script).not.toBeNull()
     expect(script?.getAttribute('src')).toContain('G-TESTID')
-    expect(window.dataLayer?.length).toBeGreaterThan(0)
+    const commands = window.dataLayer?.map((command) => Array.from(command))
+    expect(commands).toEqual([
+      ['js', expect.any(Date)],
+      ['config', 'G-TESTID', { send_page_view: false }],
+      [
+        'event',
+        'page_view',
+        {
+          page_path: '/',
+          page_location: 'https://example.com/',
+          page_title: '',
+        },
+      ],
+      [
+        'event',
+        'page_view',
+        {
+          page_path: '/ports',
+          page_location: 'https://example.com/ports',
+          page_title: '',
+        },
+      ],
+    ])
   })
 })
