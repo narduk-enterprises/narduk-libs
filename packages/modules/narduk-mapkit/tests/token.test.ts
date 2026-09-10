@@ -24,6 +24,7 @@ describe('MapKit JWT signing', () => {
       iat: 100,
       iss: 'TEAM123',
       origin: 'http://localhost:3000',
+      scope: 'mapkit_js',
     })
     expect(token.split('.')).toHaveLength(3)
   })

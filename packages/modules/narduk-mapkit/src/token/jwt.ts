@@ -80,6 +80,7 @@ export async function createMapKitToken(options: MapKitJwtOptions): Promise<stri
       iat: issuedAt,
       exp: issuedAt + expiresInSeconds,
       origin,
+      scope: 'mapkit_js',
     },
   )
 }
