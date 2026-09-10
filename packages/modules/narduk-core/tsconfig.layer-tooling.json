@@ -24,6 +24,7 @@
     "runtime/server/utils/approximateLocation.ts",
     "runtime/server/utils/authApiKeyD1.ts",
     "runtime/server/utils/authApiKeyText.ts",
+    "runtime/server/utils/client-ip.ts",
     "runtime/server/utils/kv.ts",
     "runtime/server/utils/kvCache.ts",
     "runtime/server/utils/logger.ts",
