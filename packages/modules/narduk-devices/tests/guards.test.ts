@@ -4,7 +4,7 @@ import {
   DEVICES_DENIED_ERROR_CODE,
   DEVICES_UNAUTHORIZED_ERROR_CODE,
   type DeviceSessionResolver,
-  readBearerSessionId,
+  readBearerSessionToken,
   requireDeviceSession,
 } from '../server/utils/guards'
 
@@ -32,26 +32,44 @@ async function thrown(promise: Promise<unknown>): Promise<ThrownH3Error> {
   }
 }
 
-describe('readBearerSessionId', () => {
+describe('readBearerSessionToken', () => {
   it('reads only a well-formed bearer header', () => {
-    expect(readBearerSessionId(eventWith('Bearer abc'))).toBe('abc')
-    expect(readBearerSessionId(eventWith('bearer  abc '))).toBe('abc')
-    expect(readBearerSessionId(eventWith('Basic abc'))).toBeNull()
-    expect(readBearerSessionId(eventWith('Bearer'))).toBeNull()
-    expect(readBearerSessionId(eventWith('Bearer a b'))).toBeNull()
-    expect(readBearerSessionId(eventWith())).toBeNull()
+    expect(readBearerSessionToken(eventWith('Bearer abc'))).toBe('abc')
+    expect(readBearerSessionToken(eventWith('bearer  abc '))).toBe('abc')
+    expect(readBearerSessionToken(eventWith('Basic abc'))).toBeNull()
+    expect(readBearerSessionToken(eventWith('Bearer'))).toBeNull()
+    expect(readBearerSessionToken(eventWith('Bearer a b'))).toBeNull()
+    expect(readBearerSessionToken(eventWith())).toBeNull()
   })
 })
 
 describe('requireDeviceSession', () => {
   it('401s a request without a bearer session before consulting the service', async () => {
-    const devices: DeviceSessionResolver = { getSession: vi.fn() }
+    const devices: DeviceSessionResolver = { getSessionByToken: vi.fn() }
     const error = await thrown(
       requireDeviceSession(eventWith(), { devices, credentialClass: 'ingest' }),
     )
     expect(error.statusCode).toBe(401)
     expect(error.data?.errorCode).toBe(DEVICES_UNAUTHORIZED_ERROR_CODE)
-    expect(devices.getSession).not.toHaveBeenCalled()
+    expect(devices.getSessionByToken).not.toHaveBeenCalled()
+  })
+
+  it('never admits the session row id as a bearer', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const claimed = await claimDevice(harness)
+    const opened = await devices.openSession((await signedOpen(harness, claimed, 'ingest')).input)
+    expect(opened.sessionToken).not.toBe(opened.sessionId)
+    expect(
+      (
+        await thrown(
+          requireDeviceSession(eventWith(`Bearer ${opened.sessionId}`), {
+            devices,
+            credentialClass: 'ingest',
+          }),
+        )
+      ).statusCode,
+    ).toBe(401)
   })
 
   it('401s an unknown, expired or revoked session', async () => {
@@ -67,11 +85,11 @@ describe('requireDeviceSession', () => {
         )
       ).statusCode,
     ).toBe(401)
-    await devices.revokeSession({ sessionId: opened.sessionId })
+    await devices.revokeSession({ sessionToken: opened.sessionToken })
     expect(
       (
         await thrown(
-          requireDeviceSession(eventWith(`Bearer ${opened.sessionId}`), {
+          requireDeviceSession(eventWith(`Bearer ${opened.sessionToken}`), {
             devices,
             credentialClass: 'ingest',
           }),
@@ -87,14 +105,14 @@ describe('requireDeviceSession', () => {
     const ingest = await devices.openSession((await signedOpen(harness, claimed, 'ingest')).input)
 
     await expect(
-      requireDeviceSession(eventWith(`Bearer ${ingest.sessionId}`), {
+      requireDeviceSession(eventWith(`Bearer ${ingest.sessionToken}`), {
         devices,
         credentialClass: 'ingest',
       }),
     ).resolves.toMatchObject({ id: ingest.sessionId, credentialClass: 'ingest' })
 
     const denied = await thrown(
-      requireDeviceSession(eventWith(`Bearer ${ingest.sessionId}`), {
+      requireDeviceSession(eventWith(`Bearer ${ingest.sessionToken}`), {
         devices,
         credentialClass: 'command',
       }),
@@ -107,7 +125,7 @@ describe('requireDeviceSession', () => {
       requireDeviceSession(eventWith(), {
         devices,
         credentialClass: 'ingest',
-        resolveSessionId: () => ingest.sessionId,
+        resolveSessionToken: () => ingest.sessionToken,
       }),
     ).resolves.toMatchObject({ id: ingest.sessionId })
   })

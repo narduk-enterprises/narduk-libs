@@ -1,8 +1,9 @@
-import { and, desc, eq, isNull, lt } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt, lte } from 'drizzle-orm'
 
 import { DEVICES_LOCKOUT_POLICY } from '../../shared/utils/lockout-policy'
 import {
   devicesAuditEvents,
+  devicesAuthAttempts,
   devicesChallenges,
   devicesClaimSessions,
   devicesClaimTokens,
@@ -14,18 +15,22 @@ import {
 
 import { completeClaimAtomically, type PreparedCredential } from './devices-complete-claim'
 import { DevicesError } from './devices-error'
-import { createLockoutGate, type LockoutSubject } from './devices-lockout'
 import {
-  base64UrlDecode,
+  createLockoutGate,
+  DEVICES_LOCKOUT_MAX_WINDOW_SECONDS,
+  type LockoutSubject,
+} from './devices-lockout'
+import {
   canonicalBytes,
   type CanonicalValue,
   ED25519_PUBLIC_KEY_BYTES,
-  isBase64Url,
   randomBase64Url,
   sha256Hex,
   type SignatureVerifier,
+  tryBase64UrlDecode,
   verifyEd25519,
 } from './devices-signing'
+import { startClaimAtomically } from './devices-start-claim'
 
 import type {
   ClaimCompleteStatus,
@@ -127,6 +132,28 @@ function sameResource(a: DevicesResourceRef, b: DevicesResourceRef): boolean {
   return a.kind === b.kind && a.id === b.id
 }
 
+/**
+ * Does the *signed* request name the device and credential the database
+ * resolved? Every field here is inside the signature and every comparison is
+ * against a row, never against the caller's unsigned envelope: rewriting
+ * `credentialClass` / `credentialId` on a captured signed body to ask for a
+ * different credential fails here (narduk-libs#212 review finding 1).
+ */
+function requestBindsTo(
+  request: CanonicalSessionRequest,
+  device: Device,
+  credential: DeviceCredential,
+): boolean {
+  return (
+    request.deviceId === device.id &&
+    request.installationId === device.installationId &&
+    request.credentialId === credential.id &&
+    request.credentialClass === credential.credentialClass &&
+    request.credentialVersion === credential.version &&
+    sameResource(request.resource, { kind: device.resourceKind, id: device.resourceId })
+  )
+}
+
 export interface RemoteContext {
   /** Opaque key for the account behind the request (a user id, an API key id). */
   accountKey?: string
@@ -211,9 +238,17 @@ export interface IssueChallengeResult {
 /**
  * The bytes the device signs, as canonical JSON (sorted keys, no whitespace).
  * `resource` nests as `{ id, kind }` and is sorted like every other object.
+ *
+ * The credential is *inside* the signature: `credentialId`, `credentialClass`
+ * and `credentialVersion` are all signed and all compared against the resolved
+ * credential row, so a signed `ingest` body cannot be resubmitted as a
+ * `command` request by rewriting the unsigned envelope (narduk-libs#212 review
+ * finding 1). The exact sorted key list is in the README, for the Go edge.
  */
 export interface CanonicalSessionRequest {
   challengeId: string
+  credentialClass: CredentialClass
+  credentialId: string
   credentialVersion: number
   deviceId: string
   installationId: string
@@ -227,7 +262,9 @@ export interface CanonicalSessionRequest {
 
 export interface OpenSessionInput {
   canonicalRequest: CanonicalSessionRequest
+  /** Envelope copy of the signed class; the signed value is what is trusted. */
   credentialClass: CredentialClass
+  /** Envelope copy of the signed credential id; the signed value is trusted. */
   credentialId: string
   deviceId: string
   remote?: RemoteContext
@@ -238,8 +275,28 @@ export interface OpenSessionInput {
 export interface OpenSessionResult {
   expiresAt: number
   revocationGeneration: number
+  /** Non-bearer row id: safe to log, names the session in the audit trail. */
   sessionId: string
+  /** The bearer, returned exactly once; only its SHA-256 digest is stored. */
+  sessionToken: string
 }
+
+/**
+ * How a session is named. A device path presents the bearer it was given
+ * (`sessionToken`, resolved by digest); an operator path names the row id.
+ * Exactly one of the two.
+ */
+export interface SessionById {
+  sessionId: string
+  sessionToken?: never
+}
+
+export interface SessionByToken {
+  sessionId?: never
+  sessionToken: string
+}
+
+export type SessionSelector = SessionById | SessionByToken
 
 export interface HeartbeatResult {
   /** The device's current generation; greater than the session's means re-open. */
@@ -248,6 +305,11 @@ export interface HeartbeatResult {
   revocationGeneration: number
   sessionId: string
   stale: boolean
+}
+
+export interface PruneExpiredResult {
+  authAttempts: number
+  replayEntries: number
 }
 
 export interface ActorInput {
@@ -281,17 +343,25 @@ export interface DevicesService {
   createClaimToken: (input: CreateClaimTokenInput) => Promise<CreateClaimTokenResult>
   getClaimSession: (claimSessionId: string) => Promise<ClaimSession | null>
   getDevice: (deviceId: string) => Promise<Device | null>
-  /** The active (unexpired, unrevoked) session, or null. */
+  /** The active (unexpired, unrevoked) session named by its row id, or null. */
   getSession: (sessionId: string) => Promise<DeviceSession | null>
-  heartbeat: (input: { sessionId: string }) => Promise<HeartbeatResult>
+  /** The active session a bearer token names, resolved by digest, or null. */
+  getSessionByToken: (sessionToken: string) => Promise<DeviceSession | null>
+  heartbeat: (input: SessionSelector) => Promise<HeartbeatResult>
   issueApprovalToken: (input: IssueApprovalTokenInput) => Promise<IssueApprovalTokenResult>
   issueChallenge: (input: IssueChallengeInput) => Promise<IssueChallengeResult>
   listAuditEvents: (input?: ListAuditEventsInput) => Promise<DevicesAuditEvent[]>
   listDevices: (input: ListDevicesInput) => Promise<Device[]>
   openSession: (input: OpenSessionInput) => Promise<OpenSessionResult>
+  /**
+   * Delete expired replay entries and auth attempts no rule can still count.
+   * `openSession` and `startClaim` call it opportunistically; a consumer may
+   * also run it from a cron.
+   */
+  pruneExpired: (input?: { before?: number }) => Promise<PruneExpiredResult>
   revokeClaimToken: (input: ActorInput & { claimTokenId: string }) => Promise<ClaimToken>
   revokeDevice: (input: ActorInput & { deviceId: string }) => Promise<Device>
-  revokeSession: (input: ActorInput & { sessionId: string }) => Promise<DeviceSession>
+  revokeSession: (input: ActorInput & SessionSelector) => Promise<DeviceSession>
   rotateCredential: (input: RotateCredentialInput) => Promise<IssuedCredential>
   startClaim: (input: StartClaimInput) => Promise<StartClaimResult>
   /** Bearer verification of a shown-once secret; the active credential or null. */
@@ -438,10 +508,107 @@ export function createDevices(
     )
   }
 
+  async function findSessionByTokenHash(tokenHash: string): Promise<DeviceSession | undefined> {
+    return first(
+      await db
+        .select()
+        .from(devicesSessions)
+        .where(eq(devicesSessions.tokenHash, tokenHash))
+        .limit(1)
+        .all(),
+    )
+  }
+
+  /**
+   * Resolve a `SessionSelector`. The bearer never reaches a query in the clear:
+   * `sessionToken` is digested and matched against the unique `token_hash`.
+   */
+  async function selectSession(selector: SessionSelector): Promise<DeviceSession | undefined> {
+    if (selector.sessionToken !== undefined) {
+      return findSessionByTokenHash(await sha256Hex(selector.sessionToken))
+    }
+    return findSession(selector.sessionId)
+  }
+
+  function selectorLabel(selector: SessionSelector): string {
+    // Never the bearer itself: a "not found" message must stay loggable.
+    return selector.sessionToken === undefined ? selector.sessionId : 'the presented bearer token'
+  }
+
+  /**
+   * Bounded, opportunistic prune. Both DELETEs are single statements with an
+   * index-backed predicate rather than a LIMIT (D1's SQLite is built without
+   * `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`), and the auth-attempt cutoff is older
+   * than the widest lockout window, so nothing a live check reads is removed.
+   */
+  async function prune(before?: number): Promise<PruneExpiredResult> {
+    const at = before ?? now()
+    const replayEntries = await db
+      .delete(devicesReplayEntries)
+      .where(lte(devicesReplayEntries.expiresAt, at))
+      .returning({ id: devicesReplayEntries.id })
+      .all()
+    const authAttempts = await db
+      .delete(devicesAuthAttempts)
+      .where(lt(devicesAuthAttempts.at, at - DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000))
+      .returning({ id: devicesAuthAttempts.id })
+      .all()
+    return { replayEntries: replayEntries.length, authAttempts: authAttempts.length }
+  }
+
+  /** Pruning is housekeeping: it must never turn into an authentication failure. */
+  async function pruneOpportunistically(): Promise<void> {
+    try {
+      await prune()
+    } catch {
+      // Deliberately swallowed. `pruneExpired()` is the surface that reports.
+    }
+  }
+
   async function findChallenge(id: string): Promise<DeviceChallenge | undefined> {
     return first(
       await db.select().from(devicesChallenges).where(eq(devicesChallenges.id, id)).limit(1).all(),
     )
+  }
+
+  /**
+   * What a `startClaim` that lost the redemption race should report: the state
+   * of the session that won, or — when the token is spent with no session left
+   * to point at — why it cannot be redeemed.
+   */
+  async function resolveLostRedemption(
+    token: ClaimToken,
+    hardwareFingerprint: string,
+  ): Promise<
+    | { expiresAt: number; kind: 'failure'; status: ClaimStartStatus }
+    | { kind: 'session'; result: StartClaimResult }
+  > {
+    const winner = first(
+      await db
+        .select()
+        .from(devicesClaimSessions)
+        .where(eq(devicesClaimSessions.claimTokenId, token.id))
+        .orderBy(desc(devicesClaimSessions.createdAt))
+        .limit(1)
+        .all(),
+    )
+    if (!winner) {
+      const current = await findClaimToken(token.id)
+      const expiresAt = current?.expiresAt ?? token.expiresAt
+      const expired = current !== undefined && current.expiresAt <= now()
+      return { kind: 'failure', status: expired ? 'expired' : 'revoked', expiresAt }
+    }
+    if (winner.hardwareFingerprint !== hardwareFingerprint) {
+      return { kind: 'failure', status: 'hardware_mismatch', expiresAt: winner.expiresAt }
+    }
+    return {
+      kind: 'session',
+      result: {
+        claimSessionId: winner.id,
+        status: sessionStartStatus(winner),
+        expiresAt: winner.expiresAt,
+      },
+    }
   }
 
   function sessionStartStatus(session: ClaimSession): ClaimStartStatus {
@@ -519,6 +686,7 @@ export function createDevices(
         tokenHash: await sha256Hex(token),
         expiresAt: createdAt + ttlSeconds * 1000,
         consumedAt: null,
+        consumedByClaimSessionId: null,
         revokedAt: null,
         createdByUserId,
         createdAt,
@@ -583,13 +751,12 @@ export function createDevices(
       const devicePublicKey = requireText(input.devicePublicKey, 'devicePublicKey')
       const softwareVersion = requireText(input.softwareVersion, 'softwareVersion')
       const idempotencyKey = requireText(input.idempotencyKey, 'idempotencyKey')
-      if (
-        !isBase64Url(devicePublicKey) ||
-        base64UrlDecode(devicePublicKey).length !== ED25519_PUBLIC_KEY_BYTES
-      ) {
-        throw new DevicesError('invalid', 'devicePublicKey must be a raw base64url Ed25519 key.')
-      }
 
+      await pruneOpportunistically()
+      // The per-token window is keyed on the *presented* token's digest, so it
+      // bounds guessing even when the caller passes no `remote`. Every H3 route
+      // must still pass `remote` — that is what bounds enumeration across
+      // different tokens (README §Lockouts, narduk-libs#212 review finding 5).
       const tokenHash = await sha256Hex(claimToken)
       const subjects: LockoutSubject[] = [
         { kind: 'token', subject: tokenHash },
@@ -603,6 +770,14 @@ export function createDevices(
           expiresAt: now() + locked.retryAfterSeconds * 1000,
           retryAfterSeconds: locked.retryAfterSeconds,
         }
+      }
+
+      // Checked after the gate and counted as a failure: a malformed key
+      // presented with a guessed token must not be a free attempt.
+      const publicKeyBytes = tryBase64UrlDecode(devicePublicKey)
+      if (!publicKeyBytes || publicKeyBytes.length !== ED25519_PUBLIC_KEY_BYTES) {
+        await recordAttempt(subjects, 'failure', { orgId: null, reason: 'malformed_public_key' })
+        throw new DevicesError('invalid', 'devicePublicKey must be a raw base64url Ed25519 key.')
       }
 
       const token = await findClaimTokenByHash(tokenHash)
@@ -694,47 +869,37 @@ export function createDevices(
         return fail('hardware_mismatch', token.expiresAt)
       }
 
+      // Redemption is one transaction: the session is inserted from the token
+      // row only while that row is still unconsumed, and the same transaction
+      // stamps the consumption. Two concurrent starts cannot both create a
+      // session on one token (narduk-libs#212 review finding 3).
       const createdAt = now()
-      const session: ClaimSession = {
-        id: nextId(),
-        claimTokenId: token.id,
-        idempotencyKey,
-        hardwareFingerprint,
-        fingerprintAlgorithm,
-        publicKey: devicePublicKey,
-        softwareVersion,
-        status: 'pending_user_approval',
-        expiresAt: token.expiresAt,
-        completedAt: null,
-        completionIdempotencyKey: null,
-        deviceId: null,
-        approvalTokenHash: null,
-        approvalUserId: null,
-        approvalOrgId: null,
-        approvalResourceKind: null,
-        approvalResourceId: null,
-        approvalExpiresAt: null,
-        createdAt,
-      }
-      await db.insert(devicesClaimSessions).values(session).run()
-      await audit({
-        orgId: token.orgId,
-        action: 'claim.start',
-        subjectKind: 'claim_session',
-        subjectId: session.id,
-        details: {
-          claimTokenId: token.id,
+      const claimSessionId = nextId()
+      const won = await startClaimAtomically(
+        db,
+        {
+          claimSessionId,
+          idempotencyKey,
           hardwareFingerprint,
           fingerprintAlgorithm,
+          publicKey: devicePublicKey,
           softwareVersion,
-          expiresAt: session.expiresAt,
+          createdAt,
+          token,
         },
-      })
+        nextId,
+      )
+      if (!won) {
+        // Lost the race (or the token was spent in between): report the state
+        // the winning session is in rather than inventing a second one.
+        const lost = await resolveLostRedemption(token, hardwareFingerprint)
+        return lost.kind === 'session' ? lost.result : fail(lost.status, lost.expiresAt)
+      }
       await recordAttempt(subjects, 'success', { orgId: token.orgId })
       return {
-        claimSessionId: session.id,
+        claimSessionId,
         status: 'pending_user_approval',
-        expiresAt: session.expiresAt,
+        expiresAt: token.expiresAt,
       }
     },
 
@@ -844,6 +1009,12 @@ export function createDevices(
 
       if (session.status === 'claimed') return alreadyCompleted(session)
       if (session.status === 'revoked' || token.revokedAt !== null) return fail('revoked')
+      // Single use: the token was consumed when this session redeemed it, so a
+      // consumption naming any other session means the token is already spent
+      // (narduk-libs#212 review finding 3).
+      if (token.consumedAt !== null && token.consumedByClaimSessionId !== session.id) {
+        return fail('revoked')
+      }
       if (session.status === 'expired' || session.expiresAt <= now()) {
         if (session.status !== 'expired') {
           await db
@@ -962,6 +1133,7 @@ export function createDevices(
 
     async openSession(input) {
       const { canonicalRequest: request } = input
+      await pruneOpportunistically()
       const subjects: LockoutSubject[] = [
         { kind: 'device', subject: input.deviceId },
         ...remoteSubjects(input.remote),
@@ -998,12 +1170,7 @@ export function createDevices(
       if (credential.credentialClass !== input.credentialClass) {
         return fail('forbidden', 'credential class mismatch')
       }
-      if (
-        request.deviceId !== device.id ||
-        request.credentialVersion !== credential.version ||
-        request.installationId !== device.installationId ||
-        !sameResource(request.resource, { kind: device.resourceKind, id: device.resourceId })
-      ) {
+      if (!requestBindsTo(request, device, credential)) {
         return fail('unauthorized', 'request binding mismatch')
       }
       if (!Number.isFinite(request.timestamp) || Math.abs(request.timestamp - now()) > skewMs) {
@@ -1013,11 +1180,18 @@ export function createDevices(
       if (!challenge || challenge.deviceId !== device.id || challenge.expiresAt <= now()) {
         return fail('unauthorized', 'challenge not active')
       }
-      if (!isBase64Url(input.signature)) return fail('unauthorized', 'malformed signature')
+      // Decoded without throwing: a malformed signature or stored key is an
+      // authentication failure that counts against the device, never an
+      // uncaught DOMException (narduk-libs#212 review finding 4).
+      const signatureBytes = tryBase64UrlDecode(input.signature)
+      const publicKeyBytes = tryBase64UrlDecode(device.publicKey)
+      if (!signatureBytes || !publicKeyBytes) {
+        return fail('unauthorized', 'malformed signature')
+      }
       const verified = await verifySignature({
         message: canonicalBytes(request as unknown as CanonicalValue),
-        publicKey: base64UrlDecode(device.publicKey),
-        signature: base64UrlDecode(input.signature),
+        publicKey: publicKeyBytes,
+        signature: signatureBytes,
       })
       if (!verified) return fail('unauthorized', 'signature mismatch')
 
@@ -1038,8 +1212,13 @@ export function createDevices(
       if (replay.length === 0) return fail('unauthorized', 'replayed request')
 
       const createdAt = now()
+      // The bearer is a fresh random token, not the row id: the id is what the
+      // audit trail names, and a trail that carried the bearer would hand out
+      // live sessions (narduk-libs#212 review finding 2).
+      const sessionToken = nextToken()
       const session: DeviceSession = {
         id: nextId(),
+        tokenHash: await sha256Hex(sessionToken),
         deviceId: device.id,
         credentialId: credential.id,
         credentialClass: credential.credentialClass,
@@ -1068,11 +1247,17 @@ export function createDevices(
         },
       })
       await recordAttempt(subjects, 'success', { orgId: device.orgId })
+      // The raw session token is returned exactly once; only its digest is stored.
       return {
         sessionId: session.id,
+        sessionToken,
         expiresAt: session.expiresAt,
         revocationGeneration: session.revocationGeneration,
       }
+    },
+
+    async pruneExpired(input = {}) {
+      return prune(input.before)
     },
 
     async getSession(sessionId) {
@@ -1081,10 +1266,16 @@ export function createDevices(
       return session
     },
 
+    async getSessionByToken(sessionToken) {
+      const session = await findSessionByTokenHash(await sha256Hex(sessionToken))
+      if (!session || session.revokedAt !== null || session.expiresAt <= now()) return null
+      return session
+    },
+
     async heartbeat(input) {
-      const session = await findSession(input.sessionId)
+      const session = await selectSession(input)
       if (!session)
-        throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
+        throw new DevicesError('not_found', `Session ${selectorLabel(input)} does not exist.`)
       if (session.revokedAt !== null) {
         throw new DevicesError('revoked', `Session ${session.id} was revoked.`)
       }
@@ -1110,9 +1301,9 @@ export function createDevices(
     },
 
     async revokeSession(input) {
-      const session = await findSession(input.sessionId)
+      const session = await selectSession(input)
       if (!session)
-        throw new DevicesError('not_found', `Session ${input.sessionId} does not exist.`)
+        throw new DevicesError('not_found', `Session ${selectorLabel(input)} does not exist.`)
       if (session.revokedAt !== null) return session
       const revokedAt = now()
       await revokeSessionsWhere(eq(devicesSessions.id, session.id), revokedAt)

@@ -8,8 +8,17 @@ import {
 } from '../../shared/utils/lockout-policy'
 import { devicesAuthAttempts } from '../database/devices-schema'
 
+import { runDevicesBatch, supportsAtomicBatch } from './devices-atomic'
+
 import type { AuthAttemptSubjectKind } from '../../shared/types/devices'
 import type { DevicesDatabase } from './devices'
+import type { BatchItem } from 'drizzle-orm/batch'
+
+/** The widest window any rule looks back over; what a prune may safely keep. */
+export const DEVICES_LOCKOUT_MAX_WINDOW_SECONDS = Math.max(
+  DEVICES_LOCKOUT_POLICY.perTokenOrDevice.windowSeconds,
+  DEVICES_LOCKOUT_POLICY.perAccountOrIp.windowSeconds,
+)
 
 export interface LockoutSubject {
   kind: AuthAttemptSubjectKind
@@ -58,8 +67,9 @@ export function createLockoutGate(
   now: () => number,
   nextId: () => string,
 ): LockoutGate {
-  async function failuresInWindow(subject: LockoutSubject, rule: LockoutRule): Promise<number[]> {
-    const rows = await db
+  /** The bounded, index-backed read of one subject's failures inside its window. */
+  function failuresQuery(subject: LockoutSubject, rule: LockoutRule, at: number) {
+    return db
       .select({ at: devicesAuthAttempts.at })
       .from(devicesAuthAttempts)
       .where(
@@ -67,12 +77,15 @@ export function createLockoutGate(
           eq(devicesAuthAttempts.subjectKind, subject.kind),
           eq(devicesAuthAttempts.subject, subject.subject),
           eq(devicesAuthAttempts.outcome, 'failure'),
-          gt(devicesAuthAttempts.at, now() - rule.windowSeconds * 1000),
+          gt(devicesAuthAttempts.at, at - rule.windowSeconds * 1000),
         ),
       )
       .orderBy(desc(devicesAuthAttempts.at))
       .limit(windowReadLimit(rule))
-      .all()
+  }
+
+  async function failuresInWindow(subject: LockoutSubject, rule: LockoutRule): Promise<number[]> {
+    const rows = await failuresQuery(subject, rule, now()).all()
     return rows.map((row) => row.at)
   }
 
@@ -90,10 +103,18 @@ export function createLockoutGate(
       return worst
     },
 
+    /**
+     * Insert-then-count, in one transaction where the database can run one: the
+     * attempt row lands and the window is counted without another attempt
+     * slipping between the two, so no concurrent failure can go uncounted or be
+     * counted twice (narduk-libs#212 review finding 5). A plain query-builder
+     * adapter degrades to the same two statements sequentially rather than
+     * failing the authentication path.
+     */
     async record(subjects, outcome) {
       if (subjects.length === 0) return []
       const at = now()
-      await db
+      const insert = db
         .insert(devicesAuthAttempts)
         .values(
           subjects.map((subject) => ({
@@ -104,15 +125,44 @@ export function createLockoutGate(
             at,
           })),
         )
-        .run()
-      if (outcome !== 'failure') return []
+        .returning({ id: devicesAuthAttempts.id })
+      if (outcome !== 'failure') {
+        await insert.run()
+        return []
+      }
+
+      const rules = subjects.map((subject) => lockoutRuleFor(subject.kind))
+      let counted: number[]
+      if (supportsAtomicBatch(db)) {
+        const statements = [
+          insert,
+          ...subjects.map((subject, index) =>
+            failuresQuery(subject, rules[index] ?? lockoutRuleFor(subject.kind), at),
+          ),
+        ] as unknown as [BatchItem<'sqlite'>, ...Array<BatchItem<'sqlite'>>]
+        const results = await runDevicesBatch(db, statements)
+        counted = (results.slice(1) as Array<Array<{ at: number }>>).map((rows) => rows.length)
+      } else {
+        await insert.run()
+        counted = []
+        for (const [index, subject] of subjects.entries()) {
+          // eslint-disable-next-line no-await-in-loop -- at most four subjects, one bounded read each
+          const rows = await failuresQuery(
+            subject,
+            rules[index] ?? lockoutRuleFor(subject.kind),
+            at,
+          ).all()
+          counted.push(rows.length)
+        }
+      }
 
       const crossed: LockoutThreshold[] = []
-      for (const subject of subjects) {
-        const rule = lockoutRuleFor(subject.kind)
+      for (const [index, subject] of subjects.entries()) {
+        const rule = rules[index] ?? lockoutRuleFor(subject.kind)
+        // Only the escalating rules publish a `security.lockout` audit row; the
+        // per-token/device rule is counted the same way and read by `check`.
         if (!rule.escalates) continue
-        // eslint-disable-next-line no-await-in-loop -- at most four subjects, one bounded read each
-        const failures = (await failuresInWindow(subject, rule)).length
+        const failures = counted[index] ?? 0
         if (failures > 0 && failures % rule.failures === 0) {
           crossed.push({ subject, failures, cooldownSeconds: cooldownSecondsFor(rule, failures) })
         }

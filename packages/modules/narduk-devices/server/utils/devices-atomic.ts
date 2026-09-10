@@ -9,6 +9,20 @@ interface SynchronousTransactionClient {
 }
 
 /**
+ * Whether this database can run `runDevicesBatch` at all. Used where an atomic
+ * grouping is an improvement rather than a requirement (the lockout counter), so
+ * a plain query-builder adapter degrades to sequential statements instead of
+ * failing an authentication path outright.
+ */
+export function supportsAtomicBatch(db: DevicesDatabase): boolean {
+  const database = db as DevicesDatabase &
+    Partial<Pick<DrizzleD1Database, 'batch'>> & {
+      $client?: Partial<SynchronousTransactionClient>
+    }
+  return Boolean(database.batch ?? database.$client?.transaction)
+}
+
+/**
  * D1 batches are transactions. The native better-sqlite3 adapter runs the same
  * statements inside its synchronous transaction for local tests/consumers.
  * No sequential, non-transactional fallback is safe for claim completion: a

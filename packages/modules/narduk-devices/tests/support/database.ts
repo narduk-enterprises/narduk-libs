@@ -174,12 +174,17 @@ export async function claimDevice(harness: TestHarness, overrides: { key?: TestD
   return { ...pending, approval, completed, deviceId: completed.deviceId, ingest, command }
 }
 
-/** A signed, well-formed session-open request for the given device and credential. */
+/**
+ * A signed, well-formed session-open request for the given device and
+ * credential. The unsigned envelope mirrors the signed body by default, so a
+ * test that wants them to disagree — the escalation attack — rewrites the
+ * envelope explicitly on the returned `input`.
+ */
 export async function signedOpen(
   harness: TestHarness,
   claimed: Awaited<ReturnType<typeof claimDevice>>,
   credentialClass: 'ingest' | 'command',
-  overrides: Partial<CanonicalSessionRequest> & { credentialId?: string; nonce?: string } = {},
+  overrides: Partial<CanonicalSessionRequest> = {},
 ) {
   const challenge = await harness.devices.issueChallenge({ deviceId: claimed.deviceId })
   const credential = credentialClass === 'ingest' ? claimed.ingest : claimed.command
@@ -189,6 +194,8 @@ export async function signedOpen(
     resource: VESSEL,
     installationId: 'inst-1',
     deviceId: claimed.deviceId,
+    credentialClass,
+    credentialId: credential.credentialId,
     credentialVersion: credential.version,
     challengeId: challenge.challengeId,
     nonce: challenge.nonce,
@@ -200,8 +207,8 @@ export async function signedOpen(
     challenge,
     request,
     input: {
-      credentialClass,
-      credentialId: overrides.credentialId ?? credential.credentialId,
+      credentialClass: request.credentialClass,
+      credentialId: request.credentialId,
       deviceId: claimed.deviceId,
       signature: claimed.key.sign(request),
       canonicalRequest: request,

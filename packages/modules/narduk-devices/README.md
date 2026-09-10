@@ -80,11 +80,16 @@ secrets are SHA-256 digests.
 | `devices_claim_tokens`   | digest-only, single-use, ≤15-minute claim tokens (QR / short-code material) |
 | `devices_claim_sessions` | one row per claim start, plus the owner/admin approval binding              |
 | `devices_credentials`    | versioned `ingest` / `command` credentials (`secret_hash`, `fingerprint`)   |
-| `devices_sessions`       | opened device sessions with the revocation generation they were opened at   |
+| `devices_sessions`       | opened device sessions: bearer digest, revocation generation, last seen     |
 | `devices_challenges`     | cloud-issued session-open challenges                                        |
 | `devices_replay_entries` | replay cache keyed by (device, credential version, challenge, nonce, hash)  |
 | `devices_auth_attempts`  | every auth attempt per subject (`token`, `device`, `account`, `ip`)         |
 | `devices_audit_events`   | one row per mutation                                                        |
+
+Two uniqueness constraints carry security weight rather than tidiness:
+`devices_claim_sessions(claim_token_id)` is UNIQUE, so one claim token redeems
+into exactly one claim session; `devices_sessions(token_hash)` is UNIQUE, and it
+is a digest — the session bearer itself is never stored.
 
 The drizzle schema is exported from
 `@narduk-enterprises/narduk-devices/server/database/devices-schema`, and
@@ -140,6 +145,11 @@ const approval = await devices.issueApprovalToken({
   approvedByUserId: userId,
 })
 
+// 3b. Redemption already consumed the token: `startClaim` marks `consumed_at`
+//     and `consumed_by_claim_session_id` in the same transaction that creates
+//     the claim session, so a token cannot be redeemed twice even by two
+//     concurrent starts.
+
 // 4. Completion issues both credential classes exactly once.
 const completed = await devices.completeClaim({
   claimSessionId,
@@ -169,11 +179,18 @@ could not be honoured
 - `startClaim` is idempotent on `idempotencyKey`: the same key with the same
   material returns the original session state; with different material it throws
   `conflict`.
-- `completeClaim` is atomic (device, session, token consumption, both
-  credentials, audit row in one D1 batch / better-sqlite3 transaction). Two
-  concurrent completions produce one device; the loser and every later replay
-  get `already_completed` with `deviceId` and an empty `credentials` array —
-  secrets are returned only on first completion.
+- `startClaim` is atomic: the claim session is inserted _from_ the claim-token
+  row, gated in that statement on the token still being unconsumed, unrevoked
+  and unexpired, and the same transaction stamps the consumption. Two concurrent
+  starts on one token produce one session (the loser is told the state of the
+  session that won, or `hardware_mismatch` if it presented other hardware), and
+  a token whose consumption names a different session is `revoked` at
+  completion.
+- `completeClaim` is atomic (device, session, both credentials, audit row in one
+  D1 batch / better-sqlite3 transaction). Two concurrent completions produce one
+  device; the loser and every later replay get `already_completed` with
+  `deviceId` and an empty `credentials` array — secrets are returned only on
+  first completion.
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
@@ -193,11 +210,31 @@ pins the numbers:
   `security.lockout` audit event.
 
 A lockout starts at the failure that crosses a threshold and a `rate_limited`
-refusal is not itself a failure. Subjects: `startClaim` counts the presented
+refusal is not itself a failure. Subjects: `startClaim` counts the **presented**
 token's digest plus `remote.accountKey` / `remote.ip`; `completeClaim` counts
 the token, `approvedByUserId` as the account, and `remote.ip`; `openSession`
-counts the device plus `remote.*`. Pass `remote` from the route so the account
-and IP rules have something to count.
+counts the device plus `remote.*`. The attempt row is written and the window
+counted in one transaction, so no concurrent failure goes uncounted.
+
+**Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
+caller (a queue consumer, a test) can omit it. Without it the presented token's
+own window still applies — guessing one token is bounded — but nothing bounds
+enumeration _across_ different tokens, which is precisely what the per-IP rule
+exists for. A malformed device public key is counted as a failure too, so a
+malformed key is not a free attempt.
+
+### Pruning
+
+`devices_replay_entries` and `devices_auth_attempts` grow with traffic, so
+`openSession` and `startClaim` each run a bounded opportunistic prune first: one
+`DELETE` of replay entries already past their expiry, one of auth attempts older
+than the widest lockout window (an hour), both index-backed predicates rather
+than a `LIMIT` (D1's SQLite is built without
+`SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads is ever
+removed. The opportunistic call swallows its own errors — housekeeping must not
+fail an authentication — so a consumer that wants the counts, or a cron sweep,
+calls `pruneExpired({ before })` and gets `{ authAttempts, replayEntries }`
+back.
 
 ### Sessions
 
@@ -209,6 +246,7 @@ const { challengeId, nonce, expiresAt } = await devices.issueChallenge({
 })
 
 const opened = await devices.openSession({
+  // The envelope; the signed copies below are what the service trusts.
   credentialClass: 'command',
   credentialId,
   deviceId,
@@ -219,6 +257,8 @@ const opened = await devices.openSession({
     resource: { kind: 'vessel', id: vesselId },
     installationId,
     deviceId,
+    credentialClass: 'command',
+    credentialId,
     credentialVersion: 1,
     challengeId,
     nonce, // the challenge nonce, or a client nonce paired with the challenge id
@@ -227,7 +267,7 @@ const opened = await devices.openSession({
   },
   remote: { ip },
 })
-// → { sessionId, expiresAt, revocationGeneration }
+// → { sessionId, sessionToken, expiresAt, revocationGeneration }
 ```
 
 Canonical JSON is object keys sorted code-point ascending at every depth, no
@@ -235,18 +275,55 @@ insignificant whitespace, UTF-8 (`canonicalJson` / `canonicalBytes` in
 `server/utils/devices-signing`, which also exports base64url helpers and the
 WebCrypto `verifyEd25519`). `openSession` checks, in order: lockouts, device
 status, credential activity and class, request binding (device, credential
-version, installation, resource), ±5 minute timestamp skew, challenge validity,
-the signature, then the replay cache — the UNIQUE index over (device, credential
-version, challenge, nonce, request hash) is the replay check, kept until the
-challenge expires. Every refusal counts as a failure against the device.
+**id**, **class**, version, installation, resource), ±5 minute timestamp skew,
+challenge validity, the signature, then the replay cache — the UNIQUE index over
+(device, credential version, challenge, nonce, request hash) is the replay
+check, kept until the challenge expires. Every refusal counts as a failure
+against the device, including a signature or stored key that base64url cannot
+decode (`unauthorized`, never an uncaught decode error).
+
+#### The signed field list, for a non-TypeScript edge
+
+The signature covers exactly these keys, in this order — canonical JSON sorts
+code-point ascending, and `resource` nests as `{"id":…,"kind":…}`:
+
+```text
+challengeId, credentialClass, credentialId, credentialVersion, deviceId,
+installationId, method, nonce, requestHash, resource{id,kind}, route, timestamp
+```
+
+`credentialId` and `credentialClass` are inside the signature and each is
+compared against the credential row the database resolved, so a captured signed
+`ingest` body cannot be resubmitted as a `command` request by rewriting the
+unsigned envelope. The Go edge (`mybo-at-v2/apps/edge/internal/identity`) must
+match the bytes, not just the fields:
+
+- `encoding/json` HTML-escapes `<`, `>` and `&` by default — use an `Encoder`
+  with `SetEscapeHTML(false)` (and strip the trailing newline it adds);
+- `timestamp` and `credentialVersion` are integers, and Go's `float64`
+  marshalling of a whole number differs from a JS integer — keep them typed as
+  integers;
+- Go sorts map keys bytewise over UTF-8 while JS sorts UTF-16 code units. The
+  key list above is pure ASCII, so the two agree; keep it that way if a field is
+  ever added.
 
 **Class separation.** An `ingest` credential never opens a `command` session
-(`forbidden`), and a `command` session never passes an `ingest` guard.
+(`forbidden` when the envelope's class does not match the credential,
+`unauthorized` when the _signed_ class or id does not), and a `command` session
+never passes an `ingest` guard.
 
-- `getSession(id)` returns the active session or null;
-  `heartbeat({ sessionId })` updates `lastSeenAt` and reports `stale: true` when
-  the device's revocation generation has moved past the session's (no audit row,
-  no expiry extension).
+**The session bearer is a secret.** `openSession` returns `sessionToken` exactly
+once; only `sha256(sessionToken)` is stored, in `devices_sessions.token_hash`.
+`sessionId` is a non-bearer row id — it is what the audit trail names, and it
+does not authenticate anything.
+
+- `getSessionByToken(sessionToken)` resolves a bearer by digest and is what the
+  guard uses; `getSession(sessionId)` is the operator-side lookup by row id.
+  Both return the active (unexpired, unrevoked) session or null.
+- `heartbeat` and `revokeSession` take either `{ sessionToken }` (the device
+  path, resolved by digest) or `{ sessionId }` (the operator path). `heartbeat`
+  updates `lastSeenAt` and reports `stale: true` when the device's revocation
+  generation has moved past the session's (no audit row, no expiry extension).
 - `revokeSession`, `revokeDevice` (bumps the generation, revokes every
   credential and session) and `rotateCredential({ deviceId, credentialClass })`
   (new version, bumps the generation, ends that class's sessions, returns the
@@ -257,12 +334,15 @@ challenge expires. Every refusal counts as a failure against the device.
 ### Database typing
 
 The service accepts the D1-shaped drizzle database (`LayerDatabase` in
-narduk-core). Atomic claim completion uses Drizzle's D1 `batch()`; direct
-better-sqlite3 consumers use their driver's synchronous transaction. Pass the
-real database object, including its batch/client capability, rather than a
-wrapper exposing only query-builder methods; unsupported adapters fail with
-`invalid` before touching the claim. Tests run the shipped migration against
-real in-memory SQLite and against Miniflare's D1.
+narduk-core). Atomic claim redemption (`startClaim`) and completion
+(`completeClaim`) use Drizzle's D1 `batch()`; direct better-sqlite3 consumers
+use their driver's synchronous transaction. Pass the real database object,
+including its batch/client capability, rather than a wrapper exposing only
+query-builder methods; unsupported adapters fail with `invalid` before touching
+the claim. The lockout counter prefers the same transaction and degrades to two
+sequential statements on an adapter without one, so authentication never fails
+for want of a batch. Tests run the shipped migration against real in-memory
+SQLite and against Miniflare's D1.
 
 ## Guard
 
@@ -278,10 +358,12 @@ export default defineEventHandler(async (event) => {
 })
 ```
 
-Reads `Authorization: Bearer <sessionId>` (override with `resolveSessionId`),
-throws 401 `{ errorCode: 'unauthorized' }` when there is no active session and
-403 `{ errorCode: 'entitlement_denied' }` when the session's class is not the
-one the route requires.
+Reads `Authorization: Bearer <sessionToken>` — the value `openSession` returned
+once, not the session row id (override with `resolveSessionToken`) — resolves it
+by digest, throws 401 `{ errorCode: 'unauthorized' }` when there is no active
+session and 403 `{ errorCode: 'entitlement_denied' }` when the session's class
+is not the one the route requires. `readBearerSessionToken(event)` is the header
+read on its own. Never log the bearer.
 
 ## Wire mapping to the mybo-at-v2 contracts
 
@@ -296,7 +378,7 @@ one the route requires.
 | `CLAIM_LOCKOUT_POLICY`                                     | `DEVICES_LOCKOUT_POLICY`                                                                                       |
 | `CredentialClass`                                          | `CREDENTIAL_CLASSES`                                                                                           |
 | `SessionRevokeMessage.revocationGeneration`                | `Device.revocationGeneration`, snapshotted into each session                                                   |
-| `edgeCredential` security scheme (`Authorization: Bearer`) | `requireDeviceSession(event, { devices, credentialClass })`                                                    |
+| `edgeCredential` security scheme (`Authorization: Bearer`) | `requireDeviceSession(event, { devices, credentialClass })`; the bearer is `openSession`'s `sessionToken`      |
 
 The `userApprovalToken` the contract carries is minted by `issueApprovalToken`
 from the owner/admin's fresh session, after the consumer has checked the role
@@ -309,6 +391,7 @@ Every mutation writes one `devices_audit_events` row:
 `session.open|revoke`, `device.revoke`, `credential.rotate`, and
 `security.lockout` when an account or IP crosses the escalating threshold.
 `heartbeat` is liveness, not a mutation worth a row. Raw tokens and secrets are
-never recorded. `listAuditEvents` returns newest first with a clamped limit
+never recorded — a `session.*` row names the session's non-bearer `id`, never
+the `sessionToken`. `listAuditEvents` returns newest first with a clamped limit
 (default 50, max 200), an optional `orgId`, an optional `subject: { kind, id }`,
 and a `before` cursor.

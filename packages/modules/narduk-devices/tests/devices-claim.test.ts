@@ -216,6 +216,85 @@ describe('claim ceremony', () => {
     ).toMatchObject({ status: 'hardware_mismatch' })
   })
 
+  it('consumes the claim token at redemption and refuses a token spent elsewhere', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const pending = await startPendingClaim(harness)
+
+    // The token is spent the moment a device redeems it, in the same
+    // transaction that created the session.
+    const token = harness.sqlite
+      .prepare('SELECT consumed_at, consumed_by_claim_session_id FROM devices_claim_tokens')
+      .all() as Array<{ consumed_at: number | null; consumed_by_claim_session_id: string | null }>
+    expect(token[0]?.consumed_at).not.toBeNull()
+    expect(token[0]?.consumed_by_claim_session_id).toBe(pending.claimSessionId)
+
+    const approval = await devices.issueApprovalToken({
+      claimSessionId: pending.claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      hardwareFingerprint: FINGERPRINT,
+      approvedByUserId: 'owner-1',
+    })
+    const complete = {
+      claimSessionId: pending.claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      installationId: 'inst-1',
+      hardwareFingerprint: FINGERPRINT,
+      userApprovalToken: approval.token,
+      approvedByUserId: 'owner-1',
+      idempotencyKey: 'complete-consumed',
+    }
+
+    // A consumption naming another session (a restored row, a second session
+    // that got in some other way) makes the token spent for this one.
+    harness.sqlite
+      .prepare('UPDATE devices_claim_tokens SET consumed_by_claim_session_id = ?')
+      .run('some-other-session')
+    expect((await devices.completeClaim(complete)).status).toBe('revoked')
+
+    // Its own consumption completes normally.
+    harness.sqlite
+      .prepare('UPDATE devices_claim_tokens SET consumed_by_claim_session_id = ?')
+      .run(pending.claimSessionId)
+    expect((await devices.completeClaim(complete)).status).toBe('completed')
+  })
+
+  it('counts a malformed device public key as a failed attempt', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const minted = await devices.createClaimToken({
+      orgId: ORG,
+      resource: VESSEL,
+      createdByUserId: 'owner-1',
+    })
+    // 85 characters: legal base64url alphabet, a length base64 cannot carry.
+    const malformed = 'A'.repeat(85)
+    expect(malformed.length % 4).toBe(1)
+    expect(
+      await codeOf(
+        devices.startClaim({
+          claimToken: minted.token,
+          hardwareFingerprint: FINGERPRINT,
+          hardwareFingerprintAlgorithm: ALGORITHM,
+          devicePublicKey: malformed,
+          softwareVersion: '1.0.0',
+          idempotencyKey: 'malformed-key',
+        }),
+      ),
+    ).toBe('invalid')
+    const attempts = harness.sqlite
+      .prepare("SELECT subject_kind FROM devices_auth_attempts WHERE outcome = 'failure'")
+      .all() as Array<{ subject_kind: string }>
+    expect(attempts).toEqual([{ subject_kind: 'token' }])
+    // The token was not redeemed by the malformed attempt.
+    const token = harness.sqlite
+      .prepare('SELECT consumed_at FROM devices_claim_tokens')
+      .all() as Array<{ consumed_at: number | null }>
+    expect(token[0]?.consumed_at).toBeNull()
+  })
+
   it('revoking a token revokes its pending session and start reports revoked', async () => {
     const harness = createTestHarness()
     const { devices } = harness

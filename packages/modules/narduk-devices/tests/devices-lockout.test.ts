@@ -152,6 +152,40 @@ describe('lockouts', () => {
     expect(other.status).toBe('invalid_token')
   })
 
+  it('bounds per-token guessing even when the caller passes no remote', async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+    // A live token exists; none of the guesses below is it.
+    await devices.createClaimToken({ orgId: ORG, resource: VESSEL, createdByUserId: 'owner-1' })
+    const key = createDeviceKey()
+    // The *presented* token's digest is the subject, so guessing one token is
+    // bounded with no `remote` at all. Every attempt re-presents the same guess
+    // with a fresh idempotency key, the cheapest enumeration shape there is.
+    const guess = (n: number) =>
+      devices.startClaim({
+        claimToken: 'zzzzzzzz-0000000000000000000000000000000000',
+        hardwareFingerprint: FINGERPRINT,
+        hardwareFingerprintAlgorithm: ALGORITHM,
+        devicePublicKey: key.publicKey,
+        softwareVersion: '1.0.0',
+        idempotencyKey: `no-remote-${n}`,
+      })
+
+    for (let n = 1; n <= perTokenOrDevice.failures; n += 1) {
+      expect((await guess(n)).status, `attempt ${n}`).toBe('invalid_token')
+      clock.advance(1000)
+    }
+    const sixth = await guess(99)
+    expect(sixth.status).toBe('rate_limited')
+    expect(sixth.retryAfterSeconds).toBe(perTokenOrDevice.cooldownSeconds - 1)
+
+    // Every recorded attempt is keyed on a token digest, never on an absent IP.
+    const attempts = harness.sqlite
+      .prepare('SELECT DISTINCT subject_kind FROM devices_auth_attempts')
+      .all() as Array<{ subject_kind: string }>
+    expect(attempts).toEqual([{ subject_kind: 'token' }])
+  })
+
   it('counts the approving account as a subject of a failed completion', async () => {
     const harness = createTestHarness()
     const { devices } = harness

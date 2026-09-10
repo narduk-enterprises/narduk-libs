@@ -20,9 +20,16 @@ describe('device sessions', () => {
     const opened = await devices.openSession(input)
     expect(opened).toEqual({
       sessionId: expect.stringMatching(/^id-/u),
+      sessionToken: expect.stringMatching(/^token-/u),
       expiresAt: clock.now() + SESSION_DEFAULT_TTL_SECONDS * 1000,
       revocationGeneration: 0,
     })
+    // The bearer is a secret of its own: not the row id, and stored only as a digest.
+    expect(opened.sessionToken).not.toBe(opened.sessionId)
+    expect(await devices.getSessionByToken(opened.sessionToken)).toMatchObject({
+      id: opened.sessionId,
+    })
+    expect(await devices.getSessionByToken(opened.sessionId)).toBeNull()
     expect(await devices.getSession(opened.sessionId)).toMatchObject({
       deviceId: claimed.deviceId,
       credentialClass: 'command',
@@ -39,7 +46,9 @@ describe('device sessions', () => {
 
     clock.advance(SESSION_DEFAULT_TTL_SECONDS * 1000)
     expect(await devices.getSession(opened.sessionId)).toBeNull()
+    expect(await devices.getSessionByToken(opened.sessionToken)).toBeNull()
     expect(await codeOf(devices.heartbeat({ sessionId: opened.sessionId }))).toBe('expired')
+    expect(await codeOf(devices.heartbeat({ sessionToken: opened.sessionToken }))).toBe('expired')
   })
 
   it('refuses a bad signature, a foreign key and a skewed timestamp', async () => {
@@ -146,6 +155,89 @@ describe('device sessions', () => {
     ).toBe('forbidden')
   })
 
+  it('binds the credential into the signature, so a signed body cannot be re-aimed', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const claimed = await claimDevice(harness)
+
+    // A valid, ingest-signed body. Everything an ingest-tier process, a retry
+    // queue or a log could hold on to.
+    const ingestSigned = await signedOpen(harness, claimed, 'ingest')
+    expect(ingestSigned.request.credentialClass).toBe('ingest')
+    expect(ingestSigned.request.credentialId).toBe(claimed.ingest.credentialId)
+
+    // Replayed verbatim with only the unsigned envelope rewritten to ask for a
+    // command session. The signature still verifies; the binding does not.
+    const escalated = await errorOf(
+      devices.openSession({
+        ...ingestSigned.input,
+        credentialClass: 'command',
+        credentialId: claimed.command.credentialId,
+      }),
+    )
+    expect(escalated.code).toBe('unauthorized')
+    expect(escalated.message).toContain('binding')
+    expect(
+      harness.sqlite
+        .prepare("SELECT id FROM devices_sessions WHERE credential_class = 'command'")
+        .all(),
+    ).toEqual([])
+
+    // The same rewrite in the other direction is refused too.
+    const commandSigned = await signedOpen(harness, claimed, 'command')
+    expect(
+      await codeOf(
+        devices.openSession({
+          ...commandSigned.input,
+          credentialClass: 'ingest',
+          credentialId: claimed.ingest.credentialId,
+        }),
+      ),
+    ).toBe('unauthorized')
+
+    // And a signed body naming a credential that is not the one presented.
+    const forged = await signedOpen(harness, claimed, 'command', {
+      credentialId: claimed.ingest.credentialId,
+    })
+    expect(
+      await codeOf(
+        devices.openSession({
+          ...forged.input,
+          credentialId: claimed.command.credentialId,
+        }),
+      ),
+    ).toBe('unauthorized')
+
+    // The unmodified ingest body is still good, which is what makes the
+    // rejections above about the rewrite and not about the body.
+    await expect(devices.openSession(ingestSigned.input)).resolves.toMatchObject({
+      revocationGeneration: 0,
+    })
+  })
+
+  it('refuses a signature base64url cannot decode without throwing a DOMException', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const claimed = await claimDevice(harness)
+
+    // 85 characters: a legal base64url alphabet, an impossible length
+    // (85 % 4 === 1), which is exactly what makes `atob` throw.
+    const malformed = 'A'.repeat(85)
+    expect(malformed.length % 4).toBe(1)
+    const { input } = await signedOpen(harness, claimed, 'command')
+    const error = await errorOf(devices.openSession({ ...input, signature: malformed }))
+    expect(error.code).toBe('unauthorized')
+    expect(error.message).toContain('malformed signature')
+
+    // It counted as a failure, so it cannot be repeated for free.
+    const attempts = harness.sqlite
+      .prepare(
+        "SELECT subject FROM devices_auth_attempts WHERE outcome = 'failure' AND subject_kind = 'device'",
+      )
+      .all() as Array<{ subject: string }>
+    expect(attempts).toEqual([{ subject: claimed.deviceId }])
+  })
+
   it('heartbeats, revokes sessions, and reports a stale generation after device revocation', async () => {
     const harness = createTestHarness()
     const { devices, clock } = harness
@@ -154,6 +246,10 @@ describe('device sessions', () => {
     const opened = await devices.openSession(input)
 
     clock.advance(30_000)
+    // Both selectors resolve the same session; the device path presents its bearer.
+    expect(await devices.heartbeat({ sessionToken: opened.sessionToken })).toMatchObject({
+      sessionId: opened.sessionId,
+    })
     expect(await devices.heartbeat({ sessionId: opened.sessionId })).toEqual({
       sessionId: opened.sessionId,
       expiresAt: opened.expiresAt,
@@ -177,6 +273,7 @@ describe('device sessions', () => {
     )
     expect(await codeOf(devices.revokeSession({ sessionId: 'ghost' }))).toBe('not_found')
     expect(await codeOf(devices.heartbeat({ sessionId: 'ghost' }))).toBe('not_found')
+    expect(await codeOf(devices.heartbeat({ sessionToken: 'ghost' }))).toBe('not_found')
 
     const second = await devices.openSession((await signedOpen(harness, claimed, 'ingest')).input)
     const device = await devices.revokeDevice({

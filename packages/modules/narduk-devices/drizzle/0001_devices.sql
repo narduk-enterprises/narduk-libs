@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS devices_claim_tokens (
   token_hash TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   consumed_at INTEGER,
+  consumed_by_claim_session_id TEXT,
   revoked_at INTEGER,
   created_by_user_id TEXT NOT NULL,
   created_at INTEGER NOT NULL
@@ -85,7 +86,9 @@ CREATE TABLE IF NOT EXISTS devices_claim_sessions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS devices_claim_sessions_idempotency_idx
   ON devices_claim_sessions(idempotency_key);
-CREATE INDEX IF NOT EXISTS devices_claim_sessions_token_idx
+-- UNIQUE: a claim token redeems into exactly one claim session, so two
+-- concurrent starts cannot both create one on the same token.
+CREATE UNIQUE INDEX IF NOT EXISTS devices_claim_sessions_token_unique_idx
   ON devices_claim_sessions(claim_token_id);
 
 -- Class-separated credentials. `secret_hash` is the SHA-256 of a shown-once
@@ -105,8 +108,11 @@ CREATE TABLE IF NOT EXISTS devices_credentials (
 CREATE INDEX IF NOT EXISTS devices_credentials_device_class_idx
   ON devices_credentials(device_id, credential_class);
 
+-- `id` is a non-bearer row id (audit rows name it). The bearer the device
+-- presents is a separate random token; only its SHA-256 digest is stored.
 CREATE TABLE IF NOT EXISTS devices_sessions (
   id TEXT PRIMARY KEY NOT NULL,
+  token_hash TEXT NOT NULL,
   device_id TEXT NOT NULL REFERENCES devices_devices(id) ON DELETE CASCADE,
   credential_id TEXT NOT NULL REFERENCES devices_credentials(id) ON DELETE CASCADE,
   credential_class TEXT NOT NULL CHECK (credential_class IN ('ingest', 'command')),
@@ -120,6 +126,8 @@ CREATE TABLE IF NOT EXISTS devices_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS devices_sessions_device_idx ON devices_sessions(device_id);
+CREATE UNIQUE INDEX IF NOT EXISTS devices_sessions_token_hash_idx
+  ON devices_sessions(token_hash);
 
 -- Cloud-issued session-open challenges. A client nonce is accepted only when
 -- paired with one of these ids.

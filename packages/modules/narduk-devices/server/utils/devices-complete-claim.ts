@@ -3,7 +3,6 @@ import { and, eq, gt, sql } from 'drizzle-orm'
 import {
   devicesAuditEvents,
   devicesClaimSessions,
-  devicesClaimTokens,
   devicesCredentials,
   devicesDevices,
 } from '../database/devices-schema'
@@ -40,6 +39,9 @@ export interface CompleteClaimBatchInput {
  * concurrent completions exactly one sees the session pending: the other's
  * device insert selects nothing, every conditional statement no-ops, and the
  * caller learns it lost from the empty first result.
+ *
+ * The claim token is *not* consumed here: `startClaimAtomically` consumed it
+ * when the device redeemed it, in the transaction that created this session.
  */
 export async function completeClaimAtomically(
   db: DevicesDatabase,
@@ -99,12 +101,6 @@ export async function completeClaimAtomically(
     )
     .returning({ id: devicesClaimSessions.id })
 
-  const consumeToken = db
-    .update(devicesClaimTokens)
-    .set({ consumedAt: input.completedAt })
-    .where(and(eq(devicesClaimTokens.id, input.token.id), deviceExists))
-    .returning({ id: devicesClaimTokens.id })
-
   const credentials = input.credentials.map((credential) =>
     db
       .insert(devicesCredentials)
@@ -156,12 +152,6 @@ export async function completeClaimAtomically(
     )
     .returning({ id: devicesAuditEvents.id })
 
-  const [inserted] = await runDevicesBatch(db, [
-    device,
-    session,
-    consumeToken,
-    ...credentials,
-    audit,
-  ])
+  const [inserted] = await runDevicesBatch(db, [device, session, ...credentials, audit])
   return inserted.length > 0
 }

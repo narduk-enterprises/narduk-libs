@@ -91,6 +91,8 @@ describe('D1 integration', () => {
       resource: VESSEL,
       installationId: 'inst-1',
       deviceId,
+      credentialClass: 'command' as const,
+      credentialId: command?.credentialId ?? '',
       credentialVersion: 1,
       challengeId: challenge.challengeId,
       nonce: challenge.nonce,
@@ -106,9 +108,24 @@ describe('D1 integration', () => {
     }
     const opened = await devices.openSession(input)
     expect(opened.revocationGeneration).toBe(0)
+    expect(opened.sessionToken).not.toBe(opened.sessionId)
+    // The bearer resolves by digest on the real D1 driver too.
+    expect(await devices.getSessionByToken(opened.sessionToken)).toMatchObject({
+      id: opened.sessionId,
+    })
+    expect(await devices.getSessionByToken(opened.sessionId)).toBeNull()
     await expect(devices.openSession(input)).rejects.toMatchObject({ code: 'unauthorized' })
     await expect(
       devices.openSession({ ...input, credentialClass: 'ingest' }),
     ).rejects.toMatchObject({ code: 'forbidden' })
+    // A signed body re-aimed at the other credential is refused by the binding.
+    const ingest = completed?.credentials.find((c) => c.credentialClass === 'ingest')
+    await expect(
+      devices.openSession({
+        ...input,
+        credentialClass: 'ingest',
+        credentialId: ingest?.credentialId ?? '',
+      }),
+    ).rejects.toMatchObject({ code: 'unauthorized' })
   }, 30_000)
 })

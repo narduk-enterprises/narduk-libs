@@ -157,6 +157,65 @@ describe('devices schema/migration parity', () => {
     ).toThrow(/CHECK constraint failed/u)
   })
 
+  it('makes a claim token redeemable into exactly one claim session', () => {
+    const { sqlite } = createTestHarness()
+    expect(statements).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS devices_claim_sessions_token_unique_idx/u,
+    )
+    const insert = sqlite.prepare(
+      'INSERT INTO devices_claim_sessions (id, claim_token_id, idempotency_key, hardware_fingerprint, fingerprint_algorithm, public_key, software_version, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    sqlite
+      .prepare(
+        'INSERT INTO devices_claim_tokens (id, org_id, resource_kind, resource_id, token_hash, expires_at, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run('t-1', 'o', 'vessel', 'v', 'hash', 9, 'owner', 1)
+    insert.run(
+      'cs-1',
+      't-1',
+      'idem-1',
+      'fp',
+      'sha256-v1',
+      'pk',
+      '1.0.0',
+      'pending_user_approval',
+      9,
+      1,
+    )
+    expect(() =>
+      insert.run(
+        'cs-2',
+        't-1',
+        'idem-2',
+        'fp',
+        'sha256-v1',
+        'pk',
+        '1.0.0',
+        'pending_user_approval',
+        9,
+        1,
+      ),
+    ).toThrow(/UNIQUE constraint failed/u)
+  })
+
+  it('stores a session bearer only as a unique digest', () => {
+    const { sqlite } = createTestHarness()
+    expect(statements).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS devices_sessions_token_hash_idx/u)
+    const columns = sqlite.prepare('PRAGMA table_info(devices_sessions)').all() as Array<{
+      name: string
+      notnull: number
+    }>
+    const tokenHash = columns.find((column) => column.name === 'token_hash')
+    expect(tokenHash?.notnull).toBe(1)
+    // The drizzle table declares the same column.
+    expect(schema.devicesSessions.tokenHash.notNull).toBe(true)
+    // And the claim token records which session redeemed it.
+    const tokenColumns = sqlite.prepare('PRAGMA table_info(devices_claim_tokens)').all() as Array<{
+      name: string
+    }>
+    expect(tokenColumns.map((column) => column.name)).toContain('consumed_by_claim_session_id')
+  })
+
   it('makes the replay key unique', () => {
     const { sqlite } = createTestHarness()
     const insert = sqlite.prepare('INSERT INTO devices_replay_entries VALUES (?, ?, ?, ?, ?, ?, ?)')

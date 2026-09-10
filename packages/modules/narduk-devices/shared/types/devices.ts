@@ -79,6 +79,12 @@ export interface Device {
 
 export interface ClaimToken {
   consumedAt: number | null
+  /**
+   * The claim session that redeemed this token. A token is consumed the moment
+   * `startClaim` binds it to a session, so completion can refuse a token whose
+   * consumption belongs to a different session.
+   */
+  consumedByClaimSessionId: string | null
   createdAt: number
   createdByUserId: string
   expiresAt: number
@@ -124,6 +130,11 @@ export interface DeviceCredential {
   version: number
 }
 
+/**
+ * `id` is a non-bearer row id, safe to log and to name in an audit row. The
+ * bearer is a separate random token returned exactly once by `openSession`;
+ * only its SHA-256 digest is stored, in `tokenHash`.
+ */
 export interface DeviceSession {
   challengeId: string
   createdAt: number
@@ -136,6 +147,8 @@ export interface DeviceSession {
   nonce: string
   revocationGeneration: number
   revokedAt: number | null
+  /** SHA-256 of the bearer session token; the token itself is never stored. */
+  tokenHash: string
 }
 
 export interface DeviceChallenge {

@@ -39,8 +39,15 @@ export function canonicalBytes(value: CanonicalValue): Uint8Array {
 
 const BASE64URL_PATTERN = /^[\w-]*$/u
 
+/**
+ * Both halves matter: the alphabet, and a length base64 can actually carry.
+ * `length % 4 === 1` is one leftover character, which no byte sequence encodes
+ * to — `atob` throws a DOMException on it, so a caller that only checked the
+ * alphabet turned attacker-controlled input into an uncaught 500 rather than a
+ * refusal (narduk-libs#212 review finding 4).
+ */
 export function isBase64Url(value: string): boolean {
-  return BASE64URL_PATTERN.test(value)
+  return BASE64URL_PATTERN.test(value) && value.length % 4 !== 1
 }
 
 export function base64UrlEncode(bytes: Uint8Array): string {
@@ -54,6 +61,20 @@ export function base64UrlDecode(value: string): Uint8Array {
   const padded = value.replaceAll('-', '+').replaceAll('_', '/')
   const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
   return Uint8Array.from(binary, (char) => char.charCodeAt(0))
+}
+
+/**
+ * `base64UrlDecode` for untrusted input: `null` instead of a throw, so a
+ * malformed signature or key becomes an authentication failure (counted by the
+ * lockout gate) rather than an uncaught DOMException.
+ */
+export function tryBase64UrlDecode(value: string): Uint8Array | null {
+  if (!isBase64Url(value)) return null
+  try {
+    return base64UrlDecode(value)
+  } catch {
+    return null
+  }
 }
 
 export function toHex(bytes: Uint8Array): string {

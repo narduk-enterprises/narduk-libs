@@ -56,6 +56,8 @@ export const devicesClaimTokens = sqliteTable(
     tokenHash: text('token_hash').notNull(),
     expiresAt: integer('expires_at').notNull(),
     consumedAt: integer('consumed_at'),
+    /** The claim session that redeemed the token; set in the same transaction. */
+    consumedByClaimSessionId: text('consumed_by_claim_session_id'),
     revokedAt: integer('revoked_at'),
     createdByUserId: text('created_by_user_id').notNull(),
     createdAt: integer('created_at').notNull(),
@@ -96,7 +98,9 @@ export const devicesClaimSessions = sqliteTable(
   },
   (table) => [
     uniqueIndex('devices_claim_sessions_idempotency_idx').on(table.idempotencyKey),
-    index('devices_claim_sessions_token_idx').on(table.claimTokenId),
+    // UNIQUE, not merely indexed: a claim token redeems into exactly one claim
+    // session, so two concurrent `startClaim` calls cannot both create one.
+    uniqueIndex('devices_claim_sessions_token_unique_idx').on(table.claimTokenId),
   ],
 )
 
@@ -120,10 +124,16 @@ export const devicesCredentials = sqliteTable(
   ],
 )
 
+/**
+ * `id` is a non-bearer row id (it is what audit rows name). The bearer the
+ * device presents is a separate random token whose SHA-256 digest lives in
+ * `token_hash`; the token itself is returned once and never stored.
+ */
 export const devicesSessions = sqliteTable(
   'devices_sessions',
   {
     id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
     deviceId: text('device_id')
       .notNull()
       .references(() => devicesDevices.id, { onDelete: 'cascade' }),
@@ -139,7 +149,10 @@ export const devicesSessions = sqliteTable(
     lastSeenAt: integer('last_seen_at').notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (table) => [index('devices_sessions_device_idx').on(table.deviceId)],
+  (table) => [
+    index('devices_sessions_device_idx').on(table.deviceId),
+    uniqueIndex('devices_sessions_token_hash_idx').on(table.tokenHash),
+  ],
 )
 
 /** Cloud-issued session-open challenges; a client nonce is valid only paired with one. */

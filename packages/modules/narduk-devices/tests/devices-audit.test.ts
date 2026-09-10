@@ -86,6 +86,47 @@ describe('audit trail', () => {
     })
   })
 
+  it('never records the session bearer, in an audit row or anywhere in the database', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    const claimed = await claimDevice(harness)
+    const opened = await devices.openSession((await signedOpen(harness, claimed, 'command')).input)
+
+    // The audit row names the session by its non-bearer row id.
+    const events = await devices.listAuditEvents({
+      subject: { kind: 'session', id: opened.sessionId },
+    })
+    expect(events.map((event) => event.action)).toEqual(['session.open'])
+    expect(opened.sessionId).not.toBe(opened.sessionToken)
+
+    // No table, no column, anywhere, holds the raw bearer — only its digest.
+    const tables = harness.sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'devices_%'")
+      .all() as Array<{ name: string }>
+    for (const { name } of tables) {
+      const rows = harness.sqlite.prepare(`SELECT * FROM ${name}`).all()
+      expect(JSON.stringify(rows), name).not.toContain(opened.sessionToken)
+    }
+    const stored = harness.sqlite
+      .prepare('SELECT id, token_hash FROM devices_sessions')
+      .all() as Array<{ id: string; token_hash: string }>
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.token_hash).toMatch(/^[0-9a-f]{64}$/u)
+    expect(stored[0]?.id).toBe(opened.sessionId)
+
+    // The revocation audit row names the row id too, even when the caller
+    // revoked by presenting the bearer.
+    await devices.revokeSession({ sessionToken: opened.sessionToken, actorUserId: 'owner-1' })
+    const revocations = await devices.listAuditEvents({
+      subject: { kind: 'session', id: opened.sessionId },
+    })
+    expect(revocations.map((event) => event.action).sort()).toEqual([
+      'session.open',
+      'session.revoke',
+    ])
+    expect(JSON.stringify(revocations)).not.toContain(opened.sessionToken)
+  })
+
   it('pages newest first, filters by subject, and clamps the limit', async () => {
     const harness = createTestHarness()
     const { devices, clock } = harness
