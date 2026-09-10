@@ -20,6 +20,14 @@ first). `pnpm quality` remains the existing broad formatting, lint, typecheck,
 build and unit-test command; it does not include strict package checks, script
 tests or browser/consumer validation.
 
+Actions runs package selection and repository contracts in parallel first.
+Package batches, browser suites, the packed-consumer proof and logging language
+jobs all require both preflight jobs to succeed before they reserve runners.
+They fan out in parallel after preflight; a contracts failure skips the
+expensive jobs and the always-running `verify` still fails. This trades one
+contracts-job wait on green runs for avoiding full builds and browser proofs on
+invalid input.
+
 Actions installs once per batch and invokes `pnpm ci:batch` with the complete
 lane in `PACKAGE_MATRIX_JSON`. This script validates the entire selection, runs
 lint → typecheck → build → test:unit → check:package for each package, and
