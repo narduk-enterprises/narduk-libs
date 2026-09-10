@@ -8,6 +8,8 @@
  * `check-web-foundation.py`'s static evaluator.
  */
 
+import { parse as parseYaml } from 'yaml'
+
 import { check } from '../schema.js'
 import { isRecord, parseJson, type AppRepo } from '../source.js'
 import { STATUS_FAIL, STATUS_PASS, STATUS_UNKNOWN, type FoundationSubCheck } from '../types.js'
@@ -52,34 +54,103 @@ function evaluate51(repo: AppRepo): FoundationSubCheck {
   )
 }
 
+const ITEM_5_2_NAME = 'Dependabot (preferred) or Renovate rule targeting @narduk-enterprises/**'
+
+/** Parse `.github/dependabot.yml` (the only path Dependabot itself reads,
+ * plus the `.yaml` spelling for symmetry with the two `renovate.json`
+ * candidate paths below). Invalid YAML parses to `null`, same as
+ * `parseJson` does for invalid JSON. */
+function readDependabotConfig(repo: AppRepo): unknown {
+  const text = repo.read('.github/dependabot.yml') ?? repo.read('.github/dependabot.yaml')
+  if (!text) return null
+  try {
+    return parseYaml(text)
+  } catch {
+    return null
+  }
+}
+
+/** D-TOOLCHAIN-1's two Dependabot-native equivalents of a Renovate
+ * `packageRules[].enabled: false` / grouping rule naming the scope: a
+ * `groups.*.patterns` entry matching it (grouping), or an
+ * `ignore[].dependency-name` entry matching it (delegation -- narduk-libs#233,
+ * mirroring borderwaitstat-us PR #19's `ignore` block). Either satisfies
+ * "the scope be addressed", same as item 5.2's Renovate half only asks
+ * whether a rule names the scope, not how it handles it. */
+function dependabotAddressesScope(config: unknown): boolean {
+  if (!isRecord(config)) return false
+  const updates = config.updates
+  if (!Array.isArray(updates)) return false
+  for (const update of updates) {
+    if (!isRecord(update)) continue
+    const ignore = update.ignore
+    if (Array.isArray(ignore) && JSON.stringify(ignore).includes('narduk-enterprises')) {
+      return true
+    }
+    const groups = update.groups
+    if (isRecord(groups) && JSON.stringify(groups).includes('narduk-enterprises')) {
+      return true
+    }
+  }
+  return false
+}
+
+function renovateAddressesScope(renovate: unknown): boolean {
+  if (!isRecord(renovate)) return false
+  const rules = renovate.packageRules
+  const blob = Array.isArray(rules) ? JSON.stringify(rules) : ''
+  return blob.includes('narduk-enterprises')
+}
+
 function evaluate52(repo: AppRepo): FoundationSubCheck {
   const renovate =
     parseJson(repo.read('renovate.json')) ?? parseJson(repo.read('.github/renovate.json'))
-  if (!isRecord(renovate)) {
+  if (renovateAddressesScope(renovate)) {
     return check(
       '5.2',
-      'Renovate rule targeting @narduk-enterprises/**',
-      STATUS_FAIL,
-      'no renovate.json at a known path',
-    )
-  }
-  const rules = renovate.packageRules
-  const blob = Array.isArray(rules) ? JSON.stringify(rules) : ''
-  if (blob.includes('narduk-enterprises')) {
-    return check(
-      '5.2',
-      'Renovate rule targeting @narduk-enterprises/**',
+      ITEM_5_2_NAME,
       STATUS_PASS,
       'renovate.json packageRules name the @narduk-enterprises scope',
       'renovate.json',
     )
   }
+
+  const dependabot = readDependabotConfig(repo)
+  if (dependabotAddressesScope(dependabot)) {
+    return check(
+      '5.2',
+      ITEM_5_2_NAME,
+      STATUS_PASS,
+      'dependabot.yml groups or ignores the @narduk-enterprises scope',
+      '.github/dependabot.yml',
+    )
+  }
+
+  if (isRecord(renovate)) {
+    return check(
+      '5.2',
+      ITEM_5_2_NAME,
+      STATUS_FAIL,
+      'renovate.json has no packageRule naming the @narduk-enterprises scope, and no ' +
+        '.github/dependabot.yml groups or ignores it either',
+      'renovate.json',
+    )
+  }
+  if (isRecord(dependabot)) {
+    return check(
+      '5.2',
+      ITEM_5_2_NAME,
+      STATUS_FAIL,
+      'dependabot.yml has no group or ignore entry naming the @narduk-enterprises scope, ' +
+        'and no renovate.json names it either',
+      '.github/dependabot.yml',
+    )
+  }
   return check(
     '5.2',
-    'Renovate rule targeting @narduk-enterprises/**',
+    ITEM_5_2_NAME,
     STATUS_FAIL,
-    'renovate.json has no packageRule naming the @narduk-enterprises scope',
-    'renovate.json',
+    'no renovate.json or .github/dependabot.yml at a known path',
   )
 }
 
