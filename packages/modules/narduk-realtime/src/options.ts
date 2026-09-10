@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 
+import { parseUpgradeOrigin } from './worker/upgrade-origin.js'
 import { parseUpgradePath } from './worker/upgrade-path.js'
 import { NARDUK_ROUTER_HEADER_PREFIX } from './worker/principal.js'
 import type { ResolvedDurableObject, ResolvedUpgrade } from './worker-entry.js'
@@ -103,7 +104,8 @@ export function resolveDurableObjects(
  * One declared WebSocket upgrade route.
  *
  * A route is answered by the Durable Object named by `binding`, never by the
- * Nitro app, and never without `authorize` having agreed. See the README section
+ * Nitro app, and never without `authorize` having agreed -- declaring one, or
+ * declaring `allowUnauthenticated: true` in its place, is required. See the README section
  * "Routing a WebSocket upgrade to a Durable Object" for the full example.
  */
 export interface NardukRealtimeUpgrade {
@@ -123,18 +125,46 @@ export interface NardukRealtimeUpgrade {
   /**
    * Module whose `default` export decides whether the upgrade may proceed.
    *
-   * Resolved like a `durableObjects` entry: a relative or absolute path against
-   * the app's `rootDir` (extension optional), anything else a bare specifier.
-   * The export's signature is
+   * **Required** unless `allowUnauthenticated` is `true`. Resolved like a
+   * `durableObjects` entry: a relative or absolute path against the app's
+   * `rootDir` (extension optional), anything else a bare specifier. The export's
+   * signature is
    * `(context: UpgradeAuthorizeContext) => Promise<Response | { ok: true, headers?: Record<string, string> }>`.
    */
   authorize?: string
+  /**
+   * Declare that this route intentionally has no authoriser.
+   *
+   * The only legitimate reason is a Durable Object that authorises the socket
+   * itself (from a signed token in the subprotocol, say). Anything else is an
+   * open socket, which is why the absence of `authorize` has to be written out
+   * rather than inferred from an omission.
+   */
+  allowUnauthenticated?: boolean
   /**
    * Headers to forward to the object that the router would otherwise drop
    * (`cookie`, `authorization`, the handshake and hop-by-hop set). Never
    * `x-narduk-*`: that prefix is the router's own trust channel.
    */
   forwardHeaders?: string[]
+  /**
+   * Origins allowed to open this socket, e.g. `['https://app.example']`.
+   *
+   * Absent means same-origin over https against the request's own `Host`, which
+   * is what a deployed app wants. A list **replaces** that default rather than
+   * adding to it, and `*` is rejected: a WebSocket handshake is exempt from CORS,
+   * so this comparison is what stops another site opening a socket with the
+   * viewer's cookies attached.
+   */
+  allowedOrigins?: string[]
+  /**
+   * Allow a client that sends no `Origin` header at all (default `false`).
+   *
+   * A browser always sends one; a non-browser client -- an edge device posting
+   * telemetry, a server-to-server relay -- sends none. Set it only on a route
+   * whose credential is not a cookie.
+   */
+  allowMissingOrigin?: boolean
 }
 
 /** A header field name, per RFC 9110 token. */
@@ -180,6 +210,48 @@ function resolveForwardHeaders(forwardHeaders: unknown, label: string): string[]
   return resolved
 }
 
+/**
+ * Read an optional boolean option.
+ *
+ * `false` resolves to `undefined`: only an opt-in is carried into the generated
+ * Worker entry, so its output is identical for a flag left off and one written
+ * out as `false`.
+ */
+function resolveFlag(value: unknown, label: string): true | undefined {
+  if (value === undefined || value === false) return undefined
+  if (value !== true) {
+    throw new NardukRealtimeConfigurationError(`${label} must be true or false.`)
+  }
+  return true
+}
+
+/** Validate and normalise `allowedOrigins`, or explain what is wrong with one. */
+function resolveAllowedOrigins(allowedOrigins: unknown, label: string): string[] | undefined {
+  if (allowedOrigins === undefined) return undefined
+  if (!Array.isArray(allowedOrigins)) {
+    throw new NardukRealtimeConfigurationError(
+      `${label} must be an array of origins, for example ["https://app.example"].`,
+    )
+  }
+  if (allowedOrigins.length === 0) {
+    throw new NardukRealtimeConfigurationError(
+      `${label} is empty. Remove it to keep the same-origin default, or list at least one origin.`,
+    )
+  }
+
+  const resolved: string[] = []
+  for (const entry of allowedOrigins as unknown[]) {
+    const raw = requireNonEmptyString(entry, label, '"https://app.example"')
+    const parsed = parseUpgradeOrigin(raw)
+    if (!parsed.ok) {
+      throw new NardukRealtimeConfigurationError(`${label} lists "${raw}": it ${parsed.reason}.`)
+    }
+    if (!resolved.includes(parsed.origin)) resolved.push(parsed.origin)
+  }
+
+  return resolved
+}
+
 function resolveIdFrom(idFrom: string, params: readonly string[], label: string): string {
   if (idFrom.startsWith(LITERAL_ID_PREFIX)) {
     if (idFrom.slice(LITERAL_ID_PREFIX.length).trim().length === 0) {
@@ -204,8 +276,8 @@ function resolveIdFrom(idFrom: string, params: readonly string[], label: string)
  *
  * Everything that can be known at configuration time is checked here -- the
  * path pattern, the binding name, that `idFrom` names a parameter the path
- * actually declares, the forwarded-header allowlist, and that the `authorize`
- * module exists -- so a typo fails `nuxt build` immediately instead of becoming
+ * actually declares, the forwarded-header allowlist, the origin policy, that an
+ * authoriser is declared at all, and that the `authorize` module exists -- so a typo fails `nuxt build` immediately instead of becoming
  * a 500 on a deployed upgrade. Declaration order is preserved: the first
  * matching route wins at runtime.
  */
@@ -269,6 +341,28 @@ export function resolveUpgrades(
         rootDir,
       )
     }
+
+    const allowUnauthenticated = resolveFlag(
+      upgrade.allowUnauthenticated,
+      `${label}.allowUnauthenticated`,
+    )
+    // Fail closed: an omitted authoriser forwards every matching handshake to the
+    // object, so it has to be a written decision rather than a default.
+    if (resolved.authorizeModulePath === undefined && allowUnauthenticated === undefined) {
+      throw new NardukRealtimeConfigurationError(
+        `${label}.authorize is missing for "${path}", so every matching upgrade would reach the Durable Object unauthenticated. Set ${label}.authorize to the module that decides the upgrade, or ${label}.allowUnauthenticated: true if the object authorises the socket itself.`,
+      )
+    }
+    if (allowUnauthenticated !== undefined) resolved.allowUnauthenticated = allowUnauthenticated
+
+    const allowedOrigins = resolveAllowedOrigins(upgrade.allowedOrigins, `${label}.allowedOrigins`)
+    if (allowedOrigins !== undefined) resolved.allowedOrigins = allowedOrigins
+
+    const allowMissingOrigin = resolveFlag(
+      upgrade.allowMissingOrigin,
+      `${label}.allowMissingOrigin`,
+    )
+    if (allowMissingOrigin !== undefined) resolved.allowMissingOrigin = allowMissingOrigin
 
     return resolved
   })

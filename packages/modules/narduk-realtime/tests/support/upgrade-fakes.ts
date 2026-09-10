@@ -77,17 +77,40 @@ export function fakeLocalFetch(respondWith: (path: string) => Response): {
   }
 }
 
-/** An upgrade request. `headers` is spread over the handshake headers. */
-export function upgradeRequest(url: string, headers: Record<string, string> = {}): Request {
+/** How an upgrade request may differ from a browser's own handshake. */
+export interface UpgradeRequestInit {
+  method?: string
+  body?: string
+}
+
+/**
+ * An upgrade request, shaped like the one a browser sends.
+ *
+ * `headers` is spread over the handshake headers, including the same-origin
+ * `Origin` a browser is obliged to send -- the router's default policy compares
+ * it, so a double that omitted it would test a refusal rather than a handshake.
+ * Pass `{ origin: undefined }` to leave it out, as a non-browser client would.
+ */
+export function upgradeRequest(
+  url: string,
+  headers: Record<string, string | undefined> = {},
+  init: UpgradeRequestInit = {},
+): Request {
+  const merged: Record<string, string | undefined> = {
+    connection: 'Upgrade',
+    upgrade: 'websocket',
+    origin: `https://${new URL(url).host}`,
+    'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+    'sec-websocket-version': '13',
+    ...headers,
+  }
+
   return new Request(url, {
-    method: 'GET',
-    headers: {
-      connection: 'Upgrade',
-      upgrade: 'websocket',
-      'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
-      'sec-websocket-version': '13',
-      ...headers,
-    },
+    method: init.method ?? 'GET',
+    headers: Object.entries(merged).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+    ...(init.body === undefined ? {} : { body: init.body }),
   })
 }
 

@@ -31,12 +31,23 @@ export interface ResolvedDurableObject {
   modulePath: string
 }
 
-/** A validated `realtime.upgrades` entry, ready to emit into the entry. */
+/**
+ * A validated `realtime.upgrades` entry, ready to emit into the entry.
+ *
+ * The three optional flags are present only when the app opted into them, so the
+ * generated entry stays byte-identical for a configuration that left them off.
+ */
 export interface ResolvedUpgrade {
   path: string
   binding: string
   idFrom: string
   forwardHeaders: string[]
+  /** Origins allowed to open the socket. Absent keeps the same-origin default. */
+  allowedOrigins?: string[]
+  /** Allow a client that sends no `Origin` header at all. */
+  allowMissingOrigin?: true
+  /** The route deliberately has no authoriser. */
+  allowUnauthenticated?: true
   authorizeModulePath?: string
 }
 
@@ -72,6 +83,13 @@ function upgradeEntries(upgrades: readonly ResolvedUpgrade[]): string[] {
     `      binding: ${JSON.stringify(upgrade.binding)},`,
     `      idFrom: ${JSON.stringify(upgrade.idFrom)},`,
     `      forwardHeaders: ${JSON.stringify(upgrade.forwardHeaders)},`,
+    ...(upgrade.allowedOrigins === undefined
+      ? []
+      : [`      allowedOrigins: ${JSON.stringify(upgrade.allowedOrigins)},`]),
+    ...(upgrade.allowMissingOrigin === undefined ? [] : ['      allowMissingOrigin: true,']),
+    // Emitted so the runtime router's own fail-closed check passes for a route
+    // the app deliberately left without an authoriser -- and only then.
+    ...(upgrade.allowUnauthenticated === undefined ? [] : ['      allowUnauthenticated: true,']),
     ...(upgrade.authorizeModulePath === undefined
       ? []
       : [`      authorize: ${upgradeAuthorizerName(index)},`]),

@@ -16,15 +16,25 @@ export type UpgradePathSegment = {
     kind: 'param';
     name: string;
 };
-/** Result of parsing a pattern: either the compiled segments or why it failed. */
-export type UpgradePathParse = {
+/** A pattern that parsed, with the parameter names it declares. */
+export interface UpgradePathParsed {
     ok: true;
     segments: UpgradePathSegment[];
     params: string[];
-} | {
+}
+/** A pattern that did not parse, and why. */
+export interface UpgradePathRejected {
     ok: false;
     reason: string;
-};
+}
+/**
+ * Result of parsing a pattern.
+ *
+ * Spelled as two named arms rather than an inline union so that the two Prettier
+ * versions in this workspace (3.8.3 in the package, 3.9.4 at the root) cannot
+ * disagree about how to wrap it -- they do, for an inline union of this width.
+ */
+export type UpgradePathParse = UpgradePathParsed | UpgradePathRejected;
 /**
  * Parse an upgrade route pattern.
  *

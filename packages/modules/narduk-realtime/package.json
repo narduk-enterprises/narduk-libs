@@ -46,8 +46,9 @@
   ],
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
-    "build": "tsc --project tsconfig.build.json",
-    "check:package": "publint --strict && pnpm pack --dry-run",
+    "build": "tsc --project tsconfig.build.json && node scripts/check-dist-clean.mjs",
+    "check:dist": "node scripts/check-dist-clean.mjs",
+    "check:package": "node scripts/check-dist-clean.mjs && publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
     "lint": "eslint src tests --max-warnings 0",
     "lint:strict": "eslint src tests --max-warnings 0",

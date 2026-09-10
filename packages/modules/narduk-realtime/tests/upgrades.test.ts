@@ -16,11 +16,19 @@ const CLOUDFLARE_ENTRY =
 
 let rootDir = ''
 
+/**
+ * A declared upgrade.
+ *
+ * `resolveUpgrades` fails closed, so an entry needs `authorize` or an explicit
+ * `allowUnauthenticated`. A case about something else declares the latter, the
+ * same way an app would have to.
+ */
 function live(overrides: Partial<NardukRealtimeUpgrade> = {}): NardukRealtimeUpgrade {
   return {
     path: '/api/app/vessels/:vesselId/live',
     binding: 'VESSEL_DO',
     idFrom: 'vesselId',
+    ...(overrides.authorize === undefined ? { allowUnauthenticated: true } : {}),
     ...overrides,
   }
 }
@@ -92,7 +100,14 @@ describe('resolveUpgrades', () => {
   it('accepts a fixed object name and a parameterless path', () => {
     expect(
       resolveUpgrades(
-        [{ path: '/api/edge/v1/session', binding: 'FLEET_DO', idFrom: 'name:fleet' }],
+        [
+          {
+            path: '/api/edge/v1/session',
+            binding: 'FLEET_DO',
+            idFrom: 'name:fleet',
+            allowUnauthenticated: true,
+          },
+        ],
         rootDir,
       ),
     ).toEqual([
@@ -101,8 +116,81 @@ describe('resolveUpgrades', () => {
         binding: 'FLEET_DO',
         idFrom: 'name:fleet',
         forwardHeaders: [],
+        allowUnauthenticated: true,
       },
     ])
+  })
+
+  // The blocker this option closes: an entry with no authoriser used to resolve
+  // silently, and the built Worker then forwarded every matching handshake.
+  it('refuses an entry with neither authorize nor allowUnauthenticated', () => {
+    expect(() =>
+      resolveUpgrades([{ path: '/api/live/:id', binding: 'LIVE_DO', idFrom: 'id' }], rootDir),
+    ).toThrow(NardukRealtimeConfigurationError)
+    expect(() =>
+      resolveUpgrades([{ path: '/api/live/:id', binding: 'LIVE_DO', idFrom: 'id' }], rootDir),
+    ).toThrow(/realtime\.upgrades\[0\]\.authorize is missing for "\/api\/live\/:id"/u)
+  })
+
+  it('refuses allowUnauthenticated: false in place of an authoriser', () => {
+    expect(() =>
+      resolveUpgrades(
+        [{ path: '/api/live/:id', binding: 'LIVE_DO', idFrom: 'id', allowUnauthenticated: false }],
+        rootDir,
+      ),
+    ).toThrow(/realtime\.upgrades\[0\]\.allowUnauthenticated: true/u)
+  })
+
+  it('names the entry and the field when a later entry has no authoriser', () => {
+    expect(() =>
+      resolveUpgrades(
+        [
+          live({ authorize: './server/upgrades/vessel-live' }),
+          { path: '/api/live/:id', binding: 'LIVE_DO', idFrom: 'id' },
+        ],
+        rootDir,
+      ),
+    ).toThrow(/realtime\.upgrades\[1\]\.authorize is missing/u)
+  })
+
+  it('carries the origin policy through, normalised and deduplicated', () => {
+    expect(
+      resolveUpgrades(
+        [
+          live({
+            allowedOrigins: ['HTTPS://App.Test/', 'https://app.test', 'https://console.test'],
+            allowMissingOrigin: true,
+          }),
+        ],
+        rootDir,
+      ),
+    ).toEqual([
+      {
+        path: '/api/app/vessels/:vesselId/live',
+        binding: 'VESSEL_DO',
+        idFrom: 'vesselId',
+        forwardHeaders: [],
+        allowUnauthenticated: true,
+        allowedOrigins: ['https://app.test', 'https://console.test'],
+        allowMissingOrigin: true,
+      },
+    ])
+  })
+
+  // Only an opt-in is carried, so the generated entry is identical whether a flag
+  // was left off or written out as `false`.
+  it('omits a flag written out as false', () => {
+    expect(
+      resolveUpgrades(
+        [
+          live({
+            authorize: './server/upgrades/vessel-live',
+            allowMissingOrigin: false,
+          }),
+        ],
+        rootDir,
+      )[0],
+    ).not.toHaveProperty('allowMissingOrigin')
   })
 
   it('preserves declaration order, because the first match wins at runtime', () => {
@@ -147,6 +235,38 @@ describe('resolveUpgrades', () => {
       'a non-header forwardHeaders entry',
       live({ forwardHeaders: ['not a header'] }),
       /is not a header name/u,
+    ],
+    [
+      'a wildcard origin',
+      live({ allowedOrigins: ['*'] }),
+      /realtime\.upgrades\[0\]\.allowedOrigins lists "\*": it is a wildcard/u,
+    ],
+    ['a scheme-less origin', live({ allowedOrigins: ['app.example'] }), /not an absolute origin/u],
+    [
+      'an origin carrying a path',
+      live({ allowedOrigins: ['https://app.example/live'] }),
+      /scheme and host only/u,
+    ],
+    ['an empty allowedOrigins list', live({ allowedOrigins: [] }), /allowedOrigins is empty/u],
+    [
+      'a non-array allowedOrigins',
+      live({ allowedOrigins: 'https://app.example' as unknown as string[] }),
+      /must be an array of origins/u,
+    ],
+    [
+      'a non-string allowedOrigins entry',
+      live({ allowedOrigins: [7 as unknown as string] }),
+      /allowedOrigins needs a value/u,
+    ],
+    [
+      'a non-boolean allowMissingOrigin',
+      live({ allowMissingOrigin: 'yes' as unknown as boolean }),
+      /allowMissingOrigin must be true or false/u,
+    ],
+    [
+      'a non-boolean allowUnauthenticated',
+      live({ allowUnauthenticated: 'yes' as unknown as boolean }),
+      /allowUnauthenticated must be true or false/u,
     ],
   ])('rejects %s', (_case, upgrade, message) => {
     expect(() => resolveUpgrades([upgrade], rootDir)).toThrow(NardukRealtimeConfigurationError)
@@ -208,7 +328,7 @@ describe('installRealtimeWorkerEntry', () => {
 
     installRealtimeWorkerEntry({
       durableObjects: { VesselDO: './server/durable/vessel-do' },
-      upgrades: [live()],
+      upgrades: [live({ authorize: './server/upgrades/vessel-live' })],
       rootDir,
       hooks: hooks.registry,
     })

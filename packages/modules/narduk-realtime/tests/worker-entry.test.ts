@@ -178,6 +178,7 @@ describe('worker entry upgrade router wiring', () => {
           binding: 'FLEET_DO',
           idFrom: 'name:fleet',
           forwardHeaders: [],
+          allowUnauthenticated: true,
         },
       ],
     )
@@ -185,6 +186,33 @@ describe('worker entry upgrade router wiring', () => {
     expect(source).not.toContain('nardukRealtimeAuthorize')
     expect(source).toContain('      idFrom: "name:fleet",')
     expect(source).toContain('      forwardHeaders: [],')
+    // Without this the runtime router's own fail-closed check would refuse the
+    // route the app deliberately declared unauthenticated.
+    expect(source).toContain('      allowUnauthenticated: true,')
+  })
+
+  it('emits the origin policy only when the app declared one', () => {
+    const withPolicy = buildWorkerEntrySource(
+      '/nitro/entry.mjs',
+      [],
+      [
+        {
+          ...VESSEL_UPGRADE,
+          allowedOrigins: ['https://app.test', 'https://console.test'],
+          allowMissingOrigin: true,
+        },
+      ],
+    )
+
+    expect(withPolicy).toContain(
+      '      allowedOrigins: ["https://app.test","https://console.test"],',
+    )
+    expect(withPolicy).toContain('      allowMissingOrigin: true,')
+
+    const withoutPolicy = buildWorkerEntrySource('/nitro/entry.mjs', [], [VESSEL_UPGRADE])
+    expect(withoutPolicy).not.toContain('allowedOrigins')
+    expect(withoutPolicy).not.toContain('allowMissingOrigin')
+    expect(withoutPolicy).not.toContain('allowUnauthenticated')
   })
 
   it('numbers one authoriser import per route that has one', () => {

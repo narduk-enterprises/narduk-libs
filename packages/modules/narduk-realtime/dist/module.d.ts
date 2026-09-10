@@ -53,7 +53,7 @@ export { installDurableObjectExports, installRealtimeWorkerEntry } from './setup
 export type { NitroHookHost, NuxtHookRegistry, RealtimeInstallation, RealtimeInstallOptions, } from './setup.js';
 export { buildWorkerEntrySource, CLOUDFLARE_PRESET_ENTRY_MARKER, createWorkerEntryHook, UPGRADE_ROUTER_MODULE, WORKER_ENTRY_FILENAME, } from './worker-entry.js';
 export type { NitroEntryContext, ResolvedDurableObject, ResolvedUpgrade, RollupEntryConfig, } from './worker-entry.js';
-export type { UpgradeAuthorizeContext, UpgradeAuthorizeResult, UpgradeAuthorizer, UpgradeDurableObjectNamespace, UpgradeDurableObjectStub, UpgradeExecutionContext, UpgradeLocalFetch, UpgradeLocalFetchInit, UpgradeRoute, UpgradeRouteProbe, UpgradeRouterFetch, UpgradeRouterOptions, UpgradeWrappableHandler, } from './worker/upgrade-router.js';
+export type { UpgradeAllowed, UpgradeAuthorizeContext, UpgradeAuthorizeResult, UpgradeAuthorizer, UpgradeDurableObjectNamespace, UpgradeDurableObjectStub, UpgradeExecutionContext, UpgradeLocalFetch, UpgradeLocalFetchInit, UpgradeRoute, UpgradeRouteProbe, UpgradeRouterFetch, UpgradeRouterOptions, UpgradeWrappableHandler, } from './worker/upgrade-router.js';
 export type { PrincipalCarrier } from './worker/principal.js';
 export { NARDUK_ROUTER_HEADER_PREFIX, PRINCIPAL_HEADER } from './worker/principal.js';
 //# sourceMappingURL=module.d.ts.map

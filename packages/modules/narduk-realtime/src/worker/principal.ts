@@ -1,13 +1,19 @@
 /**
  * The header prefix the upgrade router owns.
  *
- * Every inbound header starting with this prefix is **stripped** before the
- * router authorises an upgrade or forwards it to a Durable Object, and it is the
- * only prefix the router itself writes. That is what makes a principal header
- * trustworthy inside the object: a client cannot set one, and neither can an
- * app route through `forwardHeaders` (the prefix is rejected at configuration
- * time). The trust is about *origin* only -- the object must still validate the
- * shape of what it reads.
+ * Every inbound header starting with this prefix is **stripped** from every
+ * request the router sees -- the upgrade it authorises and forwards to a Durable
+ * Object, and equally the ordinary requests it hands back to the Nitro app -- and
+ * it is the only prefix the router itself writes. That is what makes a principal
+ * header trustworthy inside the object: a client cannot set one, and neither can
+ * an app route through `forwardHeaders` (the prefix is rejected at configuration
+ * time).
+ *
+ * The guarantee covers requests that came *through* the router, which is every
+ * request the Worker serves. It cannot cover a request an app route builds
+ * itself: an h3 handler that calls `stub.fetch(new Request(url, { headers }))`
+ * decides those headers, so the object still owns the check. And the trust is
+ * about *origin* only -- validate the shape of what is read, always.
  */
 export const NARDUK_ROUTER_HEADER_PREFIX = 'x-narduk-'
 

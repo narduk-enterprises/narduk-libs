@@ -13,7 +13,8 @@ export declare function resolveDurableObjects(durableObjects: Record<string, str
  * One declared WebSocket upgrade route.
  *
  * A route is answered by the Durable Object named by `binding`, never by the
- * Nitro app, and never without `authorize` having agreed. See the README section
+ * Nitro app, and never without `authorize` having agreed -- declaring one, or
+ * declaring `allowUnauthenticated: true` in its place, is required. See the README section
  * "Routing a WebSocket upgrade to a Durable Object" for the full example.
  */
 export interface NardukRealtimeUpgrade {
@@ -33,26 +34,54 @@ export interface NardukRealtimeUpgrade {
     /**
      * Module whose `default` export decides whether the upgrade may proceed.
      *
-     * Resolved like a `durableObjects` entry: a relative or absolute path against
-     * the app's `rootDir` (extension optional), anything else a bare specifier.
-     * The export's signature is
+     * **Required** unless `allowUnauthenticated` is `true`. Resolved like a
+     * `durableObjects` entry: a relative or absolute path against the app's
+     * `rootDir` (extension optional), anything else a bare specifier. The export's
+     * signature is
      * `(context: UpgradeAuthorizeContext) => Promise<Response | { ok: true, headers?: Record<string, string> }>`.
      */
     authorize?: string;
+    /**
+     * Declare that this route intentionally has no authoriser.
+     *
+     * The only legitimate reason is a Durable Object that authorises the socket
+     * itself (from a signed token in the subprotocol, say). Anything else is an
+     * open socket, which is why the absence of `authorize` has to be written out
+     * rather than inferred from an omission.
+     */
+    allowUnauthenticated?: boolean;
     /**
      * Headers to forward to the object that the router would otherwise drop
      * (`cookie`, `authorization`, the handshake and hop-by-hop set). Never
      * `x-narduk-*`: that prefix is the router's own trust channel.
      */
     forwardHeaders?: string[];
+    /**
+     * Origins allowed to open this socket, e.g. `['https://app.example']`.
+     *
+     * Absent means same-origin over https against the request's own `Host`, which
+     * is what a deployed app wants. A list **replaces** that default rather than
+     * adding to it, and `*` is rejected: a WebSocket handshake is exempt from CORS,
+     * so this comparison is what stops another site opening a socket with the
+     * viewer's cookies attached.
+     */
+    allowedOrigins?: string[];
+    /**
+     * Allow a client that sends no `Origin` header at all (default `false`).
+     *
+     * A browser always sends one; a non-browser client -- an edge device posting
+     * telemetry, a server-to-server relay -- sends none. Set it only on a route
+     * whose credential is not a cookie.
+     */
+    allowMissingOrigin?: boolean;
 }
 /**
  * Validate and resolve `realtime.upgrades`.
  *
  * Everything that can be known at configuration time is checked here -- the
  * path pattern, the binding name, that `idFrom` names a parameter the path
- * actually declares, the forwarded-header allowlist, and that the `authorize`
- * module exists -- so a typo fails `nuxt build` immediately instead of becoming
+ * actually declares, the forwarded-header allowlist, the origin policy, that an
+ * authoriser is declared at all, and that the `authorize` module exists -- so a typo fails `nuxt build` immediately instead of becoming
  * a 500 on a deployed upgrade. Declaration order is preserved: the first
  * matching route wins at runtime.
  */

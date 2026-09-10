@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { parseUpgradeOrigin } from './worker/upgrade-origin.js';
 import { parseUpgradePath } from './worker/upgrade-path.js';
 import { NARDUK_ROUTER_HEADER_PREFIX } from './worker/principal.js';
 /**
@@ -104,6 +105,43 @@ function resolveForwardHeaders(forwardHeaders, label) {
     }
     return resolved;
 }
+/**
+ * Read an optional boolean option.
+ *
+ * `false` resolves to `undefined`: only an opt-in is carried into the generated
+ * Worker entry, so its output is identical for a flag left off and one written
+ * out as `false`.
+ */
+function resolveFlag(value, label) {
+    if (value === undefined || value === false)
+        return undefined;
+    if (value !== true) {
+        throw new NardukRealtimeConfigurationError(`${label} must be true or false.`);
+    }
+    return true;
+}
+/** Validate and normalise `allowedOrigins`, or explain what is wrong with one. */
+function resolveAllowedOrigins(allowedOrigins, label) {
+    if (allowedOrigins === undefined)
+        return undefined;
+    if (!Array.isArray(allowedOrigins)) {
+        throw new NardukRealtimeConfigurationError(`${label} must be an array of origins, for example ["https://app.example"].`);
+    }
+    if (allowedOrigins.length === 0) {
+        throw new NardukRealtimeConfigurationError(`${label} is empty. Remove it to keep the same-origin default, or list at least one origin.`);
+    }
+    const resolved = [];
+    for (const entry of allowedOrigins) {
+        const raw = requireNonEmptyString(entry, label, '"https://app.example"');
+        const parsed = parseUpgradeOrigin(raw);
+        if (!parsed.ok) {
+            throw new NardukRealtimeConfigurationError(`${label} lists "${raw}": it ${parsed.reason}.`);
+        }
+        if (!resolved.includes(parsed.origin))
+            resolved.push(parsed.origin);
+    }
+    return resolved;
+}
 function resolveIdFrom(idFrom, params, label) {
     if (idFrom.startsWith(LITERAL_ID_PREFIX)) {
         if (idFrom.slice(LITERAL_ID_PREFIX.length).trim().length === 0) {
@@ -121,8 +159,8 @@ function resolveIdFrom(idFrom, params, label) {
  *
  * Everything that can be known at configuration time is checked here -- the
  * path pattern, the binding name, that `idFrom` names a parameter the path
- * actually declares, the forwarded-header allowlist, and that the `authorize`
- * module exists -- so a typo fails `nuxt build` immediately instead of becoming
+ * actually declares, the forwarded-header allowlist, the origin policy, that an
+ * authoriser is declared at all, and that the `authorize` module exists -- so a typo fails `nuxt build` immediately instead of becoming
  * a 500 on a deployed upgrade. Declaration order is preserved: the first
  * matching route wins at runtime.
  */
@@ -161,6 +199,20 @@ export function resolveUpgrades(upgrades, rootDir) {
         if (upgrade.authorize !== undefined) {
             resolved.authorizeModulePath = resolveModulePath(`${label}.authorize`, requireNonEmptyString(upgrade.authorize, `${label}.authorize`, '"./server/upgrades/live"'), rootDir);
         }
+        const allowUnauthenticated = resolveFlag(upgrade.allowUnauthenticated, `${label}.allowUnauthenticated`);
+        // Fail closed: an omitted authoriser forwards every matching handshake to the
+        // object, so it has to be a written decision rather than a default.
+        if (resolved.authorizeModulePath === undefined && allowUnauthenticated === undefined) {
+            throw new NardukRealtimeConfigurationError(`${label}.authorize is missing for "${path}", so every matching upgrade would reach the Durable Object unauthenticated. Set ${label}.authorize to the module that decides the upgrade, or ${label}.allowUnauthenticated: true if the object authorises the socket itself.`);
+        }
+        if (allowUnauthenticated !== undefined)
+            resolved.allowUnauthenticated = allowUnauthenticated;
+        const allowedOrigins = resolveAllowedOrigins(upgrade.allowedOrigins, `${label}.allowedOrigins`);
+        if (allowedOrigins !== undefined)
+            resolved.allowedOrigins = allowedOrigins;
+        const allowMissingOrigin = resolveFlag(upgrade.allowMissingOrigin, `${label}.allowMissingOrigin`);
+        if (allowMissingOrigin !== undefined)
+            resolved.allowMissingOrigin = allowMissingOrigin;
         return resolved;
     });
 }

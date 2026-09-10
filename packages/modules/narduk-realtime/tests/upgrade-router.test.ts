@@ -22,8 +22,21 @@ import {
 
 const LIVE_PATH = '/api/app/vessels/:vesselId/live'
 
+/**
+ * A configured route.
+ *
+ * The router fails closed, so an entry needs `authorize` or an explicit
+ * `allowUnauthenticated`. A test about something else gets the latter -- written
+ * out here exactly as an app would have to write it.
+ */
 function liveRoute(overrides: Partial<UpgradeRoute> = {}): UpgradeRoute {
-  return { path: LIVE_PATH, binding: 'VESSEL_DO', idFrom: 'vesselId', ...overrides }
+  return {
+    path: LIVE_PATH,
+    binding: 'VESSEL_DO',
+    idFrom: 'vesselId',
+    ...(overrides.authorize === undefined ? { allowUnauthenticated: true } : {}),
+    ...overrides,
+  }
 }
 
 describe('isWebSocketUpgrade', () => {
@@ -73,8 +86,18 @@ describe('upgrade router pass-through', () => {
     const { namespace, names } = fakeNamespace()
     const router = createUpgradeRouter({
       upgrades: [
-        { path: '/api/live/:id', binding: 'FIRST_DO', idFrom: 'name:first' },
-        { path: '/api/live/:other', binding: 'SECOND_DO', idFrom: 'name:second' },
+        {
+          path: '/api/live/:id',
+          binding: 'FIRST_DO',
+          idFrom: 'name:first',
+          allowUnauthenticated: true,
+        },
+        {
+          path: '/api/live/:other',
+          binding: 'SECOND_DO',
+          idFrom: 'name:second',
+          allowUnauthenticated: true,
+        },
       ],
     })
 
@@ -153,7 +176,7 @@ describe('upgrade router authorisation', () => {
     expect(names).toEqual([])
   })
 
-  it('forwards with no authoriser configured', async () => {
+  it('forwards with no authoriser when allowUnauthenticated says so', async () => {
     const { namespace, names } = fakeNamespace()
 
     const response = await createUpgradeRouter({ upgrades: [liveRoute()] })(
@@ -557,5 +580,433 @@ describe('withUpgradeRouter', () => {
     expect(scheduled).toHaveBeenCalledOnce()
     // The original handler is untouched -- the wrapper is a new object.
     expect(wrapped).not.toBe(handler)
+  })
+})
+
+describe('upgrade router fail-closed construction', () => {
+  // The one finding this whole option exists to close: an entry declared without
+  // an authoriser forwarded every matching handshake unauthenticated, silently.
+  it('refuses to build a route with neither authorize nor allowUnauthenticated', () => {
+    expect(() =>
+      createUpgradeRouter({
+        upgrades: [{ path: LIVE_PATH, binding: 'VESSEL_DO', idFrom: 'vesselId' }],
+      }),
+    ).toThrow(/upgrades\[0\]\.authorize is missing for "\/api\/app\/vessels\/:vesselId\/live"/u)
+  })
+
+  it('names the failing entry by index and field', () => {
+    expect(() =>
+      createUpgradeRouter({
+        upgrades: [liveRoute(), { path: '/api/live/:id', binding: 'OTHER_DO', idFrom: 'id' }],
+      }),
+    ).toThrow(/upgrades\[1\]\.authorize is missing/u)
+  })
+
+  // `false` is a decision to leave the route unchecked spelled the one way that
+  // must not work: it says nothing about the object authorising the socket.
+  it('refuses allowUnauthenticated: false with no authoriser', () => {
+    expect(() =>
+      createUpgradeRouter({
+        upgrades: [
+          {
+            path: LIVE_PATH,
+            binding: 'VESSEL_DO',
+            idFrom: 'vesselId',
+            allowUnauthenticated: false,
+          },
+        ],
+      }),
+    ).toThrow(/allowUnauthenticated to true/u)
+  })
+
+  it('builds a route that declares an authoriser and no flag', () => {
+    expect(() =>
+      createUpgradeRouter({ upgrades: [liveRoute({ authorize: () => ({ ok: true }) })] }),
+    ).not.toThrow()
+  })
+})
+
+describe('upgrade router method gate', () => {
+  // A WebSocket handshake is a GET (RFC 6455 s4.1). Routing any other method
+  // would hand the object a request the authorising GET probe never represented,
+  // so a POST carrying `Upgrade: websocket` is the app's to answer.
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('hands a %s upgrade to the app', async (method) => {
+    const { namespace, names } = fakeNamespace()
+    const { next, requests } = fakeNext()
+    const authorizerRuns: string[] = []
+
+    const response = await createUpgradeRouter({
+      upgrades: [
+        liveRoute({
+          authorize: () => {
+            authorizerRuns.push(method)
+            return { ok: true }
+          },
+        }),
+      ],
+    })(
+      upgradeRequest(
+        'https://app.test/api/app/vessels/v-1/live',
+        {},
+        { method, body: method === 'DELETE' ? undefined : '{"command":"delete-everything"}' },
+      ),
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      next,
+    )
+
+    expect(response.status).toBe(404)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe(method)
+    expect(names).toEqual([])
+    expect(authorizerRuns).toEqual([])
+  })
+
+  it('routes the GET the probe would authorise, with the same method forwarded', async () => {
+    const { namespace, forwarded } = fakeNamespace()
+    const probe = fakeLocalFetch(() => new Response('ok'))
+
+    await createUpgradeRouter({
+      localFetch: probe.localFetch,
+      upgrades: [
+        liveRoute({
+          authorize: async (context) => {
+            await context.authorizeViaRoute(context.request)
+            return { ok: true }
+          },
+        }),
+      ],
+    })(
+      upgradeRequest('https://app.test/api/app/vessels/v-1/live'),
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+
+    expect(probe.calls[0]?.init.method).toBe('GET')
+    expect(forwarded[0]?.method).toBe('GET')
+  })
+})
+
+describe('upgrade router origin policy', () => {
+  async function open(
+    route: Partial<UpgradeRoute>,
+    headers: Record<string, string | undefined> = {},
+  ) {
+    const { namespace, names, forwarded } = fakeNamespace()
+    const authorizerRuns: number[] = []
+    const response = await createUpgradeRouter({
+      upgrades: [
+        liveRoute({
+          authorize: () => {
+            authorizerRuns.push(1)
+            return { ok: true }
+          },
+          ...route,
+        }),
+      ],
+    })(
+      upgradeRequest('https://app.test/api/app/vessels/v-1/live', headers),
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+    return { authorizerRuns, forwarded, names, response }
+  }
+
+  it('allows the same origin the request was addressed to', async () => {
+    const { names, response } = await open({})
+
+    expect(response.headers.get('x-fake-101')).toBe('yes')
+    expect(names).toEqual(['v-1'])
+  })
+
+  // A WebSocket handshake is exempt from CORS, so this is the only thing between
+  // a viewer's cookie and a socket another site opened with it.
+  it.each([
+    ['another site', 'https://evil.test'],
+    ['the same host over http', 'http://app.test'],
+    ['a subdomain', 'https://tenant.app.test'],
+    ['the same host on another port', 'https://app.test:8443'],
+    ['an opaque origin', 'null'],
+    ['a wildcard', '*'],
+  ])('refuses %s with a 403 before the authoriser', async (_case, origin) => {
+    const { authorizerRuns, names, response } = await open({}, { origin })
+
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain(`Origin "${origin}" may not open a WebSocket`)
+    expect(authorizerRuns).toEqual([])
+    expect(names).toEqual([])
+  })
+
+  it('refuses a request that sends no Origin at all by default', async () => {
+    const { authorizerRuns, names, response } = await open({}, { origin: undefined })
+
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain('must send an Origin header')
+    expect(authorizerRuns).toEqual([])
+    expect(names).toEqual([])
+  })
+
+  // The edge route's case: a device, not a browser, and its credential is not a
+  // cookie, so there is no session for another site to ride.
+  it('allows a missing Origin when allowMissingOrigin says so', async () => {
+    const { names, response } = await open(
+      { allowMissingOrigin: true },
+      { origin: undefined, cookie: undefined },
+    )
+
+    expect(response.headers.get('x-fake-101')).toBe('yes')
+    expect(names).toEqual(['v-1'])
+  })
+
+  it('allows an origin named in allowedOrigins', async () => {
+    const { names } = await open(
+      { allowedOrigins: ['https://console.narduk.test', 'https://app.test'] },
+      { origin: 'https://console.narduk.test' },
+    )
+
+    expect(names).toEqual(['v-1'])
+  })
+
+  // Documented behaviour: the list is the policy, not an addition to it.
+  it('replaces the same-origin default rather than extending it', async () => {
+    const { names, response } = await open(
+      { allowedOrigins: ['https://console.narduk.test'] },
+      { origin: 'https://app.test' },
+    )
+
+    expect(response.status).toBe(403)
+    expect(names).toEqual([])
+  })
+
+  it('compares origins case-insensitively and ignores a trailing slash', async () => {
+    const { names } = await open(
+      { allowedOrigins: ['HTTPS://Console.Narduk.Test/'] },
+      { origin: 'https://console.narduk.test' },
+    )
+
+    expect(names).toEqual(['v-1'])
+  })
+
+  it.each([
+    ['a wildcard', ['*'], /wildcard/u],
+    ['a scheme-less host', ['app.example'], /not an absolute origin/u],
+    ['a non-http scheme', ['ws://app.example'], /must be http or https/u],
+    ['an origin with a path', ['https://app.example/live'], /scheme and host only/u],
+    ['an empty list', [], /is empty/u],
+  ])('refuses to build a route with %s in allowedOrigins', (_case, allowedOrigins, message) => {
+    expect(() =>
+      createUpgradeRouter({
+        upgrades: [liveRoute({ allowedOrigins, authorize: () => ({ ok: true }) })],
+      }),
+    ).toThrow(message)
+    expect(() =>
+      createUpgradeRouter({
+        upgrades: [liveRoute({ allowedOrigins, authorize: () => ({ ok: true }) })],
+      }),
+    ).toThrow(/upgrades\[0\]\.allowedOrigins/u)
+  })
+})
+
+describe('upgrade router forwarded cf', () => {
+  // `new Request(url, ...)` would drop `cf`, so an object could not read the
+  // colo, country or TLS details of the connection it was handed.
+  it('carries cf from the inbound request through to the object', async () => {
+    const { namespace, forwarded } = fakeNamespace()
+    const request = upgradeRequest('https://app.test/api/app/vessels/v-1/live')
+    const cf = { colo: 'DFW', country: 'US', tlsVersion: 'TLSv1.3' }
+    Object.defineProperty(request, 'cf', { configurable: true, enumerable: true, value: cf })
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      request,
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+
+    expect((forwarded[0] as Request & { cf?: unknown }).cf).toEqual(cf)
+  })
+
+  it('forwards a request with no cf unchanged', async () => {
+    const { namespace, forwarded } = fakeNamespace()
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      upgradeRequest('https://app.test/api/app/vessels/v-1/live'),
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+
+    expect((forwarded[0] as Request & { cf?: unknown }).cf).toBeUndefined()
+  })
+})
+
+describe('upgrade router authoriser headers', () => {
+  async function withAuthorizerHeaders(headers: Record<string, string>) {
+    const { namespace, names, forwarded } = fakeNamespace()
+    const response = await createUpgradeRouter({
+      upgrades: [liveRoute({ authorize: () => ({ ok: true, headers }) })],
+    })(
+      upgradeRequest('https://app.test/api/app/vessels/v-1/live', { cookie: 'nuxt-session=abc' }),
+      { VESSEL_DO: namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+    return { forwarded, names, response }
+  }
+
+  // `forwardHeaders` is validated at build time so an app cannot re-add `cookie`;
+  // an authoriser writing any name it liked was the same hole from the inside.
+  it.each([
+    ['a credential the router dropped', { cookie: 'nuxt-session=abc' }],
+    ['a handshake header', { upgrade: 'h2c' }],
+    ['an unrelated header', { 'x-tenant': 'other-org' }],
+  ])('answers 500 for %s', async (_case, headers) => {
+    const { names, response } = await withAuthorizerHeaders(headers)
+
+    expect(response.status).toBe(500)
+    expect(await response.text()).toContain(`returned the header "${Object.keys(headers)[0]}"`)
+    expect(names).toEqual([])
+  })
+
+  it('accepts every name in the router prefix, whatever its case', async () => {
+    const { forwarded, names } = await withAuthorizerHeaders({
+      'X-Narduk-Principal': '{"role":"viewer"}',
+      'x-narduk-trace': 'abc',
+    })
+
+    expect(names).toEqual(['v-1'])
+    expect(forwarded[0]?.headers.get(PRINCIPAL_HEADER)).toBe('{"role":"viewer"}')
+    expect(forwarded[0]?.headers.get('x-narduk-trace')).toBe('abc')
+  })
+})
+
+describe('upgrade router pass-through header stripping', () => {
+  // README's trust claim: an object reached through an h3 route with
+  // `stub.fetch(request)` must not be handed a client-set principal either.
+  it('strips the router prefix from a non-upgrade request handed to the app', async () => {
+    const { next, requests } = fakeNext()
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      new Request('https://app.test/api/app/vessels/v-1/state', {
+        method: 'POST',
+        body: '{"speed":7}',
+        headers: {
+          'content-type': 'application/json',
+          [PRINCIPAL_HEADER]: JSON.stringify({ role: 'admin' }),
+          'X-Narduk-Anything': 'spoofed',
+        },
+      }),
+      { VESSEL_DO: fakeNamespace().namespace },
+      fakeExecutionContext(),
+      next,
+    )
+
+    const passed = requests[0]
+    expect(passed?.headers.get(PRINCIPAL_HEADER)).toBeNull()
+    expect(passed?.headers.get('x-narduk-anything')).toBeNull()
+    // Everything else about the request survives the copy.
+    expect(passed?.method).toBe('POST')
+    expect(passed?.url).toBe('https://app.test/api/app/vessels/v-1/state')
+    expect(passed?.headers.get('content-type')).toBe('application/json')
+    expect(await passed?.text()).toBe('{"speed":7}')
+  })
+
+  it('strips the router prefix from an upgrade on an undeclared path', async () => {
+    const { next, requests } = fakeNext()
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      upgradeRequest('https://app.test/api/app/vessels/v-1/latest', {
+        [PRINCIPAL_HEADER]: 'spoofed',
+      }),
+      { VESSEL_DO: fakeNamespace().namespace },
+      fakeExecutionContext(),
+      next,
+    )
+
+    expect(requests[0]?.headers.get(PRINCIPAL_HEADER)).toBeNull()
+  })
+
+  it('strips the router prefix from a non-GET upgrade', async () => {
+    const { next, requests } = fakeNext()
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      upgradeRequest(
+        'https://app.test/api/app/vessels/v-1/live',
+        { [PRINCIPAL_HEADER]: 'spoofed' },
+        { method: 'POST', body: '{}' },
+      ),
+      { VESSEL_DO: fakeNamespace().namespace },
+      fakeExecutionContext(),
+      next,
+    )
+
+    expect(requests[0]?.headers.get(PRINCIPAL_HEADER)).toBeNull()
+  })
+
+  // Every ordinary request the Worker serves takes this path, so it must not pay
+  // for a copy it does not need.
+  it('passes the very same request through when there is nothing to strip', async () => {
+    const { next, requests } = fakeNext()
+    const request = new Request('https://app.test/api/app/vessels/v-1/state')
+
+    await createUpgradeRouter({ upgrades: [liveRoute()] })(
+      request,
+      { VESSEL_DO: fakeNamespace().namespace },
+      fakeExecutionContext(),
+      next,
+    )
+
+    expect(requests[0]).toBe(request)
+  })
+})
+
+describe('authorizeViaRoute path safety', () => {
+  async function probeWith(routePath: string, url = 'https://app.test/api/app/vessels/v-1/live') {
+    const probe = fakeLocalFetch(() => new Response('ok'))
+    return createUpgradeRouter({
+      localFetch: probe.localFetch,
+      upgrades: [
+        liveRoute({
+          authorize: async (context) => {
+            await context.authorizeViaRoute(context.request, routePath)
+            return { ok: true }
+          },
+        }),
+      ],
+    })(
+      upgradeRequest(url),
+      { VESSEL_DO: fakeNamespace().namespace },
+      fakeExecutionContext(),
+      fakeNext().next,
+    )
+  }
+
+  // `localFetch` routes on whatever string it is given, so an absolute URL is a
+  // different host's route and `..` is a route the upgrade never named.
+  it.each([
+    ['an absolute URL', 'https://tenant-b.example/api/session', /needs a path starting with "\/"/u],
+    ['a relative path', 'api/session', /needs a path starting with "\/"/u],
+    ['a traversal segment', '/api/app/../admin/session', /has a "\.\." segment/u],
+    ['a bare dot segment', '/api/app/./session', /has a "\." segment/u],
+  ])('refuses %s as a probe path', async (_case, routePath, message) => {
+    await expect(probeWith(routePath)).rejects.toThrow(message)
+  })
+
+  // A `%2F` survives URL normalisation (a `%2E%2E` does not), so this is the one
+  // parameter value that really can carry a path into the probe -- and
+  // `encodeURIComponent` would escape the slash but leave the `..` beside it.
+  it('refuses to interpolate a parameter that is not a single path segment', async () => {
+    await expect(
+      probeWith(
+        '/api/app/vessels/:vesselId/session',
+        'https://app.test/api/app/vessels/v-1%2F..%2Fadmin/live',
+      ),
+    ).rejects.toThrow(/would interpolate ":vesselId" as "v-1\/\.\.\/admin"/u)
+  })
+
+  it('still interpolates an ordinary parameter', async () => {
+    await expect(probeWith('/api/app/vessels/:vesselId/session')).resolves.toBeInstanceOf(Response)
   })
 })

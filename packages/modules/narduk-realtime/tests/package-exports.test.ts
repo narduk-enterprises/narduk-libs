@@ -15,6 +15,7 @@ interface PackageManifest {
   name: string
   publishConfig: { access: string; registry: string }
   private: boolean
+  scripts: Record<string, string>
   version: string
 }
 
@@ -77,6 +78,14 @@ describe('narduk-realtime package surface', () => {
   // @cloudflare/workers-types stays a type-only devDependency.
   it('adds no runtime dependency beyond @nuxt/kit', () => {
     expect(Object.keys(manifest.dependencies)).toEqual(['@nuxt/kit'])
+  })
+
+  // This package's `dist/` is committed, so a refactor pushed without a rebuild
+  // hands a git-dependency consumer type errors on exports `src` clearly
+  // declares -- which is exactly what happened before the check was wired in.
+  it('checks the committed dist output on every build and package check', () => {
+    expect(manifest.scripts.build).toContain('scripts/check-dist-clean.mjs')
+    expect(manifest.scripts['check:package']).toContain('scripts/check-dist-clean.mjs')
   })
 
   it('starts at the first minor of its own line', () => {

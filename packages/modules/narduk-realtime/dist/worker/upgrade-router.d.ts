@@ -16,6 +16,17 @@
  * `ctx.acceptWebSocket()` produces the only 101 in the system. The router itself
  * never constructs a 101.
  *
+ * ## What the router refuses before it authorises anything
+ *
+ * A route is served only for a `GET` (RFC 6455 s4.1 -- any other method is handed
+ * back to the app, because the authorising probe is a GET and the object must not
+ * see a method the guard never did), and only for an allowed `Origin`. A
+ * WebSocket handshake is exempt from CORS, so for a socket authorised from a
+ * cookie the origin comparison is the only thing standing between a viewer's
+ * session and a socket opened by another site: see `UpgradeRoute.allowedOrigins`.
+ * A route with no `authorize` and no explicit `allowUnauthenticated` is refused
+ * when the router is built, not on the first request.
+ *
  * ## Why not crossws / `nitro.experimental.websocket`
  *
  * `experimental.websocket: true` makes the preset entry answer **every**
@@ -89,11 +100,18 @@ export interface UpgradeAuthorizeContext<Env = unknown> {
      */
     authorizeViaRoute(request: Request, routePath?: string): Promise<UpgradeRouteProbe>;
 }
-/** An authoriser's verdict: a refusal to send back, or a go-ahead. */
-export type UpgradeAuthorizeResult = Response | {
+/** A go-ahead, optionally adding headers only this router can set. */
+export interface UpgradeAllowed {
     ok: true;
     headers?: Record<string, string> | undefined;
-};
+}
+/**
+ * An authoriser's verdict: a `Response` to send back verbatim, or a go-ahead.
+ *
+ * Two named arms rather than an inline union, for the Prettier-version reason
+ * documented on `UpgradePathParse`.
+ */
+export type UpgradeAuthorizeResult = Response | UpgradeAllowed;
 /** An upgrade authoriser. */
 export type UpgradeAuthorizer<Env = unknown> = (context: UpgradeAuthorizeContext<Env>) => Promise<UpgradeAuthorizeResult> | UpgradeAuthorizeResult;
 /** One configured upgrade route. */
@@ -104,10 +122,41 @@ export interface UpgradeRoute<Env = unknown> {
     binding: string;
     /** A route parameter name, or `name:<literal>`, feeding `idFromName`. */
     idFrom: string;
-    /** Decides whether the upgrade may proceed. Absent means "no check". */
+    /**
+     * Decides whether the upgrade may proceed.
+     *
+     * **Required** unless {@link UpgradeRoute.allowUnauthenticated} is `true`:
+     * building a router with neither throws, because a route with no check
+     * forwards every matching handshake to the object unauthenticated.
+     */
     authorize?: UpgradeAuthorizer<Env> | undefined;
+    /**
+     * Forward every matching upgrade with no check at all.
+     *
+     * The only legitimate reason is an object that authorises the socket itself
+     * (from a signed token in the subprotocol, say), and it has to be written out
+     * so that an omitted `authorize` can never become an open socket by accident.
+     */
+    allowUnauthenticated?: boolean | undefined;
     /** Headers to forward that the default deny list would otherwise drop. */
     forwardHeaders?: readonly string[] | undefined;
+    /**
+     * Origins allowed to open this socket, e.g. `['https://app.example']`.
+     *
+     * Absent means same-origin over https against the request's own `Host`. A list
+     * **replaces** that default rather than adding to it, so an app that names a
+     * partner origin and still wants its own must name both. `*` is rejected.
+     */
+    allowedOrigins?: readonly string[] | undefined;
+    /**
+     * Allow a request that sends no `Origin` header at all.
+     *
+     * A browser always sends one on a WebSocket handshake; a non-browser client
+     * (an edge device, a server-to-server relay) sends none. Default `false`: a
+     * cookie-authorised viewer route has to refuse a request with no origin,
+     * because that is exactly what a replayed session looks like.
+     */
+    allowMissingOrigin?: boolean | undefined;
 }
 /** Router configuration. */
 export interface UpgradeRouterOptions<Env = unknown> {
@@ -141,6 +190,8 @@ export declare function createUpgradeRouter<Env = unknown>(options: UpgradeRoute
 export declare function withUpgradeRouter<Env, Handler extends UpgradeWrappableHandler<Env>>(handler: Handler, router: UpgradeRouterFetch<Env>): Handler;
 export { NARDUK_ROUTER_HEADER_PREFIX, PRINCIPAL_HEADER, principalFromRequest } from './principal.js';
 export type { PrincipalCarrier } from './principal.js';
+export { isOriginAllowed, parseUpgradeOrigin, sameOriginFor } from './upgrade-origin.js';
+export type { UpgradeOriginParse, UpgradeOriginParsed, UpgradeOriginRejected, } from './upgrade-origin.js';
 export { matchUpgradePath, parseUpgradePath } from './upgrade-path.js';
 export type { UpgradePathParse, UpgradePathSegment } from './upgrade-path.js';
 //# sourceMappingURL=upgrade-router.d.ts.map

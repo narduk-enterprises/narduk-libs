@@ -119,24 +119,91 @@ Nitro exactly as it would have without the router installed.
 
 ### Option shape
 
-| Key              | Meaning                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| `path`           | h3-style pattern: literal segments and `:param`. Validated at build time. No wildcards. |
-| `binding`        | `env` binding name of the Durable Object namespace, as in `wrangler`                    |
-| `idFrom`         | a route parameter name from `path`, or `name:<literal>` for one shared object           |
-| `authorize`      | module whose `default` export decides the upgrade (optional, but see below)             |
-| `forwardHeaders` | headers to forward that the default deny list would drop (e.g. `['cookie']`)            |
+| Key                    | Meaning                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `path`                 | h3-style pattern: literal segments and `:param`. Validated at build time. No wildcards. |
+| `binding`              | `env` binding name of the Durable Object namespace, as in `wrangler`                    |
+| `idFrom`               | a route parameter name from `path`, or `name:<literal>` for one shared object           |
+| `authorize`            | module whose `default` export decides the upgrade. **Required** (see the rule below)    |
+| `allowUnauthenticated` | `true` to declare that this route deliberately has no authoriser                        |
+| `forwardHeaders`       | headers to forward that the default deny list would drop (e.g. `['cookie']`)            |
+| `allowedOrigins`       | origins allowed to open the socket. Default: same-origin over https. `*` rejected       |
+| `allowMissingOrigin`   | `true` to allow a client that sends no `Origin` at all (a device, not a browser)        |
 
 Every one of those is checked when the app's configuration loads: a wildcard
 path, a duplicate path, a binding that is not a valid binding name, an `idFrom`
 that names a parameter the path does not declare, a header in the router's own
-`x-narduk-` prefix, and an `authorize` module that does not resolve all fail
-`nuxt build` with the option's index in the message -- not at request time on a
-deployed Worker.
+`x-narduk-` prefix, an `allowedOrigins` entry that is not an origin (or is `*`),
+a flag that is not a boolean, a route that declares no authoriser, and an
+`authorize` module that does not resolve all fail `nuxt build` with the option's
+index and the field in the message -- not at request time on a deployed Worker.
 
-**A route without `authorize` forwards every upgrade that matches its path.**
-That is occasionally what you want (an object that authorises the socket itself
-from a signed token in the subprotocol), and otherwise it is an open socket.
+**A route must declare `authorize`.** Without it, `nuxt build` fails naming
+`realtime.upgrades[n].authorize`: a route with no check forwards every matching
+handshake straight to the Durable Object, which is the unauthenticated socket
+this module exists to prevent. When -- and only when -- the object authorises
+the socket itself (from a signed token in the subprotocol, say), write
+`allowUnauthenticated: true` in its place, so that the absence of a check is a
+decision somebody made rather than a line somebody forgot. A hand-written
+`createUpgradeRouter({ upgrades })` with neither throws the same way, naming
+`upgrades[n].authorize`.
+
+**Only a `GET` is routed.** A WebSocket handshake is a GET (RFC 6455 §4.1). A
+request carrying `Upgrade: websocket` with any other method is handed to the app
+untouched, so the object never sees a method the authorising probe -- always a
+GET -- did not represent.
+
+### Origin policy
+
+A WebSocket handshake is **exempt from CORS**: the browser sends it with the
+site's cookies attached, there is no preflight, and no response header can call
+it back. So on a route the router authorises from a cookie (`authorizeViaRoute`
+keeps `cookie` deliberately), the `Origin` header is the only thing between a
+viewer's session and a socket opened by another site. The router compares it
+before the authoriser runs and answers `403` on a mismatch.
+
+The default is **same-origin over https**: `https://` plus the request's own
+`Host`. Not "whatever scheme the request arrived on" -- a deployed Worker is
+always https, and accepting `http://<host>` would accept a stripped hop.
+
+```ts
+realtime: {
+  upgrades: [
+    {
+      // A cookie-authorised viewer socket: the default is what you want.
+      path: '/api/app/vessels/:vesselId/live',
+      binding: 'VESSEL_DO',
+      idFrom: 'vesselId',
+      authorize: './server/upgrades/vessel-live',
+    },
+    {
+      // An edge device, not a browser: it sends no Origin, and its credential
+      // is a token rather than a cookie, so there is no session to ride.
+      path: '/api/edge/v1/vessels/:vesselId/stream',
+      binding: 'VESSEL_DO',
+      idFrom: 'vesselId',
+      authorize: './server/upgrades/edge-stream',
+      allowMissingOrigin: true,
+    },
+    {
+      // A console on another host: the list REPLACES the same-origin default,
+      // so name your own origin too. An http origin (wrangler dev) opts in here.
+      path: '/api/ops/fleet/live',
+      binding: 'FLEET_DO',
+      idFrom: 'name:fleet',
+      authorize: './server/upgrades/ops-fleet',
+      allowedOrigins: ['https://app.example', 'https://console.example'],
+    },
+  ],
+}
+```
+
+`allowedOrigins` entries are normalised (case, a trailing slash) and must be
+scheme-and-host only; `*` is rejected outright. A request with **no** `Origin`
+is refused unless `allowMissingOrigin: true` -- absence is exactly what a
+replayed cookie looks like, so a viewer route must not accept it, and
+`Origin: null` (a sandboxed frame, a `file://` page) is refused with everything
+else.
 
 ### The authoriser
 
@@ -182,10 +249,14 @@ different route and its `:param`s are interpolated from the ones this upgrade
 matched.
 
 The verdict is either a `Response` -- returned to the client verbatim, which is
-how a refusal reaches it -- or `{ ok: true, headers? }`. An authoriser that
-answers `101` is refused with a 500: only the Durable Object may complete a
-handshake. An authoriser that throws fails the upgrade with the runtime's own
-500; catch inside it if you want a specific refusal.
+how a refusal reaches it -- or `{ ok: true, headers? }`. Those `headers` may
+only be in the router's own `x-narduk-` namespace: any other name is a 500,
+because the router's deny list would otherwise be undone from the inside (an
+authoriser could re-add `cookie`, or overwrite `upgrade`) -- name a client
+header in `forwardHeaders` instead. An authoriser that answers `101` is refused
+with a 500 too: only the Durable Object may complete a handshake. An authoriser
+that throws fails the upgrade with the runtime's own 500; catch inside it if you
+want a specific refusal.
 
 ### What reaches the object
 
@@ -232,11 +303,22 @@ The forwarded request:
   object's 101 with the client's connection itself, so forwarding those would
   describe the wrong hop. Name any of them in `forwardHeaders` to keep it;
 - **passes everything else through** (`user-agent`, `cf-connecting-ip`, …);
+- **keeps `cf`** -- the forwarded request is derived from the trusted request
+  rather than rebuilt from its URL, so `request.cf` (colo, country, TLS details)
+  reaches the object, along with the `GET` that was authorised;
 - **strips every inbound `x-narduk-*` header** before the authoriser runs, then
-  sets whatever the authoriser returned. That is what makes `x-narduk-principal`
-  trustworthy inside the object: a client cannot set one, and `forwardHeaders`
-  refuses the prefix at build time. It is trusted for _origin_, not for shape --
-  validate the parsed value, as above.
+  sets whatever the authoriser returned -- which may only be in that same
+  prefix. That is what makes `x-narduk-principal` trustworthy inside the object:
+  a client cannot set one, and `forwardHeaders` refuses the prefix at build
+  time. It is trusted for _origin_, not for shape -- validate the parsed value,
+  as above.
+
+The router strips that prefix from **every** request it sees, including the ones
+it hands back to the Nitro app, so an object an h3 route reaches with
+`stub.fetch(request)` is not handed a client-set principal either. What it
+cannot cover is a request the app builds itself:
+`stub.fetch(new Request(url, { headers }))` sets whatever the handler passes, so
+the object still owns the check.
 
 `principalFromRequest(request)` reads it and returns `undefined` when it is
 absent or is not JSON, so an object reached any other way simply sees no

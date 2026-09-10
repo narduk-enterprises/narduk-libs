@@ -38,6 +38,13 @@ function upgradeEntries(upgrades) {
         `      binding: ${JSON.stringify(upgrade.binding)},`,
         `      idFrom: ${JSON.stringify(upgrade.idFrom)},`,
         `      forwardHeaders: ${JSON.stringify(upgrade.forwardHeaders)},`,
+        ...(upgrade.allowedOrigins === undefined
+            ? []
+            : [`      allowedOrigins: ${JSON.stringify(upgrade.allowedOrigins)},`]),
+        ...(upgrade.allowMissingOrigin === undefined ? [] : ['      allowMissingOrigin: true,']),
+        // Emitted so the runtime router's own fail-closed check passes for a route
+        // the app deliberately left without an authoriser -- and only then.
+        ...(upgrade.allowUnauthenticated === undefined ? [] : ['      allowUnauthenticated: true,']),
         ...(upgrade.authorizeModulePath === undefined
             ? []
             : [`      authorize: ${upgradeAuthorizerName(index)},`]),
