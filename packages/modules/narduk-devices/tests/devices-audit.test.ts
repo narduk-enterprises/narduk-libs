@@ -5,6 +5,7 @@ import { DEVICES_AUDIT_ACTIONS } from '../shared/types/devices'
 
 import {
   claimDevice,
+  completionRequest,
   createTestHarness,
   ORG,
   signedOpen,
@@ -30,6 +31,16 @@ describe('audit trail', () => {
       actorUserId: 'owner-1',
     })
     clock.advance(1)
+    // A replayed completion, opted in and proved, re-issues rather than
+    // serving an empty array.
+    await devices.completeClaimWithRecordedApproval(
+      completionRequest(harness, {
+        claimSessionId: claimed.claimSessionId,
+        idempotencyKey: `complete-${claimed.claimSessionId}`,
+        key: claimed.key,
+      }).input,
+    )
+    clock.advance(1)
     await devices.revokeDevice({ deviceId: claimed.deviceId, actorUserId: 'owner-1' })
     clock.advance(1)
     const pending = await startPendingClaim(harness)
@@ -45,6 +56,7 @@ describe('audit trail', () => {
         'claim.start',
         'claim.approve',
         'claim.complete',
+        'claim.reissue',
         'challenge.issue',
         'session.open',
         'session.revoke',

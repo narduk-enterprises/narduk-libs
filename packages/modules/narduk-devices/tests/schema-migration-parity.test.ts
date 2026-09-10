@@ -14,9 +14,10 @@ import {
   DEVICE_STATUSES,
 } from '../shared/types/devices'
 
-import { createTestHarness, MIGRATION_PATH } from './support/database'
+import { claimDevice, createTestHarness, MIGRATION_PATHS, MIGRATION_SQL } from './support/database'
 
-const migration = readFileSync(MIGRATION_PATH, 'utf8')
+/** Every published migration concatenated, comments stripped. */
+const migration = MIGRATION_SQL
 const statements = migration
   .split('\n')
   .filter((line) => !line.trimStart().startsWith('--'))
@@ -55,6 +56,7 @@ const TABLES = [
   'devices_sessions',
   'devices_challenges',
   'devices_replay_entries',
+  'devices_scoped_nonces',
   'devices_auth_attempts',
   'devices_audit_events',
 ]
@@ -99,6 +101,70 @@ describe('devices schema/migration parity', () => {
       .filter((value) => typeof value === 'object')
       .map((table) => getTableName(table))
     expect([...declared].sort()).toEqual([...TABLES].sort())
+  })
+
+  it('ships every migration as an additive, re-runnable file', () => {
+    expect(MIGRATION_PATHS.length).toBeGreaterThanOrEqual(2)
+    for (const path of MIGRATION_PATHS) {
+      const file = readFileSync(path, 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+      const creates = file.match(/CREATE (?:TABLE|UNIQUE INDEX|INDEX)/gu) ?? []
+      const guarded = file.match(/CREATE (?:TABLE|UNIQUE INDEX|INDEX) IF NOT EXISTS/gu) ?? []
+      expect(guarded, `${path} has an unguarded CREATE`).toHaveLength(creates.length)
+      expect(file, `${path} mutates an existing table`).not.toMatch(/ALTER TABLE|DROP TABLE/iu)
+      // "Additive" used to mean only "no ALTER, no DROP", which a migration
+      // that rewrote rows would have passed (narduk-libs#228 M6). DML is a
+      // data migration: it is not re-runnable and it is not this file's job.
+      expect(file, `${path} contains DML`).not.toMatch(
+        /\b(?:INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b/iu,
+      )
+    }
+  })
+
+  /**
+   * narduk-libs#228 M5. `IF NOT EXISTS` suppresses "an index of that name
+   * exists", not a genuine uniqueness violation over rows already in the
+   * table, and the production runner appends its ledger INSERT to the end of
+   * the file — so a statement that can fail on existing data must come last,
+   * or it takes every statement below it and every later deploy with it.
+   */
+  it('puts the one statement that can fail on existing data last in its file', async () => {
+    const harness = createTestHarness()
+    const { sqlite } = harness
+    const claimed = await claimDevice(harness)
+    // Rewind to a database that has 0001's shape but not 0002's, then put it
+    // in the one state 0002 can fail on. A duplicate digest means two devices
+    // hold the same bearer secret: unreachable with 256-bit secrets, which is
+    // exactly why the ordering has to be pinned rather than trusted.
+    sqlite.exec('DROP INDEX IF EXISTS devices_credentials_secret_hash_idx')
+    sqlite.exec('DROP TABLE IF EXISTS devices_scoped_nonces')
+    const digest = 'f'.repeat(64)
+    for (const [offset, id] of ['dup-a', 'dup-b'].entries()) {
+      sqlite
+        .prepare(
+          'INSERT INTO devices_credentials (id, device_id, credential_class, secret_hash, fingerprint, version, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(id, claimed.deviceId, 'ingest', digest, `sha256:${id}`, 90 + offset, 1)
+    }
+
+    const second = readFileSync(
+      MIGRATION_PATHS.find((path) => path.endsWith('0002_claim_completion.sql')) ?? '',
+      'utf8',
+    )
+    expect(() => sqlite.exec(second)).toThrow(/UNIQUE constraint failed/u)
+
+    // The cost is that one index. Everything the file also ships survived,
+    // because it ran before the statement that threw.
+    const survived = sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE name LIKE 'devices_scoped_nonces%'")
+      .all() as Array<{ name: string }>
+    expect(survived.map((row) => row.name).sort()).toEqual([
+      'devices_scoped_nonces',
+      'devices_scoped_nonces_expires_at_idx',
+      'devices_scoped_nonces_key_idx',
+    ])
   })
 
   it('stays additive and D1-only', () => {
@@ -221,5 +287,34 @@ describe('devices schema/migration parity', () => {
     const insert = sqlite.prepare('INSERT INTO devices_replay_entries VALUES (?, ?, ?, ?, ?, ?, ?)')
     insert.run('r-1', 'd', 1, 'c', 'n', 'h', 9)
     expect(() => insert.run('r-2', 'd', 1, 'c', 'n', 'h', 9)).toThrow(/UNIQUE constraint failed/u)
+  })
+
+  it('makes a scoped nonce single-use, with no nullable column in its key', () => {
+    const { sqlite } = createTestHarness()
+    const insert = sqlite.prepare('INSERT INTO devices_scoped_nonces VALUES (?, ?, ?, ?, ?)')
+    insert.run('n-1', 'claim-handoff:cs-1', 'nonce-1', 9, 1)
+    expect(() => insert.run('n-2', 'claim-handoff:cs-1', 'nonce-1', 9, 1)).toThrow(
+      /UNIQUE constraint failed/u,
+    )
+    // A different scope is a different exchange.
+    expect(() => insert.run('n-3', 'claim-handoff:cs-2', 'nonce-1', 9, 1)).not.toThrow()
+    // Both key columns are NOT NULL: SQLite treats NULLs inside a UNIQUE index
+    // as distinct, so a nullable key would accept every replay.
+    const columns = sqlite.prepare('PRAGMA table_info(devices_scoped_nonces)').all() as Array<{
+      name: string
+      notnull: number
+    }>
+    for (const name of ['scope', 'nonce', 'expires_at']) {
+      expect(columns.find((column) => column.name === name)?.notnull, name).toBe(1)
+    }
+  })
+
+  it('resolves a credential secret through a unique digest index', () => {
+    const { sqlite } = createTestHarness()
+    const indexes = sqlite
+      .prepare('SELECT name, "unique" FROM pragma_index_list(\'devices_credentials\')')
+      .all() as Array<{ name: string; unique: number }>
+    const secretHash = indexes.find((index) => index.name === 'devices_credentials_secret_hash_idx')
+    expect(secretHash?.unique, 'secret_hash index must be UNIQUE').toBe(1)
   })
 })

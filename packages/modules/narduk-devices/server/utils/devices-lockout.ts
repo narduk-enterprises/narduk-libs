@@ -25,6 +25,38 @@ export interface LockoutSubject {
   subject: string
 }
 
+/**
+ * Which operation a counted failure belongs to.
+ *
+ * - `claim` — the claim ceremony: `startClaim` and both completion paths.
+ * - `credential` — `getCredentialBySecret`, the vessel's per-request bearer
+ *   lookup on the ingest path.
+ * - `session` — `openSession`.
+ */
+export type LockoutPurpose = 'claim' | 'credential' | 'session'
+
+/**
+ * The stored `devices_auth_attempts.subject` for one raw account key or IP.
+ *
+ * Lockout subjects are **namespaced by operation**, so a counter one path
+ * writes can never gate another. An account key or an IP identifies a caller,
+ * not a capability: without the namespace, the claim ceremony's unauthenticated
+ * unknown-session counter and `getCredentialBySecret`'s per-request lookup
+ * shared one per-IP counter, and twenty completions naming session ids that do
+ * not exist — no claim token, no approval, no proof, and no per-token subject
+ * to cap them — locked the whole vessel's ingest path. One looping device took
+ * every camera aboard dark with no attacker present (narduk-libs#228 third
+ * review HIGH-4).
+ *
+ * The `token` and `device` kinds are deliberately not namespaced: a token
+ * digest is only ever presented to the claim ceremony and a device id only to
+ * `openSession`, and `startClaim` and completion are meant to share the token
+ * counter — that is what bounds guessing across the two legs of one ceremony.
+ */
+export function lockoutSubjectFor(purpose: LockoutPurpose, subject: string): string {
+  return `${purpose}:${subject}`
+}
+
 export interface LockoutState {
   retryAfterSeconds: number
   subject: LockoutSubject

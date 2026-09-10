@@ -199,6 +199,7 @@ export const DEVICES_AUDIT_ACTIONS = [
   'claim.start',
   'claim.approve',
   'claim.complete',
+  'claim.reissue',
   'challenge.issue',
   'session.open',
   'session.revoke',
@@ -207,3 +208,14 @@ export const DEVICES_AUDIT_ACTIONS = [
   'security.lockout',
 ] as const
 export type DevicesAuditAction = (typeof DEVICES_AUDIT_ACTIONS)[number]
+
+/**
+ * The scope prefix this package reserves in `devices_scoped_nonces` for its own
+ * single-use rows: the completion-proof nonce
+ * (`narduk-devices:claim-completion:<claimSessionId>`) and the re-issue
+ * single-writer lock (`narduk-devices:reissue:<deviceId>`). `consumeNonce`
+ * refuses a caller scope that starts with it, so an application can never
+ * write — or pre-empt — a row the library depends on
+ * (narduk-libs#228 second review H3).
+ */
+export const DEVICES_INTERNAL_NONCE_PREFIX = 'narduk-devices:'

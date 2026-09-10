@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CHALLENGE_DEFAULT_TTL_SECONDS,
+  isWithinTimestampSkew,
   SESSION_DEFAULT_TTL_SECONDS,
   TIMESTAMP_SKEW_DEFAULT_SECONDS,
 } from '../server/utils/devices'
 
 import { claimDevice, createDeviceKey, createTestHarness, signedOpen } from './support/database'
 import { codeOf, errorOf } from './support/expect'
+
+import type { DevicesError } from '../server/utils/devices-error'
 
 describe('device sessions', () => {
   it('opens a session from a signed canonical request', async () => {
@@ -85,6 +88,50 @@ describe('device sessions', () => {
       timestamp: clock.now() + TIMESTAMP_SKEW_DEFAULT_SECONDS * 1000,
     })
     await expect(devices.openSession(future.input)).resolves.toBeDefined()
+  })
+
+  /**
+   * narduk-libs#228 M4. `isWithinTimestampSkew` shipped as the rule a consumer
+   * should use for its own pre-device exchange while `openSession` still
+   * carried an inline copy — the drift the helper existed to prevent was the
+   * one thing not implemented. This drives both across the same boundary, at a
+   * *non-default* window so a re-introduced hardcoded default fails here.
+   */
+  it('bounds openSession by the same window isWithinTimestampSkew reports', async () => {
+    const skewSeconds = 7
+    const harness = createTestHarness({ timestampSkewSeconds: skewSeconds })
+    const { devices, clock } = harness
+    const claimed = await claimDevice(harness)
+    const edge = skewSeconds * 1000
+
+    // `null` where the window accepts, the refusal reason where it does not.
+    const opens = async (timestamp: number): Promise<string | null> => {
+      const attempt = await signedOpen(harness, claimed, 'command', { timestamp })
+      try {
+        await devices.openSession(attempt.input)
+        return null
+      } catch (error) {
+        return (error as DevicesError).message
+      }
+    }
+
+    const offsets = [-edge - 1, -edge, -1, 0, 1, edge, edge + 1, Number.NaN]
+    const helper: boolean[] = []
+    const session: boolean[] = []
+    for (const offset of offsets) {
+      const timestamp = clock.now() + offset
+      helper.push(isWithinTimestampSkew(timestamp, clock.now(), skewSeconds))
+
+      const refusal = await opens(timestamp)
+      // A refusal must be *this* rule, not some other check that happens to
+      // reject: anything else would make the two look equal by accident.
+      if (refusal !== null) expect(refusal, `offset ${String(offset)}ms`).toContain('skew')
+      session.push(refusal === null)
+    }
+    expect(session).toEqual(helper)
+    // ...and the sweep really did cross the boundary rather than agreeing on
+    // one uniform answer.
+    expect(new Set(helper)).toEqual(new Set([true, false]))
   })
 
   it('refuses a replayed request and an expired challenge', async () => {

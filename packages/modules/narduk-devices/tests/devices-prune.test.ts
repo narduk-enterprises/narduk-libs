@@ -82,7 +82,11 @@ describe('opportunistic pruning', () => {
     expect(counts(harness).authAttempts).toBe(6)
 
     // An explicit prune reports nothing to do while the window still covers them.
-    expect(await devices.pruneExpired()).toEqual({ authAttempts: 0, replayEntries: 0 })
+    expect(await devices.pruneExpired()).toEqual({
+      authAttempts: 0,
+      replayEntries: 0,
+      scopedNonces: 0,
+    })
 
     clock.advance(DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000 + 1)
     const minted = await devices.createClaimToken({
@@ -101,7 +105,11 @@ describe('opportunistic pruning', () => {
     expect(started.status).toBe('pending_user_approval')
     // Only this start's own success row survives.
     expect(counts(harness).authAttempts).toBe(1)
-    expect(await devices.pruneExpired()).toEqual({ authAttempts: 0, replayEntries: 0 })
+    expect(await devices.pruneExpired()).toEqual({
+      authAttempts: 0,
+      replayEntries: 0,
+      scopedNonces: 0,
+    })
   })
 
   it('accepts an explicit cutoff', async () => {
@@ -119,5 +127,42 @@ describe('opportunistic pruning', () => {
     expect(removed.replayEntries).toBe(1)
     expect(removed.authAttempts).toBeGreaterThan(0)
     expect(counts(harness)).toEqual({ authAttempts: 0, replayEntries: 0 })
+  })
+
+  /**
+   * `scopedNonces: 0` was the only thing asserted anywhere, which proves the
+   * field exists, not that the sweep works (narduk-libs#228 M6). A spent nonce
+   * that is never pruned is unbounded growth in a table every signed
+   * pre-device exchange writes to.
+   */
+  it('prunes a spent scoped nonce once it expires, and not before', async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+    const nonce = {
+      scope: 'claim-handoff:session-1',
+      nonce: 'n-1',
+      expiresAt: clock.now() + 60_000,
+    }
+    expect(await devices.consumeNonce(nonce)).toBe(true)
+    const live = () =>
+      (
+        harness.sqlite.prepare('SELECT COUNT(*) AS n FROM devices_scoped_nonces').get() as {
+          n: number
+        }
+      ).n
+    expect(live()).toBe(1)
+
+    // Still inside its lifetime: kept, and still refusing the replay it exists
+    // to refuse.
+    expect((await devices.pruneExpired()).scopedNonces).toBe(0)
+    expect(await devices.consumeNonce(nonce)).toBe(false)
+    expect(live()).toBe(1)
+
+    clock.advance(60_001)
+    expect((await devices.pruneExpired()).scopedNonces).toBe(1)
+    expect(live()).toBe(0)
+    // Gone, so the scope is free again — which is why the TTL has to outlive
+    // the exchange the nonce protects.
+    expect(await devices.consumeNonce({ ...nonce, expiresAt: clock.now() + 60_000 })).toBe(true)
   })
 })

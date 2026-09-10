@@ -351,17 +351,17 @@ describe('claim completion', () => {
     return { pending, approval, complete }
   }
 
-  it('returns already_completed without secrets on a replay', async () => {
+  it('returns already_completed without secrets or a device id on a replay', async () => {
     const harness = createTestHarness()
     const { complete } = await approved(harness)
     const first = await harness.devices.completeClaim(complete)
     expect(first.status).toBe('completed')
     const replay = await harness.devices.completeClaim(complete)
-    expect(replay).toEqual({
-      status: 'already_completed',
-      deviceId: first.deviceId,
-      credentials: [],
-    })
+    // The replay branch answers with the status alone: a caller that proved
+    // nothing learns nothing, `deviceId` included
+    // (narduk-libs#228 second review H3).
+    expect(replay).toEqual({ status: 'already_completed', credentials: [] })
+    expect(replay).not.toHaveProperty('deviceId')
     const other = await harness.devices.completeClaim({ ...complete, idempotencyKey: 'complete-2' })
     expect(other.status).toBe('already_completed')
     // A completed session may not be re-approved.
