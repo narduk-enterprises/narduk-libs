@@ -37,6 +37,34 @@ afterEach(async () => {
 })
 
 describe('create-narduk-app generation contract', () => {
+  it.each([{ capability: [] }, { capability: ['seo'] }])(
+    'includes the share-preview gate with capabilities $capability',
+    ({ capability }) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'shareable-app',
+          capabilities: capability,
+          targetDir: '/tmp/shareable-app',
+          siteUrl: 'https://example.com',
+        }),
+      )
+      const config = JSON.parse(files.get('apps/web/Config/social-previews.json') ?? '{}')
+      const manifest = JSON.parse(files.get('apps/web/package.json') ?? '{}')
+      expect(config.defaultImage).toMatchObject({ path: '/og.png', source: 'public/og-source.svg' })
+      expect(config.routes).toContainEqual({ source: 'index.vue', kind: 'default', paths: ['/'] })
+      expect(files.get('apps/web/public/og-source.svg')).toContain('width="1200" height="630"')
+      expect(files.get('apps/web/public/og-source.svg')).toContain('Shareable App')
+      expect(manifest.scripts.build).toContain('og:check && nuxt build')
+      expect(manifest.scripts['cf:build']).toContain('og:check && nuxt build')
+      expect(files.get('apps/web/tests/e2e/social-previews.spec.ts')).toContain(
+        'checkSocialPreviews',
+      )
+      expect(files.get('apps/web/nuxt.config.ts')).toContain(
+        capability.includes('seo') ? 'defaultOgImage' : 'og:image',
+      )
+    },
+  )
+
   it('produces byte-identical plans independent of target directory', () => {
     const options = {
       appName: 'harbor-notes',
@@ -502,7 +530,9 @@ describe('create-narduk-app generation contract', () => {
     expect(webPackage.scripts.dev).toBe(
       'narduk-app dev --project generated-fixture --config dev -- nuxt dev --host 127.0.0.1',
     )
-    expect(webPackage.scripts['dev:test']).toBe('nuxt dev --host 127.0.0.1')
+    expect(webPackage.scripts['dev:test']).toBe(
+      'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
+    )
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
     expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')

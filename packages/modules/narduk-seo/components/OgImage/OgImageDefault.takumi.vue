@@ -25,7 +25,7 @@ withDefaults(
     description: 'Production-ready Nuxt 4 + Cloudflare Workers with polished social cards.',
     siteName: 'Nuxt 4 Demo',
     eyebrow: 'Open Graph Preview',
-    badgeLabel: 'Launch Ready',
+    badgeLabel: '',
     host: 'localhost:3000',
     image: '',
     primaryColor: SEO_OG_IMAGE_DEFAULT_PRIMARY,
@@ -108,6 +108,7 @@ withDefaults(
         {{ eyebrow }}
       </div>
       <div
+        v-if="badgeLabel"
         :style="{
           padding: '10px 14px',
           borderRadius: '999px',
@@ -212,17 +213,6 @@ withDefaults(
                 {{ host }}
               </div>
             </div>
-          </div>
-
-          <div
-            :style="{
-              fontSize: '15px',
-              color: SEO_OG_IMAGE_TEXT_DIM,
-              textTransform: 'uppercase',
-              letterSpacing: '0.18em',
-            }"
-          >
-            Social card
           </div>
         </div>
       </div>

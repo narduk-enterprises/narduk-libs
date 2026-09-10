@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## Social preview checks
+
+`narduk-app og:generate` renders an app-owned default share image.
+`narduk-app og:check` validates the default and route inventory; add `--live` to
+verify actual server-rendered metadata and downloaded images as crawlers. New
+app scaffolds wire these into builds and browser CI. Existing apps adopt them
+using the [social preview guide](docs/social-previews.md).
+
 Focused app-local tooling exposed as `narduk-app`. It operates on the current
 application only: local development, source-owned D1 migrations, guarded
 Wrangler deployment, registry authentication, diagnostics, performance budgets,

@@ -11,6 +11,7 @@ import {
   runPerformanceBudgetCheck,
 } from './performance.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
+import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
   return [
@@ -25,6 +26,8 @@ function usage(): string {
     '  doctor                              Check app-local prerequisites',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
+    '  og:generate [--if-missing|--force]    Render the app-owned default share image',
+    '  og:check [--live] [--base-url URL] [--json]  Verify route coverage and crawler images',
     '  foundation:check [--checkout <dir>] [--json [path]]',
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
   ].join('\n')
@@ -74,6 +77,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'og:check' || command === 'og:generate')
+      return await runOgCommand(command, rest)
     if (command === 'db') {
       const [subcommand, ...migrateArgs] = rest
       if (subcommand !== 'migrate') throw new Error('Usage: narduk-app db migrate ...')

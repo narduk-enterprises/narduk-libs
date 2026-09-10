@@ -12,8 +12,18 @@ This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.
 
 Dynamic OG images are enabled by default for crawlable pages that call
-`useSeo(...)`. Pages marked `noindex` automatically skip OG generation, and a
-page can opt out explicitly with `ogImage: false`.
+`useSeo(...)`. Explicit `noindex` callers skip automatic generation; public
+unlisted pages can still request it with an explicit `ogImage` object. A page
+can opt out with `ogImage: false`. Private data never belongs in image props.
+
+Every app also needs a real static default image. Set
+`nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
+emit it site-wide, including pages that never call `useSeo`. Page-specific
+images override this fallback. The package does not fabricate or ship an app's
+artwork. Use `narduk-app og:generate` and the offline/live `og:check` commands
+from `narduk-app-tools`; the
+[shared guide](../../tooling/narduk-app-tools/docs/social-previews.md) covers
+route inventory, rendering, crawler delivery, and existing-app adoption.
 
 Typical app setup:
 
@@ -28,6 +38,12 @@ export default defineNuxtConfig({
     name: 'Example App',
     description: 'Public app description.',
     defaultLocale: 'en',
+  },
+  nardukSeo: {
+    defaultOgImage: {
+      url: '/og.png',
+      alt: 'Example App — public app description.',
+    },
   },
   schemaOrg: {
     identity: {

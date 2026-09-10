@@ -93,6 +93,8 @@ interface TypePrepareOptions {
 
 export interface NardukSeoModuleOptions {
   app?: boolean
+  /** App-owned 1200x630 static fallback for every page, including noindex routes. */
+  defaultOgImage?: { alt: string; url: string }
   /**
    * Production-only, build-once indexing contract: the canonical site host
    * stays indexable while any other request host (e.g. a route-free
@@ -305,6 +307,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
       public: {
+        nardukSeoDefaultImage: options.defaultOgImage ?? null,
         nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
@@ -362,6 +365,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     }
 
     if (options.app) {
+      if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))
       addImportsDir(resolver.resolve('../app/composables'))
       addImportsDir(resolver.resolve('../app/utils'))
       addComponentsDir({

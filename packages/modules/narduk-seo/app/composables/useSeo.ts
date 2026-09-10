@@ -2,6 +2,7 @@ import {
   defineOgImage,
   toValue,
   useHead,
+  useRoute,
   useRuntimeConfig,
   useSeoMeta,
   useSiteConfig,
@@ -52,6 +53,7 @@ export function useSeo(options: SeoOptions) {
     robots,
   } = options
   const siteConfig = useSiteConfig()
+  const route = useRoute()
   const runtimeConfig = useRuntimeConfig()
   const fallbackSiteUrl =
     typeof runtimeConfig.public.appUrl === 'string' ? runtimeConfig.public.appUrl : undefined
@@ -61,10 +63,13 @@ export function useSeo(options: SeoOptions) {
     typeof siteConfig.url === 'string' && siteConfig.url ? siteConfig.url : fallbackSiteUrl
   const siteName =
     typeof siteConfig.name === 'string' && siteConfig.name ? siteConfig.name : fallbackSiteName
-  const resolvedCanonicalUrl = resolveCanonicalUrl(canonicalUrl, siteUrl)
+  const resolvedCanonicalUrl = resolveCanonicalUrl(canonicalUrl ?? route.path, siteUrl)
   const resolveTitle = () => toValue(title)
   const resolveDescription = () => toValue(description)
-  const shouldDefineDynamicOgImage = !hasNoindexRobots(robots) && ogImage !== false
+  // noindex is not a privacy classification: public unlisted pages can explicitly
+  // request a preview. Preserve the existing opt-out for private/noindex callers.
+  const shouldDefineDynamicOgImage =
+    ogImage !== false && (!hasNoindexRobots(robots) || Boolean(ogImage))
   const dynamicOgImage = shouldDefineDynamicOgImage
     ? resolveSeoOgImageDefinition({
         title: resolveTitle(),
@@ -89,6 +94,7 @@ export function useSeo(options: SeoOptions) {
     ogDescription: resolveDescription,
     // ogType accepts 'website' | 'article' | 'profile' etc.
     ogType: type,
+    ogUrl: resolvedCanonicalUrl,
     twitterCard: 'summary_large_image',
     twitterTitle: resolveTitle,
     twitterDescription: resolveDescription,

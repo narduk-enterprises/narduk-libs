@@ -1,4 +1,6 @@
 interface SeoPublicRuntimeConfig {
+  /** App-owned public fallback; null until the app supplies a real asset. */
+  nardukSeoDefaultImage: { url: string; alt: string } | null
   /**
    * Absolute HTTPS endpoint serving the Narduk network directory feed for
    * `/narduk-network`. Empty by design — an unset value disables the directory

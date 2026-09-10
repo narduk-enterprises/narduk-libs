@@ -166,6 +166,9 @@ export function createRootPackageManifest(
       knip: 'knip',
       lint: 'pnpm --filter web run lint',
       'performance-budget': 'pnpm --filter web run performance-budget',
+      'og:generate': 'pnpm --filter web run og:generate',
+      'og:check': 'pnpm --filter web run og:check',
+      'og:check:live': 'pnpm --filter web run og:check:live',
       quality: 'pnpm run quality:static && pnpm run test:e2e',
       'quality:static':
         'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test:unit',
@@ -255,14 +258,15 @@ export function createWebPackageManifest(
     ...(metadata.description ? { description: metadata.description } : {}),
     ...(metadata.siteUrl ? { homepage: metadata.siteUrl } : {}),
     scripts: {
-      build: 'nuxt build',
+      build: 'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build',
       dev: 'narduk-app dev --project ' + appName + ' --config dev -- nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       lint: 'nuxt prepare && eslint . --max-warnings 0',
       'nuxt:prepare': 'nuxt prepare',
       'test:e2e': 'playwright test',
       'test:unit': 'vitest run --config vitest.config.ts',
-      'cf:build': 'nuxt build --preset=cloudflare_module',
+      'cf:build':
+        'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build --preset=cloudflare_module',
       'cf:deploy':
         'narduk-app db migrate --config migrations.sources.json --database ' +
         appName +
@@ -280,9 +284,12 @@ export function createWebPackageManifest(
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
-      'dev:test': 'nuxt dev --host 127.0.0.1',
+      'dev:test': 'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
       'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
+      'og:generate': 'narduk-app og:generate',
+      'og:check': 'narduk-app og:check',
+      'og:check:live': 'narduk-app og:check --live',
       'registry-auth': 'narduk-app registry-auth',
       typecheck: 'nuxt typecheck',
     },
