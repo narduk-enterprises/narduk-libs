@@ -89,6 +89,15 @@ afterEach(() => {
 })
 
 describe('narduk-seo module', () => {
+  it('registers a static fallback only when the app provides an image', async () => {
+    const image = { url: '/og.png', alt: 'Example app' }
+    const { nuxt, addPlugin } = await setupModule({ moduleOptions: { defaultOgImage: image } })
+    expect(nuxt.options.runtimeConfig).toMatchObject({ public: { nardukSeoDefaultImage: image } })
+    expect(addPlugin).toHaveBeenCalledWith(
+      expect.stringContaining('/app/plugins/defaultSocialImage'),
+    )
+  })
+
   it('registers SEO surface without Nuxt layer inheritance', async () => {
     const { addImportsDir, addServerScanDir, extendPages, extendRouteRules, installModule, nuxt } =
       await setupModule()

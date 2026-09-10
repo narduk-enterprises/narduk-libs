@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { createCiRegistryAuthScript, createCiWorkflow } from './ci-workflow.js'
+import { socialPreviewFiles } from './social-previews.js'
 
 import {
   createMigrationSourcesManifest,
@@ -238,6 +239,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   ]
 
   const files: GeneratedFile[] = [
+    ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
     {
       path: '.gitignore',
       contents: text(
@@ -306,6 +308,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'The shared libraries are dependencies, not a control plane. This app creates files only when an operator explicitly asks for a change. Do not add credential material, hidden network calls, background reconciliation, or generated state to the repository.',
         '',
         'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries.',
+        'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
       ),
     },
     {
@@ -321,6 +324,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run dev',
         '- pnpm run quality',
         '- pnpm run test',
+        '- pnpm run og:generate (first setup; commit apps/web/public/og.png)',
+        '- pnpm run og:check:live (after deployment)',
         '',
         'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
@@ -402,6 +407,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'Nuxt modules are explicit in nuxt.config.ts. Capability metadata in package manifests documents the generated selection; runtime behavior comes from the explicit module and package configuration.',
         '',
         'Use the direct scripts from apps/web/package.json for format, lint, typecheck, unit tests, and builds. Keep secrets in the local environment and never commit them.',
+        'Classify every app/pages file in Config/social-previews.json. Keep a real default OG image and generate distinct images for public content routes. See ../../docs/social-previews.md for the build and live gates.',
       ),
     },
     {
@@ -437,6 +443,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
             '  title: displayName,',
             '  description,',
             '  canonicalUrl: ' + tsString(siteUrl) + ',',
+            '  ogImage: false, // The landing page uses the branded static default.',
             '})',
             '',
             'useWebPageSchema({',
@@ -555,6 +562,32 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  devServer: {',
         '    port: localPort,',
         '  },',
+        ...(capabilities.includes('seo')
+          ? [
+              '  nardukSeo: {',
+              "    defaultOgImage: { url: '/og.png', alt: appName + ' — ' + appDescription },",
+              '  },',
+            ]
+          : [
+              '  app: {',
+              '    head: {',
+              '      title: appName,',
+              '      meta: [',
+              "        { name: 'description', content: appDescription },",
+              "        { property: 'og:title', content: appName },",
+              "        { property: 'og:description', content: appDescription },",
+              "        { property: 'og:type', content: 'website' },",
+              "        { property: 'og:url', content: siteUrl },",
+              "        { property: 'og:image', content: new URL('/og.png', siteUrl).href, tagPriority: 'low' },",
+              "        { property: 'og:image:alt', content: appName + ' — ' + appDescription },",
+              "        { property: 'og:image:width', content: '1200' },",
+              "        { property: 'og:image:height', content: '630' },",
+              "        { name: 'twitter:card', content: 'summary_large_image' },",
+              "        { name: 'twitter:image', content: new URL('/og.png', siteUrl).href, tagPriority: 'low' },",
+              '      ],',
+              '    },',
+              '  },',
+            ]),
         // `site` belongs to nuxt-site-config, which only reaches the app through
         // @nuxtjs/seo (the seo capability). Emitting it unconditionally makes a
         // core-only or auth-only scaffold fail `nuxt typecheck` with TS2353,
@@ -570,6 +603,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '  site: {',
               '    name: appName,',
               '    url: siteUrl,',
+              '    description: appDescription,',
               '  },',
               "  routeRules: { '/': { prerender: true } },",
             ]

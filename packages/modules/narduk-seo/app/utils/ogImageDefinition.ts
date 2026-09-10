@@ -127,8 +127,7 @@ export function resolveSeoOgImageDefinition(
   const resolvedDescription = ogImage?.description ?? description
   const resolvedImage = ogImage?.image ?? image
   const resolvedBadgeLabel = normalizeBadgeLabel(ogImage?.badgeLabel ?? ogImage?.icon)
-  const resolvedEyebrow =
-    ogImage?.eyebrow ?? (type === 'article' ? 'Editorial Preview' : 'Open Graph Preview')
+  const resolvedEyebrow = ogImage?.eyebrow ?? resolvedSiteName
   const resolvedCategory = ogImage?.category ?? (type === 'article' ? 'Article' : undefined)
   const resolvedHost = normalizeHost(canonicalUrl ?? siteUrl)
   const resolvedPrimaryColor = normalizeSeoOgImageHexColor(
