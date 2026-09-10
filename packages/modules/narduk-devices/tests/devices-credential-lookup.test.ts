@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CredentialSecretLookupOptions } from '../server/utils/devices'
 import { lockoutSubjectFor } from '../server/utils/devices-lockout'
 import { sha256Hex, timingSafeEqualHex } from '../server/utils/devices-signing'
 import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import { claimDevice, createTestHarness, FINGERPRINT, ORG, VESSEL } from './support/database'
 import { codeOf, errorOf } from './support/expect'
+
+import type { CredentialSecretLookupOptions } from '../server/utils/devices'
 
 /**
  * Gap L2: the built mybo edge presents only the raw credential *secret* as its

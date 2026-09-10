@@ -27,8 +27,8 @@ import {
   createLockoutGate,
   DEVICES_LOCKOUT_MAX_WINDOW_SECONDS,
   type LockoutPurpose,
-  lockoutSubjectFor,
   type LockoutSubject,
+  lockoutSubjectFor,
 } from './devices-lockout'
 import {
   canonicalBytes,
@@ -1033,6 +1033,18 @@ export function createDevices(
       token: ClaimToken,
     ) => ApprovalOutcome | Promise<ApprovalOutcome>
     /**
+     * May this caller be served a replay of the completion it already made?
+     *
+     * Exactly `authorize` minus its approval-expiry clause, and never less:
+     * a replay rotates live credentials, so it must not be a cheaper route to
+     * a credential set than the completion itself. The one relaxation is
+     * deliberate — approvals live five minutes, the recovery window is the
+     * claim session's fifteen — and every other clause `authorize` applies,
+     * including whatever secret or signature proves the caller, applies here
+     * too (narduk-libs#228 review L2).
+     */
+    canReissue: (session: ClaimSession, token: ClaimToken) => boolean | Promise<boolean>
+    /**
      * Did this call present a secret only the genuine device could hold — the
      * raw approval token, or a signed `deviceProof`?
      *
@@ -1046,18 +1058,6 @@ export function createDevices(
      * review LOW-4).
      */
     carriesProof: boolean
-    /**
-     * May this caller be served a replay of the completion it already made?
-     *
-     * Exactly `authorize` minus its approval-expiry clause, and never less:
-     * a replay rotates live credentials, so it must not be a cheaper route to
-     * a credential set than the completion itself. The one relaxation is
-     * deliberate — approvals live five minutes, the recovery window is the
-     * claim session's fifteen — and every other clause `authorize` applies,
-     * including whatever secret or signature proves the caller, applies here
-     * too (narduk-libs#228 review L2).
-     */
-    canReissue: (session: ClaimSession, token: ClaimToken) => boolean | Promise<boolean>
     claimSessionId: string
     /**
      * The single-use row the re-issue batch must burn atomically with the serve,

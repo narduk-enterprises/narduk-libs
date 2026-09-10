@@ -231,31 +231,31 @@ counted in one transaction, so no concurrent failure goes uncounted.
 **Account and IP subjects are namespaced by operation.** The stored subject is
 `<purpose>:<accountKey|ip>` — `claim:` for `startClaim` and both completion
 paths, `credential:` for `getCredentialBySecret`, `session:` for `openSession`
-(`lockoutSubjectFor`, `server/utils/devices-lockout`) — and a
-`security.lockout` audit row carries that same namespaced value in `subjectId`.
-An account key or an IP identifies a *caller*, not a capability, so without the
-namespace one path's counter gates another's: a completion naming a
-`claimSessionId` that does not exist carries no token, no approval and no proof,
-and so has no per-token subject to cap it at five, and twenty of them from one
-address locked the vessel's whole ingest path (narduk-libs#228 third review
-HIGH-4). Token and device subjects are deliberately *not* namespaced: a token
-digest is only ever presented to the claim ceremony, a device id only to
-`openSession`, and `startClaim` and completion are meant to share the token
-counter — that is what bounds guessing across the two legs of one ceremony.
+(`lockoutSubjectFor`, `server/utils/devices-lockout`) — and a `security.lockout`
+audit row carries that same namespaced value in `subjectId`. An account key or
+an IP identifies a _caller_, not a capability, so without the namespace one
+path's counter gates another's: a completion naming a `claimSessionId` that does
+not exist carries no token, no approval and no proof, and so has no per-token
+subject to cap it at five, and twenty of them from one address locked the
+vessel's whole ingest path (narduk-libs#228 third review HIGH-4). Token and
+device subjects are deliberately _not_ namespaced: a token digest is only ever
+presented to the claim ceremony, a device id only to `openSession`, and
+`startClaim` and completion are meant to share the token counter — that is what
+bounds guessing across the two legs of one ceremony.
 
 **An unknown `claimSessionId` has two possible answers.** A completion call
 normally **throws** `DevicesError('not_found')` — unchanged, and still the
 contract for an id that does not exist — but once the caller's subjects are
-locked it **returns** `{ status: 'rate_limited', credentials: [],
-retryAfterSeconds }` instead, the same answer a real but locked session gets.
-Handle both on any route that accepts a caller-supplied id. Call it what it is:
-rate-limiting on *enumeration*, not a uniform refusal. Below the threshold the
-two answers still differ, so the first twenty probes do distinguish a real id
-from an invented one; what changed is that they are counted, audited and
-eventually refused instead of free and untraced. Uniformity was considered and
-rejected — always `rate_limited` breaks the `not_found` contract consumers
-branch on, always `not_found` hands the oracle straight back (third review
-LOW-5).
+locked it **returns**
+`{ status: 'rate_limited', credentials: [], retryAfterSeconds }` instead, the
+same answer a real but locked session gets. Handle both on any route that
+accepts a caller-supplied id. Call it what it is: rate-limiting on
+_enumeration_, not a uniform refusal. Below the threshold the two answers still
+differ, so the first twenty probes do distinguish a real id from an invented
+one; what changed is that they are counted, audited and eventually refused
+instead of free and untraced. Uniformity was considered and rejected — always
+`rate_limited` breaks the `not_found` contract consumers branch on, always
+`not_found` hands the oracle straight back (third review LOW-5).
 
 **Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
 caller (a queue consumer, a test) can omit it. Without it the presented token's

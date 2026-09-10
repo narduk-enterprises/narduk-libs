@@ -76,8 +76,8 @@ each.
 `AttributableRemoteContext` — `''` is a `string` — so
 `remote: { ip: getRequestIP(event) ?? '' }` compiled into exactly the blind
 lookup the required-argument type was added to forbid. A caller that asks to
-attribute and supplies nothing to attribute to is a bug; `{ unattributed: true }`
-remains the way to say "count nothing" on purpose.
+attribute and supplies nothing to attribute to is a bug;
+`{ unattributed: true }` remains the way to say "count nothing" on purpose.
 
 `consumeNonce` now reserves the `narduk-devices:` scope prefix
 (`DEVICES_INTERNAL_NONCE_PREFIX`) for the package's own completion-proof and
