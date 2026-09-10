@@ -252,11 +252,6 @@ export async function reissueCredentialsAtomically(
     proofNonce === null
       ? sql`1 = 1`
       : sql`NOT EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE scope = ${proofNonce.scope} AND nonce = ${proofNonce.nonce})`
-  const burnedProof =
-    proofNonce === null
-      ? null
-      : sql`EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE id = ${proofNonceId})`
-
   // Statement one of the batch: the single-writer claim. Two callers that read
   // the same generation contend for one UNIQUE (scope, nonce) key. It selects
   // from the device row so the insert can carry a WHERE clause; the row is
@@ -305,14 +300,23 @@ export async function reissueCredentialsAtomically(
           .onConflictDoNothing()
           .returning({ id: devicesScopedNonces.id })
 
-  // Every later statement is conditional on *this call* holding the writer row,
-  // having burned its own proof nonce, and on the device still being claimed,
-  // so a loser — or a device revoked between the read and the batch — mutates
-  // nothing.
-  const stillOurs =
-    burnedProof === null
-      ? sql`${heldLock} AND ${deviceClaimed}`
-      : sql`${heldLock} AND ${burnedProof} AND ${deviceClaimed}`
+  /**
+   * Every later statement is conditional on *this call* holding the writer row
+   * and on the device still being claimed, so a loser — or a device revoked
+   * between the read and the batch — mutates nothing.
+   *
+   * It deliberately does **not** also require the proof row to exist. That
+   * clause used to sit here and was dead weight: `proofWriter`'s own gate is
+   * this exact predicate, evaluated earlier in the same transaction, and
+   * statement one's `proofUnspent` rules out the only other way its
+   * `onConflictDoNothing` could fire — so whenever `stillOurs` holds, the burn
+   * has already landed. `runDevicesBatch` refuses any adapter that cannot run
+   * the statements in one transaction (`devices-atomic.ts`), so nothing can
+   * interleave between the two. Named rather than kept, because a guard no
+   * test can kill is a guard nobody can trust (narduk-libs#228 third review,
+   * test honesty).
+   */
+  const stillOurs = sql`${heldLock} AND ${deviceClaimed}`
 
   const bumpGeneration = db
     .update(devicesDevices)

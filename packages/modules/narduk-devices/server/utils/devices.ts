@@ -999,6 +999,20 @@ export function createDevices(
       token: ClaimToken,
     ) => ApprovalOutcome | Promise<ApprovalOutcome>
     /**
+     * Did this call present a secret only the genuine device could hold — the
+     * raw approval token, or a signed `deviceProof`?
+     *
+     * `authorize` alone does not answer that on
+     * `completeClaimWithRecordedApproval`: it verifies a proof only `if (proof
+     * !== undefined)`, so a first completion with **no** proof passes on the
+     * recorded approval plus four values that all travel on the wire. That
+     * caller is authorized to complete, but it has proved nothing, and it is
+     * the only reason `alreadyCompleted(…, true)` could disclose `deviceId` to
+     * a caller the JSDoc there says proved something (narduk-libs#228 third
+     * review LOW-4).
+     */
+    carriesProof: boolean
+    /**
      * May this caller be served a replay of the completion it already made?
      *
      * Exactly `authorize` minus its approval-expiry clause, and never less:
@@ -1379,15 +1393,21 @@ export function createDevices(
       return { status, credentials: [] }
     }
     /**
-     * `discloseDeviceId` is true only for a caller that ran the full
-     * authorization for a *first* completion and merely lost the race to
-     * another equally authorized attempt — a caller that would have been handed
-     * `deviceId` had it won.
+     * `discloseDeviceId` is true on exactly one path: a caller that ran the
+     * full authorization for a *first* completion, **presented a secret only
+     * the device could hold**, and merely lost the race to another equally
+     * authorized attempt — a caller that would have been handed `deviceId` had
+     * it won.
      *
-     * Every replay answer passes false. `deviceId` names the scope of the
-     * library's own re-issue lock, and handing it to a caller that proved
-     * nothing is what let an attacker aim pre-inserted rows at the recovery
-     * path (narduk-libs#228 second review H3).
+     * Both halves are needed. Every replay answer passes false, because
+     * `deviceId` names the scope of the library's own re-issue lock and handing
+     * it to a caller that proved nothing is what let an attacker aim
+     * pre-inserted rows at the recovery path (narduk-libs#228 second review
+     * H3). And the race-loser branch passes `run.carriesProof` rather than a
+     * bare `true`, because on `completeClaimWithRecordedApproval` a first
+     * completion without `deviceProof` is authorized on the recorded approval
+     * plus four on-wire values alone — authorized, but proof-less, so the
+     * rationale above did not hold for it (third review LOW-4).
      */
     const alreadyCompleted = (
       completed: ClaimSession,
@@ -1434,8 +1454,10 @@ export function createDevices(
     if (!won) {
       const current = await findClaimSession(session.id)
       // Authorized: this caller passed `run.authorize` and merely lost the
-      // completion race to a concurrent, equally authorized attempt.
-      if (current?.status === 'claimed') return alreadyCompleted(current, true)
+      // completion race to a concurrent, equally authorized attempt. It learns
+      // `deviceId` only if it also proved possession — a raw approval token or
+      // a signed `deviceProof` (third review LOW-4).
+      if (current?.status === 'claimed') return alreadyCompleted(current, run.carriesProof)
       if (current?.status === 'revoked') return fail('revoked')
       return fail('expired')
     }
@@ -1784,8 +1806,12 @@ export function createDevices(
         reissue: input.reissueOnIdempotentReplay ?? false,
         remote: input.remote,
         accountSubject: () => approvedByUserId,
-        // This path proves the caller with the raw approval token, not a
-        // single-use signed proof, so there is no nonce for the batch to burn.
+        // The raw approval token *is* this path's proof of possession — it is a
+        // secret the caller had to hold, and `authorize` compares it on every
+        // completion — so a race loser here has proved something (third review
+        // LOW-4). It is not a single-use signed proof, so there is no nonce for
+        // the batch to burn.
+        carriesProof: true,
         completionProofNonce: () => null,
         canReissue: async (session, token) =>
           session.hardwareFingerprint === input.hardwareFingerprint &&
@@ -1866,6 +1892,12 @@ export function createDevices(
         reissue,
         remote: input.remote,
         accountSubject: (session) => session.approvalUserId,
+        // Without `deviceProof` this path authenticates on the recorded
+        // approval and four values that travel on the wire, so a first
+        // completion can be authorized having proved nothing. Such a caller
+        // does not learn `deviceId` when it loses the race (third review
+        // LOW-4).
+        carriesProof: proof !== undefined,
         completionProofNonce: (session) =>
           proof === undefined ? null : completionProofNonceRef(session, proof),
         canReissue: async (session, token) =>
