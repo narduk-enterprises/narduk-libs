@@ -1,5 +1,11 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.3.5
+
+### Patch Changes
+
+- d66fe65: Release the app generator with the updated analytics package pin.
+
 ## 0.3.4
 
 ### Patch Changes

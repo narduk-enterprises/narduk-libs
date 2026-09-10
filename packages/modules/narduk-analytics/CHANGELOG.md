@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.19.33
+
+### Patch Changes
+
+- d66fe65: Deduplicate PostHog pageviews across Nuxt hydration and query-only
+  route callbacks, and skip failed navigations.
+
 ## 1.19.32
 
 ### Patch Changes
