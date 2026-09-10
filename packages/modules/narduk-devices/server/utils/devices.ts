@@ -635,10 +635,10 @@ export interface DevicesService {
   completeClaim: (input: CompleteClaimInput) => Promise<CompleteClaimResult>
   /**
    * Complete a claim from the device side, using the approval recorded on the
-   * claim session.
-   *
-   * An unknown `claimSessionId` is bimodal: see the note above this interface. No raw approval token is required, so no approval bearer
+   * claim session. No raw approval token is required, so no approval bearer
    * ever has to be persisted by the consumer.
+   *
+   * An unknown `claimSessionId` is bimodal: see the note above this interface.
    *
    * **Authenticate the device before, or with, this call.** Every value it
    * compares travels on the wire; pass `deviceProof` to have the library
