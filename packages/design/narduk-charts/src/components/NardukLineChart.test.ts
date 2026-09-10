@@ -661,8 +661,7 @@ describe('NardukLineChart pinned Y domain and tick count', () => {
         w
           .find('.narduk-line-path')
           .attributes('d')!
-          // eslint-disable-next-line regexp/no-unused-capturing-group -- narduk-libs#131, not fixed in this fold-move PR: capturing group unused in this assertion regex
-          .match(/-?\d+(\.\d+)?/g)![1],
+          .match(/-?\d+(?:\.\d+)?/g)![1],
       )
 
     // Self-normalised, both would start at the same height. Pinned, the quiet
