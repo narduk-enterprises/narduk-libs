@@ -11,11 +11,18 @@ type AfterEach = (to: Route, from: Route, failure?: unknown) => void
 
 let afterEach: AfterEach | undefined
 let currentRoute: { value: Route } = { value: { path: '/' } }
+let deferNextTicks = false
+const pendingNextTicks: Array<() => unknown> = []
 
 vi.mock('#imports', () => ({
   defineNuxtPlugin: <T>(definition: T): T => definition,
-  nextTick: (callback?: () => unknown): Promise<unknown> =>
-    callback ? Promise.resolve().then(callback) : Promise.resolve(),
+  nextTick: (callback?: () => unknown): Promise<unknown> => {
+    if (!callback) return Promise.resolve()
+    if (!deferNextTicks) return Promise.resolve().then(callback)
+
+    pendingNextTicks.push(callback)
+    return Promise.resolve()
+  },
   useHead: vi.fn(),
   useRouter: () => ({
     afterEach: (handler: AfterEach) => {
@@ -52,6 +59,8 @@ beforeEach(() => {
   document.cookie = ''
   setLocation('example.com')
   afterEach = undefined
+  deferNextTicks = false
+  pendingNextTicks.length = 0
   currentRoute = { value: { path: '/' } }
   runtimeConfigValue = {
     public: {
@@ -96,7 +105,7 @@ describe('posthog.client — enabled path', () => {
 
     expect(posthogInit).toHaveBeenCalledWith(
       'phc_test_key',
-      expect.objectContaining({ api_host: 'https://us.i.posthog.com' }),
+      expect.objectContaining({ api_host: 'https://us.i.posthog.com', capture_pageview: false }),
     )
     expect(posthogRegister).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -110,6 +119,41 @@ describe('posthog.client — enabled path', () => {
       'posthog',
       expect.objectContaining({ capture: expect.any(Function) }),
     )
+  })
+
+  it('emits one pageview per successful pathname across hydration and query-only route callbacks', async () => {
+    runtimeConfigValue = {
+      public: {
+        analyticsLoadStrategy: 'immediate',
+        previewSafeMode: false,
+        posthogPublicKey: 'phc_test_key',
+        posthogHost: 'https://us.i.posthog.com',
+        appName: 'test-app',
+        deploymentTarget: 'production',
+      },
+    }
+
+    deferNextTicks = true
+    const plugin = (await import('../app/plugins/posthog.client')).default
+    plugin.setup?.({ provide: vi.fn() })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Nuxt can call afterEach for the hydrated route before its initial next tick.
+    afterEach?.({ path: '/', fullPath: '/' }, { path: '/' })
+    afterEach?.({ path: '/map', fullPath: '/map?layer=wind#detail' }, { path: '/' })
+    afterEach?.({ path: '/map', fullPath: '/map?layer=buoys' }, { path: '/map' })
+    afterEach?.({ path: '/failed', fullPath: '/failed' }, { path: '/map' }, new Error('cancelled'))
+
+    for (const callback of pendingNextTicks.splice(0)) callback()
+
+    expect(posthogCapture).toHaveBeenCalledTimes(2)
+    expect(posthogCapture).toHaveBeenNthCalledWith(1, '$pageview', {
+      $current_url: 'https://example.com/',
+    })
+    expect(posthogCapture).toHaveBeenNthCalledWith(2, '$pageview', {
+      $current_url: 'https://example.com/map',
+    })
   })
 
   it('tags workers.dev preview traffic as internal, non-production', async () => {

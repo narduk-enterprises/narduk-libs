@@ -121,20 +121,23 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
 
       posthog.register(superProperties)
 
-      // Capture initial pageview since Nuxt router.afterEach does not fire on SSR hydration
-      void nextTick(() => {
-        posthog.capture('$pageview', {
-          $current_url: window.location.href,
-        })
-      })
+      // Nuxt may report the hydrated route through afterEach before the initial
+      // next tick. Track the pathname once across both orderings, ignore failed
+      // navigations, and leave query/hash-only state changes out of pageview totals.
+      let lastTrackedPath: string | undefined
+      const trackPageview = (path: string) => {
+        if (path === lastTrackedPath) return
 
-      // Manual pageview tracking on subsequent route changes
-      router.afterEach((to) => {
-        void nextTick(() => {
-          posthog.capture('$pageview', {
-            $current_url: window.location.origin + to.fullPath,
-          })
+        lastTrackedPath = path
+        posthog.capture('$pageview', {
+          $current_url: window.location.origin + path,
         })
+      }
+
+      void nextTick(() => trackPageview(router.currentRoute.value.path))
+      router.afterEach((to, _from, failure) => {
+        if (failure) return
+        void nextTick(() => trackPageview(to.path))
       })
     }
 
