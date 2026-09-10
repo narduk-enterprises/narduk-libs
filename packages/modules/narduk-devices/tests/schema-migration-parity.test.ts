@@ -14,7 +14,7 @@ import {
   DEVICE_STATUSES,
 } from '../shared/types/devices'
 
-import { createTestHarness, MIGRATION_PATHS, MIGRATION_SQL } from './support/database'
+import { claimDevice, createTestHarness, MIGRATION_PATHS, MIGRATION_SQL } from './support/database'
 
 /** Every published migration concatenated, comments stripped. */
 const migration = MIGRATION_SQL
@@ -114,7 +114,57 @@ describe('devices schema/migration parity', () => {
       const guarded = file.match(/CREATE (?:TABLE|UNIQUE INDEX|INDEX) IF NOT EXISTS/gu) ?? []
       expect(guarded, `${path} has an unguarded CREATE`).toHaveLength(creates.length)
       expect(file, `${path} mutates an existing table`).not.toMatch(/ALTER TABLE|DROP TABLE/iu)
+      // "Additive" used to mean only "no ALTER, no DROP", which a migration
+      // that rewrote rows would have passed (narduk-libs#228 M6). DML is a
+      // data migration: it is not re-runnable and it is not this file's job.
+      expect(file, `${path} contains DML`).not.toMatch(
+        /\b(?:INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b/iu,
+      )
     }
+  })
+
+  /**
+   * narduk-libs#228 M5. `IF NOT EXISTS` suppresses "an index of that name
+   * exists", not a genuine uniqueness violation over rows already in the
+   * table, and the production runner appends its ledger INSERT to the end of
+   * the file — so a statement that can fail on existing data must come last,
+   * or it takes every statement below it and every later deploy with it.
+   */
+  it('puts the one statement that can fail on existing data last in its file', async () => {
+    const harness = createTestHarness()
+    const { sqlite } = harness
+    const claimed = await claimDevice(harness)
+    // Rewind to a database that has 0001's shape but not 0002's, then put it
+    // in the one state 0002 can fail on. A duplicate digest means two devices
+    // hold the same bearer secret: unreachable with 256-bit secrets, which is
+    // exactly why the ordering has to be pinned rather than trusted.
+    sqlite.exec('DROP INDEX IF EXISTS devices_credentials_secret_hash_idx')
+    sqlite.exec('DROP TABLE IF EXISTS devices_scoped_nonces')
+    const digest = 'f'.repeat(64)
+    for (const [offset, id] of ['dup-a', 'dup-b'].entries()) {
+      sqlite
+        .prepare(
+          'INSERT INTO devices_credentials (id, device_id, credential_class, secret_hash, fingerprint, version, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(id, claimed.deviceId, 'ingest', digest, `sha256:${id}`, 90 + offset, 1)
+    }
+
+    const second = readFileSync(
+      MIGRATION_PATHS.find((path) => path.endsWith('0002_claim_completion.sql')) ?? '',
+      'utf8',
+    )
+    expect(() => sqlite.exec(second)).toThrow(/UNIQUE constraint failed/u)
+
+    // The cost is that one index. Everything the file also ships survived,
+    // because it ran before the statement that threw.
+    const survived = sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE name LIKE 'devices_scoped_nonces%'")
+      .all() as Array<{ name: string }>
+    expect(survived.map((row) => row.name).sort()).toEqual([
+      'devices_scoped_nonces',
+      'devices_scoped_nonces_expires_at_idx',
+      'devices_scoped_nonces_key_idx',
+    ])
   })
 
   it('stays additive and D1-only', () => {

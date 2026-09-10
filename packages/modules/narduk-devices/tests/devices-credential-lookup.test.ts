@@ -102,7 +102,10 @@ describe('credential lookup by bare secret', () => {
     ).toThrow(/UNIQUE constraint failed/u)
   })
 
-  it('confirms the digest in constant time', () => {
+  // Named for what it proves. It takes no timing measurement, so it is an
+  // equality contract for `timingSafeEqualHex`, not evidence of constant time
+  // — swap the body for `===` and this still passes (narduk-libs#228 M1).
+  it('equates two digests only when every byte matches, first byte to last', () => {
     const digest = 'a'.repeat(64)
     expect(timingSafeEqualHex(digest, digest)).toBe(true)
     expect(timingSafeEqualHex(digest, `b${digest.slice(1)}`)).toBe(false)

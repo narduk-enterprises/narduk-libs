@@ -235,24 +235,48 @@ the `approval_*` columns `issueApprovalToken` already wrote, so no raw approval
 token ever leaves the library:
 
 ```ts
-// The device presents a signed request; the consumer verifies the signature,
-// bounds the timestamp, consumes the nonce, and only then completes.
 const completed = await devices.completeClaimWithRecordedApproval({
   claimSessionId,
   devicePublicKey, // must equal the key the claim session recorded
   hardwareFingerprint,
   installationId, // minted by the cloud
   idempotencyKey,
+  // The device's Ed25519 proof, verified in-library against the key the claim
+  // session recorded, bound to every field above, and single-use.
+  deviceProof: {
+    canonicalRequest: {
+      claimSessionId,
+      devicePublicKey,
+      hardwareFingerprint,
+      idempotencyKey,
+      installationId,
+      nonce, // any unguessable value the device picks; burned on first use
+      timestamp, // ms epoch, inside the skew window
+    },
+    signature, // base64url, over canonicalBytes(canonicalRequest)
+  },
   remote: { ip },
 })
 // → { status: 'completed', deviceId, credentials: [ingest, command] }
 ```
 
-**Authenticating the device is the consumer's job.** This call binds the caller
-to the claim session's recorded public key and hardware fingerprint; it does not
-verify a signature. Verify the signed request first (`verifyEd25519` over
-`canonicalBytes`), then call. A mismatch is `hardware_mismatch` and counts
-against the lockout.
+**Authenticate the device.** `claimSessionId`, `devicePublicKey`,
+`hardwareFingerprint` and `idempotencyKey` all travel on the wire, so the
+binding checks alone prove only that the caller knows what the handoff carried.
+Two ways to close that:
+
+- **Pass `deviceProof`** and let the library do it. It binds every signed field
+  to resolved state, verifies the signature against the key the claim session
+  recorded — not the one the caller presents — and burns `nonce` in
+  `devices_scoped_nonces`, so a captured request is spent rather than
+  replayable. The proof is checked **last** on every path, so a caller refused
+  by a cheaper check never spends the nonce it presented.
+- **Or verify the signed request yourself first** (`verifyEd25519` over
+  `canonicalBytes`, `assertTimestampSkew`, `consumeNonce`) and call without
+  `deviceProof`, exactly as 0.1.0-era consumers do.
+
+A binding mismatch is `hardware_mismatch`; a proof that does not verify is
+`unauthorized_user`. Both count against the lockout.
 
 `approval_required` covers "not approved yet" and "the approval expired";
 `unauthorized_user` covers an approval recorded for a different org or resource
@@ -276,8 +300,31 @@ did receive the first response and replays anyway is handed a working
 replacement rather than a broken one. Past the claim session's lifetime the
 answer returns to `already_completed` with an empty array.
 
-`completeClaim` keeps 0.1.0's behaviour by default; pass
-`reissueOnIdempotentReplay: true` to opt that path in as well.
+**`reissueOnIdempotentReplay` is off by default on both completion paths**, and
+that default is load-bearing rather than conservative. A served re-issue hands
+the caller the device's only live credential set *and revokes the genuine
+device's*, so whoever can satisfy the check owns the device. Four conditions
+gate it:
+
+1. **Opt in explicitly.** Default `false`. A consumer following the example
+   above cannot get destructive replay without asking for it.
+2. **Prove the device.** On `completeClaimWithRecordedApproval`,
+   `reissueOnIdempotentReplay: true` without `deviceProof` throws
+   `DevicesError('invalid')` — it is not silently downgraded. On
+   `completeClaim`, the raw approval token is already that proof.
+3. **A refusal is a failed authentication.** It records an attempt, counts
+   against the lockout and returns no `deviceId`, so guessing at the four
+   on-wire values is bounded and visible instead of unlimited and untraced.
+4. **A per-claim-session cap** (`MAX_REISSUES_PER_CLAIM_SESSION`) bounds churn
+   and audit noise. It is *not* what makes the path safe: one re-issue is
+   already a complete credential set, so a cap alone would only turn unlimited
+   takeover into N takeovers. Conditions 1–3 are the control.
+
+Two replays that race resolve to one winner and one `rate_limited` with
+`retryAfterSeconds`, never to a terminal status: the loser is a device replaying
+its own completion, and the winner has already rotated the credentials it was
+holding, so telling it "already completed" would brick exactly the device this
+path exists to rescue.
 
 ### Replay primitives for a pre-device exchange
 
@@ -313,15 +360,35 @@ accepted.
 
 ### Bearer resolution
 
-| The client presents                | Resolve with                                       |
-| ---------------------------------- | -------------------------------------------------- |
-| a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
-| a raw credential secret, no id     | `getCredentialBySecret(secret)`                    |
-| a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
+| The client presents                | Resolve with                                          |
+| ---------------------------------- | ----------------------------------------------------- |
+| a session token from `openSession` | `getSessionByToken(sessionToken)`                     |
+| a raw credential secret, no id     | `getCredentialBySecret(secret, { remote })`           |
+| a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })`    |
 
-All three resolve by SHA-256 digest against a UNIQUE index and confirm in
-constant time; none accepts a revoked or expired row, and none puts the
-presented bearer into a message, an error or an audit row.
+None accepts a revoked or expired row, and none puts the presented bearer into
+a message, an error or an audit row.
+
+What protects the two digest lookups is a 256-bit secret and an equality seek
+against a UNIQUE index: at most one row can match, and it matched exactly.
+Re-comparing a digest the index already equated cannot fail, so there is no
+constant-time confirmation on those paths and none is needed — timing that
+leaked digest-prefix bits would not help forge a preimage of a 256-bit secret.
+`timingSafeEqualHex` is load-bearing in exactly one place,
+`verifyCredentialSecret`, where the row is fetched **by id** and the digest is
+then genuinely compared.
+
+**A credential secret is a long-lived bearer.** Completion issues credentials
+with `expiresAt: null` (the re-issue path preserves it), so
+`getCredentialBySecret`'s expiry check never fires and a leaked secret — from a
+device filesystem, a support bundle, a proxy log — stays live until someone
+revokes it. Prefer trading it for a 30-minute session via `openSession` where
+the edge can. Where it cannot, **pass `remote` from every route**: a failed
+resolution is recorded against the presented account and IP and a locked
+subject is refused, which is what makes a credential-stuffing sweep across a
+fleet both bounded and visible in the `security.lockout` audit trail. Without
+`remote` there are no subjects to count, so the sweep is invisible again. A
+successful resolution writes nothing — this is a per-request read path.
 
 ### Pruning
 
@@ -486,7 +553,9 @@ with narduk-tenancy. A ceremony where the **device** collects its own
 credentials never puts that token on the wire at all — see
 [Device-side completion](#device-side-completion) — and an edge that presents
 only a raw credential secret as its bearer resolves through
-`getCredentialBySecret` rather than `requireDeviceSession`.
+`getCredentialBySecret(secret, { remote })` rather than `requireDeviceSession`.
+Pass `remote`: see [Bearer resolution](#bearer-resolution) for why a bare secret
+is the one bearer that needs it.
 
 ## Audit
 
