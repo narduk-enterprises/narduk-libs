@@ -80,3 +80,59 @@ The command never writes secret files. Registry auth writes the requested
 
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
+
+## Web foundation conformance
+
+`narduk-app foundation:check [--checkout <dir>] [--json [path]]` evaluates the
+seven web-cf foundation items ratified by D-WEBFOUND-2 Q9 (a) (company-hq
+`strategy/web-foundation-libs-plan.md#4`) against the whole checkout. Every item
+resolves to `pass`, `fail`, `unknown`, or `not-applicable` -- there is no
+warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
+`2` is UNKNOWN (an app's own CI should treat that as a failure too). The
+`--json [path]` artefact is `schemaVersion: 1`,
+`tool: '@narduk-enterprises/narduk-app-tools'`, and is the exact shape
+company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
+for the weekly fleet rollup.
+
+### Shared UI pinned (`foundation:check:shared-ui-pinned`)
+
+`narduk-app foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]`
+-- components-library-plan.md §2 item 6
+([narduk-libs#253](https://github.com/narduk-enterprises/narduk-libs/issues/253)).
+The evaluator is `src/foundation/items/item-8-shared-ui-pinned.ts` and matches
+items 1-7 (`check()` sub-checks, no warn tier). It is a separate command and
+JSON artefact (`tool: '@narduk-enterprises/narduk-app-tools/shared-ui-pinned'`)
+because `foundation:check --json` is the exact 7-item contract company-hq
+`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3
+ARTEFACT finding. Same exit-code convention as `foundation:check` (`0` PASS, `1`
+FAIL, `2` UNKNOWN).
+
+**Presence policy:** registry-gated, so this command enforces what
+`foundation:check` item 2.2 cannot (item 2.2 only fails a loose pin that is
+already a dependency). For each of narduk-shell / narduk-ui / narduk-charts,
+when the app has a UI surface: not published (empty version list / 404) →
+`not-applicable` ("presence is not yet required because nothing is published");
+registry unreadable → `unknown`; published and absent → `fail` ("`<pkg>` is
+published (latest x.y.z) and this app has UI but does not depend on it — add an
+exact pin"); published and present → the exact-pin check (no `^`, `~`, or
+`workspace:`). Today narduk-shell is unpublished (`0.0.0`) so it is
+`not-applicable`; narduk-ui and narduk-charts are published, so a UI app without
+them fails.
+
+"Has UI" reuses `hasNuxtUiSurface()` -- item 1.1's `NUXT_CONFIG_CANDIDATES` plus
+a pages or components directory at those same monorepo prefixes (the paths item
+3 / Wave-1 already walk). A `nuxt` dependency alone does not count. API-only
+apps are `not-applicable` in full.
+
+**Rule table:**
+
+| Sub-check       | Condition                                                                                 | Verdict                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 8.0             | No `package.json` readable at a known monorepo-candidate path                             | `unknown`                                                                                     |
+| 8.0             | No `nuxt.config.*` at a known path, or no pages/components directory at the same prefixes | `not-applicable` (whole check)                                                                |
+| 8.0             | Nuxt config and a pages/components directory exist                                        | `pass`                                                                                        |
+| 8.1 / 8.2 / 8.3 | package has no published versions                                                         | `not-applicable` -- presence is not yet required because nothing is published                 |
+| 8.1 / 8.2 / 8.3 | registry unreadable (no credential / unreachable)                                         | `unknown`                                                                                     |
+| 8.1 / 8.2 / 8.3 | published, and this UI app does not depend on it                                          | `fail` -- "`<pkg>` is published (latest x.y.z) and this app has UI but does not depend on it" |
+| 8.1 / 8.2 / 8.3 | published, present, but the pin is a range or a `workspace:` / `file:` specifier          | `fail`, names the package and the fix                                                         |
+| 8.1 / 8.2 / 8.3 | published and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                     | `pass`                                                                                        |

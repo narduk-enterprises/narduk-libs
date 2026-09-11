@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { RegistryReality, ResolvedVersion } from '../../src/foundation/npm-registry.js'
+import type {
+  RegistryPublication,
+  RegistryReality,
+  ResolvedVersion,
+} from '../../src/foundation/npm-registry.js'
 import type {
   FoundationCheckArtefact,
   FoundationItemResult,
@@ -67,15 +71,30 @@ export function fakeReality(
   overrides: {
     installed?: Record<string, ResolvedVersion | null>
     latestMajors?: Record<string, number | null>
+    publications?: Record<string, RegistryPublication>
   } = {},
 ): RegistryReality {
   const installed = overrides.installed ?? {}
   const latestMajors = overrides.latestMajors ?? {}
+  const publications = overrides.publications ?? {}
   return {
     resolveInstalled(pkgName) {
       return pkgName in installed ? installed[pkgName] : null
     },
+    async publicationOf(pkgName) {
+      if (pkgName in publications) return publications[pkgName]
+      if (pkgName in latestMajors) {
+        const major = latestMajors[pkgName]
+        if (major === null) return { status: 'unreadable' }
+        return { status: 'published', latest: `${major}.0.0`, major }
+      }
+      return { status: 'unreadable' }
+    },
     async latestPublishedMajor(pkgName) {
+      if (pkgName in publications) {
+        const publication = publications[pkgName]
+        return publication.status === 'published' ? publication.major : null
+      }
       return pkgName in latestMajors ? latestMajors[pkgName] : null
     },
   }

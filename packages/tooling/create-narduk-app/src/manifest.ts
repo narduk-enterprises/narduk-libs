@@ -188,13 +188,12 @@ export function createRootPackageManifest(
     },
     pnpm: {
       overrides: {
-        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
-        ...(capabilities.includes('auth')
-          ? {
-              '@narduk-enterprises/narduk-auth':
-                PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
-            }
-          : {}),
+        // Estate packages are exact-pinned as direct deps in apps/web and are
+        // not listed here: Dependabot does not update `pnpm.overrides`, so an
+        // override would pin a grouped `@narduk-enterprises/*` bump straight
+        // back to the old version. `@nuxt/kit` stays -- modules depend on
+        // `@nuxt/kit@^4.0.0`, and without the override every upstream Nuxt
+        // minor silently splits kit from the exact-pinned `nuxt`.
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
         // The generator pins `nuxt` exactly, so `@nuxt/kit` has to be pinned to
         // the same version. Narduk modules depend on `@nuxt/kit@^4.0.0`, so

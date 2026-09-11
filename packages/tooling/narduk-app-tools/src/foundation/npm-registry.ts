@@ -21,13 +21,27 @@ export interface ResolvedVersion {
   source: 'node_modules' | 'manifest-pin'
 }
 
+/** Distinguishes "the registry could not be read" from "the package has no
+ * published versions". `latestPublishedMajor()` collapses both to `null`
+ * (item 2.3 only needs "could we see a major?"); item 8 needs the split so
+ * an unpublished package is `not-applicable` and an unreadable registry is
+ * `unknown`. */
+export type RegistryPublication =
+  | { status: 'unreadable' }
+  | { status: 'unpublished' }
+  | { status: 'published'; latest: string; major: number }
+
 export interface RegistryReality {
   /** The resolved (installed, or manifest-pinned as a fallback) version of a
    * package this app depends on, or null if undecidable. */
   resolveInstalled(pkgName: string, pinnedSpec: string | undefined): ResolvedVersion | null
   /** The highest published major version on the registry, or null if a
-   * registry read could not be made (no credential, no network, timeout). */
+   * registry read could not be made (no credential, no network, timeout)
+   * or the package has no published versions. */
   latestPublishedMajor(pkgName: string): Promise<number | null>
+  /** Publication status of a package. `unpublished` is a decided fact (404
+   * or an empty version list); `unreadable` is an undecided one. */
+  publicationOf(pkgName: string): Promise<RegistryPublication>
 }
 
 const EXACT_PIN_RE = /^(\d+)\.\d+\.\d+(?:-[0-9A-Z.-]+)?$/i
@@ -80,8 +94,8 @@ export class FilesystemRegistryReality implements RegistryReality {
     return null
   }
 
-  async latestPublishedMajor(pkgName: string): Promise<number | null> {
-    if (!this.authToken) return null
+  async publicationOf(pkgName: string): Promise<RegistryPublication> {
+    if (!this.authToken) return { status: 'unreadable' }
     const url = `https://npm.pkg.github.com/${pkgName}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
@@ -90,7 +104,8 @@ export class FilesystemRegistryReality implements RegistryReality {
         headers: { Authorization: `Bearer ${this.authToken}`, Accept: 'application/json' },
         signal: controller.signal,
       })
-      if (!response.ok) return null
+      if (response.status === 404) return { status: 'unpublished' }
+      if (!response.ok) return { status: 'unreadable' }
       const body = (await response.json()) as {
         'dist-tags'?: { latest?: string }
         versions?: Record<string, unknown>
@@ -98,15 +113,26 @@ export class FilesystemRegistryReality implements RegistryReality {
       const latestTag = body['dist-tags']?.latest
       if (typeof latestTag === 'string') {
         const major = majorOf(latestTag)
-        if (major !== null) return major
+        if (major !== null) return { status: 'published', latest: latestTag, major }
       }
       const versions = body.versions ? Object.keys(body.versions) : []
-      const majors = versions.map(majorOf).filter((m): m is number => m !== null)
-      return majors.length > 0 ? Math.max(...majors) : null
+      const published = versions
+        .map((version) => ({ version, major: majorOf(version) }))
+        .filter((entry): entry is { version: string; major: number } => entry.major !== null)
+      if (published.length === 0) return { status: 'unpublished' }
+      published.sort((left, right) => left.major - right.major)
+      const top = published[published.length - 1]
+      if (!top) return { status: 'unpublished' }
+      return { status: 'published', latest: top.version, major: top.major }
     } catch {
-      return null
+      return { status: 'unreadable' }
     } finally {
       clearTimeout(timer)
     }
+  }
+
+  async latestPublishedMajor(pkgName: string): Promise<number | null> {
+    const publication = await this.publicationOf(pkgName)
+    return publication.status === 'published' ? publication.major : null
   }
 }
