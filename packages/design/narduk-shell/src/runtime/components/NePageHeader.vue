@@ -13,6 +13,14 @@
  * of which a bare `<UPageHeader>` tag has outside a running Nuxt app's own
  * component-resolution build step.
  *
+ * Accessibility: the breadcrumb trail is rendered as ONE navigation landmark.
+ * Nuxt UI's `Breadcrumb.vue` (4.6.0) is itself a `Primitive` rendered `as`
+ * `"nav"` with `aria-label="breadcrumb"`, and an `aria-label` handed to the
+ * component falls through onto that same root. This wrapper therefore renders
+ * `UBreadcrumb` bare and only relabels it; an enclosing `<nav>` of its own put
+ * two identically named landmarks on every page using the shared header, which
+ * is a duplicate entry in every landmark and rotor list.
+ *
  * Styling contract (narduk-ui guardrail 3, extended to the suite): this
  * file reads Nuxt UI semantic tokens (`text-primary`, `text-highlighted`)
  * and never hardcodes a colour, radius, shadow or font. UPageHeader owns
@@ -52,7 +60,10 @@ export interface NePageHeaderProps {
    * to avoid nesting a second heading element inside the `<h1>`.
    */
   as?: NePageHeaderHeading
-  /** Breadcrumb trail. Rendered above the title, in a labelled `nav`, when non-empty. */
+  /**
+   * Breadcrumb trail. Rendered above the title when non-empty, as exactly one
+   * `nav` landmark — `UBreadcrumb`'s own root, relabelled `Breadcrumb`.
+   */
   breadcrumbs?: NeBreadcrumbItem[]
   /** Supporting copy shown below the title. */
   description?: string
@@ -83,9 +94,13 @@ defineSlots<{
 
 <template>
   <div>
-    <nav v-if="breadcrumbs && breadcrumbs.length > 0" aria-label="Breadcrumb">
-      <UBreadcrumb :items="breadcrumbs" aria-label="Breadcrumb" />
-    </nav>
+    <!-- Deliberately unwrapped: UBreadcrumb's own root is the navigation
+         landmark, and the label below lands on it. See the header comment. -->
+    <UBreadcrumb
+      v-if="breadcrumbs && breadcrumbs.length > 0"
+      :items="breadcrumbs"
+      aria-label="Breadcrumb"
+    />
 
     <!-- Default path: `as` is 'h1', so UPageHeader's own title renders the
          page's one heading and everything (headline, description, links)

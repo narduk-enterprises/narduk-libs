@@ -9,10 +9,6 @@
  * failure only with a red border is unreadable to anyone using a screen reader
  * or a grayscale display. Both are pinned below.
  */
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -20,11 +16,6 @@ import NeStatePanel from '../src/runtime/components/NeStatePanel.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'
 
 import type { NeStateValue } from '../src/runtime/types'
-
-const componentSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../src/runtime/components/NeStatePanel.vue'),
-  'utf8',
-)
 
 type Props = Record<string, unknown>
 type Slots = Record<string, string>
@@ -333,20 +324,10 @@ describe('NeStatePanel: gaps, the unblocker, and the action slot', () => {
   })
 })
 
-describe('NeStatePanel: tokens are the only styling contract', () => {
-  it('does not hardcode a colour, radius, shadow or font', () => {
-    const template = componentSource.split('<template>')[1] ?? componentSource
-    const script = componentSource.split('<script')[1]?.split('</script>')[0] ?? ''
-
-    for (const source of [template, script]) {
-      const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/[^\n]*/g, '')
-      // Quoted hex only — issue refs like operator-portal#183 are not colours.
-      expect(code).not.toMatch(/['"`]#[0-9a-f]{3,8}\b/i)
-      expect(code).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
-      expect(code).not.toMatch(/font-family\s*:/)
-      expect(code).not.toMatch(/box-shadow\s*:/)
-      expect(code).not.toMatch(/border-radius\s*:/)
-      expect(code).not.toMatch(/\b(?:rounded-md|rounded-lg|rounded-xl|shadow-md|shadow-lg)\b/)
-    }
-  })
-})
+/*
+ * The styling scan that used to live here is gone, not dropped: its rules are
+ * part of `test/styling-contract.test.ts`, which now derives what it scans
+ * from `src/registry.ts` and therefore covers this component. Three strictness
+ * levels of one idea used to coexist — the global contract, this block, and a
+ * third inside NeStatusBadge.mount.test.ts — and they had already drifted.
+ */

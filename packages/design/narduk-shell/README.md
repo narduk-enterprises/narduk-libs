@@ -178,7 +178,21 @@ app has to change an import specifier when the content arrives.
 
 `defineStatusMap` is a named export of the package root (`.`), not a fourth
 subpath. Import it from `@narduk-enterprises/narduk-shell` the same way the
-module itself is imported.
+module itself is imported. So are the suite's public types, including
+`NeConfirmOptions` and `NeConfirmTone`, so a wrapper around `useConfirm()` can
+state its own signature outside Nuxt's auto-import transform:
+
+```ts
+import type { NeConfirmOptions } from '@narduk-enterprises/narduk-shell'
+```
+
+`useConfirm` itself is reachable through the module's auto-import only, and that
+is a constraint rather than an oversight: Nuxt loads `src/module.ts` with jiti,
+jiti cannot load a single-file component, and the composable imports
+`NeConfirmDialog.vue` to hand the component object to the overlay. A value
+re-export would therefore fail every app at config time with
+`Unknown file extension ".vue"`. `test/use-confirm.test.ts` walks the module
+entry's value-import graph and fails if a `.vue` ever becomes reachable from it.
 
 ## Styling contract
 
@@ -204,6 +218,25 @@ class matches on any element, a subtree can be pinned with `<div class="dark">`.
 A page with no colour-mode runtime opts into the media query by setting
 `data-ne-scheme="auto"` on `<html>`; it is opt-in so that a document with no
 scheme class renders one deterministic way on every machine.
+
+### What enforces it
+
+`test/styling-contract.test.ts` scans every component **the registry registers**
+— the source list is derived from `src/registry.ts`, not written out by hand, so
+a component is covered the moment it is registered and cannot be silently left
+out. It reads the template, the script and any style block (comments removed)
+and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw `font-family` /
+`box-shadow` / `border-radius` declaration, and Tailwind's named radius and
+shadow steps.
+
+Tailwind's **type scale is not** a hardcoded value: under Tailwind v4 `text-sm`
+compiles to `font-size: var(--text-sm)` and `font-medium` to
+`font-weight: var(--font-weight-medium)`, which is a token read like
+`text-muted` is. What the contract forbids there is display type, because the
+page's type hierarchy belongs to the app and reaches a component through the
+heading element it renders. So body copy may use `text-xs` / `text-sm` /
+`text-base` and the one emphasis weight `font-medium`; `text-lg` and up, and
+`font-semibold` and heavier, are rejected.
 
 ### Overriding: the two brand hooks
 
@@ -450,8 +483,10 @@ convention once item 3 lands it.
 ### NePageHeader
 
 Wraps Nuxt UI `UPageHeader` and `UBreadcrumb`. Breadcrumbs render above the
-title in a labelled `nav` and are omitted when the list is empty or absent. The
-heading is an `h1` by default; set `as` to render a different heading level
+title and are omitted when the list is empty or absent. They produce exactly one
+navigation landmark: `UBreadcrumb` is itself a `nav`, so this wrapper renders it
+bare and only relabels it `Breadcrumb` rather than nesting it in a second `nav`.
+The heading is an `h1` by default; set `as` to render a different heading level
 without nesting a second heading inside `UPageHeader`'s own `<h1>`.
 
 #### Props
@@ -558,7 +593,10 @@ if (!ok) return
 ```
 
 `useConfirm()` is auto-imported by the module. Call it from any component — the
-app does not mount a `<NeConfirmDialog>` host of its own.
+app does not mount a `<NeConfirmDialog>` host of its own. The auto-import does
+not depend on `components`: setting `nardukShell: { components: false }` opts
+out of the suite's global component names, and the composable resolves its
+dialog by importing it rather than by global name, so it keeps working.
 
 #### Host mechanism
 
@@ -569,10 +607,19 @@ mounts `NeConfirmDialog` into the overlay stack and `close(boolean)` is what
 `LayerAppShell` wraps the tree in `UApp`. There is no module-registered host
 component and no layout wiring.
 
-One handle drives one dialog at a time: call `useConfirm()` once per `setup` and
-await each `confirm()` before starting the next. Sequential calls resolve
-independently; leftover `pending` / `error` from a rejected `onConfirm` is reset
-on the next `open`.
+One handle drives one dialog at a time. Sequential calls resolve independently,
+and leftover `pending` / `error` from a rejected `onConfirm` is reset on the
+next `open`.
+
+A second `confirm()` started before the first settles **supersedes** it rather
+than racing it — a double-click on a row-level "Delete?" is the case this is
+written for. The new options take the dialog over, and the superseded call
+resolves `false`: the user is being asked a different question now, so they did
+not confirm the old one, and the caller's `if (!ok) return` does the safe thing
+with no extra branch. The one exception is a superseded call whose `onConfirm`
+is still in flight; that work cannot be unrun, so its promise is kept and
+settles with the real outcome. No call is ever left holding a promise that
+cannot settle, and no in-flight handler writes to a dialog it no longer owns.
 
 The declarative form is the same component with a model:
 

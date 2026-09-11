@@ -55,8 +55,7 @@ describe('NePageHeader', () => {
       },
     })
 
-    const nav = wrapper.find('nav[aria-label="Breadcrumb"]')
-    expect(nav.exists()).toBe(true)
+    const nav = wrapper.get('nav[aria-label="Breadcrumb"]')
 
     const links = nav.findAll('a')
     expect(links).toHaveLength(1)
@@ -64,9 +63,36 @@ describe('NePageHeader', () => {
     expect(links[0]?.text()).toBe('Infrastructure')
     expect(nav.text()).toContain('Runners')
 
-    // Breadcrumb precedes the header in document order.
-    const html = wrapper.html()
-    expect(html.indexOf('<nav')).toBeLessThan(html.indexOf('data-slot="root"'))
+    // Breadcrumb precedes the header in document order. Compared as elements
+    // rather than as substrings of the markup: both stubs mark their own root
+    // `data-slot="root"`, so an index comparison would pass on the breadcrumb's
+    // own root and prove nothing about the header.
+    const heading = wrapper.get('h1')
+    expect(
+      nav.element.compareDocumentPosition(heading.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  /*
+   * UBreadcrumb's own root already IS the nav landmark
+   * (`<Primitive as="nav" aria-label="breadcrumb">`), and an `aria-label`
+   * passed to it falls through onto that same root. NePageHeader used to wrap
+   * it in a second `<nav aria-label="Breadcrumb">`, so every page using the
+   * shared header shipped two identically named navigation landmarks. The
+   * test above asserted that *a* labelled nav existed and so never saw it:
+   * only the count does.
+   */
+  it('emits exactly one breadcrumb landmark, not a nested pair', () => {
+    const wrapper = mount(NePageHeader, {
+      props: {
+        title: 'Runners',
+        breadcrumbs: [{ label: 'Infrastructure', to: '/infrastructure' }, { label: 'Runners' }],
+      },
+    })
+
+    expect(wrapper.findAll('nav')).toHaveLength(1)
+    expect(wrapper.findAll('[aria-label="Breadcrumb"]')).toHaveLength(1)
+    expect(wrapper.findAll('nav nav')).toHaveLength(0)
   })
 
   it('renders no breadcrumb nav when the list is empty or absent', () => {

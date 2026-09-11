@@ -149,7 +149,15 @@ describe('NeStatusBadge', () => {
     expect(wrapper.attributes('aria-label')).toBe('error: Degraded')
   })
 
-  it('maps tones to Nuxt UI colour tokens only — no hardcoded colours in the SFC', () => {
+  /*
+   * The hex/rgb/hsl scan that used to open this test is gone, not dropped:
+   * `test/styling-contract.test.ts` derives what it scans from
+   * `src/registry.ts`, so it covers this component's script block — which is
+   * where the map below lives — under the suite's one set of rules. What stays
+   * here is the part that is about this component rather than about styling:
+   * that each tone resolves to a Nuxt UI colour token by name.
+   */
+  it('maps every tone to a Nuxt UI colour token by name', () => {
     const source = readFileSync(
       join(
         dirname(fileURLToPath(import.meta.url)),
@@ -161,10 +169,6 @@ describe('NeStatusBadge', () => {
       ),
       'utf8',
     )
-    const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '')
-    expect(code).not.toMatch(/#[0-9A-F]{3,8}\b/i)
-    expect(code).not.toMatch(/rgba?\(/)
-    expect(code).not.toMatch(/hsla?\(/)
     expect(source).toContain("ok: 'success'")
     expect(source).toContain("warn: 'warning'")
     expect(source).toContain("pending: 'neutral'")
