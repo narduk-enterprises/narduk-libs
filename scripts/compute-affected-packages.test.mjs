@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { computeAffectedSet, loadWorkspace } from './compute-affected-packages.mjs'
 
 const scope = '@narduk-enterprises/'
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
@@ -307,4 +309,33 @@ test('resolves packages across the four-family layout and attributes nested path
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () => {
+  const workspace = loadWorkspace(repoRoot)
+  const shell = workspace.byName.get(`${scope}narduk-shell`)
+  assert.ok(shell, 'loadWorkspace must include narduk-shell')
+  assert.equal(shell.relativeDirectory, 'packages/design/narduk-shell')
+  assert.equal(shell.manifest.version, '0.0.0')
+
+  const result = computeAffectedSet({
+    root: repoRoot,
+    changedFiles: ['packages/design/narduk-shell/src/module.ts'],
+  })
+  assert.equal(result.fullRun, false)
+  assert.deepEqual(result.changedNames, [`${scope}narduk-shell`])
+  assert.ok(result.affectedNames.includes(`${scope}narduk-shell`))
+
+  // Item 4 / narduk-libs#251 owns the generator default-module pin. This item
+  // only has to be visible to workspace scripts; it must not appear there yet.
+  const generatorManifest = readFileSync(
+    join(repoRoot, 'packages/tooling/create-narduk-app/src/manifest.ts'),
+    'utf8',
+  )
+  assert.equal(generatorManifest.includes('narduk-shell'), false)
+
+  const durations = JSON.parse(
+    readFileSync(join(repoRoot, 'scripts/ci-package-durations.json'), 'utf8'),
+  ) as { gateSeconds: Record<string, number> }
+  assert.equal(typeof durations.gateSeconds['narduk-shell'], 'number')
 })

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
 import {
   exportEntry,
   exportSubpaths,
@@ -14,6 +16,8 @@ import {
   subpathResolutionPlans,
   subpathSpecifier,
 } from './packed-consumer-subpaths.mjs'
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 test('a subpath map contributes every non-pattern key', () => {
   assert.deepEqual(
@@ -108,6 +112,45 @@ test('the sugar exports shapes resolve their `.` entry, not an undefined lookup'
   assert.deepEqual(
     packageSubpathPlan({ name: '@scope/pkg', exports: { import: './index.mjs' } }).specifiers,
     ['@scope/pkg'],
+  )
+})
+
+test('the live workspace plans narduk-ui, narduk-charts and narduk-shell subpaths', () => {
+  const workspace = loadWorkspace(repoRoot)
+  const plans = subpathResolutionPlans(workspace.packages)
+  const byName = new Map(plans.map((plan) => [plan.name, plan]))
+
+  const ui = byName.get('@narduk-enterprises/narduk-ui')
+  assert.ok(ui, 'narduk-ui must be in the packed-consumer subpath plan')
+  assert.ok(ui.specifiers.includes('@narduk-enterprises/narduk-ui/tokens.css'))
+  assert.ok(ui.specifiers.includes('@narduk-enterprises/narduk-ui/core'))
+  assert.ok(ui.specifiers.includes('@narduk-enterprises/narduk-ui/instruments'))
+  assert.deepEqual(ui.skipped, [{ subpath: './instruments/*.vue', reason: 'pattern subpath' }])
+
+  const charts = byName.get('@narduk-enterprises/narduk-charts')
+  assert.ok(charts, 'narduk-charts must be in the packed-consumer subpath plan')
+  assert.deepEqual(charts.specifiers, [
+    '@narduk-enterprises/narduk-charts',
+    '@narduk-enterprises/narduk-charts/line',
+    '@narduk-enterprises/narduk-charts/bar',
+    '@narduk-enterprises/narduk-charts/pie',
+    '@narduk-enterprises/narduk-charts/candle',
+    '@narduk-enterprises/narduk-charts/studies',
+    '@narduk-enterprises/narduk-charts/style.css',
+  ])
+
+  const shell = byName.get('@narduk-enterprises/narduk-shell')
+  assert.ok(shell, 'narduk-shell must be in the packed-consumer subpath plan')
+  assert.deepEqual(shell.specifiers, [
+    '@narduk-enterprises/narduk-shell',
+    '@narduk-enterprises/narduk-shell/format',
+    '@narduk-enterprises/narduk-shell/theme.css',
+  ])
+  assert.deepEqual(shell.skipped, [])
+
+  assert.ok(
+    byName.has('@narduk-enterprises/narduk-testkit'),
+    'narduk-testkit stays in the plan; evaluation of its subpaths is a later tier',
   )
 })
 
