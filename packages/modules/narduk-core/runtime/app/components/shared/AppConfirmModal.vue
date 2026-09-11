@@ -2,6 +2,16 @@
 /**
  * AppConfirmModal — Generic confirmation dialog.
  *
+ * @deprecated Use `NeConfirmDialog` / `useConfirm()` from
+ * `@narduk-enterprises/narduk-shell` instead (components backlog item 16,
+ * narduk-libs#263). Deprecated 2026-09-11 under decision D4 and removed in the
+ * next narduk-core major; behaviour is unchanged until then. A one-time
+ * dev-only `console.warn` points at the replacement the first time this
+ * component is used. The migration mapping — including `v-model` →
+ * `v-model:open`, `confirmColor="error"` → `tone="danger"`, `loading` →
+ * `pending`, and the default slot → `#body` — is in this package's README
+ * under "Deprecations".
+ *
  * Wraps UModal for "Are you sure?" patterns. Supports customizable title,
  * message, button labels, colors, and a loading state on the confirm button.
  *
@@ -16,6 +26,10 @@
  *     @confirm="handleDelete"
  *   />
  */
+
+import { warnAppConfirmModalDeprecated } from './appConfirmModalDeprecation'
+
+warnAppConfirmModalDeprecated()
 
 type ConfirmColor = 'error' | 'info' | 'primary' | 'secondary' | 'success' | 'warning' | 'neutral'
 
