@@ -172,6 +172,23 @@ jobs:
           fi
           pnpm run format:check
 
+      # Named separately from the combined contracts step above so the gate is
+      # visible by name where it actually runs. `pnpm run quality` /
+      # `quality:artifacts` (which chains `surface:check`) never appears in
+      # this workflow, `release.yml` or `logging-languages.yml`, and the
+      # per-package `ci:batch` gate list (scripts/ci-package-plan.mjs) cannot
+      # carry a root-level script -- so before this step, `surface:check` only
+      # ran as an accidental side effect of `pnpm run scripts:test` invoking
+      # `scripts/check-component-surface.test.mjs`, which calls the real
+      # script with no args and no try/catch (narduk-libs#282). That coverage
+      # stays in place; this step makes the gate itself the named, intentional
+      # thing that runs in CI rather than a side effect nothing would notice
+      # removing.
+      - name: Check component surface (README, tests, design card per export)
+        run: |
+          set -euo pipefail
+          pnpm run surface:check
+
       - name: Remove temporary registry auth
         if: always()
         run: rm -f "${NPM_CONFIG_USERCONFIG}"

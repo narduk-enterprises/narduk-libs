@@ -6,7 +6,7 @@
  */
 
 export const APP_EMPTY_STATE_DEPRECATION_MESSAGE =
-  '[narduk-core] AppEmptyState is deprecated and will be removed in the next major. Use NeStatePanel from @narduk-enterprises/narduk-shell instead (narduk-libs#254).'
+  '[narduk-core] AppEmptyState is deprecated and will be removed in the next major. Use NeStatePanel from @narduk-enterprises/narduk-shell (currently pre-1.0) instead (narduk-libs#254).'
 
 let warned = false
 

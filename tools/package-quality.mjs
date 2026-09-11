@@ -76,10 +76,18 @@ const commands = {
     '--log-level',
     'warn',
     '**/*.{ts,mts,js,mjs,json,md,yaml,yml}',
+    // Resolved from the repository root (this script's own grandparent
+    // directory), not by relative hops from the calling package's cwd: a
+    // two-level `packages/<pkg>` layout put `../../` at the repo root by
+    // coincidence, but a three-level family layout (`packages/<family>/<pkg>`,
+    // e.g. packages/contracts/narduk-platform) lands one directory short, at
+    // `packages/`, where neither ignore file exists -- so prettier ignores
+    // nothing and scans generated `dist/` output as source (narduk-libs#282).
+    // An absolute path holds for any nesting depth.
     '--ignore-path',
-    '../../.gitignore',
+    join(repoRoot, '.gitignore'),
     '--ignore-path',
-    '../../.prettierignore',
+    join(repoRoot, '.prettierignore'),
   ],
   lint: ['eslint', ...(extraArgs.length > 0 ? extraArgs : ['src/**/*.ts']), '--max-warnings', '0'],
   typecheck: ['tsc', '--noEmit', '--project', extraArgs[0] || 'tsconfig.json'],
