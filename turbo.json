@@ -22,7 +22,7 @@
       "dependsOn": ["nuxt:prepare", "eslint:typegen"]
     },
     "typecheck": {
-      "dependsOn": ["nuxt:prepare", "eslint:typegen"]
+      "dependsOn": ["^build", "nuxt:prepare", "eslint:typegen"]
     },
     "format:check": {},
     "quality": {
