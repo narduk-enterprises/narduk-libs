@@ -1,0 +1,313 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/circuit-breaker-online",
+  "clone": "ok",
+  "surveyed_sha": "d6982c200f42580814116435ab753fc7f5f95d6f",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.3.1",
+    "nuxt_ui": "4.5.0",
+    "tailwind": "^4.0.0",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-nuxt-template-layer-core": "^1.0.16",
+      "narduk-nuxt-template-layer-auth": "^1.0.16",
+      "narduk-nuxt-template-layer-analytics": "^1.0.16"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 49,
+    "components": 8,
+    "pages": 36,
+    "layouts": 3,
+    "composables": 5,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 6 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 3 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 3 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "ProductCard",
+      "path": "apps/web/app/components/ProductCard.vue",
+      "loc": 98,
+      "consumers": 2,
+      "duplicates_lib": "none",
+      "notes": "card-grid row renderer for the product catalog: image, name, manufacturer, SKU, condition badge, NuxtLink row-link to /products/[slug]. Used by products/index.vue and products/category/[slug].vue."
+    },
+    {
+      "name": "products/index.vue catalog logic",
+      "path": "apps/web/app/pages/products/index.vue",
+      "loc": 853,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "hand-rolled server-paginated/filtered/sorted/searchable product catalog: state refs, useFetch with query params, URL sync (updateUrl), mobile filter drawer, active-filter chips, prev/next pagination."
+    },
+    {
+      "name": "products/category/[slug].vue catalog logic",
+      "path": "apps/web/app/pages/products/category/[slug].vue",
+      "loc": 214,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "near-duplicate of products/index.vue's fetch/pagination/grid logic scoped to one category; same totalPages/currentPage/grid-cols pattern copy-pasted rather than shared."
+    },
+    {
+      "name": "EquipmentPage",
+      "path": "apps/web/app/components/EquipmentPage.vue",
+      "loc": 147,
+      "consumers": 8,
+      "duplicates_lib": "none",
+      "notes": "hand-rolled marketing page template (breadcrumb + hero + content sections) reused across /equipment/* pages; a page_header/section_header-style pattern, not table-related."
+    },
+    {
+      "name": "IndustryPage",
+      "path": "apps/web/app/components/IndustryPage.vue",
+      "loc": 121,
+      "consumers": 4,
+      "duplicates_lib": "none",
+      "notes": "same marketing page-template pattern as EquipmentPage, reused across /industries/* pages."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/pages/products/index.vue",
+        "loc": 853,
+        "kind": "card-list-as-table",
+        "sortable": "server",
+        "paginated": "server",
+        "page_size": 24,
+        "searchable": true,
+        "row_link": true,
+        "mobile": "cards",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": true,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["image", "text", "badge", "link"],
+        "server_api": "apps/web/server/api/products.get.ts (params: category, subcategory, manufacturer, voltage, amperage, search, page, limit, sort)",
+        "tests": [],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/pages/products/category/[slug].vue",
+        "loc": 214,
+        "kind": "card-list-as-table",
+        "sortable": "server",
+        "paginated": "server",
+        "page_size": 24,
+        "searchable": false,
+        "row_link": true,
+        "mobile": "cards",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": true,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["image", "text", "badge", "link"],
+        "server_api": "apps/web/server/api/products.get.ts (same endpoint, category preset)",
+        "tests": [],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [
+      {
+        "path": "apps/web/app/pages/products/index.vue:797-816",
+        "loc": 20,
+        "consumers": 2,
+        "notes": "prev/next buttons + 'Page X of Y' text, no page-number list, no page-size selector; duplicated (not shared) in category/[slug].vue"
+      }
+    ],
+    "sort_control": [
+      {
+        "path": "apps/web/app/pages/products/index.vue:494-",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "native <select v-model=\"activeSort\"> (name-asc/name-desc/newest/manufacturer), not a Nuxt UI component"
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/pages/products/index.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "search input + category/subcategory/manufacturer/voltage/amperage filters, mobile slide-over drawer, active-filter chip row"
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/ProductCard.vue:34-40",
+        "loc": 6,
+        "consumers": 2,
+        "notes": "condition badge (new/reconditioned) pill on product card image"
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/pages/products/index.vue:825",
+        "loc": 1,
+        "consumers": 2,
+        "notes": "'No products found' block, duplicated in category page"
+      }
+    ],
+    "loading_skeleton": [
+      {
+        "path": "apps/web/app/pages/products/index.vue:779",
+        "loc": 13,
+        "consumers": 2,
+        "notes": "grid of placeholder divs shown while status === 'pending'"
+      }
+    ],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "apps/web/app/components/EquipmentPage.vue",
+        "loc": 147,
+        "consumers": 8,
+        "notes": "breadcrumb+hero+content template for equipment landing pages"
+      },
+      {
+        "path": "apps/web/app/components/IndustryPage.vue",
+        "loc": 121,
+        "consumers": 4,
+        "notes": "same pattern for industry landing pages"
+      }
+    ],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/ProductCard.vue",
+        "loc": 98,
+        "consumers": 2,
+        "notes": "see local_reimplementations"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/app/Header.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "not measured (not read in full)"
+      },
+      {
+        "path": "apps/web/app/components/app/Footer.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "not measured (not read in full)"
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/components/AuthLoginCard.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "legacy template-layer auth component copied into app/components (not measured further); AuthRegisterCard.vue, AuthExchangePanel.vue also present"
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/products.get.ts",
+      "params": [
+        "slug",
+        "category",
+        "subcategory",
+        "manufacturer",
+        "voltage",
+        "amperage",
+        "type",
+        "search",
+        "page",
+        "limit",
+        "sort"
+      ],
+      "response_shape": "{ products, total, page, limit, totalPages }",
+      "limit_enforced": true
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises-clients/circuit-breaker-online#22",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Unguarded JSON.parse on product images/tags columns crashes product API responses",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises-clients/circuit-breaker-online#38",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Template-layer exit onto narduk-libs (harmony#87 pattern) — web foundation contract §4",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable / ProductCatalogGrid",
+      "path": "apps/web/app/pages/products/index.vue + apps/web/app/pages/products/category/[slug].vue",
+      "loc": 1067,
+      "consumers": 2,
+      "why": "server-paginated, filtered, sorted, searchable, URL-synced list pattern duplicated near-verbatim across two pages (mobile drawer, filter chips, prev/next pager, loading/empty states all copy-pasted); confirmed server list contract already exists (products.get.ts) to build a shared table/grid against",
+      "loc_saved_estimate": 250
+    },
+    {
+      "pattern": "page_header",
+      "name": "MarketingPageTemplate",
+      "path": "apps/web/app/components/EquipmentPage.vue + IndustryPage.vue",
+      "loc": 268,
+      "consumers": 12,
+      "why": "two near-identical hand-rolled breadcrumb+hero+content templates reused across 12 landing pages",
+      "loc_saved_estimate": 100
+    }
+  ],
+  "notes": "Zero narduk-libs UI adoption; still on narduk-nuxt-template-layer-* (legacy). Issue #38 shows Logan already has an open 'template-layer exit onto narduk-libs' ticket for this app, and #22 documents a live data-shape bug in the exact server list contract a shared table would need to wrap defensively (images/tags JSON columns). No dedicated tests exist for the catalog's pagination/filter/sort behavior."
+}

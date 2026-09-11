@@ -1,0 +1,411 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/papa-everetts-pizza",
+  "clone": "ok",
+  "surveyed_sha": "2a622c251e95d8be670f0d39659cdbe13f8c8017",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none (UTable used directly in one place; no standalone @tanstack/vue-table dep)",
+    "narduk_libs": {
+      "narduk-nuxt-template-layer-core": "^1.18.26",
+      "narduk-nuxt-template-layer-auth": "^1.18.26",
+      "narduk-nuxt-template-layer-analytics": "^1.18.26",
+      "narduk-nuxt-template-layer-seo": "^1.18.26",
+      "narduk-nuxt-template-layer-testing": "^1.18.24 (dev)"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 24,
+    "components": 6,
+    "pages": 16,
+    "layouts": 0,
+    "composables": 10,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 6 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 3 2>/dev/null (directory absent -> 0)",
+      "composables": "find apps/web/app/composables -maxdepth 3 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0,
+    "AdminUsersTab": 0,
+    "AdminAnalyticsDashboard": 0,
+    "AdminGaOverviewPanel": 0,
+    "AdminGscPerformancePanel": 0,
+    "AdminPosthogPanel": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "admin/index.vue menu editor",
+      "path": "apps/web/app/pages/admin/index.vue",
+      "loc": 802,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "hand-rolled category+item CRUD list: card-per-item with inline edit form, active/inactive badge, save/delete buttons; loading state ('Loading menu items...'), empty state; no pagination (fetches all items via GET /api/admin/menu unbounded, client-filters by category)."
+    },
+    {
+      "name": "AdminPriceEditor",
+      "path": "apps/web/app/components/AdminPriceEditor.vue",
+      "loc": 102,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "price-variant key/value sub-editor used twice inside admin/index.vue's item cards (existing items + new-item form)."
+    },
+    {
+      "name": "admin/users.vue",
+      "path": "apps/web/app/pages/admin/users.vue",
+      "loc": 304,
+      "consumers": 1,
+      "duplicates_lib": "AdminUsersTab",
+      "notes": "user list rendered as <ul>/<li> cards (name, admin badge, email, created date, reset-password button), add-user UForm, password-reset UModal, useToast() notifications. GET /api/admin/users has no page/limit params and the server route (index.get.ts) does an unbounded db.select().from(users).all() — fetches every user every load."
+    },
+    {
+      "name": "admin/gsc.vue",
+      "path": "apps/web/app/pages/admin/gsc.vue",
+      "loc": 319,
+      "consumers": 1,
+      "duplicates_lib": "AdminGscPerformancePanel",
+      "notes": "hand-rolled Google Search Console performance page. Contains a REAL native <table class=\"admin-table\"> (line 260) with an inline `eslint-disable narduk/no-native-table -- raw HTML table needed for GSC data display with custom styles`, bypassing this repo's OWN local ESLint rule (eslint-plugins/rules/no-native-table.mjs, 'atx/no-native-table': disallow <table>, use <UTable> instead) because UTable reportedly couldn't achieve the needed styling (right-aligned tabular-nums numeric columns)."
+    },
+    {
+      "name": "admin/analytics.vue",
+      "path": "apps/web/app/pages/admin/analytics.vue",
+      "loc": 148,
+      "consumers": 1,
+      "duplicates_lib": "AdminGaOverviewPanel",
+      "notes": "hand-rolled Google Analytics overview page; not table-rendered (cards/metrics), backed by server/api/admin/ga/overview.get.ts."
+    },
+    {
+      "name": "admin/posthog.vue",
+      "path": "apps/web/app/pages/admin/posthog.vue",
+      "loc": 768,
+      "consumers": 1,
+      "duplicates_lib": "AdminPosthogPanel",
+      "notes": "hand-rolled PostHog analytics page (insights/recordings/devices/entry-exit/pages/referrers), the single largest admin page in the app; backed by 6 separate server/api/admin/posthog/*.get.ts routes."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/pages/admin/gsc.vue",
+        "loc": 319,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": 5,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "number", "number", "number"],
+        "server_api": "apps/web/server/api/admin/gsc/performance.get.ts",
+        "tests": [],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/pages/admin/index.vue",
+        "loc": 802,
+        "kind": "card-list-as-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "cards",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "badge", "money", "actions"],
+        "server_api": "apps/web/server/api/admin/menu.get.ts (no query params; unbounded, ordered by category/sortOrder/name)",
+        "tests": [],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/pages/admin/guide.vue",
+        "loc": 584,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 2,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "text"],
+        "server_api": "none (static inline data array)",
+        "tests": [],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "category tab filter over the unpaginated item list (not a search box)"
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue:527-534",
+        "loc": 8,
+        "consumers": 1,
+        "notes": "Active/Inactive badge on each menu item card"
+      },
+      {
+        "path": "apps/web/app/pages/admin/users.vue:220-224",
+        "loc": 5,
+        "consumers": 1,
+        "notes": "Admin badge on user list rows"
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue:503-509",
+        "loc": 7,
+        "consumers": 1,
+        "notes": "'No items match your current selection'"
+      },
+      {
+        "path": "apps/web/app/pages/admin/users.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "'No users found.'"
+      },
+      {
+        "path": "apps/web/app/pages/admin/gsc.vue",
+        "loc": 5,
+        "consumers": 1,
+        "notes": "'No search performance data available'"
+      }
+    ],
+    "loading_skeleton": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue:501",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "plain text 'Loading menu items...', not a skeleton component"
+      },
+      {
+        "path": "apps/web/app/pages/admin/gsc.vue",
+        "loc": 3,
+        "consumers": 1,
+        "notes": "spinner icon"
+      }
+    ],
+    "error_state": [],
+    "confirm_modal": [
+      {
+        "path": "apps/web/app/pages/admin/users.vue",
+        "loc": 30,
+        "consumers": 1,
+        "notes": "UModal for password reset (not a delete-confirm, but same modal-form shape)"
+      }
+    ],
+    "toast_notify": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "useToast() for save/delete feedback"
+      },
+      {
+        "path": "apps/web/app/pages/admin/users.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "useToast() for user create / password reset feedback"
+      }
+    ],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/pages/admin/analytics.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "not measured in detail; GA overview metrics likely rendered as cards"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/pages/admin/index.vue",
+        "loc": 802,
+        "consumers": 1,
+        "notes": "see local_reimplementations"
+      },
+      {
+        "path": "apps/web/app/pages/admin/users.vue",
+        "loc": 304,
+        "consumers": 1,
+        "notes": "see local_reimplementations"
+      },
+      {
+        "path": "apps/web/app/components/CustomerReviews.vue",
+        "loc": 102,
+        "consumers": 0,
+        "notes": "public-facing review list, not admin; consumers not measured"
+      },
+      {
+        "path": "apps/web/app/components/PhotoGallery.vue",
+        "loc": 67,
+        "consumers": 0,
+        "notes": "photo grid, not admin"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/AdminPriceEditor.vue",
+        "loc": 102,
+        "consumers": 1,
+        "notes": "see local_reimplementations"
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/pages/admin/users.vue:99-102",
+        "loc": 3,
+        "consumers": 1,
+        "notes": "inline formatDate() -> toISOString().split('T')[0], not a shared util"
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [
+      {
+        "path": "apps/web/app/components/PhotoGallery.vue",
+        "loc": 67,
+        "consumers": 0,
+        "notes": "not measured further"
+      }
+    ],
+    "layout_shell_nav": [],
+    "tabs": [
+      {
+        "path": "apps/web/app/pages/admin/gsc.vue:105-107,139-147",
+        "loc": 10,
+        "consumers": 1,
+        "notes": "dimensionTabs (query/page/device/country) hand-rolled tab bar, not AppTabs"
+      }
+    ],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/pages/admin/users.vue:180-186",
+        "loc": 4,
+        "consumers": 1,
+        "notes": "'Access Denied' block when !loggedIn || !user?.isAdmin"
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [
+      {
+        "path": "apps/web/server/api/admin/images/index.post.ts",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "server route exists; client-side upload UI not located/measured"
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/admin/users/index.get.ts",
+      "params": [],
+      "response_shape": "array (all users, no pagination)",
+      "limit_enforced": false
+    },
+    {
+      "route": "apps/web/server/api/admin/menu.get.ts",
+      "params": [],
+      "response_shape": "array (all menu items, ordered by category/sortOrder/name, no pagination)",
+      "limit_enforced": false
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises-clients/papa-everetts-pizza#75",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Template-layer exit onto narduk-libs (harmony#87 pattern) — web foundation contract §4",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable (raw-table variant)",
+      "path": "apps/web/app/pages/admin/gsc.vue",
+      "loc": 319,
+      "consumers": 1,
+      "why": "this repo has its OWN local ESLint rule (atx/no-native-table) mandating UTable over raw <table>, yet had to eslint-disable it here because UTable couldn't produce the right-aligned tabular-nums numeric-column styling needed for search-console metrics — direct evidence for what a shared table component must support out of the box",
+      "loc_saved_estimate": 60
+    },
+    {
+      "pattern": "table",
+      "name": "AdminUsersTab-equivalent (already exists in narduk-auth)",
+      "path": "apps/web/app/pages/admin/users.vue",
+      "loc": 304,
+      "consumers": 1,
+      "why": "full re-implementation of a component narduk-auth already ships (AdminUsersTab); also fetches all users unbounded (no page/limit) which a shared component with built-in pagination would fix for free",
+      "loc_saved_estimate": 250
+    },
+    {
+      "pattern": "table",
+      "name": "Admin analytics panel trio (already exist in narduk-analytics)",
+      "path": "apps/web/app/pages/admin/{analytics,gsc,posthog}.vue",
+      "loc": 1235,
+      "consumers": 3,
+      "why": "re-implements AdminGaOverviewPanel, AdminGscPerformancePanel, AdminPosthogPanel from scratch instead of consuming narduk-analytics; single biggest LOC block in the app (posthog.vue alone is 768 lines)",
+      "loc_saved_estimate": 900
+    }
+  ],
+  "notes": "Richest of the three apps surveyed. Zero narduk-libs component adoption despite the admin surface substantially re-implementing three components narduk-libs already ships by name (AdminUsersTab, AdminGaOverviewPanel, AdminGscPerformancePanel, AdminPosthogPanel) — this looks like the app predates those packages or was never migrated off the legacy analytics/auth template layers. The gsc.vue raw-<table> eslint-disable is the strongest single piece of evidence in this lane for a concrete UTable styling gap a shared table must close. Two server list endpoints (admin/users, admin/menu) are unbounded (no page/limit at all), consistent with small data volumes today but a real gap if either list grows."
+}

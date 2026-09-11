@@ -1,0 +1,429 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/nvault",
+  "clone": "ok",
+  "surveyed_sha": "117a6a13064c16c8cd2dbfa78ebe983d609015b4",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.5.1",
+    "nuxt_ui": "4.11.0",
+    "tailwind": "4.3.2",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false,
+    "notes": "Confirmed: zero @narduk-enterprises/* runtime dependencies (grep of package.json returned no matches). Fully custom Nitro server (routes/v1, api/v1/admin, repositories/services layers) and fully custom Vue component set. Uses Nuxt UI directly, including UEmpty and UCard, which narduk-libs has no equivalent for."
+  },
+  "counts": {
+    "vue_files_total": 42,
+    "components": 28,
+    "pages": 11,
+    "layouts": 2,
+    "composables": 12,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "audit/index.vue (page)",
+      "path": "apps/web/app/pages/app/audit/index.vue",
+      "loc": 447,
+      "consumers": 1,
+      "duplicates_lib": "none (narduk-libs ships no table/pagination component at all)",
+      "notes": "THE crown-jewel evidence in this lane: a complete hand-rolled cursor-paginated, multi-filter, loading/error-stated table page. See patterns.table for the full breakdown."
+    },
+    {
+      "name": "SecretMetadataList",
+      "path": "apps/web/app/components/SecretMetadataList.vue",
+      "loc": 162,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Raw <table> (desktop, md:block) + <ul><UCard> (mobile, md:hidden) dual-render with UEmpty empty state (line 22), formatted timestamps, an actions column. Clean reference implementation of the desktop-table/mobile-card toggle a shared table needs."
+    },
+    {
+      "name": "AuditEventList",
+      "path": "apps/web/app/components/AuditEventList.vue",
+      "loc": 190,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Same raw-table/mobile-card dual-render pattern but at the lg: breakpoint (inconsistent with SecretMetadataList's md: -- a real breakpoint-consistency defect a shared component would fix for free). outcomeColor() maps success/denied/other to success/warning/error -- a hand-rolled status-badge color function. No UEmpty / empty-state branch found (gap vs. the other two lists)."
+    },
+    {
+      "name": "TokenMetadataList",
+      "path": "apps/web/app/components/TokenMetadataList.vue",
+      "loc": 282,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Third raw-table/mobile-card dual-render, largest of the three."
+    },
+    {
+      "name": "ConfigList",
+      "path": "apps/web/app/components/ConfigList.vue",
+      "loc": 95,
+      "consumers": 1,
+      "duplicates_lib": "AppEmptyState (for its UEmpty usage; narduk-libs has no sort primitive)",
+      "notes": "Card list with client-side sortedConfigs computed sort and a UEmpty empty state."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/pages/app/audit/index.vue",
+        "loc": 447,
+        "kind": "raw-table",
+        "sortable": "none (filterable instead, no column-header sort)",
+        "paginated": "server (cursor-based)",
+        "page_size": 25,
+        "searchable": true,
+        "row_link": false,
+        "mobile": "cards (AuditEventList.vue handles the lg: breakpoint dual-render)",
+        "empty_state": "not measured (in AuditEventList itself: no)",
+        "loading_state": true,
+        "error_state": true,
+        "url_state": false,
+        "column_count": 9,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["date", "badge", "text", "text", "text", "text", "actions"],
+        "server_api": "apps/web/server/api/v1/admin/audit.get.ts -> auditPagination() in server/utils/http/validation.ts:340 (params: cursor, limit, action, actorId, actorType, configId, environmentId, outcome, projectId, from, to -- explicit allowlist, rejects unknown query keys) -> AuditPageResponseSchema",
+        "tests": [],
+        "consumers": 1,
+        "notes": "Client hand-rolls its own cursor-history stack (pageCursors ref array + pageIndex, lines 48-49, 161-225) to support Previous/Next over a cursor API -- exactly the state-management complexity a shared paginated-table component should absorb. PAGE_SIZE=25 constant (line 32). 3 USelect + 6 UInput filter fields (lines 269-360). No URL query-string sync found for filters/page (url_state: false) -- a real gap: filtered/paged state is not shareable or back-button-safe."
+      },
+      {
+        "path": "apps/web/app/components/SecretMetadataList.vue",
+        "loc": 162,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not applicable (no pagination; parent passes the full array)",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "cards (md: breakpoint)",
+        "empty_state": true,
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": 5,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "date", "text", "actions"],
+        "server_api": "not directly paginated; fed by the parent config page",
+        "tests": [],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/components/TokenMetadataList.vue",
+        "loc": 282,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not applicable",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "cards",
+        "empty_state": true,
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": "not measured",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "date", "badge", "actions"],
+        "server_api": "not measured",
+        "tests": [],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [
+      {
+        "path": "apps/web/app/pages/app/audit/index.vue",
+        "loc": 60,
+        "consumers": 1,
+        "notes": "Hand-rolled Previous/Next + 'Page N' label (line 392) driven by a client-side cursor stack; no page-jump/page-size control."
+      }
+    ],
+    "sort_control": [
+      {
+        "path": "apps/web/app/components/ConfigList.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "sortedConfigs computed; no header-click sort UI, just a fixed sort order."
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/pages/app/audit/index.vue",
+        "loc": 100,
+        "consumers": 1,
+        "notes": "3 USelect (action/actorType/outcome) + 6 UInput (actorId/configId/environmentId/projectId/from/to) filter fields, client-validated (AuditFilterError array) before the request fires."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/AuditEventList.vue",
+        "loc": 4,
+        "consumers": 1,
+        "notes": "outcomeColor(): success/denied/other -> success/warning/error UBadge color."
+      },
+      {
+        "path": "apps/web/app/components/SecretMetadataList.vue",
+        "loc": 3,
+        "consumers": 1,
+        "notes": "Revision UBadge in the mobile card view."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/SecretMetadataList.vue",
+        "loc": 6,
+        "consumers": 1,
+        "notes": "Uses Nuxt UI's own UEmpty component directly, not a narduk-libs one."
+      },
+      {
+        "path": "apps/web/app/components/ConfigList.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Also UEmpty."
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/pages/app/audit/index.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "useApiErrorState(loadError) composable classifies session/not-found/forbidden errors (lines 54, 229-232)."
+      }
+    ],
+    "confirm_modal": [
+      {
+        "path": "apps/web/app/components/RollbackRevisionModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific confirm modal; narduk-core ships AppConfirmModal generically."
+      },
+      {
+        "path": "apps/web/app/components/TokenRevokeModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific confirm modal."
+      },
+      {
+        "path": "apps/web/app/components/ArchiveResourceModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific confirm modal."
+      },
+      {
+        "path": "apps/web/app/components/RestoreResourceModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific confirm modal."
+      },
+      {
+        "path": "apps/web/app/components/MakeDefaultModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific confirm modal."
+      }
+    ],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/ConfigList.vue",
+        "loc": 95,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      },
+      {
+        "path": "apps/web/app/components/ProjectCard.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Project summary card."
+      },
+      {
+        "path": "apps/web/app/components/EnvironmentCard.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Environment summary card."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/EnvironmentForm.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain form."
+      },
+      {
+        "path": "apps/web/app/components/ProjectForm.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain form."
+      },
+      {
+        "path": "apps/web/app/components/ConfigForm.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain form."
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/components/SecretMetadataList.vue",
+        "loc": 6,
+        "consumers": 1,
+        "notes": "formattedTimestamp() via Intl.DateTimeFormat, duplicated verbatim in AuditEventList.vue (lines 6-10 of each)."
+      },
+      {
+        "path": "apps/web/app/components/AuditEventList.vue",
+        "loc": 6,
+        "consumers": 1,
+        "notes": "Same formattedTimestamp() helper, copy-pasted."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [
+      {
+        "path": "apps/web/app/components/SecretValueActions.client.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Copy/reveal secret-value actions; narduk-core ships a generic AppCopyButton this could adopt."
+      }
+    ],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/AppNavigation.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Custom nav, not narduk-core's LayerAppHeader/Shell (zero narduk-core dependency)."
+      },
+      {
+        "path": "apps/web/app/components/AppAccountMenu.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Custom account menu, not narduk-auth's AppUserMenu."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [
+      {
+        "path": "apps/web/app/components/HierarchyBreadcrumbs.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Custom breadcrumbs, not narduk-core's AppBreadcrumbs."
+      }
+    ],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/components/RevisionHistory.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Revision-history timeline/list."
+      }
+    ],
+    "file_upload": [
+      {
+        "path": "apps/web/app/components/DotenvImportSlideover.client.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Dotenv file import flow."
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [
+      {
+        "path": "apps/web/app/components/AppColorModeButton.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Custom color-mode toggle."
+      }
+    ],
+    "other": [
+      {
+        "path": "apps/web/app/components/HierarchyNavigator.vue",
+        "loc": 43,
+        "consumers": "not measured",
+        "notes": "Project/env/config tree navigator."
+      },
+      {
+        "path": "apps/web/app/components/ProjectHierarchy.vue",
+        "loc": 76,
+        "consumers": "not measured",
+        "notes": "Hierarchy display."
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/v1/admin/audit.get.ts",
+      "params": [
+        "cursor",
+        "limit",
+        "action",
+        "actorId",
+        "actorType",
+        "configId",
+        "environmentId",
+        "outcome",
+        "projectId",
+        "from",
+        "to"
+      ],
+      "response_shape": "AuditPageResponseSchema (@narduk/nvault-contracts) -- cursor-based page envelope",
+      "limit_enforced": true,
+      "notes": "server/utils/http/validation.ts:340 auditPagination() -- explicit query-key allowlist (Set of 12 names), rejects any unknown key outright, validates every value is a string. This is the single best server-side list-contract reference found across the whole lane: cursor pagination + rich filter allowlist + typed response schema."
+    }
+  ],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CursorPaginatedTable (from audit/index.vue + AuditEventList.vue)",
+      "path": "apps/web/app/pages/app/audit/index.vue",
+      "loc": 447,
+      "consumers": 1,
+      "why": "Most complete real-world reference implementation found in this survey: cursor pagination with a hand-rolled Previous/Next history stack, 9-field filter bar, loading/error states, desktop-table/mobile-card dual render, and a matching typed cursor-pagination server contract. This is close to a finished spec for the shared table's cursor-pagination mode.",
+      "loc_saved_estimate": 250
+    },
+    {
+      "pattern": "table",
+      "name": "Raw-table/mobile-card triad (SecretMetadataList, AuditEventList, TokenMetadataList)",
+      "path": "apps/web/app/components/",
+      "loc": 634,
+      "consumers": 3,
+      "why": "Three near-identical hand-rolled desktop-table+mobile-card components (162+190+282 LOC) differing mainly in columns and one uses md: while another uses lg: for the breakpoint -- a real, fixable inconsistency. A single generic table component with column config would collapse all three.",
+      "loc_saved_estimate": 450
+    },
+    {
+      "pattern": "date_time_format",
+      "name": "formattedTimestamp dedup",
+      "path": "apps/web/app/components/SecretMetadataList.vue",
+      "loc": 6,
+      "consumers": 2,
+      "why": "Identical Intl.DateTimeFormat helper hand-copied into at least 2 components; trivial shared-util extraction independent of the table work.",
+      "loc_saved_estimate": 6
+    }
+  ],
+  "notes": "The richest table evidence in the whole lane, despite zero narduk-libs adoption. Three separate raw-table components share the same desktop-table/mobile-card shape but at inconsistent breakpoints (md: vs lg:) and with inconsistent empty-state coverage (SecretMetadataList and ConfigList have UEmpty; AuditEventList does not). The audit-log page is a near-complete hand-built spec for a cursor-paginated, filterable, loading/error-stated table -- exactly the pattern class the survey's Purpose section names first. Nuxt UI's own UEmpty is used directly for empty states rather than anything narduk-libs-provided, which narduk-libs also does not ship (AppEmptyState is narduk-core, not currently used here since there is no narduk-core dependency)."
+}

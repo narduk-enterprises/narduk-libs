@@ -1,0 +1,293 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/float-forecast",
+  "clone": "ok",
+  "surveyed_sha": "bfaad6d181ccab3fbca81cba7c321b930c1f8ea1",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "not a direct dependency; likely inherited via narduk-nuxt-template-layer-core (not measured, no install)",
+    "tailwind": "@tailwindcss/vite ^4.2.1 (devDependency)",
+    "tanstack_table": "none",
+    "narduk_libs": { "narduk-charts": "^2.1.0" },
+    "legacy_template_layer": true,
+    "legacy_packages": [
+      "narduk-nuxt-template-layer-core@^1.18.26",
+      "narduk-nuxt-template-layer-seo@^1.18.26",
+      "narduk-nuxt-template-layer-analytics@^1.18.26",
+      "narduk-nuxt-template-layer-maps@^1.18.26",
+      "narduk-nuxt-template-layer-uploads@^1.18.26",
+      "narduk-nuxt-template-layer-testing@^1.18.24"
+    ]
+  },
+  "counts": {
+    "vue_files_total": 62,
+    "components": 46,
+    "pages": 12,
+    "layouts": 2,
+    "composables": 15,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -name '*.vue' | wc -l"
+    },
+    "notes": "A vestigial root-level app/ directory (sibling of apps/) exists with 0 .vue files (stores/user.ts only) — not part of the shipped app; ignored."
+  },
+  "libs_components_used": {
+    "NardukLineChart": 1,
+    "AppMapKit": 1
+  },
+  "local_reimplementations": [
+    {
+      "name": "SavedRiversPanel",
+      "path": "apps/web/app/components/consumer/saved/SavedRiversPanel.vue",
+      "loc": 106,
+      "consumers": 1,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "Hand-rolled 'No favorites yet' empty state (lines 86-93: dashed-border panel, heading, copy, CTA) plus a 2-col card grid; the empty half is a clean AppEmptyState duplicate."
+    },
+    {
+      "name": "OutlookStrip",
+      "path": "apps/web/app/components/outlook/OutlookStrip.vue",
+      "loc": 121,
+      "consumers": "not measured",
+      "duplicates_lib": "none",
+      "notes": "Horizontal day-by-day outlook strip; domain-specific, no narduk-libs sibling."
+    },
+    {
+      "name": "ScoreRing",
+      "path": "apps/web/app/components/consumer/ScoreRing.vue",
+      "loc": 52,
+      "consumers": 2,
+      "duplicates_lib": "none",
+      "notes": "Circular floatability score gauge; closer to a chart primitive than a status chip."
+    },
+    {
+      "name": "OutlookErrorCard",
+      "path": "apps/web/app/components/outlook/OutlookErrorCard.vue",
+      "loc": 25,
+      "consumers": 0,
+      "duplicates_lib": "AppEmptyState (or a new error-state primitive)",
+      "notes": "Wraps Nuxt UI UAlert as a reusable 'outlook unavailable' error card. No production consumer found via `<OutlookErrorCard` tag search (only its own component test references it) — verify before treating as live."
+    },
+    {
+      "name": "RiverDetailStatsGrid",
+      "path": "apps/web/app/components/consumer/river-detail/RiverDetailStatsGrid.vue",
+      "loc": 38,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Small stat-tile grid (river stats), shape similar to a KPI row but only 1 consumer."
+    },
+    {
+      "name": "ConsumerConditionGrid",
+      "path": "apps/web/app/components/consumer/ConsumerConditionGrid.vue",
+      "loc": 73,
+      "consumers": 0,
+      "duplicates_lib": "not measured",
+      "notes": "No production consumer found via tag search; verify before extraction."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/consumer/RiverShowcaseCard.vue",
+        "loc": "not measured",
+        "consumers": 2,
+        "notes": "Badge/status text in showcase card; not a shared chip component."
+      },
+      {
+        "path": "apps/web/app/components/outlook/OutlookDayCard.vue",
+        "loc": 74,
+        "consumers": 0,
+        "notes": "Day-status badge inside card; no production consumer found via tag search."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/consumer/saved/SavedRiversPanel.vue",
+        "loc": 106,
+        "consumers": 1,
+        "notes": "See local_reimplementations; hand-rolled, AppEmptyState-shaped."
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/components/outlook/OutlookErrorCard.vue",
+        "loc": 25,
+        "consumers": 0,
+        "notes": "UAlert-wrapped error card; see local_reimplementations."
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [
+      {
+        "path": "apps/web/app/components/consumer/home/ConsumerHomeGuidesSection.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Home-page section wrapper."
+      }
+    ],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/consumer/river-detail/RiverDetailStatsGrid.vue",
+        "loc": 38,
+        "consumers": 1,
+        "notes": "River stat tiles."
+      },
+      {
+        "path": "apps/web/app/components/consumer/river-detail/RiverDetailForecastBringGrid.vue",
+        "loc": 48,
+        "consumers": "not measured",
+        "notes": "Forecast/what-to-bring tile grid."
+      },
+      {
+        "path": "apps/web/app/components/consumer/river-detail/RiverDetailRouteLogisticsGrid.vue",
+        "loc": 70,
+        "consumers": "not measured",
+        "notes": "Route logistics tile grid."
+      },
+      {
+        "path": "apps/web/app/components/consumer/river-detail/RiverDetailSafetyAlertsGrid.vue",
+        "loc": 51,
+        "consumers": "not measured",
+        "notes": "Safety-alert tile grid."
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/consumer/rivers/ConsumerRiversBrowseSection.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "River browse card grid (list-as-cards, not a table)."
+      },
+      {
+        "path": "apps/web/app/components/consumer/RiverShowcaseCard.vue",
+        "loc": "not measured",
+        "consumers": 2,
+        "notes": "Individual river card used in browse/home."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/consumer/BottomTabBar.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Custom mobile bottom tab nav, not narduk-core's AppTabs (different purpose: page nav vs in-page tabs)."
+      },
+      {
+        "path": "apps/web/app/components/consumer/ConsumerShellHeader.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Custom shell header, not narduk-core's LayerAppHeader."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/float-forecast/FloatForecastMapKit.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Wraps AppMapKit (line 109), consumed from the legacy narduk-nuxt-template-layer-maps package."
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/consumer/ForecastSparklineCardBody.vue",
+        "loc": "not measured",
+        "consumers": 2,
+        "notes": "Wraps NardukLineChart (line 72)."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/users.get.ts",
+      "params": ["page", "limit"],
+      "response_shape": "{ users, total, page, limit }",
+      "limit_enforced": true,
+      "notes": "zod-validated page/limit (limit max 100), offset computed, count(*) total query, orderBy createdAt desc. Admin-only (requireAdmin). No local .vue in apps/web calls this directly — consumed by the legacy template layer's own admin UI (not visible in this app's source without install), so the pagination UI itself is NOT a float-forecast-local reimplementation, but the contract shape is good evidence for the shared table's server-side pagination design."
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/float-forecast#16",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Fix mobile overflow in Float Forecast panels",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/float-forecast#14",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Fix mobile zoom and scroll behavior",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/float-forecast#15",
+      "kind": "pr",
+      "state": "CLOSED",
+      "summary": "Add mobile viewport and improve touch/zoom behavior for inputs and map",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/component/OutlookDayCard.test.ts",
+    "apps/web/tests/api/api.gauges-contract.test.ts",
+    "apps/web/tests/e2e/mobile-home.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "empty_state",
+      "name": "AppEmptyState adoption",
+      "path": "apps/web/app/components/consumer/saved/SavedRiversPanel.vue",
+      "loc": 106,
+      "consumers": 1,
+      "why": "Clean, self-contained hand-rolled empty state (dashed panel, heading, copy, CTA) that maps directly onto narduk-core's AppEmptyState.",
+      "loc_saved_estimate": 15
+    },
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "River detail tile-grid family",
+      "path": "apps/web/app/components/consumer/river-detail/",
+      "loc": 207,
+      "consumers": "not measured",
+      "why": "Four separate hand-rolled tile-grid components (Stats/ForecastBring/RouteLogistics/SafetyAlerts, 38-70 LOC each) share the same tile-grid shape and would collapse into one KPI/stat-tile primitive with per-item slots.",
+      "loc_saved_estimate": 100
+    },
+    {
+      "pattern": "other",
+      "name": "Server-side page/limit list contract",
+      "path": "apps/web/server/api/users.get.ts",
+      "loc": 53,
+      "consumers": 0,
+      "why": "Already-proven { items/total/page/limit } shape (via the legacy layer's admin UI) is good precedent evidence for the shared table's server contract, even though float-forecast itself has no local UI consuming it.",
+      "loc_saved_estimate": 0
+    }
+  ],
+  "notes": "Consumer-facing river-guide app: no literal tables/pagination/sort UI anywhere (grep for <UTable|<table|role=table returned zero hits) — all list-shaped data renders as card grids or tile grids, not rows. Two components (OutlookDayCard, OutlookErrorCard) and two grid components (ConsumerConditionGrid, RiverSpotCard) had zero production consumers found via tag search; flagged rather than asserted dead, since dynamic component resolution was not checked. The one real pagination CONTRACT in the repo (server/api/users.get.ts) has no local UI consumer — it feeds the legacy template layer's own admin panel."
+}

@@ -1,0 +1,309 @@
+{
+  "lane": "L1",
+  "repo": "narduk-enterprises/lakestat-us",
+  "clone": "ok",
+  "surveyed_sha": "b46c233ee188b663331106f1e22f518064c40cfe",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "transitive via @narduk-enterprises/narduk-core/nuxt module (no direct @nuxt/ui dep; UIcon/ULink/UInput/UFormField/USelect all in use)",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-ui": "0.1.2",
+      "narduk-seo": "2.0.10",
+      "narduk-analytics": "1.19.33",
+      "narduk-mapkit": "2.0.2",
+      "narduk-mapkit-nuxt": "2.0.4",
+      "status-runtime": "1.0.2"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 32,
+    "components": 17,
+    "pages": 14,
+    "layouts": 0,
+    "composables": 11,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l (dir absent -> 0)",
+      "composables": "find apps/web/app/composables -maxdepth 8 -name '*.ts' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "NsFreshnessChip": 7,
+    "NsReadoutTile": 1,
+    "AppMapKit": 1,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "LevelGauge",
+      "path": "apps/web/app/components/lakestat/LevelGauge.vue",
+      "loc": 55,
+      "consumers": 4,
+      "duplicates_lib": "NsLevelWell",
+      "notes": "percent-full fill+waterline gauge with horizontal/vertical orientation and a null-safe 'Not published' state; textbook overlap with narduk-ui's NsLevelWell/NsRangeBar instruments - unverified prop-for-prop but conceptually the same widget (lake level as % of capacity)"
+    },
+    {
+      "name": "PendingDataPanel",
+      "path": "apps/web/app/components/lakestat/PendingDataPanel.vue",
+      "loc": 28,
+      "consumers": 5,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "icon+label+title+description panel shown when a product/section has no published data yet; same conceptual slot as AppEmptyState (0 consumers app-wide)"
+    },
+    {
+      "name": "LakeDirectoryRow + lakes/index.vue directory-table",
+      "path": "apps/web/app/pages/lakes/index.vue",
+      "loc": 125,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "CSS-grid header+rows table (.directory-table / .directory-table__header + LakeDirectoryRow, 84 LOC/1 consumer) - see patterns.table; narduk-libs ships no table component at all"
+    },
+    {
+      "name": "MetricTile",
+      "path": "apps/web/app/components/lakestat/MetricTile.vue",
+      "loc": 82,
+      "consumers": 2,
+      "duplicates_lib": "NsReadoutTile",
+      "notes": "NOT a duplicate - already composes NsReadoutTile internally (line 49); good adoption example, listed here only for completeness"
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/pages/lakes/index.vue",
+        "loc": 125,
+        "kind": "grid-div",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": true,
+        "row_link": true,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": true,
+        "url_state": true,
+        "column_count": 5,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["link", "number", "text", "text", "badge"],
+        "server_api": "server/api/lakes/directory.get.ts (params: q, region, availability, state) - filters the full in-memory directory server-side and returns every match, no limit/offset/page at all",
+        "tests": ["apps/web/tests/e2e/lakestat-directory.spec.ts"],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/pages/lakes/index.vue",
+        "loc": 125,
+        "consumers": 1,
+        "notes": "UInput search + 2x USelect (region, availability) synced to route.query via router.replace; inline in the page, not a standalone component"
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [
+      {
+        "path": "apps/web/app/components/lakestat/LakeDirectoryRow.vue",
+        "loc": 84,
+        "consumers": 1,
+        "notes": "uses NsFreshnessChip directly - good adoption, 7 NsFreshnessChip call sites total across the app"
+      }
+    ],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/lakestat/PendingDataPanel.vue",
+        "loc": 28,
+        "consumers": 5,
+        "notes": "see local_reimplementations"
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/pages/lakes/index.vue",
+        "loc": 125,
+        "consumers": 1,
+        "notes": "'.ls-banner.is-error' inline banner rendered from data?.message, not a shared component"
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "apps/web/app/pages/lakes/index.vue",
+        "loc": 125,
+        "consumers": "not measured",
+        "notes": "'.atlas-page-header' pattern (kicker + h1 + description + status chip) reused by class name across pages, not extracted as a component"
+      }
+    ],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/lakestat/MetricTile.vue",
+        "loc": 82,
+        "consumers": 2,
+        "notes": "composes NsReadoutTile - good adoption, not a gap"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/lakestat/LakeCard.vue",
+        "loc": 103,
+        "consumers": 4,
+        "notes": "single lake summary card, uses NsFreshnessChip"
+      },
+      {
+        "path": "apps/web/app/components/lakestat/RecordCard.vue",
+        "loc": 37,
+        "consumers": 1,
+        "notes": "almanac record summary card"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/pages/lakes/index.vue",
+        "loc": 125,
+        "consumers": "not measured",
+        "notes": "UFormField + UInput/USelect combos for the directory toolbar; narduk-libs ships no form field set component (UFormField itself is transitive Nuxt UI, not a narduk-libs wrapper)"
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/lakestat-format.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatObservationDate lives here; not individually measured for LOC/consumers"
+      }
+    ],
+    "number_currency_format": [
+      {
+        "path": "apps/web/app/utils/lakestat-format.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatNumber/formatMetricValue live here (percent, elevation, storage formatting)"
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/lakestat/PublicTopNav.vue",
+        "loc": 70,
+        "consumers": 1,
+        "notes": "app-specific top nav, not narduk-core's Layer* shells (all zero usage)"
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/lakestat/LakeMapCanvas.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "composes AppMapKit - correct adoption, not a duplicate"
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/lakestat/LakeHistoryChart.vue",
+        "loc": 92,
+        "consumers": 1,
+        "notes": "no narduk-charts dependency in this repo at all (package.json has no @narduk-enterprises/narduk-charts entry) - this is a fully hand-rolled history chart, not a NardukLineChart wrapper. Strongest chart-family gap found in lane L1."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/lakestat/AlmanacRecordsSection.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "paired with AlmanacStoryPending.vue for the /almanac page; not individually classified"
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/lakes/directory.get.ts",
+      "params": ["availability", "q", "region", "state"],
+      "response_shape": "{ ...directory, count, lakes: T[], regions, states } (spread of full directory, not an envelope)",
+      "limit_enforced": false
+    },
+    {
+      "route": "apps/web/server/api/lakes.get.ts",
+      "params": [],
+      "response_shape": "raw directory object, no query params read at all",
+      "limit_enforced": false
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/lakestat-us#13",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "[codex] Repair LakeStat UX and SEO crawl states",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/e2e/lakestat-directory.spec.ts",
+    "apps/web/tests/server/narduk-lake-data.test.ts",
+    "apps/web/tests/server/narduk-lake-atlas-data.test.ts",
+    "apps/web/tests/server/atlas-theme-contrast.test.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable (grid-div variant)",
+      "path": "apps/web/app/pages/lakes/index.vue",
+      "loc": 209,
+      "consumers": 1,
+      "why": "cleanest real table-shaped surface found in lane L1: explicit header row, 5 typed columns, search+2 filters with URL state, row links, empty/loading/error states - but zero sort and zero pagination on an unbounded server response. A shared table component's minimum viable contract should be built from this shape.",
+      "loc_saved_estimate": 100
+    },
+    {
+      "pattern": "chart_wrapper",
+      "name": "NardukLineChart adoption for LakeHistoryChart",
+      "path": "apps/web/app/components/lakestat/LakeHistoryChart.vue",
+      "loc": 92,
+      "consumers": 1,
+      "why": "this app has no narduk-charts dependency at all, unlike riverstatus - a hand-rolled history chart exists where NardukLineChart would apply directly",
+      "loc_saved_estimate": 70
+    },
+    {
+      "pattern": "empty_state",
+      "name": "AppEmptyState adoption for LevelGauge/PendingDataPanel",
+      "path": "apps/web/app/components/lakestat/LevelGauge.vue",
+      "loc": 55,
+      "consumers": 4,
+      "why": "LevelGauge duplicates narduk-ui's NsLevelWell/NsRangeBar concept outright; PendingDataPanel (28 LOC/5 consumers) duplicates AppEmptyState's slot",
+      "loc_saved_estimate": 83
+    }
+  ],
+  "notes": "Best narduk-ui instrument adoption seen in lane L1 (7x NsFreshnessChip, 1x NsReadoutTile via MetricTile) even though LevelGauge duplicates NsLevelWell/NsRangeBar right next to correct usage in the same file (LakeDirectoryRow.vue composes both). No narduk-charts dependency at all - LakeHistoryChart is fully hand-rolled. The /lakes directory page is the strongest 'this app actually wants a table' evidence in the lane: real header+rows structure, search+filters+URL-state+row-links+3 UI states, just no sort or pagination because the dataset (Texas reservoirs) is server-filtered but never paged."
+}

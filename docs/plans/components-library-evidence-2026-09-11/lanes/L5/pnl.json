@@ -1,0 +1,28 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/pnl",
+  "clone": "ok",
+  "surveyed_sha": "4229aabb0aa80c2e9491c25170396edbb4485295",
+  "default_branch": "main",
+  "app_dirs": ["."],
+  "is_nuxt_app": false,
+  "stack": {
+    "framework": "none (raw Cloudflare Worker serving static assets from public/)",
+    "nuxt": "none",
+    "nuxt_ui": "none",
+    "tailwind": "none",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false
+  },
+  "notes_stack": "package.json deps are only @cloudflare/workers-types, typescript, wrangler. src/index.ts is a 26-line Worker entrypoint (env.ASSETS passthrough). No frontend framework, no build step for UI, no npm UI deps at all.",
+  "has_table_or_list_ui": true,
+  "table_or_list_ui_evidence": [
+    "public/docs/index.html has ~9 static <table> elements (e.g. lines 444, 607, 672, 762, 888, 975, 1160, 1265, 1346, 1412, 1492, 1561, 1641, 1684, 1771, 1983, 2109, 2273, 2319, 2472, 2534) and many <ul>/<li> lists (2570 lines total) — this is a hand-authored spec document (Pricing Intelligence Middleware Spec) rendered as static HTML, not an interactive/sortable/paginated data table.",
+    "public/index.html (311 lines) has only one <li> (nav), no <table>."
+  ],
+  "deep_survey": "skipped per brief (not a Nuxt/Vue app; no framework at all)",
+  "counts": { "commands": { "line_counts": "wc -l public/index.html public/docs/index.html" } },
+  "top_extraction_candidates": [],
+  "notes": "This is a marketing/spec microsite for a pricing-middleware product, deployed as a Cloudflare Worker asset server. The docs page's static tables are hand-authored spec content (pricing tiers, comparison tables), not a data-grid UI pattern — irrelevant to the shared data-table component effort."
+}

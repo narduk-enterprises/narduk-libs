@@ -1,0 +1,254 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/earthdata-viewer",
+  "clone": "ok",
+  "surveyed_sha": "3f605babaf6e199dc838ff5f723ddccbee43e121",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.0.0 (package.json range; not installed, not measured resolved)",
+    "nuxt_ui": "^4.9.0",
+    "tailwind": "none (Nuxt UI v4 theme only; no direct tailwindcss dep)",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false,
+    "notes": "package name is @loganrenz/earthdata-viewer, not @narduk-enterprises/*. Zero narduk-libs (narduk-core/auth/analytics/seo/ai/ui/charts/mapkit-nuxt) dependencies or modules registered. Vendors @narduk-enterprises/geogrid-web and @narduk-enterprises/narduk-mapkit as local file: tarballs (vendor/), a different, non-Nuxt package pair unrelated to narduk-mapkit-nuxt's AppMapKit."
+  },
+  "counts": {
+    "vue_files_total": 12,
+    "components": 8,
+    "pages": 3,
+    "layouts": 0,
+    "composables": 1,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -name '*.vue' | wc -l",
+      "pages": "find app/pages -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "PlaybackView.client.vue",
+      "path": "app/components/PlaybackView.client.vue",
+      "loc": 2398,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Single-file client-only orchestrator: catalog/series/grid fetch, temporal frame cache, stretch state, all playback wiring. Not a generic pattern; too domain-specific to extract, but its size is itself a maintainability finding."
+    },
+    {
+      "name": "LayerControlPanel.vue",
+      "path": "app/components/viewer/LayerControlPanel.vue",
+      "loc": 497,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Composes Nuxt UI USelect/USlider/UButton/UBadge directly (not raw HTML) into a domain control panel; layout/composition itself is hand-rolled, primitives are not."
+    },
+    {
+      "name": "StretchControl.vue",
+      "path": "app/components/viewer/StretchControl.vue",
+      "loc": 321,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Dual-ended value-range stretch control with mode tabs; conceptually close to a level/band instrument (narduk-ui NsLevelWell/NsRangeBar cover single-band freshness display, not an editable dual-handle stretch, so not a strict duplicate)."
+    },
+    {
+      "name": "PlaybackTransport.vue",
+      "path": "app/components/viewer/PlaybackTransport.vue",
+      "loc": 291,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Play/pause/scrub transport bar; no narduk-libs equivalent exists."
+    },
+    {
+      "name": "RampLegend.vue",
+      "path": "app/components/viewer/RampLegend.vue",
+      "loc": 154,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Color-ramp gradient legend with tick labels over a value range. Closest conceptual sibling in narduk-libs is NsRangeBar (narduk-ui instrument) but that is a freshness/band classifier, not a continuous color ramp; worth a design-system look, not a direct swap."
+    },
+    {
+      "name": "GridInspectPanel.vue",
+      "path": "app/components/viewer/GridInspectPanel.vue",
+      "loc": 83,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Readout panel for a clicked grid cell's value; small stat-readout shape, similar in spirit to NsReadoutTile but single-value not tile-styled."
+    },
+    {
+      "name": "MobileControlDrawer.vue",
+      "path": "app/components/viewer/MobileControlDrawer.vue",
+      "loc": 64,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Mobile bottom-drawer wrapper around the desktop control panels."
+    },
+    {
+      "name": "DesktopLayerSidebar.vue",
+      "path": "app/components/viewer/DesktopLayerSidebar.vue",
+      "loc": 46,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Thin desktop sidebar shell."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "app/components/viewer/LayerControlPanel.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "Uses Nuxt UI UBadge directly (line 133) for a 'selected product' marker, not a hand-rolled badge."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "app/components/viewer/GridInspectPanel.vue",
+        "loc": 83,
+        "consumers": 1,
+        "notes": "Single-value readout on grid click; not a multi-tile KPI row."
+      }
+    ],
+    "card_list": [],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "app/components/viewer/LayerControlPanel.vue",
+        "loc": 497,
+        "consumers": 1,
+        "notes": "USelect/USlider-based dataset/layer/companion pickers; composes Nuxt UI primitives, hand-rolled layout/grouping."
+      },
+      {
+        "path": "app/components/viewer/StretchControl.vue",
+        "loc": 321,
+        "consumers": 1,
+        "notes": "Mode tabs + numeric stretch inputs."
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "app/viewer/formatDate.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Dedicated date formatting util for playback frame timestamps."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "app/viewer/shellLayout.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Hand-rolled shell/layout logic; app does not use a narduk-core layer shell (LayerAppShell etc.) since it has zero narduk-core dependency."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "app/map/mapEngine.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Custom map engine abstraction over Leaflet/MapKit (app/map/leafletEngine.ts, mapkitEngine.ts), not narduk-mapkit-nuxt's AppMapKit component."
+      }
+    ],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "app/components/viewer/PlaybackTransport.vue",
+        "loc": 291,
+        "consumers": 1,
+        "notes": "Playback scrubber/transport, domain-specific."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#104",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Simplify the viewer configurator across desktop and mobile",
+      "pattern": "form_field_patterns"
+    },
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#57",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "feat(ui): spatial console overhaul, multi-dataset stack, mobile dock",
+      "pattern": "layout_shell_nav"
+    },
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#9",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "feat: improve mobile playback controls",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#25",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Enforce mobile playback buffering gate",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#95",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Unpublished-product deep link now renders the primary product instead of failing closed",
+      "pattern": "error_state"
+    },
+    {
+      "ref": "narduk-enterprises/earthdata-viewer#130",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "wrangler config lacks no_bundle/find_additional_modules; production 404 page server-renders empty",
+      "pattern": "empty_state"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "other",
+      "name": "PlaybackView.client.vue decomposition",
+      "path": "app/components/PlaybackView.client.vue",
+      "loc": 2398,
+      "consumers": 1,
+      "why": "2398-LOC single-file orchestrator is the largest maintainability risk in the app, though it is too domain-specific for a narduk-libs extraction.",
+      "loc_saved_estimate": 0
+    },
+    {
+      "pattern": "form_field_patterns",
+      "name": "LayerControlPanel.vue",
+      "path": "app/components/viewer/LayerControlPanel.vue",
+      "loc": 497,
+      "consumers": 1,
+      "why": "Largest reusable-shaped control-panel pattern (select/slider/badge grouping with mobile companion state); a shared 'control panel section' primitive could shrink this.",
+      "loc_saved_estimate": 80
+    }
+  ],
+  "notes": "This app is a specialized raster/map playback viewer, not a CRUD/list app: no tables, no pagination, no search-filter bar, no narduk-libs dependency at all today (not even narduk-core). Its extraction value for the shared-table initiative is near zero; its extraction value for narduk-ui instruments (range/legend/readout shapes) is real but indirect. Onboarding this app to narduk-core/narduk-ui would itself be the bigger lift before any table work applies."
+}

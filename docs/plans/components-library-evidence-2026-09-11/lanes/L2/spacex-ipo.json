@@ -1,0 +1,257 @@
+{
+  "lane": "L2",
+  "repo": "narduk-enterprises/spacex-ipo",
+  "clone": "ok",
+  "surveyed_sha": "65c9ca696967c930681835dc2cfe86b54e813e0b",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "none (no tailwind/postcss dep in apps/web/package.json; styling is hand-authored CSS under app/assets/css plus @nuxt/ui)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-seo": "2.0.10",
+      "narduk-analytics": "1.19.33",
+      "narduk-ui": "0.1.2",
+      "narduk-app-tools": "0.2.1",
+      "narduk-testkit": "1.2.0",
+      "status-runtime": "1.0.2"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 18,
+    "components": 14,
+    "pages": 3,
+    "layouts": 0,
+    "composables": 2,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "IpoStatusMatrix verification tiers",
+      "path": "apps/web/app/components/spacex-ipo/IpoStatusMatrix.vue",
+      "loc": 67,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "4-tile KPI/stat group (Confirmed/Reported/Watching/Unknown counts with tone) built from a local computed array; two of the four counts (5, 1) are hardcoded rather than derived from data (lines 23, 29). Good candidate shape for a shared kpi_stat_tile component."
+    },
+    {
+      "name": "IpoNewsFeed formatDate",
+      "path": "apps/web/app/components/spacex-ipo/IpoNewsFeed.vue",
+      "loc": 66,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Local formatDate() (line 26) manually builds 'Mon DD HH:MM' from a MONTH_LABELS array and getUTCMonth/getUTCDate/getUTCHours instead of Intl.DateTimeFormat; narduk-libs ships no date formatter today either."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoTimeline.vue",
+        "loc": 51,
+        "consumers": 1,
+        "notes": "Per-item <span data-status=\"...\"> label driven by a statusLabels map; CSS-attribute-selector badge, not a component."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "apps/web/app/pages/narduk-network.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Grep hit on 'PageHeader'/'SectionHeader' keyword; not independently verified as a distinct component."
+      }
+    ],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoStatusMatrix.vue",
+        "loc": 67,
+        "consumers": 1,
+        "notes": "See local_reimplementations. 4-tile tone-coded stat group."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoSources.vue",
+        "loc": 43,
+        "consumers": 1,
+        "notes": "Inline 'donut' summary tile (active-source count + tone legend) at the top of a source list, lines ~10-19."
+      }
+    ],
+    "card_list": [],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoWatchList.vue",
+        "loc": 28,
+        "consumers": 1,
+        "notes": "Simple <ul> of label/text items, no card chrome."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoSources.vue",
+        "loc": 43,
+        "consumers": 1,
+        "notes": "<ol> of source citations (publisher, external link, summary) plus the donut KPI described above."
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoNewsFeed.vue",
+        "loc": 66,
+        "consumers": 1,
+        "notes": "See local_reimplementations; hand-rolled formatDate() at line 26."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoNewsFeed.vue",
+        "loc": 66,
+        "consumers": 1,
+        "notes": "Ordered list of news items with publisher/date/title/description, sourced from server/api/spacex-news.get.ts (Google News RSS aggregation with a static fallback message)."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoTimeline.vue",
+        "loc": 51,
+        "consumers": 1,
+        "notes": "Status-coded launch-event timeline list plus a decorative CSS 'radar' visualization."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoXTimelineEmbed.vue",
+        "loc": 95,
+        "consumers": 1,
+        "notes": "Embeds X/Twitter timeline widget."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoXFeed.vue",
+        "loc": 56,
+        "consumers": 1,
+        "notes": "Embeds X/Twitter feed widget; likely overlaps IpoXTimelineEmbed."
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoS1PlainEnglishCopy.vue",
+        "loc": 139,
+        "consumers": 1,
+        "notes": "Largest component; long-form editorial content, not a UI pattern."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoS1FilingPage.vue",
+        "loc": 80,
+        "consumers": 1,
+        "notes": "S-1 filing summary content block."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoS1Monitor.vue",
+        "loc": 46,
+        "consumers": 1,
+        "notes": "S-1 filing monitor status block."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoMarketContext.vue",
+        "loc": 44,
+        "consumers": 1,
+        "notes": "Market-context editorial block."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoFaq.vue",
+        "loc": 23,
+        "consumers": 1,
+        "notes": "FAQ content block."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoDisclaimer.vue",
+        "loc": 18,
+        "consumers": 1,
+        "notes": "Legal disclaimer text block."
+      },
+      {
+        "path": "apps/web/app/components/spacex-ipo/IpoHero.vue",
+        "loc": 108,
+        "consumers": 1,
+        "notes": "Landing hero section."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [],
+  "tests_covering_patterns": [
+    "apps/web/tests/narduk-spacex-news.test.ts",
+    "apps/web/tests/server/health.test.ts",
+    "apps/web/tests/e2e/smoke.spec.ts",
+    "apps/web/tests/e2e/hydration.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "StatMatrix / KPI tile group",
+      "path": "apps/web/app/components/spacex-ipo/IpoStatusMatrix.vue",
+      "loc": 67,
+      "consumers": 1,
+      "why": "Clean tone-coded 4-tile KPI group is exactly the shape narduk-libs has zero coverage for today; this app plus IpoSources' donut tile both reinvent small stat displays.",
+      "loc_saved_estimate": 30
+    },
+    {
+      "pattern": "date_time_format",
+      "name": "Shared relative/absolute date formatter",
+      "path": "apps/web/app/components/spacex-ipo/IpoNewsFeed.vue",
+      "loc": 66,
+      "consumers": 1,
+      "why": "Manual month-label array + getUTC* formatting reimplements what Intl.DateTimeFormat (or a shared util) should do once for the whole estate.",
+      "loc_saved_estimate": 15
+    },
+    {
+      "pattern": "timeline_feed",
+      "name": "Status-coded timeline/feed list",
+      "path": "apps/web/app/components/spacex-ipo/IpoTimeline.vue",
+      "loc": 51,
+      "consumers": 1,
+      "why": "IpoTimeline and IpoNewsFeed both hand-roll an <ol> feed with per-item status/date/title/description; a shared TimelineFeed component would need item-status theming and a date formatter.",
+      "loc_saved_estimate": 25
+    }
+  ],
+  "notes": "Single-page marketing/tracker site (3 pages, all 14 components consumed exactly once from pages/index.vue) with NO table or pagination anywhere -- server/api/spacex-news.get.ts returns the full news list unpaginated with only a cache-control header. Despite depending on narduk-core, narduk-seo, narduk-analytics, and narduk-ui (0.1.2), the app uses ZERO narduk-libs UI components (no AppBreadcrumbs/AppTabs/AppEmptyState/NsFreshnessChip/etc. tag usage found) -- narduk-ui appears to be consumed only for tokens.css, not its instruments. This app directly depends on @nuxt/ui 4.6.0 (unlike borderwaitstat-us, which gets it transitively via narduk-core). No UI-relevant defect history in gh issues/PRs."
+}

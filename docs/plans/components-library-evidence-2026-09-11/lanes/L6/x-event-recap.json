@@ -1,0 +1,161 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/x-event-recap",
+  "clone": "ok",
+  "surveyed_sha": "7c60c9b94dff9aec7836d821adb107602ce67dc9",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.8",
+    "nuxt_ui": "^4.9.0",
+    "tailwind": "^4.3.1 (explicit dependency, unlike other lane repos)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-analytics": "1.19.27",
+      "narduk-core": "1.20.5",
+      "narduk-seo": "2.0.5",
+      "narduk-app-tools": "0.2.0",
+      "narduk-testkit": "1.2.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 6,
+    "components": 3,
+    "pages": 2,
+    "layouts": 0,
+    "composables": 1,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find app/composables -maxdepth 8 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 8,
+        "consumers": 1,
+        "notes": "inline 'live'/'failed' status pills (lines ~168-181), not extracted into a component -- narduk-libs ships no generic status badge either."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 12,
+        "consumers": 1,
+        "notes": "inline 'No recaps yet' block (lines 129-140), not a shared component; narduk-core ships AppEmptyState but it is not used here."
+      }
+    ],
+    "loading_skeleton": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 7,
+        "consumers": 1,
+        "notes": "inline `v-for=\"n in 4\"` loop of Nuxt UI's native USkeleton (lines 116-124) -- uses the Nuxt UI primitive directly, not a hand-rolled skeleton component."
+      }
+    ],
+    "error_state": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 6,
+        "consumers": 1,
+        "notes": "inline Nuxt UI UAlert for fetch errors (lines 109-115) -- native Nuxt UI usage, not hand-rolled."
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 60,
+        "consumers": 1,
+        "notes": "the recap feed itself: TransitionGroup of <li>/NuxtLink cards (lines 141-200+), inline in the page, not a reusable component. Same status-pill logic as status_chip_badge above."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "app/components/RecapRequestForm.vue",
+        "loc": 483,
+        "consumers": 1,
+        "notes": "largest component in the repo; built directly on Nuxt UI's UInput/UButton (no UForm/UFormField schema validation wiring seen in the grepped lines)."
+      }
+    ],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "app/pages/index.vue",
+        "loc": 60,
+        "consumers": 1,
+        "notes": "same feed as card_list above -- a live-updating list of recap generation status (streaming/failed/done), arguably closer to a timeline/feed than a static card list given the live status polling (watch() on data.value?.recaps, line 29)."
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "app/components/XStreamField.vue",
+        "loc": 187,
+        "consumers": 1,
+        "notes": "domain-specific X/Twitter stream input field, not a lane-target pattern."
+      },
+      {
+        "path": "app/components/XLogo.vue",
+        "loc": 28,
+        "consumers": 3,
+        "notes": "brand icon, not a lane-target pattern."
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "server/api/recaps/index.get.ts",
+      "params": [],
+      "response_shape": "{ recaps: [...] }",
+      "limit_enforced": false
+    }
+  ],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [],
+  "notes": "Tiny Coolify-hosted app (Dockerfile + docker-entrypoint.sh, not Cloudflare Workers like the other repos in this lane) -- 'Mobile-first X event recaps, posted by agents, read on phone'. No tests directory exists at all in this repo. GET /api/recaps/index.get.ts (server/api/recaps/index.get.ts:1-20) returns the FULL unbounded recap list with no page/limit/cursor/sort params and no enforced limit -- listRecaps() is called with no bound; flagged as a genuine (if currently small-scale) unbounded-list gap, not a UI pattern to extract. The app leans on Nuxt UI's own primitives directly (UAlert, USkeleton, UButton, UIcon) for loading/error states rather than hand-rolling or importing shared wrappers, and renders its list/feed/status-badge patterns inline in app/pages/index.vue rather than as extracted components -- so despite exhibiting card_list/timeline_feed/status_chip_badge/empty_state/loading_skeleton/error_state *patterns*, none of them exist as a reusable local component with a measurable LOC-saved if replaced (all entries above cite the same page file). No table, no defect history, no matching PRs found."
+}

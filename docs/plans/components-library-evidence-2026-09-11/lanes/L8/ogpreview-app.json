@@ -1,0 +1,296 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/ogpreview-app",
+  "clone": "ok",
+  "surveyed_sha": "8ad74565e36ba009bff4fe1b73ca63557f061589",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "not a direct dependency; likely inherited via narduk-nuxt-template-layer-core (not measured, no install)",
+    "tailwind": "@tailwindcss/vite ^4.2.1 (devDependency)",
+    "tanstack_table": "none",
+    "narduk_libs": { "narduk-platform": "^1.28.25" },
+    "legacy_template_layer": true,
+    "legacy_packages": [
+      "narduk-nuxt-template-layer-core@^1.18.26",
+      "narduk-nuxt-template-layer-seo@^1.18.26",
+      "narduk-nuxt-template-layer-analytics@^1.18.26",
+      "narduk-nuxt-template-layer-testing@^1.18.24"
+    ],
+    "notes": "narduk-platform is a contracts-only package (types/schemas), not a UI package. Product is a public Open Graph / social-card preview simulator (og:title/og:image preview across Discord/Facebook/IMessage/LinkedIn/Slack/Telegram/Twitter/WhatsApp) -- functionally adjacent to but distinct from narduk-seo's admin-facing OgImagePreviewLab (which previews YOUR OWN app's og:image routes in an admin panel; ogpreview-app previews ANY public URL's social-card rendering for end users)."
+  },
+  "counts": {
+    "vue_files_total": 71,
+    "components": 42,
+    "pages": 26,
+    "layouts": 1,
+    "composables": 7,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "o-g-preview/* (Discord, Facebook, IMessage, LinkedIn, Slack, Sponsored, Telegram, Twitter, WhatsApp)",
+      "path": "apps/web/app/components/o-g-preview/",
+      "loc": 819,
+      "consumers": "not measured",
+      "duplicates_lib": "none",
+      "notes": "9 platform-specific social-card mockup renderers (819 LOC total, largest Twitter.vue 118 LOC). This is the app's core differentiating product, not a generic UI pattern -- not an extraction candidate, but worth noting as the reason this app has so many small, single-purpose components."
+    },
+    {
+      "name": "url-history/Modal.vue",
+      "path": "apps/web/app/components/url-history/Modal.vue",
+      "loc": 176,
+      "consumers": "not measured (name too generic to grep precisely)",
+      "duplicates_lib": "AppConfirmModal",
+      "notes": "Line 33: 'clear all history' uses the browser-native window.confirm() dialog rather than a proper confirm-modal component -- a clean AppConfirmModal duplicate/gap (worse than most other repos surveyed, which at least hand-roll a styled modal)."
+    },
+    {
+      "name": "url-history/Quick.vue",
+      "path": "apps/web/app/components/url-history/Quick.vue",
+      "loc": 73,
+      "consumers": "not measured",
+      "duplicates_lib": "none",
+      "notes": "Clean 'recent items' chip list sourced from a useUrlHistory composable (localStorage-backed); v-if hidden entirely when empty rather than showing an empty state."
+    },
+    {
+      "name": "what-is-open-graph.vue data table",
+      "path": "apps/web/app/pages/what-is-open-graph.vue",
+      "loc": 31,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Lines 236-267: a genuine native <table> for a comparison table, with an explicit `eslint-disable narduk/no-native-table` comment (line 236). CROSS-CUTTING FINDING: this proves a narduk-libs eslint rule named narduk/no-native-table actively discourages bare <table> elements estate-wide, with an escape hatch for real tabular content -- this explains why no other component surveyed anywhere in this lane used a literal <table> without either avoiding it (div-grid/card patterns) or an explicit disable comment. Worth flagging to the L0/narduk-libs lane and the orchestrator: a new shared table component likely needs to be the sanctioned way to satisfy this rule, or itself be exempted."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/pages/what-is-open-graph.vue",
+        "loc": 31,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not applicable",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": "not measured",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text"],
+        "server_api": "none (static content)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "Static editorial comparison table inside an informational article page, not a data-driven UI pattern. See local_reimplementations for the eslint-disable finding."
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/sections/UrlInputSection.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Primary URL-input box (the app's main 'search' affordance -- enter a URL to preview it)."
+      },
+      {
+        "path": "apps/web/app/components/sections/PreviewInputCard.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Card wrapper around the URL input."
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [
+      {
+        "path": "apps/web/app/components/url-history/Modal.vue",
+        "loc": 3,
+        "consumers": "not measured",
+        "notes": "window.confirm() native dialog, see local_reimplementations."
+      }
+    ],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [
+      {
+        "path": "apps/web/app/components/platform/Section.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Generic section wrapper used across sections/*."
+      }
+    ],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/base/PreviewCard.vue",
+        "loc": 22,
+        "consumers": "not measured",
+        "notes": "Small base preview-card shell."
+      },
+      {
+        "path": "apps/web/app/components/url-history/Quick.vue",
+        "loc": 73,
+        "consumers": "not measured",
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/url-history/Modal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Full history list inside a modal."
+      }
+    ],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/sections/OGFormSection.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "OG-tag input form."
+      },
+      {
+        "path": "apps/web/app/components/sections/OGFormModal.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Modal variant of the OG-tag form."
+      }
+    ],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [
+      {
+        "path": "apps/web/app/components/share/Button.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Share/copy-link button; narduk-core ships AppCopyButton and AppShareButtons generically (app has no narduk-core dependency)."
+      }
+    ],
+    "share_social": [
+      {
+        "path": "apps/web/app/components/share/Button.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Also relevant here; overlaps narduk-core's AppShareButtons."
+      }
+    ],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/app/Footer.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Issue #16 (open): 'Duplicate footer on preview pages: app.vue inline footer and AppFooter.vue both render on the same page' -- a real shell/layout defect."
+      },
+      {
+        "path": "apps/web/app/components/layouts/ArticleLayout.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "One of 3 custom layout wrappers (Article/Content/Simple), not narduk-core's dashboard/landing layouts."
+      },
+      {
+        "path": "apps/web/app/components/layouts/ContentLayout.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "See above."
+      },
+      {
+        "path": "apps/web/app/components/layouts/SimpleLayout.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "See above."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/o-g-preview",
+        "loc": 819,
+        "consumers": "not measured",
+        "notes": "See local_reimplementations; the app's core product, not a shared-library candidate."
+      },
+      {
+        "path": "apps/web/app/components/cache/DebugPanel.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Cache debug panel."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/ogpreview-app#16",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Duplicate footer on preview pages: app.vue inline footer and AppFooter.vue both render on the same page",
+      "pattern": "layout_shell_nav"
+    },
+    {
+      "ref": "narduk-enterprises/ogpreview-app#13",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "SSR hydration mismatch from Date.now() in useUnfurl cacheBustToken initial value",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/ogpreview-app#8",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "replace runtime new Date() in SSR render paths with static values",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/ogpreview-app#12",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Broken structured data and garbled title on two guide pages",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "confirm_modal",
+      "name": "AppConfirmModal adoption over window.confirm()",
+      "path": "apps/web/app/components/url-history/Modal.vue",
+      "loc": 3,
+      "consumers": "not measured",
+      "why": "Native browser confirm() for a destructive action ('clear all history') is a worse anti-pattern than any hand-rolled modal seen elsewhere in this lane -- trivial, high-value fix once a shared confirm modal exists.",
+      "loc_saved_estimate": 5
+    },
+    {
+      "pattern": "other",
+      "name": "narduk/no-native-table eslint rule (cross-cutting finding)",
+      "path": "apps/web/app/pages/what-is-open-graph.vue",
+      "loc": 1,
+      "consumers": 0,
+      "why": "Discovered via the one eslint-disable comment in this repo; likely explains why zero literal <table> elements were found anywhere else across this lane's 6 repos. Relevant to the shared table component's own design and to L0's narduk-libs eslint-config survey.",
+      "loc_saved_estimate": 0
+    }
+  ],
+  "notes": "Marketing/content-heavy public tool (OG/social-card preview simulator), legacy template layer consumer, no narduk-seo/narduk-core proper. Its 9 platform-preview components (819 LOC) are bespoke product surface, not extraction targets. The standout finding is NOT table-shaped: it's the narduk/no-native-table eslint rule surfaced by one eslint-disable comment, which is likely why this entire lane (6 repos) found almost no literal <table> usage -- apps are being steered toward div-grid/card patterns by lint, not by lack of a shared table component. Recommend the orchestrator confirm this rule's exact definition and scope via the L0 narduk-libs-internal lane."
+}
