@@ -127,11 +127,25 @@ const ULink = defineComponent({
   },
 })
 
+/**
+ * Real Nuxt UI `UForm` validates `state` against `schema` on submit and
+ * invokes its `onSubmit` handler with the native submit event mutated to
+ * carry the parsed result as `.data`
+ * (`node_modules/@nuxt/ui/dist/runtime/components/Form.vue`,
+ * `event.data = await _validate(...)`). A handler reading `event.data` (e.g.
+ * `AuthApiKeysPanel.submitCreate`) got `undefined` from the previous stub,
+ * which only emitted the raw DOM event — a bug latent only because nothing
+ * exercised it (narduk-libs PR #282 review).
+ */
 const UForm = defineComponent({
   name: 'UForm',
   inheritAttrs: false,
+  props: {
+    schema: { default: undefined, type: null },
+    state: { default: undefined, type: null },
+  },
   emits: ['submit'],
-  setup(_props, { attrs, emit, slots }) {
+  setup(props, { attrs, emit, slots }) {
     return () =>
       h(
         'form',
@@ -139,6 +153,12 @@ const UForm = defineComponent({
           ...attrs,
           onSubmit: (event: Event) => {
             event.preventDefault()
+            // Mutate the real native event (as `@submit.prevent`'s compiled
+            // `withModifiers` wrapper calls `.preventDefault()` on whatever
+            // this emits) rather than emitting a fresh `{ data }` object,
+            // which has no `.preventDefault` and threw.
+            const data = props.schema ? props.schema.parse(props.state) : props.state
+            Object.assign(event, { data })
             emit('submit', event)
           },
         },
