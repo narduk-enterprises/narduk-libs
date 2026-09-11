@@ -10,8 +10,8 @@ import {
 import type { Page } from '@playwright/test'
 
 /**
- * The shared list-query contract's response (narduk-libs#257): `items` +
- * `offset`, not `users` + `page`.
+ * Shared list-query contract response (narduk-libs#257), plus the deprecated
+ * `users` / `page` aliases so existing fleet callers keep working.
  */
 interface UsersApiResponse {
   items: Array<{
@@ -23,9 +23,11 @@ interface UsersApiResponse {
   }>
   limit: number
   offset: number
+  page: number
   q: string | null
   sort: string | null
   total: number | null
+  users: UsersApiResponse['items']
 }
 
 interface UserPayload {
@@ -129,9 +131,12 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
         items: expect.any(Array),
         limit: 2,
         offset: 0,
+        page: 1,
         sort: 'createdAt:desc',
         total: expect.any(Number),
+        users: expect.any(Array),
       })
+      expect(payload.users).toEqual(payload.items)
 
       for (const user of payload.items) {
         expect(user).toMatchObject({
@@ -156,15 +161,26 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
         items: expect.any(Array),
         limit: 1,
         offset: 0,
+        page: 1,
         total: expect.any(Number),
+        users: expect.any(Array),
       })
+      expect(payload.users).toEqual(payload.items)
     })
 
     test('validates pagination inputs against the list-query contract', async ({ page }) => {
       await loginAsAdmin(page)
 
-      // `page` is not a key of the contract: rejected, not silently ignored.
-      const unknownKey = await requestUsers(page, '?page=1&limit=2', apiPath)
+      // `page` is the pre-contract key: still accepted, converted to offset.
+      const legacyPage = await requestUsers(page, '?page=2&limit=2', apiPath)
+      expect(legacyPage.status).toBe(200)
+      expect(assertUsersApiPayload(legacyPage.payload)).toMatchObject({
+        limit: 2,
+        offset: 2,
+        page: 2,
+      })
+
+      const unknownKey = await requestUsers(page, '?pge=1&limit=2', apiPath)
       expect(unknownKey.status).toBe(400)
 
       const negativeOffset = await requestUsers(page, '?offset=-1&limit=2', apiPath)

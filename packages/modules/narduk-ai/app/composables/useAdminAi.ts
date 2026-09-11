@@ -60,7 +60,14 @@ export function useAdminAi() {
     'layer-admin-system-prompts',
     // The route answers with the shared list-query contract's `ListResponse`;
     // this composable keeps exposing the rows themselves.
-    async () => (await $fetch<ListResponse<AdminSystemPrompt>>(ADMIN_SYSTEM_PROMPTS_API)).items,
+    async () => {
+      const data = await $fetch<AdminSystemPrompt[] | ListResponse<AdminSystemPrompt>>(
+        ADMIN_SYSTEM_PROMPTS_API,
+      )
+      // New wire shape is ListResponse; keep reading a bare array so a mixed
+      // pin of this composable against an older narduk-ai still works.
+      return Array.isArray(data) ? data : data.items
+    },
   )
 
   const isUpdatingPrompt = ref<string | null>(null)
