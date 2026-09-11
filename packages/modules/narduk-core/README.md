@@ -235,6 +235,7 @@ return listResponse(rows, { query, total })
 `parseSortParam` in today's `query.ts` silently falls back to the default on an
 unknown field; the contract **rejects** that key instead — the bug class
 stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.
+
 ## Deprecations
 
 ### `AppConfirmModal` — deprecated, removed in the next major
