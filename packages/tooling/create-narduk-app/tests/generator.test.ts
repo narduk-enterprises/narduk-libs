@@ -153,8 +153,6 @@ describe('create-narduk-app generation contract', () => {
     })
     expect(rootManifest.pnpm).toEqual({
       overrides: {
-        '@narduk-enterprises/narduk-auth': PACKAGE_VERSIONS['@narduk-enterprises/narduk-auth'],
-        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
         '@nuxt/kit': PACKAGE_VERSIONS.nuxt,
         'eslint-plugin-vitest>@typescript-eslint/utils':
@@ -657,6 +655,8 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
       expect(readme, label).toContain('NPM_CONFIG_USERCONFIG')
       expect(readme, label).toContain('gh-packages-run')
+      expect(readme, label).toContain('org Dependabot secret store')
+      expect(readme, label).toContain('selected repositories')
     }
   })
 
@@ -682,13 +682,21 @@ describe('generated app typecheck and lint surfaces', () => {
       const parsed = YAML.parse(dependabot) as {
         version: number
         registries: Record<string, { type: string; url: string }>
-        updates: Array<{ registries: string[]; groups: Record<string, { patterns: string[] }> }>
+        updates: Array<{
+          directories?: string[]
+          directory?: string
+          registries: string[]
+          groups: Record<string, { patterns: string[] }>
+        }>
       }
       expect(parsed.version, label).toBe(2)
+      expect(parsed.updates[0].directory, label).toBeUndefined()
+      expect(parsed.updates[0].directories, label).toEqual(['/', '/apps/*'])
       expect(parsed.updates[0].registries, label).toEqual(['narduk-github-packages'])
       expect(parsed.updates[0].groups['narduk-libs'].patterns, label).toEqual([
         '@narduk-enterprises/*',
       ])
+      expect(files.has('renovate.json'), label).toBe(false)
     }
   })
 })
