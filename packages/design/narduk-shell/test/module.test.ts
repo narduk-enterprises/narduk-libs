@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { NE_SHELL_COMPONENTS } from '../src/registry'
 
 import type { NeComponentRegistration } from '../src/registry'
 
@@ -95,14 +97,34 @@ describe('narduk-shell module', () => {
     )
   })
 
-  it('registers nothing from the shipped registry, which item 1 leaves empty', async () => {
+  it('registers exactly the components the shipped registry names', async () => {
     const { addComponent, addComponentsDir } = mockNuxtKit()
 
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    expect(addComponent).not.toHaveBeenCalled()
+    // Enumerated on purpose: adding a component to the suite is a deliberate
+    // two-file edit (the SFC and its registry entry), and this list is the
+    // third place that has to agree. A component that appears here without a
+    // README section, a mount test and an SSR test is what item 3's surface
+    // check (narduk-libs#250) is being built to reject.
+    expect(addComponent.mock.calls.map(([call]) => (call as { name: string }).name)).toEqual([
+      'NeStatePanel',
+    ])
     expect(addComponentsDir).not.toHaveBeenCalled()
+  })
+
+  it('resolves each shipped registry entry to a real file on disk', async () => {
+    mockNuxtKit()
+
+    for (const entry of NE_SHELL_COMPONENTS) {
+      // The specifier is resolved against src/module.ts by the module's own
+      // createResolver, so the same relative form has to work from the
+      // workspace checkout and from the published tarball.
+      expect(entry.filePath.startsWith('./runtime/components/')).toBe(true)
+      expect(existsSync(join(packageRoot, 'src', entry.filePath.replace('./', '')))).toBe(true)
+      expect(entry.filePath.endsWith(`/${entry.name}.vue`)).toBe(true)
+    }
   })
 
   it('registers nothing when components are disabled', async () => {
