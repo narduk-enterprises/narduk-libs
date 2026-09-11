@@ -2,38 +2,45 @@
 import { useAppFetch } from '@narduk-enterprises/narduk-core/app/composables/useAppFetch'
 import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/formatBuildTimeLocal'
 
+import type { ListResponse } from '@narduk-enterprises/narduk-platform/list-query'
+
 const perPage = 20
 const page = ref(1)
 
-interface UsersResponse {
-  limit: number
-  page: number
-  total: number
-  users: Array<{
-    createdAt: string
-    email: string
-    id: string
-    isAdmin: boolean
-    name: string | null
-  }>
+interface AdminUserRow {
+  createdAt: string
+  email: string
+  id: string
+  isAdmin: boolean
+  name: string | null
 }
 
 const appFetch = useAppFetch()
 
-// Fetch from the layer's generic /api/admin/users endpoint
+// Fetch from the layer's generic /api/admin/users endpoint, which answers with
+// the shared list-query contract (`offset`, not `page`).
 const { data: usersData, refresh: refreshUsers } = useAsyncData(
   'layer-admin-users',
   () =>
-    appFetch<UsersResponse>('/api/admin/users', { query: { page: page.value, limit: perPage } }),
+    appFetch<ListResponse<AdminUserRow>>('/api/admin/users', {
+      query: { limit: perPage, offset: (page.value - 1) * perPage },
+    }),
   {
     watch: [page],
-    default: () => ({ users: [], page: 1, limit: perPage, total: 0 }),
+    default: (): ListResponse<AdminUserRow> => ({
+      items: [],
+      limit: perPage,
+      offset: 0,
+      q: null,
+      sort: null,
+      total: 0,
+    }),
   },
 )
 
-const total = computed(() => usersData.value.total)
+const total = computed(() => usersData.value.total ?? 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / perPage)))
-const paginatedUsers = computed(() => usersData.value.users)
+const paginatedUsers = computed(() => usersData.value.items)
 const activeAction = ref<string | null>(null)
 
 function prevPage() {

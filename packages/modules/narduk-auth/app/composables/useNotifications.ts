@@ -5,6 +5,8 @@
  * and Web Notifications API integration for browser push.
  */
 
+import type { ListResponse } from '@narduk-enterprises/narduk-platform/list-query'
+
 /** Notification shape returned from the API. */
 export interface AppNotification {
   actionUrl: string | null
@@ -65,9 +67,9 @@ export function useNotifications() {
   async function refresh() {
     loading.value = true
     try {
-      const data = await $fetch<{ notifications: AppNotification[] }>('/api/notifications')
-      items.value = data.notifications
-      unreadCount.value = data.notifications.filter((n) => !n.isRead).length
+      const data = await $fetch<ListResponse<AppNotification>>('/api/notifications')
+      items.value = data.items
+      unreadCount.value = data.items.filter((n) => !n.isRead).length
     } catch {
       // Silently ignore
     } finally {

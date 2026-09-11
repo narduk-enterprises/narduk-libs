@@ -1,33 +1,46 @@
-import { createError, defineEventHandler, getQuery } from 'h3'
+import { defineEventHandler } from 'h3'
 import { z } from 'zod'
 
 import { requireAuth } from '#layer/server/utils/auth'
+import { listResponse, parseListQuery } from '#layer/server/utils/listQuery'
 import { getUserNotifications } from '#narduk-auth-server/utils/notifications'
 
-const querySchema = z.object({
-  unreadOnly: z.string().optional(),
-  limit: z.string().optional(),
-})
+/** Page ceiling this route has always enforced; now a clamp, not a silent cap. */
+const MAX_LIMIT = 100
+const DEFAULT_LIMIT = 50
+
+/**
+ * `createdAt` is the only ordering this route has ever served, so it is the
+ * whole allowlist.
+ */
+const SORTABLE = ['createdAt'] as const
+
+const FILTERS = z.object({ unreadOnly: z.enum(['false', 'true']).optional() })
 
 /**
  * GET /api/notifications
  *
- * Returns the authenticated user's notifications, newest first.
- * Query params: ?unreadOnly=true&limit=20
+ * The authenticated user's notifications, newest first, in the shared
+ * list-query contract: `?limit=20&offset=20&unreadOnly=true`.
+ *
+ * `total` is `null` — this route deliberately does not count, so one page
+ * costs exactly one query. `/api/notifications/unread-count` is the count.
  */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
-  const raw = getQuery(event)
-  const parsed = querySchema.safeParse(raw)
-  if (!parsed.success) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid query parameters' })
-  }
-  const query = parsed.data
+  const query = parseListQuery(event, {
+    defaultLimit: DEFAULT_LIMIT,
+    defaultSort: 'createdAt:desc',
+    filters: FILTERS,
+    maxLimit: MAX_LIMIT,
+    sortable: SORTABLE,
+  })
 
-  const unreadOnly = query.unreadOnly === 'true'
-  const limit = query.limit ? Math.min(Number.parseInt(query.limit, 10), 100) : 50
+  const items = await getUserNotifications(event, user.id, {
+    limit: query.limit,
+    offset: query.offset,
+    unreadOnly: query.filters.unreadOnly === 'true',
+  })
 
-  const items = await getUserNotifications(event, user.id, { unreadOnly, limit })
-
-  return { notifications: items }
+  return listResponse(items, { query, total: null })
 })
