@@ -336,6 +336,6 @@ test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () =>
 
   const durations = JSON.parse(
     readFileSync(join(repoRoot, 'scripts/ci-package-durations.json'), 'utf8'),
-  ) as { gateSeconds: Record<string, number> }
+  )
   assert.equal(typeof durations.gateSeconds['narduk-shell'], 'number')
 })
