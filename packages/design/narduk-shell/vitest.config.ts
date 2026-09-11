@@ -1,10 +1,15 @@
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // The suite's components are mounted and server-rendered for real, so their
+  // single-file components have to be compiled.
+  plugins: [vue()],
   test: {
-    // No component mounts yet (the registry is empty), so the suite runs in
-    // plain Node. A later backlog item that adds an SFC adds the Vue plugin
-    // and the SSR/mount pattern from packages/design/narduk-charts.
+    // `node` is the default on purpose: the SSR suites prove the components
+    // render in a runtime with no `document` (the Workers preset has none).
+    // A mount suite opts INTO happy-dom with a `@vitest-environment` directive
+    // at the top of its own file.
     environment: 'node',
     include: ['test/**/*.test.ts'],
   },

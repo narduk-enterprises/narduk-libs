@@ -47,11 +47,16 @@
   "dependencies": {
     "@nuxt/kit": "^4.0.0"
   },
+  "//devDependencies": "@vitejs/plugin-vue, @vue/server-renderer, @vue/test-utils and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile, the same rule narduk-mapkit-nuxt states: a caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key it for every other package, which is the silent dependency drift narduk-libs#124 warns against. Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
     "@nuxt/schema": "^4.4.2",
     "@nuxt/ui": "4.6.0",
     "@types/node": "^22.19.19",
+    "@vitejs/plugin-vue": "6.0.7",
+    "@vue/server-renderer": "3.5.39",
+    "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
+    "happy-dom": "20.10.6",
     "nuxt": "^4.4.2",
     "prettier": "^3.8.3",
     "publint": "^0.3.21",

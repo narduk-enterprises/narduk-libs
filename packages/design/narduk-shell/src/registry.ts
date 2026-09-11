@@ -30,6 +30,10 @@ export interface NeComponentRegistration {
 }
 
 /**
- * Registered in array order. Empty until backlog item 2 and later fill it.
+ * Registered in array order. Each backlog item appends its own entry at the
+ * end; nothing here is sorted, so two lanes adding a component at once produce
+ * a trivial append-versus-append conflict rather than an interleaved one.
  */
-export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = []
+export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
+  { name: 'NeStatePanel', filePath: './runtime/components/NeStatePanel.vue' },
+]

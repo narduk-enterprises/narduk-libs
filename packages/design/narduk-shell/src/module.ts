@@ -2,6 +2,20 @@ import { addComponent, createResolver, defineNuxtModule } from '@nuxt/kit'
 
 import { NE_SHELL_COMPONENTS } from './registry'
 
+/**
+ * The suite's public runtime types, re-exported from the `.` subpath so an app
+ * writes `import type { NeStateValue } from '@narduk-enterprises/narduk-shell'`.
+ *
+ * `export type` is erased, so this adds nothing to the module's Node-side
+ * graph: no component source is loaded to read a type.
+ */
+export type {
+  NeAsyncDataStatus,
+  NeStateGap,
+  NeStatePanelProps,
+  NeStateValue,
+} from './runtime/types'
+
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 
 export interface NardukShellModuleOptions {
