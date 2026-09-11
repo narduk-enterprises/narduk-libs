@@ -13,6 +13,7 @@ import { parse as parseVue } from 'vue/compiler-sfc'
 // with no build step, and Node strips the types natively.
 import { PENDING_CARDS } from '../../narduk-shell/src/pending-cards.ts'
 import { NE_SHELL_COMPONENTS } from '../../narduk-shell/src/registry.ts'
+import { NE_SHELL_SURFACE_CARDS } from '../../narduk-shell/src/surface-cards.ts'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -105,25 +106,29 @@ export function kebabCase(name: string) {
 }
 
 const CARD_TEMPLATE = 'packages/design/narduk-shell/src/design-cards/template/NeExample.card.vue'
+const SHELL_REGISTRY = 'packages/design/narduk-shell/src/registry.ts'
+const SURFACE_CARDS = 'packages/design/narduk-shell/src/surface-cards.ts'
 
 /**
- * Pair narduk-shell's component registry with the card files found beside its
- * components. Both directions are errors: a registered component with no card
- * is the done-when this item exists to enforce, and a card with no registration
- * is a card NE Base would show for something no app can use.
+ * Pair narduk-shell's card files with the two lists that may authorise one:
+ * its component registry, and the much smaller `surface-cards.ts` for a card
+ * that previews an export subpath rather than a component. Both directions are
+ * errors: a registered component with no card is the done-when this item
+ * exists to enforce, and a card authorised by neither list is a card NE Base
+ * would show for something no app can use.
  */
 export function shellCardPlan(
   components: readonly { name: string }[],
   cardFiles: readonly string[],
   pendingCards: readonly string[] = PENDING_CARDS,
+  // Defaulted, and passed explicitly by `build()` below, so that every
+  // existing caller and test keeps describing the component rule on its own.
+  surfaceCards: readonly { name: string }[] = [],
 ): { name: string; file: string; id: string }[] {
   const found = new Set(cardFiles)
   const pending = new Set(pendingCards)
-  const plan = components.map(({ name }) => ({
-    name,
-    file: `${name}.card.vue`,
-    id: kebabCase(name),
-  }))
+  const entry = (name: string) => ({ name, file: `${name}.card.vue`, id: kebabCase(name) })
+  const plan = components.map(({ name }) => entry(name))
   const missing = plan.filter((card) => !found.has(card.file) && !pending.has(card.name))
   if (missing.length > 0) {
     throw new Error(
@@ -131,16 +136,38 @@ export function shellCardPlan(
         `Copy ${CARD_TEMPLATE} to src/design-cards/<Name>.card.vue.`,
     )
   }
-  const expected = new Set(plan.map((card) => card.file))
+  const registered = new Set(plan.map((card) => card.name))
+  const collisions = surfaceCards.filter((card) => registered.has(card.name))
+  if (collisions.length > 0) {
+    // Both lists would claim one file and one card id. The renderer rejects a
+    // duplicate id later; say which two lists disagree while that is still cheap.
+    throw new Error(
+      `Declared as both a component and a surface card: ${collisions.map((card) => card.name).join(', ')}. ` +
+        `A name belongs to ${SHELL_REGISTRY} or to ${SURFACE_CARDS}, never to both.`,
+    )
+  }
+  const surface = surfaceCards.map(({ name }) => entry(name))
+  // No PENDING_CARDS equivalent on purpose: that waiver was for components
+  // landing ahead of their card, and it is spent. A surface card is declared
+  // and shipped in one change or not declared at all.
+  const unshipped = surface.filter((card) => !found.has(card.file))
+  if (unshipped.length > 0) {
+    throw new Error(
+      `Surface cards declared with no card file: ${unshipped.map((card) => card.file).join(', ')}. ` +
+        `Add the card under src/design-cards/, or remove the entry from ${SURFACE_CARDS}.`,
+    )
+  }
+  const expected = new Set([...plan, ...surface].map((card) => card.file))
   const orphans = cardFiles.filter((file) => !expected.has(file))
   if (orphans.length > 0) {
     throw new Error(
       `Design cards with no registered component: ${orphans.join(', ')}. ` +
-        'Add the entry to packages/design/narduk-shell/src/registry.ts, or delete the card.',
+        `Add the entry to ${SHELL_REGISTRY} — or, for a card that previews an export ` +
+        `subpath rather than a component, to ${SURFACE_CARDS} — or delete the card.`,
     )
   }
   // Pending names without a card are omitted so `build()` does not try to read them.
-  return plan.filter((card) => found.has(card.file))
+  return [...plan.filter((card) => found.has(card.file)), ...surface]
 }
 
 /**
@@ -287,7 +314,7 @@ export async function build() {
   const cardFiles = (await readdir(cardDirectory).catch(() => []))
     .filter((entry) => entry.endsWith('.card.vue'))
     .sort()
-  const plan = shellCardPlan(NE_SHELL_COMPONENTS, cardFiles)
+  const plan = shellCardPlan(NE_SHELL_COMPONENTS, cardFiles, PENDING_CARDS, NE_SHELL_SURFACE_CARDS)
   const cardSources = Object.fromEntries(
     await Promise.all(
       plan.map(
@@ -315,12 +342,20 @@ export async function build() {
   const cardless = NE_SHELL_COMPONENTS.map((entry) => entry.name).filter(
     (name) => !plan.some((card) => card.name === name) && !pendingCardNames.has(name),
   )
+  // `plan` now carries surface cards too -- the ./format card previews an
+  // export subpath, not a component -- so the counts these notes quote come
+  // from the component half rather than from the plan's length.
+  const surfaceNames = new Set(NE_SHELL_SURFACE_CARDS.map((card) => card.name))
+  const componentCards = plan.filter((card) => !surfaceNames.has(card.name))
+  const surfaceCount = plan.length - componentCards.length
+  const surfaceSuffix =
+    surfaceCount === 0 ? '' : ` Plus ${surfaceCount} card(s) for an export subpath.`
   const shellNote =
     NE_SHELL_COMPONENTS.length === 0
       ? NO_SHELL_NOTE
-      : plan.length === 0
-        ? `narduk-shell registers ${NE_SHELL_COMPONENTS.length} component(s); their design cards have not shipped yet.`
-        : `narduk-shell contributes ${plan.length} card(s), each shipped beside its component.`
+      : componentCards.length === 0
+        ? `narduk-shell registers ${NE_SHELL_COMPONENTS.length} component(s); their design cards have not shipped yet.${surfaceSuffix}`
+        : `narduk-shell contributes ${componentCards.length} card(s), each shipped beside its component.${surfaceSuffix}`
   const { files, cards } = renderBundle(html, `${css}\n${inline}\n`, shellNote)
   const renderedIds = cards.map((card) => card.path.slice('cards/'.length, -'.html'.length)).sort()
   // This is also the proof that the discovery glob in app.vue really rendered
@@ -424,7 +459,7 @@ export async function build() {
   console.log(
     NE_SHELL_COMPONENTS.length === 0
       ? 'Coverage gap: narduk-shell registers no components yet; existing NE Base templates are preserved separately.'
-      : plan.length === 0
+      : componentCards.length === 0
         ? `Coverage gap: narduk-shell registers ${NE_SHELL_COMPONENTS.length} component(s) (${cardless.join(', ')}) with no design card yet; existing NE Base templates are preserved separately.`
         : `narduk-shell contributed ${plan.length} card(s) from src/design-cards${cardless.length ? ` (card pending: ${cardless.join(', ')})` : ''}; existing NE Base templates are preserved separately.`,
   )
