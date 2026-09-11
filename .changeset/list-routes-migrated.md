@@ -21,7 +21,9 @@ aliases in the next major of each package, once fleet apps read `items`.
   disagreeing values answers 400. `limit` above the route's ceiling of 100 is
   now **clamped to 100** instead of answering 400 (more permissive). `sort`
   accepts `createdAt:asc|desc`, defaulting to `createdAt:desc` (previously the
-  descending order was fixed). Unknown keys now answer 400.
+  descending order was fixed). An unknown key is tolerated (200, with a warning
+  logged) for one release rather than answering 400 — see
+  `.changeset/list-query-tolerate-unknown-keys.md`.
 - Response: the contract shape `{ items, total, limit, offset, sort, q }` plus
   the deprecated aliases `{ users, page }` so existing consumers keep working.
 
@@ -29,7 +31,8 @@ aliases in the next major of each package, once fleet apps read `items`.
 
 - Request: `unreadOnly` is still any string; only `'true'` filters (the
   pre-contract behaviour). `offset` is now honoured (it was previously ignored).
-  Unknown query keys answer 400. `limit` ceiling stays 100, default 50.
+  An unknown query key is tolerated (200, with a warning logged) for one release
+  rather than answering 400. `limit` ceiling stays 100, default 50.
 - Response: the contract shape plus the deprecated alias `{ notifications }`.
   `total` is `null` — this route deliberately does not count, which keeps a page
   to a single statement.
@@ -38,7 +41,9 @@ aliases in the next major of each package, once fleet apps read `items`.
 
 - Request: previously accepted no parameters (extras were ignored). It now
   accepts `limit` (ceiling and default 500), `offset`, and `sort` over `name`
-  and `updatedAt`. Unknown query keys answer 400.
+  and `updatedAt`. An unknown query key is tolerated (200, with a warning
+  logged) for one release rather than answering 400, so a caller that still
+  sends an old ignored parameter keeps working.
 - Response: a bare `AdminSystemPrompt[]` cannot also be a `{ items, … }` object,
   so the wire shape is the contract envelope with `total: null`. The bundled
   `useAdminAi` composable still exposes `AdminSystemPrompt[]` (and still accepts

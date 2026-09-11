@@ -1,5 +1,6 @@
+import { createMemorySink } from '@narduk-enterprises/narduk-logging/testing'
 import { createApp, defineEventHandler, toWebHandler } from 'h3'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import {
@@ -10,12 +11,26 @@ import {
 
 import type { EventHandlerRequest, H3Event } from 'h3'
 
+// Controls what `useRuntimeConfig` (and therefore `useLogger`'s sinks) sees,
+// the same double `tests/logger.test.ts` uses — real narduk-core server
+// utils, run outside a Nitro app, so config must be injected rather than
+// read from a running instance.
+const runtimeConfig = vi.hoisted(() => ({ current: {} as Record<string, unknown> }))
+vi.mock('nitropack/runtime', () => ({
+  useRuntimeConfig: () => runtimeConfig.current,
+  defineNitroPlugin: (plugin: unknown) => plugin,
+}))
+
 interface Row {
   id: string
 }
 
 const rows: Row[] = [{ id: 'a' }, { id: 'b' }]
 const sortable = ['createdAt', 'name'] as const
+
+beforeEach(() => {
+  runtimeConfig.current = {}
+})
 
 /** One request through a real h3 app, answering what the route replied. */
 async function call(
@@ -38,9 +53,55 @@ function offsetRoute(event: H3Event) {
   return listResponse(rows, { query, total: 2 })
 }
 
-describe('parseListQuery', () => {
+function strictOffsetRoute(event: H3Event) {
+  const query = parseListQuery(event, {
+    filters: z.object({ status: z.enum(['closed', 'open']).optional() }),
+    maxLimit: 100,
+    sortable,
+    strict: true,
+  })
+
+  return listResponse(rows, { query, total: 2 })
+}
+
+describe('parseListQuery — unknown keys (tolerate-and-warn default)', () => {
+  it('tolerates an unknown key: 200 with the same rows as the request without it', async () => {
+    const baseline = await call('/?limit=10', offsetRoute)
+    const withUnknown = await call('/?limit=10&pge=2', offsetRoute)
+
+    expect(withUnknown.status).toBe(200)
+    expect(withUnknown.body).toEqual(baseline.body)
+  })
+
+  it('logs one structured warning naming every unknown key', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    await call('/?limit=10&pge=2&serach=abc', offsetRoute)
+
+    const warnings = sink.records.filter((record) => record.level === 'warn')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]?.message).toContain('pge')
+    expect(warnings[0]?.message).toContain('serach')
+    expect(warnings[0]?.data).toMatchObject({
+      code: 'list_query_unknown_keys',
+      unknownKeys: ['pge', 'serach'],
+    })
+  })
+
+  it('does not warn when the request sends no unknown keys', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    await call('/?limit=10&status=open', offsetRoute)
+
+    expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(0)
+  })
+})
+
+describe('parseListQuery — strict opt-in', () => {
   it('answers 400 — never 500 — for an unknown key, naming it in the payload', async () => {
-    const { body, status } = await call('/?limit=10&pge=2', offsetRoute)
+    const { body, status } = await call('/?limit=10&pge=2', strictOffsetRoute)
 
     expect(status).toBe(400)
     expect(body).toMatchObject({
@@ -52,7 +113,9 @@ describe('parseListQuery', () => {
       statusCode: 400,
     })
   })
+})
 
+describe('parseListQuery', () => {
   it('rejects a sort outside the allowlist and names the field', async () => {
     const { body, status } = await call('/?sort=passwordHash:asc', offsetRoute)
 
