@@ -52,7 +52,10 @@ it('renders', () => { expect(mount(NeStatePanel).text()).toBe('') })
 import NeStatePanel from './NeStatePanel.vue'
 it('server renders', async () => { expect(await renderToString(NeStatePanel)).toContain('<div') })
 `,
-    'src/design-cards/NeStatePanel.card.vue': `<template>
+    'src/design-cards/NeStatePanel.card.vue': `<script setup lang="ts">
+import NeStatePanel from '../runtime/components/NeStatePanel.vue'
+</script>
+<template>
   <section class="preview-card" data-design-card="ne-state-panel" data-name="State panel" data-group="Shell">
     <NeStatePanel />
   </section>
@@ -165,7 +168,7 @@ test('an SSR test alone does not satisfy the mount rule, and vice versa', async 
   const mountOnly = fixture(['src/runtime/components/NeStatePanel.ssr.test.ts'])
   writeFileSync(
     join(mountOnly, 'src/runtime/components/NeStatePanel.test.ts'),
-    "import { mount } from '@vue/test-utils'\nmount(NeStatePanel)\nrenderToString(NeStatePanel)\n",
+    "import { mount } from '@vue/test-utils'\nimport NeStatePanel from './NeStatePanel.vue'\nmount(NeStatePanel)\nrenderToString(NeStatePanel)\n",
   )
   assert.deepEqual(
     (await check(mountOnly)).misses.map((miss) => miss.rule),
@@ -176,6 +179,82 @@ test('an SSR test alone does not satisfy the mount rule, and vice versa', async 
   assert.deepEqual(
     (await check(ssrOnly)).misses.map((miss) => miss.rule),
     ['mount'],
+  )
+})
+
+/*
+ * The tightened-rule fixtures below reproduce, one rule at a time, the exact
+ * gaming shapes a PR review found: a `mount(Name` reference that exists only
+ * in a comment, an SSR test whose `renderToString` targets something
+ * unrelated to the named component, an empty `data-design-card` section with
+ * nothing rendered inside it, and a `format` "test" whose only assertion is
+ * `expect(true).toBe(true)`. Before the fix (comment stripping, plus
+ * requiring a real import of the artefact under test) every one of these
+ * passed its rule; each must now fail it.
+ */
+
+test('tightened rules: a mount() reference that exists only in a comment does not satisfy the mount rule', async () => {
+  const directory = fixture(['src/runtime/components/NeStatePanel.test.ts'])
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.test.ts'),
+    "// mount(NeStatePanel) -- pretend this file mounts it via @vue/test-utils\nit('does nothing', () => { expect(true).toBe(true) })\n",
+  )
+  assert.deepEqual(
+    (await check(directory)).misses
+      .filter((miss) => miss.name === 'NeStatePanel')
+      .map((miss) => miss.rule),
+    ['mount'],
+  )
+})
+
+test('tightened rules: renderToString on an unrelated component does not satisfy the ssr rule', async () => {
+  const directory = fixture(['src/runtime/components/NeStatePanel.ssr.test.ts'])
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.ssr.test.ts'),
+    `import { renderToString } from '@vue/server-renderer'
+import { createSSRApp, defineComponent, h } from 'vue'
+// NeStatePanel already has coverage elsewhere -- this file renders something
+// else entirely, but still names the component and calls renderToString.
+const Unrelated = defineComponent({ setup: () => () => h('div', 'unrelated') })
+it('server renders something', async () => {
+  expect(await renderToString(createSSRApp(Unrelated))).toContain('unrelated')
+})
+`,
+  )
+  assert.deepEqual(
+    (await check(directory)).misses
+      .filter((miss) => miss.name === 'NeStatePanel')
+      .map((miss) => miss.rule),
+    ['ssr'],
+  )
+})
+
+test('tightened rules: an empty design-card section with nothing rendered does not satisfy the card rule', async () => {
+  const directory = fixture(['src/design-cards/NeStatePanel.card.vue'])
+  mkdirSync(join(directory, 'src/design-cards'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/design-cards/NeStatePanel.card.vue'),
+    '<template>\n  <section data-design-card="ne-state-panel" data-name="State panel" data-group="Shell"></section>\n</template>\n',
+  )
+  assert.deepEqual(
+    (await check(directory)).misses
+      .filter((miss) => miss.name === 'NeStatePanel')
+      .map((miss) => miss.rule),
+    ['card'],
+  )
+})
+
+test('tightened rules: a format "test" with no real import and a fake assertion does not satisfy the unit rule', async () => {
+  const directory = fixture(['src/format.test.ts'])
+  writeFileSync(
+    join(directory, 'src/format.test.ts'),
+    "// formatCount already has format coverage elsewhere.\nit('formats', () => { expect(true).toBe(true) })\n",
+  )
+  assert.deepEqual(
+    (await check(directory)).misses
+      .filter((miss) => miss.name === 'formatCount')
+      .map((miss) => miss.rule),
+    ['unit'],
   )
 })
 
@@ -264,10 +343,9 @@ test('scope is one directory per line, and only the real package gets pendingCar
 })
 
 test('pendingCards waives only the card rule, and only for listed names', async () => {
-  assert.deepEqual(
-    [...PENDING_CARDS],
-    ['NeStatePanel', 'NeStatusBadge', 'NePageHeader', 'NeSectionHeader', 'NeConfirmDialog'],
-  )
+  // The waiver is spent: all five names it covered now ship a real card
+  // (narduk-libs#250's follow-up), and the list stays empty going forward.
+  assert.deepEqual([...PENDING_CARDS], [])
 
   const waived = await checkComponentSurface({
     packageName: 'fixture',

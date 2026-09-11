@@ -120,6 +120,76 @@ function names(source, name) {
   return new RegExp(String.raw`\b${escapeRegExp(name)}\b`).test(source)
 }
 
+/**
+ * Strip `//` and `/* *\/` comments before a rule's regex looks for real usage,
+ * so a `mount(Name`, a `renderToString`, or a name that exists only in a
+ * comment cannot satisfy that rule. String and template literals are
+ * respected — a `//` inside a URL or an import specifier is not a comment —
+ * by copying quoted spans verbatim instead of scanning through them; a naive
+ * strip would truncate a line at the first `//` inside a string. This does
+ * not touch Vue template (`<!-- -->`) comments, only `//` and `/* *\/`.
+ */
+function stripComments(source) {
+  let out = ''
+  let index = 0
+  while (index < source.length) {
+    const char = source[index]
+    if (char === '"' || char === "'" || char === '`') {
+      let end = index + 1
+      while (end < source.length && source[end] !== char) {
+        end += source[end] === '\\' ? 2 : 1
+      }
+      end = Math.min(end + 1, source.length)
+      out += source.slice(index, end)
+      index = end
+      continue
+    }
+    if (char === '/' && source[index + 1] === '/') {
+      const end = source.indexOf('\n', index)
+      index = end === -1 ? source.length : end
+      continue
+    }
+    if (char === '/' && source[index + 1] === '*') {
+      const end = source.indexOf('*/', index + 2)
+      index = end === -1 ? source.length : end + 2
+      continue
+    }
+    out += char
+    index += 1
+  }
+  return out
+}
+
+/**
+ * Every specifier the source imports, statically (`from '<spec>'`) or
+ * dynamically (`import('<spec>')`) — several of this package's own tests use
+ * dynamic `await import(...)` after a `vi.mock(...)` call, so a check that
+ * only recognised static imports would fail on real, already-shipped tests.
+ */
+function importSpecifiers(source) {
+  return [
+    ...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g),
+    ...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g),
+  ].map(([, specifier]) => specifier)
+}
+
+/**
+ * A real import of `name`'s own module — its SFC (`.../Name.vue`) or a
+ * same-named module — not merely the identifier appearing somewhere in the
+ * file. This is what tells a genuine `mount(NeThing…)` / SSR render / design
+ * card apart from a fixture that mentions the name in a comment or an
+ * unrelated string while actually exercising something else entirely.
+ */
+function importsArtefact(source, name) {
+  const pattern = new RegExp(`(?:^|/)${escapeRegExp(name)}(?:\\.vue)?$`)
+  return importSpecifiers(source).some((specifier) => pattern.test(specifier))
+}
+
+/** A real import of the package's `format` module, by path (`.../format`). */
+function importsFormatModule(source) {
+  return importSpecifiers(source).some((specifier) => /(?:^|\/)format$/.test(specifier))
+}
+
 /** Every file under `directory` matching `predicate`, as paths relative to it. */
 async function walk(directory, predicate, prefix = '') {
   let entries
@@ -141,10 +211,13 @@ async function walk(directory, predicate, prefix = '') {
 }
 
 const isTest = (path) => path.endsWith('.test.ts')
-const isSsrTest = (path) =>
-  path.endsWith('.ssr.test.ts') ||
-  basename(path) === 'ssr.test.ts' ||
-  basename(path) === 'ssr.spec.ts'
+// `readEvidence`'s walk only ever collects `.test.ts` files (`isTest`, above),
+// so a `basename(path) === 'ssr.spec.ts'` arm here would be dead: no `.spec.ts`
+// file is ever read into `evidence.tests` for it to match against. This
+// package's convention is `.test.ts` uniformly (there is no `.spec.ts` file
+// anywhere in it today), so the fix is removing the unreachable arm rather
+// than widening `isTest` to collect a file kind nothing here writes.
+const isSsrTest = (path) => path.endsWith('.ssr.test.ts') || basename(path) === 'ssr.test.ts'
 
 /**
  * Load the package's declared surface.
@@ -239,39 +312,52 @@ const RULES = {
   mount: {
     kinds: ['component'],
     check: ({ name, evidence }) =>
-      evidence.tests.some(
-        (test) =>
-          !isSsrTest(test.path) &&
-          new RegExp(String.raw`\bmount\(\s*${escapeRegExp(name)}\b`).test(test.source),
-      ),
+      evidence.tests.some((test) => {
+        if (isSsrTest(test.path)) return false
+        const source = stripComments(test.source)
+        return (
+          new RegExp(String.raw`\bmount\(\s*${escapeRegExp(name)}\b`).test(source) &&
+          importsArtefact(source, name)
+        )
+      }),
     miss: ({ name, path }) =>
-      `missing mount test — add ${path(`src/runtime/components/${name}.test.ts`)} mounting the component with \`mount(${name}…)\` via @vue/test-utils`,
+      `missing mount test — add ${path(`src/runtime/components/${name}.test.ts`)} importing and mounting the component with \`mount(${name}…)\` via @vue/test-utils`,
   },
   ssr: {
     kinds: ['component'],
     check: ({ name, evidence }) =>
-      evidence.tests.some(
-        (test) =>
-          isSsrTest(test.path) &&
-          names(test.source, name) &&
-          test.source.includes('renderToString'),
-      ),
+      evidence.tests.some((test) => {
+        if (!isSsrTest(test.path)) return false
+        const source = stripComments(test.source)
+        return (
+          names(source, name) &&
+          source.includes('renderToString') &&
+          importsArtefact(source, name)
+        )
+      }),
     miss: ({ name, path }) =>
-      `missing SSR test — add ${path(`src/runtime/components/${name}.ssr.test.ts`)} (or name ${name} in a shared \`ssr.test.ts\`) rendering it with \`renderToString\` in vitest's node environment`,
+      `missing SSR test — add ${path(`src/runtime/components/${name}.ssr.test.ts`)} (or name ${name} in a shared \`ssr.test.ts\`) importing it and rendering it with \`renderToString\` in vitest's node environment`,
   },
   card: {
     kinds: ['component'],
     check: ({ name, evidence }) => {
       const source = evidence.cards.get(`src/design-cards/${name}.card.vue`)
-      return source !== undefined && source.includes(`data-design-card="${kebabCase(name)}"`)
+      if (source === undefined) return false
+      const stripped = stripComments(source)
+      return (
+        stripped.includes(`data-design-card="${kebabCase(name)}"`) && importsArtefact(stripped, name)
+      )
     },
     miss: ({ name, path }) =>
-      `missing design card — copy ${path('src/design-cards/template/NeExample.card.vue')} to ${path(`src/design-cards/${name}.card.vue`)} with \`data-design-card="${kebabCase(name)}"\``,
+      `missing design card — copy ${path('src/design-cards/template/NeExample.card.vue')} to ${path(`src/design-cards/${name}.card.vue`)}, import the component and set \`data-design-card="${kebabCase(name)}"\``,
   },
   unit: {
     kinds: ['format'],
     check: ({ name, evidence }) =>
-      evidence.tests.some((test) => /\bformat\b/.test(test.source) && names(test.source, name)),
+      evidence.tests.some((test) => {
+        const source = stripComments(test.source)
+        return /\bformat\b/.test(source) && names(source, name) && importsFormatModule(source)
+      }),
     miss: ({ name, path }) =>
       `missing unit test — add a \`*.test.ts\` under ${path('')} importing ${name} from the \`format\` module and asserting its output`,
   },
