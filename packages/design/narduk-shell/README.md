@@ -178,7 +178,21 @@ app has to change an import specifier when the content arrives.
 
 `defineStatusMap` is a named export of the package root (`.`), not a fourth
 subpath. Import it from `@narduk-enterprises/narduk-shell` the same way the
-module itself is imported.
+module itself is imported. So are the suite's public types, including
+`NeConfirmOptions` and `NeConfirmTone`, so a wrapper around `useConfirm()` can
+state its own signature outside Nuxt's auto-import transform:
+
+```ts
+import type { NeConfirmOptions } from '@narduk-enterprises/narduk-shell'
+```
+
+`useConfirm` itself is reachable through the module's auto-import only, and that
+is a constraint rather than an oversight: Nuxt loads `src/module.ts` with jiti,
+jiti cannot load a single-file component, and the composable imports
+`NeConfirmDialog.vue` to hand the component object to the overlay. A value
+re-export would therefore fail every app at config time with
+`Unknown file extension ".vue"`. `test/use-confirm.test.ts` walks the module
+entry's value-import graph and fails if a `.vue` ever becomes reachable from it.
 
 ## Styling contract
 
@@ -579,7 +593,10 @@ if (!ok) return
 ```
 
 `useConfirm()` is auto-imported by the module. Call it from any component — the
-app does not mount a `<NeConfirmDialog>` host of its own.
+app does not mount a `<NeConfirmDialog>` host of its own. The auto-import does
+not depend on `components`: setting `nardukShell: { components: false }` opts out
+of the suite's global component names, and the composable resolves its dialog by
+importing it rather than by global name, so it keeps working.
 
 #### Host mechanism
 
@@ -590,10 +607,19 @@ mounts `NeConfirmDialog` into the overlay stack and `close(boolean)` is what
 `LayerAppShell` wraps the tree in `UApp`. There is no module-registered host
 component and no layout wiring.
 
-One handle drives one dialog at a time: call `useConfirm()` once per `setup` and
-await each `confirm()` before starting the next. Sequential calls resolve
-independently; leftover `pending` / `error` from a rejected `onConfirm` is reset
-on the next `open`.
+One handle drives one dialog at a time. Sequential calls resolve independently,
+and leftover `pending` / `error` from a rejected `onConfirm` is reset on the next
+`open`.
+
+A second `confirm()` started before the first settles **supersedes** it rather
+than racing it — a double-click on a row-level "Delete?" is the case this is
+written for. The new options take the dialog over, and the superseded call
+resolves `false`: the user is being asked a different question now, so they did
+not confirm the old one, and the caller's `if (!ok) return` does the safe thing
+with no extra branch. The one exception is a superseded call whose `onConfirm`
+is still in flight; that work cannot be unrun, so its promise is kept and
+settles with the real outcome. No call is ever left holding a promise that
+cannot settle, and no in-flight handler writes to a dialog it no longer owns.
 
 The declarative form is the same component with a model:
 

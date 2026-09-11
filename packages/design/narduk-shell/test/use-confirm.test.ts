@@ -8,7 +8,11 @@
  * is the actual resolution contract — `await confirm(...)` is `true` only on
  * the confirm path.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
 
@@ -376,5 +380,133 @@ describe('useConfirm()', () => {
 
     confirmButton().click()
     await expect(second).resolves.toBe(true)
+  })
+})
+
+/*
+ * How `useConfirm` reaches app code, and why it is not a value export of the
+ * package root.
+ *
+ * These are module-wiring proofs and would sit more naturally in
+ * `test/module.test.ts`; they live here because the two tasks that produced
+ * them are `useConfirm`'s, and the wave that produced them ran
+ * `test/module.test.ts` in a different lane.
+ */
+describe('useConfirm() reachability', () => {
+  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+  /**
+   * The specifiers a loader actually evaluates. `import type` / `export type`
+   * statements are erased before anything runs, which is what makes the type
+   * re-exports in `src/module.ts` free.
+   */
+  function valueSpecifiers(source: string): string[] {
+    const code = source
+      .replaceAll(/\/\*[\s\S]*?\*\//g, '')
+      .replaceAll(/(?<![:/])\/\/[^\n]*/g, '')
+    return code
+      .split(/\n(?=(?:import|export)\b)/)
+      .filter((statement) => /^(?:import|export)\b/.test(statement))
+      .filter((statement) => !/^(?:import|export)\s+type\b/.test(statement))
+      .map((statement) => /from\s*['"]([^'"]+)['"]/.exec(statement)?.[1])
+      .filter((specifier): specifier is string => Boolean(specifier))
+  }
+
+  /** Relative specifiers only — a bare package name is not this package's graph. */
+  function resolveLocal(fromFile: string, specifier: string): string | null {
+    if (!specifier.startsWith('.')) return null
+    const base = join(dirname(fromFile), specifier)
+    for (const candidate of [base, `${base}.ts`, join(base, 'index.ts')]) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+    }
+    return null
+  }
+
+  /**
+   * Nuxt loads a module's entry file with jiti
+   * (`loadNuxtModuleInstance` -> `createJiti(...)` -> `jiti.import(src)`), and
+   * jiti cannot load a single-file component. `use-confirm.ts` imports
+   * `NeConfirmDialog.vue` at module scope — it hands the component OBJECT to
+   * `useOverlay().create()` — so re-exporting `useConfirm` as a VALUE from
+   * `src/module.ts` puts a `.vue` in the entry's eager Node graph, and every
+   * app installing the module then fails at config time with
+   * `TypeError: Unknown file extension ".vue"`. Reproduced against jiti 2.7.0
+   * on 2026-09-11 by adding exactly that re-export.
+   *
+   * So the root exports the composable's TYPES and the module hands app code
+   * the composable itself through `addImports`. This walk is what keeps that
+   * arrangement honest: it fails the moment a `.vue` becomes reachable from
+   * the module entry through value imports, whichever file adds it.
+   */
+  it('keeps every single-file component out of the module entry’s eager graph', () => {
+    const entry = join(packageRoot, 'src', 'module.ts')
+    const seen = new Set<string>()
+    const queue: { file: string; trail: string[] }[] = [{ file: entry, trail: ['src/module.ts'] }]
+    const visited: string[] = []
+
+    while (queue.length > 0) {
+      const { file, trail } = queue.shift()!
+      if (seen.has(file)) continue
+      seen.add(file)
+      visited.push(file)
+
+      for (const specifier of valueSpecifiers(readFileSync(file, 'utf8'))) {
+        const resolved = resolveLocal(file, specifier)
+        if (!resolved) continue
+        expect(
+          resolved.endsWith('.vue'),
+          `${[...trail, specifier].join(' -> ')} puts a single-file component in the Node graph of src/module.ts, which jiti cannot load`,
+        ).toBe(false)
+        queue.push({ file: resolved, trail: [...trail, specifier] })
+      }
+    }
+
+    // A walk that resolved nothing would pass vacuously.
+    expect(visited.length).toBeGreaterThan(1)
+  })
+
+  /**
+   * `components: false` opts an app out of the suite's GLOBAL COMPONENT NAMES,
+   * not out of the package. `useConfirm` does not depend on those names:
+   * every test above mounts it with no `Ne*` component registered anywhere,
+   * because the composable imports `NeConfirmDialog.vue` itself and passes the
+   * component object to the overlay, and that dialog imports its own
+   * `UModal` / `UButton`. So the auto-import belongs above the early return,
+   * beside `defineStatusMap` — not behind it, which would have left an app
+   * with the module installed and the composable unreachable for no reason.
+   */
+  it('auto-imports the composable even when component registration is off', async () => {
+    vi.resetModules()
+    const addImports = vi.fn()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponent: vi.fn(),
+      addComponentsDir: vi.fn(),
+      addImports,
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+    }))
+
+    const loaded = (await import('../src/module')).default as unknown as {
+      setup: (options: { components?: boolean }, nuxt: unknown) => void | Promise<void>
+    }
+    await loaded.setup(
+      { components: false },
+      { options: { build: { transpile: [] }, css: [], appConfig: {} } },
+    )
+
+    const names = addImports.mock.calls.map(([call]) => (call as { name: string }).name)
+    expect(names).toContain('useConfirm')
+    // Alphabetical, per the package's own auto-import convention.
+    expect(names).toEqual([...names].sort())
+
+    const call = addImports.mock.calls
+      .map(([entry]) => entry as { name: string; from: string })
+      .find((entry) => entry.name === 'useConfirm')
+    expect(call?.from).toContain('/src/runtime/composables/use-confirm')
+
+    vi.doUnmock('@nuxt/kit')
+    vi.resetModules()
   })
 })

@@ -26,6 +26,28 @@ export type {
   NeStateValue,
 } from './runtime/types'
 
+/**
+ * `useConfirm()`'s option and tone types, so a wrapper around the composable
+ * can state its own signature, and a consuming app's unit test can type a stub,
+ * without reaching for an auto-import that only exists inside Nuxt's transform.
+ *
+ * `useConfirm` itself is NOT re-exported here, and that is a hard constraint
+ * rather than an omission. Nuxt loads this file with jiti
+ * (`loadNuxtModuleInstance` -> `createJiti(...)` -> `jiti.import(src)`), and
+ * jiti cannot load a single-file component. `use-confirm.ts` imports
+ * `NeConfirmDialog.vue` at module scope to hand the component object to
+ * `useOverlay().create()`, so a value re-export puts a `.vue` in this file's
+ * eager Node graph and every app installing the module fails at config time
+ * with `Unknown file extension ".vue"` — reproduced against jiti 2.7.0 on
+ * 2026-09-11. `test/use-confirm.test.ts` walks the static graph and fails if a
+ * `.vue` ever becomes reachable from here.
+ *
+ * The composable reaches app code through `addImports` below, which is not
+ * gated on component registration.
+ */
+export type { NeConfirmOptions } from './runtime/composables/use-confirm'
+export type { NeConfirmTone } from './runtime/components/ne-confirm-dialog-types'
+
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 
@@ -108,13 +130,28 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       )
     }
 
-    // defineStatusMap is also a named export of this file (the package root).
-    // Auto-import is a convenience for Nuxt apps; turning `components` off
-    // must not take the helper away, the same way ./format and ./theme.css
-    // stay reachable by direct import.
+    // Auto-imports that do not depend on component registration. One entry per
+    // exposed name, alphabetical, so two backlog items adding one conflict on
+    // adjacent lines rather than on the same one.
+    //
+    // Both sit ABOVE the `components === false` return on purpose. Turning
+    // `components` off opts out of the suite's GLOBAL COMPONENT NAMES; it is
+    // not an opt-out of the package, the same way ./format and ./theme.css
+    // stay reachable by direct import. defineStatusMap is a plain utility.
+    // useConfirm is self-contained for the same reason it is testable outside
+    // Nuxt: it imports NeConfirmDialog.vue itself and hands the component
+    // OBJECT to `useOverlay().create()`, and that dialog in turn imports its
+    // own UModal/UButton, so nothing on the path is resolved by global name
+    // and `components: false` cannot leave it mounting an unregistered
+    // component. `test/use-confirm.test.ts` mounts it with no `Ne*`
+    // registration at all, which is that claim's standing proof.
     addImports({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
+    })
+    addImports({
+      name: 'useConfirm',
+      from: resolver.resolve('./runtime/composables/use-confirm'),
     })
 
     if (options.components === false) return
@@ -129,13 +166,5 @@ export default defineNuxtModule<NardukShellModuleOptions>({
         filePath: resolver.resolve(component.filePath),
       })
     }
-
-    // Composable auto-imports. One entry per exposed composable, alphabetical,
-    // so two backlog items adding one conflict on adjacent lines rather than
-    // on the same one.
-    addImports({
-      name: 'useConfirm',
-      from: resolver.resolve('./runtime/composables/use-confirm'),
-    })
   },
 })
