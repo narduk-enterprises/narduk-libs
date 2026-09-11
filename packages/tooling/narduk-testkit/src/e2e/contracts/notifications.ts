@@ -72,11 +72,21 @@ function getCreatedNotificationId(result: unknown): string {
 }
 
 function expectNotificationList(data: unknown): Array<Record<string, unknown>> {
-  // `GET /api/notifications` answers with the shared list-query contract
-  // (narduk-libs#257): `{ items, total, limit, offset, sort, q }`.
-  expect(data).toEqual(expect.objectContaining({ items: expect.any(Array) }))
+  // Contract shape plus the deprecated `notifications` alias (narduk-libs#257).
+  expect(data).toEqual(
+    expect.objectContaining({
+      items: expect.any(Array),
+      notifications: expect.any(Array),
+    }),
+  )
 
-  return (data as { items: Array<Record<string, unknown>> }).items
+  const body = data as {
+    items: Array<Record<string, unknown>>
+    notifications: Array<Record<string, unknown>>
+  }
+  expect(body.notifications).toEqual(body.items)
+
+  return body.items
 }
 
 function expectIsoTimestamp(value: unknown) {

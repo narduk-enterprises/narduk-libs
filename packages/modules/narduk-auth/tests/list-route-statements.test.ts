@@ -144,6 +144,8 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
       expect(status).toBe(200)
       expect(body).toMatchObject({ limit, offset, q: null, sort: 'createdAt:desc', total: 25 })
       expect(body.items).toHaveLength(Math.min(limit, USER_COUNT - offset))
+      expect(body.users).toEqual(body.items)
+      expect(body.page).toBe(Math.floor(offset / limit) + 1)
       expect(harness.statements).toHaveLength(2)
       expect(harness.statements.filter((sql) => /count\(\*\)/iu.test(sql))).toHaveLength(1)
     }
@@ -161,6 +163,20 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     expect(new Set([...ids(first.body), ...ids(second.body)]).size).toBe(4)
   })
 
+  it('still accepts the pre-contract page key and echoes users + page', async () => {
+    const handler = (await import('../server/api/admin/users/index.get')).default
+    const first = await call(handler, '/?page=1&limit=2')
+    const second = await call(handler, '/?page=2&limit=2')
+
+    expect(first.status).toBe(200)
+    expect(first.body).toMatchObject({ limit: 2, offset: 0, page: 1 })
+    expect(first.body.users).toEqual(first.body.items)
+    expect(second.status).toBe(200)
+    expect(second.body).toMatchObject({ limit: 2, offset: 2, page: 2 })
+    expect((second.body.items as unknown[]).length).toBe(2)
+    expect((await call(handler, '/?page=2&offset=0&limit=2')).status).toBe(400)
+  })
+
   it('serves any page of /api/notifications in a single query, with total null', async () => {
     const handler = (await import('../server/api/notifications/index.get')).default
 
@@ -170,6 +186,7 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
 
       expect(status).toBe(200)
       expect(body.total).toBeNull()
+      expect(body.notifications).toEqual(body.items)
       expect(harness.statements).toHaveLength(1)
     }
   })
@@ -179,6 +196,12 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
 
     const unread = await call(handler, '/?unreadOnly=true')
     expect((unread.body.items as Array<{ isRead: boolean }>).every((row) => !row.isRead)).toBe(true)
+    expect(unread.body.notifications).toEqual(unread.body.items)
+
+    // Pre-contract schema accepted any string; only `'true'` filtered.
+    const ignored = await call(handler, '/?unreadOnly=yes')
+    expect(ignored.status).toBe(200)
+    expect((ignored.body.items as unknown[]).length).toBe(NOTIFICATION_COUNT)
 
     const firstPage = await call(handler, '/?limit=3&offset=0')
     const secondPage = await call(handler, '/?limit=3&offset=3')
@@ -193,7 +216,7 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     const users = (await import('../server/api/admin/users/index.get')).default
     const notifications = (await import('../server/api/notifications/index.get')).default
 
-    expect((await call(users, '/?page=2')).status).toBe(400)
+    expect((await call(users, '/?pge=2')).status).toBe(400)
     expect((await call(notifications, '/?unread=true')).status).toBe(400)
   })
 

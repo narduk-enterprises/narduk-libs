@@ -15,7 +15,8 @@ const DEFAULT_LIMIT = 50
  */
 const SORTABLE = ['createdAt'] as const
 
-const FILTERS = z.object({ unreadOnly: z.enum(['false', 'true']).optional() })
+/** Any string, matching the pre-contract schema; only `'true'` filters. */
+const FILTERS = z.object({ unreadOnly: z.string().optional() })
 
 /**
  * GET /api/notifications
@@ -45,5 +46,11 @@ export default defineEventHandler(async (event) => {
     unreadOnly: query.filters.unreadOnly === 'true',
   })
 
-  return listResponse(items, { query, total: null })
+  const body = listResponse(items, { query, total: null })
+  return {
+    ...body,
+    // Deprecated alias: keep `{ notifications }` so existing consumers still
+    // read. Drop in the next narduk-auth major once fleet apps use `items`.
+    notifications: items,
+  }
 })

@@ -39,6 +39,8 @@ export default defineAdminQuery(
     const order = query.sort?.direction === 'desc' ? desc(column) : asc(column)
 
     // One page query, no count: `total` is null by contract.
+    // The pre-contract response was a bare array; that shape cannot also be
+    // this object. `useAdminAi` still exposes `AdminSystemPrompt[]`.
     const items = await getDatabaseRows<AiSystemPrompt>(
       db.select().from(table).orderBy(order).limit(query.limit).offset(query.offset),
     )
