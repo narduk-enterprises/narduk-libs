@@ -22,15 +22,17 @@ components backlog in
 
 ## Status
 
-**Tokens and wiring, no components yet.** Backlog item 1
+**Tokens, wiring and first components.** Backlog item 1
 ([narduk-libs#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))
 built the package, the module, the registration model and the reserved subpaths;
-backlog item 2
-([narduk-libs#249](https://github.com/narduk-enterprises/narduk-libs/issues/249))
+item 2 ([narduk-libs#249](https://github.com/narduk-enterprises/narduk-libs/issues/249))
 filled `theme.css` with the NE token layer, bridged it onto Nuxt UI's `--ui-*`
-variables and added the `app.config` preset. The component registry is still
-empty — each later item adds its own component, README section, tests and NE
-Base card.
+variables and added the `app.config` preset. Item 9
+([narduk-libs#256](https://github.com/narduk-enterprises/narduk-libs/issues/256))
+ships `NePageHeader` and `NeSectionHeader`. Components read Nuxt UI semantic
+tokens and `UBadge` colour/variant props, and do not hardcode a colour, radius,
+shadow or font. Each later item adds its own component, README section, tests
+and NE Base card.
 
 ## Install
 
@@ -306,14 +308,101 @@ back as a default.
 
 ## Components
 
-_Intentionally empty._ This release registers no components.
-
 Each component arrives with its own backlog item, and each adds its section here
 — props, slots, events and one example — alongside a mount test, an SSR test and
 an NE Base card. The ordered backlog is
 [narduk-libs#247](https://github.com/narduk-enterprises/narduk-libs/issues/247)
 and the plan it tracks is
 [`docs/plans/components-library-plan.md`](../../../docs/plans/components-library-plan.md).
+
+### NePageHeader
+
+Wraps Nuxt UI `UPageHeader` and `UBreadcrumb`. Breadcrumbs render above the
+title in a labelled `nav` and are omitted when the list is empty or absent. The
+heading is an `h1` by default; set `as` to render a different heading level
+without nesting a second heading inside `UPageHeader`'s own `<h1>`.
+
+#### Props
+
+| Prop          | Type                                           | Default | Description                                                               |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------------- |
+| `title`       | `string`                                       | —       | Page title. Required.                                                     |
+| `description` | `string`                                       | —       | Supporting copy below the title.                                          |
+| `eyebrow`     | `string`                                       | —       | Small label above the title (maps to `UPageHeader`'s `headline`).         |
+| `breadcrumbs` | `NeBreadcrumbItem[]`                           | —       | `UBreadcrumb` items (`label`, optional `to` / `icon`). Hidden when empty. |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h1'`  | Heading level for the title.                                              |
+
+`NeBreadcrumbItem` is the `UBreadcrumb` item shape this wrapper accepts:
+`{ label?: string, to?: string, icon?: string }` plus any extra fields
+`UBreadcrumb` already understands.
+
+#### Slots
+
+| Slot          | Description                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| `actions`     | Right-aligned actions next to the title (maps to `UPageHeader`'s `links` slot). Never inside the heading. |
+| `default`     | Pass-through of `UPageHeader`'s default slot, below the title/description block.                          |
+| `title`       | Overrides the title text. Still rendered inside the heading element.                                      |
+| `description` | Overrides the description text.                                                                           |
+
+#### Events
+
+None.
+
+#### Example
+
+```vue
+<NePageHeader
+  title="Runners"
+  description="Every self-hosted runner class."
+  eyebrow="Infrastructure"
+  :breadcrumbs="[
+    { label: 'Infrastructure', to: '/infrastructure' },
+    { label: 'Runners' },
+  ]"
+>
+  <template #actions>
+    <UButton>New</UButton>
+  </template>
+</NePageHeader>
+```
+
+### NeSectionHeader
+
+A section heading for use below `NePageHeader`. The optional `count` renders as
+a Nuxt UI `UBadge` (`color="neutral"`, `variant="subtle"`) next to the title and
+is hidden when `count` is `undefined`. Zero is a real, visible count. The
+heading is an `h2` by default.
+
+#### Props
+
+| Prop          | Type                                           | Default | Description                                                        |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------ |
+| `title`       | `string`                                       | —       | Section title. Required.                                           |
+| `count`       | `number`                                       | —       | Item count shown as a token-themed badge. Hidden when `undefined`. |
+| `description` | `string`                                       | —       | Supporting copy below the title.                                   |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h2'`  | Heading level for the title.                                       |
+
+#### Slots
+
+| Slot      | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
+| `actions` | Right-aligned actions next to the title. Never rendered inside the heading element. |
+| `default` | Extra content below the title/description row.                                      |
+
+#### Events
+
+None.
+
+#### Example
+
+```vue
+<NeSectionHeader title="Recent" :count="12">
+  <template #actions>
+    <UButton variant="ghost">View all</UButton>
+  </template>
+</NeSectionHeader>
+```
 
 ## Publication
 

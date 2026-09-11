@@ -1,10 +1,15 @@
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // NePageHeader and NeSectionHeader (item 9) are the first SFCs the registry
+  // ships, so their mount tests need the Vue plugin to compile them.
+  plugins: [vue()],
   test: {
-    // No component mounts yet (the registry is empty), so the suite runs in
-    // plain Node. A later backlog item that adds an SFC adds the Vue plugin
-    // and the SSR/mount pattern from packages/design/narduk-charts.
+    // node is the default environment (SSR tests rely on it running with no
+    // DOM); mount tests opt into happy-dom per file with a
+    // `// @vitest-environment happy-dom` directive, the narduk-mapkit-nuxt
+    // pattern.
     environment: 'node',
     include: ['test/**/*.test.ts'],
   },

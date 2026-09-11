@@ -1,15 +1,21 @@
 {
   "compilerOptions": {
     "allowJs": false,
+    "baseUrl": ".",
     "isolatedModules": true,
     "lib": ["ES2022", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    "paths": {
+      "@nuxt/ui/components/Badge.vue": ["./types/nuxt-ui-sfc.d.ts"],
+      "@nuxt/ui/components/Breadcrumb.vue": ["./types/nuxt-ui-sfc.d.ts"],
+      "@nuxt/ui/components/PageHeader.vue": ["./types/nuxt-ui-sfc.d.ts"]
+    },
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2022",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "types/**/*.d.ts", "vitest.config.ts"]
 }
