@@ -153,6 +153,10 @@ describe('create-narduk-app generation contract', () => {
     })
     expect(rootManifest.pnpm).toEqual({
       overrides: {
+        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
+        '@narduk-enterprises/narduk-logging':
+          PACKAGE_VERSIONS['@narduk-enterprises/narduk-logging'],
+        '@narduk-enterprises/narduk-mapkit': PACKAGE_VERSIONS['@narduk-enterprises/narduk-mapkit'],
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
         '@nuxt/kit': PACKAGE_VERSIONS.nuxt,
         'eslint-plugin-vitest>@typescript-eslint/utils':

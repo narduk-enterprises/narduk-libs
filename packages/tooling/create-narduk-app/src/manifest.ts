@@ -161,6 +161,7 @@ export function createRootPackageManifest(
       'deploy:version': 'pnpm --filter web run deploy:version',
       dev: 'pnpm --filter web run dev',
       doctor: 'pnpm --filter web run doctor',
+      'foundation:shared-ui-pinned': 'pnpm --filter web run foundation:shared-ui-pinned',
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       knip: 'knip',
@@ -170,8 +171,16 @@ export function createRootPackageManifest(
       'og:check': 'pnpm --filter web run og:check',
       'og:check:live': 'pnpm --filter web run og:check:live',
       quality: 'pnpm run quality:static && pnpm run test:e2e',
+      // `foundation:shared-ui-pinned` sits in the static half because it reads
+      // manifests only: no install-time resolution and, by design, no registry
+      // credential (see narduk-app-tools `item-8-shared-ui-pinned.ts`). That is
+      // what lets it run here at all -- the generated workflow scopes the
+      // GitHub Packages token to the install step, so nothing after it has an
+      // ambient token. narduk-libs' own `packed-consumer-smoke` job expands
+      // this chain via `scripts/consumer-smoke-phases.mjs`, so the check also
+      // runs against a really-installed generated app on every narduk-libs PR.
       'quality:static':
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run typecheck && pnpm run build && pnpm run test:unit',
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
@@ -188,12 +197,44 @@ export function createRootPackageManifest(
     },
     pnpm: {
       overrides: {
-        // Estate packages are exact-pinned as direct deps in apps/web and are
-        // not listed here: Dependabot does not update `pnpm.overrides`, so an
-        // override would pin a grouped `@narduk-enterprises/*` bump straight
-        // back to the old version. `@nuxt/kit` stays -- modules depend on
-        // `@nuxt/kit@^4.0.0`, and without the override every upstream Nuxt
-        // minor silently splits kit from the exact-pinned `nuxt`.
+        // WHY ESTATE PACKAGES ARE OVERRIDDEN (narduk-libs#282 review, task 5)
+        //
+        // pnpm replaces a `workspace:` specifier with the EXACT version of that
+        // workspace package at publish time, so a published estate module
+        // carries a hard pin on whatever its sibling's version was that day.
+        // Four generator-pinned modules ship `narduk-core: workspace:*`
+        // (narduk-ai, narduk-analytics, narduk-auth, narduk-seo); narduk-core
+        // itself ships `narduk-logging: workspace:*`; narduk-mapkit-nuxt ships
+        // `narduk-mapkit: workspace:*`. Without an override, the first time the
+        // app's own exact pin moves and the publishing module's does not --
+        // which is the ordinary case, since narduk-core releases far more often
+        // than narduk-auth -- pnpm installs BOTH versions. Two copies of a Nuxt
+        // module means two `addModule` registrations and two `useRuntimeConfig`
+        // namespaces, which is a correctness break, not a size regression.
+        //
+        // The cost is real and accepted: Dependabot does not update
+        // `pnpm.overrides`, so a grouped `@narduk-enterprises/*` bump resolves
+        // back to the override's version until the override is bumped by hand.
+        // A stale-but-single copy is recoverable; two live copies are not.
+        // narduk-libs#282 carries the follow-up (pnpm's `$<name>` override
+        // form, which would let the override track a root declaration that
+        // Dependabot does update).
+        //
+        // Only packages some OTHER generator-pinned package depends on via
+        // `workspace:` belong here. `narduk-auth` does not: nothing in the
+        // estate depends on it, so its override was inert and dropping it in
+        // a5ed8e9 was correct. `tests/generator.test.ts` derives this set from
+        // the live workspace manifests so a new `workspace:` dependency cannot
+        // open the hole again silently.
+        '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
+        '@narduk-enterprises/narduk-logging':
+          PACKAGE_VERSIONS['@narduk-enterprises/narduk-logging'],
+        ...(capabilities.includes('mapkit')
+          ? {
+              '@narduk-enterprises/narduk-mapkit':
+                PACKAGE_VERSIONS['@narduk-enterprises/narduk-mapkit'],
+            }
+          : {}),
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
         // The generator pins `nuxt` exactly, so `@nuxt/kit` has to be pinned to
         // the same version. Narduk modules depend on `@nuxt/kit@^4.0.0`, so
@@ -285,6 +326,10 @@ export function createWebPackageManifest(
       'deploy:version': 'narduk-app deploy versions-upload',
       'dev:test': 'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
+      // `--checkout ..` because the item reads the WHOLE checkout (root and
+      // apps/web manifests, nuxt.config, pages/components), and pnpm runs this
+      // script with the cwd at apps/web.
+      'foundation:shared-ui-pinned': 'narduk-app foundation:check:shared-ui-pinned --checkout ..',
       'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
       'og:generate': 'narduk-app og:generate',
       'og:check': 'narduk-app og:check',
