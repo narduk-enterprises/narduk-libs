@@ -3,12 +3,7 @@ import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 
 import { MISSING, SIGNALS } from "../_core";
-import {
-  NsFreshnessChip,
-  NsLevelWell,
-  NsRangeBar,
-  NsReadoutTile,
-} from "../instruments";
+import { NsFreshnessChip, NsLevelWell, NsRangeBar, NsReadoutTile } from "../instruments";
 
 const now = new Date("2026-07-30T12:00:00Z");
 

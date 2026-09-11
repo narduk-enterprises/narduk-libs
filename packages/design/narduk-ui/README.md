@@ -63,27 +63,23 @@ caller.
 
 ```vue
 <script setup lang="ts">
-import { NsFreshnessChip } from '@narduk-enterprises/narduk-ui/instruments'
+import { NsFreshnessChip } from "@narduk-enterprises/narduk-ui/instruments";
 </script>
 
 <template>
-  <NsFreshnessChip
-    observed-at="2026-07-30T11:56:00Z"
-    :interval-minutes="10"
-    show-age
-  />
+  <NsFreshnessChip observed-at="2026-07-30T11:56:00Z" :interval-minutes="10" show-age />
 </template>
 ```
 
 #### Props
 
-| Prop              | Type                                      | Default | Description                                                                                          |
-| ----------------- | ----------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `state`           | `'live' \| 'aging' \| 'stale' \| 'void'`  | —       | Explicit state. Omit to derive from `observedAt` + `intervalMinutes`                                 |
-| `observedAt`      | `Date \| string \| null`                  | —       | When the measurement was taken. Used with `intervalMinutes` when `state` is omitted                  |
-| `intervalMinutes` | `number`                                  | —       | The source's own publishing interval, not an arbitrary threshold. Required to classify from a clock  |
-| `now`             | `Date`                                    | `new Date()` | Injectable clock, for deterministic tests and stories                                           |
-| `showAge`         | `boolean`                                 | `false` | Append the compact age, e.g. `STALE · 3 d`. A stale value is shown with its age rather than hidden   |
+| Prop              | Type                                     | Default      | Description                                                                                         |
+| ----------------- | ---------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| `state`           | `'live' \| 'aging' \| 'stale' \| 'void'` | —            | Explicit state. Omit to derive from `observedAt` + `intervalMinutes`                                |
+| `observedAt`      | `Date \| string \| null`                 | —            | When the measurement was taken. Used with `intervalMinutes` when `state` is omitted                 |
+| `intervalMinutes` | `number`                                 | —            | The source's own publishing interval, not an arbitrary threshold. Required to classify from a clock |
+| `now`             | `Date`                                   | `new Date()` | Injectable clock, for deterministic tests and stories                                               |
+| `showAge`         | `boolean`                                | `false`      | Append the compact age, e.g. `STALE · 3 d`. A stale value is shown with its age rather than hidden  |
 
 When `state` is omitted and `intervalMinutes` is missing, the chip renders
 `void` rather than guessing live.
@@ -107,7 +103,7 @@ is decoration. Missing wells are hatched with an em-dash, never rendered empty
 
 ```vue
 <script setup lang="ts">
-import { NsLevelWell } from '@narduk-enterprises/narduk-ui/instruments'
+import { NsLevelWell } from "@narduk-enterprises/narduk-ui/instruments";
 </script>
 
 <template>
@@ -117,16 +113,16 @@ import { NsLevelWell } from '@narduk-enterprises/narduk-ui/instruments'
 
 #### Props
 
-| Prop            | Type                   | Default | Description                                                              |
-| --------------- | ---------------------- | ------- | ------------------------------------------------------------------------ |
-| `value`         | `number \| null`       | —       | Current observation. `null` / non-finite renders the missing variant     |
-| `median`        | `number`               | _required_ | Long-term median for this station, drawn as the dashed reference      |
-| `medianLabel`   | `string`               | `'MED'` | Label for the dashed line, e.g. `MED` or `30-YR`                         |
-| `min` / `max`   | `number`               | `0` / `100` | Domain the fill and median are placed on                            |
-| `decimals`      | `number`               | `1`     | Digits in the mono readout                                               |
-| `unit`          | `string`               | `'%'`   | Appended to the readout with no extra space (`47.3` + `%` → `47.3%`)     |
-| `name`          | `string`               | —       | Caption under the well                                                   |
-| `missingReason` | `string`               | —       | Accessible description when `value` is missing (default: `Not published`) |
+| Prop            | Type             | Default     | Description                                                               |
+| --------------- | ---------------- | ----------- | ------------------------------------------------------------------------- |
+| `value`         | `number \| null` | —           | Current observation. `null` / non-finite renders the missing variant      |
+| `median`        | `number`         | _required_  | Long-term median for this station, drawn as the dashed reference          |
+| `medianLabel`   | `string`         | `'MED'`     | Label for the dashed line, e.g. `MED` or `30-YR`                          |
+| `min` / `max`   | `number`         | `0` / `100` | Domain the fill and median are placed on                                  |
+| `decimals`      | `number`         | `1`         | Digits in the mono readout                                                |
+| `unit`          | `string`         | `'%'`       | Appended to the readout with no extra space (`47.3` + `%` → `47.3%`)      |
+| `name`          | `string`         | —           | Caption under the well                                                    |
+| `missingReason` | `string`         | —           | Accessible description when `value` is missing (default: `Not published`) |
 
 #### Events
 
@@ -147,7 +143,7 @@ retire. Missing values keep an identical footprint and take the hatch material.
 
 ```vue
 <script setup lang="ts">
-import { NsRangeBar } from '@narduk-enterprises/narduk-ui/instruments'
+import { NsRangeBar } from "@narduk-enterprises/narduk-ui/instruments";
 </script>
 
 <template>
@@ -162,16 +158,16 @@ import { NsRangeBar } from '@narduk-enterprises/narduk-ui/instruments'
 
 #### Props
 
-| Prop            | Type                   | Default | Description                                                                 |
-| --------------- | ---------------------- | ------- | --------------------------------------------------------------------------- |
-| `value`         | `number \| null`       | —       | Current observation. `null` / non-finite renders the missing variant        |
-| `band`          | `{ low, high, label? }` | _required_ | The reference this value is read against                                 |
-| `min` / `max`   | `number`               | `0` / `100` | Domain the band, fill, marker and forecast are placed on               |
-| `decimals`      | `number`               | `1`     | Digits in the mono readout                                                  |
-| `unit`          | `string`               | —       | Appended to the formatted value (`47.3 ft`)                                 |
-| `label`         | `string`               | —       | Leading label in the three-column row                                       |
-| `forecast`      | `number \| null`       | —       | Optional forecast peak, drawn as a hollow marker                            |
-| `missingReason` | `string`               | —       | Mono reason line and accessible description when `value` is missing         |
+| Prop            | Type                    | Default     | Description                                                          |
+| --------------- | ----------------------- | ----------- | -------------------------------------------------------------------- |
+| `value`         | `number \| null`        | —           | Current observation. `null` / non-finite renders the missing variant |
+| `band`          | `{ low, high, label? }` | _required_  | The reference this value is read against                             |
+| `min` / `max`   | `number`                | `0` / `100` | Domain the band, fill, marker and forecast are placed on             |
+| `decimals`      | `number`                | `1`         | Digits in the mono readout                                           |
+| `unit`          | `string`                | —           | Appended to the formatted value (`47.3 ft`)                          |
+| `label`         | `string`                | —           | Leading label in the three-column row                                |
+| `forecast`      | `number \| null`        | —           | Optional forecast peak, drawn as a hollow marker                     |
+| `missingReason` | `string`                | —           | Mono reason line and accessible description when `value` is missing  |
 
 #### Events
 
@@ -192,7 +188,7 @@ is why the delta line renders even when empty.
 
 ```vue
 <script setup lang="ts">
-import { NsReadoutTile } from '@narduk-enterprises/narduk-ui/instruments'
+import { NsReadoutTile } from "@narduk-enterprises/narduk-ui/instruments";
 </script>
 
 <template>
@@ -209,17 +205,17 @@ import { NsReadoutTile } from '@narduk-enterprises/narduk-ui/instruments'
 
 #### Props
 
-| Prop            | Type                   | Default | Description                                                                 |
-| --------------- | ---------------------- | ------- | --------------------------------------------------------------------------- |
-| `label`         | `string`               | _required_ | Uppercase mono eyebrow                                                   |
-| `value`         | `number \| null`       | —       | Current observation. `null` / non-finite renders the missing variant        |
-| `decimals`      | `number`               | `1`     | Digits in the value readout                                                 |
-| `unit`          | `string`               | —       | Rendered in a sibling span after the value (margin, not a literal space)    |
-| `delta`         | `number \| null`       | —       | Change over the stated window. Direction colours are signal tokens, not good/bad |
-| `deltaUnit`     | `string`               | —       | Unit on the formatted delta                                                 |
-| `deltaWindow`   | `string`               | —       | Window suffix, e.g. `24 h`, rendered as `/ 24 h`                            |
-| `size`          | `'md' \| 'lg'`         | `'md'`  | `lg` uses the `--ns-readout-xl-*` token pair                                |
-| `missingReason` | `string`               | —       | Shown on the delta line when `value` is missing (default: `Not published`)  |
+| Prop            | Type             | Default    | Description                                                                      |
+| --------------- | ---------------- | ---------- | -------------------------------------------------------------------------------- |
+| `label`         | `string`         | _required_ | Uppercase mono eyebrow                                                           |
+| `value`         | `number \| null` | —          | Current observation. `null` / non-finite renders the missing variant             |
+| `decimals`      | `number`         | `1`        | Digits in the value readout                                                      |
+| `unit`          | `string`         | —          | Rendered in a sibling span after the value (margin, not a literal space)         |
+| `delta`         | `number \| null` | —          | Change over the stated window. Direction colours are signal tokens, not good/bad |
+| `deltaUnit`     | `string`         | —          | Unit on the formatted delta                                                      |
+| `deltaWindow`   | `string`         | —          | Window suffix, e.g. `24 h`, rendered as `/ 24 h`                                 |
+| `size`          | `'md' \| 'lg'`   | `'md'`     | `lg` uses the `--ns-readout-xl-*` token pair                                     |
+| `missingReason` | `string`         | —          | Shown on the delta line when `value` is missing (default: `Not published`)       |
 
 #### Events
 

@@ -19,12 +19,7 @@ import { renderToString } from "@vue/server-renderer";
 import { createSSRApp, type Component } from "vue";
 
 import { MISSING, SIGNALS } from "../_core";
-import {
-  NsFreshnessChip,
-  NsLevelWell,
-  NsRangeBar,
-  NsReadoutTile,
-} from "../instruments";
+import { NsFreshnessChip, NsLevelWell, NsRangeBar, NsReadoutTile } from "../instruments";
 
 /** The globals a Workers-style server runtime does not have. */
 it("runs in an environment with no DOM, which is the whole point of this file", () => {
@@ -40,30 +35,15 @@ const now = new Date("2026-07-30T12:00:00Z");
 const band = { low: 55, high: 88, label: "Normal for July" };
 
 const cases: Array<[string, Component, Record<string, unknown>, string]> = [
-  [
-    "NsFreshnessChip",
-    NsFreshnessChip,
-    { state: "live" },
-    "ns-chip--live",
-  ],
-  [
-    "NsLevelWell",
-    NsLevelWell,
-    { value: 47.3, median: 60, name: "Lake Travis" },
-    "ns-well__fill",
-  ],
+  ["NsFreshnessChip", NsFreshnessChip, { state: "live" }, "ns-chip--live"],
+  ["NsLevelWell", NsLevelWell, { value: 47.3, median: 60, name: "Lake Travis" }, "ns-well__fill"],
   [
     "NsRangeBar",
     NsRangeBar,
     { value: 47.3, band, unit: "ft", label: "Lake Travis" },
     "ns-range__marker",
   ],
-  [
-    "NsReadoutTile",
-    NsReadoutTile,
-    { label: "Stage", value: 12.3, unit: "ft" },
-    "ns-tile__value",
-  ],
+  ["NsReadoutTile", NsReadoutTile, { label: "Stage", value: 12.3, unit: "ft" }, "ns-tile__value"],
 ];
 
 describe("server rendering without a DOM", () => {
@@ -84,7 +64,10 @@ describe("server rendering without a DOM", () => {
     });
     expect(html).toContain("ns-chip--live");
     expect(html).toContain(SIGNALS.live.label);
-    expect(html).toContain(SIGNALS.live.meaning);
+    // Vue HTML-escapes the apostrophe in "source's" (`&#39;`) on the server.
+    expect(html).toContain("Observation inside the source");
+    expect(html).toContain("own publishing interval.");
+    expect(html).toContain("ns-chip__sr");
     expect(html).toContain("4 min");
   });
 
