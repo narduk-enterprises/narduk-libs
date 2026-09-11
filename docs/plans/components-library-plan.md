@@ -1,6 +1,8 @@
 # Components library backlog — the shared component suite, one item at a time
 
-Status: **draft for Logan's decision round (2026-09-11)**. Replaces the
+Status: **decided 2026-09-11** (§5 answered by Logan in one multiple-choice
+round; issues filed in order; the D-WEBFOUND-2 amendment is in company-hq
+`DECISIONS.md` under the 2026-09-11 heading naming this backlog). Replaces the
 2026-09-11 usage-driven plan (narduk-libs #246) in place; that version's
 per-repository tables and line counts live on in git history and in its
 [evidence folder](./components-library-evidence-2026-09-11/) (lanes L0–L8 plus
@@ -79,7 +81,8 @@ Logan approves the order).
 - **Depends on:** —.
 - **First pilot:** install only; operator-portal takes the dependency with
   item 5.
-- **Issue:** —
+- **Issue:**
+  [#248](https://github.com/narduk-enterprises/narduk-libs/issues/248)
 
 ### 2. Theming through Nuxt UI (foundation)
 
@@ -95,7 +98,8 @@ Logan approves the order).
   after the fact is how "5 redesigns that never redesigned" happens.
 - **Depends on:** 1.
 - **First pilot:** operator-portal (its `op-*` palette maps onto the preset).
-- **Issue:** —
+- **Issue:**
+  [#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)
 
 ### 3. Component surface check + NE Base card mechanism (foundation)
 
@@ -110,7 +114,8 @@ Logan approves the order).
   missing; today nothing in narduk-libs checks any of them.
 - **Depends on:** 1.
 - **First pilot:** none (narduk-libs CI).
-- **Issue:** —
+- **Issue:**
+  [#250](https://github.com/narduk-enterprises/narduk-libs/issues/250)
 
 ### 4. Generator: lint packs and narduk-shell by default (machinery)
 
@@ -124,7 +129,8 @@ Logan approves the order).
   ships, or new local copies keep appearing faster than we remove them.
 - **Depends on:** 1, 2.
 - **First pilot:** the next generated app; not a pilot.
-- **Issue:** —
+- **Issue:**
+  [#251](https://github.com/narduk-enterprises/narduk-libs/issues/251)
 
 ### 5. Formatters — `narduk-shell/format`
 
@@ -145,7 +151,8 @@ Logan approves the order).
 - **First pilot:** operator-portal (6 files), then stonx
   (`app/utils/formatters.ts`, 21 formatters, 134 consumers — the reference for
   the API), then riverstatus.
-- **Issue:** —
+- **Issue:**
+  [#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)
 
 ### 6. Grouped version bumps + `foundation:check` "shared UI pinned" (machinery)
 
@@ -158,7 +165,8 @@ Logan approves the order).
   drift on; bumps must be one PR per app, not one per package.
 - **Depends on:** 5.
 - **First pilot:** operator-portal, then the other two.
-- **Issue:** —
+- **Issue:**
+  [#253](https://github.com/narduk-enterprises/narduk-libs/issues/253)
 
 ### 7. `NeStatePanel` — empty · loading · error · blocked · absent
 
@@ -181,11 +189,13 @@ Logan approves the order).
 - **Why here:** second in all three pilots' orders; 16 apps/25 files/133
   consumers; forecloses the "unknown rendered as zero" class
   (operator-portal#183, #162, #100, #21; open #282 asks for exactly this).
-- **Depends on:** 2, 3. Supersedes narduk-core `AppEmptyState` (decision D4).
+- **Depends on:** 2, 3. Supersedes narduk-core `AppEmptyState` (D4: deprecated
+  in this PR, removed in the next narduk-core major).
 - **First pilot:** operator-portal (`StatePanel.vue`, 89 LOC, 22 consumers — a
   port), then stonx (`CommonEmptyState`, 46 consumers), riverstatus
   (`RiverUnavailablePanel`, 14).
-- **Issue:** —
+- **Issue:**
+  [#254](https://github.com/narduk-enterprises/narduk-libs/issues/254)
 
 ### 8. `NeStatusBadge`
 
@@ -203,7 +213,8 @@ Logan approves the order).
 - **Depends on:** 2, 3.
 - **First pilot:** operator-portal (four chips → one), then riverstatus (the
   severity axis `RiverFreshnessBadge` hand-rolls), stonx.
-- **Issue:** —
+- **Issue:**
+  [#255](https://github.com/narduk-enterprises/narduk-libs/issues/255)
 
 ### 9. `NePageHeader` + `NeSectionHeader`
 
@@ -230,7 +241,8 @@ Logan approves the order).
 - **Depends on:** 2, 3.
 - **First pilot:** stonx (`AppPageHeader`, `MarketSectionHeader`), then
   operator-portal, riverstatus.
-- **Issue:** —
+- **Issue:**
+  [#256](https://github.com/narduk-enterprises/narduk-libs/issues/256)
 
 ### 10. List-query contract — `parseListQuery` + `listResponse`
 
@@ -261,7 +273,8 @@ Logan approves the order).
   keeps its 500 cap via `maxLimit`; watchlist and big-movers gain a limit), then
   riverstatus (3 routes). Not operator-portal (D-FRESH-1 read model, no list
   routes).
-- **Issue:** —
+- **Issue:**
+  [#257](https://github.com/narduk-enterprises/narduk-libs/issues/257)
 
 ### 11. `useCollection<T>()` + `NePager`
 
@@ -282,7 +295,8 @@ Logan approves the order).
   `useGameTradeRouteQuery`.
 - **First pilot:** stonx, then riverstatus (rivers list, `:to` mode for SEO).
   Not operator-portal now.
-- **Issue:** —
+- **Issue:**
+  [#258](https://github.com/narduk-enterprises/narduk-libs/issues/258)
 
 ### 12. `NeDataTable<T>`
 
@@ -307,7 +321,8 @@ Logan approves the order).
 - **First pilot:** operator-portal (client mode; keeps reflow, gains sort), then
   stonx (18 surfaces; inline editing and column visibility preserved).
   riverstatus has no table.
-- **Issue:** —
+- **Issue:**
+  [#259](https://github.com/narduk-enterprises/narduk-libs/issues/259)
 
 ### 13. Enforcement: lint rules + `foundation:check` "no local copy" and "list routes" (machinery)
 
@@ -323,7 +338,8 @@ Logan approves the order).
 - **Depends on:** 12, 10, 6.
 - **First pilot:** operator-portal, then stonx, riverstatus (as warnings; the
   audit skill flags what they miss — §4).
-- **Issue:** —
+- **Issue:**
+  [#260](https://github.com/narduk-enterprises/narduk-libs/issues/260)
 
 ### 14. `NeFilterBar` + `NeSearchInput`
 
@@ -347,7 +363,8 @@ Logan approves the order).
   consumers — the chips half ports), riverstatus's URL-as-source filters.
 - **First pilot:** operator-portal (chips half; search input built fresh with
   the table), then stonx, riverstatus.
-- **Issue:** —
+- **Issue:**
+  [#261](https://github.com/narduk-enterprises/narduk-libs/issues/261)
 
 ### 15. `NeKpiTile` + `NeKpiBand`
 
@@ -368,7 +385,8 @@ Logan approves the order).
 - **First pilot:** stonx (`MetricCard`/`Metric`/`MetricGrid`, 46 refs, sparkline
   not yet composed in), then operator-portal (`SparkTile`, 471 LOC for one
   consumer), riverstatus.
-- **Issue:** —
+- **Issue:**
+  [#262](https://github.com/narduk-enterprises/narduk-libs/issues/262)
 
 ### 16. `NeConfirmDialog` + `useConfirm()`
 
@@ -389,10 +407,12 @@ Logan approves the order).
 - **Why here:** 7 apps/12 modals; stonx alone has 11 call sites across six
   files; operator-portal#134 (declared `aria-modal`, Tab not trapped) is the bug
   class.
-- **Depends on:** 2, 3. Supersedes narduk-core `AppConfirmModal` (decision D4).
+- **Depends on:** 2, 3. Supersedes narduk-core `AppConfirmModal` (D4: deprecated
+  in this PR, removed in the next narduk-core major).
 - **First pilot:** stonx (`CommonConfirmModal` + 5 bespoke), then
   operator-portal (dialog chrome only).
-- **Issue:** —
+- **Issue:**
+  [#263](https://github.com/narduk-enterprises/narduk-libs/issues/263)
 
 ### 17. `NeCard`, `NeCardList<T>`, `NeDetailView`
 
@@ -420,33 +440,42 @@ Logan approves the order).
 - **Depends on:** 11, 7, 8.
 - **First pilot:** riverstatus (three entity cards, two trust panels), then
   stonx (cards mode of the screener). Not operator-portal now.
-- **Issue:** —
+- **Issue:**
+  [#264](https://github.com/narduk-enterprises/narduk-libs/issues/264)
 
 ### 18. `NeAppShell`
 
-- **What:** the sectioned left rail from `docs/proposals/narduk-shell.md` (#119)
-  — always-expanded labelled sections, active-route highlight, a drawer only at
-  the breakpoint, top and bottom slots — wrapping `UDashboardGroup`,
-  `UDashboardSidebar`, `UDashboardNavbar` and `UNavigationMenu`:
+- **What:** the sectioned left rail from `docs/proposals/narduk-shell.md`
+  (#119), promoted from operator-portal's `app/layouts/default.vue` as the
+  reference implementation (D2) — always-expanded labelled sections,
+  active-route highlight, a drawer only at the breakpoint, arrow-key rail
+  navigation, the mobile sheet, top and bottom slots — wrapping
+  `UDashboardGroup`, `UDashboardSidebar`, `UDashboardNavbar` and
+  `UNavigationMenu`:
 
   ```ts
   nardukShell: { accent, structure, sections: [{ id: 'ops', label: 'Operations', items: [{ label: 'Overview', to: '/' }] }] }
-  <NeAppShell><slot /></NeAppShell>; const sections = useNardukShellSections()
+  <NeAppShell variant="rail"><slot /></NeAppShell>; const sections = useNardukShellSections()
   ```
 
-  Not auth, not routing guards. Gated on a design pass with Logan (#119).
+  Opt-in, never required (D3): no `foundation:check` item asks for it; `rail` is
+  the only variant this item ships, and further variants (a top-nav shape for
+  public apps) are added when a second app needs one, per the promote rule in
+  §4. Not auth, not routing guards. Gated on a design pass with Logan (#119).
 
 - **Why here:** 18 apps/36 files and Logan's own complaint, but every pilot
-  orders it after the smaller items prove the suite in production, and its shape
-  is decision D2/D3.
+  orders it after the smaller items prove the suite in production, and it is the
+  one item apps may decline.
 - **Depends on:** 2, 9. Prior art: operator-portal `layouts/default.vue` (668
-  lines, Logan's sectioned-rail instruction of 2026-09-03), stonx
-  `CommonPageShell` (23 consumers) +
+  lines, Logan's sectioned-rail instruction of 2026-09-03; its e2e suite is the
+  regression gate), stonx `CommonPageShell` (23 consumers) +
   `AppHeader`/`AppShell`/`AppFooter`/`MobileNav`, narduk-core `Layer*Shell`
-  (decision D4).
-- **First pilot:** stonx (closes stonx#98, #104); operator-portal per D2;
-  riverstatus per D3.
-- **Issue:** —
+  (deprecated by this PR, D4).
+- **First pilot:** stonx (closes stonx#98, #104), then operator-portal last of
+  the pilots (it migrates onto the promoted rail behind its e2e suite).
+  riverstatus does not adopt it (D3: no variant it wants exists yet).
+- **Issue:**
+  [#265](https://github.com/narduk-enterprises/narduk-libs/issues/265)
 
 ### 19. Forms and settings page
 
@@ -461,11 +490,12 @@ Logan approves the order).
   ```
 
 - **Why here:** 13 apps/21 files but one pilot; stonx#37, #36, #350 are the bug
-  class; narduk-core `AppSettingsProfile` is the overlap (decision D4).
+  class; narduk-core `AppSettingsProfile` is deprecated by this PR (D4).
 - **Depends on:** 9, 7.
 - **First pilot:** stonx (`SettingsContent` + 7 raw `UForm` sites). Not
   operator-portal or riverstatus (no forms).
-- **Issue:** —
+- **Issue:**
+  [#266](https://github.com/narduk-enterprises/narduk-libs/issues/266)
 
 ### 20. Admin page blocks
 
@@ -477,7 +507,8 @@ Logan approves the order).
   page-level blocks; stonx's 23 admin pages are the payoff.
 - **Depends on:** 9, 12, 14, 17, 19, 4.
 - **First pilot:** stonx. Not operator-portal or riverstatus.
-- **Issue:** —
+- **Issue:**
+  [#267](https://github.com/narduk-enterprises/narduk-libs/issues/267)
 
 ### 21. Marketing sections
 
@@ -489,7 +520,8 @@ Logan approves the order).
   consumers) is the estate's prior art, so this waits for the new-app path.
 - **Depends on:** 2, 9.
 - **First pilot:** the generator's landing scaffold and the next new app.
-- **Issue:** —
+- **Issue:**
+  [#268](https://github.com/narduk-enterprises/narduk-libs/issues/268)
 
 ### 22. Backfill what already ships to the suite bar
 
@@ -508,7 +540,8 @@ Logan approves the order).
 - **First pilot:** operator-portal and riverstatus already use what ships
   (`AuthLoginCard`, `NardukLineChart`, `AppMapKit`, `NsFreshnessChip`); stonx
   uses narduk-charts and nothing else.
-- **Issue:** —
+- **Issue:**
+  [#269](https://github.com/narduk-enterprises/narduk-libs/issues/269)
 
 ## 3. Pilots
 
@@ -547,7 +580,9 @@ chips half, 8 consumers) → **15** KPI tile (`SparkTile`, 471 LOC) → **9** pa
 header (CSS pattern on 21 of 25 pages) → **16** confirm dialog chrome only
 (#134; the preview-token mutation flows stay bespoke). Not now: **10**, **11**
 (no list routes by design), **17**, **19**, **20**, **21** (no cards, forms,
-admin CRUD or marketing surface), **18** per decision D2.
+admin CRUD or marketing surface). **18** comes last (D2: its rail becomes the
+reference implementation and it migrates onto the promoted version behind its
+e2e suite).
 
 ### riverstatus — `b8b02014c3ade88faafb98cb363de8f0c290bb29`
 
@@ -561,9 +596,10 @@ rejected) → **8** status badge (finishes the freshness/severity split) → **7
 state panel (14 mechanical swaps) → **17** cards and detail view (3 cards, 2
 trust panels) → **11** pager (`:to` mode) → **14** filter bar (sidebar and
 toggle-row shapes) → **15** KPI tile (one strip) → **9** page header (2
-breadcrumbs) → **18** app shell only per decision D3. Not now: **12**, **16**,
-**19**, **20**, **21**. v1 called `SearchPanel.vue` dead code; it has one
-consumer through a renamed import (`pages/search.vue:5`).
+breadcrumbs). Not now: **18** (D3: the shell is opt-in and ships only the rail
+variant; a top-nav variant is not scheduled), **12**, **16**, **19**, **20**,
+**21**. v1 called `SearchPanel.vue` dead code; it has one consumer through a
+renamed import (`pages/search.vue:5`).
 
 ## 4. Guidance for agents
 
@@ -584,13 +620,24 @@ is the machine half of the same rule.
 Put to Logan as one multiple-choice round on 2026-09-11; answers recorded here
 verbatim and as a dated D-WEBFOUND-2 amendment in company-hq DECISIONS.md.
 
-| ID  | Question                                                                                                                                   | Answer    |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| D1  | Approve the backlog order in §2 as written                                                                                                 | _pending_ |
-| D2  | `NeAppShell` and operator-portal's 668-line rail: promote it as the reference implementation, scaffold-only, or defer                      | _pending_ |
-| D3  | Do status apps (riverstatus) adopt the shell, via a top-nav variant, or keep #119's carve-out                                              | _pending_ |
-| D4  | narduk-core's overlapping `App*`/`Layer*` components once the `Ne*` equivalent ships: deprecate and remove next major, alias, or keep both | _pending_ |
+| ID  | Question                                                                                                                                   | Answer (verbatim)                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Approve the backlog order in §2 as written                                                                                                 | "Approve as written (Recommended)"                                                                                                                                                                                                                                 |
+| D2  | `NeAppShell` and operator-portal's 668-line rail: promote it as the reference implementation, scaffold-only, or defer                      | "Promote the rail as the reference (Recommended)"                                                                                                                                                                                                                  |
+| D3  | Do status apps (riverstatus) adopt the shell, via a top-nav variant, or keep #119's carve-out                                              | Typed: "I dunno....should all apps adopt the shell? Does the shell impose a certain look? If so then we should not do it we dont want to impose it on every app but make it available for every app eventually we may want to have several variations that we sue" |
+| D4  | narduk-core's overlapping `App*`/`Layer*` components once the `Ne*` equivalent ships: deprecate and remove next major, alias, or keep both | "Deprecate, remove next major (Recommended)"                                                                                                                                                                                                                       |
 
-Issues: one narduk-libs issue per item, filed in order once D1 is approved and
-linked from each item's **Issue** line; the amendment's umbrella issue tracks
+How D3 is applied: yes, the shell imposes a layout (the rail) and item 2's token
+preset gives every app a shared baseline it re-tints through its
+`accent`/`structure` hooks; so the shell is available to every app and required
+of none — no `foundation:check` item asks for it, item 18 ships the rail variant
+only, and other variations are added when a second app needs one. Status apps
+and riverstatus keep their own chrome until a variant they want exists. Earlier
+the same day Logan also confirmed the build model: "one at a time and integrate
+them" (items built one PR at a time, each adopted by its first pilot before the
+next starts; only the foundations batched).
+
+Issues: one narduk-libs issue per item, filed in order on 2026-09-11 after D1
+and linked from each item's **Issue** line; umbrella
+[#247](https://github.com/narduk-enterprises/narduk-libs/issues/247) tracks
 them.
