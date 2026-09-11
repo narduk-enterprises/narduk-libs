@@ -86,12 +86,10 @@ A migrating app also gains `loading`, `error`, `blocked` and `absent` for free,
 plus the `gaps` / `unblocksOn` vocabulary — see
 [narduk-shell's README](../../design/narduk-shell/README.md#nestatepanel).
 
-No deprecation `console.warn` is emitted on mount. This repository has no
-precedent for a runtime deprecation warning in a published component (no `.vue`
-file in any package warns on mount today), and inventing one here would put a
-console line into every consuming app's dev server for a documentation-only
-change. The `@deprecated` JSDoc on the component gives editors and `vue-tsc` the
-strike-through and the pointer, which is where a developer actually meets it.
+A one-time, **dev-only** `console.warn` points at `NeStatePanel` the first time
+`AppEmptyState` is set up in a development process. Production stays silent, and
+the empty-state markup is unchanged. The `@deprecated` JSDoc on the component
+gives editors and `vue-tsc` the strike-through and the same pointer.
 
 ## Media security policy
 

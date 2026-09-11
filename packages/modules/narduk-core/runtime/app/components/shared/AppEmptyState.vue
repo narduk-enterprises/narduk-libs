@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { warnAppEmptyStateDeprecated } from './appEmptyStateDeprecation'
+
 /**
  * AppEmptyState — Universal "no data" placeholder.
  *
@@ -38,9 +40,11 @@
  *     </template>
  *   </NeStatePanel>
  *
- * Behaviour here is unchanged: this is a documentation-only deprecation, so no
- * app breaks on the narduk-core patch release that carries it.
+ * Markup, props and the rendered empty state are unchanged so no app breaks on
+ * the narduk-core patch release that carries this. A one-time, dev-only
+ * `console.warn` points at `NeStatePanel`; production stays silent.
  */
+warnAppEmptyStateDeprecated()
 
 withDefaults(
   defineProps<{
