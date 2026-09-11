@@ -162,6 +162,65 @@ test('pendingCards lets a listed component land without a card; a name not on th
   )
 })
 
+/*
+ * Surface cards: the second, much smaller list that may authorise a card
+ * (components backlog item 5, narduk-libs#252). `./format` is the first export
+ * narduk-shell ships that is worth a card and is not a component, and the
+ * pairing rule above would reject its card outright. These cases pin the
+ * narrow hole that opens for it — and, more to the point, that it stays narrow.
+ */
+
+test('a surface card authorises a card file that no registered component would', () => {
+  assert.deepEqual(
+    shellCardPlan(
+      [{ name: 'NeKpiTile' }],
+      ['Formatters.card.vue', 'NeKpiTile.card.vue'],
+      [],
+      [{ name: 'Formatters' }],
+    ),
+    [
+      { name: 'NeKpiTile', file: 'NeKpiTile.card.vue', id: 'ne-kpi-tile' },
+      { name: 'Formatters', file: 'Formatters.card.vue', id: 'formatters' },
+    ],
+  )
+})
+
+test('the same card file with nothing declaring it still fails, naming both lists', () => {
+  assert.throws(
+    () => shellCardPlan([{ name: 'NeKpiTile' }], ['Formatters.card.vue', 'NeKpiTile.card.vue']),
+    (error: Error) => {
+      assert.match(
+        error.message,
+        /Design cards with no registered component: Formatters\.card\.vue/,
+      )
+      assert.match(error.message, /src\/registry\.ts/)
+      assert.match(error.message, /src\/surface-cards\.ts/)
+      return true
+    },
+  )
+})
+
+test('a declared surface card with no file fails, so the list cannot drift ahead of the cards', () => {
+  // There is deliberately no PENDING_CARDS equivalent here: that waiver was
+  // for components landing ahead of their card, and it is spent.
+  assert.throws(
+    () =>
+      shellCardPlan([{ name: 'NeKpiTile' }], ['NeKpiTile.card.vue'], [], [{ name: 'Formatters' }]),
+    /Surface cards declared with no card file: Formatters\.card\.vue/,
+  )
+})
+
+test('a name on both lists fails rather than rendering one card id twice', () => {
+  // Declared as a variable, not inline, so this is the real entry shape from
+  // `surface-cards.ts` (which carries a `subject` the plan never reads) rather
+  // than a literal trimmed to fit the parameter type.
+  const entry = { name: 'NeKpiTile', subject: 'nonsense' }
+  assert.throws(
+    () => shellCardPlan([{ name: 'NeKpiTile' }], ['NeKpiTile.card.vue'], [], [entry]),
+    /Declared as both a component and a surface card: NeKpiTile/,
+  )
+})
+
 test('coverage merges the authored gallery with each shipped card, and counts Ne* tags', () => {
   const merged = mergeCoverage({
     'app.vue':
