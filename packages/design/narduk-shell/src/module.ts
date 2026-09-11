@@ -14,14 +14,12 @@ export interface NardukShellModuleOptions {
   components?: boolean
 }
 
-interface MutableNuxtOptions {
-  build: {
-    transpile: (string | RegExp | ((...args: never[]) => unknown))[]
-  }
-}
-
 interface MinimalNuxt {
-  options: MutableNuxtOptions
+  options: {
+    // Nuxt types this as string | RegExp | function entries; the module only
+    // ever appends its own package name and only needs to read membership.
+    build: { transpile: unknown[] }
+  }
 }
 
 export default defineNuxtModule<NardukShellModuleOptions>({

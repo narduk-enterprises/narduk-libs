@@ -86,8 +86,12 @@ describe('narduk-shell module', () => {
     await module_.setup({ components: true }, makeNuxt())
 
     expect(addComponentsDir).not.toHaveBeenCalled()
+    // Belt and braces: the mock above only proves the branches this test
+    // reached. Assert the source contains no call at all -- a call, not a
+    // mention, so the comment in src/module.ts explaining why it is absent
+    // stays legal.
     expect(readFileSync(join(packageRoot, 'src', 'module.ts'), 'utf8')).not.toMatch(
-      /\baddComponentsDir\b/,
+      /addComponentsDir\s*\(/,
     )
   })
 

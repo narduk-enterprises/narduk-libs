@@ -1,0 +1,82 @@
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+interface Manifest {
+  exports: Record<string, unknown>
+  files: string[]
+}
+
+const manifest = JSON.parse(
+  readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+) as unknown as Manifest
+
+/**
+ * The subpaths item 1 reserves. Adding one is a deliberate act: the release
+ * pipeline's consumer fixture resolves every declared subpath of every packed
+ * package from an external install, so a new entry here is a new thing that
+ * has to resolve there too.
+ */
+const RESERVED_SUBPATHS = ['.', './format', './theme.css']
+
+/** Every file an exports entry points at, flattened out of its conditions. */
+function exportTargets(entry: unknown): string[] {
+  if (typeof entry === 'string') return [entry]
+  if (entry && typeof entry === 'object') {
+    return Object.values(entry as Record<string, unknown>).flatMap((value) => exportTargets(value))
+  }
+  return []
+}
+
+function packedFiles(): string[] {
+  const output = execFileSync('pnpm', ['pack', '--dry-run', '--json'], {
+    cwd: packageRoot,
+    encoding: 'utf8',
+    env: { ...process.env, npm_config_ignore_scripts: 'true' },
+  })
+  const report = JSON.parse(output) as { files: Array<{ path: string }> }
+  return report.files.map(({ path }) => path)
+}
+
+describe('narduk-shell package shape', () => {
+  it('declares exactly the three reserved subpaths, none of them a pattern', () => {
+    expect(Object.keys(manifest.exports)).toEqual(RESERVED_SUBPATHS)
+    for (const subpath of Object.keys(manifest.exports)) {
+      expect(subpath).not.toContain('*')
+    }
+  })
+
+  it('ships every declared subpath target in the packed file list', () => {
+    const files = new Set(packedFiles())
+
+    for (const subpath of RESERVED_SUBPATHS) {
+      const targets = exportTargets(manifest.exports[subpath])
+      expect(targets.length, `${subpath} declares no target`).toBeGreaterThan(0)
+      for (const target of targets) {
+        expect(target.startsWith('./'), `${subpath} -> ${target} is not package-relative`).toBe(
+          true,
+        )
+        expect(files, `${subpath} -> ${target} is missing from the tarball`).toContain(
+          target.slice(2),
+        )
+      }
+    }
+
+    // The allowlist is an allowlist: nothing outside it leaks in. Stated as a
+    // rule rather than an exact file list so a later backlog item adding a
+    // component under src/ does not have to edit this test -- but tests/,
+    // configs and scratch files still fail it.
+    const allowed = new Set(['package.json', 'README.md', 'CHANGELOG.md', 'theme.css'])
+    for (const file of files) {
+      expect(
+        allowed.has(file) || file.startsWith('src/'),
+        `${file} is packed but is outside the files allowlist`,
+      ).toBe(true)
+    }
+  }, 120_000)
+})
