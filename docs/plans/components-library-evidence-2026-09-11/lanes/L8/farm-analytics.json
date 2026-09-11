@@ -1,0 +1,291 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/farm-analytics",
+  "clone": "ok",
+  "surveyed_sha": "5ee2334362a1ebad6cbb6d1a971258ca487e211e",
+  "default_branch": "main",
+  "app_dirs": ["farm-boundary-map"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.5.0",
+    "nuxt_ui": "4.10.0",
+    "tailwind": "not measured (no direct tailwindcss line found; app uses hand-rolled scoped CSS with --atlas-* custom properties, not Tailwind utility classes, in every component read)",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false,
+    "notes": "Repo also contains a Python farm-report pipeline at the root (build_farm_report.py, sms_back_parser.py); the Nuxt app is entirely under farm-boundary-map/. No @narduk-enterprises/* dependency at all; vendors @narduk-geo/narduk-mapkit and @narduk-geo/narduk-mapkit-nuxt as local file: tarballs (a different npm scope/package family from narduk-mapkit-nuxt in narduk-libs)."
+  },
+  "counts": {
+    "vue_files_total": 23,
+    "components": 20,
+    "pages": 1,
+    "layouts": 0,
+    "composables": 6,
+    "commands": {
+      "vue_files_total": "find farm-boundary-map -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find farm-boundary-map/app/components -name '*.vue' | wc -l",
+      "pages": "find farm-boundary-map/app/pages -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "PortfolioKpiBand",
+      "path": "farm-boundary-map/app/components/portfolio/PortfolioKpiBand.vue",
+      "loc": 33,
+      "consumers": 1,
+      "duplicates_lib": "NsReadoutTile",
+      "notes": "Textbook 4-column KPI band (label / big number / unit), responsive to 2-col then padding shrink. Exact-shape match for a shared kpi_stat_tile primitive; NsReadoutTile is the closest existing narduk-ui instrument but is freshness-specific, not generic."
+    },
+    {
+      "name": "FarmStatusFilters",
+      "path": "farm-boundary-map/app/components/atlas/FarmStatusFilters.vue",
+      "loc": 39,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "v-model segmented status-chip filter bar with per-chip counts, aria-pressed, and a mobile horizontal-scroll fallback (scrollbar-width:none + mask-image fade). Textbook filter_search_bar control; narduk-libs ships nothing like it."
+    },
+    {
+      "name": "PortfolioFarmGrid",
+      "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+      "loc": 42,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Card-list-as-table: one tile per farm entity carrying name, status badge (confirmed/provisional/unresolved/placeholder), acres, field/dataset/observation counts, crop chip list, click-through. Functions as the farm 'table' — see patterns.table."
+    },
+    {
+      "name": "PortfolioAttentionList",
+      "path": "farm-boundary-map/app/components/portfolio/PortfolioAttentionList.vue",
+      "loc": 32,
+      "consumers": 1,
+      "duplicates_lib": "AppEmptyState (for its empty branch)",
+      "notes": "Scrollable detail-list with icon+severity styling per row, truncation notice ('Showing X of Y bounded attention items'), and a hand-rolled empty state ('No factual attention items were identified...'). Good detail_list + empty_state + truncated-pagination-notice example."
+    },
+    {
+      "name": "OpsAppBar",
+      "path": "farm-boundary-map/app/components/atlas/OpsAppBar.vue",
+      "loc": 111,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Custom app bar/header, not narduk-core's LayerAppHeader (app has zero narduk-core dependency)."
+    },
+    {
+      "name": "FarmOperationsNav",
+      "path": "farm-boundary-map/app/components/atlas/FarmOperationsNav.vue",
+      "loc": 188,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Hand-rolled operations nav/switcher."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+        "loc": 42,
+        "kind": "card-list-as-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not measured",
+        "searchable": false,
+        "row_link": true,
+        "mobile": "cards (grid-template-columns collapses 3->2->1 at 1240px/760px breakpoints)",
+        "empty_state": false,
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "badge", "number", "text", "badge-list", "link"],
+        "server_api": "farm-boundary-map/server/api/portfolio.get.ts (no page/limit/sort params found)",
+        "tests": [],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "farm-boundary-map/app/components/atlas/FarmStatusFilters.vue",
+        "loc": 39,
+        "consumers": 1,
+        "notes": "Status-chip filter with counts; server-side search also exists (server/api/farms.get.ts 'q' param) though no local .vue was found calling it directly with a text input in the files read."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+        "loc": 4,
+        "consumers": 1,
+        "notes": ".status.confirmed/.provisional/.unresolved/.placeholder classes, 4-state reconciliation badge."
+      },
+      {
+        "path": "farm-boundary-map/app/components/atlas/FarmStatusFilters.vue",
+        "loc": 39,
+        "consumers": 1,
+        "notes": "Status chip used as a filter control, not just display."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioAttentionList.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "'No factual attention items were identified in the current source backup.'"
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+        "loc": 3,
+        "consumers": 1,
+        "notes": "eyebrow + h2 + count header pattern, repeated in PortfolioAttentionList too."
+      }
+    ],
+    "kpi_stat_tile": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioKpiBand.vue",
+        "loc": 33,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "card_list": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+        "loc": 42,
+        "consumers": 1,
+        "notes": "Also listed under table (card-list-as-table)."
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioAttentionList.vue",
+        "loc": 32,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [
+      {
+        "path": "farm-boundary-map/app/utils/farm-portfolio.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatPortfolioInteger/formatPortfolioAcres/formatPortfolioYield helpers used across portfolio components."
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "farm-boundary-map/app/components/atlas/OpsAppBar.vue",
+        "loc": 111,
+        "consumers": 1,
+        "notes": "Custom app bar."
+      },
+      {
+        "path": "farm-boundary-map/app/components/atlas/FarmOperationsNav.vue",
+        "loc": 188,
+        "consumers": 1,
+        "notes": "Custom ops nav/switcher."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "farm-boundary-map/app/components/FarmMapStage.vue",
+        "loc": 275,
+        "consumers": 1,
+        "notes": "Wraps @narduk-geo/narduk-mapkit-nuxt (vendored tarball), not narduk-libs' narduk-mapkit-nuxt."
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "farm-boundary-map/app/components/portfolio/PortfolioSeasonChart.vue",
+        "loc": 52,
+        "consumers": 1,
+        "notes": "Only 'table'-keyword hit in the app was in this file's context; hand-rolled chart, not a NardukLineChart wrapper (app has zero narduk-charts dependency)."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "farm-boundary-map/app/components/atlas/AtlasLayersPopover.vue",
+        "loc": 137,
+        "consumers": 1,
+        "notes": "Layer toggle popover."
+      },
+      {
+        "path": "farm-boundary-map/app/components/atlas/AtlasSeasonStrip.vue",
+        "loc": 48,
+        "consumers": 1,
+        "notes": "Season selector strip."
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "farm-boundary-map/server/api/farms.get.ts",
+      "params": ["q", "includeUnresolved", "includePlaceholders", "includeFootprints"],
+      "response_shape": "FarmListResponse (shared/types/farms.ts) | array; no page/limit/cursor found",
+      "limit_enforced": false,
+      "notes": "Server-side search: trims+lowercases+slices q to 160 chars, plus status-include boolean flags. No pagination — returns the full filtered set."
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/farm-analytics#1",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "feat: redesign Farm Atlas as Ops Atlas",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "PortfolioKpiBand",
+      "path": "farm-boundary-map/app/components/portfolio/PortfolioKpiBand.vue",
+      "loc": 33,
+      "consumers": 1,
+      "why": "Cleanest, smallest, most literal match anywhere in this lane for a generic KPI-band primitive (label/value/unit, responsive column collapse).",
+      "loc_saved_estimate": 25
+    },
+    {
+      "pattern": "filter_search_bar",
+      "name": "FarmStatusFilters",
+      "path": "farm-boundary-map/app/components/atlas/FarmStatusFilters.vue",
+      "loc": 39,
+      "consumers": 1,
+      "why": "Complete, accessible (aria-pressed, role=group) segmented status filter with counts and a mobile scroll fallback — ready to generalize.",
+      "loc_saved_estimate": 30
+    },
+    {
+      "pattern": "table",
+      "name": "PortfolioFarmGrid as CollectionTable precedent",
+      "path": "farm-boundary-map/app/components/portfolio/PortfolioFarmGrid.vue",
+      "loc": 42,
+      "consumers": 1,
+      "why": "Shows exactly what a card-mode row needs (status badge, numeric stat, chip list, click-through) for the shared table's mobile card view.",
+      "loc_saved_estimate": 20
+    }
+  ],
+  "notes": "Small (23-file), design-forward dashboard app with zero narduk-libs adoption but strikingly clean, already-generic-shaped UI (component names literally say KpiBand, StatusFilters, AttentionList). No literal <table>; the one 'table' is a card grid. Every component here has exactly 1 consumer (single-page portfolio dashboard) so consumer counts are uniformly low despite the patterns being reusable across a future estate."
+}

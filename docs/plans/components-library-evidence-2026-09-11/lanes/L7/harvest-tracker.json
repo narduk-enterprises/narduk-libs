@@ -1,0 +1,454 @@
+{
+  "lane": "L7",
+  "repo": "narduk-enterprises/harvest-tracker",
+  "clone": "ok",
+  "surveyed_sha": "995cc0caa92275f8fb93b81355f90d76598278e6",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "none (bundled via @nuxt/ui 4; no tailwind.config.* or @tailwind directive in apps/web)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.21.0",
+      "narduk-auth": "1.24.1",
+      "narduk-seo": "2.0.3",
+      "narduk-uploads": "1.19.19",
+      "narduk-mapkit": "2.0.0",
+      "narduk-mapkit-nuxt": "2.0.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 93,
+    "components": 70,
+    "pages": 18,
+    "layouts": 3,
+    "composables": 5,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 6 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 ( -name '*.ts' -o -name '*.vue' ) | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 1,
+    "AuthLoginCard": 1,
+    "AuthRegisterCard": 1,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "LedgerTable",
+      "path": "apps/web/app/components/almanac/LedgerTable.vue",
+      "loc": 278,
+      "consumers": 3,
+      "duplicates_lib": "none",
+      "notes": "grid-div presentational table shell (header row, group headers, zebra rows, row tone, empty slot); no sort/paginate/search"
+    },
+    {
+      "name": "ReportsYieldLedger",
+      "path": "apps/web/app/components/reports/ReportsYieldLedger.vue",
+      "loc": 545,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "raw <table> re-implementing LedgerTable's visual system because it needs colspan expand-row detail bands; author's own comment flags the duplication"
+    },
+    {
+      "name": "AvailabilityChip",
+      "path": "apps/web/app/components/almanac/AvailabilityChip.vue",
+      "loc": 147,
+      "consumers": 9,
+      "duplicates_lib": "none",
+      "notes": "status chip mapping an availability enum to color+label+icon; domain-specific but structurally a generic status badge"
+    },
+    {
+      "name": "CropChip",
+      "path": "apps/web/app/components/almanac/CropChip.vue",
+      "loc": 81,
+      "consumers": 5,
+      "duplicates_lib": "none",
+      "notes": "generic colored category/status chip"
+    },
+    {
+      "name": "StatBlock",
+      "path": "apps/web/app/components/almanac/StatBlock.vue",
+      "loc": 87,
+      "consumers": 4,
+      "duplicates_lib": "none",
+      "notes": "KPI/stat tile: label + value + optional delta"
+    },
+    {
+      "name": "SectionHeading",
+      "path": "apps/web/app/components/almanac/SectionHeading.vue",
+      "loc": 142,
+      "consumers": 2,
+      "duplicates_lib": "none",
+      "notes": "section header with eyebrow/title/actions slot"
+    },
+    {
+      "name": "ScreenTopBar",
+      "path": "apps/web/app/components/shell/ScreenTopBar.vue",
+      "loc": 129,
+      "consumers": 10,
+      "duplicates_lib": "none",
+      "notes": "page header / top bar rendered on almost every screen"
+    },
+    {
+      "name": "FarmStateNotice",
+      "path": "apps/web/app/components/farm/FarmStateNotice.vue",
+      "loc": 149,
+      "consumers": 6,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "empty/absent-state notice card; overlaps narduk-core AppEmptyState, which this app does not use at all"
+    },
+    {
+      "name": "NotBuiltYet",
+      "path": "apps/web/app/components/shell/NotBuiltYet.vue",
+      "loc": 129,
+      "consumers": 0,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "placeholder/coming-soon empty state; 0 tag-usage hits (may be dynamically resolved) so treat as low-confidence"
+    },
+    {
+      "name": "almanac-format.ts",
+      "path": "apps/web/app/utils/almanac-format.ts",
+      "loc": 321,
+      "consumers": 48,
+      "duplicates_lib": "none",
+      "notes": "date/number/currency/yield/moisture/timecode formatter library (23 exported functions); no shared narduk-libs equivalent exists"
+    },
+    {
+      "name": "ImportUploader",
+      "path": "apps/web/app/components/imports/ImportUploader.vue",
+      "loc": 473,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "large hand-rolled multi-part upload UI (drag/drop, progress, chunked upload against server/api/.../parts/[partNumber].put.ts); no shared file-upload component exists in narduk-libs despite narduk-uploads being a dependency"
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/components/almanac/LedgerTable.vue",
+        "loc": 278,
+        "kind": "grid-div",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text"],
+        "server_api": "none",
+        "tests": [],
+        "consumers": 3
+      },
+      {
+        "path": "apps/web/app/components/reports/ReportsYieldLedger.vue",
+        "loc": 545,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number"],
+        "server_api": "none",
+        "tests": ["apps/web/tests/unit/crop-compare.test.ts", "apps/web/tests/e2e/reports.spec.ts"],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/components/reports/ReportsCropCard.vue",
+        "loc": 213,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number"],
+        "server_api": "none",
+        "tests": ["apps/web/tests/unit/crop-reports.test.ts"],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [
+      {
+        "path": "apps/web/server/api/farms/[farmId]/imports.get.ts",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "server-side offset/limit contract exists but no client pagination-control UI was found consuming it"
+      }
+    ],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/almanac/AvailabilityChip.vue",
+        "loc": 147,
+        "consumers": 9,
+        "notes": "availability/freshness enum to chip"
+      },
+      {
+        "path": "apps/web/app/components/almanac/CropChip.vue",
+        "loc": 81,
+        "consumers": 5,
+        "notes": "crop category chip"
+      }
+    ],
+    "freshness_indicator": [
+      {
+        "path": "apps/web/app/components/almanac/AvailabilityChip.vue",
+        "loc": 147,
+        "consumers": 9,
+        "notes": "doubles as this app's freshness signal; closest lib analog NsFreshnessChip is unused"
+      }
+    ],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/farm/FarmStateNotice.vue",
+        "loc": 149,
+        "consumers": 6,
+        "notes": "farm-level absent/empty notice"
+      },
+      {
+        "path": "apps/web/app/components/shell/NotBuiltYet.vue",
+        "loc": 129,
+        "consumers": 0,
+        "notes": "coming-soon placeholder, 0 tag-grep hits"
+      },
+      {
+        "path": "apps/web/app/components/replay/ReplayAbsent.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      },
+      {
+        "path": "apps/web/app/components/timelapse/TimelapseAbsentState.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "apps/web/app/components/shell/ScreenTopBar.vue",
+        "loc": 129,
+        "consumers": 10,
+        "notes": "top bar used on nearly every screen"
+      }
+    ],
+    "section_header": [
+      {
+        "path": "apps/web/app/components/almanac/SectionHeading.vue",
+        "loc": 142,
+        "consumers": 2,
+        "notes": "eyebrow/title/actions section header"
+      }
+    ],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/almanac/StatBlock.vue",
+        "loc": 87,
+        "consumers": 4,
+        "notes": "label+value+delta tile"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/fields/FieldArchivesCard.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      },
+      {
+        "path": "apps/web/app/components/today/PriceCard.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/almanac-format.ts",
+        "loc": 321,
+        "consumers": 48,
+        "notes": "formatIsoDate/formatShortDate/formatLongDate/formatDateRange/formatTimecode(Progress)"
+      }
+    ],
+    "number_currency_format": [
+      {
+        "path": "apps/web/app/utils/almanac-format.ts",
+        "loc": 321,
+        "consumers": 48,
+        "notes": "formatYield/formatAcres/formatProduction/formatPrice/formatPercent/formatMoisture/formatFixed etc."
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/shell/AppSidebar.vue",
+        "loc": 369,
+        "consumers": 2,
+        "notes": "app sidebar nav shell"
+      },
+      {
+        "path": "apps/web/app/components/shell/AppShellSignature.vue",
+        "loc": 128,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      }
+    ],
+    "tabs": [
+      {
+        "path": "apps/web/app/components/shell/AppTabBar.vue",
+        "loc": 73,
+        "consumers": 1,
+        "notes": "local tab bar; narduk-core AppTabs unused"
+      }
+    ],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/pages/login.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "uses narduk-auth AuthLoginCard directly, not a local reimplementation"
+      }
+    ],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/map/MapStage.vue",
+        "loc": 601,
+        "consumers": 1,
+        "notes": "wraps narduk-mapkit-nuxt AppMapKit (line 423) with a large amount of local overlay/inspector/legend chrome (map/MapInspector.vue, MapLegend.vue, MapOverlayList.vue, MapOverlaysControl.vue, MapSeasonDock.vue)"
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/fields/RotationSparkline.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing; no @narduk-enterprises/narduk-charts dependency present, so likely hand-rolled SVG"
+      }
+    ],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/components/replay/ReplayDayLane.vue",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not measured beyond file listing"
+      }
+    ],
+    "file_upload": [
+      {
+        "path": "apps/web/app/components/imports/ImportUploader.vue",
+        "loc": 473,
+        "consumers": 1,
+        "notes": "chunked drag/drop uploader against server/api parts endpoints"
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/farms/[farmId]/imports.get.ts",
+      "params": ["limit", "offset"],
+      "response_shape": "{ items, limit, nextOffset, offset }",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/farms/[farmId]/artifacts/index.get.ts",
+      "params": ["field", "kind", "limit", "offset", "year"],
+      "response_shape": "{ items, limit, nextOffset, offset }",
+      "limit_enforced": true
+    }
+  ],
+  "defect_history": [],
+  "tests_covering_patterns": [
+    "apps/web/tests/unit/crop-compare.test.ts",
+    "apps/web/tests/unit/crop-reports.test.ts",
+    "apps/web/tests/e2e/reports.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "LedgerTable",
+      "path": "apps/web/app/components/almanac/LedgerTable.vue",
+      "loc": 278,
+      "consumers": 3,
+      "why": "already the app's own reusable table shell (3 consumers) but has zero sort/paginate/search/mobile handling; a shared table would need to preserve its grouped-rows + tone + colspan-expand affordances (see ReportsYieldLedger's duplication comment) to fully replace it",
+      "loc_saved_estimate": 823
+    },
+    {
+      "pattern": "status_chip_badge",
+      "name": "AvailabilityChip/CropChip",
+      "path": "apps/web/app/components/almanac/AvailabilityChip.vue",
+      "loc": 228,
+      "consumers": 14,
+      "why": "two structurally similar status chips with 14 combined consumers and no shared equivalent",
+      "loc_saved_estimate": 150
+    },
+    {
+      "pattern": "number_currency_format",
+      "name": "almanac-format",
+      "path": "apps/web/app/utils/almanac-format.ts",
+      "loc": 321,
+      "consumers": 48,
+      "why": "highest-consumer-count reimplementation in the app (48 files); a shared formatter package would remove ad hoc duplication across every domain app that hand-rolls Intl.NumberFormat/date wrappers",
+      "loc_saved_estimate": 200
+    }
+  ],
+  "notes": "narduk-family-location clone failed (repo not found in narduk-enterprises or narduk-incubator, verified via gh repo view and gh repo list); reported separately. This app never adopted @narduk-enterprises/narduk-core's shared UI (AppEmptyState/AppConfirmModal/AppTabs/AppBreadcrumbs all 0 usages) despite depending on the package for its Nuxt module/layout wiring -- only narduk-auth's AuthLoginCard/AuthRegisterCard and narduk-mapkit-nuxt's AppMapKit are actually consumed. No AppConfirmModal/toast usage found anywhere in the app (grep for useToast/toast. and AppConfirmModal/confirm-modal returned 0 hits)."
+}

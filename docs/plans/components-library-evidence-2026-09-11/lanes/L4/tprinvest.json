@@ -1,0 +1,178 @@
+{
+  "lane": "L4",
+  "repo": "narduk-enterprises-clients/tprinvest",
+  "clone": "ok",
+  "surveyed_sha": "d09c9c3f654d1ec551b0083ea15ba22942eabe82",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "4.6.0 (transitive only, via narduk-nuxt-template-layer-core -- not a direct apps/web dependency)",
+    "tailwind": "^4.2.1 (direct, via @tailwindcss/vite)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-platform": "^2.0.0",
+      "narduk-nuxt-template-layer-core": "^1.18.26",
+      "narduk-nuxt-template-layer-seo": "^1.18.26",
+      "narduk-nuxt-template-layer-analytics": "^1.18.26",
+      "narduk-nuxt-template-layer-testing": "^1.18.24"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 10,
+    "components": 0,
+    "pages": 8,
+    "layouts": 1,
+    "composables": 0,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l  # directory does not exist",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 -name '*.ts' | wc -l  # directory does not exist"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "Page header (h1 hero block)",
+      "path": "app/pages/{archived-pages,gallery,company,brand,references,methodology,timeline}.vue",
+      "loc": 21,
+      "consumers": 7,
+      "duplicates_lib": "none",
+      "notes": "Byte-identical class string 'text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100 mb-2' copy-pasted into 7 of 8 pages (index.vue has its own larger hero variant). Trivial PageHeader extraction candidate."
+    },
+    {
+      "name": "Header/nav/footer (layouts/default.vue)",
+      "path": "app/layouts/default.vue",
+      "loc": 97,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Hand-rolled entirely from raw HTML + a few bare Nuxt UI primitives (UNavigationMenu, UColorModeButton, UIcon) rather than narduk-core's LayerAppHeader/LayerAppFooter/LayerAppShell -- this app is on the legacy template-layer-core package, which does not appear to auto-register an equivalent, or the app chose not to use it."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "app/pages/timeline.vue",
+        "loc": 10,
+        "consumers": 1,
+        "notes": "Client-side year filter (filteredTimeline computed) over a static timeline array; not a search box."
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "app/pages/company.vue (representative of 7)",
+        "loc": 3,
+        "consumers": 7,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "app/pages/references.vue",
+        "loc": 203,
+        "consumers": 1,
+        "notes": "Citation/source list rendered as cards; not individually read in full."
+      },
+      {
+        "path": "app/pages/archived-pages.vue",
+        "loc": 217,
+        "consumers": 1,
+        "notes": "Archived-page-snapshot cards; not individually read in full."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [
+      {
+        "path": "app/pages/gallery.vue",
+        "loc": 125,
+        "consumers": 1,
+        "notes": "Plain <img> tags only -- no click-to-enlarge/modal/lightbox found (grepped for Modal|dialog|selectedImage|lightbox = 0 hits). Absence noted, not a reinvention."
+      }
+    ],
+    "layout_shell_nav": [
+      {
+        "path": "app/layouts/default.vue",
+        "loc": 97,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "app/pages/timeline.vue",
+        "loc": 306,
+        "consumers": 1,
+        "notes": "Year-grouped event timeline with highlights/evidence sub-lists; the single richest interactive page in the app."
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [
+      {
+        "path": "app/layouts/default.vue (UColorModeButton, Nuxt UI built-in)",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "Not a reinvention -- direct Nuxt UI component."
+      }
+    ],
+    "other": []
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises-clients/tprinvest#50",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Template-layer exit onto narduk-libs (harmony#87 pattern) -- web foundation contract §4. Tracked under company-hq DECISIONS.md D-WEBFOUND-2 (2026-09-04), parent company-hq#629, extraction tracker narduk-libs#76. Body states: 'tprinvest is template-layer shaped, with 13-15 narduk-nuxt-template-layer-* traces and zero current narduk-libs package pins.'",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "page_header",
+      "name": "PageHeader",
+      "path": "app/pages/{7 files}",
+      "loc": 21,
+      "consumers": 7,
+      "why": "Identical class string copy-pasted 7 times; a one-prop (title) shared component removes all 7 copies immediately with zero behavior risk.",
+      "loc_saved_estimate": 18
+    },
+    {
+      "pattern": "other",
+      "name": "Exit template-layer-core/seo/analytics/testing onto narduk-core/seo/analytics (already tracked)",
+      "path": "apps/web/package.json",
+      "loc": 0,
+      "consumers": 1,
+      "why": "tprinvest#50 already tracks this exact migration estate-wide (D-WEBFOUND-2); this lane's component survey is corroborating evidence for that tracker, not a new finding -- the app currently has zero narduk-libs (non-legacy) package pins.",
+      "loc_saved_estimate": 0
+    }
+  ],
+  "notes": "Smallest and lowest-pattern-density of the three L4 repos: a historical-archive marketing/reference site (TPR Investments, L.P., closed 2014), not a data app. No app/components or app/composables directory at all -- just 8 large single-file pages plus one layout. No tables, no pagination, no forms of consequence. Zero direct @nuxt/ui dependency (it arrives transitively via narduk-nuxt-template-layer-core; only UIcon/UNavigationMenu/UColorModeButton/ULink are used, sparingly). The one substantive cross-repo finding: issue #50 explicitly names harmony-hot-sauce#87 as the pattern to follow for exiting the legacy template layers onto narduk-libs, under a live estate program (company-hq D-WEBFOUND-2 / company-hq#629 / narduk-libs#76) -- this is the same migration L4's third repo (harmony-hot-sauce) is already tracking."
+}

@@ -1,0 +1,1179 @@
+{
+  "lane": "L3",
+  "repo": "narduk-enterprises/stonx",
+  "clone": "ok",
+  "surveyed_sha": "d50ad729600a67d09e5ec56d78bb25f73044053e",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "~4.4.6",
+    "nuxt_ui": "~4.7.1",
+    "tailwind": "^4.3.0",
+    "tanstack_table": "none (bundled transitively via @nuxt/ui UTable; no direct @tanstack/vue-table dependency in package.json)",
+    "narduk_libs": {
+      "narduk-analytics": "1.19.20",
+      "narduk-charts": "^2.3.0",
+      "narduk-seo": "2.0.6",
+      "eslint-config": "2.0.2"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 502,
+    "components": 397,
+    "pages": 71,
+    "layouts": 4,
+    "composables": 161,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -maxdepth 10 -name '*.vue' | wc -l",
+      "pages": "find app/pages -maxdepth 10 -name '*.vue' | wc -l",
+      "layouts": "find app/layouts -maxdepth 10 -name '*.vue' | wc -l",
+      "composables": "find app/composables -maxdepth 10 -type f \\( -name '*.ts' -o -name '*.js' \\) | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "NardukLineChart": 2,
+    "NardukPieChart": 1,
+    "NardukCandleChart": 1,
+    "NardukBarChart": 0,
+    "NardukHistogramChart": 0,
+    "NardukScatterChart": 0,
+    "NardukChartStack": 0,
+    "NardukBrandBackdrop": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "CommonEmptyState",
+      "path": "app/components/common/CommonEmptyState.vue",
+      "loc": 109,
+      "consumers": 46,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "highest-reuse local component in the repo; used by nearly every table/card/list surface including 6+ of the table entries below; near-drop-in for narduk-core's AppEmptyState"
+    },
+    {
+      "name": "AppPageHeader",
+      "path": "app/components/AppPageHeader.vue",
+      "loc": 80,
+      "consumers": 19,
+      "duplicates_lib": "none",
+      "notes": "narduk-libs ships no page_header component"
+    },
+    {
+      "name": "CommonPageShell",
+      "path": "app/components/common/CommonPageShell.vue",
+      "loc": 115,
+      "consumers": 23,
+      "duplicates_lib": "none",
+      "notes": "highest-reuse layout component; app-local analog of narduk-core's LayerDashboardShell but stonx has zero narduk-core dependency"
+    },
+    {
+      "name": "CommonMetricCard + Metric + MetricGrid",
+      "path": "app/components/common/MetricCard.vue, app/components/common/Metric.vue, app/components/common/MetricGrid.vue",
+      "loc": 200,
+      "consumers": 46,
+      "duplicates_lib": "none",
+      "notes": "84+97+19 loc; 19+10+17 consumers respectively; stonx has no narduk-ui dependency so NsReadoutTile is not an option today, but this is exactly the KPI/stat-tile shape narduk-ui's family targets"
+    },
+    {
+      "name": "CommonConfirmModal",
+      "path": "app/components/common/ConfirmModal.vue",
+      "loc": 110,
+      "consumers": 6,
+      "duplicates_lib": "AppConfirmModal",
+      "notes": "generic confirm dialog, direct duplicate of narduk-core's AppConfirmModal"
+    },
+    {
+      "name": "AppHeader + AppShell + AppFooter",
+      "path": "app/components/AppHeader.vue, app/components/app/AppShell.vue, app/components/app/AppFooter.vue",
+      "loc": 465,
+      "consumers": 6,
+      "duplicates_lib": "none",
+      "notes": "301+117+47 loc; naming mirrors narduk-core's LayerAppHeader/LayerAppShell/LayerAppFooter almost exactly but was built independently (no narduk-core dep)"
+    },
+    {
+      "name": "MarketScreenerPagination",
+      "path": "app/components/market/screener/Pagination.vue",
+      "loc": 216,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "216-line fully hand-rolled pagination bar (distinct mobile popover + desktop layouts, ellipsis page range, page-size selector) that does NOT use Nuxt UI's UPagination, unlike 12 other call sites in the app that use UPagination directly"
+    },
+    {
+      "name": "CommonSortableTableHeader",
+      "path": "app/components/common/SortableTableHeader.vue",
+      "loc": 43,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "wraps TanStack column.getIsSorted()/toggleSorting() as a UButton; only 1 of ~6 sortable tables actually uses it -- ResultsTableDesktop and PositionTable each hand-roll their own near-identical sort button/icon inline instead"
+    },
+    {
+      "name": "MarketStockList",
+      "path": "app/components/market/StockList.vue",
+      "loc": 252,
+      "consumers": 4,
+      "duplicates_lib": "none",
+      "notes": "TypeScript-generic <T> configurable list/grid/table component with loading/empty states and default columns -- the closest existing in-app precedent to a shared CollectionTable, but scoped to symbol-shaped market items"
+    },
+    {
+      "name": "Filter bars (4 independent implementations)",
+      "path": "app/components/game/GameFilters.vue, app/components/market/screener/FilterPanel.vue, app/components/game/trades/FiltersCard.vue, app/components/admin/stats/AdminStatsUsersFilterBar.vue",
+      "loc": 606,
+      "consumers": 4,
+      "duplicates_lib": "none",
+      "notes": "145+366+56+39 loc; zero sharing -- every filter/search bar in the app (including the screener's 366-line panel) is a one-off"
+    },
+    {
+      "name": "LoadingSkeleton (duplicate names, different features)",
+      "path": "app/components/achievements/LoadingSkeleton.vue, app/components/invite/LoadingSkeleton.vue",
+      "loc": 0,
+      "consumers": 2,
+      "duplicates_lib": "none",
+      "notes": "two unrelated components share the exact same filename in different feature folders; not measured for LOC (not read in full), flagged for naming collision risk alone"
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "app/components/admin/games/Table.vue",
+        "loc": 71,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "server",
+        "page_size": 20,
+        "searchable": true,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": "not measured",
+        "column_count": 8,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "badge", "link", "actions", "money", "date"],
+        "server_api": "server/api/admin/games/index.get.ts (params: page, limit, search, status; uses shared getPaginationParams/buildPaginatedResponse helper)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "delegates rows to AdminGamesTableRow.vue (126 loc); search/pagination state lives in parent app/page-contents/AdminGamesContent.vue (debounced search, page/limit refs)"
+      },
+      {
+        "path": "app/components/admin/provider/CompareDeltaTable.vue",
+        "loc": 100,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": true,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "badge"],
+        "server_api": "server/api/admin/provider-compare.get.ts (params: not measured)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "client-side text filter via UInput; fixed sort (by absolute delta) set by parent, not user-toggleable"
+      },
+      {
+        "path": "app/components/admin/stats/AdminStatsUsersTable.vue",
+        "loc": 176,
+        "kind": "UTable",
+        "sortable": "server",
+        "paginated": "server",
+        "page_size": 20,
+        "searchable": "not measured (parent may own it)",
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": "not measured",
+        "column_count": 11,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "text/link",
+          "badge",
+          "text",
+          "number",
+          "number",
+          "percent",
+          "money",
+          "money",
+          "money",
+          "money",
+          "money"
+        ],
+        "server_api": "server/api/admin/stats-detailed.get.ts (params: page, limit, filterType, sortBy, sortOrder; zod-validated, limit max 100)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "the richest server-driven table in the app: v-model:sorting + v-model:page bound to parent state, uses CommonSortableTableHeader for every sortable column header"
+      },
+      {
+        "path": "app/components/leaderboard/Table.vue",
+        "loc": 178,
+        "kind": "UTable",
+        "sortable": "client",
+        "paginated": "server",
+        "page_size": "prop-driven (pageSize prop from parent)",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": false,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": "not measured",
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "number/rank-badge",
+          "text+avatar/link",
+          "text/link",
+          "money",
+          "money",
+          "percent"
+        ],
+        "server_api": "server/api/leaderboard.get.ts (params: page, limit; getPaginationParams helper, default limit 10, max 100)",
+        "tests": [
+          "tests/unit/components/leaderboard/",
+          "e2e/specs/leaderboard/leaderboard.spec.ts"
+        ],
+        "consumers": 1,
+        "notes": "columns declare enableSorting:true but no v-model:sorting is bound, so UTable manages sort state internally (client-side) even though pagination is server-side -- a split sort/paginate model"
+      },
+      {
+        "path": "app/components/market/MoverTable.vue",
+        "loc": 179,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "hidden-columns",
+        "empty_state": false,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "number",
+          "symbol/link+logo",
+          "text",
+          "money(live)",
+          "percent",
+          "number/money",
+          "sparkline"
+        ],
+        "server_api": "server/api/market/movers.get.ts, market/crypto-movers.get.ts (params: not measured)",
+        "tests": ["tests/unit/components/market/MoverTable.test.ts"],
+        "consumers": 3,
+        "notes": "fetches per-symbol sparkline history client-side after mount, batched and debounced"
+      },
+      {
+        "path": "app/components/market/screener/ResultsTableDesktop.vue",
+        "loc": 156,
+        "kind": "raw-table",
+        "sortable": "server",
+        "paginated": "server",
+        "page_size": 10,
+        "searchable": "not in this file (owned by FilterPanel.vue)",
+        "row_link": true,
+        "mobile": "none (hidden below md breakpoint; mobile handled by sibling components)",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": "variable (user-configurable visibleColumns)",
+        "sticky_header": true,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["configurable: text, number, money, percent, sparkline, badge"],
+        "server_api": "server/api/market/screeners.get.ts (params: search, limit, offset, sort, order, exchange, marketCap, peRatio, sectors, priceMin, priceMax, changeMin, ...; zod-validated, limit max 500, offset-based)",
+        "tests": [
+          "tests/unit/components/market/screener/ (incl. ResultsTableSplit.test.ts)",
+          "tests/integration/screener-filters-hardening.test.ts",
+          "tests/unit/screener-helpers.test.ts",
+          "tests/unit/market-screeners.test.ts"
+        ],
+        "consumers": 1,
+        "notes": "the most feature-complete table in the app: sticky header, density modes (compact/normal), heat-map coloring, whole-row keyboard-accessible navigation (role=link, tabindex, Enter/Space handlers), skeleton+empty overlay states, per-row watchlist-toggle action"
+      },
+      {
+        "path": "app/components/market/screener/ResultsTableMobileTable.vue",
+        "loc": 76,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "server",
+        "page_size": 10,
+        "searchable": false,
+        "row_link": true,
+        "mobile": "horizontal-scroll",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 4,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["symbol/link+logo", "money", "percent", "money/marketcap"],
+        "server_api": "same as ResultsTableDesktop.vue",
+        "tests": ["tests/unit/components/market/screener/"],
+        "consumers": 1,
+        "notes": "one of two mobile strategies the screener offers (the other is card list below); user toggles between them via useScreenerView composable"
+      },
+      {
+        "path": "app/components/market/screener/ResultsTableMobileCards.vue",
+        "loc": 56,
+        "kind": "card-list-as-table",
+        "sortable": "none",
+        "paginated": "server",
+        "page_size": 10,
+        "searchable": false,
+        "row_link": true,
+        "mobile": "cards",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["symbol", "name", "price", "percent", "marketcap"],
+        "server_api": "same as ResultsTableDesktop.vue",
+        "tests": ["tests/unit/components/market/screener/"],
+        "consumers": 1,
+        "notes": "the other of the screener's two selectable mobile strategies"
+      },
+      {
+        "path": "app/components/portfolio/PositionTable.vue",
+        "loc": 434,
+        "kind": "raw-table",
+        "sortable": "client",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": "variable (user-configurable via USelectMenu column picker)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text/link+logo", "money", "number", "percent", "badge"],
+        "server_api": "server/api/me/positions.get.ts (params: page, limit; getPaginationParams helper) -- but this component itself only renders an already-fetched positions prop, no pagination inside it",
+        "tests": ["tests/unit/components/portfolio/PositionTable.test.ts"],
+        "consumers": 5,
+        "notes": "largest and most reused local table (5 consumers); exceeds the repo's own file-size-budget eslint rule hard cap (300 loc for components) and carries an eslint-disable for it; has an accessible aria-sort header and a user column-visibility picker not found elsewhere"
+      },
+      {
+        "path": "app/components/research/BigMoversTable.vue",
+        "loc": 146,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "number",
+          "symbol/link+logo",
+          "money",
+          "percent+badge",
+          "sparkline",
+          "number/money"
+        ],
+        "server_api": "server/api/market/big-movers.get.ts (no page/limit params found; returns a bounded set)",
+        "tests": [
+          "tests/unit/components/research/BigMoversTable.test.ts",
+          "tests/unit/big-movers-route.test.ts"
+        ],
+        "consumers": 1,
+        "notes": "empty state is a custom inline block, NOT the shared CommonEmptyState used by most other tables"
+      },
+      {
+        "path": "app/components/watchlist/WatchlistTable.vue",
+        "loc": 364,
+        "kind": "UTable",
+        "sortable": "client (select-dropdown sortBy, not column-header click)",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 8,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "symbol",
+          "money",
+          "percent",
+          "money/marketcap",
+          "number/volume",
+          "badge/alerts",
+          "text/notes(inline-editable)",
+          "actions"
+        ],
+        "server_api": "server/api/watchlist/index.get.ts (no page/limit params found; returns full list)",
+        "tests": [
+          "tests/integration/watchlist-hardening.test.ts",
+          "tests/unit/me-watchlist-endpoints.test.ts"
+        ],
+        "consumers": 1,
+        "notes": "exceeds the file-size-budget hard cap (eslint-disabled); only table with inline cell editing (notes field) and a filter+sort pair driven by dropdown menus instead of column headers"
+      },
+      {
+        "path": "app/components/admin/users/AdminUsersListPanel.vue",
+        "loc": 181,
+        "kind": "raw-table",
+        "sortable": "not measured",
+        "paginated": "server",
+        "page_size": "not measured",
+        "searchable": true,
+        "row_link": "not measured",
+        "mobile": "hidden-columns",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": "not measured",
+        "url_state": "not measured",
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": "not measured",
+        "server_api": "not measured",
+        "tests": [],
+        "consumers": 1,
+        "notes": "found via broader grep, outside the brief's named list; uses hidden sm:/md:table-cell responsive columns rather than horizontal-scroll, a third distinct mobile strategy"
+      },
+      {
+        "path": "app/components/home/floor/MarketPulse.vue",
+        "loc": 149,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": true,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 7,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": [
+          "number/rank",
+          "symbol/link+logo",
+          "money",
+          "percent/badge",
+          "sparkline",
+          "number+bar/volume",
+          "link/actions"
+        ],
+        "server_api": "not measured (ladder data passed in as a prop; home page data source not traced)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "found via broader grep; homepage 'Floor' widget with a 4-way client-side tab filter (movers/volume/losers/trending) above the table"
+      },
+      {
+        "path": "app/pages/admin/scheduled-games/index.vue",
+        "loc": 171,
+        "kind": "raw-table",
+        "sortable": "not measured",
+        "paginated": "not measured",
+        "page_size": "not measured",
+        "searchable": "not measured",
+        "row_link": "not measured",
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": "not measured",
+        "column_count": "not measured (approx. 8 by header count)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": "not measured",
+        "server_api": "not measured",
+        "tests": ["e2e/specs/admin/scheduled-games.spec.ts"],
+        "consumers": 1,
+        "notes": "found via broader grep; page-level table, not extracted into a component"
+      },
+      {
+        "path": "app/components/admin/scheduler/AdminSchedulerRunsCard.vue",
+        "loc": 118,
+        "kind": "UTable",
+        "sortable": "not measured",
+        "paginated": "server",
+        "page_size": "not measured",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": "not measured",
+        "column_count": "not measured (approx. 4 by header count)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": "not measured",
+        "server_api": "not measured",
+        "tests": [],
+        "consumers": 1,
+        "notes": "found via broader grep"
+      },
+      {
+        "path": "app/components/groups/MembersCard.vue",
+        "loc": 145,
+        "kind": "UTable",
+        "sortable": "not measured",
+        "paginated": "server",
+        "page_size": "not measured",
+        "searchable": "not measured",
+        "row_link": false,
+        "mobile": "hidden-columns",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": "not measured",
+        "column_count": "not measured (approx. 3+ by header count)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": "not measured",
+        "server_api": "server/api/groups (members endpoint; exact path not measured)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "found via broader grep; subject of closed defects stonx#219/#256 (member search only filtered the current page, fixed by searching before paginating)"
+      },
+      {
+        "path": "app/components/market/StockList.vue",
+        "loc": 252,
+        "kind": "UTable (layout='table', also supports 'list'/'grid')",
+        "sortable": "not measured",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": "not measured",
+        "mobile": "not measured (layout is prop-selected, not breakpoint-selected)",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": false,
+        "url_state": false,
+        "column_count": "4 default, configurable via columns prop",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["symbol", "name", "price", "percent (generic via TS generic <T>)"],
+        "server_api": "none (presentational; items passed as a prop)",
+        "tests": [],
+        "consumers": 4,
+        "notes": "found via broader grep; closest existing in-app precedent to a shared CollectionTable -- already generic, configurable, with loading/empty states built in"
+      },
+      {
+        "path": "app/pages/admin/auto-games.vue",
+        "loc": 131,
+        "kind": "UTable",
+        "sortable": "not measured",
+        "paginated": "none",
+        "page_size": "none",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": "not measured",
+        "error_state": false,
+        "url_state": false,
+        "column_count": "not measured (approx. 7 by header count)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": "not measured",
+        "server_api": "server/api/admin/games (filtered client-side for templateId !== null)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "found via broader grep; page-level table"
+      }
+    ],
+    "pagination_control": [
+      {
+        "path": "app/components/market/screener/Pagination.vue",
+        "loc": 216,
+        "consumers": 1,
+        "notes": "fully hand-rolled; distinct mobile (popover page-size picker) and desktop (ellipsis page range + inline page-size buttons) layouts; only pagination UI in the app not built on Nuxt UI's UPagination"
+      },
+      {
+        "path": "(direct Nuxt UI usage, no local wrapper -- <UPagination> imported and used inline)",
+        "loc": 0,
+        "consumers": 12,
+        "notes": "dominant pattern: AdminSchedulerRunsCard, AdminStatsUsersTable, AdminUsersListPanel, GameBrowseResultsGrid, GameLeaderboard, MembersCard, LeaderboardTable, AchievementsSection/AchievementsContent, AdminGamesContent, me/stocks.vue, notifications.vue all call <UPagination> directly with no shared wrapper component"
+      }
+    ],
+    "sort_control": [
+      {
+        "path": "app/components/common/SortableTableHeader.vue",
+        "loc": 43,
+        "consumers": 1,
+        "notes": "the only extracted sort-header component in the repo (wraps TanStack column.getIsSorted()/toggleSorting()); used by exactly one table (AdminStatsUsersTable) out of ~6 tables with user-facing sort"
+      },
+      {
+        "path": "app/components/market/screener/ResultsTableDesktop.vue (inline, not extracted)",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "hand-rolled sort button + icon for a raw <table>, functionally parallel to SortableTableHeader but not sharing code with it"
+      },
+      {
+        "path": "app/components/portfolio/PositionTable.vue (inline, not extracted)",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "third independent hand-rolled sort-button implementation (toggleSort/getSortIcon/getAriaSort functions), the only one with aria-sort accessibility wiring"
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "app/components/market/screener/FilterPanel.vue",
+        "loc": 366,
+        "consumers": 1,
+        "notes": "largest filter panel in the app"
+      },
+      { "path": "app/components/game/GameFilters.vue", "loc": 145, "consumers": 1, "notes": "" },
+      {
+        "path": "app/components/admin/stats/AdminStatsUsersFilterBar.vue",
+        "loc": 39,
+        "consumers": 1,
+        "notes": ""
+      },
+      {
+        "path": "app/components/game/trades/FiltersCard.vue",
+        "loc": 56,
+        "consumers": 1,
+        "notes": "4 independent filter-bar implementations total, zero code sharing"
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "(direct Nuxt UI usage: <UBadge>)",
+        "loc": 0,
+        "consumers": 86,
+        "notes": "no shared status-badge component; UBadge used directly everywhere"
+      },
+      {
+        "path": "app/utils/getGameStatusColor.ts",
+        "loc": 18,
+        "consumers": "not measured",
+        "notes": "color-mapping util feeding UBadge :color, one of several per-domain color helpers"
+      },
+      {
+        "path": "app/utils/getTradeSideColor.ts",
+        "loc": 13,
+        "consumers": "not measured",
+        "notes": "same pattern for buy/sell side badges"
+      }
+    ],
+    "freshness_indicator": [
+      {
+        "path": "app/components/market/LiveAssetCard.vue, app/components/market/LiveStockCard.vue, app/components/home/floor/LiveNow.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "8 files reference stale/freshness/lastUpdated concepts but there is no dedicated freshness-classification component like narduk-ui's NsFreshnessChip; live data recency is implied by websocket connection state ('Live' labels), not an explicit staleness band"
+      }
+    ],
+    "empty_state": [
+      {
+        "path": "app/components/common/CommonEmptyState.vue",
+        "loc": 109,
+        "consumers": 46,
+        "notes": "see local_reimplementations; dominant pattern"
+      },
+      {
+        "path": "app/components/research/BigMoversTable.vue (inline, not using CommonEmptyState)",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "one of a handful of tables that hand-roll their own empty markup instead of reusing CommonEmptyState"
+      }
+    ],
+    "loading_skeleton": [
+      {
+        "path": "(direct Nuxt UI usage: <USkeleton>)",
+        "loc": 0,
+        "consumers": "not measured (widespread)",
+        "notes": "used directly throughout; no shared skeleton-row/skeleton-card wrapper"
+      },
+      {
+        "path": "app/components/achievements/LoadingSkeleton.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "one of two same-named but unrelated local wrappers (see local_reimplementations)"
+      },
+      {
+        "path": "app/components/invite/LoadingSkeleton.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "the other same-named wrapper, different feature folder"
+      }
+    ],
+    "error_state": [
+      {
+        "path": "app/components/invite/ErrorCard.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "only dedicated error-display component found by name; most tables surveyed have error_state=false or not measured, i.e. no explicit error UI distinct from empty/loading"
+      }
+    ],
+    "confirm_modal": [
+      {
+        "path": "app/components/common/ConfirmModal.vue",
+        "loc": 110,
+        "consumers": 6,
+        "notes": "generic, duplicates narduk-core AppConfirmModal"
+      },
+      {
+        "path": "app/components/game/GameRemoveBotConfirmModal.vue, app/components/game/GameEndGameConfirmModal.vue, app/components/game/GamePortfolioLiquidateSingleModal.vue, app/components/game/GamePortfolioLiquidateAllModal.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "4+ additional one-off confirm modals that do not use CommonConfirmModal"
+      }
+    ],
+    "toast_notify": [
+      {
+        "path": "(direct Nuxt UI usage: useToast())",
+        "loc": 0,
+        "consumers": 30,
+        "notes": "no shared toast wrapper; Nuxt UI's built-in composable called directly in 30 files"
+      }
+    ],
+    "page_header": [
+      {
+        "path": "app/components/AppPageHeader.vue",
+        "loc": 80,
+        "consumers": 19,
+        "notes": "app-wide generic page header, no narduk-libs equivalent shipped"
+      }
+    ],
+    "section_header": [
+      {
+        "path": "app/components/market/SectionHeader.vue",
+        "loc": 39,
+        "consumers": 6,
+        "notes": "market-scoped only, not app-wide"
+      }
+    ],
+    "kpi_stat_tile": [
+      { "path": "app/components/common/MetricCard.vue", "loc": 84, "consumers": 19, "notes": "" },
+      { "path": "app/components/common/Metric.vue", "loc": 97, "consumers": 10, "notes": "" },
+      {
+        "path": "app/components/common/MetricGrid.vue",
+        "loc": 19,
+        "consumers": 17,
+        "notes": "3-component family, 46 combined consumer references; closest in-repo analog to narduk-ui's NsReadoutTile but stonx has no narduk-ui dependency"
+      }
+    ],
+    "card_list": [
+      { "path": "app/components/common/ListCard.vue", "loc": 231, "consumers": 4, "notes": "" },
+      {
+        "path": "app/components/groups/CardGrid.vue, app/components/friends/CardGrid.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "two more same-named CardGrid components in different feature folders (naming-collision pattern repeats)"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "app/components/admin/ScheduledGameBasicFields.vue, ScheduledGameScheduleFields.vue, ScheduledGameStatusFields.vue, ScheduledGameRulesFields.vue, ScheduledGameBotFields.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "5-file *Fields.vue decomposition for one admin form"
+      },
+      {
+        "path": "app/components/game/GameFormBasicInfoFields.vue, GameFormTradingRulesFields.vue, GameFormAssetRestrictionsFields.vue, GameFormTimingFields.vue, GameFormSettingsFields.vue, GameFormPositionRulesFields.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "6-file *Fields.vue decomposition for the game-creation form; same naming convention repeated independently, no shared form-field-set component"
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "app/utils/formatters.ts",
+        "loc": 690,
+        "consumers": 134,
+        "notes": "formatDate, formatDateShort, formatDateTime, formatTime, formatTimeAgo, formatGameDate(Short), formatStartsIn among 21 exported formatters in one centralized, heavily-adopted util file"
+      }
+    ],
+    "number_currency_format": [
+      {
+        "path": "app/utils/formatters.ts",
+        "loc": 690,
+        "consumers": 134,
+        "notes": "same file: formatPrice, formatMoney, formatCompact, formatCompactPrice, formatPercent, formatChange, formatVolume, formatMarketCap, formatQuantity -- already centralized, a strong precedent/target for a shared formatting util"
+      }
+    ],
+    "copy_button": [
+      {
+        "path": "app/components/trade/PickShareButton.vue",
+        "loc": 66,
+        "consumers": "not measured",
+        "notes": "one of 4 files using navigator.clipboard/useClipboard; no dedicated CopyButton component (narduk-core ships AppCopyButton, unused here since narduk-core is not a dependency)"
+      }
+    ],
+    "share_social": [
+      {
+        "path": "app/components/trade/PickShareButton.vue",
+        "loc": 66,
+        "consumers": "not measured",
+        "notes": "duplicates narduk-core AppShareButtons conceptually"
+      }
+    ],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "app/components/common/CommonPageShell.vue",
+        "loc": 115,
+        "consumers": 23,
+        "notes": "see local_reimplementations"
+      },
+      {
+        "path": "app/components/AppHeader.vue",
+        "loc": 301,
+        "consumers": 1,
+        "notes": "used from the default layout"
+      },
+      { "path": "app/components/app/AppShell.vue", "loc": 117, "consumers": 3, "notes": "" },
+      { "path": "app/components/app/AppFooter.vue", "loc": 47, "consumers": 2, "notes": "" },
+      {
+        "path": "app/components/AdminSidebar.vue",
+        "loc": 219,
+        "consumers": 1,
+        "notes": "admin-only nav shell"
+      }
+    ],
+    "tabs": [
+      {
+        "path": "(direct Nuxt UI usage: <UTabs>)",
+        "loc": 0,
+        "consumers": 5,
+        "notes": "no shared wrapper; narduk-core ships AppTabs but is unused (not a dependency)"
+      }
+    ],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "app/middleware/ (dir; definePageMeta auth gating)",
+        "loc": "not measured",
+        "consumers": 18,
+        "notes": "route-level middleware gating, not a visual UI component pattern; narduk-core ships no direct equivalent either (auth pages/middleware live in narduk-auth, also not a dependency here)"
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [
+      {
+        "path": "app/components/chart/StockChart.vue",
+        "loc": 114,
+        "consumers": "not measured",
+        "notes": "wraps NardukCandleChart + NardukLineChart (narduk-charts IS a real dependency here, unlike narduk-core/auth/ui)"
+      },
+      {
+        "path": "app/components/chart/PortfolioAllocationChart.vue",
+        "loc": 91,
+        "consumers": "not measured",
+        "notes": "wraps NardukPieChart"
+      },
+      {
+        "path": "app/components/market/TrendSparkline.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": "wraps NardukLineChart for sparklines"
+      }
+    ],
+    "timeline_feed": [
+      {
+        "path": "app/components/market/CalendarTimeline.vue, app/components/market/EarningsTimeline.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": ""
+      },
+      {
+        "path": "app/components/admin/websocket/WebsocketLiveFeedList.vue",
+        "loc": 0,
+        "consumers": "not measured",
+        "notes": ""
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [
+      {
+        "path": "app/composables/useGlobalKeyboardShortcuts.ts",
+        "loc": 91,
+        "consumers": "not measured (wired from app.vue)",
+        "notes": "real global shortcut system (e.g. stock search modal); 3 files reference it/shortcut keydown handling"
+      }
+    ],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "eslint-plugins/rules/file-size-budget.mjs",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "not a UI pattern but directly shapes table architecture: components target 180 loc / hard cap 300; PositionTable.vue (434) and WatchlistTable.vue (364) both need eslint-disable to exceed it, and the screener's ResultsTable was split into 9 small files partly to stay under budget -- a shared table component would remove this pressure from every consumer"
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "server/api/admin/games/index.get.ts",
+      "params": ["page", "limit", "search", "status"],
+      "response_shape": "{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/me/positions.get.ts",
+      "params": ["page", "limit"],
+      "response_shape": "{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/leaderboard.get.ts",
+      "params": ["page", "limit"],
+      "response_shape": "{ data (via same helper), pagination: { page, limit, ... } } -- default limit 10, max 100",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/admin/stats-detailed.get.ts",
+      "params": ["page", "limit", "filterType", "sortBy", "sortOrder"],
+      "response_shape": "{ userStats: [...], pagination: { page, limit, total, totalPages } } -- zod-validated, custom shape (does not use the shared getPaginationParams/buildPaginatedResponse helper)",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/market/screeners.get.ts",
+      "params": [
+        "search",
+        "limit",
+        "offset",
+        "sort",
+        "order",
+        "exchange",
+        "marketCap",
+        "peRatio",
+        "sectors",
+        "priceMin",
+        "priceMax",
+        "changeMin"
+      ],
+      "response_shape": "{ results, count, totalPages, page, status } -- zod-validated, offset-based, a third distinct shape",
+      "limit_enforced": "true, but max 500 (vs. 100 elsewhere) -- notably higher ceiling than every other list route measured"
+    },
+    {
+      "route": "server/api/watchlist/index.get.ts",
+      "params": [],
+      "response_shape": "not measured (no page/limit query parsing found; appears to return the full list)",
+      "limit_enforced": false
+    },
+    {
+      "route": "server/api/market/big-movers.get.ts",
+      "params": [],
+      "response_shape": "not measured (no page/limit query parsing found; appears to return a bounded feed)",
+      "limit_enforced": false
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/stonx#208",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "v2 screeners accept unbounded limit and unchecked sort columns",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#251",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix: clamp pagination limits",
+      "pattern": "pagination_control"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#218",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Groups list is unpaginated and loads members/tags for every group",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#266",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix: paginate public group discovery",
+      "pattern": "pagination_control"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#219",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Group member search filters only the current page",
+      "pattern": "filter_search_bar"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#256",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix: search group members before pagination",
+      "pattern": "filter_search_bar"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#5",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Fix leaderboard performance with database-level pagination",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#39",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Fix: UTable custom headers should use slots instead of h() function",
+      "pattern": "sort_control"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#313",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Replace remaining render-function UTable headers with slots",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#188",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Notifications pagination accepts negative limit/offset",
+      "pattern": "pagination_control"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#272",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix: bound grouped game trades fetch",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/stonx#78",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Mobile Responsiveness Overhaul - No Horizontal Scrolling",
+      "pattern": "table"
+    }
+  ],
+  "tests_covering_patterns": [
+    "tests/unit/components/research/BigMoversTable.test.ts",
+    "tests/unit/components/portfolio/PositionTable.test.ts",
+    "tests/unit/components/market/MoverTable.test.ts",
+    "tests/unit/components/market/screener/ResultsTableSplit.test.ts",
+    "tests/unit/components/leaderboard/",
+    "tests/unit/screener-helpers.test.ts",
+    "tests/unit/market-screeners.test.ts",
+    "tests/integration/screener-filters-hardening.test.ts",
+    "tests/integration/watchlist-hardening.test.ts",
+    "tests/integration/game-trades-pagination.test.ts",
+    "tests/unit/me-watchlist-endpoints.test.ts",
+    "tests/unit/big-movers-route.test.ts",
+    "e2e/specs/leaderboard/leaderboard.spec.ts",
+    "e2e/specs/admin/scheduled-games.spec.ts",
+    "e2e/specs/research/research.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable",
+      "path": "(would replace: 18 table surfaces listed above)",
+      "loc": 3900,
+      "consumers": 18,
+      "why": "18 distinct table surfaces found (brief named 10; broader grep found 8 more), split roughly evenly between raw <table> and Nuxt UI <UTable>, with at least 3 different mobile strategies (horizontal-scroll, hidden-columns, cards), 3 independent hand-rolled sort-header implementations, 3 different server pagination response shapes, and 2 closed defects (stonx#208, #218/#219) caused directly by ad hoc pagination/search wiring",
+      "loc_saved_estimate": 1500
+    },
+    {
+      "pattern": "empty_state",
+      "name": "AppEmptyState convergence",
+      "path": "app/components/common/CommonEmptyState.vue",
+      "loc": 109,
+      "consumers": 46,
+      "why": "already a single, heavily-adopted (46 consumers) local component nearly identical in shape to narduk-core's AppEmptyState -- the lowest-risk, highest-reuse win in the repo since stonx would only need to swap the import, not rewrite call sites",
+      "loc_saved_estimate": 109
+    },
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "MetricCard/Metric/MetricGrid family",
+      "path": "app/components/common/MetricCard.vue, Metric.vue, MetricGrid.vue",
+      "loc": 200,
+      "consumers": 46,
+      "why": "46 combined consumer references across 3 small files is the second-highest reuse count measured in the repo after CommonEmptyState, and directly matches the KPI/stat-tile gap narduk-ui's NsReadoutTile targets",
+      "loc_saved_estimate": 200
+    },
+    {
+      "pattern": "layout_shell_nav",
+      "name": "PageShell / AppHeader / AppFooter",
+      "path": "app/components/common/CommonPageShell.vue, app/components/AppHeader.vue, app/components/app/AppShell.vue, app/components/app/AppFooter.vue",
+      "loc": 580,
+      "consumers": 23,
+      "why": "CommonPageShell alone has 23 consumers (the single highest count found); combined with AppHeader/AppShell/AppFooter this is app-shell infrastructure stonx built from scratch with naming that mirrors narduk-core's Layer* components almost exactly, despite having zero narduk-core dependency",
+      "loc_saved_estimate": 300
+    },
+    {
+      "pattern": "pagination_control",
+      "name": "PaginationBar (with page-size picker)",
+      "path": "app/components/market/screener/Pagination.vue",
+      "loc": 216,
+      "consumers": 1,
+      "why": "only 1 direct consumer today, but it is the only pagination UI in the app with a page-size selector and distinct mobile/desktop layouts -- the 12 sites using bare UPagination lack page-size control entirely, so a shared component modeled on this one would be a net feature upgrade, not just a dedupe",
+      "loc_saved_estimate": 200
+    }
+  ],
+  "notes": "stonx has ZERO dependency on narduk-core, narduk-auth, narduk-ui, or narduk-mapkit-nuxt (confirmed via package.json and nuxt.config.ts); it only consumes narduk-charts (3 real usages: NardukCandleChart, NardukLineChart x2, NardukPieChart), narduk-analytics and narduk-seo (registered as Nuxt modules in nuxt.config.ts, no direct .vue component usage found). This means every layout-shell, empty-state, confirm-modal, page-header, and KPI-tile component in narduk-core was independently reinvented here under near-identical names (AppHeader/AppShell/AppFooter vs LayerAppHeader/LayerAppShell/LayerAppFooter; CommonEmptyState vs AppEmptyState; CommonConfirmModal vs AppConfirmModal) with no code sharing. Surprise: PR stonx#78 'Mobile Responsiveness Overhaul - No Horizontal Scrolling' merged, yet 8+ of the 18 table surveyed surfaces still use overflow-x-auto/min-w-[...] horizontal-scroll as their mobile strategy today -- the fix either didn't cover tables or the pattern crept back in later feature work. The repo's own file-size-budget eslint rule (180 target / 300 hard cap for components) is a direct, measurable pressure toward extracting a shared table: PositionTable.vue (434 loc) and WatchlistTable.vue (364 loc) both need an eslint-disable to exist as single files today."
+}

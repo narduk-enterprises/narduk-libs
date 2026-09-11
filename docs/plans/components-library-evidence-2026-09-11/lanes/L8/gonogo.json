@@ -1,0 +1,245 @@
+{
+  "lane": "L8",
+  "repo": "narduk-enterprises/gonogo",
+  "clone": "ok",
+  "surveyed_sha": "d73b8acf704153ed45d0a51c528019f12ded843d",
+  "default_branch": "main",
+  "app_dirs": [". (Nuxt shell at root) + src/client (the real, non-Vue UI)"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "not measured (no tailwindcss found; src/client/styles.css is hand-written CSS)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-analytics": "1.19.33",
+      "narduk-seo": "2.0.10",
+      "narduk-mapkit-nuxt": "2.0.4",
+      "narduk-mapkit": "2.0.2",
+      "narduk-logging": "0.1.0"
+    },
+    "legacy_template_layer": false,
+    "notes": "IMPORTANT ARCHITECTURE FINDING (this is what the brief flagged: 'find where its .vue components actually live'): they mostly don't. Only 2 .vue files exist in the whole repo (app.vue = <UApp><NuxtPage/></UApp>, pages/[...slug].vue = a catch-all rendering <div id=\"app\" />). The real UI is a pre-existing vanilla-DOM/TypeScript client under src/client/ (44 .ts files, 13101 LOC total) that self-mounts via plugins/gonogo-shell.client.ts (onNuxtReady -> dynamic import of src/client/main -> client.renderCurrentLocation(), hooked to the Nuxt router for navigation only). narduk-core/analytics/seo/mapkit-nuxt ARE real, current-version narduk-libs dependencies, registered as Nuxt modules -- but they are consumed for infrastructure (SEO meta, sitemap, mapkit token route, analytics loader) not for their Vue components (AppBreadcrumbs, AdminAnalyticsDashboard, etc. are never referenced -- there is no Vue component tree to place them in)."
+  },
+  "counts": {
+    "vue_files_total": 2,
+    "components": 0,
+    "pages": 1,
+    "layouts": 0,
+    "composables": 0,
+    "commands": {
+      "vue_files_total": "find . -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' -not -path '*/dist/*' | wc -l",
+      "legacy_client_ts_files": "find src/client -name '*.ts' | wc -l  => 44",
+      "legacy_client_loc": "find src/client -name '*.ts' -exec cat {} \\; | wc -l  => 13101"
+    }
+  },
+  "libs_components_used": {},
+  "local_reimplementations": [
+    {
+      "name": "Calendar week-span grid (calendar/view.ts)",
+      "path": "src/client/app/pages/calendar/view.ts",
+      "loc": 243,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Pure model-in/HTML-string-out renderer. Deliberately uses a real <table> for the weekday grid so screen readers announce the weekday column (module doc comment, lines 1-14); a per-day cell is a <button aria-expanded> that opens a detail panel, not a link."
+    },
+    {
+      "name": "Day gate-breakdown table (day/view.ts)",
+      "path": "src/client/app/pages/day/view.ts",
+      "loc": 418,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "A second real <table> (lines 140-153: thead with scope=\"col\" Gate/Limit/Value/Result, tbody rows with scope=\"row\"), plus a <ul class=\"gg-day__checklist\"> source-check list. Small fixed row count (gates), no sort/paginate/search."
+    },
+    {
+      "name": "shell.ts (app chrome)",
+      "path": "src/client/app/shell.ts",
+      "loc": 301,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Hand-rolled app shell/header, not narduk-core's LayerAppShell/LayerAppHeader despite narduk-core being an actual dependency here -- the Vue-based shell components are simply not used by this non-Vue UI."
+    },
+    {
+      "name": "sidenav.ts",
+      "path": "src/client/app/sidenav.ts",
+      "loc": 276,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "Hand-rolled side navigation."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "src/client/app/pages/calendar/view.ts",
+        "loc": 243,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not measured",
+        "searchable": false,
+        "row_link": true,
+        "mobile": "not measured",
+        "empty_state": "not measured",
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": true,
+        "column_count": 7,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["date", "badge", "actions"],
+        "server_api": "not measured",
+        "tests": ["tests/app/calendar.test.ts"],
+        "consumers": 1,
+        "notes": "NON-VUE: hand-built HTML-string table via a TS renderer (escapeHtml-escaped), not a .vue SFC. Reported here because it is a genuine hand-rolled table pattern the brief asked to find regardless of framework."
+      },
+      {
+        "path": "src/client/app/pages/day/view.ts",
+        "loc": 418,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": "not measured",
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": "not measured",
+        "loading_state": "not measured",
+        "error_state": "not measured",
+        "url_state": false,
+        "column_count": 4,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "number", "badge"],
+        "server_api": "not measured",
+        "tests": ["tests/app/day.test.ts"],
+        "consumers": 1,
+        "notes": "NON-VUE, see above. Accessible scope=\"row\"/scope=\"col\" table for a per-day safety-gate breakdown."
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "src/client/app/pages/calendar/view.ts",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "dot(tone: StatusTone) helper renders a <span class=\"gg-dot gg-dot--{tone}\">; a verdict/tone chip, non-Vue."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [],
+    "detail_list": [
+      {
+        "path": "src/client/app/pages/day/view.ts",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "<ul class=\"gg-day__checklist\"> source-check list, non-Vue."
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "src/client/app/shell.ts",
+        "loc": 301,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      },
+      {
+        "path": "src/client/app/sidenav.ts",
+        "loc": 276,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "tabs": [
+      {
+        "path": "src/client/app/pages/calendar/view.ts",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "boatTabs() renders a small tab strip, non-Vue."
+      }
+    ],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "src/client/map",
+        "loc": "not measured (multi-file: engine.ts, page.ts, grid.ts, etc.)",
+        "consumers": "not measured",
+        "notes": "Custom map module; app DOES depend on narduk-mapkit-nuxt (2.0.4, a real current package) but this directory is the legacy hand-rolled map, not confirmed to route through AppMapKit -- not measured further given the read-only/no-install budget."
+      }
+    ],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "src/client",
+        "loc": 13101,
+        "consumers": 1,
+        "notes": "The entire non-Vue legacy UI layer, 44 .ts files. See notes/stack.notes for the architecture finding."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/gonogo#24",
+      "kind": "pr",
+      "state": "CLOSED",
+      "summary": "Wave 3 polish: calendar mobile overflow fix; honest score display on missing sea-state",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/gonogo#32",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Rebuild the Calendar screen on a week-aligned span grid",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/gonogo#44",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Map rail is structurally over-subscribed: 620px of fixed content against a 660px cap",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/gonogo#41",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "fix(map): stop the rail crushing route and detail cards",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/gonogo#31",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Serve observed history so the calendar's elapsed days can show what actually happened",
+      "pattern": "table"
+    }
+  ],
+  "tests_covering_patterns": ["tests/app/calendar.test.ts", "tests/app/day.test.ts"],
+  "top_extraction_candidates": [],
+  "notes": "gonogo is a genuine architecture outlier in this lane: it has real, current narduk-libs dependencies (narduk-core 1.23.2, narduk-analytics, narduk-seo, narduk-mapkit-nuxt) wired as Nuxt modules, but its entire rendered UI is a pre-existing 13.1k-LOC vanilla-DOM/TypeScript client (src/client/, 44 files) that Nuxt only hosts and routes for -- zero Vue component tree exists for narduk-libs' Vue components to plug into. Its two hand-rolled 'tables' (calendar week grid, day gate-breakdown) are real semantic <table> elements with better accessibility (scope attributes, aria-expanded) than most Vue-based 'raw-table'/'grid-div' patterns seen elsewhere in this survey, but a Vue-based shared table component cannot be dropped in without either a Vue rewrite of these two screens or a non-Vue-consumable version of the shared table. No top_extraction_candidates are listed because nothing here is Vue-portable as-is; flag for the orchestrator as a migration-prerequisite case rather than a component-swap case."
+}

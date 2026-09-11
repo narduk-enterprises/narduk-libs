@@ -1,0 +1,468 @@
+{
+  "lane": "L2",
+  "repo": "narduk-enterprises/bluebonnet-status-online",
+  "clone": "ok",
+  "surveyed_sha": "638103274d278ad51532400d6e031ba8425ab36b",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "transitive (no direct @nuxt/ui dep; UTable/UCard/UBadge/UAlert/UButton/UBreadcrumb used throughout, likely via a legacy layer)",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none (not a direct dep; UTable brings its own)",
+    "narduk_libs": {
+      "legacy_template_layer_analytics": "^1.18.26",
+      "legacy_template_layer_auth": "NOT a dependency (see notes -- app hand-rolled its own Auth* components instead)",
+      "legacy_template_layer_core": "^1.18.26",
+      "legacy_template_layer_maps": "^1.18.26",
+      "legacy_template_layer_seo": "^1.18.26",
+      "legacy_template_layer_testing": "^1.18.24",
+      "legacy_template_layer_uploads": "^1.18.26"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 36,
+    "components": 28,
+    "pages": 7,
+    "layouts": 0,
+    "composables": 14,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 3,
+    "AppTabs": 2
+  },
+  "local_reimplementations": [
+    {
+      "name": "AppBreadcrumb",
+      "path": "apps/web/app/components/app/AppBreadcrumb.vue",
+      "loc": 30,
+      "consumers": 4,
+      "duplicates_lib": "AppBreadcrumbs",
+      "notes": "Clean wrapper over Nuxt UI's UBreadcrumb that auto-prepends a 'Home' crumb -- functionally the same job as narduk-core's AppBreadcrumbs, but this app is on the legacy template layer (no narduk-core dependency), so it cannot consume the shared one yet. Straightforward migration candidate once/if this app moves off the legacy layer."
+    },
+    {
+      "name": "Auth* component family (AuthLoginCard, AuthRegisterCard, AuthExchangePanel, AuthLoginFormSection, AuthRegisterFormSection)",
+      "path": "apps/web/app/components/auth/",
+      "loc": 637,
+      "consumers": 0,
+      "duplicates_lib": "AuthLoginCard | AuthRegisterCard | AuthExchangePanel (all three are literal name-for-name matches with narduk-auth's shipped components)",
+      "notes": "DEAD CODE: grep -rn for each of these five component names across apps/web/app returns zero hits anywhere outside their own files (and AuthLoginFormSection/AuthRegisterFormSection are only referenced from their own dead parent cards). There is no pages/login.vue or pages/register.vue in this app at all (pages are: index, about, admin/index, admin/observations/[id], bluebonnets/index, bluebonnets/[city]/index, bluebonnets/[city]/map). knip.json treats 'app/components/**/*.vue' as an entry point (Nuxt auto-import convention), so knip's own unused-file detection will NOT flag this -- it is invisible to the repo's own tooling. Names match narduk-auth's AuthLoginCard/AuthRegisterCard/AuthExchangePanel exactly, strongly suggesting this app pre-dates narduk-auth's extraction and simply never got auth wired up or migrated. Do not count this toward 'apps actively hand-roll auth N times' without this caveat."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 305,
+        "kind": "UTable",
+        "sortable": "column def declares sortable:true on 'id' (line 138) but the <UTable> element has no v-model:sorting and there is no custom sort-header handler -- the flag appears inert",
+        "paginated": "server",
+        "page_size": 50,
+        "searchable": true,
+        "row_link": true,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": true,
+        "url_state": false,
+        "column_count": 8,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "date", "link", "actions"],
+        "server_api": "server/api/admin/observations.get.ts (params: limit [1-200, default 50], offset, search, latMin, latMax, lngMin, lngMax; fixed orderBy desc(observedAtMs), no user-controlled sort)",
+        "tests": [],
+        "consumers": 1
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminIngestHistory.vue",
+        "loc": 157,
+        "kind": "UTable",
+        "sortable": "column defs declare sortable:true on 'startedAt' and 'upserted' (lines 15, 18) but same as AdminObservations -- no v-model:sorting wired, appears inert",
+        "paginated": "none (server hardcodes .limit(50), no client paging, no offset param)",
+        "page_size": 50,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": true,
+        "loading_state": true,
+        "error_state": true,
+        "url_state": false,
+        "column_count": 10,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "date", "badge", "text"],
+        "server_api": "server/api/admin/ingest-history.get.ts (no query params at all; server hardcodes .limit(50))",
+        "tests": [],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 8,
+        "consumers": 1,
+        "notes": "Hand-rolled Previous/Next buttons (lines 220-247) computing offset math inline; no shared pagination component, no page-number list, no URL state."
+      }
+    ],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 10,
+        "consumers": 1,
+        "notes": "UInput search box bound to searchQuery + USelect page-size picker (25/50/100/200), lines 163-170."
+      },
+      {
+        "path": "apps/web/app/components/home/FilterBar.vue",
+        "loc": 68,
+        "consumers": 0,
+        "notes": "DEAD CODE: stage-filter button group + sort USelect (newest/oldest/stage); grep for 'FilterBar' finds no importer anywhere in the app."
+      },
+      {
+        "path": "apps/web/app/components/sightings/SightingList.vue",
+        "loc": 141,
+        "consumers": 1,
+        "notes": "Live: inline filter button row (All + per-stage counts) plus a sort USelect, lines 3-30."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/admin/AdminIngestHistory.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "UBadge colored via getStatusColor(status) in the #status-cell slot."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "Inline #empty slot div, 'No observations found'."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminIngestHistory.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "Inline #empty slot div, 'No ingest history yet'."
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "UAlert color=error bound to a composable error ref."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminIngestHistory.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "Same UAlert pattern."
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [
+      {
+        "path": "apps/web/app/components/admin/AdminPhotoRotation.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "useToast()/toast.add() for rotation-save feedback."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "useToast() for create/update/delete feedback."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminIngestHistory.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "useToast() for manual-ingest-trigger feedback."
+      }
+    ],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/sightings/SightingsPanel.vue",
+        "loc": 106,
+        "consumers": 1,
+        "notes": "Public-facing card list of bloom sightings."
+      },
+      {
+        "path": "apps/web/app/components/sightings/SightingCard.vue",
+        "loc": 57,
+        "consumers": 0,
+        "notes": "DEAD CODE: grep finds no importer; likely superseded within SightingList/SightingsPanel's own inline rendering."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/admin/AdminObservations.vue",
+        "loc": 40,
+        "consumers": 1,
+        "notes": "Create/edit modal form: 8 UInput fields, zod-validated observationSchema."
+      },
+      {
+        "path": "apps/web/app/components/submission/SubmitPhotoFormSection.vue",
+        "loc": 125,
+        "consumers": 1,
+        "notes": "Public photo-submission form."
+      },
+      {
+        "path": "apps/web/app/components/auth/AuthLoginFormSection.vue",
+        "loc": 81,
+        "consumers": 0,
+        "notes": "Dead code, see local_reimplementations."
+      },
+      {
+        "path": "apps/web/app/components/auth/AuthRegisterFormSection.vue",
+        "loc": 84,
+        "consumers": 0,
+        "notes": "Dead code, see local_reimplementations."
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/observationDates.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatObservedAt/observedAtToDateInputValue/parseObservedAtToMs used by AdminObservations."
+      },
+      {
+        "path": "apps/web/app/utils/dateFormatting.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatUtcDateTime used by AdminIngestHistory; a second, separate date-formatting module from observationDates.ts above -- two parallel date utils in one app."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [
+      {
+        "path": "apps/web/app/components/bloom/BloomPopover.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Grep hit for clipboard-related code; not independently read."
+      }
+    ],
+    "share_social": [],
+    "lightbox_media": [
+      {
+        "path": "apps/web/app/components/bloom/BloomLightbox.vue",
+        "loc": 146,
+        "consumers": "not measured",
+        "notes": "Custom lightbox, not narduk-core's AppLightbox."
+      },
+      {
+        "path": "apps/web/app/components/bloom/BloomLightboxContent.vue",
+        "loc": 102,
+        "consumers": "not measured",
+        "notes": "Lightbox content renderer, paired with BloomLightbox."
+      }
+    ],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/app/SiteFooter.vue",
+        "loc": 23,
+        "consumers": "not measured",
+        "notes": "Local footer; legacy layer has no LayerAppFooter equivalent available to this app."
+      }
+    ],
+    "tabs": [
+      {
+        "path": "apps/web/app/components/admin/AdminSubmissionQueue.vue",
+        "loc": 141,
+        "consumers": 1,
+        "notes": "Correctly adopts narduk-core's <AppTabs> (line 40) for status-filtered submission queues -- a positive adoption example."
+      }
+    ],
+    "breadcrumbs": [
+      {
+        "path": "apps/web/app/components/app/AppBreadcrumb.vue",
+        "loc": 30,
+        "consumers": 4,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/components/auth/AuthExchangePanel.vue",
+        "loc": 99,
+        "consumers": 0,
+        "notes": "Dead code, see local_reimplementations."
+      }
+    ],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/map/MapControls.vue",
+        "loc": 336,
+        "consumers": 1,
+        "notes": "Largest component in the app; map control chrome layered on top of narduk-mapkit-nuxt's AppMapKit (3 usages found app-wide)."
+      }
+    ],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [
+      {
+        "path": "apps/web/app/components/submission/SubmitPhotoFormSection.vue",
+        "loc": 125,
+        "consumers": 1,
+        "notes": "Photo file input for public bloom-photo submissions; narduk-libs ships no file_upload component today."
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/admin/AdminImageRepair.vue",
+        "loc": 149,
+        "consumers": "not measured",
+        "notes": "Admin image-repair tool with its own form fields."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminImageRepairR2Panel.vue",
+        "loc": 141,
+        "consumers": "not measured",
+        "notes": "R2-specific image repair panel, paired with AdminImageRepair."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminPhotoRotation.vue",
+        "loc": 429,
+        "consumers": "not measured",
+        "notes": "Largest single file in the app; photo-rotation admin tool."
+      },
+      {
+        "path": "apps/web/app/components/admin/AdminCityContent.vue",
+        "loc": 145,
+        "consumers": "not measured",
+        "notes": "City content editor."
+      },
+      {
+        "path": "apps/web/app/components/home/HomeMobilePanel.vue",
+        "loc": 275,
+        "consumers": "not measured",
+        "notes": "Mobile-specific home layout; see defect_history for related mobile PRs."
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "server/api/admin/observations.get.ts",
+      "params": ["limit", "offset", "search", "latMin", "latMax", "lngMin", "lngMax"],
+      "response_shape": "{ observations, total, limit, offset }",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/submissions/index.get.ts",
+      "params": ["limit"],
+      "response_shape": "{ submissions: [...] } (no total/offset -- bounded list, not true pagination)",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/cities/index.get.ts",
+      "params": [],
+      "response_shape": "array-like, server hardcodes .limit(200), no client control at all",
+      "limit_enforced": true
+    },
+    {
+      "route": "server/api/admin/ingest-history.get.ts",
+      "params": [],
+      "response_shape": "{ history: [...] }, server hardcodes .limit(50)",
+      "limit_enforced": true
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#63",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Stop city filters sticking on mobile",
+      "pattern": "filter_search_bar"
+    },
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#62",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Fix mobile control rage-click targets",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#61",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Fix rage-click map interactions",
+      "pattern": "map_wrapper"
+    },
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#64",
+      "kind": "pr",
+      "state": "MERGED",
+      "summary": "Fix city map dot rendering",
+      "pattern": "map_wrapper"
+    },
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#6",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "[repo-bug-finder] Manual observation creation uses Date.now() as primary key -- silent D1 collision risk",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/bluebonnet-status-online#2",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "[repo-bug-finder] Non-atomic delete+insert in city content generation can permanently erase published city pages",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/e2e/visual-audit.spec.ts",
+    "apps/web/tests/e2e/smoke.spec.ts",
+    "apps/web/tests/unit/server/observationTime.test.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable (admin server-paginated)",
+      "path": "apps/web/app/components/admin/AdminObservations.vue",
+      "loc": 305,
+      "consumers": 1,
+      "why": "The single richest, most complete table example across all four L2 repos: server search+offset/limit paging, zod-validated query params, row link, actions column, loading/error/empty states, edit modal. Its main gap -- a 'sortable: true' column flag with no wired v-model:sorting -- is exactly the kind of half-finished sort affordance a shared component should either fully support or omit.",
+      "loc_saved_estimate": 180
+    },
+    {
+      "pattern": "auth_gating_ui",
+      "name": "Delete or migrate dead Auth* component family",
+      "path": "apps/web/app/components/auth/",
+      "loc": 637,
+      "consumers": 0,
+      "why": "637 loc of fully dead code (0 consumers, no login/register pages exist) that exactly duplicates narduk-auth's shipped AuthLoginCard/AuthRegisterCard/AuthExchangePanel by name -- invisible to knip because components are treated as entry points. Worth flagging to Logan directly regardless of the table-library project.",
+      "loc_saved_estimate": 637
+    },
+    {
+      "pattern": "breadcrumbs",
+      "name": "AppBreadcrumb -> AppBreadcrumbs migration",
+      "path": "apps/web/app/components/app/AppBreadcrumb.vue",
+      "loc": 30,
+      "consumers": 4,
+      "why": "Clean 1:1 functional match (UBreadcrumb wrapper with Home-prepend) blocked only by this app still being on the legacy template layer rather than narduk-core.",
+      "loc_saved_estimate": 30
+    }
+  ],
+  "notes": "Richest and largest app in this lane (36 vue files vs 16-18 for the others), and the only one with real server-paginated admin tables. legacy_template_layer=true (depends on narduk-nuxt-template-layer-analytics/core/maps/seo/testing/uploads, NOT the newer narduk-core/seo/analytics packages) -- yet it still gets AppMapKit (narduk-mapkit-nuxt, 3 uses) and AppTabs (narduk-core, 2 uses) via those layers, so the legacy/current split isn't a clean line. Two separate dead-code pockets found (Auth* family, 637 loc; FilterBar.vue + SightingCard.vue, 125 loc) that knip's own config would not catch since it treats all app/components/**/*.vue files as entry points -- flagged in local_reimplementations rather than silently counted as 'active hand-rolled patterns'. Real mobile-specific regression history exists (PRs #61-64) unlike the other three L2 repos, which had none."
+}

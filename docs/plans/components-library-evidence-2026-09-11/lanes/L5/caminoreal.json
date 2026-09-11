@@ -1,0 +1,29 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/caminoreal",
+  "clone": "ok",
+  "surveyed_sha": "8264bfd0fcf861c815b1b20bee19a4c398513b1f",
+  "default_branch": "main",
+  "app_dirs": ["."],
+  "is_nuxt_app": false,
+  "stack": {
+    "framework": "Astro 5.7 (static site, no client-side JS framework island detected)",
+    "nuxt": "none",
+    "nuxt_ui": "none",
+    "tailwind": "none",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false
+  },
+  "notes_stack": "package.json deps: astro ^5.7.0, @astrojs/sitemap, @fontsource-variable/fraunces, @fontsource-variable/inter, sharp. Plain CSS (src/styles/global.css), no Tailwind, no component library.",
+  "has_table_or_list_ui": false,
+  "table_or_list_ui_evidence": [
+    "grep for <table|<ul|<ol|role=\"table\"|grid-cols across src/**/*.astro: only <ul> hits (src/pages/index.astro:246,296,306,315; src/components/Header.astro:38) — nav and footer link lists, not data lists.",
+    "src/data/menu.js (240 lines) holds the restaurant menu as a JS array of category/item objects; rendered as marketing cards/sections on the one page (src/pages/index.astro), not a table or sortable/filterable list."
+  ],
+  "deep_survey": "skipped per brief (Astro, not Nuxt/Vue)",
+  "app_shape": "single-page restaurant marketing site: src/pages/index.astro, src/components/{Hero,HeroScene,Header,PapelPicado}.astro, src/layouts/Base.astro, src/data/{site,menu}.js",
+  "counts": { "commands": { "astro_files": "find src -maxdepth 4 -name '*.astro' | wc -l -> 6" } },
+  "top_extraction_candidates": [],
+  "notes": "5-page-equivalent marketing site for a restaurant (Camino Real). No admin/dashboard surface, no data fetched from an API at runtime, no table/pagination/sort UI of any kind. Not a candidate for the shared data-table effort."
+}

@@ -1,0 +1,139 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/llb-cpa",
+  "clone": "ok",
+  "surveyed_sha": "fec256a531b3e76df76fe32cd39485e32a183416",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "none",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-nuxt-template-layer-core": "^1.18.43",
+      "narduk-nuxt-template-layer-seo": "^1.18.43",
+      "narduk-nuxt-template-layer-analytics": "^1.18.43",
+      "narduk-nuxt-template-layer-testing": "^1.18.43 (dev)",
+      "narduk-platform": "^2.0.0"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 7,
+    "components": 6,
+    "pages": 1,
+    "layouts": 0,
+    "composables": 0,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 6 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 3 -name '*.vue' | wc -l (dir absent)",
+      "composables": "find apps/web/app/composables -maxdepth 3 -type f | wc -l (dir absent)"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [
+      {
+        "path": "apps/web/app/components/brochure/BrochureAbout.vue",
+        "loc": 69,
+        "consumers": 1,
+        "notes": "one of 6 single-use marketing sections composed on the single index.vue page"
+      },
+      {
+        "path": "apps/web/app/components/brochure/BrochureServices.vue",
+        "loc": 42,
+        "consumers": 1,
+        "notes": "2-col CSS grid of service cards, not a data list"
+      },
+      {
+        "path": "apps/web/app/components/brochure/BrochureContact.vue",
+        "loc": 86,
+        "consumers": 1,
+        "notes": "contact form section"
+      }
+    ],
+    "kpi_stat_tile": [],
+    "card_list": [],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/brochure/BrochureContact.vue",
+        "loc": 86,
+        "consumers": 1,
+        "notes": "contact form fields; not read in full, no dedicated server/api route found (no server/api dir)"
+      }
+    ],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/brochure/BrochureHeader.vue",
+        "loc": 61,
+        "consumers": 1,
+        "notes": ""
+      },
+      {
+        "path": "apps/web/app/components/brochure/BrochureFooter.vue",
+        "loc": 33,
+        "consumers": 1,
+        "notes": ""
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises-clients/llb-cpa#48",
+      "kind": "issue",
+      "state": "OPEN",
+      "summary": "Template-layer exit onto narduk-libs (harmony#87 pattern) — web foundation contract §4",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [],
+  "notes": "Single-page brochure site for a CPA firm (narduk field: shortName 'Laura L. Burks, CPA'). No Nuxt UI dependency at all (grep confirmed absent from package.json). 7 .vue files total: 1 page (index.vue) composing 6 single-use 'Brochure*' section components (Header/Hero/About/Services/Contact/Footer), 401 LOC combined. server/database/app-schema.ts is an empty template placeholder ('export {}') — no server/api routes exist, so the contact form (BrochureContact.vue) has no visible backend wiring in this repo. No table, list, pagination, sort, filter, badge, empty-state, loading-state, or any other pattern from the schema's checklist is present — grep for <table|<UTable|role=\"table\" returned zero hits, and the only grid-cols hits are plain 2-column CSS layout grids inside marketing sections, not data grids. This repo contributes nothing to the shared-table extraction effort; its only relevant signal is issue #48 (template-layer exit already tracked)."
+}

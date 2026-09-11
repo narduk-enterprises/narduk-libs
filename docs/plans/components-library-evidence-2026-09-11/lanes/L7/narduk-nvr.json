@@ -1,0 +1,232 @@
+{
+  "lane": "L7",
+  "repo": "narduk-enterprises/narduk-nvr",
+  "clone": "ok",
+  "surveyed_sha": "0a9578bd6aa9e6ecd9b373950d75ab460fc227c6",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "none (no tailwind.config found; bundled via @nuxt/ui 4)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.22.0",
+      "narduk-auth": "1.25.1",
+      "narduk-tenancy": "0.2.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 14,
+    "components": 6,
+    "pages": 6,
+    "layouts": 1,
+    "composables": 2,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 6 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 ( -name '*.ts' -o -name '*.vue' ) | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AdminUsersTab": 0,
+    "AppNotificationCenter": 0,
+    "AppUserMenu": 0,
+    "AuthLoginCard": 0,
+    "AuthRegisterCard": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "MemberManagement",
+      "path": "apps/web/app/components/MemberManagement.vue",
+      "loc": 142,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "member + invite admin list, plain div v-for (not <table>, not <ul>); server endpoint returns ALL members/invites with no limit/pagination at all"
+    },
+    {
+      "name": "CameraManagement",
+      "path": "apps/web/app/components/CameraManagement.vue",
+      "loc": 106,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "camera admin list, <section v-for>, unbounded server query"
+    },
+    {
+      "name": "ShareManagement",
+      "path": "apps/web/app/components/ShareManagement.vue",
+      "loc": 129,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "share-link admin list, div v-for, unbounded server query"
+    },
+    {
+      "name": "RecordingPlayer",
+      "path": "apps/web/app/components/RecordingPlayer.client.vue",
+      "loc": 137,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "date+camera-scoped recording timeline/filmstrip player, client-only"
+    },
+    {
+      "name": "CameraPlayer",
+      "path": "apps/web/app/components/CameraPlayer.client.vue",
+      "loc": 86,
+      "consumers": 3,
+      "duplicates_lib": "none",
+      "notes": "live camera stream player, client-only, most-reused component in the app"
+    },
+    {
+      "name": "PtzControls",
+      "path": "apps/web/app/components/PtzControls.vue",
+      "loc": 112,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "pan/tilt/zoom control grid"
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/pages/history.vue",
+        "loc": 116,
+        "consumers": 1,
+        "notes": "date picker + camera-id select filtering /api/recordings/day; no free-text search"
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/CameraManagement.vue",
+        "loc": 106,
+        "consumers": 1,
+        "notes": "one <section> card per camera with inline edit controls"
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/MemberManagement.vue",
+        "loc": 142,
+        "consumers": 1,
+        "notes": "member/invite rows as plain divs, no table semantics"
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [
+      {
+        "path": "apps/web/app/components/ShareManagement.vue",
+        "loc": 129,
+        "consumers": 1,
+        "notes": "generates/manages share links (token-based), not narduk-core AppShareButtons (social share) -- different domain, name collision only"
+      }
+    ],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/server/api/members/index.get.ts",
+        "loc": 0,
+        "consumers": 0,
+        "notes": "requireNvrOrg(event, 'admin') gate; role remapped 'crew' -> 'viewer' in the response"
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/components/RecordingPlayer.client.vue",
+        "loc": 137,
+        "consumers": 1,
+        "notes": "per-day recording filmstrip/timeline"
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/members/index.get.ts",
+      "params": [],
+      "response_shape": "{ members: [], invites: [] } (array, unbounded)",
+      "limit_enforced": false
+    },
+    {
+      "route": "apps/web/server/api/cameras/index.get.ts",
+      "params": "not measured",
+      "response_shape": "array (assumed from CameraManagement.vue usage)",
+      "limit_enforced": "not measured"
+    },
+    {
+      "route": "apps/web/server/api/shares/index.get.ts",
+      "params": "not measured",
+      "response_shape": "array (assumed from ShareManagement.vue usage)",
+      "limit_enforced": "not measured"
+    }
+  ],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "detail_list",
+      "name": "MemberManagement/CameraManagement/ShareManagement",
+      "path": "apps/web/app/components/MemberManagement.vue",
+      "loc": 377,
+      "consumers": 3,
+      "why": "three near-identical hand-rolled admin list panels (members, cameras, shares), all plain div v-for with no table semantics, no pagination, and (for members) no server-side limit at all -- smallest, cleanest candidate set for a shared admin-list/table component",
+      "loc_saved_estimate": 250
+    },
+    {
+      "pattern": "timeline_feed",
+      "name": "RecordingPlayer",
+      "path": "apps/web/app/components/RecordingPlayer.client.vue",
+      "loc": 137,
+      "consumers": 1,
+      "why": "date-scoped recording filmstrip is a distinct reusable shape from the almanac/passage timelines seen elsewhere in L7",
+      "loc_saved_estimate": 60
+    },
+    {
+      "pattern": "filter_search_bar",
+      "name": "history.vue date+camera filter",
+      "path": "apps/web/app/pages/history.vue",
+      "loc": 116,
+      "consumers": 1,
+      "why": "simple two-field filter bar pattern repeated in spirit across every list/history view in L7 repos",
+      "loc_saved_estimate": 30
+    }
+  ],
+  "notes": "Smallest app surveyed in L7 (14 .vue files) -- a household security-camera NVR frontend, mostly live-video/PTZ UI rather than data-heavy screens. Zero narduk-libs UI component tag usage found despite narduk-core/narduk-auth being dependencies (same auto-registered-via-layer pattern as mybo-at-v2). Notable risk: server/api/members/index.get.ts returns every member and invite with no limit/pagination at all, unlike mybo-at-v2's deliberate ORG_LIST_LIMIT -- low risk at this app's expected scale (household orgs) but exactly the unbounded-list shape mybo-at-v2 issue #14 flagged as a defect in a similar context."
+}
