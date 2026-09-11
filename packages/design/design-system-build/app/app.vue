@@ -1,10 +1,45 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import {
   NsFreshnessChip,
   NsLevelWell,
   NsRangeBar,
   NsReadoutTile,
 } from '@narduk-enterprises/narduk-ui/instruments'
+
+/*
+ * narduk-shell design cards are DISCOVERED, not authored here.
+ *
+ * The cards below for narduk-ui and Nuxt UI are hand-written sections, which
+ * is why the plan's "every component ships an NE Base card" was the done-when
+ * nothing enforced: the card lived in a different package from the component.
+ * A narduk-shell component instead ships
+ * `src/design-cards/<Name>.card.vue` next to itself, and this glob renders
+ * every one of them (components backlog item 3, narduk-libs#250). The existing
+ * hand-authored cards keep working untouched until item 22 migrates them.
+ *
+ * The path is relative rather than a package specifier on purpose: this
+ * renderer is a private workspace tool, and narduk-shell's published `exports`
+ * map stays the three subpaths item 1 fixed (`.`, `./format`, `./theme.css`).
+ * A gallery is not a reason to grow a package's public surface. The
+ * `workspace:*` devDependency in package.json is what states the build-time
+ * relationship, so CI's affected-package graph reruns this package when
+ * narduk-shell changes.
+ *
+ * `scripts/build.mts` fails the build when a registered component has no card,
+ * when a card has no registered component, or when a card does not reach the
+ * rendered output.
+ */
+const shellCards = Object.entries(
+  import.meta.glob<{ default: Component }>('../../narduk-shell/src/design-cards/*.card.vue', {
+    eager: true,
+  }),
+)
+  .map(([path, module]) => ({
+    name: path.slice(path.lastIndexOf('/') + 1, -'.card.vue'.length),
+    component: module.default,
+  }))
+  .sort((first, second) => first.name.localeCompare(second.name))
 </script>
 
 <template>
@@ -195,5 +230,6 @@ import {
         variant="soft"
       />
     </section>
+    <component :is="card.component" v-for="card in shellCards" :key="card.name" />
   </main>
 </template>

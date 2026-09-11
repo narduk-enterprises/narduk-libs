@@ -44,6 +44,10 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 
 - `pnpm install`
 - `pnpm run quality`
+- `pnpm run surface:check` (inside `quality:artifacts`): every component
+  `narduk-shell` registers, and every `./format` export, has a README section,
+  tests and a design card shipped beside it. Failures print the exact fix; see
+  `packages/design/narduk-shell/README.md` § "Component surface check".
 - For a touched package, also run its focused typecheck/unit tests and
   `pnpm pack --dry-run` before publication.
 - New package releases must be installable from their packed artifact by a

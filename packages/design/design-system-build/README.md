@@ -26,9 +26,18 @@ The Foundations card shows both the `--ns-*` status-system surfaces and the
 narduk-shell NE token layer (light and dark columns, pinned with Nuxt UI's
 `.light` / `.dark` classes). Nuxt UI cards demonstrate the gallery's blue/slate
 baseline configuration rendered through the `--ui-*` bridge, not every app's
-overrides. narduk-shell components are not registered yet. Extend the Vue
-gallery with real implemented components and their actual configuration as
-coverage grows.
+overrides.
+
+`narduk-shell` cards are discovered, not authored here: `app/app.vue` globs
+`../../narduk-shell/src/design-cards/*.card.vue` and `scripts/build.mts` pairs
+each file with `NE_SHELL_COMPONENTS`. A registered component without a card
+fails the build unless it is on the reviewed `PENDING_CARDS` allowlist in
+`narduk-shell/src/pending-cards.ts` (the four parallel component lanes whose
+cards land in a follow-up PR). The copyable template is
+`narduk-shell/src/design-cards/template/NeExample.card.vue`. Nuxt UI cards
+demonstrate the gallery's blue/slate baseline configuration, not every app's
+overrides. The hand-authored narduk-ui sections stay in `app/app.vue` until
+backlog item 22 migrates them.
 
 The generated manifest describes this bundle only. It is not a replacement for
 an existing NE Base project's complete manifest: preserve legacy templates and
