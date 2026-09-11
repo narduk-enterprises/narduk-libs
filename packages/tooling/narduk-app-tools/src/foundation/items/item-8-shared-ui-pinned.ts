@@ -12,20 +12,38 @@
  * it here would break every other app's weekly rollup on upgrade. Folding
  * this in as artefact item 8 needs a company-hq script change.
  *
- * Presence is registry-gated so this item enforces what item 2.2 cannot
- * (item 2.2 only fails a loose pin that is already a dependency). For each
- * of narduk-shell / narduk-ui / narduk-charts, when the app has a UI
- * surface: unpublished → `not-applicable` (presence is not yet required
- * because nothing is published); registry unreadable → `unknown`;
- * published and absent → `fail`; published and present → the exact-pin
- * check. Today that means narduk-shell (0.0.0, unpublished) is N/A and
- * narduk-ui / narduk-charts (published) are required exact pins on every
- * UI app.
+ * WHAT THIS ITEM ENFORCES (narduk-libs#277, #282 review)
+ * -----------------------------------------------------
+ * Exactly one rule, decided from the app's own manifests:
+ *
+ *     if the app depends on a shared-UI package, that pin must be exact.
+ *
+ * It does NOT require an app to take a dependency it does not use. An
+ * earlier revision registry-gated presence -- "narduk-charts is published,
+ * therefore every UI app must depend on it" -- which conflated *published*
+ * with *required* and would have made a charting library mandatory on fleet
+ * apps that draw no charts. `PRESENCE_REQUIRED` below is the one place a
+ * genuine estate-wide requirement would be recorded, and it is deliberately
+ * empty; see its comment for what would have to change first.
+ *
+ * NO CREDENTIAL IS NEEDED (narduk-libs#282 review, task 2)
+ * -------------------------------------------------------
+ * Exact-pin discipline is a manifest fact, so this item never needs a
+ * registry read to reach a verdict, and a missing `NODE_AUTH_TOKEN` can no
+ * longer turn the command into exit 2. That matters because the generated CI
+ * in `create-narduk-app`'s `ci-workflow.ts` deliberately scopes the GitHub
+ * Packages token to the install step
+ * (`NPM_CONFIG_USERCONFIG="$auth_file" ... pnpm install --frozen-lockfile`)
+ * so it is not ambient for the rest of the job; a check that demanded an
+ * ambient token could not be wired into that workflow at all.
+ * `RegistryReality` is still accepted and consulted, but only to ANNOTATE an
+ * already-decided sub-check with the latest published version. An unreadable
+ * registry drops the annotation and changes no status.
  *
  * "Has UI" reuses `hasNuxtUiSurface()` from `../source.js` -- item 1.1's
  * `NUXT_CONFIG_CANDIDATES` plus the pages/components directories at those
- * same monorepo prefixes. A `nuxt` dependency alone does not count. An
- * app with no UI surface is `not-applicable` in full (API-only).
+ * same monorepo prefixes. A `nuxt` dependency alone does not count. An app
+ * with no UI surface is `not-applicable` in full (API-only).
  */
 
 import { check } from '../schema.js'
@@ -39,52 +57,91 @@ import {
   type FoundationSubCheck,
 } from '../types.js'
 
-const NARDUK_SHELL_PACKAGE = '@narduk-enterprises/narduk-shell'
-const NARDUK_UI_PACKAGE = '@narduk-enterprises/narduk-ui'
-const NARDUK_CHARTS_PACKAGE = '@narduk-enterprises/narduk-charts'
+export const NARDUK_SHELL_PACKAGE = '@narduk-enterprises/narduk-shell'
+export const NARDUK_UI_PACKAGE = '@narduk-enterprises/narduk-ui'
+export const NARDUK_CHARTS_PACKAGE = '@narduk-enterprises/narduk-charts'
+
+/** The shared-UI packages this item knows about, in sub-check order. */
+export const SHARED_UI_PACKAGES = [
+  { id: '8.1', pkg: NARDUK_SHELL_PACKAGE },
+  { id: '8.2', pkg: NARDUK_UI_PACKAGE },
+  { id: '8.3', pkg: NARDUK_CHARTS_PACKAGE },
+] as const
+
+/**
+ * Shared-UI packages the estate requires of EVERY UI app, so that their
+ * absence is itself a failure rather than a capability the app did not need.
+ *
+ * EMPTY, and that is the finding, not an oversight:
+ *
+ * - `narduk-charts` is a charting library. Nothing makes a chart mandatory on
+ *   an app that draws none; requiring it would be inventing a rule out of the
+ *   fact that the package happens to be published.
+ * - `narduk-ui` is, by its own README, the `Ns*` status instruments "for the
+ *   status apps" plus the `--ns-*` token layer. Capability-specific in the
+ *   same way.
+ * - `narduk-shell` is the only one with estate-wide ambition ("so that no
+ *   Nuxt app in the estate writes its own again"). It is still `0.0.0` and
+ *   unpublished, and D-WEBFOUND-2's 2026-09-11 amendment says where the `Ne*`
+ *   suite LIVES, not that every app must consume it. The plan sentence that
+ *   asserted presence for all three (components-library-plan.md §2 item 6) is
+ *   exactly the claim narduk-libs#277 found unjustified.
+ *
+ * Adding an entry here is a policy change: it needs a dated company-hq
+ * decision that names the package and "every UI app", cited in the comment
+ * beside the entry. `tests/foundation/item-8-shared-ui-pinned.test.ts` pins
+ * the set as empty so an addition cannot land silently.
+ */
+export const PRESENCE_REQUIRED: readonly string[] = []
+
 /** Same exact-pin regex as item 2.2 -- a literal semver, optional prerelease,
  * never a range or a `workspace:` / `file:` specifier. */
 const EXACT_PIN_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Z.-]+)?$/i
 
 const ITEM_8_GATE_NAME = 'app has UI'
-const ITEM_8_SHELL_NAME = 'narduk-shell is published and an exact pin'
-const ITEM_8_UI_NAME = 'narduk-ui is published and an exact pin'
-const ITEM_8_CHARTS_NAME = 'narduk-charts is published and an exact pin'
 
-async function evaluatePublishedPin(
-  id: '8.1' | '8.2' | '8.3',
-  name: string,
+function subCheckName(pkgName: string): string {
+  return `${pkgName.slice(pkgName.indexOf('/') + 1)} is an exact pin if depended on`
+}
+
+/** Best-effort "latest published is x.y.z" tail for a sub-check detail. Never
+ * changes a status: an unreadable, unpublished, or throwing registry simply
+ * contributes nothing. */
+async function publishedSuffix(pkgName: string, reality: RegistryReality): Promise<string> {
+  try {
+    const publication = await reality.publicationOf(pkgName)
+    return publication.status === 'published' ? `; latest published is ${publication.latest}` : ''
+  } catch {
+    return ''
+  }
+}
+
+async function evaluateSharedUiPin(
+  id: string,
   pkgName: string,
   merged: Record<string, string>,
   reality: RegistryReality,
 ): Promise<FoundationSubCheck> {
-  const publication = await reality.publicationOf(pkgName)
-  if (publication.status === 'unpublished') {
-    return check(
-      id,
-      name,
-      STATUS_NA,
-      `${pkgName} has no published versions -- presence is not yet required because nothing is published`,
-    )
-  }
-  if (publication.status === 'unreadable') {
-    return check(
-      id,
-      name,
-      STATUS_UNKNOWN,
-      `${pkgName} publication status could not be read (no registry credential or the registry was unreachable)`,
-    )
+  const name = subCheckName(pkgName)
+  const spec = merged[pkgName]
+
+  if (spec === undefined) {
+    return PRESENCE_REQUIRED.includes(pkgName)
+      ? check(
+          id,
+          name,
+          STATUS_FAIL,
+          `${pkgName} is required of every UI app and is not a dependency -- add an exact pin`,
+        )
+      : check(
+          id,
+          name,
+          STATUS_NA,
+          `${pkgName} is not a dependency of this app -- it is capability-specific, so its ` +
+            'absence is not a finding (see PRESENCE_REQUIRED)',
+        )
   }
 
-  const spec = merged[pkgName]
-  if (!spec) {
-    return check(
-      id,
-      name,
-      STATUS_FAIL,
-      `${pkgName} is published (latest ${publication.latest}) and this app has UI but does not depend on it — add an exact pin`,
-    )
-  }
   if (!EXACT_PIN_RE.test(spec)) {
     return check(
       id,
@@ -94,11 +151,12 @@ async function evaluatePublishedPin(
         'pin it to an exact version, e.g. "1.2.3", with no range and no workspace: specifier',
     )
   }
+
   return check(
     id,
     name,
     STATUS_PASS,
-    `${pkgName} is an exact pin (${spec}); latest published is ${publication.latest}`,
+    `${pkgName} is an exact pin (${spec})${await publishedSuffix(pkgName, reality)}`,
   )
 }
 
@@ -125,15 +183,16 @@ export async function evaluateItem8(
   }
 
   const merged = mergedDeps(packages)
-  return [
+  const checks: FoundationSubCheck[] = [
     check(
       '8.0',
       ITEM_8_GATE_NAME,
       STATUS_PASS,
       'Nuxt config and a pages/components directory exist',
     ),
-    await evaluatePublishedPin('8.1', ITEM_8_SHELL_NAME, NARDUK_SHELL_PACKAGE, merged, reality),
-    await evaluatePublishedPin('8.2', ITEM_8_UI_NAME, NARDUK_UI_PACKAGE, merged, reality),
-    await evaluatePublishedPin('8.3', ITEM_8_CHARTS_NAME, NARDUK_CHARTS_PACKAGE, merged, reality),
   ]
+  for (const { id, pkg } of SHARED_UI_PACKAGES) {
+    checks.push(await evaluateSharedUiPin(id, pkg, merged, reality))
+  }
+  return checks
 }

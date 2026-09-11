@@ -11,6 +11,13 @@
  * vocabulary and roll-up rules (`check()`, `rollUp()`) and writes a
  * one-item artefact (`tool: '.../shared-ui-pinned'`) so nothing mistakes
  * it for the ratified shape.
+ *
+ * The item decides from the app's own manifests, so this runner needs no
+ * registry credential and cannot exit 2 for want of one: `UNKNOWN` is
+ * reachable only when no `package.json` is readable at a known monorepo
+ * candidate path. That is what lets the command be wired into the generated
+ * CI in `create-narduk-app`, whose install step deliberately keeps the
+ * GitHub Packages token out of the ambient job environment.
  */
 
 import { evaluateItem8 } from './items/item-8-shared-ui-pinned.js'
