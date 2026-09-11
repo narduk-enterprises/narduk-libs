@@ -337,6 +337,266 @@ const data = [
 
 Same as line chart: `empty`, `tooltip`, `legend-item`.
 
+---
+
+### NardukScatterChart
+
+Numeric X/Y scatter plot with per-point click and keyboard activation.
+
+```vue
+<script setup lang="ts">
+import { NardukScatterChart } from '@narduk-enterprises/narduk-charts'
+
+const series = [
+  {
+    name: 'Cohort A',
+    points: [
+      { x: 1, y: 4 },
+      { x: 2, y: 7 },
+      { x: 3, y: 5 },
+    ],
+  },
+]
+</script>
+
+<template>
+  <NardukScatterChart :series="series" chart-title="Cohort A" />
+</template>
+```
+
+#### Props
+
+| Prop                   | Type              | Default          | Description                                                                             |
+| ---------------------- | ----------------- | ---------------- | --------------------------------------------------------------------------------------- |
+| `series`               | `ScatterSeries[]` | _required_       | `{ name, points: { x, y, label? }[], color? }`                                          |
+| `width`                | `number`          | auto             | Fixed width in px (responsive if omitted)                                               |
+| `height`               | `number`          | `400`            | Chart height in px                                                                      |
+| `pointRadius`          | `number`          | `4`              | Point radius in px                                                                      |
+| `colors`               | `string[]`        | built-in palette | Custom color palette, applied per series when no per-series `color` is set              |
+| `animate`              | `boolean`         | `true`           | Animate points growing in on mount                                                      |
+| `respectReducedMotion` | `boolean`         | `true`           | Honor `prefers-reduced-motion`                                                          |
+| `theme`                | `ChartTheme`      | `default`        | Preset visual theme                                                                     |
+| `dark`                 | `boolean`         | auto-detect      | Force dark/light mode                                                                   |
+| `dir`                  | `'ltr' \| 'rtl'`  | —                | Text direction on the chart root                                                        |
+| `chartTitle`           | `string`          | generated        | Visible caption and accessible name; falls back to a generated `Scatter chart: …` label |
+| `chartDescription`     | `string`          | —                | Longer accessible description (`<desc>` + `aria-describedby`)                           |
+
+#### Events
+
+| Event        | Payload                                                               |
+| ------------ | --------------------------------------------------------------------- |
+| `pointClick` | `{ pointIndex, seriesName, x, y }` — click, Enter or Space on a point |
+
+#### Slots
+
+None.
+
+---
+
+### NardukHistogramChart
+
+Histogram from raw samples (auto-binned) or explicit bins.
+
+```vue
+<script setup lang="ts">
+import { NardukHistogramChart } from '@narduk-enterprises/narduk-charts'
+
+const values = [12, 15, 14, 18, 22, 19, 25, 30, 28, 21]
+</script>
+
+<template>
+  <NardukHistogramChart
+    :values="values"
+    :bin-count="6"
+    chart-title="Response times"
+  />
+</template>
+```
+
+#### Props
+
+| Prop                   | Type             | Default            | Description                                                                                      |
+| ---------------------- | ---------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `values`               | `number[]`       | _required_         | Raw samples; gates the empty state even when `bins` is also given                                |
+| `bins`                 | `HistogramBin[]` | —                  | Explicit `{ start, end, count }[]`; overrides `binCount`/`values`-derived binning when non-empty |
+| `binCount`             | `number`         | `8`                | Bin count for auto-binning `values`; ignored once `bins` is set                                  |
+| `barColor`             | `string`         | chart accent token | Bar fill color                                                                                   |
+| `width`                | `number`         | auto               | Fixed width in px (responsive if omitted)                                                        |
+| `height`               | `number`         | `400`              | Chart height in px                                                                               |
+| `animate`              | `boolean`        | `true`             | Animate bars growing in on mount                                                                 |
+| `respectReducedMotion` | `boolean`        | `true`             | Honor `prefers-reduced-motion`                                                                   |
+| `theme`                | `ChartTheme`     | `default`          | Preset visual theme                                                                              |
+| `dark`                 | `boolean`        | auto-detect        | Force dark/light mode                                                                            |
+| `dir`                  | `'ltr' \| 'rtl'` | —                  | Text direction on the chart root                                                                 |
+| `chartTitle`           | `string`         | generated          | Visible caption and accessible name; falls back to a generated `Histogram, N bins` label         |
+| `chartDescription`     | `string`         | —                  | Longer accessible description (`<desc>` + `aria-describedby`)                                    |
+
+#### Events
+
+None.
+
+#### Slots
+
+None.
+
+---
+
+### NardukCandleChart
+
+OHLCV candlestick chart: zoom/pan/box/pinch, volume pane, brush navigator,
+crosshair, drawings, and multi-chart domain sync via `v-model:domain`.
+
+```vue
+<script setup lang="ts">
+import { NardukCandleChart } from '@narduk-enterprises/narduk-charts'
+
+const bars = [
+  { t: 1_700_000_000_000, o: 1, h: 2, l: 0.5, c: 1.5, v: 1200 },
+  { t: 1_700_003_600_000, o: 1.5, h: 2.5, l: 1.2, c: 2, v: 900 },
+]
+</script>
+
+<template>
+  <NardukCandleChart :bars="bars" chart-title="AAPL" zoomable show-volume />
+</template>
+```
+
+#### Props
+
+| Prop                                             | Type                                        | Default                     | Description                                                                                                                    |
+| ------------------------------------------------ | ------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `bars`                                           | `CandleBar[]`                               | _required_                  | `{ t, o, h, l, c, v? }[]`                                                                                                      |
+| `width` / `height`                               | `number`                                    | auto / `400`                | Fixed size in px (responsive width if omitted)                                                                                 |
+| `domain`                                         | `CandleTimeDomain \| null`                  | —                           | Controlled visible time window (ms); pair with `v-model:domain` to sync multiple charts (see `NardukChartStack`)               |
+| `zoomable`                                       | `boolean`                                   | `false`                     | Drag-box / Ctrl-or-Cmd+wheel / Shift+drag-pan / double-click-reset zoom; emits `zoom` and `update:domain`                      |
+| `zoomWheelFree` / `zoomMinPoints`                | `boolean` / `number`                        | `false` / `3`               | Free (non-modified) wheel zoom; minimum visible bars when zoomed in                                                            |
+| `showVolume` / `volumeFraction`                  | `boolean` / `number`                        | `false` / `0.22`            | Bottom volume pane and its plot-height fraction                                                                                |
+| `showBrush`                                      | `boolean`                                   | `false`                     | Time navigator strip under the plot                                                                                            |
+| `showCrosshair` / `crosshairMagnetic`            | `boolean`                                   | `true` / `true`             | Pointer crosshair; magnetic snap to the hovered bar's X                                                                        |
+| `showLastPrice` / `showCloseLine`                | `boolean`                                   | `true` / `true`             | Latest-close axis line/label; faint close-price polyline across the window                                                     |
+| `showSessionGrid`                                | `boolean`                                   | `false`                     | Faint verticals when the UTC hour/day changes between bars                                                                     |
+| `showOhlcHud`                                    | `boolean`                                   | `true`                      | Top-left OHLC panel while hovering/focusing a bar                                                                              |
+| `showGrid`                                       | `boolean`                                   | `true`                      | Horizontal gridlines                                                                                                           |
+| `candleStyle`                                    | `CandleBarStyle`                            | `'candle'`                  | `candle` (filled body) · hollow (bull outline) · OHLC bar ticks                                                                |
+| `bullColor` / `bearColor`                        | `string`                                    | theme default               | Up/down candle colors                                                                                                          |
+| `yScale` / `symlogLinthresh`                     | `ChartYScaleMode` / `number`                | `'linear'` / `1`            | `linear` · `log` · `symlog`; linear threshold used when `symlog`                                                               |
+| `priceDisplayMode`                               | `CandlePriceDisplayMode`                    | `'absolute'`                | Rebase OHLC into `%`/indexed units (forces linear Y)                                                                           |
+| `yPadFraction`                                   | `number`                                    | `0.06`                      | Extra Y padding as a fraction of visible high−low                                                                              |
+| `highlightFormingBar`                            | `boolean`                                   | `false`                     | Emphasize the rightmost (forming) bucket in the visible window                                                                 |
+| `maxDrawBars`                                    | `number`                                    | `512`                       | Cap drawn buckets from the visible window (aggregation)                                                                        |
+| `drawings` / `drawingTool`                       | `CandleDrawing[]` / `CandleDrawingTool`     | `[]` / `null`               | Serializable price/time overlays; setting a tool turns plot-drag into drawing instead of zoom                                  |
+| `formatPrice` / `formatTickValue` / `formatTime` | `(value) => string`                         | built-in                    | Override OHLC/HUD, axis-tick and time-label formatting                                                                         |
+| `animate` / `respectReducedMotion`               | `boolean`                                   | `true` / `true`             | Animate on mount; honor `prefers-reduced-motion`                                                                               |
+| `theme` / `dark` / `dir`                         | `ChartTheme` / `boolean` / `'ltr' \| 'rtl'` | `default` / auto-detect / — | Preset theme; force dark/light mode; text direction                                                                            |
+| `chartTitle` / `chartDescription`                | `string`                                    | generated / —               | Visible caption + accessible name (falls back to a generated `Candlestick chart, N bars` label); longer accessible description |
+
+#### Events
+
+| Event             | Payload                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `barClick`        | `CandleClickPayload` — click/activate a bar                                                           |
+| `zoom`            | `CandleZoomRange` — visible range after a zoom/pan gesture                                            |
+| `update:domain`   | `CandleTimeDomain` — visible window changed (zoom/pan, or brush drag)                                 |
+| `update:drawings` | `CandleDrawing[]` — a drawing was added/edited via `drawingTool`                                      |
+| `reachedStart`    | `CandleReachedStartPayload` — the visible domain neared the earliest loaded bar (left-edge load-more) |
+
+#### Slots
+
+| Slot      | Scope         | Description                                                                            |
+| --------- | ------------- | -------------------------------------------------------------------------------------- |
+| `empty`   | —             | Custom content when `bars` is empty (default: `No data`)                               |
+| `overlay` | `{ metrics }` | Draw custom overlays in plot pixel space via `getCandlePlotMetrics()`-shaped `metrics` |
+
+---
+
+### NardukChartStack
+
+Layout wrapper that links multiple panes (typically a `NardukCandleChart` and
+companion `NardukLineChart`/volume rows) to one shared visible time window.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import {
+  NardukChartStack,
+  NardukCandleChart,
+  type CandleTimeDomain,
+} from '@narduk-enterprises/narduk-charts'
+
+const domain = ref<CandleTimeDomain | null>(null)
+const bars = [
+  { t: 1_700_000_000_000, o: 1, h: 2, l: 0.5, c: 1.5 },
+  { t: 1_700_003_600_000, o: 1.5, h: 2.5, l: 1.2, c: 2 },
+]
+</script>
+
+<template>
+  <NardukChartStack v-model:domain="domain">
+    <NardukCandleChart :bars="bars" v-model:domain="domain" zoomable />
+  </NardukChartStack>
+</template>
+```
+
+Bind the same `v-model:domain` on `NardukChartStack` and on each child chart
+(`NardukCandleChart`); derive `NardukLineChart` rows' `v-model:x-window` from
+that shared domain via `candleIndexAtTime` / `candleTimeAtIndex`.
+
+#### Props
+
+| Prop     | Type                       | Default | Description                                               |
+| -------- | -------------------------- | ------- | --------------------------------------------------------- |
+| `domain` | `CandleTimeDomain \| null` | `null`  | The linked visible time window; use with `v-model:domain` |
+
+#### Events
+
+| Event           | Payload                                                           |
+| --------------- | ----------------------------------------------------------------- |
+| `update:domain` | `CandleTimeDomain \| null` — standard `v-model` sync for `domain` |
+
+#### Slots
+
+| Slot      | Scope                     | Description                                                                                                                                                |
+| --------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default` | `{ domain, domainModel }` | Both keys expose the current `domain` value (read-only via the slot; write through each child chart's own `v-model:domain` bound to the same external ref) |
+
+---
+
+### NardukBrandBackdrop
+
+Optional full-bleed decorative SVG hero/marketing layer — grid, trend polylines,
+and candle hints on a fixed 1200×640 canvas. Reads `--color-chart-*` CSS
+variables so it tracks app theming; no bitmap assets. Takes no props and renders
+no interactive content (`aria-hidden="true"`).
+
+```vue
+<script setup lang="ts">
+import { NardukBrandBackdrop } from '@narduk-enterprises/narduk-charts'
+</script>
+
+<template>
+  <section class="relative overflow-hidden">
+    <NardukBrandBackdrop />
+    <div class="relative z-10"><!-- hero content --></div>
+  </section>
+</template>
+```
+
+Absolutely positioned and inset to fill its nearest positioned ancestor
+(`position: relative` on the wrapping section, as above) — pair it with `z-10`+
+content so the backdrop stays behind.
+
+#### Props
+
+None.
+
+#### Events
+
+None.
+
+#### Slots
+
+None.
+
 ## Utilities
 
 ### Export (browser only)
