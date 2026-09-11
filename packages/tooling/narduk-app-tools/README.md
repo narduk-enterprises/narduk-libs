@@ -103,29 +103,29 @@ The evaluator is `src/foundation/items/item-8-shared-ui-pinned.ts` and matches
 items 1-7 (`check()` sub-checks, no warn tier). It is a separate command and
 JSON artefact (`tool: '@narduk-enterprises/narduk-app-tools/shared-ui-pinned'`)
 because `foundation:check --json` is the exact 7-item contract company-hq
-`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red
-F3 ARTEFACT finding. Same exit-code convention as `foundation:check` (`0` PASS,
-`1` FAIL, `2` UNKNOWN).
+`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3
+ARTEFACT finding. Same exit-code convention as `foundation:check` (`0` PASS, `1`
+FAIL, `2` UNKNOWN).
 
 **Presence policy:** only exactness of the pins that are present. narduk-shell
-is not yet published, so requiring it would fail every UI app for a package
-that cannot be installed. narduk-ui and narduk-charts are capability-specific.
-A missing package is `not-applicable`, never `fail`. Consequence: a UI app
-that has adopted none of the three still passes; when any of the three is
-added, its pin must be exact (no `^`, `~`, or `workspace:`).
+is not yet published, so requiring it would fail every UI app for a package that
+cannot be installed. narduk-ui and narduk-charts are capability-specific. A
+missing package is `not-applicable`, never `fail`. Consequence: a UI app that
+has adopted none of the three still passes; when any of the three is added, its
+pin must be exact (no `^`, `~`, or `workspace:`).
 
-"Has UI" reuses `hasNuxtUiSurface()` -- item 1.1's `NUXT_CONFIG_CANDIDATES`
-plus a pages or components directory at those same monorepo prefixes (the
-paths item 3 / Wave-1 already walk). A `nuxt` dependency alone does not
-count. API-only apps are `not-applicable` in full.
+"Has UI" reuses `hasNuxtUiSurface()` -- item 1.1's `NUXT_CONFIG_CANDIDATES` plus
+a pages or components directory at those same monorepo prefixes (the paths item
+3 / Wave-1 already walk). A `nuxt` dependency alone does not count. API-only
+apps are `not-applicable` in full.
 
 **Rule table:**
 
-| Sub-check | Condition                                                                                          | Verdict                                                                 |
-| --------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| 8.0       | No `package.json` readable at any known monorepo-candidate path                                    | `unknown`                                                               |
-| 8.0       | No `nuxt.config.*` at a known path, or no pages/components directory at the same prefixes          | `not-applicable` (whole check)                                          |
-| 8.0       | Nuxt config and a pages/components directory exist                                                 | `pass`                                                                  |
-| 8.1 / 8.2 / 8.3 | narduk-shell / narduk-ui / narduk-charts is not a dependency                                 | `not-applicable` -- presence is not required                            |
-| 8.1 / 8.2 / 8.3 | present, but the pin is a range or a `workspace:` / `file:` specifier                       | `fail`, names the package and the fix                                   |
-| 8.1 / 8.2 / 8.3 | present and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                         | `pass`                                                                  |
+| Sub-check       | Condition                                                                                 | Verdict                                      |
+| --------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 8.0             | No `package.json` readable at any known monorepo-candidate path                           | `unknown`                                    |
+| 8.0             | No `nuxt.config.*` at a known path, or no pages/components directory at the same prefixes | `not-applicable` (whole check)               |
+| 8.0             | Nuxt config and a pages/components directory exist                                        | `pass`                                       |
+| 8.1 / 8.2 / 8.3 | narduk-shell / narduk-ui / narduk-charts is not a dependency                              | `not-applicable` -- presence is not required |
+| 8.1 / 8.2 / 8.3 | present, but the pin is a range or a `workspace:` / `file:` specifier                     | `fail`, names the package and the fix        |
+| 8.1 / 8.2 / 8.3 | present and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                       | `pass`                                       |

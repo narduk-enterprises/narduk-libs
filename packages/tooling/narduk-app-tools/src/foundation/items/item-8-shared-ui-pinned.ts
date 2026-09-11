@@ -99,7 +99,12 @@ export function evaluateItem8(repo: AppRepo): FoundationSubCheck[] {
 
   const merged = mergedDeps(packages)
   return [
-    check('8.0', ITEM_8_GATE_NAME, STATUS_PASS, 'Nuxt config and a pages/components directory exist'),
+    check(
+      '8.0',
+      ITEM_8_GATE_NAME,
+      STATUS_PASS,
+      'Nuxt config and a pages/components directory exist',
+    ),
     evaluatePresentPin('8.1', ITEM_8_SHELL_NAME, NARDUK_SHELL_PACKAGE, merged),
     evaluatePresentPin('8.2', ITEM_8_UI_NAME, NARDUK_UI_PACKAGE, merged),
     evaluatePresentPin('8.3', ITEM_8_CHARTS_NAME, NARDUK_CHARTS_PACKAGE, merged),
