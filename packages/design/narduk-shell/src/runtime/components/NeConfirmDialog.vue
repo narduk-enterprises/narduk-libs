@@ -1,37 +1,3 @@
-<script lang="ts">
-import type { Component } from 'vue'
-
-export type NeConfirmTone = 'default' | 'danger'
-
-export interface NeConfirmDialogProps {
-  /** Dialog heading. Also the dialog's accessible name (`aria-labelledby`). */
-  title?: string
-  /** One-line consequence. Also the accessible description (`aria-describedby`). */
-  message?: string
-  /** Confirm button label. */
-  confirmLabel?: string
-  /** Cancel button label. */
-  cancelLabel?: string
-  /**
-   * `danger` colours the confirm button with the `error` semantic colour and
-   * moves initial focus to Cancel. See the README's focus rules.
-   */
-  tone?: NeConfirmTone
-  /**
-   * While true the confirm button shows its loading state, the cancel button is
-   * disabled, and Escape / outside-click dismissal is turned off (Nuxt UI's
-   * `dismissible: false`, i.e. `preventClose`).
-   */
-  pending?: boolean
-  /** Failure text rendered in the body as a live `role="alert"` region. */
-  error?: string
-  /** A component rendered in the dialog body — stonx's trade summary, say. */
-  body?: Component
-  /** Props handed to `body`. Named `props` to match the plan's `confirm({ body, props })`. */
-  props?: Record<string, unknown>
-}
-</script>
-
 <script setup lang="ts">
 /**
  * NeConfirmDialog — the suite's "are you sure?" dialog (components backlog
@@ -50,10 +16,11 @@ export interface NeConfirmDialogProps {
  * real, and `test/ne-confirm-dialog.test.ts` asserts both halves together so
  * the attribute can never outlive the behaviour.
  */
-import { computed, nextTick, ref } from 'vue'
-
 import UButton from '@nuxt/ui/components/Button.vue'
 import UModal, { type ModalProps } from '@nuxt/ui/components/Modal.vue'
+import { computed, nextTick, ref } from 'vue'
+
+import type { NeConfirmDialogProps } from './ne-confirm-dialog-types'
 
 const props = withDefaults(defineProps<NeConfirmDialogProps>(), {
   title: 'Are you sure?',
@@ -68,8 +35,8 @@ const props = withDefaults(defineProps<NeConfirmDialogProps>(), {
 })
 
 const emit = defineEmits<{
-  /** The confirm button was pressed. The dialog deliberately stays open. */
-  confirm: []
+  /** Forwarded from `UModal` so `useOverlay` can unmount a closed overlay. */
+  'after:leave': []
   /** Cancel button, Escape, or an outside click. The dialog is already closing. */
   cancel: []
   /**
@@ -77,8 +44,8 @@ const emit = defineEmits<{
    * value, which is what makes `useConfirm()` awaitable.
    */
   close: [result: boolean]
-  /** Forwarded from `UModal` so `useOverlay` can unmount a closed overlay. */
-  'after:leave': []
+  /** The confirm button was pressed. The dialog deliberately stays open. */
+  confirm: []
 }>()
 
 const slots = defineSlots<{

@@ -1,7 +1,8 @@
 import { useOverlay } from '@nuxt/ui/composables/useOverlay'
 import type { Component } from 'vue'
 
-import NeConfirmDialog, { type NeConfirmTone } from '../components/NeConfirmDialog.vue'
+import NeConfirmDialog from '../components/NeConfirmDialog.vue'
+import type { NeConfirmTone } from '../components/ne-confirm-dialog-types'
 
 /** What `confirm()` accepts. Everything except `onConfirm` is a dialog prop. */
 export interface NeConfirmOptions {

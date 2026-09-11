@@ -16,7 +16,7 @@ export interface NardukShellModuleOptions {
 
 interface MutableNuxtOptions {
   build: {
-    transpile: (string | RegExp | ((...args: never[]) => unknown))[]
+    transpile: Array<string | RegExp | ((...args: never[]) => unknown)>
   }
 }
 
@@ -60,6 +60,8 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // Composable auto-imports. One entry per exposed composable, alphabetical,
     // so two backlog items adding one conflict on adjacent lines rather than
     // on the same one.
-    addImports([{ name: 'useConfirm', from: resolver.resolve('./runtime/composables/use-confirm') }])
+    addImports([
+      { name: 'useConfirm', from: resolver.resolve('./runtime/composables/use-confirm') },
+    ])
   },
 })

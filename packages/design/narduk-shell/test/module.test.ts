@@ -128,7 +128,9 @@ describe('narduk-shell module', () => {
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    const entries = addImports.mock.calls.flatMap(([call]) => call as { name: string; from: string }[])
+    const entries = addImports.mock.calls.flatMap(
+      ([call]) => call as Array<{ name: string; from: string }>,
+    )
     const useConfirmEntry = entries.find((entry) => entry.name === 'useConfirm')
     expect(useConfirmEntry).toBeDefined()
     expect(useConfirmEntry?.from).toContain('/src/runtime/composables/use-confirm')
