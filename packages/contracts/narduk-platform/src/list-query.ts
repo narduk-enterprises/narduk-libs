@@ -109,6 +109,13 @@ export interface ListQuerySchemaOptions<
   maxQueryLength?: number
   /** `'offset'` (default) or `'cursor'`. */
   mode?: TMode
+  /**
+   * Whether the route actually applies `q`. Defaults to `true`. A route that
+   * does not search sets `false`, so a non-empty `q` is rejected rather than
+   * accepted and silently ignored — an ignored filter reads to the caller as
+   * "no match narrowed the page" and hands back the wrong rows.
+   */
+  searchable?: boolean
   /** Allowlisted sort keys. */
   sortable: TSortable
 }
@@ -197,11 +204,19 @@ function buildListQuerySchema(
     })
     .transform((value) => readSort(value, options.sortable))
 
+  const searchable = options.searchable ?? true
   const freeTextSchema = z
     .string()
     .transform((value) => value.trim())
-    .refine((value) => value.length <= maxQueryLength, {
-      message: `q must be ${maxQueryLength} characters or fewer`,
+    .superRefine((value, ctx) => {
+      if (!searchable) {
+        if (value.length === 0) return
+        ctx.addIssue({ code: 'custom', message: 'q is not supported by this route' })
+        return
+      }
+
+      if (value.length <= maxQueryLength) return
+      ctx.addIssue({ code: 'custom', message: `q must be ${maxQueryLength} characters or fewer` })
     })
     .transform((value) => (value.length > 0 ? value : null))
 

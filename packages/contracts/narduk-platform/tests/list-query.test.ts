@@ -166,6 +166,17 @@ describe('listQuerySchema — free-text q', () => {
     expect(schema.parse({ q: ' 12345678 ' }).q).toBe('12345678')
     expect(schema.safeParse({ q: '123456789' }).success).toBe(false)
   })
+
+  it('rejects q on a route that does not search, rather than ignoring it', () => {
+    const unsearchable = listQuerySchema({ maxLimit: 100, searchable: false, sortable })
+    const result = unsearchable.safeParse({ q: 'ada' })
+
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe('q is not supported by this route')
+    // A blank q narrows nothing, so it is absence, not a rejected filter.
+    expect(unsearchable.parse({ q: '  ' }).q).toBeNull()
+    expect(unsearchable.parse({}).q).toBeNull()
+  })
 })
 
 describe('listQuerySchema — modes', () => {

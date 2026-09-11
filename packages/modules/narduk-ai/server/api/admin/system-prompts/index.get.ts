@@ -26,6 +26,8 @@ export default defineAdminQuery(
         defaultLimit: MAX_LIMIT,
         defaultSort: 'name:asc',
         maxLimit: MAX_LIMIT,
+        // No free-text search here yet; `q` is rejected rather than ignored.
+        searchable: false,
         sortable: SORTABLE,
       }),
     rateLimit: RATE_LIMIT_POLICIES.adminSystemPrompts,

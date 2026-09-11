@@ -35,6 +35,8 @@ export default defineEventHandler(async (event) => {
     defaultLimit: DEFAULT_LIMIT,
     defaultSort: 'createdAt:desc',
     maxLimit: MAX_LIMIT,
+    // This route has never searched; `q` is rejected rather than ignored.
+    searchable: false,
     sortable: SORTABLE,
   })
 

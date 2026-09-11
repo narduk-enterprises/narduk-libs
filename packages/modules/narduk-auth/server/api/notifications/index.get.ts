@@ -33,6 +33,9 @@ export default defineEventHandler(async (event) => {
     defaultSort: 'createdAt:desc',
     filters: FILTERS,
     maxLimit: MAX_LIMIT,
+    // No free-text search over a user's notifications yet; `q` is rejected
+    // rather than accepted and quietly dropped.
+    searchable: false,
     sortable: SORTABLE,
   })
 

@@ -18,6 +18,9 @@ the package root, matching the package's convention):
 - Unknown keys are **rejected**, never silently stripped. A typo'd or renamed
   parameter that reads as "no filter" is the riverstatus bug class this contract
   exists to close: the page silently came back unfiltered.
+- `searchable: false` closes the same hole from the other side: a route that
+  does not implement free-text search rejects a non-empty `q` instead of
+  accepting it and quietly returning an unnarrowed page.
 - `ListQuery<TFilters, TKey>` and `ListResponse<TItem, TMode>` —
   `{ items, total: number | null, limit, sort, q }` plus `offset` or
   `nextCursor` — with `formatListSort()` rendering the parsed sort back to its
