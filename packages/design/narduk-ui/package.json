@@ -37,8 +37,14 @@
     "test:unit": "vitest run",
     "typecheck": "vue-tsc --noEmit --project tsconfig.json"
   },
+  "//devDependencies": "happy-dom, @vitejs/plugin-vue, @vue/test-utils, @vue/server-renderer and @types/node are pinned to exact versions already resolved in this workspace's lockfile. A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package, which is exactly the silent dependency drift narduk-libs#124 warns folds against. Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
+    "@types/node": "22.19.19",
+    "@vitejs/plugin-vue": "6.0.7",
+    "@vue/server-renderer": "3.5.39",
+    "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
+    "happy-dom": "20.10.6",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5",

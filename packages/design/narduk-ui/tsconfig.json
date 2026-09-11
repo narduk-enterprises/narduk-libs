@@ -11,5 +11,11 @@
     "target": "ES2022",
     "types": ["vitest/globals"]
   },
-  "include": ["_core/**/*.ts", "instruments/**/*.ts", "instruments/**/*.vue", "tests/**/*.ts"]
+  "include": [
+    "_core/**/*.ts",
+    "instruments/**/*.ts",
+    "instruments/**/*.vue",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
