@@ -11,7 +11,7 @@ apps now carry one bot config: `renovate.json` is no longer scaffolded
 packages (`narduk-core`, `narduk-auth`) are dropped from `pnpm.overrides`
 because they are already exact-pinned as direct deps and Dependabot does not
 update that field -- an override would resolve a grouped bump straight back to
-the old version. `@nuxt/kit` stays in overrides (modules depend on a range).
-The registries block reads the org-level Dependabot secret
+the old version. `@nuxt/kit` stays in overrides (modules depend on a range). The
+registries block reads the org-level Dependabot secret
 `NARDUK_PLATFORM_GH_PACKAGES_READ`. A live Dependabot run against a generated
 app is not possible from the PR VM; empirical proof is a follow-up.
