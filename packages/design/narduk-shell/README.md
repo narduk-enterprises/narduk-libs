@@ -36,7 +36,10 @@ ships `NeStatusBadge` and `defineStatusMap`; item 16
 ([narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263))
 ships `NeConfirmDialog` and `useConfirm()`; item 7
 ([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254))
-ships `NeStatePanel`. Components read Nuxt UI semantic tokens and `UBadge`
+ships `NeStatePanel`; item 11
+([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258))
+ships `NePager` and `useCollection()`, the suite's single-flight paged-list
+state machine. Components read Nuxt UI semantic tokens and `UBadge`
 colour/variant props, and do not hardcode a colour, radius, shadow or font. Each
 later item adds its own component, README section, tests and NE Base card.
 
@@ -874,6 +877,165 @@ import type {
 major"). It is deprecated in the same release as this component and removed in
 the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
+
+### NePager / useCollection()
+
+The foot of a paged list, and the state machine behind it. Backlog item 11
+([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258)).
+
+`useCollection()` is the component here; `NePager` is the small part you can
+see. The composable owns the concurrency rules that every list in the estate got
+wrong separately, and the pager is deliberately incapable of breaking them — it
+can write back a page number and nothing else.
+
+The wire shape is not this package's to invent: the query and response are
+`@narduk-enterprises/narduk-platform/list-query`, served by `parseListQuery` +
+`listResponse` in `narduk-core` (item 10). `useCollection` imports the
+contract's own `LIST_QUERY_DEFAULT_LIMIT`, maximum `q` length and reserved-key
+list rather than restating them.
+
+#### The five rules it enforces
+
+| Rule                                                                                                                                                 | What it prevents                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Single flight.** One request in flight. Triggers that arrive during it coalesce into **one** follow-up, and the superseded request is `abort()`ed. | A filter panel that fires five requests for five clicks, and a server paying for four answers nobody reads.                                                                                 |
+| **Stale-scope discard.** A response whose scope token no longer matches the current state is never rendered.                                         | The out-of-order render: request A (slow, page 1) landing after request B (fast, page 2) and putting page 1 back on screen.                                                                 |
+| **Debounced `q`** (250 ms; `debounce: 0` in a test).                                                                                                 | One request per keystroke.                                                                                                                                                                  |
+| **`page` resets to 1** when `q`, a filter, `sort` or `limit` changes.                                                                                | The search-after-page bug — searching from page 7 and getting an empty result set that has matches (stonx#219, #218, #5).                                                                   |
+| **`limit` and `page` are clamped**, `page` against the response that actually landed.                                                                | An empty last page after a delete. Deleting the 26th of 26 rows at `limit: 25` lands the reader on page 1 — the new last page — in exactly **one** extra request, not an O(page) walk back. |
+
+Each of those is pinned by a test that asserts a **request count**, in
+`test/use-collection.test.ts`. A test asserting only the rendered rows passes
+for a broken single-flight implementation, which is why none of them do that.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const c = useCollection<Runner>({
+  fetch: (query, { signal }) => $fetch('/api/runners', { query, signal }),
+  limit: 25,
+  sortable: ['name', 'lastSeenAt'],
+  syncQuery: true,
+})
+</script>
+
+<template>
+  <UInput v-model="c.q" placeholder="Search runners" />
+  <NeStatePanel
+    :state="c.pending && c.items.length === 0 ? 'loading' : undefined"
+  >
+    <ul>
+      <li v-for="runner in c.items" :key="runner.id">{{ runner.name }}</li>
+    </ul>
+  </NeStatePanel>
+  <NePager
+    v-model:state="c.state"
+    noun="runners"
+    :to="(page) => ({ query: { ...$route.query, page } })"
+  />
+</template>
+```
+
+`useCollection` is auto-imported by the module. `NePager` is registered from
+`src/registry.ts` like every other component.
+
+#### `useCollection(options)`
+
+| Option           | Type                                        | Default                | Notes                                                                                                                                             |
+| ---------------- | ------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch`          | `(query, { signal }) => Promise<TRaw>`      | —                      | Required. Called at most once per settled intent. Forward `signal` and a superseded request is actually cancelled, not merely ignored.            |
+| `adapter`        | `(raw: TRaw) => OffsetListResponse<TItem>`  | —                      | For a route not yet on `listResponse`. Drop it once the route migrates.                                                                           |
+| `debounce`       | `number`                                    | `250`                  | `q` only. `0` disables it.                                                                                                                        |
+| `enabled`        | `MaybeRefOrGetter<boolean>`                 | `true`                 | False while the page has no scope to ask with; a scoped list called with no scope is a 400 by design. Fetches by itself the moment it turns true. |
+| `filters`        | `MaybeRefOrGetter<Record<string, unknown>>` | `{}`                   | Extra query keys. A change resets to page 1. A key colliding with the contract's reserved keys throws, naming the key.                            |
+| `immediate`      | `boolean`                                   | `true`                 | `false` for an SSR page that `await c.refresh()`s.                                                                                                |
+| `limit`          | `number`                                    | contract default (25)  | Clamped to `maxLimit`, then to whatever the route echoes back.                                                                                    |
+| `maxLimit`       | `number`                                    | none                   | Optional client-side ceiling. The route's own ceiling wins regardless, because the clamp follows the `limit` the response echoes back.            |
+| `maxQueryLength` | `number`                                    | contract default (200) | Longest `q` put on the wire.                                                                                                                      |
+| `sort`           | `string \| null`                            | `null`                 | Wire form, `'<key>:<asc\|desc>'`.                                                                                                                 |
+| `sortable`       | `readonly string[]`                         | —                      | Allowlist. Gates `setSort` **and** what a URL may set, so `?sort=passwordHash:asc` is dropped rather than forwarded.                              |
+| `syncQuery`      | `boolean`                                   | `false`                | Mirror `page`/`q`/`sort` in the route query.                                                                                                      |
+
+Returns a `reactive` object: `items`, `page`, `pageCount`, `total`, `pending`,
+`error`, `canNext`, `canPrevious`, `sort`, `q` (bind the search box to it — it
+is the keystroke value, applied after the debounce), `state`, and the mutators
+`setPage`, `setLimit`, `setSort` and `refresh()`. `refresh()` resolves when the
+collection has **settled**, including a clamp refetch, so an SSR
+`await c.refresh()` never serialises an empty page.
+
+#### `syncQuery: true`
+
+Reads `page`, `q` and `sort` out of the URL **before** the first request — one
+request, already for page three, not page one plus a correction — and writes
+them back on change. Defaults are omitted, so page one is `?` and never
+`?page=1`: two URLs for one page is a duplicate for a crawler, and this pager
+exists to be crawled. Query keys the collection does not own are left exactly as
+they were. It needs `useRoute()`/`useRouter()`, so it throws a named error
+outside a router; that is why `vue-router` is a declared peer.
+
+#### NePager props
+
+| Prop           | Type                                 | Default     | Notes                                                                 |
+| -------------- | ------------------------------------ | ----------- | --------------------------------------------------------------------- |
+| `state`        | `NeCollectionState<T>`               | —           | Required, `v-model:state`. Assigning applies `page` and nothing else. |
+| `density`      | `'default' \| 'dense'`               | `'default'` | `dense` is pacc-trac's `DenseListPager`.                              |
+| `noun`         | `string`                             | `'results'` | The word in the summary: `51–75 of 712 runners`.                      |
+| `siblingCount` | `number`                             | `2`         | Passed to `UPagination`.                                              |
+| `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                             |
+| `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                          |
+| `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                           |
+
+#### NePager slots and events
+
+| Slot      | Props                | Notes                                           |
+| --------- | -------------------- | ----------------------------------------------- |
+| `summary` | `{ state, summary }` | Replaces the sentence, keeping the live region. |
+
+| Event          | Payload                | Notes                                                                             |
+| -------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes. |
+
+#### Two shapes, because `total` is optional
+
+`listResponse` returns `total: null` unless the route opts into counting, so a
+page-numbered control would be inventing a number. `NePager` renders
+`UPagination` with real page numbers when `total` is a number, and Previous/Next
+driven by `hasPrevious`/`hasNext` when it is `null`.
+
+#### `:to` emits real hrefs
+
+With `:to`, every control is an `<a href>` resolved through the router, so a
+crawler follows page two and a middle-click opens it in a tab (riverstatus's
+rivers list is the pilot). `test/NePager.ssr.test.ts` renders the **real**
+`UPagination` through a real router in the `node` environment and asserts the
+`href`s in the server output — a stub emitting its own anchors would prove
+nothing about the shipped component.
+
+Nothing is disabled while a request is in flight: disabling a link takes
+middle-click and "open in new tab" away from a reader for 200 ms. The summary
+carries `aria-busy` instead.
+
+#### Offset mode only, deliberately
+
+The contract also has a cursor form. `useCollection` implements the offset form
+and nothing else, because a cursor collection cannot answer "how many pages",
+which is the question `NePager`'s counted shape exists to answer. A cursor list
+wants a different control (a "Load more"), so it should be a different
+composable rather than a mode flag that makes half of this API meaningless.
+
+#### Types
+
+```ts
+import type {
+  NeCollection,
+  NeCollectionFetchContext,
+  NeCollectionOptions,
+  NeCollectionQuery,
+  NeCollectionState,
+  NePagerProps,
+} from '@narduk-enterprises/narduk-shell'
+```
 
 ## Component surface check
 
