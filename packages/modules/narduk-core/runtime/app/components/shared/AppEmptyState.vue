@@ -44,8 +44,6 @@ import { warnAppEmptyStateDeprecated } from './appEmptyStateDeprecation'
  * the narduk-core patch release that carries this. A one-time, dev-only
  * `console.warn` points at `NeStatePanel`; production stays silent.
  */
-warnAppEmptyStateDeprecated()
-
 withDefaults(
   defineProps<{
     /** Whether to apply a compact vertical padding. */
@@ -63,6 +61,8 @@ withDefaults(
     compact: false,
   },
 )
+
+warnAppEmptyStateDeprecated()
 </script>
 
 <template>

@@ -342,7 +342,7 @@ describe('NeStatePanel: tokens are the only styling contract', () => {
     const script = componentSource.split('<script')[1]?.split('</script>')[0] ?? ''
 
     for (const source of [template, script]) {
-      expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+      expect(source).not.toMatch(/#[0-9a-f]{3,8}\b/i)
       expect(source).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
       expect(source).not.toMatch(/font-family\s*:/)
       expect(source).not.toMatch(/box-shadow\s*:/)
