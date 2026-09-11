@@ -1,0 +1,15 @@
+/*
+ * @narduk-enterprises/narduk-shell/theme.css — reserved subpath, no tokens yet.
+ *
+ * Backlog item 2, "Theming through Nuxt UI" (narduk-libs#249), owns this sheet.
+ * It will carry the NE token layer -- surfaces, ink, radius, shadow, type
+ * scale and the accent/structure brand hooks -- mapped onto Nuxt UI's `--ui-*`
+ * variables, so every `U*` and `Ne*` component themes from one file.
+ *
+ * It ships empty from item 1 (narduk-libs#248) so the export name is reserved
+ * before an app depends on it, and so the consumer-fixture subpath tier proves
+ * the specifier resolves from an external install on the suite's first release.
+ * An app may import it today; it declares nothing, so it changes nothing.
+ *
+ * Do not add tokens here outside item 2.
+ */
