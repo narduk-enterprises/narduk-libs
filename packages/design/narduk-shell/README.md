@@ -22,11 +22,12 @@ components backlog in
 
 ## Status
 
-**Skeleton only.** This release is backlog item 1 of 22
-([narduk-libs#248](https://github.com/narduk-enterprises/narduk-libs/issues/248)):
-the package, the module, the registration model and the reserved subpaths. It
-ships no components and no tokens yet. Each later item adds its own component,
-README section, tests and NE Base card.
+**Filling up, one backlog item at a time.** Item 1
+([narduk-libs#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))
+laid down the package, the module, the registration model and the reserved
+subpaths. Each later item adds its own component, README section, tests and NE
+Base card; what has landed is listed under [Components](#components) below. The
+tokens (item 2) have not landed yet.
 
 ## Install
 
@@ -54,9 +55,10 @@ layer already has the right one.
 export default defineNuxtConfig({
   modules: ['@narduk-enterprises/narduk-shell'],
   nardukShell: {
-    // Register the suite's components globally. Default: true.
+    // Register the suite globally. Default: true.
     // `false` keeps the package installed and the ./format and ./theme.css
-    // subpaths importable, but registers no global names.
+    // subpaths importable, but registers no global component names and no
+    // composable auto-imports.
     components: true,
   },
 })
@@ -123,14 +125,162 @@ arrives.
 
 ## Components
 
-_Intentionally empty._ This release registers no components.
-
 Each component arrives with its own backlog item, and each adds its section here
 — props, slots, events and one example — alongside a mount test, an SSR test and
 an NE Base card. The ordered backlog is
 [narduk-libs#247](https://github.com/narduk-enterprises/narduk-libs/issues/247)
 and the plan it tracks is
 [`docs/plans/components-library-plan.md`](../../../docs/plans/components-library-plan.md).
+
+### NeConfirmDialog / useConfirm()
+
+Backlog item 16
+([#263](https://github.com/narduk-enterprises/narduk-libs/issues/263)). The
+estate's "are you sure?" dialog, and the awaitable composable that opens one
+without wiring a `v-model` through a page.
+
+```ts
+const confirm = useConfirm()
+
+const ok = await confirm({
+  title: 'Close all positions?',
+  message: 'Every open position closes at the current market price.',
+  confirmLabel: 'Close all',
+  tone: 'danger',
+  body: TradeSummary,
+  props: { symbol, quantity, cashAfter },
+})
+if (!ok) return
+```
+
+`useConfirm()` is auto-imported by the module. Call it from any component —
+the app does not mount a `<NeConfirmDialog>` host of its own.
+
+#### Host mechanism
+
+The composable is built on Nuxt UI's `useOverlay`. That is the host: `open()`
+mounts `NeConfirmDialog` into the overlay stack and `close(boolean)` is what
+`await confirm(...)` resolves with. The stack lives on `UApp` (or a bare
+`UOverlayProvider`), which every Narduk app already has — narduk-core's
+`LayerAppShell` wraps the tree in `UApp`. There is no module-registered host
+component and no layout wiring.
+
+One handle drives one dialog at a time: call `useConfirm()` once per `setup`
+and await each `confirm()` before starting the next. Sequential calls resolve
+independently; leftover `pending` / `error` from a rejected `onConfirm` is
+reset on the next `open`.
+
+The declarative form is the same component with a model:
+
+```vue
+<NeConfirmDialog
+  v-model:open="showEndGame"
+  title="End game?"
+  message="Positions are closed at market and standings are final."
+  confirm-label="End game"
+  tone="danger"
+  :pending="ending"
+  :error="endGameError"
+  @confirm="endGame"
+/>
+```
+
+#### Props
+
+| Prop           | Type                      | Default           | Notes                                                                |
+| -------------- | ------------------------- | ----------------- | -------------------------------------------------------------------- |
+| `open`         | `boolean`                 | `false`           | `v-model:open`. Nuxt UI v4's overlay model.                          |
+| `title`        | `string`                  | `'Are you sure?'` | The dialog's accessible name (`aria-labelledby`).                    |
+| `message`      | `string`                  | `''`              | The accessible description (`aria-describedby`).                     |
+| `confirmLabel` | `string`                  | `'Confirm'`       |                                                                      |
+| `cancelLabel`  | `string`                  | `'Cancel'`        |                                                                      |
+| `tone`         | `'default' \| 'danger'`   | `'default'`       | `danger` → `error`-coloured confirm button, and Cancel takes focus.  |
+| `pending`      | `boolean`                 | `false`           | Confirm loading, cancel disabled, dismissal off. See below.          |
+| `error`        | `string`                  | `''`              | Rendered in the body as a `role="alert"` live region.                |
+| `body`         | `Component`               | —                 | Rendered in the dialog body, before the `#body` slot.                |
+| `props`        | `Record<string, unknown>` | —                 | Props for `body`. Named `props` to match `confirm({ body, props })`. |
+
+#### Slots
+
+| Slot   | Notes                                                                    |
+| ------ | ------------------------------------------------------------------------ |
+| `body` | Rich body content. Renders after the `body` component when both are set. |
+
+#### Events
+
+| Event         | Payload   | Notes                                                              |
+| ------------- | --------- | ------------------------------------------------------------------ |
+| `confirm`     | —         | Confirm pressed. **The dialog stays open** — see below.            |
+| `cancel`      | —         | Cancel, Escape or an outside click. The dialog is already closing. |
+| `close`       | `boolean` | The overlay result `useOverlay` resolves `confirm()` with.         |
+| `after:leave` | —         | Forwarded from `UModal` so a closed overlay can unmount.           |
+
+#### Confirming does not close the dialog
+
+`@confirm` fires and the dialog stays open, so the owner can flip `:pending`
+while its async work runs. That is exactly the contract narduk-core's
+`AppConfirmModal` and stonx's `CommonConfirmModal` already have, so adopting the
+suite is not a behaviour change for either. `useConfirm()` closes it for you.
+
+#### Pending (`preventClose`)
+
+While `pending` is true the confirm button shows its loading state, the cancel
+button is disabled, and Escape and outside clicks are ignored (Nuxt UI's
+`dismissible: false`). Nothing can dismiss the dialog mid-flight.
+
+With an async `onConfirm` the composable drives all of that for you:
+
+```ts
+const ok = await confirm({
+  title: 'End game?',
+  message: 'Positions are closed at market and standings are final.',
+  tone: 'danger',
+  onConfirm: () => endGame(gameId),
+})
+```
+
+The dialog goes pending the moment the user confirms, and:
+
+- **resolves** → the dialog closes and `confirm()` returns `true`;
+- **rejects** → the dialog **stays open**, leaves pending, and the rejection is
+  surfaced through the `error` prop (`error.message`, or a generic fallback).
+  The user can retry or cancel, and `confirm()` only settles once they do —
+  `false` if they back out.
+
+#### Focus
+
+Initial focus lands on the **least destructive** button: **Cancel** for
+`tone="danger"`, **Confirm** otherwise. Reka's default is the first tabbable
+child, which for a destructive dialog puts the irreversible action one Return
+press away.
+
+`aria-modal="true"` is declared on the dialog. The containment behind that claim
+— the Tab/Shift-Tab trap, wrapping at both ends, and focus restoration to the
+opening control — is **Reka UI's `FocusScope`**, which Nuxt UI's `UModal`
+mounts; this component does not re-implement it. Everything outside the dialog
+is also `aria-hidden` while it is open, which is Reka's own mechanism and the
+part that makes the `aria-modal` claim true rather than decorative.
+
+The mount tests assert what a DOM-in-JS environment can actually prove:
+`aria-modal`, the `aria-labelledby`/`aria-describedby` wiring, the Reka dialog
+role and dismissable-layer, the outside `aria-hidden`, and where initial focus
+lands. Sequential Tab navigation is browser behaviour that no DOM shim
+implements, so that specific half is delegated to Reka and stated here rather
+than asserted there. The bug class this closes is operator-portal#134: a
+declared `aria-modal` with Tab not trapped.
+
+#### What it is not for
+
+Confirmation, not workflow. operator-portal's preview-token flows stay bespoke
+(plan §2 item 16) — a dialog that mints something, shows a secret, or carries
+its own multi-step form is not this component. `NeConfirmDialog` answers one
+yes/no question about an action the user already chose.
+
+#### Supersedes
+
+narduk-core's `AppConfirmModal`, deprecated in the same release as this one
+under D4 and removed in the next narduk-core major. Migration mapping is in
+[narduk-core's README](../../modules/narduk-core/README.md).
 
 ## Publication
 

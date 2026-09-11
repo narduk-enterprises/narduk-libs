@@ -145,7 +145,12 @@ export default [
     // has to be off wherever the graph can reach vite. These are test and
     // build-tool entry points, not part of the published module's own graph,
     // so cycle detection through them has no product value.
+    // narduk-shell's vitest config joins the list for the same reason: it
+    // loads `@nuxt/ui/vite` (so mount tests can render a real `UModal` rather
+    // than a stub) alongside `@vitejs/plugin-vue` and `vitest/config`, and all
+    // three bottom out in bare `vite`.
     files: [
+      'packages/design/narduk-shell/vitest.config.ts',
       'packages/modules/narduk-mapkit-nuxt/test/**/*.ts',
       'packages/modules/narduk-mapkit-nuxt/vitest.config.ts',
     ],
