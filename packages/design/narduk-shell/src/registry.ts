@@ -30,6 +30,9 @@ export interface NeComponentRegistration {
 }
 
 /**
- * Registered in array order. Empty until backlog item 2 and later fill it.
+ * Registered in array order. Filled in by each later backlog item alongside
+ * its component, README section and tests.
  */
-export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = []
+export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
+  { name: 'NeStatusBadge', filePath: './runtime/components/NeStatusBadge.vue' },
+]
