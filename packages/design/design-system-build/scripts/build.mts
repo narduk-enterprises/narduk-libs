@@ -167,7 +167,16 @@ export const NO_SHELL_NOTE = 'narduk-shell is not yet available in the coded lib
 
 /** Only the controlled, prerendered Vue gallery supplies markup. No canvas input. */
 export function renderBundle(html: string, css: string, note: string = NO_SHELL_NOTE) {
-  if (!css.trim() || /@import\s|url\(\s*['"]?(?!data:)/i.test(css)) {
+  // The lookahead must run before the optional quote is consumed: with
+  // `['"]?` first, a quoted `url("data:...")` still matched, because the
+  // engine backtracked to zero quotes and then asserted the lookahead
+  // against the quote character itself -- which is never "data:", so it
+  // trivially passed and the whole call was (wrongly) flagged as external.
+  // Nuxt Icon's mask-image CSS (`--svg:url("data:image/svg+xml,...")`),
+  // first exercised once NePageHeader/NeSectionHeader's cards render real
+  // breadcrumbs with a separator icon, is exactly this shape:
+  // self-contained, but quoted (narduk-libs#282 PR review).
+  if (!css.trim() || /@import\s|url\(\s*(?!['"]?data:)/i.test(css)) {
     throw new Error(
       'The compiled stylesheet must be self-contained, with no external assets or imports',
     )
@@ -295,10 +304,16 @@ export async function build() {
     ...cardSources,
   })
   // Cards, not registry entries, decide the note: a registered component whose
-  // card is still on the PENDING_CARDS allowlist is a coverage gap, not a
-  // missing component.
+  // card is still on the PENDING_CARDS allowlist is a reviewed waiver, not a
+  // missing component -- the same exemption `shellCardPlan`'s own `missing`
+  // check already grants (`!pending.has(card.name)`, above). Without this
+  // filter a name that is genuinely pending (no file yet, but allowlisted)
+  // would pass `shellCardPlan` while still failing `check-package.mts`'s
+  // `coverage.missing` assertion: the waiver satisfying one gate and
+  // tripping the other (narduk-libs#282 PR review).
+  const pendingCardNames = new Set(PENDING_CARDS)
   const cardless = NE_SHELL_COMPONENTS.map((entry) => entry.name).filter(
-    (name) => !plan.some((card) => card.name === name),
+    (name) => !plan.some((card) => card.name === name) && !pendingCardNames.has(name),
   )
   const shellNote =
     NE_SHELL_COMPONENTS.length === 0
