@@ -44,6 +44,22 @@ export const NUXT_CONFIG_CANDIDATES = [
   'web/nuxt.config.ts',
 ] as const
 
+/** Pages/components directories at the same monorepo prefixes as
+ * `NUXT_CONFIG_CANDIDATES` (and the component paths item 3 / Wave-1 already
+ * walk). A Nuxt app "has UI" only when one of these exists. */
+export const NUXT_UI_SURFACE_CANDIDATES = [
+  'app/pages',
+  'app/components',
+  'apps/web/app/pages',
+  'apps/web/app/components',
+  'web/app/pages',
+  'web/app/components',
+  'src/pages',
+  'src/components',
+  'pages',
+  'components',
+] as const
+
 export const NITRO_OUTPUT_CANDIDATES = [
   '.output/nitro.json',
   'apps/web/.output/nitro.json',
@@ -178,6 +194,15 @@ export function mergedDeps(packages: FoundPackage[]): Record<string, string> {
 /** Locate the first wrangler config that exists at a known candidate path. */
 export function findWranglerConfig(repo: AppRepo): string | null {
   return WRANGLER_CANDIDATES.find((rel) => repo.read(rel) !== null) ?? null
+}
+
+/** True when this checkout is a Nuxt app with a pages or components
+ * directory. Reuses `NUXT_CONFIG_CANDIDATES` (item 1.1) rather than a second
+ * "is this Nuxt?" heuristic such as a `nuxt` dependency. API-only apps --
+ * no Nuxt config, or Nuxt without pages/components -- return false. */
+export function hasNuxtUiSurface(repo: AppRepo): boolean {
+  if (!NUXT_CONFIG_CANDIDATES.some((rel) => repo.exists(rel))) return false
+  return NUXT_UI_SURFACE_CANDIDATES.some((rel) => repo.exists(rel))
 }
 
 const BINDING_ARRAY_OR_MAP_KEYS = [
