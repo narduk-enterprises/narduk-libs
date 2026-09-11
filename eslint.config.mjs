@@ -154,6 +154,45 @@ export default [
     },
   },
   {
+    // Third instance of the same eslint-plugin-import-x@4.17.1 legacy-resolver
+    // crash documented twice above. narduk-shell's first component
+    // (narduk-libs#254) makes its vitest config import `@vitejs/plugin-vue` and
+    // its suites import `@vue/test-utils` / `@vue/server-renderer`, whose module
+    // graphs bottom out in bare `vite`; tracing a cycle through them aborts the
+    // WHOLE lint run instead of reporting a finding. Test and build-tool entry
+    // points, not part of the published module's own graph. The globs cover the
+    // whole test directory on purpose, so each later component item in this
+    // package inherits the exception instead of re-adding it.
+    files: [
+      'packages/design/narduk-shell/test/**/*.ts',
+      'packages/design/narduk-shell/vitest.config.ts',
+    ],
+    rules: {
+      'import-x/no-cycle': 'off',
+    },
+  },
+  {
+    // narduk-shell's whole purpose is to WRAP Nuxt UI: every `Ne*` component
+    // composes `U*` primitives that `@nuxt/ui` registers globally in the
+    // consuming app. They cannot be imported here — their sources resolve
+    // `#build/ui/*` and `#imports`, virtual modules that exist only inside a
+    // Nuxt build — so eslint-plugin-vue's static analysis reports each one as
+    // undefined. Same false-positive family as the Histoire `<Story>` and
+    // mapkit playground blocks above, narrowed to a prefix allowlist rather
+    // than switched off: a genuinely misspelt or unregistered component is
+    // still reported. `Ne*` is allowed for the same reason — this module
+    // registers those itself, one explicit addComponent per registry entry.
+    // The Nuxt built-ins the shared config's own allowlist covers are named
+    // here too, because supplying `ignorePatterns` replaces that list.
+    files: ['packages/design/narduk-shell/src/runtime/components/**/*.vue'],
+    rules: {
+      'vue/no-undef-components': [
+        'warn',
+        { ignorePatterns: ['^U[A-Z]', '^Ne[A-Z]', '^Nuxt[A-Z]', '^Lazy[A-Z]', '^ClientOnly$'] },
+      ],
+    },
+  },
+  {
     // narduk-mapkit's DOM-facing controllers type their element/document
     // parameters as deliberately bivariant structural shims -- the interfaces
     // say so in their own doc comments ("so that passing a real HTMLElement

@@ -32,10 +32,7 @@ it('runs in an environment with no DOM, which is the whole point of this file', 
   expect(typeof window).toBe('undefined')
 })
 
-function renderState(
-  props: Record<string, unknown>,
-  defaultSlot?: () => unknown,
-): Promise<string> {
+function renderState(props: Record<string, unknown>, defaultSlot?: () => unknown): Promise<string> {
   const app = createSSRApp({
     render: () => h(NeStatePanel, props, defaultSlot ? { default: defaultSlot } : {}),
   })

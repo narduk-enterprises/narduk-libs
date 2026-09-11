@@ -66,7 +66,11 @@ describe('NeStatePanel: which reading is on screen', () => {
 
 describe('NeStatePanel: title, message and icon reach the wrapped primitive', () => {
   it('passes empty through UEmpty with the default inbox icon', () => {
-    const wrapper = render({ message: 'No runner has registered.', state: 'empty', title: 'No runners' })
+    const wrapper = render({
+      message: 'No runner has registered.',
+      state: 'empty',
+      title: 'No runners',
+    })
     const empty = wrapper.get('[data-stub="UEmpty"]')
 
     expect(empty.get('[data-stub-slot="title"]').text()).toBe('No runners')
@@ -89,7 +93,11 @@ describe('NeStatePanel: title, message and icon reach the wrapped primitive', ()
   })
 
   it('renders loading as skeletons, with the title and message as real text', () => {
-    const wrapper = render({ message: 'Asking the fleet.', state: 'loading', title: 'Loading runners' })
+    const wrapper = render({
+      message: 'Asking the fleet.',
+      state: 'loading',
+      title: 'Loading runners',
+    })
     const panel = panelOf(wrapper, 'loading')
 
     expect(panel.findAll('[data-stub="USkeleton"]').length).toBeGreaterThan(0)
@@ -100,7 +108,11 @@ describe('NeStatePanel: title, message and icon reach the wrapped primitive', ()
   })
 
   it('passes error through UAlert in the error colour', () => {
-    const wrapper = render({ message: 'HTTP 500.', state: 'error', title: 'Could not load runners' })
+    const wrapper = render({
+      message: 'HTTP 500.',
+      state: 'error',
+      title: 'Could not load runners',
+    })
     const alert = wrapper.get('[data-stub="UAlert"]')
 
     expect(alert.get('[data-stub-slot="title"]').text()).toBe('Could not load runners')

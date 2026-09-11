@@ -40,15 +40,37 @@ interface NormalisedGap {
 }
 
 /**
+ * `''` is the internal "no reading" sentinel: the component renders its default
+ * slot instead of a panel. The public prop types stay optional, not empty
+ * strings — this is only how the resolved reading is carried around, so that
+ * a `v-if` and a `Record` lookup both narrow on the same falsy value.
+ */
+type ResolvedState = NeStateValue | ''
+
+const props = withDefaults(defineProps<NeStatePanelProps>(), {
+  as: 'div',
+  eyebrow: '',
+  gaps: () => [],
+  icon: '',
+  message: '',
+  state: undefined,
+  status: undefined,
+  title: '',
+  unblocksHref: '',
+  unblocksOn: '',
+  unblocksRef: '',
+})
+
+/**
  * `useAsyncData()`'s status, mapped onto a reading. `success` is deliberately
  * not a state: a successful read with rows is the default slot's job, and a
  * successful read with none is `empty`, which only the caller can know.
  */
-const STATUS_STATE: Readonly<Record<NeAsyncDataStatus, NeStateValue | undefined>> = {
+const STATUS_STATE: Readonly<Record<NeAsyncDataStatus, ResolvedState>> = {
   error: 'error',
   idle: 'loading',
   pending: 'loading',
-  success: undefined,
+  success: '',
 }
 
 /** Text, always rendered, so no reading depends on colour. */
@@ -86,24 +108,13 @@ const ALERT_TITLE_FALLBACK: Readonly<Record<'blocked' | 'error', string>> = {
   error: 'This view could not be loaded',
 }
 
-const props = withDefaults(defineProps<NeStatePanelProps>(), {
-  as: 'div',
-  eyebrow: '',
-  gaps: () => [],
-  icon: '',
-  message: '',
-  state: undefined,
-  status: undefined,
-  title: '',
-  unblocksHref: '',
-  unblocksOn: '',
-  unblocksRef: '',
-})
-
-const state = computed<NeStateValue | undefined>(() => {
+const state = computed<ResolvedState>(() => {
+  // An explicit `state` wins over a bound `status` whenever it is set, which is
+  // what lets a caller compose the two:
+  //   :status="status" :state="status === 'success' && !rows.length ? 'empty' : undefined"
   if (props.state) return props.state
   if (props.status) return STATUS_STATE[props.status]
-  return undefined
+  return ''
 })
 
 const isLoading = computed(() => state.value === 'loading')
@@ -143,7 +154,14 @@ const hasUnblocks = computed(() => Boolean(props.unblocksOn || props.unblocksRef
 </script>
 
 <template>
-  <!-- eslint-disable vue/no-undef-components -- UEmpty, USkeleton, UAlert and UIcon are registered by @nuxt/ui in the consuming app; this package declares it as a peer and never imports its SFCs directly (they resolve #build/* virtual modules that only exist inside a Nuxt build). -->
+  <!--
+    UEmpty, USkeleton and UAlert are registered globally by @nuxt/ui in the
+    consuming app (a peer dependency pinned to 4.6.0). They are deliberately
+    not imported: their sources resolve #build/ui/* and #imports, virtual
+    modules that exist only inside a Nuxt build, so an import here would be
+    unresolvable in this package and in every test. The root eslint config
+    allows the `U*` prefix for this directory for exactly that reason.
+  -->
   <slot v-if="!state" />
   <component
     :is="as"
