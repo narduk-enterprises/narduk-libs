@@ -2,6 +2,14 @@
 /**
  * AppSettingsProfile — Reusable profile editing card.
  *
+ * @deprecated Use `NeSettingsPage` from `@narduk-enterprises/narduk-shell`
+ * instead (components backlog item 19, narduk-libs#266). Deprecated
+ * 2026-09-11 under decision D4 and removed in the next narduk-core major;
+ * behaviour is unchanged until then. A one-time dev-only `console.warn`
+ * points at the replacement the first time this component is used. The
+ * migration mapping is in this package's README under "Deprecated
+ * components".
+ *
  * Provides name editing, email display, and optional avatar upload.
  * Emits a 'save' event with the updated profile data.
  *
@@ -15,6 +23,8 @@
  *     @save="handleSave"
  *   />
  */
+
+import { warnAppSettingsProfileDeprecated } from '../shared/appSettingsProfileDeprecation'
 
 const props = withDefaults(
   defineProps<{
@@ -53,6 +63,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   save: [data: { avatarUrl: string; name: string }]
 }>()
+
+warnAppSettingsProfileDeprecated()
 
 const formName = ref('')
 const previewAvatarUrl = ref('')
