@@ -45,6 +45,7 @@ const UAlert = defineComponent({
     color: { default: '', type: String },
     description: { default: '', type: String },
     icon: { default: '', type: String },
+    role: { default: undefined, type: String },
     title: { default: '', type: String },
     variant: { default: '', type: String },
   },
@@ -56,6 +57,7 @@ const UAlert = defineComponent({
           'data-stub': 'UAlert',
           'data-stub-color': props.color,
           'data-stub-icon': props.icon,
+          role: props.role,
         },
         [
           h('strong', { 'data-stub-slot': 'title' }, props.title),

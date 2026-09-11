@@ -27,10 +27,11 @@ and its own shape, and never looks like `empty` or `loading`.
   `unblocksRef` and `unblocksHref` ported from operator-portal's `StatePanel`.
 - Slots: `default` (the content the panel replaces) and `#action`.
 - Accessibility by construction: `loading` is a polite `role="status"` live
-  region with `aria-busy="true"`, `error` is `role="alert"`, and
+  region with `aria-busy="true"`, `error` is `role="alert"` via `UAlert`, and
   `empty`/`absent`/`blocked` are `role="status"`. Every state renders its own
-  name as text, so no reading depends on colour. Both the mount suite and the
-  SSR suite assert this in the server output as well as after hydration.
+  name as text, so no reading depends on colour. `absent` and `blocked` never
+  render as an empty list. Both the mount suite and the SSR suite assert this
+  in the server output as well as after hydration.
 - Public types `NeStateValue`, `NeAsyncDataStatus`, `NeStateGap` and
   `NeStatePanelProps` are re-exported from the package entry.
 

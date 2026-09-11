@@ -9,6 +9,10 @@
  * failure only with a red border is unreadable to anyone using a screen reader
  * or a grayscale display. Both are pinned below.
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -16,6 +20,11 @@ import NeStatePanel from '../src/runtime/components/NeStatePanel.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'
 
 import type { NeStateValue } from '../src/runtime/types'
+
+const componentSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/runtime/components/NeStatePanel.vue'),
+  'utf8',
+)
 
 type Props = Record<string, unknown>
 type Slots = Record<string, string>
@@ -133,10 +142,13 @@ describe('NeStatePanel: title, message and icon reach the wrapped primitive', ()
 })
 
 describe('NeStatePanel: accessibility by construction', () => {
-  it('announces a failure assertively', () => {
-    const panel = panelOf(render({ state: 'error' }), 'error')
+  it('announces a failure assertively via UAlert, not a nested wrapper alert', () => {
+    const wrapper = render({ state: 'error' })
+    const panel = panelOf(wrapper, 'error')
+    const alert = wrapper.get('[data-stub="UAlert"]')
 
-    expect(panel.attributes('role')).toBe('alert')
+    expect(alert.attributes('role')).toBe('alert')
+    expect(panel.attributes('role')).toBeUndefined()
     expect(panel.attributes('aria-busy')).toBeUndefined()
   })
 
@@ -165,7 +177,7 @@ describe('NeStatePanel: accessibility by construction', () => {
   })
 })
 
-describe('NeStatePanel: absent is not empty and not loading', () => {
+describe('NeStatePanel: unknown is never rendered as zero', () => {
   it('gives the three no-content readings three different shapes', () => {
     const shapeOf = (state: NeStateValue): string =>
       panelOf(render({ state }), state).attributes('class') ?? ''
@@ -181,6 +193,39 @@ describe('NeStatePanel: absent is not empty and not loading', () => {
     expect(absent).toContain('border-dotted')
     expect(loading).not.toContain('border-dashed')
     expect(loading).not.toContain('border-dotted')
+  })
+
+  it.each<NeStateValue>(['absent', 'blocked'])(
+    '%s never renders as an empty list',
+    (state) => {
+      const wrapper = render({ state, title: 'Runners' })
+      const panel = panelOf(wrapper, state)
+
+      // The reading keeps its own name. An empty collection is `empty`'s job.
+      expect(panel.attributes('data-ne-state')).toBe(state)
+      expect(wrapper.find('[data-ne-state="empty"]').exists()).toBe(false)
+      expect(panel.get('.ne-state-panel__eyebrow').text()).not.toBe('Empty')
+      expect(panel.text()).not.toMatch(/\b0\b/)
+      // No collection list — only the optional named-gaps list uses `<ul>`,
+      // and these cases have none.
+      expect(panel.findAll('ul')).toHaveLength(0)
+    },
+  )
+
+  it('does not let blocked collapse into UEmpty, the empty-list primitive', () => {
+    const wrapper = render({ state: 'blocked', title: 'Runners' })
+
+    expect(wrapper.find('[data-stub="UEmpty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-stub="UAlert"]').exists()).toBe(true)
+  })
+
+  it('keeps absent on UEmpty but not with empty’s inbox icon or dashed box', () => {
+    const wrapper = render({ state: 'absent', title: 'Runners' })
+
+    expect(wrapper.get('[data-stub="UEmpty"]').attributes('data-stub-icon')).toBe(
+      'i-lucide-circle-dashed',
+    )
+    expect(panelOf(wrapper, 'absent').classes()).not.toContain('border-dashed')
   })
 })
 
@@ -288,5 +333,21 @@ describe('NeStatePanel: gaps, the unblocker, and the action slot', () => {
     const wrapper = render({ state: 'loading' }, { default: '<p class="rows">4 runners</p>' })
 
     expect(wrapper.find('.rows').exists()).toBe(false)
+  })
+})
+
+describe('NeStatePanel: tokens are the only styling contract', () => {
+  it('does not hardcode a colour, radius, shadow or font', () => {
+    const template = componentSource.split('<template>')[1] ?? componentSource
+    const script = componentSource.split('<script')[1]?.split('</script>')[0] ?? ''
+
+    for (const source of [template, script]) {
+      expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+      expect(source).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
+      expect(source).not.toMatch(/font-family\s*:/)
+      expect(source).not.toMatch(/box-shadow\s*:/)
+      expect(source).not.toMatch(/border-radius\s*:/)
+      expect(source).not.toMatch(/\b(?:rounded-md|rounded-lg|rounded-xl|shadow-md|shadow-lg)\b/)
+    }
   })
 })

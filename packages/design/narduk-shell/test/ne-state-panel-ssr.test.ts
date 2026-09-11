@@ -62,11 +62,14 @@ describe('NeStatePanel server-rendered without a DOM', () => {
     expect(await renderState({ state })).toContain(eyebrow)
   })
 
-  it('carries role="alert" for a failure into the first paint, not only after hydration', async () => {
+  it('carries role="alert" via UAlert into the first paint, not only after hydration', async () => {
     const html = await renderState({ state: 'error', title: 'Could not load runners' })
 
+    expect(html).toContain('data-stub="UAlert"')
     expect(html).toContain('role="alert"')
     expect(html).toContain('Could not load runners')
+    // The panel itself is not a second alert — that would nest two.
+    expect(html).not.toMatch(/data-ne-state="error"[^>]*role="alert"/)
   })
 
   it('carries the polite busy region for a pending read into the first paint', async () => {
@@ -112,6 +115,18 @@ describe('NeStatePanel server-rendered without a DOM', () => {
     expect(html).toContain('no producer publishes a heartbeat')
     expect(html).toContain('Unblocks on')
     expect(html).toContain('operator-portal#152')
+  })
+
+  it('server-renders absent and blocked as named readings, not an empty list', async () => {
+    const absent = await renderState({ state: 'absent', title: 'Runners' })
+    const blocked = await renderState({ state: 'blocked', title: 'Runners' })
+
+    expect(absent).toContain('data-ne-state="absent"')
+    expect(absent).toContain('Not reported')
+    expect(absent).not.toContain('>Empty<')
+    expect(blocked).toContain('data-ne-state="blocked"')
+    expect(blocked).toContain('data-stub="UAlert"')
+    expect(blocked).not.toContain('data-stub="UEmpty"')
   })
 
   it('does not touch a DOM global merely by rendering twice', async () => {

@@ -18,16 +18,18 @@
  * Accessibility is by construction, not by caller discipline:
  *
  * - `loading` is `role="status"`, `aria-live="polite"`, `aria-busy="true"`.
- * - `error` is `role="alert"`.
+ * - `error` is `role="alert"` **via `UAlert`** (the panel itself is not a
+ *   second alert, so the roles do not nest).
  * - `empty` / `absent` / `blocked` are `role="status"`.
  * - every state renders its name as text (the eyebrow), so the reading never
  *   depends on colour, and the three non-loading shapes differ by border style
- *   as well as by hue.
+ *   as well as by hue. `absent` and `blocked` never collapse into an empty
+ *   list — that is the "unknown rendered as zero" class.
  *
  * Styling reads Nuxt UI's semantic classes (`border-default`, `text-muted`,
- * `text-highlighted`), which resolve through the `--ui-*` variables that
- * backlog item 2's `theme.css` maps the NE tokens onto. Nothing here hardcodes
- * a colour, radius or font.
+ * `text-highlighted`, `rounded`), which resolve through the `--ui-*` variables
+ * that backlog item 2's `theme.css` maps the NE tokens onto. Nothing here
+ * hardcodes a colour, radius, shadow or font.
  */
 import { computed } from 'vue'
 
@@ -98,9 +100,9 @@ const STATE_ICON: Readonly<Record<NeStateValue, string>> = {
 const STATE_SHELL: Readonly<Record<NeStateValue, string>> = {
   absent: 'border-l-2 border-dotted border-default py-2 pl-4 text-left',
   blocked: '',
-  empty: 'rounded-md border border-dashed border-default p-6 text-center',
+  empty: 'rounded border border-dashed border-default p-6 text-center',
   error: '',
-  loading: 'rounded-md border border-default p-6',
+  loading: 'rounded border border-default p-6',
 }
 
 const ALERT_TITLE_FALLBACK: Readonly<Record<'blocked' | 'error', string>> = {
@@ -133,8 +135,14 @@ const icon = computed(() => {
 
 const shellClass = computed(() => (state.value ? STATE_SHELL[state.value] : ''))
 
-/** `role="alert"` is assertive by definition, which is right only for a failure. */
-const role = computed(() => (state.value === 'error' ? 'alert' : 'status'))
+/**
+ * The panel's own role. `error` leaves this unset: `UAlert` is the alert, and
+ * a wrapper `role="alert"` around it would nest two alerts.
+ */
+const role = computed(() => (state.value === 'error' ? undefined : 'status'))
+
+/** Assertive only for a failed read; `blocked` stays a status on the panel. */
+const alertRole = computed(() => (state.value === 'error' ? 'alert' : undefined))
 
 const alertColor = computed(() => (state.value === 'error' ? 'error' : 'warning'))
 
@@ -201,6 +209,7 @@ const hasUnblocks = computed(() => Boolean(props.unblocksOn || props.unblocksRef
     <UAlert
       v-else-if="isAlertLike"
       class="ne-state-panel__body mt-2"
+      :role="alertRole"
       :color="alertColor"
       variant="subtle"
       :icon="icon"

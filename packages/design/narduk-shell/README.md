@@ -250,9 +250,11 @@ By construction, not by caller discipline:
 
 - `loading` → `role="status"`, `aria-live="polite"`, `aria-busy="true"`; the
   shimmer itself is `aria-hidden`.
-- `error` → `role="alert"` (assertive, which is right only for a failure).
+- `error` → `role="alert"` **via `UAlert`** (assertive, and only on the alert
+  itself, so roles do not nest).
 - `empty` / `absent` / `blocked` → `role="status"`.
 - Every state renders its own name as text, so no reading depends on colour.
+- `absent` and `blocked` never render as an empty list.
 
 Both the mount suite and the SSR suite assert these, the SSR one because a
 `role="alert"` that appears only after hydration is not there when it matters.
