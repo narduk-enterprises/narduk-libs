@@ -30,6 +30,10 @@ export interface NeComponentRegistration {
 }
 
 /**
- * Registered in array order. Empty until backlog item 2 and later fill it.
+ * Registered in array order. Filled in by each component backlog item.
  */
-export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = []
+export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
+  // Item 9 (narduk-libs#256): NePageHeader + NeSectionHeader.
+  { name: 'NePageHeader', filePath: './runtime/components/NePageHeader.vue' },
+  { name: 'NeSectionHeader', filePath: './runtime/components/NeSectionHeader.vue' },
+]

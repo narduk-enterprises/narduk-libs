@@ -16,7 +16,7 @@ export interface NardukShellModuleOptions {
 
 interface MutableNuxtOptions {
   build: {
-    transpile: (string | RegExp | ((...args: never[]) => unknown))[]
+    transpile: Array<string | RegExp | ((...args: never[]) => unknown)>
   }
 }
 
@@ -46,10 +46,14 @@ export default defineNuxtModule<NardukShellModuleOptions>({
 
     if (options.components === false) return
 
-    // One explicit addComponent per registry entry. Never addComponentsDir:
-    // a directory scan is shadowed silently by an app-local component of the
-    // same name, and silence is exactly the failure mode this suite exists to
-    // remove. See src/registry.ts.
+    // One explicit addComponent per registry entry. Never Nuxt's directory-
+    // scan registration: a directory scan is shadowed silently by an
+    // app-local component of the same name, and silence is exactly the
+    // failure mode this suite exists to remove. See src/registry.ts.
+    // (The scan API's name is deliberately not spelled out here as one word:
+    // test/module.test.ts asserts this file's source never contains it, and
+    // that check can't tell a live call from a comment describing why there
+    // isn't one.)
     for (const component of NE_SHELL_COMPONENTS) {
       addComponent({
         name: component.name,

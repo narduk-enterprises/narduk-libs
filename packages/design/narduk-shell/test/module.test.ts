@@ -91,13 +91,25 @@ describe('narduk-shell module', () => {
     )
   })
 
-  it('registers nothing from the shipped registry, which item 1 leaves empty', async () => {
+  it('registers the shipped registry entries against the real component files', async () => {
+    // `beforeEach` already unmocks '../src/registry', so this loads the real,
+    // current NE_SHELL_COMPONENTS — item 1 shipped it empty; item 9
+    // (narduk-libs#256) is the first to fill it in.
     const { addComponent, addComponentsDir } = mockNuxtKit()
 
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    expect(addComponent).not.toHaveBeenCalled()
+    expect(addComponent).toHaveBeenCalledTimes(2)
+    expect(addComponent.mock.calls.map(([call]) => (call as { name: string }).name)).toEqual([
+      'NePageHeader',
+      'NeSectionHeader',
+    ])
+    for (const [call] of addComponent.mock.calls) {
+      const { filePath } = call as { filePath: string }
+      expect(filePath.startsWith('/')).toBe(true)
+      expect(filePath).toContain('/src/runtime/components/')
+    }
     expect(addComponentsDir).not.toHaveBeenCalled()
   })
 

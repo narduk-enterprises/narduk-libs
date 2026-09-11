@@ -1,0 +1,80 @@
+// @vitest-environment happy-dom
+import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+
+import NeSectionHeader from '../src/runtime/components/NeSectionHeader.vue'
+
+describe('NeSectionHeader', () => {
+  it('renders the title as an h2 by default', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Recent' } })
+
+    const headings = wrapper.findAll('h2')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]?.text()).toContain('Recent')
+  })
+
+  it('renders no count when the prop is absent', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Recent' } })
+
+    expect(wrapper.find('h2').text()).toBe('Recent')
+  })
+
+  it('renders a formatted, muted count next to the title with an accessible label', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Deployments', count: 12345 } })
+
+    const count = wrapper.find('[aria-label]')
+    expect(count.exists()).toBe(true)
+    expect(count.text()).toBe(new Intl.NumberFormat().format(12345))
+    expect(count.attributes('aria-label')).toBe('12345 items')
+  })
+
+  it('uses the singular label for a count of exactly one', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Deployments', count: 1 } })
+
+    expect(wrapper.find('[aria-label]').attributes('aria-label')).toBe('1 item')
+  })
+
+  it('renders zero as a real, visible count rather than treating it as absent', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Deployments', count: 0 } })
+
+    const count = wrapper.find('[aria-label]')
+    expect(count.exists()).toBe(true)
+    expect(count.text()).toBe('0')
+  })
+
+  it('renders the description', () => {
+    const wrapper = mount(NeSectionHeader, {
+      props: { title: 'Recent', description: 'The last 24 hours.' },
+    })
+
+    expect(wrapper.text()).toContain('The last 24 hours.')
+  })
+
+  it('places actions next to the title, never inside the heading element', () => {
+    const wrapper = mount(NeSectionHeader, {
+      props: { title: 'Recent' },
+      slots: { actions: '<button type="button">View all</button>' },
+    })
+
+    expect(wrapper.find('h2').find('button').exists()).toBe(false)
+    const button = wrapper.find('button')
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toBe('View all')
+  })
+
+  it('honours an as override for the heading level', () => {
+    const wrapper = mount(NeSectionHeader, { props: { title: 'Recent', as: 'h3' } })
+
+    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.find('h3').text()).toContain('Recent')
+  })
+
+  it('renders the default slot content below the header row', () => {
+    const wrapper = mount(NeSectionHeader, {
+      props: { title: 'Recent' },
+      slots: { default: '<p data-testid="extra">Extra content</p>' },
+    })
+
+    expect(wrapper.find('[data-testid="extra"]').exists()).toBe(true)
+  })
+})
