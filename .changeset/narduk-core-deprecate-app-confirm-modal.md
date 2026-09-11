@@ -13,5 +13,5 @@ No behaviour change and no removal. The component gains an `@deprecated` JSDoc
 block and a one-time, dev-only `console.warn` pointing at `NeConfirmDialog` /
 `useConfirm()`. The call-site migration mapping — `v-model` → `v-model:open`,
 `confirmColor="error"` → `tone="danger"`, `loading` → `pending`, the default
-slot → `#body`, and the `icon` prop dropped — is in this package's README
-under "Deprecations".
+slot → `#body`, and the `icon` prop dropped — is in this package's README under
+"Deprecations".
