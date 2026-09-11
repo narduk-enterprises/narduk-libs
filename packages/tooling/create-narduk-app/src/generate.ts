@@ -295,6 +295,36 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
+    {
+      // components-library-plan.md #2 item 6 (narduk-libs#253): one
+      // Dependabot group for @narduk-enterprises/* so a fleet-wide bump
+      // lands as one PR per app, not one per package. The registries block
+      // reuses the same GitHub Packages registry URL as the committed
+      // .npmrc (`@narduk-enterprises:registry=...`) and the same org Actions
+      // secret name already used for install auth
+      // (NARDUK_PLATFORM_GH_PACKAGES_READ), so Dependabot resolves private
+      // @narduk-enterprises/* versions the same way CI installs them.
+      path: '.github/dependabot.yml',
+      contents: text(
+        'version: 2',
+        'registries:',
+        '  narduk-github-packages:',
+        '    type: npm-registry',
+        '    url: https://npm.pkg.github.com',
+        '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
+        'updates:',
+        "  - package-ecosystem: 'npm'",
+        "    directory: '/'",
+        '    registries:',
+        '      - narduk-github-packages',
+        '    schedule:',
+        "      interval: 'weekly'",
+        '    groups:',
+        '      narduk-libs:',
+        '        patterns:',
+        "          - '@narduk-enterprises/*'",
+      ),
+    },
     ...(visibility === 'private'
       ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
       : []),

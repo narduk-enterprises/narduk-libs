@@ -19,7 +19,9 @@ import type { FoundationCheckArtefact } from '../foundation/types.js'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-function readOwnVersion(): string {
+/** Shared with `shared-ui-pinned-check.ts` -- both commands report this
+ * package's own version as `toolVersion`. */
+export function readOwnVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       version?: unknown
