@@ -6,6 +6,7 @@ import { Writable } from 'node:stream'
 import * as prettier from 'prettier'
 import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as YAML from 'yaml'
 
 import { buildGeneratedFiles, createNardukApp, PACKAGE_VERSIONS, runCli } from '../src/index.js'
 
@@ -656,6 +657,38 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
       expect(readme, label).toContain('NPM_CONFIG_USERCONFIG')
       expect(readme, label).toContain('gh-packages-run')
+    }
+  })
+
+  // components-library-plan.md #2 item 6 (narduk-libs#253): one Dependabot
+  // group for @narduk-enterprises/* so a fleet-wide bump of narduk-shell /
+  // narduk-ui / narduk-charts / narduk-core etc. lands as one PR per app
+  // (matches foundation:check item 5.2's existing "grouping .github/
+  // dependabot.yml" acceptance shape, narduk-libs#233).
+  it('emits a .github/dependabot.yml grouping @narduk-enterprises/* through the existing GitHub Packages registry', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const dependabot = files.get('.github/dependabot.yml') ?? ''
+
+      expect(dependabot, label).toContain("package-ecosystem: 'npm'")
+      expect(dependabot, label).toContain('narduk-libs:')
+      expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
+      // Reuses the same registry URL as the committed .npmrc and the same
+      // org Actions secret name already used for install auth -- no new
+      // registry or credential name invented for Dependabot.
+      expect(dependabot, label).toContain('url: https://npm.pkg.github.com')
+      expect(dependabot, label).toContain('${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}')
+      expect(() => YAML.parse(dependabot), label).not.toThrow()
+      const parsed = YAML.parse(dependabot) as {
+        version: number
+        registries: Record<string, { type: string; url: string }>
+        updates: Array<{ registries: string[]; groups: Record<string, { patterns: string[] }> }>
+      }
+      expect(parsed.version, label).toBe(2)
+      expect(parsed.updates[0].registries, label).toEqual(['narduk-github-packages'])
+      expect(parsed.updates[0].groups['narduk-libs'].patterns, label).toEqual([
+        '@narduk-enterprises/*',
+      ])
     }
   })
 })
