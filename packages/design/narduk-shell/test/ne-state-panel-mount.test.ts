@@ -342,7 +342,7 @@ describe('NeStatePanel: tokens are the only styling contract', () => {
     const script = componentSource.split('<script')[1]?.split('</script>')[0] ?? ''
 
     for (const source of [template, script]) {
-      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/[^\n]*/g, '')
       // Quoted hex only — issue refs like operator-portal#183 are not colours.
       expect(code).not.toMatch(/['"`]#[0-9a-f]{3,8}\b/i)
       expect(code).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
