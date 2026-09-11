@@ -378,10 +378,14 @@ test('with no args, the check covers every directory in CHECKED_PACKAGE_DIRS, no
 
 test('a package that has not joined the check yet is an error, not a silent pass', () => {
   try {
-    execFileSync(process.execPath, [script, '--package', '@narduk-enterprises/narduk-mapkit-nuxt'], {
-      encoding: 'utf8',
-      stdio: 'pipe',
-    })
+    execFileSync(
+      process.execPath,
+      [script, '--package', '@narduk-enterprises/narduk-mapkit-nuxt'],
+      {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    )
     assert.fail('an unscoped package must not report success')
   } catch (error) {
     assert.equal(error.status, 1)
@@ -416,19 +420,16 @@ test('the real narduk-charts and narduk-ui packages read their barrel surface an
   assert.match(uiOutput, /narduk-ui: 4 component\(s\) and 0 format/)
 
   const chartsSurface = await readSurface(join(ROOT, 'packages/design/narduk-charts'))
-  assert.deepEqual(
-    chartsSurface.map((entry) => entry.name).sort(),
-    [
-      'NardukBarChart',
-      'NardukBrandBackdrop',
-      'NardukCandleChart',
-      'NardukChartStack',
-      'NardukHistogramChart',
-      'NardukLineChart',
-      'NardukPieChart',
-      'NardukScatterChart',
-    ],
-  )
+  assert.deepEqual(chartsSurface.map((entry) => entry.name).sort(), [
+    'NardukBarChart',
+    'NardukBrandBackdrop',
+    'NardukCandleChart',
+    'NardukChartStack',
+    'NardukHistogramChart',
+    'NardukLineChart',
+    'NardukPieChart',
+    'NardukScatterChart',
+  ])
   assert.ok(chartsSurface.every((entry) => entry.kind === 'component'))
 })
 
@@ -449,7 +450,7 @@ test('surfaceConfigFor reads the barrel config for a listed package, and null fo
   ])
 })
 
-test('parseComponentBarrel reads only `export { default as Name } from \'./Name.vue\'` lines', () => {
+test("parseComponentBarrel reads only `export { default as Name } from './Name.vue'` lines", () => {
   const source = `
     /** A component. */
     export { default as NsThing } from './NsThing.vue'

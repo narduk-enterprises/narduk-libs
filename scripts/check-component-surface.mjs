@@ -580,7 +580,9 @@ function parseArguments(argv) {
     }
     return {
       json: options.json,
-      targets: [{ package: options.package ?? DEFAULT_PACKAGE, packageDirectory: options.packageDirectory }],
+      targets: [
+        { package: options.package ?? DEFAULT_PACKAGE, packageDirectory: options.packageDirectory },
+      ],
     }
   }
 
