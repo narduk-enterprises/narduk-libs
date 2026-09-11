@@ -4,7 +4,7 @@
  */
 
 export const APP_CONFIRM_MODAL_DEPRECATION_MESSAGE =
-  '[narduk-core] AppConfirmModal is deprecated. Use NeConfirmDialog / useConfirm() from @narduk-enterprises/narduk-shell instead (narduk-libs#263). Removed in the next narduk-core major.'
+  '[narduk-core] AppConfirmModal is deprecated. Use NeConfirmDialog / useConfirm() from @narduk-enterprises/narduk-shell (currently pre-1.0) instead (narduk-libs#263). Removed in the next narduk-core major.'
 
 let warned = false
 
