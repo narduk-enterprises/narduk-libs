@@ -372,6 +372,11 @@ export async function build() {
     coverage: {
       cards: cards.length,
       componentsByCard,
+      // The note `renderBundle` stamped into index.html. Recorded so
+      // `check-package.mts` can re-render with the same note instead of
+      // falling back to NO_SHELL_NOTE and failing its own byte comparison
+      // the moment a real shell card ships (narduk-libs#282 PR review).
+      note: shellNote,
       instruments: components.filter((name) => name.startsWith('Ns')),
       nuxtUi: components.filter((name) => name.startsWith('U')),
       shell: components.filter((name) => name.startsWith('Ne')),

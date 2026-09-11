@@ -46,7 +46,12 @@ assert.match(tokens, /--ne-ink-muted/)
 assert.match(tokens, /--ne-accent/)
 assert.match(tokens, /--ne-structure/)
 assert.match(styles, /--ui-text-muted/)
-const { files, cards } = renderBundle(html, tokens + styles)
+assert.equal(
+  typeof manifest.coverage.note,
+  'string',
+  'Manifest does not record the note the build stamped into index.html',
+)
+const { files, cards } = renderBundle(html, tokens + styles, manifest.coverage.note)
 assert.equal(cards.length, manifest.coverage.cards)
 for (const [path, contents] of Object.entries(files)) {
   // Recombining split styles can change insignificant whitespace, not their declarations.
