@@ -15,7 +15,6 @@ import {
   type CursorListQuery,
   type CursorListResponse,
   formatListSort,
-  LIST_QUERY_STATEMENT_CEILING,
   type ListFilters,
   type ListQuery,
   type ListQueryMode,
@@ -29,7 +28,7 @@ import { createError, getQuery } from 'h3'
 import type { H3Event } from 'h3'
 import type { z } from 'zod'
 
-export { LIST_QUERY_STATEMENT_CEILING }
+export { LIST_QUERY_STATEMENT_CEILING } from '@narduk-enterprises/narduk-platform/list-query'
 
 /** Stable `data` payload carried by every list-query 400. */
 export interface ListQueryErrorPayload {
