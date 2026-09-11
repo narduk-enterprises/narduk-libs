@@ -32,7 +32,7 @@ function usage(): string {
     '  foundation:check [--checkout <dir>] [--json [path]]',
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
     '  foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]',
-    '                                       Item 8: exact pins on present narduk-shell/-ui/-charts',
+    '                                       Item 8: UI apps must exact-pin published shared-UI packages',
   ].join('\n')
 }
 
@@ -133,7 +133,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return exitCode
     }
     if (command === 'foundation:check:shared-ui-pinned') {
-      const { exitCode } = await runSharedUiPinnedCheckCommand(parseFoundationCheckArgs(rest))
+      const { exitCode } = await runSharedUiPinnedCheckCommand(
+        parseFoundationCheckArgs(rest, 'foundation:check:shared-ui-pinned'),
+      )
       return exitCode
     }
     throw new Error(`Unknown command: ${command}\n\n${usage()}`)

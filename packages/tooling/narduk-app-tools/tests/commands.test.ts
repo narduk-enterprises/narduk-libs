@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { parseFoundationCheckArgs } from '../src/commands/foundation-check.js'
 import { parseMigrationArgs } from '../src/cli.js'
 import { buildDopplerRunArgs, parseDevArgs } from '../src/dev.js'
 import {
@@ -32,6 +33,15 @@ afterEach(() => {
 })
 
 describe('app-local command planning', () => {
+  it('names the invoking command when foundation-check-style args are unknown', () => {
+    expect(() => parseFoundationCheckArgs(['--bogus'])).toThrow(
+      'Unknown foundation:check option: --bogus',
+    )
+    expect(() =>
+      parseFoundationCheckArgs(['--bogus'], 'foundation:check:shared-ui-pinned'),
+    ).toThrow('Unknown foundation:check:shared-ui-pinned option: --bogus')
+  })
+
   it('runs dev through Doppler without a file-backed env plan', () => {
     const flags = parseDevArgs(['--project', 'app', '--config', 'dev', '--', 'node', '-e', 'x'])
     expect(buildDopplerRunArgs(flags)).toEqual([

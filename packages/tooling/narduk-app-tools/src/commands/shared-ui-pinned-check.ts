@@ -6,17 +6,18 @@
  * folded into that ratified 7-item contract.
  *
  * Exit codes, same convention as `foundation:check` (no warning tier):
- *   0  PASS    every present narduk-shell/-ui/-charts pin is exact; or N/A.
- *   1  FAIL    a present pin is a range or a workspace:/file: specifier.
+ *   0  PASS    every published narduk-shell/-ui/-charts package is an exact pin;
+ *              unpublished packages are N/A.
+ *   1  FAIL    a published package is missing, or a present pin is a range.
  *   2  UNKNOWN nothing failed, but at least one fact could not be decided
- *              (e.g. no readable package.json). The app's own CI should
- *              treat this as a failure too.
+ *              (no package.json, or the registry was unreadable). The app's
+ *              own CI should treat this as a failure too.
  */
 
 import { writeFileSync } from 'node:fs'
 
-import { readOwnVersion } from './foundation-check.js'
 import type { FoundationCheckFlags } from './foundation-check.js'
+import { readOwnVersion } from './own-version.js'
 import {
   formatSharedUiPinnedSummary,
   runSharedUiPinnedCheck,
@@ -27,7 +28,7 @@ export async function runSharedUiPinnedCheckCommand(flags: FoundationCheckFlags)
   artefact: SharedUiPinnedArtefact
   exitCode: number
 }> {
-  const artefact = runSharedUiPinnedCheck({
+  const artefact = await runSharedUiPinnedCheck({
     root: flags.checkoutDir,
     toolVersion: readOwnVersion(),
   })
