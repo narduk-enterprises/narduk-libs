@@ -22,18 +22,27 @@ import { mountAuthCard } from './fixtures/auth-component-harness'
 import {
   authApiMocks,
   authMocks,
+  authRuntimeData,
   navigateToMock,
   resetAuthTestState,
   routeQuery,
   runtimeConfig,
+  toastAddMock,
 } from './fixtures/nuxt-auto-imports'
 
 const ADA_EMAIL = 'ada@example.test'
 const ADA_USER = { email: ADA_EMAIL, id: 'u1', name: 'Ada' }
 const DASHBOARD_PATH = '/dashboard/'
 
+// A controllable mock (not the hardcoded `() => false` this replaced): the
+// passkeys register/revoke tests below need `browserSupportsWebAuthn` to
+// report true so `AuthPasskeysPanel`'s `canRegister` gate opens.
+const webauthnMock = vi.hoisted(() => ({
+  browserSupportsWebAuthn: vi.fn(() => false),
+}))
+
 vi.mock('@simplewebauthn/browser', () => ({
-  browserSupportsWebAuthn: () => false,
+  browserSupportsWebAuthn: webauthnMock.browserSupportsWebAuthn,
   startAuthentication: vi.fn(),
   startRegistration: vi.fn(),
 }))
@@ -45,6 +54,7 @@ vi.mock('../app/composables/useAuthApi', async () => {
 
 beforeEach(() => {
   resetAuthTestState()
+  webauthnMock.browserSupportsWebAuthn.mockReturnValue(false)
 })
 
 describe('AuthLoginCard mount', () => {
@@ -135,6 +145,37 @@ describe('AuthRegisterCard mount', () => {
     expect(wrapper.emitted('success')?.[0]).toEqual([ADA_USER])
     wrapper.unmount()
   })
+
+  it('surfaces a failed registration via toUserFacingError without emitting success', async () => {
+    authMocks.register.mockRejectedValue(new Error('Email already registered.'))
+    const wrapper = mountAuthCard(AuthRegisterCard)
+
+    await wrapper.get('[data-testid="auth-register-name"]').setValue(ADA_USER.name)
+    await wrapper.get('[data-testid="auth-register-email"]').setValue(ADA_EMAIL)
+    await wrapper.get('[data-testid="auth-register-password"]').setValue('password1')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="auth-register-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Email already registered.')
+    expect(wrapper.emitted('success')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('falls back to the generic message when the rejection carries no message', async () => {
+    authMocks.register.mockRejectedValue('nope')
+    const wrapper = mountAuthCard(AuthRegisterCard)
+
+    await wrapper.get('[data-testid="auth-register-name"]').setValue(ADA_USER.name)
+    await wrapper.get('[data-testid="auth-register-email"]').setValue(ADA_EMAIL)
+    await wrapper.get('[data-testid="auth-register-password"]').setValue('password1')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Unable to create the account.')
+    expect(wrapper.emitted('success')).toBeUndefined()
+    wrapper.unmount()
+  })
 })
 
 describe('AuthExchangePanel mount', () => {
@@ -195,6 +236,126 @@ describe('AuthPasskeysPanel mount', () => {
     expect(wrapper.text()).toContain('never used')
     wrapper.unmount()
   })
+
+  describe('when the browser and server both support passkeys', () => {
+    beforeEach(() => {
+      webauthnMock.browserSupportsWebAuthn.mockReturnValue(true)
+      authRuntimeData.value = {
+        authBackend: 'local',
+        authProviders: ['email'],
+        passkeysEnabled: true,
+      }
+    })
+
+    it('registers a new passkey, toasts, and refreshes the list', async () => {
+      authMocks.registerPasskey.mockResolvedValue(undefined)
+      authApiMocks.listPasskeys.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          backedUp: false,
+          createdAt: '2026-02-01',
+          deviceType: 'singleDevice',
+          id: 'pk2',
+          lastUsedAt: null,
+          name: 'YubiKey',
+          transports: ['usb'],
+        },
+      ])
+
+      const wrapper = mountAuthCard(AuthPasskeysPanel)
+      await flushPromises()
+
+      await wrapper.get('input').setValue('YubiKey')
+      await wrapper.get('[data-testid="auth-passkeys-add"]').trigger('click')
+      await flushPromises()
+
+      expect(authMocks.registerPasskey).toHaveBeenCalledWith({ name: 'YubiKey' })
+      expect(toastAddMock).toHaveBeenCalledWith({ title: 'Passkey added', color: 'success' })
+      expect(wrapper.get('[data-testid="auth-passkeys-list"]').text()).toContain('YubiKey')
+      wrapper.unmount()
+    })
+
+    it('surfaces a failed registration via toUserFacingError', async () => {
+      authMocks.registerPasskey.mockRejectedValue(new Error('Registration ceremony failed.'))
+      const wrapper = mountAuthCard(AuthPasskeysPanel)
+      await flushPromises()
+
+      await wrapper.get('[data-testid="auth-passkeys-add"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="auth-passkeys-error"]').text()).toContain(
+        'Registration ceremony failed.',
+      )
+      wrapper.unmount()
+    })
+
+    it('leaves the error message untouched when the platform sheet is dismissed', async () => {
+      const dismissed = new Error('dismissed')
+      dismissed.name = 'NotAllowedError'
+      authMocks.registerPasskey.mockRejectedValue(dismissed)
+      const wrapper = mountAuthCard(AuthPasskeysPanel)
+      await flushPromises()
+
+      await wrapper.get('[data-testid="auth-passkeys-add"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="auth-passkeys-error"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('revokes a passkey, toasts, and refreshes the list', async () => {
+      authApiMocks.listPasskeys
+        .mockResolvedValueOnce([
+          {
+            backedUp: true,
+            createdAt: '2026-01-01',
+            deviceType: 'multiDevice',
+            id: 'pk1',
+            lastUsedAt: null,
+            name: 'MacBook',
+            transports: ['internal'],
+          },
+        ])
+        .mockResolvedValueOnce([])
+
+      const wrapper = mountAuthCard(AuthPasskeysPanel)
+      await flushPromises()
+      expect(wrapper.text()).toContain('MacBook')
+
+      await wrapper.get('[data-testid="auth-passkeys-list"] button').trigger('click')
+      await flushPromises()
+
+      expect(authApiMocks.revokePasskey).toHaveBeenCalledWith('pk1')
+      expect(toastAddMock).toHaveBeenCalledWith({ title: 'Passkey removed', color: 'success' })
+      expect(wrapper.text()).toContain('No passkeys yet.')
+      wrapper.unmount()
+    })
+
+    it('surfaces a failed revoke via toUserFacingError', async () => {
+      authApiMocks.listPasskeys.mockResolvedValue([
+        {
+          backedUp: true,
+          createdAt: '2026-01-01',
+          deviceType: 'multiDevice',
+          id: 'pk1',
+          lastUsedAt: null,
+          name: 'MacBook',
+          transports: ['internal'],
+        },
+      ])
+      authApiMocks.revokePasskey.mockRejectedValue(new Error('Passkey already removed.'))
+
+      const wrapper = mountAuthCard(AuthPasskeysPanel)
+      await flushPromises()
+
+      await wrapper.get('[data-testid="auth-passkeys-list"] button').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="auth-passkeys-error"]').text()).toContain(
+        'Passkey already removed.',
+      )
+      wrapper.unmount()
+    })
+  })
 })
 
 describe('AuthApiKeysPanel mount', () => {
@@ -237,6 +398,107 @@ describe('AuthApiKeysPanel mount', () => {
     expect(wrapper.text()).toContain('Registry reader')
     expect(wrapper.text()).toContain('CI token')
     expect(wrapper.text()).toContain('nk_ab')
+    wrapper.unmount()
+  })
+
+  it('creates a token with the parsed form payload, shows the raw key once, and refreshes', async () => {
+    authApiMocks.createApiKey.mockResolvedValue({
+      id: 'k9',
+      rawKey: 'nk_raw999',
+      scopes: [],
+      expiresAt: null,
+    })
+    const wrapper = mountAuthCard(AuthApiKeysPanel)
+    await flushPromises()
+
+    await wrapper.get('input').setValue('CI token')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // The real UForm shape (`event.data`), not the raw DOM event a stub bug
+    // would have passed through — `formSchema`'s defaults (`scopesText: ''`,
+    // `expiryPreset: '30 days'`) must survive that parse.
+    expect(authApiMocks.createApiKey).toHaveBeenCalledWith({
+      name: 'CI token',
+      scopes: [],
+      expiresInDays: 30,
+    })
+    expect(toastAddMock).toHaveBeenCalledWith({
+      title: 'API token created',
+      description: 'Copy the raw token now. It will not be shown again.',
+      color: 'success',
+    })
+    expect(wrapper.text()).toContain('Copy this token now')
+    expect(wrapper.text()).toContain('nk_raw999')
+    expect(authApiMocks.listApiKeys).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('surfaces a failed token creation without clearing the raw-key banner state', async () => {
+    authApiMocks.createApiKey.mockRejectedValue(new Error('Scope not permitted.'))
+    const wrapper = mountAuthCard(AuthApiKeysPanel)
+    await flushPromises()
+
+    await wrapper.get('input').setValue('CI token')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Token error')
+    expect(wrapper.text()).toContain('Scope not permitted.')
+    expect(wrapper.text()).not.toContain('Copy this token now')
+    wrapper.unmount()
+  })
+
+  it('revokes a token via handleRevoke and removes it from the list', async () => {
+    authApiMocks.listApiKeys.mockResolvedValueOnce([
+      {
+        createdAt: '2026-01-02T00:00:00.000Z',
+        expiresAt: null,
+        id: 'k1',
+        keyPrefix: 'nk_ab',
+        lastUsedAt: null,
+        name: 'CI token',
+        scopes: [],
+      },
+    ])
+    const wrapper = mountAuthCard(AuthApiKeysPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('CI token')
+
+    const revokeButton = wrapper.findAll('button').find((button) => button.text() === 'Revoke')
+    expect(revokeButton).toBeDefined()
+    await revokeButton?.trigger('click')
+    await flushPromises()
+
+    expect(authApiMocks.revokeApiKey).toHaveBeenCalledWith('k1')
+    expect(toastAddMock).toHaveBeenCalledWith({ title: 'API token revoked', color: 'success' })
+    expect(wrapper.text()).not.toContain('CI token')
+    expect(wrapper.text()).toContain('No API tokens yet')
+    wrapper.unmount()
+  })
+
+  it('surfaces a failed revoke without removing the token from the list', async () => {
+    authApiMocks.listApiKeys.mockResolvedValue([
+      {
+        createdAt: '2026-01-02T00:00:00.000Z',
+        expiresAt: null,
+        id: 'k1',
+        keyPrefix: 'nk_ab',
+        lastUsedAt: null,
+        name: 'CI token',
+        scopes: [],
+      },
+    ])
+    authApiMocks.revokeApiKey.mockRejectedValue(new Error('Token already revoked.'))
+    const wrapper = mountAuthCard(AuthApiKeysPanel)
+    await flushPromises()
+
+    const revokeButton = wrapper.findAll('button').find((button) => button.text() === 'Revoke')
+    await revokeButton?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Token already revoked.')
+    expect(wrapper.text()).toContain('CI token')
     wrapper.unmount()
   })
 })

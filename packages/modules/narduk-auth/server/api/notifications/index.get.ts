@@ -43,6 +43,7 @@ export default defineEventHandler(async (event) => {
   const items = await getUserNotifications(event, user.id, {
     limit: query.limit,
     offset: query.offset,
+    sort: query.sort,
     unreadOnly: query.filters.unreadOnly === 'true',
   })
 

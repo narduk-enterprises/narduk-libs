@@ -216,6 +216,30 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     expect(new Set([...ids(firstPage.body), ...ids(secondPage.body)]).size).toBe(6)
   })
 
+  it('actually reorders /api/notifications by sort direction, not merely echoing it', async () => {
+    const handler = (await import('../server/api/notifications/index.get')).default
+
+    const ids = (body: Record<string, unknown>) =>
+      (body.items as Array<{ id: string }>).map((item) => item.id)
+
+    const defaultOrder = await call(handler, '/')
+    const descending = await call(handler, '/?sort=createdAt:desc')
+    const ascending = await call(handler, '/?sort=createdAt:asc')
+
+    expect(descending.status).toBe(200)
+    expect(ascending.status).toBe(200)
+    expect(descending.body).toMatchObject({ sort: 'createdAt:desc' })
+    expect(ascending.body).toMatchObject({ sort: 'createdAt:asc' })
+
+    // The unsorted default matches the explicit newest-first request...
+    expect(ids(defaultOrder.body)).toEqual(ids(descending.body))
+    // ...and asking for oldest-first genuinely reverses the row order. An
+    // echo-only bug would leave both requests returning the same
+    // newest-first rows while only the `sort` field in the body changed.
+    expect(ids(ascending.body)).toEqual([...ids(descending.body)].reverse())
+    expect(ids(ascending.body)).not.toEqual(ids(descending.body))
+  })
+
   it('rejects an unknown query key on both routes with a 400, not a 500', async () => {
     const users = (await import('../server/api/admin/users/index.get')).default
     const notifications = (await import('../server/api/notifications/index.get')).default

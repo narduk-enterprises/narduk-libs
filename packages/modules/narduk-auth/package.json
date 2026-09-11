@@ -105,6 +105,7 @@
     "nuxt-auth-utils": "^0.5.29",
     "zod": "^4.4.3"
   },
+  "//devDependencies": "@vue/server-renderer, @vue/test-utils and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package, which is exactly the silent dependency drift narduk-libs#124 warns folds against. Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
@@ -114,11 +115,11 @@
     "@types/node": "^22.19.19",
     "@vitejs/plugin-vue": "6.0.7",
     "@vitest/coverage-v8": "4.1.6",
-    "@vue/server-renderer": "^3.5.39",
-    "@vue/test-utils": "^2.4.10",
+    "@vue/server-renderer": "3.5.39",
+    "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "20.10.6",
     "miniflare": "4.20260701.0",
     "nuxt": "^4.4.2",
     "playwright": "1.61.1",

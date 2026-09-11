@@ -27,6 +27,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AppMapKit from '../src/runtime/components/AppMapKit.vue'
 
+import type { GeoJSONFeatureCollection } from '../src/runtime/components/AppMapKit.vue'
+
 const mapkitReady: Ref<boolean> = ref(true)
 const mapkitError: Ref<string | null> = ref(null)
 
@@ -351,5 +353,174 @@ describe('AppMapKit mount: map initialization', () => {
 
     expect(map.destroy).toHaveBeenCalledTimes(1)
     expect(map.removeEventListener).toHaveBeenCalledWith('select', expect.any(Function))
+  })
+})
+
+/**
+ * `geojson` / `overlayStyleFn` were previously never exercised with
+ * `mapkitReady === true` in any test: `app-map-kit-ssr.test.ts` passes
+ * `geojson` too, but by design never reaches `initMap()` (there is no DOM
+ * during SSR), and nothing here previously mounted with that prop at all
+ * (narduk-libs PR #282 review). This block extends the same
+ * `createMapkitMock()` double above rather than inventing a second harness.
+ *
+ * `callouts` / `calloutMode` / `calloutPlacement` have the same gap but
+ * cannot be closed the same way: `ensureCalloutController()` in
+ * `AppMapKit.vue` gates construction on `if (!import.meta.client || ...)
+ * return null`, and this package's `vitest.config.ts` (plain
+ * `@vitejs/plugin-vue`, no Nuxt macro-replacement plugin) never defines
+ * `import.meta.client` true — confirmed both by this file's own header
+ * comment above (the same gate blocks `initMap()`'s `import.meta.client`
+ * branch, worked around there by mocking `useMapKit()` instead) and by
+ * `callouts.test.ts`'s `'never constructs the controller during SSR, or
+ * without the opt-in'` test, which asserts this exact guard string via
+ * source rather than by mounting. A mount test against `AppMapKit` can
+ * never observe a non-null `getCalloutController()` in this environment
+ * regardless of props, so one would either assert the current (environment-
+ * imposed) null forever — not a behavioral test — or silently pass for the
+ * wrong reason. `callout-mount.test.ts` already covers the reachable half
+ * (a real `MapKitCalloutController` driving `AppMapKitCallout.vue`'s
+ * rendering/lifecycle, bypassing `AppMapKit.vue`); the prop-to-controller
+ * wiring inside `AppMapKit.vue` itself (`selectedId` open/close,
+ * `calloutMode`/`calloutPlacement` forwarding, Escape-dismiss syncing back
+ * to `selectedId`) stays untestable by mount until either `vitest.config.ts`
+ * gains an `import.meta.client` define/plugin (out of this change's file
+ * scope) or `AppMapKit.vue` routes that guard through a mockable seam the
+ * way `initMap()` already does for `useMapKit()` (also out of scope — see
+ * the PR notes for narduk-libs#282 lane F3).
+ */
+describe('AppMapKit mount: GeoJSON overlays', () => {
+  const geojson: GeoJSONFeatureCollection = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { id: 'route-a' },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [20, 20],
+            [21, 21],
+            [22, 21],
+          ],
+        },
+      },
+      {
+        type: 'Feature',
+        properties: { id: 'zone-a' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [0, 10],
+              [10, 10],
+              [10, 0],
+              [0, 0],
+            ],
+          ],
+        },
+      },
+    ],
+  }
+
+  it('converts a LineString feature to a polyline overlay and a Polygon feature to a polygon overlay, with the default styles', () => {
+    const { mapkit, mapInstances } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, { props: { items: [] as Station[], geojson } })
+    const map = assertDefined(mapInstances[0], 'expected a mapkit.Map instance')
+
+    expect(map.addOverlay).toHaveBeenCalledTimes(2)
+    const [lineCall, polygonCall] = map.addOverlay.mock.calls
+    const lineOverlay = assertDefined(lineCall?.[0], 'expected the line overlay') as MapKitOverlay
+    const polygonOverlay = assertDefined(
+      polygonCall?.[0],
+      'expected the polygon overlay',
+    ) as MapKitOverlay
+
+    // The 3-point LineString became a polyline overlay in the default line style...
+    expect(lineOverlay.geometry).toHaveLength(3)
+    expect(lineOverlay.enabled).toBe(true)
+    expect((lineOverlay.options.style as MapKitStyle).options).toMatchObject({
+      strokeColor: '#0284c7',
+      lineWidth: 3,
+    })
+
+    // ...and the closed 5-point ring became a polygon overlay in the
+    // (different) default polygon style.
+    expect(polygonOverlay.geometry).toHaveLength(5)
+    expect((polygonOverlay.options.style as MapKitStyle).options).toMatchObject({
+      strokeColor: '#065f46',
+      fillColor: '#10b981',
+      lineWidth: 1.5,
+    })
+
+    wrapper.unmount()
+  })
+
+  it('applies overlayStyleFn per feature and routes an overlay click to feature-select', () => {
+    const { mapkit, mapInstances } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const overlayStyleFn = vi.fn((properties: Record<string, unknown>) => ({
+      strokeColor: properties.id === 'route-a' ? '#ff0000' : '#00ff00',
+      fillColor: '#000000',
+      lineWidth: 5,
+    }))
+
+    const wrapper = mount(AppMapKit, {
+      props: { items: [] as Station[], geojson, overlayStyleFn },
+    })
+    const map = assertDefined(mapInstances[0], 'expected a mapkit.Map instance')
+
+    expect(overlayStyleFn).toHaveBeenCalledWith({ id: 'route-a' })
+    expect(overlayStyleFn).toHaveBeenCalledWith({ id: 'zone-a' })
+
+    const [, polygonCall] = map.addOverlay.mock.calls
+    const polygonOverlay = assertDefined(
+      polygonCall?.[0],
+      'expected the polygon overlay',
+    ) as MapKitOverlay
+    expect((polygonOverlay.options.style as MapKitStyle).options).toMatchObject({
+      strokeColor: '#00ff00',
+      lineWidth: 5,
+    })
+
+    // Clicking the polygon overlay routes through the registered `select`
+    // listener (the same one background-click uses) to `feature-select`,
+    // carrying the exact feature the overlay was built from.
+    const selectListener = assertDefined(
+      map.listeners.get('select'),
+      'expected a select listener registered on the map',
+    )
+    selectListener({ overlay: polygonOverlay })
+    expect(wrapper.emitted('feature-select')?.[0]).toEqual([geojson.features[1]])
+
+    wrapper.unmount()
+  })
+
+  it('rebuilds overlays (remove the old set, add the new one) when the geojson prop changes', async () => {
+    const { mapkit, mapInstances } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, { props: { items: [] as Station[], geojson } })
+    const map = assertDefined(mapInstances[0], 'expected a mapkit.Map instance')
+    expect(map.addOverlay).toHaveBeenCalledTimes(2)
+    const firstOverlays = map.addOverlay.mock.calls.map((call) => call[0])
+
+    const nextGeojson: GeoJSONFeatureCollection = {
+      type: 'FeatureCollection',
+      features: [geojson.features[1]!],
+    }
+    await wrapper.setProps({ geojson: nextGeojson })
+    await nextTick()
+
+    expect(map.removeOverlays).toHaveBeenCalledTimes(1)
+    expect(map.removeOverlays.mock.calls[0]?.[0]).toEqual(firstOverlays)
+    // The prior 2 plus 1 more for the single-feature replacement.
+    expect(map.addOverlay).toHaveBeenCalledTimes(3)
+
+    wrapper.unmount()
   })
 })
