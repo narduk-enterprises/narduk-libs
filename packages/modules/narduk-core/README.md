@@ -129,3 +129,45 @@ export default defineEventHandler(async (event) => {
 `GET /api/runners?limit=9999&sort=name:asc&status=idle` answers
 `{ items, total, limit: 100, offset: 0, sort: 'name:asc', q: null }`;
 `?statuss=idle` answers 400.
+
+A list route may issue at most two SQL statements per request (the
+`LIST_QUERY_STATEMENT_CEILING`): one page `SELECT`, plus one `COUNT(*)` when
+`total` is a number. Set `total: null` to stay at one statement.
+
+### Worked example: stonx `server/utils/query.ts`
+
+stonx is the first pilot (plan §3). Today it has three list shapes in
+`server/utils/query.ts` and the routes that call it:
+
+1. `getPaginationParams` / `buildPaginatedResponse` —
+   `{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }`
+   — used by `admin/games`, `me/positions`, `leaderboard`.
+2. A one-off zod envelope in `admin/stats-detailed.get.ts`.
+3. `{ results, count, totalPages, page, status }` in `market/screeners.get.ts`,
+   whose `limit` caps at **500** (everywhere else that enforces a cap uses 100).
+   `watchlist/index.get.ts` and `market/big-movers.get.ts` have no page/limit
+   at all.
+
+Those three become one `parseListQuery` + `listResponse` call. The screener
+keeps its 500 cap via `maxLimit`; watchlist and big-movers gain a limit by
+passing a smaller `defaultLimit`:
+
+```ts
+// stonx server/api/market/screeners.get.ts — after the migration
+const query = parseListQuery(event, {
+  filters: z.object({
+    exchange: z.string().optional(),
+    sectors: z.string().optional(),
+  }),
+  maxLimit: 500, // the screener's existing ceiling; not a new default
+  sortable: ['symbol', 'marketCap', 'changePercent'],
+  defaultSort: 'symbol:asc',
+})
+
+return listResponse(rows, { query, total })
+// { items, total, limit, offset, sort, q }
+```
+
+`parseSortParam` in today's `query.ts` silently falls back to the default on
+an unknown field; the contract **rejects** that key instead — the bug class
+stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.

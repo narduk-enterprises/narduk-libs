@@ -73,3 +73,38 @@ type Runners = ListResponse<Runner>
 `ListResponse<T, 'cursor'>` replaces `offset` with `nextCursor`, `null` when the
 page exhausted the collection. `total` is `number | null`: `null` says the route
 deliberately does not count, which keeps a page to a single statement.
+
+`LIST_QUERY_STATEMENT_CEILING` is **2**: one page `SELECT`, plus one `COUNT(*)`
+when `total` is a number. The schema cannot count statements — it never talks to
+a database — so the constant is the contract, and route tests that wrap the D1
+binding enforce it.
+
+### Worked example: stonx `server/utils/query.ts`
+
+stonx is the first pilot (plan §3). Today it has three list shapes:
+
+1. `getPaginationParams` / `buildPaginatedResponse` in `server/utils/query.ts`
+   — `{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }`
+   — used by `admin/games`, `me/positions`, `leaderboard`.
+2. A one-off zod envelope in `admin/stats-detailed.get.ts`.
+3. `{ results, count, totalPages, page, status }` in `market/screeners.get.ts`,
+   whose `limit` caps at **500**. `watchlist` and `big-movers` have no
+   page/limit.
+
+Those three become one `listQuerySchema` (and, on the server,
+`parseListQuery` + `listResponse`). The screener keeps its 500 cap via
+`maxLimit`; watchlist and big-movers gain a limit:
+
+```ts
+const schema = listQuerySchema({
+  filters: z.object({
+    exchange: z.string().optional(),
+    sectors: z.string().optional(),
+  }),
+  maxLimit: 500, // screener; other stonx lists pass 100
+  sortable: ['symbol', 'marketCap', 'changePercent'],
+  defaultSort: 'symbol:asc',
+})
+```
+
+The stonx adoption PR is deferred from this narduk-libs PR.
