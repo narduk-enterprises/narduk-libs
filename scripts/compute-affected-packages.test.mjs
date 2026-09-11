@@ -326,13 +326,13 @@ test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () =>
   assert.deepEqual(result.changedNames, [`${scope}narduk-shell`])
   assert.ok(result.affectedNames.includes(`${scope}narduk-shell`))
 
-  // Item 4 / narduk-libs#251 owns the generator default-module pin. This item
-  // only has to be visible to workspace scripts; it must not appear there yet.
+  // Item 4 / narduk-libs#251 owns the generator default-module pin, and now
+  // does: narduk-shell ships to every generated app by default, exactly pinned.
   const generatorManifest = readFileSync(
     join(repoRoot, 'packages/tooling/create-narduk-app/src/manifest.ts'),
     'utf8',
   )
-  assert.equal(generatorManifest.includes('narduk-shell'), false)
+  assert.equal(generatorManifest.includes('narduk-shell'), true)
 
   const durations = JSON.parse(
     readFileSync(join(repoRoot, 'scripts/ci-package-durations.json'), 'utf8'),

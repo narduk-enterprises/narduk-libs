@@ -459,6 +459,10 @@ function assertExactGeneratedPackagePins(generatedDirectory, packagesByName) {
     '@narduk-enterprises/narduk-auth',
     '@narduk-enterprises/narduk-core',
     '@narduk-enterprises/narduk-seo',
+    // Ships by default (components-library-plan.md item 4, narduk-libs#251),
+    // so it is pinned exactly like every other required package here even
+    // though it is not one of the `--capabilities` passed below.
+    '@narduk-enterprises/narduk-shell',
     '@narduk-enterprises/narduk-testkit',
     '@narduk-enterprises/narduk-uploads',
   ])
@@ -540,11 +544,41 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
       '<template>',
       '  <UApp>',
       '    <LayerAppHeader app-name="Narduk Libs Release Smoke" />',
+      // Proves the packed narduk-shell tarball, not just narduk-core: the
+      // components-library suite ships to every generated app by default
+      // (components-library-plan.md item 4, narduk-libs#251), and a generated
+      // app that installs it but never renders an Ne* component has not been
+      // tested. NeStatusBadge is the simplest registered component with no
+      // slots and no optional-vs-required prop branching.
+      '    <NeStatusBadge tone="ok" label="Packed OK" />',
       '    <NuxtLayout>',
       '      <NuxtPage />',
       '    </NuxtLayout>',
       '  </UApp>',
       '</template>',
+      '',
+    ].join('\n'),
+  )
+  // Extends the generator's own home.spec.ts (which only asserts the page
+  // heading) with a real browser assertion that the packed narduk-shell
+  // component actually rendered -- not just that `nuxt build` succeeded.
+  const homeSpecPath = join(generatedDirectory, 'apps', 'web', 'tests', 'e2e', 'home.spec.ts')
+  writeFileSync(
+    homeSpecPath,
+    [
+      "import { expect, test } from '@playwright/test'",
+      '',
+      "test('home page renders', async ({ page }) => {",
+      "  await page.goto('/')",
+      '  await expect(',
+      "    page.getByRole('heading', { name: 'Narduk Libs Release Smoke' }),",
+      '  ).toBeVisible()',
+      '})',
+      '',
+      "test('packed narduk-shell component renders', async ({ page }) => {",
+      "  await page.goto('/')",
+      "  await expect(page.getByText('Packed OK')).toBeVisible()",
+      '})',
       '',
     ].join('\n'),
   )

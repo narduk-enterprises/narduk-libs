@@ -161,11 +161,20 @@ function moduleList(capabilities: readonly Capability[]): string {
   const moduleNames = [
     '@narduk-enterprises/narduk-core',
     '@nuxt/ui',
-    ...capabilities.map((capability) =>
-      capability === 'mapkit'
-        ? '@narduk-enterprises/narduk-mapkit-nuxt'
-        : '@narduk-enterprises/narduk-' + capability,
-    ),
+    // Ships by default, not behind a capability flag (components-library-plan.md
+    // item 4): every generated app starts on the shared Ne* suite.
+    '@narduk-enterprises/narduk-shell',
+    ...capabilities
+      // narduk-charts is not a Nuxt module -- no `nuxt` peer, no `module.ts`,
+      // just a plain Vue component library the app imports from directly
+      // (see capabilityPackages in manifest.ts). Listing it here would make
+      // Nuxt try to load it as a module and fail.
+      .filter((capability) => capability !== 'charts')
+      .map((capability) =>
+        capability === 'mapkit'
+          ? '@narduk-enterprises/narduk-mapkit-nuxt'
+          : '@narduk-enterprises/narduk-' + capability,
+      ),
   ]
   const inline = `  modules: [${moduleNames.map(tsString).join(', ')}],`
   if (inline.length <= 100) return inline
@@ -235,6 +244,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   const knipIgnoreDependencies = [
     '@iconify-json/lucide',
     ...(capabilities.includes('mapkit') ? ['@narduk-enterprises/narduk-mapkit'] : []),
+    // narduk-charts ships no default page or component that imports it --
+    // the capability only pins the package for the app's own future chart
+    // usage (components-library-plan.md item 4) -- so nothing in the
+    // scaffold references it yet and knip would otherwise flag it unused,
+    // the same reasoning as the mapkit peer package above.
+    ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
     'vue-tsc',
   ]
 
@@ -561,7 +576,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'export default createAppLintConfig({',
         '  withNuxt,',
-        "  capabilityPacks: ['core', 'correctness', 'complexity', 'formatting'],",
+        "  capabilityPacks: ['core', 'correctness', 'complexity', 'formatting', 'design-system', 'nuxt-ui'],",
         '})',
       ),
     },
@@ -571,7 +586,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'",
         '',
         'export default [',
-        "  ...composeSharedConfigs('core', 'correctness', 'complexity', 'formatting'),",
+        '  ...composeSharedConfigs(',
+        "    'core',",
+        "    'correctness',",
+        "    'complexity',",
+        "    'formatting',",
+        "    'design-system',",
+        "    'nuxt-ui',",
+        '  ),',
         "  { ignores: ['node_modules/**', '.nuxt/**', '.output/**', '.wrangler/**'] },",
         ']',
       ),

@@ -10,6 +10,7 @@ export const SUPPORTED_CAPABILITIES = [
   'uploads',
   'ai',
   'mapkit',
+  'charts',
 ] as const
 export type Capability = (typeof SUPPORTED_CAPABILITIES)[number]
 
