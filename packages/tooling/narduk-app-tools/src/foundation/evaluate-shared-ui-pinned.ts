@@ -14,6 +14,7 @@
  */
 
 import { evaluateItem8 } from './items/item-8-shared-ui-pinned.js'
+import { FilesystemRegistryReality, type RegistryReality } from './npm-registry.js'
 import { rollUp } from './schema.js'
 import { resolveAppInfo } from './evaluate.js'
 import { AppRepo } from './source.js'
@@ -42,15 +43,17 @@ export interface SharedUiPinnedArtefact {
 export interface RunSharedUiPinnedCheckOptions {
   root: string
   toolVersion: string
+  reality?: RegistryReality
   appOverrides?: Partial<FoundationAppInfo>
   generated?: string
 }
 
-export function runSharedUiPinnedCheck(
+export async function runSharedUiPinnedCheck(
   options: RunSharedUiPinnedCheckOptions,
-): SharedUiPinnedArtefact {
+): Promise<SharedUiPinnedArtefact> {
   const repo = new AppRepo(options.root)
-  const checks = evaluateItem8(repo)
+  const reality = options.reality ?? new FilesystemRegistryReality(options.root)
+  const checks = await evaluateItem8(repo, reality)
   const item: FoundationItemResult = {
     id: SHARED_UI_PINNED_ITEM_ID,
     name: SHARED_UI_PINNED_ITEM_NAME,
