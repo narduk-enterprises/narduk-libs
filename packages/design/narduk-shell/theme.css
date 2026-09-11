@@ -1,15 +1,316 @@
 /*
- * @narduk-enterprises/narduk-shell/theme.css — reserved subpath, no tokens yet.
+ * @narduk-enterprises/narduk-shell/theme.css — the NE token layer.
  *
- * Backlog item 2, "Theming through Nuxt UI" (narduk-libs#249), owns this sheet.
- * It will carry the NE token layer -- surfaces, ink, radius, shadow, type
- * scale and the accent/structure brand hooks -- mapped onto Nuxt UI's `--ui-*`
- * variables, so every `U*` and `Ne*` component themes from one file.
+ * Components-library backlog item 2, "Theming through Nuxt UI"
+ * (narduk-libs#249). Two things live in this file and nothing else:
  *
- * It ships empty from item 1 (narduk-libs#248) so the export name is reserved
- * before an app depends on it, and so the consumer-fixture subpath tier proves
- * the specifier resolves from an external install on the suite's first release.
- * An app may import it today; it declares nothing, so it changes nothing.
+ *   1. the NE tokens (`--ne-*`) — the structural half of PACC·TRAC's shipped
+ *      set per docs/proposals/narduk-shell.md §2: ground and surfaces, the ink
+ *      scale, hairline and divider, radius, shadow, the type scale, and the
+ *      two brand hooks an app is allowed to override;
+ *   2. the bridge that points Nuxt UI's own `--ui-*` variables at those
+ *      tokens, so every `U*` primitive and every `Ne*` wrapper takes its look
+ *      from this one sheet instead of from per-app CSS.
  *
- * Do not add tokens here outside item 2.
+ * Styling contract (narduk-ui guardrail 3, extended to this suite):
+ * components read tokens and never hardcode a colour, radius, shadow or font.
+ * An app restyles the suite by setting `--ne-accent` / `--ne-structure`, not by
+ * overriding component CSS. See README.md § Styling contract.
+ *
+ * Cascade: these rules are deliberately UNLAYERED. Nuxt UI declares its own
+ * `--ui-*` defaults inside `@layer theme` (dist/runtime/index.css) and its
+ * colour plugin injects more of them into the same layer, and an unlayered
+ * declaration beats any layer. The module adds this file at the front of
+ * `nuxt.options.css`, so an app's own stylesheet — also unlayered, and later
+ * in source order — still wins over everything here.
+ *
+ * Schemes: Nuxt UI 4 switches on a class, not on a media query
+ * (`@variant dark (&:where(.dark, .dark *))`), and `@nuxtjs/color-mode` —
+ * which `@narduk-enterprises/narduk-core` installs — is what resolves
+ * `prefers-color-scheme` and stamps `.light` / `.dark` on `<html>`. This sheet
+ * follows that class and never second-guesses it. A page with no colour-mode
+ * runtime opts into the media query by setting `data-ne-scheme="auto"` on
+ * `<html>`; see the last block in this file.
+ *
+ * Because the classes are matched on any element, not only on `:root`, a
+ * subtree can be pinned to one scheme with `<div class="light">` or
+ * `<div class="dark">` — which is how the NE Base Foundations card shows both
+ * schemes side by side in a document that has no colour mode at all.
  */
+
+:root,
+.light {
+  /* ---- ground and surfaces --------------------------------------------
+   * `--ne-ground` is the page behind the panels and has no `--ui-*` twin:
+   * Nuxt UI has one base background, so an app paints the ground itself
+   * (`body { background: var(--ne-ground) }`). The four-step surface scale
+   * below is the one Nuxt UI models, in its order of increasing emphasis.
+   */
+  --ne-ground: #f4f6f7;
+  --ne-surface: #ffffff;
+  --ne-surface-muted: #f4f6f7;
+  --ne-surface-elevated: #eef1f3;
+  --ne-surface-accented: #e3e8eb;
+  --ne-surface-inverted: #0e1418;
+
+  /* ---- ink -------------------------------------------------------------
+   * Every ink down to `--ne-ink-muted` clears WCAG 2.2 AA (4.5:1) on ground,
+   * surface, elevated and accented. `--ne-ink-muted` is the lightest ink
+   * permitted on text of any size; `--ne-ink-dimmed` is explicitly not body
+   * text (placeholders, disabled chrome) and is held to the 3:1 non-text
+   * floor instead. That distinction is the operator-portal#238 regression:
+   * `text-muted` resolved to #62748e on #edf0f4 there, which is 4.16:1.
+   */
+  --ne-ink: #0e1418;
+  --ne-ink-body: #18212a;
+  --ne-ink-secondary: #3c4a54;
+  --ne-ink-muted: #5a6570;
+  --ne-ink-dimmed: #8b949d;
+  --ne-ink-inverted: #ffffff;
+
+  /* ---- hairline and divider -------------------------------------------- */
+  --ne-hairline: #dde3e7;
+  --ne-divider: #eaeef1;
+  --ne-line-strong: #c9d1d7;
+  --ne-line-inverted: #0e1418;
+
+  /* ---- brand hooks ------------------------------------------------------
+   * The only two tokens an app is expected to set: `--ne-accent` (interaction,
+   * links, data ink, the brand mark) and `--ne-structure` (rails, headers and
+   * other structural chrome). Both ship a neutral, contrast-proven default;
+   * neither is a status colour. An app that wants the suite's accent to follow
+   * Nuxt UI's `primary` alias instead writes `--ne-accent: var(--ui-primary)`.
+   */
+  --ne-accent: #2f6b8f;
+  --ne-accent-soft: #e6eef3;
+  --ne-accent-ink: #ffffff;
+  --ne-structure: #18212a;
+  --ne-structure-ink: #ffffff;
+
+  /* ---- radius -----------------------------------------------------------
+   * Nuxt UI derives every radius from one base: controls are `rounded-md`
+   * (1.5x) and panels `rounded-lg` (2x). The named tokens are those two
+   * multiples, so a `Ne*` wrapper and a `U*` primitive round identically.
+   */
+  --ne-radius-base: 0.375rem;
+  --ne-radius-control: calc(var(--ne-radius-base) * 1.5);
+  --ne-radius-panel: calc(var(--ne-radius-base) * 2);
+  --ne-radius-tag: 9999px;
+
+  /* ---- shadow ----------------------------------------------------------- */
+  --ne-shadow-1: 0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04);
+  --ne-shadow-2: 0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28);
+  --ne-shadow-control: inset 0 1px 2px rgb(14 20 24 / 0.08);
+
+  /* ---- type -------------------------------------------------------------
+   * Instrument Sans for language, IBM Plex Mono for every measured number
+   * (narduk-ui's rule, kept). Neither font is bundled: the sheet names the
+   * families and an app serves them (`@nuxt/fonts` in the Narduk core layer).
+   */
+  --ne-font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --ne-font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --ne-text-display: 38px;
+  --ne-text-title: 28px;
+  --ne-text-heading: 22px;
+  --ne-text-body: 15px;
+  --ne-text-small: 13px;
+  --ne-text-label: 11px;
+  --ne-leading-tight: 1.1;
+  --ne-leading-body: 1.55;
+  --ne-tracking-tight: -0.03em;
+  --ne-tracking-label: 0.12em;
+
+  /* ---- layout ----------------------------------------------------------- */
+  --ne-container: 1320px;
+  --ne-header-height: 4rem;
+
+  /* ---- the bridge -------------------------------------------------------
+   * Every target below is a variable the installed Nuxt UI actually reads;
+   * test/theme.test.ts proves that against the installed package rather than
+   * against a list copied into the test.
+   *
+   * The colour aliases (`--ui-primary`, `--ui-secondary`, `--ui-success`,
+   * `--ui-info`, `--ui-warning`, `--ui-error`) are deliberately NOT bridged.
+   * Nuxt UI generates each of them from an eleven-shade scale that its
+   * `solid`, `soft`, `subtle`, `outline` and `ghost` variants all read, so
+   * repointing the 500 shade alone would leave a button's fill and its hover
+   * tint from different palettes. Brand colour stays app.config's business
+   * (src/app-config.ts supplies the suite's defaults) and the structural half
+   * — surfaces, ink, borders, radius, container — is what this sheet owns.
+   */
+  --ui-bg: var(--ne-surface);
+  --ui-bg-muted: var(--ne-surface-muted);
+  --ui-bg-elevated: var(--ne-surface-elevated);
+  --ui-bg-accented: var(--ne-surface-accented);
+  --ui-bg-inverted: var(--ne-surface-inverted);
+  --ui-text-highlighted: var(--ne-ink);
+  --ui-text: var(--ne-ink-body);
+  --ui-text-toned: var(--ne-ink-secondary);
+  --ui-text-muted: var(--ne-ink-muted);
+  --ui-text-dimmed: var(--ne-ink-dimmed);
+  --ui-text-inverted: var(--ne-ink-inverted);
+  --ui-border: var(--ne-hairline);
+  --ui-border-muted: var(--ne-divider);
+  --ui-border-accented: var(--ne-line-strong);
+  --ui-border-inverted: var(--ne-line-inverted);
+  --ui-radius: var(--ne-radius-base);
+  --ui-container: var(--ne-container);
+  --ui-header-height: var(--ne-header-height);
+}
+
+.dark {
+  --ne-ground: #0c1216;
+  --ne-surface: #141c22;
+  --ne-surface-muted: #0f171c;
+  --ne-surface-elevated: #1c252d;
+  --ne-surface-accented: #26313a;
+  --ne-surface-inverted: #f3f7f9;
+
+  --ne-ink: #f3f7f9;
+  --ne-ink-body: #dde5ea;
+  --ne-ink-secondary: #b1bec8;
+  --ne-ink-muted: #9aa8b3;
+  --ne-ink-dimmed: #6d7b85;
+  --ne-ink-inverted: #0c1216;
+
+  --ne-hairline: #243039;
+  --ne-divider: #1b242b;
+  --ne-line-strong: #33424d;
+  --ne-line-inverted: #f3f7f9;
+
+  --ne-accent: #63a6cd;
+  --ne-accent-soft: #17303f;
+  --ne-accent-ink: #0c1216;
+  --ne-structure: #0c1216;
+  --ne-structure-ink: #f3f7f9;
+
+  --ne-radius-base: 0.375rem;
+  --ne-radius-control: calc(var(--ne-radius-base) * 1.5);
+  --ne-radius-panel: calc(var(--ne-radius-base) * 2);
+  --ne-radius-tag: 9999px;
+
+  --ne-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --ne-shadow-2: 0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75);
+  --ne-shadow-control: inset 0 1px 2px rgb(0 0 0 / 0.45);
+
+  --ne-font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --ne-font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --ne-text-display: 38px;
+  --ne-text-title: 28px;
+  --ne-text-heading: 22px;
+  --ne-text-body: 15px;
+  --ne-text-small: 13px;
+  --ne-text-label: 11px;
+  --ne-leading-tight: 1.1;
+  --ne-leading-body: 1.55;
+  --ne-tracking-tight: -0.03em;
+  --ne-tracking-label: 0.12em;
+
+  --ne-container: 1320px;
+  --ne-header-height: 4rem;
+
+  --ui-bg: var(--ne-surface);
+  --ui-bg-muted: var(--ne-surface-muted);
+  --ui-bg-elevated: var(--ne-surface-elevated);
+  --ui-bg-accented: var(--ne-surface-accented);
+  --ui-bg-inverted: var(--ne-surface-inverted);
+  --ui-text-highlighted: var(--ne-ink);
+  --ui-text: var(--ne-ink-body);
+  --ui-text-toned: var(--ne-ink-secondary);
+  --ui-text-muted: var(--ne-ink-muted);
+  --ui-text-dimmed: var(--ne-ink-dimmed);
+  --ui-text-inverted: var(--ne-ink-inverted);
+  --ui-border: var(--ne-hairline);
+  --ui-border-muted: var(--ne-divider);
+  --ui-border-accented: var(--ne-line-strong);
+  --ui-border-inverted: var(--ne-line-inverted);
+  --ui-radius: var(--ne-radius-base);
+  --ui-container: var(--ne-container);
+  --ui-header-height: var(--ne-header-height);
+}
+
+/*
+ * Automatic dark, opt-in. A Nuxt app on the Narduk core layer never needs
+ * this: `@nuxtjs/color-mode` already reads `prefers-color-scheme` and writes
+ * the class. A page that has no colour-mode runtime — a static export, an
+ * email-shaped render, the NE Base preview — sets `data-ne-scheme="auto"` on
+ * `<html>` and gets the same dark values from the media query. It is opt-in
+ * rather than the default so that a document with no scheme class renders one
+ * deterministic way on every machine.
+ *
+ * The declarations below are exactly `.dark`'s; test/theme.test.ts asserts
+ * that the two blocks stay identical, so a token added to one cannot quietly
+ * go missing from the other.
+ */
+@media (prefers-color-scheme: dark) {
+  :root[data-ne-scheme='auto'] {
+    --ne-ground: #0c1216;
+    --ne-surface: #141c22;
+    --ne-surface-muted: #0f171c;
+    --ne-surface-elevated: #1c252d;
+    --ne-surface-accented: #26313a;
+    --ne-surface-inverted: #f3f7f9;
+
+    --ne-ink: #f3f7f9;
+    --ne-ink-body: #dde5ea;
+    --ne-ink-secondary: #b1bec8;
+    --ne-ink-muted: #9aa8b3;
+    --ne-ink-dimmed: #6d7b85;
+    --ne-ink-inverted: #0c1216;
+
+    --ne-hairline: #243039;
+    --ne-divider: #1b242b;
+    --ne-line-strong: #33424d;
+    --ne-line-inverted: #f3f7f9;
+
+    --ne-accent: #63a6cd;
+    --ne-accent-soft: #17303f;
+    --ne-accent-ink: #0c1216;
+    --ne-structure: #0c1216;
+    --ne-structure-ink: #f3f7f9;
+
+    --ne-radius-base: 0.375rem;
+    --ne-radius-control: calc(var(--ne-radius-base) * 1.5);
+    --ne-radius-panel: calc(var(--ne-radius-base) * 2);
+    --ne-radius-tag: 9999px;
+
+    --ne-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
+    --ne-shadow-2: 0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75);
+    --ne-shadow-control: inset 0 1px 2px rgb(0 0 0 / 0.45);
+
+    --ne-font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    --ne-font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --ne-text-display: 38px;
+    --ne-text-title: 28px;
+    --ne-text-heading: 22px;
+    --ne-text-body: 15px;
+    --ne-text-small: 13px;
+    --ne-text-label: 11px;
+    --ne-leading-tight: 1.1;
+    --ne-leading-body: 1.55;
+    --ne-tracking-tight: -0.03em;
+    --ne-tracking-label: 0.12em;
+
+    --ne-container: 1320px;
+    --ne-header-height: 4rem;
+
+    --ui-bg: var(--ne-surface);
+    --ui-bg-muted: var(--ne-surface-muted);
+    --ui-bg-elevated: var(--ne-surface-elevated);
+    --ui-bg-accented: var(--ne-surface-accented);
+    --ui-bg-inverted: var(--ne-surface-inverted);
+    --ui-text-highlighted: var(--ne-ink);
+    --ui-text: var(--ne-ink-body);
+    --ui-text-toned: var(--ne-ink-secondary);
+    --ui-text-muted: var(--ne-ink-muted);
+    --ui-text-dimmed: var(--ne-ink-dimmed);
+    --ui-text-inverted: var(--ne-ink-inverted);
+    --ui-border: var(--ne-hairline);
+    --ui-border-muted: var(--ne-divider);
+    --ui-border-accented: var(--ne-line-strong);
+    --ui-border-inverted: var(--ne-line-inverted);
+    --ui-radius: var(--ne-radius-base);
+    --ui-container: var(--ne-container);
+    --ui-header-height: var(--ne-header-height);
+  }
+}
