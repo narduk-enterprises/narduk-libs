@@ -195,22 +195,19 @@ describe('NeStatePanel: unknown is never rendered as zero', () => {
     expect(loading).not.toContain('border-dotted')
   })
 
-  it.each<NeStateValue>(['absent', 'blocked'])(
-    '%s never renders as an empty list',
-    (state) => {
-      const wrapper = render({ state, title: 'Runners' })
-      const panel = panelOf(wrapper, state)
+  it.each<NeStateValue>(['absent', 'blocked'])('%s never renders as an empty list', (state) => {
+    const wrapper = render({ state, title: 'Runners' })
+    const panel = panelOf(wrapper, state)
 
-      // The reading keeps its own name. An empty collection is `empty`'s job.
-      expect(panel.attributes('data-ne-state')).toBe(state)
-      expect(wrapper.find('[data-ne-state="empty"]').exists()).toBe(false)
-      expect(panel.get('.ne-state-panel__eyebrow').text()).not.toBe('Empty')
-      expect(panel.text()).not.toMatch(/\b0\b/)
-      // No collection list — only the optional named-gaps list uses `<ul>`,
-      // and these cases have none.
-      expect(panel.findAll('ul')).toHaveLength(0)
-    },
-  )
+    // The reading keeps its own name. An empty collection is `empty`'s job.
+    expect(panel.attributes('data-ne-state')).toBe(state)
+    expect(wrapper.find('[data-ne-state="empty"]').exists()).toBe(false)
+    expect(panel.get('.ne-state-panel__eyebrow').text()).not.toBe('Empty')
+    expect(panel.text()).not.toMatch(/\b0\b/)
+    // No collection list — only the optional named-gaps list uses `<ul>`,
+    // and these cases have none.
+    expect(panel.findAll('ul')).toHaveLength(0)
+  })
 
   it('does not let blocked collapse into UEmpty, the empty-list primitive', () => {
     const wrapper = render({ state: 'blocked', title: 'Runners' })
