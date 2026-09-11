@@ -36,9 +36,13 @@ ships `NeStatusBadge` and `defineStatusMap`; item 16
 ([narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263))
 ships `NeConfirmDialog` and `useConfirm()`; item 7
 ([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254))
-ships `NeStatePanel`. Components read Nuxt UI semantic tokens and `UBadge`
-colour/variant props, and do not hardcode a colour, radius, shadow or font. Each
-later item adds its own component, README section, tests and NE Base card.
+ships `NeStatePanel`; item 19
+([narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266))
+ships `NeForm`, `NeFormSection` and `NeSettingsPage`, and deprecates
+narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`. Components
+read Nuxt UI semantic tokens and `UBadge` colour/variant props, and do not
+hardcode a colour, radius, shadow or font. Each later item adds its own
+component, README section, tests and NE Base card.
 
 ## Install
 
@@ -873,6 +877,189 @@ import type {
 `narduk-core`'s `AppEmptyState` (D4, Logan 2026-09-11: "Deprecate, remove next
 major"). It is deprecated in the same release as this component and removed in
 the next `narduk-core` major; the migration mapping is in
+[that package's README](../../modules/narduk-core/README.md#deprecated-components).
+
+### NeForm
+
+Wraps Nuxt UI's `UForm` with a save bar that does not lie. Components backlog
+item 19
+([narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266)),
+closing three named bug classes by construction rather than by caller
+discipline:
+
+- **Double-submit (stonx#37).** Two rapid submits — a fast double-click, or
+  Enter held a beat too long — issue exactly **one** `onSubmit` call. A
+  capture-phase `submit` listener on a real DOM ancestor of `UForm`'s `<form>`
+  drops any second submit while the first is still in flight, before `UForm`
+  itself ever sees it: no second validate, no second `dirtyFields.clear()`
+  landing early and flipping the save bar to "saved" while the first save is
+  still pending.
+- **A save bar that lies about dirtiness (stonx#36).** `Unsaved changes` is
+  driven by `UForm`'s own `dirty` state, which only clears once `onSubmit`'s
+  promise _resolves_. A rejected save leaves it dirty — there is no optimistic
+  "saved" flash to walk back on failure.
+- **Errors that do not scroll into view (stonx#350).** A schema (or `validate`)
+  failure blocks submission and moves focus to the first invalid field, scrolled
+  into view, rather than leaving the reviewer to hunt for which one broke.
+
+`UButton`'s own `loading-auto` is what makes the save button spin and disable
+itself for exactly the duration of the `onSubmit` promise — no ref to wire
+between this component and its button.
+
+#### Example
+
+```vue
+<NeForm :state="profile" :on-submit="saveProfile">
+  <UFormField name="name" label="Name">
+    <UInput v-model="profile.name" />
+  </UFormField>
+</NeForm>
+```
+
+#### Props
+
+| Prop         | Type                                    | Default  | What it does                                                                                                                                            |
+| ------------ | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`      | `Record<string, unknown>`               | —        | Required. The form's reactive state — there is no uncontrolled mode.                                                                                    |
+| `onSubmit`   | `(data) => unknown \| Promise<unknown>` | —        | Called with the validated data. Bind as `:on-submit`, a real prop, not `@submit`.                                                                       |
+| `schema`     | `unknown`                               | —        | A Standard Schema object (zod, valibot, …) or any of `UForm`'s own accepted shapes.                                                                     |
+| `validate`   | `(state) => unknown`                    | —        | Custom validation, forwarded to `UForm`'s own `validate` prop. An alternative to `schema`.                                                              |
+| `saveLabel`  | `string`                                | `'Save'` | Label for the save button.                                                                                                                              |
+| `disabled`   | `boolean`                               | `false`  | Disables every field and the save button, in addition to the loading state.                                                                             |
+| `stickySave` | `boolean`                               | `false`  | Renders the save bar `position: sticky` at the bottom of its scrolling ancestor. `NeSettingsPage` turns this on; a standalone `NeForm` defaults it off. |
+
+#### Slots
+
+| Slot      | When it renders                                                 |
+| --------- | --------------------------------------------------------------- |
+| `default` | The form's fields — typically one or more `NeFormSection`s.     |
+| `actions` | Extra buttons in the save bar, rendered before the save button. |
+
+#### Events
+
+None. `onSubmit` is a real function prop (matching `UForm`'s own contract), not
+a `defineEmits` listener, so its return value can be awaited directly the same
+way `UForm` awaits its own `onSubmit` and `UButton` awaits its own `onClick`.
+
+#### Binding a schema
+
+```vue
+<script setup lang="ts">
+import { z } from 'zod'
+
+const schema = z.object({ name: z.string().min(1, 'Name is required') })
+const state = reactive({ name: '' })
+</script>
+
+<template>
+  <NeForm :schema="schema" :state="state" :on-submit="save">
+    <UFormField name="name" label="Name">
+      <UInput v-model="state.name" />
+    </UFormField>
+  </NeForm>
+</template>
+```
+
+A failing field is focused automatically — no `ref` or manual `scrollIntoView`
+call needed at the call site.
+
+### NeFormSection
+
+A titled group of fields inside a `NeForm` — a thin wrapper around
+`NeSectionHeader` (title, description, actions) plus a fields slot below it. It
+renders no `<form>` of its own and does not touch validation or submission:
+those stay owned by the enclosing `NeForm`'s `UForm`, which validates against
+the whole `state`/`schema` regardless of how the fields inside it are grouped
+visually. Splitting a long settings page into sections is purely presentational.
+
+#### Example
+
+```vue
+<NeFormSection title="Profile" description="Your public account details.">
+  <UFormField name="name" label="Name">
+    <UInput v-model="state.name" />
+  </UFormField>
+</NeFormSection>
+```
+
+#### Props
+
+| Prop          | Type                                           | Default | What it does                                                                                                  |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| `title`       | `string`                                       | —       | Required. The section title.                                                                                  |
+| `description` | `string`                                       | —       | Supporting copy shown below the title.                                                                        |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h3'`  | The heading tag. Defaults one level below `NeSettingsPage`'s own `h1` and a typical `NeSectionHeader`'s `h2`. |
+
+#### Slots
+
+| Slot      | When it renders                                             |
+| --------- | ----------------------------------------------------------- |
+| `default` | The section's fields — typically one or more `UFormField`s. |
+| `actions` | Right-aligned actions next to the section title.            |
+
+#### Events
+
+None.
+
+### NeSettingsPage
+
+A full settings screen: `NePageHeader` on top of a `NeForm` whose save bar is
+sticky by default, so the save action stays reachable on a page built from
+several `NeFormSection`s stacked below the fold. This is composition, not new
+behaviour — every `NeForm` bug fix (double-submit, honest dirty state,
+focus-on-error) is inherited unchanged; `NeSettingsPage` only wires
+`NePageHeader`'s title/description to the page and forces `stickySave` on.
+
+#### Example
+
+```vue
+<NeSettingsPage
+  title="Settings"
+  :schema="schema"
+  :state="state"
+  :on-submit="save"
+>
+  <NeFormSection title="Profile">
+    <UFormField name="name">
+      <UInput v-model="state.name" />
+    </UFormField>
+  </NeFormSection>
+</NeSettingsPage>
+```
+
+#### Props
+
+| Prop          | Type                                    | Default  | What it does                                                   |
+| ------------- | --------------------------------------- | -------- | -------------------------------------------------------------- |
+| `title`       | `string`                                | —        | Required. The page title, rendered by `NePageHeader`.          |
+| `state`       | `Record<string, unknown>`               | —        | Required. Forwarded to `NeForm`'s `state` prop.                |
+| `description` | `string`                                | —        | Forwarded to `NePageHeader`.                                   |
+| `onSubmit`    | `(data) => unknown \| Promise<unknown>` | —        | Forwarded to `NeForm`'s `onSubmit` prop. Bind as `:on-submit`. |
+| `schema`      | `unknown`                               | —        | Forwarded to `NeForm`'s `schema` prop.                         |
+| `validate`    | `(state) => unknown`                    | —        | Forwarded to `NeForm`'s `validate` prop.                       |
+| `saveLabel`   | `string`                                | `'Save'` | Forwarded to `NeForm`.                                         |
+| `disabled`    | `boolean`                               | `false`  | Forwarded to `NeForm`.                                         |
+
+There is no `stickySave` prop: `NeSettingsPage` always renders a sticky save
+bar, which is the entire reason to reach for it over a standalone `NeForm`.
+
+#### Slots
+
+| Slot            | When it renders                                                                       |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `default`       | The page's fields — typically one or more `NeFormSection`s.                           |
+| `actions`       | Extra buttons in the save bar, rendered before the save button.                       |
+| `headerActions` | Right-aligned actions next to the page title, distinct from the save bar's `actions`. |
+
+#### Events
+
+None, for the same reason as `NeForm`: `onSubmit` is a real function prop.
+
+#### Supersedes
+
+`narduk-core`'s `AppSettingsProfile` (D4, Logan 2026-09-11: "Deprecate, remove
+next major"). It is deprecated in the same release as this component and removed
+in the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
 
 ## Component surface check
