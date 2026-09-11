@@ -170,21 +170,45 @@ TypeScript — so it sees the real export list rather than whatever a regex
 matches. If a module cannot be loaded it fails closed with the loader error
 instead of reporting an empty, trivially passing surface.
 
-Scope today is this package. narduk-ui and narduk-charts backfill their surface
-in backlog item 22 and join the check then; naming one of them now is an error
-rather than a silent pass.
+Scope today is this package. The owned directories live in
+`CHECKED_PACKAGE_DIRS` in `scripts/check-component-surface.mjs` — item 22
+appends `packages/design/narduk-ui` and `packages/design/narduk-charts` there,
+one line each. Naming one of them now is an error rather than a silent pass.
+
+### What a later lane must add
+
+For a new registered component, all of the following or `pnpm run surface:check`
+fails (one line per miss, naming the artefact and the file to add):
+
+1. `{ name, filePath }` in `src/registry.ts` — the check reads this array, not
+   a hardcoded list.
+2. A Markdown heading in **this** README naming the component
+   (`### NeStatePanel`), with props, slots, events and one example.
+3. A mount test: a `*.test.ts` containing `mount(NeStatePanel` (convention:
+   `src/runtime/components/NeStatePanel.test.ts`).
+4. An SSR test: `src/runtime/components/NeStatePanel.ssr.test.ts` (or a shared
+   `ssr.test.ts`) that names the component and calls `renderToString`.
+5. `src/design-cards/NeStatePanel.card.vue` with
+   `data-design-card="ne-state-panel"` — copy the template; see below.
+   `design-system-build/app/app.vue` discovers every `*.card.vue` and renders
+   it into the NE Base gallery, so the lane does **not** hand-edit `app.vue`.
+
+A new `./format` export needs (2) and a `*.test.ts` that imports it from
+`format` and asserts its output. Mount, SSR and a card are not required of a
+function.
+
+`PENDING_CARDS` in `scripts/check-component-surface.mjs` is a reviewed,
+temporary allowlist that waives **only** (5) for the four parallel component
+lanes that were written against a follow-up card PR: `NeStatePanel` (#254),
+`NeStatusBadge` (#255), `NePageHeader` and `NeSectionHeader` (#256),
+`NeConfirmDialog` (#263). README, mount and SSR still fail closed. The follow-up
+that adds those cards empties the list. It is not a way to skip the card
+forever.
 
 ## Shipping a design card
 
 An NE Base card ships **with its component**, in this package, not as a
-hand-written section in another one. Adding a component is therefore three files
-here and no edit anywhere else:
-
-1. `src/runtime/components/<Name>.vue` — the component.
-2. `src/registry.ts` — one `{ name, filePath }` entry.
-3. `src/design-cards/<Name>.card.vue` — the card.
-
-To write the card, copy the template and edit it:
+hand-written section in another one. Copy the template and edit it:
 
 ```bash
 cp packages/design/narduk-shell/src/design-cards/template/NeExample.card.vue \
@@ -230,12 +254,12 @@ import NeStatePanel from '../runtime/components/NeStatePanel.vue'
 
 Nothing else registers the card. `packages/design/design-system-build` globs
 `src/design-cards/*.card.vue`, renders each one into the NE Base gallery, and
-fails its build when a registered component has no card, when a card has no
-registered component, when two cards claim the same id, or when an authored card
-does not reach the prerendered output. `test/design-cards.test.ts` in this
-package server-renders every card — including the template — and asserts the
-same pairing, so a card that only works after hydration fails here rather than
-showing up blank in NE Base.
+fails its build when a registered component has no card (unless the name is on
+`PENDING_CARDS`), when a card has no registered component, when two cards claim
+the same id, or when an authored card does not reach the prerendered output.
+`test/design-cards.test.ts` in this package server-renders every card —
+including the template — and asserts the same pairing, so a card that only
+works after hydration fails here rather than showing up blank in NE Base.
 
 The hand-authored cards for `narduk-ui` and the Nuxt UI baseline stay in
 `design-system-build/app/app.vue` and keep working unchanged; backlog item 22

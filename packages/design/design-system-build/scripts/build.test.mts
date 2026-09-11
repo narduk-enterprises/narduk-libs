@@ -101,7 +101,8 @@ const shellCard = (id: string, body = '<NeStatePanel />') =>
 
 test('a registered component with no card fails the build, naming the template to copy', () => {
   assert.throws(
-    () => shellCardPlan([{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }], ['NeKpiTile.card.vue']),
+    () =>
+      shellCardPlan([{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }], ['NeKpiTile.card.vue'], []),
     (error: Error) => {
       assert.match(error.message, /Registered components with no design card: NeStatePanel/)
       assert.match(error.message, /template\/NeExample\.card\.vue/)
@@ -130,6 +131,26 @@ test('the plan pairs each component with its file and kebab card id, in registry
   )
   assert.deepEqual(shellCardPlan([], []), [])
   assert.equal(kebabCase('NeURLField'), 'ne-url-field')
+})
+
+test('pendingCards lets a listed component land without a card; a name not on the list still fails', () => {
+  assert.deepEqual(
+    shellCardPlan(
+      [{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }],
+      ['NeKpiTile.card.vue'],
+      ['NeStatePanel'],
+    ),
+    [{ name: 'NeKpiTile', file: 'NeKpiTile.card.vue', id: 'ne-kpi-tile' }],
+  )
+  assert.throws(
+    () =>
+      shellCardPlan(
+        [{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }],
+        ['NeKpiTile.card.vue'],
+        ['NeStatusBadge'],
+      ),
+    /Registered components with no design card: NeStatePanel/,
+  )
 })
 
 test('coverage merges the authored gallery with each shipped card, and counts Ne* tags', () => {

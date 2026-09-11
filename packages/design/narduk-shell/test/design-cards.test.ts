@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { createSSRApp, type Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
+import { PENDING_CARDS } from '../../../../scripts/check-component-surface.mjs'
 import { NE_SHELL_COMPONENTS } from '../src/registry'
 
 /** `NeStatePanel` -> `ne-state-panel`; the id a card must declare. */
@@ -45,15 +46,23 @@ const templates = named(
 )
 
 describe('every registered component has a card, and every card a component', () => {
-  it('matches the registry name for name', () => {
-    expect(cards.map((card) => card.name)).toEqual(
-      [...NE_SHELL_COMPONENTS].map((component) => component.name).sort(),
-    )
+  const required = [...NE_SHELL_COMPONENTS]
+    .map((component) => component.name)
+    .filter((name) => !PENDING_CARDS.includes(name))
+    .sort()
+
+  it('matches the registry name for name, except reviewed pendingCards', () => {
+    const cardNames = cards.map((card) => card.name)
+    expect(cardNames.filter((name) => !PENDING_CARDS.includes(name))).toEqual(required)
+    expect(new Set(cardNames).size).toBe(cardNames.length)
+    for (const name of cardNames) {
+      expect(NE_SHELL_COMPONENTS.map((component) => component.name)).toContain(name)
+    }
   })
 
-  it('names each card file after the component it previews', () => {
-    for (const component of NE_SHELL_COMPONENTS) {
-      expect(cards.map((card) => card.file)).toContain(`${component.name}.card.vue`)
+  it('names each required card file after the component it previews', () => {
+    for (const name of required) {
+      expect(cards.map((card) => card.file)).toContain(`${name}.card.vue`)
     }
   })
 

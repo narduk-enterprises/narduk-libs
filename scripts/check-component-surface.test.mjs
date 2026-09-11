@@ -17,7 +17,15 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test, { after } from 'node:test'
 
-import { ROOT, checkComponentSurface, kebabCase, rulesFor } from './check-component-surface.mjs'
+import {
+  CHECKED_PACKAGE_DIRS,
+  PENDING_CARDS,
+  ROOT,
+  checkComponentSurface,
+  kebabCase,
+  pendingCardsFor,
+  rulesFor,
+} from './check-component-surface.mjs'
 
 const script = join(ROOT, 'scripts/check-component-surface.mjs')
 const temporaryDirectories = []
@@ -74,6 +82,7 @@ const check = (directory) =>
 test('a component with all four kinds of evidence passes, and the report lists them', async () => {
   const report = await check(fixture())
   assert.deepEqual(report.misses, [])
+  assert.deepEqual(report.waived, [])
   assert.deepEqual(report.entries, [
     {
       name: 'NeStatePanel',
@@ -246,4 +255,65 @@ test('a package that has not joined the check yet is an error, not a silent pass
     assert.match(error.stderr, /is not in the component surface check yet/)
     assert.match(error.stderr, /backlog item 22/)
   }
+})
+
+test('scope is one directory per line, and only the real package gets pendingCards', () => {
+  assert.deepEqual(CHECKED_PACKAGE_DIRS, ['packages/design/narduk-shell'])
+  assert.deepEqual(pendingCardsFor(join(ROOT, 'packages/design/narduk-shell')), [...PENDING_CARDS])
+  assert.deepEqual(pendingCardsFor(fixture()), [])
+})
+
+test('pendingCards waives only the card rule, and only for listed names', async () => {
+  assert.deepEqual(
+    [...PENDING_CARDS],
+    ['NeStatePanel', 'NeStatusBadge', 'NePageHeader', 'NeSectionHeader', 'NeConfirmDialog'],
+  )
+
+  const waived = await checkComponentSurface({
+    packageName: 'fixture',
+    packageDirectory: fixture(['src/design-cards/NeStatePanel.card.vue']),
+    pendingCards: ['NeStatePanel'],
+  })
+  assert.deepEqual(
+    waived.misses.filter((miss) => miss.name === 'NeStatePanel'),
+    [],
+  )
+  assert.deepEqual(waived.waived, ['NeStatePanel'])
+  assert.deepEqual(
+    waived.entries.find((entry) => entry.name === 'NeStatePanel')?.required,
+    ['readme', 'mount', 'ssr'],
+  )
+
+  const notListed = await checkComponentSurface({
+    packageName: 'fixture',
+    packageDirectory: fixture(['src/design-cards/NeStatePanel.card.vue']),
+    pendingCards: ['NeStatusBadge'],
+  })
+  assert.deepEqual(
+    notListed.misses.filter((miss) => miss.name === 'NeStatePanel').map((miss) => miss.rule),
+    ['card'],
+  )
+
+  const stillNeedsReadme = await checkComponentSurface({
+    packageName: 'fixture',
+    packageDirectory: fixture(['README.md', 'src/design-cards/NeStatePanel.card.vue']),
+    pendingCards: ['NeStatePanel'],
+  })
+  assert.deepEqual(
+    stillNeedsReadme.misses
+      .filter((miss) => miss.name === 'NeStatePanel')
+      .map((miss) => miss.rule),
+    ['readme'],
+  )
+})
+
+test('an unused pendingCards name is ignored, so the list can sit on main before those lanes rebase', async () => {
+  const report = await check(fixture())
+  const withFuture = await checkComponentSurface({
+    packageName: 'fixture',
+    packageDirectory: fixture(),
+    pendingCards: ['NeConfirmDialog'],
+  })
+  assert.deepEqual(withFuture.misses, report.misses)
+  assert.deepEqual(withFuture.waived, [])
 })

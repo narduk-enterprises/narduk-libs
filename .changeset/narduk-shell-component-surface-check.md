@@ -28,5 +28,8 @@ Both change here:
   them.
 
 Two new README sections, "Component surface check" and "Shipping a design card",
-document the rules and the recipe. No component, registry entry or runtime
-behaviour changes: the registry is still empty, and the check passes over it.
+document the rules and the recipe. `PENDING_CARDS` in the check script is a
+reviewed allowlist that waives only the card rule for the four parallel
+component lanes (#254, #255, #256, #263) so they can land before the follow-up
+card PR empties the list. No component, registry entry or runtime behaviour
+changes: the registry is still empty, and the check passes over it.

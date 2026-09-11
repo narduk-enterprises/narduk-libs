@@ -68,16 +68,52 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * Packages whose surface this check owns, by package name and by the short
- * alias a caller is likely to type. Item 22 adds narduk-ui and narduk-charts
- * once their surface is backfilled.
+ * Package directories this check owns. Item 22 appends narduk-ui and
+ * narduk-charts here — one line each — once their surface is backfilled.
  */
-export const CHECKED_PACKAGES = new Map([
-  ['@narduk-enterprises/narduk-shell', 'packages/design/narduk-shell'],
-  ['narduk-shell', 'packages/design/narduk-shell'],
+export const CHECKED_PACKAGE_DIRS = ['packages/design/narduk-shell']
+
+/**
+ * Reviewed allowlist of registered component names that may land before their
+ * NE Base card. The four parallel component lanes (#254 NeStatePanel,
+ * #255 NeStatusBadge, #256 NePageHeader + NeSectionHeader, #263 NeConfirmDialog)
+ * were written against a follow-up card PR. Empty this array in that follow-up.
+ *
+ * Only the `card` rule is waived, and only when this check (or `shellCardPlan`)
+ * is looking at a directory in `CHECKED_PACKAGE_DIRS`. README, mount and SSR
+ * still fail closed. Unused names — listed here before the component is
+ * registered — are ignored, so this list can sit on main before those lanes
+ * rebase.
+ */
+export const PENDING_CARDS = Object.freeze([
+  'NeStatePanel',
+  'NeStatusBadge',
+  'NePageHeader',
+  'NeSectionHeader',
+  'NeConfirmDialog',
 ])
 
+/** CLI aliases (`--package narduk-shell` or the scoped name) for the dirs above. */
+export const CHECKED_PACKAGES = new Map(
+  CHECKED_PACKAGE_DIRS.flatMap((directory) => {
+    const short = directory.slice(directory.lastIndexOf('/') + 1)
+    return [
+      [`@narduk-enterprises/${short}`, directory],
+      [short, directory],
+    ]
+  }),
+)
+
 export const DEFAULT_PACKAGE = '@narduk-enterprises/narduk-shell'
+
+/**
+ * The pending-card waiver applies only to a checked package directory, never
+ * to a throwaway fixture, so the fixture tests can still fail the card rule.
+ */
+export function pendingCardsFor(packageDirectory) {
+  const relativeDirectory = relative(ROOT, resolve(packageDirectory))
+  return CHECKED_PACKAGE_DIRS.includes(relativeDirectory) ? [...PENDING_CARDS] : []
+}
 
 /** `NeStatePanel` -> `ne-state-panel`. The card id a design card must declare. */
 export function kebabCase(name) {
@@ -262,11 +298,17 @@ export function rulesFor(kind) {
  * Run every rule over a package's declared surface.
  *
  * @returns {Promise<{ package: string, directory: string, entries: object[],
- *   misses: { name: string, kind: string, rule: string, message: string }[] }>}
+ *   misses: { name: string, kind: string, rule: string, message: string }[],
+ *   waived: string[] }>}
  */
-export async function checkComponentSurface({ packageName, packageDirectory }) {
+export async function checkComponentSurface({
+  packageName,
+  packageDirectory,
+  pendingCards = pendingCardsFor(packageDirectory),
+}) {
   const surface = await readSurface(packageDirectory)
   const evidence = await readEvidence(packageDirectory)
+  const pending = new Set(pendingCards)
   // Report repository-relative paths so a failure can be pasted into an editor.
   // A fixture package outside the repository keeps its absolute path instead of
   // becoming a wall of `../`.
@@ -278,18 +320,23 @@ export async function checkComponentSurface({ packageName, packageDirectory }) {
 
   const entries = []
   const misses = []
+  const waived = []
   for (const { kind, name } of surface) {
+    const required = rulesFor(kind).filter((rule) => !(rule === 'card' && pending.has(name)))
     const satisfied = []
-    for (const rule of rulesFor(kind)) {
+    for (const rule of required) {
       if (RULES[rule].check({ name, evidence })) {
         satisfied.push(rule)
       } else {
         misses.push({ name, kind, rule, message: `${name}: ${RULES[rule].miss({ name, path })}` })
       }
     }
-    entries.push({ name, kind, required: rulesFor(kind), satisfied })
+    if (kind === 'component' && pending.has(name) && !required.includes('card')) {
+      waived.push(name)
+    }
+    entries.push({ name, kind, required, satisfied })
   }
-  return { package: packageName, directory: path(''), entries, misses }
+  return { package: packageName, directory: path(''), entries, misses, waived }
 }
 
 function parseArguments(argv) {
@@ -347,9 +394,13 @@ export async function main(argv = process.argv.slice(2), out = process.stdout) {
 
   const components = report.entries.filter((entry) => entry.kind === 'component').length
   const formats = report.entries.length - components
+  const waiver =
+    report.waived.length > 0
+      ? ` (${report.waived.length} card(s) waived via pendingCards: ${report.waived.join(', ')})`
+      : ''
   out.write(
     `${report.package}: ${components} component(s) and ${formats} format export(s) have a README ` +
-      `section, tests and a design card.\n`,
+      `section, tests and a design card.${waiver}\n`,
   )
   return 0
 }

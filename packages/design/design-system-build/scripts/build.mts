@@ -12,6 +12,7 @@ import { parse as parseVue } from 'vue/compiler-sfc'
 // from source rather than from a built artifact: narduk-shell ships TypeScript
 // with no build step, and Node strips the types natively.
 import { NE_SHELL_COMPONENTS } from '../../narduk-shell/src/registry.ts'
+import { PENDING_CARDS } from '../../../../scripts/check-component-surface.mjs'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -109,14 +110,16 @@ const CARD_TEMPLATE = 'packages/design/narduk-shell/src/design-cards/template/Ne
 export function shellCardPlan(
   components: readonly { name: string }[],
   cardFiles: readonly string[],
+  pendingCards: readonly string[] = PENDING_CARDS,
 ): { name: string; file: string; id: string }[] {
   const found = new Set(cardFiles)
+  const pending = new Set(pendingCards)
   const plan = components.map(({ name }) => ({
     name,
     file: `${name}.card.vue`,
     id: kebabCase(name),
   }))
-  const missing = plan.filter((card) => !found.has(card.file))
+  const missing = plan.filter((card) => !found.has(card.file) && !pending.has(card.name))
   if (missing.length > 0) {
     throw new Error(
       `Registered components with no design card: ${missing.map((card) => card.name).join(', ')}. ` +
@@ -131,7 +134,8 @@ export function shellCardPlan(
         'Add the entry to packages/design/narduk-shell/src/registry.ts, or delete the card.',
     )
   }
-  return plan
+  // Pending names without a card are omitted so `build()` does not try to read them.
+  return plan.filter((card) => found.has(card.file))
 }
 
 /**
