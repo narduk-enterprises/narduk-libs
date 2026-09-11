@@ -4,11 +4,25 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-const runtimeRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'runtime', 'components')
+const runtimeRoot = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'src',
+  'runtime',
+  'components',
+)
+
+/** Issue refs like `narduk-libs#256` live in script comments; only the
+ * rendered surface can hardcode a look. */
+function visualSource(sfc: string): string {
+  return [...sfc.matchAll(/<(?:template|style)\b[^>]*>([\s\S]*?)<\/(?:template|style)>/g)]
+    .map((match) => match[1] ?? '')
+    .join('\n')
+}
 
 const sources = {
-  NePageHeader: readFileSync(join(runtimeRoot, 'NePageHeader.vue'), 'utf8'),
-  NeSectionHeader: readFileSync(join(runtimeRoot, 'NeSectionHeader.vue'), 'utf8'),
+  NePageHeader: visualSource(readFileSync(join(runtimeRoot, 'NePageHeader.vue'), 'utf8')),
+  NeSectionHeader: visualSource(readFileSync(join(runtimeRoot, 'NeSectionHeader.vue'), 'utf8')),
 }
 
 /**
@@ -21,7 +35,7 @@ const sources = {
  * font-weight / type-size utilities are not.
  */
 const FORBIDDEN = [
-  { name: 'hex colour', pattern: /#[0-9a-fA-F]{3,8}\b/ },
+  { name: 'hex colour', pattern: /#[0-9a-f]{3,8}\b/i },
   { name: 'rgb/hsl colour', pattern: /\b(?:rgba?|hsla?)\s*\(/ },
   { name: 'font-family', pattern: /\bfont-family\s*:/ },
   { name: 'box-shadow', pattern: /\bbox-shadow\s*:/ },

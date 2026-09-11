@@ -40,7 +40,11 @@ export const UPageHeaderStub = defineComponent({
     return () =>
       h('div', { 'data-slot': 'root' }, [
         props.headline || slots.headline
-          ? h('div', { 'data-slot': 'headline' }, slots.headline ? slots.headline() : props.headline)
+          ? h(
+              'div',
+              { 'data-slot': 'headline' },
+              slots.headline ? slots.headline() : props.headline,
+            )
           : null,
         h('div', { 'data-slot': 'container' }, [
           h('div', { 'data-slot': 'wrapper' }, [
@@ -105,7 +109,7 @@ export const UBadgeStub = defineComponent({
           'aria-label': attrs['aria-label'],
           'data-slot': attrs['data-slot'] ?? 'badge',
         },
-        props.label == null ? null : String(props.label),
+        props.label == null ? undefined : String(props.label),
       )
   },
 })

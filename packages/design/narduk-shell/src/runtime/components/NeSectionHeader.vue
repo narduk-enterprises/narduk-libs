@@ -11,9 +11,8 @@
  * Components-library backlog item 9 (narduk-libs#256); plan
  * docs/plans/components-library-plan.md §2 item 9.
  */
-import { computed } from 'vue'
-
 import UBadge from '@nuxt/ui/components/Badge.vue'
+import { computed } from 'vue'
 
 export type NeSectionHeaderHeading = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 

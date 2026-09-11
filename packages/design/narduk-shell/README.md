@@ -142,13 +142,13 @@ without nesting a second heading inside `UPageHeader`'s own `<h1>`.
 
 #### Props
 
-| Prop           | Type                                               | Default | Description                                                                 |
-| -------------- | -------------------------------------------------- | ------- | --------------------------------------------------------------------------- |
-| `title`        | `string`                                           | —       | Page title. Required.                                                       |
-| `description`  | `string`                                           | —       | Supporting copy below the title.                                            |
-| `eyebrow`      | `string`                                           | —       | Small label above the title (maps to `UPageHeader`'s `headline`).           |
-| `breadcrumbs`  | `NeBreadcrumbItem[]`                               | —       | `UBreadcrumb` items (`label`, optional `to` / `icon`). Hidden when empty.   |
-| `as`           | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'`     | `'h1'`  | Heading level for the title.                                                |
+| Prop          | Type                                           | Default | Description                                                               |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------------- |
+| `title`       | `string`                                       | —       | Page title. Required.                                                     |
+| `description` | `string`                                       | —       | Supporting copy below the title.                                          |
+| `eyebrow`     | `string`                                       | —       | Small label above the title (maps to `UPageHeader`'s `headline`).         |
+| `breadcrumbs` | `NeBreadcrumbItem[]`                           | —       | `UBreadcrumb` items (`label`, optional `to` / `icon`). Hidden when empty. |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h1'`  | Heading level for the title.                                              |
 
 `NeBreadcrumbItem` is the `UBreadcrumb` item shape this wrapper accepts:
 `{ label?: string, to?: string, icon?: string }` plus any extra fields
@@ -156,12 +156,12 @@ without nesting a second heading inside `UPageHeader`'s own `<h1>`.
 
 #### Slots
 
-| Slot          | Description                                                                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Slot          | Description                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
 | `actions`     | Right-aligned actions next to the title (maps to `UPageHeader`'s `links` slot). Never inside the heading. |
-| `default`     | Pass-through of `UPageHeader`'s default slot, below the title/description block.                     |
-| `title`       | Overrides the title text. Still rendered inside the heading element.                                 |
-| `description` | Overrides the description text.                                                                      |
+| `default`     | Pass-through of `UPageHeader`'s default slot, below the title/description block.                          |
+| `title`       | Overrides the title text. Still rendered inside the heading element.                                      |
+| `description` | Overrides the description text.                                                                           |
 
 #### Events
 
@@ -194,19 +194,19 @@ heading is an `h2` by default.
 
 #### Props
 
-| Prop          | Type                                           | Default | Description                                                         |
-| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------- |
-| `title`       | `string`                                       | —       | Section title. Required.                                            |
-| `count`       | `number`                                       | —       | Item count shown as a token-themed badge. Hidden when `undefined`.  |
-| `description` | `string`                                       | —       | Supporting copy below the title.                                    |
-| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h2'`  | Heading level for the title.                                        |
+| Prop          | Type                                           | Default | Description                                                        |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------ |
+| `title`       | `string`                                       | —       | Section title. Required.                                           |
+| `count`       | `number`                                       | —       | Item count shown as a token-themed badge. Hidden when `undefined`. |
+| `description` | `string`                                       | —       | Supporting copy below the title.                                   |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h2'`  | Heading level for the title.                                       |
 
 #### Slots
 
-| Slot      | Description                                                                              |
-| --------- | ---------------------------------------------------------------------------------------- |
-| `actions` | Right-aligned actions next to the title. Never rendered inside the heading element.      |
-| `default` | Extra content below the title/description row.                                           |
+| Slot      | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
+| `actions` | Right-aligned actions next to the title. Never rendered inside the heading element. |
+| `default` | Extra content below the title/description row.                                      |
 
 #### Events
 

@@ -33,10 +33,10 @@ export type NePageHeaderHeading = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
  * and forwarded on the items array.
  */
 export interface NeBreadcrumbItem {
+  [key: string]: unknown
   icon?: string
   label?: string
   to?: string
-  [key: string]: unknown
 }
 
 export interface NePageHeaderProps {
