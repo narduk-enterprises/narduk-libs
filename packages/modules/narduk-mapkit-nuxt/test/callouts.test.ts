@@ -16,9 +16,14 @@ describe('AppMapKit callout opt-in contract', () => {
   })
 
   it('never constructs the controller during SSR, or without the opt-in', async () => {
+    // `isClientEnvironment()` wraps `import.meta.client` here (not the plain
+    // macro read the way `ensureFullscreenController()` still uses) so a
+    // mount test can force this branch true with `vi.mock(...)` -- see
+    // `app-map-kit-mount.test.ts`'s "callout wiring" suite, which is the
+    // real behavioral coverage this source-regex check cannot be (narduk-libs#269).
     const source = await readFile(componentUrl, 'utf8')
     expect(source).toContain(
-      'if (!import.meta.client || !props.callouts || !mapWrapper.value || !map) return null',
+      'if (!isClientEnvironment() || !props.callouts || !mapWrapper.value || !map) return null',
     )
   })
 

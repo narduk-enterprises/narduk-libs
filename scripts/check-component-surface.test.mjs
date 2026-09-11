@@ -14,17 +14,21 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import test, { after } from 'node:test'
 
 import {
   CHECKED_PACKAGE_DIRS,
+  PACKAGE_SURFACE_CONFIG,
   PENDING_CARDS,
   ROOT,
   checkComponentSurface,
   kebabCase,
+  parseComponentBarrel,
   pendingCardsFor,
+  readSurface,
   rulesFor,
+  surfaceConfigFor,
 } from './check-component-surface.mjs'
 
 const script = join(ROOT, 'scripts/check-component-surface.mjs')
@@ -182,6 +186,49 @@ test('an SSR test alone does not satisfy the mount rule, and vice versa', async 
   )
 })
 
+test('a named import from a barrel-like specifier satisfies mount/ssr/card too, not just a per-file import path', async () => {
+  // narduk-charts's ssr.test.ts and narduk-ui's instruments.test.ts/ssr.test.ts
+  // import every component by name from one barrel file (`./index`,
+  // `../instruments`) rather than each having its own file-path import — see
+  // `importsArtefact` in check-component-surface.mjs. This fixture reproduces
+  // that shape for the shell surface shape, to isolate the behavior from
+  // barrel *surface reading* (covered separately by parseComponentBarrel and
+  // the real-package tests below).
+  const directory = fixture([
+    'src/runtime/components/NeStatePanel.test.ts',
+    'src/runtime/components/NeStatePanel.ssr.test.ts',
+    'src/design-cards/NeStatePanel.card.vue',
+  ])
+  // Both files under this directory are excluded above, so unlike the
+  // single-file-removed fixtures elsewhere in this file, the directory itself
+  // was never created.
+  mkdirSync(join(directory, 'src/runtime/components'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.test.ts'),
+    "import { mount } from '@vue/test-utils'\nimport { NeStatePanel } from './barrel'\nit('renders', () => { expect(mount(NeStatePanel).text()).toBe('') })\n",
+  )
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.ssr.test.ts'),
+    "import { renderToString } from '@vue/server-renderer'\nimport { NeStatePanel } from './barrel'\nit('server renders', async () => { expect(await renderToString(NeStatePanel)).toContain('<div') })\n",
+  )
+  mkdirSync(join(directory, 'src/design-cards'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/design-cards/NeStatePanel.card.vue'),
+    `<script setup lang="ts">
+import { NeStatePanel } from '../runtime/components/barrel'
+</script>
+<template>
+  <section class="preview-card" data-design-card="ne-state-panel"><NeStatePanel /></section>
+</template>
+`,
+  )
+  const report = await check(directory)
+  assert.deepEqual(
+    report.misses.filter((miss) => miss.name === 'NeStatePanel'),
+    [],
+  )
+})
+
 /*
  * The tightened-rule fixtures below reproduce, one rule at a time, the exact
  * gaming shapes a PR review found: a `mount(Name` reference that exists only
@@ -322,12 +369,23 @@ test('the real narduk-shell package is the default scope and passes today', () =
   assert.match(output, /@narduk-enterprises\/narduk-shell: \d+ component\(s\)/)
 })
 
+test('with no args, the check covers every directory in CHECKED_PACKAGE_DIRS, not just the first', () => {
+  const output = execFileSync(process.execPath, [script], { encoding: 'utf8' })
+  assert.match(output, /@narduk-enterprises\/narduk-shell: \d+ component\(s\)/)
+  assert.match(output, /@narduk-enterprises\/narduk-charts: 8 component\(s\)/)
+  assert.match(output, /@narduk-enterprises\/narduk-ui: 4 component\(s\)/)
+})
+
 test('a package that has not joined the check yet is an error, not a silent pass', () => {
   try {
-    execFileSync(process.execPath, [script, '--package', '@narduk-enterprises/narduk-ui'], {
-      encoding: 'utf8',
-      stdio: 'pipe',
-    })
+    execFileSync(
+      process.execPath,
+      [script, '--package', '@narduk-enterprises/narduk-mapkit-nuxt'],
+      {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    )
     assert.fail('an unscoped package must not report success')
   } catch (error) {
     assert.equal(error.status, 1)
@@ -336,10 +394,96 @@ test('a package that has not joined the check yet is an error, not a silent pass
   }
 })
 
-test('scope is one directory per line, and only the real package gets pendingCards', () => {
-  assert.deepEqual(CHECKED_PACKAGE_DIRS, ['packages/design/narduk-shell'])
+test('scope is one directory per line, and only the shell package gets pendingCards', () => {
+  assert.deepEqual(CHECKED_PACKAGE_DIRS, [
+    'packages/design/narduk-shell',
+    'packages/design/narduk-charts',
+    'packages/design/narduk-ui',
+  ])
   assert.deepEqual(pendingCardsFor(join(ROOT, 'packages/design/narduk-shell')), [...PENDING_CARDS])
+  assert.deepEqual(pendingCardsFor(join(ROOT, 'packages/design/narduk-charts')), [])
+  assert.deepEqual(pendingCardsFor(join(ROOT, 'packages/design/narduk-ui')), [])
   assert.deepEqual(pendingCardsFor(fixture()), [])
+})
+
+test('the real narduk-charts and narduk-ui packages read their barrel surface and pass today', async () => {
+  const chartsOutput = execFileSync(
+    process.execPath,
+    [script, '--package', '@narduk-enterprises/narduk-charts'],
+    { encoding: 'utf8' },
+  )
+  assert.match(chartsOutput, /@narduk-enterprises\/narduk-charts: 8 component\(s\) and 0 format/)
+
+  const uiOutput = execFileSync(process.execPath, [script, '--package', 'narduk-ui'], {
+    encoding: 'utf8',
+  })
+  assert.match(uiOutput, /narduk-ui: 4 component\(s\) and 0 format/)
+
+  const chartsSurface = await readSurface(join(ROOT, 'packages/design/narduk-charts'))
+  assert.deepEqual(chartsSurface.map((entry) => entry.name).sort(), [
+    'NardukBarChart',
+    'NardukBrandBackdrop',
+    'NardukCandleChart',
+    'NardukChartStack',
+    'NardukHistogramChart',
+    'NardukLineChart',
+    'NardukPieChart',
+    'NardukScatterChart',
+  ])
+  assert.ok(chartsSurface.every((entry) => entry.kind === 'component'))
+})
+
+test('surfaceConfigFor reads the barrel config for a listed package, and null for everything else', () => {
+  assert.deepEqual(surfaceConfigFor(join(ROOT, 'packages/design/narduk-charts')), {
+    componentsBarrel: 'src/index.ts',
+    designCardsDir: 'src/design-cards',
+  })
+  assert.deepEqual(surfaceConfigFor(join(ROOT, 'packages/design/narduk-ui')), {
+    componentsBarrel: 'instruments/index.ts',
+    designCardsDir: 'design-cards',
+  })
+  assert.equal(surfaceConfigFor(join(ROOT, 'packages/design/narduk-shell')), null)
+  assert.equal(surfaceConfigFor(fixture()), null)
+  assert.deepEqual(Object.keys(PACKAGE_SURFACE_CONFIG).sort(), [
+    'packages/design/narduk-charts',
+    'packages/design/narduk-ui',
+  ])
+})
+
+test("parseComponentBarrel reads only `export { default as Name } from './Name.vue'` lines", () => {
+  const source = `
+    /** A component. */
+    export { default as NsThing } from './NsThing.vue'
+    // export { default as Commented } from './Commented.vue'
+    export { default as NsOther } from "./NsOther.vue"
+    export { useSomething } from './useSomething'
+    export { NotDefault } from './NotDefault.vue'
+    export * from './everything'
+    export type { SomeType } from './types'
+  `
+  assert.deepEqual(parseComponentBarrel(source), ['NsThing', 'NsOther'])
+})
+
+test('a barrel with no component re-exports fails closed instead of reporting an empty surface', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'narduk-surface-barrel-fixture-'))
+  temporaryDirectories.push(directory)
+  mkdirSync(join(directory, 'src'), { recursive: true })
+  writeFileSync(join(directory, 'src/index.ts'), 'export const notAComponent = 1\n')
+
+  // PACKAGE_SURFACE_CONFIG is keyed by a path relative to ROOT. Point one
+  // entry at this fixture just long enough to prove readSurface's barrel
+  // branch fails closed the same way the shell branch's `load()` does above,
+  // then remove it so no other test sees an extra config entry.
+  const relativeDirectory = relative(ROOT, directory)
+  PACKAGE_SURFACE_CONFIG[relativeDirectory] = {
+    componentsBarrel: 'src/index.ts',
+    designCardsDir: 'src/design-cards',
+  }
+  try {
+    await assert.rejects(readSurface(directory), /exports no .*export \{ default as Name \}/)
+  } finally {
+    delete PACKAGE_SURFACE_CONFIG[relativeDirectory]
+  }
 })
 
 test('pendingCards waives only the card rule, and only for listed names', async () => {
