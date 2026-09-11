@@ -9,17 +9,23 @@ import {
 
 import type { Page } from '@playwright/test'
 
+/**
+ * The shared list-query contract's response (narduk-libs#257): `items` +
+ * `offset`, not `users` + `page`.
+ */
 interface UsersApiResponse {
-  limit: number
-  page: number
-  total: number
-  users: Array<{
+  items: Array<{
     createdAt: string
     email: string
     id: string
     isAdmin: boolean
     name: string | null
   }>
+  limit: number
+  offset: number
+  q: string | null
+  sort: string | null
+  total: number | null
 }
 
 interface UserPayload {
@@ -112,7 +118,7 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
 
     test('returns paged rows to admins and omits sensitive fields', async ({ page }) => {
       await loginAsAdmin(page)
-      const response = await requestUsers(page, '?page=1&limit=2', apiPath)
+      const response = await requestUsers(page, '?offset=0&limit=2', apiPath)
       const payload = assertUsersApiPayload(response.payload)
 
       expect(response.ok).toBe(true)
@@ -120,13 +126,14 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
       expect(payload).not.toBeNull()
 
       expect(payload).toMatchObject({
-        users: expect.any(Array),
-        page: 1,
+        items: expect.any(Array),
         limit: 2,
+        offset: 0,
+        sort: 'createdAt:desc',
         total: expect.any(Number),
       })
 
-      for (const user of payload.users) {
+      for (const user of payload.items) {
         expect(user).toMatchObject({
           id: expect.any(String),
           email: expect.any(String),
@@ -140,39 +147,48 @@ export function registerUsersApiSpec(options: UsersApiSpecOptions = {}) {
 
     test('keeps the legacy users API alias compatible', async ({ page }) => {
       await loginAsAdmin(page)
-      const response = await requestUsers(page, '?page=1&limit=1', '/api/users')
+      const response = await requestUsers(page, '?offset=0&limit=1', '/api/users')
       const payload = assertUsersApiPayload(response.payload)
 
       expect(response.ok).toBe(true)
       expect(response.status).toBe(200)
       expect(payload).toMatchObject({
-        users: expect.any(Array),
-        page: 1,
+        items: expect.any(Array),
         limit: 1,
+        offset: 0,
         total: expect.any(Number),
       })
     })
 
-    test('validates pagination inputs (page and limit caps)', async ({ page }) => {
+    test('validates pagination inputs against the list-query contract', async ({ page }) => {
       await loginAsAdmin(page)
 
-      const invalidPage = await requestUsers(page, '?page=0&limit=2', apiPath)
-      expect(invalidPage.status).toBe(400)
+      // `page` is not a key of the contract: rejected, not silently ignored.
+      const unknownKey = await requestUsers(page, '?page=1&limit=2', apiPath)
+      expect(unknownKey.status).toBe(400)
 
-      const invalidLimit = await requestUsers(page, '?page=1&limit=9999', apiPath)
-      expect(invalidLimit.status).toBe(400)
+      const negativeOffset = await requestUsers(page, '?offset=-1&limit=2', apiPath)
+      expect(negativeOffset.status).toBe(400)
 
-      const fractionalPage = await requestUsers(page, '?page=1.5&limit=2', apiPath)
-      expect(fractionalPage.status).toBe(400)
+      const fractionalOffset = await requestUsers(page, '?offset=1.5&limit=2', apiPath)
+      expect(fractionalOffset.status).toBe(400)
 
-      const fractionalLimit = await requestUsers(page, '?page=1&limit=2.7', apiPath)
+      const fractionalLimit = await requestUsers(page, '?offset=0&limit=2.7', apiPath)
       expect(fractionalLimit.status).toBe(400)
+
+      const unknownSort = await requestUsers(page, '?sort=passwordHash:asc', apiPath)
+      expect(unknownSort.status).toBe(400)
+
+      // An over-large limit is clamped to the route ceiling, not rejected.
+      const clamped = await requestUsers(page, '?limit=9999', apiPath)
+      expect(clamped.status).toBe(200)
+      expect(assertUsersApiPayload(clamped.payload).limit).toBe(100)
 
       const defaults = await requestUsers(page, '', apiPath)
       const payload = assertUsersApiPayload(defaults.payload)
 
       expect(defaults.status).toBe(200)
-      expect(payload.page).toBe(1)
+      expect(payload.offset).toBe(0)
       expect(payload.limit).toBe(20)
     })
   })

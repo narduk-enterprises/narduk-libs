@@ -72,9 +72,11 @@ function getCreatedNotificationId(result: unknown): string {
 }
 
 function expectNotificationList(data: unknown): Array<Record<string, unknown>> {
-  expect(data).toEqual(expect.objectContaining({ notifications: expect.any(Array) }))
+  // `GET /api/notifications` answers with the shared list-query contract
+  // (narduk-libs#257): `{ items, total, limit, offset, sort, q }`.
+  expect(data).toEqual(expect.objectContaining({ items: expect.any(Array) }))
 
-  return (data as { notifications: Array<Record<string, unknown>> }).notifications
+  return (data as { items: Array<Record<string, unknown>> }).items
 }
 
 function expectIsoTimestamp(value: unknown) {

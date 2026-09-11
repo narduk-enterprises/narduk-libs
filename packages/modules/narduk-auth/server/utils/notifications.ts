@@ -32,6 +32,8 @@ export interface CreateNotificationInput {
 /** Options for listing notifications. */
 export interface ListNotificationOptions {
   limit?: number
+  /** Rows to skip. Without it a paged caller silently re-reads page one. */
+  offset?: number
   unreadOnly?: boolean
 }
 
@@ -74,6 +76,7 @@ export async function getUserNotifications(
 ): Promise<Notification[]> {
   const db = useDatabase(event)
   const limit = Math.min(options.limit ?? 50, 100)
+  const offset = Math.max(options.offset ?? 0, 0)
 
   const conditions = [eq(notifications.userId, userId)]
   if (options.unreadOnly) {
@@ -86,6 +89,7 @@ export async function getUserNotifications(
     .where(and(...conditions))
     .orderBy(desc(notifications.createdAt))
     .limit(limit)
+    .offset(offset)
 }
 
 /**

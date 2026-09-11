@@ -1,3 +1,4 @@
+import type { ListResponse } from '@narduk-enterprises/narduk-platform/list-query'
 import type { ComputedRef, Ref } from 'vue'
 
 const ADMIN_AI_MODEL_API = '/api/admin/ai/model'
@@ -55,8 +56,11 @@ export function useAdminAi() {
     data: systemPrompts,
     refresh: refreshPrompts,
     status: promptsStatus,
-  } = useAsyncData<AdminSystemPrompt[]>('layer-admin-system-prompts', () =>
-    $fetch<AdminSystemPrompt[]>(ADMIN_SYSTEM_PROMPTS_API),
+  } = useAsyncData<AdminSystemPrompt[]>(
+    'layer-admin-system-prompts',
+    // The route answers with the shared list-query contract's `ListResponse`;
+    // this composable keeps exposing the rows themselves.
+    async () => (await $fetch<ListResponse<AdminSystemPrompt>>(ADMIN_SYSTEM_PROMPTS_API)).items,
   )
 
   const isUpdatingPrompt = ref<string | null>(null)
