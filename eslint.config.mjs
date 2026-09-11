@@ -156,6 +156,21 @@ export default [
     },
   },
   {
+    // Every narduk-shell runtime component wraps a bare Nuxt UI global tag
+    // (e.g. `<UBadge>` in NeStatusBadge.vue) instead of a static import -- the
+    // package type-checks and tests standalone with no live Nuxt app of its
+    // own to resolve Nuxt UI's build-time-only component aliases against (see
+    // NeStatusBadge.vue's own header comment). A real consuming app resolves
+    // the tag through Nuxt's auto-import the same way every app in the estate
+    // already writes it; eslint-plugin-vue's static analysis has no
+    // visibility into that resolution. Same false-positive family as the
+    // Histoire `<Story>`/`<Variant>` block above.
+    files: ['packages/design/narduk-shell/src/runtime/components/**/*.vue'],
+    rules: {
+      'vue/no-undef-components': 'off',
+    },
+  },
+  {
     // narduk-mapkit's DOM-facing controllers type their element/document
     // parameters as deliberately bivariant structural shims -- the interfaces
     // say so in their own doc comments ("so that passing a real HTMLElement

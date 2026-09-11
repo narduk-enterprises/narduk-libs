@@ -14,6 +14,7 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 interface NuxtKitMocks {
   addComponent: ReturnType<typeof vi.fn>
   addComponentsDir: ReturnType<typeof vi.fn>
+  addImports: ReturnType<typeof vi.fn>
 }
 
 function mockNuxtKit(): NuxtKitMocks {
@@ -22,17 +23,19 @@ function mockNuxtKit(): NuxtKitMocks {
   // `vi.doMock` without this key would make an accidental call throw, which
   // reads as a different failure than the one that matters.
   const addComponentsDir = vi.fn()
+  const addImports = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
     addComponentsDir,
+    addImports,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
   }))
 
-  return { addComponent, addComponentsDir }
+  return { addComponent, addComponentsDir, addImports }
 }
 
 function mockRegistry(components: readonly NeComponentRegistration[]) {
@@ -86,6 +89,30 @@ describe('narduk-shell module', () => {
     expect(addComponentsDir).not.toHaveBeenCalled()
   })
 
+  it('wires defineStatusMap through addImports, resolved against the module', async () => {
+    const { addImports } = mockNuxtKit()
+    mockRegistry([])
+
+    const module_ = await loadModule()
+    await module_.setup({ components: true }, makeNuxt())
+
+    expect(addImports).toHaveBeenCalledTimes(1)
+    const [call] = addImports.mock.calls[0] as [{ name: string; from: string }]
+    expect(call.name).toBe('defineStatusMap')
+    expect(call.from.startsWith('/')).toBe(true)
+    expect(call.from).toContain('/src/runtime/utils/status-map')
+  })
+
+  it('re-exports defineStatusMap from the package root (src/module.ts)', async () => {
+    mockNuxtKit()
+    const loaded = await import('../src/module')
+    expect(typeof loaded.defineStatusMap).toBe('function')
+    expect(loaded.defineStatusMap({ live: ['ok', 'Live'] })('live')).toEqual({
+      tone: 'ok',
+      label: 'Live',
+    })
+  })
+
   it('never calls addComponentsDir, so an app-local component collides instead of shadowing', async () => {
     const { addComponentsDir } = mockNuxtKit()
     mockRegistry([{ name: 'NeFixtureOne', filePath: './runtime/components/NeFixtureOne.vue' }])
@@ -103,36 +130,59 @@ describe('narduk-shell module', () => {
     )
   })
 
-  it('registers the shipped registry entries against the real component files', async () => {
+  it('registers every shipped registry entry against a real component file', async () => {
     // `beforeEach` already unmocks '../src/registry', so this loads the real,
-    // current NE_SHELL_COMPONENTS — item 1 shipped it empty; item 9
-    // (narduk-libs#256) is the first to fill it in.
+    // current NE_SHELL_COMPONENTS. Registry-driven on purpose: each backlog
+    // item appends its component here and this test must not need editing.
+    const { NE_SHELL_COMPONENTS } = await import('../src/registry')
+    expect(NE_SHELL_COMPONENTS.length).toBeGreaterThan(0)
     const { addComponent, addComponentsDir } = mockNuxtKit()
 
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    expect(addComponent).toHaveBeenCalledTimes(2)
-    expect(addComponent.mock.calls.map(([call]) => (call as { name: string }).name)).toEqual([
-      'NePageHeader',
-      'NeSectionHeader',
-    ])
+    expect(addComponent).toHaveBeenCalledTimes(NE_SHELL_COMPONENTS.length)
+    expect(addComponent.mock.calls.map(([call]) => (call as { name: string }).name)).toEqual(
+      NE_SHELL_COMPONENTS.map((entry) => entry.name),
+    )
     for (const [call] of addComponent.mock.calls) {
       const { filePath } = call as { filePath: string }
       expect(filePath.startsWith('/')).toBe(true)
       expect(filePath).toContain('/src/runtime/components/')
+      expect(statSync(filePath).isFile()).toBe(true)
     }
     expect(addComponentsDir).not.toHaveBeenCalled()
   })
 
-  it('registers nothing when components are disabled', async () => {
-    const { addComponent } = mockNuxtKit()
+  it('registers nothing beyond an empty registry', async () => {
+    const { addComponent, addComponentsDir } = mockNuxtKit()
+    mockRegistry([])
+
+    const module_ = await loadModule()
+    await module_.setup({ components: true }, makeNuxt())
+
+    expect(addComponent).not.toHaveBeenCalled()
+    expect(addComponentsDir).not.toHaveBeenCalled()
+  })
+
+  it('registers no components when components are disabled, but still wires defineStatusMap', async () => {
+    const { addComponent, addImports } = mockNuxtKit()
     mockRegistry([{ name: 'NeFixtureOne', filePath: './runtime/components/NeFixtureOne.vue' }])
 
     const module_ = await loadModule()
     await module_.setup({ components: false }, makeNuxt())
 
     expect(addComponent).not.toHaveBeenCalled()
+    // defineStatusMap is a plain utility, not a component: turning
+    // `components` off must not take it away too.
+    expect(addImports).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the three reserved package exports, with defineStatusMap a named export of the root', async () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+    }
+    expect(Object.keys(manifest.exports)).toEqual(['.', './format', './theme.css'])
   })
 
   it('defaults component registration on, and transpiles the package exactly once', async () => {

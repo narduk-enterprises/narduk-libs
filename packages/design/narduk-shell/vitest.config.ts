@@ -2,8 +2,7 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  // NePageHeader and NeSectionHeader (item 9) are the first SFCs the registry
-  // ships, so their mount tests need the Vue plugin to compile them.
+  // Registry SFCs need the Vue plugin so mount tests can compile them.
   plugins: [vue()],
   test: {
     // node is the default environment (SSR tests rely on it running with no

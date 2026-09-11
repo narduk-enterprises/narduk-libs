@@ -36,4 +36,6 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // Item 9 (narduk-libs#256): NePageHeader + NeSectionHeader.
   { name: 'NePageHeader', filePath: './runtime/components/NePageHeader.vue' },
   { name: 'NeSectionHeader', filePath: './runtime/components/NeSectionHeader.vue' },
+  // Item 8 (narduk-libs#255): NeStatusBadge.
+  { name: 'NeStatusBadge', filePath: './runtime/components/NeStatusBadge.vue' },
 ]

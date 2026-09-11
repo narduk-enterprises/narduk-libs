@@ -17,5 +17,12 @@
     "target": "ES2022",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "types/**/*.d.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.vue",
+    "test/**/*.ts",
+    "types/**/*.d.ts",
+    "vitest.config.ts"
+  ]
 }

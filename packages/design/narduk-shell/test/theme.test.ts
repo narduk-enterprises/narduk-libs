@@ -420,12 +420,4 @@ describe('styling contract', () => {
     expect(readme).toMatch(/--ne-structure/)
     expect(readme).toMatch(/deliberately not themed/i)
   })
-
-  it('has no component to mount or server-render, so those tiers do not apply yet', () => {
-    // The plan's standard done-when asks every component item for a mount test
-    // and an SSR test. Item 2 ships tokens and module wiring and registers no
-    // component, so the registry is still empty and there is nothing to mount.
-    const registry = readFileSync(join(packageRoot, 'src/registry.ts'), 'utf8')
-    expect(registry).toMatch(/NE_SHELL_COMPONENTS: readonly NeComponentRegistration\[\] = \[\]/)
-  })
 })

@@ -1,8 +1,16 @@
-import { addComponent, createResolver, defineNuxtModule } from '@nuxt/kit'
+import { addComponent, addImports, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { defu } from 'defu'
 
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
 import { NE_SHELL_COMPONENTS } from './registry'
+
+// Named exports of the package root (`.`). Not a fourth subpath — the
+// reserved map stays `.`, `./format`, `./theme.css`.
+export {
+  defineStatusMap,
+  type NeStatusDescriptor,
+  type NeStatusTone,
+} from './runtime/utils/status-map'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
@@ -85,6 +93,15 @@ export default defineNuxtModule<NardukShellModuleOptions>({
         NARDUK_SHELL_APP_CONFIG,
       )
     }
+
+    // defineStatusMap is also a named export of this file (the package root).
+    // Auto-import is a convenience for Nuxt apps; turning `components` off
+    // must not take the helper away, the same way ./format and ./theme.css
+    // stay reachable by direct import.
+    addImports({
+      name: 'defineStatusMap',
+      from: resolver.resolve('./runtime/utils/status-map'),
+    })
 
     if (options.components === false) return
 
