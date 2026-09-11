@@ -1,10 +1,13 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { NARDUK_SHELL_APP_CONFIG } from '../src/app-config'
 import type { NeComponentRegistration } from '../src/registry'
+
+const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -36,13 +39,18 @@ function mockRegistry(components: readonly NeComponentRegistration[]) {
   vi.doMock('../src/registry', () => ({ NE_SHELL_COMPONENTS: components }))
 }
 
-function makeNuxt() {
-  return { options: { build: { transpile: [] as unknown[] } } }
+function makeNuxt(appConfig: Record<string, unknown> = {}, css: string[] = []) {
+  return { options: { build: { transpile: [] as unknown[] }, css, appConfig } }
+}
+
+interface ModuleOptions {
+  components?: boolean
+  theme?: boolean
 }
 
 interface LoadedModule {
-  defaults: { components?: boolean }
-  setup: (options: { components?: boolean }, nuxt: unknown) => void | Promise<void>
+  defaults: ModuleOptions
+  setup: (options: ModuleOptions, nuxt: unknown) => void | Promise<void>
 }
 
 async function loadModule(): Promise<LoadedModule> {
@@ -126,5 +134,87 @@ describe('narduk-shell module', () => {
     await module_.setup({ components: true }, nuxt)
 
     expect(nuxt.options.build.transpile).toEqual(['@narduk-enterprises/narduk-shell'])
+  })
+})
+
+describe('narduk-shell theme wiring', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.doUnmock('../src/registry')
+  })
+
+  it('defaults the theme on', async () => {
+    mockNuxtKit()
+    expect((await loadModule()).defaults.theme).toBe(true)
+  })
+
+  it('puts theme.css at the front of the app css list, exactly once', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt({}, ['~/assets/app.css'])
+
+    await module_.setup({ theme: true }, nuxt)
+    await module_.setup({ theme: true }, nuxt)
+
+    // Front of the list, so the app's own sheet is later in source order and
+    // therefore still wins: both are unlayered.
+    expect(nuxt.options.css).toEqual([THEME_STYLESHEET, '~/assets/app.css'])
+  })
+
+  it('merges the app.config preset as a default the app can beat', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt({ ui: { colors: { primary: 'emerald' } } })
+
+    await module_.setup({ theme: true }, nuxt)
+
+    const ui = (nuxt.options.appConfig as { ui: { colors: Record<string, string> } }).ui
+    // The value that was already there survives; the missing one is filled.
+    expect(ui.colors.primary).toBe('emerald')
+    expect(ui.colors.neutral).toBe(NARDUK_SHELL_APP_CONFIG.ui.colors.neutral)
+  })
+
+  it('supplies both aliases when the app set none', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup({ theme: true }, nuxt)
+
+    expect((nuxt.options.appConfig as { ui: unknown }).ui).toEqual(NARDUK_SHELL_APP_CONFIG.ui)
+  })
+
+  it('adds neither the stylesheet nor the preset when the theme is off', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup({ theme: false }, nuxt)
+
+    expect(nuxt.options.css).toEqual([])
+    expect(nuxt.options.appConfig).toEqual({})
+  })
+
+  it('themes independently of component registration', async () => {
+    const { addComponent } = mockNuxtKit()
+    mockRegistry([{ name: 'NeFixtureOne', filePath: './runtime/components/NeFixtureOne.vue' }])
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup({ components: false, theme: true }, nuxt)
+
+    expect(addComponent).not.toHaveBeenCalled()
+    expect(nuxt.options.css).toEqual([THEME_STYLESHEET])
+  })
+
+  it('ships the stylesheet the module names, at the reserved subpath', () => {
+    expect(THEME_STYLESHEET).toBe('@narduk-enterprises/narduk-shell/theme.css')
+    const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+      files: string[]
+    }
+    expect(manifest.exports['./theme.css']).toBe('./theme.css')
+    expect(manifest.files).toContain('theme.css')
+    expect(statSync(join(packageRoot, 'theme.css')).size).toBeGreaterThan(0)
   })
 })

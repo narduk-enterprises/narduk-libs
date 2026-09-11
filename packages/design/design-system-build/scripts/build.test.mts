@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { galleryCoverage, renderBundle, splitStyles } from './build.mts'
+import { galleryCoverage, isCodedToken, renderBundle, splitStyles } from './build.mts'
 import postcss from 'postcss'
 
 const card =
@@ -32,20 +32,28 @@ test('static export keeps SSR component markup, scoped CSS and explicit styleshe
 
 test('token extraction preserves selectors, media and layer order without utility rules', () => {
   const css =
-    '@layer base, components;@layer base{:root{--ns-ink:#123;color:var(--ns-ink)}}@media(width<620px){:root{--ns-margin:16px}}[data-app="riverstatus"]{--ns-accent:teal}.flex{display:flex}'
+    '@layer base, components;@layer base{:root{--ns-ink:#123;--ne-ink:#0e1418;--ui-text:var(--ne-ink-body);color:var(--ns-ink)}}@media(width<620px){:root{--ns-margin:16px;--ne-ink-muted:#5a6570}}[data-app="riverstatus"]{--ns-accent:teal}.flex{display:flex}'
   const { tokens, styles } = splitStyles(css)
   assert.match(tokens, /@layer base, components/)
   assert.match(tokens, /@media\(width<620px\)/)
   assert.match(tokens, /\[data-app="riverstatus"\]/)
-  assert.doesNotMatch(tokens, /display:flex|color:var/)
+  assert.doesNotMatch(tokens, /display:flex|color:var|--ui-text/)
   assert.match(styles, /color:var\(--ns-ink\)/)
+  assert.match(styles, /--ui-text:var\(--ne-ink-body\)/)
   const declarations: string[] = []
   postcss.parse(tokens).walkDecls((decl) => {
     declarations.push(decl.prop)
+    assert.ok(isCodedToken(decl.prop))
   })
-  assert.deepEqual(declarations, ['--ns-ink', '--ns-margin', '--ns-accent'])
+  assert.deepEqual(declarations, [
+    '--ns-ink',
+    '--ne-ink',
+    '--ns-margin',
+    '--ne-ink-muted',
+    '--ns-accent',
+  ])
   postcss.parse(styles).walkDecls((decl) => {
-    assert.ok(!decl.prop.startsWith('--ns-'))
+    assert.ok(!isCodedToken(decl.prop))
   })
 })
 

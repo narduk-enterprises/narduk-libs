@@ -105,6 +105,9 @@ importers:
 
   packages/design/design-system-build:
     devDependencies:
+      '@narduk-enterprises/narduk-shell':
+        specifier: workspace:*
+        version: link:../narduk-shell
       '@narduk-enterprises/narduk-ui':
         specifier: workspace:*
         version: link:../narduk-ui
@@ -201,6 +204,9 @@ importers:
       '@nuxt/kit':
         specifier: ^4.0.0
         version: 4.5.0(magic-string@1.0.0)(magicast@0.5.3)(oxc-parser@0.140.0)(unplugin@3.3.0(esbuild@0.28.1)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
+      defu:
+        specifier: 6.1.7
+        version: 6.1.7
     devDependencies:
       '@nuxt/schema':
         specifier: ^4.4.2
