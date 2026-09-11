@@ -49,3 +49,80 @@ D1-safe stub. Capability packages that need core tables may use
 Application code must use its own `#narduk-db` dialect selector instead. These
 private aliases do not replace Nuxt's native `#server/*` paths, and the former
 template-era database aliases are not registered.
+
+## List routes: parseListQuery + listResponse
+
+Every list route parses one query shape and answers in one response shape. The
+zod schemas live in `@narduk-enterprises/narduk-platform/list-query`; the two
+server helpers are auto-imported from `server/utils/listQuery` (or imported
+explicitly from `@narduk-enterprises/narduk-core/server/utils/listQuery`).
+
+`parseListQuery(event, options)` validates the event's query string and returns
+the parsed query. `options`:
+
+| Option           | Meaning                                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `sortable`       | Allowlisted sort keys. The wire form is `'<key>:<asc\|desc>'`.                                      |
+| `filters`        | A zod object whose keys are the route's allowlisted filters. Its keys sit flat on the query string. |
+| `maxLimit`       | The route's page ceiling. A larger `limit` is **clamped**, not rejected.                            |
+| `mode`           | `'offset'` (default) or `'cursor'`.                                                                 |
+| `defaultLimit`   | Page size when the caller sends none (default 25, clamped to `maxLimit`).                           |
+| `defaultSort`    | Sort applied when the caller sends none.                                                            |
+| `maxQueryLength` | Longest accepted `q`, after trimming (default 200).                                                 |
+
+The schema is `.strict()`: an unknown query key is **rejected**, not silently
+stripped, so a typo'd or renamed parameter fails loudly instead of quietly
+returning the wrong page. Any invalid query throws a 400 (never a 500) whose
+`data` is a stable payload —
+`{ code: 'invalid_list_query', fields, unknownKeys, issues }` — naming the
+offending keys.
+
+`listResponse(items, { query, total, nextCursor })` returns
+`{ items, total, limit, sort, q }` plus `offset` (offset mode) or `nextCursor`
+(cursor mode, `null` when the page exhausted the collection). `total` is `null`
+when the route deliberately does not count, which keeps a page to one statement.
+
+```ts
+// server/api/runners/index.get.ts
+export default defineEventHandler(async (event) => {
+  const query = parseListQuery(event, {
+    filters: z.object({ status: z.enum(['idle', 'busy']).optional() }),
+    maxLimit: 100,
+    sortable: ['createdAt', 'name'],
+    defaultSort: 'createdAt:desc',
+  })
+
+  const where = query.filters.status
+    ? eq(runners.status, query.filters.status)
+    : undefined
+  const order =
+    query.sort?.direction === 'asc'
+      ? asc(runners.createdAt)
+      : desc(runners.createdAt)
+
+  // One page query plus one count query, whatever the page size.
+  const [total, items] = await Promise.all([
+    getDatabaseRow(
+      db
+        .select({ count: sql`count(*)` })
+        .from(runners)
+        .where(where),
+    ),
+    getDatabaseRows(
+      db
+        .select()
+        .from(runners)
+        .where(where)
+        .orderBy(order)
+        .limit(query.limit)
+        .offset(query.offset),
+    ),
+  ])
+
+  return listResponse(items, { query, total: Number(total?.count ?? 0) })
+})
+```
+
+`GET /api/runners?limit=9999&sort=name:asc&status=idle` answers
+`{ items, total, limit: 100, offset: 0, sort: 'name:asc', q: null }`;
+`?statuss=idle` answers 400.
