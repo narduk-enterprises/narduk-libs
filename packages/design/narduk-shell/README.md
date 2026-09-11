@@ -450,8 +450,10 @@ convention once item 3 lands it.
 ### NePageHeader
 
 Wraps Nuxt UI `UPageHeader` and `UBreadcrumb`. Breadcrumbs render above the
-title in a labelled `nav` and are omitted when the list is empty or absent. The
-heading is an `h1` by default; set `as` to render a different heading level
+title and are omitted when the list is empty or absent. They produce exactly one
+navigation landmark: `UBreadcrumb` is itself a `nav`, so this wrapper renders it
+bare and only relabels it `Breadcrumb` rather than nesting it in a second `nav`.
+The heading is an `h1` by default; set `as` to render a different heading level
 without nesting a second heading inside `UPageHeader`'s own `<h1>`.
 
 #### Props
