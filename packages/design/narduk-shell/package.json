@@ -47,18 +47,20 @@
   "dependencies": {
     "@nuxt/kit": "^4.0.0"
   },
-  "//devDependencies": "@vitejs/plugin-vue and vite are pinned to the exact versions this workspace already resolves (the narduk-mapkit-nuxt entry, and the root pnpm.overrides vite pin). A caret range makes pnpm re-resolve the shared entry for every other package, which is the silent dependency drift narduk-libs#124 warns against. vite is a devDependency because the test suite compiles single-file components and tsconfig needs vite/client for import.meta.glob; nothing published imports it. Widen either in a deliberate workspace-wide bump, not here.",
+  "//devDependencies": "@vitejs/plugin-vue, @vue/test-utils, @vue/server-renderer and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
     "@nuxt/schema": "^4.4.2",
     "@nuxt/ui": "4.6.0",
     "@types/node": "^22.19.19",
     "@vitejs/plugin-vue": "6.0.7",
+    "@vue/server-renderer": "3.5.39",
+    "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
+    "happy-dom": "20.10.6",
     "nuxt": "^4.4.2",
     "prettier": "^3.8.3",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",
-    "vite": "7.3.6",
     "vitest": "^4.1.5",
     "vue": "^3.5.39",
     "vue-tsc": "^3.2.5"

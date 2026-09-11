@@ -2,14 +2,15 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  // The design cards under src/design-cards are single-file components, so the
-  // suite compiles SFCs. A component item that adds a mount test under
-  // happy-dom opts in with a per-file environment directive; see
-  // packages/design/narduk-charts for that pattern.
+  // Design cards under src/design-cards are SFCs, so the suite compiles them.
+  // Item 9's mount tests need the same plugin; keep this identical to those
+  // lanes so the shared import and `plugins: [vue()]` line merge cleanly.
   plugins: [vue()],
   test: {
-    // Cards are proven by a SERVER render (no document, no window), which is
-    // how design-system-build's `nuxt generate` consumes them.
+    // node is the default environment (SSR tests rely on it running with no
+    // DOM); mount tests opt into happy-dom per file with a
+    // `// @vitest-environment happy-dom` directive, the narduk-mapkit-nuxt
+    // pattern.
     environment: 'node',
     include: ['test/**/*.test.ts'],
   },

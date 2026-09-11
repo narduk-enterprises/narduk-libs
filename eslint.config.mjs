@@ -70,14 +70,16 @@ export default [
     // the whole lint run rather than reporting a normal lint error. These
     // are build-tool entry points, not part of the library's own module
     // graph, so cycle detection through them has no product value anyway.
-    // Scoped to this package's config files only -- no other current
-    // package imports `vite` directly.
+    // Scoped to the Vite/Vitest config files that import `vite` (or a
+    // plugin that does). narduk-shell joins the list because item 9's
+    // SFC mount tests need `@vitejs/plugin-vue`.
     files: [
       'packages/design/narduk-charts/histoire.config.ts',
       'packages/design/narduk-charts/vite.config.ts',
       'packages/design/narduk-charts/vite.entries.config.ts',
       'packages/design/narduk-charts/vite.e2e.config.ts',
       'packages/design/narduk-charts/vitest.config.ts',
+      'packages/design/narduk-shell/vitest.config.ts',
     ],
     rules: {
       'import-x/no-cycle': 'off',
@@ -148,11 +150,6 @@ export default [
     files: [
       'packages/modules/narduk-mapkit-nuxt/test/**/*.ts',
       'packages/modules/narduk-mapkit-nuxt/vitest.config.ts',
-      // Same crash, same cause: narduk-shell's vitest config gained
-      // `@vitejs/plugin-vue` when its design cards made the suite compile SFCs
-      // (narduk-libs#250), and that plugin's module graph bottoms out in bare
-      // `vite` too.
-      'packages/design/narduk-shell/vitest.config.ts',
     ],
     rules: {
       'import-x/no-cycle': 'off',

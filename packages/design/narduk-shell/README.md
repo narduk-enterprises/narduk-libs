@@ -90,18 +90,43 @@ is registered by being in a folder.
 Each later lane adds one `Ne*` export with these edits, all in this package. The
 module API (`NE_SHELL_COMPONENTS` and `NeComponentRegistration` in
 `src/registry.ts`, and the `addComponent` loop in `src/module.ts`) stays
-additive: new entries only, no renames or signature changes.
+additive: new entries only, no renames or signature changes. `pnpm run
+surface:check` (inside `quality:artifacts`) reads that registry — not a
+hardcoded list — and fails one line per miss, naming the artefact and the file
+to add.
 
 1. Add the SFC at `src/runtime/components/NeThing.vue`. Wrap a Nuxt UI
    primitive. Read tokens; never hardcode a colour, radius, shadow or font.
 2. Append `{ name: 'NeThing', filePath: './runtime/components/NeThing.vue' }` to
    `NE_SHELL_COMPONENTS`. That is the only registration path. Do not call
    `addComponentsDir` and do not add a directory scan.
-3. Document props, slots, events and one example in this README.
-4. Add a mount test (`@vue/test-utils`) and an SSR test (`renderToString` in
-   vitest's node environment, no `document`; pattern:
+3. Document props, slots, events and one example in this README under a heading
+   that names the component (`### NeThing`). A mention in a paragraph or a table
+   row does not satisfy the surface check.
+4. Add a mount test (`@vue/test-utils`: a `*.test.ts` containing
+   `mount(NeThing`; convention `src/runtime/components/NeThing.test.ts`) and an
+   SSR test (`renderToString` in vitest's node environment, no `document`;
+   `src/runtime/components/NeThing.ssr.test.ts` or a shared `ssr.test.ts` that
+   names the component. Pattern:
    `packages/design/narduk-charts/src/ssr.test.ts`).
-5. Add a changeset (`minor` while the package is `0.x`).
+5. Add `src/design-cards/NeThing.card.vue` with
+   `data-design-card="ne-thing"` — copy the template; see **Shipping a design
+   card**. `design-system-build/app/app.vue` discovers every `*.card.vue` and
+   renders it into the NE Base gallery, so the lane does **not** hand-edit
+   `app.vue`.
+6. Add a changeset (`minor` while the package is `0.x`).
+
+A new `./format` export needs (3) and a `*.test.ts` that imports it from
+`format` and asserts its output. Mount, SSR and a card are not required of a
+function; see **Component surface check**.
+
+`PENDING_CARDS` in `src/pending-cards.ts` (re-exported by
+`scripts/check-component-surface.mjs`) is a reviewed, temporary allowlist that
+waives **only** (5) for the four parallel component lanes that were written
+against a follow-up card PR: `NeStatePanel` (#254), `NeStatusBadge` (#255),
+`NePageHeader` and `NeSectionHeader` (#256), `NeConfirmDialog` (#263). README,
+mount and SSR still fail closed. The follow-up that adds those cards empties the
+list. It is not a way to skip the card forever.
 
 Do not add this package to `create-narduk-app`'s default module list. That is
 backlog item 4
@@ -174,36 +199,7 @@ Scope today is this package. The owned directories live in
 `CHECKED_PACKAGE_DIRS` in `scripts/check-component-surface.mjs` — item 22
 appends `packages/design/narduk-ui` and `packages/design/narduk-charts` there,
 one line each. Naming one of them now is an error rather than a silent pass.
-
-### What a later lane must add
-
-For a new registered component, all of the following or `pnpm run surface:check`
-fails (one line per miss, naming the artefact and the file to add):
-
-1. `{ name, filePath }` in `src/registry.ts` — the check reads this array, not a
-   hardcoded list.
-2. A Markdown heading in **this** README naming the component
-   (`### NeStatePanel`), with props, slots, events and one example.
-3. A mount test: a `*.test.ts` containing `mount(NeStatePanel` (convention:
-   `src/runtime/components/NeStatePanel.test.ts`).
-4. An SSR test: `src/runtime/components/NeStatePanel.ssr.test.ts` (or a shared
-   `ssr.test.ts`) that names the component and calls `renderToString`.
-5. `src/design-cards/NeStatePanel.card.vue` with
-   `data-design-card="ne-state-panel"` — copy the template; see below.
-   `design-system-build/app/app.vue` discovers every `*.card.vue` and renders it
-   into the NE Base gallery, so the lane does **not** hand-edit `app.vue`.
-
-A new `./format` export needs (2) and a `*.test.ts` that imports it from
-`format` and asserts its output. Mount, SSR and a card are not required of a
-function.
-
-`PENDING_CARDS` in `src/pending-cards.ts` (re-exported by
-`scripts/check-component-surface.mjs`) is a reviewed, temporary allowlist that
-waives **only** (5) for the four parallel component lanes that were written
-against a follow-up card PR: `NeStatePanel` (#254), `NeStatusBadge` (#255),
-`NePageHeader` and `NeSectionHeader` (#256), `NeConfirmDialog` (#263). README,
-mount and SSR still fail closed. The follow-up that adds those cards empties the
-list. It is not a way to skip the card forever.
+What a later lane must add is listed under **Adding a component**.
 
 ## Shipping a design card
 
