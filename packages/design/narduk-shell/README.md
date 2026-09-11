@@ -90,9 +90,9 @@ is registered by being in a folder.
 Each later lane adds one `Ne*` export with these edits, all in this package. The
 module API (`NE_SHELL_COMPONENTS` and `NeComponentRegistration` in
 `src/registry.ts`, and the `addComponent` loop in `src/module.ts`) stays
-additive: new entries only, no renames or signature changes. `pnpm run
-surface:check` (inside `quality:artifacts`) reads that registry — not a
-hardcoded list — and fails one line per miss, naming the artefact and the file
+additive: new entries only, no renames or signature changes.
+`pnpm run surface:check` (inside `quality:artifacts`) reads that registry — not
+a hardcoded list — and fails one line per miss, naming the artefact and the file
 to add.
 
 1. Add the SFC at `src/runtime/components/NeThing.vue`. Wrap a Nuxt UI
@@ -109,11 +109,10 @@ to add.
    `src/runtime/components/NeThing.ssr.test.ts` or a shared `ssr.test.ts` that
    names the component. Pattern:
    `packages/design/narduk-charts/src/ssr.test.ts`).
-5. Add `src/design-cards/NeThing.card.vue` with
-   `data-design-card="ne-thing"` — copy the template; see **Shipping a design
-   card**. `design-system-build/app/app.vue` discovers every `*.card.vue` and
-   renders it into the NE Base gallery, so the lane does **not** hand-edit
-   `app.vue`.
+5. Add `src/design-cards/NeThing.card.vue` with `data-design-card="ne-thing"` —
+   copy the template; see **Shipping a design card**.
+   `design-system-build/app/app.vue` discovers every `*.card.vue` and renders it
+   into the NE Base gallery, so the lane does **not** hand-edit `app.vue`.
 6. Add a changeset (`minor` while the package is `0.x`).
 
 A new `./format` export needs (3) and a `*.test.ts` that imports it from
