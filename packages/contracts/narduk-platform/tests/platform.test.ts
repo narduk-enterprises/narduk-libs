@@ -24,6 +24,7 @@ describe('neutral platform contracts', () => {
     expect(packageJson.exports).not.toHaveProperty('./layer-bundle-manifest')
     expect(packageJson.exports).not.toHaveProperty('./starter-composition')
     expect(packageJson.exports).toHaveProperty('./onboarding-metadata')
+    expect(packageJson.exports).toHaveProperty('./list-query')
     expect(existsSync(join(packageRoot, 'dist', 'layer-bundle-manifest.js'))).toBe(false)
     expect(existsSync(join(packageRoot, 'dist', 'starter-composition.js'))).toBe(false)
   })

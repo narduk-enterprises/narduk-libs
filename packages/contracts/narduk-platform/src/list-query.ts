@@ -24,6 +24,17 @@ export const LIST_QUERY_DEFAULT_LIMIT = 25
 /** Longest accepted `q`, measured after trimming. */
 export const LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH = 200
 
+/**
+ * Maximum SQL statements a list route may issue per request: one page
+ * `SELECT`, plus one `COUNT(*)` when it returns a numeric `total`.
+ *
+ * Routes that set `total: null` stay at one statement. `listQuerySchema` /
+ * `parseListQuery` cannot count statements — they never talk to a database —
+ * so this constant is the contract, and route tests that wrap the D1 binding
+ * (narduk-auth users/notifications, narduk-ai system-prompts) enforce it.
+ */
+export const LIST_QUERY_STATEMENT_CEILING = 2
+
 export type ListQueryMode = 'cursor' | 'offset'
 export type ListSortDirection = 'asc' | 'desc'
 

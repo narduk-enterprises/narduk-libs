@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
   formatListSort,
   LIST_QUERY_DEFAULT_LIMIT,
+  LIST_QUERY_STATEMENT_CEILING,
   type ListQueryMode,
   listQuerySchema,
 } from '../src/list-query'
@@ -224,5 +225,18 @@ describe('listQuerySchema — construction guards', () => {
   it('accepts either declared mode', () => {
     const modes: ListQueryMode[] = ['cursor', 'offset']
     expect(modes).toHaveLength(2)
+  })
+})
+
+describe('list-query statement ceiling', () => {
+  it('caps a list route at one page query plus one optional count', () => {
+    expect(LIST_QUERY_STATEMENT_CEILING).toBe(2)
+  })
+
+  it('is the only number the schema can honestly publish — it does not run SQL', () => {
+    // parseListQuery / listQuerySchema never see a database. A larger ceiling
+    // would be a lie; a smaller one would forbid the users route's COUNT(*).
+    expect(LIST_QUERY_STATEMENT_CEILING).toBeGreaterThanOrEqual(1)
+    expect(LIST_QUERY_STATEMENT_CEILING).toBeLessThanOrEqual(2)
   })
 })

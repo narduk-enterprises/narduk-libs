@@ -2,7 +2,11 @@ import { createApp, defineEventHandler, toWebHandler } from 'h3'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { listResponse, parseListQuery } from '../runtime/server/utils/listQuery'
+import {
+  LIST_QUERY_STATEMENT_CEILING,
+  listResponse,
+  parseListQuery,
+} from '../runtime/server/utils/listQuery'
 
 import type { EventHandlerRequest, H3Event } from 'h3'
 
@@ -158,5 +162,14 @@ describe('listResponse', () => {
     const more = await call('/?cursor=eyJpZCI6ImIifQ', cursorRoute('eyJpZCI6ImMifQ'))
     expect(more.body).toMatchObject({ nextCursor: 'eyJpZCI6ImMifQ' })
     expect(more.body).not.toHaveProperty('offset')
+  })
+})
+
+describe('statement ceiling', () => {
+  it('is one page query plus one optional count — parseListQuery cannot run SQL', () => {
+    // The ceiling lives on the contract because parseListQuery never sees a
+    // database. Route tests in narduk-auth and narduk-ai wrap the D1 binding
+    // and assert the real statement count against this number.
+    expect(LIST_QUERY_STATEMENT_CEILING).toBe(2)
   })
 })
