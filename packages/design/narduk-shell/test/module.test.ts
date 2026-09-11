@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NARDUK_SHELL_APP_CONFIG } from '../src/app-config'
-import type { NeComponentRegistration } from '../src/registry'
+import { NE_SHELL_COMPONENTS, type NeComponentRegistration } from '../src/registry'
 
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 
@@ -15,6 +15,19 @@ interface NuxtKitMocks {
   addComponent: ReturnType<typeof vi.fn>
   addComponentsDir: ReturnType<typeof vi.fn>
   addImports: ReturnType<typeof vi.fn>
+}
+
+/**
+ * The `addImports` call registering `name`. Looked up by name, not position:
+ * every backlog item that ships a composable or helper adds its own call, and
+ * a test for one of them must not break when another lands.
+ */
+function importCall(addImports: ReturnType<typeof vi.fn>, name: string) {
+  const match = addImports.mock.calls
+    .map(([call]) => call as { name: string; from: string })
+    .find((call) => call.name === name)
+  expect(match, `addImports was not called for ${name}`).toBeDefined()
+  return match as { name: string; from: string }
 }
 
 function mockNuxtKit(): NuxtKitMocks {
@@ -96,9 +109,7 @@ describe('narduk-shell module', () => {
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    expect(addImports).toHaveBeenCalledTimes(1)
-    const [call] = addImports.mock.calls[0] as [{ name: string; from: string }]
-    expect(call.name).toBe('defineStatusMap')
+    const call = importCall(addImports, 'defineStatusMap')
     expect(call.from.startsWith('/')).toBe(true)
     expect(call.from).toContain('/src/runtime/utils/status-map')
   })
@@ -134,7 +145,6 @@ describe('narduk-shell module', () => {
     // `beforeEach` already unmocks '../src/registry', so this loads the real,
     // current NE_SHELL_COMPONENTS. Registry-driven on purpose: each backlog
     // item appends its component here and this test must not need editing.
-    const { NE_SHELL_COMPONENTS } = await import('../src/registry')
     expect(NE_SHELL_COMPONENTS.length).toBeGreaterThan(0)
     const { addComponent, addComponentsDir } = mockNuxtKit()
 
@@ -175,7 +185,7 @@ describe('narduk-shell module', () => {
     expect(addComponent).not.toHaveBeenCalled()
     // defineStatusMap is a plain utility, not a component: turning
     // `components` off must not take it away too.
-    expect(addImports).toHaveBeenCalledTimes(1)
+    importCall(addImports, 'defineStatusMap')
   })
 
   it('keeps the three reserved package exports, with defineStatusMap a named export of the root', async () => {
@@ -183,6 +193,17 @@ describe('narduk-shell module', () => {
       exports: Record<string, unknown>
     }
     expect(Object.keys(manifest.exports)).toEqual(['.', './format', './theme.css'])
+  })
+
+  it('auto-imports useConfirm from the runtime composable it ships', async () => {
+    const { addImports } = mockNuxtKit()
+
+    const module_ = await loadModule()
+    await module_.setup({ components: true }, makeNuxt())
+
+    const call = importCall(addImports, 'useConfirm')
+    expect(call.from.startsWith('/')).toBe(true)
+    expect(call.from).toContain('/src/runtime/composables/use-confirm')
   })
 
   it('defaults component registration on, and transpiles the package exactly once', async () => {

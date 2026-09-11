@@ -38,4 +38,6 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeSectionHeader', filePath: './runtime/components/NeSectionHeader.vue' },
   // Item 8 (narduk-libs#255): NeStatusBadge.
   { name: 'NeStatusBadge', filePath: './runtime/components/NeStatusBadge.vue' },
+  // Item 16 (narduk-libs#263): NeConfirmDialog.
+  { name: 'NeConfirmDialog', filePath: './runtime/components/NeConfirmDialog.vue' },
 ]

@@ -171,3 +171,48 @@ return listResponse(rows, { query, total })
 `parseSortParam` in today's `query.ts` silently falls back to the default on an
 unknown field; the contract **rejects** that key instead — the bug class
 stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.
+## Deprecations
+
+### `AppConfirmModal` — deprecated, removed in the next major
+
+Superseded by `NeConfirmDialog` and `useConfirm()` in
+[`@narduk-enterprises/narduk-shell`](../../design/narduk-shell/README.md#neconfirmdialog--useconfirm)
+(components backlog item 16,
+[narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263);
+decision D4, 2026-09-11: deprecate now, remove in the next narduk-core major).
+
+Behaviour is unchanged in this release — the component still works exactly as it
+did. A one-time, dev-only `console.warn` points at `NeConfirmDialog` /
+`useConfirm()` the first time the component is used. New code should use the
+suite; existing call sites can migrate at their own pace before the next major.
+
+**Migration mapping**
+
+| `AppConfirmModal`              | `NeConfirmDialog`                | Notes                                                                                                         |
+| ------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `v-model`                      | `v-model:open`                   | Nuxt UI v4's overlay model; the `narduk/no-legacy-overlay-model` lint rule already wants this spelling.       |
+| `title`                        | `title`                          | Same default (`Are you sure?`).                                                                               |
+| `message`                      | `message`                        | Now also the dialog's `aria-describedby` target.                                                              |
+| `confirmLabel` / `cancelLabel` | `confirmLabel` / `cancelLabel`   | Same defaults.                                                                                                |
+| `confirmColor="error"`         | `tone="danger"`                  | Also moves initial focus to Cancel. `confirmColor` was `error` by default; `tone` is `default` by default.    |
+| `confirmColor` (other values)  | `tone="default"`                 | The suite offers two tones deliberately. A one-off colour is a sign the dialog is doing more than confirming. |
+| `loading`                      | `pending`                        | Additionally disables cancel and turns off Escape / outside-click dismissal (`preventClose`).                 |
+| `dismissible`                  | — (derived)                      | Dismissal is on unless `pending`; there is no separate switch.                                                |
+| `icon` / icon tone             | — (dropped)                      | The tone colours the confirm button instead. Put an icon in the body if a call site genuinely needs one.      |
+| default slot                   | `#body` slot, or the `body` prop | `AppConfirmModal`'s default slot landed in `UModal`'s trigger slot; `#body` puts it in the dialog body.       |
+| `@confirm` / `@cancel`         | `@confirm` / `@cancel`           | Unchanged, including that `@confirm` deliberately leaves the dialog open.                                     |
+
+Most call sites are better off dropping the markup entirely:
+
+```ts
+const confirm = useConfirm()
+if (
+  !(await confirm({
+    title: 'Delete invoice?',
+    message: 'This cannot be undone.',
+    tone: 'danger',
+  }))
+) {
+  return
+}
+```
