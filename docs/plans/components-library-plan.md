@@ -1,8 +1,9 @@
 # Components library plan — a usage-driven component family for narduk-libs
 
-Status: **proposal, decisions open (§7)**. Written 2026-09-11 from a read-only
-survey of 34 repositories (29 Nuxt apps) plus narduk-libs internals, then
-revised against an adversarial review
+Status: **decided 2026-09-11 (§7 answered by Logan; wave 0 may start once the
+D-WEBFOUND-2 amendment is recorded in company-hq DECISIONS.md)**. Written
+2026-09-11 from a read-only survey of 34 repositories (29 Nuxt apps) plus
+narduk-libs internals, then revised against an adversarial review
 ([`critique/critique.md`](./components-library-evidence-2026-09-11/critique/critique.md):
 3 blockers, 10 majors, 8 minors — every finding is folded in below and marked
 `[B1]`…`[M10]` where it changed the text). Evidence: one JSON and one Markdown
@@ -444,11 +445,23 @@ unbounded/unclamped lists, inert sort, sideways scroll, tap targets under 44
 px); timezone formatting is removed by `format`; the remaining records are data,
 retention, or deploy defects the keyword caught `[M6]`.
 
-## 7. Decisions needed from Logan
+## 7. Decisions — answered by Logan, 2026-09-11
 
-Put through the structured multiple-choice surface (askme), recommended option
-first. **Q1 is a D-WEBFOUND-2 amendment in every option** — the answer is
-recorded as a dated amendment `[B2]`.
+Put through the structured multiple-choice surface (askme) on 2026-09-11, one
+round of four, recommended option first. Selected labels, verbatim (no typed
+text):
+
+| Question                        | Logan's answer                                  |
+| ------------------------------- | ----------------------------------------------- |
+| Q1 Home for the app-tier family | **"narduk-shell (Recommended)"**                |
+| Q2 Table foundation             | **"Wrap Nuxt UI UTable (Recommended)"**         |
+| Q3 Server list contract         | **"Gate query half only (Recommended)"**        |
+| Q4 Wave-1 scope                 | **"1a collections, 1b feedback (Recommended)"** |
+
+Q1 amends D-WEBFOUND-2 (Q3's parenthetical scope of `narduk-shell` and #119's
+non-goal "no table/list primitives" widen to "app-tier design system"); the
+dated amendment is recorded in company-hq `DECISIONS.md` and linked from
+narduk-libs PR #246. The options as put are kept below for provenance.
 
 - **Q1 Home for the app-tier family.** (a) **Recommended: `narduk-shell`** — the
   Nuxt-side half of the coded design system under Q3(a), already destined to
