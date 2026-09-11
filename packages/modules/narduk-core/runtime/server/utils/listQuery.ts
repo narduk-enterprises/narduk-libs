@@ -5,6 +5,10 @@
  * narduk-platform list-query contract and throws a 400 (never a 500) naming the
  * offending keys; `listResponse` renders the matching `ListResponse<T>`.
  *
+ * A list route may issue at most {@link LIST_QUERY_STATEMENT_CEILING}
+ * statements (one page `SELECT`, plus one `COUNT(*)` when `total` is a
+ * number). `total: null` is the one-statement path.
+ *
  * See narduk-libs `docs/plans/components-library-plan.md` §2 item 10.
  */
 import {
@@ -15,6 +19,7 @@ import {
   type ListQuery,
   type ListQueryMode,
   listQuerySchema,
+  LIST_QUERY_STATEMENT_CEILING,
   type ListQuerySchemaOptions,
   type OffsetListQuery,
   type OffsetListResponse,
@@ -23,6 +28,8 @@ import { createError, getQuery } from 'h3'
 
 import type { H3Event } from 'h3'
 import type { z } from 'zod'
+
+export { LIST_QUERY_STATEMENT_CEILING }
 
 /** Stable `data` payload carried by every list-query 400. */
 export interface ListQueryErrorPayload {
