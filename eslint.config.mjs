@@ -154,6 +154,36 @@ export default [
     },
   },
   {
+    // Same eslint-plugin-import-x@4.17.1 legacy-resolver crash as the two
+    // blocks above ("node with invalid interface loaded as resolver"),
+    // reached the same way: components-library backlog item 8
+    // (narduk-libs#255) is the first narduk-shell lane to add an SFC, which
+    // means adding `@vitejs/plugin-vue` to this file (the plan item 1's own
+    // vitest.config.ts comment anticipated -- "adds the Vue plugin ... from
+    // packages/design/narduk-charts"). That import's module graph bottoms
+    // out in bare `vite`, same as narduk-charts's and narduk-mapkit-nuxt's
+    // config files, with the same crash.
+    files: ['packages/design/narduk-shell/vitest.config.ts'],
+    rules: {
+      'import-x/no-cycle': 'off',
+    },
+  },
+  {
+    // Every narduk-shell runtime component wraps a bare Nuxt UI global tag
+    // (e.g. `<UBadge>` in NeStatusBadge.vue) instead of a static import -- the
+    // package type-checks and tests standalone with no live Nuxt app of its
+    // own to resolve Nuxt UI's build-time-only component aliases against (see
+    // NeStatusBadge.vue's own header comment). A real consuming app resolves
+    // the tag through Nuxt's auto-import the same way every app in the estate
+    // already writes it; eslint-plugin-vue's static analysis has no
+    // visibility into that resolution. Same false-positive family as the
+    // Histoire `<Story>`/`<Variant>` block above.
+    files: ['packages/design/narduk-shell/src/runtime/components/**/*.vue'],
+    rules: {
+      'vue/no-undef-components': 'off',
+    },
+  },
+  {
     // narduk-mapkit's DOM-facing controllers type their element/document
     // parameters as deliberately bivariant structural shims -- the interfaces
     // say so in their own doc comments ("so that passing a real HTMLElement
