@@ -255,7 +255,10 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   const debounceMs = options.debounce ?? NE_COLLECTION_DEBOUNCE_MS
 
   const clampLimit = (value: number): number =>
-    Math.min(Math.max(1, Math.trunc(Number.isFinite(value) ? value : LIST_QUERY_DEFAULT_LIMIT)), maxLimit)
+    Math.min(
+      Math.max(1, Math.trunc(Number.isFinite(value) ? value : LIST_QUERY_DEFAULT_LIMIT)),
+      maxLimit,
+    )
 
   const pageRef = shallowRef(1)
   const limitRef = shallowRef(clampLimit(options.limit ?? LIST_QUERY_DEFAULT_LIMIT))
@@ -267,7 +270,9 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   const pendingRef = shallowRef(false)
   const errorRef = shallowRef<unknown>(null)
 
-  const filtersValue = computed<Record<string, unknown>>(() => ({ ...(toValue(options.filters) ?? {}) }))
+  const filtersValue = computed<Record<string, unknown>>(() => ({
+    ...(toValue(options.filters) ?? {}),
+  }))
   const filtersKey = computed(() => filtersKeyOf(filtersValue.value))
 
   const pageCount = computed<number | null>(() =>
@@ -414,7 +419,6 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
     })
   }
 
-
   // ——— mutators —————————————————————————————————————————————————————
   //
   // Every one of them schedules explicitly. Nothing here watches the state
@@ -521,7 +525,12 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
     readRouteQuery(route.query, false)
 
     watch(
-      () => NE_COLLECTION_SYNCED_KEYS.map((key) => firstQueryValue(route.query[key]) ?? '').join(' '),
+      () =>
+        // Joined on a byte no URL can contain, so `?q=a&sort=b` and `?q=a%1Fb`
+        // are not the same string to this watcher.
+        NE_COLLECTION_SYNCED_KEYS.map((key) => firstQueryValue(route.query[key]) ?? '').join(
+          '\u001F',
+        ),
       () => readRouteQuery(route.query, true),
     )
 

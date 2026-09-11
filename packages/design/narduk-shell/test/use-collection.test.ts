@@ -12,14 +12,13 @@
  * back so a test can decide the arrival ORDER, which is the only way to make
  * "the stale one was discarded" observable.
  *
- * Runs in vitest's `node` environment (this package's default). The composable
- * touches no DOM; `syncQuery` needs a router, not a document, and the router
- * cases below install a real `vue-router` memory history rather than a stub.
+ * Runs in vitest's `node` environment (this package's default), with no DOM
+ * anywhere: the state machine needs none. The `syncQuery` half needs a mounted
+ * component, because `useRoute()`/`useRouter()` are injections, so it lives in
+ * `use-collection.route-sync.test.ts` under happy-dom instead.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { defineComponent, effectScope, h, nextTick, ref, type Component } from 'vue'
-import { mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { effectScope, nextTick, ref } from 'vue'
 import {
   LIST_QUERY_DEFAULT_LIMIT,
   LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH,
@@ -786,7 +785,9 @@ describe('adapter and enabled', () => {
   })
 
   it('fails loudly rather than showing an empty list when a response is not a list response', async () => {
-    const fetch = vi.fn(() => Promise.resolve({ rows: [] } as unknown as OffsetListResponse<Runner>))
+    const fetch = vi.fn(() =>
+      Promise.resolve({ rows: [] } as unknown as OffsetListResponse<Runner>),
+    )
     const { collection, stop } = withCollection<Runner, OffsetListResponse<Runner>>({ fetch })
     await settle()
 
@@ -824,20 +825,31 @@ describe('refresh()', () => {
     })
     expect(fetch).not.toHaveBeenCalled()
 
+    collection.setPage(5)
     let settled = false
     const done = collection.refresh().then(() => {
       settled = true
+      return settled
     })
     await settle()
+    expect(fetch).toHaveBeenCalledTimes(1)
     expect(settled).toBe(false)
 
-    // Answer with an out-of-range page so the clamp fires a second request:
-    // `refresh()` must not resolve until that one has landed too.
-    calls[0]!.resolve(page({ items: [], offset: 0, total: 0 }))
+    // Page five of a forty-row collection does not exist. The clamp costs
+    // exactly one more request, and `refresh()` must not resolve until that
+    // one has landed too — an SSR `await c.refresh()` that returned here would
+    // serialise an empty page.
+    calls[0]!.resolve(page({ items: [], limit: 25, offset: 100, total: 40 }))
+    await settle()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(settled).toBe(false)
+
+    calls[1]!.resolve(page({ items: rows(15), limit: 25, offset: 25, total: 40 }))
     await settle()
     await done
     expect(settled).toBe(true)
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(collection.page).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
     stop()
   })
 
