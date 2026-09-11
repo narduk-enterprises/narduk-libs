@@ -1,4 +1,4 @@
-import { addComponent, createResolver, defineNuxtModule } from '@nuxt/kit'
+import { addComponent, addImports, createResolver, defineNuxtModule } from '@nuxt/kit'
 
 import { NE_SHELL_COMPONENTS } from './registry'
 
@@ -16,7 +16,7 @@ export interface NardukShellModuleOptions {
 
 interface MutableNuxtOptions {
   build: {
-    transpile: (string | RegExp | ((...args: never[]) => unknown))[]
+    transpile: Array<string | RegExp | ((...args: never[]) => unknown)>
   }
 }
 
@@ -43,6 +43,15 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     if (!nuxtOptions.build.transpile.includes(PACKAGE_NAME)) {
       nuxtOptions.build.transpile.push(PACKAGE_NAME)
     }
+
+    // defineStatusMap is a plain utility, not a component: it stays
+    // auto-imported regardless of the `components` option, the same way the
+    // ./format and ./theme.css subpaths stay reachable when components are
+    // turned off.
+    addImports({
+      name: 'defineStatusMap',
+      from: resolver.resolve('./runtime/utils/status-map'),
+    })
 
     if (options.components === false) return
 
