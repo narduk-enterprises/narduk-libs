@@ -70,6 +70,11 @@ describe('narduk-shell package shape', () => {
       '@nuxt/ui': nuxtUiPin,
       nuxt: '>=4.0.0',
       vue: '>=3.5.0',
+      // `useCollection({ syncQuery: true })` calls `useRoute()`/`useRouter()`
+      // and `NePager`'s `:to` resolves through the router, so vue-router is a
+      // real peer rather than something reached only through Nuxt. The range
+      // matches @nuxt/ui's own so a consumer cannot end up with two copies.
+      'vue-router': '^4.5.0 || ^5.0.0',
     })
   })
 
