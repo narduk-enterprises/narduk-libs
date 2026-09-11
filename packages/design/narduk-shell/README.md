@@ -36,9 +36,13 @@ ships `NeStatusBadge` and `defineStatusMap`; item 16
 ([narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263))
 ships `NeConfirmDialog` and `useConfirm()`; item 7
 ([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254))
-ships `NeStatePanel`. Components read Nuxt UI semantic tokens and `UBadge`
-colour/variant props, and do not hardcode a colour, radius, shadow or font. Each
-later item adds its own component, README section, tests and NE Base card.
+ships `NeStatePanel`; item 5
+([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252))
+fills the `./format` subpath with the shared `Intl` formatters, which is the
+last of the three reserved subpaths to stop being a placeholder. Components read
+Nuxt UI semantic tokens and `UBadge` colour/variant props, and do not hardcode a
+colour, radius, shadow or font. Each later item adds its own component, README
+section, tests and NE Base card.
 
 ## Install
 
@@ -165,16 +169,16 @@ backlog item 4
 
 ## Reserved subpaths
 
-Exactly three subpaths are exported. One of them is still a reserved
-placeholder: it resolves from an external install today (the release pipeline's
-consumer fixture proves it) and is filled by the backlog item below, so that no
-app has to change an import specifier when the content arrives.
+Exactly three subpaths are exported, and all three now carry content. Each was
+reserved before it was filled — resolving from an external install while still
+empty, as the release pipeline's consumer fixture proves — so that no app had to
+change an import specifier when the content arrived.
 
-| Subpath                                      | Today                                                                                  | Filled by                                                                                                     |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-shell`           | The Nuxt module                                                                        | Every component item adds a registry entry                                                                    |
-| `@narduk-enterprises/narduk-shell/format`    | Empty module (`export {}`)                                                             | Item 5, shared `Intl`-based formatters ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
-| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract)) | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249))                       |
+| Subpath                                      | Today                                                                                  | Filled by                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-shell`           | The Nuxt module                                                                        | Every component item adds a registry entry                                              |
+| `@narduk-enterprises/narduk-shell/format`    | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                     | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
+| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract)) | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
 
 `defineStatusMap` is a named export of the package root (`.`), not a fourth
 subpath. Import it from `@narduk-enterprises/narduk-shell` the same way the
@@ -875,6 +879,218 @@ major"). It is deprecated in the same release as this component and removed in
 the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
 
+## Formatters (`./format`)
+
+```ts
+import { createFormatters } from '@narduk-enterprises/narduk-shell/format'
+```
+
+Backlog item 5
+([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)).
+Ten functions for dates, numbers, money, percentages, quantities and spans,
+built on `Intl` and on nothing else. No Vue, no Nuxt, no dependency: the same
+function is callable from a component, from a Nitro route, from a plain Node
+script and from `nuxt.config.ts`.
+
+### The rule the whole module is built around
+
+**Nothing here reads the ambient clock or the host time zone.** `timeZone` is
+required by the _types_ on every date formatter, and `formatRelative` requires
+`now` the same way. Neither is defaulted, because the default is exactly the
+bug: a Nuxt page renders once on a server (UTC, in a Cloudflare Worker) and
+again in the reader's browser (their zone, their locale), so a formatter that
+consults either one produces two different strings for one value and Vue's
+hydration check turns that into a flicker or a dropped server render. That is
+operator-portal#262 and #268, stonx#674 and #675, and riverstatus's hand-rolled
+DST table, four times over.
+
+The zone an app passes should be a **decision** — the market's zone, the gauge's
+zone, `'UTC'` — and never `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+`createFormatters()` is where an app makes that decision once.
+
+`test/format.ssr.test.ts` is what makes this a rule rather than a convention. It
+runs the whole surface in a **child process** under `TZ` of `UTC`,
+`America/Chicago`, `Asia/Tokyo` and `Australia/Eucla` and `LC_ALL` of `en-US`,
+`de-DE` and `ja-JP`, and requires byte-identical stdout; Node reads both
+variables at process start, so a child process is the only honest way to test
+it. The same file greps the source for `Date.now`, `new Date()`,
+`resolvedOptions()`, `navigator.language` and an `Intl` constructor called
+without an explicit locale, and carries a canary proving the host environment
+_does_ move an unpinned `Intl` formatter — so the comparison is a gate that can
+fail.
+
+### `src/format.ts` is deliberately one file
+
+The module is a single file with **no relative imports at all**, and
+`src/runtime/format/` is intentionally unused. Three constraints leave no other
+shape:
+
+- `scripts/check-component-surface.mjs` `import()`s `src/format.ts` in plain
+  Node. Node's ESM resolver does no extension guessing, so a relative `./x`
+  specifier fails with `ERR_MODULE_NOT_FOUND` and the check — which fails closed
+  — fails.
+- Node's native type stripping does not remap a `./x.js` specifier onto `x.ts`,
+  so the usual TypeScript workaround does not apply either.
+- Writing `./x.ts` fixes Node and breaks every consuming app:
+  `exports["./format"].types` points at this same file, and an app's own `tsc`
+  rejects an explicit `.ts` extension with **TS5097** unless it enables
+  `allowImportingTsExtensions`, which this package may not require of its
+  consumers.
+
+The third one is asserted by `test/format.ssr.test.ts`, so the trap cannot be
+walked back into. A reviewer who wants the directory shape must first give the
+surface check a bundler.
+
+### Defaults, in one place
+
+| Behaviour        | Default                                                                |
+| ---------------- | ---------------------------------------------------------------------- |
+| `locale`         | `'en-US'` — a fixed value, never the host's                            |
+| `empty`          | `'—'`, rendered for `null`, `undefined`, `NaN` and unparseable input   |
+| Date style       | `'medium'` (`Mar 8, 2026`); time style `'short'` (`3:30 AM`)           |
+| Unit display     | `'narrow'` for durations (`1h 30m`), `'short'` for quantities (`5 ft`) |
+| `Intl` instances | memoised per kind, keyed by locale plus the full sorted option set     |
+
+The memo cache is capped at 256 entries per kind and clears wholesale on
+overflow. The cap is there because an option set can be derived from data
+(`digits` off a column definition, `currency` off a row), which is the one way
+the cache could grow with the working set rather than with the code; real call
+sites re-populate a handful of entries immediately, and an adversarial one pays
+a rebuild instead of growing without bound.
+
+### `formatDate`
+
+```ts
+formatDate('2026-03-08T08:30:00Z', { timeZone: 'America/Chicago' }) // 'Mar 8, 2026'
+formatDate(row.startsOn, { timeZone: 'UTC', style: 'full' })
+```
+
+`timeZone` is required. A bare `YYYY-MM-DD` is treated as a **floating calendar
+date** with no instant, because that is what it is: `new Date('2026-03-08')` is
+midnight UTC, and rendering that in `America/Chicago` shows the 7th — the most
+common way a date lands on screen one day early. `formatDateTime` deliberately
+does not do this; a value with a time in it is an instant.
+
+### `formatDateTime`
+
+```ts
+formatDateTime(at, { timeZone: 'America/Chicago' }) // 'Mar 8, 2026, 3:30 AM'
+formatDateTime(at, { timeZone: 'America/Chicago', timeZoneName: 'short' }) // '… 3:30 AM CDT'
+```
+
+`timeZoneName` is what riverstatus's hand-rolled DST table was for: `Intl` knows
+the real transition dates for every zone, including the ones that are not the
+United States'. It is appended from a second formatter because
+`Intl.DateTimeFormat` throws a `TypeError` when `timeZoneName` is combined with
+`dateStyle`/`timeStyle`.
+
+### `formatRelative`
+
+```ts
+formatRelative(at, { now, timeZone: 'America/Chicago' }) // '3 hours ago'
+formatRelative(at, { now, timeZone: 'America/Chicago', numeric: 'always' }) // '3 hours ago' / '1 day ago'
+```
+
+`now` is required — it is the injected clock. Below 45 seconds the answer is in
+seconds, below 45 minutes in minutes, and below 22 hours in **hours** even when
+the two instants fall on different local days: something posted at 23:30 last
+night reads `2 hours ago`, not `yesterday`. Above that the ladder switches to
+the calendar, and days are counted in the caller's zone, so one 30-hour span
+reads `2 days ago` in Chicago and `yesterday` in Tokyo. The 23-hour day a
+spring-forward produces still reads `yesterday`.
+
+### `formatDuration`
+
+```ts
+formatDuration(5_400_000) // '1h 30m'
+formatDuration(5_400_000, { unitDisplay: 'long' }) // '1 hour 30 minutes'
+formatDuration(-90_000) // '-1m 30s'
+```
+
+Two components by default, from the largest non-zero unit down, trailing zero
+components trimmed. It never climbs above a day: a month is not a fixed span,
+and a duration that silently means "about a month" is worse than `45d`. A
+negative span keeps its sign rather than becoming `'unknown'` the way
+operator-portal's `formatAge` does — a clock skew should be visible, not
+laundered.
+
+### `formatNumber`
+
+```ts
+formatNumber(1234.5678, { digits: 2 }) // '1,234.57'
+```
+
+`digits` sets minimum and maximum fraction digits together; the two `Intl`
+options are still available separately for the cases that need them.
+
+### `formatCompact`
+
+```ts
+formatCompact(1234) // '1.2K'
+formatCompact(1_234_567) // '1.2M'
+```
+
+`Intl`'s own compact notation, not stonx's hand-rolled `K`/`M`/`B`/`T` ladder —
+the ladder is English-only. One visible consequence of the plan's signature
+winning: the default is one fraction digit where stonx's was two, so a call site
+that needs the old shape passes `{ digits: 2 }`.
+
+### `formatPercent`
+
+```ts
+formatPercent(0.055) // '5.5%'
+formatPercent(5.5, { input: 'percent' }) // '5.5%'
+```
+
+The default reading is `Intl`'s: the argument is a **fraction**. stonx's
+formatter defaults the other way, behind a `fromDecimal` flag, so an adoption
+that silently inherited a default would be wrong by a factor of 100 in a
+direction nothing catches. `input` is therefore spelled out at the call site
+rather than inferred.
+
+### `formatMoney`
+
+```ts
+formatMoney(1234.5, { currency: 'USD' }) // '$1,234.50'
+formatMoney(1234.5, { currency: 'EUR', locale: 'de-DE' }) // '1.234,50 €'
+```
+
+`currency` is required because there is no house currency, and fraction digits
+are the currency's own — `JPY` has none, `USD` has two. `timeZone` is accepted
+and ignored so that one bound option bag fits every formatter in the suite.
+
+### `formatQuantity`
+
+```ts
+formatQuantity(5, { unit: 'foot' }) // '5 ft'
+formatQuantity(1234, { unit: 'cfs' }) // '1,234 cfs'
+```
+
+`Intl` throws a `RangeError` for any unit outside its sanctioned list, and half
+the estate's units are outside it — riverstatus alone reads `cfs` and `ft3/s`
+off the USGS feed. An unsanctioned unit is appended after a space instead.
+
+### `createFormatters`
+
+```ts
+// app/utils/formatters.ts
+export const fmt = createFormatters({ timeZone: 'America/Chicago' })
+
+fmt.formatDateTime(row.observedAt) // 'Mar 8, 2026, 3:30 AM'
+fmt.formatRelative(row.observedAt, { now }) // '3 hours ago'
+fmt.formatMoney(row.total, { currency: 'USD' })
+fmt.formatDate(row.observedAt, { timeZone: 'UTC' }) // per-call options win
+```
+
+The intended entry point, and the reason `timeZone` being required is a one-line
+cost rather than a 228-call-site one. The returned object is frozen.
+
+These formatters are **not** auto-imported by the Nuxt module, deliberately:
+every pilot app already has its own `formatDate` in `app/utils/`, and a global
+auto-import of a different `formatDate` with a different required signature
+would shadow it at the worst possible moment. Import the subpath, or bind a set
+in `app/utils/` and import that.
+
 ## Component surface check
 
 `node scripts/check-component-surface.mjs`, from the repository root, reads the
@@ -906,6 +1122,12 @@ needs something to render, a card is a rendered preview), so requiring them
 would only produce fictions. That deviation is deliberate and recorded here and
 in
 [narduk-libs#250](https://github.com/narduk-enterprises/narduk-libs/issues/250).
+
+`./format` ships a card anyway — `src/design-cards/Formatters.card.vue` — but as
+a choice rather than a rule. A card is where a designer sees what the house date
+and money formats actually look like, which is worth having; requiring one of
+every future exported function is not. See **Shipping a design card** for the
+list that authorises it.
 
 The check reads the registry and `format` by **importing the TypeScript
 directly** — Node strips types natively and these modules are plain erasable
@@ -969,11 +1191,31 @@ import NeStatePanel from '../runtime/components/NeStatePanel.vue'
 Nothing else registers the card. `packages/design/design-system-build` globs
 `src/design-cards/*.card.vue`, renders each one into the NE Base gallery, and
 fails its build when a registered component has no card (unless the name is on
-`PENDING_CARDS`), when a card has no registered component, when two cards claim
-the same id, or when an authored card does not reach the prerendered output.
-`test/design-cards.test.ts` in this package server-renders every card —
-including the template — and asserts the same pairing, so a card that only works
-after hydration fails here rather than showing up blank in NE Base.
+`PENDING_CARDS`), when a card is authorised by neither `src/registry.ts` nor
+`src/surface-cards.ts`, when two cards claim the same id, or when an authored
+card does not reach the prerendered output. `test/design-cards.test.ts` in this
+package server-renders every card — including the template — and asserts the
+same pairing, so a card that only works after hydration fails here rather than
+showing up blank in NE Base.
+
+### A card for something that is not a component
+
+`src/surface-cards.ts` is the second — and much smaller — list that may
+authorise a card. It exists for `Formatters.card.vue`, which previews the
+`./format` subpath and has no component to be named after. Without it the
+pairing rule above rejects the card outright, which is the rule working as
+intended: NE Base showing a card for something no app can import is the failure
+it prevents.
+
+So the hole is narrow and fails closed in both directions. A name on that list
+**must** have a card file — there is no `PENDING_CARDS` equivalent, because that
+waiver was for a component landing ahead of its card and it is spent. A card
+named by neither list is still an error, and a name on both lists is an error
+too, since one card id cannot be rendered twice. `test/design-cards.test.ts`
+asserts all of that from this side, `shellCardPlan` in
+`design-system-build/scripts/build.mts` from the other, and the list is capped
+at three entries by a test: past a handful, the shape is wrong and the card
+belongs to something the registry knows about.
 
 The hand-authored cards for `narduk-ui` and the Nuxt UI baseline stay in
 `design-system-build/app/app.vue` and keep working unchanged; backlog item 22
