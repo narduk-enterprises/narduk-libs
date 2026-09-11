@@ -9,12 +9,15 @@ the estate parses the same query shape and answers with the same response shape.
 **narduk-platform** gains a new `./list-query` subpath (also re-exported from
 the package root, matching the package's convention):
 
-- `listQuerySchema({ sortable, filters, maxLimit, mode, defaultLimit, defaultSort, maxQueryLength })`
+- `listQuerySchema({ sortable, filters, maxLimit, mode, defaultLimit, defaultSort, maxQueryLength, searchable })`
   builds a `.strict()` zod object accepting `limit` (positive integer, clamped
   to `maxLimit`), `sort` as `'<key>:<asc|desc>'` with the key drawn from
   `sortable`, `q` (trimmed, length-bounded, `null` when blank), the caller's own
   `filters` object flat on the query string, and either `offset` (integer ≥ 0)
   in `mode: 'offset'` or `cursor` (opaque non-empty string) in `mode: 'cursor'`.
+- `LIST_QUERY_STATEMENT_CEILING` is 2 (one page `SELECT` plus one optional
+  `COUNT(*)`). The schema cannot count SQL; route tests that wrap the D1
+  binding enforce the ceiling.
 - Unknown keys are **rejected**, never silently stripped. A typo'd or renamed
   parameter that reads as "no filter" is the riverstatus bug class this contract
   exists to close: the page silently came back unfiltered.
