@@ -51,6 +51,18 @@ describe('every registered component has a card, and every card a component', ()
     .filter((name) => !PENDING_CARDS.includes(name))
     .sort()
 
+  it('is not vacuous: PENDING_CARDS cannot swallow every registered component', () => {
+    // `required` filters registered names through PENDING_CARDS. If the
+    // registry is non-empty but PENDING_CARDS happens to list every one of
+    // those names, `required` goes empty and the assertions below pass on
+    // zero cards -- a green suite that proves nothing. Fail loudly instead,
+    // the same way the check-component-surface fixtures make every rule a
+    // real gate rather than one that can never fire.
+    if (NE_SHELL_COMPONENTS.length > 0) {
+      expect(required.length).toBeGreaterThan(0)
+    }
+  })
+
   it('matches the registry name for name, except reviewed pendingCards', () => {
     const cardNames = cards.map((card) => card.name)
     expect(cardNames.filter((name) => !PENDING_CARDS.includes(name))).toEqual(required)
