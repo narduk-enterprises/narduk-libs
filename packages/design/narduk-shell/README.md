@@ -55,10 +55,9 @@ layer already has the right one.
 export default defineNuxtConfig({
   modules: ['@narduk-enterprises/narduk-shell'],
   nardukShell: {
-    // Register the suite globally. Default: true.
+    // Register the suite's components globally. Default: true.
     // `false` keeps the package installed and the ./format and ./theme.css
-    // subpaths importable, but registers no global component names and no
-    // composable auto-imports.
+    // subpaths importable, but registers no global names.
     components: true,
   },
 })

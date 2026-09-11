@@ -58,8 +58,9 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // Composable auto-imports. One entry per exposed composable, alphabetical,
     // so two backlog items adding one conflict on adjacent lines rather than
     // on the same one.
-    addImports([
-      { name: 'useConfirm', from: resolver.resolve('./runtime/composables/use-confirm') },
-    ])
+    addImports({
+      name: 'useConfirm',
+      from: resolver.resolve('./runtime/composables/use-confirm'),
+    })
   },
 })

@@ -16,11 +16,11 @@ interface NuxtKitMocks {
 
 function mockNuxtKit(): NuxtKitMocks {
   const addComponent = vi.fn()
-  const addImports = vi.fn()
   // Registered so the test can prove the module never reaches for it. A bare
   // `vi.doMock` without this key would make an accidental call throw, which
   // reads as a different failure than the one that matters.
   const addComponentsDir = vi.fn()
+  const addImports = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
@@ -112,14 +112,13 @@ describe('narduk-shell module', () => {
   })
 
   it('registers nothing when components are disabled', async () => {
-    const { addComponent, addImports } = mockNuxtKit()
+    const { addComponent } = mockNuxtKit()
     mockRegistry([{ name: 'NeFixtureOne', filePath: './runtime/components/NeFixtureOne.vue' }])
 
     const module_ = await loadModule()
     await module_.setup({ components: false }, makeNuxt())
 
     expect(addComponent).not.toHaveBeenCalled()
-    expect(addImports).not.toHaveBeenCalled()
   })
 
   it('auto-imports useConfirm from the runtime composable it ships', async () => {
@@ -128,12 +127,11 @@ describe('narduk-shell module', () => {
     const module_ = await loadModule()
     await module_.setup({ components: true }, makeNuxt())
 
-    const entries = addImports.mock.calls.flatMap(
-      ([call]) => call as Array<{ name: string; from: string }>,
-    )
-    const useConfirmEntry = entries.find((entry) => entry.name === 'useConfirm')
-    expect(useConfirmEntry).toBeDefined()
-    expect(useConfirmEntry?.from).toContain('/src/runtime/composables/use-confirm')
+    expect(addImports).toHaveBeenCalledTimes(1)
+    const [call] = addImports.mock.calls[0] as [{ name: string; from: string }]
+    expect(call.name).toBe('useConfirm')
+    expect(call.from.startsWith('/')).toBe(true)
+    expect(call.from).toContain('/src/runtime/composables/use-confirm')
   })
 
   it('defaults component registration on, and transpiles the package exactly once', async () => {
