@@ -302,8 +302,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // shape is the D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts
       // (narduk-libs#233 / PR #235). The registries block reuses the same
       // GitHub Packages registry URL as the committed .npmrc
-      // (`@narduk-enterprises:registry=...`) and the same org Actions secret
-      // already used for install auth (NARDUK_PLATFORM_GH_PACKAGES_READ).
+      // (`@narduk-enterprises:registry=...`). The token is read from the
+      // org-level DEPENDABOT secret NARDUK_PLATFORM_GH_PACKAGES_READ (verified
+      // present 2026-09-11) -- Dependabot secrets are a separate store from
+      // Actions secrets; the Actions secret of the same name is what CI uses.
       path: '.github/dependabot.yml',
       contents: text(
         'version: 2',

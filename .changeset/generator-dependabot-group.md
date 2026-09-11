@@ -8,8 +8,8 @@ patterns `@narduk-enterprises/*`) for the npm ecosystem
 narduk-shell / narduk-ui / narduk-charts / narduk-core / etc. lands as one PR
 per generated app instead of one per package. Its `registries:` block reuses the
 same GitHub Packages registry URL as the committed `.npmrc`
-(`https://npm.pkg.github.com`) and the same org Actions secret name already used
-for install auth (`NARDUK_PLATFORM_GH_PACKAGES_READ`), so Dependabot resolves
-private `@narduk-enterprises/*` versions the same way CI installs them. The
-existing `renovate.json` scaffold is unchanged; `foundation:check` item 5.2
-already accepts either.
+(`https://npm.pkg.github.com`) and reads the org-level Dependabot secret
+`NARDUK_PLATFORM_GH_PACKAGES_READ` (Dependabot secrets are a separate store from
+Actions secrets; the org already holds one under that name), so Dependabot
+resolves private `@narduk-enterprises/*` versions. The existing `renovate.json`
+scaffold is unchanged; `foundation:check` item 5.2 already accepts either.
