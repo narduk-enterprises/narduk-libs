@@ -148,14 +148,21 @@ export function parseListQuery(
 function warnUnknownListQueryKeys(event: H3Event, unknownKeys: readonly string[]): void {
   if (unknownKeys.length === 0) return
 
-  useLogger(event)
-    .child('ListQuery')
-    .warn(
-      `Ignoring unknown list-query key(s): ${unknownKeys.join(', ')}. They will be rejected ` +
-        `with a 400 once strict mode is the default in the next major version; pass ` +
-        `strict: true to opt into that behaviour now.`,
-      { code: 'list_query_unknown_keys', unknownKeys: [...unknownKeys] },
-    )
+  // Tolerating an unknown key must never depend on logging succeeding: a
+  // logger failure (of any kind, in any consumer) reports nothing rather
+  // than turning a tolerated request into a 500.
+  try {
+    useLogger(event)
+      .child('ListQuery')
+      .warn(
+        `Ignoring unknown list-query key(s): ${unknownKeys.join(', ')}. They will be rejected ` +
+          `with a 400 once strict mode is the default in the next major version; pass ` +
+          `strict: true to opt into that behaviour now.`,
+        { code: 'list_query_unknown_keys', unknownKeys: [...unknownKeys] },
+      )
+  } catch {
+    /* See comment above — a warning is best-effort. */
+  }
 }
 
 export interface OffsetListResponseOptions<TFilters, TKey extends string> {
