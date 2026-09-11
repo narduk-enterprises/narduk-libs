@@ -8,8 +8,8 @@ actual row order silently disagreed (narduk-libs PR #282 review).
 `ListNotificationOptions.sort` now threads through to `getUserNotifications`'s
 Drizzle `orderBy`, honoring every key in the route's `SORTABLE` allowlist
 (currently just `createdAt`, ascending or descending). This is a fix to
-previously-declared contract behavior (the `sort` parameter has been part of
-the shared list-query contract since narduk-libs#247), not new request/response
+previously-declared contract behavior (the `sort` parameter has been part of the
+shared list-query contract since narduk-libs#247), not new request/response
 surface, hence patch.
 
 Audited every other `parseListQuery` call site in narduk-auth and narduk-ai for

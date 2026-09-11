@@ -107,17 +107,28 @@ because `foundation:check --json` is the exact 7-item contract company-hq
 ARTEFACT finding. Same exit-code convention as `foundation:check` (`0` PASS, `1`
 FAIL, `2` UNKNOWN).
 
-**Presence policy:** registry-gated, so this command enforces what
-`foundation:check` item 2.2 cannot (item 2.2 only fails a loose pin that is
-already a dependency). For each of narduk-shell / narduk-ui / narduk-charts,
-when the app has a UI surface: not published (empty version list / 404) →
-`not-applicable` ("presence is not yet required because nothing is published");
-registry unreadable → `unknown`; published and absent → `fail` ("`<pkg>` is
-published (latest x.y.z) and this app has UI but does not depend on it — add an
-exact pin"); published and present → the exact-pin check (no `^`, `~`, or
-`workspace:`). Today narduk-shell is unpublished (`0.0.0`) so it is
-`not-applicable`; narduk-ui and narduk-charts are published, so a UI app without
-them fails.
+**Presence policy:** this command enforces exactly one rule, decided from the
+app's own manifests: _if the app depends on a shared-UI package, that pin must
+be exact_. It deliberately does **not** require an app to take a dependency it
+does not use -- an unused shared-UI package is `not-applicable`, not a finding.
+An earlier revision registry-gated presence ("narduk-charts is published,
+therefore every UI app must depend on it"), which conflated _published_ with
+_required_: narduk-charts is a charting library and narduk-ui is the `Ns*`
+status instruments, so neither is mandatory on an app that needs neither. The
+exported `PRESENCE_REQUIRED` is the one place a genuine estate-wide requirement
+would be recorded; it is empty because no dated decision names a shared-UI
+package as required of every UI app, and a test pins it empty so an addition
+cannot land silently.
+
+**No registry credential is needed.** Exact-pin discipline is a manifest fact,
+so this item never needs a registry read to reach a verdict and a missing
+`NODE_AUTH_TOKEN` can no longer turn the command into exit `2`; `unknown` now
+means only "no `package.json` at a known monorepo path". `RegistryReality` is
+still consulted, but only to annotate an already-decided sub-check with the
+latest published version -- an unreadable registry drops the annotation and
+changes no status. That is what lets the generated CI run this check after its
+install step has dropped the GitHub Packages token
+(`foundation:shared-ui-pinned` in the generated `quality:static` chain).
 
 "Has UI" reuses `hasNuxtUiSurface()` -- item 1.1's `NUXT_CONFIG_CANDIDATES` plus
 a pages or components directory at those same monorepo prefixes (the paths item
@@ -126,13 +137,12 @@ apps are `not-applicable` in full.
 
 **Rule table:**
 
-| Sub-check       | Condition                                                                                 | Verdict                                                                                       |
-| --------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 8.0             | No `package.json` readable at a known monorepo-candidate path                             | `unknown`                                                                                     |
-| 8.0             | No `nuxt.config.*` at a known path, or no pages/components directory at the same prefixes | `not-applicable` (whole check)                                                                |
-| 8.0             | Nuxt config and a pages/components directory exist                                        | `pass`                                                                                        |
-| 8.1 / 8.2 / 8.3 | package has no published versions                                                         | `not-applicable` -- presence is not yet required because nothing is published                 |
-| 8.1 / 8.2 / 8.3 | registry unreadable (no credential / unreachable)                                         | `unknown`                                                                                     |
-| 8.1 / 8.2 / 8.3 | published, and this UI app does not depend on it                                          | `fail` -- "`<pkg>` is published (latest x.y.z) and this app has UI but does not depend on it" |
-| 8.1 / 8.2 / 8.3 | published, present, but the pin is a range or a `workspace:` / `file:` specifier          | `fail`, names the package and the fix                                                         |
-| 8.1 / 8.2 / 8.3 | published and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                     | `pass`                                                                                        |
+| Sub-check       | Condition                                                                                 | Verdict                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 8.0             | No `package.json` readable at a known monorepo-candidate path                             | `unknown`                                                                         |
+| 8.0             | No `nuxt.config.*` at a known path, or no pages/components directory at the same prefixes | `not-applicable` (whole check)                                                    |
+| 8.0             | Nuxt config and a pages/components directory exist                                        | `pass`                                                                            |
+| 8.1 / 8.2 / 8.3 | not a dependency of this app, and not listed in `PRESENCE_REQUIRED`                       | `not-applicable` -- capability-specific, so its absence is not a finding          |
+| 8.1 / 8.2 / 8.3 | not a dependency, but listed in `PRESENCE_REQUIRED` (today: none are)                     | `fail` -- "required of every UI app and is not a dependency"                      |
+| 8.1 / 8.2 / 8.3 | depended on, but the pin is a range or a `workspace:` / `file:` specifier                 | `fail`, names the package and the fix                                             |
+| 8.1 / 8.2 / 8.3 | depended on and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                   | `pass`, annotated with the latest published version when the registry is readable |

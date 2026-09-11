@@ -92,7 +92,12 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '      typecheck-worker-script: typecheck',
       "      typecheck-web-script: ''",
       '      build-script: build',
-      "      extra-scripts: 'format:check lint knip'",
+      // The public path runs `quality:static`, which already chains
+      // `foundation:shared-ui-pinned`. The private path calls the shared
+      // workflow instead, so the check has to be named here or CI never runs
+      // it. It reads manifests only, so it needs no registry credential and is
+      // safe outside the token-scoped install step (narduk-libs#282 review).
+      "      extra-scripts: 'format:check lint knip foundation:shared-ui-pinned'",
       '      run-tests: true',
       '      test-script: test:unit',
       '      run-e2e: true',

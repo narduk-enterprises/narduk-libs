@@ -20,7 +20,9 @@ describe('generated CI boundaries', () => {
     expect(workflow).toContain('run-tests: true')
     expect(workflow).toContain('run-e2e: true')
     expect(workflow).toContain('e2e-shards: 3')
-    expect(workflow).toContain("extra-scripts: 'format:check lint knip'")
+    expect(workflow).toContain(
+      "extra-scripts: 'format:check lint knip foundation:shared-ui-pinned'",
+    )
     expect(workflow).toContain('e2e-install-browsers: false')
     expect(workflow).not.toContain('e2e-browsers-path:')
     expect(workflow).not.toContain('playwright install')

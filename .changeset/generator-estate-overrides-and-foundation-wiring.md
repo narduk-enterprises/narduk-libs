@@ -10,11 +10,11 @@ Generated apps collapse every workspace-published estate pin, and run
   capability).** pnpm replaces a `workspace:` specifier with the _exact_ version
   of that workspace package at publish time, so a published estate package
   carries a hard pin on whatever its sibling's version was that day. Two
-  different exact pins on one package in one tree is two installed copies —
-  for a Nuxt module two registrations and two `useRuntimeConfig` namespaces, for
-  a contracts package two copies of the zod schemas its consumers are supposed
-  to share. Two shapes produce that second pin: **one publisher plus the app's
-  own direct pin** (`narduk-core` ships `narduk-logging: workspace:*`;
+  different exact pins on one package in one tree is two installed copies — for
+  a Nuxt module two registrations and two `useRuntimeConfig` namespaces, for a
+  contracts package two copies of the zod schemas its consumers are supposed to
+  share. Two shapes produce that second pin: **one publisher plus the app's own
+  direct pin** (`narduk-core` ships `narduk-logging: workspace:*`;
   `narduk-mapkit-nuxt` ships `narduk-mapkit: workspace:*`), and **two or more
   publishers with no direct pin at all** — `narduk-platform` is a runtime
   `workspace:*` dependency of `narduk-core`, `narduk-ai` _and_ `narduk-auth`
@@ -38,4 +38,8 @@ Generated apps collapse every workspace-published estate pin, and run
   credential, so it runs where the generated install step has already dropped
   the GitHub Packages token. narduk-libs' own `packed-consumer-smoke` job
   expands the generated `quality` chain, so the check also runs against a
-  really-installed generated app on every narduk-libs PR.
+  really-installed generated app on every narduk-libs PR. The generated CI for a
+  **private** app calls the shared `nuxt-cloudflare.yml` workflow rather than
+  `quality:static`, so `foundation:shared-ui-pinned` is named in its
+  `extra-scripts` too — otherwise that half of the fleet would ship the script
+  and never run it.

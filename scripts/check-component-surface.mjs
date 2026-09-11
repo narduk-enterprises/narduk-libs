@@ -330,9 +330,7 @@ const RULES = {
         if (!isSsrTest(test.path)) return false
         const source = stripComments(test.source)
         return (
-          names(source, name) &&
-          source.includes('renderToString') &&
-          importsArtefact(source, name)
+          names(source, name) && source.includes('renderToString') && importsArtefact(source, name)
         )
       }),
     miss: ({ name, path }) =>
@@ -345,7 +343,8 @@ const RULES = {
       if (source === undefined) return false
       const stripped = stripComments(source)
       return (
-        stripped.includes(`data-design-card="${kebabCase(name)}"`) && importsArtefact(stripped, name)
+        stripped.includes(`data-design-card="${kebabCase(name)}"`) &&
+        importsArtefact(stripped, name)
       )
     },
     miss: ({ name, path }) =>
