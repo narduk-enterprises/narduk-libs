@@ -27,6 +27,7 @@
     "runtime/server/utils/client-ip.ts",
     "runtime/server/utils/kv.ts",
     "runtime/server/utils/kvCache.ts",
+    "runtime/server/utils/listQuery.ts",
     "runtime/server/utils/logger.ts",
     "runtime/server/utils/logSanitizer.ts",
     "runtime/server/plugins/error-logger.ts",

@@ -94,6 +94,7 @@
   "dependencies": {
     "@narduk-enterprises/narduk-app": "workspace:*",
     "@narduk-enterprises/narduk-core": "workspace:*",
+    "@narduk-enterprises/narduk-platform": "workspace:*",
     "@nuxt/kit": "^4.0.0",
     "@simplewebauthn/browser": "13.3.0",
     "@simplewebauthn/server": "13.3.3",

@@ -88,6 +88,10 @@ importers:
         version: 4.1.6(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/contracts/narduk-platform:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^22.19.19
@@ -306,6 +310,9 @@ importers:
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
         version: link:../narduk-core
+      '@narduk-enterprises/narduk-platform':
+        specifier: workspace:*
+        version: link:../../contracts/narduk-platform
       '@nuxt/kit':
         specifier: ^4.0.0
         version: 4.4.8(magicast@0.5.3)
@@ -349,6 +356,9 @@ importers:
       happy-dom:
         specifier: ^20.9.0
         version: 20.10.6
+      miniflare:
+        specifier: 4.20260701.0
+        version: 4.20260701.0
       nuxt:
         specifier: ^4.4.2
         version: 4.4.8(e09a3b4dba7b1a52a2e35e4a2bcc2ff0)
@@ -489,6 +499,9 @@ importers:
       '@narduk-enterprises/narduk-core':
         specifier: workspace:*
         version: link:../narduk-core
+      '@narduk-enterprises/narduk-platform':
+        specifier: workspace:*
+        version: link:../../contracts/narduk-platform
       '@nuxt/kit':
         specifier: ^4.0.0
         version: 4.4.8(magicast@0.5.3)
