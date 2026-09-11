@@ -12,6 +12,12 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-auth': '1.25.4',
   '@narduk-enterprises/narduk-core': '1.23.2',
   '@narduk-enterprises/narduk-logging': '0.1.0',
+  // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
+  // direct dependency of a generated app. narduk-core, narduk-ai and
+  // narduk-auth each ship it as `workspace:*`, so the app installs it three
+  // ways down and needs one version named for all of them. `versions:sync`
+  // keeps this pin on the workspace version like any other.
+  '@narduk-enterprises/narduk-platform': '2.0.0',
   '@narduk-enterprises/narduk-seo': '2.0.10',
   '@narduk-enterprises/narduk-testkit': '1.2.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
@@ -202,15 +208,43 @@ export function createRootPackageManifest(
         // pnpm replaces a `workspace:` specifier with the EXACT version of that
         // workspace package at publish time, so a published estate module
         // carries a hard pin on whatever its sibling's version was that day.
-        // Four generator-pinned modules ship `narduk-core: workspace:*`
-        // (narduk-ai, narduk-analytics, narduk-auth, narduk-seo); narduk-core
-        // itself ships `narduk-logging: workspace:*`; narduk-mapkit-nuxt ships
-        // `narduk-mapkit: workspace:*`. Without an override, the first time the
-        // app's own exact pin moves and the publishing module's does not --
-        // which is the ordinary case, since narduk-core releases far more often
-        // than narduk-auth -- pnpm installs BOTH versions. Two copies of a Nuxt
-        // module means two `addModule` registrations and two `useRuntimeConfig`
-        // namespaces, which is a correctness break, not a size regression.
+        // pnpm replaces a `workspace:` specifier with the EXACT version of
+        // that workspace package at publish time, so every published estate
+        // module carries a hard pin on whatever its sibling's version was that
+        // day. Two different exact pins on one package in one tree is two
+        // installed copies: for a Nuxt module, two `addModule` registrations
+        // and two `useRuntimeConfig` namespaces; for a contracts package, two
+        // copies of the zod schemas the modules are supposed to share. That is
+        // a correctness break, not a size regression.
+        //
+        // Two shapes produce that second pin, and both are represented here.
+        //
+        //  1. ONE publisher plus the app's own direct pin. narduk-core ships
+        //     `narduk-logging: workspace:*` and the app pins narduk-logging
+        //     itself; narduk-mapkit-nuxt ships `narduk-mapkit: workspace:*`
+        //     and the mapkit capability pins narduk-mapkit itself. They
+        //     diverge the first time one is released without the other.
+        //  2. TWO OR MORE publishers and no direct pin at all. narduk-platform
+        //     is a runtime `workspace:*` dependency of narduk-core, narduk-ai
+        //     AND narduk-auth, and a generated app names it nowhere -- so a
+        //     guard that looked only at the app's own manifests could not see
+        //     it. Let narduk-core publish while platform is 2.0.0 and
+        //     narduk-auth publish while it is 2.1.0 and the app installs both.
+        //
+        // narduk-core is in both shapes at once: four publishers and a direct
+        // pin. A package with one publisher and NO direct pin needs no
+        // override -- one exact spec, one copy -- which is why `narduk-app`,
+        // shipped `workspace:*` by narduk-auth alone, is absent. `narduk-auth`
+        // is absent for a different reason: nothing in the estate depends on
+        // it, so its override was inert and dropping it in a5ed8e9 was right.
+        //
+        // An override is an assertion, not a free fix: it forces ONE version on
+        // publishers that were each built against whatever their sibling was
+        // on their own release day. `versions:sync` keeps these pins on the
+        // workspace versions -- the set that is actually built and tested
+        // together -- so the assertion holds at release time, but a genuinely
+        // breaking contracts release (narduk-platform is already at 2.0.0) has
+        // to land across its publishers together rather than one at a time.
         //
         // The cost is real and accepted: Dependabot does not update
         // `pnpm.overrides`, so a grouped `@narduk-enterprises/*` bump resolves
@@ -220,12 +254,12 @@ export function createRootPackageManifest(
         // form, which would let the override track a root declaration that
         // Dependabot does update).
         //
-        // Only packages some OTHER generator-pinned package depends on via
-        // `workspace:` belong here. `narduk-auth` does not: nothing in the
-        // estate depends on it, so its override was inert and dropping it in
-        // a5ed8e9 was correct. `tests/generator.test.ts` derives this set from
-        // the live workspace manifests so a new `workspace:` dependency cannot
-        // open the hole again silently.
+        // `tests/workspace-override-safety.test.ts` derives this whole set
+        // from the live workspace manifests -- publishers counted over the
+        // installed closure, direct pins intersected, devDependency edges
+        // excluded because a published package's devDependencies are never
+        // installed by its consumers -- so a new `workspace:` edge cannot
+        // reopen the hole silently.
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@narduk-enterprises/narduk-logging':
           PACKAGE_VERSIONS['@narduk-enterprises/narduk-logging'],
@@ -235,6 +269,8 @@ export function createRootPackageManifest(
                 PACKAGE_VERSIONS['@narduk-enterprises/narduk-mapkit'],
             }
           : {}),
+        '@narduk-enterprises/narduk-platform':
+          PACKAGE_VERSIONS['@narduk-enterprises/narduk-platform'],
         '@nuxt/eslint': PACKAGE_VERSIONS['@nuxt/eslint'],
         // The generator pins `nuxt` exactly, so `@nuxt/kit` has to be pinned to
         // the same version. Narduk modules depend on `@nuxt/kit@^4.0.0`, so
