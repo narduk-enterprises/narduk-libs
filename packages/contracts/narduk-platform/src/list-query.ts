@@ -1,13 +1,19 @@
 /**
  * List-query contract — one query shape for every list route in the estate.
  *
- * `listQuerySchema()` builds a `.strict()` zod object: a limit clamped to the
- * route's own ceiling, a sort restricted to an allowlist, a bounded free-text
- * `q`, the caller's allowlisted filters, and either an `offset` or a `cursor`.
- * Unknown keys are **rejected**, never silently stripped — silent stripping is
- * the bug class the components-library plan (§2 item 10) names in riverstatus's
+ * `listQuerySchema()` builds a zod object: a limit clamped to the route's own
+ * ceiling, a sort restricted to an allowlist, a bounded free-text `q`, the
+ * caller's allowlisted filters, and either an `offset` or a `cursor`.
+ *
+ * An unknown key is never silently **stripped** — silent stripping is the bug
+ * class the components-library plan (§2 item 10) names in riverstatus's
  * per-route schemas, where a typo'd or renamed parameter reads as "no filter"
- * and the route answers with the wrong page.
+ * and the route answers with the wrong page. For one release it is instead
+ * **tolerated**: the request still succeeds with the known keys parsed
+ * exactly as before, and every ignored key comes back on `unknownKeys` so a
+ * caller (narduk-core's `parseListQuery`) can report it. Pass `strict: true`
+ * to reject an unknown key with a 400 today; the next major flips that
+ * default. See `.changeset/list-query-tolerate-unknown-keys.md`.
  *
  * The helpers that bind this to an h3 event (`parseListQuery`, `listResponse`)
  * live in narduk-core's server utils; this package owns the shape and the types
@@ -62,6 +68,13 @@ export interface ListQuery<TFilters = EmptyListFilters, TKey extends string = st
   offset?: number
   q: string | null
   sort: ListSort<TKey> | null
+  /**
+   * Query keys the caller sent that this route does not declare. Always `[]`
+   * with `strict: true` — an unknown key fails parsing before this field
+   * would ever be produced. Otherwise every ignored key is named here so a
+   * caller can warn on it; the value is never merged into `filters`.
+   */
+  unknownKeys: string[]
 }
 
 export interface OffsetListQuery<
@@ -129,6 +142,13 @@ export interface ListQuerySchemaOptions<
   searchable?: boolean
   /** Allowlisted sort keys. */
   sortable: TSortable
+  /**
+   * Reject an unknown query key with a 400 instead of tolerating it.
+   * Defaults to `false` for one release (tolerate-and-warn, Logan
+   * 2026-09-11); the next major flips this default to `true`. See
+   * `.changeset/list-query-tolerate-unknown-keys.md`.
+   */
+  strict?: boolean
 }
 
 /** Renders a parsed sort back into its wire form. */
@@ -244,22 +264,37 @@ function buildListQuerySchema(
     ...filterShape,
   }
 
-  return z
-    .object(shape)
-    .strict()
-    .transform((raw): ListQuery<ListFilters, string> => {
-      const { cursor, limit, offset, q, sort, ...filters } = raw as ListQueryWireValue
-      const resolved = {
-        filters,
-        limit: limit ?? defaultLimit,
-        q: q ?? null,
-        sort: sort ?? defaultSort,
-      }
+  const knownKeys = new Set(Object.keys(shape))
+  const filterKeys = new Set(Object.keys(filterShape))
+  const strict = options.strict ?? false
 
-      return mode === 'cursor'
-        ? { ...resolved, cursor: cursor ?? null, mode: 'cursor' }
-        : { ...resolved, mode: 'offset', offset: offset ?? 0 }
-    })
+  const objectSchema = strict ? z.object(shape).strict() : z.object(shape).loose()
+
+  return objectSchema.transform((raw): ListQuery<ListFilters, string> => {
+    const record = raw as ListQueryWireValue
+    const filters: ListFilters = {}
+    const unknownKeys: string[] = []
+
+    // `strict: true` already rejected any key outside `knownKeys` before this
+    // transform ever runs, so `unknownKeys` naturally stays empty there.
+    for (const key of Object.keys(record)) {
+      if (filterKeys.has(key)) filters[key] = record[key]
+      else if (!knownKeys.has(key)) unknownKeys.push(key)
+    }
+
+    const { cursor, limit, offset, q, sort } = record
+    const resolved = {
+      filters,
+      limit: limit ?? defaultLimit,
+      q: q ?? null,
+      sort: sort ?? defaultSort,
+      unknownKeys: unknownKeys.sort((left, right) => left.localeCompare(right)),
+    }
+
+    return mode === 'cursor'
+      ? { ...resolved, cursor: cursor ?? null, mode: 'cursor' }
+      : { ...resolved, mode: 'offset', offset: offset ?? 0 }
+  })
 }
 
 /**
@@ -273,7 +308,8 @@ function buildListQuerySchema(
  *   maxLimit: 100,
  * })
  * schema.parse({ limit: '500', sort: 'name:asc' }) // limit clamped to 100
- * schema.safeParse({ pge: '2' }).success // false — unknown key
+ * schema.parse({ pge: '2' }).unknownKeys // ['pge'] — tolerated by default
+ * listQuerySchema({ ...options, strict: true }).safeParse({ pge: '2' }).success // false — opt-in
  * ```
  */
 export function listQuerySchema<
