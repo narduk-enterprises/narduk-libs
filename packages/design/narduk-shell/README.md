@@ -921,9 +921,9 @@ fail.
 
 ### `src/format.ts` is deliberately one file
 
-The module is a single file with **no relative imports at all**, and
-`src/runtime/format/` is intentionally unused. Three constraints leave no other
-shape:
+The module is a single file with **no relative imports at all**. The obvious
+shape — a `src/runtime/format/` directory of small modules — is not one this
+package can have, for three reasons:
 
 - `scripts/check-component-surface.mjs` `import()`s `src/format.ts` in plain
   Node. Node's ESM resolver does no extension guessing, so a relative `./x`
