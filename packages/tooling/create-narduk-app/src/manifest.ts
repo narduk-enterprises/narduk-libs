@@ -10,6 +10,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-ai': '0.1.11',
   '@narduk-enterprises/narduk-analytics': '1.19.33',
   '@narduk-enterprises/narduk-auth': '1.25.4',
+  '@narduk-enterprises/narduk-charts': '2.5.1',
   '@narduk-enterprises/narduk-core': '1.23.2',
   '@narduk-enterprises/narduk-logging': '0.1.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
@@ -19,6 +20,17 @@ export const PACKAGE_VERSIONS = {
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.0.0',
   '@narduk-enterprises/narduk-seo': '2.0.10',
+  // The components-library suite (components-library-plan.md item 4,
+  // narduk-libs#251). Pinned to the on-disk workspace version, which is still
+  // `0.0.0`: the package has never been published (item 1 shipped the
+  // skeleton without a release, and wave 2's component items each left their
+  // changeset unconsumed rather than publish -- see
+  // docs/plans/components-library-plan.md's done-when 5). `versions:check`
+  // requires this literal to equal narduk-shell's live `package.json` version,
+  // not a preview of its next release, so it moves to a real version only
+  // when `pnpm run release:version` actually runs for narduk-shell and
+  // `versions:sync` re-pins this entry.
+  '@narduk-enterprises/narduk-shell': '0.0.0',
   '@narduk-enterprises/narduk-testkit': '1.2.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
   '@nuxt/test-utils': '4.0.3',
@@ -63,6 +75,12 @@ const capabilityPackages: Record<Capability, readonly string[]> = {
   ai: ['@narduk-enterprises/narduk-ai'],
   analytics: ['@narduk-enterprises/narduk-analytics'],
   auth: ['@narduk-enterprises/narduk-auth'],
+  // Unlike every other capability package, narduk-charts is not a Nuxt
+  // module (no `nuxt` peer, no `module.ts` -- see the package's `exports`
+  // map): it is a plain Vue component library the app imports from directly.
+  // moduleList() in generate.ts excludes 'charts' from the Nuxt `modules:
+  // [...]` array for exactly this reason.
+  charts: ['@narduk-enterprises/narduk-charts'],
   mapkit: ['@narduk-enterprises/narduk-mapkit', '@narduk-enterprises/narduk-mapkit-nuxt'],
   seo: ['@narduk-enterprises/narduk-seo'],
   uploads: ['@narduk-enterprises/narduk-uploads'],
@@ -102,6 +120,11 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
     '@iconify-json/lucide',
     '@narduk-enterprises/narduk-core',
     '@narduk-enterprises/narduk-logging',
+    // The components-library suite ships by default, not behind a
+    // capability flag (components-library-plan.md item 4): every new app
+    // starts on the shared Ne* suite before its first local component
+    // exists, the same way it always starts on narduk-core.
+    '@narduk-enterprises/narduk-shell',
     ...capabilities.flatMap(packageNamesForCapability),
     '@nuxt/ui',
     'drizzle-orm',
@@ -260,6 +283,20 @@ export function createRootPackageManifest(
         // excluded because a published package's devDependencies are never
         // installed by its consumers -- so a new `workspace:` edge cannot
         // reopen the hole silently.
+        //
+        // narduk-shell (added by item 4, narduk-libs#251) deliberately has NO
+        // override entry here, checked against this same derivation: its own
+        // `dependencies` are `@nuxt/kit` and `defu` only (no
+        // `@narduk-enterprises/*` runtime edge), and nothing else in the
+        // workspace ships it as a `workspace:` runtime dependency today --
+        // `design-system-build` depends on it, but only as a devDependency,
+        // which the derivation excludes because a published package's
+        // devDependencies are never installed by its consumers. Zero
+        // publishers means zero possible second copy, so an override here
+        // would be inert. If a future package starts shipping narduk-shell as
+        // a runtime `workspace:*` dependency, this reasoning changes and the
+        // derivation in `tests/workspace-override-safety.test.ts` will start
+        // requiring the entry.
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@narduk-enterprises/narduk-logging':
           PACKAGE_VERSIONS['@narduk-enterprises/narduk-logging'],

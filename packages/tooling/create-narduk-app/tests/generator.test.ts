@@ -705,6 +705,76 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(files.has('renovate.json'), label).toBe(false)
     }
   })
+
+  // components-library-plan.md #2 item 4 (narduk-libs#251): every new app
+  // starts on the Nuxt UI element discipline and Tailwind v4 token tier
+  // (`design-system`) and the legacy-API guardrails (`nuxt-ui`), the same way
+  // it already starts on `core`, `correctness`, `complexity` and `formatting`.
+  it('adds the design-system and nuxt-ui capability packs to both generated eslint configs', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const appConfig = files.get('apps/web/eslint.config.mjs') ?? ''
+      const rootConfig = files.get('eslint.config.mjs') ?? ''
+
+      expect(appConfig, label).toContain("capabilityPacks: ['core', 'correctness', 'complexity'")
+      expect(appConfig, label).toContain("'design-system', 'nuxt-ui']")
+      expect(rootConfig, label).toContain("'core',")
+      expect(rootConfig, label).toContain("'design-system',")
+      expect(rootConfig, label).toContain("'nuxt-ui',")
+    }
+  })
+
+  // components-library-plan.md #2 item 4: narduk-shell ships to every
+  // generated app by default -- not behind a capability flag, the same way
+  // narduk-core always ships -- with an exact pin.
+  it('installs narduk-shell as a default module and dependency for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
+      const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        dependencies: Record<string, string>
+      }
+
+      expect(nuxtConfig, label).toContain("'@narduk-enterprises/narduk-shell'")
+      expect(webManifest.dependencies['@narduk-enterprises/narduk-shell'], label).toBe(
+        PACKAGE_VERSIONS['@narduk-enterprises/narduk-shell'],
+      )
+    }
+  })
+
+  // components-library-plan.md #2 item 4: unlike every other capability
+  // package, narduk-charts is not a Nuxt module (no `nuxt` peer, no
+  // `module.ts`) -- it is a plain Vue component library the app imports from
+  // directly, so it must never appear in the Nuxt `modules: [...]` array, and
+  // it needs a knip ignore because nothing in the scaffold imports it yet.
+  it('pins narduk-charts for the charts capability without registering it as a Nuxt module', () => {
+    const withCharts = generate(['charts'])
+    const webManifest = JSON.parse(withCharts.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    const nuxtConfig = withCharts.get('apps/web/nuxt.config.ts') ?? ''
+    const knipConfig = JSON.parse(withCharts.get('knip.json') ?? '{}') as {
+      ignoreDependencies: string[]
+    }
+
+    expect(webManifest.dependencies['@narduk-enterprises/narduk-charts']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-charts'],
+    )
+    expect(nuxtConfig).not.toContain("'@narduk-enterprises/narduk-charts'")
+    // narduk-shell still ships regardless of the charts capability.
+    expect(nuxtConfig).toContain("'@narduk-enterprises/narduk-shell'")
+    expect(knipConfig.ignoreDependencies).toContain('@narduk-enterprises/narduk-charts')
+
+    const withoutCharts = generate([])
+    const webManifestWithout = JSON.parse(withoutCharts.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    const knipConfigWithout = JSON.parse(withoutCharts.get('knip.json') ?? '{}') as {
+      ignoreDependencies: string[]
+    }
+    expect(webManifestWithout.dependencies['@narduk-enterprises/narduk-charts']).toBeUndefined()
+    expect(knipConfigWithout.ignoreDependencies).not.toContain('@narduk-enterprises/narduk-charts')
+  })
 })
 
 describe('CLI argument parsing', () => {
