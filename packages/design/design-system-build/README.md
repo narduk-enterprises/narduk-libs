@@ -6,25 +6,29 @@ explicitly configured Nuxt UI component families, then extracts static HTML
 cards and the compiled CSS into `dist/design-system/` in this package.
 
 Open `dist/design-system/index.html`. Each card carries an `@dsCard` marker and
-links to `tokens.css` (only the coded `--ns-*` custom properties, with their
-selectors and media/layer context) and `styles.css` (compiled Tailwind, Nuxt UI
-and component rules). `_ds_manifest.json` lists both in load order.
-`build-manifest.json` records package versions, input hashes, output hashes and
-component coverage derived from the Vue tags in each gallery section. Rebuilding
-the same source and lockfile produces identical bytes. Source data uses fixed
-demonstration values. No production services or remote fonts are needed.
+links to `tokens.css` (the coded `--ns-*` and `--ne-*` custom properties, with
+their selectors and media/layer context) and `styles.css` (compiled Tailwind,
+Nuxt UI, the `--ui-*` bridge and component rules). `_ds_manifest.json` lists
+both in load order. `build-manifest.json` records package versions, input
+hashes, output hashes and component coverage derived from the Vue tags in each
+gallery section. Rebuilding the same source and lockfile produces identical
+bytes. Source data uses fixed demonstration values. No production services or
+remote fonts are needed.
 
 The gallery has no product `data-app` scope, so instruments use their coded base
 fallbacks instead of a hard-coded Lakestat accent. The coded
-`narduk-ui/tokens.css` and compiled component styles are authoritative. This
-tool never reads canvas exports, emits React, publishes a package, or contacts
-Claude Design. The fixtures are authored Vue examples; the HTML and token bundle
-are generated.
+`narduk-ui/tokens.css`, `narduk-shell/theme.css` and compiled component styles
+are authoritative. This tool never reads canvas exports, emits React, publishes
+a package, or contacts Claude Design. The fixtures are authored Vue examples;
+the HTML and token bundle are generated.
 
-`narduk-shell` has not yet landed in this repository. The manifest reports that
-gap. Nuxt UI cards demonstrate the gallery's blue/slate baseline configuration,
-not every app's overrides. Extend the Vue gallery with real implemented
-components and their actual configuration as coverage grows.
+The Foundations card shows both the `--ns-*` status-system surfaces and the
+narduk-shell NE token layer (light and dark columns, pinned with Nuxt UI's
+`.light` / `.dark` classes). Nuxt UI cards demonstrate the gallery's blue/slate
+baseline configuration rendered through the `--ui-*` bridge, not every app's
+overrides. narduk-shell components are not registered yet. Extend the Vue
+gallery with real implemented components and their actual configuration as
+coverage grows.
 
 The generated manifest describes this bundle only. It is not a replacement for
 an existing NE Base project's complete manifest: preserve legacy templates and

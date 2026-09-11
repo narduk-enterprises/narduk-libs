@@ -29,15 +29,20 @@ function document(title: string, body: string, prefix: string) {
   return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="${prefix}tokens.css"><link rel="stylesheet" href="${prefix}styles.css"></head><body><main class="gallery">${body}</main></body></html>\n`
 }
 
+/** Coded custom properties that belong on the extracted token sheet. */
+export function isCodedToken(property: string) {
+  return property.startsWith('--ns-') || property.startsWith('--ne-')
+}
+
 /** Retain selectors, media queries and cascade layers around the token declarations. */
 export function splitStyles(css: string) {
   const styles = postcss.parse(css)
   const tokens = styles.clone()
-  styles.walkDecls(/^--ns-/, (declaration) => {
-    declaration.remove()
+  styles.walkDecls((declaration) => {
+    if (isCodedToken(declaration.prop)) declaration.remove()
   })
   tokens.walkDecls((declaration) => {
-    if (!declaration.prop.startsWith('--ns-')) declaration.remove()
+    if (!isCodedToken(declaration.prop)) declaration.remove()
   })
   tokens.walkComments((comment) => {
     comment.remove()
@@ -133,7 +138,7 @@ export function renderBundle(html: string, css: string) {
   }
   files['index.html'] = document(
     'NE Base — coded system preview',
-    '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue. narduk-shell is not yet available in the coded library.</p></header>' +
+    '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue, themed by the narduk-shell token layer. No narduk-shell component is registered yet.</p></header>' +
       bodies.join('\n'),
     '',
   )
@@ -199,8 +204,10 @@ export async function build() {
   const components = [...new Set(Object.values(componentsByCard).flat())].sort()
   const require = createRequire(import.meta.url)
   const uiRoot = dirname(require.resolve('@narduk-enterprises/narduk-ui/tokens.css'))
-  const [uiPackage, nuxtUiPackage] = await Promise.all([
+  const shellRoot = dirname(require.resolve('@narduk-enterprises/narduk-shell/theme.css'))
+  const [uiPackage, shellPackage, nuxtUiPackage] = await Promise.all([
     readFile(join(uiRoot, 'package.json'), 'utf8'),
+    readFile(join(shellRoot, 'package.json'), 'utf8'),
     readFile(
       resolve(dirname(fileURLToPath(import.meta.resolve('@nuxt/ui'))), '../package.json'),
       'utf8',
@@ -209,6 +216,7 @@ export async function build() {
   const sources: Record<string, string> = {}
   const groups = [
     { root: uiRoot, label: 'narduk-ui' },
+    { root: shellRoot, label: 'narduk-shell' },
     { root: packageRoot, label: 'design-system-build' },
   ]
   for (const group of groups) {
@@ -227,6 +235,7 @@ export async function build() {
     kind: 'narduk-coded-design-system',
     packages: {
       'narduk-ui': JSON.parse(uiPackage).version,
+      'narduk-shell': JSON.parse(shellPackage).version,
       '@nuxt/ui': JSON.parse(nuxtUiPackage).version,
     },
     coverage: {
@@ -235,9 +244,9 @@ export async function build() {
       instruments: components.filter((name) => name.startsWith('Ns')),
       nuxtUi: components.filter((name) => name.startsWith('U')),
       appScope: null,
-      missing: ['narduk-shell (not yet present in narduk-libs)'],
+      missing: [],
       scope:
-        'shared instruments and explicitly configured Nuxt UI baseline fixtures; app-specific variants and legacy NE Base templates are not included',
+        'shared instruments, the narduk-shell NE token layer, and explicitly configured Nuxt UI baseline fixtures; narduk-shell components (registry still empty), app-specific variants and legacy NE Base templates are not included',
     },
     sources,
     files: Object.entries(files).map(([path, data]) => ({
@@ -272,7 +281,7 @@ export async function build() {
   }
   console.log(`Built ${cards.length} coded preview cards: ${target}`)
   console.log(
-    'Coverage gap: narduk-shell is not yet present; existing NE Base templates are preserved separately.',
+    'narduk-shell token layer is included; existing NE Base templates are preserved separately.',
   )
 }
 

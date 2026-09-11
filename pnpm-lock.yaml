@@ -101,6 +101,9 @@ importers:
 
   packages/design/design-system-build:
     devDependencies:
+      '@narduk-enterprises/narduk-shell':
+        specifier: workspace:*
+        version: link:../narduk-shell
       '@narduk-enterprises/narduk-ui':
         specifier: workspace:*
         version: link:../narduk-ui

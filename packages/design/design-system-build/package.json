@@ -13,6 +13,7 @@
     "check:package": "node --experimental-strip-types scripts/check-package.mts"
   },
   "devDependencies": {
+    "@narduk-enterprises/narduk-shell": "workspace:*",
     "@narduk-enterprises/narduk-ui": "workspace:*",
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/ui": "4.6.0",
