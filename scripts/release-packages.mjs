@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
+import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
@@ -788,6 +789,43 @@ try {
     }
   }
 
+  // Tier 1 -- every packed package that declares an `exports` map proves each
+  // of its non-pattern subpaths both RESOLVES from the external consumer with
+  // native Node ESM and points at a file the tarball actually contains. Before
+  // narduk-libs#248 this ran for narduk-testkit only, so narduk-ui's
+  // `./tokens.css`, narduk-charts's entry points and narduk-core's plain
+  // subpaths were believed rather than proven: a subpath naming a file the
+  // `files` allowlist omits installs cleanly and fails only in the app that
+  // imports it. See scripts/packed-consumer-subpaths.mjs for why the existence
+  // half is not redundant and why evaluation is NOT generalised here.
+  const subpathPlans = subpathResolutionPlans(packages)
+  if (subpathPlans.length === 0) {
+    throw new Error('No packed package declares an exports map; the subpath tier would be vacuous.')
+  }
+  for (const plan of subpathPlans) {
+    if (plan.skipped.length > 0) {
+      writeLine(
+        `[consumer-smoke] ${plan.name}: not probing ${plan.skipped
+          .map(({ subpath, reason }) => `${subpath} (${reason})`)
+          .join(', ')}`,
+      )
+    }
+    if (plan.specifiers.length === 0) continue
+    runChecked(
+      'node',
+      ['--input-type=module', '--eval', subpathProbeProgram(plan.name, plan.specifiers)],
+      {
+        cwd: consumerDirectory,
+        label: `resolve every packed ${plan.name} export subpath from the external consumer`,
+      },
+    )
+  }
+
+  // Tier 2 -- narduk-testkit additionally EVALUATES its subpaths. These two
+  // groups are this gate's regression baseline and are deliberately unchanged
+  // by the generalisation above; testkit is the one package whose subpaths are
+  // plain built JavaScript with no Nuxt/Vue peer and no import-time side
+  // effects, so importing them for real is both safe and meaningful.
   const testkitManifest = packages.find(
     ({ manifest }) => manifest.name === '@narduk-enterprises/narduk-testkit',
   )?.manifest

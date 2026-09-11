@@ -21,6 +21,7 @@
     "narduk-mapkit-nuxt": 55.0,
     "narduk-testkit": 12.0,
     "narduk-ui": 13.0,
+    "narduk-shell": 13.0,
     "narduk-realtime": 16.0
   }
 }
