@@ -47,10 +47,12 @@
   "dependencies": {
     "@nuxt/kit": "^4.0.0"
   },
+  "//devDependencies": "@vitejs/plugin-vue is pinned to the exact version already resolved in this workspace's lockfile (the narduk-mapkit-nuxt entry). A caret range makes pnpm re-resolve the shared entry for every other package, which is the silent dependency drift narduk-libs#124 warns against. Widen it in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
     "@nuxt/schema": "^4.4.2",
     "@nuxt/ui": "4.6.0",
     "@types/node": "^22.19.19",
+    "@vitejs/plugin-vue": "6.0.7",
     "eslint": "^10.8.0",
     "nuxt": "^4.4.2",
     "prettier": "^3.8.3",
