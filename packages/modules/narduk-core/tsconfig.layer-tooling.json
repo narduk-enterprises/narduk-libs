@@ -21,6 +21,7 @@
     "runtime/internal/**/*.ts",
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/composables/useAppViewGate.ts",
+    "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/server/middleware/securityHeaders.ts",
     "runtime/server/utils/approximateLocation.ts",
     "runtime/server/utils/authApiKeyD1.ts",

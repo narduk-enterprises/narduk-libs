@@ -12,6 +12,20 @@ export {
   type NeStatusTone,
 } from './runtime/utils/status-map'
 
+/**
+ * The suite's public runtime types, re-exported from the `.` subpath so an app
+ * writes `import type { NeStateValue } from '@narduk-enterprises/narduk-shell'`.
+ *
+ * `export type` is erased, so this adds nothing to the module's Node-side
+ * graph: no component source is loaded to read a type.
+ */
+export type {
+  NeAsyncDataStatus,
+  NeStateGap,
+  NeStatePanelProps,
+  NeStateValue,
+} from './runtime/types'
+
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 

@@ -27,6 +27,70 @@ that intentionally need user-location prompts can set
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
 blocked.
 
+## Deprecated components
+
+### `AppEmptyState` — deprecated, removed in the next major
+
+Use `NeStatePanel` from `@narduk-enterprises/narduk-shell` instead
+([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254),
+backlog item 7; standing decision D4, Logan 2026-09-11: "Deprecate, remove next
+major"). `AppEmptyState` still behaves exactly as it did — this release changes
+no runtime behaviour — but it will not survive the next narduk-core major.
+
+`AppEmptyState` can only say "nothing here". It cannot tell **unknown** from
+**zero**, which is the distinction the surfaces using it actually need, and the
+bug class behind operator-portal
+[#183](https://github.com/narduk-enterprises/operator-portal/issues/183),
+[#162](https://github.com/narduk-enterprises/operator-portal/issues/162),
+[#100](https://github.com/narduk-enterprises/operator-portal/issues/100) and
+[#21](https://github.com/narduk-enterprises/operator-portal/issues/21).
+`NeStatePanel` carries five readings — `empty`, `loading`, `error`, `blocked`,
+`absent` — gives each the right ARIA role by construction, and never signals the
+reading with colour alone.
+
+The props map one for one:
+
+| `AppEmptyState`         | `NeStatePanel`                                     |
+| ----------------------- | -------------------------------------------------- |
+| (implicit empty)        | `state="empty"`                                    |
+| `title`                 | `title`                                            |
+| `description`           | `message`                                          |
+| `icon`                  | `icon`                                             |
+| default slot (a button) | `#action` slot                                     |
+| `compact`               | no equivalent; pass `class` or `ui` if you need it |
+
+```vue
+<!-- before -->
+<AppEmptyState
+  icon="i-lucide-inbox"
+  title="No invoices yet"
+  description="Create your first invoice to get started."
+>
+  <UButton to="/invoices/new" icon="i-lucide-plus">Create invoice</UButton>
+</AppEmptyState>
+
+<!-- after -->
+<NeStatePanel
+  state="empty"
+  icon="i-lucide-inbox"
+  title="No invoices yet"
+  message="Create your first invoice to get started."
+>
+  <template #action>
+    <UButton to="/invoices/new" icon="i-lucide-plus">Create invoice</UButton>
+  </template>
+</NeStatePanel>
+```
+
+A migrating app also gains `loading`, `error`, `blocked` and `absent` for free,
+plus the `gaps` / `unblocksOn` vocabulary — see
+[narduk-shell's README](../../design/narduk-shell/README.md#nestatepanel).
+
+A one-time, **dev-only** `console.warn` points at `NeStatePanel` the first time
+`AppEmptyState` is set up in a development process. Production stays silent, and
+the empty-state markup is unchanged. The `@deprecated` JSDoc on the component
+gives editors and `vue-tsc` the strike-through and the same pointer.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set

@@ -8,9 +8,9 @@
  * name, while an explicit registration collides loudly, so a shadowing app
  * finds out at build time instead of shipping two different `NeStatePanel`s.
  *
- * Item 1 of the components backlog (narduk-libs#248) ships the home, not the
- * furniture: the registry is deliberately empty and each later backlog item
- * adds its own entry alongside its component, README section and tests.
+ * Item 1 of the components backlog (narduk-libs#248) shipped the home; each
+ * later item appends its own entry alongside its component, README section
+ * and tests. Do not scan a directory — only this list is registered.
  */
 
 export interface NeComponentRegistration {
@@ -40,4 +40,6 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeStatusBadge', filePath: './runtime/components/NeStatusBadge.vue' },
   // Item 16 (narduk-libs#263): NeConfirmDialog.
   { name: 'NeConfirmDialog', filePath: './runtime/components/NeConfirmDialog.vue' },
+  // Item 7 (narduk-libs#254): NeStatePanel.
+  { name: 'NeStatePanel', filePath: './runtime/components/NeStatePanel.vue' },
 ]
