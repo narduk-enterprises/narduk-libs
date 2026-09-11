@@ -65,6 +65,8 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { PENDING_CARDS as SHELL_PENDING_CARDS } from '../packages/design/narduk-shell/src/pending-cards.ts'
+
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
@@ -74,24 +76,12 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const CHECKED_PACKAGE_DIRS = ['packages/design/narduk-shell']
 
 /**
- * Reviewed allowlist of registered component names that may land before their
- * NE Base card. The four parallel component lanes (#254 NeStatePanel,
- * #255 NeStatusBadge, #256 NePageHeader + NeSectionHeader, #263 NeConfirmDialog)
- * were written against a follow-up card PR. Empty this array in that follow-up.
- *
- * Only the `card` rule is waived, and only when this check (or `shellCardPlan`)
- * is looking at a directory in `CHECKED_PACKAGE_DIRS`. README, mount and SSR
- * still fail closed. Unused names — listed here before the component is
- * registered — are ignored, so this list can sit on main before those lanes
- * rebase.
+ * Re-export of `packages/design/narduk-shell/src/pending-cards.ts`. Empty that
+ * array in the follow-up card PR. Only the `card` rule is waived, and only
+ * when this check (or `shellCardPlan`) is looking at a directory in
+ * `CHECKED_PACKAGE_DIRS`. README, mount and SSR still fail closed.
  */
-export const PENDING_CARDS = Object.freeze([
-  'NeStatePanel',
-  'NeStatusBadge',
-  'NePageHeader',
-  'NeSectionHeader',
-  'NeConfirmDialog',
-])
+export const PENDING_CARDS = Object.freeze([...SHELL_PENDING_CARDS])
 
 /** CLI aliases (`--package narduk-shell` or the scoped name) for the dirs above. */
 export const CHECKED_PACKAGES = new Map(

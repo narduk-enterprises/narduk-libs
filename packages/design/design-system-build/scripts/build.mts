@@ -11,8 +11,8 @@ import { parse as parseVue } from 'vue/compiler-sfc'
 // The shell registry is the authority on which cards must exist. It is read
 // from source rather than from a built artifact: narduk-shell ships TypeScript
 // with no build step, and Node strips the types natively.
+import { PENDING_CARDS } from '../../narduk-shell/src/pending-cards.ts'
 import { NE_SHELL_COMPONENTS } from '../../narduk-shell/src/registry.ts'
-import { PENDING_CARDS } from '../../../../scripts/check-component-surface.mjs'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']

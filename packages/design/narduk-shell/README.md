@@ -180,8 +180,8 @@ one line each. Naming one of them now is an error rather than a silent pass.
 For a new registered component, all of the following or `pnpm run surface:check`
 fails (one line per miss, naming the artefact and the file to add):
 
-1. `{ name, filePath }` in `src/registry.ts` — the check reads this array, not
-   a hardcoded list.
+1. `{ name, filePath }` in `src/registry.ts` — the check reads this array, not a
+   hardcoded list.
 2. A Markdown heading in **this** README naming the component
    (`### NeStatePanel`), with props, slots, events and one example.
 3. A mount test: a `*.test.ts` containing `mount(NeStatePanel` (convention:
@@ -190,20 +190,20 @@ fails (one line per miss, naming the artefact and the file to add):
    `ssr.test.ts`) that names the component and calls `renderToString`.
 5. `src/design-cards/NeStatePanel.card.vue` with
    `data-design-card="ne-state-panel"` — copy the template; see below.
-   `design-system-build/app/app.vue` discovers every `*.card.vue` and renders
-   it into the NE Base gallery, so the lane does **not** hand-edit `app.vue`.
+   `design-system-build/app/app.vue` discovers every `*.card.vue` and renders it
+   into the NE Base gallery, so the lane does **not** hand-edit `app.vue`.
 
 A new `./format` export needs (2) and a `*.test.ts` that imports it from
 `format` and asserts its output. Mount, SSR and a card are not required of a
 function.
 
-`PENDING_CARDS` in `scripts/check-component-surface.mjs` is a reviewed,
-temporary allowlist that waives **only** (5) for the four parallel component
-lanes that were written against a follow-up card PR: `NeStatePanel` (#254),
-`NeStatusBadge` (#255), `NePageHeader` and `NeSectionHeader` (#256),
-`NeConfirmDialog` (#263). README, mount and SSR still fail closed. The follow-up
-that adds those cards empties the list. It is not a way to skip the card
-forever.
+`PENDING_CARDS` in `src/pending-cards.ts` (re-exported by
+`scripts/check-component-surface.mjs`) is a reviewed, temporary allowlist that
+waives **only** (5) for the four parallel component lanes that were written
+against a follow-up card PR: `NeStatePanel` (#254), `NeStatusBadge` (#255),
+`NePageHeader` and `NeSectionHeader` (#256), `NeConfirmDialog` (#263). README,
+mount and SSR still fail closed. The follow-up that adds those cards empties the
+list. It is not a way to skip the card forever.
 
 ## Shipping a design card
 
@@ -258,8 +258,8 @@ fails its build when a registered component has no card (unless the name is on
 `PENDING_CARDS`), when a card has no registered component, when two cards claim
 the same id, or when an authored card does not reach the prerendered output.
 `test/design-cards.test.ts` in this package server-renders every card —
-including the template — and asserts the same pairing, so a card that only
-works after hydration fails here rather than showing up blank in NE Base.
+including the template — and asserts the same pairing, so a card that only works
+after hydration fails here rather than showing up blank in NE Base.
 
 The hand-authored cards for `narduk-ui` and the Nuxt UI baseline stay in
 `design-system-build/app/app.vue` and keep working unchanged; backlog item 22

@@ -279,10 +279,11 @@ test('pendingCards waives only the card rule, and only for listed names', async 
     [],
   )
   assert.deepEqual(waived.waived, ['NeStatePanel'])
-  assert.deepEqual(
-    waived.entries.find((entry) => entry.name === 'NeStatePanel')?.required,
-    ['readme', 'mount', 'ssr'],
-  )
+  assert.deepEqual(waived.entries.find((entry) => entry.name === 'NeStatePanel')?.required, [
+    'readme',
+    'mount',
+    'ssr',
+  ])
 
   const notListed = await checkComponentSurface({
     packageName: 'fixture',
@@ -300,9 +301,7 @@ test('pendingCards waives only the card rule, and only for listed names', async 
     pendingCards: ['NeStatePanel'],
   })
   assert.deepEqual(
-    stillNeedsReadme.misses
-      .filter((miss) => miss.name === 'NeStatePanel')
-      .map((miss) => miss.rule),
+    stillNeedsReadme.misses.filter((miss) => miss.name === 'NeStatePanel').map((miss) => miss.rule),
     ['readme'],
   )
 })

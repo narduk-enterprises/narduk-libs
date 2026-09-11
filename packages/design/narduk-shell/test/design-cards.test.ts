@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { createSSRApp, type Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
-import { PENDING_CARDS } from '../../../../scripts/check-component-surface.mjs'
+import { PENDING_CARDS } from '../src/pending-cards'
 import { NE_SHELL_COMPONENTS } from '../src/registry'
 
 /** `NeStatePanel` -> `ne-state-panel`; the id a card must declare. */
