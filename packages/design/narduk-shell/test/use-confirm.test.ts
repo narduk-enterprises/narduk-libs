@@ -401,9 +401,7 @@ describe('useConfirm() reachability', () => {
    * re-exports in `src/module.ts` free.
    */
   function valueSpecifiers(source: string): string[] {
-    const code = source
-      .replaceAll(/\/\*[\s\S]*?\*\//g, '')
-      .replaceAll(/(?<![:/])\/\/[^\n]*/g, '')
+    const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/(?<![:/])\/\/[^\n]*/g, '')
     return code
       .split(/\n(?=(?:import|export)\b)/)
       .filter((statement) => /^(?:import|export)\b/.test(statement))
@@ -441,7 +439,9 @@ describe('useConfirm() reachability', () => {
   it('keeps every single-file component out of the module entry’s eager graph', () => {
     const entry = join(packageRoot, 'src', 'module.ts')
     const seen = new Set<string>()
-    const queue: { file: string; trail: string[] }[] = [{ file: entry, trail: ['src/module.ts'] }]
+    const queue: Array<{ file: string; trail: string[] }> = [
+      { file: entry, trail: ['src/module.ts'] },
+    ]
     const visited: string[] = []
 
     while (queue.length > 0) {

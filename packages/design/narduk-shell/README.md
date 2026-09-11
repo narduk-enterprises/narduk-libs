@@ -221,13 +221,13 @@ scheme class renders one deterministic way on every machine.
 
 ### What enforces it
 
-`test/styling-contract.test.ts` scans every component **the registry
-registers** — the source list is derived from `src/registry.ts`, not written
-out by hand, so a component is covered the moment it is registered and cannot
-be silently left out. It reads the template, the script and any style block
-(comments removed) and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw
-`font-family` / `box-shadow` / `border-radius` declaration, and Tailwind's
-named radius and shadow steps.
+`test/styling-contract.test.ts` scans every component **the registry registers**
+— the source list is derived from `src/registry.ts`, not written out by hand, so
+a component is covered the moment it is registered and cannot be silently left
+out. It reads the template, the script and any style block (comments removed)
+and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw `font-family` /
+`box-shadow` / `border-radius` declaration, and Tailwind's named radius and
+shadow steps.
 
 Tailwind's **type scale is not** a hardcoded value: under Tailwind v4 `text-sm`
 compiles to `font-size: var(--text-sm)` and `font-medium` to
@@ -594,9 +594,9 @@ if (!ok) return
 
 `useConfirm()` is auto-imported by the module. Call it from any component — the
 app does not mount a `<NeConfirmDialog>` host of its own. The auto-import does
-not depend on `components`: setting `nardukShell: { components: false }` opts out
-of the suite's global component names, and the composable resolves its dialog by
-importing it rather than by global name, so it keeps working.
+not depend on `components`: setting `nardukShell: { components: false }` opts
+out of the suite's global component names, and the composable resolves its
+dialog by importing it rather than by global name, so it keeps working.
 
 #### Host mechanism
 
@@ -608,8 +608,8 @@ mounts `NeConfirmDialog` into the overlay stack and `close(boolean)` is what
 component and no layout wiring.
 
 One handle drives one dialog at a time. Sequential calls resolve independently,
-and leftover `pending` / `error` from a rejected `onConfirm` is reset on the next
-`open`.
+and leftover `pending` / `error` from a rejected `onConfirm` is reset on the
+next `open`.
 
 A second `confirm()` started before the first settles **supersedes** it rather
 than racing it — a double-click on a row-level "Delete?" is the case this is

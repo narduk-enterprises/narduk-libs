@@ -176,9 +176,7 @@ export function useConfirm() {
     // `close(value)` resolves with whatever the component emitted: `true` from
     // the confirm path above, `false` from cancel / Escape / outside click.
     // A superseded call's `opened` never resolves — `settle` already did it.
-    void Promise.resolve(opened).then((result: unknown) => {
-      call.settle(result === true)
-    })
+    void Promise.resolve(opened).then((result: unknown) => call.settle(result === true))
 
     return settled
   }
