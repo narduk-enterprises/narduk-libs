@@ -101,6 +101,9 @@ importers:
 
   packages/design/design-system-build:
     devDependencies:
+      '@narduk-enterprises/narduk-shell':
+        specifier: workspace:*
+        version: link:../narduk-shell
       '@narduk-enterprises/narduk-ui':
         specifier: workspace:*
         version: link:../narduk-ui
@@ -225,6 +228,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vite:
+        specifier: 7.3.6
+        version: 7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vitest:
         specifier: 4.1.6
         version: 4.1.6(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
@@ -22383,7 +22389,7 @@ snapshots:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.4)
       picomatch: 4.0.4
-      postcss: 8.5.22
+      postcss: 8.5.16
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -22400,7 +22406,7 @@ snapshots:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.4)
       picomatch: 4.0.4
-      postcss: 8.5.22
+      postcss: 8.5.16
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -22417,7 +22423,7 @@ snapshots:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.4)
       picomatch: 4.0.4
-      postcss: 8.5.22
+      postcss: 8.5.16
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:

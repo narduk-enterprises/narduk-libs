@@ -39,8 +39,8 @@ const states = ['default', 'loading', 'empty'] as const
   >
     <h2>Example component</h2>
     <p>
-      One card per component, showing the states a reviewer has to be able to see: the ordinary
-      one, the busy one, and whatever this component does when it has nothing to show.
+      One card per component, showing the states a reviewer has to be able to see: the ordinary one,
+      the busy one, and whatever this component does when it has nothing to show.
     </p>
     <div v-for="state in states" :key="state" class="preview-row">
       <!-- Replace this placeholder with the component, e.g.

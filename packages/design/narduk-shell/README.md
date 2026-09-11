@@ -132,6 +132,117 @@ an NE Base card. The ordered backlog is
 and the plan it tracks is
 [`docs/plans/components-library-plan.md`](../../../docs/plans/components-library-plan.md).
 
+## Component surface check
+
+`node scripts/check-component-surface.mjs`, from the repository root, reads the
+surface this package actually exports — every entry in `src/registry.ts` and
+every named export of `./format` — and requires the evidence for each name to
+exist. It runs in `pnpm run quality` (inside `quality:artifacts`, straight after
+`format:check`) and can be run on its own:
+
+```bash
+pnpm run surface:check            # this package
+node scripts/check-component-surface.mjs --json   # machine-readable, for CI
+```
+
+A **registered component** must satisfy four rules. A miss prints one line per
+rule with the exact fix, and the command exits 1.
+
+| Rule     | Satisfied by                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `readme` | a Markdown heading in this file naming the component (`### NeStatePanel`). A mention in a paragraph or a table row does not count — the point is a section with props, slots, events and an example. |
+| `mount`  | a `*.test.ts` anywhere in this package containing `mount(<Name>` — by convention `src/runtime/components/<Name>.test.ts`, using `@vue/test-utils`.                                                   |
+| `ssr`    | a test file named `<Name>.ssr.test.ts` (or the shared `ssr.test.ts`) that names the component and calls `renderToString`, in vitest's `node` environment.                                            |
+| `card`   | `src/design-cards/<Name>.card.vue` containing `data-design-card="<kebab-name>"` — see **Shipping a design card** below.                                                                              |
+
+A **`./format` export** must satisfy two: `readme`, and `unit` — a `*.test.ts`
+in this package that imports it from the `format` module and asserts its output.
+The plan's sentence applies all four rules to format exports too; three of them
+cannot exist for a pure function (`mount()` takes a component, an SSR render
+needs something to render, a card is a rendered preview), so requiring them
+would only produce fictions. That deviation is deliberate and recorded here and
+in
+[narduk-libs#250](https://github.com/narduk-enterprises/narduk-libs/issues/250).
+
+The check reads the registry and `format` by **importing the TypeScript
+directly** — Node strips types natively and these modules are plain erasable
+TypeScript — so it sees the real export list rather than whatever a regex
+matches. If a module cannot be loaded it fails closed with the loader error
+instead of reporting an empty, trivially passing surface.
+
+Scope today is this package. narduk-ui and narduk-charts backfill their surface
+in backlog item 22 and join the check then; naming one of them now is an error
+rather than a silent pass.
+
+## Shipping a design card
+
+An NE Base card ships **with its component**, in this package, not as a
+hand-written section in another one. Adding a component is therefore three files
+here and no edit anywhere else:
+
+1. `src/runtime/components/<Name>.vue` — the component.
+2. `src/registry.ts` — one `{ name, filePath }` entry.
+3. `src/design-cards/<Name>.card.vue` — the card.
+
+To write the card, copy the template and edit it:
+
+```bash
+cp packages/design/narduk-shell/src/design-cards/template/NeExample.card.vue \
+   packages/design/narduk-shell/src/design-cards/NeStatePanel.card.vue
+```
+
+The card is an ordinary single-file component whose root element is a
+`<section>` carrying three attributes:
+
+```vue
+<script setup lang="ts">
+// Import the component explicitly: the renderer mounts this file outside the
+// Nuxt module, so `addComponent` registration does not apply there (and an
+// unimported component is a `vue/no-undef-components` lint failure).
+import NeStatePanel from '../runtime/components/NeStatePanel.vue'
+</script>
+
+<template>
+  <section
+    class="preview-card"
+    data-design-card="ne-state-panel"
+    data-name="State panel"
+    data-group="Shell"
+  >
+    <h2>State panel</h2>
+    <div class="preview-row"><NeStatePanel title="Ordinary" /></div>
+    <div class="preview-row"><NeStatePanel title="Busy" loading /></div>
+    <div class="preview-row">
+      <NeStatePanel title="Nothing to show" empty />
+    </div>
+  </section>
+</template>
+```
+
+- `data-design-card` is the **kebab-case of the registered name**
+  (`NeStatePanel` → `ne-state-panel`). The surface check asserts exactly this.
+- `data-name` and `data-group` are the card's title and section in NE Base.
+  `design-system-build` refuses a card section missing either.
+- Show the states a reviewer has to see, with fixed demonstration values. Cards
+  are prerendered statically: no scripts, no network, no external assets.
+- `src/design-cards/template/` is deliberately **not** discovered. Only
+  `src/design-cards/*.card.vue` at the top level becomes a card.
+
+Nothing else registers the card. `packages/design/design-system-build` globs
+`src/design-cards/*.card.vue`, renders each one into the NE Base gallery, and
+fails its build when a registered component has no card, when a card has no
+registered component, when two cards claim the same id, or when an authored card
+does not reach the prerendered output. `test/design-cards.test.ts` in this
+package server-renders every card — including the template — and asserts the
+same pairing, so a card that only works after hydration fails here rather than
+showing up blank in NE Base.
+
+The hand-authored cards for `narduk-ui` and the Nuxt UI baseline stay in
+`design-system-build/app/app.vue` and keep working unchanged; backlog item 22
+migrates them to this mechanism. `/design-sync` is unaffected: the renderer's
+output shape (`@dsCard` previews, `tokens.css`, `styles.css`,
+`_ds_manifest.json`, `build-manifest.json`) is exactly what it was.
+
 ## Publication
 
 Source is TypeScript, Vue and CSS with no build step — the same shape

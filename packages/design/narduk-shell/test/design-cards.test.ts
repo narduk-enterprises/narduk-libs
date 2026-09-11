@@ -38,9 +38,7 @@ const named = (modules: Record<string, CardModule>) =>
     .sort((first, second) => first.name.localeCompare(second.name))
 
 /** The discovered surface: exactly what design-system-build renders. */
-const cards = named(
-  import.meta.glob<CardModule>('../src/design-cards/*.card.vue', { eager: true }),
-)
+const cards = named(import.meta.glob<CardModule>('../src/design-cards/*.card.vue', { eager: true }))
 /** Not discovered by the renderer, but still proven to render and lint. */
 const templates = named(
   import.meta.glob<CardModule>('../src/design-cards/template/*.card.vue', { eager: true }),

@@ -148,6 +148,11 @@ export default [
     files: [
       'packages/modules/narduk-mapkit-nuxt/test/**/*.ts',
       'packages/modules/narduk-mapkit-nuxt/vitest.config.ts',
+      // Same crash, same cause: narduk-shell's vitest config gained
+      // `@vitejs/plugin-vue` when its design cards made the suite compile SFCs
+      // (narduk-libs#250), and that plugin's module graph bottoms out in bare
+      // `vite` too.
+      'packages/design/narduk-shell/vitest.config.ts',
     ],
     rules: {
       'import-x/no-cycle': 'off',

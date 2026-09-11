@@ -8,6 +8,11 @@ import postcss, { type Container } from 'postcss'
 import { parse as parseTemplate, NodeTypes, type TemplateChildNode } from '@vue/compiler-dom'
 import { parse as parseVue } from 'vue/compiler-sfc'
 
+// The shell registry is the authority on which cards must exist. It is read
+// from source rather than from a built artifact: narduk-shell ships TypeScript
+// with no build step, and Node strips the types natively.
+import { NE_SHELL_COMPONENTS } from '../../narduk-shell/src/registry.ts'
+
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
 type Card = { path: string; name: string; group: string; viewport: string; subtitle: string }
@@ -77,7 +82,7 @@ export function galleryCoverage(source: string): Record<string, string[]> {
         result[id] = [...components].sort()
         continue
       }
-      if (/^(?:Ns|U)[A-Z]/.test(node.tag)) components?.add(node.tag)
+      if (/^(?:Ne|Ns|U)[A-Z]/.test(node.tag)) components?.add(node.tag)
       visit(node.children, components)
     }
   }
@@ -85,8 +90,74 @@ export function galleryCoverage(source: string): Record<string, string[]> {
   return result
 }
 
+/** `NeStatePanel` -> `ne-state-panel`: the id that component's card declares. */
+export function kebabCase(name: string) {
+  return name
+    .replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replaceAll(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase()
+}
+
+const CARD_TEMPLATE = 'packages/design/narduk-shell/src/design-cards/template/NeExample.card.vue'
+
+/**
+ * Pair narduk-shell's component registry with the card files found beside its
+ * components. Both directions are errors: a registered component with no card
+ * is the done-when this item exists to enforce, and a card with no registration
+ * is a card NE Base would show for something no app can use.
+ */
+export function shellCardPlan(
+  components: readonly { name: string }[],
+  cardFiles: readonly string[],
+): { name: string; file: string; id: string }[] {
+  const found = new Set(cardFiles)
+  const plan = components.map(({ name }) => ({
+    name,
+    file: `${name}.card.vue`,
+    id: kebabCase(name),
+  }))
+  const missing = plan.filter((card) => !found.has(card.file))
+  if (missing.length > 0) {
+    throw new Error(
+      `Registered components with no design card: ${missing.map((card) => card.name).join(', ')}. ` +
+        `Copy ${CARD_TEMPLATE} to src/design-cards/<Name>.card.vue.`,
+    )
+  }
+  const expected = new Set(plan.map((card) => card.file))
+  const orphans = cardFiles.filter((file) => !expected.has(file))
+  if (orphans.length > 0) {
+    throw new Error(
+      `Design cards with no registered component: ${orphans.join(', ')}. ` +
+        'Add the entry to packages/design/narduk-shell/src/registry.ts, or delete the card.',
+    )
+  }
+  return plan
+}
+
+/**
+ * Card coverage across every source that authors a card: this package's
+ * gallery, plus one file per narduk-shell component. Card ids are global to the
+ * rendered gallery, so a collision between two sources is an error here rather
+ * than a silently dropped card downstream.
+ */
+export function mergeCoverage(sources: Record<string, string>): Record<string, string[]> {
+  const merged: Record<string, string[]> = {}
+  const owners: Record<string, string> = {}
+  for (const [label, source] of Object.entries(sources)) {
+    for (const [id, components] of Object.entries(galleryCoverage(source))) {
+      if (owners[id])
+        throw new Error(`Duplicate design card id "${id}" in ${owners[id]} and ${label}`)
+      owners[id] = label
+      merged[id] = components
+    }
+  }
+  return merged
+}
+
+export const NO_SHELL_NOTE = 'narduk-shell is not yet available in the coded library.'
+
 /** Only the controlled, prerendered Vue gallery supplies markup. No canvas input. */
-export function renderBundle(html: string, css: string) {
+export function renderBundle(html: string, css: string, note: string = NO_SHELL_NOTE) {
   if (!css.trim() || /@import\s|url\(\s*['"]?(?!data:)/i.test(css)) {
     throw new Error(
       'The compiled stylesheet must be self-contained, with no external assets or imports',
@@ -133,7 +204,7 @@ export function renderBundle(html: string, css: string) {
   }
   files['index.html'] = document(
     'NE Base — coded system preview',
-    '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue. narduk-shell is not yet available in the coded library.</p></header>' +
+    `<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue. ${escape(note)}</p></header>` +
       bodies.join('\n'),
     '',
   )
@@ -191,9 +262,38 @@ export async function build() {
     .filter((node) => node.tagName === 'style')
     .map((node) => node.childNodes.map((child) => ('value' in child ? child.value : '')).join(''))
     .join('\n')
-  const { files, cards } = renderBundle(html, `${css}\n${inline}\n`)
-  const componentsByCard = galleryCoverage(await readFile(join(packageRoot, 'app/app.vue'), 'utf8'))
+  // Cards come from two places now: this package's hand-authored gallery, and
+  // one file per registered narduk-shell component, shipped beside it.
+  const shellRoot = fileURLToPath(new URL('../../narduk-shell', import.meta.url))
+  const cardDirectory = join(shellRoot, 'src/design-cards')
+  const cardFiles = (await readdir(cardDirectory).catch(() => []))
+    .filter((entry) => entry.endsWith('.card.vue'))
+    .sort()
+  const plan = shellCardPlan(NE_SHELL_COMPONENTS, cardFiles)
+  const cardSources = Object.fromEntries(
+    await Promise.all(
+      plan.map(
+        async (card) =>
+          [
+            `narduk-shell/src/design-cards/${card.file}`,
+            await readFile(join(cardDirectory, card.file), 'utf8'),
+          ] as const,
+      ),
+    ),
+  )
+  const componentsByCard = mergeCoverage({
+    'design-system-build/app/app.vue': await readFile(join(packageRoot, 'app/app.vue'), 'utf8'),
+    ...cardSources,
+  })
+  const shellNote =
+    plan.length === 0
+      ? NO_SHELL_NOTE
+      : `narduk-shell contributes ${plan.length} card(s), each shipped beside its component.`
+  const { files, cards } = renderBundle(html, `${css}\n${inline}\n`, shellNote)
   const renderedIds = cards.map((card) => card.path.slice('cards/'.length, -'.html'.length)).sort()
+  // This is also the proof that the discovery glob in app.vue really rendered
+  // every shipped card: an authored card absent from the prerendered output
+  // fails here rather than quietly not reaching NE Base.
   if (json(Object.keys(componentsByCard).sort()) !== json(renderedIds))
     throw new Error('Authored gallery and rendered cards differ')
   const components = [...new Set(Object.values(componentsByCard).flat())].sort()
@@ -209,6 +309,10 @@ export async function build() {
   const sources: Record<string, string> = {}
   const groups = [
     { root: uiRoot, label: 'narduk-ui' },
+    // narduk-shell's sources are hashed alongside narduk-ui's: its registry and
+    // its cards now determine part of the output, so a bundle whose provenance
+    // omitted them would be unverifiable.
+    { root: join(shellRoot, 'src'), label: 'narduk-shell/src' },
     { root: packageRoot, label: 'design-system-build' },
   ]
   for (const group of groups) {
@@ -234,10 +338,12 @@ export async function build() {
       componentsByCard,
       instruments: components.filter((name) => name.startsWith('Ns')),
       nuxtUi: components.filter((name) => name.startsWith('U')),
+      shell: components.filter((name) => name.startsWith('Ne')),
+      shellCards: plan.map((card) => card.id),
       appScope: null,
-      missing: ['narduk-shell (not yet present in narduk-libs)'],
+      missing: plan.length === 0 ? ['narduk-shell (registered component registry is empty)'] : [],
       scope:
-        'shared instruments and explicitly configured Nuxt UI baseline fixtures; app-specific variants and legacy NE Base templates are not included',
+        'shared instruments, explicitly configured Nuxt UI baseline fixtures, and one card per registered narduk-shell component shipped beside it; app-specific variants and legacy NE Base templates are not included',
     },
     sources,
     files: Object.entries(files).map(([path, data]) => ({
@@ -272,7 +378,9 @@ export async function build() {
   }
   console.log(`Built ${cards.length} coded preview cards: ${target}`)
   console.log(
-    'Coverage gap: narduk-shell is not yet present; existing NE Base templates are preserved separately.',
+    plan.length === 0
+      ? 'Coverage gap: narduk-shell registers no components yet; existing NE Base templates are preserved separately.'
+      : `narduk-shell contributed ${plan.length} card(s) from src/design-cards; existing NE Base templates are preserved separately.`,
   )
 }
 

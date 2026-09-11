@@ -116,7 +116,9 @@ async function walk(directory, predicate, prefix = '') {
 
 const isTest = (path) => path.endsWith('.test.ts')
 const isSsrTest = (path) =>
-  path.endsWith('.ssr.test.ts') || basename(path) === 'ssr.test.ts' || basename(path) === 'ssr.spec.ts'
+  path.endsWith('.ssr.test.ts') ||
+  basename(path) === 'ssr.test.ts' ||
+  basename(path) === 'ssr.spec.ts'
 
 /**
  * Load the package's declared surface.
@@ -224,7 +226,9 @@ const RULES = {
     check: ({ name, evidence }) =>
       evidence.tests.some(
         (test) =>
-          isSsrTest(test.path) && names(test.source, name) && test.source.includes('renderToString'),
+          isSsrTest(test.path) &&
+          names(test.source, name) &&
+          test.source.includes('renderToString'),
       ),
     miss: ({ name, path }) =>
       `missing SSR test — add ${path(`src/runtime/components/${name}.ssr.test.ts`)} (or name ${name} in a shared \`ssr.test.ts\`) rendering it with \`renderToString\` in vitest's node environment`,
@@ -294,7 +298,8 @@ function parseArguments(argv) {
     const argument = argv[index]
     if (argument === '--json') options.json = true
     else if (argument === '--package') options.package = argv[++index]
-    else if (argument.startsWith('--package=')) options.package = argument.slice('--package='.length)
+    else if (argument.startsWith('--package='))
+      options.package = argument.slice('--package='.length)
     else if (argument === '--package-dir') options.packageDirectory = argv[++index]
     else if (argument.startsWith('--package-dir='))
       options.packageDirectory = argument.slice('--package-dir='.length)

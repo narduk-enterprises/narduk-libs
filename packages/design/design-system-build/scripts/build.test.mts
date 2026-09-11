@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { galleryCoverage, renderBundle, splitStyles } from './build.mts'
+import {
+  galleryCoverage,
+  kebabCase,
+  mergeCoverage,
+  renderBundle,
+  shellCardPlan,
+  splitStyles,
+} from './build.mts'
 import postcss from 'postcss'
 
 const card =
@@ -78,4 +85,87 @@ test('incomplete or executable previews fail before publishing output', () => {
     /self-contained/,
   )
   assert.throws(() => renderBundle(card, 'body{background:url(/missing.png)}'), /self-contained/)
+})
+
+/*
+ * narduk-shell cards (components backlog item 3, narduk-libs#250).
+ *
+ * The registry is empty on the branch that introduces this mechanism, so the
+ * real build exercises none of these paths. Fixtures stand in for the registry
+ * and the card directory so that each rule fails for a reason before the first
+ * component lane relies on it.
+ */
+
+const shellCard = (id: string, body = '<NeStatePanel />') =>
+  `<template><section class="preview-card" data-design-card="${id}" data-name="State panel" data-group="Shell">${body}</section></template>`
+
+test('a registered component with no card fails the build, naming the template to copy', () => {
+  assert.throws(
+    () => shellCardPlan([{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }], ['NeKpiTile.card.vue']),
+    (error: Error) => {
+      assert.match(error.message, /Registered components with no design card: NeStatePanel/)
+      assert.match(error.message, /template\/NeExample\.card\.vue/)
+      return true
+    },
+  )
+})
+
+test('a card with no registered component fails too, so NE Base cannot advertise an unusable component', () => {
+  assert.throws(
+    () => shellCardPlan([{ name: 'NeKpiTile' }], ['NeKpiTile.card.vue', 'NeGhost.card.vue']),
+    /Design cards with no registered component: NeGhost\.card\.vue/,
+  )
+})
+
+test('the plan pairs each component with its file and kebab card id, in registry order', () => {
+  assert.deepEqual(
+    shellCardPlan(
+      [{ name: 'NeStatePanel' }, { name: 'NeKpiTile' }],
+      ['NeKpiTile.card.vue', 'NeStatePanel.card.vue'],
+    ),
+    [
+      { name: 'NeStatePanel', file: 'NeStatePanel.card.vue', id: 'ne-state-panel' },
+      { name: 'NeKpiTile', file: 'NeKpiTile.card.vue', id: 'ne-kpi-tile' },
+    ],
+  )
+  assert.deepEqual(shellCardPlan([], []), [])
+  assert.equal(kebabCase('NeURLField'), 'ne-url-field')
+})
+
+test('coverage merges the authored gallery with each shipped card, and counts Ne* tags', () => {
+  const merged = mergeCoverage({
+    'app.vue':
+      '<template><main><section data-design-card="freshness"><NsFreshnessChip/></section></main></template>',
+    'NeStatePanel.card.vue': shellCard('ne-state-panel', '<NeStatePanel/><UButton/><div/>'),
+  })
+  assert.deepEqual(merged, {
+    freshness: ['NsFreshnessChip'],
+    'ne-state-panel': ['NeStatePanel', 'UButton'],
+  })
+})
+
+test('two sources claiming one card id is an error, not a silently dropped card', () => {
+  assert.throws(
+    () =>
+      mergeCoverage({
+        'app.vue': '<template><section data-design-card="ne-state-panel"/></template>',
+        'NeStatePanel.card.vue': shellCard('ne-state-panel'),
+      }),
+    /Duplicate design card id "ne-state-panel" in app\.vue and NeStatePanel\.card\.vue/,
+  )
+})
+
+test('a shipped card renders into the bundle exactly like an authored one', () => {
+  const rendered = renderBundle(
+    '<html><body><section data-design-card="ne-state-panel" data-name="State panel" data-group="Shell"><p class="ne-panel">Empty</p></section></body></html>',
+    '.ne-panel{color:red}',
+    'narduk-shell contributes 1 card(s), each shipped beside its component.',
+  )
+  assert.match(rendered.files['cards/ne-state-panel.html']!, /@dsCard group="Shell"/)
+  assert.match(rendered.files['cards/ne-state-panel.html']!, /class="ne-panel"/)
+  assert.match(rendered.files['index.html']!, /narduk-shell contributes 1 card\(s\)/)
+  assert.deepEqual(
+    rendered.cards.map((preview) => preview.group),
+    ['Shell'],
+  )
 })
