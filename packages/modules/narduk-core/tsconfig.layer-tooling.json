@@ -19,6 +19,7 @@
   },
   "include": [
     "runtime/internal/**/*.ts",
+    "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/server/middleware/securityHeaders.ts",
     "runtime/server/utils/approximateLocation.ts",

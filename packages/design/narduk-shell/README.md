@@ -153,8 +153,8 @@ const ok = await confirm({
 if (!ok) return
 ```
 
-`useConfirm()` is auto-imported by the module. Call it from any component —
-the app does not mount a `<NeConfirmDialog>` host of its own.
+`useConfirm()` is auto-imported by the module. Call it from any component — the
+app does not mount a `<NeConfirmDialog>` host of its own.
 
 #### Host mechanism
 
@@ -165,10 +165,10 @@ mounts `NeConfirmDialog` into the overlay stack and `close(boolean)` is what
 `LayerAppShell` wraps the tree in `UApp`. There is no module-registered host
 component and no layout wiring.
 
-One handle drives one dialog at a time: call `useConfirm()` once per `setup`
-and await each `confirm()` before starting the next. Sequential calls resolve
-independently; leftover `pending` / `error` from a rejected `onConfirm` is
-reset on the next `open`.
+One handle drives one dialog at a time: call `useConfirm()` once per `setup` and
+await each `confirm()` before starting the next. Sequential calls resolve
+independently; leftover `pending` / `error` from a rejected `onConfirm` is reset
+on the next `open`.
 
 The declarative form is the same component with a model:
 
