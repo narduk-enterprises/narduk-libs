@@ -83,17 +83,17 @@ binding enforce it.
 
 stonx is the first pilot (plan §3). Today it has three list shapes:
 
-1. `getPaginationParams` / `buildPaginatedResponse` in `server/utils/query.ts`
-   — `{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }`
+1. `getPaginationParams` / `buildPaginatedResponse` in `server/utils/query.ts` —
+   `{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }`
    — used by `admin/games`, `me/positions`, `leaderboard`.
 2. A one-off zod envelope in `admin/stats-detailed.get.ts`.
 3. `{ results, count, totalPages, page, status }` in `market/screeners.get.ts`,
    whose `limit` caps at **500**. `watchlist` and `big-movers` have no
    page/limit.
 
-Those three become one `listQuerySchema` (and, on the server,
-`parseListQuery` + `listResponse`). The screener keeps its 500 cap via
-`maxLimit`; watchlist and big-movers gain a limit:
+Those three become one `listQuerySchema` (and, on the server, `parseListQuery` +
+`listResponse`). The screener keeps its 500 cap via `maxLimit`; watchlist and
+big-movers gain a limit:
 
 ```ts
 const schema = listQuerySchema({

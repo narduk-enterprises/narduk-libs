@@ -174,7 +174,11 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     expect(second.status).toBe(200)
     expect(second.body).toMatchObject({ limit: 2, offset: 2, page: 2 })
     expect((second.body.items as unknown[]).length).toBe(2)
-    expect((await call(handler, '/?page=2&offset=0&limit=2')).status).toBe(400)
+
+    // `page` wins when both keys are sent — old callers never sent offset.
+    const both = await call(handler, '/?page=2&offset=0&limit=2')
+    expect(both.status).toBe(200)
+    expect(both.body).toMatchObject({ limit: 2, offset: 2, page: 2 })
   })
 
   it('serves any page of /api/notifications in a single query, with total null', async () => {

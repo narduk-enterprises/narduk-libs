@@ -1,5 +1,5 @@
 import { asc, desc, sql } from 'drizzle-orm'
-import { createError, defineEventHandler, getQuery } from 'h3'
+import { createError, defineEventHandler } from 'h3'
 import { z } from 'zod'
 
 import { requireAdmin } from '#layer/server/utils/auth'
@@ -38,40 +38,17 @@ function normalizeCount(value: CountRow['count'] | undefined): number {
   return count
 }
 
-/** Prefer `page` when that is what the caller sent; reject a disagreeing pair. */
-function resolveOffset(
-  query: { filters: { page?: number }; limit: number; offset: number },
-  raw: { offset?: unknown },
-): number {
-  if (query.filters.page == null) return query.offset
-
-  const fromPage = (query.filters.page - 1) * query.limit
-  if (raw.offset !== undefined && query.offset !== fromPage) {
-    throw createError({
-      data: {
-        code: 'invalid_list_query',
-        fields: ['offset', 'page'],
-        issues: [
-          {
-            code: 'custom',
-            field: 'page',
-            message: 'page and offset disagree; send one of them.',
-          },
-        ],
-        unknownKeys: [],
-      },
-      message: 'Invalid list query: offset, page.',
-      statusCode: 400,
-      statusMessage: 'Bad Request',
-    })
-  }
-
-  return fromPage
+/** Prefer the pre-contract `page` key when the caller sent it. */
+function resolveOffset(query: {
+  filters: { page?: number }
+  limit: number
+  offset: number
+}): number {
+  return query.filters.page == null ? query.offset : (query.filters.page - 1) * query.limit
 }
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
-  const raw = getQuery(event)
   const query = parseListQuery(event, {
     defaultLimit: DEFAULT_LIMIT,
     defaultSort: 'createdAt:desc',
@@ -81,7 +58,7 @@ export default defineEventHandler(async (event) => {
     searchable: false,
     sortable: SORTABLE,
   })
-  const offset = resolveOffset(query, raw)
+  const offset = resolveOffset(query)
   const resolved = { ...query, offset }
 
   const db = useDatabase(event)
