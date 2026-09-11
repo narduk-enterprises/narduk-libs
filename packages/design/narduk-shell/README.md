@@ -205,6 +205,25 @@ A page with no colour-mode runtime opts into the media query by setting
 `data-ne-scheme="auto"` on `<html>`; it is opt-in so that a document with no
 scheme class renders one deterministic way on every machine.
 
+### What enforces it
+
+`test/styling-contract.test.ts` scans every component **the registry
+registers** — the source list is derived from `src/registry.ts`, not written
+out by hand, so a component is covered the moment it is registered and cannot
+be silently left out. It reads the template, the script and any style block
+(comments removed) and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw
+`font-family` / `box-shadow` / `border-radius` declaration, and Tailwind's
+named radius and shadow steps.
+
+Tailwind's **type scale is not** a hardcoded value: under Tailwind v4 `text-sm`
+compiles to `font-size: var(--text-sm)` and `font-medium` to
+`font-weight: var(--font-weight-medium)`, which is a token read like
+`text-muted` is. What the contract forbids there is display type, because the
+page's type hierarchy belongs to the app and reaches a component through the
+heading element it renders. So body copy may use `text-xs` / `text-sm` /
+`text-base` and the one emphasis weight `font-medium`; `text-lg` and up, and
+`font-semibold` and heavier, are rejected.
+
 ### Overriding: the two brand hooks
 
 An app sets `--ne-accent` and `--ne-structure` and nothing else. Put them in the
