@@ -216,7 +216,7 @@ describe('NeStatePanel: unknown is never rendered as zero', () => {
     const wrapper = render({ state: 'blocked', title: 'Runners' })
 
     expect(wrapper.find('[data-stub="UEmpty"]').exists()).toBe(false)
-    expect(wrapper.get('[data-stub="UAlert"]').exists()).toBe(true)
+    expect(wrapper.find('[data-stub="UAlert"]').exists()).toBe(true)
   })
 
   it('keeps absent on UEmpty but not with empty’s inbox icon or dashed box', () => {
