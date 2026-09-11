@@ -13,6 +13,7 @@
   },
   "include": [
     "_core/**/*.ts",
+    "design-cards/**/*.vue",
     "instruments/**/*.ts",
     "instruments/**/*.vue",
     "tests/**/*.ts",
