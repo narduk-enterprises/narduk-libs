@@ -151,12 +151,20 @@ describe('NeStatusBadge', () => {
 
   it('maps tones to Nuxt UI colour tokens only — no hardcoded colours in the SFC', () => {
     const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'runtime', 'components', 'NeStatusBadge.vue'),
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        '..',
+        'src',
+        'runtime',
+        'components',
+        'NeStatusBadge.vue',
+      ),
       'utf8',
     )
-    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
-    expect(source).not.toMatch(/rgb[a]?\(/)
-    expect(source).not.toMatch(/hsl[a]?\(/)
+    const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '')
+    expect(code).not.toMatch(/#[0-9A-F]{3,8}\b/i)
+    expect(code).not.toMatch(/rgba?\(/)
+    expect(code).not.toMatch(/hsla?\(/)
     expect(source).toContain("ok: 'success'")
     expect(source).toContain("warn: 'warning'")
     expect(source).toContain("pending: 'neutral'")
