@@ -145,8 +145,8 @@ stonx is the first pilot (plan §3). Today it has three list shapes in
 2. A one-off zod envelope in `admin/stats-detailed.get.ts`.
 3. `{ results, count, totalPages, page, status }` in `market/screeners.get.ts`,
    whose `limit` caps at **500** (everywhere else that enforces a cap uses 100).
-   `watchlist/index.get.ts` and `market/big-movers.get.ts` have no page/limit
-   at all.
+   `watchlist/index.get.ts` and `market/big-movers.get.ts` have no page/limit at
+   all.
 
 Those three become one `parseListQuery` + `listResponse` call. The screener
 keeps its 500 cap via `maxLimit`; watchlist and big-movers gain a limit by
@@ -168,6 +168,6 @@ return listResponse(rows, { query, total })
 // { items, total, limit, offset, sort, q }
 ```
 
-`parseSortParam` in today's `query.ts` silently falls back to the default on
-an unknown field; the contract **rejects** that key instead — the bug class
+`parseSortParam` in today's `query.ts` silently falls back to the default on an
+unknown field; the contract **rejects** that key instead — the bug class
 stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.

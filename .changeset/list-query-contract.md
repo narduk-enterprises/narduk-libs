@@ -16,8 +16,8 @@ the package root, matching the package's convention):
   `filters` object flat on the query string, and either `offset` (integer ≥ 0)
   in `mode: 'offset'` or `cursor` (opaque non-empty string) in `mode: 'cursor'`.
 - `LIST_QUERY_STATEMENT_CEILING` is 2 (one page `SELECT` plus one optional
-  `COUNT(*)`). The schema cannot count SQL; route tests that wrap the D1
-  binding enforce the ceiling.
+  `COUNT(*)`). The schema cannot count SQL; route tests that wrap the D1 binding
+  enforce the ceiling.
 - Unknown keys are **rejected**, never silently stripped. A typo'd or renamed
   parameter that reads as "no filter" is the riverstatus bug class this contract
   exists to close: the page silently came back unfiltered.
