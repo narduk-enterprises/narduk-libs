@@ -2,14 +2,14 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  // The suite's components are mounted and server-rendered for real, so their
-  // single-file components have to be compiled.
+  // NeStatePanel (item 7) is the first SFC the registry ships, so its mount
+  // tests need the Vue plugin to compile them.
   plugins: [vue()],
   test: {
-    // `node` is the default on purpose: the SSR suites prove the components
-    // render in a runtime with no `document` (the Workers preset has none).
-    // A mount suite opts INTO happy-dom with a `@vitest-environment` directive
-    // at the top of its own file.
+    // node is the default environment (SSR tests rely on it running with no
+    // DOM); mount tests opt into happy-dom per file with a
+    // `// @vitest-environment happy-dom` directive, the narduk-mapkit-nuxt
+    // pattern.
     environment: 'node',
     include: ['test/**/*.test.ts'],
   },

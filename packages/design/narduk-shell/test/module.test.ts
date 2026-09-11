@@ -13,6 +13,7 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 interface NuxtKitMocks {
   addComponent: ReturnType<typeof vi.fn>
   addComponentsDir: ReturnType<typeof vi.fn>
+  addImports: ReturnType<typeof vi.fn>
 }
 
 function mockNuxtKit(): NuxtKitMocks {
@@ -21,17 +22,19 @@ function mockNuxtKit(): NuxtKitMocks {
   // `vi.doMock` without this key would make an accidental call throw, which
   // reads as a different failure than the one that matters.
   const addComponentsDir = vi.fn()
+  const addImports = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
     addComponentsDir,
+    addImports,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
   }))
 
-  return { addComponent, addComponentsDir }
+  return { addComponent, addComponentsDir, addImports }
 }
 
 function mockRegistry(components: readonly NeComponentRegistration[]) {

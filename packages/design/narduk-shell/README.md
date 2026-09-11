@@ -22,16 +22,14 @@ components backlog in
 
 ## Status
 
-Backlog item 1 of 22
-([narduk-libs#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))
-built the package, the module, the registration model and the reserved subpaths.
-Item 7
+**First component.** Backlog item 7
 ([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254))
-added the first component, [`NeStatePanel`](#nestatepanel). The token sheet is
-still empty — item 2
-([narduk-libs#249](https://github.com/narduk-enterprises/narduk-libs/issues/249))
-owns it. Each later item adds its own component, README section, tests and NE
-Base card.
+ships `NeStatePanel` on the item 1 skeleton
+([narduk-libs#248](https://github.com/narduk-enterprises/narduk-libs/issues/248)).
+Tokens (item 2) and the NE Base card mechanism (item 3) are still follow-ups;
+`NeStatePanel` reads Nuxt UI semantic tokens and does not hardcode a colour,
+radius, shadow or font. Each later item adds its own component, README section,
+tests and NE Base card.
 
 ## Install
 
