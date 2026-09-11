@@ -69,6 +69,21 @@ describe('parseListQuery', () => {
     expect(status).toBe(400)
   })
 
+  it('rejects q on a route that does not search, rather than ignoring it', async () => {
+    const unsearchable = (event: H3Event) =>
+      listResponse(rows, {
+        query: parseListQuery(event, { maxLimit: 100, searchable: false, sortable }),
+        total: 2,
+      })
+
+    const rejected = await call('/?q=ada', unsearchable)
+    expect(rejected.status).toBe(400)
+    expect(rejected.body).toMatchObject({ data: { fields: ['q'] } })
+
+    // A blank q narrows nothing, so it is absence rather than a dropped filter.
+    expect((await call('/?q=', unsearchable)).status).toBe(200)
+  })
+
   it('clamps an over-large limit to the route ceiling', async () => {
     const { body, status } = await call('/?limit=9999', offsetRoute)
 

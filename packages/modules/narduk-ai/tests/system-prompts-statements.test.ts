@@ -150,5 +150,7 @@ describe('GET /api/admin/system-prompts holds a one-statement-per-page ceiling',
 
     expect((await call('/?sort=content:asc')).status).toBe(400)
     expect((await call('/?page=2')).status).toBe(400)
+    // The route does not search, so `q` is rejected rather than ignored.
+    expect((await call('/?q=prompt-1')).status).toBe(400)
   })
 })

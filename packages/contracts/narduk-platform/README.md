@@ -29,11 +29,15 @@ utils; this package owns the schema and the types.
 | `defaultLimit`   | Page size when the caller sends none (default 25, clamped to `maxLimit`).                           |
 | `defaultSort`    | Sort applied when the caller sends none.                                                            |
 | `maxQueryLength` | Longest accepted `q`, after trimming (default 200).                                                 |
+| `searchable`     | Whether the route applies `q` (default `true`). `false` rejects a non-empty `q`.                    |
 
 Unknown keys are **rejected**, never silently stripped: a typo'd or renamed
 parameter must fail loudly rather than read as "no filter" and return the wrong
 page. `limit`, `offset` and the filters are coerced from their query-string
-form; `q` is trimmed and becomes `null` when blank.
+form; `q` is trimmed and becomes `null` when blank. A route that does not
+implement free-text search sets `searchable: false` so that `?q=…` fails for the
+same reason: an accepted-and-ignored filter reads to the caller as a narrowed
+page it never got.
 
 ```ts
 import {

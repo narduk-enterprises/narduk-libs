@@ -69,11 +69,14 @@ the parsed query. `options`:
 | `defaultLimit`   | Page size when the caller sends none (default 25, clamped to `maxLimit`).                           |
 | `defaultSort`    | Sort applied when the caller sends none.                                                            |
 | `maxQueryLength` | Longest accepted `q`, after trimming (default 200).                                                 |
+| `searchable`     | Whether the route applies `q` (default `true`). `false` rejects a non-empty `q`.                    |
 
 The schema is `.strict()`: an unknown query key is **rejected**, not silently
 stripped, so a typo'd or renamed parameter fails loudly instead of quietly
-returning the wrong page. Any invalid query throws a 400 (never a 500) whose
-`data` is a stable payload —
+returning the wrong page. A route with no free-text search sets
+`searchable: false` for the same reason — an accepted-and-ignored `q` reads to
+the caller as a narrowed page it never got. Any invalid query throws a 400
+(never a 500) whose `data` is a stable payload —
 `{ code: 'invalid_list_query', fields, unknownKeys, issues }` — naming the
 offending keys.
 

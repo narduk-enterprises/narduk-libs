@@ -7,7 +7,10 @@
 Migrate this repo's three list endpoints onto the shared list-query contract
 (`parseListQuery` + `listResponse`, narduk-libs#257). Each route keeps its own
 page ceiling and its own sort allowlist; what changes is the wire shape, so
-**consumers must be updated together with the module**.
+**consumers must be updated together with the module**. None of the three
+implements free-text search, so all three declare `searchable: false` and answer
+400 for a non-empty `q` rather than accepting it and returning an unnarrowed
+page.
 
 **`GET /api/admin/users`** (narduk-auth)
 

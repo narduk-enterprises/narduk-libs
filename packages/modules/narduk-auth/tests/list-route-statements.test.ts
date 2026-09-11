@@ -196,4 +196,12 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     expect((await call(users, '/?page=2')).status).toBe(400)
     expect((await call(notifications, '/?unread=true')).status).toBe(400)
   })
+
+  it('rejects q on both routes, since neither one searches', async () => {
+    const users = (await import('../server/api/admin/users/index.get')).default
+    const notifications = (await import('../server/api/notifications/index.get')).default
+
+    expect((await call(users, '/?q=user-1')).status).toBe(400)
+    expect((await call(notifications, '/?q=hello')).status).toBe(400)
+  })
 })
