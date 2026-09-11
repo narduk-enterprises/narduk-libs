@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
 @import '@narduk-enterprises/narduk-ui/tokens.css';
+@import '@narduk-enterprises/narduk-shell/theme.css';
 
 body {
   margin: 0;
@@ -68,4 +69,136 @@ body {
 .mono {
   font-family: var(--ns-font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- narduk-shell NE token layer, Foundations card ----------------------
+ * Every rule below reads --ne-* and nothing else, which is the styling
+ * contract it exists to demonstrate. The .light / .dark wrappers in app.vue
+ * are Nuxt UI's own scheme classes, so each column is pinned rather than
+ * following the viewer's operating system.
+ */
+.gallery h3 {
+  margin-top: 32px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.ne-schemes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.ne-scheme {
+  padding: 20px;
+  background: var(--ne-ground);
+  border: 1px solid var(--ne-hairline);
+  border-radius: var(--ne-radius-panel);
+  color: var(--ne-ink-body);
+  font-family: var(--ne-font-sans);
+}
+.ne-scheme-label {
+  margin: 0 0 16px;
+  color: var(--ne-ink-muted);
+  font-size: var(--ne-text-label);
+  letter-spacing: var(--ne-tracking-label);
+}
+.ne-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.ne-swatch {
+  padding: 12px 10px;
+  border: 1px solid var(--ne-hairline);
+  border-radius: var(--ne-radius-control);
+  color: var(--ne-ink-body);
+  font-family: var(--ne-font-mono);
+  font-size: var(--ne-text-label);
+}
+.ne-ground {
+  background: var(--ne-ground);
+}
+.ne-surface {
+  background: var(--ne-surface);
+}
+.ne-elevated {
+  background: var(--ne-surface-elevated);
+}
+.ne-accented {
+  background: var(--ne-surface-accented);
+}
+.ne-accent {
+  background: var(--ne-accent);
+  border-color: var(--ne-accent);
+  color: var(--ne-accent-ink);
+}
+.ne-inks {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--ne-surface);
+  border: 1px solid var(--ne-hairline);
+  border-radius: var(--ne-radius-control);
+  box-shadow: var(--ne-shadow-1);
+}
+.ne-inks p {
+  margin: 0 0 6px;
+  font-size: var(--ne-text-small);
+}
+.ne-ink-1 {
+  color: var(--ne-ink);
+}
+.ne-ink-2 {
+  color: var(--ne-ink-body);
+}
+.ne-ink-3 {
+  color: var(--ne-ink-secondary);
+}
+.ne-ink-4 {
+  color: var(--ne-ink-muted);
+}
+.ne-geometry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.ne-chip {
+  padding: 6px 12px;
+  background: var(--ne-surface-elevated);
+  border: 1px solid var(--ne-line-strong);
+  color: var(--ne-ink-secondary);
+  font-family: var(--ne-font-mono);
+  font-size: var(--ne-text-label);
+}
+.ne-chip-panel {
+  border-radius: var(--ne-radius-panel);
+}
+.ne-chip-control {
+  border-radius: var(--ne-radius-control);
+}
+.ne-chip-tag {
+  border-radius: var(--ne-radius-tag);
+}
+.ne-type {
+  margin-top: 16px;
+}
+.ne-type p {
+  margin: 0 0 6px;
+  color: var(--ne-ink-body);
+}
+.ne-type-title {
+  font-size: var(--ne-text-title);
+  font-weight: 600;
+  line-height: var(--ne-leading-tight);
+  letter-spacing: var(--ne-tracking-tight);
+}
+.ne-type-body {
+  font-size: var(--ne-text-body);
+  line-height: var(--ne-leading-body);
+}
+.ne-type-label {
+  color: var(--ne-ink-muted);
+  font-family: var(--ne-font-mono);
+  font-size: var(--ne-text-label);
+  letter-spacing: var(--ne-tracking-label);
+  text-transform: uppercase;
 }

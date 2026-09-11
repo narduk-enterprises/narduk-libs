@@ -21,7 +21,7 @@ const readme = readFileSync(join(packageRoot, 'README.md'), 'utf8')
 function declarations(block: string): Map<string, string> {
   const found = new Map<string, string>()
   const withoutComments = block.replaceAll(/\/\*[\s\S]*?\*\//g, '')
-  for (const [, property, value] of withoutComments.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/gi)) {
+  for (const [, property, value] of withoutComments.matchAll(/(--[a-z0-9-]+)\s*:([^;]+);/gi)) {
     found.set(property, value.trim().replaceAll(/\s+/g, ' '))
   }
   return found
@@ -107,7 +107,7 @@ function textFiles(root: string, depth = 0): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = join(root, entry.name)
     if (entry.isDirectory()) return textFiles(path, depth + 1)
-    if (!/\.(css|mjs|js|ts|vue|json)$/.test(entry.name)) return []
+    if (!/\.(?:css|mjs|js|ts|vue|json)$/.test(entry.name)) return []
     if (statSync(path).size > 4_000_000) return []
     return [path]
   })

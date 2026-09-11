@@ -133,7 +133,7 @@ export function renderBundle(html: string, css: string) {
   }
   files['index.html'] = document(
     'NE Base — coded system preview',
-    '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue. narduk-shell is not yet available in the coded library.</p></header>' +
+    '<header><h1>NE Base preview</h1><p>Fixed demonstration fixtures rendered from Vue, themed by the narduk-shell token layer. No narduk-shell component is registered yet.</p></header>' +
       bodies.join('\n'),
     '',
   )
