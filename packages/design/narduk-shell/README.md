@@ -85,6 +85,29 @@ Adding a component to the suite is therefore two edits, both in this package:
 the SFC itself, and its `{ name, filePath }` entry in `src/registry.ts`. Nothing
 is registered by being in a folder.
 
+## Adding a component (later backlog items)
+
+Each later lane adds one `Ne*` export with these edits, all in this package.
+The module API (`NE_SHELL_COMPONENTS` and `NeComponentRegistration` in
+`src/registry.ts`, and the `addComponent` loop in `src/module.ts`) stays
+additive: new entries only, no renames or signature changes.
+
+1. Add the SFC at `src/runtime/components/NeThing.vue`. Wrap a Nuxt UI
+   primitive. Read tokens; never hardcode a colour, radius, shadow or font.
+2. Append
+   `{ name: 'NeThing', filePath: './runtime/components/NeThing.vue' }` to
+   `NE_SHELL_COMPONENTS`. That is the only registration path. Do not call
+   `addComponentsDir` and do not add a directory scan.
+3. Document props, slots, events and one example in this README.
+4. Add a mount test (`@vue/test-utils`) and an SSR test (`renderToString`
+   in vitest's node environment, no `document`; pattern:
+   `packages/design/narduk-charts/src/ssr.test.ts`).
+5. Add a changeset (`minor` while the package is `0.x`).
+
+Do not add this package to `create-narduk-app`'s default module list. That
+is backlog item 4
+([narduk-libs#251](https://github.com/narduk-enterprises/narduk-libs/issues/251)).
+
 ## Reserved subpaths
 
 Exactly three subpaths are exported. Two of them are reserved placeholders in

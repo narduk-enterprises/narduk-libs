@@ -10,11 +10,17 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 interface Manifest {
   exports: Record<string, unknown>
   files: string[]
+  peerDependencies?: Record<string, string>
 }
 
 const manifest = JSON.parse(
   readFileSync(join(packageRoot, 'package.json'), 'utf8'),
 ) as unknown as Manifest
+
+const repoRoot = join(packageRoot, '..', '..', '..')
+const coreManifest = JSON.parse(
+  readFileSync(join(repoRoot, 'packages', 'modules', 'narduk-core', 'package.json'), 'utf8'),
+) as { dependencies?: Record<string, string> }
 
 /**
  * The subpaths item 1 reserves. Adding one is a deliberate act: the release
@@ -49,6 +55,22 @@ describe('narduk-shell package shape', () => {
     for (const subpath of Object.keys(manifest.exports)) {
       expect(subpath).not.toContain('*')
     }
+  })
+
+  it('declares the files allowlist the packed-file test enforces', () => {
+    expect(manifest.files).toEqual(['src', 'theme.css', 'README.md', 'CHANGELOG.md'])
+  })
+
+  it('pins peers to nuxt 4, vue 3.5 and narduk-core exact @nuxt/ui version', () => {
+    const nuxtUiPin = coreManifest.dependencies?.['@nuxt/ui']
+    expect(nuxtUiPin, 'narduk-core must pin @nuxt/ui so this suite can match it').toMatch(
+      /^\d+\.\d+\.\d+$/,
+    )
+    expect(manifest.peerDependencies).toEqual({
+      '@nuxt/ui': nuxtUiPin,
+      nuxt: '>=4.0.0',
+      vue: '>=3.5.0',
+    })
   })
 
   it('ships every declared subpath target in the packed file list', () => {
