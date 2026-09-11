@@ -342,12 +342,14 @@ describe('NeStatePanel: tokens are the only styling contract', () => {
     const script = componentSource.split('<script')[1]?.split('</script>')[0] ?? ''
 
     for (const source of [template, script]) {
-      expect(source).not.toMatch(/#[0-9a-f]{3,8}\b/i)
-      expect(source).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
-      expect(source).not.toMatch(/font-family\s*:/)
-      expect(source).not.toMatch(/box-shadow\s*:/)
-      expect(source).not.toMatch(/border-radius\s*:/)
-      expect(source).not.toMatch(/\b(?:rounded-md|rounded-lg|rounded-xl|shadow-md|shadow-lg)\b/)
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      // Quoted hex only — issue refs like operator-portal#183 are not colours.
+      expect(code).not.toMatch(/['"`]#[0-9a-f]{3,8}\b/i)
+      expect(code).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch)\(/)
+      expect(code).not.toMatch(/font-family\s*:/)
+      expect(code).not.toMatch(/box-shadow\s*:/)
+      expect(code).not.toMatch(/border-radius\s*:/)
+      expect(code).not.toMatch(/\b(?:rounded-md|rounded-lg|rounded-xl|shadow-md|shadow-lg)\b/)
     }
   })
 })
