@@ -227,11 +227,9 @@ component) is item 3's mechanism and is not part of this release —
 `NeStatusBadge` ships as a standalone component today and adopts the card
 convention once item 3 lands it.
 
----
-
-Each further component arrives with its own backlog item, and each adds its own
-section here — props, slots, events and one example — alongside a mount test and
-an SSR test. The ordered backlog is
+Each component arrives with its own backlog item, and each adds its section here
+— props, slots, events and one example — alongside a mount test, an SSR test and
+an NE Base card. The ordered backlog is
 [narduk-libs#247](https://github.com/narduk-enterprises/narduk-libs/issues/247)
 and the plan it tracks is
 [`docs/plans/components-library-plan.md`](../../../docs/plans/components-library-plan.md).

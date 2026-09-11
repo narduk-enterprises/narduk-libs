@@ -2,12 +2,13 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Registry SFCs need the Vue plugin so mount tests can compile them.
   plugins: [vue()],
   test: {
-    // Default environment stays plain Node (the SSR test relies on this: no
-    // `document`/`window`). Component mount tests opt into `happy-dom` with
-    // a `// @vitest-environment happy-dom` file directive, matching
-    // packages/design/narduk-charts.
+    // node is the default environment (SSR tests rely on it running with no
+    // DOM); mount tests opt into happy-dom per file with a
+    // `// @vitest-environment happy-dom` directive, the narduk-mapkit-nuxt
+    // pattern.
     environment: 'node',
     include: ['test/**/*.test.ts'],
   },

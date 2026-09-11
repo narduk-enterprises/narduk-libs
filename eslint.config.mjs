@@ -70,14 +70,16 @@ export default [
     // the whole lint run rather than reporting a normal lint error. These
     // are build-tool entry points, not part of the library's own module
     // graph, so cycle detection through them has no product value anyway.
-    // Scoped to this package's config files only -- no other current
-    // package imports `vite` directly.
+    // Scoped to the Vite/Vitest config files that import `vite` (or a
+    // plugin that does). narduk-shell joins the list because item 9's
+    // SFC mount tests need `@vitejs/plugin-vue`.
     files: [
       'packages/design/narduk-charts/histoire.config.ts',
       'packages/design/narduk-charts/vite.config.ts',
       'packages/design/narduk-charts/vite.entries.config.ts',
       'packages/design/narduk-charts/vite.e2e.config.ts',
       'packages/design/narduk-charts/vitest.config.ts',
+      'packages/design/narduk-shell/vitest.config.ts',
     ],
     rules: {
       'import-x/no-cycle': 'off',
@@ -149,21 +151,6 @@ export default [
       'packages/modules/narduk-mapkit-nuxt/test/**/*.ts',
       'packages/modules/narduk-mapkit-nuxt/vitest.config.ts',
     ],
-    rules: {
-      'import-x/no-cycle': 'off',
-    },
-  },
-  {
-    // Same eslint-plugin-import-x@4.17.1 legacy-resolver crash as the two
-    // blocks above ("node with invalid interface loaded as resolver"),
-    // reached the same way: components-library backlog item 8
-    // (narduk-libs#255) is the first narduk-shell lane to add an SFC, which
-    // means adding `@vitejs/plugin-vue` to this file (the plan item 1's own
-    // vitest.config.ts comment anticipated -- "adds the Vue plugin ... from
-    // packages/design/narduk-charts"). That import's module graph bottoms
-    // out in bare `vite`, same as narduk-charts's and narduk-mapkit-nuxt's
-    // config files, with the same crash.
-    files: ['packages/design/narduk-shell/vitest.config.ts'],
     rules: {
       'import-x/no-cycle': 'off',
     },
