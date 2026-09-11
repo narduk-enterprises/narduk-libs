@@ -34,7 +34,18 @@ wants it today.
   `console.warn`, so it reaches a fleet operator's normal log aggregation in
   production) naming every ignored key and stating they will be rejected with a
   400 once `strict` defaults to `true` in the next major. The warning never
-  fires when there are no unknown keys.
+  fires when there are no unknown keys. That warning call is also wrapped so a
+  logging failure can never turn a tolerated request into a 500.
+- `server/utils/logger.ts` no longer statically imports `nitropack/runtime`.
+  That package's entry point is a barrel file that also re-exports an internal
+  module referencing a build-time-only Nitro virtual specifier, so the static
+  import made any module reaching `logger.ts` — including, transitively,
+  `listQuery.ts` once it started calling `useLogger` — unloadable outside a
+  booted Nitro server, breaking narduk-ai's and narduk-auth's plain-vitest
+  list-route unit tests. `useRuntimeConfig` is now resolved lazily via a cached
+  dynamic import: behaviour inside a real Nitro server is unchanged, and every
+  existing caller already treated "runtime config unavailable" as an expected,
+  handled case.
 
 **Compatibility.** This is a fix to the `.strict()` `minor` shipped in
 narduk-libs#257/#282, not a new breaking change: a caller relying on today's

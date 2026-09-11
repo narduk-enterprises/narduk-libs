@@ -149,7 +149,11 @@ describe('GET /api/admin/system-prompts holds a one-statement-per-page ceiling',
     expect(names(descending.body)).toEqual(['prompt-8', 'prompt-7', 'prompt-6'])
 
     expect((await call('/?sort=content:asc')).status).toBe(400)
-    expect((await call('/?page=2')).status).toBe(400)
+    // `page` is not a filter this route declares. Tolerate-and-warn (Logan,
+    // 2026-09-11) answers 200 with the unknown key ignored and logged rather
+    // than a 400, for one release; see
+    // `.changeset/list-query-tolerate-unknown-keys.md`.
+    expect((await call('/?page=2')).status).toBe(200)
     // The route does not search, so `q` is rejected rather than ignored.
     expect((await call('/?q=prompt-1')).status).toBe(400)
   })

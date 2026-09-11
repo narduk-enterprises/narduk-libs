@@ -240,12 +240,16 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     expect(ids(ascending.body)).not.toEqual(ids(descending.body))
   })
 
-  it('rejects an unknown query key on both routes with a 400, not a 500', async () => {
+  it('tolerates an unknown query key on both routes with a 200, not a 400 or 500', async () => {
+    // Tolerate-and-warn (Logan, 2026-09-11): an unknown key is ignored and
+    // logged rather than rejected, for one release. See
+    // `.changeset/list-query-tolerate-unknown-keys.md`. Neither route opts
+    // into `strict: true`, so a typo'd key like these no longer 400s.
     const users = (await import('../server/api/admin/users/index.get')).default
     const notifications = (await import('../server/api/notifications/index.get')).default
 
-    expect((await call(users, '/?pge=2')).status).toBe(400)
-    expect((await call(notifications, '/?unread=true')).status).toBe(400)
+    expect((await call(users, '/?pge=2')).status).toBe(200)
+    expect((await call(notifications, '/?unread=true')).status).toBe(200)
   })
 
   it('rejects q on both routes, since neither one searches', async () => {

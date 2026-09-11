@@ -1,6 +1,5 @@
 import { resolveLogLevel as resolveSharedLevel } from '@narduk-enterprises/narduk-logging'
 import { useLogger as useSharedLogger } from '@narduk-enterprises/narduk-logging/h3'
-import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { readRuntimeString } from './runtime-env'
 import { readWorkerRuntimeEnv } from './worker-env'
@@ -13,6 +12,48 @@ export { ensureRequestId } from '@narduk-enterprises/narduk-logging/h3'
 
 /** Retained for source compatibility with existing apps and shared modules. */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
+
+type NitroRuntimeConfigAccessor = (event?: H3Event) => Record<string, unknown>
+
+/**
+ * `nitropack/runtime`'s entry point is a barrel file that statically
+ * re-exports every internal submodule regardless of which export an
+ * importer actually asked for — including `internal/storage.mjs`, which
+ * references a build-time-only virtual specifier
+ * (`#nitro-internal-virtual/storage`) that only resolves inside a booted
+ * Nitro server. A *static* `import { useRuntimeConfig } from
+ * 'nitropack/runtime'` therefore made this module — and anything that
+ * imports it, such as `listQuery.ts` — unloadable in a plain unit test or
+ * any other context that never boots Nitro. Surfaced when narduk-ai's and
+ * narduk-auth's list-route unit tests started failing after `listQuery.ts`
+ * picked up a transitive import of this module (see
+ * `.changeset/list-query-tolerate-unknown-keys.md`).
+ *
+ * Resolve it lazily instead: kick off a dynamic import once at module load
+ * and cache the outcome (module or failure) for later synchronous reads. In
+ * a real Nitro server the module is already resolvable — Nitro's own
+ * bootstrap depends on it — so in practice this settles well before request
+ * handling begins; outside Nitro it settles to `null`, and every caller
+ * below already treats "runtime config unavailable" as an expected, handled
+ * case via its existing try/catch.
+ */
+let cachedUseRuntimeConfig: NitroRuntimeConfigAccessor | null | undefined
+
+void import('nitropack/runtime')
+  .then(
+    (nitroRuntime) =>
+      (cachedUseRuntimeConfig = nitroRuntime.useRuntimeConfig as NitroRuntimeConfigAccessor),
+  )
+  .catch(() => {
+    cachedUseRuntimeConfig = null
+  })
+
+function useRuntimeConfig(event?: H3Event): Record<string, unknown> {
+  if (!cachedUseRuntimeConfig) {
+    throw new Error('Nitro runtime config is unavailable outside a booted Nitro server.')
+  }
+  return cachedUseRuntimeConfig(event)
+}
 
 export interface Logger {
   child: (scope: string) => Logger
