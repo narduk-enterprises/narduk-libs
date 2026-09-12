@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-analytics",
-  "version": "1.19.33",
+  "version": "1.19.34",
   "private": false,
   "type": "module",
   "description": "PostHog, GA, Search Console, and IndexNow Nuxt module for Narduk Cloudflare apps.",

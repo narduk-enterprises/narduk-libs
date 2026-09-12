@@ -1,5 +1,28 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.1.0
+
+### Minor Changes
+
+- fb0c50c: Add app-owned social preview generation and validation: default
+  artwork, explicit route coverage, initial HTML checks, crawler image
+  downloads, and distinct dynamic route images. The SEO module gains an opt-in
+  global static fallback and canonical OG URLs, with explicit previews for
+  public noindex pages. New scaffolds include artwork sources, metadata, route
+  inventory, build gates, and crawler acceptance. Existing apps opt in through
+  the migration guide; no fleet synchronization occurs.
+
+### Patch Changes
+
+- Updated dependencies [548fa01]
+- Updated dependencies [960479a]
+- Updated dependencies [54577ac]
+- Updated dependencies [0f45d4b]
+- Updated dependencies [fdb9c15]
+- Updated dependencies [3a2b7b0]
+- Updated dependencies [d606e70]
+  - @narduk-enterprises/narduk-core@1.24.0
+
 ## 2.0.10
 
 ### Patch Changes

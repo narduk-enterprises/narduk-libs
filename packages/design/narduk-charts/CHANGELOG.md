@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.2
+
+### Patch Changes
+
+- 98a199b: Add an NE Base design card (`src/design-cards/<Name>.card.vue`) for
+  every registered chart component (`NardukLineChart`, `NardukBarChart`,
+  `NardukPieChart`, `NardukScatterChart`, `NardukHistogramChart`,
+  `NardukCandleChart`, `NardukChartStack`, `NardukBrandBackdrop`), completing
+  the suite bar's last requirement alongside the existing README sections and
+  mount/SSR tests. `scripts/check-component-surface.mjs` now checks this package
+  (components backlog item 22, narduk-libs#269).
+- 22a6303: Document `NardukScatterChart`, `NardukHistogramChart`,
+  `NardukChartStack` and `NardukBrandBackdrop` to the suite bar (props, slots,
+  events, one example) and add mount plus no-DOM SSR coverage so every exported
+  chart component has both.
+
 ## 2.5.1
 
 ### Patch Changes

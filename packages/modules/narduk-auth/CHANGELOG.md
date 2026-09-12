@@ -1,5 +1,102 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.26.0
+
+### Minor Changes
+
+- 0f45d4b: Migrate this repo's three list endpoints onto the shared list-query
+  contract (`parseListQuery` + `listResponse`, narduk-libs#257). Each route
+  keeps its own page ceiling and its own sort allowlist. None of the three
+  implements free-text search, so all three declare `searchable: false` and
+  answer 400 for a non-empty `q` rather than accepting it and returning an
+  unnarrowed page.
+
+  **Compatibility.** Previously-accepted query keys and response fields stay
+  accepted / present. New contract fields are additive. Drop the deprecated
+  aliases in the next major of each package, once fleet apps read `items`.
+
+  **`GET /api/admin/users`** (narduk-auth)
+
+  - Request: `page` is still accepted and converted to
+    `offset = (page - 1) * limit`. `offset` is the new key. Sending both with
+    disagreeing values answers 400. `limit` above the route's ceiling of 100 is
+    now **clamped to 100** instead of answering 400 (more permissive). `sort`
+    accepts `createdAt:asc|desc`, defaulting to `createdAt:desc` (previously the
+    descending order was fixed). An unknown key is tolerated (200, with a
+    warning logged) for one release rather than answering 400 — see
+    `.changeset/list-query-tolerate-unknown-keys.md`.
+  - Response: the contract shape `{ items, total, limit, offset, sort, q }` plus
+    the deprecated aliases `{ users, page }` so existing consumers keep working.
+
+  **`GET /api/notifications`** (narduk-auth)
+
+  - Request: `unreadOnly` is still any string; only `'true'` filters (the
+    pre-contract behaviour). `offset` is now honoured (it was previously
+    ignored). An unknown query key is tolerated (200, with a warning logged) for
+    one release rather than answering 400. `limit` ceiling stays 100,
+    default 50.
+  - Response: the contract shape plus the deprecated alias `{ notifications }`.
+    `total` is `null` — this route deliberately does not count, which keeps a
+    page to a single statement.
+
+  **`GET /api/admin/system-prompts`** (narduk-ai)
+
+  - Request: previously accepted no parameters (extras were ignored). It now
+    accepts `limit` (ceiling and default 500), `offset`, and `sort` over `name`
+    and `updatedAt`. An unknown query key is tolerated (200, with a warning
+    logged) for one release rather than answering 400, so a caller that still
+    sends an old ignored parameter keeps working.
+  - Response: a bare `AdminSystemPrompt[]` cannot also be a `{ items, … }`
+    object, so the wire shape is the contract envelope with `total: null`. The
+    bundled `useAdminAi` composable still exposes `AdminSystemPrompt[]` (and
+    still accepts a bare array from an older server). No fleet app `$fetch`es
+    this route directly (GitHub search, 2026-09-11); stonx, operator-portal and
+    riverstatus do not consume it. Ordering is now deterministic (`name:asc` by
+    default).
+
+  **Migration (optional).** New callers read `data.items` and page with
+  `offset`. Apps using the bundled composables and components
+  (`useNotifications`, `useAdminAi`, `AdminUsersTab`) keep their existing public
+  shapes.
+
+  **narduk-testkit**'s e2e contracts follow the new shapes and still assert the
+  legacy aliases: `expectNotificationList` expects `{ items, notifications }`,
+  and the users-api spec accepts `page`, asserts `{ items, users, page }`, and
+  checks that `limit=9999` now returns 200 with `limit: 100`.
+
+### Patch Changes
+
+- 699b5da: Backfill the registered Auth* cards (`AuthLoginCard`,
+  `AuthRegisterCard`, `AuthExchangePanel`, `AuthPasskeysPanel`,
+  `AuthApiKeysPanel`) to the shared component suite bar: README props, slots,
+  events and example for each, plus mount and `renderToString` SSR tests.
+  Existing source-regex guardrails stay. NE Base cards wait for #250.
+- 53987d2: Fix `GET /api/notifications?sort=` accepting and echoing the `sort`
+  parameter without ever applying it to the query — the response's `sort` field
+  and the actual row order silently disagreed (narduk-libs PR #282 review).
+  `ListNotificationOptions.sort` now threads through to `getUserNotifications`'s
+  Drizzle `orderBy`, honoring every key in the route's `SORTABLE` allowlist
+  (currently just `createdAt`, ascending or descending). This is a fix to
+  previously-declared contract behavior (the `sort` parameter has been part of
+  the shared list-query contract since narduk-libs#247), not new
+  request/response surface, hence patch.
+
+  Audited every other `parseListQuery` call site in narduk-auth and narduk-ai
+  for the same defect class (a declared sortable/searchable/filter key that
+  never reaches the query): `GET /api/admin/users` (narduk-auth) and
+  `GET /api/admin/system-prompts` (narduk-ai) already apply their `sort` option
+  correctly — no other fix needed.
+
+- Updated dependencies [548fa01]
+- Updated dependencies [960479a]
+- Updated dependencies [54577ac]
+- Updated dependencies [0f45d4b]
+- Updated dependencies [fdb9c15]
+- Updated dependencies [3a2b7b0]
+- Updated dependencies [d606e70]
+  - @narduk-enterprises/narduk-core@1.24.0
+  - @narduk-enterprises/narduk-platform@2.1.0
+
 ## 1.25.4
 
 ### Patch Changes
