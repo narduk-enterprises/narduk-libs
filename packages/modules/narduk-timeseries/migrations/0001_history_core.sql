@@ -66,20 +66,28 @@ SELECT create_hypertable(
 -- of decompressed whole.
 --
 -- `installation_role` is in `segmentby` because it is in the UNIQUE key above.
--- TimescaleDB refuses to enable the columnstore on a table whose unique
--- constraint covers a column that is neither a segmentby nor an orderby column
--- -- it cannot enforce uniqueness inside a compressed chunk otherwise -- so
--- with the natural key added and `segmentby = 'vessel_id, series_id'` this
--- ALTER TABLE fails and takes the whole migration down with it. Its cardinality
--- is 2 (0 primary, 1 shadow), so it costs at most a doubling of the segment
--- count and no read path loses a segment it was using.
+-- Left out, TimescaleDB 2.30 warns
+--   WARNING: column "installation_role" should be used for segmenting or ordering
+-- and enables the columnstore anyway. Uniqueness is still enforced on a
+-- compressed chunk (measured: a replayed batch still inserts 0 rows either
+-- way), but the check can no longer be aimed at one segment, so every
+-- ON CONFLICT probe has to look through more of the chunk than it needs to --
+-- on the write path, on every redelivery. Its cardinality is 2 (0 primary,
+-- 1 shadow), so segmenting on it costs at most a doubling of the segment count
+-- and no read path loses a segment it was using.
 ALTER TABLE telemetry_numeric SET (
   timescaledb.enable_columnstore = true,
   timescaledb.segmentby = 'vessel_id, series_id, installation_role',
   timescaledb.orderby   = 'ts DESC'
 );
 
-SELECT add_columnstore_policy('telemetry_numeric', after => INTERVAL '3 days', if_not_exists => TRUE);
+-- `add_columnstore_policy` is a PROCEDURE in 2.30, not a function: `SELECT`
+-- fails with "add_columnstore_policy(...) is a procedure" and takes 0001 with
+-- it. (Its neighbours are not: `add_continuous_aggregate_policy` and
+-- `drop_chunks` are still functions and are still called with SELECT.) It does
+-- no transaction control of its own, so this CALL is fine inside 0001's
+-- implicit transaction -- proven against 2.30.0, not assumed.
+CALL add_columnstore_policy('telemetry_numeric', after => INTERVAL '3 days', if_not_exists => TRUE);
 
 -- ADDITION (not in docs/04): the read index is the UNIQUE constraint above.
 -- Every read this library issues filters on vessel_id and a series set and

@@ -222,6 +222,18 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
 
     expect(result.decimated).toBe(true)
     expect(result.rows.length).toBeLessThanOrEqual(50)
-    expect(result.rows[0]?.latitude).toBeCloseTo(27.9, 3)
+    // Decimation keeps `last(geom, ts)` per bucket, not the bucket's first
+    // point and not a centroid, so row 0 carries the LAST position inside the
+    // first bucket -- somewhere inside the track, never below its start.
+    const first = result.rows[0]?.latitude ?? 0
+    const last = result.rows.at(-1)?.latitude ?? 0
+    expect(first).toBeGreaterThanOrEqual(27.9)
+    expect(first).toBeLessThanOrEqual(27.9 + 499 / 100_000)
+    // The final bucket's last point is the final point written, which is what
+    // makes a decimated track end where the real one does.
+    expect(last).toBeCloseTo(27.9 + 499 / 100_000, 5)
+    for (let index = 1; index < result.rows.length; index += 1) {
+      expect(result.rows[index]!.ts.getTime()).toBeGreaterThan(result.rows[index - 1]!.ts.getTime())
+    }
   }, 120_000)
 })

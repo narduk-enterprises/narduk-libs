@@ -33,5 +33,9 @@
   the level.
 - `RollupRow.min`, `.max` and `.last` are `number | null`: a bucket with no
   extreme reports null rather than a zero the instrument never produced.
+- `add_columnstore_policy` is invoked with `CALL`: it is a procedure in 2.30,
+  and `SELECT` on it fails the migration. Proven by applying all three
+  migrations to a real PostgreSQL 17.11 + TimescaleDB 2.30.0 + PostGIS 3.6.4
+  (`tests/live-integration.test.ts`, 7/7 from an empty database).
 - A narrow read-only Influx adapter for dual-run parity, holding no credential,
   cancellable with an `AbortSignal` — temporary, removed after G4-H parity.

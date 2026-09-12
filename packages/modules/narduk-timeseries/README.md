@@ -196,9 +196,12 @@ and `add_compression_policy` in 2.18.
 - `0001_history_core.sql` — extensions, `series`, the `telemetry_numeric`
   hypertable (1-day chunks, columnstore segmented by
   `vessel_id, series_id, installation_role` after 3 days — every column of the
-  UNIQUE key has to be a segmentby or orderby column or TimescaleDB refuses to
-  enable the columnstore) and `track_points` (`GEOGRAPHY(POINT, 4326)` + GIST,
-  7-day chunks). Both hypertables carry their natural key:
+  UNIQUE key is segmented on, so a uniqueness probe against a compressed chunk
+  is aimed at one segment; leave `installation_role` out and 2.30 warns
+  `column "installation_role" should be used for segmenting or ordering` and
+  makes every replayed row's conflict check read more of the chunk than it needs
+  to) and `track_points` (`GEOGRAPHY(POINT, 4326)` + GIST, 7-day chunks). Both
+  hypertables carry their natural key:
   `UNIQUE (vessel_id, series_id, ts, installation_role)` and
   `UNIQUE (vessel_id, ts)`.
 - `0002_history_rollups.sql` — the 1m → 15m → 1h → 1d continuous-aggregate
@@ -220,6 +223,30 @@ await applyMigrations(
   await loadMigrationsFromDirectory(timescaleMigrationsUrl),
 )
 ```
+
+### Proven against a real TimescaleDB, not only against a fake
+
+`tests/live-integration.test.ts` applies all three migrations to an empty
+database and then exercises the store against it. It is skipped unless
+`NARDUK_TIMESERIES_LIVE_DSN` is set, and it is the only thing here that proves
+the DDL executes — the unit suite asserts over SQL _text_ and cannot.
+
+Last run: PostgreSQL 17.11 + TimescaleDB 2.30.0 + PostGIS 3.6.4, 7/7 passing
+from a zero database — two hypertables, four continuous aggregates, six policy
+jobs, `segmentby` carrying `installation_role`, replay idempotency, the shadow
+row excluded from the 1m average, and a retention sweep through a session-pinned
+connection.
+
+Two things only that run could have caught:
+
+- **`add_columnstore_policy` is a PROCEDURE in 2.30**, so
+  `SELECT add_columnstore_policy(...)` fails with `... is a procedure` and takes
+  0001 with it. It is a `CALL`, and it does no transaction control of its own,
+  so it is fine inside 0001's transaction. Its neighbours are not procedures:
+  `add_continuous_aggregate_policy` and `drop_chunks` are still functions.
+- **Decimation keeps `last(geom, ts)` per bucket**, so a decimated track ends
+  where the real one does and row 0 is the last fix inside the first bucket —
+  not the bucket's first point and not a centroid.
 
 ### The deployment owns roles and timeouts
 

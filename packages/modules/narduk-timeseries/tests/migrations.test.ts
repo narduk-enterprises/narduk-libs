@@ -97,9 +97,13 @@ describe('0001_history_core.sql', () => {
     // key's `installation_role` has to be segmented on.
     expect(sql).toContain("timescaledb.segmentby = 'vessel_id, series_id, installation_role'")
     expect(sql).toContain("timescaledb.orderby   = 'ts DESC'")
+    // A PROCEDURE in 2.30: `SELECT add_columnstore_policy(...)` fails with
+    // "... is a procedure" and takes 0001 down with it. Its neighbours
+    // (add_continuous_aggregate_policy, drop_chunks) are still functions.
     expect(sql).toMatch(
-      /add_columnstore_policy\('telemetry_numeric',\s*after => INTERVAL '3 days'/u,
+      /CALL add_columnstore_policy\('telemetry_numeric',\s*after => INTERVAL '3 days'/u,
     )
+    expect(sql).not.toMatch(/SELECT\s+add_columnstore_policy/u)
     // The comment header names the superseded API; the executable SQL must not
     // use it.
     const executable = sql

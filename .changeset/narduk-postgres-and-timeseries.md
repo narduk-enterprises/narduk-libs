@@ -81,6 +81,10 @@ telemetry history store for the non-Supabase backend.
   extreme reports null; 0 is a plausible depth, speed or temperature, so
   coercing the absence to 0 puts a reading on the chart that no instrument
   produced.
+- The migrations are proven against a real PostgreSQL 17.11 + TimescaleDB
+  2.30.0 + PostGIS 3.6.4, not only against the protocol fake: that run is what
+  caught `SELECT add_columnstore_policy(...)`, which fails because the policy
+  API is a procedure in 2.30, and it is now a `CALL`.
 - `./influx`, a read-only parity adapter that holds no credential and enforces ≤
   4-day windows, `aggregateWindow` before any `group()`, a 120 s timeout, and an
   optional `AbortSignal`. It is **temporary** and is removed after G4-H parity.
