@@ -389,6 +389,29 @@ describe('createFormatters', () => {
     )
   })
 
+  it('keeps the bound zone when a per-call option is explicitly undefined', () => {
+    // `Partial<NeDateTimeOptions>` admits `{ timeZone: undefined }`, and a
+    // caller gets exactly that from any optional field. A plain spread would
+    // keep the own property, and `Intl` reads an own `undefined` `timeZone` as
+    // the *host's* zone -- so this call would render one string in a UTC Worker
+    // and another in the reader's browser. narduk-libs#283 review.
+    const at = '2026-03-08T08:30:00Z'
+    const zone: string | undefined = undefined
+    expect(bound.formatDateTime(at, { timeZone: zone })).toBe(bound.formatDateTime(at))
+    expect(bound.formatDateTime(at, { timeZone: zone })).toBe('Mar 8, 2026, 3:30 AM')
+    expect(bound.formatDate(at, { timeZone: zone })).toBe('Mar 8, 2026')
+    expect(bound.formatRelative(at, { now: '2026-03-08T11:30:00Z', timeZone: zone })).toBe(
+      '3 hours ago',
+    )
+    // The same holds for the other two bound defaults, which have their own
+    // `??` fallbacks but must not fall back to a *different* value than the
+    // bound one.
+    const german = createFormatters({ timeZone: 'UTC', locale: 'de-DE', empty: 'unbekannt' })
+    const locale: string | undefined = undefined
+    expect(german.formatNumber(1234.5, { locale })).toBe('1.234,5')
+    expect(german.formatDate(null, { empty: undefined })).toBe('unbekannt')
+  })
+
   it('is frozen, so one surface cannot quietly repoint another surface’s formatter', () => {
     expect(Object.isFrozen(bound)).toBe(true)
   })

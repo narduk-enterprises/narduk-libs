@@ -241,28 +241,60 @@ function importSpecifiers(source) {
  *
  * - a specifier ending in the component's own module (`.../Name.vue` or
  *   `.../Name`) — the shell package's per-file convention; or
- * - a named import of `name` from any specifier
+ * - a named import of `name` from the package's own components barrel
  *   (`import { Name } from './index'`) — the convention `narduk-charts`'s
  *   `ssr.test.ts` and `narduk-ui`'s `instruments.test.ts`/`ssr.test.ts` use,
  *   since both packages re-export every component through one barrel file
  *   rather than having every test import a component by its own path.
  *
- * The named-import shape is looser than the path shape (it does not confirm
- * the barrel itself re-exports the real component, only that the test names
- * it in an import), but the barrel's own shape is already checked once, by
- * `parseComponentBarrel` reading `PACKAGE_SURFACE_CONFIG`'s `componentsBarrel`
- * to build the surface in the first place — a test cannot invent a name here
- * that the barrel does not actually export, because it would never have
- * reached this check as a surface entry to begin with.
+ * The named-import shape is accepted only for a package that declares a
+ * `componentsBarrel` in `PACKAGE_SURFACE_CONFIG`, and only when that import's
+ * own specifier resolves to that barrel file. Both halves carry weight.
+ * Accepting a named import from *any* specifier would let a file satisfy the
+ * rule by importing `name` from an unrelated module — a binding that need not
+ * be the real component at all — and would apply that looser criterion to
+ * `narduk-shell` too, which imports every component by its own path and needs
+ * none of it. `import type` is excluded for the same reason: it is erased at
+ * build time, so it supplies no runtime binding for `mount` or `renderToString`
+ * to exercise. The barrel's own shape is already checked once, by
+ * `parseComponentBarrel` reading `componentsBarrel` to build the surface, so a
+ * name reaching this check really is exported by the barrel; what this
+ * constrains is that the evidence file reads it from there.
+ *
+ * @param source the file's text, comments already stripped
+ * @param name the component's name
+ * @param options `barrel`: the package-relative components barrel, or `null`
+ *   for the per-file shell shape; `from`: the package-relative path of the
+ *   file `source` came from, which `barrel` is resolved against
  */
-function importsArtefact(source, name) {
+function importsArtefact(source, name, { barrel = null, from = '' } = {}) {
   const pathPattern = new RegExp(`(?:^|/)${escapeRegExp(name)}(?:\\.vue)?$`)
   if (importSpecifiers(source).some((specifier) => pathPattern.test(specifier))) return true
+  if (barrel === null) return false
 
   const namedImportPattern = new RegExp(
-    String.raw`\bimport\s*(?:type\s+)?\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}\s*from\s*['"][^'"]+['"]`,
+    String.raw`\bimport\s*\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}\s*from\s*['"]([^'"]+)['"]`,
+    'g',
   )
-  return namedImportPattern.test(source)
+  return [...source.matchAll(namedImportPattern)].some(([, specifier]) =>
+    resolvesToBarrel(specifier, from, barrel),
+  )
+}
+
+/**
+ * Does `specifier`, written inside `from`, name the package-relative `barrel`
+ * file? Extensions are ignored on both sides and a directory resolves to its
+ * `index`, so `'./index'`, `'./index.ts'` and `'../src'` all name `src/index.ts`
+ * — the shapes `narduk-charts` (`from './index'`) and `narduk-ui`
+ * (`from '../instruments'`) actually use. A bare or absolute specifier never
+ * matches: a package's own barrel is always reached by a relative path.
+ */
+function resolvesToBarrel(specifier, from, barrel) {
+  if (!specifier.startsWith('.')) return false
+  const withoutExtension = (path) => path.replace(/\.(?:vue|m?[jt]sx?)$/, '')
+  const target = withoutExtension(barrel)
+  const resolved = withoutExtension(join(dirname(from), specifier))
+  return resolved === target || (basename(target) === 'index' && resolved === dirname(target))
 }
 
 /** A real import of the package's `format` module, by path (`.../format`). */
@@ -394,7 +426,11 @@ export async function readSurface(packageDirectory) {
  * `PACKAGE_SURFACE_CONFIG` override for a barrel package whose cards do not
  * live under `src/` (narduk-ui ships no `src/` directory at all).
  */
-async function readEvidence(packageDirectory, designCardsDir = 'src/design-cards') {
+async function readEvidence(
+  packageDirectory,
+  designCardsDir = 'src/design-cards',
+  componentsBarrel = null,
+) {
   const readme = await readFile(join(packageDirectory, 'README.md'), 'utf8').catch(() => '')
   const testPaths = await walk(packageDirectory, isTest)
   const tests = await Promise.all(
@@ -418,7 +454,7 @@ async function readEvidence(packageDirectory, designCardsDir = 'src/design-cards
       ),
     ),
   )
-  return { readme, tests, cards, designCardsDir }
+  return { readme, tests, cards, designCardsDir, componentsBarrel }
 }
 
 /**
@@ -446,7 +482,7 @@ const RULES = {
         const source = stripComments(test.source)
         return (
           new RegExp(String.raw`\bmount\(\s*${escapeRegExp(name)}\b`).test(source) &&
-          importsArtefact(source, name)
+          importsArtefact(source, name, { barrel: evidence.componentsBarrel, from: test.path })
         )
       }),
     miss: ({ name, path }) =>
@@ -459,7 +495,9 @@ const RULES = {
         if (!isSsrTest(test.path)) return false
         const source = stripComments(test.source)
         return (
-          names(source, name) && source.includes('renderToString') && importsArtefact(source, name)
+          names(source, name) &&
+          source.includes('renderToString') &&
+          importsArtefact(source, name, { barrel: evidence.componentsBarrel, from: test.path })
         )
       }),
     miss: ({ name, path }) =>
@@ -468,12 +506,13 @@ const RULES = {
   card: {
     kinds: ['component'],
     check: ({ name, evidence }) => {
-      const source = evidence.cards.get(`${evidence.designCardsDir}/${name}.card.vue`)
+      const path = `${evidence.designCardsDir}/${name}.card.vue`
+      const source = evidence.cards.get(path)
       if (source === undefined) return false
       const stripped = stripComments(source)
       return (
         stripped.includes(`data-design-card="${kebabCase(name)}"`) &&
-        importsArtefact(stripped, name)
+        importsArtefact(stripped, name, { barrel: evidence.componentsBarrel, from: path })
       )
     },
     miss: ({ name, path, evidence }) =>
@@ -510,9 +549,10 @@ export async function checkComponentSurface({
   packageDirectory,
   pendingCards = pendingCardsFor(packageDirectory),
   designCardsDir = surfaceConfigFor(packageDirectory)?.designCardsDir ?? 'src/design-cards',
+  componentsBarrel = surfaceConfigFor(packageDirectory)?.componentsBarrel ?? null,
 }) {
   const surface = await readSurface(packageDirectory)
-  const evidence = await readEvidence(packageDirectory, designCardsDir)
+  const evidence = await readEvidence(packageDirectory, designCardsDir, componentsBarrel)
   const pending = new Set(pendingCards)
   // Report repository-relative paths so a failure can be pasted into an editor.
   // A fixture package outside the repository keeps its absolute path instead of

@@ -83,8 +83,8 @@ function fixture(without = []) {
   return directory
 }
 
-const check = (directory) =>
-  checkComponentSurface({ packageName: 'fixture', packageDirectory: directory })
+const check = (directory, overrides = {}) =>
+  checkComponentSurface({ packageName: 'fixture', packageDirectory: directory, ...overrides })
 
 test('a component with all four kinds of evidence passes, and the report lists them', async () => {
   const report = await check(fixture())
@@ -186,7 +186,7 @@ test('an SSR test alone does not satisfy the mount rule, and vice versa', async 
   )
 })
 
-test('a named import from a barrel-like specifier satisfies mount/ssr/card too, not just a per-file import path', async () => {
+test("a named import from the package's own barrel satisfies mount/ssr/card too, not just a per-file import path", async () => {
   // narduk-charts's ssr.test.ts and narduk-ui's instruments.test.ts/ssr.test.ts
   // import every component by name from one barrel file (`./index`,
   // `../instruments`) rather than each having its own file-path import — see
@@ -222,10 +222,78 @@ import { NeStatePanel } from '../runtime/components/barrel'
 </template>
 `,
   )
-  const report = await check(directory)
+  const report = await check(directory, {
+    componentsBarrel: 'src/runtime/components/barrel.ts',
+  })
   assert.deepEqual(
     report.misses.filter((miss) => miss.name === 'NeStatePanel'),
     [],
+  )
+})
+
+test('tightened rules: a named import of the component from a module that is not the barrel satisfies nothing', async () => {
+  // The named-import allowance exists for one shape only: a barrel package's
+  // test reading the component from that package's own barrel. Accepting the
+  // name from *any* specifier would let a file satisfy mount/ssr/card with a
+  // binding that need not be the real component -- which is what the rule is
+  // there to establish. Same fixture as the test above, one specifier changed.
+  const directory = fixture([
+    'src/runtime/components/NeStatePanel.test.ts',
+    'src/runtime/components/NeStatePanel.ssr.test.ts',
+    'src/design-cards/NeStatePanel.card.vue',
+  ])
+  mkdirSync(join(directory, 'src/runtime/components'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.test.ts'),
+    "import { mount } from '@vue/test-utils'\nimport { NeStatePanel } from './decoy'\nit('renders', () => { expect(mount(NeStatePanel).text()).toBe('') })\n",
+  )
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.ssr.test.ts'),
+    "import { renderToString } from '@vue/server-renderer'\nimport { NeStatePanel } from './decoy'\nit('server renders', async () => { expect(await renderToString(NeStatePanel)).toContain('<div') })\n",
+  )
+  mkdirSync(join(directory, 'src/design-cards'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/design-cards/NeStatePanel.card.vue'),
+    `<script setup lang="ts">
+import { NeStatePanel } from '../runtime/components/decoy'
+</script>
+<template>
+  <section class="preview-card" data-design-card="ne-state-panel"><NeStatePanel /></section>
+</template>
+`,
+  )
+  const report = await check(directory, {
+    componentsBarrel: 'src/runtime/components/barrel.ts',
+  })
+  assert.deepEqual(
+    report.misses.filter((miss) => miss.name === 'NeStatePanel').map((miss) => miss.rule),
+    ['mount', 'ssr', 'card'],
+  )
+})
+
+test('tightened rules: a package with no barrel gets no named-import allowance at all', async () => {
+  // narduk-shell declares no `componentsBarrel`: every one of its tests imports
+  // the component by its own path. The looser named-import shape must not reach
+  // it, or the allowance barrel packages need would silently relax the rule for
+  // the package with the largest surface.
+  const directory = fixture([
+    'src/runtime/components/NeStatePanel.test.ts',
+    'src/runtime/components/NeStatePanel.ssr.test.ts',
+  ])
+  mkdirSync(join(directory, 'src/runtime/components'), { recursive: true })
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.test.ts'),
+    "import { mount } from '@vue/test-utils'\nimport { NeStatePanel } from './barrel'\nit('renders', () => { expect(mount(NeStatePanel).text()).toBe('') })\n",
+  )
+  writeFileSync(
+    join(directory, 'src/runtime/components/NeStatePanel.ssr.test.ts'),
+    "import { renderToString } from '@vue/server-renderer'\nimport { NeStatePanel } from './barrel'\nit('server renders', async () => { expect(await renderToString(NeStatePanel)).toContain('<div') })\n",
+  )
+  assert.deepEqual(
+    (await check(directory)).misses
+      .filter((miss) => miss.name === 'NeStatePanel')
+      .map((miss) => miss.rule),
+    ['mount', 'ssr'],
   )
 })
 

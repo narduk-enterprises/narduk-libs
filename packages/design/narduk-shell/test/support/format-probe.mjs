@@ -84,6 +84,19 @@ cases.push(
   ['bound.money', bound.formatMoney(1234.5, { currency: 'USD' })],
 )
 
+// A per-call option that is explicitly `undefined` -- what a caller gets for
+// free from any optional field, e.g. `{ timeZone: row.zone }` -- must fall back
+// to the bound zone. A plain spread would keep the own property, and `Intl`
+// reads an own `undefined` `timeZone` as the host's, so these three lines would
+// differ under each TZ below. narduk-libs#283 review.
+const absent = undefined
+cases.push(
+  ['bound.date.undefinedZone', bound.formatDate(AT, { timeZone: absent })],
+  ['bound.dateTime.undefinedZone', bound.formatDateTime(AT, { timeZone: absent })],
+  ['bound.relative.undefinedZone', bound.formatRelative(AT, { now: NOW, timeZone: absent })],
+  ['bound.number.undefinedLocale', bound.formatNumber(1234.5678, { locale: absent })],
+)
+
 for (const [name, output] of cases) {
   process.stdout.write(`${JSON.stringify({ name, output })}\n`)
 }

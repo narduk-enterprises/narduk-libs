@@ -1283,8 +1283,11 @@ Tone → colour, the same vocabulary `NeStatusBadge` uses:
 
 Colour is never the only signal for a delta's direction: the rendered text
 always carries an explicit sign (`formatNumber`'s `signDisplay: 'always'`) and a
-▲/▼ glyph (`aria-hidden`, since the sign already reads correctly on its own), so
-the reading survives with every tone-driven colour class stripped away.
+▲/▼ glyph, so the reading survives with every tone-driven colour class stripped
+away. Glyph and number are one text node rather than an `aria-hidden` glyph span
+beside a separate number — splitting them would leave the visible reading at the
+mercy of how the template compiler treats the whitespace between the two, and
+the sign alone already carries the direction with no glyph at all.
 `test/NeKpiTile.mount.test.ts` proves the delta text is identical across every
 tone.
 

@@ -718,6 +718,30 @@ export function formatQuantity(
  * Per-call options still win, so one row can render in another zone without a
  * second bound set.
  */
+/**
+ * `options` with every explicitly-`undefined` value dropped.
+ *
+ * {@link createFormatters}'s bound signatures take `Partial<…>`, so
+ * `{ timeZone: undefined }` type-checks — and a caller gets exactly that for
+ * free from any optional field (`formatDateTime(at, { timeZone: row.zone })`
+ * where `zone` is `string | undefined`). A plain spread keeps that own
+ * property, and `Intl.DateTimeFormat` treats an own `undefined` `timeZone`
+ * exactly like an absent one: the **host's** zone. That would render
+ * `Mar 8, 2026, 8:30 AM` in a UTC Worker and `5:30 PM` in a Tokyo browser for
+ * the same call — the hydration mismatch this module's header says it prevents
+ * by construction. Dropping the key restores the bound default instead.
+ * Nothing is lost: no field of {@link NeFormatterDefaults} has an "unset"
+ * meaning a caller could want. (narduk-libs#283 review.)
+ */
+function definedValues<T extends object>(options: T | undefined): Partial<T> {
+  if (options === undefined) return {}
+  const defined: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) defined[key] = value
+  }
+  return defined as Partial<T>
+}
+
 export function createFormatters(defaults: NeFormatterDefaults): NeFormatters {
   // The assertion is the spread's own shape, which TypeScript cannot see
   // through an unresolved `T`: the result carries every key of `options` and
@@ -725,7 +749,7 @@ export function createFormatters(defaults: NeFormatterDefaults): NeFormatters {
   // second. Each call below then supplies the rest of its own required
   // options (`now`, `currency`, `unit`) as `T`.
   const bind = <T extends object>(options: T | undefined): T & NeFormatterDefaults =>
-    ({ ...defaults, ...options }) as T & NeFormatterDefaults
+    ({ ...defaults, ...definedValues(options) }) as T & NeFormatterDefaults
   return Object.freeze({
     formatDate: (value, options) => formatDate(value, bind(options)),
     formatDateTime: (value, options) => formatDateTime(value, bind(options)),

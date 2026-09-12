@@ -299,10 +299,13 @@ export function createRootPackageManifest(
         // reopen the hole silently.
         //
         // narduk-shell (added by item 4, narduk-libs#251) deliberately has NO
-        // override entry here, checked against this same derivation: its own
-        // `dependencies` are `@nuxt/kit` and `defu` only (no
-        // `@narduk-enterprises/*` runtime edge), and nothing else in the
-        // workspace ships it as a `workspace:` runtime dependency today --
+        // override entry here, checked against this same derivation. It does
+        // ship one `@narduk-enterprises/*` runtime edge of its own --
+        // `@narduk-enterprises/narduk-platform`, a `workspace:*` dependency --
+        // but that only makes it a fifth publisher of a package already
+        // overridden below, which changes nothing. What decides shell's own
+        // entry is the other direction: nothing else in the workspace ships
+        // *shell* as a `workspace:` runtime dependency today --
         // `design-system-build` depends on it, but only as a devDependency,
         // which the derivation excludes because a published package's
         // devDependencies are never installed by its consumers. Zero
