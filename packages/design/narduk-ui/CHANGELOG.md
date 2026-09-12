@@ -1,5 +1,20 @@
 # @narduk-enterprises/narduk-ui
 
+## 0.1.3
+
+### Patch Changes
+
+- 98a199b: Add an NE Base design card (`design-cards/<Name>.card.vue`) for every registered
+  status instrument (`NsFreshnessChip`, `NsLevelWell`, `NsRangeBar`,
+  `NsReadoutTile`), completing the suite bar's last requirement alongside the
+  existing README sections and mount/SSR tests.
+  `scripts/check-component-surface.mjs` now checks this package (components
+  backlog item 22, narduk-libs#269).
+- 74aecaf: Add README sections (props, slots, events, one example) plus mount and no-DOM
+  SSR tests for every registered status instrument: `NsFreshnessChip`,
+  `NsLevelWell`, `NsRangeBar` and `NsReadoutTile`. Existing core
+  measurement/signal guardrail tests are unchanged.
+
 ## 0.1.2
 
 ### Patch Changes

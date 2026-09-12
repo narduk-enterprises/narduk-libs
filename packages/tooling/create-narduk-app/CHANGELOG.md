@@ -1,5 +1,125 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.4.0
+
+### Minor Changes
+
+- 3578eef: Scaffold a `.github/dependabot.yml` with one Dependabot group
+  (`narduk-libs`, patterns `@narduk-enterprises/*`) using
+  `directories: ['/', '/apps/*']` so the update covers the root lockfile and the
+  `apps/web` manifest that holds the estate pins (components-library-plan.md §2
+  item 6, narduk-libs#253). Generated apps now carry one bot config:
+  `renovate.json` is no longer scaffolded (D-TOOLCHAIN-1 prefers Dependabot;
+  item 5.2 already accepts either). `@narduk-enterprises/narduk-auth` is dropped
+  from `pnpm.overrides`: nothing in the estate depends on narduk-auth, so the
+  override could never collapse a second copy, and Dependabot does not update
+  that field. The estate overrides that ARE load-bearing are covered in a
+  separate changeset. The registries block reads the org-level Dependabot secret
+  `NARDUK_PLATFORM_GH_PACKAGES_READ`. A live Dependabot run against a generated
+  app is not possible from the PR VM; empirical proof is a follow-up.
+- 1a7a036: Generator: lint packs and narduk-shell by default
+  (components-library-plan.md §2 item 4, narduk-libs#251).
+
+  - Adds the `design-system` and `nuxt-ui` capability packs to the four already
+    hardcoded (`core`, `correctness`, `complexity`, `formatting`) in both
+    `apps/web/eslint.config.mjs` (`createAppLintConfig`) and the root
+    `eslint.config.mjs` (`composeSharedConfigs`), so every new app starts on the
+    Nuxt UI element discipline, the Tailwind v4 token tier, and the three
+    legacy-API guardrails from day one.
+  - `@narduk-enterprises/narduk-shell` joins the default module list
+    (`nuxt.config.ts`) and the default runtime `dependencies`, unconditionally
+    and not behind a capability flag — the same way narduk-core always ships —
+    with an exact pin. The pin is `0.0.0`: narduk-shell has never been published
+    (item 1 shipped the skeleton without a release, and every wave-2 component
+    item since has left its changeset unconsumed), and the pin has to equal the
+    package's live on-disk version for `versions:check`, not a preview of its
+    next release.
+  - Adds a `charts` capability that pins `@narduk-enterprises/narduk-charts`,
+    the one existing capability package that is not itself a Nuxt module (no
+    `nuxt` peer, no `module.ts`) — it is excluded from the generated
+    `modules: [...]` array for that reason, and added to the generated app's
+    `knip.json` `ignoreDependencies` because nothing in the scaffold imports
+    from it directly yet.
+  - Extends the narduk-libs `packed-consumer-smoke` fixture
+    (`scripts/release-packages.mjs`) so the generated release-smoke app renders
+    `<NeStatusBadge>` alongside `LayerAppHeader`, and asserts its label is
+    visible in a real browser via Playwright — proof that the packed
+    narduk-shell tarball registers and renders a component, not just that
+    `nuxt build` succeeds. `@narduk-enterprises/narduk-shell` is added to
+    `assertExactGeneratedPackagePins`'s required-package set alongside the other
+    always-shipped packages.
+
+  No override entry is added to the generated app's `pnpm.overrides` for
+  narduk-shell: it has no runtime `@narduk-enterprises/*` dependency of its own,
+  and nothing else in the workspace ships it as a `workspace:` **runtime**
+  dependency today (`design-system-build` depends on it only as a devDependency,
+  which `tests/workspace-override-safety.test.ts` deliberately excludes) — so
+  there is no second copy an override could collapse.
+
+- 09b35f7: Generated apps collapse every workspace-published estate pin, and run
+  `foundation:check:shared-ui-pinned` (narduk-libs#282 review).
+
+  - **`pnpm.overrides` regains `@narduk-enterprises/narduk-core` and gains
+    `narduk-logging`, `narduk-platform` (always) and `narduk-mapkit` (mapkit
+    capability).** pnpm replaces a `workspace:` specifier with the _exact_
+    version of that workspace package at publish time, so a published estate
+    package carries a hard pin on whatever its sibling's version was that day.
+    Two different exact pins on one package in one tree is two installed copies
+    — for a Nuxt module two registrations and two `useRuntimeConfig` namespaces,
+    for a contracts package two copies of the zod schemas its consumers are
+    supposed to share. Two shapes produce that second pin: **one publisher plus
+    the app's own direct pin** (`narduk-core` ships
+    `narduk-logging: workspace:*`; `narduk-mapkit-nuxt` ships
+    `narduk-mapkit: workspace:*`), and **two or more publishers with no direct
+    pin at all** — `narduk-platform` is a runtime `workspace:*` dependency of
+    `narduk-core`, `narduk-ai` _and_ `narduk-auth` while a generated app names
+    it nowhere. `narduk-core` is both at once (four publishers and a direct
+    pin). A package with one publisher and no direct pin needs no override and
+    gets none, which is why `narduk-app` (shipped by `narduk-auth` alone) is
+    absent; `@narduk-enterprises/narduk-auth` is absent because nothing in the
+    estate depends on it, so its override was inert. The accepted cost is that
+    Dependabot does not update `pnpm.overrides`, so a grouped bump resolves back
+    to the override until it is bumped by hand: a stale single copy is
+    recoverable, two live copies are not. An override also asserts the estate is
+    mutually compatible at the pinned versions; `versions:sync` keeps those pins
+    on the workspace versions, which is the set built and tested together. A new
+    test derives the whole set from the live workspace manifests — publishers
+    counted over the installed closure, direct pins intersected, devDependency
+    edges excluded because a published package's devDependencies are never
+    installed by its consumers — so a new `workspace:` edge cannot reopen the
+    hole silently.
+  - **New scripts `foundation:shared-ui-pinned` (root and `apps/web`), wired
+    into `quality:static`.** The command reads manifests only and needs no
+    registry credential, so it runs where the generated install step has already
+    dropped the GitHub Packages token. narduk-libs' own `packed-consumer-smoke`
+    job expands the generated `quality` chain, so the check also runs against a
+    really-installed generated app on every narduk-libs PR. The generated CI for
+    a **private** app calls the shared `nuxt-cloudflare.yml` workflow rather
+    than `quality:static`, so `foundation:shared-ui-pinned` is named in its
+    `extra-scripts` too — otherwise that half of the fleet would ship the script
+    and never run it.
+
+- fb0c50c: Add app-owned social preview generation and validation: default
+  artwork, explicit route coverage, initial HTML checks, crawler image
+  downloads, and distinct dynamic route images. The SEO module gains an opt-in
+  global static fallback and canonical OG URLs, with explicit previews for
+  public noindex pages. New scaffolds include artwork sources, metadata, route
+  inventory, build gates, and crawler acceptance. Existing apps opt in through
+  the migration guide; no fleet synchronization occurs.
+
+### Patch Changes
+
+- 699b5da: Refresh the generator's pinned `@narduk-enterprises/narduk-auth`
+  version so new apps pick up the Auth* suite-bar docs and tests. No generator
+  behavior changes beyond the pinned version bump.
+- 54577ac: Refresh the generator's pinned `@narduk-enterprises/narduk-core`
+  version to pick up the `getClientIp` export (`server/utils/client-ip`). No
+  generator behavior changes beyond the pinned version bump.
+- 837c1eb: Refresh the generator's pinned
+  `@narduk-enterprises/narduk-mapkit-nuxt` version so new apps pick up the
+  AppMapKit suite-bar docs and tests. No generator behavior changes beyond the
+  pinned version bump.
+
 ## 0.3.7
 
 ### Patch Changes
