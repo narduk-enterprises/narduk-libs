@@ -29,7 +29,11 @@ export const PACKAGE_VERSIONS = {
   // requires this literal to equal narduk-shell's live `package.json` version,
   // not a preview of its next release, so it moves to a real version only
   // when `pnpm run release:version` actually runs for narduk-shell and
-  // `versions:sync` re-pins this entry.
+  // `versions:sync` re-pins this entry. Until that first publish lands,
+  // scripts/publish-verified-packages.mjs asserts every locally pinned
+  // version above actually resolves on the registry before create-narduk-app
+  // itself publishes, so this (or any future) unpublished pin fails the
+  // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.0.0',
   '@narduk-enterprises/narduk-testkit': '1.2.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
