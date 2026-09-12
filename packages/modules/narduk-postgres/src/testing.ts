@@ -68,7 +68,7 @@ function highestPlaceholder(text: string): number {
 }
 
 function assertEncodable(params: readonly unknown[]): void {
-  params.forEach((value, index) => {
+  for (const [index, value] of params.entries()) {
     const kind = typeof value
     if (value === undefined || kind === 'function' || kind === 'symbol') {
       throw new NardukPostgresError(
@@ -77,7 +77,7 @@ function assertEncodable(params: readonly unknown[]): void {
         { index: index + 1 },
       )
     }
-  })
+  }
 }
 
 export class ProtocolFake implements TransactionalExecutor {
@@ -142,8 +142,7 @@ export class ProtocolFake implements TransactionalExecutor {
     this.statements.push({ params: [...params], text })
 
     for (const rule of this.#responses) {
-      const matched =
-        typeof rule.match === 'function' ? rule.match(text) : rule.match.test(text)
+      const matched = typeof rule.match === 'function' ? rule.match(text) : rule.match.test(text)
       if (!matched) continue
       const rows = (typeof rule.rows === 'function' ? rule.rows(params) : rule.rows) as Row[]
       return { rowCount: rows.length, rows }

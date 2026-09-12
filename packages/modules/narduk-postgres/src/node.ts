@@ -12,11 +12,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { NardukPostgresError } from './errors.js'
-import {
-  MIGRATION_NAME_PATTERN,
-  type Migration,
-  createMigrationSet,
-} from './migrate.js'
+import { MIGRATION_NAME_PATTERN, type Migration, createMigrationSet } from './migrate.js'
 import { redactConnectionString } from './redact.js'
 import {
   type ConnectionTuning,
@@ -43,9 +39,7 @@ export function nodeDriverOptions(options: ConnectionTuningOptions = {}): NodePo
  * exclusion the runner depends on. This pins `maxConnections` to 1 and ignores
  * any attempt to raise it, rather than trusting every caller to remember.
  */
-export function migrationDriverOptions(
-  options: ConnectionTuningOptions = {},
-): NodePostgresOptions {
+export function migrationDriverOptions(options: ConnectionTuningOptions = {}): NodePostgresOptions {
   return toNodePostgresOptions(nodeTuning({ ...options, maxConnections: 1 }))
 }
 
@@ -112,9 +106,7 @@ export async function withNodeConnection<T>(
  * `0003_thing.sql.bak` left behind by an editor is exactly the case where
  * silently ignoring it means a migration nobody notices is missing.
  */
-export async function loadMigrationsFromDirectory(
-  directory: string | URL,
-): Promise<Migration[]> {
+export async function loadMigrationsFromDirectory(directory: string | URL): Promise<Migration[]> {
   const path = typeof directory === 'string' ? directory : fileURLToPath(directory)
   const entries = await readdir(path, { withFileTypes: true })
   const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name)

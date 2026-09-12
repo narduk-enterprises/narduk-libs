@@ -28,9 +28,7 @@ export interface TransactionalExecutor extends SqlExecutor {
   transaction<T>(run: (tx: SqlExecutor) => Promise<T>): Promise<T>
 }
 
-export function isTransactionalExecutor(
-  executor: SqlExecutor,
-): executor is TransactionalExecutor {
+export function isTransactionalExecutor(executor: SqlExecutor): executor is TransactionalExecutor {
   return typeof (executor as Partial<TransactionalExecutor>).transaction === 'function'
 }
 

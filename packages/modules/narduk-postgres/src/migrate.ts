@@ -146,9 +146,7 @@ export async function createMigrationSet(
  * thing to get wrong. This is a lock key, not a security boundary, so a small
  * synchronous hash is the right tool.
  */
-export function migrationLockKey(
-  namespace: string = MIGRATION_LOCK_NAMESPACE,
-): [number, number] {
+export function migrationLockKey(namespace: string = MIGRATION_LOCK_NAMESPACE): [number, number] {
   let high = 0x81_23_45_67
   let low = 0x9a_bc_de_f1
   for (let index = 0; index < namespace.length; index += 1) {
