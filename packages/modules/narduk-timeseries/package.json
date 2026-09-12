@@ -44,12 +44,16 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "prebuild": "node scripts/clean-dist.mjs",
+    "deps:build": "pnpm --filter @narduk-enterprises/narduk-postgres run build",
+    "prebuild": "node scripts/clean-dist.mjs && pnpm run deps:build",
     "build": "tsc --project tsconfig.build.json",
     "prepack": "pnpm run build",
+    "pretypecheck": "pnpm run deps:build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
+    "prelint": "pnpm run deps:build",
     "lint": "eslint src tests --max-warnings 0",
     "lint:strict": "eslint src tests --max-warnings 0",
+    "pretest:unit": "pnpm run deps:build",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
     "quality": "pnpm run test:unit",
