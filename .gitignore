@@ -74,6 +74,10 @@ packages/modules/narduk-logging/python/dist/
 packages/modules/narduk-logging/python/.venv/
 packages/modules/narduk-logging/python/.pytest_cache/
 packages/modules/narduk-logging/python/.ruff_cache/
+
+# Postgres and timeseries packages build to dist/ at prepack; it is never committed
+packages/modules/narduk-postgres/dist/
+packages/modules/narduk-timeseries/dist/
 .build/
 .swiftpm/
 
