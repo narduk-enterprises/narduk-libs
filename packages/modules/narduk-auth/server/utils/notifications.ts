@@ -1,10 +1,11 @@
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 
 import { executeDatabaseQuery, useDatabase } from '#layer/server/utils/database'
 import { notifications } from '#narduk-core/schema'
 
 import type { Notification } from '#narduk-core/schema'
+import type { ListSort } from '@narduk-enterprises/narduk-platform/list-query'
 import type { H3Event } from 'h3'
 
 /**
@@ -16,6 +17,19 @@ import type { H3Event } from 'h3'
  *
  * All functions require an H3Event for database access via `useDatabase()`.
  */
+
+/**
+ * Sort keys this module knows how to order by. Keep in lockstep with the
+ * route's own `SORTABLE` allowlist — a key accepted there but missing from
+ * {@link NOTIFICATION_SORT_COLUMNS} would fall through to the default column
+ * silently instead of failing loudly.
+ */
+export type NotificationSortKey = 'createdAt'
+
+/** Column each allowlisted sort key orders by. */
+const NOTIFICATION_SORT_COLUMNS = {
+  createdAt: notifications.createdAt,
+} as const satisfies Record<NotificationSortKey, typeof notifications.createdAt>
 
 /** Input shape for creating a notification. */
 export interface CreateNotificationInput {
@@ -32,6 +46,10 @@ export interface CreateNotificationInput {
 /** Options for listing notifications. */
 export interface ListNotificationOptions {
   limit?: number
+  /** Rows to skip. Without it a paged caller silently re-reads page one. */
+  offset?: number
+  /** Defaults to `createdAt` descending (newest first) when omitted. */
+  sort?: ListSort<NotificationSortKey> | null
   unreadOnly?: boolean
 }
 
@@ -74,18 +92,23 @@ export async function getUserNotifications(
 ): Promise<Notification[]> {
   const db = useDatabase(event)
   const limit = Math.min(options.limit ?? 50, 100)
+  const offset = Math.max(options.offset ?? 0, 0)
 
   const conditions = [eq(notifications.userId, userId)]
   if (options.unreadOnly) {
     conditions.push(eq(notifications.isRead, false))
   }
 
+  const column = NOTIFICATION_SORT_COLUMNS[options.sort?.key ?? 'createdAt']
+  const order = options.sort?.direction === 'asc' ? asc(column) : desc(column)
+
   return db
     .select()
     .from(notifications)
     .where(and(...conditions))
-    .orderBy(desc(notifications.createdAt))
+    .orderBy(order)
     .limit(limit)
+    .offset(offset)
 }
 
 /**

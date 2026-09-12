@@ -26,6 +26,7 @@ import {
   NardukScatterChart,
   NardukHistogramChart,
   NardukCandleChart,
+  NardukChartStack,
   NardukBrandBackdrop,
 } from './index'
 
@@ -142,5 +143,40 @@ describe('server rendering without a DOM', () => {
     // The import at the top of this file already proves module scope is clean;
     // this asserts the same for a second render, after any lazy init.
     await expect(render(NardukLineChart, { series, labels })).resolves.toContain('<svg')
+  })
+})
+
+describe('NardukChartStack under SSR', () => {
+  // NardukChartStack has no chart of its own — it is a slot-forwarding layout
+  // wrapper (`defineModel`, a `<div>`, and a scoped `<slot>`). It is exercised
+  // here rather than added to `cases` above because proving it renders under
+  // SSR means proving the *slotted* content — including the `v-model:domain`
+  // scope handed to it — reaches the server output too, not just the wrapper.
+  it('renders the wrapper and forwards v-model:domain into a slotted chart, with no DOM', async () => {
+    const html = await renderToString(
+      createSSRApp({
+        components: { NardukChartStack, NardukCandleChart },
+        template: `
+          <NardukChartStack v-model:domain="domain">
+            <template #default="{ domain: d }">
+              <NardukCandleChart :bars="bars" :domain="d" chart-title="Stacked under SSR" />
+            </template>
+          </NardukChartStack>
+        `,
+        data() {
+          return {
+            domain: null as null | { start: number; end: number },
+            bars: [
+              { t: 1_700_000_000_000, o: 1, h: 2, l: 0.5, c: 1.5 },
+              { t: 1_700_003_600_000, o: 1.5, h: 2.5, l: 1.2, c: 2 },
+            ],
+          }
+        },
+      }),
+    )
+
+    expect(html).toContain('narduk-chart-stack')
+    expect(html).toContain('<svg')
+    expect(html).toContain('Stacked under SSR')
   })
 })

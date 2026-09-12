@@ -9,26 +9,13 @@
  *              The app's own CI must treat this as a failure too.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { runFoundationCheck } from '../foundation/evaluate.js'
 import { formatArtefactSummary } from '../foundation/schema.js'
 import type { FoundationCheckArtefact } from '../foundation/types.js'
-
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-
-function readOwnVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
-      version?: unknown
-    }
-    return typeof pkg.version === 'string' ? pkg.version : '0.0.0'
-  } catch {
-    return '0.0.0'
-  }
-}
+import { readOwnVersion } from './own-version.js'
 
 export interface FoundationCheckFlags {
   checkoutDir: string
@@ -36,7 +23,10 @@ export interface FoundationCheckFlags {
   json: boolean
 }
 
-export function parseFoundationCheckArgs(args: string[]): FoundationCheckFlags {
+export function parseFoundationCheckArgs(
+  args: string[],
+  commandName = 'foundation:check',
+): FoundationCheckFlags {
   let checkoutDir = process.cwd()
   let jsonPath: string | null = null
   let json = false
@@ -51,7 +41,7 @@ export function parseFoundationCheckArgs(args: string[]): FoundationCheckFlags {
       } else {
         json = true
       }
-    } else throw new Error(`Unknown foundation:check option: ${arg}`)
+    } else throw new Error(`Unknown ${commandName} option: ${arg}`)
   }
   return { checkoutDir: resolve(checkoutDir), jsonPath, json }
 }

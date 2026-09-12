@@ -3,13 +3,15 @@ import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { renderBundle } from './build.mts'
+import { isCodedToken, renderBundle } from './build.mts'
 import postcss from 'postcss'
 
 const root = fileURLToPath(new URL('../dist/design-system/', import.meta.url))
 const manifest = JSON.parse(await readFile(join(root, 'build-manifest.json'), 'utf8'))
 assert.equal(manifest.kind, 'narduk-coded-design-system')
 assert.equal(manifest.schemaVersion, 1)
+assert.equal(typeof manifest.packages['narduk-shell'], 'string')
+assert.deepEqual(manifest.coverage.missing, [])
 const actual = (await readdir(root, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile())
   .map((entry) => join(entry.parentPath, entry.name).slice(root.length))
@@ -35,12 +37,21 @@ const tokens = await readFile(join(root, 'tokens.css'), 'utf8')
 const styles = await readFile(join(root, 'styles.css'), 'utf8')
 assert.ok(Buffer.byteLength(tokens) < 32 * 1024, 'Token sheet unexpectedly large')
 postcss.parse(tokens).walkDecls((decl) => {
-  assert.ok(decl.prop.startsWith('--ns-'))
+  assert.ok(isCodedToken(decl.prop), `token sheet has a non-coded property: ${decl.prop}`)
 })
 postcss.parse(styles).walkDecls((decl) => {
-  assert.ok(!decl.prop.startsWith('--ns-'))
+  assert.ok(!isCodedToken(decl.prop), `styles still carry a coded token: ${decl.prop}`)
 })
-const { files, cards } = renderBundle(html, tokens + styles)
+assert.match(tokens, /--ne-ink-muted/)
+assert.match(tokens, /--ne-accent/)
+assert.match(tokens, /--ne-structure/)
+assert.match(styles, /--ui-text-muted/)
+assert.equal(
+  typeof manifest.coverage.note,
+  'string',
+  'Manifest does not record the note the build stamped into index.html',
+)
+const { files, cards } = renderBundle(html, tokens + styles, manifest.coverage.note)
 assert.equal(cards.length, manifest.coverage.cards)
 for (const [path, contents] of Object.entries(files)) {
   // Recombining split styles can change insignificant whitespace, not their declarations.

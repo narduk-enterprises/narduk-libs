@@ -295,6 +295,40 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
+    {
+      // components-library-plan.md #2 item 6 (narduk-libs#253): one
+      // Dependabot group for @narduk-enterprises/* so a fleet-wide bump
+      // lands as one PR per app, not one per package. The `groups.*.patterns`
+      // shape is the D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts
+      // (narduk-libs#233 / PR #235). The registries block reuses the same
+      // GitHub Packages registry URL as the committed .npmrc
+      // (`@narduk-enterprises:registry=...`). The token is read from the
+      // org-level DEPENDABOT secret NARDUK_PLATFORM_GH_PACKAGES_READ (verified
+      // present 2026-09-11) -- Dependabot secrets are a separate store from
+      // Actions secrets; the Actions secret of the same name is what CI uses.
+      path: '.github/dependabot.yml',
+      contents: text(
+        'version: 2',
+        'registries:',
+        '  narduk-github-packages:',
+        '    type: npm-registry',
+        '    url: https://npm.pkg.github.com',
+        '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
+        'updates:',
+        "  - package-ecosystem: 'npm'",
+        '    directories:',
+        "      - '/'",
+        "      - '/apps/*'",
+        '    registries:',
+        '      - narduk-github-packages',
+        '    schedule:',
+        "      interval: 'weekly'",
+        '    groups:',
+        '      narduk-libs:',
+        '        patterns:',
+        "          - '@narduk-enterprises/*'",
+      ),
+    },
     ...(visibility === 'private'
       ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
       : []),
@@ -330,6 +364,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
         'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In private CI the pinned shared workflow invokes `scripts/package-registry-auth.mjs` before installation and removes its ignored `.npmrc.auth` output on every install outcome. Public CI uses a unique temporary userconfig under `$RUNNER_TEMP`. Both supply the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` through `NPM_CONFIG_USERCONFIG` only for installation. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
+        '',
+        'Dependabot is a fourth consumer of `NARDUK_PLATFORM_GH_PACKAGES_READ`: it reads that name from the org Dependabot secret store (a separate store from Actions). If the org secret is scoped to selected repositories, grant this newly generated repo access or Dependabot silently fails to resolve the private `@narduk-enterprises/*` scope.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
@@ -832,33 +868,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "  trailingComma: 'all',",
         '  printWidth: 100,',
         "  endOfLine: 'lf',",
-        '}',
-      ),
-    },
-    {
-      path: 'renovate.json',
-      contents: text(
-        '{',
-        '  "extends": ["config:recommended"],',
-        '  "packageRules": [',
-        '    {',
-        '      "rangeStrategy": "pin",',
-        '      "matchManagers": ["pnpm"]',
-        '    },',
-        '    {',
-        '      "groupName": "narduk libraries",',
-        '      "matchPackageNames": ["@narduk-enterprises/**"],',
-        '      "rangeStrategy": "pin"',
-        '    },',
-        '    {',
-        '      "groupName": "narduk mapkit",',
-        '      "matchPackageNames": [',
-        '        "@narduk-enterprises/narduk-mapkit",',
-        '        "@narduk-enterprises/narduk-mapkit-nuxt"',
-        '      ],',
-        '      "rangeStrategy": "pin"',
-        '    }',
-        '  ]',
         '}',
       ),
     },

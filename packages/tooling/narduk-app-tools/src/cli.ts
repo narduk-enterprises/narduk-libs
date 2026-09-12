@@ -11,6 +11,7 @@ import {
   runPerformanceBudgetCheck,
 } from './performance.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
+import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
@@ -30,6 +31,8 @@ function usage(): string {
     '  og:check [--live] [--base-url URL] [--json]  Verify route coverage and crawler images',
     '  foundation:check [--checkout <dir>] [--json [path]]',
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
+    '  foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]',
+    '                                       Item 8: UI apps must exact-pin published shared-UI packages',
   ].join('\n')
 }
 
@@ -127,6 +130,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check') {
       const { exitCode } = await runFoundationCheckCommand(parseFoundationCheckArgs(rest))
+      return exitCode
+    }
+    if (command === 'foundation:check:shared-ui-pinned') {
+      const { exitCode } = await runSharedUiPinnedCheckCommand(
+        parseFoundationCheckArgs(rest, 'foundation:check:shared-ui-pinned'),
+      )
       return exitCode
     }
     throw new Error(`Unknown command: ${command}\n\n${usage()}`)

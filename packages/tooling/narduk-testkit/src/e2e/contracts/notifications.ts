@@ -72,9 +72,21 @@ function getCreatedNotificationId(result: unknown): string {
 }
 
 function expectNotificationList(data: unknown): Array<Record<string, unknown>> {
-  expect(data).toEqual(expect.objectContaining({ notifications: expect.any(Array) }))
+  // Contract shape plus the deprecated `notifications` alias (narduk-libs#257).
+  expect(data).toEqual(
+    expect.objectContaining({
+      items: expect.any(Array),
+      notifications: expect.any(Array),
+    }),
+  )
 
-  return (data as { notifications: Array<Record<string, unknown>> }).notifications
+  const body = data as {
+    items: Array<Record<string, unknown>>
+    notifications: Array<Record<string, unknown>>
+  }
+  expect(body.notifications).toEqual(body.items)
+
+  return body.items
 }
 
 function expectIsoTimestamp(value: unknown) {

@@ -261,3 +261,181 @@ in the zone**, including any future or compromised subdomain. Do not do it
 
 `/settings/passkeys` lists a user's credentials (name, created, last used) and
 revokes them. Up to 20 credentials per user.
+
+## Auth card components
+
+The module registers everything under `app/components` with `addComponentsDir`
+(`pathPrefix: false`). The `Auth*` surface is five cards. Source-regex
+guardrails (`auth-card-autocomplete`, `auth-login-card-contrast`) stay in place;
+this section is the suite-bar API. NE Base `data-design-card` entries are
+deferred until the card mechanism in
+[#250](https://github.com/narduk-enterprises/narduk-libs/issues/250) lands.
+
+The stonx `AuthBackground` / `AuthLegalFooter` rename and the been-sober-for and
+bluebonnet `auth/*` copies are app-repo work, not this package.
+
+### `AuthLoginCard`
+
+Email/password sign-in, with optional Apple and passkey buttons when the runtime
+advertises them.
+
+#### Props
+
+| Prop           | Default         | Purpose                                                                                         |
+| -------------- | --------------- | ----------------------------------------------------------------------------------------------- |
+| `title`        | `Welcome back`  | Card heading.                                                                                   |
+| `subtitle`     | resolved copy   | Overrides the backend-aware subtitle (`loginCopy`). Omit to keep the package default.           |
+| `redirectPath` | runtime default | Same-origin path to enter after success. Falls back to `?next=` then `public.authRedirectPath`. |
+
+#### Slots
+
+None.
+
+#### Events
+
+| Event     | Payload                                     |
+| --------- | ------------------------------------------- |
+| `success` | `{ email, id, name }` — the signed-in user. |
+
+#### Example
+
+```vue
+<template>
+  <AuthLoginCard
+    title="Operator sign-in"
+    redirect-path="/dashboard/"
+    @success="(user) => console.log(user.email)"
+  />
+</template>
+```
+
+### `AuthRegisterCard`
+
+Public signup. Apple is offered only on the Supabase backend when `apple` is in
+`authProviders`.
+
+#### Props
+
+| Prop           | Default                                                  | Purpose                                                                                         |
+| -------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `title`        | `Create an account`                                      | Card heading.                                                                                   |
+| `subtitle`     | `Start with Apple, then fall back to email when needed.` | Card subtitle.                                                                                  |
+| `redirectPath` | runtime default                                          | Same-origin path to enter after success. Falls back to `?next=` then `public.authRedirectPath`. |
+
+#### Slots
+
+None.
+
+#### Events
+
+| Event     | Payload                                              |
+| --------- | ---------------------------------------------------- |
+| `success` | `{ email, id, name }` — the created, signed-in user. |
+
+#### Example
+
+```vue
+<template>
+  <AuthRegisterCard title="Join" @success="(user) => console.log(user.id)" />
+</template>
+```
+
+### `AuthExchangePanel`
+
+Finishes an OAuth or emailed-link callback (`code`, or `token_hash` + `type`)
+into an app session. Used by `/auth/callback` and `/auth/confirm`.
+
+#### Props
+
+| Prop          | Default                                                              | Purpose        |
+| ------------- | -------------------------------------------------------------------- | -------------- |
+| `title`       | `Finishing sign-in`                                                  | Card heading.  |
+| `description` | `We are validating the auth callback and creating your app session.` | Card subtitle. |
+
+#### Slots
+
+None.
+
+#### Events
+
+None. A successful exchange `navigateTo`s `result.redirectTo` or
+`public.authRedirectPath`.
+
+#### Example
+
+```vue
+<template>
+  <AuthExchangePanel
+    title="Confirming your email"
+    description="We are finishing account confirmation and creating your app session."
+  />
+</template>
+```
+
+### `AuthPasskeysPanel`
+
+Lists, adds, and revokes the signed-in user's passkeys. Renders on
+`/settings/passkeys`.
+
+#### Props
+
+None.
+
+#### Slots
+
+None.
+
+#### Events
+
+None. Toasts report add/remove; failures stay on the card.
+
+#### Example
+
+```vue
+<template>
+  <AuthPasskeysPanel />
+</template>
+```
+
+### `AuthApiKeysPanel`
+
+Mints and revokes personal API tokens. Renders on `/settings/api-keys`.
+
+#### Props
+
+| Prop                    | Default | Purpose                                                                                         |
+| ----------------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `availableScopes`       | `[]`    | Extra scope chips merged with the package's `auth:api-keys:read` / `auth:api-keys:write` pair.  |
+| `tokenProfiles`         | `[]`    | Recommended `{ id, label, description, scopes?, expiresInDays? }` presets shown above the form. |
+| `defaultTokenProfileId` | `null`  | When set, applies that profile to the create form on first mount.                               |
+
+#### Slots
+
+None.
+
+#### Events
+
+None. Toasts report create/revoke; the raw token is shown once on the card.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const tokenProfiles = [
+  {
+    id: 'registry-read',
+    label: 'Registry reader',
+    description: 'Read-only registry access.',
+    scopes: ['registry:read'],
+    expiresInDays: 30,
+  },
+]
+</script>
+
+<template>
+  <AuthApiKeysPanel
+    :token-profiles="tokenProfiles"
+    default-token-profile-id="registry-read"
+  />
+</template>
+```
