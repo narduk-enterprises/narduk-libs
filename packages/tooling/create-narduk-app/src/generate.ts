@@ -183,6 +183,23 @@ function moduleList(capabilities: readonly Capability[]): string {
   )
 }
 
+// Mirrors Prettier's own printWidth-driven collapse/expand decision for a JSON
+// array (see knip.json below): single-line when it fits under the configured
+// 100-char printWidth, otherwise one item per line. Unlike moduleList's TS
+// array, JSON items use double-quoted JSON.stringify output and this repo's
+// JSON prettier override (trailingComma: 'none') forbids a trailing comma
+// after the last item.
+function knipIgnoreDependenciesLine(dependencies: readonly string[]): string {
+  const items = dependencies.map((dependency) => JSON.stringify(dependency))
+  const inline = `  "ignoreDependencies": [${items.join(', ')}]`
+  if (inline.length <= 100) return inline
+  return [
+    '  "ignoreDependencies": [',
+    ...items.map((item, index) => `    ${item}${index < items.length - 1 ? ',' : ''}`),
+    '  ]',
+  ].join('\n')
+}
+
 interface NormalizedCreateOptions {
   appName: string
   capabilities: Capability[]
@@ -243,6 +260,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     : []
   const knipIgnoreDependencies = [
     '@iconify-json/lucide',
+    // @nuxt/ui's own module dynamically imports this to register the Vite
+    // plugin (see dependencyEntries'/devDependencyEntries' tailwindcss
+    // comments in manifest.ts) -- nothing in the generated app's own source
+    // imports it by name, so knip would otherwise flag it unused.
+    '@tailwindcss/vite',
     ...(capabilities.includes('mapkit') ? ['@narduk-enterprises/narduk-mapkit'] : []),
     // narduk-charts ships no default page or component that imports it --
     // the capability only pins the package for the app's own future chart
@@ -504,10 +526,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
             '</script>',
             '',
             '<template>',
-            '  <main>',
+            // A native <main> trips the design-system pack's
+            // vue/no-restricted-html-elements rule (components-library-plan.md
+            // item 4 adds that pack to every generated app's default lint
+            // config); <UMain> is Nuxt UI's blessed replacement.
+            '  <UMain>',
             '    <h1>{{ displayName }}</h1>',
             '    <p>{{ description }}</p>',
-            '  </main>',
+            '  </UMain>',
             '</template>',
           )
         : text(
@@ -517,10 +543,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
             '</script>',
             '',
             '<template>',
-            '  <main>',
+            // A native <main> trips the design-system pack's
+            // vue/no-restricted-html-elements rule (components-library-plan.md
+            // item 4 adds that pack to every generated app's default lint
+            // config); <UMain> is Nuxt UI's blessed replacement.
+            '  <UMain>',
             '    <h1>{{ displayName }}</h1>',
             '    <p>{{ description }}</p>',
-            '  </main>',
+            '  </UMain>',
             '</template>',
           ),
     },
@@ -825,9 +855,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      }',
         '    }',
         '  },',
-        '  "ignoreDependencies": [' +
-          knipIgnoreDependencies.map((dependency) => JSON.stringify(dependency)).join(', ') +
-          ']',
+        knipIgnoreDependenciesLine(knipIgnoreDependencies),
         '}',
       ),
     },

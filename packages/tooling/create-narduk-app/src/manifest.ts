@@ -129,6 +129,14 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
     '@nuxt/ui',
     'drizzle-orm',
     'nuxt',
+    // @nuxt/ui declares tailwindcss as a peer, not a dependency, and
+    // eslint-plugin-better-tailwindcss (design-system pack) resolves
+    // `tailwindcss/package.json` from the linted package's own directory --
+    // pnpm's strict per-package isolation means that resolution fails unless
+    // the app declares tailwindcss itself, whatever narduk-core or @nuxt/ui
+    // pull in transitively. narduk-core's own package.json makes the same
+    // choice (a real `dependencies` entry, not just a peer passthrough).
+    'tailwindcss',
   ]
 
   return Object.fromEntries(
@@ -144,6 +152,12 @@ function devDependencyEntries(): Record<string, string> {
     '@narduk-enterprises/narduk-app-tools',
     '@narduk-enterprises/narduk-testkit',
     '@playwright/test',
+    // @nuxt/ui's module dynamically imports('@tailwindcss/vite') at Nuxt
+    // setup time to register the Vite plugin itself; the app has to make the
+    // package resolvable, the same requirement as the tailwindcss dependency
+    // above (see dependencyEntries). narduk-core pins it as a devDependency
+    // too, since it is a build-time-only tool, never shipped at runtime.
+    '@tailwindcss/vite',
     '@types/node',
     'drizzle-kit',
     'eslint',
