@@ -48,4 +48,7 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeForm', filePath: './runtime/components/NeForm.vue' },
   { name: 'NeFormSection', filePath: './runtime/components/NeFormSection.vue' },
   { name: 'NeSettingsPage', filePath: './runtime/components/NeSettingsPage.vue' },
+  // Item 15 (narduk-libs#262): NeKpiTile + NeKpiBand.
+  { name: 'NeKpiTile', filePath: './runtime/components/NeKpiTile.vue' },
+  { name: 'NeKpiBand', filePath: './runtime/components/NeKpiBand.vue' },
 ]

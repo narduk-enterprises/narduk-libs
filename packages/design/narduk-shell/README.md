@@ -45,10 +45,12 @@ fills the `./format` subpath with the shared `Intl` formatters, which is the
 last of the three reserved subpaths to stop being a placeholder; item 19
 ([narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266))
 ships `NeForm`, `NeFormSection` and `NeSettingsPage`, and deprecates
-narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`. Components
-read Nuxt UI semantic tokens and `UBadge` colour/variant props, and do not
-hardcode a colour, radius, shadow or font. Each later item adds its own
-component, README section, tests and NE Base card.
+narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`; item 15
+([narduk-libs#262](https://github.com/narduk-enterprises/narduk-libs/issues/262))
+ships `NeKpiTile` and `NeKpiBand`. Components read Nuxt UI semantic tokens and
+`UBadge` colour/variant props, and do not hardcode a colour, radius, shadow or
+font. Each later item adds its own component, README section, tests and NE Base
+card.
 
 ## Install
 
@@ -1226,6 +1228,101 @@ None, for the same reason as `NeForm`: `onSubmit` is a real function prop.
 next major"). It is deprecated in the same release as this component and removed
 in the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
+
+### NeKpiTile
+
+One measured metric in a `UCard`: a label, a value, and an optional signed delta
+with a caption. The value and the delta are formatted through the `./format`
+subpath's `formatNumber` (item 5,
+[narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)),
+never with `Number.prototype.toLocaleString` — the fixed `en-US` locale is what
+lets the server and the browser render the same digits on the first paint.
+
+#### Example
+
+```vue
+<NeKpiTile
+  label="Runners online"
+  :value="128"
+  :delta="6"
+  tone="ok"
+  detail="vs yesterday"
+/>
+```
+
+#### Props
+
+| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                |
+| -------------- | --------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                   |
+| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` render `formatNumber`'s empty placeholder (`—`). |
+| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                         |
+| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.             |
+| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                         |
+| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                           |
+| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                 |
+
+Tone → colour, the same vocabulary `NeStatusBadge` uses:
+
+| Tone      | Delta colour   |
+| --------- | -------------- |
+| `ok`      | `text-success` |
+| `warn`    | `text-warning` |
+| `error`   | `text-error`   |
+| `info`    | `text-info`    |
+| `neutral` | `text-muted`   |
+| `pending` | `text-muted`   |
+
+#### Slots
+
+| Slot    | When it renders                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spark` | Under the value and delta, when given — e.g. a `narduk-charts` sparkline. `NeKpiTile` never imports `narduk-charts` itself; composing one in is the caller's job. |
+
+#### Accessibility
+
+Colour is never the only signal for a delta's direction: the rendered text
+always carries an explicit sign (`formatNumber`'s `signDisplay: 'always'`) and a
+▲/▼ glyph (`aria-hidden`, since the sign already reads correctly on its own), so
+the reading survives with every tone-driven colour class stripped away.
+`test/NeKpiTile.mount.test.ts` proves the delta text is identical across every
+tone.
+
+`NeNumberOptions` is the `./format` subpath's own type
+(`import type { NeNumberOptions } from '@narduk-enterprises/narduk-shell/format'`).
+
+### NeKpiBand
+
+A responsive grid of `NeKpiTile`s. It lays out; it does not style the tiles
+inside it — no card, border or background of its own, just `display: grid` and a
+gap.
+
+#### Example
+
+```vue
+<NeKpiBand :columns="{ base: 1, sm: 2, lg: 4 }">
+  <NeKpiTile label="Runners online" :value="128" :delta="6" tone="ok" />
+  <NeKpiTile label="Open findings" :value="42" :delta="-3" tone="error" />
+</NeKpiBand>
+```
+
+#### Props
+
+| Prop      | Type                                                                        | Default       | What it does                                                                                                          |
+| --------- | --------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `columns` | `Partial<Record<'base' \| 'sm' \| 'md' \| 'lg' \| 'xl', 1\|2\|3\|4\|5\|6>>` | `{ base: 1 }` | Columns per breakpoint. Only the breakpoints given are constrained; an app's own responsive design fills in the rest. |
+
+Every `grid-cols-*` class this component could ever apply is a literal string in
+`src/runtime/components/NeKpiBand.vue`, not a computed `` `grid-cols-${n}` `` —
+Tailwind's build-time scanner only ships a utility whose class name it can see
+literally in source, so a name assembled at runtime never reaches the compiled
+CSS.
+
+#### Slots
+
+| Slot      | When it renders                                    |
+| --------- | -------------------------------------------------- |
+| `default` | The tiles (or anything else) laid out in the grid. |
 
 ## Formatters (`./format`)
 
