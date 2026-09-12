@@ -20,14 +20,21 @@
  * leave `mapkitReady` false forever here. Mocking only this one seam keeps
  * everything downstream of it — `initMap()` and the whole map lifecycle —
  * real.
+ *
+ * `isClientEnvironment()` is mocked true for the whole file so the "AppMapKit
+ * mount: callout wiring" suite below can exercise `ensureCalloutController()`
+ * — nothing else in this file reads that seam, so forcing it true has no
+ * effect on the other suites.
  */
 import { mount } from '@vue/test-utils'
 import { nextTick, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AppMapKit from '../src/runtime/components/AppMapKit.vue'
+import { createMapKitCalloutController } from '@narduk-enterprises/narduk-mapkit/client'
 
 import type { GeoJSONFeatureCollection } from '../src/runtime/components/AppMapKit.vue'
+import type * as NardukMapkitClient from '@narduk-enterprises/narduk-mapkit/client'
 
 const mapkitReady: Ref<boolean> = ref(true)
 const mapkitError: Ref<string | null> = ref(null)
@@ -35,6 +42,18 @@ const mapkitError: Ref<string | null> = ref(null)
 vi.mock('../src/runtime/composables/useMapKit', () => ({
   useMapKit: () => ({ mapkitError, mapkitReady }),
 }))
+
+vi.mock('../src/runtime/utils/isClientEnvironment', () => ({
+  isClientEnvironment: () => true,
+}))
+
+// Spy-wraps the real factory (via `importOriginal`) rather than replacing it,
+// so `createMapKitCalloutController` still builds a real, working controller
+// — this suite asserts on how it was *called*, not a fake return value.
+vi.mock('@narduk-enterprises/narduk-mapkit/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof NardukMapkitClient>()
+  return { ...actual, createMapKitCalloutController: vi.fn(actual.createMapKitCalloutController) }
+})
 
 class MapKitCoordinate {
   constructor(
@@ -177,6 +196,7 @@ function assertDefined<T>(value: T | undefined, message: string): T {
 beforeEach(() => {
   mapkitReady.value = true
   mapkitError.value = null
+  vi.mocked(createMapKitCalloutController).mockClear()
 })
 
 afterEach(() => {
@@ -520,6 +540,121 @@ describe('AppMapKit mount: GeoJSON overlays', () => {
     expect(map.removeOverlays.mock.calls[0]?.[0]).toEqual(firstOverlays)
     // The prior 2 plus 1 more for the single-feature replacement.
     expect(map.addOverlay).toHaveBeenCalledTimes(3)
+
+    wrapper.unmount()
+  })
+})
+
+/**
+ * The prop-to-controller wiring inside `AppMapKit.vue` itself: `selectedId`
+ * open/close, `calloutMode`/`calloutPlacement` forwarding, and Escape-dismiss
+ * syncing back to `selectedId`. Before `isClientEnvironment()` existed as a
+ * mockable seam, `ensureCalloutController()`'s `!import.meta.client` guard
+ * meant this file could never observe a non-null controller regardless of
+ * props (see this file's header and `callouts.test.ts`'s source-regex
+ * contract test) — `callout-mount.test.ts` covers the reachable half (a real
+ * `MapKitCalloutController` driving `AppMapKitCallout.vue`'s rendering,
+ * bypassing `AppMapKit.vue` entirely). This suite drives the controller
+ * through `AppMapKit.vue`'s own props and watchers instead.
+ */
+describe('AppMapKit mount: callout wiring (#269)', () => {
+  const items: Station[] = [
+    { id: 'a', lat: 10, lng: 20 },
+    { id: 'b', lat: 12, lng: 22 },
+  ]
+
+  it('opens a callout through the real controller when selectedId is set, and closes it when cleared', async () => {
+    const { mapkit } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, { props: { callouts: true, items, selectedId: null } })
+    const controller = wrapper.vm.getCalloutController()
+    // Not yet constructed: `ensureCalloutController()` builds on first use,
+    // and nothing has opened a callout yet.
+    expect(controller).toBeNull()
+
+    await wrapper.setProps({ selectedId: 'a' })
+    await nextTick()
+
+    const opened = wrapper.vm.getCalloutController()
+    expect(opened).not.toBeNull()
+    expect(opened?.openKeys).toEqual(['a'])
+
+    await wrapper.setProps({ selectedId: null })
+    await nextTick()
+
+    expect(opened?.openKeys).toEqual([])
+
+    wrapper.unmount()
+  })
+
+  it('forwards calloutMode and calloutPlacement into the real controller construction', async () => {
+    const { mapkit } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, {
+      props: {
+        callouts: true,
+        calloutMode: 'multi',
+        calloutPlacement: 'left',
+        items,
+        selectedId: 'b',
+      },
+    })
+    await nextTick()
+
+    expect(createMapKitCalloutController).toHaveBeenCalledTimes(1)
+    expect(createMapKitCalloutController).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'multi', placement: 'left' }),
+    )
+
+    wrapper.unmount()
+  })
+
+  it('syncs a controller-initiated close (Escape, outside click, …) back to selectedId', async () => {
+    const { mapkit } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, {
+      props: { callouts: true, items, selectedId: 'a' },
+    })
+    await nextTick()
+
+    const controller = wrapper.vm.getCalloutController()
+    expect(controller?.openKeys).toEqual(['a'])
+
+    // The controller closing a callout for any reason (Escape, a map click,
+    // `'single'` mode replacing it, …) is exactly what `syncCallouts()`
+    // reacts to; it does not distinguish by reason, only by phase. Asserting
+    // on the `update:selectedId` emit (rather than reading the prop back)
+    // sidesteps `defineModel`'s local-fallback semantics and matches how
+    // every other emit in this file is asserted.
+    controller?.close('a')
+    await nextTick()
+
+    expect(wrapper.emitted('update:selectedId')?.at(-1)).toEqual([null])
+
+    wrapper.unmount()
+  })
+
+  it('does not sync selectedId back when calloutFollowSelection is off', async () => {
+    const { mapkit } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+
+    const wrapper = mount(AppMapKit, {
+      props: { callouts: true, calloutFollowSelection: false, items, selectedId: 'a' },
+    })
+    await nextTick()
+    wrapper.vm.openCallout('a')
+    await nextTick()
+
+    const controller = wrapper.vm.getCalloutController()
+    expect(controller?.openKeys).toEqual(['a'])
+
+    controller?.close('a')
+    await nextTick()
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
 
     wrapper.unmount()
   })

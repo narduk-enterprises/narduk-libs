@@ -48,6 +48,27 @@ export type {
 export type { NeConfirmOptions } from './runtime/composables/use-confirm'
 export type { NeConfirmTone } from './runtime/components/ne-confirm-dialog-types'
 
+/**
+ * `useCollection()`'s public types, re-exported from `.` for the same reason
+ * the confirm dialog's are: a page that wraps the composable, or a unit test
+ * that stubs it, has to be able to state the shape outside Nuxt's auto-import
+ * transform. `NeCollectionState` is also `NePager`'s `v-model:state` type.
+ *
+ * `useCollection` itself is NOT re-exported as a value, matching `useConfirm`:
+ * this file is loaded by jiti at Nuxt config time, and the reserved export map
+ * (`.`, `./format`, `./theme.css`) is not widened by a composable. It reaches
+ * app code through `addImports` below.
+ */
+export type {
+  NeCollection,
+  NeCollectionFetchContext,
+  NeCollectionOptions,
+  NeCollectionQuery,
+  NeCollectionState,
+} from './runtime/composables/use-collection'
+
+export type { NePagerProps } from './runtime/components/ne-pager-types'
+
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 
@@ -148,6 +169,10 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     addImports({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
+    })
+    addImports({
+      name: 'useCollection',
+      from: resolver.resolve('./runtime/composables/use-collection'),
     })
     addImports({
       name: 'useConfirm',

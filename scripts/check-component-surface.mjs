@@ -51,13 +51,47 @@
  *
  * ## Scope
  *
- * `--package` is scoped to `@narduk-enterprises/narduk-shell` today. The
- * existing design packages (narduk-ui, narduk-charts) backfill their surface in
- * backlog item 22 and join the check then; naming one of them now is an error
- * rather than a silent pass, so the day they join is a deliberate edit here.
+ * `CHECKED_PACKAGE_DIRS` lists every package this check owns (backlog item 22,
+ * narduk-libs#269): `narduk-shell`, `narduk-charts` and `narduk-ui`. Naming an
+ * unlisted package with `--package`/`--package-dir` is an error rather than a
+ * silent pass — joining is a deliberate edit to that array plus, when the
+ * package reads its surface from a barrel (below), a `PACKAGE_SURFACE_CONFIG`
+ * entry.
+ *
+ * With no `--package`/`--package-dir` at all, the check runs every directory
+ * in `CHECKED_PACKAGE_DIRS` and reports each, so `pnpm run surface:check`
+ * (which CI calls with no arguments) actually enforces the whole list rather
+ * than only the first entry.
+ *
+ * ## Two ways a package declares its surface
+ *
+ * `narduk-shell` (the "shell" shape) declares components through an explicit
+ * `{ name, filePath }` registry (`src/registry.ts`'s `NE_SHELL_COMPONENTS`),
+ * read by **importing the TypeScript directly** — see above.
+ *
+ * `narduk-charts` and `narduk-ui` instead re-export each component from a
+ * plain ESM barrel (`export { default as Name } from './Name.vue'` in
+ * `src/index.ts` / `instruments/index.ts`, alongside many non-component
+ * exports — composables, utils, types — that are not part of this check's
+ * surface). Node's native type-stripping cannot `import()` a module whose
+ * specifiers include `.vue` files, so a barrel package's surface is read by
+ * **parsing** that one file's re-export lines instead (`parseComponentBarrel`)
+ * — a deliberate, narrower exception to the "import, don't parse" rule above,
+ * made only for the one line that names each component, not for evidence.
+ * `PACKAGE_SURFACE_CONFIG` maps a barrel package's directory to its barrel
+ * file and its design-cards directory (`src/design-cards` unless overridden).
+ * Neither barrel package declares a `format`-shaped module today, so barrel
+ * surfaces carry only `component` entries — the `format` kind stays specific
+ * to the shell shape until a barrel package needs it.
+ *
+ * A test file that imports a barrel-shaped component by a **named import from
+ * the barrel** (`import { Name } from './index'` / `from '../instruments'`),
+ * rather than by the component's own file path, still satisfies `mount`/`ssr`/
+ * `card`'s "real import" check — see `importsArtefact` below.
  *
  * Usage:
- *   node scripts/check-component-surface.mjs [--package <name>] [--json]
+ *   node scripts/check-component-surface.mjs [--json]                     (all of CHECKED_PACKAGE_DIRS)
+ *   node scripts/check-component-surface.mjs --package <name> [--json]
  *   node scripts/check-component-surface.mjs --package-dir <dir> [--json]
  */
 
@@ -70,10 +104,13 @@ import { PENDING_CARDS as SHELL_PENDING_CARDS } from '../packages/design/narduk-
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * Package directories this check owns. Item 22 appends narduk-ui and
- * narduk-charts here — one line each — once their surface is backfilled.
+ * Package directories this check owns (backlog item 22, narduk-libs#269).
  */
-export const CHECKED_PACKAGE_DIRS = ['packages/design/narduk-shell']
+export const CHECKED_PACKAGE_DIRS = [
+  'packages/design/narduk-shell',
+  'packages/design/narduk-charts',
+  'packages/design/narduk-ui',
+]
 
 /**
  * Re-export of `packages/design/narduk-shell/src/pending-cards.ts`. Empty that
@@ -95,6 +132,28 @@ export const CHECKED_PACKAGES = new Map(
 )
 
 export const DEFAULT_PACKAGE = '@narduk-enterprises/narduk-shell'
+
+/**
+ * Non-shell packages: where their component barrel lives, and (when it is not
+ * `src/design-cards`) where their design cards live. A directory absent from
+ * this map reads the shell shape (`src/registry.ts` + `src/format.ts`).
+ */
+export const PACKAGE_SURFACE_CONFIG = {
+  'packages/design/narduk-charts': {
+    componentsBarrel: 'src/index.ts',
+    designCardsDir: 'src/design-cards',
+  },
+  'packages/design/narduk-ui': {
+    componentsBarrel: 'instruments/index.ts',
+    designCardsDir: 'design-cards',
+  },
+}
+
+/** The barrel config for a package directory, or `null` for the shell shape. */
+export function surfaceConfigFor(packageDirectory) {
+  const relativeDirectory = relative(ROOT, resolve(packageDirectory))
+  return PACKAGE_SURFACE_CONFIG[relativeDirectory] ?? null
+}
 
 /**
  * The pending-card waiver applies only to a checked package directory, never
@@ -174,15 +233,68 @@ function importSpecifiers(source) {
 }
 
 /**
- * A real import of `name`'s own module — its SFC (`.../Name.vue`) or a
- * same-named module — not merely the identifier appearing somewhere in the
- * file. This is what tells a genuine `mount(NeThing…)` / SSR render / design
- * card apart from a fixture that mentions the name in a comment or an
- * unrelated string while actually exercising something else entirely.
+ * A real import of `name`'s own artefact — not merely the identifier
+ * appearing somewhere in the file. This is what tells a genuine
+ * `mount(NeThing…)` / SSR render / design card apart from a fixture that
+ * mentions the name in a comment or an unrelated string while actually
+ * exercising something else entirely. Two shapes count:
+ *
+ * - a specifier ending in the component's own module (`.../Name.vue` or
+ *   `.../Name`) — the shell package's per-file convention; or
+ * - a named import of `name` from the package's own components barrel
+ *   (`import { Name } from './index'`) — the convention `narduk-charts`'s
+ *   `ssr.test.ts` and `narduk-ui`'s `instruments.test.ts`/`ssr.test.ts` use,
+ *   since both packages re-export every component through one barrel file
+ *   rather than having every test import a component by its own path.
+ *
+ * The named-import shape is accepted only for a package that declares a
+ * `componentsBarrel` in `PACKAGE_SURFACE_CONFIG`, and only when that import's
+ * own specifier resolves to that barrel file. Both halves carry weight.
+ * Accepting a named import from *any* specifier would let a file satisfy the
+ * rule by importing `name` from an unrelated module — a binding that need not
+ * be the real component at all — and would apply that looser criterion to
+ * `narduk-shell` too, which imports every component by its own path and needs
+ * none of it. `import type` is excluded for the same reason: it is erased at
+ * build time, so it supplies no runtime binding for `mount` or `renderToString`
+ * to exercise. The barrel's own shape is already checked once, by
+ * `parseComponentBarrel` reading `componentsBarrel` to build the surface, so a
+ * name reaching this check really is exported by the barrel; what this
+ * constrains is that the evidence file reads it from there.
+ *
+ * @param source the file's text, comments already stripped
+ * @param name the component's name
+ * @param options `barrel`: the package-relative components barrel, or `null`
+ *   for the per-file shell shape; `from`: the package-relative path of the
+ *   file `source` came from, which `barrel` is resolved against
  */
-function importsArtefact(source, name) {
-  const pattern = new RegExp(`(?:^|/)${escapeRegExp(name)}(?:\\.vue)?$`)
-  return importSpecifiers(source).some((specifier) => pattern.test(specifier))
+function importsArtefact(source, name, { barrel = null, from = '' } = {}) {
+  const pathPattern = new RegExp(`(?:^|/)${escapeRegExp(name)}(?:\\.vue)?$`)
+  if (importSpecifiers(source).some((specifier) => pathPattern.test(specifier))) return true
+  if (barrel === null) return false
+
+  const namedImportPattern = new RegExp(
+    String.raw`\bimport\s*\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}\s*from\s*['"]([^'"]+)['"]`,
+    'g',
+  )
+  return [...source.matchAll(namedImportPattern)].some(([, specifier]) =>
+    resolvesToBarrel(specifier, from, barrel),
+  )
+}
+
+/**
+ * Does `specifier`, written inside `from`, name the package-relative `barrel`
+ * file? Extensions are ignored on both sides and a directory resolves to its
+ * `index`, so `'./index'`, `'./index.ts'` and `'../src'` all name `src/index.ts`
+ * — the shapes `narduk-charts` (`from './index'`) and `narduk-ui`
+ * (`from '../instruments'`) actually use. A bare or absolute specifier never
+ * matches: a package's own barrel is always reached by a relative path.
+ */
+function resolvesToBarrel(specifier, from, barrel) {
+  if (!specifier.startsWith('.')) return false
+  const withoutExtension = (path) => path.replace(/\.(?:vue|m?[jt]sx?)$/, '')
+  const target = withoutExtension(barrel)
+  const resolved = withoutExtension(join(dirname(from), specifier))
+  return resolved === target || (basename(target) === 'index' && resolved === dirname(target))
 }
 
 /** A real import of the package's `format` module, by path (`.../format`). */
@@ -220,11 +332,55 @@ const isTest = (path) => path.endsWith('.test.ts')
 const isSsrTest = (path) => path.endsWith('.ssr.test.ts') || basename(path) === 'ssr.test.ts'
 
 /**
- * Load the package's declared surface.
+ * Every `export { default as Name } from './Name.vue'` line in a barrel
+ * module's source, as the names it re-exports as components. Comments are
+ * stripped first so a re-export mentioned only in a comment (or inside a
+ * docblock example) is not mistaken for a real one. Deliberately narrow: it
+ * does not match a bare `export { Name } from …` (no `default as`) or a
+ * `export * from …`, because every barrel this repository has today spells a
+ * component re-export exactly this way — see the module docblock's "Two ways
+ * a package declares its surface" section for why this is a parse rather
+ * than an import.
+ */
+export function parseComponentBarrel(source) {
+  const stripped = stripComments(source)
+  const pattern = /export\s*\{\s*default\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]+\.vue['"]/g
+  return [...stripped.matchAll(pattern)].map((match) => match[1])
+}
+
+/**
+ * Load the package's declared surface — the shell shape (`src/registry.ts` +
+ * `src/format.ts`, read by importing) for a package absent from
+ * `PACKAGE_SURFACE_CONFIG`, or the barrel shape (a `parseComponentBarrel` of
+ * `componentsBarrel`, components only) for one present in it.
  *
  * @returns {Promise<{ kind: 'component' | 'format', name: string }[]>}
  */
 export async function readSurface(packageDirectory) {
+  const config = surfaceConfigFor(packageDirectory)
+  if (config) {
+    const barrelPath = config.componentsBarrel
+    const path = join(packageDirectory, barrelPath)
+    let source
+    try {
+      source = await readFile(path, 'utf8')
+    } catch (error) {
+      throw new Error(
+        `Cannot read the component barrel (${barrelPath}): ${error instanceof Error ? error.message : error}`,
+        { cause: error },
+      )
+    }
+    const names = parseComponentBarrel(source)
+    if (names.length === 0) {
+      throw new Error(
+        `${barrelPath} exports no \`export { default as Name } from './Name.vue'\` lines. ` +
+          'The surface check fails closed rather than reporting an empty surface — fix the ' +
+          'barrel, or its PACKAGE_SURFACE_CONFIG entry, in scripts/check-component-surface.mjs.',
+      )
+    }
+    return names.map((name) => ({ kind: 'component', name }))
+  }
+
   const load = async (relativePath, describe) => {
     const path = join(packageDirectory, relativePath)
     try {
@@ -264,8 +420,17 @@ export async function readSurface(packageDirectory) {
   return surface
 }
 
-/** Everything a rule needs to look at, read once for the whole package. */
-async function readEvidence(packageDirectory) {
+/**
+ * Everything a rule needs to look at, read once for the whole package.
+ * `designCardsDir` is `src/design-cards` for the shell shape, or a
+ * `PACKAGE_SURFACE_CONFIG` override for a barrel package whose cards do not
+ * live under `src/` (narduk-ui ships no `src/` directory at all).
+ */
+async function readEvidence(
+  packageDirectory,
+  designCardsDir = 'src/design-cards',
+  componentsBarrel = null,
+) {
   const readme = await readFile(join(packageDirectory, 'README.md'), 'utf8').catch(() => '')
   const testPaths = await walk(packageDirectory, isTest)
   const tests = await Promise.all(
@@ -276,7 +441,7 @@ async function readEvidence(packageDirectory) {
   )
   const cardPaths = await walk(
     packageDirectory,
-    (path) => path.startsWith('src/design-cards/') && path.endsWith('.card.vue'),
+    (path) => path.startsWith(`${designCardsDir}/`) && path.endsWith('.card.vue'),
   )
   const cards = new Map(
     await Promise.all(
@@ -289,7 +454,7 @@ async function readEvidence(packageDirectory) {
       ),
     ),
   )
-  return { readme, tests, cards }
+  return { readme, tests, cards, designCardsDir, componentsBarrel }
 }
 
 /**
@@ -317,7 +482,7 @@ const RULES = {
         const source = stripComments(test.source)
         return (
           new RegExp(String.raw`\bmount\(\s*${escapeRegExp(name)}\b`).test(source) &&
-          importsArtefact(source, name)
+          importsArtefact(source, name, { barrel: evidence.componentsBarrel, from: test.path })
         )
       }),
     miss: ({ name, path }) =>
@@ -330,7 +495,9 @@ const RULES = {
         if (!isSsrTest(test.path)) return false
         const source = stripComments(test.source)
         return (
-          names(source, name) && source.includes('renderToString') && importsArtefact(source, name)
+          names(source, name) &&
+          source.includes('renderToString') &&
+          importsArtefact(source, name, { barrel: evidence.componentsBarrel, from: test.path })
         )
       }),
     miss: ({ name, path }) =>
@@ -339,16 +506,17 @@ const RULES = {
   card: {
     kinds: ['component'],
     check: ({ name, evidence }) => {
-      const source = evidence.cards.get(`src/design-cards/${name}.card.vue`)
+      const path = `${evidence.designCardsDir}/${name}.card.vue`
+      const source = evidence.cards.get(path)
       if (source === undefined) return false
       const stripped = stripComments(source)
       return (
         stripped.includes(`data-design-card="${kebabCase(name)}"`) &&
-        importsArtefact(stripped, name)
+        importsArtefact(stripped, name, { barrel: evidence.componentsBarrel, from: path })
       )
     },
-    miss: ({ name, path }) =>
-      `missing design card — copy ${path('src/design-cards/template/NeExample.card.vue')} to ${path(`src/design-cards/${name}.card.vue`)}, import the component and set \`data-design-card="${kebabCase(name)}"\``,
+    miss: ({ name, path, evidence }) =>
+      `missing design card — add ${path(`${evidence.designCardsDir}/${name}.card.vue`)}, import the component and set \`data-design-card="${kebabCase(name)}"\``,
   },
   unit: {
     kinds: ['format'],
@@ -380,9 +548,11 @@ export async function checkComponentSurface({
   packageName,
   packageDirectory,
   pendingCards = pendingCardsFor(packageDirectory),
+  designCardsDir = surfaceConfigFor(packageDirectory)?.designCardsDir ?? 'src/design-cards',
+  componentsBarrel = surfaceConfigFor(packageDirectory)?.componentsBarrel ?? null,
 }) {
   const surface = await readSurface(packageDirectory)
-  const evidence = await readEvidence(packageDirectory)
+  const evidence = await readEvidence(packageDirectory, designCardsDir, componentsBarrel)
   const pending = new Set(pendingCards)
   // Report repository-relative paths so a failure can be pasted into an editor.
   // A fixture package outside the repository keeps its absolute path instead of
@@ -403,7 +573,12 @@ export async function checkComponentSurface({
       if (RULES[rule].check({ name, evidence })) {
         satisfied.push(rule)
       } else {
-        misses.push({ name, kind, rule, message: `${name}: ${RULES[rule].miss({ name, path })}` })
+        misses.push({
+          name,
+          kind,
+          rule,
+          message: `${name}: ${RULES[rule].miss({ name, path, evidence })}`,
+        })
       }
     }
     if (kind === 'component' && pending.has(name) && !required.includes('card')) {
@@ -414,8 +589,11 @@ export async function checkComponentSurface({
   return { package: packageName, directory: path(''), entries, misses, waived }
 }
 
+/**
+ * @returns {{ json: boolean, targets: { package: string, packageDirectory: string }[] }}
+ */
 function parseArguments(argv) {
-  const options = { package: DEFAULT_PACKAGE, packageDirectory: undefined, json: false }
+  const options = { package: undefined, packageDirectory: undefined, json: false }
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]
     if (argument === '--json') options.json = true
@@ -427,57 +605,96 @@ function parseArguments(argv) {
       options.packageDirectory = argument.slice('--package-dir='.length)
     else throw new Error(`Unknown argument: ${argument}`)
   }
-  if (!options.packageDirectory) {
-    const directory = CHECKED_PACKAGES.get(options.package)
-    if (!directory) {
-      throw new Error(
-        `${options.package} is not in the component surface check yet. Checked today: ` +
-          `${[...new Set(CHECKED_PACKAGES.values())].join(', ')}. The existing design packages ` +
-          'join in components backlog item 22.',
-      )
+
+  if (options.packageDirectory || options.package) {
+    if (!options.packageDirectory) {
+      const directory = CHECKED_PACKAGES.get(options.package)
+      if (!directory) {
+        throw new Error(
+          `${options.package} is not in the component surface check yet. Checked today: ` +
+            `${[...new Set(CHECKED_PACKAGES.values())].join(', ')}. The existing design packages ` +
+            'join in components backlog item 22.',
+        )
+      }
+      options.packageDirectory = join(ROOT, directory)
     }
-    options.packageDirectory = join(ROOT, directory)
+    return {
+      json: options.json,
+      targets: [
+        { package: options.package ?? DEFAULT_PACKAGE, packageDirectory: options.packageDirectory },
+      ],
+    }
   }
-  return options
+
+  // Neither `--package` nor `--package-dir`: check everything this script
+  // owns. `pnpm run surface:check` (CI's step, and this repo's `quality`
+  // chain) calls the script with no arguments at all, so this is the path
+  // that must actually enforce every entry in CHECKED_PACKAGE_DIRS rather
+  // than silently covering only the first one.
+  return {
+    json: options.json,
+    targets: CHECKED_PACKAGE_DIRS.map((directory) => ({
+      package: `@narduk-enterprises/${directory.slice(directory.lastIndexOf('/') + 1)}`,
+      packageDirectory: join(ROOT, directory),
+    })),
+  }
 }
 
 export async function main(argv = process.argv.slice(2), out = process.stdout) {
-  const options = parseArguments(argv)
-  const directoryStat = await stat(options.packageDirectory).catch(() => null)
-  if (!directoryStat?.isDirectory()) {
-    throw new Error(`Not a package directory: ${options.packageDirectory}`)
-  }
+  const { json, targets } = parseArguments(argv)
 
-  const report = await checkComponentSurface({
-    packageName: options.package,
-    packageDirectory: resolve(options.packageDirectory),
-  })
-
-  if (options.json) {
-    out.write(`${JSON.stringify({ ok: report.misses.length === 0, ...report }, undefined, 2)}\n`)
-    return report.misses.length === 0 ? 0 : 1
-  }
-
-  if (report.misses.length > 0) {
-    for (const miss of report.misses) out.write(`${report.directory}: ${miss.message}\n`)
-    out.write(
-      `\n${report.misses.length} surface requirement(s) missing across ${report.entries.length} ` +
-        `registered name(s). See ${report.directory}/README.md "Component surface check".\n`,
+  const reports = []
+  for (const target of targets) {
+    const directoryStat = await stat(target.packageDirectory).catch(() => null)
+    if (!directoryStat?.isDirectory()) {
+      throw new Error(`Not a package directory: ${target.packageDirectory}`)
+    }
+    reports.push(
+      await checkComponentSurface({
+        packageName: target.package,
+        packageDirectory: resolve(target.packageDirectory),
+      }),
     )
-    return 1
   }
 
-  const components = report.entries.filter((entry) => entry.kind === 'component').length
-  const formats = report.entries.length - components
-  const waiver =
-    report.waived.length > 0
-      ? ` (${report.waived.length} card(s) waived via pendingCards: ${report.waived.join(', ')})`
-      : ''
-  out.write(
-    `${report.package}: ${components} component(s) and ${formats} format export(s) have a README ` +
-      `section, tests and a design card.${waiver}\n`,
-  )
-  return 0
+  const ok = reports.every((report) => report.misses.length === 0)
+
+  if (json) {
+    // A single target keeps the original flat `{ ok, ...report }` shape so an
+    // existing `--package-dir … --json` caller sees no change. Multiple
+    // targets (the no-args, check-everything path) wrap each report the same
+    // way inside `reports`, since one flat object cannot hold more than one
+    // package's `entries`/`misses`/`directory`.
+    const payload =
+      reports.length === 1
+        ? { ok, ...reports[0] }
+        : { ok, reports: reports.map((report) => ({ ok: report.misses.length === 0, ...report })) }
+    out.write(`${JSON.stringify(payload, undefined, 2)}\n`)
+    return ok ? 0 : 1
+  }
+
+  for (const report of reports) {
+    if (report.misses.length > 0) {
+      for (const miss of report.misses) out.write(`${report.directory}: ${miss.message}\n`)
+      out.write(
+        `\n${report.misses.length} surface requirement(s) missing across ${report.entries.length} ` +
+          `registered name(s). See ${report.directory}/README.md "Component surface check".\n`,
+      )
+      continue
+    }
+
+    const components = report.entries.filter((entry) => entry.kind === 'component').length
+    const formats = report.entries.length - components
+    const waiver =
+      report.waived.length > 0
+        ? ` (${report.waived.length} card(s) waived via pendingCards: ${report.waived.join(', ')})`
+        : ''
+    out.write(
+      `${report.package}: ${components} component(s) and ${formats} format export(s) have a README ` +
+        `section, tests and a design card.${waiver}\n`,
+    )
+  }
+  return ok ? 0 : 1
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

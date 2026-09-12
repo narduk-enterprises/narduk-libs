@@ -36,9 +36,21 @@ ships `NeStatusBadge` and `defineStatusMap`; item 16
 ([narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263))
 ships `NeConfirmDialog` and `useConfirm()`; item 7
 ([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254))
-ships `NeStatePanel`. Components read Nuxt UI semantic tokens and `UBadge`
-colour/variant props, and do not hardcode a colour, radius, shadow or font. Each
-later item adds its own component, README section, tests and NE Base card.
+ships `NeStatePanel`; item 11
+([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258))
+ships `NePager` and `useCollection()`, the suite's single-flight paged-list
+state machine; item 5
+([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252))
+fills the `./format` subpath with the shared `Intl` formatters, which is the
+last of the three reserved subpaths to stop being a placeholder; item 19
+([narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266))
+ships `NeForm`, `NeFormSection` and `NeSettingsPage`, and deprecates
+narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`; item 15
+([narduk-libs#262](https://github.com/narduk-enterprises/narduk-libs/issues/262))
+ships `NeKpiTile` and `NeKpiBand`. Components read Nuxt UI semantic tokens and
+`UBadge` colour/variant props, and do not hardcode a colour, radius, shadow or
+font. Each later item adds its own component, README section, tests and NE Base
+card.
 
 ## Install
 
@@ -165,16 +177,16 @@ backlog item 4
 
 ## Reserved subpaths
 
-Exactly three subpaths are exported. One of them is still a reserved
-placeholder: it resolves from an external install today (the release pipeline's
-consumer fixture proves it) and is filled by the backlog item below, so that no
-app has to change an import specifier when the content arrives.
+Exactly three subpaths are exported, and all three now carry content. Each was
+reserved before it was filled — resolving from an external install while still
+empty, as the release pipeline's consumer fixture proves — so that no app had to
+change an import specifier when the content arrived.
 
-| Subpath                                      | Today                                                                                  | Filled by                                                                                                     |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-shell`           | The Nuxt module                                                                        | Every component item adds a registry entry                                                                    |
-| `@narduk-enterprises/narduk-shell/format`    | Empty module (`export {}`)                                                             | Item 5, shared `Intl`-based formatters ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
-| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract)) | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249))                       |
+| Subpath                                      | Today                                                                                  | Filled by                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-shell`           | The Nuxt module                                                                        | Every component item adds a registry entry                                              |
+| `@narduk-enterprises/narduk-shell/format`    | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                     | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
+| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract)) | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
 
 `defineStatusMap` is a named export of the package root (`.`), not a fourth
 subpath. Import it from `@narduk-enterprises/narduk-shell` the same way the
@@ -875,6 +887,658 @@ major"). It is deprecated in the same release as this component and removed in
 the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
 
+### NePager / useCollection()
+
+The foot of a paged list, and the state machine behind it. Backlog item 11
+([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258)).
+
+`useCollection()` is the component here; `NePager` is the small part you can
+see. The composable owns the concurrency rules that every list in the estate got
+wrong separately, and the pager is deliberately incapable of breaking them — it
+can write back a page number and nothing else.
+
+The wire shape is not this package's to invent: the query and response are
+`@narduk-enterprises/narduk-platform/list-query`, served by `parseListQuery` +
+`listResponse` in `narduk-core` (item 10). `useCollection` imports the
+contract's own `LIST_QUERY_DEFAULT_LIMIT`, maximum `q` length and reserved-key
+list rather than restating them.
+
+#### The five rules it enforces
+
+| Rule                                                                                                                                                 | What it prevents                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Single flight.** One request in flight. Triggers that arrive during it coalesce into **one** follow-up, and the superseded request is `abort()`ed. | A filter panel that fires five requests for five clicks, and a server paying for four answers nobody reads.                                                                                 |
+| **Stale-scope discard.** A response whose scope token no longer matches the current state is never rendered.                                         | The out-of-order render: request A (slow, page 1) landing after request B (fast, page 2) and putting page 1 back on screen.                                                                 |
+| **Debounced `q`** (250 ms; `debounce: 0` in a test).                                                                                                 | One request per keystroke.                                                                                                                                                                  |
+| **`page` resets to 1** when `q`, a filter, `sort` or `limit` changes.                                                                                | The search-after-page bug — searching from page 7 and getting an empty result set that has matches (stonx#219, #218, #5).                                                                   |
+| **`limit` and `page` are clamped**, `page` against the response that actually landed.                                                                | An empty last page after a delete. Deleting the 26th of 26 rows at `limit: 25` lands the reader on page 1 — the new last page — in exactly **one** extra request, not an O(page) walk back. |
+
+Each of those is pinned by a test that asserts a **request count**, in
+`test/use-collection.test.ts`. A test asserting only the rendered rows passes
+for a broken single-flight implementation, which is why none of them do that.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const c = useCollection<Runner>({
+  fetch: (query, { signal }) => $fetch('/api/runners', { query, signal }),
+  limit: 25,
+  sortable: ['name', 'lastSeenAt'],
+  syncQuery: true,
+})
+</script>
+
+<template>
+  <UInput v-model="c.q" placeholder="Search runners" />
+  <NeStatePanel
+    :state="c.pending && c.items.length === 0 ? 'loading' : undefined"
+  >
+    <ul>
+      <li v-for="runner in c.items" :key="runner.id">{{ runner.name }}</li>
+    </ul>
+  </NeStatePanel>
+  <NePager
+    v-model:state="c.state"
+    noun="runners"
+    :to="(page) => ({ query: { ...$route.query, page } })"
+  />
+</template>
+```
+
+`useCollection` is auto-imported by the module. `NePager` is registered from
+`src/registry.ts` like every other component.
+
+#### `useCollection(options)`
+
+| Option           | Type                                        | Default                | Notes                                                                                                                                             |
+| ---------------- | ------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch`          | `(query, { signal }) => Promise<TRaw>`      | —                      | Required. Called at most once per settled intent. Forward `signal` and a superseded request is actually cancelled, not merely ignored.            |
+| `adapter`        | `(raw: TRaw) => OffsetListResponse<TItem>`  | —                      | For a route not yet on `listResponse`. Drop it once the route migrates.                                                                           |
+| `debounce`       | `number`                                    | `250`                  | `q` only. `0` disables it.                                                                                                                        |
+| `enabled`        | `MaybeRefOrGetter<boolean>`                 | `true`                 | False while the page has no scope to ask with; a scoped list called with no scope is a 400 by design. Fetches by itself the moment it turns true. |
+| `filters`        | `MaybeRefOrGetter<Record<string, unknown>>` | `{}`                   | Extra query keys. A change resets to page 1. A key colliding with the contract's reserved keys throws, naming the key.                            |
+| `immediate`      | `boolean`                                   | `true`                 | `false` for an SSR page that `await c.refresh()`s.                                                                                                |
+| `limit`          | `number`                                    | contract default (25)  | Clamped to `maxLimit`, then to whatever the route echoes back.                                                                                    |
+| `maxLimit`       | `number`                                    | none                   | Optional client-side ceiling. The route's own ceiling wins regardless, because the clamp follows the `limit` the response echoes back.            |
+| `maxQueryLength` | `number`                                    | contract default (200) | Longest `q` put on the wire.                                                                                                                      |
+| `sort`           | `string \| null`                            | `null`                 | Wire form, `'<key>:<asc\|desc>'`.                                                                                                                 |
+| `sortable`       | `readonly string[]`                         | —                      | Allowlist. Gates `setSort` **and** what a URL may set, so `?sort=passwordHash:asc` is dropped rather than forwarded.                              |
+| `syncQuery`      | `boolean`                                   | `false`                | Mirror `page`/`q`/`sort` in the route query.                                                                                                      |
+
+Returns a `reactive` object: `items`, `page`, `pageCount`, `total`, `pending`,
+`error`, `canNext`, `canPrevious`, `sort`, `q` (bind the search box to it — it
+is the keystroke value, applied after the debounce), `state`, and the mutators
+`setPage`, `setLimit`, `setSort` and `refresh()`. `refresh()` resolves when the
+collection has **settled**, including a clamp refetch, so an SSR
+`await c.refresh()` never serialises an empty page.
+
+#### `syncQuery: true`
+
+Reads `page`, `q` and `sort` out of the URL **before** the first request — one
+request, already for page three, not page one plus a correction — and writes
+them back on change. Defaults are omitted, so page one is `?` and never
+`?page=1`: two URLs for one page is a duplicate for a crawler, and this pager
+exists to be crawled. Query keys the collection does not own are left exactly as
+they were. It needs `useRoute()`/`useRouter()`, so it throws a named error
+outside a router; that is why `vue-router` is a declared peer.
+
+#### NePager props
+
+| Prop           | Type                                 | Default     | Notes                                                                 |
+| -------------- | ------------------------------------ | ----------- | --------------------------------------------------------------------- |
+| `state`        | `NeCollectionState<T>`               | —           | Required, `v-model:state`. Assigning applies `page` and nothing else. |
+| `density`      | `'default' \| 'dense'`               | `'default'` | `dense` is pacc-trac's `DenseListPager`.                              |
+| `noun`         | `string`                             | `'results'` | The word in the summary: `51–75 of 712 runners`.                      |
+| `siblingCount` | `number`                             | `2`         | Passed to `UPagination`.                                              |
+| `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                             |
+| `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                          |
+| `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                           |
+
+#### NePager slots and events
+
+| Slot      | Props                | Notes                                           |
+| --------- | -------------------- | ----------------------------------------------- |
+| `summary` | `{ state, summary }` | Replaces the sentence, keeping the live region. |
+
+| Event          | Payload                | Notes                                                                             |
+| -------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes. |
+
+#### Two shapes, because `total` is optional
+
+`listResponse` returns `total: null` unless the route opts into counting, so a
+page-numbered control would be inventing a number. `NePager` renders
+`UPagination` with real page numbers when `total` is a number, and Previous/Next
+driven by `hasPrevious`/`hasNext` when it is `null`.
+
+#### `:to` emits real hrefs
+
+With `:to`, every control is an `<a href>` resolved through the router, so a
+crawler follows page two and a middle-click opens it in a tab (riverstatus's
+rivers list is the pilot). `test/NePager.ssr.test.ts` renders the **real**
+`UPagination` through a real router in the `node` environment and asserts the
+`href`s in the server output — a stub emitting its own anchors would prove
+nothing about the shipped component.
+
+Nothing is disabled while a request is in flight: disabling a link takes
+middle-click and "open in new tab" away from a reader for 200 ms. The summary
+carries `aria-busy` instead.
+
+#### Offset mode only, deliberately
+
+The contract also has a cursor form. `useCollection` implements the offset form
+and nothing else, because a cursor collection cannot answer "how many pages",
+which is the question `NePager`'s counted shape exists to answer. A cursor list
+wants a different control (a "Load more"), so it should be a different
+composable rather than a mode flag that makes half of this API meaningless.
+
+#### Types
+
+```ts
+import type {
+  NeCollection,
+  NeCollectionFetchContext,
+  NeCollectionOptions,
+  NeCollectionQuery,
+  NeCollectionState,
+  NePagerProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeForm
+
+Wraps Nuxt UI's `UForm` with a save bar that does not lie. Components backlog
+item 19
+([narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266)),
+closing three named bug classes by construction rather than by caller
+discipline:
+
+- **Double-submit (stonx#37).** Two rapid submits — a fast double-click, or
+  Enter held a beat too long — issue exactly **one** `onSubmit` call. A
+  capture-phase `submit` listener on a real DOM ancestor of `UForm`'s `<form>`
+  drops any second submit while the first is still in flight, before `UForm`
+  itself ever sees it: no second validate, no second `dirtyFields.clear()`
+  landing early and flipping the save bar to "saved" while the first save is
+  still pending.
+- **A save bar that lies about dirtiness (stonx#36).** `Unsaved changes` is
+  driven by `UForm`'s own `dirty` state, which only clears once `onSubmit`'s
+  promise _resolves_. A rejected save leaves it dirty — there is no optimistic
+  "saved" flash to walk back on failure.
+- **Errors that do not scroll into view (stonx#350).** A schema (or `validate`)
+  failure blocks submission and moves focus to the first invalid field, scrolled
+  into view, rather than leaving the reviewer to hunt for which one broke.
+
+`UButton`'s own `loading-auto` is what makes the save button spin and disable
+itself for exactly the duration of the `onSubmit` promise — no ref to wire
+between this component and its button.
+
+#### Example
+
+```vue
+<NeForm :state="profile" :on-submit="saveProfile">
+  <UFormField name="name" label="Name">
+    <UInput v-model="profile.name" />
+  </UFormField>
+</NeForm>
+```
+
+#### Props
+
+| Prop         | Type                                    | Default  | What it does                                                                                                                                            |
+| ------------ | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`      | `Record<string, unknown>`               | —        | Required. The form's reactive state — there is no uncontrolled mode.                                                                                    |
+| `onSubmit`   | `(data) => unknown \| Promise<unknown>` | —        | Called with the validated data. Bind as `:on-submit`, a real prop, not `@submit`.                                                                       |
+| `schema`     | `unknown`                               | —        | A Standard Schema object (zod, valibot, …) or any of `UForm`'s own accepted shapes.                                                                     |
+| `validate`   | `(state) => unknown`                    | —        | Custom validation, forwarded to `UForm`'s own `validate` prop. An alternative to `schema`.                                                              |
+| `saveLabel`  | `string`                                | `'Save'` | Label for the save button.                                                                                                                              |
+| `disabled`   | `boolean`                               | `false`  | Disables every field and the save button, in addition to the loading state.                                                                             |
+| `stickySave` | `boolean`                               | `false`  | Renders the save bar `position: sticky` at the bottom of its scrolling ancestor. `NeSettingsPage` turns this on; a standalone `NeForm` defaults it off. |
+
+#### Slots
+
+| Slot      | When it renders                                                 |
+| --------- | --------------------------------------------------------------- |
+| `default` | The form's fields — typically one or more `NeFormSection`s.     |
+| `actions` | Extra buttons in the save bar, rendered before the save button. |
+
+#### Events
+
+None. `onSubmit` is a real function prop (matching `UForm`'s own contract), not
+a `defineEmits` listener, so its return value can be awaited directly the same
+way `UForm` awaits its own `onSubmit` and `UButton` awaits its own `onClick`.
+
+#### Binding a schema
+
+```vue
+<script setup lang="ts">
+import { z } from 'zod'
+
+const schema = z.object({ name: z.string().min(1, 'Name is required') })
+const state = reactive({ name: '' })
+</script>
+
+<template>
+  <NeForm :schema="schema" :state="state" :on-submit="save">
+    <UFormField name="name" label="Name">
+      <UInput v-model="state.name" />
+    </UFormField>
+  </NeForm>
+</template>
+```
+
+A failing field is focused automatically — no `ref` or manual `scrollIntoView`
+call needed at the call site.
+
+### NeFormSection
+
+A titled group of fields inside a `NeForm` — a thin wrapper around
+`NeSectionHeader` (title, description, actions) plus a fields slot below it. It
+renders no `<form>` of its own and does not touch validation or submission:
+those stay owned by the enclosing `NeForm`'s `UForm`, which validates against
+the whole `state`/`schema` regardless of how the fields inside it are grouped
+visually. Splitting a long settings page into sections is purely presentational.
+
+#### Example
+
+```vue
+<NeFormSection title="Profile" description="Your public account details.">
+  <UFormField name="name" label="Name">
+    <UInput v-model="state.name" />
+  </UFormField>
+</NeFormSection>
+```
+
+#### Props
+
+| Prop          | Type                                           | Default | What it does                                                                                                  |
+| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| `title`       | `string`                                       | —       | Required. The section title.                                                                                  |
+| `description` | `string`                                       | —       | Supporting copy shown below the title.                                                                        |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h3'`  | The heading tag. Defaults one level below `NeSettingsPage`'s own `h1` and a typical `NeSectionHeader`'s `h2`. |
+
+#### Slots
+
+| Slot      | When it renders                                             |
+| --------- | ----------------------------------------------------------- |
+| `default` | The section's fields — typically one or more `UFormField`s. |
+| `actions` | Right-aligned actions next to the section title.            |
+
+#### Events
+
+None.
+
+### NeSettingsPage
+
+A full settings screen: `NePageHeader` on top of a `NeForm` whose save bar is
+sticky by default, so the save action stays reachable on a page built from
+several `NeFormSection`s stacked below the fold. This is composition, not new
+behaviour — every `NeForm` bug fix (double-submit, honest dirty state,
+focus-on-error) is inherited unchanged; `NeSettingsPage` only wires
+`NePageHeader`'s title/description to the page and forces `stickySave` on.
+
+#### Example
+
+```vue
+<NeSettingsPage
+  title="Settings"
+  :schema="schema"
+  :state="state"
+  :on-submit="save"
+>
+  <NeFormSection title="Profile">
+    <UFormField name="name">
+      <UInput v-model="state.name" />
+    </UFormField>
+  </NeFormSection>
+</NeSettingsPage>
+```
+
+#### Props
+
+| Prop          | Type                                    | Default  | What it does                                                   |
+| ------------- | --------------------------------------- | -------- | -------------------------------------------------------------- |
+| `title`       | `string`                                | —        | Required. The page title, rendered by `NePageHeader`.          |
+| `state`       | `Record<string, unknown>`               | —        | Required. Forwarded to `NeForm`'s `state` prop.                |
+| `description` | `string`                                | —        | Forwarded to `NePageHeader`.                                   |
+| `onSubmit`    | `(data) => unknown \| Promise<unknown>` | —        | Forwarded to `NeForm`'s `onSubmit` prop. Bind as `:on-submit`. |
+| `schema`      | `unknown`                               | —        | Forwarded to `NeForm`'s `schema` prop.                         |
+| `validate`    | `(state) => unknown`                    | —        | Forwarded to `NeForm`'s `validate` prop.                       |
+| `saveLabel`   | `string`                                | `'Save'` | Forwarded to `NeForm`.                                         |
+| `disabled`    | `boolean`                               | `false`  | Forwarded to `NeForm`.                                         |
+
+There is no `stickySave` prop: `NeSettingsPage` always renders a sticky save
+bar, which is the entire reason to reach for it over a standalone `NeForm`.
+
+#### Slots
+
+| Slot            | When it renders                                                                       |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `default`       | The page's fields — typically one or more `NeFormSection`s.                           |
+| `actions`       | Extra buttons in the save bar, rendered before the save button.                       |
+| `headerActions` | Right-aligned actions next to the page title, distinct from the save bar's `actions`. |
+
+#### Events
+
+None, for the same reason as `NeForm`: `onSubmit` is a real function prop.
+
+#### Supersedes
+
+`narduk-core`'s `AppSettingsProfile` (D4, Logan 2026-09-11: "Deprecate, remove
+next major"). It is deprecated in the same release as this component and removed
+in the next `narduk-core` major; the migration mapping is in
+[that package's README](../../modules/narduk-core/README.md#deprecated-components).
+
+### NeKpiTile
+
+One measured metric in a `UCard`: a label, a value, and an optional signed delta
+with a caption. The value and the delta are formatted through the `./format`
+subpath's `formatNumber` (item 5,
+[narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)),
+never with `Number.prototype.toLocaleString` — the fixed `en-US` locale is what
+lets the server and the browser render the same digits on the first paint.
+
+#### Example
+
+```vue
+<NeKpiTile
+  label="Runners online"
+  :value="128"
+  :delta="6"
+  tone="ok"
+  detail="vs yesterday"
+/>
+```
+
+#### Props
+
+| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                |
+| -------------- | --------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                   |
+| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` render `formatNumber`'s empty placeholder (`—`). |
+| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                         |
+| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.             |
+| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                         |
+| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                           |
+| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                 |
+
+Tone → colour, the same vocabulary `NeStatusBadge` uses:
+
+| Tone      | Delta colour   |
+| --------- | -------------- |
+| `ok`      | `text-success` |
+| `warn`    | `text-warning` |
+| `error`   | `text-error`   |
+| `info`    | `text-info`    |
+| `neutral` | `text-muted`   |
+| `pending` | `text-muted`   |
+
+#### Slots
+
+| Slot    | When it renders                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spark` | Under the value and delta, when given — e.g. a `narduk-charts` sparkline. `NeKpiTile` never imports `narduk-charts` itself; composing one in is the caller's job. |
+
+#### Accessibility
+
+Colour is never the only signal for a delta's direction: the rendered text
+always carries an explicit sign (`formatNumber`'s `signDisplay: 'always'`) and a
+▲/▼ glyph, so the reading survives with every tone-driven colour class stripped
+away. Glyph and number are one text node rather than an `aria-hidden` glyph span
+beside a separate number — splitting them would leave the visible reading at the
+mercy of how the template compiler treats the whitespace between the two, and
+the sign alone already carries the direction with no glyph at all.
+`test/NeKpiTile.mount.test.ts` proves the delta text is identical across every
+tone.
+
+`NeNumberOptions` is the `./format` subpath's own type
+(`import type { NeNumberOptions } from '@narduk-enterprises/narduk-shell/format'`).
+
+### NeKpiBand
+
+A responsive grid of `NeKpiTile`s. It lays out; it does not style the tiles
+inside it — no card, border or background of its own, just `display: grid` and a
+gap.
+
+#### Example
+
+```vue
+<NeKpiBand :columns="{ base: 1, sm: 2, lg: 4 }">
+  <NeKpiTile label="Runners online" :value="128" :delta="6" tone="ok" />
+  <NeKpiTile label="Open findings" :value="42" :delta="-3" tone="error" />
+</NeKpiBand>
+```
+
+#### Props
+
+| Prop      | Type                                                                        | Default       | What it does                                                                                                          |
+| --------- | --------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `columns` | `Partial<Record<'base' \| 'sm' \| 'md' \| 'lg' \| 'xl', 1\|2\|3\|4\|5\|6>>` | `{ base: 1 }` | Columns per breakpoint. Only the breakpoints given are constrained; an app's own responsive design fills in the rest. |
+
+Every `grid-cols-*` class this component could ever apply is a literal string in
+`src/runtime/components/NeKpiBand.vue`, not a computed `` `grid-cols-${n}` `` —
+Tailwind's build-time scanner only ships a utility whose class name it can see
+literally in source, so a name assembled at runtime never reaches the compiled
+CSS.
+
+#### Slots
+
+| Slot      | When it renders                                    |
+| --------- | -------------------------------------------------- |
+| `default` | The tiles (or anything else) laid out in the grid. |
+
+## Formatters (`./format`)
+
+```ts
+import { createFormatters } from '@narduk-enterprises/narduk-shell/format'
+```
+
+Backlog item 5
+([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)).
+Ten functions for dates, numbers, money, percentages, quantities and spans,
+built on `Intl` and on nothing else. No Vue, no Nuxt, no dependency: the same
+function is callable from a component, from a Nitro route, from a plain Node
+script and from `nuxt.config.ts`.
+
+### The rule the whole module is built around
+
+**Nothing here reads the ambient clock or the host time zone.** `timeZone` is
+required by the _types_ on every date formatter, and `formatRelative` requires
+`now` the same way. Neither is defaulted, because the default is exactly the
+bug: a Nuxt page renders once on a server (UTC, in a Cloudflare Worker) and
+again in the reader's browser (their zone, their locale), so a formatter that
+consults either one produces two different strings for one value and Vue's
+hydration check turns that into a flicker or a dropped server render. That is
+operator-portal#262 and #268, stonx#674 and #675, and riverstatus's hand-rolled
+DST table, four times over.
+
+The zone an app passes should be a **decision** — the market's zone, the gauge's
+zone, `'UTC'` — and never `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+`createFormatters()` is where an app makes that decision once.
+
+`test/format.ssr.test.ts` is what makes this a rule rather than a convention. It
+runs the whole surface in a **child process** under `TZ` of `UTC`,
+`America/Chicago`, `Asia/Tokyo` and `Australia/Eucla` and `LC_ALL` of `en-US`,
+`de-DE` and `ja-JP`, and requires byte-identical stdout; Node reads both
+variables at process start, so a child process is the only honest way to test
+it. The same file greps the source for `Date.now`, `new Date()`,
+`resolvedOptions()`, `navigator.language` and an `Intl` constructor called
+without an explicit locale, and carries a canary proving the host environment
+_does_ move an unpinned `Intl` formatter — so the comparison is a gate that can
+fail.
+
+### `src/format.ts` is deliberately one file
+
+The module is a single file with **no relative imports at all**. The obvious
+shape — a `src/runtime/format/` directory of small modules — is not one this
+package can have, for three reasons:
+
+- `scripts/check-component-surface.mjs` `import()`s `src/format.ts` in plain
+  Node. Node's ESM resolver does no extension guessing, so a relative `./x`
+  specifier fails with `ERR_MODULE_NOT_FOUND` and the check — which fails closed
+  — fails.
+- Node's native type stripping does not remap a `./x.js` specifier onto `x.ts`,
+  so the usual TypeScript workaround does not apply either.
+- Writing `./x.ts` fixes Node and breaks every consuming app:
+  `exports["./format"].types` points at this same file, and an app's own `tsc`
+  rejects an explicit `.ts` extension with **TS5097** unless it enables
+  `allowImportingTsExtensions`, which this package may not require of its
+  consumers.
+
+The third one is asserted by `test/format.ssr.test.ts`, so the trap cannot be
+walked back into. A reviewer who wants the directory shape must first give the
+surface check a bundler.
+
+### Defaults, in one place
+
+| Behaviour        | Default                                                                |
+| ---------------- | ---------------------------------------------------------------------- |
+| `locale`         | `'en-US'` — a fixed value, never the host's                            |
+| `empty`          | `'—'`, rendered for `null`, `undefined`, `NaN` and unparseable input   |
+| Date style       | `'medium'` (`Mar 8, 2026`); time style `'short'` (`3:30 AM`)           |
+| Unit display     | `'narrow'` for durations (`1h 30m`), `'short'` for quantities (`5 ft`) |
+| `Intl` instances | memoised per kind, keyed by locale plus the full sorted option set     |
+
+The memo cache is capped at 256 entries per kind and clears wholesale on
+overflow. The cap is there because an option set can be derived from data
+(`digits` off a column definition, `currency` off a row), which is the one way
+the cache could grow with the working set rather than with the code; real call
+sites re-populate a handful of entries immediately, and an adversarial one pays
+a rebuild instead of growing without bound.
+
+### `formatDate`
+
+```ts
+formatDate('2026-03-08T08:30:00Z', { timeZone: 'America/Chicago' }) // 'Mar 8, 2026'
+formatDate(row.startsOn, { timeZone: 'UTC', style: 'full' })
+```
+
+`timeZone` is required. A bare `YYYY-MM-DD` is treated as a **floating calendar
+date** with no instant, because that is what it is: `new Date('2026-03-08')` is
+midnight UTC, and rendering that in `America/Chicago` shows the 7th — the most
+common way a date lands on screen one day early. `formatDateTime` deliberately
+does not do this; a value with a time in it is an instant.
+
+### `formatDateTime`
+
+```ts
+formatDateTime(at, { timeZone: 'America/Chicago' }) // 'Mar 8, 2026, 3:30 AM'
+formatDateTime(at, { timeZone: 'America/Chicago', timeZoneName: 'short' }) // '… 3:30 AM CDT'
+```
+
+`timeZoneName` is what riverstatus's hand-rolled DST table was for: `Intl` knows
+the real transition dates for every zone, including the ones that are not the
+United States'. It is appended from a second formatter because
+`Intl.DateTimeFormat` throws a `TypeError` when `timeZoneName` is combined with
+`dateStyle`/`timeStyle`.
+
+### `formatRelative`
+
+```ts
+formatRelative(at, { now, timeZone: 'America/Chicago' }) // '3 hours ago'
+formatRelative(at, { now, timeZone: 'America/Chicago', numeric: 'always' }) // '3 hours ago' / '1 day ago'
+```
+
+`now` is required — it is the injected clock. Below 45 seconds the answer is in
+seconds, below 45 minutes in minutes, and below 22 hours in **hours** even when
+the two instants fall on different local days: something posted at 23:30 last
+night reads `2 hours ago`, not `yesterday`. Above that the ladder switches to
+the calendar, and days are counted in the caller's zone, so one 30-hour span
+reads `2 days ago` in Chicago and `yesterday` in Tokyo. The 23-hour day a
+spring-forward produces still reads `yesterday`.
+
+### `formatDuration`
+
+```ts
+formatDuration(5_400_000) // '1h 30m'
+formatDuration(5_400_000, { unitDisplay: 'long' }) // '1 hour 30 minutes'
+formatDuration(-90_000) // '-1m 30s'
+```
+
+Two components by default, from the largest non-zero unit down, trailing zero
+components trimmed. It never climbs above a day: a month is not a fixed span,
+and a duration that silently means "about a month" is worse than `45d`. A
+negative span keeps its sign rather than becoming `'unknown'` the way
+operator-portal's `formatAge` does — a clock skew should be visible, not
+laundered.
+
+### `formatNumber`
+
+```ts
+formatNumber(1234.5678, { digits: 2 }) // '1,234.57'
+```
+
+`digits` sets minimum and maximum fraction digits together; the two `Intl`
+options are still available separately for the cases that need them.
+
+### `formatCompact`
+
+```ts
+formatCompact(1234) // '1.2K'
+formatCompact(1_234_567) // '1.2M'
+```
+
+`Intl`'s own compact notation, not stonx's hand-rolled `K`/`M`/`B`/`T` ladder —
+the ladder is English-only. One visible consequence of the plan's signature
+winning: the default is one fraction digit where stonx's was two, so a call site
+that needs the old shape passes `{ digits: 2 }`.
+
+### `formatPercent`
+
+```ts
+formatPercent(0.055) // '5.5%'
+formatPercent(5.5, { input: 'percent' }) // '5.5%'
+```
+
+The default reading is `Intl`'s: the argument is a **fraction**. stonx's
+formatter defaults the other way, behind a `fromDecimal` flag, so an adoption
+that silently inherited a default would be wrong by a factor of 100 in a
+direction nothing catches. `input` is therefore spelled out at the call site
+rather than inferred.
+
+### `formatMoney`
+
+```ts
+formatMoney(1234.5, { currency: 'USD' }) // '$1,234.50'
+formatMoney(1234.5, { currency: 'EUR', locale: 'de-DE' }) // '1.234,50 €'
+```
+
+`currency` is required because there is no house currency, and fraction digits
+are the currency's own — `JPY` has none, `USD` has two. `timeZone` is accepted
+and ignored so that one bound option bag fits every formatter in the suite.
+
+### `formatQuantity`
+
+```ts
+formatQuantity(5, { unit: 'foot' }) // '5 ft'
+formatQuantity(1234, { unit: 'cfs' }) // '1,234 cfs'
+```
+
+`Intl` throws a `RangeError` for any unit outside its sanctioned list, and half
+the estate's units are outside it — riverstatus alone reads `cfs` and `ft3/s`
+off the USGS feed. An unsanctioned unit is appended after a space instead.
+
+### `createFormatters`
+
+```ts
+// app/utils/formatters.ts
+export const fmt = createFormatters({ timeZone: 'America/Chicago' })
+
+fmt.formatDateTime(row.observedAt) // 'Mar 8, 2026, 3:30 AM'
+fmt.formatRelative(row.observedAt, { now }) // '3 hours ago'
+fmt.formatMoney(row.total, { currency: 'USD' })
+fmt.formatDate(row.observedAt, { timeZone: 'UTC' }) // per-call options win
+```
+
+The intended entry point, and the reason `timeZone` being required is a one-line
+cost rather than a 228-call-site one. The returned object is frozen.
+
+These formatters are **not** auto-imported by the Nuxt module, deliberately:
+every pilot app already has its own `formatDate` in `app/utils/`, and a global
+auto-import of a different `formatDate` with a different required signature
+would shadow it at the worst possible moment. Import the subpath, or bind a set
+in `app/utils/` and import that.
+
 ## Component surface check
 
 `node scripts/check-component-surface.mjs`, from the repository root, reads the
@@ -906,6 +1570,12 @@ needs something to render, a card is a rendered preview), so requiring them
 would only produce fictions. That deviation is deliberate and recorded here and
 in
 [narduk-libs#250](https://github.com/narduk-enterprises/narduk-libs/issues/250).
+
+`./format` ships a card anyway — `src/design-cards/Formatters.card.vue` — but as
+a choice rather than a rule. A card is where a designer sees what the house date
+and money formats actually look like, which is worth having; requiring one of
+every future exported function is not. See **Shipping a design card** for the
+list that authorises it.
 
 The check reads the registry and `format` by **importing the TypeScript
 directly** — Node strips types natively and these modules are plain erasable
@@ -969,11 +1639,31 @@ import NeStatePanel from '../runtime/components/NeStatePanel.vue'
 Nothing else registers the card. `packages/design/design-system-build` globs
 `src/design-cards/*.card.vue`, renders each one into the NE Base gallery, and
 fails its build when a registered component has no card (unless the name is on
-`PENDING_CARDS`), when a card has no registered component, when two cards claim
-the same id, or when an authored card does not reach the prerendered output.
-`test/design-cards.test.ts` in this package server-renders every card —
-including the template — and asserts the same pairing, so a card that only works
-after hydration fails here rather than showing up blank in NE Base.
+`PENDING_CARDS`), when a card is authorised by neither `src/registry.ts` nor
+`src/surface-cards.ts`, when two cards claim the same id, or when an authored
+card does not reach the prerendered output. `test/design-cards.test.ts` in this
+package server-renders every card — including the template — and asserts the
+same pairing, so a card that only works after hydration fails here rather than
+showing up blank in NE Base.
+
+### A card for something that is not a component
+
+`src/surface-cards.ts` is the second — and much smaller — list that may
+authorise a card. It exists for `Formatters.card.vue`, which previews the
+`./format` subpath and has no component to be named after. Without it the
+pairing rule above rejects the card outright, which is the rule working as
+intended: NE Base showing a card for something no app can import is the failure
+it prevents.
+
+So the hole is narrow and fails closed in both directions. A name on that list
+**must** have a card file — there is no `PENDING_CARDS` equivalent, because that
+waiver was for a component landing ahead of its card and it is spent. A card
+named by neither list is still an error, and a name on both lists is an error
+too, since one card id cannot be rendered twice. `test/design-cards.test.ts`
+asserts all of that from this side, `shellCardPlan` in
+`design-system-build/scripts/build.mts` from the other, and the list is capped
+at three entries by a test: past a handful, the shape is wrong and the card
+belongs to something the registry knows about.
 
 The hand-authored cards for `narduk-ui` and the Nuxt UI baseline stay in
 `design-system-build/app/app.vue` and keep working unchanged; backlog item 22

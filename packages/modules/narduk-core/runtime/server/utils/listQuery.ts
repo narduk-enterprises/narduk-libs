@@ -5,6 +5,15 @@
  * narduk-platform list-query contract and throws a 400 (never a 500) naming the
  * offending keys; `listResponse` renders the matching `ListResponse<T>`.
  *
+ * An unknown query key is tolerated for one release rather than rejected
+ * (Logan, 2026-09-11 — see `.changeset/list-query-tolerate-unknown-keys.md`):
+ * the request still succeeds with the known keys parsed exactly as before,
+ * and `parseListQuery` logs one structured `warn` per request through
+ * narduk-logging — `useLogger(event)`, not a dev-only `console.warn`, so a
+ * fleet operator can find it in production — naming every ignored key. Pass
+ * `strict: true` to reject an unknown key with a 400 today; the next major
+ * flips that default.
+ *
  * A list route may issue at most {@link LIST_QUERY_STATEMENT_CEILING}
  * statements (one page `SELECT`, plus one `COUNT(*)` when `total` is a
  * number). `total: null` is the one-statement path.
@@ -24,6 +33,8 @@ import {
   type OffsetListResponse,
 } from '@narduk-enterprises/narduk-platform/list-query'
 import { createError, getQuery } from 'h3'
+
+import { useLogger } from './logger'
 
 import type { H3Event } from 'h3'
 import type { z } from 'zod'
@@ -123,7 +134,35 @@ export function parseListQuery(
     })
   }
 
+  warnUnknownListQueryKeys(event, parsed.data.unknownKeys)
   return parsed.data
+}
+
+/**
+ * Logs one structured warning per request naming every list-query key this
+ * route does not declare. `unknownKeys` is non-empty only when the schema
+ * tolerated them — the `strict` option was not set — since `strict: true`
+ * rejects them with a 400 before `parseListQuery` gets here. See
+ * `.changeset/list-query-tolerate-unknown-keys.md`.
+ */
+function warnUnknownListQueryKeys(event: H3Event, unknownKeys: readonly string[]): void {
+  if (unknownKeys.length === 0) return
+
+  // Tolerating an unknown key must never depend on logging succeeding: a
+  // logger failure (of any kind, in any consumer) reports nothing rather
+  // than turning a tolerated request into a 500.
+  try {
+    useLogger(event)
+      .child('ListQuery')
+      .warn(
+        `Ignoring unknown list-query key(s): ${unknownKeys.join(', ')}. They will be rejected ` +
+          `with a 400 once strict mode is the default in the next major version; pass ` +
+          `strict: true to opt into that behaviour now.`,
+        { code: 'list_query_unknown_keys', unknownKeys: [...unknownKeys] },
+      )
+  } catch {
+    /* See comment above — a warning is best-effort. */
+  }
 }
 
 export interface OffsetListResponseOptions<TFilters, TKey extends string> {

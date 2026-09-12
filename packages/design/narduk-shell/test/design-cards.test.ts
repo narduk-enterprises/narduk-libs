@@ -19,6 +19,7 @@ import { renderToString } from 'vue/server-renderer'
 
 import { PENDING_CARDS } from '../src/pending-cards'
 import { NE_SHELL_COMPONENTS } from '../src/registry'
+import { NE_SHELL_SURFACE_CARDS } from '../src/surface-cards'
 
 /** `NeStatePanel` -> `ne-state-panel`; the id a card must declare. */
 export function kebabCase(name: string): string {
@@ -46,9 +47,17 @@ const templates = named(
 )
 
 describe('every registered component has a card, and every card a component', () => {
+  // Two lists may authorise a card, and only two: the component registry, and
+  // `surface-cards.ts` for a card that previews an export subpath rather than
+  // a component (`./format`, components backlog item 5). A card named by
+  // neither is still an error, which is the half of this rule that matters --
+  // NE Base showing a card for something no app can import.
+  const surfaceNames = NE_SHELL_SURFACE_CARDS.map((card) => card.name)
+  const authorised = [...NE_SHELL_COMPONENTS.map((component) => component.name), ...surfaceNames]
   const required = [...NE_SHELL_COMPONENTS]
     .map((component) => component.name)
     .filter((name) => !PENDING_CARDS.includes(name))
+    .concat(surfaceNames)
     .sort()
 
   it('is not vacuous: PENDING_CARDS cannot swallow every registered component', () => {
@@ -68,8 +77,21 @@ describe('every registered component has a card, and every card a component', ()
     expect(cardNames.filter((name) => !PENDING_CARDS.includes(name))).toEqual(required)
     expect(new Set(cardNames).size).toBe(cardNames.length)
     for (const name of cardNames) {
-      expect(NE_SHELL_COMPONENTS.map((component) => component.name)).toContain(name)
+      expect(authorised).toContain(name)
     }
+  })
+
+  it('keeps the surface-card list an exception, not a second registry', () => {
+    // A name that is both a component and a surface card would render one card
+    // id twice; `shellCardPlan` rejects that, and this is the near half of the
+    // same rule. The cap is a judgement, not arithmetic: if this list ever
+    // grows past a handful, the shape is wrong and a card belongs to something
+    // the registry knows about.
+    for (const name of surfaceNames) {
+      expect(NE_SHELL_COMPONENTS.map((component) => component.name)).not.toContain(name)
+    }
+    expect(new Set(surfaceNames).size).toBe(surfaceNames.length)
+    expect(surfaceNames.length).toBeLessThanOrEqual(3)
   })
 
   it('names each required card file after the component it previews', () => {

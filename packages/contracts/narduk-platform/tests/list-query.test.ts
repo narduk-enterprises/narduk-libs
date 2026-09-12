@@ -95,10 +95,33 @@ describe('listQuerySchema — sort allowlist', () => {
   })
 })
 
-describe('listQuerySchema — unknown keys', () => {
+describe('listQuerySchema — unknown keys (tolerate-and-warn default)', () => {
   const schema = listQuerySchema({ maxLimit: 100, sortable })
 
-  it('rejects an unknown key rather than stripping it, and names the keys', () => {
+  it('tolerates an unknown key instead of rejecting it, and reports it on unknownKeys', () => {
+    const result = schema.parse({ limit: '10', pge: '2', serach: 'abc' })
+
+    expect(result.limit).toBe(10)
+    expect(result.filters).toEqual({})
+    expect(result.unknownKeys).toEqual(['pge', 'serach'])
+  })
+
+  it('reports an empty unknownKeys when the caller sends none', () => {
+    expect(schema.parse({ limit: '10' }).unknownKeys).toEqual([])
+  })
+
+  it("tolerates the other mode's pagination key as an unknown key", () => {
+    expect(schema.parse({ cursor: 'abc' }).unknownKeys).toEqual(['cursor'])
+
+    const cursorSchema = listQuerySchema({ maxLimit: 100, mode: 'cursor', sortable })
+    expect(cursorSchema.parse({ offset: '20' }).unknownKeys).toEqual(['offset'])
+  })
+})
+
+describe('listQuerySchema — strict opt-in (the pre-tolerate .strict() behaviour)', () => {
+  const schema = listQuerySchema({ maxLimit: 100, sortable, strict: true })
+
+  it('rejects an unknown key rather than tolerating it, and names the keys', () => {
     const result = schema.safeParse({ limit: '10', pge: '2', serach: 'abc' })
 
     expect(result.success).toBe(false)
@@ -113,7 +136,7 @@ describe('listQuerySchema — unknown keys', () => {
   it("rejects the other mode's pagination key", () => {
     expect(schema.safeParse({ cursor: 'abc' }).success).toBe(false)
 
-    const cursorSchema = listQuerySchema({ maxLimit: 100, mode: 'cursor', sortable })
+    const cursorSchema = listQuerySchema({ maxLimit: 100, mode: 'cursor', sortable, strict: true })
     expect(cursorSchema.safeParse({ offset: '20' }).success).toBe(false)
   })
 })
@@ -139,8 +162,16 @@ describe('listQuerySchema — filters', () => {
     expect(issuePaths(result.error)).toEqual(['status'])
   })
 
-  it('rejects an undeclared filter key (the strictness the caller asked for)', () => {
-    expect(schema.safeParse({ statuss: 'open' }).success).toBe(false)
+  it('tolerates an undeclared filter key as an unknown key rather than a declared filter', () => {
+    const result = schema.parse({ statuss: 'open' })
+
+    expect(result.filters).toEqual({})
+    expect(result.unknownKeys).toEqual(['statuss'])
+  })
+
+  it('rejects an undeclared filter key under strict opt-in', () => {
+    const strictSchema = listQuerySchema({ filters, maxLimit: 100, sortable, strict: true })
+    expect(strictSchema.safeParse({ statuss: 'open' }).success).toBe(false)
   })
 
   it('leaves filters empty when the route declares none', () => {

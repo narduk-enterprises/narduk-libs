@@ -14,6 +14,7 @@ import { nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch }
 
 import { appMapKitCalloutInjectionKey } from '../callouts'
 import { useMapKit } from '../composables/useMapKit'
+import { isClientEnvironment } from '../utils/isClientEnvironment'
 
 import type { AppMapKitCalloutEntry } from '../callouts'
 import type {
@@ -1055,7 +1056,7 @@ function calloutAnchorOffset(): { x: number; y: number } {
  */
 function ensureCalloutController(): MapKitCalloutController<T, AppMapKitCalloutCoordinate> | null {
   if (calloutController) return calloutController
-  if (!import.meta.client || !props.callouts || !mapWrapper.value || !map) return null
+  if (!isClientEnvironment() || !props.callouts || !mapWrapper.value || !map) return null
 
   calloutController = createMapKitCalloutController<T, AppMapKitCalloutCoordinate>({
     ...props.calloutOptions,

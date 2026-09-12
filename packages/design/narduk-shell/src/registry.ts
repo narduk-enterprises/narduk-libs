@@ -42,4 +42,13 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeConfirmDialog', filePath: './runtime/components/NeConfirmDialog.vue' },
   // Item 7 (narduk-libs#254): NeStatePanel.
   { name: 'NeStatePanel', filePath: './runtime/components/NeStatePanel.vue' },
+  // Item 11 (narduk-libs#258): NePager.
+  { name: 'NePager', filePath: './runtime/components/NePager.vue' },
+  // Item 19 (narduk-libs#266): NeForm, NeFormSection, NeSettingsPage.
+  { name: 'NeForm', filePath: './runtime/components/NeForm.vue' },
+  { name: 'NeFormSection', filePath: './runtime/components/NeFormSection.vue' },
+  { name: 'NeSettingsPage', filePath: './runtime/components/NeSettingsPage.vue' },
+  // Item 15 (narduk-libs#262): NeKpiTile + NeKpiBand.
+  { name: 'NeKpiTile', filePath: './runtime/components/NeKpiTile.vue' },
+  { name: 'NeKpiBand', filePath: './runtime/components/NeKpiBand.vue' },
 ]
