@@ -46,7 +46,6 @@ export { REDACTED, redactConnectionString, redactSecrets } from './redact.js'
 export {
   POSTGRES_ROLES,
   assertPostgresRole,
-  createRoleStatement,
   isPostgresRole,
   resetRoleStatement,
   roleGrantStatements,

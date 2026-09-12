@@ -1,6 +1,13 @@
 /**
  * A read-only InfluxDB adapter, for dual-run parity and nothing else.
  *
+ * **TEMPORARY: removed after G4-H parity.** This module exists to compare the
+ * new Timescale store against the Influx replica while the migration is
+ * running. When G4-H signs parity off, the Influx replica host is retired and
+ * this file is deleted along with it -- it is not a supported second backend,
+ * it will not grow a write path, and nothing in the product should be built to
+ * depend on it.
+ *
  * ADR-0004 keeps Influx alive in exactly two places: the optional on-boat
  * `local-history` profile, and a read-only adapter used to compare the new
  * Timescale store against the old one until G4 parity is signed off. This is
@@ -30,7 +37,7 @@ export const INFLUX_MAX_WINDOW_MS = 4 * 24 * 60 * 60 * 1000
 export const INFLUX_TIMEOUT_MS = 120_000
 
 export interface InfluxQueryClient {
-  query(flux: string, options: { timeoutMs: number }): Promise<unknown[]>
+  query(flux: string, options: { signal?: AbortSignal; timeoutMs: number }): Promise<unknown[]>
 }
 
 export interface InfluxWindowedRead {
@@ -42,6 +49,13 @@ export interface InfluxWindowedRead {
   flux: string
   maxWindowMs?: number
   range: TimeRange
+  /**
+   * Cancels the read between windows, and is handed to the client for the
+   * window in flight. A year-long parity run is 92 sequential queries at up to
+   * two minutes each; without this, a cancelled parity job keeps loading the
+   * replica host until the last window finishes.
+   */
+  signal?: AbortSignal
   timeoutMs?: number
 }
 
@@ -129,6 +143,14 @@ export function renderFluxWindow(flux: string, window: TimeRange): string {
  * Sequential on purpose. The point of windowing is to bound the replica's peak
  * memory; firing the windows concurrently would restore exactly the load the
  * windowing exists to avoid.
+ *
+ * TEMPORARY, as the module docblock says: removed after G4-H parity.
+ *
+ * An `AbortSignal` is checked before every window and passed to the client, so
+ * a cancelled parity run stops at the next window boundary rather than at the
+ * end of the range. Cancellation throws the signal's own reason (an
+ * `AbortError` by default), not a `NardukTimeseriesError`: a cancelled read is
+ * the caller's decision, not a fault in the query.
  */
 export async function readWindowed(request: InfluxWindowedRead): Promise<unknown[]> {
   assertHostSafeFlux(request.flux)
@@ -144,7 +166,9 @@ export async function readWindowed(request: InfluxWindowedRead): Promise<unknown
 
   const rows: unknown[] = []
   for (const window of windows) {
+    request.signal?.throwIfAborted()
     const result = await request.client.query(renderFluxWindow(request.flux, window), {
+      signal: request.signal,
       timeoutMs,
     })
     rows.push(...result)

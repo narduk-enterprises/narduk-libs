@@ -107,8 +107,19 @@ const result = await applyMigrations(connection, migrations, { dryRun: true })
 - A `pg_try_advisory_lock` serialises concurrent deploys. That lock is
   **session-scoped**, so the executor must be a **single connection, not a
   pool** — `migrationDriverOptions()` pins `max: 1` for exactly this reason.
-- A file whose first line is `-- narduk:no-transaction` runs outside a
-  transaction, for DDL Postgres or Timescale refuses to run inside one.
+- A file whose **first line** is `-- narduk:no-transaction` runs outside a
+  transaction, for DDL Postgres or Timescale refuses to run inside one. Such a
+  file is split into top-level statements (quote-, comment- and dollar-quote-
+  aware) and sent **one statement per round trip**: a multi-statement simple
+  query is itself an implicit transaction, so sending the file whole would
+  reject exactly the DDL the directive exists for.
+- `applyMigrations(connection, migrations, { table })` puts a set in its own
+  ledger table (default `schema_migrations`), so two independent migration sets
+  can share a database without either seeing the other's history. The table
+  name is validated against `/^[a-z_][a-z0-9_]*$/`.
+- The advisory unlock is checked: `pg_advisory_unlock` returning false raises
+  `MIGRATION_UNLOCK_FAILED`, and it can never mask a migration failure that
+  happened first.
 
 ## Roles
 
@@ -117,8 +128,8 @@ Three least-privilege roles, named once:
 ```ts
 import {
   assertPostgresRole,
+  roleGrantStatements,
   setRoleStatement,
-  createRoleStatement,
 } from '@narduk-enterprises/narduk-postgres'
 
 setRoleStatement(assertPostgresRole(configuredRole)) // 'ingest_writer' | 'history_reader' | 'ops'
@@ -126,10 +137,16 @@ setRoleStatement(assertPostgresRole(configuredRole)) // 'ingest_writer' | 'histo
 
 `setRoleStatement` accepts only a member of the frozen role tuple, so a role can
 never be interpolated from user input. Identifiers in generated DDL are
-validated against `/^[a-z_][a-z0-9_]*$/` and quoted; a `statement_timeout` must
-match `/^\d+(?:ms|s|min)$/`. The roles are created `NOLOGIN`: this package never
-handles a credential, and an operator grants a login role membership out of
-band.
+validated against `/^[a-z_][a-z0-9_]*$/` and quoted.
+
+**Creating roles is not this package's job, and neither is setting their
+timeouts.** The deployment's own provisioning creates the three roles and sets
+each one's role-level `statement_timeout` (narduk-infrastructure#155); both
+need superuser, and a library that re-issued them would either fail for lack of
+privilege or quietly override the deployment's deadline with its own. What this
+module owns is `roleGrantStatements`, the GRANT matrix — which is what
+generates narduk-timeseries' `0003_history_roles.sql`, asserted there by a test
+so the two cannot drift. This package never handles a credential.
 
 ## Parameter budgets
 

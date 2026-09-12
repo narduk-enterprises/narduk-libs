@@ -8,7 +8,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { NardukTimeseriesError } from '../src/errors.js'
-import { DEFAULT_MAX_VESSELS_PER_STATEMENT, validateRetentionPolicy } from '../src/policy.js'
+import {
+  DEFAULT_MAX_VESSELS_PER_STATEMENT,
+  retentionPolicyIdentity,
+  validateRetentionPolicy,
+} from '../src/policy.js'
 
 const VESSEL = '11111111-1111-4111-8111-111111111111'
 
@@ -81,5 +85,67 @@ describe('validateRetentionPolicy', () => {
     expect(() => validateRetentionPolicy({ ...round20, maxVesselsPerStatement: 10.5 })).toThrow(
       /maxVesselsPerStatement/u,
     )
+  })
+})
+
+describe('unswept rollup levels', () => {
+  it('reports the levels no global window sweeps instead of guessing one', () => {
+    // "1d is missing from the policy" and "1d is kept forever" looked identical
+    // from the outside; round 23 (R23-2) keeps the behaviour and adds the
+    // report.
+    const validated = validateRetentionPolicy({
+      ...round20,
+      globalRollupWindowMs: { '1m': 30 * 86_400_000 },
+    })
+    expect(validated.unsweptRollupLevels).toEqual(['15m', '1h', '1d'])
+  })
+
+  it('reports every level when the policy declares no rollup windows at all', () => {
+    expect(validateRetentionPolicy(round20).unsweptRollupLevels).toEqual(['1m', '15m', '1h', '1d'])
+  })
+
+  it('refuses a tier promising more rollup depth than the store retains', () => {
+    expect(() =>
+      validateRetentionPolicy({
+        ...round20,
+        globalRollupWindowMs: { '1h': 7 * 86_400_000 },
+      }),
+    ).toThrow(/global 1h window/u)
+  })
+
+  it('refuses a global ladder that narrows as it coarsens', () => {
+    expect(() =>
+      validateRetentionPolicy({
+        ...round20,
+        globalRollupWindowMs: { '1h': 30 * 86_400_000, '1m': 365 * 86_400_000 },
+      }),
+    ).toThrow(NardukTimeseriesError)
+  })
+})
+
+describe('retentionPolicyIdentity', () => {
+  it('is stable across equal policies and independent of now', () => {
+    const first = retentionPolicyIdentity(validateRetentionPolicy({ ...round20, now: new Date(0) }))
+    const second = retentionPolicyIdentity(
+      validateRetentionPolicy({ ...round20, now: new Date('2026-09-12T00:00:00Z') }),
+    )
+    expect(first).toBe(second)
+  })
+
+  it('changes when the policy would delete something different', () => {
+    const base = retentionPolicyIdentity(validateRetentionPolicy(round20))
+    const wider = retentionPolicyIdentity(
+      validateRetentionPolicy({ ...round20, globalRawWindowMs: 14 * 86_400_000 }),
+    )
+    const moreVessels = retentionPolicyIdentity(
+      validateRetentionPolicy({
+        ...round20,
+        tiers: {
+          free: { ...round20.tiers.free, vesselIds: [VESSEL, '22222222-2222-4222-8222-222222222222'] },
+        },
+      }),
+    )
+    expect(wider).not.toBe(base)
+    expect(moreVessels).not.toBe(base)
   })
 })

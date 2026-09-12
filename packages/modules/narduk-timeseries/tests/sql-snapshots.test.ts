@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { buildRollupQuery, planTrackQuery } from '../src/timescale/query.js'
+import { buildRollupQuery, planTrackQuery, refreshRollupsStatement } from '../src/timescale/query.js'
 import { buildRetentionStatements } from '../src/timescale/retention.js'
 import { buildSeriesResolveStatement } from '../src/timescale/series.js'
 import { buildNumericWriteStatements, buildTrackWriteStatements } from '../src/timescale/write.js'
@@ -33,21 +33,12 @@ describe('series resolution', () => {
     ])
 
     expect(statement.text).toMatchInlineSnapshot(`
-      "WITH input (vessel_id, path, unit, value_kind) AS (VALUES ($1::uuid, $2::text, $3::text, $4::text), ($5::uuid, $6::text, $7::text, $8::text)),
-      inserted AS (
-        INSERT INTO series (vessel_id, path, unit, value_kind)
-        SELECT vessel_id, path, unit, value_kind FROM input
-        ON CONFLICT (vessel_id, path) DO NOTHING
-        RETURNING series_id, vessel_id, path, unit, value_kind
-      )
-      SELECT series_id, vessel_id, path, unit, value_kind FROM inserted
-      UNION ALL
-      SELECT s.series_id, s.vessel_id, s.path, s.unit, s.value_kind
-        FROM series s
-        JOIN input i ON i.vessel_id = s.vessel_id AND i.path = s.path
-       WHERE NOT EXISTS (
-         SELECT 1 FROM inserted x WHERE x.vessel_id = s.vessel_id AND x.path = s.path
-       )"
+      "WITH input (vessel_id, path, unit, value_kind) AS (VALUES ($1::uuid, $2::text, $3::text, $4::text), ($5::uuid, $6::text, $7::text, $8::text))
+      INSERT INTO series (vessel_id, path, unit, value_kind)
+      SELECT vessel_id, path, unit, value_kind FROM input
+      ON CONFLICT (vessel_id, path) DO UPDATE
+         SET unit = COALESCE(EXCLUDED.unit, series.unit)
+      RETURNING series_id, vessel_id, path, unit, value_kind"
     `)
     expect(statement.params).toEqual([
       VESSEL,
@@ -85,7 +76,8 @@ describe('numeric write', () => {
 
     expect(statement!.text).toMatchInlineSnapshot(`
       "INSERT INTO telemetry_numeric (ts, vessel_id, series_id, installation_role, value, quality)
-      VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)"
+      VALUES ($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)
+      ON CONFLICT DO NOTHING"
     `)
     expect(statement!.params).toEqual([
       new Date('2026-09-11T12:00:00.000Z'),
@@ -124,7 +116,8 @@ describe('track write', () => {
 
     expect(statement!.text).toMatchInlineSnapshot(`
       "INSERT INTO track_points (ts, vessel_id, geom, sog, cog, heading, depth)
-      VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6, $7, $8)"
+      VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6, $7, $8)
+      ON CONFLICT DO NOTHING"
     `)
     expect(statement!.params).toEqual([
       new Date('2026-09-11T12:00:00.000Z'),
@@ -231,10 +224,15 @@ describe('track query', () => {
 })
 
 describe('retention plan', () => {
-  it('drops raw chunks globally and deletes per tier', () => {
+  it('drops raw and rollup chunks globally and deletes only track and raw per tier', () => {
     const now = new Date('2026-09-12T03:15:00.000Z')
     const statements = buildRetentionStatements({
       globalRawWindowMs: 7 * 86_400_000,
+      globalRollupWindowMs: {
+        '1m': 30 * 86_400_000,
+        '15m': 90 * 86_400_000,
+        '1h': 365 * 86_400_000,
+      },
       now,
       tiers: {
         free: {
@@ -244,35 +242,52 @@ describe('retention plan', () => {
           vesselIds: [VESSEL],
         },
         cruiser: {
-          rollupWindowMs: { '1m': 365 * 86_400_000 },
+          rollupWindowMs: { '1m': 30 * 86_400_000 },
           trackWindowMs: 730 * 86_400_000,
           vesselIds: [OTHER_VESSEL],
         },
       },
     })
 
+    // Round 24 (R24-1): a rollup level is pruned globally, with drop_chunks on
+    // its materialization hypertable. There is no per-vessel DELETE against a
+    // continuous aggregate any more -- tier depth is a read boundary.
     expect(
       statements.map(
         (statement) => `${statement.tier ?? 'global'} ${statement.kind} ${statement.target}`,
       ),
     ).toEqual([
       'global drop_chunks telemetry_numeric',
-      'free delete telemetry_numeric_1m',
-      'free delete telemetry_numeric_1h',
+      'global drop_chunks telemetry_numeric_1m',
+      'global drop_chunks telemetry_numeric_15m',
+      'global drop_chunks telemetry_numeric_1h',
       'free delete track_points',
       'free delete telemetry_numeric',
-      'cruiser delete telemetry_numeric_1m',
       'cruiser delete track_points',
     ])
+    expect(statements.some((statement) => /DELETE FROM telemetry_numeric_1/u.test(statement.text))).toBe(
+      false,
+    )
     expect(statements[0]!.text).toBe(
       "SELECT drop_chunks('telemetry_numeric', older_than => $1::timestamptz)",
     )
     expect(statements[0]!.params).toEqual([new Date('2026-09-05T03:15:00.000Z')])
     expect(statements[1]!.text).toBe(
-      'DELETE FROM telemetry_numeric_1m WHERE vessel_id = ANY($1::uuid[]) AND bucket < $2::timestamptz',
+      "SELECT drop_chunks('telemetry_numeric_1m', older_than => $1::timestamptz)",
     )
+    expect(statements[1]!.params).toEqual([new Date('2026-08-13T03:15:00.000Z')])
+    // 1d has no global window, so it is never swept -- reported, not guessed.
+    expect(statements.some((statement) => statement.rollup === '1d')).toBe(false)
     // The Free raw sweep exists only because round 20 chose both a 7-day global
     // raw window (1A) and a 24-hour Free raw window (2B).
-    expect(statements[4]!.params).toEqual([[VESSEL], new Date('2026-09-11T03:15:00.000Z')])
+    expect(statements[5]!.params).toEqual([[VESSEL], new Date('2026-09-11T03:15:00.000Z')])
+  })
+
+  it('builds the explicit backfill refresh a late batch needs', () => {
+    const statement = refreshRollupsStatement('15m', RANGE)
+    expect(statement.text).toBe(
+      "CALL refresh_continuous_aggregate('telemetry_numeric_15m', $1::timestamptz, $2::timestamptz)",
+    )
+    expect(statement.params).toEqual([RANGE.start, RANGE.end])
   })
 })

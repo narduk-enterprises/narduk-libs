@@ -86,8 +86,21 @@ export interface RollupQuery {
   bucket: RollupBucket
   /** Cap on returned rows. The store reports truncation rather than lying. */
   maxRows?: number
+  /** Injected for deterministic tests; defaults to the current time. */
+  now?: Date
   range: TimeRange
   seriesIds: readonly number[]
+  /**
+   * The requesting tier's history depth in ms, when the product has tiers.
+   *
+   * Rollups are retained globally at the most generous tier's depth (see
+   * `RetentionPolicyInput.globalRollupWindowMs`), so a tier's own depth is
+   * enforced HERE, on read: the store clips `range.start` up to
+   * `now - tierWindowMs` and reports the clip in `RollupResult`. The caller
+   * owns tier membership and therefore owns this number; omitting it reads
+   * the full retained range.
+   */
+  tierWindowMs?: number
   vesselId: string
 }
 
@@ -103,6 +116,10 @@ export interface RollupRow {
 
 export interface RollupResult {
   bucket: RollupBucket
+  /** True when `tierWindowMs` moved `range.start` forward. */
+  clipped: boolean
+  /** The range actually read, after tier clipping. */
+  range: TimeRange
   rows: RollupRow[]
   truncated: boolean
 }
@@ -139,7 +156,16 @@ export interface RetentionResult {
   /** True when a concurrent sweep already held the lock and this one stood down. */
   coalesced: boolean
   deletedRowsByTarget: Record<string, number>
+  /** Per-level rollup cutoffs this sweep dropped chunks older than. */
+  droppedRollupsOlderThan: Partial<Record<RollupBucket, Date>>
   droppedRawOlderThan: Date | null
+  /**
+   * A stable digest of the validated policy this result describes. The
+   * in-process single-flight is keyed on it, so a `coalesced: true` result
+   * names the policy it was coalesced onto rather than leaving the caller to
+   * assume it was their own.
+   */
+  policyIdentity: string
   skipped: string[]
   statements: number
 }
@@ -165,7 +191,17 @@ export interface TelemetryHistoryStore {
 export interface TierRetention {
   /** Vessel ids on this tier. The caller owns tier membership. */
   vesselIds: readonly string[]
-  /** Per-rollup-level windows, in ms. A level omitted is not swept. */
+  /**
+   * Per-rollup-level history depth for this tier, in ms.
+   *
+   * This is a READ depth, not a delete. Rollup retention is one global
+   * time-based window per level (`globalRollupWindowMs`); a per-vessel DELETE
+   * against a continuous aggregate is not how a continuous aggregate is
+   * pruned. What these numbers do is (a) get validated against the global
+   * windows, so a tier cannot promise depth the store does not retain, and
+   * (b) get passed by the consumer as `RollupQuery.tierWindowMs`, which clips
+   * the range on read. A level omitted here reads the full retained range.
+   */
   rollupWindowMs: Partial<Record<RollupBucket, number>>
   /** Track-point window in ms. Omitted means not swept. */
   trackWindowMs?: number
@@ -180,6 +216,17 @@ export interface TierRetention {
 export interface RetentionPolicyInput {
   /** The global raw window in ms. Round 20 (1A) for mybo-at-v2: 7 days. */
   globalRawWindowMs: number
+  /**
+   * One global window per rollup level, in ms: how long the store keeps that
+   * level for EVERY vessel. Set it to the most generous tier's depth for that
+   * level; shorter tiers are enforced on read (`RollupQuery.tierWindowMs`).
+   *
+   * A level omitted here is never swept -- which is a real choice (keep 1d
+   * rollups forever) and not a mistake, so the validator reports the omitted
+   * levels in `unsweptRollupLevels` and the sweep reports them in
+   * `RetentionResult.skipped` instead of guessing a window.
+   */
+  globalRollupWindowMs?: Partial<Record<RollupBucket, number>>
   /** Injected for deterministic tests. */
   now?: Date
   tiers: Record<string, TierRetention>

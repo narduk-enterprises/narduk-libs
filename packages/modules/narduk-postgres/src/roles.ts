@@ -8,6 +8,16 @@
  * frozen tuple below, and `assertPostgresRole` is the single gate; a value that
  * arrived from a request body, a JWT claim or a config file fails there rather
  * than reaching the statement text.
+ *
+ * **Creating the roles is not this library's job.** The target instance's own
+ * provisioning creates `ingest_writer` / `history_reader` / `ops` and sets their
+ * role-level `statement_timeout` (narduk-infrastructure#155), which needs
+ * superuser; a migration that re-issued `CREATE ROLE` or `ALTER ROLE ... SET
+ * statement_timeout` would either fail for lack of privilege or quietly
+ * override the deployment's timeout with a library default. What this module
+ * owns is the GRANT matrix -- which is also what generates
+ * `0003_history_roles.sql` in narduk-timeseries, asserted there by a test, so
+ * the two can never drift.
  */
 
 import { NardukPostgresError } from './errors.js'
@@ -46,8 +56,6 @@ export interface RolePrivilegeSpec {
   insert: readonly string[]
   /** Tables the role may UPDATE or DELETE. */
   mutate: readonly string[]
-  /** Sequences whose nextval the role needs (identity columns). */
-  sequences: readonly string[]
   /** True only for a role that runs DDL: migrations, retention, compression. */
   ddl: boolean
 }
@@ -97,44 +105,5 @@ export function roleGrantStatements(
       `GRANT UPDATE, DELETE ON ${quotedSchema}.${quoteIdentifier(table)} TO ${quotedRole};`,
     )
   }
-  for (const sequence of spec.sequences) {
-    statements.push(
-      `GRANT USAGE, SELECT ON SEQUENCE ${quotedSchema}.${quoteIdentifier(sequence)} TO ${quotedRole};`,
-    )
-  }
   return statements
-}
-
-/**
- * `CREATE ROLE ... NOLOGIN`, idempotently.
- *
- * These are group roles with no password and no login. An operator creates the
- * login user that Hyperdrive or the deploy job authenticates as, then grants it
- * membership -- so no migration file, and nothing in this repository, ever holds
- * a credential.
- */
-export function createRoleStatement(role: PostgresRoleName, statementTimeout?: string): string {
-  assertPostgresRole(role)
-  const lines = [
-    'DO $$',
-    'BEGIN',
-    `  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN`,
-    `    CREATE ROLE "${role}" NOLOGIN;`,
-    '  END IF;',
-    'END',
-    '$$;',
-  ]
-  if (statementTimeout) {
-    // An interval literal, not a parameter: validate its exact shape rather
-    // than trusting a caller-supplied string into DDL.
-    if (!/^\d+(?:ms|s|min)$/u.test(statementTimeout)) {
-      throw new NardukPostgresError(
-        'TUNING_INVALID',
-        'statementTimeout must look like 15000ms, 15s or 5min.',
-        { statementTimeout },
-      )
-    }
-    lines.push(`ALTER ROLE "${role}" SET statement_timeout = '${statementTimeout}';`)
-  }
-  return lines.join('\n')
 }

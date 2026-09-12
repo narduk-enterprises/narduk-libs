@@ -9,7 +9,7 @@
  * NARDUK_TIMESERIES_LIVE_DSN pointing at a throwaway database.
  *
  * What it proves that no unit test can: that the migrations actually apply in
- * order against a real Timescale (continuous aggregates, compression policies
+ * order against a real Timescale (continuous aggregates, columnstore policies
  * and PostGIS types are all server-side behaviour a fake cannot check), that
  * the builders' SQL parses and means what it says, and that a rollup read comes
  * back with the values the raw writes imply.
@@ -114,6 +114,36 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
       })),
     )
 
+    // At-least-once delivery: the same batch, again. 0001's natural key plus
+    // the writer's ON CONFLICT DO NOTHING must make this a no-op, and only a
+    // real database can prove the constraint is there.
+    await store.writeNumeric(
+      Array.from({ length: 600 }, (_, index) => ({
+        path: 'navigation.speedOverGround',
+        ts: new Date(start.getTime() + index * 1000),
+        unit: 'm/s',
+        value: 4,
+        vesselId,
+      })),
+    )
+    const stored = await client.query<{ n: string }>(
+      'SELECT count(*) AS n FROM telemetry_numeric WHERE vessel_id = $1::uuid',
+      [vesselId],
+    )
+    expect(Number(stored.rows[0]?.n)).toBe(600)
+
+    // A shadow installation writes to raw and must not reach the rollup.
+    await store.writeNumeric([
+      {
+        installationRole: 1,
+        path: 'navigation.speedOverGround',
+        ts: new Date(start.getTime() + 1000),
+        unit: 'm/s',
+        value: 400,
+        vesselId,
+      },
+    ])
+
     await client.query("CALL refresh_continuous_aggregate('telemetry_numeric_1m', NULL, NULL)")
     const series = await store.resolveSeries([
       {
@@ -131,7 +161,27 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     })
 
     expect(result.rows.length).toBeGreaterThan(0)
+    // 4, not a mean of 4 and 400: the 1m aggregate is installation_role = 0.
     expect(result.rows[0]?.avg).toBeCloseTo(4, 6)
+  }, 120_000)
+
+  it('sweeps retention through a session-pinned connection', async () => {
+    const store = createTimescaleHistoryStore({
+      executor: client,
+      // The live client here IS one connection, which is exactly the
+      // requirement: a session advisory lock cannot be released from another
+      // backend.
+      retention: { executor: client, maxConnections: 1 },
+    })
+
+    const result = await store.applyRetention({
+      globalRawWindowMs: 7 * 86_400_000,
+      globalRollupWindowMs: { '1m': 30 * 86_400_000 },
+      tiers: {},
+    })
+
+    expect(result.coalesced).toBe(false)
+    expect(result.droppedRollupsOlderThan['1m']).toBeInstanceOf(Date)
   }, 120_000)
 
   it('round-trips a track batch through a decimated read', async () => {

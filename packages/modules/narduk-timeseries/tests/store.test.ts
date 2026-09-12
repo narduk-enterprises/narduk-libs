@@ -227,6 +227,7 @@ describe('queryTrack', () => {
 describe('applyRetention', () => {
   const policy = {
     globalRawWindowMs: 7 * 86_400_000,
+    globalRollupWindowMs: { '1h': 365 * 86_400_000, '1m': 30 * 86_400_000 },
     now: new Date('2026-09-12T03:00:00.000Z'),
     tiers: {
       free: {
@@ -237,11 +238,40 @@ describe('applyRetention', () => {
     },
   }
 
+  /** A fake standing in for a session-pinned connection: one backend pid. */
+  function pinned(pid = 4242): ProtocolFake {
+    return createProtocolFake()
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true, pid }])
+      .respondTo(/pg_advisory_unlock/u, [{ pid, unlocked: true }])
+  }
+
+  it('refuses to sweep through an executor nobody has pinned', async () => {
+    // A Hyperdrive pool can take the lock on one backend and release it on
+    // another; the lock then survives, and every later sweep stands down and
+    // deletes nothing.
+    const store = createTimescaleHistoryStore({ executor: pinned() })
+    const error = await store.applyRetention(policy).then(
+      () => null,
+      (cause: unknown) => cause as NardukTimeseriesError,
+    )
+    expect(error?.code).toBe('RETENTION_EXECUTOR_UNPINNED')
+  })
+
+  it('refuses a retention pool that is not tuned to a single connection', () => {
+    expect(() =>
+      createTimescaleHistoryStore({
+        executor: createProtocolFake(),
+        retention: { executor: createProtocolFake(), maxConnections: 10 },
+      }),
+    ).toThrow(/RETENTION_EXECUTOR_UNPINNED/u)
+  })
+
   it('takes the advisory lock, sweeps, and releases it', async () => {
-    const database = createProtocolFake()
-      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
-      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
-    const store = createTimescaleHistoryStore({ executor: database })
+    const database = pinned()
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database, maxConnections: 1 },
+    })
 
     const result = await store.applyRetention(policy)
 
@@ -249,25 +279,72 @@ describe('applyRetention', () => {
     expect(database.texts.at(-1)).toContain('pg_advisory_unlock')
     expect(result.coalesced).toBe(false)
     expect(result.droppedRawOlderThan).toEqual(new Date('2026-09-05T03:00:00.000Z'))
+    expect(result.droppedRollupsOlderThan).toEqual({
+      '1h': new Date('2025-09-12T03:00:00.000Z'),
+      '1m': new Date('2026-08-13T03:00:00.000Z'),
+    })
+    expect(result.policyIdentity).toMatch(/^[0-9a-f]{8}-[0-9a-f]+$/u)
+    // 15m and 1d carry no global window: reported, never guessed at.
+    expect(result.skipped).toEqual([
+      'rollup level 15m has no globalRollupWindowMs and is never swept (retained indefinitely)',
+      'rollup level 1d has no globalRollupWindowMs and is never swept (retained indefinitely)',
+    ])
   })
 
   it('stands down when another process holds the lock', async () => {
-    const database = createProtocolFake().respondTo(/pg_try_advisory_lock/u, [{ locked: false }])
-    const store = createTimescaleHistoryStore({ executor: database })
+    const database = createProtocolFake().respondTo(/pg_try_advisory_lock/u, [
+      { locked: false, pid: 7 },
+    ])
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
 
     const result = await store.applyRetention(policy)
 
     expect(result.coalesced).toBe(true)
-    expect(result.skipped).toHaveLength(1)
+    expect(result.skipped.at(-1)).toBe('another retention sweep holds the advisory lock')
     expect(database.countMatching(/DELETE FROM/u)).toBe(0)
     expect(database.countMatching(/drop_chunks/u)).toBe(0)
   })
 
-  it('coalesces a second in-process sweep onto the one already running', async () => {
+  it('treats an unlock that returns false as the failure it is', async () => {
+    // false means "this session never held that lock" -- which is exactly what
+    // a pooled executor produces, and what leaks the lock.
     const database = createProtocolFake()
-      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
-      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
-    const store = createTimescaleHistoryStore({ executor: database })
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true, pid: 1 }])
+      .respondTo(/pg_advisory_unlock/u, [{ pid: 2, unlocked: false }])
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
+
+    await expect(store.applyRetention(policy)).rejects.toThrow(/RETENTION_UNLOCK_FAILED/u)
+  })
+
+  it('notices when lock and unlock ran on different backends', async () => {
+    const database = createProtocolFake()
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true, pid: 1 }])
+      .respondTo(/pg_advisory_unlock/u, [{ pid: 2, unlocked: true }])
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
+
+    const error = await store.applyRetention(policy).then(
+      () => null,
+      (cause: unknown) => cause as NardukTimeseriesError,
+    )
+    expect(error?.code).toBe('RETENTION_UNLOCK_FAILED')
+    expect(error?.details).toEqual({ lockPid: 1, unlockPid: 2 })
+  })
+
+  it('coalesces a second in-process sweep of the SAME policy onto the first', async () => {
+    const database = pinned()
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
 
     const [first, second] = await Promise.all([
       store.applyRetention(policy),
@@ -276,18 +353,160 @@ describe('applyRetention', () => {
 
     expect(first.coalesced).toBe(false)
     expect(second.coalesced).toBe(true)
+    expect(second.policyIdentity).toBe(first.policyIdentity)
     expect(database.countMatching(/pg_try_advisory_lock/u)).toBe(1)
   })
 
-  it('releases the lock even when a sweep statement fails', async () => {
+  it('does not coalesce a DIFFERENT policy onto the one in flight', async () => {
+    // The earlier single-flight was keyed on "a sweep is running", so a second
+    // caller with a different policy got back a result describing deletions it
+    // never asked for.
+    const database = pinned()
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
+
+    const other = { ...policy, globalRawWindowMs: 3 * 86_400_000 }
+    const [first, second] = await Promise.all([
+      store.applyRetention(policy),
+      store.applyRetention(other),
+    ])
+
+    expect(first.coalesced).toBe(false)
+    expect(second.coalesced).toBe(false)
+    expect(second.policyIdentity).not.toBe(first.policyIdentity)
+    expect(database.countMatching(/pg_try_advisory_lock/u)).toBe(2)
+  })
+
+  it('releases the lock even when a sweep statement fails, and reports the sweep failure', async () => {
     const database = createProtocolFake()
-      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true, pid: 9 }])
+      .respondTo(/pg_advisory_unlock/u, [{ pid: 9, unlocked: true }])
       .respondTo(/drop_chunks/u, () => {
-        throw new Error('compressed chunk is not droppable')
+        throw new Error('columnstore chunk is not droppable')
       })
-    const store = createTimescaleHistoryStore({ executor: database })
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
 
     await expect(store.applyRetention(policy)).rejects.toThrow(/droppable/u)
     expect(database.texts.at(-1)).toContain('pg_advisory_unlock')
+  })
+
+  it('does not let a failed unlock mask the sweep failure', async () => {
+    const database = createProtocolFake()
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true, pid: 9 }])
+      .respondTo(/pg_advisory_unlock/u, [{ pid: 9, unlocked: false }])
+      .respondTo(/drop_chunks/u, () => {
+        throw new Error('columnstore chunk is not droppable')
+      })
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      retention: { executor: database },
+    })
+
+    // The primary failure is the one an operator has to see.
+    await expect(store.applyRetention(policy)).rejects.toThrow(/droppable/u)
+  })
+})
+
+describe('batch atomicity', () => {
+  it('wraps a multi-statement batch in one transaction', async () => {
+    // The chunking is this library's bookkeeping, not a fact about the data:
+    // a failure halfway through must not leave half a batch stored.
+    const database = withSeriesResolution(createProtocolFake())
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    await store.writeNumeric(numericPoints(12_000, 50))
+
+    expect(database.countMatching(/INSERT INTO telemetry_numeric \(/u)).toBe(3)
+    expect(database.countMatching(/^BEGIN$/u)).toBe(1)
+    expect(database.countMatching(/^COMMIT$/u)).toBe(1)
+    // The resolve is outside the transaction: a series row is a dimension, and
+    // rolling it back would throw away work the next batch needs anyway.
+    expect(database.texts.indexOf('BEGIN')).toBeGreaterThan(
+      database.texts.findIndex((text) => text.includes('INSERT INTO series')),
+    )
+  })
+
+  it('rolls the whole batch back when one chunk fails', async () => {
+    const database = withSeriesResolution(createProtocolFake())
+    let inserts = 0
+    database.respondTo(/INSERT INTO telemetry_numeric \(/u, () => {
+      inserts += 1
+      if (inserts === 2) throw new Error('deadlock detected')
+      return []
+    })
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    await expect(store.writeNumeric(numericPoints(12_000, 50))).rejects.toThrow(/deadlock/u)
+    expect(database.countMatching(/^ROLLBACK$/u)).toBe(1)
+    expect(database.countMatching(/^COMMIT$/u)).toBe(0)
+  })
+
+  it('does not pay for a transaction when the batch is one statement', async () => {
+    const database = withSeriesResolution(createProtocolFake())
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    await store.writeNumeric(numericPoints(100, 5))
+    expect(database.countMatching(/^BEGIN$/u)).toBe(0)
+  })
+})
+
+describe('tier clipping on read', () => {
+  const now = new Date('2026-09-12T00:00:00.000Z')
+
+  it('clips the requested range to the tier window and says so', async () => {
+    const database = createProtocolFake().respondTo(/FROM telemetry_numeric_1h/u, [])
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    const result = await store.queryRollup({
+      bucket: '1h',
+      now,
+      range: { end: now, start: new Date('2026-06-12T00:00:00.000Z') },
+      seriesIds: [7],
+      tierWindowMs: 30 * 86_400_000,
+      vesselId: VESSEL,
+    })
+
+    expect(result.clipped).toBe(true)
+    expect(result.range.start).toEqual(new Date('2026-08-13T00:00:00.000Z'))
+    expect(database.statements[0]?.params[2]).toEqual(new Date('2026-08-13T00:00:00.000Z'))
+  })
+
+  it('answers a range entirely outside the tier window without a statement', async () => {
+    const database = createProtocolFake()
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    const result = await store.queryRollup({
+      bucket: '1h',
+      now,
+      range: { end: new Date('2026-01-02T00:00:00.000Z'), start: new Date('2026-01-01T00:00:00.000Z') },
+      seriesIds: [7],
+      tierWindowMs: 30 * 86_400_000,
+      vesselId: VESSEL,
+    })
+
+    expect(result.clipped).toBe(true)
+    expect(result.rows).toEqual([])
+    expect(database.statements).toHaveLength(0)
+  })
+
+  it('reads the full retained range when the caller declares no tier', async () => {
+    const database = createProtocolFake().respondTo(/FROM telemetry_numeric_1h/u, [])
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    const result = await store.queryRollup({
+      bucket: '1h',
+      now,
+      range: { end: now, start: new Date('2020-01-01T00:00:00.000Z') },
+      seriesIds: [7],
+      vesselId: VESSEL,
+    })
+
+    expect(result.clipped).toBe(false)
+    expect(result.range.start).toEqual(new Date('2020-01-01T00:00:00.000Z'))
   })
 })

@@ -16,7 +16,7 @@
  */
 
 import { NardukTimeseriesError } from '../errors.js'
-import type { RollupQuery, TimeRange, TrackQuery } from '../types.js'
+import type { RollupBucket, RollupQuery, TimeRange, TrackQuery } from '../types.js'
 import { ROLLUP_BUCKET_MS, TRACK_TABLE, rollupTable } from './tables.js'
 
 export const DEFAULT_MAX_ROLLUP_ROWS = 50_000
@@ -57,6 +57,64 @@ function assertPositiveInteger(label: string, value: number): number {
   return value
 }
 
+export interface RollupRangePlan {
+  /** True when the tier window moved `range.start` forward. */
+  clipped: boolean
+  /** True when the whole requested range is older than the tier window. */
+  empty: boolean
+  range: TimeRange
+}
+
+/**
+ * Clip a requested range to the tier's history depth.
+ *
+ * Rollups are retained globally at the most generous tier's depth, so a
+ * narrower tier is a READ boundary, not a delete: without this clip a Free
+ * vessel could read a Cruiser's worth of history simply by asking for it. The
+ * clip is reported rather than silent -- a consumer that asked for a year and
+ * received a month needs to be able to say so in its response.
+ */
+export function clipRollupRange(query: RollupQuery): RollupRangePlan {
+  assertRange(query.range)
+  const { tierWindowMs } = query
+  if (tierWindowMs === undefined) {
+    return { clipped: false, empty: false, range: query.range }
+  }
+  if (!Number.isFinite(tierWindowMs) || tierWindowMs <= 0) {
+    throw new NardukTimeseriesError(
+      'RANGE_INVALID',
+      'tierWindowMs must be a positive, finite number of milliseconds.',
+      { tierWindowMs },
+    )
+  }
+
+  const now = query.now ?? new Date()
+  const floorMs = now.getTime() - tierWindowMs
+  if (query.range.end.getTime() <= floorMs) {
+    // Zero-width at the floor: the honest answer to "what range did you read"
+    // when the tier window starts after the request ended is "none".
+    return {
+      clipped: true,
+      empty: true,
+      range: { end: new Date(floorMs), start: new Date(floorMs) },
+    }
+  }
+  if (query.range.start.getTime() >= floorMs) {
+    return { clipped: false, empty: false, range: query.range }
+  }
+  return {
+    clipped: true,
+    empty: false,
+    range: { end: query.range.end, start: new Date(floorMs) },
+  }
+}
+
+export interface RollupBuiltQuery extends BuiltQuery {
+  clipped: boolean
+  /** The range the statement actually reads, after tier clipping. */
+  range: TimeRange
+}
+
 /**
  * `avg` is computed here, from `sum_value / n`, rather than read from a stored
  * `avg` column. Migration 0002 explains why: chaining an average of averages is
@@ -64,9 +122,20 @@ function assertPositiveInteger(label: string, value: number): number {
  * telemetry store cannot promise. The division is guarded so a bucket that
  * somehow recorded zero rows returns 0 instead of NaN.
  */
-export function buildRollupQuery(query: RollupQuery): BuiltQuery {
+export function buildRollupQuery(query: RollupQuery): RollupBuiltQuery {
   const table = rollupTable(query.bucket)
-  assertRange(query.range)
+  const plan = clipRollupRange(query)
+  if (plan.empty) {
+    throw new NardukTimeseriesError(
+      'RANGE_INVALID',
+      'The whole requested range is older than the tier window, so there is no statement to build. Callers going through the store get an empty, clipped result instead.',
+      {
+        end: query.range.end.toISOString(),
+        start: query.range.start.toISOString(),
+        tierWindowMs: query.tierWindowMs,
+      },
+    )
+  }
 
   if (!Array.isArray(query.seriesIds) || query.seriesIds.length === 0) {
     throw new NardukTimeseriesError(
@@ -89,9 +158,11 @@ export function buildRollupQuery(query: RollupQuery): BuiltQuery {
   const maxRows = assertPositiveInteger('maxRows', query.maxRows ?? DEFAULT_MAX_ROLLUP_ROWS)
 
   return {
+    clipped: plan.clipped,
     // The limit is maxRows + 1 so a full page is distinguishable from an exact
     // fit: the adapter reports `truncated` on the extra row and drops it.
-    params: [query.vesselId, query.seriesIds, query.range.start, query.range.end, maxRows + 1],
+    params: [query.vesselId, query.seriesIds, plan.range.start, plan.range.end, maxRows + 1],
+    range: plan.range,
     text: [
       `SELECT bucket,`,
       `       series_id,`,
@@ -113,6 +184,34 @@ export function buildRollupQuery(query: RollupQuery): BuiltQuery {
 
 export function rollupBucketMs(bucket: RollupQuery['bucket']): number {
   return ROLLUP_BUCKET_MS[bucket]
+}
+
+/**
+ * The explicit refresh for one rollup level over one range.
+ *
+ * The scheduled policies in migration 0002 reconsider the last 7 days, which
+ * is the whole global raw window -- so anything raw still holds can still be
+ * materialized by the scheduler. A store-and-forward consumer that
+ * deliberately accepts a batch OLDER than that has to say so, because no
+ * policy will ever look at those buckets again: it calls this for the level
+ * and range it just wrote.
+ *
+ * `refresh_continuous_aggregate` is a procedure, so this is a `CALL`, and it
+ * cannot run inside a transaction block -- run it on its own, not inside
+ * `executor.transaction()`.
+ *
+ * The ladder is hierarchical: 15m reads 1m, 1h reads 15m, 1d reads 1h. A
+ * backfilled range therefore refreshes the levels in order, coarsest last, or
+ * the coarse levels keep summarizing buckets the fine level has not
+ * materialized yet.
+ */
+export function refreshRollupsStatement(bucket: RollupBucket, range: TimeRange): BuiltQuery {
+  const view = rollupTable(bucket)
+  assertRange(range)
+  return {
+    params: [range.start, range.end],
+    text: `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, $2::timestamptz)`,
+  }
 }
 
 export interface TrackPlan {

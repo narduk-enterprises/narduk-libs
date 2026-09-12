@@ -127,3 +127,42 @@ describe('renderFluxWindow', () => {
     )
   })
 })
+
+describe('cancellation', () => {
+  it('stops at the next window boundary and hands the signal to the client', async () => {
+    // A year-long parity run is 92 sequential queries at up to two minutes
+    // each; without a signal a cancelled job keeps loading the replica host.
+    const controller = new AbortController()
+    const seen: Array<AbortSignal | undefined> = []
+    const query = vi.fn(async (_flux: string, options: { signal?: AbortSignal }) => {
+      seen.push(options.signal)
+      controller.abort()
+      return []
+    })
+
+    await expect(
+      readWindowed({
+        client: { query },
+        flux: 'from(b) |> range(start: :start:, stop: :end:) |> aggregateWindow(every: 1m, fn: mean)',
+        range: { end: new Date('2026-09-21T00:00:00.000Z'), start: new Date('2026-09-01T00:00:00.000Z') },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow()
+
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(seen[0]).toBe(controller.signal)
+  })
+
+  it('refuses before the first window when the signal is already aborted', async () => {
+    const query = vi.fn(async () => [])
+    await expect(
+      readWindowed({
+        client: { query },
+        flux: 'from(b) |> range(start: :start:, stop: :end:) |> aggregateWindow(every: 1m, fn: mean)',
+        range: { end: new Date('2026-09-02T00:00:00.000Z'), start: new Date('2026-09-01T00:00:00.000Z') },
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toThrow()
+    expect(query).not.toHaveBeenCalled()
+  })
+})

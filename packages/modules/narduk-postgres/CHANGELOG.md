@@ -8,10 +8,15 @@
 - Direct Node connections, plus migration loading from a directory.
 - Health check: `SELECT 1` and extension presence, in two statements, never
   throwing, always redacted.
-- Migrations runner: ordered SQL files, a `schema_migrations` table, checksum
-  immutability, an advisory lock, a dry run, and a `-- narduk:no-transaction`
-  directive.
+- Migrations runner: ordered SQL files, a configurable ledger table
+  (`schema_migrations` by default), checksum immutability, an advisory lock
+  whose unlock result is checked and which never masks a migration failure, a
+  dry run, and a `-- narduk:no-transaction` first-line directive — a
+  non-transactional file is split into top-level statements and sent one per
+  round trip, since a multi-statement simple query is an implicit transaction.
 - Typed helpers for the `ingest_writer` / `history_reader` / `ops` roles, with
-  `SET ROLE` never taken from user input.
+  `SET ROLE` never taken from user input, and the GRANT matrix that generates
+  narduk-timeseries' role migration. Creating roles and setting their
+  `statement_timeout` belongs to the deployment (narduk-infrastructure#155).
 - Parameter budgets against the 65535 Bind ceiling, and a protocol fake for
   tests.

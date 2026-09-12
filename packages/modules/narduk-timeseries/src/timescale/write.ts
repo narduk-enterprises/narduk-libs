@@ -74,10 +74,22 @@ function optionalNumber(value: unknown, label: string, index: number): number | 
 /**
  * Multi-row INSERT statements for a resolved numeric batch.
  *
- * There is no `ON CONFLICT` clause. docs/04 declares no unique constraint on
- * `telemetry_numeric`, so `ON CONFLICT DO NOTHING` would be a no-op that reads
- * like idempotency -- worse than nothing. De-duplication for the at-least-once
- * queue path is the consumer's, and is named as an open item in the README.
+ * `ON CONFLICT DO NOTHING` is load-bearing, not decorative. Migration 0001
+ * gives `telemetry_numeric` the natural key
+ * (vessel_id, series_id, ts, installation_role), so a redelivered queue batch
+ * -- the ordinary consequence of at-least-once delivery -- inserts the rows it
+ * has not already inserted and silently drops the rest. That makes a whole
+ * batch safely replayable: the writer never has to know whether its ack
+ * landed.
+ *
+ * The target is left inferred (`ON CONFLICT DO NOTHING`, no column list)
+ * because the table carries exactly one unique index and a hypertable's chunk
+ * constraints are renamed per chunk; inference-free is the form that behaves
+ * identically on the parent table and on every chunk.
+ *
+ * A dropped row is not reported per row: `WriteResult.rows` is what the batch
+ * handed to the database, not what the database stored. A consumer that needs
+ * the difference reads it back; nothing in this path guesses at it.
  */
 export function buildNumericWriteStatements(
   batch: readonly ResolvedNumericPoint[],
@@ -86,26 +98,34 @@ export function buildNumericWriteStatements(
   if (batch.length === 0) return []
 
   const chunks = chunkRowsByParameterBudget(batch, NUMERIC_PARAMETERS_PER_ROW, budget)
-  return chunks.map((chunk) => {
+  const statements: WriteStatement[] = []
+  // The index in every validation error is the point's index in the CALLER's
+  // batch, not its offset inside the chunk the budget happened to put it in.
+  let base = 0
+  for (const chunk of chunks) {
     const params: unknown[] = []
     for (const [offset, point] of chunk.entries()) {
+      const index = base + offset
       params.push(
-        assertTimestamp(point.ts, offset),
+        assertTimestamp(point.ts, index),
         point.vesselId,
         point.seriesId,
         point.installationRole ?? 0,
-        assertFiniteNumber(point.value, 'value', offset),
+        assertFiniteNumber(point.value, 'value', index),
         point.quality ?? 0,
       )
     }
-    return {
+    statements.push({
       params,
       rows: chunk.length,
       text:
         `INSERT INTO ${NUMERIC_TABLE} (ts, vessel_id, series_id, installation_role, value, quality)\n` +
-        `VALUES ${placeholderTuples(chunk.length, NUMERIC_PARAMETERS_PER_ROW)}`,
-    }
-  })
+        `VALUES ${placeholderTuples(chunk.length, NUMERIC_PARAMETERS_PER_ROW)}\n` +
+        `ON CONFLICT DO NOTHING`,
+    })
+    base += chunk.length
+  }
+  return statements
 }
 
 /**
@@ -115,6 +135,10 @@ export function buildNumericWriteStatements(
  * takes x then y, so the ordering is lon, lat. Getting that backwards produces
  * coordinates that are silently valid and geographically absurd, which is why
  * the column order is asserted in the snapshot test rather than left to review.
+ *
+ * `ON CONFLICT DO NOTHING` against 0001's UNIQUE (vessel_id, ts): one recorded
+ * position per vessel per instant, so a replayed batch is idempotent here for
+ * the same reason it is on the numeric table.
  */
 export function buildTrackWriteStatements(
   batch: readonly TrackPoint[],
@@ -123,32 +147,38 @@ export function buildTrackWriteStatements(
   if (batch.length === 0) return []
 
   const chunks = chunkRowsByParameterBudget(batch, TRACK_PARAMETERS_PER_ROW, budget)
-  return chunks.map((chunk) => {
+  const statements: WriteStatement[] = []
+  let chunkBase = 0
+  for (const chunk of chunks) {
     const params: unknown[] = []
     const tuples: string[] = []
     for (const [offset, point] of chunk.entries()) {
-      const base = offset * TRACK_PARAMETERS_PER_ROW + 1
+      const placeholder = offset * TRACK_PARAMETERS_PER_ROW + 1
+      const index = chunkBase + offset
       tuples.push(
-        `($${base}, $${base + 1}, ST_SetSRID(ST_MakePoint($${base + 2}, $${base + 3}), 4326)::geography, ` +
-          `$${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`,
+        `($${placeholder}, $${placeholder + 1}, ST_SetSRID(ST_MakePoint($${placeholder + 2}, $${placeholder + 3}), 4326)::geography, ` +
+          `$${placeholder + 4}, $${placeholder + 5}, $${placeholder + 6}, $${placeholder + 7})`,
       )
       params.push(
-        assertTimestamp(point.ts, offset),
+        assertTimestamp(point.ts, index),
         point.vesselId,
-        assertFiniteNumber(point.longitude, 'longitude', offset),
-        assertFiniteNumber(point.latitude, 'latitude', offset),
-        optionalNumber(point.sog, 'sog', offset),
-        optionalNumber(point.cog, 'cog', offset),
-        optionalNumber(point.heading, 'heading', offset),
-        optionalNumber(point.depth, 'depth', offset),
+        assertFiniteNumber(point.longitude, 'longitude', index),
+        assertFiniteNumber(point.latitude, 'latitude', index),
+        optionalNumber(point.sog, 'sog', index),
+        optionalNumber(point.cog, 'cog', index),
+        optionalNumber(point.heading, 'heading', index),
+        optionalNumber(point.depth, 'depth', index),
       )
     }
-    return {
+    statements.push({
       params,
       rows: chunk.length,
       text:
         `INSERT INTO ${TRACK_TABLE} (ts, vessel_id, geom, sog, cog, heading, depth)\n` +
-        `VALUES ${tuples.join(', ')}`,
-    }
-  })
+        `VALUES ${tuples.join(', ')}\n` +
+        `ON CONFLICT DO NOTHING`,
+    })
+    chunkBase += chunk.length
+  }
+  return statements
 }

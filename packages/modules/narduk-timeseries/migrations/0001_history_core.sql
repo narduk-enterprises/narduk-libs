@@ -1,8 +1,15 @@
 -- 0001_history_core.sql -- the history store's core schema.
 --
 -- Source of truth: mybo-at-v2 docs/04-data-model.md § History (TimescaleDB +
--- PostGIS), which this file follows column for column. Two deliberate additions
--- are marked below; there are no silent ones.
+-- PostGIS), which this file follows column for column. The deliberate
+-- additions are marked below; there are no silent ones.
+--
+-- TARGET: TimescaleDB 2.30.0 on PostgreSQL 17 (narduk-infrastructure#155).
+-- This file uses the current APIs, not the deprecated ones: `by_range()` for
+-- the time dimension (the positional `create_hypertable` form is deprecated
+-- since 2.13) and the columnstore API (`timescaledb.enable_columnstore`,
+-- `timescaledb.segmentby`, `add_columnstore_policy`) which superseded
+-- `timescaledb.compress` / `add_compression_policy` in 2.18.
 --
 -- APPLIED MIGRATIONS ARE IMMUTABLE. Once a database has run this file, editing
 -- it forks the schema: every environment that already applied it keeps the old
@@ -27,42 +34,58 @@ CREATE TABLE IF NOT EXISTS series (
 COMMENT ON COLUMN series.value_kind IS 'numeric | position | attitude | text | bool | json';
 
 -- Numeric telemetry: the bulk of the store.
+--
+-- The UNIQUE constraint is the point of this table's shape. The upload path is
+-- an at-least-once queue consumer, so the same batch can legitimately arrive
+-- twice; without a natural key the second delivery doubles every point it
+-- carries and no read can tell. (vessel_id, series_id, ts, installation_role)
+-- is that key -- one reading per series per instant per installation role --
+-- and it lets the writer say `ON CONFLICT DO NOTHING` and mean it. A
+-- hypertable's unique index must include the partitioning column, which `ts`
+-- is.
 CREATE TABLE IF NOT EXISTS telemetry_numeric (
   ts                TIMESTAMPTZ NOT NULL,
   vessel_id         UUID NOT NULL,
   series_id         BIGINT NOT NULL,
   installation_role SMALLINT NOT NULL DEFAULT 0,
   value             DOUBLE PRECISION NOT NULL,
-  quality           SMALLINT NOT NULL DEFAULT 0
+  quality           SMALLINT NOT NULL DEFAULT 0,
+  UNIQUE (vessel_id, series_id, ts, installation_role)
 );
 
 COMMENT ON COLUMN telemetry_numeric.installation_role IS '0 primary, 1 shadow';
 
 SELECT create_hypertable(
   'telemetry_numeric',
-  'ts',
-  chunk_time_interval => INTERVAL '1 day',
+  by_range('ts', INTERVAL '1 day'),
   if_not_exists => TRUE
 );
 
+-- Columnstore (2.18+ API). `segmentby` matches the read pattern -- one vessel,
+-- a series set -- so a compressed chunk is read one segment at a time instead
+-- of decompressed whole.
 ALTER TABLE telemetry_numeric SET (
-  timescaledb.compress,
-  timescaledb.compress_segmentby = 'vessel_id, series_id',
-  timescaledb.compress_orderby   = 'ts DESC'
+  timescaledb.enable_columnstore = true,
+  timescaledb.segmentby = 'vessel_id, series_id',
+  timescaledb.orderby   = 'ts DESC'
 );
 
-SELECT add_compression_policy('telemetry_numeric', INTERVAL '3 days', if_not_exists => TRUE);
+SELECT add_columnstore_policy('telemetry_numeric', after => INTERVAL '3 days', if_not_exists => TRUE);
 
--- ADDITION (not in docs/04): an index on (vessel_id, series_id, ts DESC).
+-- ADDITION (not in docs/04): the read index is the UNIQUE constraint above.
 -- Every read this library issues filters on vessel_id and a series set and
--- orders by time; the hypertable's own index is on ts alone, so without this
--- a one-vessel rollup query scans every vessel's rows in each chunk it
--- touches. The compression segmentby above covers the same columns for
--- compressed chunks only.
-CREATE INDEX IF NOT EXISTS telemetry_numeric_vessel_series_ts_idx
-  ON telemetry_numeric (vessel_id, series_id, ts DESC);
+-- orders by time; the hypertable's own index is on ts alone, so without a
+-- (vessel_id, series_id, ts) index a one-vessel rollup query scans every
+-- vessel's rows in each chunk it touches. The unique index has exactly that
+-- prefix and PostgreSQL scans it backwards for `ORDER BY ts DESC`, so a
+-- separate index would only double the write amplification.
 
 -- Position track (PostGIS).
+--
+-- (vessel_id, ts) is this table's natural key: one recorded position per
+-- vessel per instant. The table carries no installation_role column -- docs/04
+-- does not shadow the track -- so two rows at the same instant for the same
+-- vessel are a duplicate delivery, not two distinct facts.
 CREATE TABLE IF NOT EXISTS track_points (
   ts        TIMESTAMPTZ NOT NULL,
   vessel_id UUID NOT NULL,
@@ -70,18 +93,17 @@ CREATE TABLE IF NOT EXISTS track_points (
   sog       REAL,
   cog       REAL,
   heading   REAL,
-  depth     REAL
+  depth     REAL,
+  UNIQUE (vessel_id, ts)
 );
 
 SELECT create_hypertable(
   'track_points',
-  'ts',
-  chunk_time_interval => INTERVAL '7 days',
+  by_range('ts', INTERVAL '7 days'),
   if_not_exists => TRUE
 );
 
 CREATE INDEX IF NOT EXISTS track_points_geom_idx ON track_points USING GIST (geom);
 
 -- ADDITION (not in docs/04), same reasoning as above: the track read is always
--- "one vessel, one time range".
-CREATE INDEX IF NOT EXISTS track_points_vessel_ts_idx ON track_points (vessel_id, ts DESC);
+-- "one vessel, one time range", which the UNIQUE (vessel_id, ts) index serves.

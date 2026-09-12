@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   POSTGRES_ROLES,
   assertPostgresRole,
-  createRoleStatement,
   isPostgresRole,
   resetRoleStatement,
   roleGrantStatements,
@@ -43,7 +42,6 @@ describe('least-privilege grants', () => {
     insert: ['telemetry_numeric', 'series'],
     mutate: [],
     read: ['series'],
-    sequences: ['series_series_id_seq'],
   }
 
   it('gives the ingest writer insert and nothing that erases history', () => {
@@ -53,7 +51,6 @@ describe('least-privilege grants', () => {
       'GRANT SELECT ON "public"."series" TO "ingest_writer";',
       'GRANT INSERT ON "public"."telemetry_numeric" TO "ingest_writer";',
       'GRANT INSERT ON "public"."series" TO "ingest_writer";',
-      'GRANT USAGE, SELECT ON SEQUENCE "public"."series_series_id_seq" TO "ingest_writer";',
     ])
     expect(statements.join('\n')).not.toMatch(/DELETE|UPDATE|TRUNCATE|CREATE/u)
   })
@@ -71,17 +68,15 @@ describe('least-privilege grants', () => {
   })
 })
 
-describe('role creation', () => {
-  it('creates a NOLOGIN group role idempotently and holds no credential', () => {
-    const sql = createRoleStatement('history_reader', '30s')
-    expect(sql).toContain("IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'history_reader')")
-    expect(sql).toContain('CREATE ROLE "history_reader" NOLOGIN;')
-    expect(sql).toContain(`ALTER ROLE "history_reader" SET statement_timeout = '30s';`)
-    expect(sql).not.toMatch(/PASSWORD/iu)
-    expect(sql).toContain('NOLOGIN')
-  })
-
-  it('refuses a statement timeout that is not an interval literal', () => {
-    expect(() => createRoleStatement('ops', "30s'; DROP ROLE ops; --")).toThrow(/TUNING_INVALID/u)
+describe('role creation is not this library\'s', () => {
+  // narduk-infrastructure#155: the target instance's own provisioning creates
+  // the three roles WITH LOGIN and sets their statement_timeout, which needs
+  // superuser. A CREATE ROLE / ALTER ROLE helper here would either fail for
+  // lack of privilege or silently override the deployment's 60 s with a
+  // library default -- so the module exports no such helper.
+  it('exports no role-creation or timeout helper', async () => {
+    const roles: Record<string, unknown> = await import('../src/roles.js')
+    expect(Object.keys(roles)).not.toContain('createRoleStatement')
+    expect(Object.keys(roles).filter((key) => /timeout/iu.test(key))).toEqual([])
   })
 })

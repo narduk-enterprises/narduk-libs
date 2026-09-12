@@ -8,6 +8,7 @@ import {
   migrationLockKey,
   parseMigrationDirectives,
   planMigrations,
+  splitSqlStatements,
 } from '../src/migrate.js'
 import { type ProtocolFake, createProtocolFake } from '../src/testing.js'
 import type { SqlExecutor } from '../src/types.js'
@@ -142,14 +143,80 @@ describe('applyMigrations', () => {
     expect(texts.filter((text) => text === 'BEGIN')).toHaveLength(2)
   })
 
-  it('runs a no-transaction migration outside BEGIN/COMMIT', async () => {
+  // A multi-command simple query runs in an IMPLICIT transaction, so sending a
+  // no-transaction file as one string fails on exactly the DDL the directive
+  // exists for. One statement per round trip is the whole point.
+  it('sends a no-transaction migration one statement at a time, outside BEGIN', async () => {
     const set = await createMigrationSet([
-      { name: '0001_cagg.sql', sql: '-- narduk:no-transaction\nCREATE MATERIALIZED VIEW m;' },
+      {
+        name: '0001_cagg.sql',
+        sql: [
+          '-- narduk:no-transaction',
+          'CREATE MATERIALIZED VIEW a WITH (timescaledb.continuous) AS SELECT 1;',
+          '-- a comment with a ; semicolon in it',
+          "SELECT add_continuous_aggregate_policy('a', start_offset => INTERVAL '7 days');",
+          'DO $$ BEGIN PERFORM 1; PERFORM 2; END $$;',
+        ].join('\n'),
+      },
     ])
     const database = databaseWith([], { tableExists: false })
     await applyMigrations(database, set)
+
     expect(database.texts).not.toContain('BEGIN')
-    expect(database.texts.join('\n')).toContain('CREATE MATERIALIZED VIEW m;')
+    // Everything the runner itself issues, subtracted -- what is left is the
+    // migration, and it arrived as three separate queries, not one.
+    const runnerOwn = /to_regclass|pg_try_advisory_lock|pg_advisory_unlock|schema_migrations/u
+    const migrationStatements = database.texts.filter((text) => !runnerOwn.test(text))
+    expect(migrationStatements).toHaveLength(3)
+    // A leading comment rides with its statement, the directive line included.
+    expect(migrationStatements[0]).toBe(
+      '-- narduk:no-transaction\nCREATE MATERIALIZED VIEW a WITH (timescaledb.continuous) AS SELECT 1',
+    )
+    expect(migrationStatements[1]).toContain('add_continuous_aggregate_policy')
+    expect(migrationStatements[2]).toBe('DO $$ BEGIN PERFORM 1; PERFORM 2; END $$')
+  })
+
+  it('reports an unlock that says this session never held the lock', async () => {
+    const set = await createMigrationSet([CORE])
+    const database = createProtocolFake()
+      .respondTo(/to_regclass/u, [{ exists: false }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: false }])
+
+    await expect(applyMigrations(database, set)).rejects.toThrow(/MIGRATION_UNLOCK_FAILED/u)
+  })
+
+  it('lets the migration error through when the unlock also fails', async () => {
+    const set = await createMigrationSet([CORE])
+    const database = databaseWith([], { tableExists: false })
+      .respondTo(/CREATE TABLE series/u, () => {
+        throw new Error('relation exists')
+      })
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: false }])
+
+    // The primary failure is the one an operator has to see.
+    await expect(applyMigrations(database, set)).rejects.toThrow(/relation exists/u)
+  })
+
+  it('keeps a second migration set in its own table', async () => {
+    const set = await createMigrationSet([CORE])
+    const database = createProtocolFake()
+      .respondTo(/to_regclass/u, [{ exists: false }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
+    await applyMigrations(database, set, { table: 'history_migrations' })
+
+    const joined = database.texts.join('\n')
+    expect(joined).toContain('CREATE TABLE IF NOT EXISTS history_migrations')
+    expect(joined).toContain('INSERT INTO history_migrations')
+    expect(joined).not.toContain('schema_migrations')
+  })
+
+  it('refuses a table name that is not a bare lower_snake_case identifier', async () => {
+    const set = await createMigrationSet([CORE])
+    await expect(
+      applyMigrations(createProtocolFake(), set, { table: 'public.migrations; DROP TABLE x' }),
+    ).rejects.toThrow(/MIGRATION_TABLE_INVALID/u)
   })
 
   // A dry run is what a deploy job prints before it is allowed to change
@@ -203,5 +270,60 @@ describe('applyMigrations', () => {
     }
     await expect(applyMigrations(failing, set)).rejects.toThrow('relation exists')
     expect(database.texts.at(-1)).toContain('pg_advisory_unlock')
+  })
+})
+
+describe('splitSqlStatements', () => {
+  it('splits on top-level semicolons only', () => {
+    expect(splitSqlStatements('SELECT 1; SELECT 2;')).toEqual(['SELECT 1', 'SELECT 2'])
+  })
+
+  it('ignores semicolons inside a dollar-quoted body', () => {
+    const sql = "DO $$ BEGIN IF TRUE THEN PERFORM 1; END IF; END $$;\nSELECT 2;"
+    expect(splitSqlStatements(sql)).toEqual([
+      'DO $$ BEGIN IF TRUE THEN PERFORM 1; END IF; END $$',
+      'SELECT 2',
+    ])
+  })
+
+  it('ignores semicolons inside tagged dollar quotes, literals and identifiers', () => {
+    expect(splitSqlStatements("DO $body$ SELECT ';'; $body$; SELECT 2;")).toHaveLength(2)
+    expect(splitSqlStatements("SELECT 'a;b'; SELECT 2;")).toEqual(["SELECT 'a;b'", 'SELECT 2'])
+    expect(splitSqlStatements('SELECT "a;b"; SELECT 2;')).toEqual(['SELECT "a;b"', 'SELECT 2'])
+    expect(splitSqlStatements("SELECT 'it''s; fine';")).toEqual(["SELECT 'it''s; fine'"])
+  })
+
+  it('ignores semicolons inside line and nested block comments', () => {
+    expect(splitSqlStatements('-- one; two\nSELECT 1;')).toEqual(['-- one; two\nSELECT 1'])
+    expect(splitSqlStatements('/* a; /* b; */ c; */ SELECT 1;')).toEqual([
+      '/* a; /* b; */ c; */ SELECT 1',
+    ])
+  })
+
+  it('drops comment-only and empty trailing fragments', () => {
+    expect(splitSqlStatements('SELECT 1;\n-- trailing note\n')).toEqual(['SELECT 1'])
+    expect(splitSqlStatements(';;\n')).toEqual([])
+  })
+
+  it('refuses an unterminated quote or dollar body rather than guessing', () => {
+    expect(() => splitSqlStatements("SELECT 'unclosed")).toThrow(
+      /MIGRATION_STATEMENT_UNTERMINATED/u,
+    )
+    expect(() => splitSqlStatements('DO $$ SELECT 1')).toThrow(
+      /MIGRATION_STATEMENT_UNTERMINATED/u,
+    )
+  })
+})
+
+describe('parseMigrationDirectives', () => {
+  it('reads the directive from the first line only', () => {
+    expect(parseMigrationDirectives('-- narduk:no-transaction\nSELECT 1;').transactional).toBe(
+      false,
+    )
+    // A file that merely mentions the directive further down still runs wrapped.
+    expect(
+      parseMigrationDirectives('SELECT 1;\n-- see -- narduk:no-transaction for CAggs\n')
+        .transactional,
+    ).toBe(true)
   })
 })

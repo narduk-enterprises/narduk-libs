@@ -20,6 +20,7 @@ export {
 } from './errors.js'
 export {
   DEFAULT_MAX_VESSELS_PER_STATEMENT,
+  retentionPolicyIdentity,
   validateRetentionPolicy,
   type ValidatedRetentionPolicy,
 } from './policy.js'

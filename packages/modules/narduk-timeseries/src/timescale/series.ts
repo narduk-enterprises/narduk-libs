@@ -8,11 +8,20 @@
  * turns a 2,000-point upload into 2,000 queries across a Cloudflare Tunnel.
  *
  * So resolution is set-based. The distinct descriptors of a batch go into one
- * `INSERT ... ON CONFLICT DO NOTHING` whose `RETURNING` is unioned with a
- * `SELECT` for the rows that already existed -- one round trip, whether the
- * batch touches one series or four hundred. A bounded in-process cache then
- * removes even that for the steady state: a vessel's path set is stable, so
- * after the first batch the resolve statement count is zero.
+ * `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` -- one round trip, whether
+ * the batch touches one series or four hundred. A bounded in-process cache
+ * then removes even that for the steady state: a vessel's path set is stable,
+ * so after the first batch the resolve statement count is zero.
+ *
+ * `DO UPDATE` rather than `DO NOTHING` is the correctness-critical part.
+ * `DO NOTHING` returns no row for a conflicting tuple, so the statement needed
+ * a second branch to read the rows that already existed -- and that branch
+ * cannot see a row inserted by a *concurrent uncommitted* transaction, which
+ * is the ordinary case when two queue consumers pick up the same vessel's
+ * first batch at once. The statement then returned nothing for that descriptor
+ * and the store raised `SERIES_UNRESOLVED` on a perfectly healthy database.
+ * `DO UPDATE` takes the conflicting row's lock, waits for the other
+ * transaction, and returns the row either way.
  *
  * The cache is bounded (insertion-order eviction) because an unbounded map in a
  * long-lived Node process is a slow memory leak that only shows up at fleet
@@ -88,8 +97,13 @@ export interface SeriesResolveStatement {
  * of them.
  *
  * The `input` CTE needs its casts: a bare multi-row `VALUES` list feeding a CTE
- * has no target column to infer from, so without `::uuid` the join against
+ * has no target column to infer from, so without `::uuid` the insert into
  * `series.vessel_id` resolves to text and fails at plan time.
+ *
+ * The conflict action updates `unit` from the incoming descriptor when the
+ * incoming one is non-null and keeps the stored one otherwise -- a batch that
+ * omits the unit must not erase a unit the store already knows. `value_kind`
+ * is never overwritten: the kind a series was created with is its identity.
  */
 export function buildSeriesResolveStatement(
   descriptors: readonly SeriesDescriptor[],
@@ -108,21 +122,12 @@ export function buildSeriesResolveStatement(
   }
 
   const text = [
-    `WITH input (vessel_id, path, unit, value_kind) AS (VALUES ${tuples}),`,
-    `inserted AS (`,
-    `  INSERT INTO ${SERIES_TABLE} (vessel_id, path, unit, value_kind)`,
-    `  SELECT vessel_id, path, unit, value_kind FROM input`,
-    `  ON CONFLICT (vessel_id, path) DO NOTHING`,
-    `  RETURNING series_id, vessel_id, path, unit, value_kind`,
-    `)`,
-    `SELECT series_id, vessel_id, path, unit, value_kind FROM inserted`,
-    `UNION ALL`,
-    `SELECT s.series_id, s.vessel_id, s.path, s.unit, s.value_kind`,
-    `  FROM ${SERIES_TABLE} s`,
-    `  JOIN input i ON i.vessel_id = s.vessel_id AND i.path = s.path`,
-    ` WHERE NOT EXISTS (`,
-    `   SELECT 1 FROM inserted x WHERE x.vessel_id = s.vessel_id AND x.path = s.path`,
-    ` )`,
+    `WITH input (vessel_id, path, unit, value_kind) AS (VALUES ${tuples})`,
+    `INSERT INTO ${SERIES_TABLE} (vessel_id, path, unit, value_kind)`,
+    `SELECT vessel_id, path, unit, value_kind FROM input`,
+    `ON CONFLICT (vessel_id, path) DO UPDATE`,
+    `   SET unit = COALESCE(EXCLUDED.unit, ${SERIES_TABLE}.unit)`,
+    `RETURNING series_id, vessel_id, path, unit, value_kind`,
   ].join('\n')
 
   return { params, text }

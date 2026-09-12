@@ -144,23 +144,44 @@ describe('parameter ceilings', () => {
     }
   })
 
-  it('chunks retention deletes by the vessel ceiling', () => {
+  it('chunks the remaining per-vessel deletes by the vessel ceiling', () => {
     const statements = buildRetentionStatements({
       globalRawWindowMs: 7 * 86_400_000,
       maxVesselsPerStatement: 100,
       now: new Date('2026-09-12T00:00:00Z'),
       tiers: {
         free: {
+          rawWindowMs: 86_400_000,
           rollupWindowMs: { '1m': 86_400_000 },
           vesselIds: Array.from({ length: 250 }, (_, index) => `vessel-${String(index)}`),
         },
       },
     })
     const deletes = statements.filter((statement) => statement.kind === 'delete')
+    // Per-tier raw only: rollup retention is global and per-vessel rollup
+    // deletes no longer exist (round 24).
     expect(deletes).toHaveLength(3)
     for (const statement of deletes) {
+      expect(statement.target).toBe('telemetry_numeric')
       expect((statement.params[0] as string[]).length).toBeLessThanOrEqual(100)
     }
+  })
+
+  it('binds one parameter per global rollup sweep, whatever the fleet size', () => {
+    const statements = buildRetentionStatements({
+      globalRawWindowMs: 7 * 86_400_000,
+      globalRollupWindowMs: { '1d': 3650 * 86_400_000, '1h': 365 * 86_400_000 },
+      now: new Date('2026-09-12T00:00:00Z'),
+      tiers: {
+        free: {
+          rollupWindowMs: { '1h': 30 * 86_400_000 },
+          vesselIds: Array.from({ length: 50_000 }, (_, index) => `vessel-${String(index)}`),
+        },
+      },
+    })
+    const rollupSweeps = statements.filter((statement) => statement.rollup !== null)
+    expect(rollupSweeps.map((statement) => statement.rollup)).toEqual(['1h', '1d'])
+    for (const statement of rollupSweeps) expect(statement.params).toHaveLength(1)
   })
 })
 

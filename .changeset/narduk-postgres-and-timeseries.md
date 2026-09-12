@@ -13,15 +13,23 @@ telemetry history store for the non-Supabase backend.
   (`env.HISTORY_DB.connectionString`) with the connection lifetime bound to the
   invocation, `max` capped at 6, and a statement timeout always set through
   startup parameters. `./node` connects directly for migrations and jobs.
-- `./migrate` runs ordered `NNNN_name.sql` files against a `schema_migrations`
-  table under a `pg_try_advisory_lock`, records a sha256 per file so an applied
-  migration can never be edited in place, supports a dry run, and honours a
-  `-- narduk:no-transaction` first line. The advisory lock is session-scoped, so
-  `migrationDriverOptions()` pins `max: 1`.
+- `./migrate` runs ordered `NNNN_name.sql` files against a ledger table
+  (`schema_migrations` by default, `{ table }` for a second set) under a
+  `pg_try_advisory_lock`, records a sha256 per file so an applied migration can
+  never be edited in place, supports a dry run, and honours a
+  `-- narduk:no-transaction` first line — splitting such a file into top-level
+  statements and sending one per round trip, because a multi-statement simple
+  query is an implicit transaction and would reject the very DDL the directive
+  exists for. The advisory lock is session-scoped, so `migrationDriverOptions()`
+  pins `max: 1`, the unlock result is checked (`MIGRATION_UNLOCK_FAILED`), and
+  it can never mask a migration failure that happened first.
 - Health is `SELECT 1` plus extension presence in two statements, never throws,
   and passes every error through `redactSecrets()`.
 - Typed helpers for the `ingest_writer` / `history_reader` / `ops` roles;
-  `SET ROLE` only ever takes a member of the frozen role tuple.
+  `SET ROLE` only ever takes a member of the frozen role tuple. Role creation
+  and role-level `statement_timeout` belong to the deployment
+  (narduk-infrastructure#155), not to this library; what it owns is the GRANT
+  matrix, which generates narduk-timeseries' 0003.
 - `POSTGRES_MAX_BIND_PARAMETERS` (65535, the protocol's 16-bit Bind field) and
   `DEFAULT_PARAMETER_BUDGET` (32768) with chunking helpers.
 - `./testing` exports a protocol fake that enforces the wire rules — the
@@ -37,18 +45,30 @@ telemetry history store for the non-Supabase backend.
   builders whose parameter counts are stated and tested: 6 per numeric row, 8
   per track row, 4 per series descriptor, and a fixed 5 for a rollup read
   whatever the series cardinality.
-- The docs/04 schema as three migrations: hypertables with compression, the 1m →
-  15m → 1h → 1d continuous-aggregate ladder (non-transactional), and the three
-  least-privilege roles. The rollups store `n`/`sum`/`min`/`max`/`last` rather
-  than an average, because avg-of-avg is wrong when chained.
-- Retention parameterized by tier windows the consumer supplies, guarded by
-  in-process single-flight and a Postgres advisory lock; the library holds no
-  tier numbers.
+- The docs/04 schema as three migrations against TimescaleDB 2.30: hypertables
+  created with `by_range` and stored in the columnstore (`enable_columnstore`,
+  `add_columnstore_policy`), the 1m → 15m → 1h → 1d continuous-aggregate ladder
+  (non-transactional, `materialized_only` stated, 1m aggregating
+  `installation_role = 0` so shadow rows live in raw only), and a grant matrix
+  generated from the library's own role specification. The rollups store
+  `n`/`sum`/`min`/`max`/`last` rather than an average, because avg-of-avg is
+  wrong when chained.
+- Both hypertables carry a natural key —
+  `(vessel_id, series_id, ts, installation_role)` and `(vessel_id, ts)` — and
+  both write paths say `ON CONFLICT DO NOTHING`, so a redelivered at-least-once
+  batch cannot inflate `n` and with it every rollup average. A multi-statement
+  batch is atomic when the injected executor is transactional.
+- Retention: raw and each rollup level are swept globally with `drop_chunks`
+  (rollups at the most generous tier's depth, since a continuous aggregate is
+  not pruned per vessel), and a narrower tier is enforced on read, where
+  `queryRollup` clips the requested range to the `tierWindowMs` the consumer
+  passes and reports the clip. A level with no global window is never swept and
+  is reported as such. The sweep requires a session-pinned executor, checks its
+  unlock, and runs from Node — not from a Hyperdrive Worker.
+- `refreshRollupsStatement(level, range)` for a store-and-forward batch older
+  than the 7-day refresh window the scheduled policies reconsider.
 - `./influx`, a read-only parity adapter that holds no credential and enforces ≤
-  4-day windows, `aggregateWindow` before any `group()`, and a 120 s timeout.
-
-Known gap in 0.1.0: `telemetry_numeric` has no unique constraint, so an
-at-least-once delivery path can write duplicate rows; de-duplication is the
-consumer's until a uniqueness decision is made.
+  4-day windows, `aggregateWindow` before any `group()`, a 120 s timeout, and an
+  optional `AbortSignal`. It is **temporary** and is removed after G4-H parity.
 
 Refs narduk-libs#112, mybo-at-v2#63.

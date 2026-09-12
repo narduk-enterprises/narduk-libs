@@ -77,6 +77,15 @@ export interface ApplyMigrationsOptions {
   lockTimeoutMs?: number
   now?: () => Date
   sleep?: (milliseconds: number) => Promise<void>
+  /**
+   * The ledger table, default `schema_migrations`.
+   *
+   * One table belongs to one migration set: the runner treats an applied name
+   * with no file as a deploy-artifact mismatch, so two sets sharing a table
+   * would each see the other's rows as missing files. Give a second set its own
+   * table name (and its own `lockNamespace`) instead.
+   */
+  table?: string
 }
 
 export interface ApplyMigrationsResult {
@@ -94,8 +103,157 @@ async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * The directive is read from the FIRST LINE only.
+ *
+ * A substring search anywhere in the file would let a comment three hundred
+ * lines down -- or a migration that *documents* the directive, as
+ * narduk-timeseries's README-adjacent SQL does -- silently change how the whole
+ * file is executed. The first line is a place an author has to mean.
+ */
 export function parseMigrationDirectives(sql: string): { transactional: boolean } {
-  return { transactional: !sql.includes(NO_TRANSACTION_DIRECTIVE) }
+  const firstLine = sql.slice(0, sql.indexOf('\n') === -1 ? sql.length : sql.indexOf('\n')).trim()
+  return { transactional: firstLine !== NO_TRANSACTION_DIRECTIVE }
+}
+
+/**
+ * Split SQL into top-level statements, aware of everything that can contain a
+ * bare semicolon: line comments, block comments (which nest in Postgres),
+ * single-quoted literals, quoted identifiers, and dollar-quoted bodies.
+ *
+ * This exists because a **non-transactional migration cannot be sent as one
+ * multi-statement string**. libpq's simple query protocol wraps a multi-command
+ * string in an implicit transaction, so `CREATE MATERIALIZED VIEW ... WITH
+ * (timescaledb.continuous)` in a file the runner has been told not to wrap
+ * still fails with "cannot create continuous aggregate in a transaction block".
+ * The fix is one statement per round trip, which is what `applyMigrations` does
+ * for a `transactional: false` file.
+ *
+ * Dollar quoting is not optional to handle: `0003_history_roles.sql`-style
+ * files use `DO $$ ... END $$;`, whose body is full of semicolons.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = []
+  let start = 0
+  let index = 0
+  let blockCommentDepth = 0
+
+  const push = (endExclusive: number): void => {
+    const candidate = sql.slice(start, endExclusive)
+    if (stripSqlComments(candidate).trim().length > 0) statements.push(candidate.trim())
+    start = endExclusive + 1
+  }
+
+  while (index < sql.length) {
+    const two = sql.slice(index, index + 2)
+
+    if (blockCommentDepth > 0) {
+      if (two === '/*') {
+        blockCommentDepth += 1
+        index += 2
+        continue
+      }
+      if (two === '*/') {
+        blockCommentDepth -= 1
+        index += 2
+        continue
+      }
+      index += 1
+      continue
+    }
+
+    if (two === '--') {
+      const newline = sql.indexOf('\n', index)
+      index = newline === -1 ? sql.length : newline + 1
+      continue
+    }
+    if (two === '/*') {
+      blockCommentDepth = 1
+      index += 2
+      continue
+    }
+
+    const character = sql[index]
+
+    if (character === "'" || character === '"') {
+      index = skipQuoted(sql, index, character)
+      continue
+    }
+
+    if (character === '$') {
+      const tag = dollarTagAt(sql, index)
+      if (tag !== null) {
+        const closing = sql.indexOf(tag, index + tag.length)
+        if (closing === -1) {
+          throw new NardukPostgresError(
+            'MIGRATION_STATEMENT_UNTERMINATED',
+            `A dollar-quoted body opened with ${tag} is never closed.`,
+            { tag },
+          )
+        }
+        index = closing + tag.length
+        continue
+      }
+    }
+
+    if (character === ';') {
+      push(index)
+      index += 1
+      continue
+    }
+
+    index += 1
+  }
+
+  if (blockCommentDepth > 0) {
+    throw new NardukPostgresError(
+      'MIGRATION_STATEMENT_UNTERMINATED',
+      'A block comment is never closed.',
+    )
+  }
+  push(sql.length)
+  return statements
+}
+
+/** Skip a `'...'` literal or a `"..."` identifier, doubling as its own escape. */
+function skipQuoted(sql: string, openIndex: number, quote: string): number {
+  let index = openIndex + 1
+  while (index < sql.length) {
+    if (sql[index] === quote) {
+      if (sql[index + 1] === quote) {
+        index += 2
+        continue
+      }
+      return index + 1
+    }
+    index += 1
+  }
+  throw new NardukPostgresError(
+    'MIGRATION_STATEMENT_UNTERMINATED',
+    `A ${quote === "'" ? 'string literal' : 'quoted identifier'} is never closed.`,
+    { openIndex },
+  )
+}
+
+/** `$$` or `$tag$` at this position, or null when the `$` is something else. */
+function dollarTagAt(sql: string, index: number): string | null {
+  const match = /^\$[A-Za-z_]*\$/u.exec(sql.slice(index))
+  return match === null ? null : match[0]
+}
+
+function stripSqlComments(sql: string): string {
+  return sql.replaceAll(/--[^\n]*/gu, ' ').replaceAll(/\/\*[\s\S]*?\*\//gu, ' ')
+}
+
+function assertMigrationsTable(table: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/u.test(table)) {
+    throw new NardukPostgresError(
+      'MIGRATION_TABLE_INVALID',
+      'A migrations table name must be lower_snake_case with no schema qualifier or quoting.',
+      { table },
+    )
+  }
+  return table
 }
 
 export async function createMigration(source: MigrationSource): Promise<Migration> {
@@ -202,17 +360,17 @@ interface AppliedRow {
   name: string
 }
 
-async function migrationsTableExists(executor: SqlExecutor): Promise<boolean> {
+async function migrationsTableExists(executor: SqlExecutor, table: string): Promise<boolean> {
   const result = await executor.query<{ exists: boolean }>(
     'SELECT to_regclass($1) IS NOT NULL AS exists',
-    [MIGRATIONS_TABLE],
+    [table],
   )
   return result.rows[0]?.exists === true
 }
 
-async function readApplied(executor: SqlExecutor): Promise<AppliedMigration[]> {
+async function readApplied(executor: SqlExecutor, table: string): Promise<AppliedMigration[]> {
   const result = await executor.query<AppliedRow>(
-    `SELECT name, checksum, applied_at FROM ${MIGRATIONS_TABLE} ORDER BY name ASC`,
+    `SELECT name, checksum, applied_at FROM ${table} ORDER BY name ASC`,
   )
   return result.rows.map((row) => ({
     appliedAt: row.applied_at === null ? null : new Date(row.applied_at),
@@ -228,9 +386,11 @@ async function readApplied(executor: SqlExecutor): Promise<AppliedMigration[]> {
 export async function planMigrations(
   executor: SqlExecutor,
   migrations: readonly Migration[],
+  options: { table?: string } = {},
 ): Promise<MigrationPlan> {
-  const tableExists = await migrationsTableExists(executor)
-  const applied = tableExists ? await readApplied(executor) : []
+  const table = assertMigrationsTable(options.table ?? MIGRATIONS_TABLE)
+  const tableExists = await migrationsTableExists(executor, table)
+  const applied = tableExists ? await readApplied(executor, table) : []
   assertImmutability(applied, migrations)
 
   const appliedNames = new Set(applied.map((row) => row.name))
@@ -240,12 +400,16 @@ export async function planMigrations(
   return { applied, pending, tableExists }
 }
 
-export const CREATE_MIGRATIONS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+export function createMigrationsTableSql(table: string = MIGRATIONS_TABLE): string {
+  return `CREATE TABLE IF NOT EXISTS ${assertMigrationsTable(table)} (
   name TEXT PRIMARY KEY,
   checksum TEXT NOT NULL,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   duration_ms INTEGER NOT NULL DEFAULT 0
 )`
+}
+
+export const CREATE_MIGRATIONS_TABLE_SQL = createMigrationsTableSql()
 
 const defaultSleep = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
@@ -284,9 +448,10 @@ export async function applyMigrations(
   options: ApplyMigrationsOptions = {},
 ): Promise<ApplyMigrationsResult> {
   const now = options.now ?? ((): Date => new Date())
+  const table = assertMigrationsTable(options.table ?? MIGRATIONS_TABLE)
 
   if (options.dryRun === true) {
-    const plan = await planMigrations(executor, migrations)
+    const plan = await planMigrations(executor, migrations, { table })
     return {
       applied: [],
       dryRun: true,
@@ -306,34 +471,71 @@ export async function applyMigrations(
     now,
   )
 
+  let primaryError: unknown = null
+  let result: ApplyMigrationsResult | null = null
+
   try {
-    await executor.query(CREATE_MIGRATIONS_TABLE_SQL)
-    const plan = await planMigrations(executor, migrations)
+    await executor.query(createMigrationsTableSql(table))
+    const plan = await planMigrations(executor, migrations, { table })
     const applied: string[] = []
     const durationMsByName: Record<string, number> = {}
 
     for (const migration of plan.pending) {
       const startedAt = now().getTime()
-      const record = async (target: SqlExecutor): Promise<void> => {
-        await target.query(migration.sql)
+      const recordRow = async (target: SqlExecutor): Promise<void> => {
         await target.query(
-          `INSERT INTO ${MIGRATIONS_TABLE} (name, checksum, applied_at, duration_ms) VALUES ($1, $2, $3, $4)`,
+          `INSERT INTO ${table} (name, checksum, applied_at, duration_ms) VALUES ($1, $2, $3, $4)`,
           [migration.name, migration.checksum, now(), Math.max(0, now().getTime() - startedAt)],
         )
       }
 
       if (migration.transactional && isTransactionalExecutor(executor)) {
-        await executor.transaction(record)
+        await executor.transaction(async (target) => {
+          await target.query(migration.sql)
+          await recordRow(target)
+        })
       } else {
-        await record(executor)
+        // One statement per round trip. A multi-command simple query runs in an
+        // implicit transaction, which is exactly what this file said it cannot
+        // tolerate -- sending the whole thing at once would fail on the first
+        // `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)`.
+        for (const statement of splitSqlStatements(migration.sql)) {
+          await executor.query(statement)
+        }
+        await recordRow(executor)
       }
 
       applied.push(migration.name)
       durationMsByName[migration.name] = Math.max(0, now().getTime() - startedAt)
     }
 
-    return { applied, dryRun: false, durationMsByName, plan, skipped: [] }
-  } finally {
-    await executor.query('SELECT pg_advisory_unlock($1, $2)', [key[0], key[1]])
+    result = { applied, dryRun: false, durationMsByName, plan, skipped: [] }
+  } catch (cause: unknown) {
+    primaryError = cause
   }
+
+  // The unlock is not allowed to mask the migration failure, and a `false`
+  // return is not "fine": it means this session never held the lock (a pooled
+  // executor), so nothing was serialized and a concurrent deploy may have been
+  // running the same DDL.
+  let unlockError: unknown = null
+  try {
+    const unlocked = await executor.query<{ unlocked: boolean }>(
+      'SELECT pg_advisory_unlock($1, $2) AS unlocked',
+      [key[0], key[1]],
+    )
+    if (unlocked.rows[0]?.unlocked !== true) {
+      unlockError = new NardukPostgresError(
+        'MIGRATION_UNLOCK_FAILED',
+        'pg_advisory_unlock reported that this session did not hold the migration lock. The executor is not a single pinned connection, so the run was not serialized.',
+        { lockKey: key },
+      )
+    }
+  } catch (cause: unknown) {
+    unlockError = cause
+  }
+
+  if (primaryError !== null) throw primaryError
+  if (unlockError !== null) throw unlockError
+  return result as ApplyMigrationsResult
 }
