@@ -115,8 +115,8 @@ const result = await applyMigrations(connection, migrations, { dryRun: true })
   reject exactly the DDL the directive exists for.
 - `applyMigrations(connection, migrations, { table })` puts a set in its own
   ledger table (default `schema_migrations`), so two independent migration sets
-  can share a database without either seeing the other's history. The table
-  name is validated against `/^[a-z_][a-z0-9_]*$/`.
+  can share a database without either seeing the other's history. The table name
+  is validated against `/^[a-z_][a-z0-9_]*$/`.
 - The advisory unlock is checked: `pg_advisory_unlock` returning false raises
   `MIGRATION_UNLOCK_FAILED`, and it can never mask a migration failure that
   happened first.
@@ -141,12 +141,12 @@ validated against `/^[a-z_][a-z0-9_]*$/` and quoted.
 
 **Creating roles is not this package's job, and neither is setting their
 timeouts.** The deployment's own provisioning creates the three roles and sets
-each one's role-level `statement_timeout` (narduk-infrastructure#155); both
-need superuser, and a library that re-issued them would either fail for lack of
+each one's role-level `statement_timeout` (narduk-infrastructure#155); both need
+superuser, and a library that re-issued them would either fail for lack of
 privilege or quietly override the deployment's deadline with its own. What this
-module owns is `roleGrantStatements`, the GRANT matrix — which is what
-generates narduk-timeseries' `0003_history_roles.sql`, asserted there by a test
-so the two cannot drift. This package never handles a credential.
+module owns is `roleGrantStatements`, the GRANT matrix — which is what generates
+narduk-timeseries' `0003_history_roles.sql`, asserted there by a test so the two
+cannot drift. This package never handles a credential.
 
 ## Parameter budgets
 

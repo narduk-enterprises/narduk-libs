@@ -8,7 +8,11 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { buildRollupQuery, planTrackQuery, refreshRollupsStatement } from '../src/timescale/query.js'
+import {
+  buildRollupQuery,
+  planTrackQuery,
+  refreshRollupsStatement,
+} from '../src/timescale/query.js'
 import { buildRetentionStatements } from '../src/timescale/retention.js'
 import { buildSeriesResolveStatement } from '../src/timescale/series.js'
 import { buildNumericWriteStatements, buildTrackWriteStatements } from '../src/timescale/write.js'
@@ -265,9 +269,9 @@ describe('retention plan', () => {
       'free delete telemetry_numeric',
       'cruiser delete track_points',
     ])
-    expect(statements.some((statement) => /DELETE FROM telemetry_numeric_1/u.test(statement.text))).toBe(
-      false,
-    )
+    expect(
+      statements.some((statement) => /DELETE FROM telemetry_numeric_1/u.test(statement.text)),
+    ).toBe(false)
     expect(statements[0]!.text).toBe(
       "SELECT drop_chunks('telemetry_numeric', older_than => $1::timestamptz)",
     )

@@ -112,7 +112,8 @@ async function sha256Hex(value: string): Promise<string> {
  * file is executed. The first line is a place an author has to mean.
  */
 export function parseMigrationDirectives(sql: string): { transactional: boolean } {
-  const firstLine = sql.slice(0, sql.indexOf('\n') === -1 ? sql.length : sql.indexOf('\n')).trim()
+  const breakAt = sql.indexOf('\n')
+  const firstLine = (breakAt === -1 ? sql : sql.slice(0, breakAt)).trim()
   return { transactional: firstLine !== NO_TRANSACTION_DIRECTIVE }
 }
 

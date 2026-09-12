@@ -279,7 +279,7 @@ describe('splitSqlStatements', () => {
   })
 
   it('ignores semicolons inside a dollar-quoted body', () => {
-    const sql = "DO $$ BEGIN IF TRUE THEN PERFORM 1; END IF; END $$;\nSELECT 2;"
+    const sql = 'DO $$ BEGIN IF TRUE THEN PERFORM 1; END IF; END $$;\nSELECT 2;'
     expect(splitSqlStatements(sql)).toEqual([
       'DO $$ BEGIN IF TRUE THEN PERFORM 1; END IF; END $$',
       'SELECT 2',
@@ -309,9 +309,7 @@ describe('splitSqlStatements', () => {
     expect(() => splitSqlStatements("SELECT 'unclosed")).toThrow(
       /MIGRATION_STATEMENT_UNTERMINATED/u,
     )
-    expect(() => splitSqlStatements('DO $$ SELECT 1')).toThrow(
-      /MIGRATION_STATEMENT_UNTERMINATED/u,
-    )
+    expect(() => splitSqlStatements('DO $$ SELECT 1')).toThrow(/MIGRATION_STATEMENT_UNTERMINATED/u)
   })
 })
 

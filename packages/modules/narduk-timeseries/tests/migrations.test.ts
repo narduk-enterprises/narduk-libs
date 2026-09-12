@@ -76,8 +76,12 @@ describe('0001_history_core.sql', () => {
   })
 
   it('builds the hypertables through by_range, not the form deprecated in 2.13', () => {
-    expect(sql).toMatch(/create_hypertable\(\s*'telemetry_numeric',\s*by_range\('ts', INTERVAL '1 day'\)/u)
-    expect(sql).toMatch(/create_hypertable\(\s*'track_points',\s*by_range\('ts', INTERVAL '7 days'\)/u)
+    expect(sql).toMatch(
+      /create_hypertable\(\s*'telemetry_numeric',\s*by_range\('ts', INTERVAL '1 day'\)/u,
+    )
+    expect(sql).toMatch(
+      /create_hypertable\(\s*'track_points',\s*by_range\('ts', INTERVAL '7 days'\)/u,
+    )
     // The positional dimension form still parses on 2.30 and is deprecated;
     // shipping it would be a migration nobody can re-run on a later major.
     expect(sql).not.toMatch(/create_hypertable\([^)]*chunk_time_interval\s*=>/u)
@@ -86,7 +90,9 @@ describe('0001_history_core.sql', () => {
   it('uses the columnstore API that superseded compression in 2.18', () => {
     expect(sql).toContain('timescaledb.enable_columnstore = true')
     expect(sql).toContain("timescaledb.segmentby = 'vessel_id, series_id'")
-    expect(sql).toMatch(/add_columnstore_policy\('telemetry_numeric',\s*after => INTERVAL '3 days'/u)
+    expect(sql).toMatch(
+      /add_columnstore_policy\('telemetry_numeric',\s*after => INTERVAL '3 days'/u,
+    )
     // The comment header names the superseded API; the executable SQL must not
     // use it.
     const executable = sql

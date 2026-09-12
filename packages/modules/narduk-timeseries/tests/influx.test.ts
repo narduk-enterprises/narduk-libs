@@ -144,7 +144,10 @@ describe('cancellation', () => {
       readWindowed({
         client: { query },
         flux: 'from(b) |> range(start: :start:, stop: :end:) |> aggregateWindow(every: 1m, fn: mean)',
-        range: { end: new Date('2026-09-21T00:00:00.000Z'), start: new Date('2026-09-01T00:00:00.000Z') },
+        range: {
+          end: new Date('2026-09-21T00:00:00.000Z'),
+          start: new Date('2026-09-01T00:00:00.000Z'),
+        },
         signal: controller.signal,
       }),
     ).rejects.toThrow()
@@ -159,7 +162,10 @@ describe('cancellation', () => {
       readWindowed({
         client: { query },
         flux: 'from(b) |> range(start: :start:, stop: :end:) |> aggregateWindow(every: 1m, fn: mean)',
-        range: { end: new Date('2026-09-02T00:00:00.000Z'), start: new Date('2026-09-01T00:00:00.000Z') },
+        range: {
+          end: new Date('2026-09-02T00:00:00.000Z'),
+          start: new Date('2026-09-01T00:00:00.000Z'),
+        },
         signal: AbortSignal.abort(),
       }),
     ).rejects.toThrow()

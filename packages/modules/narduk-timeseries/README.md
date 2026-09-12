@@ -48,13 +48,13 @@ assert the shape of its own data path rather than trusting this README.
 
 ## What is bounded, and by what
 
-| Path           | Bound                                                                     |
-| -------------- | ------------------------------------------------------------------------- |
-| Numeric write  | 6 parameters per row, chunked to the 32768-parameter budget               |
-| Track write    | 8 parameters per row, same budget                                         |
-| Series resolve | 4 parameters per descriptor, one statement per distinct descriptor set    |
-| Rollup read    | **5 parameters, whatever the series cardinality** (`= ANY($2::bigint[])`) |
-| Track read     | 4 or 5 parameters; decimated in the database above `maxPoints`            |
+| Path           | Bound                                                                               |
+| -------------- | ----------------------------------------------------------------------------------- |
+| Numeric write  | 6 parameters per row, chunked to the 32768-parameter budget                         |
+| Track write    | 8 parameters per row, same budget                                                   |
+| Series resolve | 4 parameters per descriptor, one statement per distinct descriptor set              |
+| Rollup read    | **5 parameters, whatever the series cardinality** (`= ANY($2::bigint[])`)           |
+| Track read     | 4 or 5 parameters; decimated in the database above `maxPoints`                      |
 | Retention      | one `drop_chunks` per level plus per-tier track/raw deletes chunked at 1000 vessels |
 
 Nothing scales with retained history: no statement this package issues has a
@@ -115,13 +115,13 @@ the store:
 ```ts
 const result = await store.queryRollup({
   bucket: '1h',
-  range,                       // what the caller asked for
+  range, // what the caller asked for
   tierWindowMs: 30 * 86_400_000, // what this tier may see
   seriesIds,
   vesselId,
 })
 result.clipped // true when range.start was moved forward
-result.range   // the range actually read
+result.range // the range actually read
 ```
 
 A range entirely older than the tier window returns an empty, `clipped: true`
@@ -138,14 +138,14 @@ at: `validateRetentionPolicy(...).unsweptRollupLevels` lists them, and every
 
 The sweep takes a **session-scoped** advisory lock, so the lock and its unlock
 must reach the same backend. Through a pool — and Hyperdrive **is** a pool —
-they may not, and a lock left held by a backend nobody is talking to makes
-every later sweep stand down with `coalesced: true` and delete nothing until
-that backend is recycled. The store therefore refuses to sweep through an
-executor nobody has declared pinned:
+they may not, and a lock left held by a backend nobody is talking to makes every
+later sweep stand down with `coalesced: true` and delete nothing until that
+backend is recycled. The store therefore refuses to sweep through an executor
+nobody has declared pinned:
 
 ```ts
 const store = createTimescaleHistoryStore({
-  executor: pool,                                    // reads and writes
+  executor: pool, // reads and writes
   retention: { executor: connection, maxConnections: 1 }, // one backend
 })
 ```
@@ -209,8 +209,8 @@ await applyMigrations(
 
 ### The deployment owns roles and timeouts
 
-0003 does **not** `CREATE ROLE` and does **not** `ALTER ROLE ... SET
-statement_timeout`. The target instance's own initdb
+0003 does **not** `CREATE ROLE` and does **not**
+`ALTER ROLE ... SET statement_timeout`. The target instance's own initdb
 (narduk-infrastructure#155) creates `ingest_writer`, `history_reader` and `ops`
 WITH LOGIN and sets each role's `statement_timeout`; both need superuser, and
 re-issuing the timeout here would have silently replaced the deployment's 60 s
@@ -220,10 +220,10 @@ identity and deadlines.
 ### Shadow rows live in raw only
 
 The 1m continuous aggregate reads `WHERE installation_role = 0`. A shadow
-installation exists to be compared against the primary, so folding both into
-one bucket would produce a mean of two instruments and present it as the
-vessel's value. Shadow history is readable in `telemetry_numeric`; it is
-deliberately absent from every rollup level.
+installation exists to be compared against the primary, so folding both into one
+bucket would produce a mean of two instruments and present it as the vessel's
+value. Shadow history is readable in `telemetry_numeric`; it is deliberately
+absent from every rollup level.
 
 ### Rollup lag, per level
 
@@ -246,8 +246,8 @@ local days buckets 1h rows in its own query.
 ### Backfill older than the refresh window
 
 Every scheduled policy below 1d reconsiders the last **7 days**, which is the
-whole global raw window: anything raw still holds can still be materialized.
-A store-and-forward consumer that deliberately accepts a batch older than that
+whole global raw window: anything raw still holds can still be materialized. A
+store-and-forward consumer that deliberately accepts a batch older than that
 must refresh it explicitly, coarsest last, because no policy will look at those
 buckets again:
 
@@ -294,8 +294,8 @@ non-transactional executor runs the statements in order without atomicity.
 For dual-running against the old stack only, and deliberately tiny. **It is
 temporary**: when G4-H signs parity off, the Influx replica host is retired and
 this subpath is deleted with it. It is not a supported second backend, it will
-never grow a write path, and nothing in the product should be built to depend
-on it.
+never grow a write path, and nothing in the product should be built to depend on
+it.
 
 ```ts
 import { readWindowed } from '@narduk-enterprises/narduk-timeseries/influx'

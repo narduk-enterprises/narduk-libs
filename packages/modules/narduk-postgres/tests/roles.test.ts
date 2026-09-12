@@ -68,7 +68,7 @@ describe('least-privilege grants', () => {
   })
 })
 
-describe('role creation is not this library\'s', () => {
+describe("role creation is not this library's", () => {
   // narduk-infrastructure#155: the target instance's own provisioning creates
   // the three roles WITH LOGIN and sets their statement_timeout, which needs
   // superuser. A CREATE ROLE / ALTER ROLE helper here would either fail for

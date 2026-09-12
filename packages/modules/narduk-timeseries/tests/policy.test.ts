@@ -141,7 +141,10 @@ describe('retentionPolicyIdentity', () => {
       validateRetentionPolicy({
         ...round20,
         tiers: {
-          free: { ...round20.tiers.free, vesselIds: [VESSEL, '22222222-2222-4222-8222-222222222222'] },
+          free: {
+            ...round20.tiers.free,
+            vesselIds: [VESSEL, '22222222-2222-4222-8222-222222222222'],
+          },
         },
       }),
     )

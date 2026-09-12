@@ -483,7 +483,10 @@ describe('tier clipping on read', () => {
     const result = await store.queryRollup({
       bucket: '1h',
       now,
-      range: { end: new Date('2026-01-02T00:00:00.000Z'), start: new Date('2026-01-01T00:00:00.000Z') },
+      range: {
+        end: new Date('2026-01-02T00:00:00.000Z'),
+        start: new Date('2026-01-01T00:00:00.000Z'),
+      },
       seriesIds: [7],
       tierWindowMs: 30 * 86_400_000,
       vesselId: VESSEL,
