@@ -206,7 +206,15 @@ function readPage(value: unknown): number | null {
   return parsed
 }
 
-function firstQueryValue(value: LocationQuery[string]): string | null {
+// `LocationQuery[string]` excludes `undefined`, but indexing a `LocationQuery`
+// under the stricter `noUncheckedIndexedAccess` a generated app compiles with
+// yields `| undefined` -- so the four call sites below fail to typecheck inside
+// a consumer even though they pass here. The body already returns `null` for
+// `undefined` (`Array.isArray(undefined)` is false, and `typeof undefined` is
+// never `'string'`), so this widens the type to match behaviour that was
+// already correct. Caught by release:consumer-smoke, not by this package's own
+// typecheck.
+function firstQueryValue(value: LocationQuery[string] | undefined): string | null {
   const raw = Array.isArray(value) ? value[0] : value
   return typeof raw === 'string' ? raw : null
 }
