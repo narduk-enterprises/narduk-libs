@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // `DOM` in `lib` supplies the Web Crypto `SubtleCrypto`/`TextEncoder`
+    // globals the migration checksum uses. They exist identically in Node >= 22
+    // and in workerd, so the runner stays runtime-agnostic; nothing here
+    // touches a `document` or a `window`.
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}
