@@ -316,7 +316,15 @@ test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () =>
   const shell = workspace.byName.get(`${scope}narduk-shell`)
   assert.ok(shell, 'loadWorkspace must include narduk-shell')
   assert.equal(shell.relativeDirectory, 'packages/design/narduk-shell')
-  assert.equal(shell.manifest.version, '0.0.0')
+  // Deliberately not a literal. This test proves workspace *discovery*; pinning
+  // the version instead makes every narduk-shell release PR fail its own gate,
+  // which is what stalled the 0.1.0 release for nine days. Assert that the
+  // manifest was read and parsed, not what it currently happens to say.
+  assert.match(
+    shell.manifest.version,
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/,
+    'narduk-shell manifest version must parse as semver',
+  )
 
   const result = computeAffectedSet({
     root: repoRoot,
