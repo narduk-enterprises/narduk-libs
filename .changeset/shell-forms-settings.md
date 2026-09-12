@@ -15,8 +15,8 @@ three named bug classes by construction:
   in flight, so two rapid submits issue exactly one `onSubmit` call.
 - **A save bar that lies about dirtiness (stonx#36).** `Unsaved changes` is
   driven by `UForm`'s own `dirty` state, which only clears once `onSubmit`'s
-  promise resolves — a rejected save leaves it dirty, with no optimistic
-  "saved" flash to walk back.
+  promise resolves — a rejected save leaves it dirty, with no optimistic "saved"
+  flash to walk back.
 - **Errors that do not scroll into view (stonx#350).** A schema (or `validate`)
   failure blocks submission and focuses the first invalid field, scrolled into
   view.

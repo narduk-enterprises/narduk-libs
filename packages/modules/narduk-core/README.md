@@ -288,10 +288,10 @@ Superseded by `NeSettingsPage` (with `NeForm` and `NeFormSection`) in
 [narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266);
 decision D4, 2026-09-11: deprecate now, remove in the next narduk-core major).
 
-Behaviour is unchanged in this release — the component still works exactly as
-it did. A one-time, dev-only `console.warn` points at `NeSettingsPage` the
-first time the component is used. New code should use the suite; existing
-call sites can migrate at their own pace before the next major.
+Behaviour is unchanged in this release — the component still works exactly as it
+did. A one-time, dev-only `console.warn` points at `NeSettingsPage` the first
+time the component is used. New code should use the suite; existing call sites
+can migrate at their own pace before the next major.
 
 `AppSettingsProfile` bundled a fixed profile card — name, email, an avatar
 uploader, and a "quick links" sidebar — with no schema validation, no protection
@@ -304,15 +304,15 @@ shape.
 
 **Migration mapping**
 
-| `AppSettingsProfile`                       | `NeSettingsPage` / `NeForm` / `NeFormSection`                | Notes                                                                                                              |
-| ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `title` / `subtitle`                        | `title` (on `NeSettingsPage`)                                  | The suite has one title, not a title/subtitle pair; put the subtitle in `description` if it is a sentence.        |
-| `initial-name`, `email`, ...                 | `state` (a reactive object)                                    | `NeSettingsPage`/`NeForm` are controlled: pass a `reactive()` object and bind fields to it with `UFormField`/`UInput`. |
-| `@save="handleSave"`                        | `@submit` (via the `onSubmit` prop, called `:on-submit`)        | Fires once per click and disables the button for the promise's duration — no `:saving` prop to wire by hand.      |
-| `saving` prop                               | — (automatic)                                                  | `UButton`'s own `loading-auto` drives this from the `onSubmit` promise; nothing to pass in.                        |
-| avatar upload (`show-avatar`, cropping, ...) | — (dropped)                                                    | Not part of the suite. Keep a bespoke avatar uploader as a field inside a `NeFormSection` if a call site needs one. |
-| `settings-links` / `#settings-sidebar` slot  | — (dropped)                                                    | Page-level navigation is an app concern; render it around `NeSettingsPage`, not inside it.                        |
-| `#extra-fields` slot                        | the default slot, inside a `NeFormSection`                     | Add fields as `UFormField`s inside one or more sections rather than one fixed slot.                                |
+| `AppSettingsProfile`                         | `NeSettingsPage` / `NeForm` / `NeFormSection`            | Notes                                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `title` / `subtitle`                         | `title` (on `NeSettingsPage`)                            | The suite has one title, not a title/subtitle pair; put the subtitle in `description` if it is a sentence.             |
+| `initial-name`, `email`, ...                 | `state` (a reactive object)                              | `NeSettingsPage`/`NeForm` are controlled: pass a `reactive()` object and bind fields to it with `UFormField`/`UInput`. |
+| `@save="handleSave"`                         | `@submit` (via the `onSubmit` prop, called `:on-submit`) | Fires once per click and disables the button for the promise's duration — no `:saving` prop to wire by hand.           |
+| `saving` prop                                | — (automatic)                                            | `UButton`'s own `loading-auto` drives this from the `onSubmit` promise; nothing to pass in.                            |
+| avatar upload (`show-avatar`, cropping, ...) | — (dropped)                                              | Not part of the suite. Keep a bespoke avatar uploader as a field inside a `NeFormSection` if a call site needs one.    |
+| `settings-links` / `#settings-sidebar` slot  | — (dropped)                                              | Page-level navigation is an app concern; render it around `NeSettingsPage`, not inside it.                             |
+| `#extra-fields` slot                         | the default slot, inside a `NeFormSection`               | Add fields as `UFormField`s inside one or more sections rather than one fixed slot.                                    |
 
 ```vue
 <!-- before -->

@@ -9,16 +9,16 @@
  * real thing for exactly the behaviour this suite exists to pin down —
  * UForm's own submit/validate/dirty machinery.
  *
- * Every test mounts through a thin wrapper component rather than passing
- * `slots: { default: '<template>...</template>' }` directly to `mount`,
- * because the failing bug classes below (double-submit, dirty lies, lost
- * focus) only reproduce against a real `UFormField`/`UInput` pair wired to
- * reactive `state` — a static slot string never fires the real `input`/
- * `change` events `useFormField` listens for.
+ * Every test wires a real `UFormField`/`UInput` pair to reactive `state` via
+ * a function slot (`slots: { default: () => h(...) }`), rather than a static
+ * `slots: { default: '<template>...</template>' }` string: the failing bug
+ * classes below (double-submit, dirty lies, lost focus) only reproduce
+ * against real `input`/`change` events flowing through `useFormField` and
+ * back into `state` — a static slot string never fires those.
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, reactive } from 'vue'
+import { h, reactive } from 'vue'
 
 import UButton from '@nuxt/ui/components/Button.vue'
 import UFormField from '@nuxt/ui/components/FormField.vue'
@@ -38,32 +38,30 @@ afterEach(() => {
 })
 
 function mountForm(props: Partial<NeFormProps> & { state: Record<string, unknown> }) {
-  return mount(
-    defineComponent({
-      setup() {
-        return () =>
-          h(
-            NeForm,
-            { ...props },
-            {
-              default: () =>
-                h(UFormField, { name: 'name', label: 'Name' }, () =>
-                  // `h()`'s overloads pick apart UInput's generic modelValue type more
-                  // strictly than a template binding would; a test file wiring a plain
-                  // string field is not the place to fight that generic.
-                  h(UInput, {
-                    modelValue: props.state.name,
-                    'onUpdate:modelValue': (value: string) => {
-                      props.state.name = value
-                    },
-                  } as never),
-                ),
+  // Mounts NeForm directly (`mount(NeForm, { props, slots })`) rather than
+  // through a wrapper `defineComponent`: the surface check
+  // (scripts/check-component-surface.mjs) requires a literal `mount(NeForm…)`
+  // call as its mount-test evidence, and a direct mount is simpler here too —
+  // `state` is already the caller's own `reactive()` object, so passing it as
+  // a prop keeps the same reactivity a wrapper's `setup()` would have given it.
+  return mount(NeForm, {
+    props: { ...props },
+    slots: {
+      default: () =>
+        h(UFormField, { name: 'name', label: 'Name' }, () =>
+          // `h()`'s overloads pick apart UInput's generic modelValue type more
+          // strictly than a template binding would; a test file wiring a plain
+          // string field is not the place to fight that generic.
+          h(UInput, {
+            modelValue: props.state.name,
+            'onUpdate:modelValue': (value: string) => {
+              props.state.name = value
             },
-          )
-      },
-    }),
-    { attachTo: document.body },
-  )
+          } as never),
+        ),
+    },
+    attachTo: document.body,
+  })
 }
 
 describe('NeForm', () => {
@@ -231,22 +229,14 @@ describe('NeForm', () => {
   })
 
   it('renders extra save-bar actions before the save button', () => {
-    const wrapper = mount(
-      defineComponent({
-        setup() {
-          const state = reactive({ name: '' })
-          return () =>
-            h(
-              NeForm,
-              { state },
-              {
-                default: () => h('div'),
-                actions: () => h(UButton, { variant: 'ghost', label: 'Cancel' }),
-              },
-            )
-        },
-      }),
-    )
+    const state = reactive({ name: '' })
+    const wrapper = mount(NeForm, {
+      props: { state },
+      slots: {
+        default: () => h('div'),
+        actions: () => h(UButton, { variant: 'ghost', label: 'Cancel' }),
+      },
+    })
 
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(2)

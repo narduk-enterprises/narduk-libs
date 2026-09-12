@@ -13,9 +13,7 @@ let warned = false
  * to Nuxt's `import.meta.dev` so production builds stay silent; tests pass
  * `true` or `false` explicitly.
  */
-export function warnAppSettingsProfileDeprecated(
-  isDev: boolean = Boolean(import.meta.dev),
-): void {
+export function warnAppSettingsProfileDeprecated(isDev: boolean = Boolean(import.meta.dev)): void {
   if (!isDev || warned) return
   warned = true
   console.warn(APP_SETTINGS_PROFILE_DEPRECATION_MESSAGE)
