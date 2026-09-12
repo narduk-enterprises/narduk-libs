@@ -18,9 +18,20 @@
 --
 -- Least privilege is expressed by what is absent:
 --
---   ingest_writer   INSERT on the hypertables, INSERT+SELECT on series. No
---                   UPDATE, no DELETE, no TRUNCATE: a compromised ingest path
---                   can add wrong history but cannot erase the right history.
+--   ingest_writer   INSERT on the hypertables; INSERT, SELECT and UPDATE on
+--                   series; no DELETE and no TRUNCATE anywhere, and no UPDATE
+--                   on either hypertable -- a compromised ingest path can add
+--                   wrong history but cannot erase the right history.
+--                   The series UPDATE is required, not a convenience:
+--                   resolveSeries upserts with INSERT ... ON CONFLICT
+--                   (vessel_id, path) DO UPDATE, and PostgreSQL checks the
+--                   UPDATE privilege when it PARSES that statement, whether or
+--                   not a row ever conflicts. Grant only INSERT+SELECT here and
+--                   every resolve -- so every numeric write -- fails with
+--                   "permission denied for table series". series is a dimension
+--                   table and the conflict action rewrites one nullable unit
+--                   string (COALESCE(EXCLUDED.unit, series.unit)), so the
+--                   privilege buys the writer nothing else.
 --                   No sequence grant either: series_id is GENERATED ALWAYS AS
 --                   IDENTITY, whose sequence is owned by the column and driven
 --                   by the INSERT privilege.
@@ -40,6 +51,7 @@ GRANT SELECT ON "public"."series" TO "ingest_writer";
 GRANT INSERT ON "public"."series" TO "ingest_writer";
 GRANT INSERT ON "public"."telemetry_numeric" TO "ingest_writer";
 GRANT INSERT ON "public"."track_points" TO "ingest_writer";
+GRANT UPDATE ON "public"."series" TO "ingest_writer";
 GRANT USAGE ON SCHEMA "public" TO "history_reader";
 GRANT SELECT ON "public"."series" TO "history_reader";
 GRANT SELECT ON "public"."telemetry_numeric" TO "history_reader";

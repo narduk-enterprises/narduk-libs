@@ -36,9 +36,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   TIMESCALE_MIGRATION_NAMES,
+  buildSeriesResolveStatement,
   historyRoleGrantStatements,
   timescaleMigrationsUrl,
 } from '../src/timescale/index.js'
+
+const VESSEL = '11111111-1111-4111-8111-111111111111'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const migrationsDirectory = join(packageRoot, 'migrations')
@@ -89,7 +92,11 @@ describe('0001_history_core.sql', () => {
 
   it('uses the columnstore API that superseded compression in 2.18', () => {
     expect(sql).toContain('timescaledb.enable_columnstore = true')
-    expect(sql).toContain("timescaledb.segmentby = 'vessel_id, series_id'")
+    // Every column of the UNIQUE key must be a segmentby or an orderby column
+    // or TimescaleDB refuses to enable the columnstore at all, so the natural
+    // key's `installation_role` has to be segmented on.
+    expect(sql).toContain("timescaledb.segmentby = 'vessel_id, series_id, installation_role'")
+    expect(sql).toContain("timescaledb.orderby   = 'ts DESC'")
     expect(sql).toMatch(
       /add_columnstore_policy\('telemetry_numeric',\s*after => INTERVAL '3 days'/u,
     )
@@ -101,6 +108,29 @@ describe('0001_history_core.sql', () => {
       .join('\n')
     expect(executable).not.toContain('timescaledb.compress')
     expect(executable).not.toContain('add_compression_policy')
+  })
+
+  it('keeps every unique-key column inside segmentby or orderby', () => {
+    // TimescaleDB cannot enforce a unique constraint inside a compressed chunk
+    // over a column it did not segment or order by, so `enable_columnstore`
+    // is rejected and 0001 rolls back on the real instance. This test is the
+    // structural version of that rule: change the natural key without changing
+    // the columnstore settings and it fails here rather than on deployment.
+    const unique = /UNIQUE \(([^)]+)\)/u.exec(
+      sql.slice(sql.indexOf('CREATE TABLE IF NOT EXISTS telemetry_numeric')),
+    )
+    const segmentby = /timescaledb\.segmentby = '([^']+)'/u.exec(sql)
+    const orderby = /timescaledb\.orderby\s+= '([^']+)'/u.exec(sql)
+    expect(unique?.[1]).toBeDefined()
+    expect(segmentby?.[1]).toBeDefined()
+    expect(orderby?.[1]).toBeDefined()
+
+    const columns = (list: string): string[] =>
+      list.split(',').map((entry) => entry.trim().split(/\s+/u)[0] ?? '')
+    const covered = new Set([...columns(segmentby?.[1] ?? ''), ...columns(orderby?.[1] ?? '')])
+    for (const column of columns(unique?.[1] ?? '')) {
+      expect(covered.has(column)).toBe(true)
+    }
   })
 
   it('gives both hypertables the natural key their writers rely on', () => {
@@ -228,6 +258,28 @@ describe('0003_history_roles.sql', () => {
   it('carries no credential of any kind', () => {
     const executable = executableLines.join('\n')
     expect(executable).not.toMatch(/PASSWORD/iu)
+  })
+
+  it('grants the writer exactly the UPDATE its own upsert parses against', () => {
+    // This is the blocker fix pass 2 found: `resolveSeries` upserts with
+    // ON CONFLICT ... DO UPDATE, PostgreSQL checks UPDATE at PARSE time, and
+    // 0003 granted the writer only INSERT+SELECT -- so a consumer provisioning
+    // from the library alone got "permission denied for table series" on every
+    // resolve. The two facts are asserted together so neither can move alone.
+    const resolve = buildSeriesResolveStatement([
+      { path: 'navigation.speedOverGround', unit: 'm/s', valueKind: 'numeric', vesselId: VESSEL },
+    ])
+    const writerGrants = executableLines.filter((line) => line.includes('"ingest_writer"'))
+    if (/DO UPDATE/u.test(resolve.text)) {
+      expect(writerGrants).toContain('GRANT UPDATE ON "public"."series" TO "ingest_writer";')
+    }
+    // ...and no more than that: no DELETE, no TRUNCATE, no UPDATE on either
+    // hypertable. A writer that can rewrite a unit string still cannot erase
+    // a reading.
+    for (const grant of writerGrants) {
+      expect(grant).not.toMatch(/\b(DELETE|TRUNCATE)\b/u)
+      if (/\bUPDATE\b/u.test(grant)) expect(grant).toContain('"public"."series"')
+    }
   })
 
   it('gives the reader no write grant', () => {

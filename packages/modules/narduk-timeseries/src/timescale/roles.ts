@@ -31,9 +31,18 @@ const ROLLUP_VIEWS: readonly string[] = ROLLUP_BUCKETS.map((bucket) => rollupTab
 /**
  * Least privilege expressed by what is absent.
  *
- *  - `ingest_writer` gets INSERT and no UPDATE, DELETE or TRUNCATE, so a
- *    compromised ingest path can add wrong history but cannot erase the right
- *    history.
+ *  - `ingest_writer` gets INSERT everywhere it writes, UPDATE on `series`
+ *    alone, and no DELETE or TRUNCATE anywhere -- so a compromised ingest path
+ *    can add wrong history but cannot erase the right history. The `series`
+ *    UPDATE is not optional: `resolveSeries` upserts the descriptor with
+ *    `INSERT ... ON CONFLICT (vessel_id, path) DO UPDATE`, and PostgreSQL
+ *    requires the UPDATE privilege to PARSE that statement whether or not a
+ *    row ever conflicts. Without it every resolve -- and therefore every
+ *    numeric write -- fails with `permission denied for table series`.
+ *    `series` is a dimension table: the worst an UPDATE there can do is
+ *    rewrite a unit string, which is why the conflict action is
+ *    `unit = COALESCE(EXCLUDED.unit, series.unit)` and touches nothing else.
+ *    No hypertable gets UPDATE.
  *  - `history_reader` gets SELECT on the tables and the four rollup views and
  *    nothing else. The read path in a Worker uses this role.
  *  - `ops` runs migrations and retention: DDL plus row mutation on the three
@@ -49,18 +58,21 @@ export const HISTORY_ROLE_PRIVILEGES: Readonly<Record<PostgresRoleName, RolePriv
       insert: [],
       mutate: [],
       read: [SERIES_TABLE, NUMERIC_TABLE, TRACK_TABLE, ...ROLLUP_VIEWS],
+      update: [],
     },
     ingest_writer: {
       ddl: false,
       insert: [SERIES_TABLE, NUMERIC_TABLE, TRACK_TABLE],
       mutate: [],
       read: [SERIES_TABLE],
+      update: [SERIES_TABLE],
     },
     ops: {
       ddl: true,
       insert: [SERIES_TABLE, NUMERIC_TABLE, TRACK_TABLE],
       mutate: [SERIES_TABLE, NUMERIC_TABLE, TRACK_TABLE],
       read: [SERIES_TABLE, NUMERIC_TABLE, TRACK_TABLE, ...ROLLUP_VIEWS],
+      update: [],
     },
   })
 

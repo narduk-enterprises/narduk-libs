@@ -101,6 +101,22 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     expect(second.applied).toEqual([])
   }, 120_000)
 
+  it('enables the columnstore over the natural key, which only a server can prove', async () => {
+    // Fix pass 2's blocker: TimescaleDB refuses `enable_columnstore` when a
+    // unique-constrained column is neither a segmentby nor an orderby column,
+    // so `UNIQUE (vessel_id, series_id, ts, installation_role)` with
+    // `segmentby = 'vessel_id, series_id'` fails the ALTER TABLE and takes
+    // 0001 down with it. No fake can report that; this assertion is the proof,
+    // and it is skipped until the live route exists.
+    const settings = await client.query<{ segmentby: string | null }>(
+      `SELECT pg_catalog.array_to_string(array_agg(attname ORDER BY attname), ',') AS segmentby
+         FROM timescaledb_information.compression_settings
+        WHERE hypertable_name = 'telemetry_numeric'
+          AND segmentby_column_index IS NOT NULL`,
+    )
+    expect(settings.rows[0]?.segmentby).toContain('installation_role')
+  }, 60_000)
+
   it('round-trips a numeric batch through a rollup read', async () => {
     const store = createTimescaleHistoryStore({ executor: client })
     const start = new Date(Date.now() - 60 * 60 * 1000)
@@ -157,6 +173,7 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
       bucket: '1m',
       range: { end: new Date(Date.now() + 60_000), start },
       seriesIds: series.map((row) => row.seriesId),
+      tierWindowMs: 'unrestricted',
       vesselId,
     })
 

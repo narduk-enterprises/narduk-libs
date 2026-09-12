@@ -54,6 +54,17 @@ export interface RolePrivilegeSpec {
   read: readonly string[]
   /** Tables the role may INSERT into. */
   insert: readonly string[]
+  /**
+   * Tables the role may UPDATE but NOT delete from.
+   *
+   * This shape exists because `INSERT ... ON CONFLICT ... DO UPDATE` needs the
+   * UPDATE privilege at parse time, unconditionally -- the planner does not
+   * wait to see whether a conflict occurs. A writer that upserts a dimension
+   * row therefore needs UPDATE on that one table, and giving it DELETE as well
+   * (the `mutate` shape) would hand it the ability to erase the history it is
+   * only supposed to append to.
+   */
+  update: readonly string[]
   /** Tables the role may UPDATE or DELETE. */
   mutate: readonly string[]
   /** True only for a role that runs DDL: migrations, retention, compression. */
@@ -78,9 +89,11 @@ function quoteIdentifier(identifier: string): string {
  * from them is byte-stable and a snapshot test means something.
  *
  * Least privilege is expressed by what is absent: `ingest_writer` never gets
- * UPDATE, DELETE or TRUNCATE on a hypertable, so a compromised ingest path can
- * add wrong history but cannot erase the right history; `history_reader` gets
- * SELECT and nothing else; only `ops` runs DDL.
+ * DELETE or TRUNCATE anywhere and never gets UPDATE on a hypertable, so a
+ * compromised ingest path can add wrong history but cannot erase the right
+ * history; `history_reader` gets SELECT and nothing else; only `ops` runs DDL.
+ * `update` and `mutate` are separate lists precisely so an upserting writer can
+ * be given UPDATE on one dimension table without also being given DELETE.
  */
 export function roleGrantStatements(
   role: PostgresRoleName,
@@ -99,6 +112,9 @@ export function roleGrantStatements(
   }
   for (const table of spec.insert) {
     statements.push(`GRANT INSERT ON ${quotedSchema}.${quoteIdentifier(table)} TO ${quotedRole};`)
+  }
+  for (const table of spec.update) {
+    statements.push(`GRANT UPDATE ON ${quotedSchema}.${quoteIdentifier(table)} TO ${quotedRole};`)
   }
   for (const table of spec.mutate) {
     statements.push(

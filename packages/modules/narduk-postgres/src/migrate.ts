@@ -177,7 +177,16 @@ export function splitSqlStatements(sql: string): string[] {
     const character = sql[index]
 
     if (character === "'" || character === '"') {
-      index = skipQuoted(sql, index, character)
+      // `E'...'` (or `e'...'`) turns on backslash escaping, so `E'it\\'s'` is one
+      // literal, not a literal followed by a stray `s'`. The `E` counts only
+      // when it is its own token, never as the tail of an identifier.
+      const previous = index > 0 ? (sql[index - 1] ?? '') : ''
+      const beforePrevious = index > 1 ? (sql[index - 2] ?? '') : ''
+      const escapeBackslash =
+        character === "'" &&
+        (previous === 'E' || previous === 'e') &&
+        !/[\w$]/u.test(beforePrevious)
+      index = skipQuoted(sql, index, character, escapeBackslash)
       continue
     }
 
@@ -216,10 +225,26 @@ export function splitSqlStatements(sql: string): string[] {
   return statements
 }
 
-/** Skip a `'...'` literal or a `"..."` identifier, doubling as its own escape. */
-function skipQuoted(sql: string, openIndex: number, quote: string): number {
+/**
+ * Skip a `'...'` literal or a `"..."` identifier, doubling as its own escape.
+ *
+ * `escapeBackslash` is true only for an E-string (`E'...'`), where a backslash
+ * escapes the next character. In a standard literal a backslash is an ordinary
+ * character -- `standard_conforming_strings` has been on by default since 9.1 --
+ * so treating it as an escape everywhere would mis-parse `'C:\\'`.
+ */
+function skipQuoted(
+  sql: string,
+  openIndex: number,
+  quote: string,
+  escapeBackslash = false,
+): number {
   let index = openIndex + 1
   while (index < sql.length) {
+    if (escapeBackslash && sql[index] === '\\') {
+      index += 2
+      continue
+    }
     if (sql[index] === quote) {
       if (sql[index + 1] === quote) {
         index += 2
@@ -236,9 +261,16 @@ function skipQuoted(sql: string, openIndex: number, quote: string): number {
   )
 }
 
-/** `$$` or `$tag$` at this position, or null when the `$` is something else. */
+/**
+ * `$$` or `$tag$` at this position, or null when the `$` is something else.
+ *
+ * A tag follows identifier rules: it may not START with a digit, but it may
+ * contain them. The previous pattern excluded every digit, so `$func1$` was not
+ * recognized as an opener and the splitter cut the function body at its first
+ * internal semicolon -- producing two fragments that are each a syntax error.
+ */
 function dollarTagAt(sql: string, index: number): string | null {
-  const match = /^\$[A-Za-z_]*\$/u.exec(sql.slice(index))
+  const match = /^\$(?:[A-Za-z_]\w*)?\$/u.exec(sql.slice(index))
   return match === null ? null : match[0]
 }
 

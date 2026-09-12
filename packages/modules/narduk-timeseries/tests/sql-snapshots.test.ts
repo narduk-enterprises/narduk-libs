@@ -11,7 +11,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRollupQuery,
   planTrackQuery,
-  refreshRollupsStatement,
+  REFRESH_MAX_WINDOW_MS,
+  refreshRollupsStatements,
 } from '../src/timescale/query.js'
 import { buildRetentionStatements } from '../src/timescale/retention.js'
 import { buildSeriesResolveStatement } from '../src/timescale/series.js'
@@ -143,6 +144,7 @@ describe('rollup query', () => {
       maxRows: 1000,
       range: RANGE,
       seriesIds: [1, 2, 3],
+      tierWindowMs: 'unrestricted',
       vesselId: VESSEL,
     })
 
@@ -167,13 +169,20 @@ describe('rollup query', () => {
 
   it('selects the table from a frozen map and fails closed', () => {
     expect(
-      buildRollupQuery({ bucket: '1d', range: RANGE, seriesIds: [1], vesselId: VESSEL }).text,
+      buildRollupQuery({
+        bucket: '1d',
+        range: RANGE,
+        seriesIds: [1],
+        tierWindowMs: 'unrestricted',
+        vesselId: VESSEL,
+      }).text,
     ).toContain('FROM telemetry_numeric_1d')
     expect(() =>
       buildRollupQuery({
         bucket: '1m; DROP TABLE telemetry_numeric' as never,
         range: RANGE,
         seriesIds: [1],
+        tierWindowMs: 'unrestricted',
         vesselId: VESSEL,
       }),
     ).toThrow(/BUCKET_UNKNOWN/u)
@@ -288,10 +297,57 @@ describe('retention plan', () => {
   })
 
   it('builds the explicit backfill refresh a late batch needs', () => {
-    const statement = refreshRollupsStatement('15m', RANGE)
-    expect(statement.text).toBe(
+    const statements = refreshRollupsStatements({ buckets: ['15m'], range: RANGE })
+    expect(statements).toHaveLength(1)
+    expect(statements[0]!.text).toBe(
       "CALL refresh_continuous_aggregate('telemetry_numeric_15m', $1::timestamptz, $2::timestamptz)",
     )
-    expect(statement.params).toEqual([RANGE.start, RANGE.end])
+    expect(statements[0]!.params).toEqual([RANGE.start, RANGE.end])
+    expect(statements[0]!.range).toEqual(RANGE)
+  })
+
+  it('orders the whole ladder fine-first, coarsest last', () => {
+    // 15m reads 1m, 1h reads 15m, 1d reads 1h: refresh 1d first and it
+    // summarizes buckets the level below has not materialized yet, and nothing
+    // reports the hole. The order holds even when the caller asks backwards.
+    const statements = refreshRollupsStatements({
+      buckets: ['1d', '1h', '15m', '1m'],
+      range: RANGE,
+    })
+    expect(statements.map((statement) => statement.bucket)).toEqual(['1m', '15m', '1h', '1d'])
+  })
+
+  it('splits a wide backfill into bounded windows per level', () => {
+    // A year of 1m buckets in one CALL is 525 600 buckets per series
+    // materialized inside a single statement. The ceiling is per level because
+    // the bucket count, not the wall-clock width, is what costs.
+    const range = {
+      end: new Date('2027-01-01T00:00:00.000Z'),
+      start: new Date('2026-01-01T00:00:00.000Z'),
+    }
+    const statements = refreshRollupsStatements({ range })
+    const oneMinute = statements.filter((statement) => statement.bucket === '1m')
+    expect(oneMinute.length).toBe(Math.ceil(365 / 7))
+    for (const statement of statements) {
+      const width = statement.range.end.getTime() - statement.range.start.getTime()
+      expect(width).toBeLessThanOrEqual(REFRESH_MAX_WINDOW_MS[statement.bucket])
+      expect(width).toBeGreaterThan(0)
+    }
+    // Contiguous and ascending inside a level: no bucket is skipped.
+    for (let index = 1; index < oneMinute.length; index += 1) {
+      expect(oneMinute[index]!.range.start).toEqual(oneMinute[index - 1]!.range.end)
+    }
+    expect(oneMinute[0]!.range.start).toEqual(range.start)
+    expect(oneMinute.at(-1)!.range.end).toEqual(range.end)
+  })
+
+  it('refuses a window wider than the level allows', () => {
+    expect(() =>
+      refreshRollupsStatements({
+        buckets: ['1m'],
+        maxWindowMs: REFRESH_MAX_WINDOW_MS['1m'] + 1,
+        range: RANGE,
+      }),
+    ).toThrow(/REFRESH_WINDOW_TOO_WIDE/u)
   })
 })

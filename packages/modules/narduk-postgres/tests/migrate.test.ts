@@ -293,6 +293,36 @@ describe('splitSqlStatements', () => {
     expect(splitSqlStatements("SELECT 'it''s; fine';")).toEqual(["SELECT 'it''s; fine'"])
   })
 
+  it('accepts a dollar tag containing digits', () => {
+    // A tag follows identifier rules: no leading digit, digits allowed after.
+    // Excluding every digit meant `$func1$` was not an opener, so the body was
+    // cut at its first internal semicolon into two syntax errors.
+    expect(splitSqlStatements('DO $func1$ BEGIN PERFORM 1; END $func1$; SELECT 2;')).toEqual([
+      'DO $func1$ BEGIN PERFORM 1; END $func1$',
+      'SELECT 2',
+    ])
+    expect(splitSqlStatements('DO $x_9$ SELECT 1; $x_9$;')).toHaveLength(1)
+    // A leading digit is still not a tag, so `$1` stays a bind placeholder.
+    expect(splitSqlStatements('SELECT $1; SELECT $2;')).toEqual(['SELECT $1', 'SELECT $2'])
+  })
+
+  it('honours backslash escapes inside an E-string and only there', () => {
+    // E'...' turns on backslash escaping, so E'it\'s; fine' is one literal.
+    // Read as a plain literal, the closing quote lands early and the rest of
+    // the statement is split at a semicolon that is inside a string.
+    expect(splitSqlStatements("SELECT E'it\\'s; fine'; SELECT 2;")).toEqual([
+      "SELECT E'it\\'s; fine'",
+      'SELECT 2',
+    ])
+    expect(splitSqlStatements("SELECT e'a\\'; b'; SELECT 2;")).toHaveLength(2)
+    // In a standard literal a backslash is an ordinary character
+    // (standard_conforming_strings has been on since 9.1), so a trailing one
+    // must NOT swallow the closing quote.
+    expect(splitSqlStatements("SELECT 'C:\\'; SELECT 2;")).toEqual(["SELECT 'C:\\'", 'SELECT 2'])
+    // The E only counts as its own token, never as the tail of an identifier.
+    expect(splitSqlStatements("SELECT valueE'a\\'; SELECT 2;")).toHaveLength(2)
+  })
+
   it('ignores semicolons inside line and nested block comments', () => {
     expect(splitSqlStatements('-- one; two\nSELECT 1;')).toEqual(['-- one; two\nSELECT 1'])
     expect(splitSqlStatements('/* a; /* b; */ c; */ SELECT 1;')).toEqual([

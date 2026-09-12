@@ -64,9 +64,18 @@ SELECT create_hypertable(
 -- Columnstore (2.18+ API). `segmentby` matches the read pattern -- one vessel,
 -- a series set -- so a compressed chunk is read one segment at a time instead
 -- of decompressed whole.
+--
+-- `installation_role` is in `segmentby` because it is in the UNIQUE key above.
+-- TimescaleDB refuses to enable the columnstore on a table whose unique
+-- constraint covers a column that is neither a segmentby nor an orderby column
+-- -- it cannot enforce uniqueness inside a compressed chunk otherwise -- so
+-- with the natural key added and `segmentby = 'vessel_id, series_id'` this
+-- ALTER TABLE fails and takes the whole migration down with it. Its cardinality
+-- is 2 (0 primary, 1 shadow), so it costs at most a doubling of the segment
+-- count and no read path loses a segment it was using.
 ALTER TABLE telemetry_numeric SET (
   timescaledb.enable_columnstore = true,
-  timescaledb.segmentby = 'vessel_id, series_id',
+  timescaledb.segmentby = 'vessel_id, series_id, installation_role',
   timescaledb.orderby   = 'ts DESC'
 );
 

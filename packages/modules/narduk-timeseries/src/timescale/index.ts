@@ -94,8 +94,17 @@ export * from './write.js'
 export interface RetentionExecutorOptions {
   /** A single-connection executor: a ManagedConnection, or a `max: 1` pool. */
   executor: SqlExecutor
-  /** The pool size, when the executor is a pool. Anything but 1 is refused. */
-  maxConnections?: number
+  /**
+   * The executor's connection count. **Required, and anything but 1 is
+   * refused.**
+   *
+   * Optional, this refused a pool only when the caller happened to mention its
+   * size -- so the dangerous case, a pool handed over with no metadata, was
+   * exactly the case that passed. A session advisory lock taken on one backend
+   * cannot be released from another, so a sweep on a pool can unlock nothing
+   * and leave the lock held until the connection is recycled.
+   */
+  maxConnections: 1
 }
 
 export interface TimescaleStoreOptions {
@@ -164,10 +173,10 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     this.#executor = options.executor
     this.#parameterBudget = options.parameterBudget
     this.#retention = options.retention
-    if (options.retention?.maxConnections !== undefined && options.retention.maxConnections !== 1) {
+    if (options.retention !== undefined && options.retention.maxConnections !== 1) {
       throw new NardukTimeseriesError(
         'RETENTION_EXECUTOR_UNPINNED',
-        'The retention executor must be session-pinned: a ManagedConnection, or a pool tuned to max: 1. A session advisory lock taken on one backend cannot be released from another.',
+        'The retention executor must be session-pinned and must say so: pass maxConnections: 1 with a ManagedConnection or a pool tuned to max: 1. A session advisory lock taken on one backend cannot be released from another.',
         { maxConnections: options.retention.maxConnections },
       )
     }
@@ -218,7 +227,13 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
 
     // Coalesce identical concurrent resolves onto one statement: a burst of
     // queue messages for the same vessel is the common case, not the rare one.
-    const key = missing.map((d) => seriesCacheKey(d.vesselId, d.path)).join('|')
+    // Sorted: the same descriptor set arriving in two orders is one resolve,
+    // not two. Unsorted, a batch of the same paths in a different order missed
+    // the in-flight entry and issued a second identical statement.
+    const key = missing
+      .map((d) => seriesCacheKey(d.vesselId, d.path))
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .join('|')
     const existing = this.#inFlightResolves.get(key)
     const inFlight =
       existing ??
@@ -325,16 +340,22 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
       return { bucket: query.bucket, clipped: true, range: plan.range, rows: [], truncated: false }
     }
 
-    const built = buildRollupQuery(query)
+    // The plan computed above is handed on rather than recomputed: clipping
+    // twice means two `new Date()` calls and therefore two floors, so the
+    // range reported would not be quite the range the statement read.
+    const built = buildRollupQuery(query, plan)
     const result = await this.#executor.query<RollupSqlRow>(built.text, built.params)
     const limit = Number(built.params.at(-1)) - 1
     const truncated = result.rows.length > limit
+    // min/max/last stay null when the bucket has none: 0 is a plausible depth,
+    // speed or temperature, so coercing a missing extreme to 0 puts a reading
+    // on the chart that the instrument never produced.
     const rows: RollupRow[] = result.rows.slice(0, limit).map((row) => ({
       avg: toNumber(row.avg),
       bucket: toDate(row.bucket),
-      last: toNumber(row.last ?? 0),
-      max: toNumber(row.max ?? 0),
-      min: toNumber(row.min ?? 0),
+      last: toOptionalNumber(row.last),
+      max: toOptionalNumber(row.max),
+      min: toOptionalNumber(row.min),
       n: toNumber(row.n),
       seriesId: toNumber(row.series_id),
     }))

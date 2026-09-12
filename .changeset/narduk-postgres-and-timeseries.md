@@ -62,11 +62,25 @@ telemetry history store for the non-Supabase backend.
   (rollups at the most generous tier's depth, since a continuous aggregate is
   not pruned per vessel), and a narrower tier is enforced on read, where
   `queryRollup` clips the requested range to the `tierWindowMs` the consumer
-  passes and reports the clip. A level with no global window is never swept and
-  is reported as such. The sweep requires a session-pinned executor, checks its
-  unlock, and runs from Node — not from a Hyperdrive Worker.
-- `refreshRollupsStatement(level, range)` for a store-and-forward batch older
-  than the 7-day refresh window the scheduled policies reconsider.
+  passes and reports the clip. That field is required and typed
+  `number | 'unrestricted'`: read-side clipping is the only tier gate there is,
+  so a handler that omits it must fail to compile rather than fail open. A level
+  with no global window is never swept and is reported as such. The sweep
+  requires a session-pinned executor, checks its unlock, and runs from Node —
+  not from a Hyperdrive Worker.
+- `refreshRollupsStatements({ range })` for a store-and-forward batch older than
+  the 7-day refresh window the scheduled policies reconsider: the whole ladder
+  in order, coarsest last (15m reads 1m, 1h reads 15m, 1d reads 1h), each level
+  split into windows no wider than `REFRESH_MAX_WINDOW_MS` for that level.
+- The writer's grant set is `INSERT` everywhere it writes plus `UPDATE` on
+  `series` alone, and DELETE nowhere: `INSERT ... ON CONFLICT ... DO UPDATE` is
+  checked for UPDATE at parse time, so a writer without it fails every resolve
+  with `permission denied for table series`. `RolePrivilegeSpec` gained an
+  `update` list separate from `mutate` to express exactly that.
+- `RollupRow.min`, `.max` and `.last` are `number | null`. A bucket with no
+  extreme reports null; 0 is a plausible depth, speed or temperature, so
+  coercing the absence to 0 puts a reading on the chart that no instrument
+  produced.
 - `./influx`, a read-only parity adapter that holds no credential and enforces ≤
   4-day windows, `aggregateWindow` before any `group()`, a 120 s timeout, and an
   optional `AbortSignal`. It is **temporary** and is removed after G4-H parity.

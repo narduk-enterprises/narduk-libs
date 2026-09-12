@@ -91,25 +91,36 @@ export interface RollupQuery {
   range: TimeRange
   seriesIds: readonly number[]
   /**
-   * The requesting tier's history depth in ms, when the product has tiers.
+   * The requesting tier's history depth in ms, or the literal `'unrestricted'`.
    *
    * Rollups are retained globally at the most generous tier's depth (see
    * `RetentionPolicyInput.globalRollupWindowMs`), so a tier's own depth is
    * enforced HERE, on read: the store clips `range.start` up to
-   * `now - tierWindowMs` and reports the clip in `RollupResult`. The caller
-   * owns tier membership and therefore owns this number; omitting it reads
-   * the full retained range.
+   * `now - tierWindowMs` and reports the clip in `RollupResult`.
+   *
+   * **Required, and required on purpose.** Read-side clipping is the only tier
+   * gate there is, so an optional field would mean a route handler that forgot
+   * it failed OPEN -- serving a Free vessel a Cruiser's worth of history and
+   * reporting `clipped: false` while doing it. A caller that genuinely has no
+   * tier boundary says so with `'unrestricted'`, which is a decision in the
+   * code review rather than an omission nobody sees.
    */
-  tierWindowMs?: number
+  tierWindowMs: number | 'unrestricted'
   vesselId: string
 }
 
 export interface RollupRow {
   avg: number
   bucket: Date
-  last: number
-  max: number
-  min: number
+  /**
+   * `min`, `max` and `last` are null when the bucket recorded no value for
+   * them -- they are not zero. Reporting a missing extreme as 0 puts a reading
+   * on a chart that the instrument never produced, and 0 is a plausible depth,
+   * speed or temperature, so nothing downstream can tell the difference.
+   */
+  last: number | null
+  max: number | null
+  min: number | null
   n: number
   seriesId: number
 }

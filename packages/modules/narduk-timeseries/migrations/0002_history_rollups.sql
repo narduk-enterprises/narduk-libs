@@ -112,7 +112,7 @@ WITH NO DATA;
 -- would sit in raw until the global window dropped them and never appear in
 -- any rollup. 7 days is the whole raw window, so anything raw still holds can
 -- still be materialized. A batch accepted outside even that window is the
--- consumer's to refresh explicitly: `refreshRollupsStatement(level, range)`
+-- consumer's to refresh explicitly: `refreshRollupsStatements({ range })`
 -- from this package emits the `refresh_continuous_aggregate` call for it.
 SELECT add_continuous_aggregate_policy('telemetry_numeric_1m',
   start_offset => INTERVAL '7 days',

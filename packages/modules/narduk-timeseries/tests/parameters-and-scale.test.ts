@@ -137,6 +137,7 @@ describe('parameter ceilings', () => {
         bucket: '1h',
         range: { end: new Date('2026-09-12T00:00:00Z'), start: new Date('2026-09-11T00:00:00Z') },
         seriesIds: Array.from({ length: cardinality }, (_, index) => index + 1),
+        tierWindowMs: 'unrestricted',
         vesselId: VESSEL,
       })
       // The series list rides as one array parameter, not as N placeholders.

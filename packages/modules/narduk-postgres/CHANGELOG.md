@@ -14,9 +14,14 @@
   dry run, and a `-- narduk:no-transaction` first-line directive — a
   non-transactional file is split into top-level statements and sent one per
   round trip, since a multi-statement simple query is an implicit transaction.
+  The splitter honours dollar tags containing digits (`$func1$`) and backslash
+  escapes inside an E-string (`E'it\'s'`) — and only inside one, since a
+  backslash in a standard literal is an ordinary character.
 - Typed helpers for the `ingest_writer` / `history_reader` / `ops` roles, with
   `SET ROLE` never taken from user input, and the GRANT matrix that generates
-  narduk-timeseries' role migration. Creating roles and setting their
+  narduk-timeseries' role migration. The matrix separates `update` from
+  `mutate`, so a role that upserts a dimension row can be granted UPDATE on that
+  one table without also being granted DELETE. Creating roles and setting their
   `statement_timeout` belongs to the deployment (narduk-infrastructure#155).
 - Parameter budgets against the 65535 Bind ceiling, and a protocol fake for
   tests.

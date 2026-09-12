@@ -42,6 +42,7 @@ describe('least-privilege grants', () => {
     insert: ['telemetry_numeric', 'series'],
     mutate: [],
     read: ['series'],
+    update: [],
   }
 
   it('gives the ingest writer insert and nothing that erases history', () => {
@@ -53,6 +54,15 @@ describe('least-privilege grants', () => {
       'GRANT INSERT ON "public"."series" TO "ingest_writer";',
     ])
     expect(statements.join('\n')).not.toMatch(/DELETE|UPDATE|TRUNCATE|CREATE/u)
+  })
+
+  it('can grant UPDATE without granting DELETE', () => {
+    // `INSERT ... ON CONFLICT ... DO UPDATE` needs UPDATE at parse time, so an
+    // upserting writer needs it on the dimension table it upserts -- and must
+    // still not be able to delete anything.
+    const statements = roleGrantStatements('ingest_writer', { ...spec, update: ['series'] })
+    expect(statements).toContain('GRANT UPDATE ON "public"."series" TO "ingest_writer";')
+    expect(statements.join('\n')).not.toMatch(/DELETE|TRUNCATE/u)
   })
 
   it('gives only the DDL role CREATE on the schema', () => {

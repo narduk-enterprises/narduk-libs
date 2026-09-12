@@ -99,6 +99,23 @@ describe('writeNumeric', () => {
     expect(second).toEqual(third)
   })
 
+  it('coalesces the same descriptor set arriving in different orders', async () => {
+    // The in-flight key is sorted. Unsorted, the same two paths in the other
+    // order missed the entry and issued a second identical statement -- which
+    // is exactly the burst shape a queue delivers.
+    const descriptors = [
+      { path: 'a', unit: null, valueKind: 'numeric' as const, vesselId: VESSEL },
+      { path: 'b', unit: null, valueKind: 'numeric' as const, vesselId: VESSEL },
+    ]
+    const [forwards, backwards] = await Promise.all([
+      store.resolveSeries(descriptors),
+      store.resolveSeries([...descriptors].reverse()),
+    ])
+
+    expect(database.countMatching(/INSERT INTO series/u)).toBe(1)
+    expect(forwards.map((row) => row.path).sort()).toEqual(backwards.map((row) => row.path).sort())
+  })
+
   it('fails loudly when the database answers a descriptor with no id', async () => {
     const silent = createProtocolFake().respondTo(/INSERT INTO series/u, [])
     const bare = createTimescaleHistoryStore({ executor: silent })
@@ -178,6 +195,7 @@ describe('queryRollup', () => {
       maxRows: 2,
       range: { end: new Date('2026-09-12T00:00:00Z'), start: new Date('2026-09-11T00:00:00Z') },
       seriesIds: [7],
+      tierWindowMs: 'unrestricted',
       vesselId: VESSEL,
     })
 
@@ -192,6 +210,59 @@ describe('queryRollup', () => {
       n: 12,
       seriesId: 7,
     })
+  })
+
+  it('reports a missing min, max or last as null rather than as zero', async () => {
+    // 0 is a plausible depth, speed or temperature, so a coerced extreme is a
+    // reading the instrument never produced and nothing downstream can tell.
+    const database = createProtocolFake().respondTo(/FROM telemetry_numeric_1h/u, [
+      {
+        avg: '4.5',
+        bucket: '2026-09-11T00:00:00.000Z',
+        last: null,
+        max: null,
+        min: null,
+        n: '3',
+        series_id: '7',
+      },
+    ])
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    const result = await store.queryRollup({
+      bucket: '1h',
+      range: { end: new Date('2026-09-12T00:00:00Z'), start: new Date('2026-09-11T00:00:00Z') },
+      seriesIds: [7],
+      tierWindowMs: 'unrestricted',
+      vesselId: VESSEL,
+    })
+
+    expect(result.rows[0]).toEqual({
+      avg: 4.5,
+      bucket: new Date('2026-09-11T00:00:00.000Z'),
+      last: null,
+      max: null,
+      min: null,
+      n: 3,
+      seriesId: 7,
+    })
+  })
+
+  it('refuses a tier window that is neither a positive number nor unrestricted', async () => {
+    const store = createTimescaleHistoryStore({ executor: createProtocolFake() })
+    const error = await store
+      .queryRollup({
+        bucket: '1h',
+        range: { end: new Date('2026-09-12T00:00:00Z'), start: new Date('2026-09-11T00:00:00Z') },
+        seriesIds: [7],
+        tierWindowMs: 0 as never,
+        vesselId: VESSEL,
+      })
+      .then(
+        () => null,
+        (cause: unknown) => cause as NardukTimeseriesError,
+      )
+
+    expect(error?.code).toBe('RANGE_INVALID')
   })
 })
 
@@ -261,7 +332,21 @@ describe('applyRetention', () => {
     expect(() =>
       createTimescaleHistoryStore({
         executor: createProtocolFake(),
-        retention: { executor: createProtocolFake(), maxConnections: 10 },
+        // The type says 1; the cast is the point of the test -- JavaScript
+        // callers and a `as any` config object still reach the constructor.
+        retention: { executor: createProtocolFake(), maxConnections: 10 as 1 },
+      }),
+    ).toThrow(/RETENTION_EXECUTOR_UNPINNED/u)
+  })
+
+  it('refuses a retention executor that does not declare its connection count', () => {
+    // Optional, this refused a pool only when the caller happened to mention
+    // its size -- so the dangerous case, a pool handed over with no metadata,
+    // was exactly the case that passed.
+    expect(() =>
+      createTimescaleHistoryStore({
+        executor: createProtocolFake(),
+        retention: { executor: pinned() } as never,
       }),
     ).toThrow(/RETENTION_EXECUTOR_UNPINNED/u)
   })
@@ -297,7 +382,7 @@ describe('applyRetention', () => {
     ])
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     const result = await store.applyRetention(policy)
@@ -316,7 +401,7 @@ describe('applyRetention', () => {
       .respondTo(/pg_advisory_unlock/u, [{ pid: 2, unlocked: false }])
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     await expect(store.applyRetention(policy)).rejects.toThrow(/RETENTION_UNLOCK_FAILED/u)
@@ -328,7 +413,7 @@ describe('applyRetention', () => {
       .respondTo(/pg_advisory_unlock/u, [{ pid: 2, unlocked: true }])
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     const error = await store.applyRetention(policy).then(
@@ -343,7 +428,7 @@ describe('applyRetention', () => {
     const database = pinned()
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     const [first, second] = await Promise.all([
@@ -364,7 +449,7 @@ describe('applyRetention', () => {
     const database = pinned()
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     const other = { ...policy, globalRawWindowMs: 3 * 86_400_000 }
@@ -388,7 +473,7 @@ describe('applyRetention', () => {
       })
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     await expect(store.applyRetention(policy)).rejects.toThrow(/droppable/u)
@@ -404,7 +489,7 @@ describe('applyRetention', () => {
       })
     const store = createTimescaleHistoryStore({
       executor: createProtocolFake(),
-      retention: { executor: database },
+      retention: { executor: database, maxConnections: 1 },
     })
 
     // The primary failure is the one an operator has to see.
@@ -497,7 +582,7 @@ describe('tier clipping on read', () => {
     expect(database.statements).toHaveLength(0)
   })
 
-  it('reads the full retained range when the caller declares no tier', async () => {
+  it("reads the full retained range when the caller declares 'unrestricted'", async () => {
     const database = createProtocolFake().respondTo(/FROM telemetry_numeric_1h/u, [])
     const store = createTimescaleHistoryStore({ executor: database })
 
@@ -506,6 +591,7 @@ describe('tier clipping on read', () => {
       now,
       range: { end: now, start: new Date('2020-01-01T00:00:00.000Z') },
       seriesIds: [7],
+      tierWindowMs: 'unrestricted',
       vesselId: VESSEL,
     })
 

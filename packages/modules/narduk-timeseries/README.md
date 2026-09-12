@@ -129,6 +129,18 @@ result and costs **no statement at all**. `tierWindowMs` is the consumer's to
 pass: this library does not know what a "Cruiser" is, and tier membership never
 enters it.
 
+**`tierWindowMs` is required**, and a caller with no tier boundary passes the
+literal `'unrestricted'`:
+
+```ts
+tierWindowMs: 'unrestricted' // this caller has no tier boundary, deliberately
+```
+
+Optional, the field failed open — a route handler that forgot it served the full
+retained range and reported `clipped: false` while doing it, and read-side
+clipping is the only tier gate there is. Required, the omission is a type error
+and the exemption is a word a reviewer can see.
+
 A level with **no** `globalRollupWindowMs` entry is never swept. That is a real
 choice — keep 1d rollups indefinitely — so it is reported rather than guessed
 at: `validateRetentionPolicy(...).unsweptRollupLevels` lists them, and every
@@ -182,9 +194,11 @@ deprecated since 2.13) and the columnstore API (`enable_columnstore`,
 and `add_compression_policy` in 2.18.
 
 - `0001_history_core.sql` — extensions, `series`, the `telemetry_numeric`
-  hypertable (1-day chunks, columnstore segmented by `vessel_id, series_id`
-  after 3 days) and `track_points` (`GEOGRAPHY(POINT, 4326)` + GIST, 7-day
-  chunks). Both hypertables carry their natural key:
+  hypertable (1-day chunks, columnstore segmented by
+  `vessel_id, series_id, installation_role` after 3 days — every column of the
+  UNIQUE key has to be a segmentby or orderby column or TimescaleDB refuses to
+  enable the columnstore) and `track_points` (`GEOGRAPHY(POINT, 4326)` + GIST,
+  7-day chunks). Both hypertables carry their natural key:
   `UNIQUE (vessel_id, series_id, ts, installation_role)` and
   `UNIQUE (vessel_id, ts)`.
 - `0002_history_rollups.sql` — the 1m → 15m → 1h → 1d continuous-aggregate
@@ -216,6 +230,44 @@ WITH LOGIN and sets each role's `statement_timeout`; both need superuser, and
 re-issuing the timeout here would have silently replaced the deployment's 60 s
 with a library default. This migration owns privileges; the deployment owns
 identity and deadlines.
+
+### What the three roles may do — and what the deployment actually grants
+
+The role names `ingest_writer`, `history_reader` and `ops` are **literals** and
+part of this library's contract: `setRoleStatement` accepts nothing else, and
+0003 grants to exactly those three. A deployment that names its roles something
+else has to alias them.
+
+| Role             | 0003 grants                                                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ingest_writer`  | USAGE on the schema; SELECT + INSERT + **UPDATE** on `series`; INSERT on both hypertables. No DELETE, no TRUNCATE, no UPDATE on a hypertable. |
+| `history_reader` | USAGE; SELECT on the three tables and the four rollup views. Nothing else.                                                                    |
+| `ops`            | USAGE + CREATE; SELECT/INSERT/UPDATE/DELETE on the three base tables; SELECT (never DELETE) on the rollup views.                              |
+
+The writer's UPDATE on `series` is required, not a convenience. `resolveSeries`
+upserts the descriptor with
+`INSERT ... ON CONFLICT (vessel_id, path) DO UPDATE`, and PostgreSQL checks the
+UPDATE privilege when it **parses** that statement, whether or not a row ever
+conflicts. Granting only INSERT + SELECT makes every resolve — and therefore
+every numeric write — fail with `permission denied for table series`. The
+conflict action rewrites one nullable unit string
+(`COALESCE(EXCLUDED.unit, series.unit)`), so the privilege buys the writer
+nothing beyond that.
+
+**`history_reader` also needs `USAGE ON SCHEMA _timescaledb_internal`** to read
+a hypertable at all — a SELECT resolves to the chunk tables in that schema. 0003
+does not grant it (the schema is Timescale's, not this library's); the
+deployment's initdb does.
+
+**Divergence from the deployed instance, stated rather than assumed.** The
+provisioning in `narduk-infrastructure`
+(`deploy/mybo-history-postgres/initdb/ 030-grants.sh`, at `ab717ab`) sets
+`ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE ON TABLES` to the
+writer, so on that instance `ingest_writer` can UPDATE **every** table,
+including both hypertables. Until that script narrows to match, the
+least-privilege claim above describes what this migration grants, not what the
+writer ends up holding there; the two have to be reconciled on the deployment
+side.
 
 ### Shadow rows live in raw only
 
@@ -252,13 +304,22 @@ must refresh it explicitly, coarsest last, because no policy will look at those
 buckets again:
 
 ```ts
-import { refreshRollupsStatement } from '@narduk-enterprises/narduk-timeseries/timescale'
+import { refreshRollupsStatements } from '@narduk-enterprises/narduk-timeseries/timescale'
 
-for (const level of ['1m', '15m', '1h', '1d'] as const) {
-  const { text, params } = refreshRollupsStatement(level, backfilledRange)
-  await connection.query(text, params) // not inside a transaction
+// Already ordered fine-first (1m → 15m → 1h → 1d) and already split into
+// windows no wider than REFRESH_MAX_WINDOW_MS[level].
+for (const statement of refreshRollupsStatements({ range: backfilledRange })) {
+  await connection.query(statement.text, statement.params) // not in a transaction
 }
 ```
+
+Two properties of that list matter. **Order**: 15m reads 1m, 1h reads 15m, 1d
+reads 1h, so every window of a level runs before any window of the level above
+it — refresh 1d first and it summarizes buckets that do not exist yet, and
+nothing reports the hole. **Bounds**: a refresh materializes every bucket in its
+range inside one statement, so the range is split per level — 7 days at 1m, 30
+days at 15m, 90 days at 1h, a year at 1d — and a wider `maxWindowMs` is refused
+with `REFRESH_WINDOW_TOO_WIDE` rather than accepted and regretted.
 
 ### Two deliberate deviations from docs/04
 
