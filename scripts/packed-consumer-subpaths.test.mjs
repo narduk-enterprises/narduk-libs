@@ -143,6 +143,12 @@ test('the live workspace plans narduk-ui, narduk-charts and narduk-shell subpath
   assert.ok(shell, 'narduk-shell must be in the packed-consumer subpath plan')
   assert.deepEqual(shell.specifiers, [
     '@narduk-enterprises/narduk-shell',
+    // `./module` (narduk-libs#295): the Nuxt module definition's own subpath,
+    // not app-facing, but still a runtime-condition export a consumer could
+    // resolve -- so it belongs in the plan like any other, resolved only
+    // (never evaluated; see packed-consumer-subpaths.mjs's module doc for why
+    // evaluating a raw-TypeScript module entry is deliberately out of scope).
+    '@narduk-enterprises/narduk-shell/module',
     '@narduk-enterprises/narduk-shell/format',
     '@narduk-enterprises/narduk-shell/theme.css',
   ])
