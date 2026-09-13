@@ -22,10 +22,10 @@ const manifest = JSON.parse(
 ) as PackageManifest
 
 describe('narduk-postgres package surface', () => {
-  it('publishes to GitHub Packages under restricted access at its first minor', () => {
+  it('publishes to GitHub Packages under restricted access as a pre-1.0 package', () => {
     expect(manifest.name).toBe('@narduk-enterprises/narduk-postgres')
     expect(manifest.private).toBe(false)
-    expect(manifest.version).toBe('0.1.0')
+    expect(manifest.version).toMatch(/^0\.\d+\.\d+$/u)
     expect(manifest.publishConfig).toEqual({
       access: 'restricted',
       registry: 'https://npm.pkg.github.com',
