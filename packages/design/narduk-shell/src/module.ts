@@ -4,84 +4,35 @@ import { defu } from 'defu'
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
 import { NE_SHELL_COMPONENTS } from './registry'
 
-// Named exports of the package root (`.`). Not a fourth subpath — the
-// reserved map stays `.`, `./format`, `./theme.css`.
-export {
-  defineStatusMap,
-  type NeStatusDescriptor,
-  type NeStatusTone,
-} from './runtime/utils/status-map'
-
 /**
- * The suite's public runtime types, re-exported from the `.` subpath so an app
- * writes `import type { NeStateValue } from '@narduk-enterprises/narduk-shell'`.
+ * The Nuxt module definition — narduk-libs#295.
  *
- * `export type` is erased, so this adds nothing to the module's Node-side
- * graph: no component source is loaded to read a type.
+ * This file imports `@nuxt/kit`, which is exactly why it can no longer also
+ * be `.`: Nuxt's import-protection plugin refuses any app-code import of a
+ * file that pulls in `@nuxt/kit`, and an app writing
+ * `import { defineStatusMap } from '@narduk-enterprises/narduk-shell'` hit
+ * that refusal in a production `nuxt build` when this file WAS `.` (0.1.0,
+ * found by `narduk-enterprises/buoys` PR #44 within an hour of publish).
+ * `src/index.ts` is `.` now; its own header explains what stays working there
+ * and the "root barrel reachability" test in `test/module.test.ts` fails the
+ * moment this file becomes reachable from it by value again.
+ *
+ * This file kept its name and gained its own subpath, `./module`, instead of
+ * moving, because of exactly how Nuxt resolves a string `modules: []` entry.
+ * `@nuxt/kit`'s `loadNuxtModuleInstance` calls `resolveModuleURL` with
+ * `suffixes: ['nuxt', 'nuxt/index', 'module', 'module/index', '', 'index']`
+ * and takes the first one that resolves (verified directly against the
+ * installed `@nuxt/kit@4.5.0` + `exsolve@1.1.0` source: `exsolve` tries each
+ * suffix in that order and swallows the `ERR_PACKAGE_PATH_NOT_EXPORTED` an
+ * undeclared one throws, rather than failing, so it falls through to the next
+ * candidate). Declaring `./module` in `package.json` satisfies the `module`
+ * suffix, so a consumer's unchanged `modules: ['@narduk-enterprises/narduk-shell']`
+ * resolves to THIS file before Nuxt ever tries the bare, empty-suffix
+ * fallback that would otherwise hand it `src/index.ts` — which has no default
+ * export to call as a module anyway. `@narduk-enterprises/narduk-shell/module`
+ * also works as an explicit specifier, for a consumer composing the module by
+ * hand with `installModule()`.
  */
-export type {
-  NeAsyncDataStatus,
-  NeStateGap,
-  NeStatePanelProps,
-  NeStateValue,
-} from './runtime/types'
-
-/**
- * `useConfirm()`'s option and tone types, so a wrapper around the composable
- * can state its own signature, and a consuming app's unit test can type a stub,
- * without reaching for an auto-import that only exists inside Nuxt's transform.
- *
- * `useConfirm` itself is NOT re-exported here, and that is a hard constraint
- * rather than an omission. Nuxt loads this file with jiti
- * (`loadNuxtModuleInstance` -> `createJiti(...)` -> `jiti.import(src)`), and
- * jiti cannot load a single-file component. `use-confirm.ts` imports
- * `NeConfirmDialog.vue` at module scope to hand the component object to
- * `useOverlay().create()`, so a value re-export puts a `.vue` in this file's
- * eager Node graph and every app installing the module fails at config time
- * with `Unknown file extension ".vue"` — reproduced against jiti 2.7.0 on
- * 2026-09-11. `test/use-confirm.test.ts` walks the static graph and fails if a
- * `.vue` ever becomes reachable from here.
- *
- * The composable reaches app code through `addImports` below, which is not
- * gated on component registration.
- */
-export type { NeConfirmOptions } from './runtime/composables/use-confirm'
-export type { NeConfirmTone } from './runtime/components/ne-confirm-dialog-types'
-
-/**
- * `useCollection()`'s public types, re-exported from `.` for the same reason
- * the confirm dialog's are: a page that wraps the composable, or a unit test
- * that stubs it, has to be able to state the shape outside Nuxt's auto-import
- * transform. `NeCollectionState` is also `NePager`'s `v-model:state` type.
- *
- * `useCollection` itself is NOT re-exported as a value, matching `useConfirm`:
- * this file is loaded by jiti at Nuxt config time, and the reserved export map
- * (`.`, `./format`, `./theme.css`) is not widened by a composable. It reaches
- * app code through `addImports` below.
- */
-export type {
-  NeCollection,
-  NeCollectionFetchContext,
-  NeCollectionOptions,
-  NeCollectionQuery,
-  NeCollectionState,
-} from './runtime/composables/use-collection'
-
-export type { NePagerProps } from './runtime/components/ne-pager-types'
-
-const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
-const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
-
-// Re-exported from the module entry rather than from a fourth subpath: item 1
-// fixed the exports map at `.`, `./format` and `./theme.css`, and an app that
-// wants to read or extend the preset should not need a new specifier.
-export {
-  NARDUK_SHELL_APP_CONFIG,
-  type NardukShellAppConfig,
-  type NardukShellColorAliases,
-  type NardukShellUiAppConfig,
-} from './app-config'
-
 export interface NardukShellModuleOptions {
   /**
    * Register the suite's components. Turning this off leaves the package
@@ -98,6 +49,9 @@ export interface NardukShellModuleOptions {
    */
   theme?: boolean
 }
+
+const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
+const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
 
 interface MinimalNuxt {
   options: {

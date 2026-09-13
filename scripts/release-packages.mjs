@@ -582,6 +582,132 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
   )
 }
 
+// narduk-libs#295: `addPackedCoreUiRuntimeSmoke` above only proves the packed
+// narduk-shell tarball installs and that a registered Ne* component renders
+// through the module's own component auto-import -- neither exercises app
+// code that writes `import { defineStatusMap } from '@narduk-enterprises/narduk-shell'`,
+// which is exactly the line that failed a production `nuxt build` for the
+// first real adopter (narduk-enterprises/buoys PR #44, within an hour of the
+// 0.1.0 publish): `.` resolved straight to `src/module.ts`, which imports
+// `@nuxt/kit`, and Nuxt's import-protection plugin refuses to let any
+// app-bundled file that imports `@nuxt/kit` reach the client build.
+//
+// This page imports the package root's documented value exports
+// (`defineStatusMap`, `NARDUK_SHELL_APP_CONFIG`) as VALUES from the bare
+// `@narduk-enterprises/narduk-shell` specifier -- never from `./module` --
+// the same way that failing line did. If a future change ever repoints `.`
+// back at a file that pulls in `@nuxt/kit`, the `build` phase of
+// `quality:static` (a real `nuxt build`, run before `test:unit`/`test:e2e`
+// in the phase list `qualityPhases()` expands below) fails here, before this
+// page is ever served. The Playwright assertion is the second half of the
+// proof: it shows the values did not just survive the build, they executed
+// and produced the right output.
+function addPackedShellRootValueImportSmoke(generatedDirectory) {
+  const pagePath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'app',
+    'pages',
+    'narduk-shell-root-value-import.vue',
+  )
+  mkdirSync(dirname(pagePath), { recursive: true })
+  writeFileSync(
+    pagePath,
+    [
+      '<script setup lang="ts">',
+      '// narduk-libs#295 gate -- see addPackedShellRootValueImportSmoke in',
+      '// scripts/release-packages.mjs for why this page exists. Every import',
+      "// below is a VALUE from the bare package specifier, never './module'.",
+      "import { defineStatusMap, NARDUK_SHELL_APP_CONFIG } from '@narduk-enterprises/narduk-shell'",
+      '',
+      "type RootImportCheck = 'ok'",
+      '',
+      'const rootImportStatus = defineStatusMap<RootImportCheck>({',
+      "  ok: ['ok', 'narduk-shell root value import OK'],",
+      '})',
+      '',
+      "const descriptor = rootImportStatus('ok')",
+      'const primaryColorAlias = NARDUK_SHELL_APP_CONFIG.ui.colors.primary',
+      '</script>',
+      '',
+      '<template>',
+      '  <div>',
+      '    <h1>{{ descriptor.label }}</h1>',
+      '    <p data-testid="root-config-alias">{{ primaryColorAlias }}</p>',
+      '  </div>',
+      '</template>',
+      '',
+    ].join('\n'),
+  )
+
+  const specPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'tests',
+    'e2e',
+    'narduk-shell-root-value-import.spec.ts',
+  )
+  mkdirSync(dirname(specPath), { recursive: true })
+  writeFileSync(
+    specPath,
+    [
+      "import { expect, test } from '@playwright/test'",
+      '',
+      "test('narduk-shell root value imports execute (narduk-libs#295)', async ({ page }) => {",
+      "  await page.goto('/narduk-shell-root-value-import')",
+      '  await expect(',
+      "    page.getByRole('heading', { name: 'narduk-shell root value import OK' }),",
+      '  ).toBeVisible()',
+      "  await expect(page.getByTestId('root-config-alias')).toHaveText('sky')",
+      '})',
+      '',
+    ].join('\n'),
+  )
+
+  // The generator's own `og:check` step (wired into the generated app's
+  // `build` script: `narduk-app og:generate --if-missing && narduk-app
+  // og:check && nuxt build`) requires every `app/pages/*.vue` file to be
+  // classified in `Config/social-previews.json`, or the build fails before
+  // `nuxt build` -- and therefore before Playwright -- ever runs (see
+  // packages/tooling/create-narduk-app/src/social-previews.ts and
+  // checkRouteInventory in packages/tooling/narduk-app-tools/src/social/config.ts).
+  // This fixture page is release-pipeline plumbing, not real content, so it
+  // is classified `private` with a reason, exactly like the generator's own
+  // `/__preview/og-images` example -- that skips path/crawler checks entirely
+  // (checkRouteInventory: `if (route.kind === 'private') continue`) while
+  // still satisfying the per-file "every page is classified" requirement.
+  const socialPreviewsConfigPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'Config',
+    'social-previews.json',
+  )
+  const socialPreviewsConfig = JSON.parse(readFileSync(socialPreviewsConfigPath, 'utf8'))
+  socialPreviewsConfig.routes.push({
+    source: 'narduk-shell-root-value-import.vue',
+    kind: 'private',
+    reason:
+      'narduk-libs#295 packed-consumer-smoke fixture proving the narduk-shell root value import; not real content',
+  })
+  // Re-serializing the whole config with plain `JSON.stringify` would
+  // re-expand the pre-existing `"paths": ["/"]` entry back onto three lines,
+  // failing the generated app's own `format:check` -- Prettier collapses a
+  // short array like that onto one line, but does not collapse an object
+  // (which is why the new `private` route above, with no `paths` field,
+  // needs no such fix-up). Re-apply the exact same collapsing this file was
+  // originally written with in socialPreviewFiles
+  // (packages/tooling/create-narduk-app/src/social-previews.ts) to keep the
+  // untouched routes byte-identical to what Prettier already accepted.
+  const rewritten = `${JSON.stringify(socialPreviewsConfig, null, 2).replaceAll(
+    /("paths": )\[\n\s+("[^\n]+")\n\s+\]/gu,
+    '$1[$2]',
+  )}\n`
+  writeFileSync(socialPreviewsConfigPath, rewritten)
+}
+
 function assertPackedInternalDependencyGraph(packages, tarballs) {
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
 
@@ -938,6 +1064,7 @@ try {
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
   addTarballOverrides(generatedDirectory, packages, tarballs)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
+  addPackedShellRootValueImportSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   runChecked('pnpm', ['install', '--no-frozen-lockfile'], {

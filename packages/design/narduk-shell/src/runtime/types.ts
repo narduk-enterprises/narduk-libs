@@ -1,15 +1,16 @@
 /**
  * Public runtime types for the `Ne*` suite.
  *
- * These are re-exported from the package entry (`src/module.ts`, the `.`
- * subpath) as type-only exports, so an app writes
+ * These are re-exported from the package entry (`src/index.ts`, the `.`
+ * subpath — narduk-libs#295 moved it off `src/module.ts`) as type-only
+ * exports, so an app writes
  * `import type { NeStateValue } from '@narduk-enterprises/narduk-shell'`
  * without importing the Nuxt module for its side effects.
  *
- * Keep this file type-only. `src/module.ts` re-exports it with
+ * Keep this file type-only. `src/index.ts` re-exports it with
  * `export type { ... } from './runtime/types'`, which is erased at build time;
  * adding a runtime value here would either be unreachable through that
- * re-export or would pull component code into the module's Node-side graph.
+ * re-export or would pull component code into the barrel's Node-side graph.
  */
 
 /**

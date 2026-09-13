@@ -177,34 +177,58 @@ backlog item 4
 
 ## Reserved subpaths
 
-Exactly three subpaths are exported, and all three now carry content. Each was
-reserved before it was filled — resolving from an external install while still
-empty, as the release pipeline's consumer fixture proves — so that no app had to
-change an import specifier when the content arrived.
+Exactly four subpaths are exported. Three carry app-facing content, resolving
+from an external install as soon as they are declared — the release pipeline's
+consumer fixture proves this — so that no app had to change an import specifier
+when the content arrived. The fourth, `./module`, is not app-facing: it exists
+only so Nuxt itself can find the module definition, and no consumer ever writes
+it explicitly.
 
-| Subpath                                      | Today                                                                                  | Filled by                                                                               |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-shell`           | The Nuxt module                                                                        | Every component item adds a registry entry                                              |
-| `@narduk-enterprises/narduk-shell/format`    | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                     | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
-| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract)) | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
+| Subpath                                      | Today                                                                                                                | Filled by                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-shell`           | The value-safe barrel: `defineStatusMap`, `NARDUK_SHELL_APP_CONFIG` and the suite's public types                     | Every component item adds a registry entry                                              |
+| `@narduk-enterprises/narduk-shell/module`    | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
+| `@narduk-enterprises/narduk-shell/format`    | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
+| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
 
-`defineStatusMap` is a named export of the package root (`.`), not a fourth
-subpath. Import it from `@narduk-enterprises/narduk-shell` the same way the
-module itself is imported. So are the suite's public types, including
-`NeConfirmOptions` and `NeConfirmTone`, so a wrapper around `useConfirm()` can
-state its own signature outside Nuxt's auto-import transform:
+Install and register the module exactly as before —
+`modules: ['@narduk-enterprises/narduk-shell']` in `nuxt.config.ts` — and it
+keeps resolving to `./module` without you ever naming that subpath: `@nuxt/kit`
+tries a fixed `nuxt`/`nuxt/index`/`module`/`module/index` suffix convention
+before it ever falls back to the bare specifier this package's root used to be.
+
+`defineStatusMap` and `NARDUK_SHELL_APP_CONFIG` are named exports of the package
+root (`.`). Import them from `@narduk-enterprises/narduk-shell` directly, same
+as before:
+
+```ts
+import { defineStatusMap } from '@narduk-enterprises/narduk-shell'
+```
+
+So are the suite's public types, including `NeConfirmOptions` and
+`NeConfirmTone`, so a wrapper around `useConfirm()` can state its own signature
+outside Nuxt's auto-import transform:
 
 ```ts
 import type { NeConfirmOptions } from '@narduk-enterprises/narduk-shell'
 ```
 
 `useConfirm` itself is reachable through the module's auto-import only, and that
-is a constraint rather than an oversight: Nuxt loads `src/module.ts` with jiti,
-jiti cannot load a single-file component, and the composable imports
-`NeConfirmDialog.vue` to hand the component object to the overlay. A value
-re-export would therefore fail every app at config time with
-`Unknown file extension ".vue"`. `test/use-confirm.test.ts` walks the module
-entry's value-import graph and fails if a `.vue` ever becomes reachable from it.
+is a deliberate choice rather than an oversight: `use-confirm.ts` imports
+`NeConfirmDialog.vue` at module scope to hand the component object to the
+overlay, and a value re-export would put that single-file component in every
+plain value-import of the package root for no reason — `addImports` already gets
+the composable to app code, gated on nothing but the module being installed.
+`useCollection` is reachable the same way, for the same reason.
+
+Before the first real adopter (`narduk-enterprises/buoys` PR #44, within an hour
+of the 0.1.0 publish), `.` pointed straight at the Nuxt module definition, which
+imports `@nuxt/kit`. Nuxt's import-protection plugin refuses any app-code import
+of a file that imports `@nuxt/kit`, so that exact
+`import { defineStatusMap } from '@narduk-enterprises/narduk-shell'` failed a
+production `nuxt build` (narduk-libs#295). `src/index.ts` is `.` now and never
+imports `@nuxt/kit`; `test/module.test.ts`'s "root barrel reachability" check
+walks its value-import graph and fails the moment that changes again.
 
 ## Styling contract
 
@@ -446,9 +470,11 @@ enum, a job state — that needs to become a `{ tone, label }` pair.
 `defineStatusMap` builds that mapping once, typed so a missing union member is a
 compile-time error and an unrecognised runtime value falls back to `neutral`
 instead of throwing. It is a **named export of the package root**
-(`@narduk-enterprises/narduk-shell`, `src/module.ts`) — not a fourth subpath;
-the reserved map stays `.`, `./format`, `./theme.css`. Nuxt apps that register
-the module also get it as an auto-import.
+(`@narduk-enterprises/narduk-shell`, `src/index.ts`) — not a subpath of its own;
+the reserved map is `.`, `./module`, `./format`, `./theme.css` (see
+[Reserved subpaths](#reserved-subpaths); narduk-libs#295 moved this export off
+`src/module.ts`). Nuxt apps that register the module also get it as an
+auto-import.
 
 ```ts
 import { defineStatusMap } from '@narduk-enterprises/narduk-shell'
