@@ -88,7 +88,14 @@ describe('narduk-realtime package surface', () => {
     expect(manifest.scripts['check:package']).toContain('scripts/check-dist-clean.mjs')
   })
 
-  it('starts at the first minor of its own line', () => {
-    expect(manifest.version).toMatch(/^0\.\d+\.\d+$/u)
+  // Not pinned to a literal or to major 0. narduk-postgres and
+  // narduk-timeseries copied this exact regex and it broke CI at their first
+  // release (narduk-libs#291, #297 -- the same defect twice). This proves the
+  // manifest carries a parseable semver, which is what a package-surface test
+  // can actually promise; it says nothing about how far the package has
+  // released, so no future bump -- including this package's own -- can fail
+  // it again.
+  it('carries a parseable semantic version', () => {
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/u)
   })
 })

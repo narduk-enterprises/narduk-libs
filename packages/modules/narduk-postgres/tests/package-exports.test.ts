@@ -22,14 +22,24 @@ const manifest = JSON.parse(
 ) as PackageManifest
 
 describe('narduk-postgres package surface', () => {
-  it('publishes to GitHub Packages under restricted access as a pre-1.0 package', () => {
+  it('publishes to GitHub Packages under restricted access', () => {
     expect(manifest.name).toBe('@narduk-enterprises/narduk-postgres')
     expect(manifest.private).toBe(false)
-    expect(manifest.version).toMatch(/^0\.\d+\.\d+$/u)
     expect(manifest.publishConfig).toEqual({
       access: 'restricted',
       registry: 'https://npm.pkg.github.com',
     })
+  })
+
+  // Not pinned to a literal or to major 0. A hardcoded '0.1.0' failed CI the
+  // moment changesets bumped this package to 0.2.0, and the regex that
+  // replaced it (`/^0\.\d+\.\d+$/`) only moves the same failure to this
+  // package's first 1.0.0 (narduk-libs#291, #297 -- the same defect twice).
+  // This proves the manifest carries a parseable semver, which is what a
+  // package-surface test can actually promise; it says nothing about how far
+  // the package has released, so no future bump can fail it again.
+  it('carries a parseable semantic version', () => {
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/u)
   })
 
   it('exposes the four runtime subpaths the consumer imports', () => {
