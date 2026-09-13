@@ -665,6 +665,47 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
       '',
     ].join('\n'),
   )
+
+  // The generator's own `og:check` step (wired into the generated app's
+  // `build` script: `narduk-app og:generate --if-missing && narduk-app
+  // og:check && nuxt build`) requires every `app/pages/*.vue` file to be
+  // classified in `Config/social-previews.json`, or the build fails before
+  // `nuxt build` -- and therefore before Playwright -- ever runs (see
+  // packages/tooling/create-narduk-app/src/social-previews.ts and
+  // checkRouteInventory in packages/tooling/narduk-app-tools/src/social/config.ts).
+  // This fixture page is release-pipeline plumbing, not real content, so it
+  // is classified `private` with a reason, exactly like the generator's own
+  // `/__preview/og-images` example -- that skips path/crawler checks entirely
+  // (checkRouteInventory: `if (route.kind === 'private') continue`) while
+  // still satisfying the per-file "every page is classified" requirement.
+  const socialPreviewsConfigPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'Config',
+    'social-previews.json',
+  )
+  const socialPreviewsConfig = JSON.parse(readFileSync(socialPreviewsConfigPath, 'utf8'))
+  socialPreviewsConfig.routes.push({
+    source: 'narduk-shell-root-value-import.vue',
+    kind: 'private',
+    reason:
+      'narduk-libs#295 packed-consumer-smoke fixture proving the narduk-shell root value import; not real content',
+  })
+  // Re-serializing the whole config with plain `JSON.stringify` would
+  // re-expand the pre-existing `"paths": ["/"]` entry back onto three lines,
+  // failing the generated app's own `format:check` -- Prettier collapses a
+  // short array like that onto one line, but does not collapse an object
+  // (which is why the new `private` route above, with no `paths` field,
+  // needs no such fix-up). Re-apply the exact same collapsing this file was
+  // originally written with in socialPreviewFiles
+  // (packages/tooling/create-narduk-app/src/social-previews.ts) to keep the
+  // untouched routes byte-identical to what Prettier already accepted.
+  const rewritten = `${JSON.stringify(socialPreviewsConfig, null, 2).replaceAll(
+    /("paths": )\[\n\s+("[^\n]+")\n\s+\]/gu,
+    '$1[$2]',
+  )}\n`
+  writeFileSync(socialPreviewsConfigPath, rewritten)
 }
 
 function assertPackedInternalDependencyGraph(packages, tarballs) {
