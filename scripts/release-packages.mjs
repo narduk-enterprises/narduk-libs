@@ -582,6 +582,91 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
   )
 }
 
+// narduk-libs#295: `addPackedCoreUiRuntimeSmoke` above only proves the packed
+// narduk-shell tarball installs and that a registered Ne* component renders
+// through the module's own component auto-import -- neither exercises app
+// code that writes `import { defineStatusMap } from '@narduk-enterprises/narduk-shell'`,
+// which is exactly the line that failed a production `nuxt build` for the
+// first real adopter (narduk-enterprises/buoys PR #44, within an hour of the
+// 0.1.0 publish): `.` resolved straight to `src/module.ts`, which imports
+// `@nuxt/kit`, and Nuxt's import-protection plugin refuses to let any
+// app-bundled file that imports `@nuxt/kit` reach the client build.
+//
+// This page imports the package root's documented value exports
+// (`defineStatusMap`, `NARDUK_SHELL_APP_CONFIG`) as VALUES from the bare
+// `@narduk-enterprises/narduk-shell` specifier -- never from `./module` --
+// the same way that failing line did. If a future change ever repoints `.`
+// back at a file that pulls in `@nuxt/kit`, the `build` phase of
+// `quality:static` (a real `nuxt build`, run before `test:unit`/`test:e2e`
+// in the phase list `qualityPhases()` expands below) fails here, before this
+// page is ever served. The Playwright assertion is the second half of the
+// proof: it shows the values did not just survive the build, they executed
+// and produced the right output.
+function addPackedShellRootValueImportSmoke(generatedDirectory) {
+  const pagePath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'app',
+    'pages',
+    'narduk-shell-root-value-import.vue',
+  )
+  mkdirSync(dirname(pagePath), { recursive: true })
+  writeFileSync(
+    pagePath,
+    [
+      '<script setup lang="ts">',
+      '// narduk-libs#295 gate -- see addPackedShellRootValueImportSmoke in',
+      '// scripts/release-packages.mjs for why this page exists. Every import',
+      "// below is a VALUE from the bare package specifier, never './module'.",
+      "import { defineStatusMap, NARDUK_SHELL_APP_CONFIG } from '@narduk-enterprises/narduk-shell'",
+      '',
+      "type RootImportCheck = 'ok'",
+      '',
+      'const rootImportStatus = defineStatusMap<RootImportCheck>({',
+      "  ok: ['ok', 'narduk-shell root value import OK'],",
+      '})',
+      '',
+      "const descriptor = rootImportStatus('ok')",
+      'const primaryColorAlias = NARDUK_SHELL_APP_CONFIG.ui.colors.primary',
+      '</script>',
+      '',
+      '<template>',
+      '  <div>',
+      '    <h1>{{ descriptor.label }}</h1>',
+      '    <p data-testid="root-config-alias">{{ primaryColorAlias }}</p>',
+      '  </div>',
+      '</template>',
+      '',
+    ].join('\n'),
+  )
+
+  const specPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'tests',
+    'e2e',
+    'narduk-shell-root-value-import.spec.ts',
+  )
+  mkdirSync(dirname(specPath), { recursive: true })
+  writeFileSync(
+    specPath,
+    [
+      "import { expect, test } from '@playwright/test'",
+      '',
+      "test('narduk-shell root value imports execute (narduk-libs#295)', async ({ page }) => {",
+      "  await page.goto('/narduk-shell-root-value-import')",
+      '  await expect(',
+      "    page.getByRole('heading', { name: 'narduk-shell root value import OK' }),",
+      '  ).toBeVisible()',
+      "  await expect(page.getByTestId('root-config-alias')).toHaveText('sky')",
+      '})',
+      '',
+    ].join('\n'),
+  )
+}
+
 function assertPackedInternalDependencyGraph(packages, tarballs) {
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
 
@@ -938,6 +1023,7 @@ try {
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
   addTarballOverrides(generatedDirectory, packages, tarballs)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
+  addPackedShellRootValueImportSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   runChecked('pnpm', ['install', '--no-frozen-lockfile'], {

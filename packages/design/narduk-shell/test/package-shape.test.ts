@@ -23,12 +23,20 @@ const coreManifest = JSON.parse(
 ) as { dependencies?: Record<string, string> }
 
 /**
- * The subpaths item 1 reserves. Adding one is a deliberate act: the release
- * pipeline's consumer fixture resolves every declared subpath of every packed
- * package from an external install, so a new entry here is a new thing that
- * has to resolve there too.
+ * The subpaths item 1 reserves, plus `./module` (narduk-libs#295). Adding one
+ * is a deliberate act: the release pipeline's consumer fixture resolves every
+ * declared subpath of every packed package from an external install, so a new
+ * entry here is a new thing that has to resolve there too.
+ *
+ * `./module` is not a value-facing subpath like the other three: it exists so
+ * `@nuxt/kit`'s `loadNuxtModuleInstance` finds the actual Nuxt module
+ * definition (`src/module.ts`, which imports `@nuxt/kit`) before it ever
+ * tries the bare, empty-suffix fallback that resolves `.` — see
+ * `src/module.ts`'s own header for the verified resolution order. A consumer
+ * never has to write `./module` itself; `modules: ['@narduk-enterprises/narduk-shell']`
+ * keeps resolving there unchanged.
  */
-const RESERVED_SUBPATHS = ['.', './format', './theme.css']
+const RESERVED_SUBPATHS = ['.', './module', './format', './theme.css']
 
 /** Every file an exports entry points at, flattened out of its conditions. */
 function exportTargets(entry: unknown): string[] {
@@ -50,7 +58,7 @@ function packedFiles(): string[] {
 }
 
 describe('narduk-shell package shape', () => {
-  it('declares exactly the three reserved subpaths, none of them a pattern', () => {
+  it('declares exactly the four reserved subpaths, none of them a pattern', () => {
     expect(Object.keys(manifest.exports)).toEqual(RESERVED_SUBPATHS)
     for (const subpath of Object.keys(manifest.exports)) {
       expect(subpath).not.toContain('*')

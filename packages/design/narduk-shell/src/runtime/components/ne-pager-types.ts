@@ -2,11 +2,14 @@
  * `NePager`'s prop contract, kept in a plain module rather than inside the
  * single-file component.
  *
- * Same reason as `ne-confirm-dialog-types.ts`: `src/module.ts` re-exports the
- * suite's public types from the package root, Nuxt loads that entry with jiti,
- * and jiti cannot parse a `.vue`. A type-only re-export is erased and would be
- * safe in principle, but keeping the declaration out of the SFC means the
- * question never has to be re-answered by the next lane reading this file.
+ * Same reason as `ne-confirm-dialog-types.ts`: `src/index.ts` (the `.`
+ * subpath — narduk-libs#295 moved it off `src/module.ts`) re-exports the
+ * suite's public types from the package root as type-only exports, which are
+ * erased before the bundler resolves anything. A plain `.ts` module is what a
+ * generic, non-Vue-aware tool can read a named interface out of directly,
+ * without needing Vue's own SFC compiler to strip one out of a `<script>`
+ * block. Keeping the declaration out of the SFC means the question never has
+ * to be re-answered by the next lane reading this file.
  */
 import type { RouteLocationRaw } from 'vue-router'
 

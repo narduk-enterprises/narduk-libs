@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { defineStatusMap, type NeStatusDescriptor, type NeStatusTone } from '../src/module'
+import { defineStatusMap, type NeStatusDescriptor, type NeStatusTone } from '../src/index'
 
 type FloodStage = 'normal' | 'action' | 'major'
 

@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -114,9 +114,14 @@ describe('narduk-shell module', () => {
     expect(call.from).toContain('/src/runtime/utils/status-map')
   })
 
-  it('re-exports defineStatusMap from the package root (src/module.ts)', async () => {
-    mockNuxtKit()
-    const loaded = await import('../src/module')
+  it('re-exports defineStatusMap from the package root (src/index.ts)', async () => {
+    // No mockNuxtKit() here, deliberately: src/index.ts is the `.` barrel and
+    // has no legitimate reason to touch '@nuxt/kit' at all (narduk-libs#295),
+    // so this loads it for real rather than through a mock that would hide a
+    // regression. The "root barrel reachability" test below is the one that
+    // actually fails a reintroduced value-level edge to src/module.ts; a
+    // mocked '@nuxt/kit' would load either way and prove nothing here.
+    const loaded = await import('../src/index')
     expect(typeof loaded.defineStatusMap).toBe('function')
     expect(loaded.defineStatusMap({ live: ['ok', 'Live'] })('live')).toEqual({
       tone: 'ok',
@@ -188,11 +193,11 @@ describe('narduk-shell module', () => {
     importCall(addImports, 'defineStatusMap')
   })
 
-  it('keeps the three reserved package exports, with defineStatusMap a named export of the root', async () => {
+  it('keeps the four reserved package exports, with defineStatusMap a named export of the root', async () => {
     const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, unknown>
     }
-    expect(Object.keys(manifest.exports)).toEqual(['.', './format', './theme.css'])
+    expect(Object.keys(manifest.exports)).toEqual(['.', './module', './format', './theme.css'])
   })
 
   it('auto-imports useConfirm from the runtime composable it ships', async () => {
@@ -217,6 +222,80 @@ describe('narduk-shell module', () => {
     await module_.setup({ components: true }, nuxt)
 
     expect(nuxt.options.build.transpile).toEqual(['@narduk-enterprises/narduk-shell'])
+  })
+})
+
+describe('narduk-shell root barrel reachability', () => {
+  /**
+   * The specifiers a loader actually evaluates. `import type` / `export type`
+   * statements are erased before anything runs, which is what makes the type
+   * re-exports in src/index.ts free. Same parsing rule
+   * test/use-confirm.test.ts's reachability walk uses for src/module.ts;
+   * duplicated rather than shared because each walk starts from a different
+   * entry and checks a different forbidden target.
+   */
+  function valueSpecifiers(source: string): string[] {
+    const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/(?<![:/])\/\/[^\n]*/g, '')
+    return code
+      .split(/\n(?=(?:import|export)\b)/)
+      .filter((statement) => /^(?:import|export)\b/.test(statement))
+      .filter((statement) => !/^(?:import|export)\s+type\b/.test(statement))
+      .map((statement) => /from\s*['"]([^'"]+)['"]/.exec(statement)?.[1])
+      .filter((specifier): specifier is string => Boolean(specifier))
+  }
+
+  /** A relative specifier resolved to the file it names; a bare one returned as-is. */
+  function resolveSpecifier(fromFile: string, specifier: string): string {
+    if (!specifier.startsWith('.')) return specifier
+    const base = join(dirname(fromFile), specifier)
+    for (const candidate of [base, `${base}.ts`, join(base, 'index.ts')]) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+    }
+    return base
+  }
+
+  /**
+   * narduk-libs#295: `.` used to be src/module.ts, which imports `@nuxt/kit`.
+   * Nuxt's import-protection plugin refuses any app-code import of a file
+   * that pulls in `@nuxt/kit`, which is exactly what broke a plain
+   * `import { defineStatusMap } from '@narduk-enterprises/narduk-shell'` in a
+   * production `nuxt build` when src/module.ts WAS `.` (0.1.0). src/index.ts
+   * is `.` now, and this walk is what keeps it safe: it fails the moment
+   * `@nuxt/kit`, or src/module.ts itself, becomes reachable from the barrel
+   * through a VALUE import again, whichever file adds the edge.
+   */
+  it('never reaches @nuxt/kit or src/module.ts by value from src/index.ts', () => {
+    const entry = join(packageRoot, 'src', 'index.ts')
+    const forbiddenModule = join(packageRoot, 'src', 'module.ts')
+    const forbidden = new Set(['@nuxt/kit', forbiddenModule])
+    const seen = new Set<string>()
+    const queue: Array<{ file: string; trail: string[] }> = [
+      { file: entry, trail: ['src/index.ts'] },
+    ]
+    const visited: string[] = []
+
+    while (queue.length > 0) {
+      const { file, trail } = queue.shift()!
+      if (seen.has(file)) continue
+      seen.add(file)
+      visited.push(file)
+
+      for (const specifier of valueSpecifiers(readFileSync(file, 'utf8'))) {
+        const resolved = resolveSpecifier(file, specifier)
+        const trailDescription = [...trail, specifier].join(' -> ')
+        const target = resolved.startsWith(packageRoot) ? relative(packageRoot, resolved) : resolved
+        expect(
+          forbidden.has(resolved),
+          `${trailDescription} reaches ${target}, which src/index.ts must never reach by value (narduk-libs#295)`,
+        ).toBe(false)
+        if (existsSync(resolved) && statSync(resolved).isFile()) {
+          queue.push({ file: resolved, trail: [...trail, specifier] })
+        }
+      }
+    }
+
+    // A walk that resolved nothing would pass vacuously.
+    expect(visited.length).toBeGreaterThan(1)
   })
 })
 
