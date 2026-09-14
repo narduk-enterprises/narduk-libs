@@ -55,3 +55,16 @@ public required aggregate accepts only successful static checks, all browser
 shards and merged evidence. Failure screenshots, retry traces and retained
 failure videos are attached to the reports. `quality:static` includes format,
 lint, knip, typecheck, build and unit tests; `quality` adds browser tests.
+
+## Workers Builds and previews
+
+Workers Builds deploys protected `main`; enable non-production branch builds and
+GitHub PR comments during onboarding so trusted PR branches receive preview
+URLs. The generator emits the commands and explicit `workers_dev` /
+`preview_urls` flags but never creates provider connections. Public apps enable
+both flags. `--exposure authenticated` closes both for internal or authenticated
+apps; selecting the `auth` capability defaults to that exposure and rejects
+`--exposure public`. Repository `--visibility` is independent: a private
+repository can serve a public app. Version previews share runtime bindings;
+isolate private data and write-capable bindings before enabling them. Keep
+previews noindex and analytics disabled.

@@ -778,6 +778,55 @@ describe('generated app typecheck and lint surfaces', () => {
 })
 
 describe('CLI argument parsing', () => {
+  it('keeps app exposure independent from repository visibility', async () => {
+    const { parseCliArguments } = await import('../src/cli.js')
+    const parsed = parseCliArguments([
+      'public-viewer',
+      '--visibility',
+      'private',
+      '--exposure',
+      'public',
+    ])
+    const files = asFileMap(buildGeneratedFiles(parsed.options))
+    const wrangler = ts.parseConfigFileTextToJson(
+      'wrangler.jsonc',
+      files.get('apps/web/wrangler.jsonc') ?? '',
+    ).config
+    expect(wrangler.workers_dev).toBe(true)
+    expect(wrangler.preview_urls).toBe(true)
+    expect(parsed.options.visibility).toBe('private')
+  })
+
+  it.each([
+    { capabilities: ['auth'], exposure: undefined },
+    { capabilities: [], exposure: 'authenticated' as const },
+  ])('closes direct hostnames for authenticated apps: %j', (options) => {
+    const files = asFileMap(
+      buildGeneratedFiles({
+        appName: 'private-tool',
+        targetDir: '/tmp/private-tool',
+        ...options,
+      }),
+    )
+    const wrangler = ts.parseConfigFileTextToJson(
+      'wrangler.jsonc',
+      files.get('apps/web/wrangler.jsonc') ?? '',
+    ).config
+    expect(wrangler.workers_dev).toBe(false)
+    expect(wrangler.preview_urls).toBe(false)
+  })
+
+  it('rejects a public-preview override for an auth app', () => {
+    expect(() =>
+      buildGeneratedFiles({
+        appName: 'private-tool',
+        targetDir: '/tmp/private-tool',
+        capabilities: ['auth'],
+        exposure: 'public',
+      }),
+    ).toThrow('Auth apps require authenticated exposure')
+  })
+
   it('supports named options and exact local target resolution', async () => {
     const parsed = (await import('../src/cli.js')).parseCliArguments(
       ['--name', 'named-app', '--target-dir', 'output', '--local-dev-port=3456', '--no-git'],

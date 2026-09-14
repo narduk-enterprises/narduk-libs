@@ -18,6 +18,7 @@ import {
   SUPPORTED_CAPABILITIES,
 } from './types.js'
 import type {
+  AppExposure,
   AppVisibility,
   Capability,
   CreateNardukAppOptions,
@@ -201,6 +202,7 @@ function knipIgnoreDependenciesLine(dependencies: readonly string[]): string {
 }
 
 interface NormalizedCreateOptions {
+  exposure: AppExposure
   appName: string
   capabilities: Capability[]
   description: string
@@ -214,6 +216,15 @@ interface NormalizedCreateOptions {
 function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOptions {
   const appName = normalizeAppName(options)
   const capabilities = normalizeCapabilities(options.capabilities)
+  const exposure = options.exposure ?? (capabilities.includes('auth') ? 'authenticated' : 'public')
+  if (!['public', 'authenticated'].includes(exposure)) {
+    throw new CreateNardukAppError('exposure must be public or authenticated.')
+  }
+  if (exposure === 'public' && capabilities.includes('auth')) {
+    throw new CreateNardukAppError(
+      'Auth apps require authenticated exposure; configure protected, isolated previews during onboarding.',
+    )
+  }
   const localPort = normalizePort(options.localDevPort ?? options.localPort)
   const visibility = normalizeVisibility(options.visibility)
   const siteUrl = normalizeSiteUrl(options.siteUrl, localPort)
@@ -229,6 +240,7 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
     capabilities,
     description,
     displayName,
+    exposure,
     localPort,
     productSpec,
     siteUrl,
@@ -242,6 +254,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     capabilities,
     description,
     displayName,
+    exposure,
     localPort,
     productSpec,
     siteUrl,
@@ -405,6 +418,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'Dependabot is a fourth consumer of `NARDUK_PLATFORM_GH_PACKAGES_READ`: it reads that name from the org Dependabot secret store (a separate store from Actions). If the org secret is scoped to selected repositories, grant this newly generated repo access or Dependabot silently fails to resolve the private `@narduk-enterprises/*` scope.',
         '',
         'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
+        '',
+        'Enable Workers Builds on protected `main`. Enable non-production branch builds and GitHub PR comments for trusted branches of public apps; the generated scripts alone do not create that connection. Version previews share Worker bindings, so private data and mutation-capable apps need isolated preview bindings before enabling them. Authenticated apps keep direct Worker and preview URLs disabled until equivalent protection is configured.',
         '',
         'Cloudflare Workers Builds uses `pnpm run cf:build` as its build command, `pnpm run cf:deploy` for the production deploy command, and `pnpm run cf:deploy:preview` for non-production branches. Local `pnpm run deploy` remains recovery-only; `pnpm run deploy:dry-run` is credential-free.',
         '',
@@ -637,6 +652,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'const siteUrl = ' + tsString(siteUrl),
         'const appName = ' + tsString(displayName),
         'const appDescription = ' + tsString(description),
+        "const deploymentTarget = process.env.WORKERS_CI_BRANCH && process.env.WORKERS_CI_BRANCH !== 'main' ? 'preview' : 'production'",
+        'process.env.NARDUK_DEPLOY_TARGET ??= deploymentTarget',
         '',
         'export default defineNuxtConfig({',
         '  compatibilityDate: ' + tsString(DEFAULT_COMPATIBILITY_DATE) + ',',
@@ -653,6 +670,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         ...(capabilities.includes('seo')
           ? [
               '  nardukSeo: {',
+              '    hostAwareIndexing: true,',
               "    defaultOgImage: { url: '/og.png', alt: appName + ' — ' + appDescription },",
               '  },',
             ]
@@ -692,6 +710,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '    name: appName,',
               '    url: siteUrl,',
               '    description: appDescription,',
+              "    indexable: deploymentTarget === 'production',",
               '  },',
               "  routeRules: { '/': { prerender: true } },",
             ]
@@ -707,6 +726,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "    xaiApiKey: process.env.XAI_API_KEY || '',",
         '    public: {',
         '      appDescription,',
+        '      deploymentTarget,',
+        "      previewSafeMode: deploymentTarget === 'preview',",
         '      appName,',
         '      appUrl: siteUrl,',
         '      localPort,',
@@ -807,6 +828,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "rules": [{ "type": "ESModule", "globs": ["**/*.mjs"] }],',
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
+        '  "workers_dev": ' + (exposure === 'public') + ',',
+        '  "preview_urls": ' + (exposure === 'public') + ',',
         '  "d1_databases": [',
         '    {',
         '      "binding": "DB",',

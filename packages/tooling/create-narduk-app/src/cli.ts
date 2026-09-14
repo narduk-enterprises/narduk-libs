@@ -21,7 +21,8 @@ function usage(): string {
       '  --description <text>        Product description',
       '  --site-url <url>            Public or local site URL',
       '  --target-dir <path>         Output directory (defaults to ./<app-name>)',
-      '  --visibility <value>        private (default) or public',
+      '  --visibility <value>        Repository: private (default) or public',
+      '  --exposure <value>          App: public or authenticated (auth capability defaults closed)',
       '  --local-dev-port <port>     Local Nuxt port (default: 3000)',
       '  --problem <text>            Product spec problem',
       '  --audience <text>           Product spec audience',
@@ -66,6 +67,7 @@ export function parseCliArguments(
   let siteUrl: string | undefined
   let targetDir: string | undefined
   let visibility: 'private' | 'public' | undefined
+  let exposure: 'public' | 'authenticated' | undefined
   let localPort: number | undefined
   let noGit = false
   let force = false
@@ -124,6 +126,12 @@ export function parseCliArguments(
         }
         visibility = parsed.value
         break
+      case '--exposure':
+        if (parsed.value !== 'public' && parsed.value !== 'authenticated') {
+          throw new CreateNardukAppError('--exposure must be public or authenticated.')
+        }
+        exposure = parsed.value
+        break
       case '--local-dev-port':
       case '--local-port': {
         const parsedPort = Number(parsed.value)
@@ -169,6 +177,7 @@ export function parseCliArguments(
       capabilities: capabilityValues.join(','),
       description,
       displayName,
+      exposure,
       force,
       localPort,
       noGit,
