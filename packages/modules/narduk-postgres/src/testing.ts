@@ -13,7 +13,11 @@
  *  - placeholders must be dense from `$1` (a gap means a builder dropped a
  *    column);
  *  - every bound value must be encodable: `undefined`, a function or a symbol
- *    is a driver-level TypeError in production and an assertion here.
+ *    is a driver-level TypeError in production and an assertion here;
+ *  - with `{ prepare: false }`, a raw array is rejected too: it is the one
+ *    "encodable" JS value whose wire encoding depends on the driver getting to
+ *    type-infer the parameter, which an unprepared, simple-protocol connection
+ *    does not do (narduk-libs#304).
  *
  * **What it does not do** is speak the wire protocol. There is no socket, no
  * startup packet, no type resolution, no server. It cannot tell you that a
@@ -43,6 +47,20 @@ export interface ResponseRule {
 export interface ProtocolFakeOptions {
   /** Rules are tried in order; the first match wins. Unmatched returns []. */
   responses?: ResponseRule[]
+  /**
+   * Set to `false` to model a connection opened with the driver's own
+   * `prepare: false` -- the Workers/Hyperdrive path (see `../worker` and
+   * `toPostgresJsOptions`). Unprepared, simple-protocol execution does not get
+   * the parameter-type introspection a prepared statement gets, and a raw JS
+   * array bound as a parameter has been observed to serialize as bare
+   * comma-joined text instead of a `{...}` array literal -- a
+   * `22P02 malformed array literal` the fake cannot see by default, since an
+   * array is otherwise an "encodable" value (narduk-libs#304). When `false`,
+   * binding a raw array is itself a `PROTOCOL_VIOLATION`, so a unit test can
+   * see this class of bug without a database. Defaults to `true`, matching
+   * postgres.js's own default.
+   */
+  prepare?: boolean
 }
 
 function highestPlaceholder(text: string): number {
@@ -80,6 +98,23 @@ function assertEncodable(params: readonly unknown[]): void {
   }
 }
 
+/** See `ProtocolFakeOptions.prepare`. */
+function assertNoUnpreparedArrayParameters(params: readonly unknown[]): void {
+  for (const [index, value] of params.entries()) {
+    if (Array.isArray(value)) {
+      throw new NardukPostgresError(
+        'PROTOCOL_VIOLATION',
+        `Parameter $${index + 1} is a raw array, bound under prepare: false. The driver cannot ` +
+          `type-infer an unprepared array parameter and may send it as bare comma-joined text ` +
+          `instead of a Postgres array literal (narduk-libs#304, 22P02 malformed array literal). ` +
+          `Join it into a single string and build the array server-side, e.g. ` +
+          `ANY(string_to_array($1, ',')), or bind one parameter per element.`,
+        { index: index + 1 },
+      )
+    }
+  }
+}
+
 export class ProtocolFake implements TransactionalExecutor {
   readonly statements: RecordedStatement[] = []
 
@@ -87,8 +122,11 @@ export class ProtocolFake implements TransactionalExecutor {
 
   #depth = 0
 
+  #prepare: boolean
+
   constructor(options: ProtocolFakeOptions = {}) {
     this.#responses = [...(options.responses ?? [])]
+    this.#prepare = options.prepare ?? true
   }
 
   /** Parameter counts in statement order -- the axis a ceiling test asserts. */
@@ -138,6 +176,7 @@ export class ProtocolFake implements TransactionalExecutor {
       )
     }
     assertEncodable(params)
+    if (!this.#prepare) assertNoUnpreparedArrayParameters(params)
 
     this.statements.push({ params: [...params], text })
 

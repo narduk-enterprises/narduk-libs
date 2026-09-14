@@ -68,4 +68,36 @@ describe('the protocol fake enforces the Bind message rules', () => {
     })
     await expect(fake.query('SELECT 1')).resolves.toEqual({ rowCount: 0, rows: [] })
   })
+
+  // narduk-libs#304: a raw JS array is "encodable" by `assertEncodable`'s own
+  // rules (it is neither undefined, a function, nor a symbol), so nothing
+  // above flagged it -- and the driver-level failure this hid was reported
+  // over a live Hyperdrive connection as every healthy database being
+  // unhealthy.
+  describe('with prepare: false, the Workers/Hyperdrive shape', () => {
+    it('rejects a raw array parameter, the one value whose wire encoding needs type inference', async () => {
+      const fake = createProtocolFake({ prepare: false })
+      await expect(
+        fake.query('SELECT * FROM t WHERE x = ANY($1::text[])', [['a', 'b']]),
+      ).rejects.toThrow(/raw array, bound under prepare: false/u)
+      await expect(
+        fake.query('SELECT * FROM t WHERE x = ANY($1::text[])', [['a', 'b']]),
+      ).rejects.toThrow(/PROTOCOL_VIOLATION/u)
+    })
+
+    it('still accepts ordinary scalar parameters', async () => {
+      const fake = createProtocolFake({ prepare: false })
+      await expect(fake.query('SELECT $1, $2', ['a', 1])).resolves.toEqual({
+        rowCount: 0,
+        rows: [],
+      })
+    })
+  })
+
+  it('accepts a raw array parameter by default (prepare: true, the ordinary case)', async () => {
+    const fake = createProtocolFake()
+    await expect(
+      fake.query('SELECT * FROM t WHERE x = ANY($1::text[])', [['a', 'b']]),
+    ).resolves.toEqual({ rowCount: 0, rows: [] })
+  })
 })
