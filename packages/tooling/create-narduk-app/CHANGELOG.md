@@ -1,5 +1,15 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.5.0
+
+### Minor Changes
+
+- 6d7d26d: Make Workers Builds preview exposure explicit and independent of
+  repository visibility. Public apps receive workers.dev and version-preview
+  defaults; authenticated apps keep both closed. Generated SEO and runtime
+  configuration mark branch builds as previews, and onboarding documents the
+  required Git connection and binding isolation.
+
 ## 0.4.1
 
 ### Patch Changes
