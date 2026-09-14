@@ -41,6 +41,8 @@ export interface ResponseRule {
 }
 
 export interface ProtocolFakeOptions {
+  /** Flag bare arrays that postgres.js prepare:false sends as untyped text. */
+  unpreparedTextParameters?: boolean
   /** Rules are tried in order; the first match wins. Unmatched returns []. */
   responses?: ResponseRule[]
 }
@@ -67,8 +69,15 @@ function highestPlaceholder(text: string): number {
   return highest
 }
 
-function assertEncodable(params: readonly unknown[]): void {
+function assertEncodable(params: readonly unknown[], unpreparedTextParameters: boolean): void {
   for (const [index, value] of params.entries()) {
+    if (unpreparedTextParameters && Array.isArray(value)) {
+      throw new NardukPostgresError(
+        'PROTOCOL_VIOLATION',
+        `Parameter $${index + 1} is a bare array in unprepared text-parameter mode. Use scalar binds or explicitly encoded text.`,
+        { index: index + 1 },
+      )
+    }
     const kind = typeof value
     if (value === undefined || kind === 'function' || kind === 'symbol') {
       throw new NardukPostgresError(
@@ -84,11 +93,13 @@ export class ProtocolFake implements TransactionalExecutor {
   readonly statements: RecordedStatement[] = []
 
   #responses: ResponseRule[]
+  #unpreparedTextParameters: boolean
 
   #depth = 0
 
   constructor(options: ProtocolFakeOptions = {}) {
     this.#responses = [...(options.responses ?? [])]
+    this.#unpreparedTextParameters = options.unpreparedTextParameters ?? false
   }
 
   /** Parameter counts in statement order -- the axis a ceiling test asserts. */
@@ -137,7 +148,7 @@ export class ProtocolFake implements TransactionalExecutor {
         { required, supplied: params.length },
       )
     }
-    assertEncodable(params)
+    assertEncodable(params, this.#unpreparedTextParameters)
 
     this.statements.push({ params: [...params], text })
 

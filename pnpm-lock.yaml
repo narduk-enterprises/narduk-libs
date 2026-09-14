@@ -939,6 +939,9 @@ importers:
       eslint:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       prettier:
         specifier: 3.9.4
         version: 3.9.4

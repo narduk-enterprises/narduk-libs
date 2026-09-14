@@ -14,6 +14,7 @@
  * that was supposed to report it.
  */
 
+import { placeholderTuples } from './parameters.js'
 import { redactSecrets } from './redact.js'
 import type { SqlExecutor } from './types.js'
 
@@ -67,15 +68,19 @@ export async function checkHealth(
   const now = options.now ?? DEFAULT_NOW
   const required = [...(options.requiredExtensions ?? [])]
   const startedAt = now()
+  let connected = false
 
   try {
     await executor.query('SELECT 1 AS ok')
+    connected = true
 
     let extensions: ExtensionStatus[] = []
     if (required.length > 0) {
       const result = await executor.query<ExtensionRow>(
-        'SELECT extname, extversion FROM pg_extension WHERE extname = ANY($1::text[])',
-        [required],
+        // postgres.js prepare:false sends bare arrays as comma-joined text.
+        // Scalar binds work without array type discovery or literal escaping.
+        `SELECT extname, extversion FROM pg_extension WHERE extname IN ${placeholderTuples(1, required.length)}`,
+        required,
       )
       const found = new Map(result.rows.map((row) => [row.extname, row.extversion ?? null]))
       extensions = required.map((name) => ({
@@ -99,7 +104,7 @@ export async function checkHealth(
     }
   } catch (cause) {
     return {
-      connected: false,
+      connected,
       error: describeError(cause),
       extensions: required.map((name) => ({ installed: false, name, version: null })),
       latencyMs: Math.max(0, Math.round(now() - startedAt)),

@@ -57,6 +57,7 @@
     "lint": "eslint src tests --max-warnings 0",
     "lint:strict": "eslint src tests --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "test:live": "NARDUK_POSTGRES_REQUIRE_LIVE=1 vitest run tests/health.live.test.ts --config vitest.config.ts",
     "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
     "quality": "pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
@@ -70,6 +71,7 @@
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
+    "postgres": "3.4.9",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "4.1.6"
