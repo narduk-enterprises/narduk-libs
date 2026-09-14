@@ -93,7 +93,40 @@ export function createWorldQuery(base: string): WorldQuery {
   }
 }
 
-function createContextApi(page: Page, base: string, mode: Mode): WebJourneyContext {
+/**
+ * EVERY AWAIT IN THIS FILE IS BOUNDED, and the number below is why the file has
+ * a constant instead of two inline literals.
+ *
+ * Playwright's default action timeout is ZERO, meaning no timeout at all, so an
+ * action that never becomes possible is bounded only by the per-test ceiling —
+ * minutes for a capture. `scrollIntoViewIfNeeded()` was called with no options
+ * in two places here, and one of them cost two hosted capture builds 17 minutes
+ * each on the same beat while that beat's test-mode twin passed in 11 seconds
+ * (narduk-libs#77, Buildkite `pacc-trac-capture` #9 and #10). Read out of the
+ * trace rather than guessed at: the action had a `before` event, no `after`,
+ * and `timeout: "0"`.
+ *
+ * Both call sites already swallow their own failures, so a bound degrades the
+ * cosmetic case to "no highlight drawn" and the functional case to "click
+ * without pre-scrolling" — which `click()` does itself, under its own 8s bound.
+ * A defect either way; the job of the number is only to turn "forever" into
+ * "bounded", matching the 4s `hover()` already carried beside it.
+ *
+ * A CONSUMER-SIDE `actionTimeout` IS NOT THIS. It bounds the same call, but it
+ * is a Playwright config a repository has to know to write, and the two builds
+ * above died in a repository that had not written it. A library whose helper
+ * can park forever unless the consumer defends against it is shipping the
+ * defect and the workaround separately.
+ */
+const SCROLL_TIMEOUT_MS = 4_000
+
+/**
+ * Exported for the unit suite, not for consumers: the bound above is a property
+ * of these five helpers, and a browser is far too expensive a way to assert
+ * that a call passes a timeout. Not re-exported from `./index` or `./web`'s
+ * public surface in any documented form.
+ */
+export function createContextApi(page: Page, base: string, mode: Mode): WebJourneyContext {
   const paced = mode === 'capture'
   return {
     page,
@@ -105,7 +138,9 @@ function createContextApi(page: Page, base: string, mode: Mode): WebJourneyConte
       if ((await locator.count()) === 0) {
         throw new Error(`no ${String(role)} matching ${String(name)}`)
       }
-      await locator.scrollIntoViewIfNeeded().catch(() => {})
+      // Bounded, and it runs in BOTH modes: unlike `point()` below, a parked
+      // scroll here wedges the regression gate too, not only the camera.
+      await locator.scrollIntoViewIfNeeded({ timeout: SCROLL_TIMEOUT_MS }).catch(() => {})
       await locator.click({ timeout: 8_000 })
       if (paced) await sleep(400)
     },
@@ -130,8 +165,8 @@ function createContextApi(page: Page, base: string, mode: Mode): WebJourneyConte
       if (!paced) return
       const locator = page.getByText(text).first()
       if ((await locator.count()) === 0) return
-      await locator.scrollIntoViewIfNeeded().catch(() => {})
-      await locator.hover({ timeout: 4_000 }).catch(() => {})
+      await locator.scrollIntoViewIfNeeded({ timeout: SCROLL_TIMEOUT_MS }).catch(() => {})
+      await locator.hover({ timeout: SCROLL_TIMEOUT_MS }).catch(() => {})
       await sleep(900)
     },
   }
