@@ -4,6 +4,17 @@ import { POSTGRES_MAX_BIND_PARAMETERS } from '../src/parameters.js'
 import { createProtocolFake } from '../src/testing.js'
 
 describe('the protocol fake enforces the Bind message rules', () => {
+  it('flags bare array binds in postgres.js unprepared text mode', async () => {
+    const fake = createProtocolFake({ unpreparedTextParameters: true })
+    await expect(fake.query('SELECT $1::text[]', [['timescaledb', 'postgis']])).rejects.toThrow(
+      /bare array in unprepared text-parameter mode/u,
+    )
+    expect(fake.statements).toHaveLength(0)
+    await expect(fake.query('SELECT $1::text[]', ['{timescaledb,postgis}'])).resolves.toBeDefined()
+    await expect(fake.query('SELECT $1, $2', ['timescaledb', 'postgis'])).resolves.toBeDefined()
+    // Other drivers encode arrays; generic mode retains that contract.
+    await expect(createProtocolFake().query('SELECT $1', [['a', 'b']])).resolves.toBeDefined()
+  })
   it('rejects a parameter count that does not match the highest placeholder', async () => {
     const fake = createProtocolFake()
     await expect(fake.query('SELECT $1, $2', ['a'])).rejects.toThrow(

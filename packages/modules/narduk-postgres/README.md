@@ -174,6 +174,30 @@ wire enforces — the 65535 ceiling, placeholders dense from `$1`, the parameter
 count matching the highest `$n`, encodable values — and records every statement
 so a test can assert statement and parameter counts.
 
+Use `createProtocolFake({ unpreparedTextParameters: true })` for postgres.js
+`prepare: false` consumers. This mode rejects bare JavaScript array binds, which
+that driver path sends as comma-joined text rather than a PostgreSQL array
+literal. Generic mode remains available for drivers with array encoding.
+
+`checkHealth` binds each extension name separately. After `SELECT 1` succeeds, a
+later statement error preserves `connected: true` while returning `ok: false`
+and the redacted error; extension availability is unproven on that error path.
+
+### Real-driver health proof
+
+Set `NARDUK_POSTGRES_LIVE_DSN` through a secret-injecting process to a database
+with TimescaleDB and PostGIS, then run `pnpm run test:live` in this package. It
+fails if the DSN is absent. The normal unit run skips this explicitly named live
+suite when no DSN is supplied. The suite uses postgres.js 3.4.9 with the
+Worker's `prepare: false`, `fetch_types: false`, one socket, and bounded
+timeouts. It reproduces the old `22P02`, proves extension presence and absence,
+and checks that a real later statement error retains successful connectivity.
+Every query is read-only; it runs no migration and creates no fixture data.
+
+For the documented loopback SSH tunnel to a private Origin CA certificate only,
+set `NARDUK_POSTGRES_LIVE_SSH_TUNNEL=1` to encrypt without certificate
+validation. Direct connections retain the driver's default TLS verification.
+
 **What it does not emulate:** SQL semantics, the type system, the planner,
 transaction isolation, constraint enforcement, or extension behaviour. A green
 run against the fake proves a builder's shape, never its meaning. That is what
