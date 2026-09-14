@@ -196,6 +196,79 @@ describe('social preview inventory and default images', () => {
 })
 
 describe('crawler-visible delivery', () => {
+  it('cancels after a streamed head even when Content-Length describes a large SSR body', async () => {
+    await serve()
+    const nativeFetch = globalThis.fetch
+    let cancelled = 0
+    let bodyReads = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, options) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('.png')) return nativeFetch(input, options)
+      let part = 0
+      const stream = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            part++
+            if (part === 1) {
+              controller.enqueue(
+                new TextEncoder().encode(html(url.pathname).split('</head>')[0] + '</he'),
+              )
+            } else if (part === 2) {
+              controller.enqueue(new TextEncoder().encode('ad>'))
+            } else {
+              bodyReads++
+              controller.error(new Error('The unrelated SSR body must not be downloaded'))
+            }
+          },
+          cancel() {
+            cancelled++
+          },
+        },
+        { highWaterMark: 0 },
+      )
+      return new Response(stream, {
+        headers: {
+          'content-type': 'text/html',
+          'content-length': '10000000',
+        },
+      })
+    })
+    const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
+    expect(report).toMatchObject({ ok: true, samples: 6, errors: [] })
+    expect(cancelled).toBe(6)
+    expect(bodyReads).toBe(0)
+  })
+
+  it('does not stop at a fake head ending before duplicate metadata', async () => {
+    await serve((path) =>
+      path.endsWith('.png')
+        ? undefined
+        : {
+            body: html(path).replace(
+              '</head>',
+              '<script>const text = "</head>"</script><!-- </head> -->' +
+                '<template></head></template><meta property="og:image" content="https://example.com/duplicate.png"></head>',
+            ),
+          },
+    )
+    const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
+    expect(report.ok).toBe(false)
+    expect(report.errors.join(' ')).toContain('exactly one')
+  })
+
+  it('keeps the byte ceiling on the head itself', async () => {
+    await serve((path) =>
+      path.endsWith('.png')
+        ? undefined
+        : {
+            body: html(path).replace('</head>', '<!--' + 'x'.repeat(1_000_001) + '--></head>'),
+          },
+    )
+    const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
+    expect(report.ok).toBe(false)
+    expect(report.errors.join(' ')).toContain('head exceeds byte limit')
+  })
+
   it('bounds concurrent requests and cancels a stalled run within its total budget', async () => {
     await serve()
     const nativeFetch = globalThis.fetch
