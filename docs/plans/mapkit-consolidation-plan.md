@@ -344,5 +344,235 @@ Adapter facts this lane surfaced, verified in this worktree:
    not live risk (no deployment), but it fails foundation:check item 3 and
    must move scopes, not just versions.
 
-<!-- SECTIONS 6–13 ARE WRITTEN AFTER LANE L-LEGACY REPORTS -->
+## 6. Best-of adjudication — what the consolidated library absorbs
+
+Rule used: the library absorbs a capability only when two or more apps
+implement it, or one app implements it and the adapter re-implements it
+internally, **and** it is not product-specific. Product-specific stays put:
+tile baking (D1), the Texas mask (ledger rows 337, 540), engines and fallback
+renderers, geolocation flows. Every absorption below is additive — no existing
+export, prop, option, route, env var or default changes meaning (AGENTS.md
+source-compatibility rule). The one default worth changing, MapKit JS v5 → v6,
+is §12 D3 and stays as it is unless Logan approves a major.
+
+| # | Capability | Best implementation today | Lands in | Why that one | Proof required |
+|---|---|---|---|---|---|
+| 1 | Crossfade clock | earthdata-viewer's local `now()` fix (`mapkitEngine.ts:466-493`) | core `/client`: `crossfadeMapKitOverlayOpacity` defaults `now` to `performance.now` when present (`runtime.ts:275` is `Date.now`) and documents that `now` and frame timestamps must share a clock | only production consumer that hit and fixed it | unit test: crossfade completes with rAF-style timestamps |
+| 2 | Overlay ordering (narduk-mapkit#18) | gonogo's requirement, vendored `temporal.ts` | core `/client`: `MapKitLayerRegistry` keeps descriptor order and re-adds the overlays above a replaced or inserted layer (MapKit JS offers only `addTileOverlay`/`removeTileOverlay`, `layers.ts:58-59,331,389`) | the only thing keeping a vendored file alive in a now-tier app | unit test: replacing the lower of two layers leaves it below |
+| 3 | Coordinate → page projection | buoys `useMarineMapCalloutOverlay.ts:113-115`, vtraceroute `RoutePulseOverlay.client.vue:28-34`, `callouts.ts:59-60` JSDoc | core `/client`: exported projection helper | three identical derivations | unit test with a fake map |
+| 4 | Typed `mapkit` global | harvest-tracker `map-mapkit-global.ts` (53 loc) | core `/client`: accessor + minimal `MapKitGlobal` type; the adapter drops `declare const mapkit: any` (`AppMapKit.vue:4`) | already written in the library's narrow style | typecheck + unit |
+| 5 | MapKit JS v6 compatibility aliases | farm-analytics `installMapKitV6CompatibilityAliases` (`farm-map.ts:64-81`) | core `/client`, applied by `initializeMapKit` when the v6 script URL is in use | the only v6 consumer's shim | unit: aliases present after v6 init |
+| 6 | Nearest point + haversine | hydrogen `useStationMapKit.ts` nearest-station over `station-map.ts:125` | core `/geometry`: nearest-of-set helper over the existing `haversineDistanceMetres` (`helpers.ts:220`) | e2e-tested behaviour with no library equivalent | unit |
+| 7 | `AppMapKit` internals | the core controllers gonogo already uses in production | adapter refactor: annotations onto `MapKitAnnotationRegistry` (`AppMapKit.vue:607-665`), bounding region onto `computeMapKitRegionFor*` (`:267-306`), zoom curves onto `MapKitPinScalingController` (`:804+`) | removes the duplication inside narduk-libs itself (§5.0) | prop-contract snapshot + mount parity before/after; SSR proof stays green |
+| 8 | `getDisplayPriority` | template layer, consumed by bluebonnet | adapter prop | the only layer prop the adapter lacks | mount test |
+| 9 | Colour scheme | austin/layer `useColorMode` watcher; adapter `classList` (`:907-912`) | adapter `colorScheme: 'light' \| 'dark' \| 'auto'` prop; classList behaviour unchanged when unset | pacc-trac's appendix names the missing prop | mount test |
+| 10 | Map-unavailable state | mybo-at-v2's fallback branch on `mapkitError` | adapter `#unavailable` slot receiving `mapkitError`; renders nothing by default | three apps hand-roll the branch outside the component | mount test |
+| 11 | Component types | core `types.ts` (root export) | adapter imports the core types and adds a `./types` export of its prop, GeoJSON, circle and overlay-style types | root-cause fix for pacc-trac's copy (§5.4) | typecheck from a packed consumer |
+| 12 | Script URL selection | farm-analytics' composable override | module option `mapkitScriptUrl` + `useMapKit({ scriptUrl })`, default unchanged | removes the override and the nuxt alias | unit + Cloudflare test |
+| 13 | Marker kit | riverstatus/lakestat-us/buoys scaffolding + bluebonnet's `applyClusterAccessibility` (`useBloomMapPins.ts:81-127`) | adapter `./markers`: status-dot pin, count cluster with an accessible label by default, muted-map props preset | three copies of the same shape; one with the right accessibility | unit + README section |
+| 14 | Rate-limit provider example | farm-analytics `server/middleware/mapkit-rate-limit.ts` (22 loc) | adapter `examples/` + README (the playground copy ships nowhere, §5.0) | correct use of the documented hook | example compiles in the packed-consumer fixture |
+| 15 | Config-key confusion | pacc-trac's dead `runtimeConfig.nardukMapKit` | module warns at build time when `runtimeConfig.nardukMapKit` is set; README states the two surfaces; no rename | evidence of the mistake exists | unit |
+| 16 | Tests for the untested surface | 2.0.5's mount test + SSR proof | adapter: callouts, fullscreen, clustering, circles, dynamic radius mount tests | §5.0 finding | `surface:check` + coverage of every documented prop |
+
+Stays app-owned: earthdata-viewer's `MapEngine` + Leaflet fallback; the tile
+bakers in farm-analytics, harvest-tracker and my-farm (D1); Austin's Texas
+mask; mybo-at-v2's SVG renderer; harvest-tracker replay/timelapse (not
+MapKit); vtraceroute's globe; every geolocation composable (buoys and
+riverstatus should share one, but that belongs to a shared composables
+package, not narduk-mapkit); gonogo's dead Worker signer (delete, not lift).
+
+Deferred, needs design first: a time-cursor playback variant — diff mybo-at-v2
+`usePassagePlayback.ts` and vtraceroute's hop engine against `playback.ts`
+before extending it; a React wrapper — my-farm stays core-only (§12 D4).
+
+## 7. Target architecture
+
+- **Two packages, names unchanged.** `@narduk-enterprises/narduk-mapkit`
+  (framework-agnostic: `client`, `geometry`, `playback`, `server`, `worker`,
+  `node`, `token`, `apple-maps`) and `@narduk-enterprises/narduk-mapkit-nuxt`
+  (module, `AppMapKit`, `AppMapKitCallout`, composables, token route, and the
+  new `./types` and `./markers` exports). my-farm (React), the hydrogen and
+  my-farm Workers, earthdata-viewer and gonogo's engine consume the core
+  without Vue or Nuxt; one package would drag `@nuxt/kit` and `vue` into them.
+  The names already satisfy D-NAME-1 and fifteen consumers import them.
+- **One release train.** `.changeset/config.json` gets
+  `"fixed": [["@narduk-enterprises/narduk-mapkit", "@narduk-enterprises/narduk-mapkit-nuxt"]]`
+  (today both arrays are empty), so both packages always publish at the same
+  version and "pinned from the same release" is checkable by equality. Cost:
+  an adapter-only change also publishes a no-op core patch. First fixed
+  release: **2.1.0** for both (additive minor).
+- **Generator stays in lock-step by gate.** `versions:check`
+  (`scripts/sync-generator-package-versions.mjs --check`) already fails when
+  `create-narduk-app`'s manifest (`manifest.ts:6-7`) drifts from workspace
+  versions, and `foundation:check` item 3 keeps rejecting `@narduk-geo`.
+- **Docs.** The adapter README owns the consumer contract (props, slots,
+  events, exposed methods, module options, token route, rate limiting, script
+  URL selection, unavailable slot, markers); the core README owns the
+  primitives. `docs/centralization-plan.md` gets a banner pointing here and
+  is otherwise left as history. `package.json` `homepage`/`bugs` move to
+  narduk-libs.
+- **Secrets contract unchanged.** `APPLE_TEAM_ID`, `APPLE_KEY_ID`,
+  `APPLE_PRIVATE_KEY`, `MAPKIT_ALLOWED_ORIGINS` (and `NUXT_` forms) from the
+  shared `apple/prd/mapkit-signing` persona. The dead `MAPKIT_SERVER_API_KEY`
+  / `NUXT_MAPKIT_SERVER_API_KEY` catalog entries
+  (`narduk-platform/src/env-catalog.ts:171,766-792`) are marked deprecated in
+  W1 and removed in a later narduk-platform release.
+
+## 8. Migration waves, ordered by focus tier
+
+Each wave lands behind its own gate (§10). App waves start only after the
+library release they depend on is on the registry. "Delete" means the file or
+identifier is gone in the same PR as the adoption — no app keeps a copy "for
+now".
+
+### W0 — Housekeeping (GitHub + narduk-libs metadata; no app code)
+
+| Step | Action | Evidence when done |
+|---|---|---|
+| 0.1 | Re-home narduk-mapkit#18 (overlay ordering) into narduk-libs with labels `bug`, `area:foundation`, `P2-medium`; close #17 as obsolete (2.0.x publishes from narduk-libs under `@narduk-enterprises`); add a README pointer to `packages/modules/narduk-mapkit`; archive `narduk-enterprises/narduk-mapkit`. Archiving keeps the repo clonable, so legacy `git+` refs (I1) keep resolving. | issue URLs, `gh repo view --json isArchived` |
+| 0.2 | Repoint `homepage`/`bugs` in both `package.json` files to narduk-libs; add the supersession banner to `docs/centralization-plan.md`. | diff |
+| 0.3 | Close company-hq#159 (fold complete: packages in narduk-libs since 2.0.1, standalone archived, metadata repointed). | issue state |
+| 0.4 | narduk-libs issues: close #123 with evidence (manifest pins 2.0.2/2.0.5; `generator.test.ts:226-227` asserts no `@narduk-geo`); verify #152 against the adapter 2.0.3 CHANGELOG entry and close; leave #162 open and attach it to W1's release proof; fold #138's lint findings into W1; link #124 to this plan; #140 closes in W2 step 2.9. | issue states |
+
+### W1 — Library absorption and release 2.1.0 (narduk-libs only)
+
+Order inside the wave: tests for the existing surface first (§6 #16, the
+prop-contract snapshot), then the adapter refactor (#7), then the additive
+props, slots, options and exports (#8–#13, #15), then the core fixes and
+helpers (#1–#6), then examples and READMEs (#14), then the Changesets fixed
+group and the release. Gate: §10 row W1. Release proof per
+`docs/package-releases.md` from the Release run's verify step (narduk-libs
+#162 is the known false-red there).
+
+### W2 — Now-tier consumers (after 2.1.0 is on the registry)
+
+Live-risk bumps (§5.7 item 1) go first and are separable one-line PRs.
+
+| Step | Repo | Change | Deletes | Re-verify live first |
+|---|---|---|---|---|
+| 2.1 | hydrogen | core 2.0.0 → 2.1.0 (Worker route untouched); then `useStationMapKit.ts` onto `MapKitAnnotationRegistry`, callouts and the nearest-point helper | duplicate haversine in `station-map.ts` | Playwright with `HYDROGEN_EXPECT_MAPKIT=1` still passes on the bump alone |
+| 2.2 | harvest-tracker | 2.0.0 / 2.0.0 → 2.1.0 pair; `/client` accessor replaces `map-mapkit-global.ts`; raster placement onto `MapKitLayerRegistry` only when that code is next touched | `map-mapkit-global.ts` | the map code has no tests — write the first mount test in the bump PR |
+| 2.3 | my-farm | core 2.0.0 → 2.1.0 (core-only by design); `probe.ts` for the inspector is optional | nothing | `FarmMap2D.test.tsx` green; the Three.js path untouched |
+| 2.4 | vtraceroute | 2.0.0 / 2.0.0 → 2.1.0 pair; geometry/projection adoption optional | `types/mapkit.ts` once the `/client` type lands | build + tests |
+| 2.5 | earthdata-viewer | registry pin replaces `file:vendor/narduk-mapkit`; drop the local `now()` workaround | `vendor/narduk-mapkit/`; the `no_bundle`/`find_additional_modules` pair if the Worker build no longer needs it | Worker build under `cloudflare_module`; `mapkitEngine.test.ts`; token route 200. Ledger row 374's "rescue the vendor cache" precondition is met: 2.0.2 is a strict superset of the vendored 2.0.0 |
+| 2.6 | buoys, lakestat-us, riverstatus, mybo-at-v2, pacc-trac-live-hyundai | 2.0.2 / 2.0.4 → 2.1.0 pair. pacc-trac imports `./types`; buoys swaps its callout re-implementation for adapter callouts (second PR; parity on placement and resize); riverstatus/lakestat-us take the marker kit when touched | pacc-trac `types/map.ts` copies + dead `runtimeConfig.nardukMapKit`; buoys `useMarineMapCalloutOverlay.ts` + `marineMapProjection.ts`; riverstatus marks its prototype doc superseded | each app's suite + a rendered-map smoke |
+| 2.7 | gonogo | 2.0.2 / 2.0.4 → 2.1.0; `initializeMapKit` replaces `mapkit-loader.ts` (mount lifecycle lives in `shell.ts`); `createTemporalLayerController` replaces the vendored `temporal.ts` (needs #18 from W1) | `src/client/map/vendor/narduk-mapkit/`, `src/worker/**`, `tsconfig.legacy.json`, the legacy Worker tests | the ledger's "app-owned `200` fallback" claim — the checkout shows the module route; five map test files + the e2e token fixture |
+| 2.8 | float-forecast | adapter module replaces `narduk-nuxt-template-layer-maps`; `<AppMapKit>` usage re-mapped (the layer exposes 4 methods, the adapter a superset); MapKit JS stays v5 so no enum shim | own `server/api/mapkit-token.get.ts` (allowlist + rate limit return with the module route) | which other template layers remain in `extends` — only the maps layer is swapped; `mapkit-tints.ts` and `float-forecast-mapkit.ts` stay |
+| 2.9 | farm-analytics, then narduk-libs | 2.1.0 pair from the registry replaces the `@narduk-geo` tarballs; `mapkitScriptUrl` replaces the composable override; then delete `MAPKIT_PACKAGE_REGISTRY_SCOPE` and `NARDUK_GEO_SCOPE` (narduk-libs#140) | three tarballs, `app/composables/useMapKit.ts`, the `nuxt.config.ts:16-18` alias | no deployment exists: gate is `make map` locally + `foundation:check` item 3 green |
+
+### W3 — Next-tier consumers
+
+| Step | Repo | Change | Deletes | Re-verify live first |
+|---|---|---|---|---|
+| 3.1 | bluebonnet-status-online | adapter module replaces the layer; `getDisplayPriority` (W1 #8) keeps its clustering UX; keep `cspWorkerSrc: 'blob:'`; bloom-map utils stay (marker kit optional) | `scripts/run-mapkit-e2e.sh` (dead) | which remote is canonical (`narduk-enterprises` and `narduk-incubator` resolve to the same HEAD today); the `staging` Cloudflare environment |
+| 3.2 | austin-texas-net | adapter module registered; Texas simplification + hole mask become an app utility feeding the `geojson` prop; dynamic-radius and clustering props map 1:1; the ~12 consumers re-checked page by page; add a `blob:` worker-src CSP entry if the adapter needs it | `components/app/MapKit.vue` (915 loc), `useMapKit.ts`, `helpers/mapkit.ts`, `useMapkitToken.ts`, own token route, dead e2e script | no unit tests exist — write the first for the mask utility in the same PR |
+| 3.3 | narduk-template (hand-off) | once 2.8, 3.1 and 3.2 are merged, `npm deprecate` the maps layer with a pointer to the adapter and record it in the decommission ledger | the layer's publish | that no other estate app still `extends` it (§5.3's sweep covered local checkouts only) |
+
+### W4 — Unranked, hold and legacy: recorded, not scheduled
+
+- narduk-family-location (unranked): the 2.0.0 → 2.1.0 bump is a one-line
+  live-risk fix (§5.7); §12 D4 asks whether it rides W2. Work only from a
+  checkout with its remote wired (§5.2).
+- Hold and deferred per the ledger and D-FOCUS-1/-4: the I1 git-ref and
+  tarball consumers (narduk-earth-data, gonogo-web, rawenc-lab), the
+  incubator copies (D-TOOLCHAIN-1), and the deferred registry map apps
+  (boat-search, coolmaps, myboat) get no work unless Logan pulls them up. They
+  keep installing because W0 archives the standalone repo rather than deleting
+  it. <!-- L-LEGACY: rows added when the lineage lane reports -->
+
+## 9. Retirement list
+
+| Item | Where | Wave | Replaced by |
+|---|---|---|---|
+| Standalone repo `narduk-enterprises/narduk-mapkit` (main `9e0ed51`, 2.0.0) | GitHub | W0 | archive + pointer |
+| `homepage`/`bugs` pointing at the standalone repo | both `package.json` | W0 | narduk-libs URLs |
+| `docs/centralization-plan.md` as the live plan (stale line refs at 87, 89) | narduk-libs | W0 | this document; banner on the old one |
+| Internal re-implementations inside `AppMapKit.vue` (`:267-306`, `:607-665`, `:804+`, `:907-912`) | adapter | W1 | core controllers and helpers |
+| `declare const mapkit: any`, local GeoJSON/overlay interfaces (`AppMapKit.vue:4,43-91`) | adapter | W1 | `/client` global type; core `types.ts` |
+| Playground-only rate-limit middleware | adapter playground | W1 | `examples/` + README |
+| `.changeset/config.json` empty `fixed` group | narduk-libs | W1 | fixed pair |
+| `MAPKIT_SERVER_API_KEY`, `NUXT_MAPKIT_SERVER_API_KEY` catalog entries | narduk-platform `env-catalog.ts` | W1 (deprecate) | none — dead per the worker-secrets contract |
+| `vendor/narduk-mapkit/` (2.0.0 dist), `file:` dependency, local crossfade clock workaround | earthdata-viewer | W2 | registry pin |
+| `src/client/mapkit-loader.ts`, `src/client/map/vendor/narduk-mapkit/`, `src/worker/**`, `tsconfig.legacy.json`, stale vendor README | gonogo | W2 | `initializeMapKit`, `createTemporalLayerController`, module route |
+| `vendor/*.tgz` (`@narduk-geo` 1.2.0 / 1.1.2 / orphan 1.1.1), composable override, nuxt alias, "sample" README framing | farm-analytics | W2 | registry pair + `mapkitScriptUrl` |
+| `MAPKIT_PACKAGE_REGISTRY_SCOPE = '@narduk-geo'` (`package-registry.ts:9,119`), `NARDUK_GEO_SCOPE` (`registry-auth.ts:5`) | narduk-libs | W2 (#140) | nothing — single scope |
+| `types/map.ts` copies, dead `runtimeConfig.nardukMapKit` | pacc-trac-live-hyundai | W2 | adapter `./types` |
+| `useMarineMapCalloutOverlay.ts`, `marineMapProjection.ts` | buoys | W2 | adapter callouts |
+| `map-mapkit-global.ts` | harvest-tracker | W2 | `/client` accessor |
+| duplicate haversine (`station-map.ts:125`) | hydrogen | W2 | `/geometry` |
+| own token route (no allowlist, no rate limit) | float-forecast | W2 | module route |
+| `narduk-nuxt-template-layer-maps` dependency | float-forecast, bluebonnet, austin | W2–W3 | adapter module |
+| `components/app/MapKit.vue` fork, own loader, own token route, `useMapkitToken.ts` | austin-texas-net | W3 | adapter |
+| `scripts/run-mapkit-e2e.sh` (targets a non-existent `apps/showcase`) | austin, bluebonnet | W3 | delete or real spec |
+| `@narduk-enterprises/narduk-nuxt-template-layer-maps` on the registry (247 versions, last 1.19.13) | narduk-template | W3 hand-off | `npm deprecate` + ledger row |
+| `docs/app-builder/river-shapes/04-mapkit-overlay-prototype.md` | riverstatus | W2 | superseded banner |
+| narduk-mapkit#17, #18; company-hq#159; narduk-libs #123, #152 | GitHub | W0–W2 | closed with evidence |
+
+<!-- L-LEGACY: legacy/incubator rows added when the lineage lane reports -->
+
+## 10. Gates and evidence
+
+| Wave | Gate | Evidence artefact |
+|---|---|---|
+| W0 | `gh issue view` / `gh repo view --json isArchived`; `pnpm run quality` unaffected | issue and repo JSON in the PR body |
+| W1 | `pnpm install`; `pnpm run quality` (`versions:check`, `release-plan:check`, `format:check`, `surface:check`, `lint`, `typecheck`, `build`, `test`); per-package `typecheck`/`test:unit`; adapter `test:cloudflare`; `pnpm pack --dry-run` for both; the packed-consumer fixture (`scripts/packed-consumer-*.mjs`, `consumer-smoke-*.mjs`) importing the new `./types`, `./markers` and `/client` helpers; publint | `verify-pr-gate.py` verdict; Release run verify step + New-tag log lines (memory: gh tokens 403 on the registry, so the run is the proof) |
+| W2 / W3 per app | the app's own suite; a Worker build where the token route runs in a Worker (earthdata-viewer, hydrogen, my-farm, gonogo); `foundation:check` item 3; a rendered-map smoke (Playwright where it exists: hydrogen, buoys keystone flow, austin pages) ; token route returns 200 with the shared persona and 403 for a disallowed origin | PR body with the gate output; `verify-pr-gate.py` verdict |
+| Every consumer PR | `package.json` pins both packages to the same 2.1.0 string; lockfile resolves to it; no `file:`, tarball, git ref or `@narduk-geo` remains (`rg` over the repo) | grep output in the PR body |
+| W3.3 | `npm view … deprecated` shows the message; ledger row updated | registry JSON + ledger diff |
+
+## 11. Risks
+
+| Risk | Where | Mitigation |
+|---|---|---|
+| Adapter refactor (§6 #7) regresses eight consumers' maps | W1 | prop-contract snapshot and mount parity tests written **before** the refactor; SSR proof; release as a minor with the refactor and the additions in separate changesets so a rollback is one revert |
+| MapKit JS v5 default stays while two apps run v6 | W1 | explicit `mapkitScriptUrl`; v6 aliases only when v6 is selected; the default flip is D3, a separate major |
+| earthdata-viewer's Worker build contract changes with the registry pin | W2.5 | build the Worker in CI before deleting `vendor/`; keep `no_bundle` until proven unnecessary |
+| Austin's ~12 pages change behaviour when the fork goes | W3.2 | page-by-page smoke list in the PR; keep the mask utility identical; dynamic-radius props are already on the adapter |
+| bluebonnet split-brain across two remotes | W3.1 | confirm the canonical remote before the first push; push to one only |
+| The fixed Changesets group publishes no-op core patches | W1+ | accepted; noted in `docs/package-releases.md` |
+| Release CI needs approval and #162 reports a false red after a good publish | W1 | Logan's standing authorisation to approve narduk-libs runs; prove the publish from the verify step and tag lines, not the job colour |
+| Tokens keep failing at Apple for the 2.0.0 consumers until W2 lands | now | W2's bump PRs are one-line and go first; earthdata-viewer and narduk-family-location are the two with dynamic signing named in-repo |
+| The layer keeps being installed by an app this survey did not see | W3.3 | registry `npm view` after deprecation; ask before deprecating if any unexpected consumer appears in `gh search code` |
+| A survey fact is stale at execution time | every wave | each step's "re-verify live first" column; lanes treat §5 as hypotheses |
+
+## 12. Decisions for Logan
+
+Put through the structured multiple-choice surface (askme); answers recorded
+verbatim below when given.
+
+| # | Question | Options (recommended first) | Consequence of the recommendation |
+|---|---|---|---|
+| D1 | Package shape | **Keep two packages with unchanged names (recommended)** / merge into one `narduk-mapkit` with a `nuxt` subpath | no import churn for fifteen consumers; React and Worker consumers stay free of Nuxt dependencies |
+| D2 | Versioning | **Lock-step via a Changesets `fixed` group, first release 2.1.0 (recommended)** / keep independent versions | consumers pin one number for both; adapter-only changes also publish a no-op core patch |
+| D3 | MapKit JS default | **Keep v5 as the default and add `mapkitScriptUrl` for v6 (recommended)** / flip the default to v6 in a 3.0.0 now | no behaviour change for eleven adapter consumers; farm-analytics and my-farm select v6 explicitly |
+| D4 | Unranked and core-only consumers | **narduk-family-location rides W2 for the one-line live-risk bump; my-farm stays core-only with no React wrapper (recommended)** / leave narduk-family-location until promoted; or fund a React wrapper | the bump fixes a live token risk without promoting the app; no new package |
+
+Not a decision, just a notice: retiring the template maps layer is already
+decided in the decommission ledger (row 81, amended 2026-09-04); W3.3 executes
+it.
+
+## 13. Evidence method and hypotheses to re-verify live
+
+- Library facts were read in this worktree at base `c1fb48f`
+  (2.0.2 / 2.0.5), with `grep -n`/`sed -n` slices and the two CHANGELOGs;
+  registry facts with `gh-packages-run npm view … --json` on 2026-09-14;
+  governance from company-hq `609aa3e` (`DECISIONS.md`, the decommission
+  ledger, `untangle/inventory/packages.tsv`) and the agent-infrastructure
+  worker-secrets and estate-ownership docs.
+- App facts came from six read-only lanes (fetch only; no checkout mutated;
+  no credential file or secret value read). Each lane recorded HEAD, branch,
+  `status -sb` and the ahead count for every repo it touched; austin-texas-net
+  and bluebonnet-status-online were read over the GitHub API because no
+  `narduk-enterprises` checkout exists on this machine.
+- Every per-app line reference is a hypothesis at execution time. The rows
+  most likely to move: gonogo's token fallback (ledger vs checkout disagree),
+  the three layer consumers' installed layer version (lockfiles not read),
+  narduk-family-location's staleness (no remote), bluebonnet's canonical
+  remote, and whether any production deployment of a 2.0.0 consumer signs
+  tokens dynamically (unreadable without secret values, and not read).
+- Counting method for "no other consumer of the layer": `package.json`
+  declarations across `~/code/narduk-enterprises`, `~/code/narduk-enterprises-clients`
+  and `~/code/narduk-incubator` checkouts, plus the two API-read repos. It is
+  not a registry-side or estate-wide search.
+
 
