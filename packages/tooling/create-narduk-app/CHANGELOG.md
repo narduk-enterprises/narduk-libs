@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.4.1
+
+### Patch Changes
+
+- 45ff93c: Refresh the generator's pinned `@narduk-enterprises/narduk-shell`
+  version to pick up the package-root import-protection fix (narduk-libs#295).
+  No generator behavior changes beyond the pinned version bump.
+
 ## 0.4.0
 
 ### Minor Changes
