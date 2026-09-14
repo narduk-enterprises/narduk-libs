@@ -1,0 +1,346 @@
+# @narduk-enterprises/narduk-core
+
+Core UI, worker runtime, and shared utilities.
+
+First-class Nuxt package source in this workspace.
+
+Generic shell primitives such as `AppBreadcrumbs` live here; AI runtime and
+admin surfaces now belong to `@narduk-enterprises/narduk-ai` in
+`packages/modules/narduk-ai/`.
+
+> [!NOTE] Public SEO and Schema.org capabilities have been moved to
+> `@narduk-enterprises/narduk-seo` in `packages/modules/narduk-seo/`. Internal
+> SPA apps and operator consoles can use only `@narduk-enterprises/narduk-core`
+> without loading public formatting dependencies. Public websites should
+> explicitly register the SEO package and use `useSeo(...)` for proper
+> structured metadata.
+
+Nitro OpenAPI generation is enabled here for all downstream apps. By default,
+production builds prerender `/_openapi.json`, while the Scalar and Swagger UI
+routes stay disabled unless an app opts into `nitro.openAPI.ui`. Set
+`NUXT_OPENAPI_PRODUCTION=runtime` to serve the spec dynamically or
+`NUXT_OPENAPI_PRODUCTION=false` to disable the production route entirely.
+
+The core security headers keep browser geolocation disabled by default. Apps
+that intentionally need user-location prompts can set
+`NUXT_PUBLIC_ALLOW_GEOLOCATION=true` to emit
+`Permissions-Policy: geolocation=(self)` while leaving camera and microphone
+blocked.
+
+## Media security policy
+
+Media stays restricted to the application origin by default. Set
+`runtimeConfig.public.cspMediaSrc` (or `CSP_MEDIA_SRC` at build time /
+`NUXT_PUBLIC_CSP_MEDIA_SRC` at runtime) to a comma-separated list of additional
+sources, such as `blob:,https://media.example.com`. Browser MSE players
+typically need `blob:` here and the media origin in `cspConnectSrc` for manifest
+and segment fetches; native HLS needs the media origin in `cspMediaSrc`. These
+options extend only their named directives and leave scripts, frames, and
+workers unchanged.
+
+## Database alias contract
+
+Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
+selects the D1 or PostgreSQL core schema according to `NUXT_DATABASE_BACKEND`,
+while `#narduk-core/postgres-runtime` selects the real PostgreSQL adapter or the
+D1-safe stub. Capability packages that need core tables may use
+`#narduk-core/schema` after registering the core Nuxt module.
+
+Application code must use its own `#narduk-db` dialect selector instead. These
+private aliases do not replace Nuxt's native `#server/*` paths, and the former
+template-era database aliases are not registered.
+
+## List routes: parseListQuery + listResponse
+
+Every list route parses one query shape and answers in one response shape. The
+zod schemas live in `@narduk-enterprises/narduk-platform/list-query`; the two
+server helpers are auto-imported from `server/utils/listQuery` (or imported
+explicitly from `@narduk-enterprises/narduk-core/server/utils/listQuery`).
+
+`parseListQuery(event, options)` validates the event's query string and returns
+the parsed query. `options`:
+
+| Option           | Meaning                                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `sortable`       | Allowlisted sort keys. The wire form is `'<key>:<asc\|desc>'`.                                      |
+| `filters`        | A zod object whose keys are the route's allowlisted filters. Its keys sit flat on the query string. |
+| `maxLimit`       | The route's page ceiling. A larger `limit` is **clamped**, not rejected.                            |
+| `mode`           | `'offset'` (default) or `'cursor'`.                                                                 |
+| `defaultLimit`   | Page size when the caller sends none (default 25, clamped to `maxLimit`).                           |
+| `defaultSort`    | Sort applied when the caller sends none.                                                            |
+| `maxQueryLength` | Longest accepted `q`, after trimming (default 200).                                                 |
+| `searchable`     | Whether the route applies `q` (default `true`). `false` rejects a non-empty `q`.                    |
+
+The schema is `.strict()`: an unknown query key is **rejected**, not silently
+stripped, so a typo'd or renamed parameter fails loudly instead of quietly
+returning the wrong page. A route with no free-text search sets
+`searchable: false` for the same reason — an accepted-and-ignored `q` reads to
+the caller as a narrowed page it never got. Any invalid query throws a 400
+(never a 500) whose `data` is a stable payload —
+`{ code: 'invalid_list_query', fields, unknownKeys, issues }` — naming the
+offending keys.
+
+`listResponse(items, { query, total, nextCursor })` returns
+`{ items, total, limit, sort, q }` plus `offset` (offset mode) or `nextCursor`
+(cursor mode, `null` when the page exhausted the collection). `total` is `null`
+when the route deliberately does not count, which keeps a page to one statement.
+
+```ts
+// server/api/runners/index.get.ts
+export default defineEventHandler(async (event) => {
+  const query = parseListQuery(event, {
+    filters: z.object({ status: z.enum(['idle', 'busy']).optional() }),
+    maxLimit: 100,
+    sortable: ['createdAt', 'name'],
+    defaultSort: 'createdAt:desc',
+  })
+
+  const where = query.filters.status
+    ? eq(runners.status, query.filters.status)
+    : undefined
+  const order =
+    query.sort?.direction === 'asc'
+      ? asc(runners.createdAt)
+      : desc(runners.createdAt)
+
+  // One page query plus one count query, whatever the page size.
+  const [total, items] = await Promise.all([
+    getDatabaseRow(
+      db
+        .select({ count: sql`count(*)` })
+        .from(runners)
+        .where(where),
+    ),
+    getDatabaseRows(
+      db
+        .select()
+        .from(runners)
+        .where(where)
+        .orderBy(order)
+        .limit(query.limit)
+        .offset(query.offset),
+    ),
+  ])
+
+  return listResponse(items, { query, total: Number(total?.count ?? 0) })
+})
+```
+
+`GET /api/runners?limit=9999&sort=name:asc&status=idle` answers
+`{ items, total, limit: 100, offset: 0, sort: 'name:asc', q: null }`;
+`?statuss=idle` answers 400.
+
+A list route may issue at most two SQL statements per request (the
+`LIST_QUERY_STATEMENT_CEILING`): one page `SELECT`, plus one `COUNT(*)` when
+`total` is a number. Set `total: null` to stay at one statement.
+
+### Worked example: stonx `server/utils/query.ts`
+
+stonx is the first pilot (plan §3). Today it has three list shapes in
+`server/utils/query.ts` and the routes that call it:
+
+1. `getPaginationParams` / `buildPaginatedResponse` —
+   `{ data, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } }`
+   — used by `admin/games`, `me/positions`, `leaderboard`.
+2. A one-off zod envelope in `admin/stats-detailed.get.ts`.
+3. `{ results, count, totalPages, page, status }` in `market/screeners.get.ts`,
+   whose `limit` caps at **500** (everywhere else that enforces a cap uses 100).
+   `watchlist/index.get.ts` and `market/big-movers.get.ts` have no page/limit at
+   all.
+
+Those three become one `parseListQuery` + `listResponse` call. The screener
+keeps its 500 cap via `maxLimit`; watchlist and big-movers gain a limit by
+passing a smaller `defaultLimit`:
+
+```ts
+// stonx server/api/market/screeners.get.ts — after the migration
+const query = parseListQuery(event, {
+  filters: z.object({
+    exchange: z.string().optional(),
+    sectors: z.string().optional(),
+  }),
+  maxLimit: 500, // the screener's existing ceiling; not a new default
+  sortable: ['symbol', 'marketCap', 'changePercent'],
+  defaultSort: 'symbol:asc',
+})
+
+return listResponse(rows, { query, total })
+// { items, total, limit, offset, sort, q }
+```
+
+`parseSortParam` in today's `query.ts` silently falls back to the default on an
+unknown field; the contract **rejects** that key instead — the bug class
+stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.
+
+## Deprecated components
+
+### `AppEmptyState` — deprecated, removed in the next major
+
+Use `NeStatePanel` from `@narduk-enterprises/narduk-shell` instead
+([narduk-libs#254](https://github.com/narduk-enterprises/narduk-libs/issues/254),
+backlog item 7; standing decision D4, Logan 2026-09-11: "Deprecate, remove next
+major"). `AppEmptyState` still behaves exactly as it did — this release changes
+no runtime behaviour — but it will not survive the next narduk-core major.
+
+`AppEmptyState` can only say "nothing here". It cannot tell **unknown** from
+**zero**, which is the distinction the surfaces using it actually need, and the
+bug class behind operator-portal
+[#183](https://github.com/narduk-enterprises/operator-portal/issues/183),
+[#162](https://github.com/narduk-enterprises/operator-portal/issues/162),
+[#100](https://github.com/narduk-enterprises/operator-portal/issues/100) and
+[#21](https://github.com/narduk-enterprises/operator-portal/issues/21).
+`NeStatePanel` carries five readings — `empty`, `loading`, `error`, `blocked`,
+`absent` — gives each the right ARIA role by construction, and never signals the
+reading with colour alone.
+
+The props map one for one:
+
+| `AppEmptyState`         | `NeStatePanel`                                     |
+| ----------------------- | -------------------------------------------------- |
+| (implicit empty)        | `state="empty"`                                    |
+| `title`                 | `title`                                            |
+| `description`           | `message`                                          |
+| `icon`                  | `icon`                                             |
+| default slot (a button) | `#action` slot                                     |
+| `compact`               | no equivalent; pass `class` or `ui` if you need it |
+
+```vue
+<!-- before -->
+<AppEmptyState
+  icon="i-lucide-inbox"
+  title="No invoices yet"
+  description="Create your first invoice to get started."
+>
+  <UButton to="/invoices/new" icon="i-lucide-plus">Create invoice</UButton>
+</AppEmptyState>
+
+<!-- after -->
+<NeStatePanel
+  state="empty"
+  icon="i-lucide-inbox"
+  title="No invoices yet"
+  message="Create your first invoice to get started."
+>
+  <template #action>
+    <UButton to="/invoices/new" icon="i-lucide-plus">Create invoice</UButton>
+  </template>
+</NeStatePanel>
+```
+
+A migrating app also gains `loading`, `error`, `blocked` and `absent` for free,
+plus the `gaps` / `unblocksOn` vocabulary — see
+[narduk-shell's README](../../design/narduk-shell/README.md#nestatepanel).
+
+A one-time, **dev-only** `console.warn` points at `NeStatePanel` the first time
+`AppEmptyState` is set up in a development process. Production stays silent, and
+the empty-state markup is unchanged. The `@deprecated` JSDoc on the component
+gives editors and `vue-tsc` the strike-through and the same pointer.
+
+### `AppConfirmModal` — deprecated, removed in the next major
+
+Superseded by `NeConfirmDialog` and `useConfirm()` in
+[`@narduk-enterprises/narduk-shell`](../../design/narduk-shell/README.md#neconfirmdialog--useconfirm)
+(components backlog item 16,
+[narduk-libs#263](https://github.com/narduk-enterprises/narduk-libs/issues/263);
+decision D4, 2026-09-11: deprecate now, remove in the next narduk-core major).
+
+Behaviour is unchanged in this release — the component still works exactly as it
+did. A one-time, dev-only `console.warn` points at `NeConfirmDialog` /
+`useConfirm()` the first time the component is used. New code should use the
+suite; existing call sites can migrate at their own pace before the next major.
+
+**Migration mapping**
+
+| `AppConfirmModal`              | `NeConfirmDialog`                | Notes                                                                                                         |
+| ------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `v-model`                      | `v-model:open`                   | Nuxt UI v4's overlay model; the `narduk/no-legacy-overlay-model` lint rule already wants this spelling.       |
+| `title`                        | `title`                          | Same default (`Are you sure?`).                                                                               |
+| `message`                      | `message`                        | Now also the dialog's `aria-describedby` target.                                                              |
+| `confirmLabel` / `cancelLabel` | `confirmLabel` / `cancelLabel`   | Same defaults.                                                                                                |
+| `confirmColor="error"`         | `tone="danger"`                  | Also moves initial focus to Cancel. `confirmColor` was `error` by default; `tone` is `default` by default.    |
+| `confirmColor` (other values)  | `tone="default"`                 | The suite offers two tones deliberately. A one-off colour is a sign the dialog is doing more than confirming. |
+| `loading`                      | `pending`                        | Additionally disables cancel and turns off Escape / outside-click dismissal (`preventClose`).                 |
+| `dismissible`                  | — (derived)                      | Dismissal is on unless `pending`; there is no separate switch.                                                |
+| `icon` / icon tone             | — (dropped)                      | The tone colours the confirm button instead. Put an icon in the body if a call site genuinely needs one.      |
+| default slot                   | `#body` slot, or the `body` prop | `AppConfirmModal`'s default slot landed in `UModal`'s trigger slot; `#body` puts it in the dialog body.       |
+| `@confirm` / `@cancel`         | `@confirm` / `@cancel`           | Unchanged, including that `@confirm` deliberately leaves the dialog open.                                     |
+
+Most call sites are better off dropping the markup entirely:
+
+```ts
+const confirm = useConfirm()
+if (
+  !(await confirm({
+    title: 'Delete invoice?',
+    message: 'This cannot be undone.',
+    tone: 'danger',
+  }))
+) {
+  return
+}
+```
+
+### `AppSettingsProfile` — deprecated, removed in the next major
+
+Superseded by `NeSettingsPage` (with `NeForm` and `NeFormSection`) in
+[`@narduk-enterprises/narduk-shell`](../../design/narduk-shell/README.md#nesettingspage)
+(components backlog item 19,
+[narduk-libs#266](https://github.com/narduk-enterprises/narduk-libs/issues/266);
+decision D4, 2026-09-11: deprecate now, remove in the next narduk-core major).
+
+Behaviour is unchanged in this release — the component still works exactly as it
+did. A one-time, dev-only `console.warn` points at `NeSettingsPage` the first
+time the component is used. New code should use the suite; existing call sites
+can migrate at their own pace before the next major.
+
+`AppSettingsProfile` bundled a fixed profile card — name, email, an avatar
+uploader, and a "quick links" sidebar — with no schema validation, no protection
+against a double-click firing `@save` twice, and a `saving` prop the caller has
+to wire and flip by hand. `NeSettingsPage` composes `NeForm`'s save bar (one
+submit per click, a loading button with no ref to wire, dirty state that only
+clears once the save resolves) with one or more titled `NeFormSection`s, so a
+settings screen states its own fields instead of fitting inside one fixed card
+shape.
+
+**Migration mapping**
+
+| `AppSettingsProfile`                         | `NeSettingsPage` / `NeForm` / `NeFormSection`            | Notes                                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `title` / `subtitle`                         | `title` (on `NeSettingsPage`)                            | The suite has one title, not a title/subtitle pair; put the subtitle in `description` if it is a sentence.             |
+| `initial-name`, `email`, ...                 | `state` (a reactive object)                              | `NeSettingsPage`/`NeForm` are controlled: pass a `reactive()` object and bind fields to it with `UFormField`/`UInput`. |
+| `@save="handleSave"`                         | `@submit` (via the `onSubmit` prop, called `:on-submit`) | Fires once per click and disables the button for the promise's duration — no `:saving` prop to wire by hand.           |
+| `saving` prop                                | — (automatic)                                            | `UButton`'s own `loading-auto` drives this from the `onSubmit` promise; nothing to pass in.                            |
+| avatar upload (`show-avatar`, cropping, ...) | — (dropped)                                              | Not part of the suite. Keep a bespoke avatar uploader as a field inside a `NeFormSection` if a call site needs one.    |
+| `settings-links` / `#settings-sidebar` slot  | — (dropped)                                              | Page-level navigation is an app concern; render it around `NeSettingsPage`, not inside it.                             |
+| `#extra-fields` slot                         | the default slot, inside a `NeFormSection`               | Add fields as `UFormField`s inside one or more sections rather than one fixed slot.                                    |
+
+```vue
+<!-- before -->
+<AppSettingsProfile
+  :initial-name="user.name"
+  :email="user.email"
+  :saving="isSaving"
+  @save="handleSave"
+/>
+
+<!-- after -->
+<script setup lang="ts">
+const state = reactive({ name: user.name })
+async function handleSave(data: { name: string }) {
+  await saveProfile(data)
+}
+</script>
+
+<template>
+  <NeSettingsPage title="Your identity" :state="state" :on-submit="handleSave">
+    <NeFormSection title="Profile">
+      <UFormField name="name" label="Display name">
+        <UInput v-model="state.name" />
+      </UFormField>
+      <UFormField name="email" label="Email">
+        <UInput :model-value="user.email" disabled />
+      </UFormField>
+    </NeFormSection>
+  </NeSettingsPage>
+</template>
+```

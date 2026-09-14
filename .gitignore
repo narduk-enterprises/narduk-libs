@@ -41,8 +41,13 @@ test-results/
 .playwright-mcp/
 
 # ESLint plugin build artifacts (rebuilt via `pnpm run build:plugins`)
-packages/eslint-config/*/dist/
-packages/narduk-platform/dist/
+packages/tooling/eslint-config/*/dist/
+packages/contracts/narduk-platform/dist/
+packages/modules/narduk-mapkit-nuxt/dist/
+# narduk-mapkit deliberately COMMITS its dist/ (git-dependency consumers
+# install it without a build step); only the Nuxt adapter's build output
+# above is ignored.
+.pack/
 # ESLint caches
 .eslint-results.json
 
@@ -63,5 +68,22 @@ __pycache__/
 .codegraph/
 .cursor/rules/codegraph.mdc
 
+# Logging package build and language environments
+packages/modules/narduk-logging/dist/
+packages/modules/narduk-logging/python/dist/
+packages/modules/narduk-logging/python/.venv/
+packages/modules/narduk-logging/python/.pytest_cache/
+packages/modules/narduk-logging/python/.ruff_cache/
+
+# Postgres and timeseries packages build to dist/ at prepack; it is never committed
+packages/modules/narduk-postgres/dist/
+packages/modules/narduk-timeseries/dist/
+.build/
+.swiftpm/
+
 # Local audit snapshots
 artifacts/
+.ci-evidence/
+
+# Per-lane evidence transcripts (packed-consumer fixtures, gate tails)
+.lane-evidence/

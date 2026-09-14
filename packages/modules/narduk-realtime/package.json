@@ -1,0 +1,86 @@
+{
+  "name": "@narduk-enterprises/narduk-realtime",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "description": "Durable Object build wiring, a WebSocket upgrade router, and a hibernating WebSocket base class for Narduk Cloudflare apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-realtime"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "./dist/module.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/module.d.ts",
+      "import": "./dist/module.js"
+    },
+    "./nuxt": {
+      "types": "./dist/module.d.ts",
+      "import": "./dist/module.js"
+    },
+    "./worker-entry": {
+      "types": "./dist/worker-entry.d.ts",
+      "import": "./dist/worker-entry.js"
+    },
+    "./server/durable-object": {
+      "types": "./dist/server/durable-object.d.ts",
+      "import": "./dist/server/durable-object.js"
+    },
+    "./worker/upgrade-router": {
+      "types": "./dist/worker/upgrade-router.d.ts",
+      "import": "./dist/worker/upgrade-router.js"
+    },
+    "./worker/principal": {
+      "types": "./dist/worker/principal.d.ts",
+      "import": "./dist/worker/principal.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json && node scripts/check-dist-clean.mjs",
+    "check:dist": "node scripts/check-dist-clean.mjs",
+    "check:package": "node scripts/check-dist-clean.mjs && publint --strict && pnpm pack --dry-run",
+    "prepack": "pnpm run build",
+    "lint": "eslint src tests --max-warnings 0",
+    "lint:strict": "eslint src tests --max-warnings 0",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "quality": "pnpm run test:unit",
+    "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "dependencies": {
+    "@nuxt/kit": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260511.1",
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "peerDependencies": {
+    "nuxt": ">=3.16.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

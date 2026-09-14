@@ -1,0 +1,209 @@
+{
+  "lane": "L2",
+  "repo": "narduk-enterprises/borderwaitstat-us",
+  "clone": "ok",
+  "surveyed_sha": "0b1da5758c2c1331ee0e5ea39c01c38c07dd2451",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "transitive via @narduk-enterprises/narduk-core/nuxt (not a direct dep); UMain/UButton/UInput/UFormField/USelect used in templates, e.g. apps/web/app/components/border/BorderWaitControls.vue",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-seo": "2.0.10",
+      "narduk-analytics": "1.19.33",
+      "narduk-ui": "0.1.2",
+      "status-runtime": "1.0.2"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 16,
+    "components": 11,
+    "pages": 4,
+    "layouts": 0,
+    "composables": 6,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "NsFreshnessChip": 1
+  },
+  "local_reimplementations": [
+    {
+      "name": "PortDetailPanel breadcrumb nav",
+      "path": "apps/web/app/components/border/PortDetailPanel.vue",
+      "loc": 5,
+      "consumers": 1,
+      "duplicates_lib": "AppBreadcrumbs",
+      "notes": "Hand-rolled 2-link <nav aria-label=\"Border crossing breadcrumbs\"> at lines 24-27 instead of narduk-core's globally-registered AppBreadcrumbs; small but a clean miss since the component is already auto-registered by the narduk-core module this app already imports."
+    },
+    {
+      "name": "BorderWaitControls",
+      "path": "apps/web/app/components/border/BorderWaitControls.vue",
+      "loc": 48,
+      "consumers": 0,
+      "duplicates_lib": "none",
+      "notes": "Dead code: a full search+lane-mode+border+sort filter bar (UFormField/UInput/USelect) with defineModel bindings, never imported by any page or component (grep '<BorderWaitControls' and 'BorderWaitControls' both return only the component's own file). Worth flagging to Logan rather than counting as an active pattern."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [
+      {
+        "path": "apps/web/app/components/border/BorderWaitControls.vue",
+        "loc": 48,
+        "consumers": 0,
+        "notes": "sortOrder defineModel ('Longest wait' | 'Name'); unused component, see local_reimplementations."
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/border/BorderWaitControls.vue",
+        "loc": 48,
+        "consumers": 0,
+        "notes": "Combined search input + lane-mode segmented control + border USelect; dead code (0 consumers)."
+      },
+      {
+        "path": "apps/web/app/components/border/LocationAwareSearchSheet.vue",
+        "loc": 116,
+        "consumers": 1,
+        "notes": "Live, mobile bottom-sheet style search UI used from LocationAwarePortFinder.vue."
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [
+      {
+        "path": "apps/web/app/components/shared/FreshnessBadge.vue",
+        "loc": 58,
+        "consumers": 1,
+        "notes": "Thin adapter over narduk-ui's NsFreshnessChip; maps app-specific FreshnessState ('fresh'|'warning'|'stale') onto the design system's SignalState ('live'|'aging'|'stale'|'void'). This is correct adoption, not a duplicate."
+      }
+    ],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/components/border/BorderWaitBoard.vue",
+        "loc": 20,
+        "consumers": 2,
+        "notes": "Single inline <p v-if=\"data.errorMessage\"> banner, no shared AppEmptyState-style component."
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/border/BorderCrossingDirectory.vue",
+        "loc": 83,
+        "consumers": 1,
+        "notes": "Groups all crossings by border region (Canada/Mexico/other) into labeled card groups, client-side sort by REGION_SORT_ORDER map."
+      },
+      {
+        "path": "apps/web/app/components/border/LocationAwarePortFinder.vue",
+        "loc": 136,
+        "consumers": 1,
+        "notes": "Largest component in the app: geolocation-sorted card list combining search sheet + lane-mode filter + LocationAwareCrossingCard list."
+      },
+      {
+        "path": "apps/web/app/components/border/LocationAwareCrossingCard.vue",
+        "loc": 91,
+        "consumers": 1,
+        "notes": "Per-crossing card with distance annotation."
+      },
+      {
+        "path": "apps/web/app/components/border/CrossingCard.vue",
+        "loc": 56,
+        "consumers": 0,
+        "notes": "Appears unused (0 tag consumers found); possibly superseded by LocationAwareCrossingCard."
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/border/PortDetailPanel.vue",
+        "loc": 122,
+        "consumers": 1,
+        "notes": "Key/value detail stats grid (status, hours, etc.) for a single port."
+      }
+    ],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/border/BorderWaitControls.vue",
+        "loc": 48,
+        "consumers": 0,
+        "notes": "UFormField + UInput/USelect combo; dead code."
+      }
+    ],
+    "date_time_format": [],
+    "number_currency_format": [
+      {
+        "path": "apps/web/app/utils/format.ts",
+        "loc": 49,
+        "consumers": "not measured",
+        "notes": "Domain-specific wait-time formatters (formatWaitMinutes, compactWaitMinutes, waitSeverity, formatFreshness, labelLaneCategory/Type); not a generic date/currency formatter."
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [
+      {
+        "path": "apps/web/app/components/border/PortDetailPanel.vue",
+        "loc": 5,
+        "consumers": 1,
+        "notes": "See local_reimplementations; duplicates AppBreadcrumbs. Separately, pages/ports/index.vue and pages/ports/[slug].vue call useBreadcrumbSchema() for JSON-LD only, not UI."
+      }
+    ],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/border/LocationAwarePortFinder.vue",
+        "loc": 136,
+        "consumers": 1,
+        "notes": "Geolocation-driven port finder combining several patterns (search, filter, card list); bespoke to this app's use case, low reuse value outside border-crossing apps."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "freshness_indicator",
+      "name": "FreshnessBadge adapter pattern",
+      "path": "apps/web/app/components/shared/FreshnessBadge.vue",
+      "loc": 58,
+      "consumers": 1,
+      "why": "Model of correct adoption (thin label-vocabulary adapter over NsFreshnessChip) other apps' freshness reimplementations should be measured against; not itself extractable further.",
+      "loc_saved_estimate": 0
+    },
+    {
+      "pattern": "breadcrumbs",
+      "name": "Replace hand-rolled breadcrumb nav with AppBreadcrumbs",
+      "path": "apps/web/app/components/border/PortDetailPanel.vue",
+      "loc": 5,
+      "consumers": 1,
+      "why": "narduk-core (already a module dependency here) globally registers AppBreadcrumbs; this app never adopted it.",
+      "loc_saved_estimate": 5
+    }
+  ],
+  "notes": "Smallest app in this lane (16 vue files). No table/pagination pattern exists anywhere -- border-waits.get.ts returns the full unpaginated dataset and the UI renders it as region-grouped cards. BorderWaitControls.vue (a full filter+sort bar) and CrossingCard.vue are both dead code (0 consumers) -- worth flagging to Logan before counting them toward any 'apps hand-roll X a lot' argument. gh issue/PR search for table/pagination/sort/mobile/hydration/empty turned up nothing UI-relevant (only a CI/deploy issue and dependency-bump PRs)."
+}

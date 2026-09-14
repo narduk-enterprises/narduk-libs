@@ -1,0 +1,89 @@
+{
+  "name": "@narduk-enterprises/narduk-devices",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "description": "Generic device identity, claim ceremony, class-separated credentials, signed device sessions, and lockouts for Narduk Nuxt apps on D1.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-devices"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "import": "./src/module.ts"
+    },
+    "./nuxt": {
+      "import": "./src/module.ts"
+    },
+    "./drizzle/*": "./drizzle/*",
+    "./server/*": {
+      "import": "./server/*.ts"
+    },
+    "./shared/*": {
+      "import": "./shared/*.ts"
+    }
+  },
+  "files": [
+    "drizzle/",
+    "server/",
+    "shared/",
+    "src/",
+    "eslint.config.mjs",
+    "nuxt.config.ts",
+    "tsconfig.json",
+    "vitest.config.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "pnpm run nuxt:prepare",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "dev": "nuxt dev",
+    "nuxt:prepare": "sh ../../../scripts/ensure-generated-files.sh .nuxt/tsconfig.json .nuxt/tsconfig.shared.json .nuxt/tsconfig.node.json .nuxt/nuxt.shared.d.ts .nuxt/nuxt.node.d.ts .nuxt/eslint.config.mjs -- nuxt prepare",
+    "prepare": "nuxt prepare",
+    "pretypecheck": "pnpm run nuxt:prepare",
+    "prelint": "pnpm run nuxt:prepare",
+    "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
+    "typecheck": "nuxt typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "lint:strict": "eslint . --max-warnings 0",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "quality": "pnpm run test:unit",
+    "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "dependencies": {
+    "@nuxt/kit": "^4.0.0",
+    "drizzle-orm": "^0.45.2",
+    "h3": "^1.15.11"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260511.1",
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@narduk-enterprises/narduk-core": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "better-sqlite3": "^12.4.1",
+    "eslint": "^10.8.0",
+    "miniflare": "4.20260701.0",
+    "nuxt": "^4.4.2",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.5"
+  },
+  "peerDependencies": {
+    "nuxt": ">=3.16.0"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

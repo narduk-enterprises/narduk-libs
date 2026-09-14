@@ -1,0 +1,135 @@
+{
+  "name": "@narduk-enterprises/narduk-seo",
+  "version": "2.1.0",
+  "private": false,
+  "type": "module",
+  "description": "SEO, structured data, sitemap, robots, and OpenGraph Nuxt module for Narduk Cloudflare apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-seo"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "import": "./src/module.ts"
+    },
+    "./nuxt": {
+      "import": "./src/module.ts"
+    },
+    "./app/*": {
+      "import": "./app/*.ts"
+    },
+    "./app/components/*": {
+      "import": "./app/components/*.vue"
+    },
+    "./app/composables/*": {
+      "import": "./app/composables/*.ts"
+    },
+    "./app/pages/*": {
+      "import": "./app/pages/*.vue"
+    },
+    "./app/types/*": {
+      "import": "./app/types/*.ts"
+    },
+    "./app/utils/*": {
+      "import": "./app/utils/*.ts"
+    },
+    "./components/*": {
+      "import": "./components/*.vue"
+    },
+    "./server/*": {
+      "import": "./server/*.ts"
+    },
+    "./shared/*": {
+      "import": "./shared/*.ts"
+    },
+    "./shared/types/*": {
+      "types": "./shared/types/*.d.ts"
+    }
+  },
+  "files": [
+    "app/",
+    "components/",
+    "server/",
+    "shared/",
+    "src/",
+    "eslint.config.mjs",
+    "nuxt.config.ts",
+    "tsconfig.json",
+    "vitest.config.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "pnpm run nuxt:prepare",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "nuxt:prepare": "sh ../../../scripts/ensure-generated-files.sh .nuxt/tsconfig.json .nuxt/tsconfig.shared.json .nuxt/tsconfig.node.json .nuxt/nuxt.shared.d.ts .nuxt/nuxt.node.d.ts .nuxt/eslint.config.mjs -- nuxt prepare",
+    "preview": "nuxt preview",
+    "prepare": "nuxt prepare",
+    "pretypecheck": "pnpm run nuxt:prepare",
+    "typecheck": "nuxt typecheck",
+    "prelint": "pnpm run nuxt:prepare",
+    "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
+    "lint": "eslint . --max-warnings 0",
+    "lint:strict": "eslint . --max-warnings 0",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "quality": "pnpm run test:unit",
+    "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "dependencies": {
+    "@narduk-enterprises/narduk-core": "workspace:*",
+    "@nuxt/kit": "^4.0.0",
+    "@nuxtjs/robots": "6.0.6",
+    "@nuxtjs/sitemap": "8.0.12",
+    "@takumi-rs/core": "2.2.0",
+    "@takumi-rs/wasm": "2.2.0",
+    "h3": "^1.15.11",
+    "defu": "^6.1.7",
+    "nuxt-link-checker": "5.0.7",
+    "nuxt-og-image": "6.7.4",
+    "nuxt-schema-org": "6.0.4",
+    "nuxt-seo-utils": "8.1.7",
+    "nuxt-site-config": "4.0.8",
+    "ohash": "^2.0.11",
+    "ufo": "^1.6.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@nuxt/test-utils": "^4.0.3",
+    "@playwright/test": "1.61.1",
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "@vue/test-utils": "^2.4.10",
+    "eslint": "^10.8.0",
+    "happy-dom": "^20.9.0",
+    "nuxt": "^4.4.2",
+    "playwright": "1.61.1",
+    "prettier": "^3.8.3",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.5"
+  },
+  "peerDependencies": {
+    "nuxt": ">=3.16.0"
+  },
+  "overrides": {
+    "@cloudflare/unenv-preset": "2.12.1",
+    "@nuxt/fonts": "0.14.0",
+    "vite": "npm:rolldown-vite@7.3.1"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

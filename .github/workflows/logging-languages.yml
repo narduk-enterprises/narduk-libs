@@ -1,0 +1,54 @@
+name: Logging languages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python artifacts
+    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
+    # Share the package callable's persistent repository switch and rollback.
+    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: false
+      - name: Check Python contract, adapters, wheel and source installs
+        working-directory: packages/modules/narduk-logging/python
+        run: uv run --locked --all-extras python scripts/quality.py
+
+  swift-linux:
+    name: Swift Linux artifacts
+    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
+    # Share the package callable's persistent repository switch and rollback.
+    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14.7"
+      - name: Provision and verify Swift 6.3.3
+        run: python scripts/install-swift-linux.py
+      - name: Check Swift contract, Linux adapters and version-tag consumer
+        run: python packages/modules/narduk-logging/scripts/swift-quality.py
+      - name: Remove the job-local Swift fallback
+        if: always()
+        run: |
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "narduk-logging-swift"
+          if root.exists():
+              shutil.rmtree(root)
+          PY

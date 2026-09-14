@@ -1,0 +1,216 @@
+# @narduk-enterprises/narduk-testkit
+
+## 1.3.0
+
+### Minor Changes
+
+- 0f45d4b: Migrate this repo's three list endpoints onto the shared list-query
+  contract (`parseListQuery` + `listResponse`, narduk-libs#257). Each route
+  keeps its own page ceiling and its own sort allowlist. None of the three
+  implements free-text search, so all three declare `searchable: false` and
+  answer 400 for a non-empty `q` rather than accepting it and returning an
+  unnarrowed page.
+
+  **Compatibility.** Previously-accepted query keys and response fields stay
+  accepted / present. New contract fields are additive. Drop the deprecated
+  aliases in the next major of each package, once fleet apps read `items`.
+
+  **`GET /api/admin/users`** (narduk-auth)
+
+  - Request: `page` is still accepted and converted to
+    `offset = (page - 1) * limit`. `offset` is the new key. Sending both with
+    disagreeing values answers 400. `limit` above the route's ceiling of 100 is
+    now **clamped to 100** instead of answering 400 (more permissive). `sort`
+    accepts `createdAt:asc|desc`, defaulting to `createdAt:desc` (previously the
+    descending order was fixed). An unknown key is tolerated (200, with a
+    warning logged) for one release rather than answering 400 — see
+    `.changeset/list-query-tolerate-unknown-keys.md`.
+  - Response: the contract shape `{ items, total, limit, offset, sort, q }` plus
+    the deprecated aliases `{ users, page }` so existing consumers keep working.
+
+  **`GET /api/notifications`** (narduk-auth)
+
+  - Request: `unreadOnly` is still any string; only `'true'` filters (the
+    pre-contract behaviour). `offset` is now honoured (it was previously
+    ignored). An unknown query key is tolerated (200, with a warning logged) for
+    one release rather than answering 400. `limit` ceiling stays 100,
+    default 50.
+  - Response: the contract shape plus the deprecated alias `{ notifications }`.
+    `total` is `null` — this route deliberately does not count, which keeps a
+    page to a single statement.
+
+  **`GET /api/admin/system-prompts`** (narduk-ai)
+
+  - Request: previously accepted no parameters (extras were ignored). It now
+    accepts `limit` (ceiling and default 500), `offset`, and `sort` over `name`
+    and `updatedAt`. An unknown query key is tolerated (200, with a warning
+    logged) for one release rather than answering 400, so a caller that still
+    sends an old ignored parameter keeps working.
+  - Response: a bare `AdminSystemPrompt[]` cannot also be a `{ items, … }`
+    object, so the wire shape is the contract envelope with `total: null`. The
+    bundled `useAdminAi` composable still exposes `AdminSystemPrompt[]` (and
+    still accepts a bare array from an older server). No fleet app `$fetch`es
+    this route directly (GitHub search, 2026-09-11); stonx, operator-portal and
+    riverstatus do not consume it. Ordering is now deterministic (`name:asc` by
+    default).
+
+  **Migration (optional).** New callers read `data.items` and page with
+  `offset`. Apps using the bundled composables and components
+  (`useNotifications`, `useAdminAi`, `AdminUsersTab`) keep their existing public
+  shapes.
+
+  **narduk-testkit**'s e2e contracts follow the new shapes and still assert the
+  legacy aliases: `expectNotificationList` expects `{ items, notifications }`,
+  and the users-api spec accepts `page`, asserts `{ items, users, page }`, and
+  checks that `limit=9999` now returns 200 with `limit: 100`.
+
+## 1.2.0
+
+### Minor Changes
+
+- c53456f: Add `playwright/accessibility`: axe-driven WCAG 2.2 AA conformance
+  asserted against a recorded baseline rather than against zero.
+
+  The baseline is a two-directional ledger. A rule that fires and is not listed
+  fails, so new debt cannot land silently; a listed rule that no longer fires
+  also fails, asking for the entry to be removed, so debt cannot be re-accrued
+  behind a stale allowance. A gate that demands zero on an app's first axe run
+  gets disabled by the first person it blocks, and one that only reports teaches
+  nothing — this is the shape that survives contact with real debt.
+
+  Ships three checks axe has no rule for: text zoom, state-not-by-colour-alone,
+  and reduced motion, which asserts transitions are removed rather than merely
+  shortened.
+
+  The text-zoom check scales the ROOT font size rather than the viewport, and
+  then proves the text actually grew before it trusts the layout assertion. Both
+  halves are load-bearing. Zooming a viewport out passes while real 200% text
+  still overflows — but so does raising the root font size on a page whose
+  typography is declared in px, because nothing moves and therefore nothing
+  overflows. That second failure is the dangerous one: the check reports 1.4.4
+  conformance for a page that has none, and gets cited as evidence. The
+  judgement is exposed as `textScalingVerdict` so it is unit-tested rather than
+  locked inside a browser call, which is how the vacuous version survived
+  review.
+
+  `@axe-core/playwright` is an OPTIONAL peer. The helpers take axe results
+  rather than building the scan, so the app keeps control of its `AxeBuilder`
+  options and this package never imports axe — apps using the other testkit
+  families are not made to install a runtime they never call.
+
+## 1.1.0
+
+### Minor Changes
+
+- 6575caf: Three new subpaths for e2e suites that commit evidence, extracted
+  from a Cloudflare Worker app's Playwright suite where each one was
+  load-bearing.
+
+  **`playwright/deterministic-capture`** — `prepareDeterministicPage`,
+  `freezePageClock`, `emulateReducedMotion`, `waitForVisualQuiescence`,
+  `captureStableScreenshot` and `expectRepeatableCapture`. It carries three
+  measured findings that each cause silent, hard-to-attribute screenshot churn
+  on `playwright@1.61.1`:
+
+  - `page.clock.setFixedTime()` replaces `window.performance` with a plain
+    object stub, so `getEntriesByType('resource')` returns zero entries on a
+    page that just fetched four API responses. Nothing throws; any request or
+    performance budget built on Resource Timing simply starts passing for the
+    wrong reason. `freezePageClock` patches `Date.now` and `new Date()` through
+    a Proxy and leaves the performance timeline alone.
+  - `use: { reducedMotion: 'reduce' }` resolves into `project.use` and is then
+    dropped on the way to the browser context — the page answers
+    `no-preference`, and an app that reads the media query renders a different,
+    sometimes differently sized tree. `emulateReducedMotion` applies it on the
+    page, where it takes effect.
+  - Playwright's `fullPage` capture is not repeatable: six consecutive calls
+    against a settled page produced hashes A B A B A B, the same 23 pixels
+    flipping one 8-bit step along a rounded border. `captureStableScreenshot`
+    grows the viewport to the document instead, which is one paint and is stable
+    — and stops stranding `position: fixed` chrome partway down a tall page.
+
+  `captureStableScreenshot` also photographs twice and requires byte equality —
+  retrying the pair (re-settling between attempts, three times by default) so
+  that a loaded CI runner slipping one paint into the gap is not a red test,
+  while a screen that never comes to rest still fails and says so.
+  `expectRepeatableCapture` takes any capture closure, so a suite can prove the
+  app _boots_ to the same pixels twice. Masks carry a mandatory `reason`.
+
+  **`playwright/request-accounting`** — `expectRequestCounts` and
+  `readResourceRequests` assert the exact number of times each endpoint was
+  requested during a navigation, read from the document's own Resource Timing
+  entries. Exact rather than "at most": the pattern this generalises from was
+  catching a duplicated pair of ~90 KB JSON responses on every cold load. With a
+  `scope`, an unbudgeted request inside it is also a failure.
+
+  **`e2e/fixture-server`** — `startStaticFixtureServer` serves an app's built
+  output with recorded responses standing in for its API, for the non-Nuxt app
+  (Cloudflare Worker, Vite SPA) that the existing Nuxt-shaped fixtures do not
+  cover. Extensionless paths are rewritten to the HTML entry so deep links
+  behave as they do behind a real static host; an unrecorded path inside the API
+  scope is answered 501 rather than a plausible empty body; the port is
+  ephemeral by default. It is deliberately not re-exported from the root barrel,
+  because it is imported from a Playwright config, which is evaluated before the
+  runner exists.
+
+## 1.0.1
+
+### Patch Changes
+
+- 95ec690: `@narduk-enterprises/eslint-config` v2: the estate lint config moves
+  into narduk-libs (per HB-10 / D-DEMOTE-1 and narduk-libs#50), rebuilt for
+  ESLint 10 on a replace-by-default basis — maintained third-party plugins
+  wherever they cover the intent, 45 bespoke rules surviving out of 103 (every
+  one with tests and no `testMode` bypasses), the proven-inverted hydration
+  rules and dead Nitro security gates rebuilt against the executed deep-review
+  proofs, legacy presets and the frozen nuxt-ui spec tier removed, and every
+  code-corrupting autofixer gone. Consumer API (`createAppLintConfig`,
+  `composeSharedConfigs`, the 14 capability packs) is signature-compatible;
+  adopting v2 requires ESLint `^10` (peer). License corrected to UNLICENSED
+  (D-PKG-5).
+
+  **Three consumer-visible tightenings** land with the adversarial-hardening
+  pass (full account in `DESIGN.md`):
+
+  1. **Pack globs are nesting-safe.** `server/**`, `workers/**` and the auth
+     pack's globs now match at any depth. A repository linted from an outer
+     `cwd` — any monorepo, any app one level down, and every layer package's
+     `runtime/server/**` — previously received **no** server or Cloudflare rules
+     at all. Expect first-time findings in newly-covered trees. The two core
+     rules the packs carry are gated out of `tests/**` and friends so the
+     widening does not sweep in test code.
+  2. **A route named like a test is a route.** `server/api/x.post.test.ts` is
+     deployed by Nitro as `POST /api/x.post.test`, and the `.test.` infix no
+     longer exempts it from the security tier. Inside a route tree only a real
+     test or fixture _directory_ exempts a file. Move colocated route suites
+     under `tests/` or `__tests__/`.
+  3. **`no-restricted-imports` is order-independent.** All three contributing
+     packs now assign one shared option, so a trailing `cloudflare` entry can no
+     longer erase the relative-import and layer-source patterns — which it did
+     for every consumer using `nardukTemplateStrictCapabilityPacks`. Those
+     patterns start applying again. A portable Nuxt layer (no `#server/*` alias
+     for its own sources) should assign the new
+     `PORTABLE_LAYER_RESTRICTED_IMPORTS_RULE` export to its server glob rather
+     than switching the rule off.
+
+  Also fixed in the same pass: five ways to walk past a security rule by
+  renaming a binding (an aliased `defineEventHandler`, a runtime-derived HTTP
+  method, `.raw` lifted off drizzle's `sql`, a destructured `db.query` receiver,
+  and `limit: undefined`), and `no-legacy-overlay-model`'s blindness to
+  camelCase `modelValue` bindings. Every one ships with the fixture that proved
+  it as a regression test.
+
+  Sibling packages: the shared config is now consumed via the workspace
+  (`workspace:*`) and their `eslint` devDependency moves to `^10.8.0`. Adopting
+  v2 also swept their stale `eslint-disable` comments onto the replacement rule
+  ids and cleared the findings the fixed path gates newly surface. Three
+  behaviour-neutral source edits came with that sweep: `narduk-core` adds
+  `import.meta.client` early returns to three handlers that were already
+  client-only (clipboard copy, share-link copy, avatar canvas resize);
+  `narduk-auth`'s `runtime-public` endpoint drops a `process.env` merge layer
+  that `readWorkerRuntimeEnv` already supplied and that the merge order
+  discarded; and `narduk-app-tools` swaps one `split().join()` for
+  `replaceAll()`. The five layer packages (`narduk-core`, `-auth`, `-seo`,
+  `-ai`, `-uploads`) assign the portable-layer import rule in their own configs,
+  and `narduk-core` and `-uploads` carry scoped, commented exceptions for the
+  pre-existing conditions their newly-linted `runtime/server/**` trees surfaced.

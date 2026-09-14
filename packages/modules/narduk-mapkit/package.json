@@ -1,0 +1,97 @@
+{
+  "name": "@narduk-enterprises/narduk-mapkit",
+  "version": "2.0.2",
+  "type": "module",
+  "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-mapkit"
+  },
+  "homepage": "https://github.com/narduk-enterprises/narduk-mapkit#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-mapkit/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "apple-maps",
+    "geojson",
+    "mapkit",
+    "mapkit-js",
+    "maps",
+    "typescript"
+  ],
+  "sideEffects": false,
+  "files": [
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "dist/",
+    "examples/",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    },
+    "./apple-maps": {
+      "types": "./dist/server/apple-maps.d.ts",
+      "import": "./dist/server/apple-maps.js"
+    },
+    "./geometry": {
+      "types": "./dist/geometry/index.d.ts",
+      "import": "./dist/geometry/index.js"
+    },
+    "./playback": {
+      "types": "./dist/playback.d.ts",
+      "import": "./dist/playback.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./worker": {
+      "types": "./dist/server/worker.d.ts",
+      "import": "./dist/server/worker.js"
+    },
+    "./node": {
+      "types": "./dist/server/node.d.ts",
+      "import": "./dist/server/node.js"
+    },
+    "./token": {
+      "types": "./dist/token/index.d.ts",
+      "import": "./dist/token/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node script/check_dist_clean.mjs",
+    "check:dist": "node script/check_dist_clean.mjs",
+    "check:exports": "node script/check_package_exports.mjs",
+    "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "prepare": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "publint": "^0.3.21",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  }
+}

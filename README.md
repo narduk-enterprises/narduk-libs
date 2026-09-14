@@ -9,19 +9,41 @@ or Command control plane. The decommission ledger and archive gates live in
 
 ## Packages
 
-- `@narduk-enterprises/narduk-platform`
-- `@narduk-enterprises/narduk-app`
-- `@narduk-enterprises/narduk-app-tools`
+`packages/` is organized into four families (company-hq `D-WEBFOUND-2` Q2 (a),
+2026-09-04). Directory layout only -- published package names are unchanged and
+every package still releases independently through Changesets.
+
+### `packages/modules/` -- Nuxt runtime modules and layers
+
 - `@narduk-enterprises/narduk-core`
+- [`narduk-logging`](packages/modules/narduk-logging/README.md) -- shared
+  TypeScript, Swift, and Python structured logging
 - `@narduk-enterprises/narduk-auth`
 - `@narduk-enterprises/narduk-seo`
 - `@narduk-enterprises/narduk-analytics`
 - `@narduk-enterprises/narduk-uploads`
 - `@narduk-enterprises/narduk-ai`
+- `@narduk-enterprises/narduk-app`
+- `@narduk-enterprises/geogrid-web` -- framework-agnostic gridded geo-data
+  overlay and Web-Mercator tile render (WebGL2 + CPU fallback), not
+  Nuxt-specific
+
+### `packages/tooling/` -- build, test and generator tooling
+
+- `@narduk-enterprises/narduk-app-tools`
 - `@narduk-enterprises/narduk-testkit`
+- `@narduk-enterprises/eslint-config`
+- `@narduk-enterprises/create-narduk-app`
+- `@narduk-enterprises/journeys`
+
+### `packages/design/` -- the coded NE design system
+
 - `@narduk-enterprises/narduk-ui`
 - `@narduk-enterprises/status-runtime`
-- `@narduk-enterprises/create-narduk-app`
+
+### `packages/contracts/` -- shared contracts
+
+- `@narduk-enterprises/narduk-platform`
 
 ## Consuming these packages
 

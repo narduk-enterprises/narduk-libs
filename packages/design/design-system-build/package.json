@@ -1,0 +1,29 @@
+{
+  "name": "@narduk-enterprises/design-system-build",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One-shot static Claude Design previews rendered from the coded Vue system.",
+  "scripts": {
+    "prepare": "nuxt prepare",
+    "build": "nuxt generate && node --experimental-strip-types scripts/build.mts",
+    "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions scripts/*.mts",
+    "lint": "eslint . --max-warnings 0",
+    "test:unit": "node --experimental-strip-types --test scripts/build.test.mts",
+    "check:package": "node --experimental-strip-types scripts/check-package.mts"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/narduk-shell": "workspace:*",
+    "@narduk-enterprises/narduk-ui": "workspace:*",
+    "@nuxt/eslint": "^1.15.2",
+    "@nuxt/ui": "4.6.0",
+    "@types/node": "^22.19.19",
+    "@vue/compiler-dom": "3.5.39",
+    "nuxt": "^4.4.2",
+    "parse5": "^7.3.0",
+    "postcss": "8.5.16",
+    "typescript": "^5.9.3",
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.2.5"
+  }
+}

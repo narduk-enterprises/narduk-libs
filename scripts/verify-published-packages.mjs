@@ -1,25 +1,27 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
+
 const registry = 'https://npm.pkg.github.com'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packageRoot = join(root, 'packages')
 const planOnly = process.argv.includes('--plan')
 const maxRegistryAttempts = 12
 const registryRetryDelayMilliseconds = 5_000
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
-const packages = readdirSync(packageRoot, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => readJson(join(packageRoot, entry.name, 'package.json')))
+const packages = loadWorkspace(root)
+  .packages.map(({ manifest }) => manifest)
   .filter((manifest) => manifest.private !== true)
   .sort((left, right) => left.name.localeCompare(right.name))
 
-if (packages.length === 0) throw new Error('No publishable packages found under packages/.')
+if (packages.length === 0) {
+  throw new Error('No publishable packages found in the pnpm-workspace.yaml package families.')
+}
 
 for (const manifest of packages) {
   if (!manifest.name?.startsWith('@narduk-enterprises/')) {

@@ -1,0 +1,80 @@
+{
+  "name": "@narduk-enterprises/narduk-postgres",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "description": "One PostgreSQL access surface for Narduk apps: Hyperdrive-bound Workers connections, direct Node connections, health checks, an immutable-file migrations runner and the three least-privilege roles.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/modules/narduk-postgres"
+  },
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-postgres#readme",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./migrate": {
+      "types": "./dist/migrate.d.ts",
+      "import": "./dist/migrate.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/clean-dist.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "lint": "eslint src tests --max-warnings 0",
+    "lint:strict": "eslint src tests --max-warnings 0",
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
+    "quality": "pnpm run test:unit",
+    "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
+    "format": "pnpm run prettier:fix",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "prettier": "pnpm run format:check",
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@types/node": "^22.19.19",
+    "@vitest/coverage-v8": "4.1.6",
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.6"
+  },
+  "volta": {
+    "node": "22.22.3"
+  }
+}

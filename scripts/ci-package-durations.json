@@ -1,0 +1,27 @@
+{
+  "sourceRun": 34372542185,
+  "gateSeconds": {
+    "narduk-analytics": 30.0,
+    "narduk-app": 10.0,
+    "journeys": 11.0,
+    "narduk-ai": 26.0,
+    "eslint-config": 33.0,
+    "narduk-mapkit": 29.0,
+    "narduk-auth": 98.0,
+    "create-narduk-app": 39.0,
+    "narduk-core": 53.0,
+    "geogrid-web": 16.0,
+    "narduk-tenancy": 42.0,
+    "narduk-seo": 30.0,
+    "status-runtime": 6.0,
+    "narduk-uploads": 34.0,
+    "narduk-app-tools": 19.0,
+    "narduk-charts": 29.0,
+    "narduk-platform": 17.0,
+    "narduk-mapkit-nuxt": 55.0,
+    "narduk-testkit": 12.0,
+    "narduk-ui": 13.0,
+    "narduk-shell": 13.0,
+    "narduk-realtime": 16.0
+  }
+}

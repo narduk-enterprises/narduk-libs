@@ -1,2 +1,8 @@
 packages:
-  - "packages/*"
+  # Four families, D-WEBFOUND-2 Q2 (a). Listed explicitly rather than as
+  # `packages/*/*` because scripts/compute-affected-packages.mjs resolves
+  # workspace patterns itself and supports a single trailing `/*` per entry.
+  - "packages/modules/*"
+  - "packages/tooling/*"
+  - "packages/design/*"
+  - "packages/contracts/*"

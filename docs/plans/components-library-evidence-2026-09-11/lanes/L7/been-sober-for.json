@@ -1,0 +1,338 @@
+{
+  "lane": "L7",
+  "repo": "narduk-enterprises/been-sober-for",
+  "clone": "ok",
+  "surveyed_sha": "37d1e8dcb70058e9f3bc582a2f5a821e7f032831",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "not a direct dependency, but used at runtime (app.vue wraps everything in <UApp>) -- available transitively, most likely via narduk-core/narduk-auth",
+    "tailwind": "^4.2.1 (direct dependency, unlike the other 3 successfully-cloned L7 repos)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-auth": "1.25.4",
+      "narduk-analytics": "1.19.33",
+      "narduk-seo": "2.0.10",
+      "narduk-uploads": "1.19.19"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 49,
+    "components": 15,
+    "pages": 29,
+    "layouts": 3,
+    "composables": 6,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 ( -name '*.ts' -o -name '*.vue' ) | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppConfirmModal": 3,
+    "LayerNetworkFooter": 1,
+    "AppEmptyState": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AdminUsersTab": 0,
+    "AppNotificationCenter": 0,
+    "AppUserMenu": 0,
+    "AuthLoginCard": 0,
+    "AuthRegisterCard": 0,
+    "AuthExchangePanel": 0,
+    "AuthApiKeysPanel": 0,
+    "AuthPasskeysPanel": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "LoginCard",
+      "path": "apps/web/app/components/auth/LoginCard.vue",
+      "loc": 263,
+      "consumers": 0,
+      "duplicates_lib": "AuthLoginCard",
+      "notes": "app-local full reimplementation of narduk-auth's AuthLoginCard (own zod schema, useAuth()/startOAuth() calls). 0 usage found under <LoginCard> OR <AuthLoginCard> tags anywhere in this app's .vue/.ts source. Nuxt's default components-dir folder-prefix convention (confirmed active in this app -- see components bsf/SiteHeader.vue -> <BsfSiteHeader>, bsf/MilestonePage.vue -> <BsfMilestonePage> with 8 hits) would register this file as <AuthLoginCard>, the SAME tag name narduk-auth's own layer registers -- if that resolves as expected, this local file silently shadows/replaces the library component wherever narduk-auth's own login.vue page (served automatically, no local page file exists) renders <AuthLoginCard>. Not confirmed by a build/component-manifest trace (out of scope for a read-only grep survey); flagged as the single most consequential finding in this repo for the orchestrator to verify directly."
+    },
+    {
+      "name": "RegisterCard",
+      "path": "apps/web/app/components/auth/RegisterCard.vue",
+      "loc": 245,
+      "consumers": 0,
+      "duplicates_lib": "AuthRegisterCard",
+      "notes": "same shadow-collision hypothesis as LoginCard, for narduk-auth's AuthRegisterCard"
+    },
+    {
+      "name": "ExchangePanel",
+      "path": "apps/web/app/components/auth/ExchangePanel.vue",
+      "loc": 98,
+      "consumers": 0,
+      "duplicates_lib": "AuthExchangePanel",
+      "notes": "same shadow-collision hypothesis, for narduk-auth's AuthExchangePanel"
+    },
+    {
+      "name": "BsfDashboardShell",
+      "path": "apps/web/app/components/bsf/BsfDashboardShell.vue",
+      "loc": 84,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "dashboard layout shell; narduk-core's LayerDashboardShell is unused (0 hits) in this app"
+    },
+    {
+      "name": "BsfPublicProfilesGrid",
+      "path": "apps/web/app/components/bsf/BsfPublicProfilesGrid.vue",
+      "loc": 95,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "public-profile card grid, backed by server/api/public/profiles.get.ts (limit-only, max 20, no pagination past page 1)"
+    },
+    {
+      "name": "BsfPublicProfileBody",
+      "path": "apps/web/app/components/bsf/BsfPublicProfileBody.vue",
+      "loc": 156,
+      "consumers": 3,
+      "duplicates_lib": "none",
+      "notes": "renders a public sobriety profile including the live day-counter; one of the two components implicated in issue #7's SSR/hydration timezone bug"
+    },
+    {
+      "name": "PrivateCounterPanel",
+      "path": "apps/web/app/components/bsf/PrivateCounterPanel.vue",
+      "loc": 115,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "KPI/stat-tile-like live counter panel"
+    },
+    {
+      "name": "sobrietyTime.ts",
+      "path": "apps/web/app/utils/sobrietyTime.ts",
+      "loc": 135,
+      "consumers": 9,
+      "duplicates_lib": "none",
+      "notes": "8 exported date/duration formatting functions (sobriety-duration domain); no narduk-libs equivalent exists"
+    },
+    {
+      "name": "AvatarCropDialog",
+      "path": "apps/web/app/components/bsf/AvatarCropDialog.vue",
+      "loc": 107,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "image crop dialog feeding narduk-uploads; narduk-uploads is a dependency but ships no crop-dialog UI"
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [
+      {
+        "path": "apps/web/server/api/public/profiles.get.ts",
+        "loc": 33,
+        "consumers": 1,
+        "notes": "limit-only (max 20, default 20) truncating list, no offset/cursor for a second page -- not true pagination"
+      }
+    ],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [
+      {
+        "path": "apps/web/app/components",
+        "loc": 0,
+        "consumers": 3,
+        "notes": "narduk-core AppConfirmModal used 3x -- this app IS adopting some narduk-core shared UI, unlike harvest-tracker/mybo-at-v2/narduk-nvr which have 0 AppConfirmModal usage"
+      }
+    ],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/bsf/PrivateCounterPanel.vue",
+        "loc": 115,
+        "consumers": 1,
+        "notes": "live sobriety-duration counter panel"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/bsf/BsfPublicProfilesGrid.vue",
+        "loc": 95,
+        "consumers": 1,
+        "notes": "public profile card grid"
+      },
+      {
+        "path": "apps/web/app/components/bsf/SelfRecoveryPartnerCard.vue",
+        "loc": 35,
+        "consumers": 1,
+        "notes": "small partner-invite card"
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/sobrietyTime.ts",
+        "loc": 135,
+        "consumers": 9,
+        "notes": "8 duration/date formatters; implicated in issue #7 (SSR/hydration day-count mismatch)"
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [
+      {
+        "path": "apps/web/app/components/bsf/BsfQrCode.vue",
+        "loc": 89,
+        "consumers": 2,
+        "notes": "QR code + likely copy-link affordance for profile sharing; narduk-core AppCopyButton unused (0 hits)"
+      }
+    ],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/bsf/BsfDashboardShell.vue",
+        "loc": 84,
+        "consumers": 1,
+        "notes": "dashboard shell; narduk-core LayerDashboardShell unused"
+      },
+      {
+        "path": "apps/web/app/components/bsf/SiteHeader.vue",
+        "loc": 83,
+        "consumers": 1,
+        "notes": "registers as <BsfSiteHeader> per this app's folder-prefix convention"
+      },
+      {
+        "path": "apps/web/app/components/bsf/SiteFooter.vue",
+        "loc": 47,
+        "consumers": 1,
+        "notes": "registers as <BsfSiteFooter>"
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/components/auth/LoginCard.vue",
+        "loc": 263,
+        "consumers": 0,
+        "notes": "see local_reimplementations -- likely-dead OR silently-shadowing local copy of narduk-auth's AuthLoginCard"
+      },
+      {
+        "path": "apps/web/app/components/auth/RegisterCard.vue",
+        "loc": 245,
+        "consumers": 0,
+        "notes": "same as above for AuthRegisterCard"
+      },
+      {
+        "path": "apps/web/app/components/auth/ExchangePanel.vue",
+        "loc": 98,
+        "consumers": 0,
+        "notes": "same as above for AuthExchangePanel"
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [
+      {
+        "path": "apps/web/app/components/bsf/AvatarCropDialog.vue",
+        "loc": 107,
+        "consumers": 1,
+        "notes": "crop UI in front of narduk-uploads, which has no crop-dialog of its own"
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/components/bsf/BsfQrCode.vue",
+        "loc": 89,
+        "consumers": 2,
+        "notes": "QR code generation for profile/share links"
+      },
+      {
+        "path": "apps/web/app/components/bsf/MilestonePage.vue",
+        "loc": 50,
+        "consumers": 8,
+        "notes": "registers as <BsfMilestonePage>; templated page body reused across the 8 static (milestones)/*.vue routes -- highest consumer-count local component in this app"
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/public/profiles.get.ts",
+      "params": ["limit"],
+      "response_shape": "array (rows.map(toPublicProfileDto)), max 20, no next-page mechanism",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/__sitemap__/indexed-public-profiles.get.ts",
+      "params": "not measured",
+      "response_shape": "not measured",
+      "limit_enforced": "not measured"
+    },
+    {
+      "route": "apps/web/server/api/users.get.ts",
+      "params": "not measured",
+      "response_shape": "not measured",
+      "limit_enforced": "not measured"
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/been-sober-for#7",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "SSR/hydration mismatch: day counter showed wrong value for UTC+ timezone users during early local hours, because atLocalMidnight() used JS local-time getters that resolve to UTC on the Cloudflare Worker but user-local time on the client, in both BsfPublicProfileBody.vue and dashboard/index.vue",
+      "pattern": "date_time_format"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/e2e/dashboard.spec.ts",
+    "apps/web/tests/e2e/public-profile.spec.ts",
+    "apps/web/tests/e2e/visual-audit.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "auth_gating_ui",
+      "name": "LoginCard/RegisterCard/ExchangePanel duplication risk",
+      "path": "apps/web/app/components/auth/LoginCard.vue",
+      "loc": 606,
+      "consumers": 0,
+      "why": "606 combined LOC of local components with the exact same names narduk-auth's own layer would assign them (AuthLoginCard/AuthRegisterCard/AuthExchangePanel via Nuxt's folder-prefix convention, confirmed active elsewhere in this app), zero measured usage under any tag, and a live dependency on narduk-auth 1.25.4 -- this needs a direct (non-grep) check by whoever owns the estate-wide plan: either dead code to delete, or a silent override of the shared library's own auth UI that every other app assumes is safe to change centrally",
+      "loc_saved_estimate": 606
+    },
+    {
+      "pattern": "date_time_format",
+      "name": "sobrietyTime.ts",
+      "path": "apps/web/app/utils/sobrietyTime.ts",
+      "loc": 135,
+      "consumers": 9,
+      "why": "9-consumer duration formatter with a real, closed SSR-hydration defect (issue #7) rooted in a local-time-vs-UTC bug -- exactly the class of defect a shared, audited date/duration formatter should prevent from being reinvented per-app",
+      "loc_saved_estimate": 100
+    },
+    {
+      "pattern": "pagination_control",
+      "name": "public profiles limit-only list",
+      "path": "apps/web/server/api/public/profiles.get.ts",
+      "loc": 33,
+      "consumers": 1,
+      "why": "truncates silently past 20 rows with no next-page mechanism -- same unbounded/undersized-list risk class flagged in mybo-at-v2 issue #14 and narduk-nvr's members endpoint",
+      "loc_saved_estimate": 40
+    }
+  ],
+  "notes": "Only L7 repo without @nuxt/ui as a direct dependency and the only one with tailwindcss as a direct dependency -- has its own UI_PLAN.md-driven design system, though <UApp> in app.vue confirms Nuxt UI is still present and used transitively. This app DOES adopt some narduk-core UI (AppConfirmModal x3, LayerNetworkFooter x1), unlike the other three cloned L7 repos which show zero narduk-core component tag usage. The auth/{LoginCard,RegisterCard,ExchangePanel}.vue finding is the standout result of this lane and needs a maintainer/build-level check, not just grep, to resolve."
+}

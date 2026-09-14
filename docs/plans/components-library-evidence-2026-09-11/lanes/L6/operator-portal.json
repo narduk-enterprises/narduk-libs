@@ -1,0 +1,384 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/operator-portal",
+  "clone": "ok",
+  "surveyed_sha": "fe1192d2d5402634ae740341e1cd33bb6491168a",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.8",
+    "nuxt_ui": "^4.9.0",
+    "tailwind": "none (bundled via @nuxt/ui, no direct dependency)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-auth": "^1.24.1",
+      "narduk-charts": "^2.5.0",
+      "narduk-core": "^1.20.4",
+      "narduk-app-tools": "^0.1.3"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 60,
+    "components": 32,
+    "pages": 25,
+    "layouts": 1,
+    "composables": 9,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find app/composables -maxdepth 8 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "NardukLineChart": 2,
+    "AuthLoginCard": 1,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "CollectionTable",
+      "path": "app/components/CollectionTable.vue",
+      "loc": 421,
+      "consumers": 17,
+      "duplicates_lib": "none",
+      "notes": "narduk-libs ships no table component at all; this is the app's own hardened, tested, documented table primitive (see patterns.table)."
+    },
+    {
+      "name": "StatePanel",
+      "path": "app/components/StatePanel.vue",
+      "loc": 89,
+      "consumers": 22,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "variant: empty|blocked|clear|absent, each with distinct copy semantics (empty vs 'unknown is not zero'). Plausible AppEmptyState overlap by name/purpose only -- prop-level comparison against narduk-core's AppEmptyState not performed (out of L6 scope, see L0)."
+    },
+    {
+      "name": "FreshnessStamp",
+      "path": "app/components/FreshnessStamp.vue",
+      "loc": 30,
+      "consumers": 16,
+      "duplicates_lib": "NsFreshnessChip",
+      "notes": "small figure-bearing freshness/staleness stamp; issue #253 proposes a pattern-gate rule specifically for this class of module. Plausible NsFreshnessChip overlap by name/purpose only -- not verified against narduk-ui's implementation."
+    },
+    {
+      "name": "FilterBar",
+      "path": "app/components/FilterBar.vue",
+      "loc": 173,
+      "consumers": 8,
+      "duplicates_lib": "none",
+      "notes": "renders filter chips/facets; explicitly does NOT own the search query field or refresh/close controls per its own doc comment (those are separate, uninventoried .op-search markup in callers). narduk-libs ships no filter/search-bar component."
+    },
+    {
+      "name": "status chip family (DomainChip, clients/KindChip, products/AnalyticsChip, products/Badges)",
+      "path": "app/components/DomainChip.vue (13 loc, 1 consumer); app/components/clients/KindChip.vue; app/components/products/AnalyticsChip.vue; app/components/products/Badges.vue",
+      "loc": 13,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "four separate small badge/chip components, one per domain area, no shared generic status-badge primitive; narduk-libs ships no status badge component either. Only DomainChip's own LOC/consumers measured; the other three not individually sized (out of budget)."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "app/components/CollectionTable.vue",
+        "loc": 421,
+        "kind": "raw-table",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "cards",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 5,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "badge", "actions"],
+        "server_api": "none (app is read-model-driven: server/api/read-model.get.ts, products.get.ts, analytics.get.ts, live.get.ts carry no page/limit/cursor/sort query params -- tables render a full pre-aggregated snapshot client-side)",
+        "tests": [
+          "tests/e2e/09-collection-table.spec.ts (232 loc)",
+          "tests/e2e/21-mobile-collection-tables.spec.ts (415 loc)",
+          "tests/unit/documents-collection-table.test.ts"
+        ],
+        "consumers": 17,
+        "notes": "This is the ONLY table surface in the app today -- all ~11 raw <table> usages the lane brief anticipated have already been consolidated onto this ONE shared local component via PRs #155, #159, #186, #269, #276 (see defect_history). Sort/pagination/search are NOT built in: projects/index.vue does its own client-side [...].sort() (line 49); no page does pagination (page_size not applicable -- reads full read-model snapshot); FilterBar is a separate, partial (chips-only) component. mobile='cards' is an approximation: the component's own doc comment describes it as 'the SAME real table, same DOM order, one cell per line, headers dropped' below 1000px -- NOT a redesigned card, and horizontal-scroll/hidden-columns are explicitly prohibited in its header comment (verified: no overflow-x in the file). column_count=5 and column_types are from one sample (app/pages/products/index.vue productColumns, line 283) -- other consumers' column defs not individually counted (17 consumers, out of budget to enumerate each)."
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [
+      {
+        "path": "app/pages/projects/index.vue",
+        "loc": 1,
+        "consumers": 1,
+        "notes": "inline `[...projects.value].sort(...)` at line 49, client-side only, not a shared control; open issue #330 'Products render in YAML file order, not sorted alphabetically' and #201 'sort observed timestamps chronologically' show this need recurring unaddressed elsewhere."
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "app/components/FilterBar.vue",
+        "loc": 173,
+        "consumers": 8,
+        "notes": "chip/facet rendering only; query input (.op-search) is separate uninventoried markup per caller."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "app/components/DomainChip.vue",
+        "loc": 13,
+        "consumers": 1,
+        "notes": "one of four domain-specific chip components (KindChip, AnalyticsChip, Badges also exist); no shared generic badge."
+      }
+    ],
+    "freshness_indicator": [
+      {
+        "path": "app/components/FreshnessStamp.vue",
+        "loc": 30,
+        "consumers": 16,
+        "notes": "figure-bearing freshness stamp; issue #253 tracks a pattern-gate rule for this module class."
+      }
+    ],
+    "empty_state": [
+      {
+        "path": "app/components/StatePanel.vue",
+        "loc": 89,
+        "consumers": 22,
+        "notes": "variant: empty|blocked|clear|absent; issue #282 'Route .op-absence consumers through StatePanel' shows adoption is still in progress even internally."
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "app/components/SparkTile.vue",
+        "loc": 471,
+        "consumers": 1,
+        "notes": "stat tile wrapping NardukLineChart; only 1 consumer measured via tag-grep so reuse is currently low, but it is the app's only KPI-tile-with-sparkline pattern."
+      }
+    ],
+    "card_list": [],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [
+      {
+        "path": "app/components/HeroChart.vue",
+        "loc": 200,
+        "consumers": 1,
+        "notes": "wraps NardukLineChart (narduk-charts already adopted here)."
+      },
+      {
+        "path": "app/components/SparkTile.vue",
+        "loc": 471,
+        "consumers": 1,
+        "notes": "also wraps NardukLineChart; see kpi_stat_tile."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [
+      {
+        "path": "app/components/CommandPalette.vue",
+        "loc": 487,
+        "consumers": "not measured",
+        "notes": "role=\"dialog\" command palette; not a lane-target pattern, noted for completeness only."
+      }
+    ],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "app/components/EvidenceDrawer.vue",
+        "loc": 157,
+        "consumers": 1,
+        "notes": "role=\"dialog\" evidence drawer, domain-specific overlay, not a generic modal/confirm pattern."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/operator-portal#167",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Three tables still horizontal-scroll on phones: Documents, Analytics unmapped values, Decisions fallback",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#168",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Dead CSS: .v4-table rule family has zero consumers after the last CollectionTable migration",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#180",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Mobile: /portfolio/analytics scrolls sideways at 390px",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#236",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "e2e: no coverage for /login, and /portfolio/property missing from mobile CollectionTable sweep",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#273",
+      "kind": "issue",
+      "state": "open",
+      "summary": "e2e flake: products State-column word-break assertion reads a detached node",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#279",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "Phone tap-target floor stops one selector short: pagination buttons and search inputs stay under 44px",
+      "pattern": "filter_search_bar"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#330",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Products render in YAML file order, not sorted alphabetically",
+      "pattern": "sort_control"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#201",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Agent feed freshness: honour slow-but-valid heartbeats and sort observed timestamps chronologically",
+      "pattern": "sort_control"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#156",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "overflow-wrap: anywhere splits state words -- twice now, in two components",
+      "pattern": "status_chip_badge"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#282",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Route .op-absence consumers through StatePanel and promote .op-clocks into components.css",
+      "pattern": "empty_state"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#155",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "feat(surface): the P2 collection ledger -- CollectionTable, and two pages proving it",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#159",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "feat(surface): finish the P2 collection-ledger migration -- six surfaces onto CollectionTable",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#186",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix(surface): migrate the last three horizontal-scroll tables onto CollectionTable",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#217",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix(mobile-tables): give every stacked cell its own label, keep state words whole",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#242",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "test(e2e): cover /login and add property/agent-work/agents to mobile CollectionTable sweep",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#269",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix(desk): migrate Projects collection and detail to the desk design system",
+      "pattern": "table"
+    },
+    {
+      "ref": "narduk-enterprises/operator-portal#276",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "fix(desk): migrate the Portfolio and Clients batch, and restore the analytics fleet grid",
+      "pattern": "table"
+    }
+  ],
+  "tests_covering_patterns": [
+    "tests/e2e/09-collection-table.spec.ts",
+    "tests/e2e/21-mobile-collection-tables.spec.ts",
+    "tests/unit/documents-collection-table.test.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "CollectionTable",
+      "path": "app/components/CollectionTable.vue",
+      "loc": 421,
+      "consumers": 17,
+      "why": "Only table primitive in the app, already fully migrated off ~11 hand-rolled tables (PRs #155/159/186/269/276), a11y-reviewed (real table semantics preserved through responsive reflow), and covered by 647 lines of e2e + a unit test. Best available real-world starting point for a shared narduk-libs table, but ships zero sort/paginate/search -- an extracted version must add those.",
+      "loc_saved_estimate": 421
+    },
+    {
+      "pattern": "empty_state",
+      "name": "StatePanel",
+      "path": "app/components/StatePanel.vue",
+      "loc": 89,
+      "consumers": 22,
+      "why": "22 consumers, richer than a plain empty state (4 variants: empty/blocked/clear/absent), highest-reuse non-table component found in this repo.",
+      "loc_saved_estimate": 89
+    },
+    {
+      "pattern": "freshness_indicator",
+      "name": "FreshnessStamp",
+      "path": "app/components/FreshnessStamp.vue",
+      "loc": 30,
+      "consumers": 16,
+      "why": "16 consumers for a 30-line component -- high reuse density; narduk-ui already ships NsFreshnessChip, worth a direct comparison (L0's job) before extracting a second implementation.",
+      "loc_saved_estimate": 30
+    }
+  ],
+  "notes": "Single-app repo (app/ at root, not a monorepo). Architecture is read-model-driven (top-level read-model/ dir, contract.json) -- server/api routes serve pre-aggregated snapshots, not paginated DB queries, so 'server_list_contracts' is genuinely empty here, not unmeasured. The brief's premise of '~11 raw <table> usages' describes this app's PRE-migration state; as of surveyed_sha the count is 1 real table primitive (CollectionTable) with 17 consumers -- this is itself evidence for the estate-wide table extraction (a real app already proved the pattern and paid down the horizontal-scroll/a11y defects a shared component should avoid repeating elsewhere)."
+}

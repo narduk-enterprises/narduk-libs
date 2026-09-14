@@ -1,0 +1,10 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/software-delivery",
+  "clone": "ok",
+  "surveyed_sha": "7360b9738f6bd8fe82a05aa1bc87206a480bf7b2",
+  "default_branch": "main",
+  "app_dirs": [],
+  "is_nuxt_app": false,
+  "notes": "Pure Cloudflare Worker (wrangler dev/deploy, src/index.ts + src/index.test.ts, a redirect-worker/ sub-worker, public/og.png) -- no nuxt.config.*, no 'nuxt' dependency in package.json, zero .vue files anywhere in the repo (find . -maxdepth 6 -name '*.vue' -not -path '*/node_modules/*' | wc -l => 0). README/scripts (upload:catalog, upload:release, upload:myfarm) indicate this is an app-catalog/release-delivery backend service, not a Vue/Nuxt UI surface. No component-usage survey applies; not surveyed further per lane brief instructions for a non-Nuxt repo."
+}

@@ -7,7 +7,13 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 ## Scope
 
 - Shared Nuxt modules, runtime helpers, test helpers, focused app-local tooling,
-  and the deterministic one-shot app generator live in `packages/*`.
+  and the deterministic one-shot app generator live in four families under
+  `packages/`: `modules/` (Nuxt runtime modules and layers), `tooling/` (build,
+  test and generator tooling), `design/` (the coded NE design system) and
+  `contracts/` (shared contracts). The layout is company-hq `D-WEBFOUND-2` Q2
+  (a); `pnpm-workspace.yaml` is the single source of truth for where a package
+  lives, so scripts resolve package directories from it rather than assuming
+  `packages/<name>`.
 - The app generator may create a new repository layout once. It must not manage
   that repository afterward and must not call Command, Cloudflare, GitHub, or
   Doppler directly.
@@ -38,6 +44,10 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 
 - `pnpm install`
 - `pnpm run quality`
+- `pnpm run surface:check` (inside `quality:artifacts`): every component
+  `narduk-shell` registers, and every `./format` export, has a README section,
+  tests and a design card shipped beside it. Failures print the exact fix; see
+  `packages/design/narduk-shell/README.md` § "Component surface check".
 - For a touched package, also run its focused typecheck/unit tests and
   `pnpm pack --dry-run` before publication.
 - New package releases must be installable from their packed artifact by a

@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   appendFileSync,
@@ -16,11 +16,22 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
+import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
+import { loadWorkspace } from './compute-affected-packages.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
+import {
+  fileDigest,
+  fingerprintInputs,
+  lookupConsumerProof,
+} from './reuse-packed-consumer-proof.mjs'
+
+const execFileAsync = promisify(execFile)
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packageRoot = join(root, 'packages')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
@@ -64,8 +75,26 @@ if (!WORKSPACE_UNHEAD_VERSION || !WORKSPACE_UNHEAD_VUE_VERSION) {
   )
 }
 
+// narduk-core depends on nuxt-auth-utils, whose OPTIONAL passkey helpers still
+// declare `@simplewebauthn/*@^11` — a range upstream has not moved since 2024.
+// narduk-auth implements WebAuthn itself against its own exact-pinned v13
+// (narduk-libs#125 D3) and never calls those helpers, so the two versions never
+// meet at runtime. This sandbox is outside the workspace, so it must carry the
+// same peer rule the workspace root declares or pnpm emits the WARN/✕ lines
+// runChecked() turns into a hard failure. Read from root/package.json for the
+// same reason as the pins above: one place to change.
+const WORKSPACE_PEER_ALLOW_ANY = (rootManifest.pnpm?.peerDependencyRules?.allowAny ?? []).filter(
+  (name) => name.startsWith('@simplewebauthn/'),
+)
+if (WORKSPACE_PEER_ALLOW_ANY.length === 0) {
+  throw new Error(
+    'Root package.json must list the @simplewebauthn/* packages in pnpm.peerDependencyRules.allowAny.',
+  )
+}
+
 const writeLine = (message) => process.stdout.write(`${message}\n`)
 const writeError = (message) => process.stderr.write(`${message}\n`)
+const timings = []
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const ignoredGeneratedDirectories = new Set([
   '.git',
@@ -109,8 +138,7 @@ const forbiddenSourceReferencePattern = new RegExp(
 // `git+` in a lockfile is usually package `repository.url` metadata
 // (`git+ssh://git@github.com/narduk-enterprises/narduk-libs.git`), not a git
 // dependency. Only treat it as forbidden when it is a specifier or resolution.
-const forbiddenGitDependencyLinePattern =
-  /(?:^\s*(?:specifier|version):\s*git\+)|(?:@[^\s'"]+@git\+)/u
+const forbiddenGitDependencyLinePattern = /^\s*(?:specifier|version):\s*git\+|@[^\s'"]+@git\+/u
 
 if (!dryRun) {
   writeError('Refusing to run without --dry-run; this helper never publishes packages.')
@@ -127,6 +155,7 @@ function childEnvironment(overrides = {}) {
 function runChecked(command, commandArgs, options) {
   const label = options.label || `${command} ${commandArgs.join(' ')}`
   writeLine(`\n[consumer-smoke] ${label}`)
+  const started = performance.now()
   const result = spawnSync(command, commandArgs, {
     cwd: options.cwd,
     encoding: 'utf8',
@@ -134,7 +163,9 @@ function runChecked(command, commandArgs, options) {
     maxBuffer: 64 * 1024 * 1024,
   })
   const output = `${result.stdout || ''}${result.stderr || ''}`
+  timings.push({ label, seconds: (performance.now() - started) / 1000 })
   if (output) process.stdout.write(output)
+  writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`${label} failed with exit code ${result.status ?? 'unknown'}.`)
@@ -345,6 +376,7 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
     const requested = [...new Set(requiredBrowsers)]
     if (!requested.length) fail('at least one browser engine is required')
     const playwright = localRequire('@playwright/test')
+    const executableDigests = {}
     for (const engineName of requested) {
       const selection = supported[engineName]
       if (!selection) fail(`unsupported isolated browser ${JSON.stringify(engineName)}`)
@@ -388,9 +420,20 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
       }
       add(`${engineName} executable`, realized)
       add(`${engineName} launch canary`, 'passed')
+      executableDigests[engineName] = fileDigest(realized)
     }
     add('status', 'PASS — exact immutable image toolchain selected; no installer invoked')
     writeLine(`Playwright toolchain matched image ${imagePackage.version} (${imageManifestSha})`)
+    return {
+      manifest: imageManifestSha,
+      package: fileDigest(imagePackagePath),
+      executables: executableDigests,
+      os: fileDigest('/etc/os-release'),
+      // Browser revision alone does not identify its native library inputs.
+      systemPackages: createHash('sha256')
+        .update(execFileSync('dpkg-query', ['-W', '-f=${binary:Package}=${Version}\n']))
+        .digest('hex'),
+    }
   } catch (error) {
     add('status', `FAIL — ${error.message}`)
     writeError(`Playwright toolchain mismatch: ${error.message}`)
@@ -416,6 +459,10 @@ function assertExactGeneratedPackagePins(generatedDirectory, packagesByName) {
     '@narduk-enterprises/narduk-auth',
     '@narduk-enterprises/narduk-core',
     '@narduk-enterprises/narduk-seo',
+    // Ships by default (components-library-plan.md item 4, narduk-libs#251),
+    // so it is pinned exactly like every other required package here even
+    // though it is not one of the `--capabilities` passed below.
+    '@narduk-enterprises/narduk-shell',
     '@narduk-enterprises/narduk-testkit',
     '@narduk-enterprises/narduk-uploads',
   ])
@@ -469,6 +516,27 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
 }
 
 function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
+  const loggingPlugin = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'app',
+    'plugins',
+    'logging.client.ts',
+  )
+  mkdirSync(dirname(loggingPlugin), { recursive: true })
+  writeFileSync(
+    loggingPlugin,
+    [
+      "import { createBrowserLogger } from '@narduk-enterprises/narduk-logging/browser'",
+      '',
+      'export default defineNuxtPlugin(() => {',
+      "  const logger = createBrowserLogger({ service: 'packed-seo-browser', environment: 'test' })",
+      "  logger.info('Synthetic logging check', { check: 'seo-browser' })",
+      '})',
+      '',
+    ].join('\n'),
+  )
   const appPath = join(generatedDirectory, 'apps', 'web', 'app', 'app.vue')
   writeFileSync(
     appPath,
@@ -476,6 +544,13 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
       '<template>',
       '  <UApp>',
       '    <LayerAppHeader app-name="Narduk Libs Release Smoke" />',
+      // Proves the packed narduk-shell tarball, not just narduk-core: the
+      // components-library suite ships to every generated app by default
+      // (components-library-plan.md item 4, narduk-libs#251), and a generated
+      // app that installs it but never renders an Ne* component has not been
+      // tested. NeStatusBadge is the simplest registered component with no
+      // slots and no optional-vs-required prop branching.
+      '    <NeStatusBadge tone="ok" label="Packed OK" />',
       '    <NuxtLayout>',
       '      <NuxtPage />',
       '    </NuxtLayout>',
@@ -484,6 +559,153 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
       '',
     ].join('\n'),
   )
+  // Extends the generator's own home.spec.ts (which only asserts the page
+  // heading) with a real browser assertion that the packed narduk-shell
+  // component actually rendered -- not just that `nuxt build` succeeded.
+  const homeSpecPath = join(generatedDirectory, 'apps', 'web', 'tests', 'e2e', 'home.spec.ts')
+  writeFileSync(
+    homeSpecPath,
+    [
+      "import { expect, test } from '@playwright/test'",
+      '',
+      "test('home page renders', async ({ page }) => {",
+      "  await page.goto('/')",
+      "  await expect(page.getByRole('heading', { name: 'Narduk Libs Release Smoke' })).toBeVisible()",
+      '})',
+      '',
+      "test('packed narduk-shell component renders', async ({ page }) => {",
+      "  await page.goto('/')",
+      "  await expect(page.getByText('Packed OK')).toBeVisible()",
+      '})',
+      '',
+    ].join('\n'),
+  )
+}
+
+// narduk-libs#295: `addPackedCoreUiRuntimeSmoke` above only proves the packed
+// narduk-shell tarball installs and that a registered Ne* component renders
+// through the module's own component auto-import -- neither exercises app
+// code that writes `import { defineStatusMap } from '@narduk-enterprises/narduk-shell'`,
+// which is exactly the line that failed a production `nuxt build` for the
+// first real adopter (narduk-enterprises/buoys PR #44, within an hour of the
+// 0.1.0 publish): `.` resolved straight to `src/module.ts`, which imports
+// `@nuxt/kit`, and Nuxt's import-protection plugin refuses to let any
+// app-bundled file that imports `@nuxt/kit` reach the client build.
+//
+// This page imports the package root's documented value exports
+// (`defineStatusMap`, `NARDUK_SHELL_APP_CONFIG`) as VALUES from the bare
+// `@narduk-enterprises/narduk-shell` specifier -- never from `./module` --
+// the same way that failing line did. If a future change ever repoints `.`
+// back at a file that pulls in `@nuxt/kit`, the `build` phase of
+// `quality:static` (a real `nuxt build`, run before `test:unit`/`test:e2e`
+// in the phase list `qualityPhases()` expands below) fails here, before this
+// page is ever served. The Playwright assertion is the second half of the
+// proof: it shows the values did not just survive the build, they executed
+// and produced the right output.
+function addPackedShellRootValueImportSmoke(generatedDirectory) {
+  const pagePath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'app',
+    'pages',
+    'narduk-shell-root-value-import.vue',
+  )
+  mkdirSync(dirname(pagePath), { recursive: true })
+  writeFileSync(
+    pagePath,
+    [
+      '<script setup lang="ts">',
+      '// narduk-libs#295 gate -- see addPackedShellRootValueImportSmoke in',
+      '// scripts/release-packages.mjs for why this page exists. Every import',
+      "// below is a VALUE from the bare package specifier, never './module'.",
+      "import { defineStatusMap, NARDUK_SHELL_APP_CONFIG } from '@narduk-enterprises/narduk-shell'",
+      '',
+      "type RootImportCheck = 'ok'",
+      '',
+      'const rootImportStatus = defineStatusMap<RootImportCheck>({',
+      "  ok: ['ok', 'narduk-shell root value import OK'],",
+      '})',
+      '',
+      "const descriptor = rootImportStatus('ok')",
+      'const primaryColorAlias = NARDUK_SHELL_APP_CONFIG.ui.colors.primary',
+      '</script>',
+      '',
+      '<template>',
+      '  <div>',
+      '    <h1>{{ descriptor.label }}</h1>',
+      '    <p data-testid="root-config-alias">{{ primaryColorAlias }}</p>',
+      '  </div>',
+      '</template>',
+      '',
+    ].join('\n'),
+  )
+
+  const specPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'tests',
+    'e2e',
+    'narduk-shell-root-value-import.spec.ts',
+  )
+  mkdirSync(dirname(specPath), { recursive: true })
+  writeFileSync(
+    specPath,
+    [
+      "import { expect, test } from '@playwright/test'",
+      '',
+      "test('narduk-shell root value imports execute (narduk-libs#295)', async ({ page }) => {",
+      "  await page.goto('/narduk-shell-root-value-import')",
+      '  await expect(',
+      "    page.getByRole('heading', { name: 'narduk-shell root value import OK' }),",
+      '  ).toBeVisible()',
+      "  await expect(page.getByTestId('root-config-alias')).toHaveText('sky')",
+      '})',
+      '',
+    ].join('\n'),
+  )
+
+  // The generator's own `og:check` step (wired into the generated app's
+  // `build` script: `narduk-app og:generate --if-missing && narduk-app
+  // og:check && nuxt build`) requires every `app/pages/*.vue` file to be
+  // classified in `Config/social-previews.json`, or the build fails before
+  // `nuxt build` -- and therefore before Playwright -- ever runs (see
+  // packages/tooling/create-narduk-app/src/social-previews.ts and
+  // checkRouteInventory in packages/tooling/narduk-app-tools/src/social/config.ts).
+  // This fixture page is release-pipeline plumbing, not real content, so it
+  // is classified `private` with a reason, exactly like the generator's own
+  // `/__preview/og-images` example -- that skips path/crawler checks entirely
+  // (checkRouteInventory: `if (route.kind === 'private') continue`) while
+  // still satisfying the per-file "every page is classified" requirement.
+  const socialPreviewsConfigPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'Config',
+    'social-previews.json',
+  )
+  const socialPreviewsConfig = JSON.parse(readFileSync(socialPreviewsConfigPath, 'utf8'))
+  socialPreviewsConfig.routes.push({
+    source: 'narduk-shell-root-value-import.vue',
+    kind: 'private',
+    reason:
+      'narduk-libs#295 packed-consumer-smoke fixture proving the narduk-shell root value import; not real content',
+  })
+  // Re-serializing the whole config with plain `JSON.stringify` would
+  // re-expand the pre-existing `"paths": ["/"]` entry back onto three lines,
+  // failing the generated app's own `format:check` -- Prettier collapses a
+  // short array like that onto one line, but does not collapse an object
+  // (which is why the new `private` route above, with no `paths` field,
+  // needs no such fix-up). Re-apply the exact same collapsing this file was
+  // originally written with in socialPreviewFiles
+  // (packages/tooling/create-narduk-app/src/social-previews.ts) to keep the
+  // untouched routes byte-identical to what Prettier already accepted.
+  const rewritten = `${JSON.stringify(socialPreviewsConfig, null, 2).replaceAll(
+    /("paths": )\[\n\s+("[^\n]+")\n\s+\]/gu,
+    '$1[$2]',
+  )}\n`
+  writeFileSync(socialPreviewsConfigPath, rewritten)
 }
 
 function assertPackedInternalDependencyGraph(packages, tarballs) {
@@ -570,13 +792,8 @@ function packEnvironment() {
   return childEnvironment({ npm_config_ignore_scripts: 'true' })
 }
 
-const packages = readdirSync(packageRoot, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => {
-    const directory = join(packageRoot, entry.name)
-    const manifest = readJson(join(directory, 'package.json'))
-    return { directory, manifest }
-  })
+const packages = loadWorkspace(root)
+  .packages.map(({ directory, manifest }) => ({ directory, manifest }))
   .filter(({ manifest }) => manifest.private !== true)
   .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name))
 
@@ -596,15 +813,12 @@ for (const { directory, manifest } of packages) {
     throw new Error(`Package ${manifest.name} must publish to GitHub Packages.`)
   }
 
-  writeLine(`Checking ${manifest.name}@${manifest.version}`)
-  execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
-    cwd: root,
-    stdio: 'inherit',
-  })
-  // Standalone dry-run still exercises pack listing + lifecycle. Consumer smoke
-  // creates the real tarball immediately below from already-built artifacts, so
-  // a listing-only pack would only re-run prepack/prepare for no additional proof.
   if (!consumerSmoke) {
+    writeLine(`Checking ${manifest.name}@${manifest.version}`)
+    execFileSync('pnpm', ['exec', 'publint', directory, '--strict'], {
+      cwd: root,
+      stdio: 'inherit',
+    })
     execFileSync('pnpm', ['pack', '--dry-run'], { cwd: directory, stdio: 'inherit' })
   }
 }
@@ -627,19 +841,43 @@ mkdirSync(tarballDirectory, { recursive: true })
 try {
   const tarballs = new Map()
 
-  for (const { directory, manifest } of packages) {
-    execFileSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
-      cwd: directory,
-      env: packEnvironment(),
-      stdio: 'inherit',
-    })
-    const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
-    const tarball = readdirSync(tarballDirectory).find((entry) => entry === expectedTarball)
-    if (!tarball) {
-      throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+  const packStarted = performance.now()
+  const packed = await mapPackages(packages, async ({ directory, manifest }) => {
+    const label = `validate and pack ${manifest.name}@${manifest.version}`
+    writeLine(`[consumer-smoke] ${label}`)
+    try {
+      const lint = await execFileAsync('pnpm', ['exec', 'publint', directory, '--strict'], {
+        cwd: root,
+        env: childEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      const pack = await execFileAsync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
+        cwd: directory,
+        env: packEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
+      const path = join(tarballDirectory, expectedTarball)
+      if (!existsSync(path)) throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+      return {
+        name: manifest.name,
+        path,
+        output: `${lint.stdout}${lint.stderr}${pack.stdout}${pack.stderr}`,
+      }
+    } catch (error) {
+      if (error.stdout) process.stdout.write(error.stdout)
+      if (error.stderr) process.stderr.write(error.stderr)
+      throw new Error(`${label} failed`, { cause: error })
     }
-    tarballs.set(manifest.name, join(tarballDirectory, tarball))
+  })
+  for (const { name, path, output } of packed) {
+    tarballs.set(name, path)
+    if (output) process.stdout.write(output)
   }
+  timings.push({
+    label: 'validate and pack all packages (two at a time)',
+    seconds: (performance.now() - packStarted) / 1000,
+  })
 
   assertPackedInternalDependencyGraph(packages, tarballs)
 
@@ -676,6 +914,9 @@ try {
             '@nuxt/eslint': '1.15.2',
             glob: '13.0.6',
           },
+          peerDependencyRules: {
+            allowAny: WORKSPACE_PEER_ALLOW_ANY,
+          },
         },
       },
       null,
@@ -706,6 +947,43 @@ try {
     }
   }
 
+  // Tier 1 -- every packed package that declares an `exports` map proves each
+  // of its non-pattern subpaths both RESOLVES from the external consumer with
+  // native Node ESM and points at a file the tarball actually contains. Before
+  // narduk-libs#248 this ran for narduk-testkit only, so narduk-ui's
+  // `./tokens.css`, narduk-charts's entry points and narduk-core's plain
+  // subpaths were believed rather than proven: a subpath naming a file the
+  // `files` allowlist omits installs cleanly and fails only in the app that
+  // imports it. See scripts/packed-consumer-subpaths.mjs for why the existence
+  // half is not redundant and why evaluation is NOT generalised here.
+  const subpathPlans = subpathResolutionPlans(packages)
+  if (subpathPlans.length === 0) {
+    throw new Error('No packed package declares an exports map; the subpath tier would be vacuous.')
+  }
+  for (const plan of subpathPlans) {
+    if (plan.skipped.length > 0) {
+      writeLine(
+        `[consumer-smoke] ${plan.name}: not probing ${plan.skipped
+          .map(({ subpath, reason }) => `${subpath} (${reason})`)
+          .join(', ')}`,
+      )
+    }
+    if (plan.specifiers.length === 0) continue
+    runChecked(
+      'node',
+      ['--input-type=module', '--eval', subpathProbeProgram(plan.name, plan.specifiers)],
+      {
+        cwd: consumerDirectory,
+        label: `resolve every packed ${plan.name} export subpath from the external consumer`,
+      },
+    )
+  }
+
+  // Tier 2 -- narduk-testkit additionally EVALUATES its subpaths. These two
+  // groups are this gate's regression baseline and are deliberately unchanged
+  // by the generalisation above; testkit is the one package whose subpaths are
+  // plain built JavaScript with no Nuxt/Vue peer and no import-time side
+  // effects, so importing them for real is both safe and meaningful.
   const testkitManifest = packages.find(
     ({ manifest }) => manifest.name === '@narduk-enterprises/narduk-testkit',
   )?.manifest
@@ -786,6 +1064,7 @@ try {
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
   addTarballOverrides(generatedDirectory, packages, tarballs)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
+  addPackedShellRootValueImportSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
@@ -798,11 +1077,12 @@ try {
   })
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
+  let imageIdentity
   if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
     // Isolated-pool path: reject drift instead of trusting the env var alone.
     // A stale pin or a wrong/job-local PLAYWRIGHT_BROWSERS_PATH must fail
     // here, before `pnpm run quality` below ever launches the real suite.
-    await assertIsolatedPlaywrightToolchain({
+    imageIdentity = await assertIsolatedPlaywrightToolchain({
       cwd: generatedDirectory,
       expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
       requiredBrowsers: ['chromium'],
@@ -813,50 +1093,135 @@ try {
       label: 'install the generated app browser fixture',
     })
   }
-  runChecked('pnpm', ['run', 'quality'], {
-    cwd: generatedDirectory,
-    label: 'run generated app formatting, lint, typecheck, build, unit, and browser gates',
-  })
-  assertNoRetiredBuiltReferences(generatedDirectory)
-
-  const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
-    cwd: generatedDirectory,
-    label: 'apply generated app migrations to a fresh local D1 database',
-  })
-  const firstMigrationMatch = firstMigration.match(
-    /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
+  // Resolve and install both external consumers before considering reuse. A
+  // floating registry dependency or different installed package content forces execution,
+  // even when GitHub reports identical source trees across the merge.
+  const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  const packedInputs = new Map([...tarballs].map(([name, path]) => [name, packedInput(path)]))
+  const proofInputs = {
+    schemaVersion: 2,
+    tree,
+    tarballs: Object.fromEntries([...packedInputs].map(([name, input]) => [name, input.digest])),
+    consumerLock: consumerLockDigest(join(consumerDirectory, 'pnpm-lock.yaml'), packedInputs),
+    generatedSources: Object.fromEntries(
+      listGeneratedTextFiles(generatedDirectory).map((path) => [
+        relative(generatedDirectory, path),
+        basename(path) === 'pnpm-lock.yaml'
+          ? consumerLockDigest(path, packedInputs)
+          : fileDigest(path),
+      ]),
+    ),
+    node: {
+      version: process.version,
+      executable: fileDigest(process.execPath),
+      platform: process.platform,
+      arch: process.arch,
+    },
+    pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
+    imageIdentity: imageIdentity ?? null,
+    nodeOptions: process.env.NODE_OPTIONS || '',
+  }
+  const fingerprint = fingerprintInputs(proofInputs)
+  const inputDigests = Object.fromEntries(
+    Object.entries(proofInputs).map(([key, value]) => [key, fingerprintInputs(value)]),
   )
-  if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
-    throw new Error('Fresh generated app migration did not apply at least one migration.')
+  const inputFiles = {
+    tarballs: proofInputs.tarballs,
+    generatedSources: proofInputs.generatedSources,
+  }
+  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests, inputFiles })
+  if (prior) {
+    writeLine(
+      `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
+    )
+  } else {
+    for (const phase of qualityPhases(readJson(join(generatedDirectory, 'package.json')).scripts)) {
+      if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
+      try {
+        runChecked('pnpm', ['run', phase], {
+          cwd: generatedDirectory,
+          label: `generated app ${phase}`,
+        })
+      } finally {
+        if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
+      }
+    }
+    assertNoRetiredBuiltReferences(generatedDirectory)
+
+    const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'apply generated app migrations to a fresh local D1 database',
+    })
+    const firstMigrationMatch = firstMigration.match(
+      /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
+    )
+    if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
+      throw new Error('Fresh generated app migration did not apply at least one migration.')
+    }
+
+    const secondMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'prove generated app migrations are idempotent',
+    })
+    const secondMigrationMatch = secondMigration.match(
+      /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
+    )
+    if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
+      throw new Error('Second generated app migration was not an empty idempotent run.')
+    }
+
+    runChecked('pnpm', ['run', 'performance-budget'], {
+      cwd: generatedDirectory,
+      label: 'enforce generated app performance budgets',
+    })
+    const deployDryRun = runChecked('pnpm', ['run', 'deploy:dry-run'], {
+      cwd: generatedDirectory,
+      label: 'build the generated Worker with Wrangler deploy dry-run',
+    })
+    if (!deployDryRun.includes('--dry-run: exiting now.')) {
+      throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
+    }
+    assertNoForbiddenGeneratedReferences(generatedDirectory)
   }
 
-  const secondMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
-    cwd: generatedDirectory,
-    label: 'prove generated app migrations are idempotent',
-  })
-  const secondMigrationMatch = secondMigration.match(
-    /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
-  )
-  if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
-    throw new Error('Second generated app migration was not an empty idempotent run.')
+  if (process.env.GITHUB_RUN_ID && imageIdentity) {
+    const evidenceDirectory = join(root, '.ci-evidence', 'packed-consumer-proof')
+    mkdirSync(evidenceDirectory, { recursive: true })
+    writeFileSync(
+      join(evidenceDirectory, 'proof.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: prior ? 'reused' : 'executed',
+          repository: process.env.GITHUB_REPOSITORY,
+          runId: Number(process.env.GITHUB_RUN_ID),
+          runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+          tree,
+          fingerprint,
+          inputDigests,
+          inputFiles,
+          completedAt: new Date().toISOString(),
+          ...(prior ? { prior } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+    )
   }
-
-  runChecked('pnpm', ['run', 'performance-budget'], {
-    cwd: generatedDirectory,
-    label: 'enforce generated app performance budgets',
-  })
-  const deployDryRun = runChecked('pnpm', ['run', 'deploy:dry-run'], {
-    cwd: generatedDirectory,
-    label: 'build the generated Worker with Wrangler deploy dry-run',
-  })
-  if (!deployDryRun.includes('--dry-run: exiting now.')) {
-    throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
-  }
-  assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   writeLine(
     `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
   )
 } finally {
+  for (const { label, seconds } of timings)
+    writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `\n### Consumer phase timings\n\n| Phase | Seconds |\n| --- | ---: |\n${timings.map(({ label, seconds }) => `| ${label} | ${seconds.toFixed(1)} |`).join('\n')}\n`,
+    )
   rmSync(consumerDirectory, { recursive: true, force: true })
 }

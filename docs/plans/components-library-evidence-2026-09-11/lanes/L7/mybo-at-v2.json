@@ -1,0 +1,305 @@
+{
+  "lane": "L7",
+  "repo": "narduk-enterprises/mybo-at-v2",
+  "clone": "ok",
+  "surveyed_sha": "890fd603a9932be067d3ec4e2be6ffda1f17a7b4",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.6.0",
+    "tailwind": "none (no tailwind.config found; bundled via @nuxt/ui 4)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.21.0",
+      "narduk-auth": "1.24.0",
+      "narduk-devices": "0.2.0",
+      "narduk-logging": "0.1.0",
+      "narduk-realtime": "0.2.0",
+      "narduk-tenancy": "0.2.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 21,
+    "components": 12,
+    "pages": 7,
+    "layouts": 1,
+    "composables": 2,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 6 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 ( -name '*.ts' -o -name '*.vue' ) | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AdminUsersTab": 0,
+    "AppNotificationCenter": 0,
+    "AppUserMenu": 0,
+    "AuthLoginCard": 0,
+    "AuthRegisterCard": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "OrgMembersPanel",
+      "path": "apps/web/app/components/OrgMembersPanel.vue",
+      "loc": 453,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "member list as <li v-for>, cursor-paginated (see server_list_contracts); role-based row redaction; closest lib analog is narduk-auth AdminUsersTab (unused, 0 hits) but that is a platform-admin panel not an org-member list"
+    },
+    {
+      "name": "OrgInvitesPanel",
+      "path": "apps/web/app/components/OrgInvitesPanel.vue",
+      "loc": 359,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "outstanding-invite list, cursor-paginated against the same ORG_LIST_LIMIT contract, plus an inline invite-creation form"
+    },
+    {
+      "name": "OrgClaimsPanel",
+      "path": "apps/web/app/components/OrgClaimsPanel.vue",
+      "loc": 301,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "device-claim list with <dl> detail pairs (sm:grid-cols-2), not a real table"
+    },
+    {
+      "name": "PassagePlaybackDeck",
+      "path": "apps/web/app/components/PassagePlaybackDeck.vue",
+      "loc": 201,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "timeline/playback scrubber for a vessel passage"
+    },
+    {
+      "name": "PassageMap",
+      "path": "apps/web/app/components/PassageMap.vue",
+      "loc": 181,
+      "consumers": 1,
+      "duplicates_lib": "AppMapKit (indirect)",
+      "notes": "not measured whether it wraps narduk-mapkit or is a separate map integration; narduk-mapkit is not a dependency of this app at all, unlike harvest-tracker"
+    },
+    {
+      "name": "EdgeStatusBadge",
+      "path": "apps/web/app/components/EdgeStatusBadge.vue",
+      "loc": 52,
+      "consumers": 2,
+      "duplicates_lib": "none",
+      "notes": "small status badge for edge-device connectivity state"
+    },
+    {
+      "name": "VesselStateCards",
+      "path": "apps/web/app/components/VesselStateCards.vue",
+      "loc": 66,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "KPI/stat-tile row for a vessel's live state"
+    },
+    {
+      "name": "PassageRail",
+      "path": "apps/web/app/components/PassageRail.vue",
+      "loc": 101,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "horizontal passage-list rail (card_list variant)"
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [
+      {
+        "path": "apps/web/app/components/OrgMembersPanel.vue",
+        "loc": 453,
+        "consumers": 1,
+        "notes": "consumes cursor pagination from members/index.get.ts; no dedicated pagination-control sub-component, load-more logic is inline"
+      },
+      {
+        "path": "apps/web/app/components/OrgInvitesPanel.vue",
+        "loc": 359,
+        "consumers": 1,
+        "notes": "consumes cursor pagination from invites/index.get.ts; same inline load-more pattern"
+      }
+    ],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/EdgeStatusBadge.vue",
+        "loc": 52,
+        "consumers": 2,
+        "notes": "edge-device connectivity status badge"
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/VesselStateCards.vue",
+        "loc": 66,
+        "consumers": 1,
+        "notes": "live vessel state KPI row"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/VesselListCard.vue",
+        "loc": 66,
+        "consumers": 1,
+        "notes": "vessel summary card"
+      },
+      {
+        "path": "apps/web/app/components/PassageRail.vue",
+        "loc": 101,
+        "consumers": 1,
+        "notes": "horizontal passage card rail"
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/OrgClaimsPanel.vue",
+        "loc": 301,
+        "consumers": 1,
+        "notes": "<dl> label/value pairs at sm:grid-cols-2, not a table"
+      }
+    ],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/components/OrgInvitesPanel.vue",
+        "loc": 359,
+        "consumers": 1,
+        "notes": "inline invite-creation form embedded in the list panel"
+      }
+    ],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "apps/web/app/components/OrgInvitesPanel.vue",
+        "loc": 359,
+        "consumers": 1,
+        "notes": "viewerRole (TenancyRole) gates form visibility and role options; 4 files reference viewerRole/TenancyRole"
+      }
+    ],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/PassageMap.vue",
+        "loc": 181,
+        "consumers": 1,
+        "notes": "not measured whether built on a shared map primitive; narduk-mapkit is not a dependency here"
+      }
+    ],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/components/PassagePlaybackDeck.vue",
+        "loc": 201,
+        "consumers": 1,
+        "notes": "passage playback timeline/scrubber"
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/app/orgs/[orgSlug]/members/index.get.ts",
+      "params": ["after"],
+      "response_shape": "cursor: { members: items, nextCursor, total }",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/app/orgs/[orgSlug]/invites/index.get.ts",
+      "params": ["after"],
+      "response_shape": "cursor: { invites: items, nextCursor, total }",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/app/orgs/[orgSlug]/claims/index.get.ts",
+      "params": "not measured",
+      "response_shape": "not measured",
+      "limit_enforced": "not measured"
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/mybo-at-v2#14",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "org member/invite list response bytes were unbounded despite fixed statement count; fixed with a 200-row ORG_LIST_LIMIT cap plus createdAt cursor pagination",
+      "pattern": "pagination_control"
+    },
+    {
+      "ref": "narduk-enterprises/mybo-at-v2#17",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "implements issue #14: pages org member/invite lists",
+      "pattern": "pagination_control"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/unit/org-authority.test.ts",
+    "apps/web/tests/unit/ui/role-authority.test.ts",
+    "apps/web/tests/unit/ui/roles.test.ts",
+    "apps/web/tests/unit/ui/passages.test.ts",
+    "apps/web/tests/e2e/org-journey.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "pagination_control",
+      "name": "cursor-list pattern (members/invites)",
+      "path": "apps/web/server/orgs/queries.ts",
+      "loc": 0,
+      "consumers": 2,
+      "why": "this repo has the most deliberately-designed cursor-pagination contract of anything surveyed in L7 (opaque createdAt cursor, ORG_LIST_LIMIT=200, total repeated every page, born from a real defect in issue #14) but zero shared client-side pagination-control UI -- both OrgMembersPanel and OrgInvitesPanel hand-roll their own load-more logic against the identical shape",
+      "loc_saved_estimate": 80
+    },
+    {
+      "pattern": "status_chip_badge",
+      "name": "EdgeStatusBadge",
+      "path": "apps/web/app/components/EdgeStatusBadge.vue",
+      "loc": 52,
+      "consumers": 2,
+      "why": "small, clean status badge with no shared equivalent",
+      "loc_saved_estimate": 30
+    },
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "VesselStateCards",
+      "path": "apps/web/app/components/VesselStateCards.vue",
+      "loc": 66,
+      "consumers": 1,
+      "why": "structurally generic KPI tile row, same shape as harvest-tracker's StatBlock",
+      "loc_saved_estimate": 40
+    }
+  ],
+  "notes": "This is a genuinely new create-narduk-app scaffold: only 21 .vue files, no login/register page files locally (narduk-auth supplies those via its Nuxt layer), and zero explicit narduk-core/narduk-auth component tag usage anywhere -- narduk-core and narduk-auth are consumed entirely through layout/module wiring, not template imports. No table pattern exists in this app at all (0 hits for <table>/<UTable>/role=table); the closest thing is three cursor-paginated list panels (members/invites/claims) that render as <li>/<dl> lists, not tables. narduk-mapkit(-nuxt) is notably NOT a dependency here despite PassageMap.vue doing map rendering -- worth the orchestrator checking what PassageMap actually wraps."
+}

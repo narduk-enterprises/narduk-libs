@@ -185,7 +185,9 @@ been a false failure.
 Before deleting template files, make the app self-sufficient:
 
 - `.github/workflows/ci.yml` with meaningful PR and main gates;
-- `renovate.json` for independent `@narduk-enterprises/*` updates;
+- `.github/dependabot.yml`, grouping independent `@narduk-enterprises/*` updates
+  into one PR per app rather than one per package (`create-narduk-app` stopped
+  generating `renovate.json` for this in narduk-libs#277);
 - root and app package scripts that call the actual tools directly;
 - root `playwright.config.ts` and app-owned Vitest configuration;
 - `apps/web/wrangler.jsonc` plus isolated staging/test variants where needed;

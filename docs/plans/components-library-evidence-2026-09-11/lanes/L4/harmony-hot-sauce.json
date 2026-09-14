@@ -1,0 +1,352 @@
+{
+  "lane": "L4",
+  "repo": "narduk-enterprises-clients/harmony-hot-sauce",
+  "clone": "ok",
+  "surveyed_sha": "44a8185af8a986f93ebbaffa800752c97f04c71a",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "transitive only (no direct apps/web dependency; @UTable/@UCard/@UButton etc. used, arrives via narduk-nuxt-template-layer-core)",
+    "tailwind": "^4.2.1 (direct, via @tailwindcss/vite)",
+    "tanstack_table": "none direct (UTable wraps it internally, but no v-model:sorting/pagination/global-filter or getXRowModel wired anywhere)",
+    "narduk_libs": {
+      "narduk-platform": "^2.0.0",
+      "narduk-nuxt-template-layer-core": "^1.18.45",
+      "narduk-nuxt-template-layer-seo": "^1.18.45",
+      "narduk-nuxt-template-layer-auth": "^1.18.46",
+      "narduk-nuxt-template-layer-analytics": "^1.18.45",
+      "narduk-nuxt-template-layer-uploads": "^1.18.45",
+      "narduk-nuxt-template-layer-testing": "^1.18.45"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 161,
+    "components": 120,
+    "pages": 37,
+    "layouts": 3,
+    "composables": 25,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find apps/web/app/composables -maxdepth 8 -name '*.ts' | wc -l"
+    }
+  },
+  "libs_components_used": { "AppLightbox": 1 },
+  "local_reimplementations": [
+    {
+      "name": "useHarmonyData (single-blob client data layer)",
+      "path": "app/composables/useHarmonyData.ts",
+      "loc": 16,
+      "consumers": 22,
+      "duplicates_lib": "none",
+      "notes": "One useFetch('/api/harmony?scope=admin|public') returns the WHOLE dataset (leads, orders, retailers, SKUs, site content); every admin table/list derives its view from this single client blob with no server-side limit/offset/cursor anywhere. Architecturally the opposite of pacc-trac's usePagedList -- fine at current business scale, but the pattern that would need to change first if a shared paginated table is adopted here."
+    },
+    {
+      "name": "AdminStatusBadge",
+      "path": "app/components/admin/AdminStatusBadge.vue",
+      "loc": 35,
+      "consumers": 5,
+      "duplicates_lib": "none",
+      "notes": "Only ONE status-badge component in this repo (contrast with pacc-trac's 9). Reasonable existing local convergence narduk-libs' chip could absorb directly."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "app/components/admin/AdminSkuTableGrid.vue",
+        "loc": 73,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "none (wrapped in plain overflow-hidden, no min-width, no scroll fallback -- inferred risk, not a proven bug)",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number"],
+        "server_api": "not measured (rows via props/parent)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "UTable given only :data and :columns -- no v-model:sorting/pagination/global-filter, no getPaginationRowModel/getSortedRowModel. Purely a styled static render."
+      },
+      {
+        "path": "app/components/admin/AdminSiteIssuesTable.vue",
+        "loc": 56,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "none (overflow-hidden wrapper, no scroll fallback)",
+        "empty_state": true,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "badge"],
+        "server_api": "server/api/admin/site-issues.get.ts",
+        "tests": [],
+        "consumers": 1,
+        "notes": "v-if=\"filteredRows.length\" guards an implicit empty state (no dedicated empty component)."
+      },
+      {
+        "path": "app/pages/admin/leads/index.vue",
+        "loc": 61,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "none (overflow-hidden wrapper, no scroll fallback)",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["date", "text", "badge"],
+        "server_api": "none directly -- rows come from useHarmonyData()'s single client-side fetch",
+        "tests": [],
+        "consumers": 1,
+        "notes": "Full-dump from the one big harmony-data blob, no pagination at any layer."
+      },
+      {
+        "path": "app/pages/admin/orders/index.vue",
+        "loc": 61,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "none (overflow-hidden wrapper, no scroll fallback)",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["date", "text", "money", "badge"],
+        "server_api": "none directly -- useHarmonyData()",
+        "tests": [],
+        "consumers": 1,
+        "notes": "Same shape as leads/index.vue."
+      },
+      {
+        "path": "app/components/admin/AdminSkuTableImportModal.vue",
+        "loc": 57,
+        "kind": "UTable (xlsx import preview)",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 0,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number"],
+        "server_api": "none (client-side xlsx parse via the 'xlsx' package)",
+        "tests": [],
+        "consumers": 1,
+        "notes": "Import preview grid for spreadsheet-uploaded SKU data."
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "app/components/admin/AdminSiteIssuesTable.vue",
+        "loc": 5,
+        "consumers": 1,
+        "notes": "filteredRows computed -- local, not shared."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "app/components/admin/AdminStatusBadge.vue",
+        "loc": 35,
+        "consumers": 5,
+        "notes": "See local_reimplementations."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [
+      {
+        "path": "10 files using UModal directly",
+        "loc": 0,
+        "consumers": 10,
+        "notes": "No shared ConfirmModal wrapper found; direct Nuxt UI usage."
+      }
+    ],
+    "toast_notify": [
+      {
+        "path": "3 files using useToast()",
+        "loc": 0,
+        "consumers": 3,
+        "notes": "Direct Nuxt UI composable, not a reinvention."
+      }
+    ],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "app/components/public/sections/PublicStatsSection.vue",
+        "loc": 50,
+        "consumers": 0,
+        "notes": "No consumer found by static <Tag> grep (incl. Nuxt directory-prefix variants) -- likely resolved dynamically (a section-type registry / <component :is>) rather than dead; not confirmed either way under this budget."
+      },
+      {
+        "path": "app/components/admin/section-editor/AdminSectionEditorStats.vue",
+        "loc": 70,
+        "consumers": 0,
+        "notes": "Same caveat as PublicStatsSection -- this repo's public site is built from an admin-editable 'sections' system, so most section components are likely wired through a type registry, not a literal template tag."
+      }
+    ],
+    "card_list": [],
+    "detail_list": [],
+    "form_field_patterns": [
+      {
+        "path": "app/utils/retailerFormState.ts",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "Not read in full."
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "app/utils/formatting.ts (formatDate)",
+        "loc": 0,
+        "consumers": 2,
+        "notes": "Seen imported by leads/index.vue and orders/index.vue; not read in full or counted app-wide."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [
+      {
+        "path": "app/components/admin/AdminProductForm.vue",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "Uses narduk-core's AppLightbox directly (line 466) -- the only narduk-libs (non-legacy-layer) component tag found anywhere in this repo."
+      }
+    ],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [
+      {
+        "path": "app/middleware (admin middleware, via narduk-nuxt-template-layer-auth)",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "definePageMeta({ middleware: ['admin'] }) seen on admin pages; auth UI itself comes from the legacy auth layer package, not hand-rolled locally -- not a reinvention finding."
+      }
+    ],
+    "map_wrapper": [],
+    "chart_wrapper": [
+      {
+        "path": "mermaid dependency, 1 file",
+        "loc": 0,
+        "consumers": 1,
+        "notes": "Diagram rendering (mermaid), not a data chart -- different category than narduk-charts; flagged only for completeness."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [
+      {
+        "path": "app/components/admin/AdminImageUpload.vue",
+        "loc": 98,
+        "consumers": 7,
+        "notes": "Backed by app/composables/useImageUpload.ts and the narduk-nuxt-template-layer-uploads package. Real, multi-consumer file-upload UI -- a genuine file_upload extraction candidate given narduk-libs ships none."
+      }
+    ],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "app/components/admin/AdminSkuTableImportModal.vue + xlsx package",
+        "loc": 57,
+        "consumers": 1,
+        "notes": "Spreadsheet (.xlsx) bulk-import UI for SKU data -- a pattern none of the other two L4 repos have."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises-clients/harmony-hot-sauce#47",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Fix mobile product detail overflow",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises-clients/harmony-hot-sauce#87",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Migrate Harmony onto narduk-libs and remove Command control-plane dependency -- the original tracker that tprinvest#50 cites as 'the proven downstream migration pattern' to follow. Body: app still depends on legacy narduk-nuxt-template-layer-* packages and narduk-platform; done-when includes replacing them with the supported narduk-libs package set.",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "Wire real sort/paginate/search onto the existing UTable usages",
+      "path": "app/components/admin/AdminSkuTableGrid.vue, AdminSiteIssuesTable.vue, app/pages/admin/{leads,orders}/index.vue",
+      "loc": 251,
+      "consumers": 4,
+      "why": "This app already reaches for Nuxt UI's UTable (the 'correct' primitive) in all 5 of its table surfaces, yet none of the 4 list-style ones use any sort/paginate/filter row-model at all -- same behavioral gap as pacc-trac and tprinvest despite different starting tech. A shared narduk-libs DataTable that wraps UTable with sort/paginate/search pre-wired would fix this with a drop-in swap, not a rewrite.",
+      "loc_saved_estimate": 60
+    },
+    {
+      "pattern": "file_upload",
+      "name": "FileUpload / ImageUpload",
+      "path": "app/components/admin/AdminImageUpload.vue + app/composables/useImageUpload.ts",
+      "loc": 98,
+      "consumers": 7,
+      "why": "7 real consumers, narduk-libs ships no file/image upload component today; this plus narduk-nuxt-template-layer-uploads' plumbing is reasonable prior art.",
+      "loc_saved_estimate": 80
+    },
+    {
+      "pattern": "status_chip_badge",
+      "name": "StatusChip (promote AdminStatusBadge)",
+      "path": "app/components/admin/AdminStatusBadge.vue",
+      "loc": 35,
+      "consumers": 5,
+      "why": "Only one local badge implementation (unlike pacc-trac's 9) -- low-risk to converge across the estate since there's nothing to reconcile within this repo itself.",
+      "loc_saved_estimate": 20
+    }
+  ],
+  "notes": "Second-lowest pattern density of the three L4 repos but still a real operational app (leads/orders/retailers/SKU/site-content admin for a boutique hot-sauce brand), unlike tprinvest's static archive. Legacy template-layer app (auth+uploads+analytics+seo+core+testing, all ^1.18.x), one incidental narduk-core AppLightbox usage otherwise zero non-legacy narduk-libs adoption. Whole data layer is a single client-fetched blob (useHarmonyData, 22 consumers) with zero server-side pagination anywhere -- architecturally the opposite end of the spectrum from pacc-trac's usePagedList system. harmony-hot-sauce#87 is the ORIGINAL narduk-libs migration tracker that tprinvest#50 explicitly names as the pattern to follow -- both L4 repos point at the same open estate-wide effort (company-hq D-WEBFOUND-2 / company-hq#629 / narduk-libs#76 per tprinvest#50's body)."
+}

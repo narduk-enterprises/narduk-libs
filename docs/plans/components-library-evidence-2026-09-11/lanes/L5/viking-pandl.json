@@ -1,0 +1,31 @@
+{
+  "lane": "L5",
+  "repo": "narduk-enterprises-clients/viking-pandl",
+  "clone": "ok",
+  "surveyed_sha": "e02da5c871c070698bd57f8883d10a13a267bcee",
+  "default_branch": "main",
+  "app_dirs": [],
+  "is_nuxt_app": false,
+  "stack": {
+    "framework": "none — no package.json anywhere in the repo; not a buildable app at all",
+    "nuxt": "none",
+    "nuxt_ui": "none",
+    "tailwind": "none",
+    "tanstack_table": "none",
+    "narduk_libs": {},
+    "legacy_template_layer": false
+  },
+  "notes_stack": "No package.json found (find . -maxdepth 3 -name package.json -> empty). Repo is a client-engagement data/deliverables package: markdown briefs, CSV templates (templates/*.csv), a JSON schema (templates/viking_data_package.schema.json), source-material transcripts, and two standalone static HTML documents (overview.html, VIKING-PAUL-CALL-ONE-PAGER.html) plus a rendered PDF (output/pdf/*.pdf).",
+  "has_table_or_list_ui": true,
+  "table_or_list_ui_evidence": [
+    "overview.html (1862 lines): one <table> at line 1633, plus <ul> lists at lines 1110, 1155, 1543, 1554 — a static one-off report/proposal document, no JS, no interactivity.",
+    "VIKING-PAUL-CALL-ONE-PAGER.html (364 lines): <ul>/<ol> lists only (lines 256,259,268,277,284,296,327), no <table>.",
+    "templates/*.csv (invoice_lines, customers_sites, quotes, current_route_stops, repricing_20_30_50, data_dictionary) are raw data templates for the client to fill in, not rendered UI."
+  ],
+  "deep_survey": "skipped per brief (not an app; no framework; static one-off HTML deliverables and CSV/data templates for a client engagement)",
+  "counts": {
+    "commands": { "package_json_search": "find . -maxdepth 3 -name package.json -> (none)" }
+  },
+  "top_extraction_candidates": [],
+  "notes": "This is not a software product repo — it's a consulting-deliverables package (P&L / systems discovery for Viking Sanitation client) containing markdown briefs, transcripts, CSV data templates, and two static standalone HTML report pages. No live app, no npm dependencies, nothing to extract for the shared component library."
+}

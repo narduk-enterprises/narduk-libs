@@ -12,6 +12,9 @@ node_modules
 .nitro
 .turbo
 .cache
+.build/
+.swiftpm/
+**/.venv/
 .wrangler
 .fleet
 dist
@@ -75,6 +78,14 @@ packages/narduk-cli/src/sync/assets/.github/workflows/*.lock.yml
 # ── Vendored dependencies ───────────────────────────────────────────────
 vendor/
 
+# ── geogrid-web vendored/pinned test fixtures ────────────────────────────
+# tests/fixtures/render-parity-v1/manifest.json pins the exact byte length and
+# SHA-256 of 16 files in that pack (tests/render-parity-manifest.test.ts
+# enforces it); tests/fixtures/vendor_render_parity.mjs is a vendored copy of
+# the server's own render script. Reformatting any of these silently corrupts
+# a cross-repo parity contract instead of just changing whitespace.
+packages/modules/geogrid-web/tests/fixtures/**
+
 # ── Worktrees and archives ──────────────────────────────────────────────
 .worktrees/
 .codex-worktrees/
@@ -84,3 +95,6 @@ vendor/
 *.dump
 *.sql.gz
 *.tar.gz
+
+# ── Generated changelogs (written by changesets, not hand-authored) ────
+**/CHANGELOG.md

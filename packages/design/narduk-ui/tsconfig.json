@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowJs": false,
+    "isolatedModules": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": ["vitest/globals"]
+  },
+  "include": [
+    "_core/**/*.ts",
+    "design-cards/**/*.vue",
+    "instruments/**/*.ts",
+    "instruments/**/*.vue",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

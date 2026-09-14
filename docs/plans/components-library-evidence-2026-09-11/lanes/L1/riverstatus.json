@@ -1,0 +1,382 @@
+{
+  "lane": "L1",
+  "repo": "narduk-enterprises/riverstatus",
+  "clone": "ok",
+  "surveyed_sha": "b8b02014c3ade88faafb98cb363de8f0c290bb29",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "transitive via @narduk-enterprises/narduk-core/nuxt module (no direct @nuxt/ui dep; UIcon/ULink/UButton/UInput/UFormField/USelect/UForm/UPagination/UApp all resolve from it)",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-ui": "0.1.2",
+      "narduk-charts": "2.5.1",
+      "narduk-seo": "2.0.10",
+      "narduk-analytics": "1.19.32",
+      "narduk-mapkit": "2.0.2",
+      "narduk-mapkit-nuxt": "2.0.4",
+      "narduk-uploads": "1.19.19",
+      "status-runtime": "1.0.2"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 71,
+    "components": 57,
+    "pages": 13,
+    "layouts": 0,
+    "composables": 10,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l (dir absent -> 0; app relies on narduk-core layouts)",
+      "composables": "find apps/web/app/composables -maxdepth 8 -name '*.ts' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 5,
+    "NardukLineChart": 1,
+    "NsFreshnessChip": 1,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "RiverUnavailablePanel",
+      "path": "apps/web/app/components/river/RiverUnavailablePanel.vue",
+      "loc": 19,
+      "consumers": 14,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "title+message+tone(error|neutral|warning) panel shown whenever a data section has nothing to render; widest-reused local component in the app (14 files); strong candidate to verify against/replace with AppEmptyState"
+    },
+    {
+      "name": "RiverFreshnessBadge",
+      "path": "apps/web/app/components/river/RiverFreshnessBadge.vue",
+      "loc": 90,
+      "consumers": 4,
+      "duplicates_lib": "NsFreshnessChip",
+      "notes": "already composes NsFreshnessChip for the freshness axis (good adoption); the flood-category axis (action/minorFlood/.../recordFlood) falls back to a hand-rolled '.rs-pill' status pill because NsFreshnessChip cannot express severity - real gap for a generic status/severity badge, not a dup"
+    },
+    {
+      "name": "SearchPanel",
+      "path": "apps/web/app/components/river/SearchPanel.vue",
+      "loc": 142,
+      "consumers": 0,
+      "duplicates_lib": "none",
+      "notes": "142-LOC hand-rolled search bar component with zero template consumers found via '<SearchPanel\\b' grep - looks like dead code superseded by RiverRiversFilterSidebar/RiverStatesFilterControls; worth a live check before extraction, not before deletion-flagging"
+    },
+    {
+      "name": "RiverRiversFilterSidebar",
+      "path": "apps/web/app/components/river/RiverRiversFilterSidebar.vue",
+      "loc": 86,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "hand-rolled filter sidebar (state/source facets) for the rivers browse page; narduk-libs ships no filter/search bar component"
+    },
+    {
+      "name": "RiverStatesFilterControls",
+      "path": "apps/web/app/components/river/RiverStatesFilterControls.vue",
+      "loc": 64,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "sibling hand-rolled filter control for the states browse page; near-duplicate concept of RiverRiversFilterSidebar, different markup"
+    },
+    {
+      "name": "RiverHomeMetricStrip",
+      "path": "apps/web/app/components/river/RiverHomeMetricStrip.vue",
+      "loc": 32,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "icon+label+value+detail KPI tile strip with tone variants on the homepage; narduk-libs ships no KPI/stat-tile component"
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [
+      {
+        "path": "apps/web/app/components/river/RiverRiversResults.vue",
+        "loc": 67,
+        "consumers": 1,
+        "notes": "only pagination control in the app: hand-rolled 'Showing X-Y of Z' summary + UPagination (from the transitive Nuxt UI dep) driving server-paginated /api/v1/rivers; card-grid results, not a table row list"
+      }
+    ],
+    "sort_control": [
+      {
+        "path": "apps/web/app/components/river/RiverRiversPage.vue",
+        "loc": 297,
+        "consumers": 1,
+        "notes": "URL-query-driven two-state sort toggle (gauges|name) implemented as a UButton/NuxtLink at line ~232, not a generic sortable column header; state lives in route.query.sort"
+      }
+    ],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/river/RiverRiversFilterSidebar.vue",
+        "loc": 86,
+        "consumers": 1,
+        "notes": "state/source facet filters for rivers browse, URL-query-synced"
+      },
+      {
+        "path": "apps/web/app/components/river/RiverStatesFilterControls.vue",
+        "loc": 64,
+        "consumers": 1,
+        "notes": "facet filters for states browse"
+      },
+      {
+        "path": "apps/web/app/components/river/SearchPanel.vue",
+        "loc": 142,
+        "consumers": 0,
+        "notes": "appears unused - see local_reimplementations note"
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/river/RiverFreshnessBadge.vue",
+        "loc": 90,
+        "consumers": 4,
+        "notes": "dual-purpose: NsFreshnessChip for freshness, local '.rs-pill' markup for 5 flood-severity categories"
+      }
+    ],
+    "freshness_indicator": [
+      {
+        "path": "apps/web/app/components/river/RiverFreshnessBadge.vue",
+        "loc": 90,
+        "consumers": 4,
+        "notes": "wraps NsFreshnessChip; see status_chip_badge"
+      }
+    ],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/river/RiverUnavailablePanel.vue",
+        "loc": 19,
+        "consumers": 14,
+        "notes": "also doubles as an inline error-state panel via the tone prop; see local_reimplementations"
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/components/river/RiverUnavailablePanel.vue",
+        "loc": 19,
+        "consumers": 14,
+        "notes": "tone=\"error\" variant of the same panel used for empty state"
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/river/RiverHomeMetricStrip.vue",
+        "loc": 32,
+        "consumers": 1,
+        "notes": "icon+label+value+detail tiles, tone variants; homepage-only"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/river/RiverRiversResults.vue",
+        "loc": 67,
+        "consumers": 1,
+        "notes": "paginated card grid of RiverRiverCard (rivers browse)"
+      },
+      {
+        "path": "apps/web/app/components/river/RiverRiverCard.vue",
+        "loc": 93,
+        "consumers": 2,
+        "notes": "single river summary card"
+      },
+      {
+        "path": "apps/web/app/components/river/RiverGaugeCard.vue",
+        "loc": 118,
+        "consumers": 3,
+        "notes": "single gauge summary card"
+      },
+      {
+        "path": "apps/web/app/components/river/RiverStateCard.vue",
+        "loc": 40,
+        "consumers": 2,
+        "notes": "single state summary card"
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/river/GaugeObservationList.vue",
+        "loc": 33,
+        "consumers": 1,
+        "notes": "gauge observation history rows - no sort, no pagination, no search; renders whatever the server already limited. This is the app's 'history' surface (USGS/NWPS observation readings)."
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/riverstatus.ts",
+        "loc": 252,
+        "consumers": 1,
+        "notes": "formatTimestamp/getFreshnessLabel/getFloodCategoryLabel among other formatters; consumed widely via import, file-consumer count not exhaustively grepped"
+      },
+      {
+        "path": "apps/web/app/components/river/RiverDateTime.vue",
+        "loc": 21,
+        "consumers": 1,
+        "notes": "wraps a formatted timestamp with a fallback string; used at minimum by RiverHomeMetricStrip"
+      }
+    ],
+    "number_currency_format": [
+      {
+        "path": "apps/web/app/utils/riverstatus.ts",
+        "loc": 252,
+        "consumers": 1,
+        "notes": "formatNumber/formatObservationValue live here alongside date formatters, not split into a separate file"
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/river/RiverShell.vue",
+        "loc": 143,
+        "consumers": "not measured",
+        "notes": "app-specific shell/nav wrapper distinct from narduk-core Layer* shells (none of which are used - see libs_components_used all-zero for Layer*)"
+      }
+    ],
+    "tabs": [
+      {
+        "path": "apps/web/app/components/river/RiverHomeConditionTabs.vue",
+        "loc": 207,
+        "consumers": "not measured",
+        "notes": "hand-rolled tabs on the homepage instead of narduk-core's AppTabs (0 consumers of AppTabs found app-wide)"
+      }
+    ],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/river/RiverMapCanvas.vue",
+        "loc": 157,
+        "consumers": 1,
+        "notes": "composes AppMapKit (narduk-mapkit-nuxt) - correct adoption, not a duplicate"
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/river/RiverForecastObservedChart.vue",
+        "loc": 98,
+        "consumers": 1,
+        "notes": "composes NardukLineChart - correct adoption, not a duplicate"
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/v1/rivers.get.ts",
+      "params": ["flood", "forecast", "limit", "offset", "q", "sort", "source", "state"],
+      "response_shape": "{ ok, data: T[], error, meta: { generatedAt, pagination: { limit, offset, total } } } (createPaginatedEnvelope in server/utils/api-envelope.ts)",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/v1/gauges.get.ts",
+      "params": ["limit", "offset", "..."],
+      "response_shape": "same createPaginatedEnvelope shape as rivers.get.ts",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/v1/search.get.ts",
+      "params": ["limit", "offset", "..."],
+      "response_shape": "same createPaginatedEnvelope shape as rivers.get.ts",
+      "limit_enforced": true
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/riverstatus#64",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Improve RiverStatus mobile UI flows",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/riverstatus#57",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Improve RiverStatus UI filter surfaces",
+      "pattern": "filter_search_bar"
+    },
+    {
+      "ref": "narduk-enterprises/riverstatus#28",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Fix gauge observation history controls",
+      "pattern": "detail_list"
+    },
+    {
+      "ref": "narduk-enterprises/riverstatus#65",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Fix RiverStatus light and dark theme surfaces",
+      "pattern": "other"
+    },
+    {
+      "ref": "narduk-enterprises/riverstatus#19",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Add RiverStatus comp guardrails and UI polish",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/server/narduk-river-query.test.ts",
+    "apps/web/tests/server/gauge-discovery-query.test.ts",
+    "apps/web/tests/e2e/riverstatus-interactions.spec.ts",
+    "apps/web/tests/e2e/riverstatus-regression.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "empty_state",
+      "name": "AppEmptyState adoption/verification",
+      "path": "apps/web/app/components/river/RiverUnavailablePanel.vue",
+      "loc": 19,
+      "consumers": 14,
+      "why": "14 consumers for a 19-LOC title/message/tone panel is the single highest-leverage swap in this app if it matches AppEmptyState's contract",
+      "loc_saved_estimate": 19
+    },
+    {
+      "pattern": "card_list",
+      "name": "CollectionResults (card-grid variant)",
+      "path": "apps/web/app/components/river/RiverRiversResults.vue",
+      "loc": 67,
+      "consumers": 1,
+      "why": "server-paginated card grid with a real query-param contract (limit/offset/sort/q) behind it; a shared table/collection component needs a card-grid render mode to cover this app, not just rows",
+      "loc_saved_estimate": 50
+    },
+    {
+      "pattern": "filter_search_bar",
+      "name": "CollectionFilterBar",
+      "path": "apps/web/app/components/river/RiverRiversFilterSidebar.vue",
+      "loc": 86,
+      "consumers": 1,
+      "why": "RiverRiversFilterSidebar and RiverStatesFilterControls duplicate the facet-filter concept with separate markup; a shared filter bar could unify both and the (possibly dead) SearchPanel",
+      "loc_saved_estimate": 120
+    }
+  ],
+  "notes": "No table/UTable/role=table/grid-cols-as-table pattern exists anywhere in this app - all list surfaces (rivers, gauges, states, observations) render as card grids or plain detail-row stacks, not tables. @nuxt/ui is not a direct dependency but is fully available transitively through @narduk-enterprises/narduk-core/nuxt (UIcon/ULink/UButton/UInput/UFormField/USelect/UForm/UPagination/UApp all in use) - any shared table component built on UTable would work here without adding a new direct dependency. GaugeObservationList (the closest thing to a 'history' table) has zero sort/pagination/search despite being literal time-series gauge readings."
+}

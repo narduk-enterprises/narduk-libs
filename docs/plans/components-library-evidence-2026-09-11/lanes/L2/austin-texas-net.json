@@ -1,0 +1,340 @@
+{
+  "lane": "L2",
+  "repo": "narduk-enterprises/austin-texas-net",
+  "clone": "ok",
+  "surveyed_sha": "040dbb10b11f5d21d4d3406f06f712e6f027a019",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.2",
+    "nuxt_ui": "^4.3.0",
+    "tailwind": "^4.2.1",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "legacy_template_layer_core": "^1.19.8",
+      "legacy_template_layer_seo": "^1.19.8",
+      "legacy_template_layer_analytics": "^1.19.8",
+      "legacy_template_layer_maps": "^1.19.8",
+      "legacy_template_layer_ingestion": "^1.19.8",
+      "legacy_template_layer_testing": "^1.19.8 (dev)",
+      "narduk-mapkit-nuxt": "NOT a dependency (see local_reimplementations -- app ships its own local AppMapKit)"
+    },
+    "legacy_template_layer": true
+  },
+  "counts": {
+    "vue_files_total": 73,
+    "components": 24,
+    "pages": 43,
+    "layouts": 4,
+    "composables": 13,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "AppMapKit (local)",
+      "path": "apps/web/app/components/app/MapKit.vue",
+      "loc": 915,
+      "consumers": 11,
+      "duplicates_lib": "AppMapKit",
+      "notes": "IMPORTANT AMBIGUITY, flagged rather than guessed: this app does NOT depend on @narduk-enterprises/narduk-mapkit-nuxt (absent from package.json; nuxt.config.ts modules are only ['@nuxt/content','@nuxt/fonts','nitro-cloudflare-dev']). It DOES `extends: ['@narduk-enterprises/narduk-nuxt-template-layer-maps', ...]` (nuxt.config.ts line ~21-26). The local file's own doc comment reads 'AppMapKit -- Reusable Apple MapKit JS map component' and Nuxt's directory-prefix convention registers apps/web/app/components/app/MapKit.vue as the tag <AppMapKit> -- the exact same tag name narduk-mapkit-nuxt ships. Because a local file at the same relative path as a layer file overrides the layer's version in Nuxt, this could be (a) a full independent 915-loc reimplementation, or (b) a local override shadowing an equivalent component the narduk-nuxt-template-layer-maps legacy layer itself already provides. This repo's node_modules was not installed (clone-only, per lane rules), so this could not be resolved from this app alone -- recommend L0 or a follow-up check narduk-nuxt-template-layer-maps's own runtime/app/components/app/MapKit.vue (or equivalent) directly. Either way, this app is NOT consuming narduk-mapkit-nuxt's current AppMapKit."
+    },
+    {
+      "name": "Pollen line chart / Live data line chart (near-duplicate pair)",
+      "path": "apps/web/app/components/pollen/Chart.vue and apps/web/app/components/live/DataChart.vue",
+      "loc": 454,
+      "consumers": 4,
+      "duplicates_lib": "NardukLineChart",
+      "notes": "Both components (241 loc + 213 loc) independently wrap chart.js's Line via vue-chartjs with near-identical import blocks (same chart.js registrable pieces, same ChartArea/ScriptableContext/TooltipItem types) -- an internal duplicate pair within this one app, and both duplicate what narduk-charts' NardukLineChart is meant to cover estate-wide. austin-texas-net depends on vue-chartjs ^5.3.3 directly rather than narduk-charts."
+    }
+  ],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/home/Search.vue",
+        "loc": 164,
+        "consumers": 1,
+        "notes": "Site-wide search over categories+live sub-apps, client-side filter, empty state, focus handling. Auto-registers as <HomeSearch>."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "apps/web/app/components/map/SpotList.vue",
+        "loc": 235,
+        "consumers": 1,
+        "notes": "Rank badges (is-top-3 styling) + rating display per row."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/home/Search.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "No-results state for site search."
+      },
+      {
+        "path": "apps/web/app/pages/neighborhoods/index.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Empty-state grep hit; not independently read."
+      }
+    ],
+    "loading_skeleton": [
+      {
+        "path": "apps/web/app/pages/outdoors/bluebonnets.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Only loading-skeleton grep hit in the whole app."
+      }
+    ],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/pollen/StatCard.vue",
+        "loc": 107,
+        "consumers": 1,
+        "notes": "Animated count-up stat tile (requestAnimationFrame-driven), color prop, optional suffix -- a well-built, self-contained KPI tile narduk-libs has no equivalent for."
+      },
+      {
+        "path": "apps/web/app/components/pollen/SeverityRing.vue",
+        "loc": 127,
+        "consumers": 1,
+        "notes": "Gauge/ring-style severity indicator, conceptually close to narduk-ui's NsLevelWell/NsRangeBar band-maths instruments but built independently."
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/map/SpotList.vue",
+        "loc": 235,
+        "consumers": 1,
+        "notes": "Ranked row-link list (photo/icon, name, rating, neighborhood) shared generically across bat-viewing spots, food spots, etc. via a generic MapSpot type -- good example of the app already generalizing internally."
+      },
+      {
+        "path": "apps/web/app/components/food/SpotCard.vue",
+        "loc": 75,
+        "consumers": "not measured",
+        "notes": "Card variant for food spots."
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/map/SpotDetail.vue",
+        "loc": 318,
+        "consumers": 1,
+        "notes": "Detail panel for a selected map spot; pairs with SpotList/ContentView/ContentPage as a shared 'spot browser' kit reused across verticals (bat, food, outdoors, real-estate/housing-map)."
+      }
+    ],
+    "form_field_patterns": [
+      {
+        "path": "apps/web/app/pages/real-estate/property-tax-guide.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Only form-field grep hit; editorial page, not app UI."
+      }
+    ],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/utils/austinSunset.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Sunset-time calculation util (feeds bat-watching countdown)."
+      },
+      {
+        "path": "apps/web/app/utils/batBridgeForecast.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "Domain-specific date/forecast util, not a generic formatter."
+      }
+    ],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/sub/AppShell.vue",
+        "loc": 89,
+        "consumers": "not measured",
+        "notes": "App shell wrapper, composes local AppMapKit + AppTopbar."
+      },
+      {
+        "path": "apps/web/app/components/sub/AppTopbar.vue",
+        "loc": 65,
+        "consumers": "not measured",
+        "notes": "Topbar with breadcrumb-keyword grep hit (see breadcrumbs)."
+      },
+      {
+        "path": "apps/web/app/layouts/home.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "One of 4 layouts (home, fullscreen, default, landing)."
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [
+      {
+        "path": "apps/web/app/components/category/Page.vue",
+        "loc": 247,
+        "consumers": 3,
+        "notes": "Generic category-page template (reused across food/culture/outdoors-style verticals per the CategoryPage tag having 3 consumers) with breadcrumb-keyword hit; not independently confirmed as a full breadcrumb UI vs a single back-link."
+      },
+      {
+        "path": "apps/web/app/components/sub/AppTopbar.vue",
+        "loc": 65,
+        "consumers": "not measured",
+        "notes": "Breadcrumb-keyword hit; not independently read."
+      }
+    ],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/app/MapKit.vue",
+        "loc": 915,
+        "consumers": 11,
+        "notes": "See local_reimplementations -- largest single component found across the whole L2 lane."
+      },
+      {
+        "path": "apps/web/app/components/map/Pin.vue",
+        "loc": 61,
+        "consumers": "not measured",
+        "notes": "Map pin sub-component."
+      },
+      {
+        "path": "apps/web/app/components/map/ContentView.vue",
+        "loc": 60,
+        "consumers": 1,
+        "notes": "Map + content split view."
+      },
+      {
+        "path": "apps/web/app/components/map/ContentPage.vue",
+        "loc": 338,
+        "consumers": 1,
+        "notes": "Full map-plus-content page composition."
+      },
+      {
+        "path": "apps/web/app/components/bat/ViewingSpotsMap.client.vue",
+        "loc": 308,
+        "consumers": "not measured",
+        "notes": "Bat-viewing-spot-specific map, client-only component."
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/pollen/Chart.vue",
+        "loc": 241,
+        "consumers": 1,
+        "notes": "See local_reimplementations."
+      },
+      {
+        "path": "apps/web/app/components/live/DataChart.vue",
+        "loc": 213,
+        "consumers": 3,
+        "notes": "See local_reimplementations; reused across 3 live-data pages (lake-levels, water-temps, etc.)."
+      }
+    ],
+    "timeline_feed": [
+      {
+        "path": "apps/web/app/pages/food/crawfish-season.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "Only timeline-keyword hit; editorial page content, not verified as an app timeline component."
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [
+      {
+        "path": "apps/web/app/components/pollen/Chart.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "color-mode-aware chart theming."
+      },
+      {
+        "path": "apps/web/app/components/app/MapKit.vue",
+        "loc": "not measured",
+        "consumers": 11,
+        "notes": "Dark-mode sync mentioned in its own doc comment."
+      },
+      {
+        "path": "apps/web/app/components/live/DataChart.vue",
+        "loc": "not measured",
+        "consumers": 3,
+        "notes": "color-mode-aware chart theming."
+      },
+      {
+        "path": "apps/web/app/layouts/landing.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "color-mode grep hit."
+      }
+    ],
+    "other": [
+      {
+        "path": "apps/web/app/components/bat/CountdownHero.vue",
+        "loc": 128,
+        "consumers": "not measured",
+        "notes": "Bat-bridge countdown hero, feeds off austinSunset.ts/batBridgeForecast.ts."
+      },
+      {
+        "path": "apps/web/app/components/bat/WeeklyForecast.vue",
+        "loc": 75,
+        "consumers": "not measured",
+        "notes": "Forecast strip."
+      },
+      {
+        "path": "apps/web/app/components/bat/TipsSection.vue",
+        "loc": 45,
+        "consumers": "not measured",
+        "notes": "Static tips content block."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [
+    {
+      "pattern": "map_wrapper",
+      "name": "Resolve AppMapKit name collision",
+      "path": "apps/web/app/components/app/MapKit.vue",
+      "loc": 915,
+      "consumers": 11,
+      "why": "Largest component found across all four L2 repos and a direct tag-name collision with narduk-mapkit-nuxt's shipped AppMapKit, while this app depends on neither that package nor (visibly) a layer equivalent. Needs a definitive answer -- independent reimplementation or shadowed layer override -- before counting it as estate-wide 'apps hand-roll a map wrapper' evidence.",
+      "loc_saved_estimate": "not measured (depends on the resolution above)"
+    },
+    {
+      "pattern": "chart_wrapper",
+      "name": "Collapse Chart.vue / DataChart.vue into NardukLineChart",
+      "path": "apps/web/app/components/pollen/Chart.vue",
+      "loc": 454,
+      "consumers": 4,
+      "why": "Two near-identical vue-chartjs Line wrappers exist inside the same app; both would disappear behind a single NardukLineChart with theming support.",
+      "loc_saved_estimate": 300
+    },
+    {
+      "pattern": "kpi_stat_tile",
+      "name": "Animated StatCard + SeverityRing",
+      "path": "apps/web/app/components/pollen/StatCard.vue",
+      "loc": 234,
+      "consumers": 2,
+      "why": "A well-built animated count-up stat tile and a severity-ring gauge, both patterns narduk-libs has zero coverage for today.",
+      "loc_saved_estimate": 100
+    }
+  ],
+  "notes": "Largest and most content-heavy app in this lane by far (73 vue files, 43 pages, 4 layouts -- a local-info portal covering weather/pollen/bats/food/real-estate/outdoors/events/culture for Austin). NO data table anywhere: the only <table> hits (real-estate/market-trends.vue, property-tax-guide.vue) are static markdown-style HTML tables inside editorial content pages, confirmed by direct read. Nuxt's directory-prefix auto-import convention (components/map/SpotList.vue -> <MapSpotList>) meant naive filename-tag greps undercounted consumers for every component in a subdirectory; consumer counts here were re-verified against the prefixed tag names. The single most important finding is the AppMapKit name collision (see local_reimplementations) -- it is NOT safe to assume this repo is 'adopting' narduk-mapkit-nuxt just because <AppMapKit> appears 11 times. No UI-relevant defect history in gh issues/PRs (only deploy/template-sync chores and one unrelated auth bug)."
+}

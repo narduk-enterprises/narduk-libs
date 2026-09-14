@@ -1,0 +1,267 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/hydrogen",
+  "clone": "ok",
+  "surveyed_sha": "ef6b8c097c54a4e564deb2d7b81ccc0fd9b360e8",
+  "default_branch": "main",
+  "app_dirs": ["web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.8",
+    "nuxt_ui": "^4.9.0",
+    "tailwind": "none (bundled via @nuxt/ui, no direct dependency)",
+    "tanstack_table": "none (uses Nuxt UI's UTable, which wraps tanstack internally but not a direct dep)",
+    "narduk_libs": {
+      "narduk-analytics": "1.19.27",
+      "narduk-core": "1.20.5",
+      "narduk-seo": "2.0.5"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 25,
+    "components": 14,
+    "pages": 10,
+    "layouts": 0,
+    "composables": 1,
+    "commands": {
+      "vue_files_total": "find web/app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find web/app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find web/app/composables -maxdepth 8 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0,
+    "NardukLineChart": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "SimpleTable",
+      "path": "web/app/components/SimpleTable.vue",
+      "loc": 54,
+      "consumers": 8,
+      "duplicates_lib": "none",
+      "notes": "thin wrapper around Nuxt UI's <UTable> (columns/rows/rowKey props, per-cell named slots via TableColumn). narduk-libs ships no table. UTable's own sort/pagination props (v-model:sorting, v-model:pagination) are NOT forwarded -- SimpleTable is a pure static-display wrapper today."
+    },
+    {
+      "name": "InventoryHistoryChart",
+      "path": "web/app/components/InventoryHistoryChart.vue",
+      "loc": 277,
+      "consumers": 1,
+      "duplicates_lib": "NardukLineChart or NardukHistogramChart",
+      "notes": "hand-rolled inline <svg> chart (line 206), no charting library at all -- narduk-charts is not even a dependency of this app (checked web/package.json), despite the catalog listing NardukLineChart/NardukHistogramChart as available. Largest single hand-rolled UI surface found in this repo."
+    },
+    {
+      "name": "DataState",
+      "path": "web/app/components/DataState.vue",
+      "loc": 25,
+      "consumers": 10,
+      "duplicates_lib": "AppEmptyState",
+      "notes": "single component covering loading|error|empty via one `type` prop, wrapping Nuxt UI's UAlert. Highest-reuse non-table component in this repo. Plausible AppEmptyState overlap by purpose only -- not prop-compared."
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "web/app/components/SimpleTable.vue",
+        "loc": 54,
+        "kind": "UTable",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 0,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "not measured",
+        "empty_state": false,
+        "loading_state": false,
+        "error_state": false,
+        "url_state": false,
+        "column_count": 6,
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["text", "number", "money", "link", "badge"],
+        "server_api": "GET /api/snapshots?limit=N (clamped 1-500, default 100, src/router.ts:65 + src/public-data.ts:48 -- bound SQL LIMIT, no page/cursor/sort); most table data comes from range-keyed cached JSON payloads (/api/public-history?range=, /api/reports), not a paged list endpoint",
+        "tests": [
+          "tests/e2e/nuxt-pages.spec.ts (229 loc, generic hydration/marker-text smoke coverage only -- no table-specific sort/paginate/mobile assertions, unlike operator-portal)"
+        ],
+        "consumers": 8,
+        "notes": "column_count/column_types sampled from RollupRegionTable.vue (its only distinct consumer configuration: region link, 4 money/number columns, signed-net styled cell). Row links exist here (NuxtLink in the region cell slot) but are caller-provided via slot, not a SimpleTable prop -- so 'row_link' is marked false at the component level. mobile='not measured': no CSS/breakpoint logic found in SimpleTable.vue itself in the time budget available; relies entirely on Nuxt UI's own UTable responsive behavior, unverified here."
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "web/app/components/ReportRangeSwitcher.vue",
+        "loc": 25,
+        "consumers": 6,
+        "notes": "URL-link-based 7d/14d/30d range switcher, not a text search."
+      },
+      {
+        "path": "web/app/components/RollupPeriodNav.vue",
+        "loc": 23,
+        "consumers": 2,
+        "notes": "URL-link-based daily/weekly/monthly period nav, same shape as ReportRangeSwitcher."
+      }
+    ],
+    "status_chip_badge": [
+      {
+        "path": "web/app/components/StatusBadge.vue",
+        "loc": 24,
+        "consumers": 4,
+        "notes": "generic status badge; narduk-libs ships no equivalent."
+      }
+    ],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "web/app/components/DataState.vue",
+        "loc": 25,
+        "consumers": 10,
+        "notes": "also covers loading_state and error_state via one `type` prop -- see local_reimplementations."
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [
+      {
+        "path": "web/app/components/PageHeader.vue",
+        "loc": 23,
+        "consumers": 9,
+        "notes": "second-highest reuse component in the repo."
+      }
+    ],
+    "section_header": [
+      {
+        "path": "web/app/components/AppPanel.vue",
+        "loc": 18,
+        "consumers": 3,
+        "notes": "title+description card/section wrapper."
+      }
+    ],
+    "kpi_stat_tile": [
+      {
+        "path": "web/app/components/MetricTile.vue",
+        "loc": 23,
+        "consumers": 6,
+        "notes": "plausibly overlaps narduk-ui's NsReadoutTile by purpose; not prop-compared."
+      },
+      {
+        "path": "web/app/components/RollupMetricGrid.vue",
+        "loc": 19,
+        "consumers": "not measured",
+        "notes": "grid-cols-4 layout composing 4 MetricTiles; not itself reused elsewhere, listed for completeness."
+      }
+    ],
+    "card_list": [
+      {
+        "path": "web/app/components/StationMapSidebar.vue",
+        "loc": 73,
+        "consumers": 1,
+        "notes": "despite the name, this is a searchable station LIST sidebar, not a map -- no maplibre/mapbox/leaflet/AppMapKit found anywhere in this app (narduk-mapkit-nuxt is not even a dependency)."
+      },
+      {
+        "path": "web/app/components/StationList.vue",
+        "loc": 27,
+        "consumers": 0,
+        "notes": "zero consumers found by tag-grep (plain and kebab-case) -- appears to be dead/unused code, flagged not fixed (read-only survey)."
+      }
+    ],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [
+      {
+        "path": "web/app/components/InventoryHistoryChart.vue",
+        "loc": 277,
+        "consumers": 1,
+        "notes": "see local_reimplementations -- hand-rolled inline SVG, no charting library dependency at all."
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": []
+  },
+  "server_list_contracts": [
+    {
+      "route": "src/router.ts:65 (GET /api/snapshots)",
+      "params": ["limit"],
+      "response_shape": "array",
+      "limit_enforced": true
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/hydrogen#54",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "wrangler config lacks no_bundle/find_additional_modules; production 404 page server-renders empty",
+      "pattern": "empty_state"
+    },
+    {
+      "ref": "narduk-enterprises/hydrogen#32",
+      "kind": "issue",
+      "state": "open",
+      "summary": "Make narduk-data the sole data plane: thin the Worker, retire the 275 MB D1 before Wave-1c",
+      "pattern": "other"
+    }
+  ],
+  "tests_covering_patterns": ["tests/e2e/nuxt-pages.spec.ts"],
+  "top_extraction_candidates": [
+    {
+      "pattern": "table",
+      "name": "SimpleTable",
+      "path": "web/app/components/SimpleTable.vue",
+      "loc": 54,
+      "consumers": 8,
+      "why": "Smallest, cleanest table wrapper found across the lane's repos -- a thin, typed UTable adapter (columns/rows/rowKey + per-cell slots). Good evidence that a shared table built on Nuxt UI's UTable is viable and low-LOC when it doesn't hand-roll DOM/a11y itself (contrast with operator-portal's CollectionTable, which is real-<table>-first because Nuxt UI wasn't used).",
+      "loc_saved_estimate": 54
+    },
+    {
+      "pattern": "chart_wrapper",
+      "name": "InventoryHistoryChart",
+      "path": "web/app/components/InventoryHistoryChart.vue",
+      "loc": 277,
+      "consumers": 1,
+      "why": "277 lines of hand-rolled inline SVG charting in an app that has narduk-core/analytics/seo installed but not narduk-charts -- a concrete case where a shared chart component was available estate-wide and not adopted.",
+      "loc_saved_estimate": 277
+    },
+    {
+      "pattern": "empty_state",
+      "name": "DataState",
+      "path": "web/app/components/DataState.vue",
+      "loc": 25,
+      "consumers": 10,
+      "why": "10 consumers for 25 lines -- highest reuse density found in this repo, and unifies loading/error/empty into one component/prop, a pattern narduk-libs' AppEmptyState may not currently offer (unverified, L0's job).",
+      "loc_saved_estimate": 25
+    }
+  ],
+  "notes": "Two-part repo: `web/` is the Nuxt 4 app (surveyed here), root `src/` is the actual Cloudflare Worker/data API that `web/server/api/[...path].ts` proxies to -- the real list/limit contract lives in src/router.ts, not web/server. No layouts/ directory in the app at all. narduk-mapkit-nuxt and narduk-charts are NOT dependencies despite matching component needs (map sidebar, history chart) existing locally. No table/mobile/sort UI defects found in issue or PR history -- this app's table surface (SimpleTable, 8 consumers) has had no reported breakage, unlike operator-portal's pre-migration horizontal-scroll history."
+}

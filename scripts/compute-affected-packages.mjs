@@ -3,6 +3,8 @@ import { appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } fr
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { batchPackages, packageGates } from './ci-package-plan.mjs'
+
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dependencySections = [
   'dependencies',
@@ -40,7 +42,7 @@ export function readWorkspacePatterns(root) {
     if (inPackages && /^\S/u.test(line) && line.trim() !== '') break
     if (!inPackages) continue
 
-    const match = line.match(/^\s+-\s+(.+)$/u)
+    const match = line.match(/^\s+-\s+(\S.*)$/u)
     if (!match) continue
     const pattern = stripYamlScalar(match[1])
     if (pattern) patterns.push(pattern)
@@ -144,6 +146,33 @@ function isReleaseMetadata(path) {
   return path.startsWith('.changeset/')
 }
 
+// Paths that cannot affect any package's build/test/lint/pack output, so a
+// diff touching only these (plus release metadata) never needs the package
+// matrix. Narrow and explicit on purpose -- do not widen this to cover
+// anything a package's own files could plausibly read.
+//
+// - `docs/**`: nothing under scripts/, .github/workflows/, or any package's
+//   package.json reads from the top-level docs/ directory, and workspace
+//   packages live under packages/{modules,tooling,design,contracts}/*, never
+//   docs/ -- so it is not part of any package's published files and cannot
+//   affect `pnpm pack` or any package's own build/test.
+// - Root-level `*.md` only (the regex requires no `/`, so it matches
+//   README.md/CHANGELOG.md/etc. directly at the repo root, never a package's
+//   own packages/<family>/<name>/README.md, which still has a `/` and is
+//   still caught by packageForPath first, earlier in the same loop
+//   iteration). Root markdown ships in no tarball -- `pnpm pack` packs each
+//   workspace package's own directory, never the repo root file tree.
+// - `LICENSE` at the repo root, exact match only: not part of any
+//   individual package's published contents unless a package explicitly
+//   copies it in as part of its own build (none of the four families do
+//   this today).
+function isInertPath(path) {
+  if (path.startsWith('docs/')) return true
+  if (/^[^/]+\.md$/u.test(path)) return true
+  if (path === 'LICENSE') return true
+  return false
+}
+
 function isPackageValidationOnly(relativePath) {
   const file = basename(relativePath)
   if (/^(?:README|CHANGELOG)(?:\.[^.]+)?\.md$/iu.test(file)) return true
@@ -190,6 +219,7 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
     }
 
     if (isReleaseMetadata(path)) continue
+    if (isInertPath(path)) continue
     const reason = globalTriggerReason(path)
     if (reason) {
       globalReasons.add(`${reason}: ${path}`)
@@ -200,10 +230,6 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
   }
 
   let fullRun = forceAll || globalReasons.size > 0 || unclassifiedPaths.length > 0
-  if (!fullRun && changedNames.size === 0) {
-    fullRun = true
-    globalReasons.add('no package change could be classified safely')
-  }
   if (forceAll) {
     globalReasons.add('explicit full run')
     packedConsumer = true
@@ -224,7 +250,9 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
       label: name.replace(/^@narduk-enterprises\//u, ''),
       filter: name,
     }))
-  if (matrix.length === 0) throw new Error('Affected package matrix must never be empty.')
+  if (fullRun && matrix.length === 0) {
+    throw new Error('A full run must never produce an empty package matrix.')
+  }
 
   const skippedNames = workspace.packages
     .map(({ name }) => name)
@@ -232,6 +260,16 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
 
   return {
     matrix,
+    browserPackages: workspace.packages
+      .filter(({ name, manifest }) => affectedNames.has(name) && manifest.scripts?.['test:e2e'])
+      .map(({ name }) => name)
+      .sort(),
+    batches: batchPackages(
+      matrix,
+      JSON.parse(readFileSync(join(scriptRoot, 'scripts/ci-package-durations.json'), 'utf8'))
+        .gateSeconds,
+    ),
+    packageGates,
     changedNames: [...changedNames].sort(),
     affectedNames: [...affectedNames].sort(),
     skippedNames,
@@ -266,6 +304,7 @@ export function renderSummary(result) {
     '## Affected package plan',
     '',
     `**Mode:** ${mode}`,
+    `**Install batches:** ${result.batches.length}; **gates per package:** ${packageGates.join(', ')}`,
     '',
     '### Directly changed packages',
     '',
@@ -349,6 +388,8 @@ function main() {
       options.githubOutput,
       [
         `matrix=${JSON.stringify(result.matrix)}`,
+        `batches=${JSON.stringify(result.batches)}`,
+        `browser-packages=${JSON.stringify(result.browserPackages)}`,
         `packed-consumer=${result.packedConsumer}`,
         `full-run=${result.fullRun}`,
         `affected-count=${result.affectedNames.length}`,

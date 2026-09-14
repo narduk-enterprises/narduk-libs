@@ -1,0 +1,161 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/vtraceroute",
+  "clone": "ok",
+  "surveyed_sha": "7a76b1a3920a286f98ecd028a397d2691b8df4b9",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "4.10.0",
+    "tailwind": "none (bundled via @nuxt/ui, no direct dependency)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-analytics": "1.19.27",
+      "narduk-core": "1.20.5",
+      "narduk-mapkit": "2.0.0",
+      "narduk-mapkit-nuxt": "2.0.0",
+      "narduk-seo": "2.0.5",
+      "narduk-app-tools": "0.2.1",
+      "narduk-testkit": "1.2.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 8,
+    "components": 6,
+    "pages": 1,
+    "layouts": 0,
+    "composables": 1,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find app/composables -maxdepth 8 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 1,
+    "AppMapKitCallout": 0,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0
+  },
+  "local_reimplementations": [],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "card_list": [],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "app/components/RouteMap.client.vue",
+        "loc": 335,
+        "consumers": 1,
+        "notes": "wraps narduk-mapkit-nuxt's AppMapKit (line 291) -- this is the one lane repo that has actually adopted the shared map component."
+      },
+      {
+        "path": "app/components/RouteGlobe.client.vue",
+        "loc": 501,
+        "consumers": 1,
+        "notes": "largest component in the repo, a 3D globe view (not built on AppMapKit -- distinct rendering mode from RouteMap)."
+      },
+      {
+        "path": "app/components/RouteFallbackMap.client.vue",
+        "loc": 36,
+        "consumers": 1,
+        "notes": "fallback when globe/map rendering is unavailable."
+      },
+      {
+        "path": "app/components/RoutePulseOverlay.client.vue",
+        "loc": 98,
+        "consumers": 1,
+        "notes": "visual pulse/animation overlay on the route map."
+      }
+    ],
+    "chart_wrapper": [],
+    "timeline_feed": [
+      {
+        "path": "app/components/HopTimeline.vue",
+        "loc": 44,
+        "consumers": 1,
+        "notes": "live hop-by-hop feed (aria-live='polite'), one article per network hop with index/IP/geo/RTT columns-as-rows. Has its OWN inline empty state ('Start a trace to watch routers resolve in real time') and its own loading indicator ('Discovering next hop', role='status') rather than using a shared component for either -- both are candidates for empty_state/loading_skeleton extraction even though narduk-libs' pattern list wasn't the natural home for this component's primary job."
+      }
+    ],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "app/components/RoutePlaybackControls.vue",
+        "loc": 74,
+        "consumers": 1,
+        "notes": "trace playback scrubber/controls, domain-specific, not a lane-target pattern."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/vtraceroute#14",
+      "kind": "issue",
+      "state": "closed",
+      "summary": "wrangler config lacks no_bundle/find_additional_modules; production 404 page server-renders empty",
+      "pattern": "empty_state"
+    }
+  ],
+  "tests_covering_patterns": ["tests/e2e/trace.spec.ts"],
+  "top_extraction_candidates": [
+    {
+      "pattern": "map_wrapper",
+      "name": "AppMapKit adoption (RouteMap.client.vue)",
+      "path": "app/components/RouteMap.client.vue",
+      "loc": 335,
+      "consumers": 1,
+      "why": "Not a hand-rolled duplicate -- the opposite finding: this is proof narduk-mapkit-nuxt's AppMapKit is usable in a real, demanding client-only map product. Worth citing as a positive-adoption reference rather than an extraction target.",
+      "loc_saved_estimate": 0
+    },
+    {
+      "pattern": "timeline_feed",
+      "name": "HopTimeline",
+      "path": "app/components/HopTimeline.vue",
+      "loc": 44,
+      "consumers": 1,
+      "why": "Small, clean live-feed pattern (aria-live, own empty+loading inline states) that could generalize to any real-time event/log feed elsewhere in the estate, though only 1 consumer here so reuse pressure is unproven.",
+      "loc_saved_estimate": 44
+    }
+  ],
+  "notes": "Single-page app (app/pages/index.vue only); every component in app/components has exactly 1 consumer because there is only one page -- consumer counts here measure usage sites, not cross-page reuse. No table, no pagination, no server-side list API (server/api/trace.post.ts is a POST action endpoint, not a list GET). This is the one repo in the lane that already depends on and uses narduk-mapkit-nuxt's AppMapKit, which is a useful positive data point for narduk-libs adoption viability. No table/mobile UI defects in issue or PR history; only 1 open PR (a routine wrangler dependency bump) and one closed empty-page infra issue (#14, same class of wrangler-bundling bug reported independently in hydrogen #54 -- possibly a recurring estate-wide wrangler config gotcha worth flagging to the orchestrator)."
+}

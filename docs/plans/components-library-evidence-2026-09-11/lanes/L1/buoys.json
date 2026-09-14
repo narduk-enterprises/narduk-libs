@@ -1,0 +1,367 @@
+{
+  "lane": "L1",
+  "repo": "narduk-enterprises/buoys",
+  "clone": "ok",
+  "surveyed_sha": "b87206b2dc612ca2e79a64c3254d88a658dd2901",
+  "default_branch": "main",
+  "app_dirs": ["apps/web"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "4.4.8",
+    "nuxt_ui": "transitive via @narduk-enterprises/narduk-core module (no direct @nuxt/ui dep; UIcon/ULink/UButton/UAlert all in use); reka-ui 2.9.2 is a DIRECT dep used only for ConfigProvider/TooltipProvider in app/app.vue",
+    "tailwind": "not directly pinned in apps/web/package.json (raw Tailwind utility classes used extensively; narduk/no-raw-tailwind-colors eslint-disable comments present in 2+ files, implying an app-level lint rule against it)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-core": "1.23.2",
+      "narduk-ui": "0.1.2",
+      "narduk-charts": "2.5.1",
+      "narduk-seo": "2.0.10",
+      "narduk-analytics": "1.19.33",
+      "narduk-mapkit": "2.0.2",
+      "narduk-mapkit-nuxt": "2.0.4",
+      "narduk-platform": "2.0.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 53,
+    "components": 36,
+    "pages": 16,
+    "layouts": 0,
+    "composables": 13,
+    "commands": {
+      "vue_files_total": "find apps/web -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' -not -path '*/.output/*' | wc -l",
+      "components": "find apps/web/app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find apps/web/app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find apps/web/app/layouts -maxdepth 8 -name '*.vue' | wc -l (dir absent -> 0)",
+      "composables": "find apps/web/app/composables -maxdepth 8 -name '*.ts' | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppMapKit": 2,
+    "NardukLineChart": 2,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0
+  },
+  "local_reimplementations": [
+    {
+      "name": "MarineStationHistoryTable (StationHistoryTable.vue)",
+      "path": "apps/web/app/components/marine/StationHistoryTable.vue",
+      "loc": 48,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "hand-rolled CSS-grid header+rows history table with dynamic column count (one column per available metric), overflow-x-auto for mobile; narduk-libs ships no table component to have adopted instead"
+    },
+    {
+      "name": "MarineStationList (StationList.vue) + 3 item variants",
+      "path": "apps/web/app/components/marine/StationList.vue",
+      "loc": 335,
+      "consumers": 4,
+      "duplicates_lib": "none",
+      "notes": "StationList.vue (68 LOC) + StationListCardItem.vue (42) + StationListCompactItem.vue (83) + StationListRowItem.vue (70) + StationListEmptyState.vue (7) = 270 LOC across 5 files implementing a 3-variant (cards|compact|rows) collection renderer with a client-side display cap (props.limit, NOT real pagination - just Array.slice) and a shared empty state. This is the single richest 'what should a shared CollectionTable's row-density modes look like' example in lane L1."
+    },
+    {
+      "name": "RegionStatsPanel",
+      "path": "apps/web/app/components/marine/RegionStatsPanel.vue",
+      "loc": 41,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "icon+label+value+unit+trend KPI tiles (dl/dt/dd); also contains a literal, non-reactive '2 min ago' text string with no template binding - looks like a stale/hardcoded freshness label rather than a computed one, worth a live check"
+    },
+    {
+      "name": "MapSidebarFilters",
+      "path": "apps/web/app/components/marine/MapSidebarFilters.vue",
+      "loc": 143,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "largest hand-rolled filter surface across all three L1 repos"
+    },
+    {
+      "name": "StationSearchPanel",
+      "path": "apps/web/app/components/marine/StationSearchPanel.vue",
+      "loc": 72,
+      "consumers": 1,
+      "duplicates_lib": "none",
+      "notes": "search input + MarineStationList(rows, capped to 8) results"
+    }
+  ],
+  "patterns": {
+    "table": [
+      {
+        "path": "apps/web/app/components/marine/StationHistoryTable.vue",
+        "loc": 48,
+        "kind": "grid-div",
+        "sortable": "none",
+        "paginated": "none",
+        "page_size": 500,
+        "searchable": false,
+        "row_link": false,
+        "mobile": "horizontal-scroll",
+        "empty_state": false,
+        "loading_state": true,
+        "error_state": true,
+        "url_state": false,
+        "column_count": "dynamic (1 + availableMetrics.length)",
+        "sticky_header": false,
+        "selection": false,
+        "virtualized": false,
+        "column_types": ["date", "number"],
+        "server_api": "server/api/ndbc/stations/[stationId]/history.get.ts (params: from, to, limit<=2000 default 500, product, resolution=raw|hourly|daily) - a max-rows cap plus time-range/resolution selection, not true pagination",
+        "tests": ["apps/web/tests/server/buoy-status-product.test.ts"],
+        "consumers": 1
+      }
+    ],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [
+      {
+        "path": "apps/web/app/components/marine/MapSidebarFilters.vue",
+        "loc": 143,
+        "consumers": 1,
+        "notes": "map sidebar region/freshness filters; tested by tests/server/marine-map-sidebar.test.ts and tests/e2e/map-sidebar.spec.ts"
+      },
+      {
+        "path": "apps/web/app/components/marine/StationSearchPanel.vue",
+        "loc": 72,
+        "consumers": 1,
+        "notes": "text search over stations, backed by server/api/stations/index.get.ts (q, region, freshness, limit<=2000 default 1500)"
+      },
+      {
+        "path": "apps/web/app/components/marine/StationHistoryControls.vue",
+        "loc": 86,
+        "consumers": 1,
+        "notes": "not a text filter - unit-system/time-mode toggles + product selector for the history table; includes its own error alert (UAlert)"
+      }
+    ],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [
+      {
+        "path": "apps/web/app/components/marine/StationListEmptyState.vue",
+        "loc": 7,
+        "consumers": 2,
+        "notes": "smallest, most focused empty-state component in the lane; used by StationList's compact and rows variants only (not cards)"
+      }
+    ],
+    "loading_skeleton": [],
+    "error_state": [
+      {
+        "path": "apps/web/app/components/marine/StationHistoryControls.vue",
+        "loc": 86,
+        "consumers": 1,
+        "notes": "UAlert (Nuxt UI, transitive) shown on loadError"
+      }
+    ],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [
+      {
+        "path": "apps/web/app/components/marine/RegionStatsPanel.vue",
+        "loc": 41,
+        "consumers": 1,
+        "notes": "see local_reimplementations note re: hardcoded '2 min ago'"
+      },
+      {
+        "path": "apps/web/app/components/marine/StationMetricsGrid.vue",
+        "loc": 122,
+        "consumers": 1,
+        "notes": "not read in full; grid of station metric tiles, largest of the KPI-tile family in the lane"
+      }
+    ],
+    "card_list": [
+      {
+        "path": "apps/web/app/components/marine/StationList.vue",
+        "loc": 68,
+        "consumers": 4,
+        "notes": "variant='cards' branch; see local_reimplementations"
+      },
+      {
+        "path": "apps/web/app/components/marine/RegionGrid.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "region summary card grid, not individually inspected"
+      },
+      {
+        "path": "apps/web/app/components/marine/BuoyCamGrid.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "buoy camera card grid, not individually inspected"
+      }
+    ],
+    "detail_list": [
+      {
+        "path": "apps/web/app/components/marine/StationListRowItem.vue",
+        "loc": 70,
+        "consumers": 4,
+        "notes": "variant='rows' branch of StationList; status dot + id/name/region on the left, 3 metric readings on the right - the closest thing to a real table row in the app, rendered as a flex/grid <ULink>, not a <tr>"
+      },
+      {
+        "path": "apps/web/app/components/marine/StationHistoryAvailability.vue",
+        "loc": 35,
+        "consumers": 1,
+        "notes": "per-period data-provenance cards (status, row count, source link, R2 key) - metadata about the history table's own data completeness"
+      }
+    ],
+    "form_field_patterns": [],
+    "date_time_format": [
+      {
+        "path": "apps/web/app/composables/useStationHistoryFormatters.ts",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "drives StationHistoryTable's observedLabel and StationHistoryControls' local/UTC time-mode formatting"
+      }
+    ],
+    "number_currency_format": [
+      {
+        "path": "apps/web/app/utils/marineMapSidebar.ts",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "formatStationMetricReading used by StationListRowItem for wave/wind/water unit-aware value formatting"
+      }
+    ],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [
+      {
+        "path": "apps/web/app/components/marine/MarineAppShell.vue",
+        "loc": "not measured",
+        "consumers": "not measured",
+        "notes": "app-specific shell, not narduk-core's Layer* family (all zero usage)"
+      }
+    ],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [
+      {
+        "path": "apps/web/app/components/marine/StationMapCanvas.vue",
+        "loc": "not measured",
+        "consumers": 2,
+        "notes": "composes AppMapKit - correct adoption, not a duplicate; 2 AppMapKit call sites total in the app"
+      }
+    ],
+    "chart_wrapper": [
+      {
+        "path": "apps/web/app/components/marine/Sparkline.vue",
+        "loc": 88,
+        "consumers": 3,
+        "notes": "correctly composes NardukLineChart with show-area/no-axes styling for a compact trend line - good adoption, not a duplicate"
+      },
+      {
+        "path": "apps/web/app/components/marine/StationHistoryChart.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "2nd NardukLineChart call site (full-size history chart, companion to StationHistoryTable in StationHistoryPanel)"
+      }
+    ],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "other": [
+      {
+        "path": "apps/web/app/app.vue",
+        "loc": "not measured",
+        "consumers": 1,
+        "notes": "wraps the app in reka-ui's ConfigProvider/TooltipProvider - a direct headless-primitives dependency, not routed through Nuxt UI or narduk-ui"
+      }
+    ]
+  },
+  "server_list_contracts": [
+    {
+      "route": "apps/web/server/api/stations/index.get.ts",
+      "params": ["q", "region", "freshness", "limit (max 2000, default 1500)"],
+      "response_shape": "{ data: T[], meta: { source, count, query } }",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/ndbc/stations/[stationId]/history.get.ts",
+      "params": [
+        "from",
+        "to",
+        "limit (max 2000, default 500)",
+        "product",
+        "resolution (raw|hourly|daily)"
+      ],
+      "response_shape": "publishedStationHistoryResponse(...) - not individually decomposed further",
+      "limit_enforced": true
+    },
+    {
+      "route": "apps/web/server/api/regions/index.get.ts",
+      "params": "not measured",
+      "response_shape": "not measured",
+      "limit_enforced": "not measured"
+    }
+  ],
+  "defect_history": [
+    {
+      "ref": "narduk-enterprises/buoys#6",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Polish station charts and responsive map UI",
+      "pattern": "chart_wrapper"
+    },
+    {
+      "ref": "narduk-enterprises/buoys#7",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "Fix map annotation detail navigation",
+      "pattern": "map_wrapper"
+    },
+    {
+      "ref": "narduk-enterprises/buoys#8",
+      "kind": "pr",
+      "state": "merged",
+      "summary": "90-day D1 history retention + stop history regrowth",
+      "pattern": "table"
+    }
+  ],
+  "tests_covering_patterns": [
+    "apps/web/tests/server/buoy-status-product.test.ts",
+    "apps/web/tests/server/marine-map-sidebar.test.ts",
+    "apps/web/tests/server/marine-models.test.ts",
+    "apps/web/tests/e2e/map-sidebar.spec.ts"
+  ],
+  "top_extraction_candidates": [
+    {
+      "pattern": "card_list",
+      "name": "CollectionList (cards|compact|rows variant prop)",
+      "path": "apps/web/app/components/marine/StationList.vue",
+      "loc": 335,
+      "consumers": 4,
+      "why": "the clearest, most deliberate multi-density collection renderer found across all of lane L1 - a single variant prop switching between card grid / compact list / detail rows, each with correct empty-state handling and a client-side display cap. This is close to a ready-made spec for a shared component's density modes.",
+      "loc_saved_estimate": 200
+    },
+    {
+      "pattern": "table",
+      "name": "CollectionTable (history/time-series variant)",
+      "path": "apps/web/app/components/marine/StationHistoryTable.vue",
+      "loc": 48,
+      "consumers": 1,
+      "why": "dynamic-column CSS-grid table with horizontal-scroll mobile handling, backed by a real time-range+resolution+row-cap API contract - the most table-like surface in the entire lane and a strong shape reference for a shared table's 'no sort, no pagination, just a bounded time window' mode",
+      "loc_saved_estimate": 40
+    },
+    {
+      "pattern": "filter_search_bar",
+      "name": "CollectionFilterBar",
+      "path": "apps/web/app/components/marine/MapSidebarFilters.vue",
+      "loc": 143,
+      "consumers": 1,
+      "why": "largest hand-rolled filter surface in the lane; StationSearchPanel and StationHistoryControls each reimplement pieces of the same search/filter/toggle concept independently",
+      "loc_saved_estimate": 150
+    }
+  ],
+  "notes": "buoys has the richest table/list evidence in lane L1. Good adoption of narduk-charts (Sparkline + StationHistoryChart both correctly wrap NardukLineChart) and AppMapKit, but ZERO usage of narduk-ui instruments (NsFreshnessChip/NsLevelWell/NsRangeBar/NsReadoutTile all 0) despite this being a freshness-heavy marine-status product - status is instead conveyed via hand-rolled '.marine-dot' color classes (dotClass() in StationListRowItem.vue). reka-ui is a direct dependency used only for ConfigProvider/TooltipProvider, independent of the Nuxt UI access that comes transitively through narduk-core. RegionStatsPanel.vue has a literal non-reactive '2 min ago' string that looks hardcoded rather than computed - flagged, not confirmed live."
+}

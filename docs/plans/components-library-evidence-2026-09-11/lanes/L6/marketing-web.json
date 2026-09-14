@@ -1,0 +1,124 @@
+{
+  "lane": "L6",
+  "repo": "narduk-enterprises/marketing-web",
+  "clone": "ok",
+  "surveyed_sha": "9903e061c3f85e37738af5df0449d2c826335656",
+  "default_branch": "main",
+  "app_dirs": ["app"],
+  "is_nuxt_app": true,
+  "stack": {
+    "nuxt": "^4.4.8",
+    "nuxt_ui": "^4.9.0",
+    "tailwind": "none (bundled via @nuxt/ui, no direct dependency)",
+    "tanstack_table": "none",
+    "narduk_libs": {
+      "narduk-analytics": "1.19.27",
+      "narduk-core": "1.20.5",
+      "narduk-seo": "2.0.5",
+      "narduk-app-tools": "0.2.1",
+      "narduk-testkit": "1.2.0"
+    },
+    "legacy_template_layer": false
+  },
+  "counts": {
+    "vue_files_total": 7,
+    "components": 5,
+    "pages": 1,
+    "layouts": 0,
+    "composables": 0,
+    "commands": {
+      "vue_files_total": "find app -maxdepth 8 -name '*.vue' -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | wc -l",
+      "components": "find app/components -maxdepth 8 -name '*.vue' | wc -l",
+      "pages": "find app/pages -maxdepth 8 -name '*.vue' | wc -l",
+      "layouts": "find app/layouts -maxdepth 8 -name '*.vue' | wc -l",
+      "composables": "find app/composables -maxdepth 8 -type f | wc -l"
+    }
+  },
+  "libs_components_used": {
+    "AppEmptyState": 0,
+    "AppConfirmModal": 0,
+    "AppCopyButton": 0,
+    "AppTabs": 0,
+    "AppLightbox": 0,
+    "AppShareButtons": 0,
+    "AppBreadcrumbs": 0,
+    "NsFreshnessChip": 0,
+    "NsLevelWell": 0,
+    "NsRangeBar": 0,
+    "NsReadoutTile": 0,
+    "AppMapKit": 0
+  },
+  "local_reimplementations": [],
+  "patterns": {
+    "table": [],
+    "pagination_control": [],
+    "sort_control": [],
+    "filter_search_bar": [],
+    "status_chip_badge": [],
+    "freshness_indicator": [],
+    "empty_state": [],
+    "loading_skeleton": [],
+    "error_state": [],
+    "confirm_modal": [],
+    "toast_notify": [],
+    "page_header": [],
+    "section_header": [],
+    "kpi_stat_tile": [],
+    "detail_list": [],
+    "form_field_patterns": [],
+    "date_time_format": [],
+    "number_currency_format": [],
+    "copy_button": [],
+    "share_social": [],
+    "lightbox_media": [],
+    "layout_shell_nav": [],
+    "tabs": [],
+    "breadcrumbs": [],
+    "auth_gating_ui": [],
+    "map_wrapper": [],
+    "chart_wrapper": [],
+    "timeline_feed": [],
+    "file_upload": [],
+    "keyboard_shortcuts": [],
+    "theme_toggle": [],
+    "card_list": [
+      {
+        "path": "app/components/WorkCard.vue",
+        "loc": 23,
+        "consumers": 1,
+        "notes": "portfolio/work item card, single-page marketing site so 'consumers' means usage sites within the one index.vue, not distinct pages."
+      },
+      {
+        "path": "app/components/CapabilityCard.vue",
+        "loc": 19,
+        "consumers": 0,
+        "notes": "zero consumers by tag-grep (plain and kebab-case checked) -- appears dead/unused; flagged, not touched."
+      },
+      {
+        "path": "app/components/ProcessStep.vue",
+        "loc": 15,
+        "consumers": 1,
+        "notes": "numbered process-step card."
+      },
+      {
+        "path": "app/components/FitItem.vue",
+        "loc": 13,
+        "consumers": 1,
+        "notes": "small fit-criteria list item."
+      }
+    ],
+    "other": [
+      {
+        "path": "app/components/BrandLogo.vue",
+        "loc": 34,
+        "consumers": 1,
+        "notes": "brand mark; not a lane-target pattern, noted for completeness."
+      }
+    ]
+  },
+  "server_list_contracts": [],
+  "defect_history": [],
+  "tests_covering_patterns": [],
+  "top_extraction_candidates": [],
+  "notes": "Smallest repo in this lane by far: a single-page (app/pages/index.vue) marketing/portfolio site, no tables, no pagination, no server API list surface, no layouts, no composables. narduk-core/analytics/seo are installed (useSeoMeta used at app/pages/index.vue:129) but contribute no visible UI components -- likely SEO meta/OG-image plumbing only, not templated. Issue/PR search for table/pagination/sort/mobile/hydration/empty returned only dependency-bump PRs and two unrelated open issues (CI gating, analytics instrumentation) -- no UI defect history at all. Given the near-total absence of the target patterns, this repo contributes essentially nothing to the estate-wide table/pagination/card extraction case; CapabilityCard.vue (0 consumers) is the one flagged dead-code item."
+}
