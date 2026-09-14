@@ -673,7 +673,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         ...(capabilities.includes('seo')
           ? [
               '  nardukSeo: {',
-              '    hostAwareIndexing: true,',
               "    defaultOgImage: { url: '/og.png', alt: appName + ' — ' + appDescription },",
               '  },',
             ]

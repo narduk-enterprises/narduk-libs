@@ -93,6 +93,22 @@ describe('create-narduk-app generation contract', () => {
     expect([...first.values()].join('\n')).not.toContain('/two/target')
   })
 
+  it('preserves an explicit deployment target before inferring a branch preview', () => {
+    const files = asFileMap(
+      buildGeneratedFiles({
+        appName: 'preview-aware-app',
+        capabilities: ['seo'],
+        targetDir: '/tmp/preview-aware-app',
+      }),
+    )
+    const config = files.get('apps/web/nuxt.config.ts') ?? ''
+    expect(config).toContain(
+      "process.env.NARDUK_DEPLOY_TARGET || (isBranchPreview ? 'preview' : 'production')",
+    )
+    expect(config).toContain('process.env.NARDUK_DEPLOY_TARGET ??= deploymentTarget')
+    expect(config).not.toContain('hostAwareIndexing: true')
+  })
+
   it('renders user-provided display text through Vue bindings', async () => {
     const files = asFileMap(
       buildGeneratedFiles({
