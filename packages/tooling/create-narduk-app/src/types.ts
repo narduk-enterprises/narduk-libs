@@ -15,6 +15,7 @@ export const SUPPORTED_CAPABILITIES = [
 export type Capability = (typeof SUPPORTED_CAPABILITIES)[number]
 
 export type AppVisibility = 'private' | 'public'
+export type AppExposure = 'public' | 'authenticated'
 
 export interface ProductSpec {
   audience?: string
@@ -30,6 +31,7 @@ export interface CreateNardukAppOptions {
   capabilities?: readonly string[] | string
   description?: string
   displayName?: string
+  exposure?: AppExposure
   force?: boolean
   localDevPort?: number
   localPort?: number
