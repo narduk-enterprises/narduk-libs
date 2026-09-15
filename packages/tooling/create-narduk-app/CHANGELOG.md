@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.5.1
+
+### Patch Changes
+
+- 994551d: Read only the parsed HTML head during social-preview crawler checks,
+  retaining the head byte limit and all metadata checks without downloading
+  unrelated SSR payloads.
+
 ## 0.5.0
 
 ### Minor Changes
