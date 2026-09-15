@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { parse } from 'parse5'
+import { parse, Parser } from 'parse5'
 import type { DefaultTreeAdapterMap } from 'parse5'
 
 import { checkRouteInventory, publicUrl } from './config.js'
@@ -43,13 +43,16 @@ export function socialMeta(html: string): Map<string, string[]> {
   return result
 }
 
-/** No cookies/credentials; bounded redirects, body size, and total request time. */
+/** No cookies/credentials; bounded redirects, bytes, and total request time.
+ * HTML probes cancel after the parsed head; SSR data in the body is irrelevant.
+ */
 async function fetchBytes(
   url: URL,
   agent: string,
   origins: Set<string>,
   limit: number,
   runSignal: AbortSignal,
+  headOnly = false,
 ): Promise<{ bytes: Uint8Array; mime: string }> {
   const signal = AbortSignal.any([runSignal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
   let current = url
@@ -73,7 +76,7 @@ async function fetchBytes(
       await response.body?.cancel()
       throw new Error(`HTTP ${response.status}`)
     }
-    if (Number(response.headers.get('content-length')) > limit) {
+    if (!headOnly && Number(response.headers.get('content-length')) > limit) {
       await response.body?.cancel()
       throw new Error('Response exceeds byte limit')
     }
@@ -81,13 +84,42 @@ async function fetchBytes(
     const reader = response.body.getReader()
     const chunks: Uint8Array[] = []
     let size = 0
+    const decoder = new TextDecoder()
+    const parser = headOnly
+      ? new Parser<DefaultTreeAdapterMap>({ sourceCodeLocationInfo: true })
+      : null
+    let headComplete = false
+    if (parser) {
+      const onEndTag = parser.onEndTag.bind(parser)
+      parser.onEndTag = (token) => {
+        onEndTag(token)
+        if (token.tagName !== 'head') return
+        const html = parser.document.childNodes.find(
+          (node) => 'tagName' in node && node.tagName === 'html',
+        )
+        const head =
+          html && 'childNodes' in html
+            ? html.childNodes.find((node) => 'tagName' in node && node.tagName === 'head')
+            : undefined
+        // The tree builder must have closed the real head. Literal/scripted or
+        // template-contained </head> text must not hide later duplicate metadata.
+        if (head && 'tagName' in head && head.sourceCodeLocation?.endTag) {
+          headComplete = true
+          parser.tokenizer.pause()
+        }
+      }
+    }
     try {
       while (true) {
         const chunk = await reader.read()
         if (chunk.done) break
-        size += chunk.value.byteLength
+        const bytes = headOnly ? chunk.value.subarray(0, limit - size) : chunk.value
+        size += bytes.byteLength
         if (size > limit) throw new Error('Response exceeds byte limit')
-        chunks.push(chunk.value)
+        chunks.push(bytes)
+        parser?.tokenizer.write(decoder.decode(bytes, { stream: true }), false)
+        if (headComplete) break
+        if (headOnly && size >= limit) throw new Error('HTML head exceeds byte limit')
       }
     } finally {
       await reader.cancel()
@@ -144,6 +176,7 @@ async function probePage(
     new Set([context.target.origin]),
     MAX_HTML_BYTES,
     context.signal,
+    true,
   )
   if (!/^text\/html(?:;|$)/iu.test(mime)) throw new Error('Page is not text/html')
   const meta = socialMeta(new TextDecoder().decode(bytes))

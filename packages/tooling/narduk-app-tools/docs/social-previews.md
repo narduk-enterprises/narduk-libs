@@ -218,3 +218,10 @@ landing page.
 Protocol references: [Open Graph metadata](https://ogp.me/),
 [Apple rich previews](https://developer.apple.com/documentation/technotes/tn3156-create-rich-previews-for-messages),
 and [Nuxt OG Image](https://nuxtseo.com/og-image).
+
+Crawler probes stop after the HTML parser closes the real document head and
+cancel the response body. The one-megabyte ceiling applies to the inspected
+head; large SSR data payloads in the body do not affect social metadata
+validation. Script, comment, and template text cannot terminate the head probe.
+Image byte limits, origin checks, crawler profiles, and metadata checks remain
+independent.
