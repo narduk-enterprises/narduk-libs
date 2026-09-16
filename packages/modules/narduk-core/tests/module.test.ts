@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('narduk-core module', () => {
   it('registers core aliases without relying on Nuxt layer inheritance', async () => {
@@ -147,5 +147,147 @@ describe('narduk-core module', () => {
         process.env.NUXT_DATABASE_BACKEND = previousDatabaseBackend
       }
     }
+  })
+})
+
+describe('narduk-core databaseBackend declaration', () => {
+  let previousDatabaseBackend: string | undefined
+
+  beforeEach(() => {
+    previousDatabaseBackend = process.env.NUXT_DATABASE_BACKEND
+    delete process.env.NUXT_DATABASE_BACKEND
+  })
+
+  afterEach(() => {
+    if (previousDatabaseBackend === undefined) {
+      delete process.env.NUXT_DATABASE_BACKEND
+    } else {
+      process.env.NUXT_DATABASE_BACKEND = previousDatabaseBackend
+    }
+  })
+
+  async function loadCoreModule() {
+    vi.resetModules()
+    const hooks = new Map<string, Array<() => unknown>>()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponentsDir: vi.fn(),
+      addImportsDir: vi.fn(),
+      addPlugin: vi.fn(),
+      addServerScanDir: vi.fn(),
+      addTemplate: vi.fn((template: { src: string }) => ({
+        filename: template.src.split('/').pop(),
+      })),
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+      installModule: vi.fn(),
+    }))
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    const nuxt = {
+      options: {
+        alias: {} as Record<string, string>,
+        app: {},
+        appConfig: {},
+        build: { transpile: [] },
+        colorMode: {},
+        css: [],
+        devServer: {},
+        future: {},
+        icon: {},
+        nitro: {},
+        runtimeConfig: {} as Record<string, unknown>,
+        ui: {},
+        vite: {},
+      },
+      hook(name: string, handler: () => unknown) {
+        hooks.set(name, [...(hooks.get(name) || []), handler])
+      },
+    }
+    const setup = (options: Record<string, unknown> = {}) =>
+      mod.setup({ app: false, coreModules: false, server: false, ...options }, nuxt)
+    const modulesDone = () => {
+      for (const hook of hooks.get('modules:done') || []) {
+        hook()
+      }
+    }
+    return { nuxt, setup, modulesDone }
+  }
+
+  it('records an undeclared D1 default and keeps it undeclared across repeated setup', async () => {
+    const { nuxt, setup } = await loadCoreModule()
+
+    await setup()
+    await setup()
+
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      databaseBackend: 'd1',
+      databaseBackendSource: 'default',
+    })
+  })
+
+  it.each([
+    [{ databaseBackend: 'none' }, undefined, 'none', 'option'],
+    [{ databaseBackend: 'none' }, 'postgres', 'none', 'option'],
+    [{}, 'postgres', 'postgres', 'env'],
+    [{}, 'none', 'none', 'env'],
+  ])(
+    'resolves option %j with NUXT_DATABASE_BACKEND=%s to %s from %s',
+    async (options, env, databaseBackend, databaseBackendSource) => {
+      if (env !== undefined) {
+        process.env.NUXT_DATABASE_BACKEND = env
+      }
+      const { nuxt, setup } = await loadCoreModule()
+
+      await setup(options)
+
+      expect(nuxt.options.runtimeConfig).toMatchObject({ databaseBackend, databaseBackendSource })
+      expect(nuxt.options.alias['#narduk-core/schema']).toContain(
+        databaseBackend === 'postgres'
+          ? '/runtime/server/database/pg-schema.ts'
+          : '/runtime/server/database/schema.ts',
+      )
+    },
+  )
+
+  it('rejects an unknown databaseBackend option', async () => {
+    const { setup } = await loadCoreModule()
+
+    await expect(setup({ databaseBackend: 'sqlite' })).rejects.toThrow(
+      "nardukCore.databaseBackend must be one of 'd1', 'postgres', 'none'",
+    )
+  })
+
+  it.each([
+    ['the narduk-auth health flag', { nardukHealth: { authTables: true } }],
+    ['an authBackend from an older narduk-auth', { authBackend: 'local' }],
+  ])(
+    'fails the build when an app without a database also installs narduk-auth, detected by %s (Q3)',
+    async (_label, authRuntimeConfig) => {
+      const { nuxt, setup, modulesDone } = await loadCoreModule()
+
+      await setup({ databaseBackend: 'none' })
+      // narduk-auth installs after narduk-core, so the check runs once every module is set up.
+      Object.assign(nuxt.options.runtimeConfig, authRuntimeConfig)
+
+      expect(modulesDone).toThrow(
+        "[narduk-core] databaseBackend 'none' conflicts with @narduk-enterprises/narduk-auth",
+      )
+    },
+  )
+
+  it.each([
+    [{ databaseBackend: 'none' }, {}],
+    [{ databaseBackend: 'd1' }, { nardukHealth: { authTables: true }, authBackend: 'local' }],
+    [{}, { nardukHealth: { authTables: true } }],
+  ])('allows option %j with runtime config %j', async (options, authRuntimeConfig) => {
+    const { nuxt, setup, modulesDone } = await loadCoreModule()
+
+    await setup(options)
+    Object.assign(nuxt.options.runtimeConfig, authRuntimeConfig)
+
+    expect(modulesDone).not.toThrow()
   })
 })

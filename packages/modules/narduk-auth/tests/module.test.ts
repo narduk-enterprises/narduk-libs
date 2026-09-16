@@ -84,4 +84,48 @@ describe('narduk-auth module', () => {
     expect(appTemplateState.layouts.auth).toEqual({ file: '~/layouts/auth.vue', name: 'auth' })
     expect(appTemplateState.layouts.blank).toEqual({ file: '#build/blank.vue', name: 'blank' })
   })
+
+  it('tells narduk-core health and build checks that auth needs a database', async () => {
+    vi.resetModules()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponentsDir: vi.fn(),
+      addImportsDir: vi.fn(),
+      addServerScanDir: vi.fn(),
+      addTemplate: vi.fn((template: { src: string }) => ({
+        filename: template.src.split('/').pop(),
+      })),
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+      extendPages: vi.fn(),
+      extendRouteRules: vi.fn(),
+    }))
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => void
+    }
+    const { findDatabaseBackendConflict } = await import(
+      '@narduk-enterprises/narduk-core/shared/database-backend'
+    )
+    const runtimeConfig: Record<string, unknown> = {
+      databaseBackend: 'none',
+      nardukHealth: { futureProbe: true },
+    }
+    const nuxt = {
+      options: {
+        appConfig: {},
+        build: { transpile: [] },
+        nitro: {},
+        runtimeConfig,
+      },
+      hook: vi.fn(),
+    }
+
+    mod.setup({ app: false, server: false }, nuxt)
+
+    expect(nuxt.options.runtimeConfig.nardukHealth).toEqual({ futureProbe: true, authTables: true })
+    expect(findDatabaseBackendConflict(nuxt.options.runtimeConfig)).toContain(
+      "databaseBackend 'none' conflicts with @narduk-enterprises/narduk-auth",
+    )
+  })
 })
