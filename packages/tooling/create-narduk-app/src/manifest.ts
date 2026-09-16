@@ -38,7 +38,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-testkit': '1.3.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
   '@nuxt/test-utils': '4.0.3',
-  '@nuxt/ui': '4.6.0',
+  '@nuxt/ui': '4.8.1',
   '@playwright/test': '1.61.1',
   '@tailwindcss/vite': '4.2.1',
   '@types/node': '22.19.19',

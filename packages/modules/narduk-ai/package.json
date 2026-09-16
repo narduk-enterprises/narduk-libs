@@ -104,7 +104,7 @@
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
-    "@nuxt/ui": "4.6.0",
+    "@nuxt/ui": "4.8.1",
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "2.4.11",
