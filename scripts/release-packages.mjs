@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import { consumerSmokePhases, mapPackages } from './consumer-smoke-phases.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
@@ -62,19 +62,6 @@ const WORKSPACE_ESLINT_VERSION_RANGE = rootManifest.devDependencies?.eslint
 if (!WORKSPACE_ESLINT_VERSION_RANGE) {
   throw new Error('Root package.json must directly pin devDependencies.eslint.')
 }
-// narduk-seo's Nuxt SEO plugins still peer on unhead 2. Nuxt 4.4 resolves
-// unhead 3 unless the workspace override is applied. The packed-consumer
-// sandbox is outside the workspace, so it must carry the same pin or pnpm
-// emits WARN/✕ lines that runChecked() turns into a hard failure. @unhead/vue
-// is a separate package with the same 2.x line; pin both from the workspace.
-const WORKSPACE_UNHEAD_VERSION = rootManifest.pnpm?.overrides?.unhead
-const WORKSPACE_UNHEAD_VUE_VERSION = rootManifest.pnpm?.overrides?.['@unhead/vue']
-if (!WORKSPACE_UNHEAD_VERSION || !WORKSPACE_UNHEAD_VUE_VERSION) {
-  throw new Error(
-    'Root package.json must pin pnpm.overrides.unhead and pnpm.overrides["@unhead/vue"].',
-  )
-}
-
 // narduk-core depends on nuxt-auth-utils, whose OPTIONAL passkey helpers still
 // declare `@simplewebauthn/*@^11` — a range upstream has not moved since 2024.
 // narduk-auth implements WebAuthn itself against its own exact-pinned v13
@@ -506,9 +493,9 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   )
 
   rootManifest.pnpm = rootManifest.pnpm || {}
+  // No unhead pin: narduk-seo's Nuxt SEO modules accept Unhead 2 and 3
+  // (narduk-libs#316), so the consumer keeps the Unhead its Nuxt resolves.
   rootManifest.pnpm.overrides = {
-    unhead: WORKSPACE_UNHEAD_VERSION,
-    '@unhead/vue': WORKSPACE_UNHEAD_VUE_VERSION,
     ...(rootManifest.pnpm.overrides || {}),
     ...tarballOverrides,
   }
@@ -666,18 +653,26 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
     ].join('\n'),
   )
 
-  // The generator's own `og:check` step (wired into the generated app's
-  // `build` script: `narduk-app og:generate --if-missing && narduk-app
-  // og:check && nuxt build`) requires every `app/pages/*.vue` file to be
-  // classified in `Config/social-previews.json`, or the build fails before
-  // `nuxt build` -- and therefore before Playwright -- ever runs (see
-  // packages/tooling/create-narduk-app/src/social-previews.ts and
-  // checkRouteInventory in packages/tooling/narduk-app-tools/src/social/config.ts).
-  // This fixture page is release-pipeline plumbing, not real content, so it
-  // is classified `private` with a reason, exactly like the generator's own
-  // `/__preview/og-images` example -- that skips path/crawler checks entirely
-  // (checkRouteInventory: `if (route.kind === 'private') continue`) while
-  // still satisfying the per-file "every page is classified" requirement.
+  classifyGeneratedFixturePage(
+    generatedDirectory,
+    'narduk-shell-root-value-import.vue',
+    'narduk-libs#295 packed-consumer-smoke fixture proving the narduk-shell root value import; not real content',
+  )
+}
+
+// The generator's own `og:check` step (wired into the generated app's `build`
+// script: `narduk-app og:generate --if-missing && narduk-app og:check && nuxt
+// build`) requires every `app/pages/*.vue` file to be classified in
+// `Config/social-previews.json`, or the build fails before `nuxt build` -- and
+// therefore before Playwright -- ever runs (see
+// packages/tooling/create-narduk-app/src/social-previews.ts and
+// checkRouteInventory in packages/tooling/narduk-app-tools/src/social/config.ts).
+// A fixture page is release-pipeline plumbing, not real content, so it is
+// classified `private` with a reason, exactly like the generator's own
+// `/__preview/og-images` example -- that skips path/crawler checks entirely
+// (checkRouteInventory: `if (route.kind === 'private') continue`) while still
+// satisfying the per-file "every page is classified" requirement.
+function classifyGeneratedFixturePage(generatedDirectory, source, reason) {
   const socialPreviewsConfigPath = join(
     generatedDirectory,
     'apps',
@@ -686,19 +681,14 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
     'social-previews.json',
   )
   const socialPreviewsConfig = JSON.parse(readFileSync(socialPreviewsConfigPath, 'utf8'))
-  socialPreviewsConfig.routes.push({
-    source: 'narduk-shell-root-value-import.vue',
-    kind: 'private',
-    reason:
-      'narduk-libs#295 packed-consumer-smoke fixture proving the narduk-shell root value import; not real content',
-  })
+  socialPreviewsConfig.routes.push({ source, kind: 'private', reason })
   // Re-serializing the whole config with plain `JSON.stringify` would
   // re-expand the pre-existing `"paths": ["/"]` entry back onto three lines,
   // failing the generated app's own `format:check` -- Prettier collapses a
   // short array like that onto one line, but does not collapse an object
-  // (which is why the new `private` route above, with no `paths` field,
-  // needs no such fix-up). Re-apply the exact same collapsing this file was
-  // originally written with in socialPreviewFiles
+  // (which is why the `private` routes above, with no `paths` field, need no
+  // such fix-up). Re-apply the exact same collapsing this file was originally
+  // written with in socialPreviewFiles
   // (packages/tooling/create-narduk-app/src/social-previews.ts) to keep the
   // untouched routes byte-identical to what Prettier already accepted.
   const rewritten = `${JSON.stringify(socialPreviewsConfig, null, 2).replaceAll(
@@ -706,6 +696,144 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
     '$1[$2]',
   )}\n`
   writeFileSync(socialPreviewsConfigPath, rewritten)
+}
+
+// narduk-libs#316: the packed SEO module set has to be proven through a real
+// browser, not just installed. This page calls the packed
+// `useSeo`/`useWebPageSchema` composables the same way an adopting app does.
+const PACKED_SEO_FIXTURE_PAGE = `<script setup lang="ts">
+// narduk-libs#316 gate -- see addPackedSeoMetadataSmoke in
+// scripts/release-packages.mjs for why this page exists. Both composables are
+// auto-imported by the packed narduk-seo module.
+const pageTitle = 'Packed SEO metadata'
+const pageDescription = 'Packed narduk-seo renders SSR metadata, canonical links and JSON-LD.'
+
+useSeo({
+  title: pageTitle,
+  description: pageDescription,
+  canonicalUrl: '/narduk-seo-packed',
+  // The branded static default image already covers this fixture; generated
+  // OG images keep their own coverage in the social-previews suite.
+  ogImage: false,
+})
+
+useWebPageSchema({
+  name: pageTitle,
+  description: pageDescription,
+})
+</script>
+
+<template>
+  <div>
+    <h1>{{ pageTitle }}</h1>
+    <p>{{ pageDescription }}</p>
+    <NuxtLink to="/" data-testid="seo-packed-home-link">Home</NuxtLink>
+  </div>
+</template>
+`
+
+// The gate itself: server-rendered title, description, Open Graph and Twitter
+// meta, canonical link and WebPage JSON-LD, plus a client-side navigation that
+// has to re-apply the head. The generated consumer resolves its own Nuxt, and
+// therefore its own Unhead major, so this is what catches an Unhead-
+// incompatible module set before it is published.
+const PACKED_SEO_FIXTURE_SPEC = `import { expect, test } from '@playwright/test'
+
+const pageTitle = 'Packed SEO metadata'
+const pageDescription = 'Packed narduk-seo renders SSR metadata, canonical links and JSON-LD.'
+const siteUrl = 'https://narduk-libs-release-smoke.invalid'
+const canonical = \`\${siteUrl}/narduk-seo-packed\`
+
+interface SchemaNode {
+  '@id'?: string
+  '@type'?: string
+  description?: string
+  name?: string
+}
+
+function metaContent(html: string, attribute: string, value: string) {
+  const tag = new RegExp(\`<meta[^>]*\\\\b\${attribute}="\${value}"[^>]*>\`, 'u').exec(html)?.[0]
+  return tag ? (/content="([^"]*)"/u.exec(tag)?.[1] ?? null) : null
+}
+
+// A trailing slash is the one canonical difference Nuxt SEO normalizes per
+// site config, so compare normalized hrefs -- but still require every emitted
+// canonical to agree, because a second, different canonical is a real defect.
+function normalizeHref(href: string | null) {
+  return (href ?? '').replace(/\\/$/u, '')
+}
+
+test('packed narduk-seo renders SSR metadata (narduk-libs#316)', async ({ request }) => {
+  const response = await request.get('/narduk-seo-packed')
+  expect(response.ok()).toBe(true)
+  const html = await response.text()
+
+  expect(/<title[^>]*>([^<]*)<\\/title>/u.exec(html)?.[1] ?? '').toContain(pageTitle)
+  expect(metaContent(html, 'name', 'description')).toBe(pageDescription)
+  expect(metaContent(html, 'property', 'og:title')).toBe(pageTitle)
+  expect(metaContent(html, 'property', 'og:description')).toBe(pageDescription)
+  expect(metaContent(html, 'property', 'og:url')).toBe(canonical)
+  expect(metaContent(html, 'name', 'twitter:card')).toBe('summary_large_image')
+  expect(metaContent(html, 'name', 'twitter:title')).toBe(pageTitle)
+
+  const canonicals = [...html.matchAll(/<link[^>]*rel="canonical"[^>]*>/gu)].map(
+    ([tag]) => /href="([^"]*)"/u.exec(tag)?.[1] ?? null,
+  )
+  expect(canonicals.length).toBeGreaterThan(0)
+  expect([...new Set(canonicals.map(normalizeHref))]).toEqual([normalizeHref(canonical)])
+
+  const blocks = [...html.matchAll(/<script[^>]*application\\/ld\\+json[^>]*>([\\s\\S]*?)<\\/script>/gu)]
+  expect(blocks.length).toBeGreaterThan(0)
+  const graph = blocks.flatMap(([, json]) => {
+    const parsed = JSON.parse(json) as SchemaNode & { '@graph'?: SchemaNode[] }
+    return parsed['@graph'] ?? [parsed]
+  })
+  const webPage = graph.find((node) => node['@type'] === 'WebPage')
+  expect(webPage?.name).toBe(pageTitle)
+  expect(webPage?.description).toBe(pageDescription)
+  expect(webPage?.['@id'] ?? '').toContain('/narduk-seo-packed')
+})
+
+test('packed narduk-seo re-applies head on client navigation (narduk-libs#316)', async ({
+  page,
+}) => {
+  await page.goto('/narduk-seo-packed')
+  await expect(page.getByRole('heading', { name: pageTitle })).toBeVisible()
+  await expect(page).toHaveTitle(new RegExp(pageTitle, 'u'))
+
+  await page.getByTestId('seo-packed-home-link').click()
+  await expect(page.getByRole('heading', { name: 'Narduk Libs Release Smoke' })).toBeVisible()
+  await expect(page).toHaveTitle(/Narduk Libs Release Smoke/u)
+
+  const canonicals = await page
+    .locator('link[rel="canonical"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  expect(canonicals.length).toBeGreaterThan(0)
+  expect([...new Set(canonicals.map(normalizeHref))]).toEqual([normalizeHref(siteUrl)])
+})
+`
+
+function addPackedSeoMetadataSmoke(generatedDirectory) {
+  const pagePath = join(generatedDirectory, 'apps', 'web', 'app', 'pages', 'narduk-seo-packed.vue')
+  mkdirSync(dirname(pagePath), { recursive: true })
+  writeFileSync(pagePath, PACKED_SEO_FIXTURE_PAGE)
+
+  const specPath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'tests',
+    'e2e',
+    'narduk-seo-packed.spec.ts',
+  )
+  mkdirSync(dirname(specPath), { recursive: true })
+  writeFileSync(specPath, PACKED_SEO_FIXTURE_SPEC)
+
+  classifyGeneratedFixturePage(
+    generatedDirectory,
+    'narduk-seo-packed.vue',
+    'narduk-libs#316 packed-consumer-smoke fixture proving packed narduk-seo metadata; not real content',
+  )
 }
 
 function assertPackedInternalDependencyGraph(packages, tarballs) {
@@ -1065,6 +1193,7 @@ try {
   addTarballOverrides(generatedDirectory, packages, tarballs)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
   addPackedShellRootValueImportSmoke(generatedDirectory)
+  addPackedSeoMetadataSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
   runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
@@ -1138,7 +1267,11 @@ try {
       `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
     )
   } else {
-    for (const phase of qualityPhases(readJson(join(generatedDirectory, 'package.json')).scripts)) {
+    // The release boundary needs compatibility proof, not a second full
+    // scaffold-quality run. The generated app's own quality command is intact.
+    for (const phase of consumerSmokePhases(
+      readJson(join(generatedDirectory, 'package.json')).scripts,
+    )) {
       if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
       try {
         runChecked('pnpm', ['run', phase], {

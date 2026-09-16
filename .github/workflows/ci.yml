@@ -53,7 +53,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.22.3
+          node-version: 24.21.0
           package-manager-cache: false
 
       - name: Compute changed packages and transitive dependents
@@ -98,8 +98,8 @@ jobs:
       # Verbatim `runsOn` from Config/github-runner-fleet.json via
       # scripts/github_runner_fleet.py route (organization scope, linux-ci).
       runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
-      # Exact version the old workflow pinned, matching the root `volta.node`.
-      node-version: "22.22.3"
+      # Match the root runtime and the workspace ESLint package's Node 24 minimum.
+      node-version: "24.21.0"
       package-manager: pnpm
       # All five package gates execute inside ci:batch, in their original order.
       run-lint: false
@@ -152,7 +152,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.22.3
+          node-version: 24.21.0
 
       - name: Configure GitHub Packages read auth
         run: node ./scripts/package-registry-auth.mjs
@@ -237,6 +237,9 @@ jobs:
       # counted. 2048 leaves headroom for pnpm, esbuild workers and the browser
       # the smoke launches, and no lane has needed the larger heap.
       NODE_OPTIONS: --max-old-space-size=2048
+      # pnpm's project node-options overrides NODE_OPTIONS for lifecycle scripts.
+      # Override that config too, including nested generated-consumer commands.
+      npm_config_node_options: --max-old-space-size=2048
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
       # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
@@ -305,7 +308,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.22.3
+          node-version: 24.21.0
 
       # The large dependency archive costs more to restore than a fresh
       # install on this pool. Keep one job-local store: the root installation
@@ -403,7 +406,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.22.3
+          node-version: 24.21.0
 
       # Same ephemeral-pool reasoning as packed-consumer-smoke's identically
       # named step above: this pool has no persistent local store at all, and

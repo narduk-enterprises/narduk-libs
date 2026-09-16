@@ -15,7 +15,7 @@
  *
  * By **importing the TypeScript sources directly** (`import('…/registry.ts')`),
  * not by parsing them. Node >= 22.18 strips types natively, the repository pins
- * Node 22.22.3 through Volta and `actions/setup-node`, and the registry and
+ * Node 24.21.0 through Volta and `actions/setup-node`, and the registry and
  * `format` modules are plain erasable TypeScript. Importing gives the real
  * export list rather than whatever a regex happens to match, so a component
  * built by a helper, re-exported, or spread into the array is still seen. The

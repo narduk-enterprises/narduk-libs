@@ -3,7 +3,7 @@
 The estate's ESLint plugin and shared flat-config packs for Nuxt 4, Vue 3,
 Tailwind v4, Nuxt UI v4, Nitro, and Cloudflare Workers.
 
-Requires **ESLint 10**, `vue-eslint-parser` 10, and Node >= 22.
+Requires **ESLint 10**, `vue-eslint-parser` 10, and Node >= 24.
 
 ## Use it
 

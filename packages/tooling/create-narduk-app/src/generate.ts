@@ -9,6 +9,7 @@ import {
   createProductSpec,
   createRootPackageManifest,
   createWebPackageManifest,
+  NODE_VERSION,
   packageVersionsForCapabilities,
 } from './manifest.js'
 import {
@@ -316,6 +317,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   ]
 
   const files: GeneratedFile[] = [
+    { path: '.nvmrc', contents: `${NODE_VERSION}\n` },
     ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
     {
       path: '.gitignore',
@@ -437,6 +439,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run test',
         '- pnpm run og:generate (first setup; commit apps/web/public/og.png)',
         '- pnpm run og:check:live (after deployment)',
+        '',
+        '`pnpm run dev` starts Nuxt directly and reads no secret store. When a capability needs registered credentials locally, run that command under the registered local credential route instead: `narduk-app dev --credentials nvault --project <project> --environment <environment> --config <config> -- nuxt dev --host 127.0.0.1`. Values stay process-local for that run and are never written to a file; do not commit real values to `.env` or `.dev.vars`.',
         '',
         'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',

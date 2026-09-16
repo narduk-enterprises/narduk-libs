@@ -18,7 +18,7 @@ inverted rules, dead security gates, and code-corrupting fixers).
   `tests/composition/package-surface.test.ts` asserts the manifest is still
   pre-2.0.0 with a major changeset pending, so that cannot happen silently.
 - **ESLint 10** peer (`^10.0.0`), current `@nuxt/eslint`-composed foundation,
-  `vue-eslint-parser ^10`. Node >= 22.
+  `vue-eslint-parser ^10`. Node >= 24.
 - **Replace-by-default** (Logan's directive): a maintained third-party rule
   replaces a bespoke rule wherever it covers the intent. No bespoke rule is
   ported without a deep-review KEEP verdict, and none without tests.

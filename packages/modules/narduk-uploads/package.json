@@ -106,7 +106,7 @@
     "wrangler": "^4.90.1"
   },
   "peerDependencies": {
-    "@narduk-enterprises/narduk-core": ">=1.19.15 <2.0.0",
+    "@narduk-enterprises/narduk-core": ">=1.19.15 <3.0.0",
     "nuxt": ">=3.16.0"
   },
   "overrides": {

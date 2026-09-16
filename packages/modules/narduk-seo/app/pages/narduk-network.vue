@@ -10,7 +10,8 @@ const pageTitle = 'Narduk Enterprises Network'
 const pageDescription = `Explore public Narduk Enterprises sites connected to ${appName}.`
 const siteOrigin = resolveSiteOriginForSchemaInput({
   siteConfigUrl: typeof siteConfig.url === 'string' ? siteConfig.url : undefined,
-  publicAppUrl: runtimeConfig.public.appUrl,
+  publicAppUrl:
+    typeof runtimeConfig.public.appUrl === 'string' ? runtimeConfig.public.appUrl : undefined,
 })
 const pageUrl = siteOrigin ? `${siteOrigin}/narduk-network` : undefined
 

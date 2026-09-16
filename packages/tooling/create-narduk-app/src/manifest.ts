@@ -1,5 +1,7 @@
 import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
+export const NODE_VERSION = '24.21.0'
+
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
@@ -40,7 +42,9 @@ export const PACKAGE_VERSIONS = {
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.8.1',
   '@playwright/test': '1.61.1',
-  '@tailwindcss/vite': '4.2.1',
+  // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
+  // Vite 7, which makes a newly generated app install with a peer warning.
+  '@tailwindcss/vite': '4.3.2',
   '@types/node': '22.19.19',
   '@typescript-eslint/utils': '8.64.0',
   'drizzle-kit': '0.31.10',
@@ -59,15 +63,12 @@ export const PACKAGE_VERSIONS = {
   glob: '13.0.6',
   'happy-dom': '20.9.0',
   knip: '6.14.1',
-  nuxt: '4.4.8',
+  // narduk-seo's current module set uses Unhead 3's tree-shake transform.
+  // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
+  nuxt: '4.5.2',
   '@nuxt/eslint': '1.15.2',
-  // nuxt-og-image 6.7.3 moved to `@nuxt/kit@^4.5.0`; 6.7.2 is the release built
-  // for the `@nuxt/kit` that the pinned Nuxt above ships. narduk-seo pins the
-  // 6.7.4 release because a Nuxt-less consumer install resolves @nuxt/kit 4.5.0
-  // and needs its oxc-parser 0.140 line, so the app pins its own Nuxt block.
-  'nuxt-og-image': '6.7.2',
   prettier: '3.8.3',
-  tailwindcss: '4.2.1',
+  tailwindcss: '4.3.2',
   typescript: '5.9.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',
@@ -199,6 +200,8 @@ export function createRootPackageManifest(
     version: '0.1.0',
     private: true,
     packageManager: 'pnpm@10.33.4',
+    engines: { node: NODE_VERSION },
+    volta: { node: NODE_VERSION },
     narduk: {
       capabilities: [...capabilities],
       visibility,
@@ -350,9 +353,6 @@ export function createRootPackageManifest(
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
-        ...(capabilities.includes('seo')
-          ? { 'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'] }
-          : {}),
       },
       ...(capabilities.includes('auth')
         ? {
@@ -407,7 +407,12 @@ export function createWebPackageManifest(
     ...(metadata.siteUrl ? { homepage: metadata.siteUrl } : {}),
     scripts: {
       build: 'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build',
-      dev: 'narduk-app dev --project ' + appName + ' --config dev -- nuxt dev --host 127.0.0.1',
+      // Starts Nuxt directly: a new app has no registered development
+      // credentials, and the old `narduk-app dev --project … --config …`
+      // wrapper meant an implicit `doppler run` against the retired app-secret
+      // store (narduk-libs#321). An app that later needs credentials locally
+      // runs this same command under `narduk-app dev --credentials nvault`.
+      dev: 'nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       lint: 'nuxt prepare && eslint . --max-warnings 0',
       'nuxt:prepare': 'nuxt prepare',
@@ -438,7 +443,10 @@ export function createWebPackageManifest(
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
-      'dev:test': 'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
+      // Nuxt DevTools explicitly skips TEST processes. The browser fixture
+      // exercises the app, without the interactive development toolbar and
+      // its Vite 8-incompatible config-retriever hook.
+      'dev:test': 'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
       // `--checkout ..` because the item reads the WHOLE checkout (root and
       // apps/web manifests, nuxt.config, pages/components), and pnpm runs this

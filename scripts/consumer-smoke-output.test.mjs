@@ -126,3 +126,38 @@ test("the annotation body lines of Rollup's multi-line notice were never finding
     'in "../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.'
   assert.deepEqual(collectWarningFindings(body), [])
 })
+
+const nuxtH3BarrelNotice =
+  'WARN  "H3Event" is imported from external module "file:///tmp/consumer/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs" but never used in "../../node_modules/.pnpm/@nuxt+nitro-server@4.5.2_peerhash/node_modules/@nuxt/nitro-server/dist/h3.mjs".'
+
+test('the unused H3Event re-export in the Nuxt 4.5.2 compatibility barrel is benign', () => {
+  assert.deepEqual(collectWarningFindings(nuxtH3BarrelNotice), [])
+  assert.deepEqual(collectWarningFindings(nuxtH3BarrelNotice.replace('WARN ', '[warn]')), [])
+})
+
+test('unused app imports, other symbols, other versions and actual errors still fail', () => {
+  for (const line of [
+    nuxtH3BarrelNotice.replace(
+      '../../node_modules/.pnpm/@nuxt+nitro-server@4.5.2_peerhash/node_modules/@nuxt/nitro-server/dist/h3.mjs',
+      'src/server/h3.mjs',
+    ),
+    nuxtH3BarrelNotice.replace('"H3Event"', '"createError"'),
+    nuxtH3BarrelNotice.replace('@4.5.2_', '@4.5.3_'),
+    nuxtH3BarrelNotice.replace('WARN ', 'ERROR '),
+    `${nuxtH3BarrelNotice} A different failure follows.`,
+  ]) {
+    assert.deepEqual(collectWarningFindings(line), [line])
+  }
+})
+
+test('a successful Rolldown plugin timing summary is informational', () => {
+  const timing = 'WARN  [PLUGIN_TIMINGS] Plugin hooks ran for 4.5s of this 5.1s build (89%).'
+  assert.deepEqual(collectWarningFindings(timing), [])
+  for (const line of [
+    timing.replace('WARN', 'ERROR'),
+    timing.replace('PLUGIN_TIMINGS', 'PLUGIN_ERROR'),
+    `${timing} Build failed.`,
+  ]) {
+    assert.deepEqual(collectWarningFindings(line), [line])
+  }
+})

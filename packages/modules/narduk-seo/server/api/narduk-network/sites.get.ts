@@ -6,9 +6,13 @@ import {
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
-  const catalogUrl = resolveNardukCatalogBaseUrl(runtimeConfig.public.publicCatalogBaseUrl)
+  const publicCatalogBaseUrl = runtimeConfig.public.publicCatalogBaseUrl
+  const catalogUrl = resolveNardukCatalogBaseUrl(
+    typeof publicCatalogBaseUrl === 'string' ? publicCatalogBaseUrl : undefined,
+  )
+  const nardukNetworkDirectoryUrl = runtimeConfig.public.nardukNetworkDirectoryUrl
   const directoryUrl = resolveNardukNetworkDirectoryUrl(
-    runtimeConfig.public.nardukNetworkDirectoryUrl,
+    typeof nardukNetworkDirectoryUrl === 'string' ? nardukNetworkDirectoryUrl : undefined,
   )
   const emptyDirectory = {
     ok: false,
@@ -23,7 +27,9 @@ export default defineEventHandler(async (event) => {
   // all — the directory just renders empty. See resolveNardukNetworkDirectoryUrl.
   if (!directoryUrl) return emptyDirectory
 
-  const currentAppUrl = runtimeConfig.public.appUrl || getRequestURL(event).origin
+  const publicAppUrl = runtimeConfig.public.appUrl
+  const currentAppUrl =
+    (typeof publicAppUrl === 'string' && publicAppUrl) || getRequestURL(event).origin
 
   try {
     const response = await fetch(directoryUrl, {

@@ -6,9 +6,9 @@
  * That fail-closed contract is load-bearing and predates this module: it is
  * what caught the ESLint 9/10 peer-dependency drift in PR #51 (run
  * 30764151785), where the packed consumer installed cleanly with exit code 0
- * while pnpm reported unmet peers, and it is why the eslint/unhead pins at the
- * top of release-packages.mjs are read from the workspace instead of
- * hardcoded. Nothing here loosens that: unexpected output still fails.
+ * while pnpm reported unmet peers, and it is why the eslint pin at the top of
+ * release-packages.mjs is read from the workspace instead of hardcoded.
+ * Nothing here loosens that: unexpected output still fails.
  *
  * It lives in its own module purely so `node --test` can cover it.
  * release-packages.mjs is an executable script with top-level side effects
@@ -65,7 +65,7 @@ const networkLatencyOnlyWarningPatterns = [
  * emitted from a success path, provably carrying no signal about the packed
  * artifacts under test.
  *
- * The one entry so far is Rollup's misplaced-`@__PURE__`-annotation notice.
+ * The original entry is Rollup's misplaced-`@__PURE__`-annotation notice.
  * `zod@4.5.1` (published 2026-08-28T17:58Z) ships three such comments, so the
  * generated consumer's `vite build` prints, per occurrence:
  *
@@ -94,7 +94,22 @@ const networkLatencyOnlyWarningPatterns = [
 const thirdPartyBundlerNoticePatterns = [
   // [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment
   /^(?:\[warn\]|WARN)\s+\S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
+  // Nuxt 4.5.2's h3 compatibility barrel imports and re-exports H3Event.
+  // Rollup reports its unused external import after pruning that re-export;
+  // no app import or missing export is involved. Keep the notice visible in
+  // build output, but classify this exact upstream barrel/version as benign.
+  /^(?:\[warn\]|WARN)\s+"H3Event" is imported from external module "file:\/\/[^"\n]*\/node_modules\/h3\/dist\/index\.mjs" but never used in "[^"\n]*\/node_modules\/\.pnpm\/@nuxt\+nitro-server@4\.5\.2(?:_[^"/]+)?\/node_modules\/@nuxt\/nitro-server\/dist\/h3\.mjs"\.$/u,
 ]
+
+// Rolldown emits this timing summary after successful bundle cleanup. It
+// measures wall time spent in plugin callbacks, including awaits, and depends
+// on machine load; it says nothing about the emitted artifacts. Keep the full
+// report visible, without turning a relative timing observation into a package
+// compatibility failure. Every other PLUGIN_* diagnostic remains a finding.
+// Source: rolldown/rolldown crates/rolldown_binding/src/binding_bundler.rs,
+// report_plugin_timings; crates/rolldown_error/.../events/plugin_timings.rs.
+const buildTimingOnlyWarningPattern =
+  /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] Plugin hooks ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
 
 export function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
@@ -128,6 +143,7 @@ export function collectWarningFindings(output) {
       (line) =>
         warningOrErrorTokenPattern.test(line) &&
         !isNetworkLatencyOnlyWarning(line) &&
-        !isThirdPartyBundlerNotice(line),
+        !isThirdPartyBundlerNotice(line) &&
+        !buildTimingOnlyWarningPattern.test(line),
     )
 }

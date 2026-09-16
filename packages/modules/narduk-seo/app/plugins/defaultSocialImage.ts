@@ -2,12 +2,25 @@ import { defineNuxtPlugin, useHead, useRoute, useRuntimeConfig, useSiteConfig } 
 
 import { defaultSocialMeta } from '../utils/defaultSocialMeta'
 
+import type { DefaultSocialImage } from '../utils/defaultSocialMeta'
+
+function isDefaultSocialImage(value: unknown): value is DefaultSocialImage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'alt' in value &&
+    'url' in value &&
+    typeof value.alt === 'string' &&
+    typeof value.url === 'string'
+  )
+}
+
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
   const site = useSiteConfig()
   const route = useRoute()
   const image = config.public.nardukSeoDefaultImage
-  if (!image) return
+  if (!isDefaultSocialImage(image)) return
   useHead(
     () => ({
       meta: defaultSocialMeta({

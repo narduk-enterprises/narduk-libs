@@ -1,4 +1,4 @@
-import { hash } from 'ohash'
+import { digest } from 'ohash/crypto'
 import { joinURL } from 'ufo'
 
 const RE_BASE64_PADDING = /=/g
@@ -7,6 +7,9 @@ const RE_BASE64_SLASH = /\//g
 const RE_NON_ASCII = /[^\u0020-\u007E]/
 const RE_PERCENT20 = /%20/g
 const RE_UNDERSCORE = /_/g
+// nuxt-og-image 6.8.0 base64-encodes values with Windows-reserved filename
+// characters. encodeURIComponent already escapes all of them except `*`.
+const RE_WINDOWS_RESERVED_FILENAME_CHARACTERS = /[<>:"/\\|?*]/
 
 const PARAM_TO_ALIAS = {
   width: 'w',
@@ -55,7 +58,7 @@ function encodeSimpleValue(value: string): string {
     '+',
   )
 
-  if (encoded.includes('%')) {
+  if (encoded.includes('%') || RE_WINDOWS_RESERVED_FILENAME_CHARACTERS.test(value)) {
     return `~${b64Encode(value)}`
   }
 
@@ -118,7 +121,7 @@ export function buildSeoOgImagePreviewPath(
   const encoded = encodeOgImagePreviewParams(options, config.defaults)
   const segment = encoded || 'default'
   const signed = config.secret
-    ? `${segment},s_${hash(`${config.secret}:${segment}`).slice(0, 16)}`
+    ? `${segment},s_${digest(`${config.secret}:${segment}`).slice(0, 16)}`
     : segment
 
   return joinURL('/', config.baseURL, `/_og/d/${signed}.${extension}`)

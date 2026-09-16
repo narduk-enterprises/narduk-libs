@@ -27,11 +27,29 @@ describe('narduk-seo package exports', () => {
       overrides?: Record<string, string>
     }
 
-    expect(packageJson.dependencies['nuxt-og-image']).toBe('6.7.4')
+    expect(packageJson.dependencies['nuxt-og-image']).toBe('6.8.0')
     expect(packageJson.dependencies['@takumi-rs/core']).toBe('2.2.0')
     expect(packageJson.dependencies['@takumi-rs/wasm']).toBe('2.2.0')
     expect(packageJson.overrides).not.toHaveProperty('@takumi-rs/core')
     expect(packageJson.overrides).not.toHaveProperty('@takumi-rs/wasm')
+  })
+
+  it('pins one coordinated Nuxt SEO module set (narduk-libs#316)', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      dependencies: Record<string, string>
+    }
+
+    // These releases share one nuxtseo-shared/nuxt-site-config line and accept
+    // both Unhead 2 (Nuxt 4.4) and Unhead 3 (Nuxt 4.5). Bump them together.
+    expect(packageJson.dependencies).toMatchObject({
+      '@nuxtjs/robots': '6.2.3',
+      '@nuxtjs/sitemap': '8.5.1',
+      'nuxt-link-checker': '5.3.0',
+      'nuxt-og-image': '6.8.0',
+      'nuxt-schema-org': '6.3.2',
+      'nuxt-seo-utils': '8.5.1',
+      'nuxt-site-config': '4.2.3',
+    })
   })
 
   it('keeps the packaged network page independent of consumer auto-import transforms', () => {

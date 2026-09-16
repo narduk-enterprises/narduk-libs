@@ -38,6 +38,41 @@ afterEach(async () => {
 })
 
 describe('create-narduk-app generation contract', () => {
+  it.each(['private', 'public'] as const)(
+    'uses one supported Node runtime in %s apps',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'node-runtime',
+          capabilities: [],
+          visibility,
+          targetDir: '/tmp/node-runtime',
+        }),
+      )
+      const manifest = JSON.parse(files.get('package.json') ?? '{}')
+      expect(manifest.engines.node).toBe('24.21.0')
+      expect(manifest.volta.node).toBe(manifest.engines.node)
+      expect(files.get('.nvmrc')?.trim()).toBe(manifest.engines.node)
+      const workflow = YAML.parse(files.get('.github/workflows/ci.yml') ?? '')
+      const versions = Object.values(
+        workflow.jobs as Record<
+          string,
+          {
+            with?: { 'node-version'?: string }
+            steps?: Array<{ with?: { 'node-version'?: string } }>
+          }
+        >,
+      )
+        .flatMap((job) => [
+          job.with?.['node-version'],
+          ...(job.steps ?? []).map((step) => step.with?.['node-version']),
+        ])
+        .filter(Boolean)
+      expect(versions.length).toBeGreaterThan(0)
+      expect(versions.every((version) => version === manifest.engines.node)).toBe(true)
+    },
+  )
+
   it.each([{ capability: [] }, { capability: ['seo'] }])(
     'includes the share-preview gate with capabilities $capability',
     ({ capability }) => {
@@ -181,7 +216,6 @@ describe('create-narduk-app generation contract', () => {
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
-        'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'],
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on
@@ -228,6 +262,7 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-testkit']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
     )
+    expect(dependencies.nuxt).toBe('4.5.2')
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
     )
@@ -550,11 +585,12 @@ describe('create-narduk-app generation contract', () => {
       localDevNuxtPort: 4377,
     })
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
-    expect(webPackage.scripts.dev).toBe(
-      'narduk-app dev --project generated-fixture --config dev -- nuxt dev --host 127.0.0.1',
-    )
+    // narduk-libs#321: the generated dev script starts Nuxt directly. The old
+    // wrapper meant an implicit `doppler run` against the retired app-secret
+    // store for every generated app.
+    expect(webPackage.scripts.dev).toBe('nuxt dev --host 127.0.0.1')
     expect(webPackage.scripts['dev:test']).toBe(
-      'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
+      'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
     )
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
@@ -641,6 +677,39 @@ describe('generated app typecheck and lint surfaces', () => {
       // dropping the block never leaves an unused binding behind.
       expect(nuxtConfig).toContain('      appName,')
       expect(nuxtConfig).toContain('      siteUrl,')
+    }
+  })
+
+  // narduk-libs#321: a generated app must not acquire an implicit dependency on
+  // a secret manager just by running `pnpm run dev`. The retired wrapper shape
+  // `narduk-app dev --project … --config …` meant `doppler run`, so no
+  // generated file may carry it, and no generated file may name Doppler at all.
+  it('starts development without any secret-store dependency, for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const webPackage = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      const rootPackage = JSON.parse(files.get('package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      const generatedText = [...files.values()].join('\n')
+
+      expect(webPackage.scripts.dev, label).toBe('nuxt dev --host 127.0.0.1')
+      expect(rootPackage.scripts.dev, label).toBe('pnpm --filter web run dev')
+      // No generated script invokes the wrapper at all, and nothing anywhere in
+      // the scaffold carries the retired selector shape or names Doppler.
+      for (const [name, script] of Object.entries({
+        ...rootPackage.scripts,
+        ...webPackage.scripts,
+      })) {
+        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev/u)
+      }
+      expect(generatedText, label).not.toMatch(/narduk-app dev --project/u)
+      expect(generatedText, label).not.toMatch(/doppler/iu)
+      // The route an app adopts when it does need credentials locally is named
+      // in the generated README, so the migration target is discoverable.
+      expect(files.get('README.md'), label).toContain('--credentials nvault')
     }
   })
 
