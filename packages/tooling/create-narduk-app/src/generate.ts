@@ -13,6 +13,7 @@ import {
 } from './manifest.js'
 import {
   CreateNardukAppError,
+  GENERATED_DATABASE_BACKENDS,
   GENERATOR_NAME,
   GENERATOR_VERSION,
   SUPPORTED_CAPABILITIES,
@@ -23,6 +24,7 @@ import type {
   Capability,
   CreateNardukAppOptions,
   CreateNardukAppReport,
+  GeneratedDatabaseBackend,
   GeneratedFile,
   ProductSpec,
 } from './types.js'
@@ -87,6 +89,18 @@ function normalizeCapabilities(input: CreateNardukAppOptions['capabilities']): C
   }
 
   return SUPPORTED_CAPABILITIES.filter((capability) => normalized.includes(capability))
+}
+
+function normalizeDatabaseBackend(
+  value: CreateNardukAppOptions['databaseBackend'],
+): GeneratedDatabaseBackend {
+  if (value === undefined) return 'd1'
+  if (!(GENERATED_DATABASE_BACKENDS as readonly string[]).includes(value)) {
+    throw new CreateNardukAppError(
+      `databaseBackend must be one of ${GENERATED_DATABASE_BACKENDS.map((backend) => `'${backend}'`).join(', ')}; received ${JSON.stringify(value)}. Scaffold 'd1' and switch the app to Postgres afterwards if it needs Hyperdrive.`,
+    )
+  }
+  return value
 }
 
 function normalizePort(value: number | undefined): number {
@@ -205,6 +219,7 @@ interface NormalizedCreateOptions {
   exposure: AppExposure
   appName: string
   capabilities: Capability[]
+  databaseBackend: GeneratedDatabaseBackend
   description: string
   displayName: string
   localPort: number
@@ -225,6 +240,12 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
       'Auth apps require authenticated exposure; configure protected, isolated previews during onboarding.',
     )
   }
+  const databaseBackend = normalizeDatabaseBackend(options.databaseBackend)
+  if (databaseBackend === 'none' && capabilities.includes('auth')) {
+    throw new CreateNardukAppError(
+      "The auth capability stores users, sessions and API keys in the app database, so it cannot be combined with databaseBackend 'none'. Drop the auth capability, or scaffold with the default d1 backend.",
+    )
+  }
   const localPort = normalizePort(options.localDevPort ?? options.localPort)
   const visibility = normalizeVisibility(options.visibility)
   const siteUrl = normalizeSiteUrl(options.siteUrl, localPort)
@@ -238,6 +259,7 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
   return {
     appName,
     capabilities,
+    databaseBackend,
     description,
     displayName,
     exposure,
@@ -252,6 +274,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   const {
     appName,
     capabilities,
+    databaseBackend,
     description,
     displayName,
     exposure,
@@ -261,6 +284,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     visibility,
   } = options
   const modules = moduleList(capabilities)
+  // `'none'` drops every database artifact: the D1 binding, the schema, the
+  // migrations and the drizzle tooling. narduk-core's /api/health then reports
+  // `database: 'not_applicable'` rather than degrading the app (narduk-libs#313).
+  const hasDatabase = databaseBackend !== 'none'
   const uploadBindingLines = capabilities.includes('uploads')
     ? [
         '  "r2_buckets": [',
@@ -490,7 +517,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         '# Web app guidance',
         '',
-        'Keep browser and server code under apps/web. Use #narduk-db for app-owned database imports and keep app schema changes in server/database with a matching migration in drizzle.',
+        hasDatabase
+          ? 'Keep browser and server code under apps/web. Use #narduk-db for app-owned database imports and keep app schema changes in server/database with a matching migration in drizzle.'
+          : "Keep browser and server code under apps/web. This app declares databaseBackend 'none' and has no database: useDatabase() throws, and /api/health reports database not_applicable. Register app-owned probes with registerHealthCheck instead.",
         '',
         'Nuxt modules are explicit in nuxt.config.ts. Capability metadata in package manifests documents the generated selection; runtime behavior comes from the explicit module and package configuration.',
         '',
@@ -569,39 +598,43 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
             '</template>',
           ),
     },
-    {
-      path: 'apps/web/drizzle.config.ts',
-      contents: text(
-        "import { defineConfig } from 'drizzle-kit'",
-        '',
-        'export default defineConfig({',
-        "  dialect: 'sqlite',",
-        "  schema: './server/database/schema.ts',",
-        "  out: './drizzle',",
-        '  dbCredentials: {',
-        "    url: './.data/" + appName + ".sqlite',",
-        '  },',
-        '})',
-      ),
-    },
-    {
-      path: 'apps/web/drizzle/README.md',
-      contents: text(
-        '# App migrations',
-        '',
-        'Keep app-owned SQL migrations in this directory. Migration identity is the tuple source, filename, checksum; package-owned migration sources are listed in migrations.sources.json.',
-      ),
-    },
-    {
-      path: 'apps/web/drizzle/0000_app_records.sql',
-      contents: text(
-        'CREATE TABLE `app_records` (',
-        '  `id` text PRIMARY KEY NOT NULL,',
-        '  `label` text NOT NULL,',
-        '  `created_at` integer NOT NULL',
-        ');',
-      ),
-    },
+    ...(hasDatabase
+      ? [
+          {
+            path: 'apps/web/drizzle.config.ts',
+            contents: text(
+              "import { defineConfig } from 'drizzle-kit'",
+              '',
+              'export default defineConfig({',
+              "  dialect: 'sqlite',",
+              "  schema: './server/database/schema.ts',",
+              "  out: './drizzle',",
+              '  dbCredentials: {',
+              "    url: './.data/" + appName + ".sqlite',",
+              '  },',
+              '})',
+            ),
+          },
+          {
+            path: 'apps/web/drizzle/README.md',
+            contents: text(
+              '# App migrations',
+              '',
+              'Keep app-owned SQL migrations in this directory. Migration identity is the tuple source, filename, checksum; package-owned migration sources are listed in migrations.sources.json.',
+            ),
+          },
+          {
+            path: 'apps/web/drizzle/0000_app_records.sql',
+            contents: text(
+              'CREATE TABLE `app_records` (',
+              '  `id` text PRIMARY KEY NOT NULL,',
+              '  `label` text NOT NULL,',
+              '  `created_at` integer NOT NULL',
+              ');',
+            ),
+          },
+        ]
+      : []),
     {
       // Self-contained per @narduk-enterprises/eslint-config's own documented
       // usage (see the JSDoc example atop eslint-app-config.mjs), not a
@@ -646,8 +679,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     {
       path: 'apps/web/nuxt.config.ts',
       contents: text(
-        "import { fileURLToPath } from 'node:url'",
-        '',
+        ...(hasDatabase ? ["import { fileURLToPath } from 'node:url'", ''] : []),
         'const localPort = ' + localPort,
         'const siteUrl = ' + tsString(siteUrl),
         'const appName = ' + tsString(displayName),
@@ -664,9 +696,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    compatibilityVersion: 4,',
         '  },',
         modules,
-        '  alias: {',
-        "    '#narduk-db': fileURLToPath(new URL('./server/database/schema.ts', import.meta.url)),",
-        '  },',
+        ...(hasDatabase
+          ? [
+              '  alias: {',
+              "    '#narduk-db': fileURLToPath(new URL('./server/database/schema.ts', import.meta.url)),",
+              '  },',
+            ]
+          : ['  nardukCore: {', "    databaseBackend: 'none',", '  },']),
         '  devServer: {',
         '    port: localPort,',
         '  },',
@@ -752,36 +788,41 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     {
       path: 'apps/web/package.json',
       contents: createWebPackageManifest(appName, capabilities, localPort, {
+        databaseBackend,
         description,
         displayName,
         siteUrl,
       }),
     },
-    {
-      path: 'apps/web/server/database/schema.ts',
-      contents: text(
-        "import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'",
-        '',
-        "export const appRecords = sqliteTable('app_records', {",
-        "  id: text('id').primaryKey(),",
-        "  label: text('label').notNull(),",
-        "  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),",
-        '})',
-        '',
-        'export type AppRecord = typeof appRecords.$inferSelect',
-        'export type NewAppRecord = typeof appRecords.$inferInsert',
-      ),
-    },
-    {
-      path: 'apps/web/server/utils/database.ts',
-      contents: text(
-        "import { createAppDatabase } from '@narduk-enterprises/narduk-core/server/utils/database'",
-        '',
-        "import * as schema from '#narduk-db'",
-        '',
-        'export const useAppDatabase = createAppDatabase(schema)',
-      ),
-    },
+    ...(hasDatabase
+      ? [
+          {
+            path: 'apps/web/server/database/schema.ts',
+            contents: text(
+              "import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'",
+              '',
+              "export const appRecords = sqliteTable('app_records', {",
+              "  id: text('id').primaryKey(),",
+              "  label: text('label').notNull(),",
+              "  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),",
+              '})',
+              '',
+              'export type AppRecord = typeof appRecords.$inferSelect',
+              'export type NewAppRecord = typeof appRecords.$inferInsert',
+            ),
+          },
+          {
+            path: 'apps/web/server/utils/database.ts',
+            contents: text(
+              "import { createAppDatabase } from '@narduk-enterprises/narduk-core/server/utils/database'",
+              '',
+              "import * as schema from '#narduk-db'",
+              '',
+              'export const useAppDatabase = createAppDatabase(schema)',
+            ),
+          },
+        ]
+      : []),
     {
       path: 'apps/web/tsconfig.json',
       contents: text(
@@ -832,14 +873,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "compatibility_flags": ["nodejs_compat"],',
         '  "workers_dev": ' + (exposure === 'public') + ',',
         '  "preview_urls": ' + (exposure === 'public') + ',',
-        '  "d1_databases": [',
-        '    {',
-        '      "binding": "DB",',
-        '      "database_name": ' + JSON.stringify(appName + '-db') + ',',
-        '      "database_id": "00000000-0000-0000-0000-000000000000",',
-        '      "migrations_dir": "drizzle",',
-        '    },',
-        '  ],',
+        ...(hasDatabase
+          ? [
+              '  "d1_databases": [',
+              '    {',
+              '      "binding": "DB",',
+              '      "database_name": ' + JSON.stringify(appName + '-db') + ',',
+              '      "database_id": "00000000-0000-0000-0000-000000000000",',
+              '      "migrations_dir": "drizzle",',
+              '    },',
+              '  ],',
+            ]
+          : []),
         ...uploadBindingLines,
         '}',
       ),
@@ -874,23 +919,27 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "workspaces": {',
         '    "apps/web": {',
         '      "entry": ["app/pages/**/*.{ts,vue}", "server/api/**/*.ts", "server/utils/**/*.ts"],',
-        '      "project": ["**/*.{ts,mts,vue,js,mjs}"],',
-        '      "paths": {',
-        '        "#narduk-db": ["server/database/schema.ts"]',
-        '      }',
+        '      "project": ["**/*.{ts,mts,vue,js,mjs}"]' + (hasDatabase ? ',' : ''),
+        ...(hasDatabase
+          ? ['      "paths": {', '        "#narduk-db": ["server/database/schema.ts"]', '      }']
+          : []),
         '    }',
         '  },',
         knipIgnoreDependenciesLine(knipIgnoreDependencies),
         '}',
       ),
     },
-    {
-      path: 'apps/web/migrations.sources.json',
-      contents: createMigrationSourcesManifest(capabilities),
-    },
+    ...(hasDatabase
+      ? [
+          {
+            path: 'apps/web/migrations.sources.json',
+            contents: createMigrationSourcesManifest(capabilities),
+          },
+        ]
+      : []),
     {
       path: 'package.json',
-      contents: createRootPackageManifest(appName, capabilities, visibility),
+      contents: createRootPackageManifest(appName, capabilities, visibility, databaseBackend),
     },
     {
       path: 'playwright.config.ts',
@@ -1006,13 +1055,17 @@ export async function createNardukApp(
   return {
     appName: normalized.appName,
     capabilities: normalized.capabilities,
+    databaseBackend: normalized.databaseBackend,
     description: normalized.description,
     displayName: normalized.displayName,
     files: files.map((file) => file.path),
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     gitInitialized,
     localPort: normalized.localPort,
-    packageVersions: packageVersionsForCapabilities(normalized.capabilities),
+    packageVersions: packageVersionsForCapabilities(
+      normalized.capabilities,
+      normalized.databaseBackend,
+    ),
     schemaVersion: 1,
     siteUrl: normalized.siteUrl,
     targetDir,

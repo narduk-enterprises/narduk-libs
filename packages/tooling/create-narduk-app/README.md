@@ -16,7 +16,7 @@ await createNardukApp({
 The CLI is `create-narduk-app`:
 
 ```sh
-pnpm dlx @narduk-enterprises/create-narduk-app@0.5.1 harbor-notes \
+pnpm dlx @narduk-enterprises/create-narduk-app@0.5.2 harbor-notes \
   --display-name='Harbor Notes' \
   --description='A harbor log.' \
   --site-url=https://harbor.example \
@@ -26,6 +26,25 @@ pnpm dlx @narduk-enterprises/create-narduk-app@0.5.1 harbor-notes \
   --local-dev-port=3011 \
   --json
 ```
+
+## Database backend
+
+Scaffolds carry a D1 database by default: a `DB` binding,
+`server/database/schema.ts`, the `#narduk-db` alias, a first migration and the
+`db:migrate:*` scripts.
+
+`--no-database` (or `--database=none`) scaffolds an app with no database at all.
+The generated `nuxt.config.ts` declares
+`nardukCore: { databaseBackend: 'none' }`, so narduk-core's shared `/api/health`
+reports `database: "not_applicable"` and stays `ok` instead of degrading a
+publication-only app. No D1 binding, no schema, no migrations, no drizzle pins.
+App-owned probes register with `registerHealthCheck` from
+`@narduk-enterprises/narduk-core`.
+
+The `auth` capability keeps users, sessions and API keys in the app database, so
+it is rejected with `--no-database`. The generator scaffolds D1 only; an app
+that needs Postgres scaffolds `d1` and declares `databaseBackend: 'postgres'`
+with its Hyperdrive binding afterwards.
 
 It supports `--force`, `--no-git`, and `--json`; it never mutates GitHub,
 Cloudflare, Doppler, or package registries. The JSON report is returned to the

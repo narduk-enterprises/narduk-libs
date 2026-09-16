@@ -1,7 +1,7 @@
 import type { Writable } from 'node:stream'
 
 export const GENERATOR_NAME = '@narduk-enterprises/create-narduk-app'
-export const GENERATOR_VERSION = '0.5.1'
+export const GENERATOR_VERSION = '0.5.2'
 
 export const SUPPORTED_CAPABILITIES = [
   'auth',
@@ -13,6 +13,14 @@ export const SUPPORTED_CAPABILITIES = [
   'charts',
 ] as const
 export type Capability = (typeof SUPPORTED_CAPABILITIES)[number]
+
+/**
+ * Backends the generator can scaffold. narduk-core also supports `'postgres'`,
+ * which needs a Hyperdrive binding the generator does not provision, so a
+ * Postgres app declares that backend itself after scaffolding.
+ */
+export const GENERATED_DATABASE_BACKENDS = ['d1', 'none'] as const
+export type GeneratedDatabaseBackend = (typeof GENERATED_DATABASE_BACKENDS)[number]
 
 export type AppVisibility = 'private' | 'public'
 export type AppExposure = 'public' | 'authenticated'
@@ -29,6 +37,12 @@ export interface ProductSpec {
 export interface CreateNardukAppOptions {
   appName?: string
   capabilities?: readonly string[] | string
+  /**
+   * `'d1'` (the default) scaffolds a D1 binding, schema and migrations.
+   * `'none'` scaffolds an app with no database: narduk-core's `/api/health`
+   * then reports `database: 'not_applicable'` instead of degrading.
+   */
+  databaseBackend?: GeneratedDatabaseBackend
   description?: string
   displayName?: string
   exposure?: AppExposure
@@ -48,6 +62,7 @@ export interface CreateNardukAppOptions {
 export interface CreateNardukAppReport {
   appName: string
   capabilities: Capability[]
+  databaseBackend: GeneratedDatabaseBackend
   description: string
   displayName: string
   files: string[]

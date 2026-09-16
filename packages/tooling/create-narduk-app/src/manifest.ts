@@ -1,4 +1,4 @@
-import type { Capability, ProductSpec } from './types.js'
+import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
@@ -7,11 +7,11 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.5',
   '@narduk-enterprises/narduk-app-tools': '0.3.1',
   '@narduk-enterprises/eslint-config': '2.0.2',
-  '@narduk-enterprises/narduk-ai': '0.2.0',
-  '@narduk-enterprises/narduk-analytics': '1.19.34',
-  '@narduk-enterprises/narduk-auth': '1.26.0',
+  '@narduk-enterprises/narduk-ai': '0.2.1',
+  '@narduk-enterprises/narduk-analytics': '1.19.35',
+  '@narduk-enterprises/narduk-auth': '1.27.0',
   '@narduk-enterprises/narduk-charts': '2.5.2',
-  '@narduk-enterprises/narduk-core': '1.24.0',
+  '@narduk-enterprises/narduk-core': '1.25.0',
   '@narduk-enterprises/narduk-logging': '0.1.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
@@ -19,7 +19,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.1.0',
-  '@narduk-enterprises/narduk-seo': '2.1.0',
+  '@narduk-enterprises/narduk-seo': '2.1.1',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
@@ -38,7 +38,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-testkit': '1.3.0',
   '@narduk-enterprises/narduk-uploads': '1.19.19',
   '@nuxt/test-utils': '4.0.3',
-  '@nuxt/ui': '4.6.0',
+  '@nuxt/ui': '4.8.1',
   '@playwright/test': '1.61.1',
   // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
   // Vite 7, which makes a newly generated app install with a peer warning.
@@ -99,10 +99,11 @@ export function packageNamesForCapability(capability: Capability): readonly stri
 
 export function packageVersionsForCapabilities(
   capabilities: readonly Capability[],
+  databaseBackend: GeneratedDatabaseBackend = 'd1',
 ): Record<string, string> {
   const names = [
-    ...Object.keys(dependencyEntries(capabilities)),
-    ...Object.keys(devDependencyEntries()),
+    ...Object.keys(dependencyEntries(capabilities, databaseBackend)),
+    ...Object.keys(devDependencyEntries(databaseBackend)),
     '@narduk-enterprises/eslint-config',
     '@nuxt/eslint',
     '@typescript-eslint/utils',
@@ -118,7 +119,10 @@ export function packageVersionsForCapabilities(
   )
 }
 
-function dependencyEntries(capabilities: readonly Capability[]): Record<string, string> {
+function dependencyEntries(
+  capabilities: readonly Capability[],
+  databaseBackend: GeneratedDatabaseBackend,
+): Record<string, string> {
   const names = [
     '@iconify-json/lucide',
     '@narduk-enterprises/narduk-core',
@@ -130,7 +134,9 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
     '@narduk-enterprises/narduk-shell',
     ...capabilities.flatMap(packageNamesForCapability),
     '@nuxt/ui',
-    'drizzle-orm',
+    // An app with no database imports no schema, so drizzle stays out of both
+    // manifests rather than sitting unused (knip would flag it).
+    ...(databaseBackend === 'none' ? [] : ['drizzle-orm']),
     'nuxt',
     // @nuxt/ui declares tailwindcss as a peer, not a dependency, and
     // eslint-plugin-better-tailwindcss (design-system pack) resolves
@@ -149,7 +155,7 @@ function dependencyEntries(capabilities: readonly Capability[]): Record<string, 
   )
 }
 
-function devDependencyEntries(): Record<string, string> {
+function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record<string, string> {
   const names = [
     '@cloudflare/workers-types',
     '@narduk-enterprises/narduk-app-tools',
@@ -162,7 +168,7 @@ function devDependencyEntries(): Record<string, string> {
     // too, since it is a build-time-only tool, never shipped at runtime.
     '@tailwindcss/vite',
     '@types/node',
-    'drizzle-kit',
+    ...(databaseBackend === 'none' ? [] : ['drizzle-kit']),
     'eslint',
     'happy-dom',
     'prettier',
@@ -185,6 +191,7 @@ export function createRootPackageManifest(
   appName: string,
   capabilities: readonly Capability[],
   visibility: 'private' | 'public',
+  databaseBackend: GeneratedDatabaseBackend = 'd1',
 ): string {
   return json({
     name: appName,
@@ -200,8 +207,12 @@ export function createRootPackageManifest(
       'cf:build': 'pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
-      'db:migrate:local': 'pnpm --filter web run db:migrate:local',
-      'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+      ...(databaseBackend === 'none'
+        ? {}
+        : {
+            'db:migrate:local': 'pnpm --filter web run db:migrate:local',
+            'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+          }),
       deploy: 'pnpm --filter web run deploy',
       'deploy:dry-run': 'pnpm --filter web run deploy:dry-run',
       'deploy:version': 'pnpm --filter web run deploy:version',
@@ -375,11 +386,14 @@ export function createWebPackageManifest(
   capabilities: readonly Capability[],
   localPort: number,
   metadata: {
+    /** Defaults to `'d1'`; `'none'` drops the migrate scripts and drizzle pins. */
+    databaseBackend?: GeneratedDatabaseBackend
     description?: string
     displayName?: string
     siteUrl?: string
   } = {},
 ): string {
+  const databaseBackend = metadata.databaseBackend ?? 'd1'
   return json({
     name: 'web',
     version: '0.1.0',
@@ -398,18 +412,24 @@ export function createWebPackageManifest(
       'cf:build':
         'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build --preset=cloudflare_module',
       'cf:deploy':
-        'narduk-app db migrate --config migrations.sources.json --database ' +
-        appName +
-        '-db --remote --workers-build-only && narduk-app deploy deploy',
+        databaseBackend === 'none'
+          ? 'narduk-app deploy deploy'
+          : 'narduk-app db migrate --config migrations.sources.json --database ' +
+            appName +
+            '-db --remote --workers-build-only && narduk-app deploy deploy',
       'cf:deploy:preview': 'narduk-app deploy versions-upload',
-      'db:migrate:local':
-        'narduk-app db migrate --config migrations.sources.json --database ' +
-        appName +
-        '-db --local',
-      'db:migrate:remote':
-        'narduk-app db migrate --config migrations.sources.json --database ' +
-        appName +
-        '-db --remote',
+      ...(databaseBackend === 'none'
+        ? {}
+        : {
+            'db:migrate:local':
+              'narduk-app db migrate --config migrations.sources.json --database ' +
+              appName +
+              '-db --local',
+            'db:migrate:remote':
+              'narduk-app db migrate --config migrations.sources.json --database ' +
+              appName +
+              '-db --remote',
+          }),
       deploy: 'narduk-app deploy deploy',
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
       'deploy:local': 'narduk-app deploy-local',
@@ -436,8 +456,8 @@ export function createWebPackageManifest(
       capabilities: [...capabilities],
       localDevNuxtPort: localPort,
     },
-    dependencies: dependencyEntries(capabilities),
-    devDependencies: devDependencyEntries(),
+    dependencies: dependencyEntries(capabilities, databaseBackend),
+    devDependencies: devDependencyEntries(databaseBackend),
   })
 }
 

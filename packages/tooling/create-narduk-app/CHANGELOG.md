@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.5.2
+
+### Patch Changes
+
+- 2e9d424: Pin the narduk-core and narduk-auth releases that add
+  `databaseBackend: 'none'` and registered health checks.
+
 ## 0.5.1
 
 ### Patch Changes
