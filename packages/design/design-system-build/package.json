@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/design-system-build",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "One-shot static Claude Design previews rendered from the coded Vue system.",
