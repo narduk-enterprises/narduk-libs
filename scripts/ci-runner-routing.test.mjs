@@ -44,6 +44,24 @@ test('only the verified main release receives a job-scoped package write token',
   assert.match(release, /git merge-base --is-ancestor "\$\{VERIFIED_SHA\}" origin\/main/u)
 })
 
+test('hosted package jobs fan out by library and only main seeds the consumer store', () => {
+  assert.match(ci, /package-jobs: \$\{\{ steps\.plan\.outputs\.package-jobs \}\}/u)
+  assert.match(ci, /package-matrix: \$\{\{ needs\.affected\.outputs\.package-jobs \}\}/u)
+  assert.doesNotMatch(ci, /package-matrix: \$\{\{ needs\.affected\.outputs\.batches \}\}/u)
+  assert.match(
+    ci,
+    /narduk-libs-packed-consumer-pnpm-store-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('pnpm-lock\.yaml'\) \}\}/u,
+  )
+  assert.match(
+    ci,
+    /restore-keys: \|\s+narduk-libs-journeys-e2e-pnpm-store-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('pnpm-lock\.yaml'\) \}\}/u,
+  )
+  assert.match(
+    ci,
+    /steps\.pnpm-store-cache\.outputs\.cache-hit != 'true'\s*&& github\.ref_name == github\.event\.repository\.default_branch/u,
+  )
+})
+
 test('every CI and release executor matches the supported root Node runtime', () => {
   const root = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const eslint = JSON.parse(

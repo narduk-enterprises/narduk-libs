@@ -8,6 +8,10 @@ import { test } from 'node:test'
 test('packed smoke heap survives pnpm lifecycle and nested consumer commands', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
   const job = workflow.split('\n  packed-consumer-smoke:\n')[1].split(/^  [\w-]+:\s*$/m)[0]
+  assert.match(job, /^      NARDUK_BUILD_MAX_OLD_SPACE_SIZE: "2048"$/m)
+  assert.match(job, /turbo run build --filter='\.\/packages\/\*\/\*'\s+--concurrency=2 /u)
+  const turbo = JSON.parse(readFileSync(new URL('../turbo.json', import.meta.url), 'utf8'))
+  assert.ok(turbo.tasks.build.dependsOn.includes('^build'))
   const env = { ...process.env }
   for (const key of Object.keys(env)) {
     if (/^(node_options|npm_config_node_options)$/i.test(key)) delete env[key]

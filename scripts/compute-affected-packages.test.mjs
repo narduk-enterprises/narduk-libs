@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { computeAffectedSet, loadWorkspace } from './compute-affected-packages.mjs'
+import { packageJobs } from './ci-package-plan.mjs'
 
 const scope = '@narduk-enterprises/'
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -120,6 +121,16 @@ test('selects a changed dependency and all transitive dependents', () => {
     assert.equal(result.fullRun, false)
     assert.equal(result.packedConsumer, true)
     assert.equal(result.batches.length, 3)
+    assert.deepEqual(result.packageJobs, [
+      { label: 'auth', filter: '', 'extra-scripts': 'ci:batch', packages: [`${scope}auth`] },
+      { label: 'core', filter: '', 'extra-scripts': 'ci:batch', packages: [`${scope}core`] },
+      {
+        label: 'platform',
+        filter: '',
+        'extra-scripts': 'ci:batch',
+        packages: [`${scope}platform`],
+      },
+    ])
     assert.equal(
       computeAffectedSet({ root, changedFiles: ['packages/platform/src/index.ts'], batchCount: 1 })
         .batches.length,
@@ -128,6 +139,24 @@ test('selects a changed dependency and all transitive dependents', () => {
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('the hosted plan requires unique library filters and gives each one its own job', () => {
+  assert.throws(
+    () =>
+      packageJobs([
+        { label: 'first', filter: 'same' },
+        { label: 'second', filter: 'same' },
+      ]),
+    /duplicates/u,
+  )
+  const result = computeAffectedSet({ root: repoRoot, changedFiles: [], forceAll: true })
+  assert.equal(result.packageJobs.length, result.matrix.length)
+  assert.ok(result.packageJobs.length > 1)
+  assert.deepEqual(
+    result.packageJobs.map(({ label, packages }) => ({ label, packages })),
+    result.matrix.map(({ label, filter }) => ({ label, packages: [filter] })),
+  )
 })
 
 test('does not select dependencies of a changed dependent', () => {

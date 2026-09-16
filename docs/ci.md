@@ -20,25 +20,24 @@ built packages (run `pnpm build` first). `pnpm quality` remains the existing
 broad formatting, lint, typecheck, build and unit-test command; it does not
 include strict package checks, script tests or browser/consumer validation.
 
-Actions runs package selection and repository contracts in parallel first.
-Package batches, browser suites, the packed-consumer proof and logging language
-jobs all require both preflight jobs to succeed before they reserve runners.
-They fan out in parallel after preflight; a contracts failure skips the
-expensive jobs and the always-running `verify` still fails. This trades one
-contracts-job wait on green runs for avoiding full builds and browser proofs on
-invalid input.
+Actions runs package selection and repository contracts in parallel. Package
+jobs, browser suites, the packed-consumer proof and logging language jobs start
+as soon as selection succeeds, while contracts can still be running. The
+always-running `verify` rejects failed, cancelled or missing contracts even if
+every other job succeeds. Invalid contracts may spend runner time on work that
+cannot pass the final gate; green runs avoid waiting for contracts before
+package installs begin.
 
-Actions installs once per batch and invokes `pnpm ci:batch` with the complete
-lane in `PACKAGE_MATRIX_JSON`. This script validates the entire selection, runs
-lint → typecheck → build → test:unit → check:package for each package, and
-retains every failure while printing a per-package result and duration. At most
-eight batches run by default (`--batch-count` accepts 1–8); the scheduling
-estimates in `scripts/ci-package-durations.json` come from the cited Actions run
-and affect ordering only. They never skip a gate. New packages receive a default
-estimate.
+Actions starts one callable job per selected library. Each job installs its
+dependencies and invokes `pnpm ci:batch` with a single-package
+`PACKAGE_MATRIX_JSON` entry. The script runs lint → typecheck → build →
+test:unit → check:package and prints that library's result and duration. The
+same transitive dependency selection determines which jobs run. The planning
+script still reports weighted batches (`--batch-count` accepts 1–8) for
+inspection; those estimates never skip a gate or group hosted jobs.
 
-The always-running `verify` job covers planner, package batches, contracts and
-all applicable integration jobs. Keep `ci / Required` while adopting `verify` in
+The always-running `verify` job covers planner, package jobs, contracts and all
+applicable integration jobs. Keep `ci / Required` while adopting `verify` in
 repository protection. Empty docs/release-metadata selection is intentional;
 planner failure, cancellation, missing expected output and failed mandatory work
 must fail the aggregate. Release accepts only successful full CI for the exact
@@ -55,6 +54,17 @@ after exact-SHA CI verification and requires the main-only `npm-release`
 environment. The job-scoped `GITHUB_TOKEN` publishes with `packages: write`;
 each existing package must grant this repository Actions access. Publication and
 external registry proof still run only from verified main history.
+
+The packed-consumer job restores a lockfile-keyed pnpm store seeded by a green
+main run, and shares that store across its root and generated consumer installs.
+Its first run can restore the existing browser job's root dependency store; the
+next main run saves a dedicated store with generated-app dependencies. A new
+lockfile starts cold; only main writes caches, so fork PRs cannot seed
+dependencies for later runs. Its separate Turbo build cache still uses content
+hashes to invalidate stale compiled output. The coordinated package build uses
+two Turbo workers and keeps its `^build` dependency ordering; parent and nested
+Node heaps and the charts-specific build remain capped at 2048 MiB. The
+generated app phases continue sequentially.
 
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and
