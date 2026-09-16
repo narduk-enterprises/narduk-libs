@@ -237,6 +237,9 @@ jobs:
       # counted. 2048 leaves headroom for pnpm, esbuild workers and the browser
       # the smoke launches, and no lane has needed the larger heap.
       NODE_OPTIONS: --max-old-space-size=2048
+      # pnpm's project node-options overrides NODE_OPTIONS for lifecycle scripts.
+      # Override that config too, including nested generated-consumer commands.
+      npm_config_node_options: --max-old-space-size=2048
       NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
       NPM_CONFIG_GLOBALCONFIG: /dev/null
       # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
