@@ -122,9 +122,10 @@ jobs:
       - name: Materialize Changesets base branch
         # `changeset status` resolves .changeset/config.json `baseBranch: main`
         # against a local ref. On a PR the checkout is detached at the merge
-        # commit with no `main`, so create it from the fetched remote.
+        # commit with no `main`, so create it from the checkout's full-history
+        # origin/main ref. No second network fetch is needed after checkout.
         run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --verify "refs/remotes/origin/main^{commit}"
           if [ "$(git branch --show-current)" != "main" ]; then
             git branch --force main origin/main
           fi
@@ -207,7 +208,7 @@ jobs:
 
       - name: Materialize Changesets base branch
         run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --verify "refs/remotes/origin/main^{commit}"
           if [ "$(git branch --show-current)" != "main" ]; then
             git branch --force main origin/main
           fi

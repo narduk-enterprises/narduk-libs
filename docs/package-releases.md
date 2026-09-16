@@ -44,8 +44,12 @@ now a no-op.
 Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
 `packages: write` inside the main-only `npm-release` environment. GitHub
 Packages must grant this repository Actions access to every existing package,
-including packages not automatically linked to this repository. The release's
-exact version registry proof uses the same temporary token config.
+including packages not automatically linked to this repository. Before writing
+registry auth, the job checks that its token can read metadata for every current
+publication target; a missing or foreign package fails closed. Changesets gets a
+mode-0600 temporary home for its git push credential, created only after the
+dependency install and removed on exit. The release's exact version registry
+proof uses the same temporary token config.
 
 ## Failed or partial publish
 

@@ -19,6 +19,11 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)
   assert.equal((ci.match(/playwright install --with-deps chromium/gu) || []).length, 2)
+  assert.equal(
+    (ci.match(/git rev-parse --verify "refs\/remotes\/origin\/main\^\{commit\}"/gu) || []).length,
+    2,
+  )
+  assert.doesNotMatch(ci, /git fetch/u)
 })
 
 test('only the verified main release receives a job-scoped package write token', () => {
@@ -27,6 +32,10 @@ test('only the verified main release receives a job-scoped package write token',
   assert.match(release, /environment: npm-release/u)
   assert.match(release, /packages: write/u)
   assert.match(release, /PACKAGE_WRITE_TOKEN: \$\{\{ github\.token \}\}/u)
+  assert.match(release, /persist-credentials: false/u)
+  assert.match(release, /verify-package-actions-access\.mjs/u)
+  assert.match(release, /HOME: \$\{\{ runner\.temp \}\}\/changesets-home/u)
+  assert.doesNotMatch(release, /git fetch/u)
   assert.doesNotMatch(
     release,
     /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted|secrets\./u,

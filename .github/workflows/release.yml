@@ -73,13 +73,14 @@ jobs:
         with:
           ref: ${{ needs.verify-ci.outputs.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Require the exact verified SHA retained in main
         shell: bash
         run: |
           set -euo pipefail
           [[ "${VERIFIED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --verify "refs/remotes/origin/main^{commit}"
           test "$(git rev-parse HEAD)" = "${VERIFIED_SHA}"
           git merge-base --is-ancestor "${VERIFIED_SHA}" origin/main
           # Changesets resolves its base against a local ref after this detached checkout.
@@ -102,6 +103,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify the job token can read every existing package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-package-actions-access.mjs
+
       # Publishing with GITHUB_TOKEN requires this repository's Actions access
       # to each existing GitHub Package. Verify the grants before publication.
       - name: Configure GitHub Packages write auth
@@ -120,14 +126,24 @@ jobs:
 
       - name: Select publication or current-main version preparation
         id: release-mode
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if test "$(git rev-parse origin/main)" = "${VERIFIED_SHA}"; then
+          current_main=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)
+          if test "${current_main}" = "${VERIFIED_SHA}"; then
             echo 'current=true' >> "$GITHUB_OUTPUT"
           fi
           node --input-type=module -e "import { readdirSync, appendFileSync } from 'node:fs'; const pending = readdirSync('.changeset').some(name => name.endsWith('.md') && name !== 'README.md'); appendFileSync(process.env.GITHUB_OUTPUT, 'publish=' + !pending + '\\n')"
+
+      # changesets/action v1.9.0 writes a .netrc for its git-cli push. Keep
+      # that credential outside the checkout and only after untrusted install.
+      - name: Prepare isolated Changesets home
+        if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/changesets-home"
+          install -m 0600 /dev/null "${RUNNER_TEMP}/changesets-home/.netrc"
 
       - name: Prepare or publish the independently verified package versions
         if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
@@ -138,6 +154,7 @@ jobs:
           title: "chore: release packages"
           commit: "chore: release packages"
         env:
+          HOME: ${{ runner.temp }}/changesets-home
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify immutable published package versions
@@ -146,4 +163,6 @@ jobs:
 
       - name: Remove temporary registry auth
         if: always()
-        run: rm -f "${NPM_CONFIG_USERCONFIG}"
+        run: |
+          rm -f "${NPM_CONFIG_USERCONFIG}"
+          rm -f "${RUNNER_TEMP}/changesets-home/.netrc"
