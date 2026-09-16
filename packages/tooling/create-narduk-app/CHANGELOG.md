@@ -1,5 +1,106 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.6.0
+
+### Minor Changes
+
+- 26c8d05: Scaffold apps with no database.
+
+  `--no-database` (or `--database=none`, or `databaseBackend: 'none'` through
+  the API) generates an app that declares
+  `nardukCore: { databaseBackend: 'none' }`, so narduk-core's shared
+  `/api/health` reports `database: "not_applicable"` and stays `ok` rather than
+  degrading a publication-only app.
+
+  - No D1 binding in `wrangler.jsonc`, no `server/database/schema.ts`, no
+    `#narduk-db` alias, no `drizzle/` migrations and no
+    `migrations.sources.json`.
+  - No `db:migrate:local` / `db:migrate:remote` scripts, and `cf:deploy` deploys
+    without a migration step.
+  - `drizzle-orm` and `drizzle-kit` are left out of the generated manifests.
+  - The `auth` capability is rejected with no database, because sign-in stores
+    users, sessions and API keys in the app database.
+  - The JSON report records the resolved `databaseBackend`.
+
+  The default stays D1, and a D1 scaffold is byte-identical to the previous
+  release.
+
+### Patch Changes
+
+- 8f693b1: Pin `@nuxt/ui` at `4.8.1` everywhere the layer pins it: the
+  `narduk-core` dependency, the `narduk-shell` peer and dev pins, the
+  `narduk-ai` and `design-system-build` dev pins, and the `create-narduk-app`
+  generator manifest.
+
+  `@nuxt/ui` 4.6.1 added `build.transpile.push('reka-ui')` (nuxt/ui#6286), which
+  makes Vite bundle `reka-ui` per importer on the server as well as the client.
+  Without it, an app that also declares `reka-ui` directly renders SSR markup
+  from its own copy while hydrating against Nuxt UI's pinned copy, which
+  produced the `Hydration node mismatch` failures in buoys. 4.8.1 also carries
+  the fix for GHSA-gj2h-2fpw-fhv9 (medium, `@nuxt/ui < 4.8.1`) and widens the
+  `typescript` peer to `^5.6.3 || ^6.0.0`. The only breaking change between
+  4.6.0 and 4.8.1 is `UInputMenu`'s `autocomplete` prop being renamed to `mode`,
+  which nothing in this workspace uses.
+
+  Consumer migration: an app that declares `@nuxt/ui` itself must move its own
+  pin to `4.8.1` in the same change that takes this release. `narduk-shell`'s
+  peer is exact, so any other version is a peer conflict, and `narduk-core`
+  carries `@nuxt/ui` as a dependency, so a different app-level pin resolves a
+  second copy — the duplicate-copy failure this release removes.
+
+- 8abb3c8: Update the generator's pinned `@narduk-enterprises/*` versions to the
+  coordinated release that ships narduk-core 2 (Pinia 4 and `@pinia/nuxt` 1).
+  Generated apps do not list `pinia` directly, so the generator's behavior does
+  not change beyond the new pins.
+- 8abb3c8: Run generated app CI on Node 24.21.0 and emit matching `.nvmrc`,
+  `engines.node` and Volta declarations from one constant. This matches the Node
+  24 minimum the shared ESLint configuration already requires. Correct that
+  package's stale Node 22 documentation. The repository's own CI, release jobs
+  and root runtime pin also move to Node 24.21.0; package JavaScript output
+  targets retain their existing compatibility range.
+- 8abb3c8: Retire the implicit Doppler execution in `narduk-app dev`
+  (narduk-libs#321).
+
+  **Breaking for existing callers of `narduk-app dev`.** The command used to run
+  every child through `doppler run`, with `--project` / `--config` selecting a
+  Doppler project and config — an implicit dependency on the retired app-secret
+  store. It now runs one child process through an explicit credential route:
+
+  - no `--credentials` (the default) runs the child directly, so an app whose
+    local development needs no secrets has no secret-store dependency at all;
+  - `--credentials nvault` requires a complete `--project` / `--environment` /
+    `--config` selector and runs
+    `nvault run -p <project> -e <environment> -c <config> -- <command>`, the
+    registered local credential route, whose values stay process-local
+    (company-hq `docs/SECRETS-MATRIX.md`, plane 4);
+  - `--dry-run` prints the resolved command without running it.
+
+  The retired invocation
+  `narduk-app dev --project <app> --config dev -- <command>` now fails with a
+  message naming both replacements, rather than silently starting a dev server
+  without the environment it used to receive. `--credentials doppler` fails the
+  same way. Doppler `ne/*` root provisioners remain a separately approved
+  provider-root exception and are not an application development credential
+  source.
+
+  The exported `buildDopplerRunArgs` is replaced by `buildNvaultRunArgs`,
+  `buildDevInvocation` and `formatDevInvocation`.
+
+  Generated apps start Nuxt directly: the web `dev` script is now
+  `nuxt dev --host 127.0.0.1`, and the generated README documents the nvault
+  route an app adopts when it later needs credentials locally.
+  `narduk-app deploy-local` is a different command and still reads Doppler
+  `narduk/tokens`; it is unchanged.
+
+- 8abb3c8: Stop overriding `nuxt-og-image` to 6.7.2 in generated SEO apps, so
+  they use the release that `@narduk-enterprises/narduk-seo` pins. New apps now
+  pin Nuxt 4.5.2, which supplies Unhead 3 for that module set's
+  `treeShakeUseSeoMeta` transform, and Tailwind 4.3.2, whose Vite plugin
+  supports Nuxt 4.5's Vite 8.
+
+  Run the generated browser-test server with Nuxt's `TEST` flag so it excludes
+  the interactive DevTools module. Normal `dev` keeps DevTools available.
+
 ## 0.5.2
 
 ### Patch Changes

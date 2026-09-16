@@ -86,7 +86,7 @@ sweep of stale `eslint-disable` comments.
 ### 1. Move the app to ESLint 10
 
 The peer range is `eslint@^10.0.0` (with `vue-eslint-parser@^10` and Node >=
-22). There is no ESLint 9 fallback: v2 is composed on the current `@nuxt/eslint`
+24). There is no ESLint 9 fallback: v2 is composed on the current `@nuxt/eslint`
 foundation and the flat-config-only plugin APIs it depends on.
 
 ### 2. Fix stale `eslint-disable` comments — these are the loudest breakage

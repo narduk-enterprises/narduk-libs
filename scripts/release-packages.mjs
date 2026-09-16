@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   appendFileSync,
@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { runConsumerCommand } from './consumer-smoke-command.mjs'
 import { consumerSmokePhases, mapPackages } from './consumer-smoke-phases.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
@@ -139,23 +140,23 @@ function childEnvironment(overrides = {}) {
   return { ...environment, ...overrides }
 }
 
-function runChecked(command, commandArgs, options) {
+async function runChecked(command, commandArgs, options) {
   const label = options.label || `${command} ${commandArgs.join(' ')}`
   writeLine(`\n[consumer-smoke] ${label}`)
   const started = performance.now()
-  const result = spawnSync(command, commandArgs, {
-    cwd: options.cwd,
-    encoding: 'utf8',
-    env: childEnvironment(options.env),
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  const output = `${result.stdout || ''}${result.stderr || ''}`
-  timings.push({ label, seconds: (performance.now() - started) / 1000 })
-  if (output) process.stdout.write(output)
-  writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`${label} failed with exit code ${result.status ?? 'unknown'}.`)
+  let output
+  try {
+    output = await runConsumerCommand(command, commandArgs, {
+      cwd: options.cwd,
+      env: childEnvironment(options.env),
+    })
+  } catch (error) {
+    throw new Error(`${label} failed (${error.signal || error.code || 'unknown exit'}).`, {
+      cause: error,
+    })
+  } finally {
+    timings.push({ label, seconds: (performance.now() - started) / 1000 })
+    writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
   }
   if (options.rejectWarnings !== false) {
     const findings = collectWarningFindings(output)
@@ -712,9 +713,6 @@ useSeo({
   title: pageTitle,
   description: pageDescription,
   canonicalUrl: '/narduk-seo-packed',
-  // The branded static default image already covers this fixture; generated
-  // OG images keep their own coverage in the social-previews suite.
-  ogImage: false,
 })
 
 useWebPageSchema({
@@ -775,6 +773,17 @@ test('packed narduk-seo renders SSR metadata (narduk-libs#316)', async ({ reques
   expect(metaContent(html, 'property', 'og:url')).toBe(canonical)
   expect(metaContent(html, 'name', 'twitter:card')).toBe('summary_large_image')
   expect(metaContent(html, 'name', 'twitter:title')).toBe(pageTitle)
+  expect(metaContent(html, 'name', 'robots')).toContain('noindex')
+  expect(response.headers()['x-robots-tag']).toContain('noindex')
+
+  // Fetch the actual dynamic image on the preview origin. Its internal island
+  // render must succeed while page and response noindex protection stays on.
+  const imageUrl = new URL(metaContent(html, 'property', 'og:image')!)
+  expect(imageUrl.pathname).toMatch(/^\\/_og\\//u)
+  const image = await request.get(imageUrl.pathname + imageUrl.search)
+  expect(image.ok()).toBe(true)
+  expect(image.headers()['content-type']).toContain('image/png')
+  expect([...(await image.body()).subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
 
   const canonicals = [...html.matchAll(/<link[^>]*rel="canonical"[^>]*>/gu)].map(
     ([tag]) => /href="([^"]*)"/u.exec(tag)?.[1] ?? null,
@@ -814,6 +823,17 @@ test('packed narduk-seo re-applies head on client navigation (narduk-libs#316)',
 `
 
 function addPackedSeoMetadataSmoke(generatedDirectory) {
+  const configPath = join(generatedDirectory, 'apps', 'web', 'nuxt.config.ts')
+  const config = readFileSync(configPath, 'utf8')
+  const seoOptions = '  nardukSeo: {'
+  if (config.split(seoOptions).length !== 2) {
+    throw new Error('Packed SEO fixture requires exactly one generated nardukSeo config.')
+  }
+  writeFileSync(
+    configPath,
+    config.replace(seoOptions, `${seoOptions}\n    hostAwareIndexing: true,`),
+  )
+
   const pagePath = join(generatedDirectory, 'apps', 'web', 'app', 'pages', 'narduk-seo-packed.vue')
   mkdirSync(dirname(pagePath), { recursive: true })
   writeFileSync(pagePath, PACKED_SEO_FIXTURE_PAGE)
@@ -1053,7 +1073,7 @@ try {
   )
   addTarballOverrides(consumerDirectory, packages, tarballs)
 
-  runChecked('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
+  await runChecked('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
     cwd: consumerDirectory,
     label: 'install every packed package in an external consumer',
   })
@@ -1097,7 +1117,7 @@ try {
       )
     }
     if (plan.specifiers.length === 0) continue
-    runChecked(
+    await runChecked(
       'node',
       ['--input-type=module', '--eval', subpathProbeProgram(plan.name, plan.specifiers)],
       {
@@ -1133,7 +1153,7 @@ try {
   ]
   for (const group of testkitExportGroups) {
     if (group.specifiers.length === 0) continue
-    runChecked(
+    await runChecked(
       'node',
       [
         '--input-type=module',
@@ -1160,13 +1180,13 @@ try {
       'base64',
     ),
   )
-  runChecked('pnpm', ['exec', 'narduk-testkit', 'ui', 'analyze', testkitCliFixture], {
+  await runChecked('pnpm', ['exec', 'narduk-testkit', 'ui', 'analyze', testkitCliFixture], {
     cwd: consumerDirectory,
     label: 'execute the packed testkit CLI through built JavaScript',
   })
 
   const generatedDirectory = join(consumerDirectory, 'generated-app')
-  runChecked(
+  await runChecked(
     'pnpm',
     [
       'exec',
@@ -1196,11 +1216,11 @@ try {
   addPackedSeoMetadataSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
-  runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
+  await runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
     cwd: generatedDirectory,
     label: 'install the generated app from packed artifacts',
   })
-  runChecked('pnpm', ['install', '--frozen-lockfile'], {
+  await runChecked('pnpm', ['install', '--frozen-lockfile'], {
     cwd: generatedDirectory,
     label: 'repeat generated app install with the frozen lockfile',
   })
@@ -1217,7 +1237,7 @@ try {
       requiredBrowsers: ['chromium'],
     })
   } else {
-    runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+    await runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
       cwd: generatedDirectory,
       label: 'install the generated app browser fixture',
     })
@@ -1274,7 +1294,7 @@ try {
     )) {
       if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
       try {
-        runChecked('pnpm', ['run', phase], {
+        await runChecked('pnpm', ['run', phase], {
           cwd: generatedDirectory,
           label: `generated app ${phase}`,
         })
@@ -1284,7 +1304,7 @@ try {
     }
     assertNoRetiredBuiltReferences(generatedDirectory)
 
-    const firstMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+    const firstMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
       cwd: generatedDirectory,
       label: 'apply generated app migrations to a fresh local D1 database',
     })
@@ -1295,7 +1315,7 @@ try {
       throw new Error('Fresh generated app migration did not apply at least one migration.')
     }
 
-    const secondMigration = runChecked('pnpm', ['run', 'db:migrate:local'], {
+    const secondMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
       cwd: generatedDirectory,
       label: 'prove generated app migrations are idempotent',
     })
@@ -1306,11 +1326,11 @@ try {
       throw new Error('Second generated app migration was not an empty idempotent run.')
     }
 
-    runChecked('pnpm', ['run', 'performance-budget'], {
+    await runChecked('pnpm', ['run', 'performance-budget'], {
       cwd: generatedDirectory,
       label: 'enforce generated app performance budgets',
     })
-    const deployDryRun = runChecked('pnpm', ['run', 'deploy:dry-run'], {
+    const deployDryRun = await runChecked('pnpm', ['run', 'deploy:dry-run'], {
       cwd: generatedDirectory,
       label: 'build the generated Worker with Wrangler deploy dry-run',
     })
