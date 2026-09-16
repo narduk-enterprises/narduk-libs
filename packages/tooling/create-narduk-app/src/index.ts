@@ -7,6 +7,7 @@ export {
 export { parseCliArguments, runCli } from './cli.js'
 export {
   CreateNardukAppError,
+  GENERATED_DATABASE_BACKENDS,
   GENERATOR_NAME,
   GENERATOR_VERSION,
   SUPPORTED_CAPABILITIES,
@@ -17,6 +18,7 @@ export type {
   CreateNardukAppCliOptions,
   CreateNardukAppOptions,
   CreateNardukAppReport,
+  GeneratedDatabaseBackend,
   GeneratedFile,
   ProductSpec,
 } from './types.js'

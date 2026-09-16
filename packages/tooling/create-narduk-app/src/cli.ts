@@ -6,8 +6,13 @@ import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { createNardukApp } from './generate.js'
-import { CreateNardukAppError } from './types.js'
-import type { CreateNardukAppCliOptions, CreateNardukAppOptions, ProductSpec } from './types.js'
+import { CreateNardukAppError, GENERATED_DATABASE_BACKENDS } from './types.js'
+import type {
+  CreateNardukAppCliOptions,
+  CreateNardukAppOptions,
+  GeneratedDatabaseBackend,
+  ProductSpec,
+} from './types.js'
 
 function usage(): string {
   return (
@@ -23,6 +28,8 @@ function usage(): string {
       '  --target-dir <path>         Output directory (defaults to ./<app-name>)',
       '  --visibility <value>        Repository: private (default) or public',
       '  --exposure <value>          App: public or authenticated (auth capability defaults closed)',
+      '  --database <value>          d1 (default) or none for an app with no database',
+      '  --no-database               Shorthand for --database none',
       '  --local-dev-port <port>     Local Nuxt port (default: 3000)',
       '  --problem <text>            Product spec problem',
       '  --audience <text>           Product spec audience',
@@ -68,6 +75,7 @@ export function parseCliArguments(
   let targetDir: string | undefined
   let visibility: 'private' | 'public' | undefined
   let exposure: 'public' | 'authenticated' | undefined
+  let databaseBackend: GeneratedDatabaseBackend | undefined
   let localPort: number | undefined
   let noGit = false
   let force = false
@@ -87,6 +95,10 @@ export function parseCliArguments(
     }
     if (argument === '--force') {
       force = true
+      continue
+    }
+    if (argument === '--no-database') {
+      databaseBackend = 'none'
       continue
     }
     if (argument === '--json') {
@@ -132,6 +144,16 @@ export function parseCliArguments(
         }
         exposure = parsed.value
         break
+      case '--database':
+      case '--database-backend': {
+        if (!(GENERATED_DATABASE_BACKENDS as readonly string[]).includes(parsed.value)) {
+          throw new CreateNardukAppError(
+            `--database must be ${GENERATED_DATABASE_BACKENDS.join(' or ')}.`,
+          )
+        }
+        databaseBackend = parsed.value as GeneratedDatabaseBackend
+        break
+      }
       case '--local-dev-port':
       case '--local-port': {
         const parsedPort = Number(parsed.value)
@@ -175,6 +197,7 @@ export function parseCliArguments(
     options: {
       appName,
       capabilities: capabilityValues.join(','),
+      databaseBackend,
       description,
       displayName,
       exposure,
