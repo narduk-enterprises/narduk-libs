@@ -16,6 +16,11 @@ import {
 import { defu } from 'defu'
 
 import {
+  type DatabaseBackend,
+  findDatabaseBackendConflict,
+  resolveDatabaseBackendSelection,
+} from '../runtime/shared/database-backend'
+import {
   applyCoreRollupBuildWarningPolicy,
   applyCoreViteBuildWarningPolicy,
   createCoreViteBuildLogger,
@@ -78,6 +83,12 @@ interface MutableNuxtOptionsRecord {
 export interface NardukCoreModuleOptions {
   app?: boolean
   coreModules?: boolean
+  /**
+   * The app's SQL backend. `'none'` declares an app without a database, so
+   * `/api/health` reports `database: 'not_applicable'`. Omitted, the build
+   * falls back to `NUXT_DATABASE_BACKEND`, then to an undeclared D1 default.
+   */
+  databaseBackend?: DatabaseBackend
   image?: boolean
   server?: boolean
 }
@@ -457,7 +468,16 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     const resolver = createResolver(import.meta.url)
     const runtimeRoot = resolver.resolve('../runtime')
     const nuxtOptions = nuxt.options as unknown as MutableNuxtOptionsRecord
-    const databaseBackend = process.env.NUXT_DATABASE_BACKEND === 'postgres' ? 'postgres' : 'd1'
+    const existingRuntimeConfig: Record<string, unknown> = nuxtOptions.runtimeConfig ?? {}
+    const { backend: databaseBackend, source: databaseBackendSource } =
+      resolveDatabaseBackendSelection({
+        option: options.databaseBackend,
+        env: process.env.NUXT_DATABASE_BACKEND,
+        runtimeConfig: {
+          databaseBackend: existingRuntimeConfig.databaseBackend,
+          databaseBackendSource: existingRuntimeConfig.databaseBackendSource,
+        },
+      })
     const appVersion =
       process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
     const buildVersion =
@@ -483,7 +503,7 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     const ormTablesEntry =
       databaseBackend === 'postgres' ? 'server/database/pg-schema.ts' : 'server/database/schema.ts'
     const postgresRuntimeEntry =
-      process.env.NUXT_DATABASE_BACKEND === 'postgres'
+      databaseBackend === 'postgres'
         ? 'internal/postgres-runtime.ts'
         : 'internal/postgres-runtime.stub.ts'
     const includeLegacyUtilitiesCss = !['0', 'false', 'off'].includes(
@@ -586,7 +606,6 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     })
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
-      databaseBackend,
       hyperdriveBinding: process.env.NUXT_HYPERDRIVE_BINDING || 'HYPERDRIVE',
       rateLimitPolicies: {},
       cronSecret: process.env.CRON_SECRET || '',
@@ -605,6 +624,20 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
         cspMediaSrc: process.env.CSP_MEDIA_SRC || '',
         allowGeolocation,
       },
+    })
+
+    // The resolved selection overwrites any earlier value so the schema alias,
+    // the server runtime and /api/health all agree on one backend.
+    nuxtOptions.runtimeConfig.databaseBackend = databaseBackend
+    nuxtOptions.runtimeConfig.databaseBackendSource = databaseBackendSource
+
+    // Other modules (narduk-auth) finish configuring after this setup runs, so
+    // the conflict check waits until every module is installed.
+    nuxt.hook('modules:done', () => {
+      const conflict = findDatabaseBackendConflict(nuxtOptions.runtimeConfig)
+      if (conflict) {
+        throw new Error(conflict)
+      }
     })
 
     nuxtOptions.compatibilityDate ??= '2026-03-03'

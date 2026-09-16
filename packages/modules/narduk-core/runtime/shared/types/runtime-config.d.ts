@@ -9,8 +9,23 @@ import type { RequestLoggingOptions } from '@narduk-enterprises/narduk-logging/h
 interface CoreRuntimeConfig {
   /** Explicit logging identity and controls; absent level retains legacy logLevel behavior. */
   nardukLogging?: Partial<Omit<RequestLoggingOptions, 'sinks' | 'clock' | 'context'>>
-  /** SQL backend: D1 (default) or Postgres via Hyperdrive. */
-  databaseBackend: 'd1' | 'postgres'
+  /**
+   * SQL backend: D1 (the default), Postgres via Hyperdrive, or `none` for an app
+   * without a database. Set it with the `nardukCore.databaseBackend` module
+   * option or `NUXT_DATABASE_BACKEND`; the module writes the resolved value here.
+   */
+  databaseBackend: 'd1' | 'postgres' | 'none'
+  /**
+   * Where `databaseBackend` came from. `default` means the app declared nothing
+   * and inherited D1, so `/api/health` treats a missing D1 binding as degraded
+   * rather than as a failed declared dependency.
+   */
+  databaseBackendSource: 'option' | 'env' | 'runtimeConfig' | 'default'
+  /** Built-in `/api/health` probes other modules switch on. */
+  nardukHealth?: {
+    /** Set by narduk-auth: also verify the `users`, `sessions` and `api_keys` tables. */
+    authTables?: boolean
+  }
   /** Wrangler Hyperdrive binding name; used by `useHyperdriveConnectionString`. */
   hyperdriveBinding: string
   /** Optional per-policy server-side rate limit overrides for shared layer routes. */

@@ -38,13 +38,158 @@ and segment fetches; native HLS needs the media origin in `cspMediaSrc`. These
 options extend only their named directives and leave scripts, frames, and
 workers unchanged.
 
+## Database backend
+
+Every app states whether it has a database with the `databaseBackend` module
+option:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-core'],
+  nardukCore: { databaseBackend: 'none' },
+})
+```
+
+| Value        | The app uses                                 |
+| ------------ | -------------------------------------------- |
+| `'d1'`       | Cloudflare D1 through the `DB` binding       |
+| `'postgres'` | PostgreSQL through the Hyperdrive binding    |
+| `'none'`     | No database: a publication-only or proxy app |
+
+Without the option, core reads `NUXT_DATABASE_BACKEND` at build time. An app
+that sets neither still gets D1, but it has not declared it, and
+[`/api/health`](#health-endpoint) treats a missing D1 binding as `degraded`
+rather than as an error. An unknown option value fails the build; an unknown
+`NUXT_DATABASE_BACKEND` value is ignored with a warning.
+
+With `'none'`:
+
+- `useDatabase(event)` and accessors made by `createAppDatabase` throw an HTTP
+  500 that names the declaration.
+- A bearer API key authenticates nobody: `authenticateApiKey` returns `null`.
+- `/api/health` reports `database: "not_applicable"` and probes nothing.
+- The build fails if `@narduk-enterprises/narduk-auth` is installed, because
+  sign-in stores users, sessions and API keys in the app database.
+
+## Health endpoint
+
+Core serves `GET /api/health` for uptime monitors and deploy checks. The
+response is never cached (`Cache-Control: no-store`).
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "timestamp": "2026-09-16T17:00:00.000Z",
+    "database": "not_applicable",
+    "missingAuthTables": [],
+    "checks": [
+      {
+        "name": "database",
+        "required": false,
+        "result": "skipped",
+        "reason": "not-configured"
+      },
+      {
+        "name": "auth-tables",
+        "required": false,
+        "result": "skipped",
+        "reason": "auth-not-enabled"
+      },
+      {
+        "name": "publication",
+        "required": true,
+        "result": "pass",
+        "durationMs": 4,
+        "detail": { "releaseId": "2026-09-16.1" }
+      }
+    ]
+  }
+}
+```
+
+| `status`   | HTTP | Meaning                           |
+| ---------- | ---- | --------------------------------- |
+| `ok`       | 200  | Every check passed or was skipped |
+| `degraded` | 200  | An optional check failed          |
+| `error`    | 503  | A required check failed           |
+
+`database` summarizes the built-in probe:
+
+| `database`       | Meaning                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `ok`             | The probe passed                                                                                                        |
+| `not_applicable` | The app declared `databaseBackend: 'none'`                                                                              |
+| `not_available`  | No D1 `DB` binding: `error` for an app that declared its backend, `degraded` for one that only inherited the D1 default |
+| `schema_error`   | A narduk-auth table is missing (`degraded`); `missingAuthTables` names it                                               |
+| `error`          | The probe failed or took longer than 5 seconds                                                                          |
+
+`checks` lists every check as `{ name, required, result }`, where `result` is
+`pass`, `fail` or `skipped`, with `reason` for a skipped check, `error` for a
+failed one, and `durationMs` and `detail` when present. The first two entries
+are built in:
+
+- `database` runs `SELECT 1` against D1, or `select 1` through Hyperdrive.
+- `auth-tables` runs only when narduk-auth is installed on D1. It looks up the
+  `users`, `sessions` and `api_keys` tables, which also proves the connection,
+  and it is optional.
+
+Registered checks follow, in registration order.
+
+### Registering a check
+
+`registerHealthCheck` is auto-imported in server code, or import it from
+`@narduk-enterprises/narduk-core/server/utils/health-checks`. Register from a
+Nitro plugin so the check exists before the first request:
+
+```ts
+// server/plugins/health-checks.ts
+export default defineNitroPlugin(() => {
+  registerHealthCheck({
+    name: 'publication',
+    required: true,
+    timeoutMs: 2000,
+    async run({ signal }) {
+      const manifest = await readPublishedManifest({ signal })
+      return { detail: { releaseId: manifest.releaseId } }
+    },
+  })
+})
+```
+
+- `name`: 1-63 lowercase letters, digits or hyphens. `database` and
+  `auth-tables` are reserved. Registering a name again replaces the earlier
+  check, and `registerHealthCheck` returns a function that removes it.
+- `required`: a failed required check makes the report `error` (HTTP 503); a
+  failed optional check makes it `degraded`.
+- `timeoutMs`: defaults to 3000 and may be at most 30000. A check that runs out
+  of time fails, and its `signal` is aborted.
+- `run`: resolve to pass; throw or return `{ ok: false }` to fail. Checks run
+  concurrently with each other and with the database probe.
+- `detail`: an optional JSON object published with the result. It is left out,
+  with `detailOmitted` saying why, when it is not a plain object, cannot be
+  serialized, is larger than 1 KiB, or has a `status` or `database` key at any
+  depth.
+
+A failed check publishes fixed text such as `Check failed.`; the thrown error
+goes only to the server log.
+
+### Monitoring the endpoint
+
+Prefer the HTTP status where a monitor supports it. A monitor that matches a
+substring can rely on `"status":"ok"`: `status`, `timestamp` and `database` are
+the first fields of `data`, well inside the first 4096 bytes, and no check
+detail can contain a `status` or `database` key.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
-selects the D1 or PostgreSQL core schema according to `NUXT_DATABASE_BACKEND`,
-while `#narduk-core/postgres-runtime` selects the real PostgreSQL adapter or the
-D1-safe stub. Capability packages that need core tables may use
-`#narduk-core/schema` after registering the core Nuxt module.
+selects the PostgreSQL core schema when `databaseBackend` is `'postgres'` and
+the D1 schema otherwise, while `#narduk-core/postgres-runtime` selects the real
+PostgreSQL adapter or the D1-safe stub. Capability packages that need core
+tables may use `#narduk-core/schema` after registering the core Nuxt module.
 
 Application code must use its own `#narduk-db` dialect selector instead. These
 private aliases do not replace Nuxt's native `#server/*` paths, and the former

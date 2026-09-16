@@ -16,6 +16,7 @@ import {
   serializeApiKeyScopeText as serializeApiKeyScopes,
 } from './authApiKeyText'
 import { executeDatabaseQuery, getDatabaseRow, getDatabaseRows, useDatabase } from './database'
+import { useLogger } from './logger'
 import { getLayerUserSession } from './user-session'
 
 import type { User } from '#narduk-core/schema'
@@ -157,6 +158,8 @@ export async function getSessionUser(event: H3Event): Promise<User | null> {
 export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedApiKey | null> {
   const rawKey = getApiKeyFromAuthorization(event)
   if (!rawKey) return null
+  // An app without a database has no API keys; callers answer 401, not 500.
+  if (useRuntimeConfig(event).databaseBackend === 'none') return null
 
   const db = useDatabase(event)
   const keyHash = await hashApiKeyText(rawKey)
