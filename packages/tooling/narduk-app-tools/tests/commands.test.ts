@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { parseFoundationCheckArgs } from '../src/commands/foundation-check.js'
 import { parseMigrationArgs } from '../src/cli.js'
-import { buildDopplerRunArgs, parseDevArgs } from '../src/dev.js'
+import { buildDevInvocation, parseDevArgs } from '../src/dev.js'
 import {
   buildWranglerCommandArgs,
   isDryRunDeploy,
@@ -42,19 +42,25 @@ describe('app-local command planning', () => {
     ).toThrow('Unknown foundation:check:shared-ui-pinned option: --bogus')
   })
 
-  it('runs dev through Doppler without a file-backed env plan', () => {
-    const flags = parseDevArgs(['--project', 'app', '--config', 'dev', '--', 'node', '-e', 'x'])
-    expect(buildDopplerRunArgs(flags)).toEqual([
-      'run',
+  it('runs dev through the registered nvault route without a file-backed env plan', () => {
+    const flags = parseDevArgs([
+      '--credentials',
+      'nvault',
       '--project',
       'app',
-      '--config',
+      '--environment',
       'dev',
+      '--config',
+      'default',
       '--',
       'node',
       '-e',
       'x',
     ])
+    expect(buildDevInvocation(flags)).toEqual({
+      args: ['run', '-p', 'app', '-e', 'dev', '-c', 'default', '--', 'node', '-e', 'x'],
+      command: 'nvault',
+    })
   })
 
   it('preserves deployment recovery safeguards', () => {
