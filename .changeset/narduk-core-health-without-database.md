@@ -19,9 +19,9 @@ Let apps run without a database and extend `/api/health` with their own checks.
 
 **Behavior change: `/api/health` answers HTTP 503 when `status` is `error`.** It
 previously answered 200 for every status. `degraded` still answers 200. A
-monitor or deploy check that treats any 200 as healthy now sees failures, and
-one that parses the body of a non-2xx response must accept a 503 with the same
-JSON body.
+monitor that treats any 200 as healthy now sees failures, and a client that
+throws on non-2xx responses, such as `$fetch`, must catch the 503 to read the
+report.
 
 **Behavior change: a declared D1 database without its `DB` binding is `error`
 (503).** It was `degraded`. This applies when the app sets `databaseBackend` by
