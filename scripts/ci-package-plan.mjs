@@ -1,5 +1,19 @@
 export const packageGates = ['lint', 'typecheck', 'build', 'test:unit', 'check:package']
 
+// The shared callable needs a singleton package array to invoke the same
+// repository-owned five-gate runner independently for each selected library.
+export function packageJobs(matrix) {
+  if (new Set(matrix.map(({ filter }) => filter)).size !== matrix.length) {
+    throw new Error('The package plan contains duplicates.')
+  }
+  return matrix.map(({ label, filter }) => ({
+    label,
+    filter: '',
+    'extra-scripts': 'ci:batch',
+    packages: [filter],
+  }))
+}
+
 // One lane runs one package at a time. The weights affect scheduling only;
 // unknown/new packages still run every gate, using the median-sized estimate.
 export function batchPackages(matrix, weights, limit = 8) {

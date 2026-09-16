@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } fr
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { batchPackages, packageGates } from './ci-package-plan.mjs'
+import { batchPackages, packageGates, packageJobs } from './ci-package-plan.mjs'
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dependencySections = [
@@ -265,6 +265,7 @@ export function computeAffectedSet({
 
   return {
     matrix,
+    packageJobs: packageJobs(matrix),
     browserPackages: workspace.packages
       .filter(({ name, manifest }) => affectedNames.has(name) && manifest.scripts?.['test:e2e'])
       .map(({ name }) => name)
@@ -310,7 +311,7 @@ export function renderSummary(result) {
     '## Affected package plan',
     '',
     `**Mode:** ${mode}`,
-    `**Install batches:** ${result.batches.length}; **gates per package:** ${packageGates.join(', ')}`,
+    `**Independent package jobs:** ${result.packageJobs.length}; **gates per package:** ${packageGates.join(', ')}`,
     '',
     '### Directly changed packages',
     '',
@@ -404,6 +405,7 @@ function main() {
       options.githubOutput,
       [
         `matrix=${JSON.stringify(result.matrix)}`,
+        `package-jobs=${JSON.stringify(result.packageJobs)}`,
         `batches=${JSON.stringify(result.batches)}`,
         `browser-packages=${JSON.stringify(result.browserPackages)}`,
         `packed-consumer=${result.packedConsumer}`,

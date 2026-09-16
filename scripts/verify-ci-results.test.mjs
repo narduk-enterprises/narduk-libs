@@ -35,7 +35,7 @@ const run = (env) =>
     encoding: 'utf8',
   })
 
-test('expensive jobs require successful preflight without serializing each other', () => {
+test('selected execution lanes start after planning while contracts run independently', () => {
   const jobSource = workflow.split('\njobs:\n')[1]
   assert.ok(jobSource, 'the workflow must declare jobs')
   const jobs = [...jobSource.matchAll(/^  ([\w-]+):\s*$/gm)].map((match, index, matches) => ({
@@ -48,12 +48,12 @@ test('expensive jobs require successful preflight without serializing each other
   for (const { name, source } of executionJobs) {
     const declaration = source.match(/^    needs:\s*(\[[\s\S]*?\]|[\w-]+)/m)?.[1]
     const needs = declaration?.match(/[\w-]+/g) ?? []
-    assert.deepEqual(needs.sort(), [...preflight].sort(), `${name} must wait only for preflight`)
+    assert.deepEqual(needs, ['affected'], `${name} must wait only for the package plan`)
     const condition = source.match(/^    if:([^\n]*(?:\n {6,}[^\n]*)*)/m)?.[1] ?? ''
     assert.doesNotMatch(
       condition,
       /\b(?:always|failure|cancelled)\s*\(/,
-      `${name} must not bypass successful preflight`,
+      `${name} must not bypass the affected selection`,
     )
   }
   for (const { name, source } of jobs.filter(({ name }) => preflight.includes(name))) {
@@ -61,15 +61,9 @@ test('expensive jobs require successful preflight without serializing each other
   }
 })
 
-test('failed preflight and skipped execution jobs cannot turn the final aggregate green', () => {
-  for (const result of ['failure', 'cancelled', 'skipped']) {
-    const outcome = run({
-      CONTRACTS_RESULT: result,
-      CI_RESULT: 'skipped',
-      PACKED_CONSUMER_SMOKE_RESULT: 'skipped',
-      BROWSER_RESULT: 'skipped',
-      LOGGING_RESULT: 'skipped',
-    })
+test('failed, cancelled or missing contracts reject even successful downstream work', () => {
+  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    const outcome = run({ CONTRACTS_RESULT: result })
     assert.notEqual(outcome.status, 0)
     assert.match(outcome.stdout, new RegExp(`CONTRACTS gate reported '${result}'`))
   }

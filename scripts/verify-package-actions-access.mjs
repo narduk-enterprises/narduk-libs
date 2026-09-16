@@ -18,8 +18,11 @@ export async function verifyPackageActionsAccess({ names, token, repository, req
   for (const name of names) {
     if (!/^@narduk-enterprises\/[a-z0-9-]+$/u.test(name))
       throw new Error(`Unexpected package publication target: ${name}`)
+    // GitHub's org route already identifies the npm scope. Its package path
+    // and returned metadata use the unscoped package name (e.g. narduk-auth).
+    const packageName = name.slice('@narduk-enterprises/'.length)
     const response = await request(
-      `https://api.github.com/orgs/narduk-enterprises/packages/npm/${encodeURIComponent(name)}`,
+      `https://api.github.com/orgs/narduk-enterprises/packages/npm/${encodeURIComponent(packageName)}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -30,7 +33,7 @@ export async function verifyPackageActionsAccess({ names, token, repository, req
     )
     if (!response.ok) throw new Error(`Package job token cannot read ${name} (${response.status})`)
     const metadata = await response.json()
-    if (metadata.name !== name || metadata.package_type !== 'npm')
+    if (metadata.name !== packageName || metadata.package_type !== 'npm')
       throw new Error(`Unexpected GitHub Packages metadata for ${name}`)
   }
   return names.length

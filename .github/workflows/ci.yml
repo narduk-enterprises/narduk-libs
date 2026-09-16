@@ -1,8 +1,9 @@
-# The shared callable installs once per bounded batch. Repository-owned
+# The shared callable runs one job per affected library. Repository-owned
 # ci:batch runs the same strict package gates as ci:affected/ci:full locally.
 # Selection remains dependency-aware; verify covers packages, contracts and
 # every applicable browser/consumer gate. Keep ci / Required during migration.
-# Planning and contracts run first; expensive jobs fan out only after both pass.
+# Planner selection starts the package and integration jobs while contracts run
+# alongside them; verify rejects a failed, cancelled or missing contracts gate.
 # Public fork CI uses GitHub-hosted runners and no registry credential.
 name: CI
 
@@ -35,7 +36,7 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      batches: ${{ steps.plan.outputs.batches }}
+      package-jobs: ${{ steps.plan.outputs.package-jobs }}
       browser-packages: ${{ steps.plan.outputs.browser-packages }}
       packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
       full-run: ${{ steps.plan.outputs.full-run }}
@@ -79,12 +80,12 @@ jobs:
           node scripts/logging-ci-plan.mjs "${args[@]}"
 
   logging-languages:
-    needs: [affected, contracts]
+    needs: [affected]
     if: needs.affected.outputs.logging-languages == 'true'
     uses: ./.github/workflows/logging-languages.yml
 
   ci:
-    needs: [affected, contracts]
+    needs: [affected]
     uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@d1026b280db8e3a2959a852961d5828f8ea294a9 # public hosted CI and no registry auth
     permissions:
       contents: read
@@ -94,19 +95,20 @@ jobs:
       # Match the root runtime and the workspace ESLint package's Node 24 minimum.
       node-version: "24.21.0"
       package-manager: pnpm
-      # All five package gates execute inside ci:batch, in their original order.
+      # Each matrix entry contains exactly one library. All five gates execute
+      # inside ci:batch, in their original order and with transitive selection.
       run-lint: false
       run-typecheck: false
       run-tests: false
       run-build: false
-      package-matrix: ${{ needs.affected.outputs.batches }}
+      package-matrix: ${{ needs.affected.outputs.package-jobs }}
       extra-scripts: "ci:batch"
       require-scripts: true
       package-registry-auth: disabled
 
   contracts:
-    # Repository-wide preflight: a failed contract cannot produce a releasable
-    # result, so reject it before reserving package and browser runner slots.
+    # Repository-wide acceptance gate runs alongside selected package jobs.
+    # The final verify refuses release when contracts fail or never finish.
     name: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -176,7 +178,7 @@ jobs:
   packed-consumer-smoke:
     # Build every package, then run the packed consumer's Chromium and platform gates.
     name: package / packed-consumer-smoke
-    needs: [affected, contracts]
+    needs: [affected]
     if: needs.affected.outputs.packed-consumer == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -188,6 +190,8 @@ jobs:
       # Bound parent and nested pnpm lifecycle Node heaps.
       NODE_OPTIONS: --max-old-space-size=2048
       npm_config_node_options: --max-old-space-size=2048
+      # narduk-charts' build script overrides NODE_OPTIONS from this value.
+      NARDUK_BUILD_MAX_OLD_SPACE_SIZE: "2048"
       TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
     steps:
       - name: Check out source
@@ -224,13 +228,27 @@ jobs:
         with:
           node-version: 24.21.0
 
-      # Share a store across the root and both external consumer installs.
+      # Share one store across the root and every external consumer install.
       - name: Share a job-local pnpm store across consumer installs
         run: |
           set -euo pipefail
           store="${RUNNER_TEMP}/pnpm-store"
           mkdir -p "${store}"
           echo "npm_config_store_dir=${store}" >>"${GITHUB_ENV}"
+
+      # The packed consumer's root install is cold on every fresh hosted VM.
+      # Restore the store seeded by a successful main run before the root and
+      # external installs. On its first run, warm the root from the existing
+      # browser job's main-only cache; the consumer's later main run saves its
+      # own expanded store with generated-app dependencies.
+      - name: Restore pnpm store cache
+        id: pnpm-store-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/pnpm-store
+          key: narduk-libs-packed-consumer-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # Turbo's content hashes invalidate stale restored build output.
       - name: Restore turbo build cache
@@ -251,7 +269,7 @@ jobs:
       - name: Build coordinated release set
         run: >-
           pnpm exec turbo run build --filter='./packages/*/*'
-          --concurrency=1 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
+          --concurrency=2 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
 
       - name: Prove packed artifacts in an external generated consumer
         env:
@@ -276,11 +294,22 @@ jobs:
           path: ${{ github.workspace }}/.turbo-cache
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
+      # Only successful main runs can seed caches later PRs can read; never
+      # upload a PR-authored store into the shared cache namespace.
+      - name: Save pnpm store cache
+        if: >-
+          steps.pnpm-store-cache.outputs.cache-hit != 'true'
+          && github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/pnpm-store
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
+
   package-browser-tests:
     # Every selected package declaring test:e2e shares this one install. This
-    # includes journeys and charts; general package batches never launch browsers.
+    # includes journeys and charts; general package jobs never launch browsers.
     name: package / browser tests
-    needs: [affected, contracts]
+    needs: [affected]
     if: needs.affected.outputs.browser-packages != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -35,7 +35,7 @@ test('requires the job token to see every exact package before publishing', asyn
     return { ok: true, json: async () => ({ name, package_type: 'npm' }) }
   }
   assert.equal(await verifyPackageActionsAccess({ names, repository, token, request }), 2)
-  assert.deepEqual(seen, names)
+  assert.deepEqual(seen, ['one', 'two'])
   await assert.rejects(
     verifyPackageActionsAccess({
       names,
@@ -52,10 +52,26 @@ test('requires the job token to see every exact package before publishing', asyn
       token,
       request: async () => ({
         ok: true,
-        json: async () => ({ name: names[1], package_type: 'npm' }),
+        json: async () => ({ name: 'two', package_type: 'npm' }),
       }),
     }),
     /Unexpected GitHub Packages metadata/,
+  )
+  await assert.rejects(
+    verifyPackageActionsAccess({
+      names,
+      repository,
+      token,
+      request: async () => ({
+        ok: true,
+        json: async () => ({ name: 'one', package_type: 'maven' }),
+      }),
+    }),
+    /Unexpected GitHub Packages metadata/,
+  )
+  await assert.rejects(
+    verifyPackageActionsAccess({ names: ['@outside/one'], repository, token, request }),
+    /Unexpected package publication target/,
   )
   await assert.rejects(
     verifyPackageActionsAccess({ names, repository, token: '', request }),
