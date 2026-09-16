@@ -548,9 +548,10 @@ describe('create-narduk-app generation contract', () => {
       localDevNuxtPort: 4377,
     })
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
-    expect(webPackage.scripts.dev).toBe(
-      'narduk-app dev --project generated-fixture --config dev -- nuxt dev --host 127.0.0.1',
-    )
+    // narduk-libs#321: the generated dev script starts Nuxt directly. The old
+    // wrapper meant an implicit `doppler run` against the retired app-secret
+    // store for every generated app.
+    expect(webPackage.scripts.dev).toBe('nuxt dev --host 127.0.0.1')
     expect(webPackage.scripts['dev:test']).toBe(
       'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
     )
@@ -639,6 +640,39 @@ describe('generated app typecheck and lint surfaces', () => {
       // dropping the block never leaves an unused binding behind.
       expect(nuxtConfig).toContain('      appName,')
       expect(nuxtConfig).toContain('      siteUrl,')
+    }
+  })
+
+  // narduk-libs#321: a generated app must not acquire an implicit dependency on
+  // a secret manager just by running `pnpm run dev`. The retired wrapper shape
+  // `narduk-app dev --project … --config …` meant `doppler run`, so no
+  // generated file may carry it, and no generated file may name Doppler at all.
+  it('starts development without any secret-store dependency, for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const webPackage = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      const rootPackage = JSON.parse(files.get('package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      const generatedText = [...files.values()].join('\n')
+
+      expect(webPackage.scripts.dev, label).toBe('nuxt dev --host 127.0.0.1')
+      expect(rootPackage.scripts.dev, label).toBe('pnpm --filter web run dev')
+      // No generated script invokes the wrapper at all, and nothing anywhere in
+      // the scaffold carries the retired selector shape or names Doppler.
+      for (const [name, script] of Object.entries({
+        ...rootPackage.scripts,
+        ...webPackage.scripts,
+      })) {
+        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev/u)
+      }
+      expect(generatedText, label).not.toMatch(/narduk-app dev --project/u)
+      expect(generatedText, label).not.toMatch(/doppler/iu)
+      // The route an app adopts when it does need credentials locally is named
+      // in the generated README, so the migration target is discoverable.
+      expect(files.get('README.md'), label).toContain('--credentials nvault')
     }
   })
 

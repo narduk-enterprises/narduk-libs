@@ -13,6 +13,48 @@ application only: local development, source-owned D1 migrations, guarded
 Wrangler deployment, registry authentication, diagnostics, performance budgets,
 and favicon assets.
 
+## Local development (`narduk-app dev`)
+
+```sh
+narduk-app dev [--credentials <none|nvault>] [--project <name>] \
+  [--environment <name>] [--config <name>] [--dry-run] -- <command...>
+```
+
+The command runs one child process. Without `--credentials` it runs that child
+directly, so an app whose local development needs no secrets has no secret-store
+dependency at all. The child defaults to `nuxt dev`.
+
+`--credentials nvault` is the registered local credential route. It requires a
+complete selector and runs
+`nvault run -p <project> -e <environment> -c <config> -- <command>`, so values
+stay process-local for that one run and are never written to a file (company-hq
+[`docs/SECRETS-MATRIX.md`](https://github.com/narduk-enterprises/company-hq/blob/main/docs/SECRETS-MATRIX.md),
+plane 4 "Local workstation overlay"). A partial selector is refused by name
+rather than resolved to some nearby scope. `--dry-run` prints the exact command
+without running it.
+
+### Migrating off the retired Doppler wrapper
+
+Before 0.4.0 this command always ran its child through `doppler run`, and
+`--project` / `--config` selected a Doppler project and config — an implicit
+dependency on the retired app-secret store (narduk-libs#321). That route is
+gone: the old invocation now fails with the migration message below rather than
+silently starting a dev server without the environment it used to receive.
+
+| Before                                                    | After                                                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `narduk-app dev --project <app> --config dev -- nuxt dev` | no secrets needed: `nuxt dev` (or `narduk-app dev -- nuxt dev`)                                                |
+| `narduk-app dev --project <app> --config dev -- nuxt dev` | secrets needed: `narduk-app dev --credentials nvault --project <p> --environment <e> --config <c> -- nuxt dev` |
+
+Choosing the second form needs a real nvault project, environment and config for
+the app; adopt them with the `adopt-nvault` workflow rather than guessing a
+selector. Doppler `ne/*` root provisioners remain a separately approved
+provider-root exception and are **not** an application development credential
+source.
+
+`narduk-app deploy-local` is a different command and still reads Doppler
+`narduk/tokens` for its recovery deploy; it is unchanged here.
+
 ## Migration config
 
 `narduk-app db migrate` accepts a JSON config with explicit source names and

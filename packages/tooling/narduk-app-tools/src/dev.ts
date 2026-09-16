@@ -122,9 +122,7 @@ function assertCompleteSelector(selectors: {
   environment?: string
   project?: string
 }): void {
-  const missing = (['project', 'environment', 'config'] as const).filter(
-    (name) => !selectors[name],
-  )
+  const missing = (['project', 'environment', 'config'] as const).filter((name) => !selectors[name])
   if (missing.length === 0) return
   throw new Error(
     `--credentials nvault requires ${missing.map((name) => `--${name}`).join(', ')}. ` +
@@ -137,9 +135,7 @@ function assertNoSelector(
   selectors: { config?: string; environment?: string; project?: string },
   credentials: DevCredentialRoute | undefined,
 ): void {
-  const present = (['project', 'environment', 'config'] as const).filter(
-    (name) => selectors[name],
-  )
+  const present = (['project', 'environment', 'config'] as const).filter((name) => selectors[name])
   if (present.length === 0) return
   // An explicit `--credentials none` plus a selector is a contradiction the
   // caller can see; an omitted route with `--project/--config` is the retired

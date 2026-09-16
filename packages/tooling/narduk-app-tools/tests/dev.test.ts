@@ -139,7 +139,17 @@ describe('the retired Doppler invocation', () => {
   // Every known caller used exactly this shape (narduk-libs#321). It must fail
   // loudly with the migration path rather than silently start a dev server
   // without the environment it used to receive.
-  const legacy = ['--project', 'demo', '--config', 'dev', '--', 'nuxt', 'dev', '--host', '127.0.0.1']
+  const legacy = [
+    '--project',
+    'demo',
+    '--config',
+    'dev',
+    '--',
+    'nuxt',
+    'dev',
+    '--host',
+    '127.0.0.1',
+  ]
 
   it('fails with an actionable migration message', () => {
     expect(() => parseDevArgs(legacy)).toThrow('narduk-app dev no longer runs Doppler')
@@ -225,7 +235,7 @@ describe('running the dev child', () => {
 
   it('prints the resolved command for a dry run without spawning it', () => {
     const stubs = stubbedPath()
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const flags = parseDevArgs([
       '--credentials',
       'nvault',
@@ -246,7 +256,7 @@ describe('running the dev child', () => {
   })
 
   it('reports a missing route binary instead of a misleading child failure', () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const empty = mkdtempSync(join(tmpdir(), 'narduk-app-tools-empty-'))
     tempDirs.push(empty)
     const flags = parseDevArgs([

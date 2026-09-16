@@ -393,7 +393,12 @@ export function createWebPackageManifest(
     ...(metadata.siteUrl ? { homepage: metadata.siteUrl } : {}),
     scripts: {
       build: 'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build',
-      dev: 'narduk-app dev --project ' + appName + ' --config dev -- nuxt dev --host 127.0.0.1',
+      // Starts Nuxt directly: a new app has no registered development
+      // credentials, and the old `narduk-app dev --project … --config …`
+      // wrapper meant an implicit `doppler run` against the retired app-secret
+      // store (narduk-libs#321). An app that later needs credentials locally
+      // runs this same command under `narduk-app dev --credentials nvault`.
+      dev: 'nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       lint: 'nuxt prepare && eslint . --max-warnings 0',
       'nuxt:prepare': 'nuxt prepare',
