@@ -1,76 +1,42 @@
-/// <reference types="@cloudflare/workers-types" />
-import { sql } from 'drizzle-orm'
-import { defineEventHandler } from 'h3'
+import { defineEventHandler, setHeader, setResponseStatus } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { probeDatabaseConnection } from '../utils/database'
+import {
+  buildHealthReport,
+  HEALTH_ERROR_STATUS_CODE,
+  type HealthReportConfig,
+} from '../health/report'
 import { useLogger } from '../utils/logger'
-import { readWorkerRuntimeEnv } from '../utils/worker-env'
 
 /**
- * Health check endpoint for uptime monitoring and deployment verification.
+ * Health endpoint for uptime monitoring and deployment verification.
  *
- * Probes the active database: `databaseBackend: postgres` runs a simple SQL
- * connectivity check via Hyperdrive; otherwise (default D1) checks required
- * auth-related tables exist in the local D1 schema.
+ * GET /api/health returns
+ * `{ success: true, data: { status, timestamp, database, missingAuthTables, checks } }`.
  *
- * GET /api/health
+ * - `status` is `ok`; `degraded` (HTTP 200) when an optional check failed; or
+ *   `error` (HTTP 503) when a required check failed.
+ * - `database` follows `databaseBackend`: `not_applicable` for `'none'`;
+ *   otherwise `ok`, `error`, `not_available` (no D1 `DB` binding) or
+ *   `schema_error` (narduk-auth tables missing). A missing binding is an
+ *   error only for an app that declared its backend.
+ * - `missingAuthTables` names the absent narduk-auth tables.
+ * - `checks` lists the built-in `database` and `auth-tables` probes, then each
+ *   check registered with `registerHealthCheck`, as
+ *   `{ name, required, result: 'pass' | 'fail' | 'skipped', ... }`.
+ *
+ * The auth-table probe runs only when narduk-auth is installed; otherwise D1
+ * gets a plain `SELECT 1`. Failure text is fixed and the causes are logged.
+ * `status` and `database` precede `checks`, and check details cannot contain
+ * those keys, so a monitor matching `"status":"ok"` sees only the real result.
  */
-const REQUIRED_AUTH_TABLES = ['api_keys', 'sessions', 'users'] as const
-const REQUIRED_AUTH_TABLE_SQL = REQUIRED_AUTH_TABLES.map((tableName) => `'${tableName}'`).join(', ')
-
 export default defineEventHandler(async (event) => {
-  const log = useLogger(event).child('Health')
-  let dbStatus: 'ok' | 'not_available' | 'error' | 'schema_error' = 'not_available'
-  let missingAuthTables: string[] = []
+  const config = useRuntimeConfig(event) as HealthReportConfig
+  const report = await buildHealthReport(event, config, useLogger(event).child('Health'))
 
-  const config = useRuntimeConfig(event)
-  const databaseBackend = (config as { databaseBackend?: string }).databaseBackend ?? 'd1'
-
-  try {
-    if (databaseBackend === 'postgres') {
-      await probeDatabaseConnection(event, sql`select 1`)
-      dbStatus = 'ok'
-      missingAuthTables = []
-    } else {
-      const rawEnv = readWorkerRuntimeEnv(event)
-      const d1 = (rawEnv as { DB?: D1Database }).DB
-      if (d1) {
-        const result = await d1
-          .prepare(
-            `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${REQUIRED_AUTH_TABLE_SQL})`,
-          )
-          .all<{ name: string }>()
-        const existingTables = new Set(result.results.map((row) => row.name))
-        missingAuthTables = REQUIRED_AUTH_TABLES.filter(
-          (tableName) => !existingTables.has(tableName),
-        )
-        dbStatus = missingAuthTables.length === 0 ? 'ok' : 'schema_error'
-
-        if (missingAuthTables.length > 0) {
-          log.error('Health check DB schema probe failed', { missingAuthTables })
-        }
-      }
-    }
-  } catch {
-    log.error(
-      databaseBackend === 'postgres'
-        ? 'Health check Postgres probe failed'
-        : 'Health check DB probe failed',
-    )
-    dbStatus = 'error'
+  setHeader(event, 'Cache-Control', 'no-store')
+  if (report.status === 'error') {
+    setResponseStatus(event, HEALTH_ERROR_STATUS_CODE)
   }
-
-  const status =
-    dbStatus === 'ok' ? 'ok' : dbStatus === 'error' ? ('error' as const) : ('degraded' as const)
-
-  return {
-    success: true as const,
-    data: {
-      status,
-      timestamp: new Date().toISOString(),
-      database: dbStatus,
-      missingAuthTables,
-    },
-  }
+  return { success: true as const, data: report }
 })

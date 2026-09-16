@@ -176,6 +176,14 @@ function isCloudflareScheduledEvent(event: H3Event): boolean {
   )
 }
 
+function databaseNotConfiguredError() {
+  return createError({
+    statusCode: 500,
+    message:
+      "This app declares databaseBackend 'none', so it has no database. Declare 'd1' or 'postgres' to use one.",
+  })
+}
+
 function resolveDatabaseBackend(event: H3Event): unknown {
   try {
     return (useRuntimeConfig(event) as Record<string, unknown>).databaseBackend ?? 'd1'
@@ -192,6 +200,7 @@ function resolveDatabaseBackend(event: H3Event): unknown {
  *
  * - `d1` (default): Cloudflare D1 via the `DB` binding.
  * - `postgres`: Hyperdrive connection string + `postgres.js` + Drizzle postgres-js.
+ * - `none`: the app declared no database; calling this throws a 500 that says so.
  *
  * Memoized on `event.context._db`. Postgres builds must use `NUXT_DATABASE_BACKEND=postgres`
  * so `#narduk-core/schema` and this schema stay aligned.
@@ -203,6 +212,10 @@ export function useDatabase(event: H3Event): LayerDatabase {
   }
 
   const backend = resolveDatabaseBackend(event)
+
+  if (backend === 'none') {
+    throw databaseNotConfiguredError()
+  }
 
   if (backend === 'postgres') {
     const connectionString = useHyperdriveConnectionString(event)
@@ -256,6 +269,10 @@ export function createAppDatabase<
     }
 
     const backend = resolveDatabaseBackend(event)
+    if (backend === 'none') {
+      throw databaseNotConfiguredError()
+    }
+
     const resolvedSchema = isAppSchemaMap(appSchema)
       ? appSchema
       : {

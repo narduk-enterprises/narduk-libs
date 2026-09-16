@@ -297,6 +297,15 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       },
     })
 
+    // Assigned after the defaults merge so it holds whatever the app authored:
+    // narduk-core's /api/health then verifies the auth tables, and its build
+    // rejects this module in an app that declares databaseBackend 'none'.
+    const nardukHealth = nuxtOptions.runtimeConfig.nardukHealth
+    nuxtOptions.runtimeConfig.nardukHealth = {
+      ...(nardukHealth !== null && typeof nardukHealth === 'object' ? nardukHealth : {}),
+      authTables: true,
+    }
+
     for (const route of [
       '/login',
       '/login/**',
