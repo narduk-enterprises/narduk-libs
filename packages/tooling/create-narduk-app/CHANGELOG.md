@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.6.1
+
+### Patch Changes
+
+- 76aba10: Retire branding-based status-app classification. Keep subcheck 3.4 as
+  explicitly not-applicable and continue checking actual web capabilities.
+  Legacy status-runtime consumers remain supported; new apps do not need that
+  package.
+
 ## 0.6.0
 
 ### Minor Changes
