@@ -93,6 +93,11 @@ Apps continue to use their app-owned `#narduk-db` alias for combined schemas.
 
 ## Migrations
 
+narduk-auth needs an app database: users, sessions and API keys live there. An
+app that declares narduk-core's `databaseBackend: 'none'` cannot install it, and
+its build fails with a message naming the conflict. When narduk-auth is
+installed, narduk-core's `/api/health` also checks for its tables on D1.
+
 Apply every SQL file in `drizzle/` to the app database, in order:
 
 1. `drizzle/0001_auth_bridge.sql`

@@ -440,13 +440,15 @@ describe('create-narduk-app generation contract', () => {
 
   it('does not scaffold an app-local health route that shadows narduk-core /api/health', () => {
     // narduk-core is always an implicit module (moduleList()) and registers
-    // `runtime/server/api/health.get.ts` via addServerScanDir — a real
-    // DB-probing health check. Nitro resolves an app-local
-    // `server/api/*` file before a module's addServerScanDir contribution
-    // with the same route, so a generated `apps/web/server/api/health.get.ts`
-    // stub would silently shadow narduk-core's real check with a trivial
-    // `{ ok: true }` response in every scaffolded app. Regression coverage
-    // for that shadowing bug.
+    // `runtime/server/api/health.get.ts` via addServerScanDir: the shared
+    // health report, which probes the declared database (or reports it
+    // not_applicable for databaseBackend 'none') and runs the checks apps add
+    // with registerHealthCheck. Nitro resolves an app-local `server/api/*`
+    // file before a module's addServerScanDir contribution with the same
+    // route, so a generated `apps/web/server/api/health.get.ts` stub would
+    // silently shadow that report with a trivial `{ ok: true }` response in
+    // every scaffolded app. Apps extend health with registerHealthCheck
+    // instead. Regression coverage for that shadowing bug.
     const files = buildGeneratedFiles({
       appName: 'health-shadow-check',
       capabilities: [],
