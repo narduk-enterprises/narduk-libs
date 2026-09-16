@@ -3,6 +3,13 @@ export interface DefaultSocialImage {
   url: string
 }
 
+/**
+ * One tag per entry, keyed by exactly one of `property` or `name`. Unhead 3 types
+ * meta as that discriminated union, and Unhead 2 accepts it as well.
+ */
+export type DefaultSocialMetaTag =
+  { content: string; property: string } | { content: string; name: string }
+
 /** Safe app identity only. Page metadata and generated images take precedence. */
 export function defaultSocialMeta(input: {
   description: string
@@ -10,7 +17,7 @@ export function defaultSocialMeta(input: {
   path: string
   siteName: string
   siteUrl: string
-}): Array<{ content: string; name?: string; property?: string }> {
+}): DefaultSocialMetaTag[] {
   const site = new URL(input.siteUrl)
   const image = new URL(input.image.url, site)
   const canonical = new URL(input.path, site)

@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
   // all — the directory just renders empty. See resolveNardukNetworkDirectoryUrl.
   if (!directoryUrl) return emptyDirectory
 
-  const currentAppUrl = runtimeConfig.public.appUrl || getRequestURL(event).origin
+  const publicAppUrl = runtimeConfig.public.appUrl
+  const currentAppUrl =
+    (typeof publicAppUrl === 'string' && publicAppUrl) || getRequestURL(event).origin
 
   try {
     const response = await fetch(directoryUrl, {

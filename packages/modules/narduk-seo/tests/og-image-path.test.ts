@@ -28,33 +28,34 @@ async function loadOgImageUrlEncoding(): Promise<OgImageUrlEncoding> {
 }
 
 const defaults = { width: 1200, height: 630, extension: 'png', component: 'Default' }
+const previewPath = '/__preview/og-images'
 
 const cases = [
   {
     component: 'Default',
     props: { title: 'Buoy 41002', description: 'South Hatteras' },
     key: 'og',
-    _path: '/__preview/og-images',
+    _path: previewPath,
   },
   {
     component: 'Article',
     props: { title: 'Wave height 101', category: 'Guides' },
     width: 1600,
-    _path: '/__preview/og-images',
+    _path: previewPath,
   },
-  { component: 'Default', props: { title: 'Ünïcode — title' }, _path: '/__preview/og-images' },
+  { component: 'Default', props: { title: 'Ünïcode — title' }, _path: previewPath },
   {
     component: 'Default',
     props: { title: 'with_underscore and space', primaryColor: '#0ea5e9' },
-    _path: '/__preview/og-images',
+    _path: previewPath,
   },
-  { component: 'Default', props: { title: 'Top 5*' }, _path: '/__preview/og-images' },
+  { component: 'Default', props: { title: 'Top 5*' }, _path: previewPath },
   {
     component: 'Default',
     props: { title: '~tilde start' },
     alt: 'Alt text',
     cacheMaxAgeSeconds: 3600,
-    _path: '/__preview/og-images',
+    _path: previewPath,
   },
 ]
 
