@@ -2,6 +2,10 @@
 
 ## 2.2.0
 
+- Keep the host-aware page indexing plugin out of internal component islands.
+  Dynamic OG images on preview hosts now render successfully while page metadata
+  and response headers retain `noindex, nofollow` protection.
+
 ### Minor Changes
 
 - 8abb3c8: Move the bundled Nuxt SEO modules to one coordinated set that

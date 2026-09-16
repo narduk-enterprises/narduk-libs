@@ -29,12 +29,19 @@ export function applyHostAwareNoindexRule(isServer: boolean): void {
   })
 }
 
-export default defineNuxtPlugin(() => {
-  const config = useRuntimeConfig()
-  if (!config.public.nardukSeoHostAwareIndexing) return
+export default defineNuxtPlugin({
+  name: 'narduk-host-aware-indexing',
+  // Robots deliberately skips internal island requests. OG templates render
+  // as islands, so their events have no robots context for useRobotsRule.
+  // The server middleware still sets noindex on non-canonical responses.
+  env: { islands: false },
+  setup() {
+    const config = useRuntimeConfig()
+    if (!config.public.nardukSeoHostAwareIndexing) return
 
-  const url = useRequestURL()
-  if (isNonCanonicalIndexingHost(url.host, config.public.siteUrl)) {
-    applyHostAwareNoindexRule(import.meta.server)
-  }
+    const url = useRequestURL()
+    if (isNonCanonicalIndexingHost(url.host, config.public.siteUrl)) {
+      applyHostAwareNoindexRule(import.meta.server)
+    }
+  },
 })
