@@ -555,7 +555,7 @@ describe('create-narduk-app generation contract', () => {
     // store for every generated app.
     expect(webPackage.scripts.dev).toBe('nuxt dev --host 127.0.0.1')
     expect(webPackage.scripts['dev:test']).toBe(
-      'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
+      'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
     )
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')

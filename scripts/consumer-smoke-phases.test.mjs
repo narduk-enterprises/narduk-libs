@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import { consumerSmokePhases, mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
 
 test('expands the complete quality chain in order without discarding duplicate calls', () => {
   assert.deepEqual(
@@ -32,6 +32,32 @@ test('a missing or cyclic gate fails instead of becoming an empty success', () =
     () => qualityPhases({ quality: 'pnpm run static', static: 'pnpm run quality' }),
     /Cyclic/,
   )
+})
+
+test('release smoke trims scaffold checks and retains compatibility and future checks', () => {
+  const scripts = {
+    quality: 'pnpm run static && pnpm run test:e2e',
+    static:
+      'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit && pnpm run future-contract',
+    'format:check': 'prettier --check .',
+    lint: 'nuxt prepare && eslint .',
+    knip: 'knip',
+    'foundation:shared-ui-pinned': 'narduk-app foundation:check:shared-ui-pinned',
+    typecheck: 'nuxt typecheck',
+    build: 'nuxt build',
+    'test:unit': 'vitest run',
+    'test:e2e': 'playwright test',
+    'future-contract': 'node check-contract.mjs',
+  }
+  assert.deepEqual(consumerSmokePhases(scripts), [
+    'foundation:shared-ui-pinned',
+    'typecheck',
+    'build',
+    'future-contract',
+    'test:e2e',
+  ])
+  assert.equal(qualityPhases(scripts).includes('lint'), true)
+  assert.throws(() => consumerSmokePhases({ quality: 'pnpm run absent' }), /Missing/)
 })
 
 test('package work is bounded and preserves every result in input order', async () => {

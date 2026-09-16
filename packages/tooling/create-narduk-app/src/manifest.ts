@@ -439,7 +439,10 @@ export function createWebPackageManifest(
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
-      'dev:test': 'narduk-app og:generate --if-missing && nuxt dev --host 127.0.0.1',
+      // Nuxt DevTools explicitly skips TEST processes. The browser fixture
+      // exercises the app, without the interactive development toolbar and
+      // its Vite 8-incompatible config-retriever hook.
+      'dev:test': 'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
       // `--checkout ..` because the item reads the WHOLE checkout (root and
       // apps/web manifests, nuxt.config, pages/components), and pnpm runs this

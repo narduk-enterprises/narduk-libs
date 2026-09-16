@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import { consumerSmokePhases, mapPackages } from './consumer-smoke-phases.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
@@ -1267,7 +1267,11 @@ try {
       `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
     )
   } else {
-    for (const phase of qualityPhases(readJson(join(generatedDirectory, 'package.json')).scripts)) {
+    // The release boundary needs compatibility proof, not a second full
+    // scaffold-quality run. The generated app's own quality command is intact.
+    for (const phase of consumerSmokePhases(
+      readJson(join(generatedDirectory, 'package.json')).scripts,
+    )) {
       if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
       try {
         runChecked('pnpm', ['run', phase], {
