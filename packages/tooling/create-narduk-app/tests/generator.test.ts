@@ -795,6 +795,170 @@ describe('generated app typecheck and lint surfaces', () => {
   })
 })
 
+describe('database-free scaffold', () => {
+  const DATABASE_PATHS = [
+    'apps/web/drizzle.config.ts',
+    'apps/web/drizzle/README.md',
+    'apps/web/drizzle/0000_app_records.sql',
+    'apps/web/server/database/schema.ts',
+    'apps/web/server/utils/database.ts',
+    'apps/web/migrations.sources.json',
+  ]
+
+  function scaffold(databaseBackend: 'd1' | 'none' | undefined, capabilities: string[] = []) {
+    return asFileMap(
+      buildGeneratedFiles({
+        appName: 'publication-viewer',
+        capabilities,
+        databaseBackend,
+        noGit: true,
+        targetDir: '/tmp/publication-viewer',
+      }),
+    )
+  }
+
+  it('keeps every database artifact for the default and explicit d1 scaffolds', () => {
+    for (const backend of [undefined, 'd1'] as const) {
+      const files = scaffold(backend)
+      for (const path of DATABASE_PATHS) {
+        expect([...files.keys()], String(backend)).toContain(path)
+      }
+      expect(files.get('apps/web/nuxt.config.ts')).toContain("'#narduk-db'")
+      expect(files.get('apps/web/wrangler.jsonc')).toContain('"d1_databases"')
+      expect(files.get('apps/web/nuxt.config.ts')).not.toContain('nardukCore')
+    }
+  })
+
+  it('omits every database artifact when the app declares no database', () => {
+    const files = scaffold('none')
+    for (const path of DATABASE_PATHS) {
+      expect([...files.keys()]).not.toContain(path)
+    }
+    expect([...files.keys()].some((path) => path.includes('drizzle'))).toBe(false)
+  })
+
+  it("declares databaseBackend 'none' to narduk-core instead of aliasing #narduk-db", () => {
+    const config = scaffold('none').get('apps/web/nuxt.config.ts') ?? ''
+
+    expect(config).toContain('nardukCore: {')
+    expect(config).toContain("databaseBackend: 'none',")
+    expect(config).not.toContain('#narduk-db')
+    // The alias was the only consumer of the node:url import.
+    expect(config).not.toContain('fileURLToPath')
+  })
+
+  it('drops the D1 binding from wrangler while keeping other bindings', () => {
+    expect(scaffold('none').get('apps/web/wrangler.jsonc')).not.toContain('d1_databases')
+    expect(scaffold('none').get('apps/web/wrangler.jsonc')).not.toContain('migrations_dir')
+    expect(scaffold('none', ['uploads']).get('apps/web/wrangler.jsonc')).toContain('r2_buckets')
+  })
+
+  it('drops the migrate scripts and the drizzle pins from both manifests', () => {
+    const files = scaffold('none')
+    const web = JSON.parse(files.get('apps/web/package.json') ?? '{}')
+    const root = JSON.parse(files.get('package.json') ?? '{}')
+
+    expect(web.scripts).not.toHaveProperty('db:migrate:local')
+    expect(web.scripts).not.toHaveProperty('db:migrate:remote')
+    expect(root.scripts).not.toHaveProperty('db:migrate:local')
+    expect(root.scripts).not.toHaveProperty('db:migrate:remote')
+    expect(web.scripts['cf:deploy']).toBe('narduk-app deploy deploy')
+    expect(collectVersionedDependencies(web)).not.toHaveProperty('drizzle-orm')
+    expect(collectVersionedDependencies(web)).not.toHaveProperty('drizzle-kit')
+
+    const d1Web = JSON.parse(scaffold('d1').get('apps/web/package.json') ?? '{}')
+    expect(d1Web.scripts['db:migrate:remote']).toContain('narduk-app db migrate')
+    expect(d1Web.scripts['cf:deploy']).toContain('narduk-app db migrate')
+    expect(collectVersionedDependencies(d1Web)).toHaveProperty('drizzle-orm')
+  })
+
+  it('emits a knip config that still parses without the #narduk-db path mapping', () => {
+    const knip = scaffold('none').get('knip.json') ?? ''
+
+    expect(() => JSON.parse(knip)).not.toThrow()
+    expect(knip).not.toContain('#narduk-db')
+    expect(JSON.parse(knip).workspaces['apps/web']).not.toHaveProperty('paths')
+    expect(JSON.parse(scaffold('d1').get('knip.json') ?? '{}').workspaces['apps/web'].paths).toEqual(
+      { '#narduk-db': ['server/database/schema.ts'] },
+    )
+  })
+
+  it('points app guidance at registerHealthCheck rather than at the schema', () => {
+    const guidance = scaffold('none').get('apps/web/AGENTS.md') ?? ''
+
+    expect(guidance).toContain('registerHealthCheck')
+    expect(guidance).toContain('not_applicable')
+    expect(guidance).not.toContain('#narduk-db')
+  })
+
+  it('rejects the auth capability without a database', () => {
+    expect(() => scaffold('none', ['auth'])).toThrow(/cannot be combined with databaseBackend/u)
+    expect(() => scaffold('none', ['auth'])).toThrow(/Drop the auth capability/u)
+  })
+
+  it('rejects a backend the generator cannot scaffold', () => {
+    expect(() =>
+      buildGeneratedFiles({
+        appName: 'hyperdrive-app',
+        databaseBackend: 'postgres' as 'd1',
+        noGit: true,
+        targetDir: '/tmp/hyperdrive-app',
+      }),
+    ).toThrow(/databaseBackend must be one of 'd1', 'none'/u)
+  })
+
+  it('still emits Prettier-canonical files and parses every config surface', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'no-db-format',
+      capabilities: ['seo', 'analytics', 'uploads', 'ai', 'mapkit'],
+      databaseBackend: 'none',
+      noGit: true,
+      targetDir: '/tmp/no-db-format',
+    })
+    const supported = /\.(?:css|json|jsonc|md|mjs|ts|vue|ya?ml)$/u
+
+    for (const file of files.filter((candidate) => supported.test(candidate.path))) {
+      expect(
+        await prettier.check(file.contents, {
+          endOfLine: 'lf',
+          filepath: file.path,
+          printWidth: 100,
+          semi: false,
+          singleQuote: true,
+          trailingComma: 'all',
+        }),
+        file.path,
+      ).toBe(true)
+    }
+    for (const file of files.filter((file) => file.path.endsWith('.json'))) {
+      expect(() => JSON.parse(file.contents), file.path).not.toThrow()
+    }
+    for (const file of files.filter(
+      (file) => file.path.endsWith('.ts') || file.path.endsWith('.mjs'),
+    )) {
+      expect(
+        () =>
+          ts.transpileModule(file.contents, { compilerOptions: { module: ts.ModuleKind.ESNext } }),
+        file.path,
+      ).not.toThrow()
+    }
+  })
+
+  it('records the resolved backend in the JSON report', async () => {
+    const targetDir = await makeTempDirectory()
+    const report = await createNardukApp({
+      appName: 'reported-no-db',
+      databaseBackend: 'none',
+      noGit: true,
+      targetDir,
+    })
+
+    expect(report.databaseBackend).toBe('none')
+    expect(report.files).not.toContain('apps/web/server/database/schema.ts')
+    expect(report.packageVersions).not.toHaveProperty('drizzle-orm')
+  })
+})
+
 describe('CLI argument parsing', () => {
   it('keeps app exposure independent from repository visibility', async () => {
     const { parseCliArguments } = await import('../src/cli.js')
@@ -854,6 +1018,40 @@ describe('CLI argument parsing', () => {
     expect(parsed.options.targetDir).toBe('/workspace/output')
     expect(parsed.options.localPort).toBe(3456)
     expect(parsed.options.noGit).toBe(true)
+  })
+
+  it.each([
+    { argv: ['--no-database'], expected: 'none' },
+    { argv: ['--database', 'none'], expected: 'none' },
+    { argv: ['--database=none'], expected: 'none' },
+    { argv: ['--database-backend=d1'], expected: 'd1' },
+    { argv: [], expected: undefined },
+  ])('parses $argv into databaseBackend $expected', async ({ argv, expected }) => {
+    const parsed = (await import('../src/cli.js')).parseCliArguments(
+      ['db-flag-app', ...argv],
+      '/workspace',
+    )
+    expect(parsed.options.databaseBackend).toBe(expected)
+  })
+
+  it('rejects a database backend the generator cannot scaffold', async () => {
+    const { parseCliArguments } = await import('../src/cli.js')
+    expect(() => parseCliArguments(['pg-app', '--database', 'postgres'], '/workspace')).toThrow(
+      /--database must be d1 or none/u,
+    )
+  })
+
+  it('documents the database flags in help output', async () => {
+    const chunks: string[] = []
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk))
+        callback()
+      },
+    })
+    await runCli({ argv: ['--help'], stdout: output })
+    expect(chunks.join('')).toContain('--no-database')
+    expect(chunks.join('')).toContain('--database <value>')
   })
 
   it('prints help without generating files', async () => {
