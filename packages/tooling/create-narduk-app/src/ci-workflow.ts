@@ -1,3 +1,5 @@
+import { NODE_VERSION } from './manifest.js'
+
 import type { AppVisibility } from './types.js'
 
 const workflowSha = '9070db7244649bf192d392a5b96eb1656997c84c'
@@ -20,7 +22,7 @@ function setupSteps(): string[] {
     '          dest: ${{ runner.temp }}/setup-pnpm',
     '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0',
     '        with:',
-    '          node-version: 22.22.3',
+    `          node-version: ${NODE_VERSION}`,
     '          package-manager-cache: false',
     '      - name: Install workspace',
     '        env:',
@@ -86,7 +88,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '      packages: read',
       '    with:',
       `      runner: '${linuxRoute}'`,
-      "      node-version: '22.22.3'",
+      `      node-version: '${NODE_VERSION}'`,
       '      package-manager: pnpm',
       '      require-scripts: true',
       '      typecheck-worker-script: typecheck',

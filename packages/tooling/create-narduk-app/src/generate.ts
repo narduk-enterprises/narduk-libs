@@ -9,6 +9,7 @@ import {
   createProductSpec,
   createRootPackageManifest,
   createWebPackageManifest,
+  NODE_VERSION,
   packageVersionsForCapabilities,
 } from './manifest.js'
 import {
@@ -316,6 +317,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   ]
 
   const files: GeneratedFile[] = [
+    { path: '.nvmrc', contents: `${NODE_VERSION}\n` },
     ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
     {
       path: '.gitignore',

@@ -38,6 +38,41 @@ afterEach(async () => {
 })
 
 describe('create-narduk-app generation contract', () => {
+  it.each(['private', 'public'] as const)(
+    'uses one supported Node runtime in %s apps',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'node-runtime',
+          capabilities: [],
+          visibility,
+          targetDir: '/tmp/node-runtime',
+        }),
+      )
+      const manifest = JSON.parse(files.get('package.json') ?? '{}')
+      expect(manifest.engines.node).toBe('24.21.0')
+      expect(manifest.volta.node).toBe(manifest.engines.node)
+      expect(files.get('.nvmrc')?.trim()).toBe(manifest.engines.node)
+      const workflow = YAML.parse(files.get('.github/workflows/ci.yml') ?? '')
+      const versions = Object.values(
+        workflow.jobs as Record<
+          string,
+          {
+            with?: { 'node-version'?: string }
+            steps?: Array<{ with?: { 'node-version'?: string } }>
+          }
+        >,
+      )
+        .flatMap((job) => [
+          job.with?.['node-version'],
+          ...(job.steps ?? []).map((step) => step.with?.['node-version']),
+        ])
+        .filter(Boolean)
+      expect(versions.length).toBeGreaterThan(0)
+      expect(versions.every((version) => version === manifest.engines.node)).toBe(true)
+    },
+  )
+
   it.each([{ capability: [] }, { capability: ['seo'] }])(
     'includes the share-preview gate with capabilities $capability',
     ({ capability }) => {

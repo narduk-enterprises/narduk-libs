@@ -66,3 +66,25 @@ test('Linux overflow leaves browser gates on their isolated runner class', () =>
     assert.doesNotMatch(ci[name], /BLACKSMITH_/)
   }
 })
+
+test('every CI and release executor matches the supported root Node runtime', () => {
+  const root = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const eslint = JSON.parse(
+    readFileSync(
+      new URL('../packages/tooling/eslint-config/package.json', import.meta.url),
+      'utf8',
+    ),
+  )
+  assert.ok(Number(root.volta.node.split('.')[0]) >= Number(eslint.engines.node.match(/\d+/)[0]))
+  assert.equal(root.engines.node, root.volta.node)
+  assert.equal(readFileSync(new URL('../.nvmrc', import.meta.url), 'utf8').trim(), root.volta.node)
+  for (const file of ['ci.yml', 'release.yml']) {
+    const source = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8')
+    const versions = [...source.matchAll(/node-version: ["']?([\d.]+)/g)].map((match) => match[1])
+    assert.ok(versions.length > 0)
+    assert.ok(
+      versions.every((version) => version === root.volta.node),
+      `${file}: ${versions}`,
+    )
+  }
+})

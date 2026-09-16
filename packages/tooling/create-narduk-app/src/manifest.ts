@@ -1,5 +1,7 @@
 import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
+export const NODE_VERSION = '24.21.0'
+
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
@@ -198,6 +200,8 @@ export function createRootPackageManifest(
     version: '0.1.0',
     private: true,
     packageManager: 'pnpm@10.33.4',
+    engines: { node: NODE_VERSION },
+    volta: { node: NODE_VERSION },
     narduk: {
       capabilities: [...capabilities],
       visibility,
