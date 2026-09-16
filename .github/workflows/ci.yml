@@ -3,7 +3,7 @@
 # Selection remains dependency-aware; verify covers packages, contracts and
 # every applicable browser/consumer gate. Keep ci / Required during migration.
 # Planning and contracts run first; expensive jobs fan out only after both pass.
-# Runner routes are resolved from fleet; no host-specific tuning belongs here.
+# Public fork CI uses GitHub-hosted runners and no registry credential.
 name: CI
 
 on:
@@ -28,10 +28,8 @@ permissions:
 
 jobs:
   affected:
-    # Secrets-free release gate: company-hq CI runner policy exception 2.
-    # Planning must not wait for a package-build execution slot.
     name: affected packages
-    runs-on: ${{ fromJSON(vars.CI_LIGHTWEIGHT_RUNNER || '"ubuntu-slim"') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -75,6 +73,7 @@ jobs:
           fi
           node scripts/compute-affected-packages.mjs \
             "${args[@]}" \
+            --batch-count 8 \
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
@@ -86,18 +85,12 @@ jobs:
 
   ci:
     needs: [affected, contracts]
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@8cd24c16a1054723e599f62edbfccfcaa8ed0e8c # central lightweight gate route
-    # A called workflow cannot request MORE than the caller grants, and
-    # node-library.yml's package job asks for `packages: read` to reach the
-    # GitHub Packages registry. Without this the run does not fail a step -- it
-    # fails to START (`startup_failure`, no logs, no annotation).
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@d1026b280db8e3a2959a852961d5828f8ea294a9 # public hosted CI and no registry auth
     permissions:
       contents: read
-      packages: read
     with:
-      # Verbatim `runsOn` from Config/github-runner-fleet.json via
-      # scripts/github_runner_fleet.py route (organization scope, linux-ci).
-      runner: '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}'
+      runner: '"ubuntu-latest"'
+      required-runner: '"ubuntu-latest"'
       # Match the root runtime and the workspace ESLint package's Node 24 minimum.
       node-version: "24.21.0"
       package-manager: pnpm
@@ -109,29 +102,22 @@ jobs:
       package-matrix: ${{ needs.affected.outputs.batches }}
       extra-scripts: "ci:batch"
       require-scripts: true
-    secrets:
-      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
+      package-registry-auth: disabled
 
   contracts:
     # Repository-wide preflight: a failed contract cannot produce a releasable
     # result, so reject it before reserving package and browser runner slots.
     name: contracts
-    # Ordinary Linux CI overflow: company-hq CI runner policy §2 exception 4.
-    # Share the package callable's persistent repository switch and rollback.
-    runs-on: ${{ fromJSON(vars.BLACKSMITH_RUNNERS_ENABLED == 'true' && format('"{0}"', vars.BLACKSMITH_LINUX_LABEL || 'blacksmith-2vcpu-ubuntu-2404') || '{"group":"linux-ci","labels":["self-hosted","Linux","X64","proxmox","linux-ci"]}') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: read
-    env:
-      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
-      NPM_CONFIG_GLOBALCONFIG: /dev/null
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Materialize Changesets base branch
         # `changeset status` resolves .changeset/config.json `baseBranch: main`
@@ -153,9 +139,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
-
-      - name: Configure GitHub Packages read auth
-        run: node ./scripts/package-registry-auth.mjs
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -189,102 +172,32 @@ jobs:
           set -euo pipefail
           pnpm run surface:check
 
-      - name: Remove temporary registry auth
-        if: always()
-        run: rm -f "${NPM_CONFIG_USERCONFIG}"
-
   packed-consumer-smoke:
-    # Unchanged by the #278 adoption. This is the only lane that installs and
-    # launches a real browser (Playwright chromium, via the generated app's
-    # `quality` gate inside scripts/release-packages.mjs), so it runs on the
-    # dedicated playwright-isolated pool. node-library.yml has NO browser lane
-    # and no input that could express one, so this job cannot move into the
-    # callable and stays here by design -- recorded as a kept-separate lane
-    # against #278, not as residue.
+    # Build every package, then run the packed consumer's Chromium and platform gates.
     name: package / packed-consumer-smoke
     needs: [affected, contracts]
     if: needs.affected.outputs.packed-consumer == 'true'
-    runs-on:
-      group: playwright-isolated
-      labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       actions: read
       contents: read
-      packages: read
       pull-requests: read
     env:
-      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-      # Keep the temp working set OFF the guest's RAM.
-      #
-      # The playwright pool's runner cycle exports TMPDIR into
-      # /run/playwright-ephemeral/job-tmp, and /run in those guests is a tmpfs
-      # sized 13G while the cgroup limit is 4096 MiB -- LXC sized that tmpfs
-      # against the host's 64 GiB, not the container's. So every byte this job
-      # writes to TMPDIR is guest memory, and `swap: 0` means none of it can be
-      # evicted. Installing and building a whole generated Nuxt app there, on
-      # top of the heap below, is what OOM-killed this lane twice on
-      # 2026-08-31/09-01 -- surfacing to GitHub as the misleading "The runner
-      # has received a shutdown signal" rather than as an out-of-memory error.
-      #
-      # TMPDIR is NOT set here. It is exported by the step below instead --
-      # see that step for why a job-level value cannot express it.
-      #
-      # Tracked upstream as fleet#196 and agent-infrastructure#1007; the
-      # override below is the repository's own half and stands however those
-      # land.
-      # 3072 was over-committed against a 4096 MiB guest even before TMPDIR is
-      # counted. 2048 leaves headroom for pnpm, esbuild workers and the browser
-      # the smoke launches, and no lane has needed the larger heap.
+      # Bound parent and nested pnpm lifecycle Node heaps.
       NODE_OPTIONS: --max-old-space-size=2048
-      # pnpm's project node-options overrides NODE_OPTIONS for lifecycle scripts.
-      # Override that config too, including nested generated-consumer commands.
       npm_config_node_options: --max-old-space-size=2048
-      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
-      NPM_CONFIG_GLOBALCONFIG: /dev/null
-      # Pool guests are ephemeral one-job sandboxes without the linux-ci shared
-      # cache mount; keep the turbo cache workspace-local here.
       TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
-      # The pool's browser binaries are immutable under /opt (downloads are
-      # deliberately blocked); Playwright must resolve them from there.
-      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
-      # Consumed by assertIsolatedPlaywrightToolchain() in
-      # scripts/release-packages.mjs (company-hq#343 fail-closed preflight,
-      # same idiom as the workflows repo's shared callables). The function
-      # defaults to these exact values when unset, but they are declared
-      # explicitly here to match the other isolated-pool jobs' idiom.
-      PLAYWRIGHT_TOOLCHAIN_ROOT: /opt/playwright-ci
-      PLAYWRIGHT_TOOLCHAIN_OWNER_UID: "0"
-      PLAYWRIGHT_ALLOWED_BROWSER_PREFIX: /opt
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Point TMPDIR at disk, outside the checkout
-        # WHY THIS IS A STEP AND NOT A JOB-LEVEL `env:` VALUE.
-        #
-        # The destination has to satisfy three things at once, and only
-        # RUNNER_TEMP does:
-        #
-        #   on disk, not tmpfs  -- /run in these guests is a tmpfs sized 13G
-        #     inside a 4096 MiB cgroup, so the default TMPDIR makes every
-        #     temp byte guest RAM and OOM-kills this job mid-install.
-        #   OUTSIDE github.workspace -- a first attempt put it at
-        #     ${{ github.workspace }}/.job-tmp, and pnpm then walked up from
-        #     the generated consumer, found this repo's pnpm-workspace.yaml,
-        #     and resolved the consumer as a workspace member. The install
-        #     "succeeded" and left no node_modules in the consumer, failing
-        #     later with a confusing ENOENT on create-narduk-app/package.json.
-        #   expressible -- the `runner` context is unavailable in a job-level
-        #     `env:` block, where ${{ runner.temp }} silently expands to the
-        #     empty string and un-sets TMPDIR rather than failing.
-        #
-        # $RUNNER_TEMP is the same directory the `runner` context would name,
-        # readable as a plain shell variable at step level. Exporting through
-        # $GITHUB_ENV applies it to every later step, which is why this sits
-        # before all of them.
+        # The fixture must live outside the workspace: pnpm otherwise finds
+        # pnpm-workspace.yaml and treats it as another workspace member.
         run: |
           set -euo pipefail
           tmp="${RUNNER_TEMP}/consumer-smoke"
@@ -310,10 +223,7 @@ jobs:
         with:
           node-version: 24.21.0
 
-      # The large dependency archive costs more to restore than a fresh
-      # install on this pool. Keep one job-local store: the root installation
-      # warms the external packed consumer and both generated-app installs.
-      # Guest destruction removes it; no cross-job state or archive is needed.
+      # Share a store across the root and both external consumer installs.
       - name: Share a job-local pnpm store across consumer installs
         run: |
           set -euo pipefail
@@ -321,11 +231,7 @@ jobs:
           mkdir -p "${store}"
           echo "npm_config_store_dir=${store}" >>"${GITHUB_ENV}"
 
-      # Retain the much smaller compiled-artifact cache. Turbo's own
-      # content hashing makes a stale or partial restore harmless -- a task
-      # whose inputs changed just misses and rebuilds, exactly as it would
-      # with an empty cache-dir -- so the key only needs to always resolve to
-      # the most recent entry, never an exact match.
+      # Turbo's content hashes invalidate stale restored build output.
       - name: Restore turbo build cache
         id: turbo-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -335,11 +241,11 @@ jobs:
           restore-keys: |
             narduk-libs-packed-consumer-turbo-${{ runner.os }}-
 
-      - name: Configure GitHub Packages read auth
-        run: node ./scripts/package-registry-auth.mjs
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium and Linux browser dependencies
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Build coordinated release set
         run: >-
@@ -369,28 +275,16 @@ jobs:
           path: ${{ github.workspace }}/.turbo-cache
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
-      - name: Remove temporary registry auth
-        if: always()
-        run: rm -f "${NPM_CONFIG_USERCONFIG}"
-
   package-browser-tests:
     # Every selected package declaring test:e2e shares this one install. This
     # includes journeys and charts; general package batches never launch browsers.
     name: package / browser tests
     needs: [affected, contracts]
     if: needs.affected.outputs.browser-packages != '[]'
-    runs-on:
-      group: playwright-isolated
-      labels: [self-hosted, Linux, X64, proxmox-playwright-x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: read
-    env:
-      GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.auth
-      NPM_CONFIG_GLOBALCONFIG: /dev/null
-      PLAYWRIGHT_BROWSERS_PATH: /opt/playwright-ci/browsers
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -408,10 +302,7 @@ jobs:
         with:
           node-version: 24.21.0
 
-      # Same ephemeral-pool reasoning as packed-consumer-smoke's identically
-      # named step above: this pool has no persistent local store at all, and
-      # (unlike linux-ci) no concurrent lane ever shares this guest's
-      # filesystem while this job runs, so `actions/cache` is sound here.
+      # Each hosted job has a private store; restore from the lockfile cache.
       - name: Resolve pnpm store cache directory
         id: pnpm-store
         run: |
@@ -430,11 +321,11 @@ jobs:
           restore-keys: |
             narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-
 
-      - name: Configure GitHub Packages read auth
-        run: node ./scripts/package-registry-auth.mjs
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium and Linux browser dependencies
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run every selected package browser suite
         env:
@@ -453,18 +344,13 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
 
-      - name: Remove temporary registry auth
-        if: always()
-        run: rm -f "${NPM_CONFIG_USERCONFIG}"
-
   verify:
     # Complete acceptance boundary, including integrations outside the callable.
     name: verify
     if: always()
     needs:
       [affected, ci, contracts, packed-consumer-smoke, package-browser-tests, logging-languages]
-    # Secrets-free gate before the privileged self-hosted release (policy §2.2).
-    runs-on: ${{ fromJSON(vars.CI_LIGHTWEIGHT_RUNNER || '"ubuntu-slim"') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read

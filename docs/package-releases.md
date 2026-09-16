@@ -41,10 +41,11 @@ published version commit still repeats registry verification on retry, so a
 previous verification failure cannot turn green merely because publication is
 now a no-op.
 
-Publishing uses `NARDUK_PLATFORM_GH_PACKAGES_WRITE`; record only names and
-rotation time, never values. The read credential, and which name it answers to
-on each plane, is canonical in company-hq
-[`docs/SECRETS-MATRIX.md` § One credential, two names](https://github.com/narduk-enterprises/company-hq/blob/main/docs/SECRETS-MATRIX.md#one-credential-two-names).
+Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
+`packages: write` inside the main-only `npm-release` environment. GitHub
+Packages must grant this repository Actions access to every existing package,
+including packages not automatically linked to this repository. The release's
+exact version registry proof uses the same temporary token config.
 
 ## Failed or partial publish
 

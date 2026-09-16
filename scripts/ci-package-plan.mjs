@@ -2,9 +2,9 @@ export const packageGates = ['lint', 'typecheck', 'build', 'test:unit', 'check:p
 
 // One lane runs one package at a time. The weights affect scheduling only;
 // unknown/new packages still run every gate, using the median-sized estimate.
-export function batchPackages(matrix, weights, limit = 4) {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 4)
-    throw new Error('Batch limit must be 1–4.')
+export function batchPackages(matrix, weights, limit = 8) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 8)
+    throw new Error('Batch limit must be 1–8.')
   if (new Set(matrix.map(({ filter }) => filter)).size !== matrix.length) {
     throw new Error('The package plan contains duplicates.')
   }

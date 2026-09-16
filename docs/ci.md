@@ -8,17 +8,17 @@ shared tooling/configuration changes select every package. The plan prints
 reasons and all five package gates.
 
 The plan also selects every affected package declaring `test:e2e`. Actions runs
-those suites together on the isolated browser pool with one installation; this
-includes both journeys and narduk-charts. Local commands use the same list.
+those suites together on a hosted runner with one installation; this includes
+both journeys and narduk-charts. Local commands use the same list.
 
 `pnpm ci:affected` executes that plan. `pnpm ci:full` executes the complete
 workspace. Both run repository contracts, strict package gates and applicable
 browser/packed consumer checks. Browser tooling must be installed locally; CI
-uses the dedicated immutable Playwright pool. `pnpm release:consumer-smoke` is
-the external packed-artifact proof and requires built packages (run `pnpm build`
-first). `pnpm quality` remains the existing broad formatting, lint, typecheck,
-build and unit-test command; it does not include strict package checks, script
-tests or browser/consumer validation.
+installs Chromium and its Linux libraries with Playwright.
+`pnpm release:consumer-smoke` is the external packed-artifact proof and requires
+built packages (run `pnpm build` first). `pnpm quality` remains the existing
+broad formatting, lint, typecheck, build and unit-test command; it does not
+include strict package checks, script tests or browser/consumer validation.
 
 Actions runs package selection and repository contracts in parallel first.
 Package batches, browser suites, the packed-consumer proof and logging language
@@ -32,9 +32,10 @@ Actions installs once per batch and invokes `pnpm ci:batch` with the complete
 lane in `PACKAGE_MATRIX_JSON`. This script validates the entire selection, runs
 lint → typecheck → build → test:unit → check:package for each package, and
 retains every failure while printing a per-package result and duration. At most
-four batches run; the scheduling estimates in
-`scripts/ci-package-durations.json` come from the cited Actions run and affect
-ordering only. They never skip a gate. New packages receive a default estimate.
+eight batches run by default (`--batch-count` accepts 1–8); the scheduling
+estimates in `scripts/ci-package-durations.json` come from the cited Actions run
+and affect ordering only. They never skip a gate. New packages receive a default
+estimate.
 
 The always-running `verify` job covers planner, package batches, contracts and
 all applicable integration jobs. Keep `ci / Required` while adopting `verify` in
@@ -45,25 +46,15 @@ release SHA retained in main history and latest attempt. A version commit's CI
 continues independently of later main pushes; the release checks out that exact
 verified commit. Ordinary iterations still cancel superseded runs.
 
-The planner, `ci / Required`, `verify`, and release `verify-ci` jobs run on
-GitHub's `ubuntu-slim` runners. They hold no repository secrets, perform no
-package install, and gate the privileged self-hosted publication, fitting
-company-hq's CI runner policy §2 exception 2. Their short work no longer queues
-behind package builds. Package batches, repository contracts and logging
-language checks all honor the same `BLACKSMITH_RUNNERS_ENABLED` switch.
-Blacksmith is kept enabled for `narduk-libs` through persistent repository
-variables: `BLACKSMITH_RUNNERS_ENABLED=true` and
-`BLACKSMITH_LINUX_LABEL=blacksmith-4vcpu-ubuntu-2404`. This repository override
-leaves the organization default unchanged and applies to subsequent PR, main and
-manual runs. These jobs need public package/toolchain endpoints, with only
-read-only package credentials; they do not need the tailnet or deploy access.
-Setting the switch to `false` returns every ordinary Linux job to the complete
-manifest `linux-ci` group and labels. Cancel and rerun unfinished jobs after
-changing the switch: queued jobs keep their original route. This is manual
-provider selection, not automatic queue-depth routing. Browser tests and packed
-consumers retain their isolated browser route; publication retains
-`linux-deploy`. The callable's `required-runner` input changes only its
-aggregate, preserving its check name and failure rules.
+Every CI job runs on `ubuntu-latest`, including the shared package callable,
+Python/Swift checks and browser/consumer gates. Forked PRs receive no registry
+secret: every workspace package dependency in this repository's lockfile is
+resolved locally, and `package-registry-auth: disabled` prevents the callable
+from generating a registry credential. The release job runs on `ubuntu-latest`
+after exact-SHA CI verification and requires the main-only `npm-release`
+environment. The job-scoped `GITHUB_TOKEN` publishes with `packages: write`;
+each existing package must grant this repository Actions access. Publication and
+external registry proof still run only from verified main history.
 
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and
@@ -72,7 +63,7 @@ expensive generated-app quality, migration, performance and Wrangler checks can
 reuse the associated merged PR's successful proof. This extends draft PR #80's
 lookup with an exact fingerprint of the tested Git tree, installed archive
 contents, both resolved consumer lockfiles, generated sources, Node
-binary/version, pnpm version, and the verified browser image/native system
+binary/version, pnpm version, and the verified downloaded browser/native system
 packages. Each missing or changed input runs the full proof. PR, manual and
 local runs always execute all checks.
 
@@ -97,8 +88,7 @@ Package validation and packing run two packages at a time; all compiled outputs
 come from the preceding coordinated build. Phase timings appear in both logs and
 the job summary. Per-package and generated-file digests identify proof
 mismatches while retaining every content and dependency check. Only digests and
-provenance are retained in the proof artifact; registry authentication files are
-excluded.
+provenance are retained in the proof artifact.
 
 Use focused validation after meaningful edits, then the relevant integration
 proof at the final candidate. A result is reusable locally only while its
@@ -107,7 +97,6 @@ actually ran. Compare admission, setup/install, cache transport and useful work
 separately when changing CI; summed job-minutes are pool demand, not end-to-end
 latency or CPU utilization.
 
-Lightweight planner and completion jobs use the organization variable
-`CI_LIGHTWEIGHT_RUNNER` (JSON runner specification, default `"ubuntu-slim"`).
-The shared workflow consumes the same variable, so changing lightweight capacity
-does not require another workflow edit in this repository.
+The packed-consumer proof hashes the downloaded Chromium binary, installed
+Playwright packages and manifest, OS release and native package inventory. A
+different hosted image or browser binary causes a full generated-app proof.

@@ -201,7 +201,12 @@ function transitiveDependents(changedNames, dependents) {
   return affected
 }
 
-export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll = false }) {
+export function computeAffectedSet({
+  root = scriptRoot,
+  changedFiles,
+  forceAll = false,
+  batchCount = 8,
+}) {
   const workspace = loadWorkspace(root)
   const normalizedFiles = [...new Set(changedFiles.map((path) => toPosix(path)))].sort()
   const changedNames = new Set()
@@ -268,6 +273,7 @@ export function computeAffectedSet({ root = scriptRoot, changedFiles, forceAll =
       matrix,
       JSON.parse(readFileSync(join(scriptRoot, 'scripts/ci-package-durations.json'), 'utf8'))
         .gateSeconds,
+      batchCount,
     ),
     packageGates,
     changedNames: [...changedNames].sort(),
@@ -336,6 +342,7 @@ function parseArguments(argv) {
     githubOutput: undefined,
     summary: undefined,
     jsonOutput: undefined,
+    batchCount: 8,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -346,9 +353,15 @@ function parseArguments(argv) {
     }
     const next = argv[index + 1]
     if (
-      ['--root', '--base', '--head', '--github-output', '--summary', '--json-output'].includes(
-        argument,
-      )
+      [
+        '--root',
+        '--base',
+        '--head',
+        '--github-output',
+        '--summary',
+        '--json-output',
+        '--batch-count',
+      ].includes(argument)
     ) {
       if (!next) throw new Error(`${argument} requires a value.`)
       const key = {
@@ -358,8 +371,10 @@ function parseArguments(argv) {
         '--github-output': 'githubOutput',
         '--summary': 'summary',
         '--json-output': 'jsonOutput',
+        '--batch-count': 'batchCount',
       }[argument]
-      options[key] = argument === '--root' ? resolve(next) : next
+      options[key] =
+        argument === '--root' ? resolve(next) : argument === '--batch-count' ? Number(next) : next
       index += 1
       continue
     }
@@ -381,6 +396,7 @@ function main() {
     root: options.root,
     changedFiles,
     forceAll: options.forceAll,
+    batchCount: options.batchCount,
   })
 
   if (options.githubOutput) {

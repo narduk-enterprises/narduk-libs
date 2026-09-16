@@ -119,6 +119,12 @@ test('selects a changed dependency and all transitive dependents', () => {
     assert.deepEqual(result.skippedNames, [`${scope}leaf`])
     assert.equal(result.fullRun, false)
     assert.equal(result.packedConsumer, true)
+    assert.equal(result.batches.length, 3)
+    assert.equal(
+      computeAffectedSet({ root, changedFiles: ['packages/platform/src/index.ts'], batchCount: 1 })
+        .batches.length,
+      1,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
