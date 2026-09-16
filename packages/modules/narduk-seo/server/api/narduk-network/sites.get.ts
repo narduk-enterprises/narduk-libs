@@ -6,9 +6,13 @@ import {
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
-  const catalogUrl = resolveNardukCatalogBaseUrl(runtimeConfig.public.publicCatalogBaseUrl)
+  const publicCatalogBaseUrl = runtimeConfig.public.publicCatalogBaseUrl
+  const catalogUrl = resolveNardukCatalogBaseUrl(
+    typeof publicCatalogBaseUrl === 'string' ? publicCatalogBaseUrl : undefined,
+  )
+  const nardukNetworkDirectoryUrl = runtimeConfig.public.nardukNetworkDirectoryUrl
   const directoryUrl = resolveNardukNetworkDirectoryUrl(
-    runtimeConfig.public.nardukNetworkDirectoryUrl,
+    typeof nardukNetworkDirectoryUrl === 'string' ? nardukNetworkDirectoryUrl : undefined,
   )
   const emptyDirectory = {
     ok: false,

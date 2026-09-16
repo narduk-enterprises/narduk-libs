@@ -227,6 +227,7 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-testkit']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
     )
+    expect(dependencies.nuxt).toBe('4.5.2')
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
     )

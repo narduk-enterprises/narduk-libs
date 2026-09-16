@@ -62,6 +62,11 @@ const querySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
+  const appConfig = runtimeConfig.app
+  const appBaseURL =
+    typeof appConfig === 'object' && appConfig !== null && typeof appConfig.baseURL === 'string'
+      ? appConfig.baseURL
+      : '/'
   const ogImageConfig = runtimeConfig['nuxt-og-image'] as
     | {
         defaults?: {
@@ -130,7 +135,7 @@ export default defineEventHandler(async (event) => {
         _path: '/__preview/og-images',
       },
       {
-        baseURL: runtimeConfig.app.baseURL,
+        baseURL: appBaseURL,
         defaults: ogImageConfig?.defaults,
         secret: ogImageConfig?.security?.secret,
       },

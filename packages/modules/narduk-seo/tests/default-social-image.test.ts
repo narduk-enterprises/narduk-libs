@@ -63,4 +63,22 @@ describe('default social image', () => {
       content: 'https://example.com/account',
     })
   })
+
+  it('skips malformed runtime config image values', async () => {
+    const useHead = vi.fn()
+    vi.doMock('#imports', () => ({
+      defineNuxtPlugin: <T>(plugin: T): T => plugin,
+      useHead,
+      useRoute: () => ({ path: '/' }),
+      useRuntimeConfig: () => ({
+        public: { nardukSeoDefaultImage: { url: '/og.png' } },
+      }),
+      useSiteConfig: () => ({ url: 'https://example.com', name: 'Example', description: 'App' }),
+    }))
+    const { default: plugin } = await import('../app/plugins/defaultSocialImage')
+
+    ;(plugin as unknown as () => void)()
+
+    expect(useHead).not.toHaveBeenCalled()
+  })
 })

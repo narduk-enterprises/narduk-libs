@@ -40,7 +40,9 @@ export const PACKAGE_VERSIONS = {
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.6.0',
   '@playwright/test': '1.61.1',
-  '@tailwindcss/vite': '4.2.1',
+  // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
+  // Vite 7, which makes a newly generated app install with a peer warning.
+  '@tailwindcss/vite': '4.3.2',
   '@types/node': '22.19.19',
   '@typescript-eslint/utils': '8.64.0',
   'drizzle-kit': '0.31.10',
@@ -59,10 +61,12 @@ export const PACKAGE_VERSIONS = {
   glob: '13.0.6',
   'happy-dom': '20.9.0',
   knip: '6.14.1',
-  nuxt: '4.4.8',
+  // narduk-seo's current module set uses Unhead 3's tree-shake transform.
+  // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
+  nuxt: '4.5.2',
   '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
-  tailwindcss: '4.2.1',
+  tailwindcss: '4.3.2',
   typescript: '5.9.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',

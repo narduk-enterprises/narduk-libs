@@ -782,9 +782,7 @@ test('packed narduk-seo renders SSR metadata (narduk-libs#316)', async ({ reques
   expect(canonicals.length).toBeGreaterThan(0)
   expect([...new Set(canonicals.map(normalizeHref))]).toEqual([normalizeHref(canonical)])
 
-  const blocks = [
-    ...html.matchAll(/<script[^>]*application\\/ld\\+json[^>]*>([\\s\\S]*?)<\\/script>/gu),
-  ]
+  const blocks = [...html.matchAll(/<script[^>]*application\\/ld\\+json[^>]*>([\\s\\S]*?)<\\/script>/gu)]
   expect(blocks.length).toBeGreaterThan(0)
   const graph = blocks.flatMap(([, json]) => {
     const parsed = JSON.parse(json) as SchemaNode & { '@graph'?: SchemaNode[] }
