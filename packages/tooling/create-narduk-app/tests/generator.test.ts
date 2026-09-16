@@ -181,7 +181,6 @@ describe('create-narduk-app generation contract', () => {
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
-        'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'],
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on

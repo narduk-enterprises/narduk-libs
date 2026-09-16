@@ -61,11 +61,6 @@ export const PACKAGE_VERSIONS = {
   knip: '6.14.1',
   nuxt: '4.4.8',
   '@nuxt/eslint': '1.15.2',
-  // nuxt-og-image 6.7.3 moved to `@nuxt/kit@^4.5.0`; 6.7.2 is the release built
-  // for the `@nuxt/kit` that the pinned Nuxt above ships. narduk-seo pins the
-  // 6.7.4 release because a Nuxt-less consumer install resolves @nuxt/kit 4.5.0
-  // and needs its oxc-parser 0.140 line, so the app pins its own Nuxt block.
-  'nuxt-og-image': '6.7.2',
   prettier: '3.8.3',
   tailwindcss: '4.2.1',
   typescript: '5.9.3',
@@ -339,9 +334,6 @@ export function createRootPackageManifest(
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
-        ...(capabilities.includes('seo')
-          ? { 'nuxt-og-image': PACKAGE_VERSIONS['nuxt-og-image'] }
-          : {}),
       },
       ...(capabilities.includes('auth')
         ? {

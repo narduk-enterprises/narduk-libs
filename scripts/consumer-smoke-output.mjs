@@ -6,9 +6,9 @@
  * That fail-closed contract is load-bearing and predates this module: it is
  * what caught the ESLint 9/10 peer-dependency drift in PR #51 (run
  * 30764151785), where the packed consumer installed cleanly with exit code 0
- * while pnpm reported unmet peers, and it is why the eslint/unhead pins at the
- * top of release-packages.mjs are read from the workspace instead of
- * hardcoded. Nothing here loosens that: unexpected output still fails.
+ * while pnpm reported unmet peers, and it is why the eslint pin at the top of
+ * release-packages.mjs is read from the workspace instead of hardcoded.
+ * Nothing here loosens that: unexpected output still fails.
  *
  * It lives in its own module purely so `node --test` can cover it.
  * release-packages.mjs is an executable script with top-level side effects
