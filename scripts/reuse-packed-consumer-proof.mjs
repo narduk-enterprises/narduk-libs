@@ -175,8 +175,7 @@ export async function lookupConsumerProof(options, environment = process.env) {
   if (
     environment.GITHUB_EVENT_NAME !== 'push' ||
     environment.GITHUB_REF !== 'refs/heads/main' ||
-    !environment.GITHUB_TOKEN ||
-    !environment.PLAYWRIGHT_BROWSERS_PATH
+    !environment.GITHUB_TOKEN
   )
     return undefined
   const repository = environment.GITHUB_REPOSITORY

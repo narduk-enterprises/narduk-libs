@@ -38,6 +38,9 @@ test('a detached release checkout gives Changesets its verified local base', () 
     git(checkout, 'remote', 'add', 'origin', source)
     git(checkout, 'fetch', '--quiet', 'origin', verified)
     git(checkout, 'checkout', '--quiet', '--detach', 'FETCH_HEAD')
+    // actions/checkout fetch-depth: 0 provides all remote branches before
+    // persist-credentials: false removes the token from later git commands.
+    git(checkout, 'fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main')
     assert.equal(
       spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: checkout })
         .status,

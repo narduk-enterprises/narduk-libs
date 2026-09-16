@@ -23,6 +23,7 @@ import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
+import { assertHostedPlaywrightToolchain } from './hosted-playwright-toolchain.mjs'
 import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
 import {
   fileDigest,
@@ -241,19 +242,9 @@ function assertNoRetiredBuiltReferences(generatedDirectory) {
   }
 }
 
-// Fail-closed isolated-pool toolchain preflight (company-hq#343), adopted
-// from the same idiom the narduk-enterprises/workflows shared callables run
-// in their `Assert isolated Playwright toolchain` step
-// (reusable-browser-tests.yml / nuxt-cloudflare.yml). packed-consumer-smoke
-// is narduk-libs' only browser-launching lane -- it runs on the dedicated
-// playwright-isolated pool but is a Node script, not a workflow YAML job, so
-// this callable's browser preflight cannot be `uses:`-adopted directly; the
-// exact same checks are reproduced here instead of left absent. It proves
-// the generated consumer's exact @playwright/test pin, installed
-// package/core versions, and browsers.json manifest all equal the immutable
-// /opt/playwright-ci image, rejects a job-local browser path, then actually
-// launches the selected executable as a canary -- all BEFORE `pnpm run
-// quality` (which is what launches the real Playwright suite) ever starts.
+// Preserve the fail-closed immutable-image proof for legacy isolated-pool
+// execution. Hosted CI instead checks the downloaded toolchain below; both
+// paths bind the real browser and native libraries into the reuse fingerprint.
 async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, requiredBrowsers }) {
   const rows = []
   const summary = process.env.GITHUB_STEP_SUMMARY
@@ -1044,13 +1035,8 @@ try {
         packageManager: 'pnpm@10.33.4',
         dependencies,
         devDependencies: {
-          // Must equal the pool-supported exact pin asserted by
-          // assertIsolatedPlaywrightToolchain below and the repo's own root/
-          // package devDependency pins (company-hq#343): the packed-consumer
-          // smoke launches this generated app's real Playwright suite on the
-          // playwright-isolated pool, and a stale pin here silently drifts
-          // this dev-only sandbox package.json out of the immutable image's
-          // supported version even though every other manifest is pinned.
+          // The generated app and root must share one exact Playwright pin;
+          // both downloaded and immutable-image proof paths assert it.
           '@playwright/test': PLAYWRIGHT_TOOLCHAIN_VERSION,
           eslint: WORKSPACE_ESLINT_VERSION_RANGE,
           typescript: '5.9.3',
@@ -1237,10 +1223,20 @@ try {
       requiredBrowsers: ['chromium'],
     })
   } else {
-    await runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
-      cwd: generatedDirectory,
-      label: 'install the generated app browser fixture',
-    })
+    if (!process.env.GITHUB_ACTIONS) {
+      await runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+        cwd: generatedDirectory,
+        label: 'install the generated app browser fixture',
+      })
+    }
+    // Hosted CI installs Chromium and its native libraries before the proof.
+    // Local runs still download a browser but do not create reusable evidence.
+    if (process.env.GITHUB_ACTIONS) {
+      imageIdentity = await assertHostedPlaywrightToolchain({
+        cwd: generatedDirectory,
+        expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
+      })
+    }
   }
   // Resolve and install both external consumers before considering reuse. A
   // floating registry dependency or different installed package content forces execution,

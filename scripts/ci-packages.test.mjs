@@ -31,14 +31,14 @@ test('browser selection executes each declared suite and rejects missing scripts
   assert.throws(() => runBrowserGates(names, browserWorkspace, execute), /missing required script/)
 })
 
-test('full and narrow plans select every package exactly once in at most four install batches', () => {
-  for (const count of [0, 1, 2, 3, 4, 21]) {
+test('full and narrow plans select every package exactly once in at most eight install batches', () => {
+  for (const count of [0, 1, 2, 3, 4, 8, 21]) {
     const matrix = Array.from({ length: count }, (_, index) => ({
       label: `p${index}`,
       filter: `@example/p${index}`,
     }))
     const batches = batchPackages(matrix, { p0: 100, p1: 50 })
-    assert.equal(batches.length, Math.min(4, count))
+    assert.equal(batches.length, Math.min(8, count))
     assert.deepEqual(
       batches.flatMap(({ packages }) => packages).sort(),
       matrix.map(({ filter }) => filter).sort(),
@@ -59,6 +59,7 @@ test('longest gates are spread across batches without changing coverage', () => 
   )
   assert.throws(() => batchPackages([{ filter: 'one' }, { filter: 'one' }], {}), /duplicates/)
   assert.throws(() => batchPackages([], {}, 0), /limit/)
+  assert.throws(() => batchPackages([], {}, 9), /limit/)
 })
 
 for (const failedPackage of names) {
