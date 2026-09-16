@@ -29,17 +29,16 @@ export interface HealthCheckContext {
 }
 
 export interface HealthCheckOutcome {
-  /** `false` reports a failure without throwing. Omitted, the check passed. */
-  ok?: boolean
   /**
    * A small JSON object published with the result, at most 1 KiB serialized.
    * Keys named `status` or `database`, at any depth, are rejected.
    */
   detail?: HealthCheckDetail
+  /** `false` reports a failure without throwing. Omitted, the check passed. */
+  ok?: boolean
 }
 
-// `void` lets a check be a plain `async () => { ... }` that passes by resolving.
-// eslint-disable-next-line @typescript-eslint/no-invalid-void-type
+// eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- lets a check be a plain `async () => {}` that passes by resolving
 export type HealthCheckRunResult = HealthCheckOutcome | undefined | void
 
 export interface HealthCheckDefinition {
@@ -50,10 +49,10 @@ export interface HealthCheckDefinition {
    * optional check that fails makes it `degraded` (HTTP 200).
    */
   required: boolean
-  /** Defaults to 3000 ms; at most 30000 ms. A timed-out check fails. */
-  timeoutMs?: number
   /** Resolve (optionally with an outcome) to pass; throw or return `{ ok: false }` to fail. */
   run: (context: HealthCheckContext) => HealthCheckRunResult | Promise<HealthCheckRunResult>
+  /** Defaults to 3000 ms; at most 30000 ms. A timed-out check fails. */
+  timeoutMs?: number
 }
 
 export interface RegisteredHealthCheck extends HealthCheckDefinition {
@@ -62,21 +61,22 @@ export interface RegisteredHealthCheck extends HealthCheckDefinition {
 
 export type HealthCheckResult = 'pass' | 'fail' | 'skipped'
 
-export type HealthCheckDetailOmission = 'not-an-object' | 'not-serializable' | 'reserved-key' | 'too-large'
+export type HealthCheckDetailOmission =
+  'not-an-object' | 'not-serializable' | 'reserved-key' | 'too-large'
 
 /** One entry of `data.checks` in the `/api/health` response. */
 export interface HealthCheckReport {
-  name: string
-  required: boolean
-  result: HealthCheckResult
-  /** Why a check did not run. Present only when `result` is `skipped`. */
-  reason?: string
-  durationMs?: number
-  /** Fixed public text for a failure; underlying errors go to the server log. */
-  error?: string
   detail?: HealthCheckDetail
   /** Why a check's `detail` was left out of the public report. */
   detailOmitted?: HealthCheckDetailOmission
+  durationMs?: number
+  /** Fixed public text for a failure; underlying errors go to the server log. */
+  error?: string
+  name: string
+  /** Why a check did not run. Present only when `result` is `skipped`. */
+  reason?: string
+  required: boolean
+  result: HealthCheckResult
 }
 
 type HealthCheckRegistry = Map<string, RegisteredHealthCheck>
@@ -122,11 +122,7 @@ export function normalizeHealthCheckDefinition(
   if (typeof run !== 'function') {
     throw new TypeError(`[narduk-core] Health check '${name}' needs a run function.`)
   }
-  if (
-    !Number.isInteger(timeoutMs) ||
-    timeoutMs < 1 ||
-    timeoutMs > MAX_HEALTH_CHECK_TIMEOUT_MS
-  ) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_HEALTH_CHECK_TIMEOUT_MS) {
     throw new TypeError(
       `[narduk-core] Health check '${name}' timeoutMs must be an integer from 1 to ${MAX_HEALTH_CHECK_TIMEOUT_MS}.`,
     )
@@ -166,9 +162,7 @@ export function sanitizeHealthCheckDetail(
 }
 
 export type SettledWithTimeout<T> =
-  | { kind: 'value'; value: T }
-  | { kind: 'error'; error: unknown }
-  | { kind: 'timeout' }
+  { kind: 'value'; value: T } | { error: unknown; kind: 'error' } | { kind: 'timeout' }
 
 /**
  * Run `task` and settle within `timeoutMs`. On timeout the task's signal is

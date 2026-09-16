@@ -104,9 +104,8 @@ describe('narduk-auth module', () => {
     const mod = (await import('../src/module')).default as unknown as {
       setup: (options: unknown, nuxt: Record<string, unknown>) => void
     }
-    const { findDatabaseBackendConflict } = await import(
-      '@narduk-enterprises/narduk-core/shared/database-backend'
-    )
+    const { findDatabaseBackendConflict } =
+      await import('@narduk-enterprises/narduk-core/shared/database-backend')
     const runtimeConfig: Record<string, unknown> = {
       databaseBackend: 'none',
       nardukHealth: { futureProbe: true },

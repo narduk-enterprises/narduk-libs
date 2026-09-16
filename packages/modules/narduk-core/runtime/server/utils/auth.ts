@@ -16,6 +16,7 @@ import {
   serializeApiKeyScopeText as serializeApiKeyScopes,
 } from './authApiKeyText'
 import { executeDatabaseQuery, getDatabaseRow, getDatabaseRows, useDatabase } from './database'
+import { useLogger } from './logger'
 import { getLayerUserSession } from './user-session'
 
 import type { User } from '#narduk-core/schema'

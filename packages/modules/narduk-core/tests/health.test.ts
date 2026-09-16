@@ -7,10 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import healthHandler from '../runtime/server/api/health.get'
 import {
   getHealthCheckRegistry,
-  MAX_HEALTH_CHECK_DETAIL_BYTES,
-  sanitizeHealthCheckDetail,
   type HealthCheckContext,
   type HealthCheckDefinition,
+  MAX_HEALTH_CHECK_DETAIL_BYTES,
+  sanitizeHealthCheckDetail,
 } from '../runtime/server/health/checks'
 import { buildHealthReport, DATABASE_PROBE_TIMEOUT_MS } from '../runtime/server/health/report'
 import { registerHealthCheck } from '../runtime/server/utils/health-checks'
@@ -38,27 +38,30 @@ vi.mock('../runtime/server/utils/database', () => ({ probeDatabaseConnection }))
 
 /** Monitors such as watchdog-uptime match substrings in this much of the body. */
 const MONITOR_WINDOW_CHARS = 4096
+/** The substring uptime monitors treat as healthy. */
+const STATUS_OK = '"status":"ok"'
+const AUTH_TABLES_CHECK = 'auth-tables'
 
 interface HealthCheckBody {
-  name: string
-  required: boolean
-  result: 'pass' | 'fail' | 'skipped'
-  reason?: string
-  durationMs?: number
-  error?: string
   detail?: Record<string, unknown>
   detailOmitted?: string
+  durationMs?: number
+  error?: string
+  name: string
+  reason?: string
+  required: boolean
+  result: 'pass' | 'fail' | 'skipped'
 }
 
 interface HealthBody {
-  success: true
   data: {
-    status: 'ok' | 'degraded' | 'error'
-    timestamp: string
+    checks: HealthCheckBody[]
     database: string
     missingAuthTables: string[]
-    checks: HealthCheckBody[]
+    status: 'ok' | 'degraded' | 'error'
+    timestamp: string
   }
+  success: true
 }
 
 async function requestHealth() {
@@ -93,8 +96,8 @@ async function requestHealth() {
 
 function fakeD1(
   options: {
-    tables?: string[]
     error?: Error
+    tables?: string[]
     waitFor?: Promise<unknown>
   } = {},
 ) {
@@ -122,7 +125,7 @@ const DECLARED_D1 = { databaseBackend: 'd1', databaseBackendSource: 'option' }
 const ALL_AUTH_TABLES = ['api_keys', 'sessions', 'users']
 const SKIPPED_BUILT_INS: HealthCheckBody[] = [
   { name: 'database', required: false, result: 'skipped', reason: 'not-configured' },
-  { name: 'auth-tables', required: false, result: 'skipped', reason: 'auth-not-enabled' },
+  { name: AUTH_TABLES_CHECK, required: false, result: 'skipped', reason: 'auth-not-enabled' },
 ]
 
 function neverSettles({ signal }: HealthCheckContext) {
@@ -245,7 +248,11 @@ describe('GET /api/health with D1', () => {
     expect(d1.queries).toHaveLength(1)
     expect(d1.queries[0]).toContain('FROM sqlite_master')
     expect(body.data).toMatchObject({ status: 'ok', database: 'ok', missingAuthTables: [] })
-    expect(body.data.checks[1]).toEqual({ name: 'auth-tables', required: false, result: 'pass' })
+    expect(body.data.checks[1]).toEqual({
+      name: AUTH_TABLES_CHECK,
+      required: false,
+      result: 'pass',
+    })
   })
 
   it('reports missing auth tables as degraded, not as a failed database', async () => {
@@ -263,7 +270,7 @@ describe('GET /api/health with D1', () => {
     expect(body.data.checks).toEqual([
       { name: 'database', required: true, result: 'pass', durationMs: expect.any(Number) },
       {
-        name: 'auth-tables',
+        name: AUTH_TABLES_CHECK,
         required: false,
         result: 'fail',
         error: 'Required auth tables are missing.',
@@ -290,7 +297,12 @@ describe('GET /api/health with D1', () => {
         durationMs: expect.any(Number),
         error: 'Database probe failed.',
       },
-      { name: 'auth-tables', required: false, result: 'skipped', reason: 'database-unavailable' },
+      {
+        name: AUTH_TABLES_CHECK,
+        required: false,
+        result: 'skipped',
+        reason: 'database-unavailable',
+      },
     ])
     expect(text).not.toContain('internal detail')
     expect(logger.error).toHaveBeenCalledWith('Health check DB probe failed')
@@ -299,7 +311,11 @@ describe('GET /api/health with D1', () => {
 
 describe('GET /api/health with Postgres', () => {
   it('passes when the connection probe succeeds and skips the D1-only table probe', async () => {
-    state.config = { databaseBackend: 'postgres', databaseBackendSource: 'env', authBackend: 'local' }
+    state.config = {
+      databaseBackend: 'postgres',
+      databaseBackendSource: 'env',
+      authBackend: 'local',
+    }
     probeDatabaseConnection.mockResolvedValue(undefined)
 
     const { httpStatus, body } = await requestHealth()
@@ -309,7 +325,12 @@ describe('GET /api/health with Postgres', () => {
     expect(body.data).toMatchObject({ status: 'ok', database: 'ok' })
     expect(body.data.checks).toEqual([
       { name: 'database', required: true, result: 'pass', durationMs: expect.any(Number) },
-      { name: 'auth-tables', required: false, result: 'skipped', reason: 'unsupported-backend' },
+      {
+        name: AUTH_TABLES_CHECK,
+        required: false,
+        result: 'skipped',
+        reason: 'unsupported-backend',
+      },
     ])
   })
 
@@ -373,7 +394,7 @@ describe('registered health checks', () => {
     'answers $httpStatus with status $status when a check with required=$required fails (Q1: 503 on failure)',
     async ({ required, httpStatus, status }) => {
       state.config = { ...NO_DATABASE }
-      registerHealthCheck({ name: 'passing', required: true, run: () => undefined })
+      registerHealthCheck({ name: 'passing', required: true, run: () => {} })
       registerHealthCheck({ name: 'failing', required, run: () => ({ ok: false }) })
 
       const response = await requestHealth()
@@ -399,7 +420,12 @@ describe('registered health checks', () => {
       undefined,
       { error: 'Check failed.' },
     ],
-    ['returns ok: false', () => ({ ok: false, detail: { releaseId: 'r-1' } }), undefined, { detail: { releaseId: 'r-1' } }],
+    [
+      'returns ok: false',
+      () => ({ ok: false, detail: { releaseId: 'r-1' } }),
+      undefined,
+      { detail: { releaseId: 'r-1' } },
+    ],
     ['times out', neverSettles, 25, { error: 'Check timed out after 25 ms.' }],
   ])('fails a check that %s with public text only', async (_label, run, timeoutMs, expected) => {
     state.config = { ...NO_DATABASE }
@@ -477,7 +503,7 @@ describe('registered health checks', () => {
     expect(httpStatus).toBe(200)
     expect(body.data.checks.map((check) => [check.name, check.result])).toEqual([
       ['database', 'pass'],
-      ['auth-tables', 'skipped'],
+      [AUTH_TABLES_CHECK, 'skipped'],
       ['first', 'pass'],
       ['second', 'pass'],
     ])
@@ -486,7 +512,11 @@ describe('registered health checks', () => {
   it('keeps registration order, replaces a name, and unregisters only its own check', async () => {
     state.config = { ...NO_DATABASE }
     registerHealthCheck({ name: 'zeta', required: false, run: () => ({ detail: { v: 1 } }) })
-    const unregisterOldAlpha = registerHealthCheck({ name: 'alpha', required: false, run: () => undefined })
+    const unregisterOldAlpha = registerHealthCheck({
+      name: 'alpha',
+      required: false,
+      run: () => {},
+    })
     registerHealthCheck({ name: 'alpha', required: true, run: () => ({ detail: { v: 2 } }) })
     unregisterOldAlpha()
 
@@ -496,12 +526,12 @@ describe('registered health checks', () => {
       ['alpha', true],
     ])
 
-    const unregisterBeta = registerHealthCheck({ name: 'beta', required: true, run: () => undefined })
+    const unregisterBeta = registerHealthCheck({ name: 'beta', required: true, run: () => {} })
     unregisterBeta()
     ;({ body } = await requestHealth())
     expect(body.data.checks.map((check) => check.name)).toEqual([
       'database',
-      'auth-tables',
+      AUTH_TABLES_CHECK,
       'zeta',
       'alpha',
     ])
@@ -544,7 +574,7 @@ describe('monitor safety', () => {
       'a Postgres app whose probe fails',
       () => {
         state.config = { databaseBackend: 'postgres', databaseBackendSource: 'env' }
-        probeDatabaseConnection.mockRejectedValue(new Error('"status":"ok"'))
+        probeDatabaseConnection.mockRejectedValue(new Error(STATUS_OK))
       },
     ],
   ])('never serves "status":"ok" for %s', async (_label, arrange) => {
@@ -554,7 +584,7 @@ describe('monitor safety', () => {
 
     expect(httpStatus).toBe(503)
     expect(body.data.status).toBe('error')
-    expect(text).not.toContain('"status":"ok"')
+    expect(text).not.toContain(STATUS_OK)
     expect(text).not.toContain('"database":"ok"')
     expect(text.indexOf('"status":"error"')).toBeGreaterThanOrEqual(0)
     expect(text.indexOf('"status":"error"')).toBeLessThan(MONITOR_WINDOW_CHARS)
@@ -580,8 +610,20 @@ describe('monitor safety', () => {
   })
 
   it.each([
-    { outcome: 'passing', ok: true, httpStatus: 200, key: '"status":"ok"', database: '"database":"not_applicable"' },
-    { outcome: 'failing', ok: false, httpStatus: 503, key: '"status":"error"', database: '"database":"not_applicable"' },
+    {
+      outcome: 'passing',
+      ok: true,
+      httpStatus: 200,
+      key: STATUS_OK,
+      database: '"database":"not_applicable"',
+    },
+    {
+      outcome: 'failing',
+      ok: false,
+      httpStatus: 503,
+      key: '"status":"error"',
+      database: '"database":"not_applicable"',
+    },
   ])(
     'serves status and database within the first 4096 characters of a large $outcome body',
     async ({ ok, httpStatus, key, database }) => {
@@ -635,12 +677,8 @@ describe('health check timeouts', () => {
 
     const pending = buildHealthReport(event({}), NO_DATABASE, logger)
     await vi.advanceTimersByTimeAsync(2999)
-    let settled = false
-    void pending.then(() => {
-      settled = true
-    })
-    await Promise.resolve()
-    expect(settled).toBe(false)
+    const stillRunning = Symbol('still running')
+    expect(await Promise.race([pending, Promise.resolve(stillRunning)])).toBe(stillRunning)
     await vi.advanceTimersByTimeAsync(1)
     const report = await pending
 
@@ -653,21 +691,37 @@ describe('health check timeouts', () => {
 })
 
 describe('registerHealthCheck validation', () => {
-  const run = () => undefined
+  const run = () => {}
 
   it.each<[string, unknown, string]>([
     ['a missing definition', undefined, 'expects a check definition object'],
     ['an uppercase name', { name: 'Publication', required: true, run }, 'must be 1-63 lowercase'],
     ['an empty name', { name: '', required: true, run }, 'must be 1-63 lowercase'],
     ['a name with quotes', { name: 'a"b', required: true, run }, 'must be 1-63 lowercase'],
-    ['a 64-character name', { name: 'a'.repeat(64), required: true, run }, 'must be 1-63 lowercase'],
+    [
+      'a 64-character name',
+      { name: 'a'.repeat(64), required: true, run },
+      'must be 1-63 lowercase',
+    ],
     ['the database probe name', { name: 'database', required: true, run }, 'reserved'],
-    ['the auth-tables probe name', { name: 'auth-tables', required: false, run }, 'reserved'],
-    ['no required flag', { name: 'publication', run }, 'must set required: true or required: false'],
+    ['the auth-tables probe name', { name: AUTH_TABLES_CHECK, required: false, run }, 'reserved'],
+    [
+      'no required flag',
+      { name: 'publication', run },
+      'must set required: true or required: false',
+    ],
     ['no run function', { name: 'publication', required: true }, 'needs a run function'],
     ['a zero timeout', { name: 'publication', required: true, run, timeoutMs: 0 }, 'timeoutMs'],
-    ['a fractional timeout', { name: 'publication', required: true, run, timeoutMs: 1.5 }, 'timeoutMs'],
-    ['a timeout above 30000 ms', { name: 'publication', required: true, run, timeoutMs: 30_001 }, 'timeoutMs'],
+    [
+      'a fractional timeout',
+      { name: 'publication', required: true, run, timeoutMs: 1.5 },
+      'timeoutMs',
+    ],
+    [
+      'a timeout above 30000 ms',
+      { name: 'publication', required: true, run, timeoutMs: 30_001 },
+      'timeoutMs',
+    ],
   ])('rejects %s', (_label, definition, message) => {
     expect(() => registerHealthCheck(definition as HealthCheckDefinition)).toThrow(TypeError)
     expect(() => registerHealthCheck(definition as HealthCheckDefinition)).toThrow(message)
@@ -691,11 +745,7 @@ describe('sanitizeHealthCheckDetail', () => {
     ['a top-level status key', { status: 'fresh' }, { detailOmitted: 'reserved-key' }],
     ['a nested database key', { a: [{ database: 1 }] }, { detailOmitted: 'reserved-key' }],
     ['a key that embeds a quote', { 'x"status': 1 }, { detailOmitted: 'reserved-key' }],
-    [
-      'a value that only mentions status',
-      { note: '"status":"ok"' },
-      { detail: { note: '"status":"ok"' } },
-    ],
+    ['a value that only mentions status', { note: STATUS_OK }, { detail: { note: STATUS_OK } }],
     [
       'detail over the size limit',
       { note: 'x'.repeat(MAX_HEALTH_CHECK_DETAIL_BYTES) },
@@ -706,7 +756,7 @@ describe('sanitizeHealthCheckDetail', () => {
   })
 
   it('never lets an allowed value put the reserved substring into the body', () => {
-    const { detail } = sanitizeHealthCheckDetail({ note: '"status":"ok"' })
-    expect(JSON.stringify(detail)).not.toContain('"status":"ok"')
+    const { detail } = sanitizeHealthCheckDetail({ note: STATUS_OK })
+    expect(JSON.stringify(detail)).not.toContain(STATUS_OK)
   })
 })

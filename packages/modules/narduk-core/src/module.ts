@@ -16,9 +16,9 @@ import {
 import { defu } from 'defu'
 
 import {
+  type DatabaseBackend,
   findDatabaseBackendConflict,
   resolveDatabaseBackendSelection,
-  type DatabaseBackend,
 } from '../runtime/shared/database-backend'
 import {
   applyCoreRollupBuildWarningPolicy,

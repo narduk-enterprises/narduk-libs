@@ -27,7 +27,10 @@ describe('resolveDatabaseBackendSelection', () => {
       ),
     ).toEqual({ backend: 'postgres', source: 'env' })
     expect(
-      resolveDatabaseBackendSelection({ env: '', runtimeConfig: { databaseBackend: 'none' } }, warn),
+      resolveDatabaseBackendSelection(
+        { env: '', runtimeConfig: { databaseBackend: 'none' } },
+        warn,
+      ),
     ).toEqual({ backend: 'none', source: 'runtimeConfig' })
     expect(resolveDatabaseBackendSelection({}, warn)).toEqual({ backend: 'd1', source: 'default' })
     expect(warn).not.toHaveBeenCalled()
@@ -56,10 +59,15 @@ describe('resolveDatabaseBackendSelection', () => {
   it('warns about unrecognized environment and runtimeConfig values and keeps resolving', () => {
     const warn = vi.fn()
     expect(
-      resolveDatabaseBackendSelection({ env: 'mysql', runtimeConfig: { databaseBackend: 'sqlite' } }, warn),
+      resolveDatabaseBackendSelection(
+        { env: 'mysql', runtimeConfig: { databaseBackend: 'sqlite' } },
+        warn,
+      ),
     ).toEqual({ backend: 'd1', source: 'default' })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('NUXT_DATABASE_BACKEND="mysql"'))
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('runtimeConfig.databaseBackend="sqlite"'))
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('runtimeConfig.databaseBackend="sqlite"'),
+    )
   })
 })
 

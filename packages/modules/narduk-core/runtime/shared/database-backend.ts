@@ -23,10 +23,10 @@ export interface DatabaseBackendSelection {
 }
 
 export interface DatabaseBackendInputs {
-  /** The `nardukCore.databaseBackend` module option. */
-  option?: unknown
   /** `NUXT_DATABASE_BACKEND` in the build environment. */
   env?: string | undefined
+  /** The `nardukCore.databaseBackend` module option. */
+  option?: unknown
   /**
    * The `runtimeConfig.databaseBackend` / `databaseBackendSource` pair already
    * present on the Nuxt options: authored by the app, or written by an earlier
@@ -116,8 +116,8 @@ export function isDatabaseBackendDeclared(source: unknown): boolean {
 }
 
 export interface DatabaseBackendConflictInputs {
-  databaseBackend?: unknown
   authBackend?: unknown
+  databaseBackend?: unknown
   nardukHealth?: unknown
 }
 

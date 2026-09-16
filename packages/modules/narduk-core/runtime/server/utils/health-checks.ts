@@ -1,7 +1,7 @@
 import {
   getHealthCheckRegistry,
-  normalizeHealthCheckDefinition,
   type HealthCheckDefinition,
+  normalizeHealthCheckDefinition,
 } from '../health/checks'
 
 export type {
