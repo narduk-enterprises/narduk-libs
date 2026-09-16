@@ -878,9 +878,9 @@ describe('database-free scaffold', () => {
     expect(() => JSON.parse(knip)).not.toThrow()
     expect(knip).not.toContain('#narduk-db')
     expect(JSON.parse(knip).workspaces['apps/web']).not.toHaveProperty('paths')
-    expect(JSON.parse(scaffold('d1').get('knip.json') ?? '{}').workspaces['apps/web'].paths).toEqual(
-      { '#narduk-db': ['server/database/schema.ts'] },
-    )
+    expect(
+      JSON.parse(scaffold('d1').get('knip.json') ?? '{}').workspaces['apps/web'].paths,
+    ).toEqual({ '#narduk-db': ['server/database/schema.ts'] })
   })
 
   it('points app guidance at registerHealthCheck rather than at the schema', () => {
