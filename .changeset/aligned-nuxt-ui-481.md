@@ -19,3 +19,9 @@ GHSA-gj2h-2fpw-fhv9 (medium, `@nuxt/ui < 4.8.1`) and widens the `typescript`
 peer to `^5.6.3 || ^6.0.0`. The only breaking change between 4.6.0 and 4.8.1 is
 `UInputMenu`'s `autocomplete` prop being renamed to `mode`, which nothing in
 this workspace uses.
+
+Consumer migration: an app that declares `@nuxt/ui` itself must move its own pin
+to `4.8.1` in the same change that takes this release. `narduk-shell`'s peer is
+exact, so any other version is a peer conflict, and `narduk-core` carries
+`@nuxt/ui` as a dependency, so a different app-level pin resolves a second copy
+— the duplicate-copy failure this release removes.
