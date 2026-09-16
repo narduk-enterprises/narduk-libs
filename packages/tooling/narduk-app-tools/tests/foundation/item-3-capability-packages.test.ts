@@ -115,35 +115,28 @@ describe('item 3 -- capability packages', () => {
     expect(subCheckStatus(await run(root), '3.3')).toBe('pass')
   })
 
-  it('3.4 is not-applicable off a non-status name, and fails/passes a status app on narduk-ui + status-runtime', async () => {
+  it.each([
+    ['Fixture App', { name: 'fixture-app' }],
+    ['Riverstatus', { name: 'riverstatus' }],
+    ['BuoyStat.us', { name: 'buoys' }],
+    ['Fixture App', { name: 'fixture-app', scripts: { status: 'git status' } }],
+    ['Riverstatus', { dependencies: { '@narduk-enterprises/status-runtime': '1.0.2' } }],
+  ])('3.4 stays retired for %s and manifest %j', async (productName, manifest) => {
     const root = makeTempRepo()
     tempDirs.push(root)
     writeConformantBaseline(root)
-    expect(subCheckStatus(await run(root), '3.4')).toBe('not-applicable')
-
     writeJson(root, 'Config/cloudflare-app.json', {
-      product: { name: 'Riverstatus', repository: 'narduk-enterprises/fixture-app' },
+      product: { name: productName, repository: 'narduk-enterprises/fixture-app' },
       worker: { nitroPreset: 'cloudflare_module' },
       access: { exposureClass: 'public' },
       bindings: { r2: [] },
     })
-    expect(subCheckStatus(await run(root), '3.4')).toBe('fail')
-
-    writeJson(root, 'package.json', {
-      name: 'x',
-      scripts: { 'manifests:validate': 'true' },
-      dependencies: {
-        '@narduk-enterprises/narduk-core': '3.4.1',
-        '@narduk-enterprises/narduk-testkit': '2.0.0',
-        '@narduk-enterprises/narduk-app-tools': '0.1.3',
-        '@narduk-enterprises/eslint-config': '2.0.0',
-        '@narduk-enterprises/narduk-seo': '1.0.0',
-        '@narduk-enterprises/narduk-analytics': '1.0.0',
-        '@narduk-enterprises/narduk-ui': '1.0.0',
-        'status-runtime': '1.0.0',
-      },
-    })
-    expect(subCheckStatus(await run(root), '3.4')).toBe('pass')
+    writeJson(root, 'package.json', manifest)
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '3.4')).toBe('not-applicable')
+    // Retiring the category must not exempt the app from its public-site rule.
+    expect(subCheckStatus(artefact, '3.1')).toBe('fail')
+    expect(artefact.items).toHaveLength(7)
   })
 
   it('3.5 fails a @narduk-geo scoped chart/map dependency outright', async () => {

@@ -1,7 +1,12 @@
 # @narduk-enterprises/status-runtime
 
-Shared build-time configuration for the five status applications. Everything
-here was duplicated verbatim across app `nuxt.config` files before extraction.
+Legacy build-time helpers retained for existing consumers. The special
+status-app compliance category was retired by company-hq D-WEBFOUND-2's
+2026-09-16 amendment; this package is optional, not an app foundation requirement.
+It remains published and source-compatible. Migrate existing uses during normal
+app maintenance, preserving their fonts and revision behavior.
+
+This package has no status-data service, health endpoint, or Nuxt module.
 
 - `resolveSourceRevision(env?)` — the exact source revision a build is produced
   from, resolved in a fixed precedence so an authorized exact-SHA release always
@@ -16,8 +21,7 @@ This package is a dependency-free ESM module with no build step. Pin an exact
 version; never use a path or monorepo workspace protocol dependency.
 
 Keep it split-survivable: do not add monorepo-relative imports, and do not put
-app-specific logic here. Pair it with `@narduk-enterprises/narduk-ui` for the
-token and instrument surface.
+app-specific logic here. Adopting it does not require `@narduk-enterprises/narduk-ui`.
 
-Anything generic to every Narduk app rather than to these five specifically
-belongs upstream in `@narduk-enterprises/narduk-core`, not here.
+New apps use the normal web-app contract: `narduk-core` owns build stamps and
+health behavior, while app font and theme choices remain app-owned.

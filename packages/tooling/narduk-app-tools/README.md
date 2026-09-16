@@ -136,6 +136,12 @@ warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
 company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
 for the weekly fleet rollup.
 
+The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
+Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
+product names do not require `narduk-ui` or `status-runtime`. Existing
+status-runtime consumers remain supported. All actual capability checks and
+exact-pin requirements continue to apply.
+
 ### Shared UI pinned (`foundation:check:shared-ui-pinned`)
 
 `narduk-app foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]`

@@ -164,35 +164,14 @@ function evaluate33(repo: AppRepo, merged: Record<string, string>): FoundationSu
   )
 }
 
-function evaluate34(repo: AppRepo, merged: Record<string, string>): FoundationSubCheck {
-  const cfApp = readCloudflareApp(repo)
-  const productName = isRecord(cfApp?.product)
-    ? String((cfApp!.product as Record<string, unknown>).name ?? '')
-    : ''
-  const looksLikeStatusApp =
-    /status/i.test(productName) || /status/i.test(repo.read('package.json') ?? '')
-  if (!looksLikeStatusApp) {
-    return check(
-      '3.4',
-      'status app: narduk-ui + status-runtime',
-      STATUS_NA,
-      'nothing in product.name or package.json name suggests this is a status app',
-    )
-  }
-  const hasUi = '@narduk-enterprises/narduk-ui' in merged
-  const hasStatusRuntime =
-    'status-runtime' in merged || '@narduk-enterprises/status-runtime' in merged
+function evaluate34(): FoundationSubCheck {
+  // Preserve the artifact ID; product branding no longer creates a capability.
+  // company-hq D-WEBFOUND-2 amendment, 2026-09-16.
   return check(
     '3.4',
-    'status app: narduk-ui + status-runtime',
-    hasUi && hasStatusRuntime ? STATUS_PASS : STATUS_FAIL,
-    hasUi && hasStatusRuntime
-      ? 'narduk-ui and status-runtime are both dependencies'
-      : `looks like a status app (product.name/package name); missing ${JSON.stringify(
-          [!hasUi && '@narduk-enterprises/narduk-ui', !hasStatusRuntime && 'status-runtime'].filter(
-            Boolean,
-          ),
-        )}`,
+    'retired status-app category',
+    STATUS_NA,
+    'status-app classification is retired; actual capabilities use the normal web-app checks, and status-runtime remains optional for legacy consumers',
   )
 }
 
@@ -243,7 +222,7 @@ export function evaluateItem3(repo: AppRepo): FoundationSubCheck[] {
   return [
     ...evaluate31And32(repo, exposureClass, merged),
     evaluate33(repo, merged),
-    evaluate34(repo, merged),
+    evaluate34(),
     evaluate35(repo, merged),
   ]
 }
