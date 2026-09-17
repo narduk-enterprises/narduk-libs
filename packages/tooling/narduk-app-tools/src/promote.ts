@@ -27,13 +27,35 @@
  * `./deploy.ts`), and this module resolves a SHA back to a version id by
  * reading it.
  *
- * KNOWN WINDOW: `wrangler versions list` returns the 10 most recent versions
- * and takes no paging flag (`wrangler versions list --help`, wrangler 4.133.0).
- * On a repository with many branch builds a main version can fall out of that
- * window before the promote job runs. That is reported as its own outcome --
- * `version-not-found`, with the number of versions actually searched -- rather
- * than as a generic failure, because the remedy (re-run the build, or promote
- * by explicit `--version-id`) is different.
+ * WHY THE LOOKUP DOES NOT USE `wrangler versions list`
+ * ----------------------------------------------------
+ * `wrangler versions list` prints "the 10 most recent Versions of your Worker"
+ * and takes no paging flag (`wrangler versions list --help`, wrangler 4.107.0).
+ * On a repository with non-production branch builds on, ten branch uploads can
+ * land between the main upload and the promote job, so the version to promote
+ * falls out of that window and the promote does nothing -- the one way this
+ * standard is worse than deploy-on-push (narduk-libs#451 defect 1).
+ *
+ * So the SHA lookup reads Cloudflare's Versions list endpoint directly
+ * (`GET /accounts/{id}/workers/scripts/{name}/versions`), which wrangler itself
+ * calls with no `per_page` and therefore gets the API's default page of 10. The
+ * same endpoint takes `per_page` and `page` (V4 page pagination), so this module
+ * walks it `VERSION_PAGE_SIZE` at a time up to a BOUND -- `--max-versions`,
+ * default `DEFAULT_VERSION_SEARCH_LIMIT` -- and never paginates unbounded.
+ *
+ * A miss is reported as its own outcome, `version-not-found` with exit
+ * `PROMOTE_EXIT.versionNotFound` (3) -- never exit 0, because a promote that
+ * promotes nothing must be a red job -- and the detail says the SHA, how many
+ * versions were searched, the bound, and whether the search reached the end of
+ * the Worker's history or stopped at its bound. The remedies differ: a search
+ * that ended short of the bound means the build never uploaded for this commit,
+ * while one that hit the bound means the version is older than the bound and
+ * `--max-versions` or `--version-id` recovers it.
+ *
+ * FALLBACK: without both an account id and `CLOUDFLARE_API_TOKEN` there is no
+ * API path, so the client falls back to `wrangler versions list` and SAYS so in
+ * the result (`versionSearch.source`), because a 10-version search that found
+ * nothing means something different from a 500-version one.
  *
  * WHY THIS GUARD IS NOT `isWorkersBuildDeployAllowed`
  * ---------------------------------------------------
@@ -48,6 +70,7 @@
 
 import { spawnSync } from 'node:child_process'
 
+import { fetchCloudflareJson } from './cloudflare.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
 
 import type { DeployEnv } from './deploy.js'
@@ -84,6 +107,49 @@ export interface WorkerDeployment {
   annotations?: Record<string, string>
   versions: Array<{ version_id: string; percentage: number }>
 }
+
+/**
+ * How a version listing was obtained. `wrangler` can only ever see the API's
+ * default page, so a `not-found` from it means far less than one from `api`.
+ */
+export type VersionSearchSource = 'api' | 'wrangler'
+
+/** What a listing saw, so a miss can say how hard it looked. */
+export interface VersionSearchInfo {
+  source: VersionSearchSource
+  /** The ceiling that applied. */
+  limit: number
+  /** True when the listing reached the end of this Worker's version history. */
+  complete: boolean
+}
+
+/** A bounded listing of a Worker's versions, newest first. */
+export interface VersionListing extends VersionSearchInfo {
+  versions: WorkerVersion[]
+}
+
+/**
+ * The page size asked of the Versions list endpoint. 100 is the conventional
+ * Cloudflare V4 page maximum; a smaller page would only mean more round trips
+ * for the same bound.
+ */
+export const VERSION_PAGE_SIZE = 100
+
+/**
+ * The default ceiling on a `--sha` lookup: five pages. Chosen to be far above
+ * any plausible number of branch uploads between a merge and its promote job
+ * (the failure narduk-libs#451 describes needs ten) while still being a bound --
+ * an unbounded walk of a long-lived Worker's history would turn one promote into
+ * an unbounded number of API reads. `--max-versions` raises or lowers it.
+ */
+export const DEFAULT_VERSION_SEARCH_LIMIT = 500
+
+/**
+ * What `wrangler versions list` returns at most, per its own help text
+ * ("List the 10 most recent Versions of your Worker", wrangler 4.107.0). Used
+ * only to decide whether a fallback listing reached the end of the history.
+ */
+export const WRANGLER_VERSION_LIST_CAP = 10
 
 /** The annotation key `wrangler versions upload --tag` writes. */
 export const VERSION_TAG_ANNOTATION = 'workers/tag'
@@ -236,7 +302,12 @@ export function getPromoteGuardMessage(action: PromoteAction): string {
 
 /** Every Cloudflare interaction goes through this, so tests never touch a network. */
 export interface WranglerVersionsClient {
-  listVersions: () => Promise<WorkerVersion[]>
+  /**
+   * Newest-first versions, bounded by `limit`. Returns the listing's own
+   * provenance and completeness alongside the rows, because "no version carries
+   * this tag" is only actionable next to how far the search actually reached.
+   */
+  listVersions: (limit: number) => Promise<VersionListing>
   listDeployments: () => Promise<WorkerDeployment[]>
   /** `wrangler versions deploy <id>@100 --yes`. */
   deployVersion: (versionId: string, percentage: number, message?: string) => Promise<void>
@@ -273,6 +344,9 @@ export interface WranglerCliOptions {
   env?: DeployEnv
   /** Injected in tests; `spawnSync` otherwise. */
   spawn?: SpawnWrangler
+  /** Injected in tests; the global `fetch` otherwise. Never reaches a network
+   * in this package's suite -- see `tests/promote.test.ts`. */
+  fetchImpl?: typeof fetch
 }
 
 const spawnWranglerSync: SpawnWrangler = (command, args, options) =>
@@ -322,15 +396,93 @@ export function parseWranglerVersionsJson<T>(stdout: string, what: string): T {
   }
 }
 
+/**
+ * The bounded walk of Cloudflare's Versions list endpoint -- the whole of
+ * narduk-libs#451 defect 1.
+ *
+ * `wrangler versions list` calls this same endpoint with no `per_page` and so
+ * receives the API's default page of 10 (wrangler 4.107.0,
+ * `fetchDeployableVersions`). `per_page`/`page` are the endpoint's own V4 page
+ * pagination -- `?per_page=` is already how this package reads a version's
+ * plain-text vars (`./cloudflare.ts`).
+ *
+ * The walk stops at the FIRST of: the bound, a short page (the end of the
+ * history), or an empty page. `complete` records which, so a caller can tell
+ * "this commit never uploaded" from "its version is older than the bound".
+ */
+export async function listWorkerVersionsViaApi(options: {
+  accountId: string
+  apiToken: string
+  scriptName: string
+  limit: number
+  fetchImpl?: typeof fetch
+}): Promise<VersionListing> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const base = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}/versions`
+  const limit = Math.max(1, Math.trunc(options.limit))
+  const versions: WorkerVersion[] = []
+  let complete = false
+  for (let page = 1; versions.length < limit; page += 1) {
+    const perPage = Math.min(VERSION_PAGE_SIZE, limit - versions.length)
+    const url = `${base}?deployable=true&per_page=${String(perPage)}&page=${String(page)}`
+    const body = await fetchCloudflareJson<{ items?: WorkerVersion[] }>(
+      url,
+      options.apiToken,
+      fetchImpl,
+    )
+    const items = body.items ?? []
+    versions.push(...items)
+    if (items.length < perPage) {
+      complete = true
+      break
+    }
+  }
+  return { versions: versions.slice(0, limit), complete, limit, source: 'api' }
+}
+
+/**
+ * Whether the API path is available. Both halves are required: the endpoint is
+ * account-scoped, and it is the only credential this command is ever given.
+ * Without them the client falls back to wrangler's 10 and says so.
+ */
+export function resolveVersionsApiAuth(
+  options: WranglerCliOptions,
+  env: DeployEnv,
+): { accountId: string; apiToken: string } | null {
+  const accountId = options.accountId?.trim() || env.CLOUDFLARE_ACCOUNT_ID?.trim() || ''
+  const apiToken = env.CLOUDFLARE_API_TOKEN?.trim() || ''
+  if (!accountId || !apiToken) return null
+  return { accountId, apiToken }
+}
+
 export function createWranglerCli(options: WranglerCliOptions): WranglerVersionsClient {
   const env = options.env ?? process.env
   const bound = { ...options, env }
+  const api = resolveVersionsApiAuth(bound, env)
   return {
-    listVersions: async () =>
-      parseWranglerVersionsJson<WorkerVersion[]>(
+    listVersions: async (limit) => {
+      if (api) {
+        return listWorkerVersionsViaApi({
+          accountId: api.accountId,
+          apiToken: api.apiToken,
+          scriptName: bound.workerName,
+          limit,
+          fetchImpl: bound.fetchImpl,
+        })
+      }
+      const versions = parseWranglerVersionsJson<WorkerVersion[]>(
         runWrangler(bound, ['versions', 'list', '--json'], true).stdout,
         'versions list',
-      ),
+      )
+      return {
+        versions,
+        // Fewer rows than wrangler's own cap is the only evidence available
+        // that the listing reached the end of the history.
+        complete: versions.length < WRANGLER_VERSION_LIST_CAP,
+        limit: WRANGLER_VERSION_LIST_CAP,
+        source: 'wrangler',
+      }
+    },
     listDeployments: async () =>
       parseWranglerVersionsJson<WorkerDeployment[]>(
         runWrangler(bound, ['deployments', 'list', '--json'], true).stdout,
@@ -389,6 +541,39 @@ export function resolveVersionForSha(
   if (matches.length === 1) return { kind: 'found', version: matches[0], searched: versions.length }
   if (matches.length === 0) return { kind: 'not-found', searched: versions.length }
   return { kind: 'ambiguous', versions: matches, searched: versions.length }
+}
+
+/**
+ * The remedy half of a `version-not-found`, kept beside the search facts that
+ * decide it: a search that ran out of history means the build never uploaded
+ * this commit, a search that hit its bound means the version is simply older
+ * than the bound, and a `wrangler` search means neither was established because
+ * only ten versions were visible.
+ */
+export function describeVersionSearch(sha: string, searched: number, info: VersionSearchInfo): string {
+  const head =
+    `No uploaded version carries ${VERSION_TAG_ANNOTATION} ${sha} among the ` +
+    `${String(searched)} version(s) searched (source ${info.source}, bound ${String(info.limit)}).`
+  if (info.source === 'wrangler') {
+    return (
+      `${head} The search fell back to \`wrangler versions list\`, which returns at most ` +
+      `${String(WRANGLER_VERSION_LIST_CAP)} versions and takes no paging flag, because an account ` +
+      'id and CLOUDFLARE_API_TOKEN were not both available. Supply both so the paginated ' +
+      'Versions API is used, re-run the Workers Build for this commit, or promote by --version-id.'
+    )
+  }
+  if (!info.complete) {
+    return (
+      `${head} The search stopped at its bound before reaching the end of this Worker's ` +
+      'version history, so the version may simply be older than the bound: re-run with a larger ' +
+      '--max-versions, or promote by --version-id.'
+    )
+  }
+  return (
+    `${head} The search reached the end of this Worker's version history, so no build ever ` +
+    'uploaded a version for this commit. Re-run the Workers Build for this commit, or promote ' +
+    'by --version-id.'
+  )
 }
 
 /**
@@ -540,6 +725,8 @@ export interface PromoteFlags {
   anyBranch: boolean
   /** Promote a version older than the live one -- a deliberate revert. */
   force: boolean
+  /** The bound on the `--sha` lookup. See `DEFAULT_VERSION_SEARCH_LIMIT`. */
+  maxVersions: number
   json: boolean
   dryRun: boolean
 }
@@ -547,6 +734,14 @@ export interface PromoteFlags {
 function requireValue(args: string[], index: number, flag: string): string {
   const value = args[index]
   if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`)
+  return value
+}
+
+function requireMaxVersions(raw: string): number {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1 || value > 10_000) {
+    throw new Error(`--max-versions must be an integer 1..10000, got ${JSON.stringify(raw)}`)
+  }
   return value
 }
 
@@ -569,6 +764,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     productionBranch: null,
     anyBranch: false,
     force: false,
+    maxVersions: DEFAULT_VERSION_SEARCH_LIMIT,
     json: false,
     dryRun: false,
   }
@@ -585,6 +781,8 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
       flags.productionBranch = requireValue(args, (index += 1), '--production-branch')
     else if (arg === '--percentage')
       flags.percentage = requirePercentage(requireValue(args, (index += 1), '--percentage'))
+    else if (arg === '--max-versions')
+      flags.maxVersions = requireMaxVersions(requireValue(args, (index += 1), '--max-versions'))
     else if (arg === '--any-branch') flags.anyBranch = true
     else if (arg === '--force') flags.force = true
     else if (arg === '--json') flags.json = true
@@ -662,8 +860,11 @@ export interface PromoteResult {
   /** The version that was live before this call -- feed it to `rollback --to`. */
   previousVersionId: string | null
   percentage: number | null
-  /** How many versions the SHA lookup could see. `wrangler versions list` caps at 10. */
+  /** How many versions the SHA lookup actually read. */
   searchedVersions?: number
+  /** Where that listing came from, its bound, and whether it reached the end of
+   * the Worker's history. A `version-not-found` is only actionable with this. */
+  versionSearch?: VersionSearchInfo
   candidates?: string[]
   /**
    * Set only on `wrangler-failed`. `true` means a `versions deploy` or
@@ -687,7 +888,14 @@ export function formatPromoteResult(result: PromoteResult): string {
   if (result.previousVersionId) lines.push(`  previous   ${result.previousVersionId}`)
   if (result.percentage !== null) lines.push(`  traffic    ${String(result.percentage)}%`)
   if (result.searchedVersions !== undefined) {
-    lines.push(`  searched   ${String(result.searchedVersions)} most recent versions`)
+    const search = result.versionSearch
+    lines.push(
+      `  searched   ${String(result.searchedVersions)} version(s)` +
+        (search
+          ? ` via ${search.source}, bound ${String(search.limit)}, ` +
+            `${search.complete ? 'reached the end of the history' : 'stopped at the bound'}`
+          : ''),
+    )
   }
   if (result.candidates?.length) lines.push(`  candidates ${result.candidates.join(', ')}`)
   if (result.trafficMayHaveChanged !== undefined) {
@@ -791,6 +999,32 @@ async function withWranglerFailure<T>(
   }
 }
 
+/**
+ * The `--sha` default -- and the one event where there must not be one
+ * (narduk-libs#451 defect 2).
+ *
+ * Under `on: workflow_run`, `GITHUB_SHA` is the default branch's head at the
+ * moment the triggering run COMPLETED, not the commit that run verified. A
+ * promote job that lets `--sha` default there promotes whatever landed on main
+ * since -- a commit `ci / Required` never passed. The triggering commit is
+ * `github.event.workflow_run.head_sha`, which only the workflow can read, so
+ * this refuses rather than guesses. `--version-id` is unaffected: it names the
+ * version outright and never consults a SHA.
+ */
+export function defaultPromoteSha(env: DeployEnv, haveVersionId: boolean): string | null {
+  const sha = env.GITHUB_SHA?.trim() || null
+  if (haveVersionId) return null
+  if (sha && env.GITHUB_EVENT_NAME?.trim() === 'workflow_run') {
+    throw new Error(
+      'Refusing to default --sha to GITHUB_SHA under a workflow_run event: there GITHUB_SHA is ' +
+        'the default branch head at trigger time, not the commit whose run completed, so this ' +
+        'would promote a commit the gate check never passed. Pass ' +
+        '--sha ${{ github.event.workflow_run.head_sha }} explicitly.',
+    )
+  }
+  return sha
+}
+
 export async function runVersionsPromote(
   flags: PromoteFlags,
   context: PromoteContext = {},
@@ -814,7 +1048,7 @@ export async function runVersionsPromote(
   const client =
     context.client ??
     createWranglerCli({ workerName, accountId: accountId ?? undefined, appDir, env })
-  const sha = flags.sha ?? env.GITHUB_SHA?.trim() ?? null
+  const sha = flags.sha ?? defaultPromoteSha(env, flags.versionId !== null)
   if (!flags.versionId && !sha) {
     throw new Error('Pass --sha <commit> or --version-id <id> (GITHUB_SHA was not set)')
   }
@@ -831,17 +1065,23 @@ export async function runVersionsPromote(
   const live = currentDeployment(deployments)
   const previousVersionId = soleDeployedVersionId(live)
 
-  // One `versions list` serves both the SHA lookup and the ordering guard, so
-  // the guard costs no extra call and sees exactly the window the lookup saw.
+  // One listing serves both the SHA lookup and the ordering guard, so the guard
+  // costs no extra call and sees exactly the window the lookup saw.
   const versionsRead = await withWranglerFailure(
     'versions-promote',
     workerName,
     'versions list',
     false,
-    async () => client.listVersions(),
+    async () => client.listVersions(flags.maxVersions),
   )
   if (!versionsRead.ok) return versionsRead.result
-  const versions = versionsRead.value
+  const listing = versionsRead.value
+  const versions = listing.versions
+  const versionSearch: VersionSearchInfo = {
+    source: listing.source,
+    limit: listing.limit,
+    complete: listing.complete,
+  }
 
   let versionId = flags.versionId
   let searchedVersions: number | undefined
@@ -849,6 +1089,8 @@ export async function runVersionsPromote(
     const match = resolveVersionForSha(versions, sha)
     searchedVersions = match.searched
     if (match.kind === 'not-found') {
+      // Exit 3, never 0: a promote that promoted nothing has to be a red job,
+      // because production is still serving the previous release (#451).
       return {
         action: 'versions-promote',
         outcome: 'version-not-found',
@@ -858,10 +1100,8 @@ export async function runVersionsPromote(
         previousVersionId,
         percentage: null,
         searchedVersions,
-        detail:
-          `No uploaded version carries workers/tag ${sha} among the ${String(match.searched)} most ` +
-          'recent versions. Re-run the Workers Build for this commit, or promote by --version-id. ' +
-          '`wrangler versions list` returns at most 10 versions and takes no paging flag.',
+        versionSearch,
+        detail: describeVersionSearch(sha, match.searched, versionSearch),
         exitCode: PROMOTE_EXIT.versionNotFound,
       }
     }
@@ -875,6 +1115,7 @@ export async function runVersionsPromote(
         previousVersionId,
         percentage: null,
         searchedVersions,
+        versionSearch,
         candidates: match.versions.map((version) => version.id),
         detail:
           `${String(match.versions.length)} versions carry workers/tag ${sha}; refusing to guess. ` +
@@ -905,6 +1146,7 @@ export async function runVersionsPromote(
     previousVersionId,
     percentage: null,
     searchedVersions,
+    versionSearch,
     detail,
     exitCode,
   })
@@ -969,6 +1211,7 @@ export async function runVersionsPromote(
       previousVersionId,
       percentage: 100,
       searchedVersions,
+      versionSearch,
       detail: 'This version already serves 100% of traffic; nothing to do.',
       exitCode: PROMOTE_EXIT.ok,
     }
@@ -984,6 +1227,7 @@ export async function runVersionsPromote(
       previousVersionId,
       percentage: flags.percentage,
       searchedVersions,
+      versionSearch,
       detail: `Would run: wrangler versions deploy ${versionId}@${String(flags.percentage)}`,
       exitCode: PROMOTE_EXIT.ok,
     }
@@ -1011,6 +1255,7 @@ export async function runVersionsPromote(
     previousVersionId,
     percentage: flags.percentage,
     searchedVersions,
+    versionSearch,
     forced,
     detail: `Deployed version ${versionId} at ${String(flags.percentage)}%.`,
     exitCode: PROMOTE_EXIT.ok,

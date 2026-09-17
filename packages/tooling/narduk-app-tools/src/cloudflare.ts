@@ -11,7 +11,17 @@ export interface WorkerPlainTextOptions {
   scriptName: string
 }
 
-async function fetchJson<T>(url: string, apiToken: string, fetchImpl: typeof fetch): Promise<T> {
+/**
+ * One Cloudflare REST read, with Cloudflare's own `success`/`errors` envelope
+ * turned into a thrown `Error`. Exported because the promote path needs the
+ * same envelope handling for the paginated Versions list (`../promote.ts`) and
+ * a second copy of it would be a second place for the error shape to drift.
+ */
+export async function fetchCloudflareJson<T>(
+  url: string,
+  apiToken: string,
+  fetchImpl: typeof fetch,
+): Promise<T> {
   const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${apiToken}` } })
   const body = (await response.json()) as CloudflareErrorBody
   if (!response.ok || body.success === false) {
@@ -33,14 +43,14 @@ export async function fetchWorkerPlainTextVars(
 ): Promise<Record<string, string>> {
   const fetchImpl = options.fetchImpl ?? fetch
   const base = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}`
-  const versions = await fetchJson<{ items?: Array<{ id?: string }> }>(
+  const versions = await fetchCloudflareJson<{ items?: Array<{ id?: string }> }>(
     `${base}/versions?per_page=5`,
     options.apiToken,
     fetchImpl,
   )
   const versionId = versions.items?.[0]?.id
   if (!versionId) throw new Error(`No deployed Worker versions found for ${options.scriptName}`)
-  const detail = await fetchJson<{
+  const detail = await fetchCloudflareJson<{
     resources?: { bindings?: Array<{ name?: string; text?: string; type?: string }> }
   }>(`${base}/versions/${encodeURIComponent(versionId)}`, options.apiToken, fetchImpl)
 
