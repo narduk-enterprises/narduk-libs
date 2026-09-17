@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
 /**
  * Where a resolved local dev port came from.
@@ -31,7 +31,14 @@ export interface LocalDevPortResolution {
 }
 
 export interface ResolveLocalDevPortOptions {
-  /** Absolute path to the checkout root -- the directory that holds `.git`. */
+  /**
+   * Any directory inside the checkout. The checkout root -- the nearest
+   * ancestor holding `.git` -- is found from here and is what the port derives
+   * from, so `process.cwd()` is a fine value. A Playwright config cannot always
+   * use `import.meta.url`: Playwright transpiles a TypeScript config to CJS
+   * unless something (`--import tsx`, `"type": "module"`) says otherwise, and
+   * `import.meta` is a syntax error there.
+   */
   rootDir: string
   /** The app's declared local dev port (`narduk.localDevNuxtPort`). */
   declaredPort: number
@@ -69,6 +76,23 @@ export function normalizePort(value: unknown): number | null {
         : Number.NaN
 
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_PORT ? parsed : null
+}
+
+/**
+ * The nearest ancestor of `startDir` (inclusive) that holds a `.git` entry, or
+ * `null` when there is none. That directory is the checkout root, and it is
+ * what a derived port keys on -- so passing any directory inside the checkout,
+ * `process.cwd()` included, yields the same port.
+ */
+export function findCheckoutRoot(startDir: string): string | null {
+  let dir = resolve(startDir)
+
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
 }
 
 /**
@@ -134,6 +158,8 @@ export function resolveLocalDevPort(options: ResolveLocalDevPortOptions): LocalD
     span = DEFAULT_SPAN,
   } = options
 
+  const checkoutRoot = findCheckoutRoot(rootDir) ?? resolve(rootDir)
+
   for (const envVar of overrideEnvVars) {
     const override = normalizePort(env[envVar])
     if (override !== null) {
@@ -142,13 +168,13 @@ export function resolveLocalDevPort(options: ResolveLocalDevPortOptions): LocalD
         source: 'env',
         envVar,
         declaredPort,
-        linkedWorktree: isLinkedWorktree(rootDir),
+        linkedWorktree: isLinkedWorktree(checkoutRoot),
         description: `port ${override} from ${envVar}`,
       }
     }
   }
 
-  const linkedWorktree = isLinkedWorktree(rootDir)
+  const linkedWorktree = isLinkedWorktree(checkoutRoot)
   const declared: LocalDevPortResolution = {
     port: declaredPort,
     source: 'declared',
@@ -163,14 +189,14 @@ export function resolveLocalDevPort(options: ResolveLocalDevPortOptions): LocalD
   // Slide the window rather than let a high declared port push the derived one
   // past 65535. `windowStart + span - 1` is always a legal port.
   const windowStart = Math.max(MIN_PORT, Math.min(declaredPort, MAX_PORT - (effectiveSpan - 1)))
-  const port = windowStart + stablePathOffset(rootDir, effectiveSpan)
+  const port = windowStart + stablePathOffset(checkoutRoot, effectiveSpan)
 
   return {
     port,
     source: 'derived',
     declaredPort,
     linkedWorktree: true,
-    description: `port ${port} derived from linked worktree ${rootDir} (declared ${declaredPort})`,
+    description: `port ${port} derived from linked worktree ${checkoutRoot} (declared ${declaredPort})`,
   }
 }
 

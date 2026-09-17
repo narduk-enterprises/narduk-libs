@@ -1,12 +1,13 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   assertLocalDevPortAvailable,
+  findCheckoutRoot,
   isLinkedWorktree,
   isPortInUse,
   normalizePort,
@@ -45,6 +46,37 @@ describe('isLinkedWorktree', () => {
     const root = join(scratch, 'not-a-checkout')
     mkdirSync(root, { recursive: true })
     expect(isLinkedWorktree(root)).toBe(false)
+  })
+})
+
+describe('findCheckoutRoot', () => {
+  it('walks up to the checkout root from a nested directory', () => {
+    const root = linkedWorktree('nested-root')
+    const nested = join(root, 'apps', 'web', 'tests')
+    mkdirSync(nested, { recursive: true })
+
+    expect(findCheckoutRoot(nested)).toBe(resolve(root))
+  })
+
+  it('returns null outside any checkout', () => {
+    // The scratch dir itself has no `.git`; assert only that the walk does not
+    // stop inside it, since a real filesystem root may be inside a repo.
+    const outside = join(scratch, 'outside')
+    mkdirSync(outside, { recursive: true })
+
+    expect(findCheckoutRoot(outside)).not.toBe(resolve(outside))
+  })
+
+  it('derives the same port from a nested directory as from the checkout root', () => {
+    // packed-consumer-smoke's failure mode in reverse: a config that cannot use
+    // `import.meta.url` passes `process.cwd()`, which may be anywhere inside.
+    const root = linkedWorktree('nested-port')
+    const nested = join(root, 'apps', 'web')
+    mkdirSync(nested, { recursive: true })
+
+    expect(resolveLocalDevPort({ rootDir: nested, declaredPort: DECLARED, env: {} })).toMatchObject(
+      resolveLocalDevPort({ rootDir: root, declaredPort: DECLARED, env: {} }),
+    )
   })
 })
 

@@ -961,6 +961,15 @@ describe('create-narduk-app generation contract', () => {
       "} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'",
     )
     expect(generatedPlaywrightConfig).toContain('declaredPort: 4377,')
+    // Playwright transpiles this config to CJS (the generated root package.json
+    // is not `"type": "module"` and nothing injects tsx), where `import.meta`
+    // is a SYNTAX error -- caught live by packed-consumer-smoke.
+    expect(generatedPlaywrightConfig).toContain('rootDir: process.cwd(),')
+    expect(
+      generatedPlaywrightConfig
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//') && line.includes('import.meta')),
+    ).toEqual([])
     expect(generatedPlaywrightConfig).toContain('const port = devPort.port')
     // Reuse is a decision the resolver makes, never the old `!isCI`: a derived
     // port must not adopt a server this checkout did not start.

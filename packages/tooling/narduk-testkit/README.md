@@ -369,9 +369,6 @@ app shares it, so `reuseExistingServer` attaches to whichever worktree's
 (narduk-libs#417).
 
 ```ts
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import {
   assertLocalDevPortAvailable,
   resolveLocalDevPort,
@@ -379,12 +376,18 @@ import {
 } from '@narduk-enterprises/narduk-testkit/playwright/dev-port'
 
 const devPort = resolveLocalDevPort({
-  rootDir: dirname(fileURLToPath(import.meta.url)),
+  rootDir: process.cwd(),
   declaredPort: 51952,
 })
 const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })
 if (!reuseExistingServer) assertLocalDevPortAvailable({ resolution: devPort })
 ```
+
+`rootDir` is any directory inside the checkout — the resolver walks up to the
+nearest `.git`, so `process.cwd()` is enough. Prefer it to `import.meta.url`:
+Playwright transpiles a TypeScript config to CJS unless something
+(`--import tsx`, `"type": "module"`) says otherwise, and `import.meta` is a
+syntax error there.
 
 A **linked git worktree** derives `declaredPort + hash(checkout path) % 1000`,
 so two lanes on one machine cannot collide with no environment variable set, and
