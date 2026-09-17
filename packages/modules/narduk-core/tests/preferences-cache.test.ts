@@ -27,6 +27,10 @@ const { applyPreferencesCacheHeaders, default: plugin } =
 const CACHEABLE = 'public, max-age=60'
 const LIVE_CDN = 'public, max-age=300, stale-while-revalidate=900'
 const NO_STORE = 'private, no-store'
+const CACHE_CONTROL = 'cache-control'
+const CDN_CACHE_CONTROL = 'cdn-cache-control'
+/** Every marked response varies on both of these, lowercased for comparison. */
+const PREFERENCE_VARY = ['cookie', 'accept-language']
 
 interface RenderResponse {
   headers: Record<string, string | undefined>
@@ -107,19 +111,19 @@ async function apiRespond(
 describe('preferences-cache Nitro plugin', () => {
   it('leaves a response alone when nothing read preferences', () => {
     const { renderResponse } = installedHooks()
-    const response: RenderResponse = { headers: { 'cache-control': CACHEABLE } }
+    const response: RenderResponse = { headers: { [CACHE_CONTROL]: CACHEABLE } }
 
     renderResponse(response, { event: { context: {} } })
 
-    expect(response.headers).toEqual({ 'cache-control': CACHEABLE })
+    expect(response.headers).toEqual({ [CACHE_CONTROL]: CACHEABLE })
   })
 
   it('leaves a response alone when there is no event at all', () => {
     const { renderResponse } = installedHooks()
-    const response: RenderResponse = { headers: { 'cache-control': CACHEABLE } }
+    const response: RenderResponse = { headers: { [CACHE_CONTROL]: CACHEABLE } }
 
     expect(() => renderResponse(response, {})).not.toThrow()
-    expect(response.headers['cache-control']).toBe(CACHEABLE)
+    expect(response.headers[CACHE_CONTROL]).toBe(CACHEABLE)
   })
 
   it('forces private, no-store with Vary: Cookie once preferences were read', () => {
@@ -127,12 +131,12 @@ describe('preferences-cache Nitro plugin', () => {
     const event = { context: {} as Record<string, unknown> }
     markPreferencesInfluenced(event)
     const response: RenderResponse = {
-      headers: { 'cache-control': CACHEABLE, 'content-type': 'text/html' },
+      headers: { [CACHE_CONTROL]: CACHEABLE, 'content-type': 'text/html' },
     }
 
     renderResponse(response, { event })
 
-    expect(response.headers['cache-control']).toBe(NO_STORE)
+    expect(response.headers[CACHE_CONTROL]).toBe(NO_STORE)
     expect(response.headers['content-type']).toBe('text/html')
     expect(varyTokens(response.headers.vary)).toEqual(expect.arrayContaining(['cookie']))
   })
@@ -143,7 +147,7 @@ describe('preferences-cache Nitro plugin', () => {
     markPreferencesInfluenced(event)
     const response: RenderResponse = {
       headers: {
-        'cache-control': CACHEABLE,
+        [CACHE_CONTROL]: CACHEABLE,
         'CDN-Cache-Control': LIVE_CDN,
         'Cloudflare-CDN-Cache-Control': 'public, max-age=60',
         'Surrogate-Control': 'max-age=60',
@@ -156,7 +160,7 @@ describe('preferences-cache Nitro plugin', () => {
 
     renderResponse(response, { event })
 
-    expect(response.headers['cache-control']).toBe(NO_STORE)
+    expect(response.headers[CACHE_CONTROL]).toBe(NO_STORE)
     expect(response.headers['content-type']).toBe('text/html')
     expect(response.headers['CDN-Cache-Control']).toBeUndefined()
     expect(response.headers['Cloudflare-CDN-Cache-Control']).toBeUndefined()
@@ -164,16 +168,14 @@ describe('preferences-cache Nitro plugin', () => {
     expect(response.headers['Cache-Tag']).toBeUndefined()
     expect(response.headers.Expires).toBeUndefined()
     expect(response.headers.Age).toBeUndefined()
-    expect(varyTokens(response.headers.vary)).toEqual(
-      expect.arrayContaining(['cookie', 'accept-language']),
-    )
+    expect(varyTokens(response.headers.vary)).toEqual(expect.arrayContaining(PREFERENCE_VARY))
   })
 
   it('merges Cookie and Accept-Language into an existing Vary without clobbering it', () => {
     const headers = applyPreferencesCacheHeaders({ Vary: 'Accept-Encoding' })
-    expect(headers['cache-control']).toBe(NO_STORE)
+    expect(headers[CACHE_CONTROL]).toBe(NO_STORE)
     expect(varyTokens(headers.vary)).toEqual(
-      expect.arrayContaining(['accept-encoding', 'cookie', 'accept-language']),
+      expect.arrayContaining(['accept-encoding', ...PREFERENCE_VARY]),
     )
   })
 
@@ -188,9 +190,9 @@ describe('preferences-cache Nitro plugin', () => {
       Object.keys(headers)
         .map((name) => name.toLowerCase())
         .sort(),
-    ).toEqual(['cache-control', 'vary'])
+    ).toEqual([CACHE_CONTROL, 'vary'])
     expect(varyTokens(headers.vary)).toEqual(
-      expect.arrayContaining(['accept-encoding', 'cookie', 'accept-language']),
+      expect.arrayContaining(['accept-encoding', ...PREFERENCE_VARY]),
     )
   })
 
@@ -211,14 +213,12 @@ describe('preferences-cache beforeResponse (API routes)', () => {
       return { ok: true }
     })
 
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cloudflare-cdn-cache-control')).toBeNull()
     expect(headers.get('surrogate-control')).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
-    expect(varyTokens(headers.get('vary'))).toEqual(
-      expect.arrayContaining(['cookie', 'accept-language']),
-    )
+    expect(varyTokens(headers.get('vary'))).toEqual(expect.arrayContaining(PREFERENCE_VARY))
   })
 
   it('ends private when readPreferences runs before setCacheProfile', async () => {
@@ -228,8 +228,8 @@ describe('preferences-cache beforeResponse (API routes)', () => {
       return { ok: true }
     })
 
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
 
@@ -239,8 +239,8 @@ describe('preferences-cache beforeResponse (API routes)', () => {
       event.context[NE_PREFERENCES_INFLUENCED_CONTEXT_KEY] = true
     })
 
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
 })
@@ -252,7 +252,7 @@ describe('preferences-cache render:response order (SSR)', () => {
     markPreferencesInfluenced(event)
     const response: RenderResponse = {
       headers: {
-        'cache-control': CACHEABLE,
+        [CACHE_CONTROL]: CACHEABLE,
         'CDN-Cache-Control': LIVE_CDN,
         'Cache-Tag': 'stations',
       },
@@ -260,7 +260,7 @@ describe('preferences-cache render:response order (SSR)', () => {
 
     renderResponse(response, { event })
 
-    expect(response.headers['cache-control']).toBe(NO_STORE)
+    expect(response.headers[CACHE_CONTROL]).toBe(NO_STORE)
     expect(response.headers['CDN-Cache-Control']).toBeUndefined()
     expect(response.headers['Cache-Tag']).toBeUndefined()
   })
@@ -269,7 +269,7 @@ describe('preferences-cache render:response order (SSR)', () => {
     const { renderResponse } = installedHooks()
     const response: RenderResponse = {
       headers: {
-        'cache-control': CACHEABLE,
+        [CACHE_CONTROL]: CACHEABLE,
         'CDN-Cache-Control': LIVE_CDN,
         'Cache-Tag': 'stations',
       },
@@ -279,7 +279,7 @@ describe('preferences-cache render:response order (SSR)', () => {
 
     renderResponse(response, { event })
 
-    expect(response.headers['cache-control']).toBe(NO_STORE)
+    expect(response.headers[CACHE_CONTROL]).toBe(NO_STORE)
     expect(response.headers['CDN-Cache-Control']).toBeUndefined()
     expect(response.headers['Cache-Tag']).toBeUndefined()
   })
@@ -351,8 +351,8 @@ describe('Nitro cached-handler incompatibility warning', () => {
  */
 describe('every response path leaves a marked response unstorable', () => {
   const POISON_HEADERS = {
-    'cache-control': CACHEABLE,
-    'cdn-cache-control': LIVE_CDN,
+    [CACHE_CONTROL]: CACHEABLE,
+    [CDN_CACHE_CONTROL]: LIVE_CDN,
     'cloudflare-cdn-cache-control': LIVE_CDN,
     'surrogate-control': 'max-age=300',
     'cache-tag': 'stations',
@@ -360,25 +360,24 @@ describe('every response path leaves a marked response unstorable', () => {
   }
 
   function expectUnstorable(headers: Headers): void {
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cloudflare-cdn-cache-control')).toBeNull()
     expect(headers.get('surrogate-control')).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
     expect(headers.get('expires')).toBeNull()
-    expect(varyTokens(headers.get('vary'))).toEqual(
-      expect.arrayContaining(['cookie', 'accept-language']),
-    )
+    expect(varyTokens(headers.get('vary'))).toEqual(expect.arrayContaining(PREFERENCE_VARY))
   }
 
   it('strips shared-cache headers a returned Response object carries', async () => {
-    const { headers } = await apiRespond((event) => {
+    const { body, headers } = await apiRespond((event) => {
       readPreferences(event)
       return new Response(JSON.stringify({ text: '4.6 ft' }), {
         headers: { ...POISON_HEADERS, 'content-type': 'application/json' },
       })
     })
 
+    expect(JSON.parse(body)).toEqual({ text: '4.6 ft' })
     expectUnstorable(headers)
   })
 
@@ -423,12 +422,13 @@ describe('every response path leaves a marked response unstorable', () => {
   })
 
   it('keeps a streamed response out of a shared cache', async () => {
-    const { headers } = await apiRespond((event) => {
+    const { body, headers } = await apiRespond((event) => {
       setCacheProfile(event, 'live', { tags: ['stations'] })
       readPreferences(event)
       return Readable.from(['4.6 ft'])
     })
 
+    expect(body).toBe('4.6 ft')
     expectUnstorable(headers)
   })
 })
@@ -442,8 +442,8 @@ describe('a proxied fetch Response with immutable headers', () => {
   it('is rebuilt private, no-store rather than throwing', async () => {
     const upstream = createServer((_request, response) => {
       response.writeHead(200, {
-        'cache-control': CACHEABLE,
-        'cdn-cache-control': LIVE_CDN,
+        [CACHE_CONTROL]: CACHEABLE,
+        [CDN_CACHE_CONTROL]: LIVE_CDN,
         'cache-tag': 'stations',
         'content-type': 'application/json',
       })
@@ -466,12 +466,10 @@ describe('a proxied fetch Response with immutable headers', () => {
       })
 
       expect(JSON.parse(body)).toEqual({ text: '4.6 ft' })
-      expect(headers.get('cache-control')).toBe(NO_STORE)
-      expect(headers.get('cdn-cache-control')).toBeNull()
+      expect(headers.get(CACHE_CONTROL)).toBe(NO_STORE)
+      expect(headers.get(CDN_CACHE_CONTROL)).toBeNull()
       expect(headers.get('cache-tag')).toBeNull()
-      expect(varyTokens(headers.get('vary'))).toEqual(
-        expect.arrayContaining(['cookie', 'accept-language']),
-      )
+      expect(varyTokens(headers.get('vary'))).toEqual(expect.arrayContaining(PREFERENCE_VARY))
     } finally {
       await new Promise<void>((resolve, reject) =>
         upstream.close((error) => (error ? reject(error) : resolve())),
@@ -513,5 +511,55 @@ describe('event.respondWith is outside every hook', () => {
     }
 
     expect(beforeResponseCalls).toBe(0)
+  })
+})
+
+/**
+ * Node throws `ERR_HTTP_HEADERS_SENT` from `setHeader` once a response has
+ * started. A late mark cannot protect that response either way, so it must not
+ * take the page down with it (narduk-libs#386).
+ */
+describe('marking after the response started', () => {
+  it('does not throw when the headers have already been sent', () => {
+    const sent: string[] = []
+    const event = {
+      context: {} as Record<string, unknown>,
+      node: {
+        res: {
+          getHeaders: () => ({ [CACHE_CONTROL]: CACHEABLE }),
+          headersSent: true,
+          removeHeader: (name: string) => sent.push(`remove:${name}`),
+          setHeader: (name: string) => sent.push(`set:${name}`),
+        },
+      },
+    }
+
+    expect(() => markPreferencesInfluenced(event)).not.toThrow()
+    expect(sent).toEqual([])
+    expect(event.context[NE_PREFERENCES_INFLUENCED_CONTEXT_KEY]).toBe(true)
+  })
+
+  it('still rewrites a response that has not started', () => {
+    const headers: Record<string, unknown> = { [CACHE_CONTROL]: CACHEABLE }
+    const event = {
+      context: {} as Record<string, unknown>,
+      node: {
+        res: {
+          getHeaders: () => headers,
+          headersSent: false,
+          removeHeader: (name: string) => {
+            Reflect.deleteProperty(headers, name)
+          },
+          setHeader: (name: string, value: string) => {
+            headers[name.toLowerCase()] = value
+          },
+        },
+      },
+    }
+
+    markPreferencesInfluenced(event)
+
+    expect(headers[CACHE_CONTROL]).toBe(NO_STORE)
+    expect(varyTokens(headers.vary as string)).toEqual(expect.arrayContaining(PREFERENCE_VARY))
   })
 })

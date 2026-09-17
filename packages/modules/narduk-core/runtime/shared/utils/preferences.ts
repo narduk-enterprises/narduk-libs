@@ -341,8 +341,10 @@ const PREFERENCE_VARY_TOKENS = ['Cookie', 'Accept-Language'] as const
 /** The Node response surface this module duck-types, so it imports no h3. */
 interface NodeResponseLike {
   getHeaders?: () => Record<string, unknown>
+  headersSent?: boolean
   removeHeader?: (name: string) => void
   setHeader?: (name: string, value: number | string | readonly string[]) => void
+  writableEnded?: boolean
 }
 
 /**
@@ -450,11 +452,18 @@ function nodeResponseOf(event: PreferenceAwareEvent): NodeResponseLike | undefin
 /**
  * Apply {@link applyPreferencesCacheHeaders} to an event's Node response, if
  * one is present. No-op on the client and on a plain `{ context }` test double.
+ *
+ * Node throws `ERR_HTTP_HEADERS_SENT` from `setHeader` once the response has
+ * started, so a late mark — an async component resolving after a streamed SSR
+ * document began, an app util marking after `send()` — must not take the page
+ * down. It is already too late to protect that response; the marker stays set
+ * so `setCacheProfile` and the hooks still see it.
  */
 export function applyPreferencesCacheToEvent(event: PreferenceAwareEvent | null | undefined): void {
   if (!event) return
   const res = nodeResponseOf(event)
   if (!res?.setHeader || !res.removeHeader) return
+  if (res.headersSent === true || res.writableEnded === true) return
 
   const current = res.getHeaders?.() ?? {}
   const flattened: Record<string, string> = {}
