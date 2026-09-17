@@ -24,6 +24,41 @@ describe('orgs and memberships', () => {
     })
   })
 
+  it('rolls back the org when the owner membership write fails', async () => {
+    const { tenancy, sqlite } = createTestHarness()
+    sqlite.exec(`
+      CREATE TRIGGER fail_create_org_owner
+      BEFORE INSERT ON tenancy_memberships
+      WHEN NEW.user_id = 'failed-owner'
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated membership failure');
+      END;
+    `)
+
+    await expect(
+      tenancy.createOrg({
+        slug: 'ghost-org',
+        name: 'Ghost',
+        createdByUserId: 'failed-owner',
+      }),
+    ).rejects.toThrow(/simulated membership failure/u)
+
+    expect(sqlite.prepare('SELECT slug FROM tenancy_orgs WHERE slug = ?').all('ghost-org')).toEqual(
+      [],
+    )
+    expect(sqlite.prepare('SELECT id FROM tenancy_memberships').all()).toEqual([])
+    expect(sqlite.prepare('SELECT action FROM tenancy_audit_events').all()).toEqual([])
+
+    sqlite.exec('DROP TRIGGER fail_create_org_owner')
+    await expect(
+      tenancy.createOrg({
+        slug: 'ghost-org',
+        name: 'Ghost',
+        createdByUserId: 'failed-owner',
+      }),
+    ).resolves.toMatchObject({ slug: 'ghost-org' })
+  })
+
   it('rejects an invalid slug and a duplicate slug', async () => {
     const { tenancy } = createTestHarness()
     expect(await codeOf(tenancy.createOrg({ ...ACME, slug: 'not a slug' }))).toBe('invalid')

@@ -24,7 +24,7 @@
  */
 
 import { NardukPostgresError } from './errors.js'
-import { redactConnectionString } from './redact.js'
+import { redactConnectionString, redactErrorCause } from './redact.js'
 import {
   type ConnectionTuning,
   type ConnectionTuningOptions,
@@ -94,7 +94,7 @@ export async function withHyperdriveConnection<T>(
       'HYPERDRIVE_BINDING_INVALID',
       'The driver could not open a connection for the Hyperdrive binding.',
       { connectionString: redactConnectionString(connectionString) },
-      { cause },
+      { cause: redactErrorCause(cause) },
     )
   }
 

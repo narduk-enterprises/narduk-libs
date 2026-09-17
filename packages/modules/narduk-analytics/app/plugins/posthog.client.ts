@@ -149,7 +149,8 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         superProperties.is_internal_user = true
       }
 
-      // Tag owner traffic (cookie set via /api/owner-tag)
+      // Tag owner traffic. `narduk_owner=true` is the unsigned, client-readable
+      // flag from /api/owner-tag — not the httpOnly HMAC proof used by bootstrap.
       const isOwner = document.cookie.includes('narduk_owner=true')
       superProperties.is_owner = isOwner
 

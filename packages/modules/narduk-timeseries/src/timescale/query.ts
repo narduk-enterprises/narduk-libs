@@ -15,6 +15,7 @@
  * a hundred thousand rows across a tunnel for a client to throw away.
  */
 
+import { clampQueryNowMs } from '../clock.js'
 import { NardukTimeseriesError } from '../errors.js'
 import { ROLLUP_BUCKETS } from '../types.js'
 import type { RollupBucket, RollupQuery, TimeRange, TrackQuery } from '../types.js'
@@ -78,6 +79,9 @@ export interface RollupRangePlan {
  * `tierWindowMs` is required. A caller with no tier boundary passes
  * `'unrestricted'` and says so out loud; there is no shape of this call that
  * silently skips the only tier gate the read path has.
+ *
+ * The floor clock is `max(real now, query.now)`. A client-supplied past `now`
+ * cannot slide this gate backward; a future `now` may only raise the floor.
  */
 export function clipRollupRange(query: RollupQuery): RollupRangePlan {
   assertRange(query.range)
@@ -93,8 +97,7 @@ export function clipRollupRange(query: RollupQuery): RollupRangePlan {
     )
   }
 
-  const now = query.now ?? new Date()
-  const floorMs = now.getTime() - tierWindowMs
+  const floorMs = clampQueryNowMs(query.now) - tierWindowMs
   if (query.range.end.getTime() <= floorMs) {
     // Zero-width at the floor: the honest answer to "what range did you read"
     // when the tier window starts after the request ended is "none".

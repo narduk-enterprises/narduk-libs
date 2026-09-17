@@ -50,3 +50,57 @@ export function redactSecrets(text: unknown): string {
       `$1=${REDACTED}`,
     )
 }
+
+const MAX_CAUSE_DEPTH = 8
+
+/**
+ * Replace a driver `cause` with a copy whose messages (and nested `cause`
+ * chain) have been through `redactSecrets`. The original object is left
+ * untouched: mutating a postgres.js / `pg` error in place would still leave
+ * the password in any other holder of the same reference (a logger that
+ * captured it first, a test, the isolate's unhandled-rejection handler).
+ *
+ * `name` and a primitive `code` are preserved so callers can still branch
+ * the way they do on the raw driver error. Everything else is dropped --
+ * driver errors also stash the DSN on enumerable extras, and those must
+ * not ride along.
+ */
+export function redactErrorCause(
+  cause: unknown,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (cause == null) return cause
+  if (typeof cause === 'string') return redactSecrets(cause)
+  if (typeof cause !== 'object') return cause
+  if (depth >= MAX_CAUSE_DEPTH || seen.has(cause)) return undefined
+  seen.add(cause)
+
+  if (cause instanceof Error) {
+    const nested =
+      cause.cause === undefined ? undefined : redactErrorCause(cause.cause, depth + 1, seen)
+    const redacted =
+      nested === undefined
+        ? new Error(redactSecrets(cause.message))
+        : new Error(redactSecrets(cause.message), { cause: nested })
+    redacted.name = cause.name
+    if ('code' in cause) {
+      const code = (cause as { code: unknown }).code
+      if (typeof code === 'string' || typeof code === 'number') {
+        Object.defineProperty(redacted, 'code', {
+          configurable: true,
+          enumerable: true,
+          value: code,
+          writable: true,
+        })
+      }
+    }
+    return redacted
+  }
+
+  try {
+    return new Error(redactSecrets(JSON.stringify(cause) ?? String(cause)))
+  } catch {
+    return new Error(REDACTED)
+  }
+}

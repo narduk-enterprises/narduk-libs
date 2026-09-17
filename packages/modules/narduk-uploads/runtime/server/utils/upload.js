@@ -8,6 +8,20 @@ export const ALLOWED_TYPES = new Set([
   'image/avif',
 ])
 
+/**
+ * Strip MIME parameters and lowercase so `image/PNG; charset=x` matches
+ * `ALLOWED_TYPES`. Used by POST /api/upload and GET /images/** so the
+ * two cannot drift.
+ */
+export function normalizeUploadContentType(contentType) {
+  if (typeof contentType !== 'string') return ''
+  return contentType.toLowerCase().split(';', 1)[0]?.trim() ?? ''
+}
+
+export function isAllowedUploadContentType(contentType) {
+  return ALLOWED_TYPES.has(normalizeUploadContentType(contentType))
+}
+
 export const MAX_FILE_SIZE = 10 * 1024 * 1024
 export const MAX_UPLOAD_REQUEST_SIZE = MAX_FILE_SIZE * 10
 export const PUBLIC_RASTER_WARNING_SIZE = 800 * 1024
@@ -47,7 +61,7 @@ export function getUploadPerformanceWarnings(file) {
 
 export function validateUploadFiles(files) {
   for (const file of files) {
-    if (!file.type || !ALLOWED_TYPES.has(file.type)) {
+    if (!isAllowedUploadContentType(file.type)) {
       throw createError({
         statusCode: 400,
         message: `Unsupported file type: ${file.type ?? 'unknown'}`,

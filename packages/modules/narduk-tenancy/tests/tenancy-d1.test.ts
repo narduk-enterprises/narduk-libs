@@ -94,4 +94,38 @@ describe('D1 transaction integration', () => {
       false,
     )
   })
+
+  it('rolls back createOrg when the owner membership write fails', async () => {
+    await binding
+      .prepare(
+        "CREATE TRIGGER fail_d1_create_org_owner BEFORE INSERT ON tenancy_memberships WHEN NEW.user_id = 'failed-owner' BEGIN SELECT RAISE(ABORT, 'simulated membership failure'); END",
+      )
+      .run()
+    const tenancy = createTenancy(drizzle(binding))
+    await expect(
+      tenancy.createOrg({
+        slug: 'd1-ownerless',
+        name: 'Ownerless',
+        createdByUserId: 'failed-owner',
+      }),
+    ).rejects.toThrow()
+
+    const leftover = await binding
+      .prepare('SELECT slug FROM tenancy_orgs WHERE slug = ?')
+      .bind('d1-ownerless')
+      .all()
+    expect(leftover.results).toEqual([])
+
+    await binding.prepare('DROP TRIGGER fail_d1_create_org_owner').run()
+    const created = await tenancy.createOrg({
+      slug: 'd1-ownerless',
+      name: 'Ownerless',
+      createdByUserId: 'failed-owner',
+    })
+    expect(created.slug).toBe('d1-ownerless')
+    expect(await tenancy.resolveRole({ orgId: created.id, userId: 'failed-owner' })).toMatchObject({
+      role: 'owner',
+      source: 'membership',
+    })
+  })
 })

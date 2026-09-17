@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import { NardukPostgresError } from './errors.js'
 import { MIGRATION_NAME_PATTERN, type Migration, createMigrationSet } from './migrate.js'
-import { redactConnectionString } from './redact.js'
+import { redactConnectionString, redactErrorCause } from './redact.js'
 import {
   type ConnectionTuning,
   type ConnectionTuningOptions,
@@ -80,7 +80,7 @@ export async function withNodeConnection<T>(
       'CONNECTION_STRING_MISSING',
       'The driver could not open a direct connection.',
       { connectionString: redactConnectionString(request.connectionString) },
-      { cause },
+      { cause: redactErrorCause(cause) },
     )
   }
 

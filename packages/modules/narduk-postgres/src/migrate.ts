@@ -475,6 +475,31 @@ async function acquireLock(
   }
 }
 
+/**
+ * The package's own connections are a `SqlExecutor` plus `end()` -- they do
+ * not implement `.transaction`. A file marked transactional (the default)
+ * still has to run as one unit: wrap it ourselves rather than degrade to
+ * autocommit. Files that cannot live in a transaction opt out with
+ * `-- narduk:no-transaction` and never reach this helper.
+ */
+async function applyInOwnTransaction(
+  executor: SqlExecutor,
+  run: (target: SqlExecutor) => Promise<void>,
+): Promise<void> {
+  await executor.query('BEGIN')
+  try {
+    await run(executor)
+    await executor.query('COMMIT')
+  } catch (cause: unknown) {
+    try {
+      await executor.query('ROLLBACK')
+    } catch {
+      // The migration failure is the one the caller must see.
+    }
+    throw cause
+  }
+}
+
 export async function applyMigrations(
   executor: SqlExecutor,
   migrations: readonly Migration[],
@@ -525,6 +550,13 @@ export async function applyMigrations(
       if (migration.transactional && isTransactionalExecutor(executor)) {
         await executor.transaction(async (target) => {
           await target.query(migration.sql)
+          await recordRow(target)
+        })
+      } else if (migration.transactional) {
+        await applyInOwnTransaction(executor, async (target) => {
+          for (const statement of splitSqlStatements(migration.sql)) {
+            await target.query(statement)
+          }
           await recordRow(target)
         })
       } else {

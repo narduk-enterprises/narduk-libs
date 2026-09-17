@@ -29,6 +29,7 @@
  * the policy" and "1d is kept forever" looked identical from the outside.
  */
 
+import { clampRetentionNow } from './clock.js'
 import { NardukTimeseriesError } from './errors.js'
 import { ROLLUP_BUCKETS, type RetentionPolicyInput, type RollupBucket } from './types.js'
 
@@ -132,7 +133,8 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
     ...policy,
     globalRollupWindowMs,
     maxVesselsPerStatement,
-    now: policy.now ?? new Date(),
+    // A future `now` must not deepen deletes; a past `now` may only retract them.
+    now: clampRetentionNow(policy.now),
     unsweptRollupLevels,
   }
 }

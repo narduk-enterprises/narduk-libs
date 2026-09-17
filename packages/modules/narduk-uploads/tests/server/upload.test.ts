@@ -4,9 +4,11 @@ import {
   ALLOWED_TYPES,
   CRITICAL_RASTER_WARNING_SIZE,
   getUploadPerformanceWarnings,
+  isAllowedUploadContentType,
   MAX_FILE_SIZE,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
+  normalizeUploadContentType,
   PUBLIC_RASTER_WARNING_SIZE,
   validateUploadFiles,
 } from '../../runtime/server/utils/upload'
@@ -84,6 +86,26 @@ describe('upload endpoint request sizing', () => {
       { data: expect.any(Uint8Array), filename: 'a.png' },
     ])
     expect(readMultipartFormData).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('upload content-type allow-list', () => {
+  it('normalizes parameters and case to the shared ALLOWED_TYPES keys', () => {
+    expect(normalizeUploadContentType('image/PNG; charset=x')).toBe('image/png')
+    expect(normalizeUploadContentType('IMAGE/JPEG')).toBe('image/jpeg')
+    expect(normalizeUploadContentType(undefined)).toBe('')
+    expect(normalizeUploadContentType('')).toBe('')
+  })
+
+  it('accepts allow-listed types and rejects HTML, JS, SVG, and missing types', () => {
+    for (const type of ALLOWED_TYPES) {
+      expect(isAllowedUploadContentType(type)).toBe(true)
+    }
+    expect(isAllowedUploadContentType('image/PNG; charset=x')).toBe(true)
+    expect(isAllowedUploadContentType('text/html')).toBe(false)
+    expect(isAllowedUploadContentType('application/javascript')).toBe(false)
+    expect(isAllowedUploadContentType('image/svg+xml')).toBe(false)
+    expect(isAllowedUploadContentType(undefined)).toBe(false)
   })
 })
 

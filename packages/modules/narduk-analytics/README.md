@@ -80,8 +80,8 @@ takes priority over the build-time value) via narduk-core's `readRuntimeString`
 
 | Env var                                                                                                | `runtimeConfig` key       | Purpose                                                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OWNER_TAG_SECRET`                                                                                     | `ownerTagSecret`          | Shared secret required by `POST /api/owner-tag` to set/clear the owner cookie.                                                                                  |
-| `POSTHOG_OWNER_DISTINCT_ID`                                                                            | `posthogOwnerDistinctId`  | Optional PostHog distinct ID shared across your own devices; served by `GET /api/owner/posthog-bootstrap` once the owner cookie is set.                         |
+| `OWNER_TAG_SECRET`                                                                                     | `ownerTagSecret`          | Shared secret required by `POST /api/owner-tag` to set/clear the owner cookies. Also the HMAC key for the httpOnly owner-proof cookie that bootstrap verifies.  |
+| `POSTHOG_OWNER_DISTINCT_ID`                                                                            | `posthogOwnerDistinctId`  | Optional PostHog distinct ID shared across your own devices; served by `GET /api/owner/posthog-bootstrap` only after the signed owner-proof cookie verifies.    |
 | `NUXT_INDEXNOW_KEY` / `INDEXNOW_KEY`                                                                   | `indexNowKey`             | Private IndexNow key fallback, checked before the public key. Also readable from the Worker runtime env directly (`INDEXNOW_KEY` / `NUXT_PUBLIC_INDEXNOW_KEY`). |
 | `GA_PROPERTY_ID` (Worker runtime env; falls back to `runtimeConfig.gaPropertyId`)                      | `gaPropertyId`            | GA4 property ID for the admin GA overview route.                                                                                                                |
 | `GSC_SITE_URL` (Worker runtime env; falls back to `runtimeConfig.gscSiteUrl`)                          | `gscSiteUrl`              | Search Console site URL/domain property (e.g. `sc-domain:example.com`); falls back to a `sc-domain:` derived from `appUrl` when unset.                          |
@@ -120,26 +120,26 @@ All `/api/admin/**` routes require an authenticated admin session
 additionally 403 when `previewSafeMode` is active
 (`assertAnalyticsWriteAllowed`).
 
-| Route                           | Method       | Purpose                                                                                                |
-| ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------ |
-| `/api/owner-tag`                | `POST`       | Set/clear the `narduk_owner` cookie used to tag owner traffic in PostHog. Requires `OWNER_TAG_SECRET`. |
-| `/api/owner/posthog-bootstrap`  | `GET`        | Returns `POSTHOG_OWNER_DISTINCT_ID` for cross-device PostHog identity once the owner cookie is set.    |
-| `/api/indexnow/submit`          | `POST`       | Submits URLs (default: homepage + sitemap) via the IndexNow protocol.                                  |
-| `/{key}.txt` (middleware)       | `GET`/`HEAD` | Serves the configured IndexNow key at its verification path.                                           |
-| `/api/admin/ga/overview`        | `GET`        | GA4 totals + daily rows for a date range (`startDate`, `endDate`, `noCache`).                          |
-| `/api/admin/gsc/performance`    | `GET`        | GSC search-performance rows by dimension (`query`/`page`/`device`/`country`/`searchAppearance`).       |
-| `/api/admin/gsc/sitemaps`       | `GET`        | Lists submitted sitemaps and their indexing counts.                                                    |
-| `/api/admin/gsc/submit-sitemap` | `POST`       | Submits a sitemap URL to Search Console.                                                               |
-| `/api/admin/gsc/inspect-url`    | `POST`       | Runs a Search Console URL Inspection.                                                                  |
-| `/api/admin/indexing/batch`     | `POST`       | Google Indexing API — batch-publish up to 100 URL notifications.                                       |
-| `/api/admin/indexing/publish`   | `POST`       | Google Indexing API — publish a single URL notification.                                               |
-| `/api/admin/indexing/status`    | `GET`        | Google Indexing API — last notification status for a URL.                                              |
-| `/api/admin/posthog/pages`      | `GET`        | Top pages by pageviews for a period.                                                                   |
-| `/api/admin/posthog/referrers`  | `GET`        | Top referrers for a period.                                                                            |
-| `/api/admin/posthog/devices`    | `GET`        | Device/browser breakdown for a period.                                                                 |
-| `/api/admin/posthog/entry-exit` | `GET`        | Top entry/exit pages for a period.                                                                     |
-| `/api/admin/posthog/insights`   | `GET`        | Arbitrary HogQL-backed insight results for a period.                                                   |
-| `/api/admin/posthog/recordings` | `GET`        | Recent session recordings (up to `limit`).                                                             |
+| Route                           | Method       | Purpose                                                                                                                                     |
+| ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/owner-tag`                | `POST`       | Set/clear `narduk_owner` (client-readable flag) and the httpOnly HMAC proof cookie. Requires `OWNER_TAG_SECRET`.                            |
+| `/api/owner/posthog-bootstrap`  | `GET`        | Returns `POSTHOG_OWNER_DISTINCT_ID` for cross-device identity after the HMAC proof cookie verifies. Rate-limited with the owner-tag policy. |
+| `/api/indexnow/submit`          | `POST`       | Submits URLs (default: homepage + sitemap) via the IndexNow protocol.                                                                       |
+| `/{key}.txt` (middleware)       | `GET`/`HEAD` | Serves the configured IndexNow key at its verification path.                                                                                |
+| `/api/admin/ga/overview`        | `GET`        | GA4 totals + daily rows for a date range (`startDate`, `endDate`, `noCache`).                                                               |
+| `/api/admin/gsc/performance`    | `GET`        | GSC search-performance rows by dimension (`query`/`page`/`device`/`country`/`searchAppearance`).                                            |
+| `/api/admin/gsc/sitemaps`       | `GET`        | Lists submitted sitemaps and their indexing counts.                                                                                         |
+| `/api/admin/gsc/submit-sitemap` | `POST`       | Submits a sitemap URL to Search Console.                                                                                                    |
+| `/api/admin/gsc/inspect-url`    | `POST`       | Runs a Search Console URL Inspection.                                                                                                       |
+| `/api/admin/indexing/batch`     | `POST`       | Google Indexing API — batch-publish up to 100 URL notifications.                                                                            |
+| `/api/admin/indexing/publish`   | `POST`       | Google Indexing API — publish a single URL notification.                                                                                    |
+| `/api/admin/indexing/status`    | `GET`        | Google Indexing API — last notification status for a URL.                                                                                   |
+| `/api/admin/posthog/pages`      | `GET`        | Top pages by pageviews for a period.                                                                                                        |
+| `/api/admin/posthog/referrers`  | `GET`        | Top referrers for a period.                                                                                                                 |
+| `/api/admin/posthog/devices`    | `GET`        | Device/browser breakdown for a period.                                                                                                      |
+| `/api/admin/posthog/entry-exit` | `GET`        | Top entry/exit pages for a period.                                                                                                          |
+| `/api/admin/posthog/insights`   | `GET`        | Arbitrary HogQL-backed insight results for a period.                                                                                        |
+| `/api/admin/posthog/recordings` | `GET`        | Recent session recordings (up to `limit`).                                                                                                  |
 
 ## IndexNow
 
@@ -159,7 +159,13 @@ this module makes to each one. Requires `INDEXNOW_KEY` (or
 filter yourself and non-production traffic out of dashboards (Project Settings →
 "Filter out internal and test users"):
 
-- `is_owner` — set via the `narduk_owner` cookie (`POST /api/owner-tag`).
+- `is_owner` — set via the unsigned `narduk_owner=true` cookie
+  (`POST /api/owner-tag`). That flag stays readable by `posthog.client`.
+  Cross-device identity (`GET /api/owner/posthog-bootstrap`) additionally
+  requires the httpOnly HMAC proof cookie minted with `OWNER_TAG_SECRET`
+  (`narduk_owner_proof` on HTTP, `__Host-narduk_owner_proof` on HTTPS). Forging
+  the flag cookie alone does not release `POSTHOG_OWNER_DISTINCT_ID`. Clearing
+  the tag deletes both cookies.
 - `is_internal_user` — set for any request whose deployment target
   (`runtimeConfig.public.deploymentTarget`) is not `production`, or whose
   hostname ends in `.pages.dev` or `.workers.dev` (covers both legacy Pages

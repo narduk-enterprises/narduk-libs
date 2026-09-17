@@ -141,6 +141,12 @@ retained range and reported `clipped: false` while doing it, and read-side
 clipping is the only tier gate there is. Required, the omission is a type error
 and the exemption is a word a reviewer can see.
 
+`RollupQuery.now` cannot widen that gate: the floor is
+`max(real now, now) - tierWindowMs`. A past `now` (including one forwarded from
+a client body) is ignored on read. `RetentionPolicyInput.now` is the opposite
+safe direction: the sweep clock is `min(real now, now)`, so a future `now`
+cannot delete more than real time would.
+
 A level with **no** `globalRollupWindowMs` entry is never swept. That is a real
 choice — keep 1d rollups indefinitely — so it is reported rather than guessed
 at: `validateRetentionPolicy(...).unsweptRollupLevels` lists them, and every

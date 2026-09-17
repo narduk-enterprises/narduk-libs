@@ -16,6 +16,16 @@ export function useR2(event, bindingName = 'BUCKET') {
   return env[bindingName]
 }
 
+/**
+ * Write an object to R2. Signature and accept/reject behavior are unchanged:
+ * this helper does not validate `contentType`.
+ *
+ * Public `GET /images/**` only streams keys under `uploads/` whose stored
+ * content type is in `ALLOWED_TYPES` (see `./upload.js`). Writes of other
+ * types to that prefix succeed here but are not served (415). Prefer
+ * `validateUploadFiles` for public image uploads. Other prefixes stay
+ * unrestricted so non-public objects can keep arbitrary types.
+ */
 export async function uploadToR2(event, key, data, contentType, bindingName = 'BUCKET') {
   const r2 = useR2(event, bindingName)
   await r2.put(key, data, contentType ? { httpMetadata: { contentType } } : undefined)

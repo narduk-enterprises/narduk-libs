@@ -11,7 +11,7 @@ import {
 } from '../database/tenancy-schema'
 
 import { claimInviteMembership } from './tenancy-accept-invite'
-import { preservesAnOwner } from './tenancy-atomic'
+import { preservesAnOwner, runTenancyBatch } from './tenancy-atomic'
 import { TenancyError } from './tenancy-error'
 
 import type {
@@ -495,21 +495,48 @@ export function createTenancy(
         createdAt: timestamp,
         updatedAt: timestamp,
       }
-      await db.insert(tenancyOrgs).values(org).run()
-      await audit({
-        orgId: org.id,
-        actorUserId: createdByUserId,
-        action: 'org.create',
-        subjectKind: 'org',
-        subjectId: org.id,
-        details: { slug, name },
-      })
-      await insertMembership({
+      const orgCreateAuditId = nextId()
+      const membership: TenancyMembership = {
+        id: nextId(),
         orgId: org.id,
         userId: createdByUserId,
         role: 'owner',
-        actorUserId: createdByUserId,
-      })
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      // Four auto-commits used to leave an ownerless org (and a burned slug)
+      // when the membership write failed after the org insert. Invite
+      // acceptance already batches for the same reason.
+      await runTenancyBatch(db, [
+        db.insert(tenancyOrgs).values(org).returning({ id: tenancyOrgs.id }),
+        db
+          .insert(tenancyAuditEvents)
+          .values({
+            id: orgCreateAuditId,
+            orgId: org.id,
+            actorUserId: createdByUserId,
+            action: 'org.create',
+            subjectKind: 'org',
+            subjectId: org.id,
+            detailsJson: JSON.stringify({ slug, name }),
+            createdAt: timestamp,
+          })
+          .returning({ id: tenancyAuditEvents.id }),
+        db.insert(tenancyMemberships).values(membership).returning({ id: tenancyMemberships.id }),
+        db
+          .insert(tenancyAuditEvents)
+          .values({
+            id: nextId(),
+            orgId: org.id,
+            actorUserId: createdByUserId,
+            action: 'membership.add',
+            subjectKind: 'membership',
+            subjectId: membership.id,
+            detailsJson: JSON.stringify({ userId: createdByUserId, role: 'owner' }),
+            createdAt: timestamp,
+          })
+          .returning({ id: tenancyAuditEvents.id }),
+      ])
       return org
     },
 

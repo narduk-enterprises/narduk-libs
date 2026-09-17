@@ -29,6 +29,22 @@ function createLogger() {
   return logger
 }
 
+async function loadRoute() {
+  return import('../../runtime/server/routes/images/[...slug].get')
+}
+
+const UNSUPPORTED_IMAGE_TYPE = 'Unsupported image type'
+
+function r2Object(
+  contentType: string | undefined,
+  body = 'image body',
+): { body: string; httpEtag: string; httpMetadata?: { contentType?: string } } {
+  if (contentType === undefined) {
+    return { body, httpEtag: 'etag' }
+  }
+  return { body, httpEtag: 'etag', httpMetadata: { contentType } }
+}
+
 describe('uploaded image route', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -37,30 +53,58 @@ describe('uploaded image route', () => {
   })
 
   it('blocks existing R2 SVG objects from rendering as first-party documents', async () => {
-    get.mockResolvedValue({
-      body: 'svg body',
-      httpEtag: 'etag',
-      httpMetadata: { contentType: 'image/svg+xml; charset=utf-8' },
-    })
-    const route = await import('../../runtime/server/routes/images/[...slug].get')
+    get.mockResolvedValue(r2Object('image/svg+xml; charset=utf-8', 'svg body'))
+    const route = await loadRoute()
 
     await expect(route.default({} as never)).rejects.toMatchObject({
-      message: 'Unsupported image type',
+      message: UNSUPPORTED_IMAGE_TYPE,
       statusCode: 415,
     })
     expect(setResponseHeaders).not.toHaveBeenCalled()
   })
 
   it('blocks SVG upload keys even when old R2 metadata is missing or wrong', async () => {
-    get.mockResolvedValue({
-      body: 'svg body',
-      httpEtag: 'etag',
-      httpMetadata: { contentType: 'application/octet-stream' },
-    })
-    const route = await import('../../runtime/server/routes/images/[...slug].get')
+    get.mockResolvedValue(r2Object('application/octet-stream', 'svg body'))
+    const route = await loadRoute()
 
     await expect(route.default({} as never)).rejects.toMatchObject({
-      message: 'Unsupported image type',
+      message: UNSUPPORTED_IMAGE_TYPE,
+      statusCode: 415,
+    })
+    expect(setResponseHeaders).not.toHaveBeenCalled()
+  })
+
+  it('returns 415 for stored text/html objects under uploads/', async () => {
+    getRouterParam.mockReturnValue('uploads/page.html')
+    get.mockResolvedValue(r2Object('text/html', '<script>alert(1)</script>'))
+    const route = await loadRoute()
+
+    await expect(route.default({} as never)).rejects.toMatchObject({
+      message: UNSUPPORTED_IMAGE_TYPE,
+      statusCode: 415,
+    })
+    expect(setResponseHeaders).not.toHaveBeenCalled()
+  })
+
+  it('returns 415 for stored application/javascript objects under uploads/', async () => {
+    getRouterParam.mockReturnValue('uploads/xss.js')
+    get.mockResolvedValue(r2Object('application/javascript', 'alert(1)'))
+    const route = await loadRoute()
+
+    await expect(route.default({} as never)).rejects.toMatchObject({
+      message: UNSUPPORTED_IMAGE_TYPE,
+      statusCode: 415,
+    })
+    expect(setResponseHeaders).not.toHaveBeenCalled()
+  })
+
+  it('returns 415 when R2 metadata has no content type', async () => {
+    getRouterParam.mockReturnValue('uploads/mystery.bin')
+    get.mockResolvedValue(r2Object(undefined))
+    const route = await loadRoute()
+
+    await expect(route.default({} as never)).rejects.toMatchObject({
+      message: UNSUPPORTED_IMAGE_TYPE,
       statusCode: 415,
     })
     expect(setResponseHeaders).not.toHaveBeenCalled()
@@ -68,7 +112,7 @@ describe('uploaded image route', () => {
 
   it('blocks non-upload keys before reading from R2', async () => {
     getRouterParam.mockReturnValue('private/test.png')
-    const route = await import('../../runtime/server/routes/images/[...slug].get')
+    const route = await loadRoute()
 
     await expect(route.default({} as never)).rejects.toMatchObject({
       message: 'Image not found',
@@ -78,20 +122,32 @@ describe('uploaded image route', () => {
     expect(setResponseHeaders).not.toHaveBeenCalled()
   })
 
-  it('continues serving raster image objects', async () => {
+  it('serves image/png with cache, ETag, nosniff, and inline disposition', async () => {
     getRouterParam.mockReturnValue('uploads/test.png')
-    get.mockResolvedValue({
-      body: 'png body',
-      httpEtag: 'etag',
-      httpMetadata: { contentType: 'image/png' },
+    get.mockResolvedValue(r2Object('image/png', 'png body'))
+    const route = await loadRoute()
+
+    await expect(route.default({} as never)).resolves.toBe('png body')
+    expect(setResponseHeaders).toHaveBeenCalledWith(expect.anything(), {
+      'Content-Type': 'image/png',
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+      ETag: 'etag',
     })
-    const route = await import('../../runtime/server/routes/images/[...slug].get')
+  })
+
+  it('serves image/PNG; charset=x after normalizing the stored content type', async () => {
+    getRouterParam.mockReturnValue('uploads/test.png')
+    get.mockResolvedValue(r2Object('image/PNG; charset=x', 'png body'))
+    const route = await loadRoute()
 
     await expect(route.default({} as never)).resolves.toBe('png body')
     expect(setResponseHeaders).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         'Content-Type': 'image/png',
+        'Content-Disposition': 'inline',
         'X-Content-Type-Options': 'nosniff',
       }),
     )

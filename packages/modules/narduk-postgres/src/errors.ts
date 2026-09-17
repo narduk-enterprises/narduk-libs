@@ -3,8 +3,11 @@
  * stable `code`. Callers branch on the code, never on the message text, and no
  * message ever carries a connection string, a password or a query parameter --
  * `redactConnectionString` is applied before a DSN reaches a message or a
- * `details` field.
+ * `details` field, and a driver `cause` is replaced with a redacted copy
+ * before it is attached (postgres.js / `pg` embed the DSN in `cause.message`).
  */
+
+import { redactErrorCause, redactSecrets } from './redact.js'
 
 export const POSTGRES_ERROR_CODES = [
   'CONNECTION_STRING_MISSING',
@@ -38,7 +41,9 @@ export class NardukPostgresError extends Error {
     details: Record<string, unknown> = {},
     options?: { cause?: unknown },
   ) {
-    super(`${code}: ${message}`, options)
+    super(`${code}: ${redactSecrets(message)}`, {
+      cause: options?.cause === undefined ? undefined : redactErrorCause(options.cause),
+    })
     this.name = 'NardukPostgresError'
     this.code = code
     this.details = Object.freeze({ ...details })

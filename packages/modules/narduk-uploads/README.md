@@ -14,8 +14,13 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
 
 ## Runtime Surface
 
-- `POST /api/upload` accepts authenticated multipart image uploads.
-- `GET /images/uploads/*` streams uploaded image objects from R2.
+- `POST /api/upload` accepts authenticated multipart image uploads
+  (`image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`).
+- `GET /images/uploads/*` streams those objects from R2 when the stored content
+  type is on the same allow-list (parameters stripped, lowercased). Other types
+  — including missing metadata, SVG, HTML, and JavaScript — return 415.
+  `uploadToR2` still writes any prefix and type; non-allow-listed objects under
+  `uploads/` are stored but not served.
 - `useUpload()` uploads files through the route with CSRF support when
   available.
 

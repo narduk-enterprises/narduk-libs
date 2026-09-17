@@ -86,7 +86,20 @@ export interface RollupQuery {
   bucket: RollupBucket
   /** Cap on returned rows. The store reports truncation rather than lying. */
   maxRows?: number
-  /** Injected for deterministic tests; defaults to the current time. */
+  /**
+   * Optional clock for the tier-floor calculation.
+   *
+   * A supplied value may only **tighten** the read window: the floor is
+   * `max(real now, now) - tierWindowMs`. A past `now` is ignored so a
+   * client-supplied body cannot disable the only rollup-tier gate. A future
+   * `now` raises the floor (more history is clipped). Omitted, non-Date, and
+   * invalid values use real time.
+   *
+   * Deterministic tests that need a frozen *past* clock must freeze `Date`
+   * (for example `vi.setSystemTime`) rather than relying on a past `now` to
+   * loosen the floor. A `now` that matches a frozen clock still pins the
+   * floor.
+   */
   now?: Date
   range: TimeRange
   seriesIds: readonly number[]
@@ -96,7 +109,8 @@ export interface RollupQuery {
    * Rollups are retained globally at the most generous tier's depth (see
    * `RetentionPolicyInput.globalRollupWindowMs`), so a tier's own depth is
    * enforced HERE, on read: the store clips `range.start` up to
-   * `now - tierWindowMs` and reports the clip in `RollupResult`.
+   * `max(real now, now) - tierWindowMs` and reports the clip in
+   * `RollupResult`.
    *
    * **Required, and required on purpose.** Read-side clipping is the only tier
    * gate there is, so an optional field would mean a route handler that forgot
@@ -238,7 +252,15 @@ export interface RetentionPolicyInput {
    * `RetentionResult.skipped` instead of guessing a window.
    */
   globalRollupWindowMs?: Partial<Record<RollupBucket, number>>
-  /** Injected for deterministic tests. */
+  /**
+   * Optional clock for retention cutoffs (`cutoff = now - windowMs`).
+   *
+   * A supplied value may only make cutoffs **earlier** (less deletion): the
+   * clock is `min(real now, now)`. A future `now` is ignored so a caller
+   * cannot delete more than real time would. A past `now` is honored, which
+   * is the safe direction and is how snapshot tests pin cutoffs. Omitted,
+   * non-Date, and invalid values use real time.
+   */
   now?: Date
   tiers: Record<string, TierRetention>
   /** Vessels per statement in the per-tier deletes. Defaults to 1000. */
