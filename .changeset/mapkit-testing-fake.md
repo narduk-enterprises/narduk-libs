@@ -13,8 +13,8 @@ than on the documentation alone. It covers `load()` with library gating,
 including the measured origin-mismatch shape (the same token retried three
 times, `authorizationCallback` invoked exactly once, then `Unauthorized`), an
 injected access-key clock, `mapkit.Map`, the three annotation classes, and the
-value types. Anything it does not model throws `FakeMapKitNotImplemented:
-<member>` instead of silently answering `undefined`.
+value types. Anything it does not model throws
+`FakeMapKitNotImplemented: <member>` instead of silently answering `undefined`.
 
 A separate inspection surface records an operation log with per-annotation
 add/remove counts, so a component test can assert a reconciliation budget --
