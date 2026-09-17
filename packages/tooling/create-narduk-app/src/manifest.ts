@@ -7,7 +7,7 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.108',
   '@narduk-enterprises/narduk-mapkit': '2.0.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.5',
-  '@narduk-enterprises/narduk-app-tools': '0.4.1',
+  '@narduk-enterprises/narduk-app-tools': '0.4.2',
   '@narduk-enterprises/eslint-config': '2.0.3',
   '@narduk-enterprises/narduk-ai': '0.2.2',
   '@narduk-enterprises/narduk-analytics': '1.19.36',
@@ -37,7 +37,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.3.0',
-  '@narduk-enterprises/narduk-testkit': '1.3.1',
+  '@narduk-enterprises/narduk-testkit': '1.3.2',
   '@narduk-enterprises/narduk-uploads': '1.20.0',
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.8.1',
