@@ -148,8 +148,8 @@ exact-pin requirements continue to apply.
 -- narduk-core's `security.headers` preset
 ([company-hq#745](https://github.com/narduk-enterprises/company-hq/issues/745)).
 The evaluator is `src/foundation/items/item-10-security-headers.ts` and matches
-items 1-7 (`check()` sub-checks, no warn tier). Like items 8 and 9 it is a separate
-command and JSON artefact
+items 1-7 (`check()` sub-checks, no warn tier). Like items 8 and 9 it is a
+separate command and JSON artefact
 (`tool: '@narduk-enterprises/narduk-app-tools/security-headers'`) because
 `foundation:check --json` is the exact 7-item contract company-hq
 `check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3

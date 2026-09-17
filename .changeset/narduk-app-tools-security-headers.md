@@ -19,7 +19,7 @@ produced by a running server and a checkout can describe a policy it does not
 serve, so no `--base-url` means `unknown` (exit 2), never `pass`. It is a
 separate command and one-item artefact
 (`tool: '@narduk-enterprises/narduk-app-tools/security-headers'`) for the same
-reason `foundation:check:shared-ui-pinned` and `foundation:check:coverage` are: `foundation-check.json` is the
-ratified 7-item contract company-hq `check-web-foundation.py` validates, and an
-`id` outside `1..7` is a rollup-red F3 ARTEFACT finding. No registry credential
-is required.
+reason `foundation:check:shared-ui-pinned` and `foundation:check:coverage` are:
+`foundation-check.json` is the ratified 7-item contract company-hq
+`check-web-foundation.py` validates, and an `id` outside `1..7` is a rollup-red
+F3 ARTEFACT finding. No registry credential is required.

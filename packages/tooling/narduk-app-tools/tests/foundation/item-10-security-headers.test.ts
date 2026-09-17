@@ -116,7 +116,7 @@ describe('a conformant deployment', () => {
   it('names the soak when a report-only policy sits beside the enforcing one', () => {
     const checks = evaluateProbedRoute(
       route({ ...CONFORMANT, 'content-security-policy-report-only': "default-src 'none'" }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.1')).toBe('pass')
     expect(checks.find((sub) => sub.id === '10.1')?.detail).toContain('soak is in progress')
@@ -147,7 +147,7 @@ describe('gaps a probe must catch', () => {
           "default-src 'self'; frame-ancestors 'none'; " +
           "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.example",
       }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.2')).toBe('fail')
     expect(checks.find((sub) => sub.id === '10.2')?.detail).toContain('no nonce source')
@@ -160,7 +160,7 @@ describe('gaps a probe must catch', () => {
         'content-security-policy':
           "frame-ancestors 'none'; script-src 'self' 'nonce-Ab12' 'unsafe-inline'",
       }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.2')).toBe('fail')
   })
@@ -173,7 +173,7 @@ describe('gaps a probe must catch', () => {
           "frame-ancestors 'none'; " +
           "script-src 'self' 'nonce-Ab12' 'strict-dynamic' 'unsafe-inline'",
       }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.2')).toBe('pass')
     expect(checks.find((sub) => sub.id === '10.2')?.detail).toContain('ignored by a browser')
@@ -185,7 +185,7 @@ describe('gaps a probe must catch', () => {
         ...CONFORMANT,
         'content-security-policy': "default-src 'self' 'nonce-Ab12' 'strict-dynamic'",
       }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.2')).toBe('pass')
   })
@@ -199,7 +199,7 @@ describe('gaps a probe must catch', () => {
   it('fails an HSTS max-age below six months', () => {
     const checks = evaluateProbedRoute(
       route({ ...CONFORMANT, 'strict-transport-security': 'max-age=3600' }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.3')).toBe('fail')
     expect(checks.find((sub) => sub.id === '10.3')?.detail).toContain('3600')
@@ -213,7 +213,7 @@ describe('gaps a probe must catch', () => {
   it('accepts X-Frame-Options alone, for a policy with no frame-ancestors', () => {
     const checks = evaluateProbedRoute(
       route({ ...CONFORMANT, 'content-security-policy': "default-src 'self' 'nonce-a'" }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.4')).toBe('pass')
   })
@@ -233,7 +233,7 @@ describe('gaps a probe must catch', () => {
   it('fails an X-Content-Type-Options that is present but not nosniff', () => {
     const checks = evaluateProbedRoute(
       route({ ...CONFORMANT, 'x-content-type-options': 'sniff' }),
-      '9',
+      '10',
     )
     expect(statusOf(checks, '10.7')).toBe('fail')
   })
@@ -271,7 +271,7 @@ describe('multi-route probes', () => {
     expect(statusOf(checks, '10.2.5')).toBe('fail')
   })
 
-  it('keeps the plain 9.N ids when only one route is probed', () => {
+  it('keeps the plain 10.N ids when only one route is probed', () => {
     expect(evaluateItem10([route()]).map((sub) => sub.id)).toEqual([
       '10.0',
       '10.1',
@@ -312,7 +312,7 @@ describe('artefact', () => {
     })
     expect(artefact.tool).toBe('@narduk-enterprises/narduk-app-tools/security-headers')
     expect(artefact.contract.items).toBe(1)
-    expect(artefact.item.id).toBe(9)
+    expect(artefact.item.id).toBe(10)
     expect(artefact).not.toHaveProperty('items')
     expect(artefact.result).toBe('PASS')
     expect(artefact.exitCode).toBe(0)
