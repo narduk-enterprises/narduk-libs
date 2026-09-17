@@ -1,6 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { createServer, IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 
-import { normalizeCspReports } from '../runtime/server/handlers/cspReport.post'
+import { createApp, createEvent, toNodeListener } from 'h3'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import cspReportHandler, {
+  cspReportDeclaredLengthExceedsLimit,
+  MAX_CSP_REPORT_BODY_BYTES,
+  normalizeCspReports,
+  readCappedCspReportJson,
+} from '../runtime/server/handlers/cspReport.post'
+
+const { logger } = vi.hoisted(() => {
+  const logger = {
+    warn: vi.fn(),
+    child: () => logger,
+  }
+  return { logger }
+})
+
+vi.mock('../runtime/server/utils/logger', () => ({ useLogger: () => logger }))
 
 /** The wire spelling browsers actually send, as opposed to the camelCase one
  * the Reporting API spec drafts used. Named because it appears in almost every
@@ -10,26 +29,28 @@ const DIRECTIVE = 'effective-directive'
 /** The directive most of these cases violate. */
 const SCRIPT_SRC = 'script-src'
 
+const STATION_URL = 'https://app.example/stations'
+
 describe('report-uri envelope (application/csp-report)', () => {
   it('unwraps the csp-report object browsers actually send', () => {
     expect(
       normalizeCspReports({
         'csp-report': {
-          'document-uri': 'https://app.example/stations',
+          'document-uri': STATION_URL,
           [DIRECTIVE]: SCRIPT_SRC,
           'blocked-uri': 'https://evil.example/x.js',
           disposition: 'report',
-          'source-file': 'https://app.example/stations',
+          'source-file': STATION_URL,
           'line-number': 42,
         },
       }),
     ).toEqual([
       {
-        documentUri: 'https://app.example/stations',
+        documentUri: STATION_URL,
         effectiveDirective: 'script-src',
         blockedUri: 'https://evil.example/x.js',
         disposition: 'report',
-        sourceFile: 'https://app.example/stations',
+        sourceFile: STATION_URL,
         lineNumber: 42,
       },
     ])
@@ -119,5 +140,78 @@ describe('hostile and malformed input', () => {
       'csp-report': { [DIRECTIVE]: SCRIPT_SRC, 'line-number': -1 },
     })
     expect(report?.lineNumber).toBeUndefined()
+  })
+})
+
+describe('raw body ceiling', () => {
+  afterEach(() => {
+    logger.warn.mockClear()
+  })
+
+  it('rejects a Content-Length over 64 KiB before parsing', () => {
+    expect(cspReportDeclaredLengthExceedsLimit(String(MAX_CSP_REPORT_BODY_BYTES))).toBe(false)
+    expect(cspReportDeclaredLengthExceedsLimit(String(MAX_CSP_REPORT_BODY_BYTES + 1))).toBe(true)
+    expect(cspReportDeclaredLengthExceedsLimit(undefined)).toBe(false)
+  })
+
+  it('throws 413 when Content-Length exceeds the cap without reading the stream', async () => {
+    const request = new IncomingMessage(new Socket())
+    request.method = 'POST'
+    request.url = '/api/_security/csp-report'
+    request.headers['content-length'] = String(MAX_CSP_REPORT_BODY_BYTES + 1)
+    request.headers['content-type'] = 'application/csp-report'
+    const event = createEvent(request, new ServerResponse(request))
+
+    await expect(readCappedCspReportJson(event)).rejects.toMatchObject({ statusCode: 413 })
+  })
+
+  async function postReport(body: string, headers: Record<string, string> = {}): Promise<Response> {
+    const app = createApp().use(cspReportHandler)
+    const server = createServer(toNodeListener(app))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
+    try {
+      return await fetch(`http://127.0.0.1:${address.port}/api/_security/csp-report`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/csp-report', ...headers },
+        body,
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
+  }
+
+  it('answers 204 for a real browser-sized report', async () => {
+    const response = await postReport(
+      JSON.stringify({
+        'csp-report': {
+          [DIRECTIVE]: SCRIPT_SRC,
+          'document-uri': STATION_URL,
+          'blocked-uri': 'inline',
+        },
+      }),
+    )
+    expect(response.status).toBe(204)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'CSP violation',
+      expect.objectContaining({ effectiveDirective: SCRIPT_SRC }),
+    )
+  })
+
+  it('answers 413 when the raw body exceeds 64 KiB', async () => {
+    const oversized = JSON.stringify({
+      'csp-report': {
+        [DIRECTIVE]: SCRIPT_SRC,
+        'source-file': 'x'.repeat(MAX_CSP_REPORT_BODY_BYTES),
+      },
+    })
+    expect(Buffer.byteLength(oversized)).toBeGreaterThan(MAX_CSP_REPORT_BODY_BYTES)
+
+    const response = await postReport(oversized)
+    expect(response.status).toBe(413)
+    expect(logger.warn).not.toHaveBeenCalled()
   })
 })

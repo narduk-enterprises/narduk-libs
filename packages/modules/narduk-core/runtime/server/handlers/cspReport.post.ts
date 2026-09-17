@@ -20,9 +20,18 @@
  *   `application/reports+json`  the Reporting API batch, an array of
  *                              `{ type, url, body }` envelopes.
  */
-import { defineEventHandler, readBody, setResponseStatus } from 'h3'
+import {
+  createError,
+  defineEventHandler,
+  getRequestHeader,
+  getRequestWebStream,
+  isError,
+  setResponseStatus,
+} from 'h3'
 
 import { useLogger } from '../utils/logger'
+
+import type { H3Event } from 'h3'
 
 /** A report is diagnostics, not a document. Anything longer than this is a
  * page that pasted itself into `script-sample`, and truncating keeps one
@@ -32,6 +41,14 @@ const MAX_FIELD_LENGTH = 512
 /** A single navigation can legitimately produce a handful of violations; a
  * request claiming hundreds is noise or an attempt to fill the log. */
 const MAX_REPORTS_PER_REQUEST = 20
+
+/**
+ * Byte ceiling for the raw report body. The sink is CSRF-exempt (browsers
+ * POST `application/csp-report` with no `X-Requested-With`), so an unbounded
+ * `readBody` is an unauthenticated parse. 64 KiB covers a Reporting API batch
+ * of {@link MAX_REPORTS_PER_REQUEST} field-capped reports with room to spare.
+ */
+export const MAX_CSP_REPORT_BODY_BYTES = 64 * 1024
 
 interface CspReportBody {
   'blocked-uri'?: unknown
@@ -112,13 +129,94 @@ export function normalizeCspReports(payload: unknown): NormalizedCspViolation[] 
     .filter((report): report is NormalizedCspViolation => report !== null)
 }
 
+export function cspReportDeclaredLengthExceedsLimit(
+  contentLengthHeader: string | undefined,
+  maxBytes = MAX_CSP_REPORT_BODY_BYTES,
+): boolean {
+  if (contentLengthHeader === undefined || contentLengthHeader === '') return false
+  const parsed = Number(contentLengthHeader)
+  return Number.isInteger(parsed) && parsed > maxBytes
+}
+
+function payloadTooLargeError() {
+  return createError({ statusCode: 413, statusMessage: 'Payload Too Large' })
+}
+
+function chunkToBytes(chunk: unknown): Uint8Array {
+  if (chunk instanceof Uint8Array) return chunk
+  if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk)
+  if (typeof chunk === 'string') return new TextEncoder().encode(chunk)
+  return new Uint8Array()
+}
+
+function decodeUtf8Chunks(chunks: Uint8Array[]): string {
+  let total = 0
+  for (const chunk of chunks) total += chunk.byteLength
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(merged)
+}
+
+/**
+ * Read the raw POST body with a hard byte ceiling. h3 1.15 `readRawBody` /
+ * `readBody` have no limit, so this is the only cap on an unauthenticated
+ * parse. Rejects 413 when `Content-Length` or the actual stream exceeds
+ * {@link MAX_CSP_REPORT_BODY_BYTES}.
+ */
+export async function readCappedCspReportJson(
+  event: H3Event,
+  maxBytes = MAX_CSP_REPORT_BODY_BYTES,
+): Promise<unknown> {
+  if (cspReportDeclaredLengthExceedsLimit(getRequestHeader(event, 'content-length'), maxBytes)) {
+    throw payloadTooLargeError()
+  }
+
+  const stream = getRequestWebStream(event)
+  if (!stream) return null
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let overflow = false
+  try {
+    await stream.pipeTo(
+      new WritableStream({
+        write(chunk) {
+          const bytes = chunkToBytes(chunk)
+          total += bytes.byteLength
+          if (total > maxBytes) {
+            overflow = true
+            throw payloadTooLargeError()
+          }
+          chunks.push(bytes)
+        },
+      }),
+    )
+  } catch (error) {
+    if (overflow || (isError(error) && error.statusCode === 413)) {
+      throw payloadTooLargeError()
+    }
+    throw error
+  }
+
+  if (chunks.length === 0) return null
+
+  const raw = decodeUtf8Chunks(chunks)
+  if (raw === '') return null
+  return JSON.parse(raw) as unknown
+}
+
 export default defineEventHandler(async (event) => {
   const logger = useLogger(event).child('SecurityHeaders')
 
   let payload: unknown
   try {
-    payload = await readBody(event)
-  } catch {
+    payload = await readCappedCspReportJson(event)
+  } catch (error) {
+    if (isError(error) && error.statusCode === 413) throw error
     // A malformed or empty body is a misbehaving client, not an app fault, and
     // answering 4xx would only teach it to retry.
     setResponseStatus(event, 204)

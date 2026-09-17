@@ -94,4 +94,33 @@ describe('default social image', () => {
 
     expect(useHead).not.toHaveBeenCalled()
   })
+
+  it.each([
+    '//attacker.example',
+    '\\attacker.example',
+    '/%5cattacker',
+    'https://attacker.example/x',
+  ])('falls back to the site root instead of poisoning og:url for %s', (path) => {
+    expect(() => defaultSocialMeta({ ...LOGIN_CARD, path })).not.toThrow()
+    expect(defaultSocialMeta({ ...LOGIN_CARD, path })).toContainEqual({
+      property: 'og:url',
+      content: `${SITE_URL}/`,
+    })
+  })
+
+  it('keeps a normal path and query on og:url', () => {
+    expect(defaultSocialMeta({ ...LOGIN_CARD, path: '/path?q=1' })).toContainEqual({
+      property: 'og:url',
+      content: `${SITE_URL}/path?q=1`,
+    })
+  })
+
+  it('allows an explicit absolute canonical only when it matches the site origin', () => {
+    expect(defaultSocialMeta({ ...LOGIN_CARD, path: `${SITE_URL}/narduk-network` })).toContainEqual(
+      {
+        property: 'og:url',
+        content: `${SITE_URL}/narduk-network`,
+      },
+    )
+  })
 })

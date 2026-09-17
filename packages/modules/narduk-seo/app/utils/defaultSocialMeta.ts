@@ -1,3 +1,5 @@
+import { resolveSafeCanonicalUrl } from './safeCanonicalUrl'
+
 export interface DefaultSocialImage {
   alt: string
   url: string
@@ -27,7 +29,9 @@ export function defaultSocialMeta(input: {
 }): DefaultSocialMetaTag[] {
   const site = new URL(input.siteUrl)
   const image = new URL(input.image.url, site)
-  const canonical = new URL(input.path, site)
+  const canonical = new URL(
+    resolveSafeCanonicalUrl(input.path, input.siteUrl) ?? new URL('/', site).href,
+  )
   for (const url of [site, image, canonical]) {
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
     if (

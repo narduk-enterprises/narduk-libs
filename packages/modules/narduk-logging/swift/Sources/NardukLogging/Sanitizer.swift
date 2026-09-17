@@ -8,6 +8,29 @@ public enum LogSanitizer {
         "body", "requestbody", "responsebody", "payload", "payment", "cardnumber", "cvv", "email",
         "phone", "address", "latitude", "longitude", "prompt", "completion",
     ]
+    /// Exact segments after camelCase / snake_case / kebab-case split.
+    static let sensitiveSegments: Set<String> = [
+        "password", "passwd", "secret", "token", "apikey", "authorization",
+        "cookie", "cookies", "setcookie", "session", "sessionid", "privatekey",
+        "clientsecret", "jwt", "bearer", "credential", "credentials",
+    ]
+    /// Adjacent segments that together name a secret (`x-api-key` → api+key).
+    static let compoundSegments: Set<String> = [
+        "apikey", "accesskey", "privatekey", "clientsecret", "setcookie",
+    ]
+    /// Keep infix on the punctuation-stripped key only for these compounds.
+    static let sensitiveInfix = ["apikey", "accesskey", "privatekey", "authorization"]
+    /// Suffix match on the punctuation-stripped key. Segment splitting cannot
+    /// see a boundary in an all-lowercase concatenation such as `refreshtoken`
+    /// or `dbpassword`, so without this the narrowing would stop redacting
+    /// names the suffix matcher already covered. `tokenizer` / `secretary` /
+    /// `jwtid` do not end in these words, and `tokencount` / `passwordless`
+    /// are carved out by `safeNormalizedKeys`.
+    static let sensitiveSuffixes = ["token", "password", "secret"]
+    /// Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+    static let safeNormalizedKeys: Set<String> = [
+        "tokencount", "passwordless", "authmethod", "authbackend", "authprovider",
+    ]
 
     static func clean(_ value: String, limit: Int = 2048) -> String {
         String(
@@ -23,6 +46,48 @@ public enum LogSanitizer {
                 key.lowercased().unicodeScalars.filter {
                     (97...122).contains($0.value) || (48...57).contains($0.value)
                 }))
+    }
+
+    static func keySegments(_ key: String) -> [String] {
+        let pieces = key.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        var segments: [String] = []
+        for piece in pieces {
+            var current = ""
+            let characters = Array(piece)
+            for (index, character) in characters.enumerated() {
+                let previous = index > 0 ? characters[index - 1] : nil
+                let next = index + 1 < characters.count ? characters[index + 1] : nil
+                let splitBeforeUpper =
+                    character.isUppercase && previous.map { $0.isLowercase || $0.isNumber } == true
+                let splitAcronym =
+                    character.isUppercase && previous?.isUppercase == true
+                    && next?.isLowercase == true
+                if !current.isEmpty && (splitBeforeUpper || splitAcronym) {
+                    segments.append(current.lowercased())
+                    current = String(character)
+                } else {
+                    current.append(character)
+                }
+            }
+            if !current.isEmpty { segments.append(current.lowercased()) }
+        }
+        return segments
+    }
+
+    static func isSensitiveKey(_ key: String, extra: Set<String>) -> Bool {
+        let normalizedKey = normalized(key)
+        if sensitive.contains(normalizedKey) || extra.contains(normalizedKey) { return true }
+        if normalizedKey.isEmpty || safeNormalizedKeys.contains(normalizedKey) { return false }
+        let segments = keySegments(key)
+        if segments.contains(where: sensitiveSegments.contains) { return true }
+        if segments.count >= 2 {
+            for index in 0..<(segments.count - 1) {
+                if compoundSegments.contains(segments[index] + segments[index + 1]) { return true }
+            }
+        }
+        if segments.contains("auth") { return true }
+        if sensitiveSuffixes.contains(where: normalizedKey.hasSuffix) { return true }
+        return sensitiveInfix.contains(where: normalizedKey.contains)
     }
 
     public static func url(_ value: String) -> String {
@@ -57,12 +122,7 @@ public enum LogSanitizer {
         let extra = Set(redact.map(normalized))
         var nodes = 0
         func walk(_ value: LogValue, key: String = "", depth: Int = 0) -> LogValue {
-            let normalizedKey = normalized(key)
-            if sensitive.contains(normalizedKey) || extra.contains(normalizedKey)
-                || ["token", "password", "secret"].contains(where: normalizedKey.hasSuffix)
-            {
-                return "[REDACTED]"
-            }
+            if isSensitiveKey(key, extra: extra) { return "[REDACTED]" }
             if case .private = value { return "[REDACTED]" }
             nodes += 1
             guard depth <= 6, nodes <= 500 else { return "[Truncated]" }
@@ -77,7 +137,7 @@ public enum LogSanitizer {
                 return .string(
                     key.hasSuffix("url") || key.hasSuffix("uri") ? url(string) : clean(string))
             case .array(let array):
-                var result = array.prefix(50).map { walk($0, depth: depth + 1) }
+                var result = array.prefix(50).map { walk($0, key: key, depth: depth + 1) }
                 if array.count > 50 { result.append("[Truncated]") }
                 return .array(result)
             case .object(let object):

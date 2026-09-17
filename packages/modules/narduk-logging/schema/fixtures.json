@@ -1,8 +1,16 @@
 [
   {
     "name": "ordinary fields",
-    "input": { "count": 3, "ok": true, "optional": null },
-    "expected": { "count": 3, "ok": true, "optional": null }
+    "input": {
+      "count": 3,
+      "ok": true,
+      "optional": null
+    },
+    "expected": {
+      "count": 3,
+      "ok": true,
+      "optional": null
+    }
   },
   {
     "name": "nested credentials and personal fields",
@@ -17,7 +25,11 @@
     },
     "expected": {
       "password": "[REDACTED]",
-      "nested": { "access_token": "[REDACTED]", "email": "[REDACTED]", "tokenCount": 4 },
+      "nested": {
+        "access_token": "[REDACTED]",
+        "email": "[REDACTED]",
+        "tokenCount": 4
+      },
       "body": "[REDACTED]"
     }
   },
@@ -27,12 +39,21 @@
       "url": "https://example:synthetic@example.invalid/items?token=synthetic#private",
       "relativeUrl": "/items?token=synthetic"
     },
-    "expected": { "url": "https://example.invalid/items", "relativeUrl": "/items" }
+    "expected": {
+      "url": "https://example.invalid/items",
+      "relativeUrl": "/items"
+    }
   },
   {
     "name": "terminal and line controls",
-    "input": { "event": "first\nsecond\u001b[31m", "nested": ["a\tb", 4] },
-    "expected": { "event": "first second [31m", "nested": ["a b", 4] }
+    "input": {
+      "event": "first\nsecond\u001b[31m",
+      "nested": ["a\tb", 4]
+    },
+    "expected": {
+      "event": "first second [31m",
+      "nested": ["a b", 4]
+    }
   },
   {
     "name": "unsupported URLs",
@@ -40,6 +61,138 @@
       "url": "file:///private/data?key=synthetic",
       "callbackUrl": "https://[invalid?token=synthetic"
     },
-    "expected": { "url": "[unsupported URL]", "callbackUrl": "[invalid URL]" }
+    "expected": {
+      "url": "[unsupported URL]",
+      "callbackUrl": "[invalid URL]"
+    }
+  },
+  {
+    "name": "API-key headers and credential substrings",
+    "input": {
+      "x-api-key": ["synthetic-a", "synthetic-b"],
+      "openai_api_key": "synthetic",
+      "AWS_SECRET_ACCESS_KEY": "synthetic",
+      "AWS_ACCESS_KEY_ID": "synthetic",
+      "x-secret-key": "synthetic",
+      "cf-access-jwt-assertion": "synthetic",
+      "x-authorization": "synthetic",
+      "x-auth": "synthetic",
+      "credentials": "synthetic",
+      "x-bearer": "synthetic",
+      "ssh_private_key": "synthetic",
+      "authorName": "Ada",
+      "passwordless": true,
+      "authMethod": "session",
+      "authBackend": "local",
+      "authProvider": "supabase",
+      "itemCount": 7
+    },
+    "expected": {
+      "x-api-key": "[REDACTED]",
+      "openai_api_key": "[REDACTED]",
+      "AWS_SECRET_ACCESS_KEY": "[REDACTED]",
+      "AWS_ACCESS_KEY_ID": "[REDACTED]",
+      "x-secret-key": "[REDACTED]",
+      "cf-access-jwt-assertion": "[REDACTED]",
+      "x-authorization": "[REDACTED]",
+      "x-auth": "[REDACTED]",
+      "credentials": "[REDACTED]",
+      "x-bearer": "[REDACTED]",
+      "ssh_private_key": "[REDACTED]",
+      "authorName": "Ada",
+      "passwordless": true,
+      "authMethod": "session",
+      "authBackend": "local",
+      "authProvider": "supabase",
+      "itemCount": 7
+    }
+  },
+  {
+    "name": "segment match keeps tokenizer secretary jwtid visible",
+    "input": {
+      "tokenizer": "bpe",
+      "tokenization": "wordpiece",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "token": "synthetic",
+      "access_token": "synthetic",
+      "authToken": "synthetic",
+      "x-api-key": "synthetic",
+      "authorization": "synthetic",
+      "cookie": "synthetic",
+      "set-cookie": "synthetic",
+      "secret": "synthetic",
+      "client_secret": "synthetic",
+      "password": "synthetic"
+    },
+    "expected": {
+      "tokenizer": "bpe",
+      "tokenization": "wordpiece",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "token": "[REDACTED]",
+      "access_token": "[REDACTED]",
+      "authToken": "[REDACTED]",
+      "x-api-key": "[REDACTED]",
+      "authorization": "[REDACTED]",
+      "cookie": "[REDACTED]",
+      "set-cookie": "[REDACTED]",
+      "secret": "[REDACTED]",
+      "client_secret": "[REDACTED]",
+      "password": "[REDACTED]"
+    }
+  },
+  {
+    "name": "concatenated secret suffixes stay redacted",
+    "input": {
+      "accesstoken": "synthetic",
+      "refreshtoken": "synthetic",
+      "apitoken": "synthetic",
+      "authtoken": "synthetic",
+      "idtoken": "synthetic",
+      "sessiontoken": "synthetic",
+      "githubtoken": "synthetic",
+      "oauthtoken": "synthetic",
+      "dbpassword": "synthetic",
+      "userpassword": "synthetic",
+      "rootpassword": "synthetic",
+      "adminsecret": "synthetic",
+      "apisecret": "synthetic",
+      "mastersecret": "synthetic",
+      "clientsecret": "synthetic",
+      "tokenizer": "bpe",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "tokenCount": 7,
+      "passwordless": true,
+      "monkey": "george",
+      "keyboard": "qwerty",
+      "passport": "A123"
+    },
+    "expected": {
+      "accesstoken": "[REDACTED]",
+      "refreshtoken": "[REDACTED]",
+      "apitoken": "[REDACTED]",
+      "authtoken": "[REDACTED]",
+      "idtoken": "[REDACTED]",
+      "sessiontoken": "[REDACTED]",
+      "githubtoken": "[REDACTED]",
+      "oauthtoken": "[REDACTED]",
+      "dbpassword": "[REDACTED]",
+      "userpassword": "[REDACTED]",
+      "rootpassword": "[REDACTED]",
+      "adminsecret": "[REDACTED]",
+      "apisecret": "[REDACTED]",
+      "mastersecret": "[REDACTED]",
+      "clientsecret": "[REDACTED]",
+      "tokenizer": "bpe",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "tokenCount": 7,
+      "passwordless": true,
+      "monkey": "george",
+      "keyboard": "qwerty",
+      "passport": "A123"
+    }
   }
 ]

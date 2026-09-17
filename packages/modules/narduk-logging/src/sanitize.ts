@@ -38,6 +38,52 @@ const SENSITIVE = new Set([
   'prompt',
   'completion',
 ])
+/** Exact segments after camelCase / snake_case / kebab-case split. */
+const SENSITIVE_SEGMENTS = new Set([
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'apikey',
+  'authorization',
+  'cookie',
+  'cookies',
+  'setcookie',
+  'session',
+  'sessionid',
+  'privatekey',
+  'clientsecret',
+  'jwt',
+  'bearer',
+  'credential',
+  'credentials',
+])
+/** Adjacent segments that together name a secret (`x-api-key` → api+key). */
+const COMPOUND_SEGMENTS = new Set([
+  'apikey',
+  'accesskey',
+  'privatekey',
+  'clientsecret',
+  'setcookie',
+])
+/** Keep infix on the punctuation-stripped key only for these compounds. */
+const SENSITIVE_INFIX = ['apikey', 'accesskey', 'privatekey', 'authorization'] as const
+/**
+ * Suffix match on the punctuation-stripped key. Segment splitting cannot see a
+ * boundary in an all-lowercase concatenation such as `refreshtoken` or
+ * `dbpassword`, so without this the narrowing would stop redacting names the
+ * suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not
+ * end in these words, and `tokencount` / `passwordless` are carved out above.
+ */
+const SENSITIVE_SUFFIXES = ['token', 'password', 'secret'] as const
+/** Metric / method flags that contain `token`, `password`, or `auth` but are not secrets. */
+const SAFE_NORMALIZED_KEYS = new Set([
+  'tokencount',
+  'passwordless',
+  'authmethod',
+  'authbackend',
+  'authprovider',
+])
 
 /** Mark a value as private. It is redacted before any sink sees the record. */
 export function privateValue(value: unknown): object {
@@ -53,15 +99,33 @@ function normalizeKey(key: string): string {
   return key.toLowerCase().replaceAll(/[^a-z0-9]/g, '')
 }
 
+/** Split `authToken`, `access_token`, and `x-api-key` on the original key. */
+function keySegments(key: string): string[] {
+  const pieces = key.split(/[^A-Za-z0-9]+/u).filter(Boolean)
+  const segments: string[] = []
+  for (const piece of pieces) {
+    const parts = piece.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/u)
+    for (const part of parts) {
+      if (part) segments.push(part.toLowerCase())
+    }
+  }
+  return segments
+}
+
 export function isSensitiveKey(key: string, extra: readonly string[] = []): boolean {
   const normalized = normalizeKey(key)
-  return (
-    SENSITIVE.has(normalized) ||
-    normalized.endsWith('token') ||
-    normalized.endsWith('password') ||
-    normalized.endsWith('secret') ||
-    extra.some((item) => normalizeKey(item) === normalized)
-  )
+  if (SENSITIVE.has(normalized) || extra.some((item) => normalizeKey(item) === normalized)) {
+    return true
+  }
+  if (!normalized || SAFE_NORMALIZED_KEYS.has(normalized)) return false
+  const segments = keySegments(key)
+  if (segments.some((segment) => SENSITIVE_SEGMENTS.has(segment))) return true
+  for (let index = 0; index < segments.length - 1; index++) {
+    if (COMPOUND_SEGMENTS.has(`${segments[index]}${segments[index + 1]}`)) return true
+  }
+  if (segments.includes('auth')) return true
+  if (SENSITIVE_SUFFIXES.some((part) => normalized.endsWith(part))) return true
+  return SENSITIVE_INFIX.some((part) => normalized.includes(part))
 }
 
 /** Malformed URLs never fall back to the original query/credential-bearing string. */
@@ -194,7 +258,7 @@ function walk(value: unknown, state: WalkState, depth: number, key = ''): JsonVa
       const descriptor = descriptors[String(i)]
       result.push(
         descriptor && 'value' in descriptor
-          ? walk(descriptor.value, state, depth + 1)
+          ? walk(descriptor.value, state, depth + 1, key)
           : '[Accessor]',
       )
     }

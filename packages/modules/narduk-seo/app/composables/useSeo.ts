@@ -10,6 +10,7 @@ import {
 
 import { DEFAULT_SOCIAL_IMAGE_HEIGHT, DEFAULT_SOCIAL_IMAGE_WIDTH } from '../utils/defaultSocialMeta'
 import { hasNoindexRobots, resolveSeoOgImageDefinition } from '../utils/ogImageDefinition'
+import { resolveSafeCanonicalUrl } from '../utils/safeCanonicalUrl'
 
 import type { SeoOgImageOptions } from '../utils/ogImageDefinition'
 import type { MaybeRefOrGetter } from 'vue'
@@ -30,16 +31,6 @@ interface SeoOptions {
   robots?: string
   title: MaybeRefOrGetter<string>
   type?: 'website' | 'article' | 'profile'
-}
-
-function resolveCanonicalUrl(canonicalUrl?: string, siteUrl?: string) {
-  if (!canonicalUrl) return
-  if (!siteUrl) return canonicalUrl
-  try {
-    return new URL(canonicalUrl, siteUrl).toString()
-  } catch {
-    return canonicalUrl
-  }
 }
 
 export function useSeo(options: SeoOptions) {
@@ -69,7 +60,7 @@ export function useSeo(options: SeoOptions) {
     typeof siteConfig.url === 'string' && siteConfig.url ? siteConfig.url : fallbackSiteUrl
   const siteName =
     typeof siteConfig.name === 'string' && siteConfig.name ? siteConfig.name : fallbackSiteName
-  const resolvedCanonicalUrl = resolveCanonicalUrl(canonicalUrl ?? route.path, siteUrl)
+  const resolvedCanonicalUrl = resolveSafeCanonicalUrl(canonicalUrl ?? route.path, siteUrl)
   const resolveTitle = () => toValue(title)
   const resolveDescription = () => toValue(description)
   // noindex is not a privacy classification: public unlisted pages can explicitly

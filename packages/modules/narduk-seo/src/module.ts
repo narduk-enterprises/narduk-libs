@@ -17,6 +17,10 @@ import { defu } from 'defu'
 
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
 import {
+  assertOgImageSigningSecretForBuild,
+  resolveOgImageSigningSecret,
+} from '../shared/ogImageSecret'
+import {
   type NardukSecurityTxtOptions,
   resolveSecurityTxtBody,
   SECURITY_TXT_LEGACY_PATH,
@@ -369,6 +373,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     nuxtOptions.seo = defu((nuxtOptions.seo ?? {}) as Record<string, unknown>, {
       automaticTwitterTags: false,
     })
+    const ogImageSecret = readTrimmedEnv(['NUXT_OG_IMAGE_SECRET'])
     nuxtOptions.ogImage = defu((nuxtOptions.ogImage ?? {}) as Record<string, unknown>, {
       enabled: true,
       // narduk-libs#349: without this, every `defineOgImage` route also emits
@@ -376,7 +381,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       // `twitter:image:*` dimensions. The `og:image*` tags are unaffected.
       includeTwitter: false,
       security: {
-        secret: process.env.NUXT_OG_IMAGE_SECRET || '',
+        ...(ogImageSecret ? { secret: ogImageSecret } : {}),
       },
       defaults: {
         width: 1200,
@@ -395,6 +400,29 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
           takumi: 'wasm',
         },
       },
+    })
+    const resolvedOgImage = nuxtOptions.ogImage as {
+      enabled?: boolean
+      security?: { secret?: unknown }
+      zeroRuntime?: boolean
+    }
+    const resolvedOgImageSecret = resolveOgImageSigningSecret(resolvedOgImage.security?.secret)
+    if (resolvedOgImage.security) {
+      if (resolvedOgImageSecret) {
+        resolvedOgImage.security.secret = resolvedOgImageSecret
+      } else {
+        delete resolvedOgImage.security.secret
+      }
+    }
+    const nuxtBuildFlags = nuxt.options as { _prepare?: boolean; dev?: boolean }
+    assertOgImageSigningSecretForBuild({
+      isDev: Boolean(nuxtBuildFlags.dev),
+      isPrepare: Boolean(nuxtBuildFlags._prepare),
+      runtimeGenerationEnabled:
+        Boolean(options.seoModule) &&
+        resolvedOgImage.enabled !== false &&
+        resolvedOgImage.zeroRuntime !== true,
+      secret: resolvedOgImageSecret,
     })
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
       urls: ['/narduk-network'],

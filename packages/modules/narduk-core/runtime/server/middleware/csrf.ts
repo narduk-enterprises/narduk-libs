@@ -21,11 +21,37 @@
  * - Webhook/external callback routes (`/api/webhooks/`, `/api/cron/`)
  * - Auth provider routes (`/api/_auth/`)
  * - Opt-in Nuxt Content internal queries (`/__nuxt_content/`)
+ * - The configured CSP report sink (`nardukSecurityHeaders.reportRoute`)
  * - API key bearer auth (`Authorization: Bearer nk_...`)
  */
 import { createError, defineEventHandler, getHeader } from 'h3'
+import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { DEFAULT_REPORT_ROUTE } from '../../shared/security-headers'
 import { useLogger } from '../utils/logger'
+
+function requestPathname(path: string): string {
+  const query = path.indexOf('?')
+  return query === -1 ? path : path.slice(0, query)
+}
+
+/**
+ * Browser CSP reports are unauthenticated POSTs with no `X-Requested-With`.
+ * The path is whatever `security.headers.reportRoute` resolved to — the
+ * module writes that onto `runtimeConfig.nardukSecurityHeaders.reportRoute`
+ * so this skip tracks a consumer override instead of a hardcoded literal.
+ */
+function configuredCspReportRoute(config: object): string | null {
+  const headers = (config as { nardukSecurityHeaders?: { mode?: unknown; reportRoute?: unknown } })
+    .nardukSecurityHeaders
+  // No handler is registered when mode is `off` (the default). Skipping CSRF
+  // for the fallback report path would exempt a 404.
+  if (headers?.mode !== 'report-only' && headers?.mode !== 'enforce') return null
+  const reportRoute = headers.reportRoute
+  if (reportRoute === false) return null
+  if (typeof reportRoute === 'string' && reportRoute.length > 0) return reportRoute
+  return DEFAULT_REPORT_ROUTE
+}
 
 export default defineEventHandler((event) => {
   const method = event.method.toUpperCase()
@@ -46,6 +72,9 @@ export default defineEventHandler((event) => {
   ) {
     return
   }
+
+  const reportRoute = configuredCspReportRoute(useRuntimeConfig(event))
+  if (reportRoute && requestPathname(path) === reportRoute) return
 
   // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable
   const authHeader = getHeader(event, 'authorization')
