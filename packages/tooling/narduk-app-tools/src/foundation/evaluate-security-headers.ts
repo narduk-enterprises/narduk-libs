@@ -16,6 +16,8 @@
  * command exits 2.
  */
 
+import { createLiveProbe } from '../live-probe.js'
+
 import { evaluateItem10, type ProbedRoute } from './items/item-10-security-headers.js'
 import { rollUp } from './schema.js'
 import { resolveAppInfo } from './evaluate.js'
@@ -48,32 +50,22 @@ export type HeaderProbe = (url: string) => Promise<ProbedRoute>
 
 const DEFAULT_TIMEOUT_MS = 15_000
 
+/**
+ * Item 10's probe, expressed over the shared `createLiveProbe` HTTP layer so
+ * `verify --live` and this check cannot diverge on timeout, redirect or
+ * user-agent behaviour. This one never reads the body -- a header verdict does
+ * not need it -- and returns the narrower `ProbedRoute` shape the item consumes.
+ */
 export function createFetchProbe(timeoutMs = DEFAULT_TIMEOUT_MS): HeaderProbe {
+  const probe = createLiveProbe({
+    timeoutMs,
+    readBody: false,
+    userAgent: 'narduk-app-tools/foundation-check-security-headers',
+  })
   return async (url: string): Promise<ProbedRoute> => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      const response = await fetch(url, {
-        // A HEAD can be answered by a different handler than the GET a browser
-        // makes, and Nitro's render hooks -- which is where nuxt-security sets
-        // the headers -- only run for a rendered response. Probe with GET.
-        method: 'GET',
-        redirect: 'follow',
-        headers: { 'user-agent': 'narduk-app-tools/foundation-check-security-headers' },
-        signal: controller.signal,
-      })
-      // Drain rather than leak the body; nothing here needs it.
-      await response.arrayBuffer().catch(() => new ArrayBuffer(0))
-      const headers: Record<string, string> = {}
-      response.headers.forEach((value, name) => {
-        headers[name.toLowerCase()] = value
-      })
-      return { url, status: response.status, headers }
-    } catch (error) {
-      return { url, error: error instanceof Error ? error.message : String(error) }
-    } finally {
-      clearTimeout(timer)
-    }
+    const response = await probe(url)
+    if (response.error !== undefined) return { url, error: response.error }
+    return { url, status: response.status, headers: response.headers }
   }
 }
 
