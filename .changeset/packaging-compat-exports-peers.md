@@ -20,7 +20,7 @@ Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is now
 `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
 `narduk-analytics` also add exact `./app/types/*` entries for the `.ts` files
 that the `*.d.ts` export pattern could not resolve. `narduk-app` declares `zod`
-`^4.4.3` as a required peer (kept in `devDependencies`) so consumers that
-typecheck `./server/request-body` can resolve `z.ZodType`. `narduk-shell`
-tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
-`4.8.1` and the workspace override.
+`^4.4.3` as an optional peer (kept in `devDependencies`) so consumers that
+typecheck `./server/request-body` can resolve `z.ZodType` without warning
+HTTP-only consumers. `narduk-shell` tightens `vue-router` to `^5.3.1` so the
+published package matches `@nuxt/ui` `4.8.1` and the workspace override.

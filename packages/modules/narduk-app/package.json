@@ -63,6 +63,11 @@
   "peerDependencies": {
     "zod": "^4.4.3"
   },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
   "volta": {
     "node": "22.22.3"
   }
