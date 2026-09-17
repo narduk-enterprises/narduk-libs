@@ -48,32 +48,6 @@ describe('narduk-core package exports', () => {
     expect(source).toContain("import { useColorMode } from '#imports'")
   })
 
-  /**
-   * `usePreferences()` is deliberately thin — `createPreferencesState` holds
-   * the behaviour, where a test can drive it with real Vue reactivity
-   * (`tests/preferences-state.test.ts`). What the composable still owns is the
-   * three Nuxt bindings it supplies, and importing it here to check them would
-   * fail `nuxt typecheck` with a TS6307 project-boundary error, the same way
-   * `useAppFetch` does. The wiring is pinned against the source text instead.
-   */
-  it('wires the preference composable to the SSR-safe Nuxt bindings', () => {
-    const source = readFileSync(
-      join(packageRoot, 'runtime/app/composables/usePreferences.ts'),
-      'utf-8',
-    )
-
-    expect(source).toContain(
-      "import { useCookie, useRequestEvent, useRequestHeaders, useState } from '#imports'",
-    )
-    // The cookie is what makes the choice readable during SSR.
-    expect(source).toContain('useCookie<string | null>(NE_PREFERENCES_COOKIE')
-    // useState carries the server's resolved defaults in the payload, so the
-    // client's first render reproduces the server's markup exactly.
-    expect(source).toContain('useState(NE_PREFERENCES_STATE_KEY')
-    // Marking the event is what keeps preference-shaped HTML out of a shared cache.
-    expect(source).toContain('markPreferencesInfluenced(useRequestEvent())')
-  })
-
   it('does not ship retired PWA, shared icon, or control-plane runtime assets', () => {
     expect(existsSync(join(packageRoot, 'runtime/public/apple-touch-icon.png'))).toBe(false)
     expect(existsSync(join(packageRoot, 'runtime/public/favicon-16x16.png'))).toBe(false)

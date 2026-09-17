@@ -39,6 +39,7 @@ export function usePreferences(): NePreferencesState {
     maxAge: NE_PREFERENCES_COOKIE_MAX_AGE,
     path: '/',
     sameSite: 'lax',
+    secure: !import.meta.dev,
   })
 
   const defaults = useState(NE_PREFERENCES_STATE_KEY, () =>
