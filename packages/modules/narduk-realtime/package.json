@@ -76,6 +76,7 @@
     "vitest": "4.1.11"
   },
   "peerDependencies": {
+    "@nuxt/schema": ">=3.16.0",
     "nuxt": ">=3.16.0"
   },
   "engines": {
