@@ -9,9 +9,9 @@ app scaffolds wire these into builds and browser CI. Existing apps adopt them
 using the [social preview guide](docs/social-previews.md).
 
 Focused app-local tooling exposed as `narduk-app`. It operates on the current
-application only: local development, source-owned D1 migrations, guarded
-Wrangler deployment, registry authentication, diagnostics, performance budgets,
-and favicon assets.
+application only: local development, prebuilt-Worker e2e serving, source-owned
+D1 migrations, guarded Wrangler deployment, registry authentication,
+diagnostics, performance budgets, and favicon assets.
 
 ## Local development (`narduk-app dev`)
 
@@ -54,6 +54,38 @@ source.
 
 `narduk-app deploy-local` is a different command and still reads Doppler
 `narduk/tokens` for its recovery deploy; it is unchanged here.
+
+## Prebuilt-Worker e2e (`narduk-app e2e-serve`)
+
+```sh
+narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
+  [--assets <dir>] [--cwd <dir>]
+```
+
+Serves an already-built Worker for Playwright when the shared `nuxt-cloudflare`
+callable sets `E2E_PREBUILT_ARTIFACT=1`. Defaults match the narduk-app layout
+(`apps/web/.output/server/index.mjs` and `wrangler.jsonc` / `wrangler.json` from
+the app directory or repository root). Flags override those paths; nothing
+app-specific is baked in.
+
+The command will not compile a fallback. A missing artifact fails immediately.
+It binds `127.0.0.1` only (`E2E_HOST` must be that address or unset). Startup
+notes go to stderr as `[e2e-serve] cwd=…` / `ready on …` because Playwright
+forwards only a webServer's stderr — without them a stalled start looks like a
+hung poll.
+
+`wrangler` is the app's dependency (optional peer here). It is resolved from the
+app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
+
+`wrangler is not installed in this app. Add it as a dependency and retry.`
+
+Real worker errors pass through. The only filtered stderr is workerd's
+client-abort block
+(`kj::getCaughtExceptionAsKj() … disconnected: ::write(…): Broken pipe` or
+`Connection reset by peer`, plus the following `stack: …workerd@…` line). A
+following `ECONNREFUSED` is the real crash
+([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
+See [the e2e-serve guide](docs/e2e-serve.md).
 
 ## Migration config
 

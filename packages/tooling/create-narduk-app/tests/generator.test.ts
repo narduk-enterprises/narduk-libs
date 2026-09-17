@@ -645,6 +645,9 @@ describe('create-narduk-app generation contract', () => {
       expect(e2eDoc, label).toContain('@narduk-enterprises/narduk-testkit/playwright/ui-quality')
       expect(e2eDoc, label).not.toContain('.template-reference')
       expect(e2eDoc, label).not.toContain('run-web-e2e.mjs')
+      expect(e2eDoc, label).toContain('E2E_PREBUILT_ARTIFACT=1')
+      expect(e2eDoc, label).toContain('narduk-app e2e-serve')
+      expect(e2eDoc, label).toContain('kj::getCaughtExceptionAsKj()')
       const visualAudit = byPath.get('apps/web/tests/e2e/visual-audit.spec.ts')
       expect(visualAudit, label).toBeDefined()
       expect(visualAudit, label).toContain(
@@ -990,6 +993,9 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedPlaywrightConfig).toContain("name: 'setup'")
     expect(generatedPlaywrightConfig).toContain("dependencies: ['setup']")
     expect(generatedPlaywrightConfig).toContain('`PORT=${port} NUXT_SESSION_PASSWORD=')
+    expect(generatedPlaywrightConfig).toContain("process.env.E2E_PREBUILT_ARTIFACT === '1'")
+    expect(generatedPlaywrightConfig).toContain('narduk-app e2e-serve ${port}')
+    expect(generatedPlaywrightConfig).toContain('pnpm --filter web run dev:test')
     expect(
       await readFile(join(targetDir, 'apps/web/drizzle/0000_app_records.sql'), 'utf8'),
     ).toContain('CREATE TABLE `app_records`')

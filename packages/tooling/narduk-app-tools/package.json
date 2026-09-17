@@ -57,7 +57,16 @@
     "eslint": "^10.8.0",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.90.1"
+  },
+  "peerDependencies": {
+    "wrangler": ">=4.90.1"
+  },
+  "peerDependenciesMeta": {
+    "wrangler": {
+      "optional": true
+    }
   },
   "volta": {
     "node": "22.22.3"
