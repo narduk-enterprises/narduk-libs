@@ -278,6 +278,43 @@ function stripSqlComments(sql: string): string {
   return sql.replaceAll(/--[^\n]*/gu, ' ').replaceAll(/\/\*[\s\S]*?\*\//gu, ' ')
 }
 
+const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
+  {
+    label: 'CREATE INDEX CONCURRENTLY',
+    pattern: /^(?:CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b)/iu,
+  },
+  { label: 'VACUUM', pattern: /^(?:VACUUM\b)/iu },
+  {
+    label: 'ALTER TYPE ... ADD VALUE',
+    pattern: /^(?:ALTER\s+TYPE\b)[\s\S]*\bADD\s+VALUE\b/iu,
+  },
+]
+
+/**
+ * Statements Postgres rejects inside a transaction. Default-transactional
+ * files now wrap in BEGIN/COMMIT, so these must fail closed with the
+ * opt-out directive rather than being auto-run outside a transaction.
+ */
+function findTransactionForbiddenStatement(sql: string): string | null {
+  for (const statement of splitSqlStatements(sql)) {
+    const stripped = stripSqlComments(statement).replaceAll(/\s+/gu, ' ').trim()
+    for (const { label, pattern } of TRANSACTION_FORBIDDEN_PATTERNS) {
+      if (pattern.test(stripped)) return label
+    }
+  }
+  return null
+}
+
+function assertTransactionalMigration(migration: Migration): void {
+  const forbidden = findTransactionForbiddenStatement(migration.sql)
+  if (forbidden === null) return
+  throw new NardukPostgresError(
+    'MIGRATION_TRANSACTION_FORBIDDEN',
+    `${migration.name} contains ${forbidden}, which cannot run inside a transaction. Put "${NO_TRANSACTION_DIRECTIVE}" on the first line to opt this file out. The runner will not silently run it non-transactionally.`,
+    { name: migration.name, statement: forbidden },
+  )
+}
+
 function assertMigrationsTable(table: string): string {
   if (!/^[a-z_][a-z0-9_]*$/u.test(table)) {
     throw new NardukPostgresError(
@@ -539,6 +576,8 @@ export async function applyMigrations(
     const durationMsByName: Record<string, number> = {}
 
     for (const migration of plan.pending) {
+      if (migration.transactional) assertTransactionalMigration(migration)
+
       const startedAt = now().getTime()
       const recordRow = async (target: SqlExecutor): Promise<void> => {
         await target.query(

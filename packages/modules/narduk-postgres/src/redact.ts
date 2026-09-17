@@ -53,17 +53,36 @@ export function redactSecrets(text: unknown): string {
 
 const MAX_CAUSE_DEPTH = 8
 
+const unredactedCauses = new WeakMap<object, unknown>()
+
+const SKIP_ERROR_KEYS = new Set(['cause', 'code', 'errors', 'message', 'name', 'stack'])
+
 /**
- * Replace a driver `cause` with a copy whose messages (and nested `cause`
- * chain) have been through `redactSecrets`. The original object is left
- * untouched: mutating a postgres.js / `pg` error in place would still leave
- * the password in any other holder of the same reference (a logger that
- * captured it first, a test, the isolate's unhandled-rejection handler).
+ * The driver object `redactErrorCause` copied. Not attached to the redacted
+ * error (JSON.stringify / inspect would leak it). Server-side logging may
+ * read it here; do not serialize the result.
+ */
+export function getUnredactedCause(error: object): unknown {
+  return unredactedCauses.get(error)
+}
+
+export function rememberUnredactedCause(copy: object, original: unknown): void {
+  unredactedCauses.set(copy, original)
+}
+
+/**
+ * Replace a driver `cause` with a copy whose messages, nested `cause` /
+ * `AggregateError.errors`, and enumerable own properties have been through
+ * `redactSecrets`. The original object is left untouched and is recoverable
+ * via `getUnredactedCause` for server-side logging: mutating a postgres.js /
+ * `pg` error in place would still leave the password in any other holder of
+ * the same reference, and attaching the original as `.cause` would put the
+ * DSN back on the serialized surface.
  *
  * `name` and a primitive `code` are preserved so callers can still branch
- * the way they do on the raw driver error. Everything else is dropped --
- * driver errors also stash the DSN on enumerable extras, and those must
- * not ride along.
+ * the way they do on the raw driver error. Enumerable extras (`address`,
+ * `hostname`, `parameters.connectionString`) are copied after redaction so
+ * `JSON.stringify` of the attached copy cannot carry a DSN.
  */
 export function redactErrorCause(
   cause: unknown,
@@ -76,31 +95,76 @@ export function redactErrorCause(
   if (depth >= MAX_CAUSE_DEPTH || seen.has(cause)) return undefined
   seen.add(cause)
 
+  if (Array.isArray(cause)) {
+    return cause.map((item) => redactErrorCause(item, depth + 1, seen))
+  }
+
   if (cause instanceof Error) {
-    const nested =
-      cause.cause === undefined ? undefined : redactErrorCause(cause.cause, depth + 1, seen)
-    const redacted =
-      nested === undefined
-        ? new Error(redactSecrets(cause.message))
-        : new Error(redactSecrets(cause.message), { cause: nested })
-    redacted.name = cause.name
-    if ('code' in cause) {
-      const code = (cause as { code: unknown }).code
-      if (typeof code === 'string' || typeof code === 'number') {
-        Object.defineProperty(redacted, 'code', {
-          configurable: true,
-          enumerable: true,
-          value: code,
-          writable: true,
-        })
-      }
-    }
+    const redacted = cloneRedactedError(cause, depth, seen)
+    rememberUnredactedCause(redacted, cause)
     return redacted
   }
 
-  try {
-    return new Error(redactSecrets(JSON.stringify(cause) ?? String(cause)))
-  } catch {
-    return new Error(REDACTED)
+  return cloneRedactedObject(cause, depth, seen)
+}
+
+function cloneRedactedError(cause: Error, depth: number, seen: WeakSet<object>): Error {
+  const nested =
+    cause.cause === undefined ? undefined : redactErrorCause(cause.cause, depth + 1, seen)
+  const message = redactSecrets(cause.message)
+  const options = nested === undefined ? undefined : { cause: nested }
+
+  const redacted =
+    cause instanceof AggregateError
+      ? new AggregateError(
+          cause.errors.map((item) => redactErrorCause(item, depth + 1, seen)),
+          message,
+          options,
+        )
+      : options === undefined
+        ? new Error(message)
+        : new Error(message, options)
+
+  redacted.name = cause.name
+  if ('code' in cause) {
+    const code = (cause as { code: unknown }).code
+    if (typeof code === 'string' || typeof code === 'number') {
+      Object.defineProperty(redacted, 'code', {
+        configurable: true,
+        enumerable: true,
+        value: code,
+        writable: true,
+      })
+    }
+  }
+  copyEnumerableOwn(cause, redacted, depth, seen, SKIP_ERROR_KEYS)
+  return redacted
+}
+
+function cloneRedactedObject(
+  cause: object,
+  depth: number,
+  seen: WeakSet<object>,
+): Record<string, unknown> {
+  const copy: Record<string, unknown> = {}
+  copyEnumerableOwn(cause, copy, depth, seen, new Set())
+  return copy
+}
+
+function copyEnumerableOwn(
+  source: object,
+  target: object,
+  depth: number,
+  seen: WeakSet<object>,
+  skip: ReadonlySet<string>,
+): void {
+  for (const key of Object.keys(source)) {
+    if (skip.has(key)) continue
+    Object.defineProperty(target, key, {
+      configurable: true,
+      enumerable: true,
+      value: redactErrorCause((source as Record<string, unknown>)[key], depth + 1, seen),
+      writable: true,
+    })
   }
 }

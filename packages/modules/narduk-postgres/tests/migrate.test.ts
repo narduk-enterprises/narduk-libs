@@ -343,6 +343,74 @@ describe('applyMigrations', () => {
     expect(committed.has('first')).toBe(false)
     expect(ledger).toEqual([])
   })
+
+  function plainLockingExecutor(): SqlExecutor & { texts: string[] } {
+    const texts: string[] = []
+    return {
+      texts,
+      async query<Row = Record<string, unknown>>(text: string): Promise<QueryResult<Row>> {
+        texts.push(text)
+        if (/pg_try_advisory_lock/u.test(text)) {
+          return { rowCount: 1, rows: [{ locked: true }] as Row[] }
+        }
+        if (/pg_advisory_unlock/u.test(text)) {
+          return { rowCount: 1, rows: [{ unlocked: true }] as Row[] }
+        }
+        if (/to_regclass/u.test(text)) {
+          return { rowCount: 1, rows: [{ exists: false }] as Row[] }
+        }
+        return { rowCount: 0, rows: [] }
+      },
+    }
+  }
+
+  it('refuses CONCURRENTLY in a default-transactional file before running SQL', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      {
+        name: '0001_concurrent_idx.sql',
+        sql: 'CREATE INDEX CONCURRENTLY idx ON t (a);',
+      },
+    ])
+
+    await expect(applyMigrations(executor, set)).rejects.toThrow(
+      /0001_concurrent_idx\.sql[\s\S]*-- narduk:no-transaction/u,
+    )
+    const joined = executor.texts.join('\n')
+    expect(joined).not.toMatch(/\bBEGIN\b/u)
+    expect(joined).not.toMatch(/CREATE INDEX CONCURRENTLY/iu)
+    expect(joined).toContain('pg_advisory_unlock')
+  })
+
+  it('refuses VACUUM and ALTER TYPE ADD VALUE in a default-transactional file', async () => {
+    for (const [name, sql] of [
+      ['0001_vacuum.sql', 'VACUUM ANALYZE t;'],
+      ['0001_add_value.sql', "ALTER TYPE mood ADD VALUE 'sad';"],
+    ] as const) {
+      const executor = plainLockingExecutor()
+      const set = await createMigrationSet([{ name, sql }])
+      await expect(applyMigrations(executor, set)).rejects.toThrow(/-- narduk:no-transaction/u)
+      expect(executor.texts.join('\n')).not.toMatch(/\bBEGIN\b/u)
+      expect(executor.texts.some((text) => text.includes(sql.split(' ')[0] ?? ''))).toBe(false)
+    }
+  })
+
+  it('still applies CONCURRENTLY when the file opts out on the first line', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      {
+        name: '0001_concurrent_idx.sql',
+        sql: '-- narduk:no-transaction\nCREATE INDEX CONCURRENTLY idx ON t (a);',
+      },
+    ])
+
+    await expect(applyMigrations(executor, set)).resolves.toMatchObject({
+      applied: ['0001_concurrent_idx.sql'],
+    })
+    const joined = executor.texts.join('\n')
+    expect(joined).not.toMatch(/\bBEGIN\b/u)
+    expect(joined).toMatch(/CREATE INDEX CONCURRENTLY/iu)
+  })
 })
 
 describe('splitSqlStatements', () => {

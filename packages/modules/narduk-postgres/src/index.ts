@@ -42,7 +42,7 @@ export {
   placeholderTuples,
   placeholderTuplesWithCasts,
 } from './parameters.js'
-export { REDACTED, redactConnectionString, redactSecrets } from './redact.js'
+export { REDACTED, getUnredactedCause, redactConnectionString, redactSecrets } from './redact.js'
 export {
   POSTGRES_ROLES,
   assertPostgresRole,

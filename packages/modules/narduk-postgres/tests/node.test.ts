@@ -6,6 +6,7 @@ import { inspect } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { NardukPostgresError } from '../src/errors.js'
+import { getUnredactedCause } from '../src/redact.js'
 
 import {
   loadMigrationsFromDirectory,
@@ -149,6 +150,9 @@ describe('withNodeConnection', () => {
     )
     expect(error).toBeInstanceOf(NardukPostgresError)
     expect(serializedErrorSurface(error)).not.toContain('hunter2')
+    const original = getUnredactedCause(error as object)
+    expect(original).toBeInstanceOf(Error)
+    expect(String((original as Error).message)).toContain('hunter2')
   })
 
   it('uses the single-socket tuning when asked', async () => {

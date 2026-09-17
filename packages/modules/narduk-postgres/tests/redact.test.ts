@@ -2,7 +2,13 @@ import { inspect } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
-import { REDACTED, redactConnectionString, redactErrorCause, redactSecrets } from '../src/redact.js'
+import {
+  REDACTED,
+  getUnredactedCause,
+  redactConnectionString,
+  redactErrorCause,
+  redactSecrets,
+} from '../src/redact.js'
 
 describe('redactConnectionString', () => {
   it('removes the password from a DSN and keeps the rest readable', () => {
@@ -68,5 +74,41 @@ describe('redactErrorCause', () => {
     expect((redacted.cause as Error).message).not.toContain('hunter2')
     expect(inspect(redacted, { depth: 8 })).not.toContain('hunter2')
     expect(nested.message).toContain('hunter2')
+  })
+
+  it('redacts enumerable extras and AggregateError.errors instead of dropping them', () => {
+    const original = new Error('connect failed') as Error & {
+      address: string
+      hostname: string
+      parameters: { connectionString: string }
+    }
+    original.address = '10.70.0.4'
+    original.hostname = 'db.internal'
+    original.parameters = { connectionString: 'postgres://ops:hunter2@db/history' }
+    const inner = new Error('inner postgres://ops:hunter2@db/history')
+    const aggregate = new AggregateError(
+      [inner, original],
+      'connect postgres://ops:hunter2@db/history',
+    )
+
+    const redacted = redactErrorCause(aggregate) as AggregateError
+    expect(redacted).toBeInstanceOf(AggregateError)
+    expect(redacted).not.toBe(aggregate)
+    expect(redacted.errors).toHaveLength(2)
+    expect(redacted.message).not.toContain('hunter2')
+    expect((redacted.errors[0] as Error).message).not.toContain('hunter2')
+
+    const copy = redacted.errors[1] as typeof original
+    expect(copy.parameters.connectionString).toBeTruthy()
+    expect(copy.parameters.connectionString).not.toContain('hunter2')
+    expect(copy.hostname).toBe('db.internal')
+    expect(JSON.stringify(copy)).toContain('parameters')
+    expect(JSON.stringify(copy)).not.toContain('hunter2')
+    expect(JSON.stringify(redacted.errors)).not.toContain('hunter2')
+    expect(inspect(redacted, { depth: 8, showHidden: true })).not.toContain('hunter2')
+    expect(original.parameters.connectionString).toContain('hunter2')
+    expect(inner.message).toContain('hunter2')
+    expect(getUnredactedCause(redacted)).toBe(aggregate)
+    expect(getUnredactedCause(copy)).toBe(original)
   })
 })
