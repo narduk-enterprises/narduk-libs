@@ -179,6 +179,30 @@ const AppMapKitImpl = defineComponent({
     loading?: () => VNode[]
   }>,
   setup(componentProps, { emit, expose, slots }) {
+    /**
+     * K-9. 2.1.0 threw from inside the pin layer on the first non-empty
+     * `items`, which meant the error arrived only once MapKit had loaded, a
+     * token had been exchanged and a map existed -- i.e. in production, on a
+     * page whose map had already half-built itself.
+     *
+     * The type system cannot carry this: making `itemLabel` required when
+     * `items` is would mean a union `$props`, which no gate in this package can
+     * prove safe under `vue-tsc`. So the throw stays, raised first thing in
+     * `setup` -- before a script is injected or a token is fetched, naming the
+     * component and both ways out.
+     */
+    function assertPinLabelling(items: readonly MapKitItem[]): void {
+      if (items.length === 0 || !componentProps.pinsFocusable || componentProps.itemLabel) return
+      throw new Error(
+        '<AppMapKit>: the itemLabel prop is required whenever items is non-empty -- it is the ' +
+          'accessible name of the library-owned pin host, and a pin without one is unreachable ' +
+          'by screen reader. Pass itemLabel, or set :pins-focusable="false" for a decorative ' +
+          'map whose pins are not interactive controls.',
+      )
+    }
+
+    assertPinLabelling(componentProps.items)
+
     const injectedNonce = inject(mapKitNonceInjectionKey, null)
     const colorMode = inject(mapKitColorModeInjectionKey, null)
 
@@ -217,29 +241,6 @@ const AppMapKitImpl = defineComponent({
       if (failure.value) return 'error'
       return ready.value && mapReady.value ? 'ready' : 'loading'
     })
-
-    /**
-     * K-9. 2.1.0 threw from inside the pin layer on the first non-empty
-     * `items`, which meant the error arrived only once MapKit had loaded, a
-     * token had been exchanged and a map existed -- i.e. in production, on a
-     * page whose map had already half-built itself.
-     *
-     * The type system cannot carry this: making `itemLabel` required when
-     * `items` is would mean a union `$props`, which no gate in this package can
-     * prove safe under `vue-tsc`. So the throw stays, raised as early as it can
-     * be -- at mount, naming the component and both ways out.
-     */
-    function assertPinLabelling(items: readonly MapKitItem[]): void {
-      if (items.length === 0 || !componentProps.pinsFocusable || componentProps.itemLabel) return
-      throw new Error(
-        '<AppMapKit>: the itemLabel prop is required whenever items is non-empty -- it is the ' +
-          'accessible name of the library-owned pin host, and a pin without one is unreachable ' +
-          'by screen reader. Pass itemLabel, or set :pins-focusable="false" for a decorative ' +
-          'map whose pins are not interactive controls.',
-      )
-    }
-
-    assertPinLabelling(componentProps.items)
 
     function report(cause: unknown): void {
       const next: MapKitFailure = {

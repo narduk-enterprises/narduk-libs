@@ -11,10 +11,12 @@
  */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 
 import { resetMapKitClientStateForTests } from '../../src/client/index.js'
 import AppMapKit from '../../src/nuxt/runtime/components/AppMapKit.js'
+import { mapKitColorModeInjectionKey } from '../../src/nuxt/runtime/injection-keys.js'
+
 import { resetMapKitComposableStateForTests } from '../../src/nuxt/runtime/composables/useMapKit.js'
 import { createFakeMapKit } from '../../src/testing/index.js'
 
@@ -33,6 +35,7 @@ interface MapKitExpose {
   closeCallout: (id?: string) => void
   getDiagnostics: () => { annotations: number; lastDiff: MapKitDiff }
   getMap: () => unknown
+  getMapKit: () => unknown
   openCallout: (id: string) => void
   retry: () => void
   scrollIntoView: () => void
@@ -465,6 +468,7 @@ describe('the expose (§c.6)', () => {
       'closeCallout',
       'getDiagnostics',
       'getMap',
+      'getMapKit',
       'openCallout',
       'retry',
       'scrollIntoView',
@@ -493,5 +497,168 @@ describe('the expose (§c.6)', () => {
     api(wrapper).select('station-2')
 
     expect(wrapper.emitted('update:selectedId')).toStrictEqual([['station-2']])
+  })
+})
+
+describe('the basemap follows its props on a live map (K-4)', () => {
+  it('re-applies mapType when the prop changes, not only at construction', async () => {
+    const wrapper = await mountMap({ items: STATIONS, mapType: 'standard' })
+    const map = api(wrapper).getMap() as { colorScheme: string; mapType: string }
+    expect(map.mapType).toBe('standard')
+
+    await wrapper.setProps({ mapType: 'satellite' })
+    await nextTick()
+
+    // 2.1.0 passed mapType to the mapkit.Map constructor and never wrote it
+    // again, so this stayed 'standard' for the life of the map.
+    expect(map.mapType).toBe('satellite')
+  })
+
+  it('re-applies colorScheme when the prop changes', async () => {
+    const wrapper = await mountMap({ colorScheme: 'light', items: STATIONS })
+    const map = api(wrapper).getMap() as { colorScheme: string; mapType: string }
+
+    await wrapper.setProps({ colorScheme: 'dark' })
+    await nextTick()
+
+    expect(map.colorScheme).toBe('dark')
+  })
+
+  it("hands MapKit Apple's spelling for this library's 'muted' (K-3)", async () => {
+    const wrapper = await mountMap({ items: STATIONS, mapType: 'muted' })
+
+    // 'muted' is not a MapKit JS value; `mapkit.MapType.MutedStandard` is.
+    expect((api(wrapper).getMap() as { mapType: string }).mapType).toBe('mutedStandard')
+  })
+
+  it('follows an injected colour-mode source under colorScheme="auto"', async () => {
+    const colorMode = ref('light')
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      global: { provide: { [mapKitColorModeInjectionKey as symbol]: colorMode } },
+      props: { ...BASE_PROPS, colorScheme: 'auto', items: STATIONS },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+    const map = api(wrapper).getMap() as { colorScheme: string }
+    expect(map.colorScheme).toBe('light')
+
+    colorMode.value = 'dark'
+    await nextTick()
+
+    expect(map.colorScheme).toBe('dark')
+  })
+})
+
+describe('map-ready hands over the namespace that built the map (K-10)', () => {
+  it('emits the scoped namespace beside the map, never globalThis.mapkit', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+
+    const payload = wrapper.emitted('map-ready')?.[0] as [unknown, unknown]
+    expect(payload).toHaveLength(2)
+    expect(payload[0]).toBe(api(wrapper).getMap())
+    // The live defect: an Annotation built from `window.mapkit` belongs to a
+    // different namespace and the map's own checks reject it.
+    expect(payload[1]).not.toBe(fake.mapkit)
+    expect(payload[1]).toBe(await fake.load({ libraries: ['map'] }))
+  })
+
+  it('exposes the same namespace through getMapKit()', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+
+    const payload = wrapper.emitted('map-ready')?.[0] as [unknown, unknown]
+    expect(api(wrapper).getMapKit()).toBe(payload[1])
+  })
+
+  it('builds annotations the map accepts, which a global-namespace one is not', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const map = api(wrapper).getMap() as {
+      addAnnotations: (annotations: unknown[]) => unknown
+      annotations: unknown[]
+    }
+    expect(map.annotations).toHaveLength(3)
+
+    const foreign = new fake.mapkit.MarkerAnnotation({ latitude: 30, longitude: -88 })
+    expect(() => map.addAnnotations([foreign])).toThrow(
+      'Map.addAnnotations expected an annotation at index 0, but got',
+    )
+
+    const own = new (api(wrapper).getMapKit() as typeof fake.mapkit).MarkerAnnotation({
+      latitude: 30,
+      longitude: -88,
+    })
+    expect(() => map.addAnnotations([own])).not.toThrow()
+  })
+})
+
+describe('pins that are not controls (K-8)', () => {
+  it('drops the role, tabindex and listeners when pinsFocusable is false', async () => {
+    const wrapper = await mountMap({ items: STATIONS, pinsFocusable: false })
+
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    expect(host.getAttribute('role')).toBeNull()
+    expect(host.getAttribute('tabindex')).toBeNull()
+    expect(host.getAttribute('aria-label')).toBeNull()
+
+    host.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+  })
+
+  it('stops requiring itemLabel for a decorative map', async () => {
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      props: { createPinElement: pinElement, items: STATIONS, pinsFocusable: false },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+
+    expect(document.querySelectorAll('[data-mapkit-pin]')).toHaveLength(3)
+  })
+
+  it('keeps 2.1.0’s interactive host as the default', async () => {
+    await mountMap({ items: STATIONS })
+
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    expect(host.getAttribute('role')).toBe('button')
+    expect(host.getAttribute('tabindex')).toBe('0')
+  })
+})
+
+describe('a pin with no accessible name fails at mount (K-9)', () => {
+  it('throws from setup, naming the component and both ways out', () => {
+    // 2.1.0 threw from inside the pin layer, asynchronously, after the map had
+    // half-built itself -- so an app saw a broken map and a stack with no
+    // component in it.
+    expect(() =>
+      mount(AppMapKit, {
+        attachTo: document.body,
+        props: { createPinElement: pinElement, items: STATIONS },
+      }),
+    ).toThrow('<AppMapKit>: the itemLabel prop is required whenever items is non-empty')
+  })
+
+  it('throws when items become non-empty later', async () => {
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      props: { createPinElement: pinElement, items: [] },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+
+    await expect(wrapper.setProps({ items: STATIONS })).rejects.toThrow(
+      'the itemLabel prop is required',
+    )
+  })
+
+  it('says nothing about an empty items list', () => {
+    expect(() =>
+      mount(AppMapKit, {
+        attachTo: document.body,
+        props: { createPinElement: pinElement, items: [] },
+      }),
+    ).not.toThrow()
   })
 })
