@@ -1,0 +1,355 @@
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
+
+import { createEvent } from 'h3'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { H3Event } from 'h3'
+
+const RESET_PATH = '/reset-password'
+
+interface UserRow {
+  appleId?: string | null
+  createdAt?: string
+  email: string
+  id: string
+  isAdmin: boolean | null
+  name: string | null
+  passwordHash?: string | null
+  updatedAt?: string
+}
+
+interface LinkRow {
+  authUserId: string
+  createdAt?: string
+  emailConfirmedAt?: string | null
+  lastProvider?: string | null
+  localUserId: string
+  primaryEmail: string
+  providersJson?: string
+  updatedAt?: string
+}
+
+interface QueryState {
+  column?: string
+  table?: string
+  value?: unknown
+}
+
+const db = vi.hoisted(() => ({
+  linkInserts: [] as LinkRow[],
+  links: [] as LinkRow[],
+  userInserts: [] as UserRow[],
+  users: [] as UserRow[],
+}))
+
+const persistCalls = vi.hoisted(() => [] as Array<{ recoveryMode?: boolean }>)
+
+vi.mock('nitropack/runtime', () => ({
+  defineNitroPlugin: <T>(plugin: T) => plugin,
+  useRuntimeConfig: () => ({
+    public: {
+      authCallbackPath: '/auth/callback',
+      authRedirectPath: '/dashboard/',
+      authRequireMfa: false,
+    },
+  }),
+}))
+
+function drizzleName(table: unknown): string | undefined {
+  if (!table || typeof table !== 'object') return undefined
+  const symbol = Object.getOwnPropertySymbols(table).find(
+    (entry) => entry.description === 'drizzle:Name',
+  )
+  if (!symbol) return undefined
+  const value = (table as Record<symbol, unknown>)[symbol]
+  return typeof value === 'string' ? value : undefined
+}
+
+function parseEq(clause: unknown): { column?: string; table?: string; value?: unknown } {
+  if (!clause || typeof clause !== 'object' || !('queryChunks' in clause)) return {}
+  const chunks = (clause as { queryChunks: unknown[] }).queryChunks
+  let column: string | undefined
+  let table: string | undefined
+  let value: unknown
+  for (const chunk of chunks) {
+    if (chunk && typeof chunk === 'object' && 'name' in chunk && 'table' in chunk) {
+      column = (chunk as { name: string }).name
+      table = drizzleName((chunk as { table: unknown }).table)
+    }
+    if (chunk && typeof chunk === 'object' && 'value' in chunk && 'encoder' in chunk) {
+      value = (chunk as { value: unknown }).value
+    }
+  }
+  return { column, table, value }
+}
+
+function createChain(defaultTable?: string) {
+  const state: QueryState = { table: defaultTable }
+  const chain: Record<string, unknown> = { __q: state }
+  chain.select = () => chain
+  chain.from = (table: unknown) => {
+    state.table = drizzleName(table) ?? state.table
+    return chain
+  }
+  chain.insert = (table: unknown) => {
+    state.table = drizzleName(table) ?? state.table
+    return chain
+  }
+  chain.values = (row: Record<string, unknown>) => {
+    if (state.table === 'users') {
+      const user = row as unknown as UserRow
+      db.userInserts.push(user)
+      db.users.push(user)
+    }
+    if (state.table === 'auth_user_links') {
+      const link = row as unknown as LinkRow
+      db.linkInserts.push(link)
+      db.links.push(link)
+    }
+    return chain
+  }
+  chain.where = (clause: unknown) => {
+    const parsed = parseEq(clause)
+    state.column = parsed.column
+    state.value = parsed.value
+    if (parsed.table) state.table = parsed.table
+    return chain
+  }
+  chain.update = () => chain
+  chain.set = () => chain
+  chain.delete = () => chain
+  return chain
+}
+
+function lookupRow(query: unknown): unknown {
+  const state = (query as { __q?: QueryState }).__q
+  if (!state) return undefined
+  if (state.table === 'users') {
+    if (state.column === 'id') return db.users.find((row) => row.id === state.value)
+    if (state.column === 'email') return db.users.find((row) => row.email === state.value)
+    if (state.column === 'apple_id') return db.users.find((row) => row.appleId === state.value)
+  }
+  if (state.table === 'auth_user_links') {
+    if (state.column === 'auth_user_id') {
+      return db.links.find((row) => row.authUserId === state.value)
+    }
+    if (state.column === 'local_user_id') {
+      return db.links.find((row) => row.localUserId === state.value)
+    }
+  }
+  return undefined
+}
+
+vi.mock('#layer/server/utils/database', () => ({
+  createAppDatabase: () => () => createChain('auth_user_links'),
+  executeDatabaseQuery: async () => undefined,
+  getDatabaseRow: async (query: unknown) => lookupRow(query),
+  getDatabaseRows: async (query: unknown) => {
+    const row = lookupRow(query)
+    return row ? [row] : []
+  },
+  useDatabase: () => createChain('users'),
+}))
+
+vi.mock('../server/lib/app-auth/session', () => ({
+  persistSupabaseSession: async (_event: H3Event, params: { recoveryMode?: boolean }) => {
+    persistCalls.push({ recoveryMode: params.recoveryMode })
+    return {
+      authSessionId: 'sess-1',
+      aal: 'aal1',
+      providers: ['email'],
+      authProvider: 'email',
+      emailConfirmedAt: null,
+      needsPasswordSetup: false,
+      recoveryMode: Boolean(params.recoveryMode),
+    }
+  },
+  setCurrentSessionUser: vi.fn(),
+  clearCurrentSession: vi.fn(),
+  establishLocalSessionUser: vi.fn(),
+  getCurrentSessionUser: vi.fn(),
+  getCurrentSupabaseContext: vi.fn(),
+}))
+
+vi.mock('../server/lib/app-auth/supabase-client', () => ({
+  getAuthConfig: () => ({
+    backend: 'supabase',
+    publicSignup: false,
+    providers: ['apple'],
+    appUrl: 'https://app.test',
+    callbackPath: '/auth/callback',
+    resetPath: RESET_PATH,
+    redirectPath: '/dashboard/',
+    confirmPath: '/auth/confirm',
+  }),
+  isSupabaseConfigured: () => true,
+  createSupabaseUserClient: () => ({
+    exchangeCodeForSession: async () => ({
+      data: {
+        user: {
+          id: 'auth-attacker',
+          email: 'parent@example.com',
+          app_metadata: {},
+          user_metadata: {},
+        },
+        session: {
+          access_token: 't',
+          refresh_token: 'r',
+          expires_in: 3600,
+          user: { id: 'auth-attacker' },
+        },
+      },
+      error: null,
+    }),
+    verifyOtp: async () => ({
+      data: {
+        user: {
+          id: 'auth-invitee',
+          email: 'parent@example.com',
+          app_metadata: {},
+          user_metadata: {},
+        },
+        session: {
+          access_token: 't',
+          refresh_token: 'r',
+          expires_in: 3600,
+          user: { id: 'auth-invitee' },
+        },
+      },
+      error: null,
+    }),
+  }),
+  createSupabaseClient: vi.fn(),
+  toSupabaseHttpError: (error: unknown) => {
+    throw error
+  },
+}))
+
+vi.mock('#narduk-auth-server/utils/app-auth', async () => {
+  const flows = await import('../server/lib/app-auth/auth-flows')
+  return {
+    exchangeSupabaseCode: flows.exchangeSupabaseCode,
+  }
+})
+
+vi.mock('../server/utils/verified-email', () => ({
+  getLocalEmailVerification: async () => null,
+}))
+
+import exchangeGet from '../server/api/auth/session/exchange.get'
+import exchangePost from '../server/api/auth/session/exchange.post'
+
+interface CapturedMutation {
+  __handler: (context: Record<string, unknown>) => Promise<unknown>
+  __options: { parseBody: (input: unknown) => unknown }
+}
+
+function captured(route: unknown): CapturedMutation {
+  return route as unknown as CapturedMutation
+}
+
+function requestEvent(url: string, method = 'GET'): H3Event {
+  const request = new IncomingMessage(new Socket())
+  request.method = method
+  request.url = url
+  request.headers = { host: 'app.test' }
+  const response = new ServerResponse(request)
+  return createEvent(request, response)
+}
+
+async function postExchange(body: unknown) {
+  const parsed = captured(exchangePost).__options.parseBody(body)
+  return captured(exchangePost).__handler({
+    body: parsed,
+    event: requestEvent('/api/auth/session/exchange', 'POST'),
+  })
+}
+
+describe('closed signup: client cannot forge invite or recovery on ?code=', () => {
+  beforeEach(() => {
+    db.users = []
+    db.links = []
+    db.userInserts = []
+    db.linkInserts = []
+    persistCalls.length = 0
+  })
+
+  it('refuses POST {code, redirectType:"invite"} and does not INSERT a users row', async () => {
+    await expect(postExchange({ code: 'pkce-code', redirectType: 'invite' })).rejects.toMatchObject(
+      {
+        statusCode: 403,
+        statusMessage: 'Public signup is disabled for this app.',
+      },
+    )
+
+    expect(db.userInserts).toEqual([])
+    expect(db.users).toEqual([])
+    expect(db.linkInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+
+  it('refuses GET ?code=&type=invite and does not INSERT a users row', async () => {
+    const event = requestEvent('/api/auth/session/exchange?code=pkce-code&type=invite')
+    await exchangeGet(event)
+
+    expect(event.node.res.statusCode).toBe(302)
+    expect(String(event.node.res.getHeader?.('location') ?? '')).toContain(
+      'error=callback_exchange_failed',
+    )
+    expect(db.userInserts).toEqual([])
+    expect(db.users).toEqual([])
+    expect(db.linkInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+
+  it('still provisions an invited user when the server-side token_hash type is invite', async () => {
+    await postExchange({ tokenHash: 'digest', verificationType: 'invite' })
+
+    expect(db.userInserts).toHaveLength(1)
+    expect(db.userInserts[0]?.email).toBe('parent@example.com')
+    expect(db.linkInserts).toHaveLength(1)
+    expect(db.linkInserts[0]?.authUserId).toBe('auth-invitee')
+    expect(persistCalls).toEqual([{ recoveryMode: false }])
+  })
+
+  it('does not link an unlinked local user via POST redirectType:"recovery"', async () => {
+    db.users.push({
+      id: 'local-1',
+      email: 'parent@example.com',
+      name: 'Parent',
+      isAdmin: false,
+    })
+
+    await expect(
+      postExchange({ code: 'pkce-code', redirectType: 'recovery' }),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      statusMessage: 'Public signup is disabled for this app.',
+    })
+
+    expect(db.linkInserts).toEqual([])
+    expect(db.links).toEqual([])
+    expect(db.userInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+
+  it('does not link an unlinked local user via POST next=/reset-password', async () => {
+    db.users.push({
+      id: 'local-1',
+      email: 'parent@example.com',
+      name: 'Parent',
+      isAdmin: false,
+    })
+
+    await expect(postExchange({ code: 'pkce-code', next: RESET_PATH })).rejects.toMatchObject({
+      statusCode: 403,
+      statusMessage: 'Public signup is disabled for this app.',
+    })
+
+    expect(db.linkInserts).toEqual([])
+    expect(db.links).toEqual([])
+    expect(db.userInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+})

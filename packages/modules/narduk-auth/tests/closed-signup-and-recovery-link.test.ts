@@ -140,7 +140,7 @@ describe('closed signup and recovery linking', () => {
       next: RESET_PATH,
     })
 
-    expect(state.ensureOptions).toEqual([{ requireExistingUser: true }])
+    expect(state.ensureOptions).toEqual([{ requireExistingUser: true, requireExistingLink: true }])
     expect(state.persistRecovery).toEqual([true])
   })
 
@@ -152,7 +152,7 @@ describe('closed signup and recovery linking', () => {
       next: RESET_PATH,
     })
 
-    expect(state.ensureOptions).toEqual([{ requireExistingUser: true }])
+    expect(state.ensureOptions).toEqual([{ requireExistingUser: true, requireExistingLink: true }])
     expect(state.persistRecovery).toEqual([true])
   })
 

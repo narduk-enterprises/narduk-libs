@@ -443,27 +443,25 @@ export async function exchangeSupabaseCode(
     })
   }
 
-  const redirectType =
-    typeof body.redirectType === 'string'
-      ? body.redirectType
-      : typeof (data as { redirectType?: string | null }).redirectType === 'string'
-        ? (data as { redirectType?: string | null }).redirectType
-        : !hasAuthCode
-          ? body.verificationType
-          : null
+  // Invite is the closed-signup door and must come from the server-side
+  // exchange, never from a client-supplied `redirectType`. Client
+  // `redirectType` / `next` may only feed recovery detection, which
+  // restricts the session; it cannot open signup.
+  const serverRedirectType =
+    (data as { redirectType?: string | null }).redirectType ??
+    (!hasAuthCode ? body.verificationType : null)
   const isPasswordRecovery = resolvePasswordRecoveryExchange({
-    redirectType,
+    redirectType: typeof body.redirectType === 'string' ? body.redirectType : serverRedirectType,
     verificationType: hasAuthCode ? null : body.verificationType,
     next: body.next,
     resetPath: config.resetPath,
   })
-  const isInvite = isInviteRedirectType(redirectType)
-  // Invite is the closed-signup door. Recovery must never INSERT a new user.
+  const isInvite = isInviteRedirectType(serverRedirectType)
   const localUser = await ensureLinkedLocalUser(
     event,
     data.user,
     isPasswordRecovery
-      ? { requireExistingUser: true }
+      ? { requireExistingUser: true, requireExistingLink: !config.publicSignup }
       : { requireExistingLink: !config.publicSignup && !isInvite },
   )
   const next = sanitizeNextPath(body.next, config.redirectPath)
