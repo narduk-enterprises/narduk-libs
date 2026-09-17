@@ -18,5 +18,10 @@ out once — including local-email sessions minted before this change, which nev
 wrote a row. They sign in again and receive a server-side session. Logout and
 password change now revoke other browsers that still hold a copy of the cookie.
 
+Login (not the per-request refresh path) opportunistically deletes a
+`LIMIT`-bounded batch of expired `auth_sessions` rows via the existing
+`expires_at` index. Supabase rows now carry the same 30-day absolute expiry as
+local sessions so abandoned rows are sweepable.
+
 This is a patch: exported function signatures are unchanged, and the behavior
 change is a security correction, not a new API.

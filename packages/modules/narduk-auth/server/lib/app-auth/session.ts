@@ -1,6 +1,6 @@
 import { deleteAppCookie } from '@narduk-enterprises/narduk-app/server/http'
 import { AuthSessionMissingError } from '@supabase/auth-js'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, inArray, lt, ne } from 'drizzle-orm'
 import { createError } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
@@ -45,8 +45,37 @@ export { resolvePersistedRecoveryMode } from './recovery-mode'
 const PKCE_COOKIE_NAME = 'app_auth_pkce'
 const AUTH_SESSION_ROTATION_RETRY_DELAYS_MS = [100, 250, 650] as const
 const LOCAL_AUTH_SESSION_DAYS = 30
+/** Bounded opportunistic purge of expired rows. Login only — never the request path. */
+export const EXPIRED_AUTH_SESSION_SWEEP_LIMIT = 50
 const AUTH_SESSION_ROW_CACHE_KEY = '_nardukAuthSessionRowCache'
 const AUTH_USER_ROW_CACHE_KEY = '_nardukAuthUserRowCache'
+
+function absoluteAuthSessionExpiry(nowSeconds = Math.floor(Date.now() / 1000)): number {
+  return nowSeconds + LOCAL_AUTH_SESSION_DAYS * 86400
+}
+
+/**
+ * Delete a capped batch of expired `auth_sessions` rows using
+ * `auth_sessions_expires_at_idx`. Called from login inserts only.
+ */
+export async function sweepExpiredAuthSessions(event: H3Event): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  const appDb = useAuthBridgeDatabase(event)
+  await executeDatabaseQuery(
+    appDb
+      .delete(authSessions)
+      .where(
+        inArray(
+          authSessions.id,
+          appDb
+            .select({ id: authSessions.id })
+            .from(authSessions)
+            .where(lt(authSessions.expiresAt, now))
+            .limit(EXPIRED_AUTH_SESSION_SWEEP_LIMIT),
+        ),
+      ),
+  )
+}
 
 type AuthSessionRow = typeof authSessions.$inferSelect
 type AuthSessionRowCache = Map<string, Promise<AuthSessionRow | null>>
@@ -93,9 +122,9 @@ export async function persistSupabaseSession(
       typeof payload.session_id === 'string' ? payload.session_id : params.session.user.id,
     accessToken: params.session.access_token,
     refreshToken: params.session.refresh_token,
-    expiresAt:
-      params.session.expires_at ??
-      Math.floor(Date.now() / 1000) + Math.max(0, params.session.expires_in),
+    // Absolute row lifetime so abandoned Supabase sessions are sweepable.
+    // Access-token TTL stays on the tokens; refresh updates this window.
+    expiresAt: absoluteAuthSessionExpiry(),
     aal: toAppAuthenticatorAssuranceLevel(payload.aal),
     currentProvider: metadata.primaryProvider,
     providersJson: JSON.stringify(metadata.providers),
@@ -109,6 +138,7 @@ export async function persistSupabaseSession(
     )
     forgetCachedAuthSessionRow(event, params.sessionId)
   } else {
+    await sweepExpiredAuthSessions(event)
     await appDb.insert(authSessions).values({
       id: authSessionId,
       createdAt: now,
@@ -257,6 +287,7 @@ export async function persistLocalAuthSession(
   const authSessionId = crypto.randomUUID()
   const token = `local-session:${crypto.randomUUID()}`
 
+  await sweepExpiredAuthSessions(event)
   await appDb.insert(authSessions).values({
     id: authSessionId,
     localUserId: localUser.id,
@@ -264,7 +295,7 @@ export async function persistLocalAuthSession(
     sessionIdentifier: authSessionId,
     accessToken: token,
     refreshToken: token,
-    expiresAt: Math.floor(Date.now() / 1000) + LOCAL_AUTH_SESSION_DAYS * 86400,
+    expiresAt: absoluteAuthSessionExpiry(),
     aal: null,
     currentProvider: 'local',
     providersJson: '[]',

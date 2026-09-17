@@ -13,6 +13,7 @@ function createChain(): Record<string, unknown> {
     'delete',
     'from',
     'insert',
+    'limit',
     'onConflictDoUpdate',
     'returning',
     'select',
