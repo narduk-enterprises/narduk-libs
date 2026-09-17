@@ -50,16 +50,23 @@ export interface MapKitAnnotationOptionsLike {
     size?: MapKitSizeLike;
 }
 /**
- * The map members the runtime touches. Deliberately short: `colorScheme`,
- * `mapType`, `convertCoordinateToPointOnPage` and the overlay methods are NOT
- * here, because the fake does not model them: `colorScheme` and `mapType` are
- * constructor options the component never reads back, the projection call is
- * guarded by a `try`/`catch` with a fallback, and the overlay members live on
+ * The map members the runtime touches. Deliberately short:
+ * `convertCoordinateToPointOnPage` and the overlay methods are NOT here,
+ * because the fake does not model them -- the projection call is guarded by a
+ * `try`/`catch` with a fallback, and the overlay members live on
  * `overlay-layer.ts`'s own narrower types, which are only touched when
  * `geojson` or `circles` is non-empty.
+ *
+ * `colorScheme` and `mapType` joined the list in 2.1.1 (K-4): they were
+ * constructor options the component never wrote again, so changing either prop
+ * on a mounted map did nothing. They are `string` rather than Apple's own
+ * unions for the same reason every other member here is structural -- see the
+ * conformance check in `tests/nuxt/mapkit-surface.test.ts`.
  */
 export interface MapKitMapLike {
+    colorScheme: string;
     readonly element: HTMLElement | null;
+    mapType: string;
     region: MapKitRegionLike;
     selectedAnnotation: MapKitAnnotationLike | null;
     addAnnotations(annotations: readonly MapKitAnnotationLike[]): unknown;

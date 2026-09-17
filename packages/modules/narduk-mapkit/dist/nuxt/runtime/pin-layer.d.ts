@@ -23,9 +23,24 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     createPinElement?: (item: T, isSelected: boolean) => MapKitPinElement;
     /** Injected so a plain-TS test can run against any document. */
     document?: Document;
+    /**
+     * Whether the library-owned host is an interactive control. Default `true`.
+     *
+     * 2.1.0 had no way to say otherwise (2.1.1, K-8): every host carried
+     * `role="button"` and `tabindex="0"`, so a decorative map marked
+     * `aria-hidden="true"` was full of focusable descendants -- axe's
+     * `aria-hidden-focus` -- and the only way out was `inert` on the consumer's
+     * side. `false` builds a plain host: no role, no tabindex, no `aria-pressed`,
+     * no click or key listener, and no required `itemLabel`.
+     */
+    focusable?: boolean;
     /** Stable identity per item. Must be non-blank and unique. */
     itemKey: (item: T, index: number) => string;
-    /** Accessible name of the library-owned host. Required whenever `items` is non-empty. */
+    /**
+     * Accessible name of the library-owned host. Required whenever `items` is
+     * non-empty AND the host is focusable; a non-interactive host has no
+     * accessible name to carry.
+     */
     itemLabel?: (item: T) => string;
     map: MapKitMapLike;
     mapkit: MapKitNamespaceLike;
