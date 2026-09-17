@@ -1,11 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertOgImageSigningSecretForBuild,
+  CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+  CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE,
   isOgImageSigningSecretConfigured,
   MISSING_OG_IMAGE_SECRET_MESSAGE,
   resolveOgImageSigningSecret,
 } from '../shared/ogImageSecret'
+
+const repoPackages = join(dirname(fileURLToPath(import.meta.url)), '../../..')
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('OG image signing secret', () => {
   it('treats empty, whitespace, and non-strings as unconfigured', () => {
@@ -73,5 +85,66 @@ describe('OG image signing secret', () => {
         secret: 'production-og-secret',
       }),
     ).not.toThrow()
+  })
+
+  it('rejects the committed CI placeholder on a production deploy build', () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: `  ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}  `,
+      }),
+    ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
+  })
+
+  it('rejects the placeholder on Workers Builds cf:build even if the CI flag is copied', () => {
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '1')
+    vi.stubEnv('WORKERS_CI_BRANCH', 'main')
+
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+      }),
+    ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
+  })
+
+  it('keeps accepting the placeholder on GitHub Actions build:ci', () => {
+    // Generated nuxt.config.ts does `NARDUK_DEPLOY_TARGET ??= production`
+    // when WORKERS_CI_BRANCH is unset, so build:ci also sees production.
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+      }),
+    ).not.toThrow()
+  })
+
+  it('shares one placeholder literal with the generator files that emit it', () => {
+    const generateSrc = readFileSync(
+      join(repoPackages, 'tooling/create-narduk-app/src/generate.ts'),
+      'utf8',
+    )
+    expect(generateSrc).toContain(`NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}`)
+
+    const ciTestEnvPath = join(repoPackages, 'tooling/create-narduk-app/src/ci-test-env.ts')
+    if (existsSync(ciTestEnvPath)) {
+      expect(readFileSync(ciTestEnvPath, 'utf8')).toContain(
+        `'${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}'`,
+      )
+    }
   })
 })

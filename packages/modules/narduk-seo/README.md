@@ -21,7 +21,8 @@ Non-dev builds that leave runtime OG generation enabled require a non-empty
 URL signatures and `/_og/` becomes an unauthenticated WASM renderer. `nuxt dev`
 stays permissive. Provision the secret in every deployed environment, or set
 `ogImage.enabled: false` / `ogImage.zeroRuntime: true` if the app only uses the
-static `defaultOgImage`.
+static `defaultOgImage`. The committed CI placeholder is rejected on production
+and Workers Builds; `build:ci` may still use it.
 
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
