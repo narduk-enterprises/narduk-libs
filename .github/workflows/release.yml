@@ -124,8 +124,8 @@ jobs:
           //npm.pkg.github.com/:_authToken=${PACKAGE_WRITE_TOKEN}
           EOF
 
-      - name: Select publication or current-main version preparation
-        id: release-mode
+      - name: Detect whether the verified commit is current main
+        id: main-state
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -135,6 +135,31 @@ jobs:
           if test "${current_main}" = "${VERIFIED_SHA}"; then
             echo 'current=true' >> "$GITHUB_OUTPUT"
           fi
+
+      # A runtime dependency bump reaches main without a Changeset on purpose
+      # (scripts/release-plan-guard.mjs, verdict `deferred`), so the published
+      # manifest is the only record that a patch release is owed. Synthesize
+      # those Changesets here, before the mode is selected, so they take the
+      # Changesets action's version path and appear in the release PR. The
+      # script writes nothing while any version is still waiting to publish,
+      # and fails the job on any registry read it cannot resolve.
+      #
+      # This is the only automatic trigger for that comparison, and it needs a
+      # push to main to fire. When a release run is lost -- red CI on the push,
+      # or the concurrency group cancelling a queued run -- re-run this workflow
+      # by hand with `verified-sha` set to current main; that is what puts
+      # `main-state.current` back to `true`. See docs/package-releases.md,
+      # "When a Changeset is required".
+      - name: Synthesize patch changesets for published manifest drift
+        if: steps.main-state.outputs.current == 'true'
+        run: pnpm run release:synthesize-drift
+
+      - name: Select publication or current-main version preparation
+        id: release-mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "current=${{ steps.main-state.outputs.current }}" >> "$GITHUB_OUTPUT"
           node --input-type=module -e "import { readdirSync, appendFileSync } from 'node:fs'; const pending = readdirSync('.changeset').some(name => name.endsWith('.md') && name !== 'README.md'); appendFileSync(process.env.GITHUB_OUTPUT, 'publish=' + !pending + '\\n')"
 
       # changesets/action v1.9.0 writes a .netrc for its git-cli push. Keep

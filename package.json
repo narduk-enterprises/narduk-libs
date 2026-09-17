@@ -21,6 +21,7 @@
     "release:consumer-smoke": "node scripts/release-packages.mjs --dry-run --consumer-smoke",
     "release:version": "pnpm run release-plan:check && changeset version && pnpm run versions:sync",
     "release:publish": "node scripts/publish-verified-packages.mjs",
+    "release:synthesize-drift": "node scripts/synthesize-manifest-drift.mjs",
     "release:verify-published": "node scripts/verify-published-packages.mjs",
     "release-plan:check": "node scripts/check-generator-release-plan.mjs",
     "versions:check": "node scripts/sync-generator-package-versions.mjs --check",
@@ -116,6 +117,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
+    "@changesets/get-release-plan": "^4.0.16",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@playwright/test": "1.61.1",
     "@types/node": "^22.19.19",
