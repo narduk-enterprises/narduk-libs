@@ -11,6 +11,7 @@ import type { H3Event } from 'h3'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const sessionState = vi.hoisted(() => ({
+  nardukSessionGrantRequired: false,
   user: null as null | {
     email: string
     id: string
@@ -20,7 +21,10 @@ const sessionState = vi.hoisted(() => ({
 }))
 
 vi.mock('nitropack/runtime', () => ({
-  useRuntimeConfig: () => ({ databaseBackend: 'd1' }),
+  useRuntimeConfig: () => ({
+    databaseBackend: 'd1',
+    nardukSessionGrantRequired: sessionState.nardukSessionGrantRequired,
+  }),
 }))
 vi.mock('#narduk-core/postgres-runtime', () => ({
   createPostgresDatabase: () => {
@@ -52,6 +56,7 @@ function requestEvent(): H3Event {
 describe('requireAuth sealed-session grant seam', () => {
   beforeEach(() => {
     sessionState.user = { ...COOKIE_USER }
+    sessionState.nardukSessionGrantRequired = false
   })
 
   it('keeps cookie-as-grant when no validator is registered', async () => {
@@ -92,5 +97,22 @@ describe('requireAuth sealed-session grant seam', () => {
       user: { name: 'Refreshed' },
     })
     expect(validator).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when a validator is required but none is registered', async () => {
+    sessionState.nardukSessionGrantRequired = true
+    const event = requestEvent()
+    const warn = vi.spyOn(globalThis.console, 'warn').mockImplementation(() => {})
+
+    await expect(requireAuth(event)).rejects.toMatchObject({
+      statusCode: 401,
+      message: 'Unauthorized',
+    })
+    await expect(validateSealedSessionGrant(event, COOKIE_USER)).resolves.toEqual({
+      status: 'invalid',
+    })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('nardukSessionGrantRequired'))
+
+    warn.mockRestore()
   })
 })

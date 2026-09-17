@@ -1,14 +1,21 @@
+import { useRuntimeConfig } from 'nitropack/runtime'
+
 import type { H3Event } from 'h3'
 
 /**
  * Optional session-grant validator seam.
  *
  * narduk-core must not import narduk-auth. Apps that install narduk-auth attach
- * a validator on `event.context` (nitro `request` hook). `requireAuth` consults
- * it so a sealed cookie is only a pointer to server-side session state.
+ * a validator on `event.context` (nitro `request` hook) and set
+ * `runtimeConfig.nardukSessionGrantRequired`. `requireAuth` consults the
+ * seam so a sealed cookie is only a pointer to server-side session state.
  *
- * No validator (core-only apps): sealed-cookie identity is unchanged.
+ * No validator and the flag unset (core-only apps): sealed-cookie identity
+ * is unchanged. Flag set but no validator: fail closed — do not treat the
+ * cookie as a grant.
  */
+
+let missingRequiredValidatorWarned = false
 
 export type SessionGrantValidation =
   | {
@@ -46,12 +53,31 @@ export function getSessionGrantValidator(event: H3Event): SessionGrantValidator 
   return grantContext(event)[SESSION_GRANT_VALIDATOR_KEY]
 }
 
+function isSessionGrantRequired(event: H3Event): boolean {
+  try {
+    const config = useRuntimeConfig(event) as { nardukSessionGrantRequired?: unknown }
+    return config.nardukSessionGrantRequired === true
+  } catch {
+    return false
+  }
+}
+
+function warnMissingRequiredValidator(): void {
+  if (missingRequiredValidatorWarned) return
+  missingRequiredValidatorWarned = true
+  globalThis.console.warn(
+    '[narduk-core] nardukSessionGrantRequired is set but no session-grant validator is registered on this request; the sealed cookie is not a grant.',
+  )
+}
+
 /**
  * Validate a sealed-cookie principal against a registered grant validator.
  *
- * `unvalidated` means no validator is registered — callers must keep legacy
- * cookie-as-grant behavior. Validator results are memoized on the event so the
- * same session is not re-checked more than once per request.
+ * `unvalidated` means no validator is registered and none is required —
+ * callers must keep legacy cookie-as-grant behavior. When narduk-auth has
+ * marked a validator as required, a missing validator is `invalid` (fail
+ * closed). Validator results are memoized on the event so the same session
+ * is not re-checked more than once per request.
  */
 export async function validateSealedSessionGrant(
   event: H3Event,
@@ -60,6 +86,10 @@ export async function validateSealedSessionGrant(
   const context = grantContext(event)
   const validator = context[SESSION_GRANT_VALIDATOR_KEY]
   if (!validator) {
+    if (isSessionGrantRequired(event)) {
+      warnMissingRequiredValidator()
+      return { status: 'invalid' }
+    }
     return { status: 'unvalidated' }
   }
 
