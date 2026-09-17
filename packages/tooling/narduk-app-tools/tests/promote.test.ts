@@ -1202,7 +1202,11 @@ describe('#451 regressions, shape-agnostic', () => {
       env,
       resolveWorkerName: () => 'buoys',
       appDir: '/tmp/app',
-    }).catch(() => undefined)
+    }).catch(() => {
+      // On this revision the default is refused outright; on the one before it
+      // the call resolved and deployed. Either way the assertion below is the
+      // regression: nothing may be deployed from the branch head.
+    })
     // The commit `ci / Required` verified is SHA, not the branch head. Promoting
     // `v-head` deploys code that never passed the gate.
     expect(calls.deployed).toEqual([])

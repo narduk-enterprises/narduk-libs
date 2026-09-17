@@ -32,6 +32,16 @@
  * non-production branch build of an app whose committed wrangler config binds
  * production D1/KV/R2 writes to production data from every PR branch. That is
  * not advice; the gate refuses it.
+ *
+ * **What 12.4 does NOT do** (narduk-libs#451 defect 4): declaring a binding
+ * under `previewBindings` does not isolate anything, because nothing in this
+ * release consumes that field -- `narduk-app deploy` generates only
+ * `.wrangler.deploy.production.json` and a branch build uploads with it. So the
+ * covered path reports UNKNOWN ("declared, not enforced"), not PASS. A green
+ * sub-check must never stand for an isolation that does not exist, and an app
+ * that lists every binding name gets exactly the runtime of one that lists
+ * none. PASS is reserved for the two states the repository really decides:
+ * branch builds off, or no D1/KV/R2 binding at all.
  */
 
 import {
@@ -77,6 +87,11 @@ export const TIER_ONE_LIMITATIONS: readonly string[] = [
     'account serves the same hostname.',
   'A dashboard-edited deploy command is invisible here and is the exact failure that would ' +
     'silently undo the standard. Catching it needs the live read (design §2.2 tier 2).',
+  'deployment.previewBindings is a declaration no released tool consumes: narduk-app deploy ' +
+    'generates only .wrangler.deploy.production.json, and a non-production branch build uploads ' +
+    'with that same config. Listing a binding there therefore isolates nothing at runtime, which ' +
+    'is why 12.4 reports UNKNOWN rather than PASS when it is the only thing covering a ' +
+    'production binding (narduk-libs#451).',
 ]
 
 /** The wrangler keys that declare each preview-sensitive binding kind. */
@@ -577,15 +592,40 @@ function evaluate124(scan: DeploymentScan): FoundationSubCheck {
       )
     }
     const covered = PREVIEW_BINDING_KINDS.flatMap((kind) => scan.production[kind])
+    if (covered.length === 0) {
+      // Nothing to isolate. This is the only PASS this sub-check can honestly
+      // give an app with branch builds on, because it is the only one that
+      // rests on the wrangler configs rather than on the declaration.
+      return check(
+        '12.4',
+        name,
+        STATUS_PASS,
+        `nonProductionBranchBuilds is true and ${scanned} declare(s) no D1, KV or R2 ` +
+          `binding, so a preview has no production state to reach`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
+    // narduk-libs#451 defect 4. `previewBindings` is a DECLARATION, and this
+    // release consumes it nowhere: `narduk-app deploy` writes one config,
+    // `.wrangler.deploy.production.json`, and a branch build uploads with that
+    // same file, so a listed binding still points at the production resource.
+    // Reporting PASS here asserted a preview isolation that does not exist --
+    // an app that lists every binding name and one that lists none get the
+    // identical runtime. UNKNOWN is the vocabulary for a verdict the check
+    // cannot reach, and it is what an adopter should see until a preview
+    // config generator exists (design §3.3 option A).
     return check(
       '12.4',
       name,
-      STATUS_PASS,
-      covered.length === 0
-        ? `nonProductionBranchBuilds is true and ${scanned} declare(s) no D1, KV or R2 ` +
-            `binding, so a preview has no production state to reach`
-        : `every one of the ${covered.length} production D1/KV/R2 binding(s) across ${scanned} ` +
-            `has a preview replacement declared`,
+      STATUS_UNKNOWN,
+      `nonProductionBranchBuilds is true and deployment.previewBindings names a replacement for ` +
+        `each of the ${covered.length} production D1/KV/R2 binding(s) across ${scanned} -- but ` +
+        `that is a declaration this release consumes nowhere. narduk-app deploy generates only ` +
+        `.wrangler.deploy.production.json and a non-production branch build uploads with that ` +
+        `same config, so every listed binding still resolves to the production resource. This ` +
+        `sub-check therefore reports "declared, not enforced": it is unproven, not safe. Set ` +
+        `nonProductionBranchBuilds to false for a decidable verdict, or accept the exposure ` +
+        `explicitly where exemptions are recorded.`,
       scan.wranglerRel ?? undefined,
     )
   })
