@@ -7,6 +7,13 @@ import {
   compareVersionRecency,
   createWranglerCli,
   currentDeployment,
+  DEFAULT_VERSION_SEARCH_LIMIT,
+  defaultPromoteSha,
+  describeVersionSearch,
+  listWorkerVersionsViaApi,
+  resolveVersionsApiAuth,
+  VERSION_PAGE_SIZE,
+  WRANGLER_VERSION_LIST_CAP,
   getPromoteGuardMessage,
   isActionsPromoteAllowed,
   isManualPromoteAllowed,
@@ -28,6 +35,7 @@ import {
   type SpawnWrangler,
   type WorkerDeployment,
   type WorkerVersion,
+  type VersionListing,
   type WranglerVersionsClient,
 } from '../src/promote.js'
 import { main } from '../src/cli.js'
@@ -88,7 +96,12 @@ function stubClient(
   return {
     calls,
     client: {
-      listVersions: async () => versions,
+      listVersions: async (limit) => ({
+        versions: versions.slice(0, limit),
+        complete: true,
+        limit,
+        source: 'api',
+      }),
       listDeployments: async () => deployments,
       deployVersion: async (versionId, percentage, message) => {
         calls.deployed.push({ versionId, percentage, message })
@@ -181,7 +194,7 @@ describe('sha to version resolution', () => {
     expect(result.outcome).toBe('version-not-found')
     expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
     expect(result.searchedVersions).toBe(10)
-    expect(result.detail).toContain('at most 10 versions')
+    expect(result.detail).toContain('10 version(s) searched')
     expect(calls.deployed).toEqual([])
   })
 
@@ -768,7 +781,9 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
       env: {},
       spawn,
     })
-    const versions = await cli.listVersions()
+    const listing = await cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    const versions = listing.versions
+    expect(listing.source).toBe('wrangler')
     expect(calls[0].args).toEqual([
       'exec',
       'wrangler',
@@ -826,13 +841,13 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
       env: {},
       spawn: () => ({ status: 1, signal: null, stdout: '' }),
     })
-    await expect(cli.listVersions()).rejects.toThrow('exited 1')
+    await expect(cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)).rejects.toThrow('exited 1')
     const killed = createWranglerCli({
       workerName: 'buoys',
       env: {},
       spawn: () => ({ status: null, signal: 'SIGKILL', stdout: '' }),
     })
-    await expect(killed.listVersions()).rejects.toThrow('SIGKILL')
+    await expect(killed.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)).rejects.toThrow('SIGKILL')
   })
 
   it('does not overwrite an account id the environment already carries', async () => {
@@ -845,5 +860,240 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
     })
     await cli.listDeployments()
     expect(calls[0].accountId).toBe('from-env')
+  })
+})
+
+/**
+ * narduk-libs#451 defect 1: the `--sha` lookup used to see only the page
+ * `wrangler versions list` prints -- ten versions -- so ten branch uploads
+ * between a merge upload and its promote job left production un-updated.
+ */
+describe('bounded version search (#451 defect 1)', () => {
+  /** A Cloudflare Versions list response page. */
+  function page(items: WorkerVersion[]): Response {
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: true, errors: [], messages: [], result: { items } }),
+    } as unknown as Response
+  }
+
+  /** A history whose tagged version sits `depth` versions below the newest. */
+  function history(depth: number, tag: string): WorkerVersion[] {
+    return Array.from({ length: depth + 40 }, (_, index) =>
+      version(`v-${String(index)}`, index === depth ? tag : `beef${String(index).padStart(3, '0')}`, {
+        number: 10_000 - index,
+      }),
+    )
+  }
+
+  function pagingFetch(all: WorkerVersion[]): {
+    fetchImpl: typeof fetch
+    urls: string[]
+  } {
+    const urls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      urls.push(url)
+      const perPage = Number(new URL(url).searchParams.get('per_page'))
+      const pageNumber = Number(new URL(url).searchParams.get('page'))
+      return page(all.slice((pageNumber - 1) * perPage, pageNumber * perPage))
+    }) as unknown as typeof fetch
+    return { fetchImpl, urls }
+  }
+
+  const API_ENV = { ...ACTIONS_ENV, CLOUDFLARE_API_TOKEN: 'token-1' }
+
+  it('finds a version far below the ten wrangler can show, and promotes it', async () => {
+    const all = history(147, SHA)
+    const { fetchImpl, urls } = pagingFetch(all)
+    const client = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: API_ENV,
+      fetchImpl,
+      spawn: () => {
+        throw new Error('the API path must not shell out to wrangler for a listing')
+      },
+    })
+    const listing = await client.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(listing.source).toBe('api')
+    expect(listing.versions.length).toBe(all.length)
+    expect(listing.complete).toBe(true)
+    // The version that matters is deeper than anything `wrangler versions list`
+    // would have returned -- that is the whole defect.
+    expect(147).toBeGreaterThan(WRANGLER_VERSION_LIST_CAP)
+    const match = resolveVersionForSha(listing.versions, SHA)
+    expect(match.kind).toBe('found')
+    // page 1 asks for the full page size; the walk stops on the short page.
+    expect(urls[0]).toContain(`per_page=${String(VERSION_PAGE_SIZE)}`)
+    expect(urls[0]).toContain('page=1')
+    expect(urls[1]).toContain('page=2')
+  })
+
+  it('never paginates past the bound, and reports the bound it used', async () => {
+    const all = history(400, SHA)
+    const { fetchImpl, urls } = pagingFetch(all)
+    const client = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: API_ENV,
+      fetchImpl,
+    })
+    const listing = await client.listVersions(120)
+    expect(listing.versions.length).toBe(120)
+    expect(listing.limit).toBe(120)
+    expect(listing.complete).toBe(false)
+    expect(urls.length).toBe(2)
+    expect(urls[1]).toContain('per_page=20')
+  })
+
+  it('promotes nothing with exit 3 -- never 0 -- and names the sha and the count', async () => {
+    const versions = [version('v-live', 'aaaaaaa', { number: 2 })]
+    const { context: ctx } = context(versions, [deployment('d-1', 'v-live', '2026-09-17T00:00:00Z')])
+    const result = await runVersionsPromote(
+      { ...parseVersionsPromoteArgs(['--sha', SHA]) },
+      ctx,
+    )
+    expect(result.outcome).toBe('version-not-found')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    expect(result.exitCode).not.toBe(PROMOTE_EXIT.ok)
+    expect(result.detail).toContain(SHA)
+    expect(result.detail).toContain('1 version(s) searched')
+    expect(result.searchedVersions).toBe(1)
+    expect(result.versionSearch).toEqual({ source: 'api', limit: DEFAULT_VERSION_SEARCH_LIMIT, complete: true })
+  })
+
+  it('tells "never uploaded" apart from "older than the bound" and from the wrangler fallback', () => {
+    const exhausted = describeVersionSearch(SHA, 500, {
+      source: 'api',
+      limit: 500,
+      complete: false,
+    })
+    expect(exhausted).toContain('stopped at its bound')
+    expect(exhausted).toContain('--max-versions')
+    const complete = describeVersionSearch(SHA, 83, { source: 'api', limit: 500, complete: true })
+    expect(complete).toContain('reached the end')
+    expect(complete).toContain('no build ever uploaded')
+    const fallback = describeVersionSearch(SHA, 10, {
+      source: 'wrangler',
+      limit: WRANGLER_VERSION_LIST_CAP,
+      complete: false,
+    })
+    expect(fallback).toContain('CLOUDFLARE_API_TOKEN')
+    expect(fallback).toContain('takes no paging flag')
+  })
+
+  it('falls back to wrangler only when the account id or token is missing, and says which', async () => {
+    expect(resolveVersionsApiAuth({ workerName: 'buoys', accountId: 'acct-1' }, {})).toBeNull()
+    expect(resolveVersionsApiAuth({ workerName: 'buoys' }, { CLOUDFLARE_API_TOKEN: 't' })).toBeNull()
+    expect(
+      resolveVersionsApiAuth({ workerName: 'buoys' }, {
+        CLOUDFLARE_ACCOUNT_ID: 'acct-2',
+        CLOUDFLARE_API_TOKEN: 't',
+      }),
+    ).toEqual({ accountId: 'acct-2', apiToken: 't' })
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: {},
+      spawn: () => ({ status: 0, signal: null, stdout: JSON.stringify([version('v-1', 'aaaaaaa')]) }),
+    })
+    const listing: VersionListing = await cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(listing.source).toBe('wrangler')
+    expect(listing.limit).toBe(WRANGLER_VERSION_LIST_CAP)
+    expect(listing.complete).toBe(true)
+  })
+
+  it('surfaces a Cloudflare API error rather than reporting an empty history', async () => {
+    const fetchImpl = (async () =>
+      ({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: async () => ({ success: false, errors: [{ message: 'Insufficient permissions' }] }),
+      }) as unknown as Response) as unknown as typeof fetch
+    await expect(
+      listWorkerVersionsViaApi({
+        accountId: 'acct-1',
+        apiToken: 'token-1',
+        scriptName: 'buoys',
+        limit: 50,
+        fetchImpl,
+      }),
+    ).rejects.toThrow('Cloudflare API 403')
+  })
+
+  it('parses and bounds --max-versions', () => {
+    expect(parseVersionsPromoteArgs([]).maxVersions).toBe(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(parseVersionsPromoteArgs(['--max-versions', '25']).maxVersions).toBe(25)
+    expect(() => parseVersionsPromoteArgs(['--max-versions', '0'])).toThrow('1..10000')
+    expect(() => parseVersionsPromoteArgs(['--max-versions', 'lots'])).toThrow('1..10000')
+  })
+})
+
+/**
+ * narduk-libs#451 defect 2: under `on: workflow_run`, `GITHUB_SHA` is the
+ * default branch head at trigger time, not the commit whose run went green.
+ */
+describe('workflow_run commit resolution (#451 defect 2)', () => {
+  const DEFAULT_BRANCH_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+  const VERIFIED = SHA
+
+  it('refuses to default --sha to GITHUB_SHA under a workflow_run event', () => {
+    expect(() =>
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        false,
+      ),
+    ).toThrow('workflow_run')
+    expect(() =>
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        false,
+      ),
+    ).toThrow('github.event.workflow_run.head_sha')
+  })
+
+  it('still defaults on the events where GITHUB_SHA is the commit', () => {
+    expect(
+      defaultPromoteSha({ GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'push' }, false),
+    ).toBe(DEFAULT_BRANCH_HEAD)
+    expect(defaultPromoteSha({ GITHUB_SHA: DEFAULT_BRANCH_HEAD }, false)).toBe(DEFAULT_BRANCH_HEAD)
+    expect(
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        true,
+      ),
+    ).toBeNull()
+  })
+
+  it('does not promote the default-branch head a workflow_run run carries', async () => {
+    const versions = [
+      version('v-head', DEFAULT_BRANCH_HEAD, { number: 9 }),
+      version('v-verified', VERIFIED, { number: 8 }),
+      version('v-live', 'cccccccc', { number: 7 }),
+    ]
+    const deployments = [deployment('d-1', 'v-live', '2026-09-17T00:00:00Z')]
+    const env = {
+      ...ACTIONS_ENV,
+      GITHUB_SHA: DEFAULT_BRANCH_HEAD,
+      GITHUB_EVENT_NAME: 'workflow_run',
+      GITHUB_REF_NAME: 'main',
+    }
+    const { context: ctx } = context(versions, deployments, env)
+    await expect(runVersionsPromote(parseVersionsPromoteArgs([]), ctx)).rejects.toThrow(
+      'workflow_run',
+    )
+    // The explicit, correct form still promotes -- the refusal is about the
+    // default, not about the event.
+    const { context: ok, calls } = context(versions, deployments, env)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', VERIFIED, '--any-branch']),
+      ok,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v-verified')
   })
 })

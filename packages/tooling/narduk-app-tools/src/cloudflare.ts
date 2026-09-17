@@ -15,7 +15,7 @@ export interface WorkerPlainTextOptions {
  * One Cloudflare REST read, with Cloudflare's own `success`/`errors` envelope
  * turned into a thrown `Error`. Exported because the promote path needs the
  * same envelope handling for the paginated Versions list (`../promote.ts`) and
- * a second copy of it would be a second place for the error shape to drift.
+ * a second copy of it would be a second place for the error shape to diverge.
  */
 export async function fetchCloudflareJson<T>(
   url: string,
