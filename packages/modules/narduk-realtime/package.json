@@ -72,7 +72,7 @@
     "eslint": "^10.8.0",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
-    "vitest": "4.1.6"
+    "vitest": "4.1.11"
   },
   "peerDependencies": {
     "nuxt": ">=3.16.0"
