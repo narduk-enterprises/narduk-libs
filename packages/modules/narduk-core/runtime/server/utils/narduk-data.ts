@@ -818,7 +818,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       identityOf(product.validate),
       identityOf(product.acceptManifest),
       identityOf(context?.fetch ?? options.fetch),
-    ].join(' ')
+    ].join('\0')
   }
 
   function retainedBytes(): number {
