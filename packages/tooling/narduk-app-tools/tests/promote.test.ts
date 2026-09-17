@@ -950,7 +950,10 @@ describe('bounded version search (#451 defect 1)', () => {
     expect(listing.limit).toBe(120)
     expect(listing.complete).toBe(false)
     expect(urls.length).toBe(2)
-    expect(urls[1]).toContain('per_page=20')
+    // Every page asks for the SAME per_page; shrinking it on the last page
+    // would move the server-side offset and re-read page 1 (#457 diff-read).
+    expect(urls[1]).toContain(`per_page=${String(VERSION_PAGE_SIZE)}`)
+    expect(urls.every((url) => url.includes(`per_page=${String(VERSION_PAGE_SIZE)}`))).toBe(true)
   })
 
   it('promotes nothing with exit 3 -- never 0 -- and names the sha and the count', async () => {
@@ -1210,5 +1213,148 @@ describe('#451 regressions, shape-agnostic', () => {
     // The commit `ci / Required` verified is SHA, not the branch head. Promoting
     // `v-head` deploys code that never passed the gate.
     expect(calls.deployed).toEqual([])
+  })
+})
+
+/**
+ * The two pagination defects an orchestrator diff-read of PR #457 found in
+ * `listWorkerVersionsViaApi` at b0c4e898.
+ *
+ * Both fakes model V4 page pagination the way the API defines it -- the offset
+ * is `(page - 1) * per_page_applied`, computed server side -- rather than the
+ * way the caller hoped, which is the whole point.
+ */
+describe('Versions API pagination (#457 diff-read)', () => {
+  /**
+   * `clamp` is the largest `per_page` this fake honours; a request above it is
+   * silently reduced, exactly as an endpoint with a lower maximum would.
+   * `reportInfo` decides whether the envelope carries `result_info` at all.
+   */
+  function apiFake(options: { all: WorkerVersion[]; clamp?: number; reportInfo?: boolean }): {
+    fetchImpl: typeof fetch
+    urls: string[]
+  } {
+    const urls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      urls.push(String(input))
+      const asked = Number(url.searchParams.get('per_page'))
+      const page = Number(url.searchParams.get('page'))
+      const perPage = Math.min(asked, options.clamp ?? asked)
+      const items = options.all.slice((page - 1) * perPage, page * perPage)
+      const body: Record<string, unknown> = {
+        success: true,
+        errors: [],
+        messages: [],
+        result: { items },
+      }
+      if (options.reportInfo) {
+        body.result_info = {
+          page,
+          per_page: perPage,
+          count: items.length,
+          total_count: options.all.length,
+          total_pages: Math.ceil(options.all.length / perPage),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => body,
+      } as unknown as Response
+    }) as unknown as typeof fetch
+    return { fetchImpl, urls }
+  }
+
+  /** A history of `size` versions, the target tagged at 0-based `position`. */
+  function historyWithTargetAt(size: number, position: number, tag: string): WorkerVersion[] {
+    return Array.from({ length: size }, (_, index) =>
+      version(
+        `v-${String(index)}`,
+        index === position ? tag : `dead${String(index).padStart(4, '0')}`,
+        { number: 100_000 - index },
+      ),
+    )
+  }
+
+  it('asks for one constant per_page, so a non-multiple bound cannot re-read page 1', async () => {
+    // 250 is deliberately not a multiple of 100: a last page asking
+    // per_page=50&page=3 is served items 101..150 again, so the rows the bound
+    // was meant to reach are never read and the duplicates can even make one
+    // tag look ambiguous.
+    const all = historyWithTargetAt(400, 230, SHA)
+    const { fetchImpl, urls } = apiFake({ all, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 250,
+      fetchImpl,
+    })
+    const sizes = new Set(urls.map((url) => new URL(url).searchParams.get('per_page')))
+    expect([...sizes]).toEqual([String(VERSION_PAGE_SIZE)])
+    expect(listing.versions).toHaveLength(250)
+    expect(new Set(listing.versions.map((row) => row.id)).size).toBe(250)
+    const tagged = listing.versions.filter((row) => row.annotations?.['workers/tag'] === SHA)
+    expect(tagged).toHaveLength(1)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-230' },
+    })
+  })
+
+  it('walks past a clamped per_page the envelope reports', async () => {
+    const all = historyWithTargetAt(120, 60, SHA)
+    const { fetchImpl } = apiFake({ all, clamp: 25, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 500,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(120)
+    expect(listing.complete).toBe(true)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-60' },
+    })
+  })
+
+  it('walks past a per_page clamped silently, and only an empty page ends it', async () => {
+    const all = historyWithTargetAt(120, 60, SHA)
+    const { fetchImpl, urls } = apiFake({ all, clamp: 25 })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 500,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(120)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-60' },
+    })
+    // Without result_info a short page proves nothing -- the endpoint may have
+    // clamped. Completion is claimed only after a page comes back empty, which
+    // costs exactly one extra read.
+    expect(listing.complete).toBe(true)
+    expect(urls).toHaveLength(Math.ceil(120 / 25) + 1)
+  })
+
+  it('does not claim the end of the history when it stopped at the bound', async () => {
+    const all = historyWithTargetAt(400, 10, SHA)
+    const { fetchImpl } = apiFake({ all, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 150,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(150)
+    expect(listing.complete).toBe(false)
   })
 })

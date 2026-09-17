@@ -70,7 +70,7 @@
 
 import { spawnSync } from 'node:child_process'
 
-import { fetchCloudflareJson } from './cloudflare.js'
+import { fetchCloudflareEnvelope } from './cloudflare.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
 
 import type { DeployEnv } from './deploy.js'
@@ -406,9 +406,14 @@ export function parseWranglerVersionsJson<T>(stdout: string, what: string): T {
  * pagination -- `?per_page=` is already how this package reads a version's
  * plain-text vars (`./cloudflare.ts`).
  *
- * The walk stops at the FIRST of: the bound, a short page (the end of the
- * history), or an empty page. `complete` records which, so a caller can tell
- * "this commit never uploaded" from "its version is older than the bound".
+ * The walk asks for ONE constant `per_page` and stops at the first of: the
+ * bound, an empty page, or an end-of-collection the response's own
+ * `result_info` proves (`total_count`, `total_pages`, or a page shorter than
+ * the `per_page` the API actually applied). A short page on a response with no
+ * `result_info` proves nothing -- the endpoint may have clamped `per_page`
+ * below the request -- so it does not end the walk. `complete` records which,
+ * so a caller can tell "this commit never uploaded" from "its version is older
+ * than the bound".
  */
 export async function listWorkerVersionsViaApi(options: {
   accountId: string
@@ -420,22 +425,51 @@ export async function listWorkerVersionsViaApi(options: {
   const fetchImpl = options.fetchImpl ?? fetch
   const base = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}/versions`
   const limit = Math.max(1, Math.trunc(options.limit))
+  // ONE page size for the whole walk. V4 page pagination computes the offset
+  // server side as `(page - 1) * per_page`, so shrinking `per_page` on the last
+  // page re-reads rows already seen and never reaches the rows the bound was
+  // meant to cover -- and the duplicates can make a single tag look ambiguous.
+  const perPage = Math.min(VERSION_PAGE_SIZE, limit)
   const versions: WorkerVersion[] = []
   let complete = false
   for (let page = 1; versions.length < limit; page += 1) {
-    const perPage = Math.min(VERSION_PAGE_SIZE, limit - versions.length)
     const url = `${base}?deployable=true&per_page=${String(perPage)}&page=${String(page)}`
-    const body = await fetchCloudflareJson<{ items?: WorkerVersion[] }>(
+    const { result, pageInfo } = await fetchCloudflareEnvelope<{ items?: WorkerVersion[] }>(
       url,
       options.apiToken,
       fetchImpl,
     )
-    const items = body.items ?? []
+    const items = result.items ?? []
     versions.push(...items)
-    if (items.length < perPage) {
+    // An empty page is the one end-of-history signal that needs no assumption.
+    if (items.length === 0) {
       complete = true
       break
     }
+    if (pageInfo) {
+      const { total_count: total, total_pages: totalPages, per_page: applied } = pageInfo
+      if (total !== undefined && versions.length >= total) {
+        complete = true
+        break
+      }
+      if (totalPages !== undefined && page >= totalPages) {
+        complete = true
+        break
+      }
+      // `applied` is the size the API really used, which may be lower than the
+      // one asked for. Only against THAT does a short page mean the end.
+      if (applied !== undefined && applied > 0 && items.length < applied) {
+        complete = true
+        break
+      }
+    }
+    // No pagination block: a short page proves nothing, because the endpoint
+    // may have clamped `per_page` below the request -- and treating a clamped
+    // first page as the end would reinstate exactly the ten-version blindness
+    // this walk exists to remove. Keep going until a page comes back empty or
+    // the bound is reached; that costs one extra read at most. The walk is
+    // still bounded: every non-final page adds at least one version, so it
+    // cannot run more than `limit + 1` times.
   }
   return { versions: versions.slice(0, limit), complete, limit, source: 'api' }
 }
