@@ -68,3 +68,17 @@ zero-consumer surface is deliberately not carried over.
 
 `@nuxt/schema` becomes an optional peer dependency: `dist/nuxt/index.d.ts` names
 `NuxtModule`, which `@nuxt/kit` does not re-export.
+
+Review round (Grok adversarial) on PR 436:
+
+- `tokenRoutePath` and `fetchMapKitToken` now canonicalise `\` to `/` before the
+  protocol-relative check. WHATWG treats `/\evil.example/mk` as
+  `//evil.example/mk`, so a startsWith('//') check let a backslash path leave
+  the serving origin.
+- The method catch-all is a re-export of the GET handler. A dummy with empty
+  credentials 503'd any GET that landed on it.
+- `<AppMapKit>` passes `isRotationEnabled` into the Map constructor. MapKit JS
+  defaults rotation on; omitting the flag ignored the documented `false`.
+- The pin layer reads `pinGeometry` / `itemKey` from the live props, so a
+  geometry-only `setProps` restyles in place instead of keeping the init-time
+  anchor.
