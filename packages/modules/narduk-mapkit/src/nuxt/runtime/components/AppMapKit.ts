@@ -30,6 +30,7 @@ import {
   watch,
 } from 'vue'
 
+import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js'
 import { MapKitCalloutHostLayer } from '../callout-host.js'
 import { useMapKitPreload } from '../preload.js'
 import { MapKitOverlayLayer } from '../overlay-layer.js'
@@ -121,6 +122,17 @@ const props = {
     default: undefined,
     type: Function as PropType<(item: MapKitItem) => MapKitPinGeometry>,
   },
+  /**
+   * Whether a pin is an interactive control (2.1.1, K-8).
+   *
+   * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
+   * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
+   * handlers. `false` is for a decorative map: the host carries no role, no
+   * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
+   * longer contains focusable descendants (axe `aria-hidden-focus`) and
+   * `itemLabel` stops being required.
+   */
+  pinsFocusable: { default: true, type: Boolean },
   /** 7 of 7 consumers set this, so 2.1.0 flips the default. */
   preserveRegion: { default: true, type: Boolean },
   selectedId: { default: null, type: String as PropType<string | null> },
@@ -142,7 +154,14 @@ const AppMapKitImpl = defineComponent({
     'callout-open': (payload: { id: string; item: MapKitItem }) => Boolean(payload),
     'feature-select': (feature: GeoJSONFeature) => Boolean(feature),
     'map-click': (coordinate: MapKitLatLng) => Boolean(coordinate),
-    'map-ready': (map: unknown) => Boolean(map),
+    /**
+     * The map, and the namespace that built it (2.1.1, K-10).
+     *
+     * The second argument is `useMapKit().mapkit`, NOT `globalThis.mapkit`:
+     * MapKit JS 6 resolves `mapkit.load(libraries)` to a scoped namespace, and a
+     * value built from the global one fails this map's own instanceof checks.
+     */
+    'map-ready': (map: unknown, mapkit: unknown) => Boolean(map) && Boolean(mapkit),
     'mapkit-error': (failure: MapKitFailure) => Boolean(failure),
     'region-change': (region: {
       centerLat: number
@@ -198,6 +217,29 @@ const AppMapKitImpl = defineComponent({
       if (failure.value) return 'error'
       return ready.value && mapReady.value ? 'ready' : 'loading'
     })
+
+    /**
+     * K-9. 2.1.0 threw from inside the pin layer on the first non-empty
+     * `items`, which meant the error arrived only once MapKit had loaded, a
+     * token had been exchanged and a map existed -- i.e. in production, on a
+     * page whose map had already half-built itself.
+     *
+     * The type system cannot carry this: making `itemLabel` required when
+     * `items` is would mean a union `$props`, which no gate in this package can
+     * prove safe under `vue-tsc`. So the throw stays, raised as early as it can
+     * be -- at mount, naming the component and both ways out.
+     */
+    function assertPinLabelling(items: readonly MapKitItem[]): void {
+      if (items.length === 0 || !componentProps.pinsFocusable || componentProps.itemLabel) return
+      throw new Error(
+        '<AppMapKit>: the itemLabel prop is required whenever items is non-empty -- it is the ' +
+          'accessible name of the library-owned pin host, and a pin without one is unreachable ' +
+          'by screen reader. Pass itemLabel, or set :pins-focusable="false" for a decorative ' +
+          'map whose pins are not interactive controls.',
+      )
+    }
+
+    assertPinLabelling(componentProps.items)
 
     function report(cause: unknown): void {
       const next: MapKitFailure = {
@@ -362,7 +404,8 @@ const AppMapKitImpl = defineComponent({
         isRotationEnabled: componentProps.isRotationEnabled,
         isScrollEnabled: componentProps.isScrollEnabled,
         isZoomEnabled: componentProps.isZoomEnabled,
-        mapType: componentProps.mapType,
+        // K-3: `'muted'` is this library's spelling; MapKit's is `'mutedStandard'`.
+        mapType: resolveMapKitMapType(componentProps.mapType),
         showsPointsOfInterest: componentProps.showsPointsOfInterest,
       }
       if (overviewRegion) mapOptions['region'] = overviewRegion
@@ -399,6 +442,7 @@ const AppMapKitImpl = defineComponent({
         // pinGeometry-only setProps would otherwise restyle nothing.
         itemKey: (item, index) => componentProps.itemKey(item, index),
         pinGeometry: (item) => componentProps.pinGeometry?.(item) ?? {},
+        focusable: componentProps.pinsFocusable,
         map,
         mapkit: namespace,
         onSelect: select,
@@ -421,7 +465,10 @@ const AppMapKitImpl = defineComponent({
       applyOverlays()
       if (componentProps.selectedId !== null) applySelection(componentProps.selectedId)
       mapReady.value = true
-      emit('map-ready', map)
+      // K-10: the namespace goes with the map. A value built from
+      // `globalThis.mapkit` belongs to a different namespace and this map's own
+      // instanceof checks reject it.
+      emit('map-ready', map, namespace)
     }
 
     function applyOverlays(): void {
@@ -465,6 +512,7 @@ const AppMapKitImpl = defineComponent({
       () => componentProps.items,
       () => {
         try {
+          assertPinLabelling(componentProps.items)
           applyItems()
         } catch (cause) {
           report(cause)
@@ -499,6 +547,26 @@ const AppMapKitImpl = defineComponent({
       () => {
         try {
           applyItems()
+        } catch (cause) {
+          report(cause)
+        }
+      },
+    )
+    /**
+     * K-4. 2.1.0 applied `mapType` and `colorScheme` in the `mapkit.Map`
+     * constructor and never again, so switching either prop on a mounted map
+     * did nothing at all. The injected colour-mode source is watched with them:
+     * without it `colorScheme: 'auto'` is only auto once, at construction.
+     */
+    watch(
+      () => [componentProps.mapType, componentProps.colorScheme, colorMode?.value ?? null] as const,
+      () => {
+        if (!map) return
+        try {
+          applyMapKitBasemap(map, {
+            colorScheme: resolveColorScheme(),
+            mapType: componentProps.mapType,
+          })
         } catch (cause) {
           report(cause)
         }
@@ -545,6 +613,11 @@ const AppMapKitImpl = defineComponent({
           lastDiff: { added: [], moved: [], removed: [], restyled: [] },
         },
       getMap: () => map,
+      /**
+       * The namespace that built this map (2.1.1, K-10), for an app that has to
+       * construct MapKit values itself. NEVER `globalThis.mapkit`.
+       */
+      getMapKit: () => mapkit.value,
       openCallout,
       retry,
       scrollIntoView: () => {
@@ -653,16 +726,54 @@ const AppMapKitImpl = defineComponent({
   },
 })
 
+type AppMapKitBaseInstance = InstanceType<typeof AppMapKitImpl>
+
+/**
+ * Every prop whose type is a function of the app's own item type.
+ *
+ * Named as one interface rather than spelled out twice because the `Omit` below
+ * takes its keys from here: adding an item-typed prop to the component then
+ * cannot leave the generic surface behind, which is exactly how 2.1.0 shipped
+ * with only `items` re-typed (narduk-libs 2.1.1, K-1).
+ */
+export interface AppMapKitItemProps<T extends MapKitPinItem> {
+  createPinElement?: ((item: T, isSelected: boolean) => MapKitPinElement) | undefined
+  itemKey?: ((item: T, index: number) => string) | undefined
+  itemLabel?: ((item: T) => string) | undefined
+  items?: readonly T[] | undefined
+  pinGeometry?: ((item: T) => MapKitPinGeometry) | undefined
+}
+
+/** `<AppMapKit>`'s props for an app item type `T`. */
+export type AppMapKitProps<T extends MapKitPinItem> = Omit<
+  AppMapKitBaseInstance['$props'],
+  keyof AppMapKitItemProps<MapKitPinItem>
+> &
+  AppMapKitItemProps<T>
+
+/** `<AppMapKit>`'s slots for an app item type `T`; only `#callout` is item-typed. */
+export type AppMapKitSlots<T extends MapKitPinItem> = Omit<
+  AppMapKitBaseInstance['$slots'],
+  'callout'
+> & {
+  callout?: (scope: MapKitCalloutSlotScope<T>) => VNode[]
+}
+
 /**
  * Exported with a generic construct signature so an app's own item type flows
- * through `items`, `itemKey`, `createPinElement`, `pinGeometry` and the
- * `#callout` slot. The runtime props above cannot carry a type parameter, so the
- * generic surface is applied here, once.
+ * through `items`, `itemKey`, `itemLabel`, `createPinElement`, `pinGeometry` and
+ * the `#callout` slot scope. The runtime props above cannot carry a type
+ * parameter, so the generic surface is applied here, once.
+ *
+ * 2.1.0 re-typed `items` alone, which under `strictFunctionTypes` left every
+ * callback rejecting the app's item type -- parameters are contravariant, so
+ * `(item: Station) => string` is not assignable to `(item: MapKitPinItem) =>
+ * string`. `tests/nuxt/app-map-kit-generic.test.ts` is the compile-time gate; a
+ * runtime test cannot see this at all.
  */
 export default AppMapKitImpl as typeof AppMapKitImpl & {
-  new <T extends MapKitPinItem>(): {
-    $props: Omit<InstanceType<typeof AppMapKitImpl>['$props'], 'items'> & {
-      items?: readonly T[]
-    }
+  new <T extends MapKitPinItem>(): Omit<AppMapKitBaseInstance, '$props' | '$slots'> & {
+    $props: AppMapKitProps<T>
+    $slots: AppMapKitSlots<T>
   }
 }
