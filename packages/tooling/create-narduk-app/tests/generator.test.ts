@@ -513,6 +513,12 @@ describe('create-narduk-app generation contract', () => {
     for (const { capabilities, hasDatabase, hasAuth, label } of [
       { capabilities: ['auth', 'seo'], hasDatabase: true, hasAuth: true, label: 'auth+db' },
       {
+        capabilities: ['seo'] as string[],
+        hasDatabase: true,
+        hasAuth: false,
+        label: 'db, no auth',
+      },
+      {
         capabilities: [] as string[],
         hasDatabase: false,
         hasAuth: false,
@@ -583,7 +589,12 @@ describe('create-narduk-app generation contract', () => {
       expect(visualAudit, label).toContain(
         "} from '@narduk-enterprises/narduk-testkit/playwright/ui-quality'",
       )
-      expect(visualAudit, label).toContain('createConsoleTracker(page)')
+      // narduk-core's build-info plugin logs this banner via console.warn on
+      // every page load (universal, not app-specific), so every scaffold's
+      // consoleTracker must ignore it the same way the reference app does --
+      // matches narduk-libs PR #347 CI: consoleTracker.expectClean() failed
+      // on every generated app without this, live-verified.
+      expect(visualAudit, label).toContain('createConsoleTracker(page, [/^\\[build\\]/])')
       expect(visualAudit, label).toContain('await consoleTracker.expectClean()')
       expect(visualAudit, label).toContain("{ name: 'home', path: '/' }")
 
@@ -603,9 +614,23 @@ describe('create-narduk-app generation contract', () => {
       const globalSetup = byPath.get('apps/web/tests/e2e/global.setup.ts')
       expect(globalSetup, label).toBeDefined()
       expect(globalSetup, label).toContain("import { expect, test } from './fixtures'")
-      expect(globalSetup, label).toContain(
-        "data: { status: 'ok', database: " + (hasDatabase ? "'ok'" : "'not_applicable'") + ' },',
-      )
+      if (hasDatabase && hasAuth) {
+        // A freshly generated auth+database app has never run
+        // db:migrate:local/:remote, so narduk-core's (required: false)
+        // auth-tables probe genuinely degrades the health response without
+        // failing the request -- asserting a hard 'ok' here would fail
+        // every such app's own readiness gate before its first migration
+        // (narduk-libs PR #347 CI: schema_error/degraded on a fresh
+        // packed-consumer-smoke run, live-verified).
+        expect(globalSetup, label).toContain(
+          'data: { status: expect.stringMatching(/^(ok|degraded)$/u) },',
+        )
+        expect(globalSetup, label).not.toContain("database: 'ok'")
+      } else {
+        expect(globalSetup, label).toContain(
+          "data: { status: 'ok', database: " + (hasDatabase ? "'ok'" : "'not_applicable'") + ' },',
+        )
+      }
 
       // apps/web/wrangler.jsonc: $schema + observability additions.
       const wrangler = byPath.get('apps/web/wrangler.jsonc')

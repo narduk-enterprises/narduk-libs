@@ -714,7 +714,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '- `playwright.config.ts` defines a `setup` project (runs once, see `global.setup.ts`) and a `chromium` project that depends on it.',
         '- `apps/web/tests/e2e/fixtures.ts` re-exports the shared readiness and hydration helpers from `@narduk-enterprises/narduk-testkit/e2e/fixtures` -- import from this local file, not the package directly, so a future fixture addition only touches one file.',
-        "- `apps/web/tests/e2e/global.setup.ts` is the `setup` project: it waits for the base URL, asserts `/api/health` reports `status: 'ok'`, and warms the app before any other spec runs.",
+        "- `apps/web/tests/e2e/global.setup.ts` is the `setup` project: it waits for the base URL, asserts `/api/health` reports a healthy status (an unmigrated database's auth-tables check is tolerated as `degraded`, never a hard failure), and warms the app before any other spec runs.",
         '- `apps/web/tests/e2e/home.spec.ts` is the starter smoke spec.',
         '- `apps/web/tests/e2e/visual-audit.spec.ts` captures the starter route across representative viewports using the shared UI-quality toolkit (see below) and asserts a clean browser console.',
         '',
@@ -1298,12 +1298,32 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "  const health = await request.get('/api/health')",
         '  expect(health.status()).toBe(200)',
         '  const body = await health.json()',
-        '  expect(body).toMatchObject({',
-        '    success: true,',
-        "    data: { status: 'ok', database: " +
-          (hasDatabase ? "'ok'" : "'not_applicable'") +
-          ' },',
-        '  })',
+        ...(hasDatabase && capabilities.includes('auth')
+          ? [
+              // narduk-core's own auth-tables probe is deliberately
+              // `required: false` (see packages/modules/narduk-core's health
+              // report): a scaffold this generator just produced has never
+              // run `db:migrate:local`/`db:migrate:remote`, so the D1
+              // binding is reachable but the auth tables genuinely are not
+              // there yet. That degrades `status`/`database` without
+              // failing the request (still 200) -- asserting a hard `'ok'`
+              // here would make every freshly generated auth+database app
+              // fail its own readiness gate before its first migration.
+              // Once migrations have run, both fields report `'ok'` and
+              // this still passes.
+              '  expect(body).toMatchObject({',
+              '    success: true,',
+              '    data: { status: expect.stringMatching(/^(ok|degraded)$/u) },',
+              '  })',
+            ]
+          : [
+              '  expect(body).toMatchObject({',
+              '    success: true,',
+              "    data: { status: 'ok', database: " +
+                (hasDatabase ? "'ok'" : "'not_applicable'") +
+                ' },',
+              '  })',
+            ]),
         '  await warmUpApp(browser, baseURL!)',
         '})',
       ),
@@ -1361,7 +1381,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  }, 60_000)',
         '',
         "  test('captures representative routes across target viewports', async ({ page }) => {",
-        '    const consoleTracker = createConsoleTracker(page)',
+        // narduk-core's build-info client plugin unconditionally logs this
+        // banner via console.warn on every page load (see
+        // packages/modules/narduk-core's build-info.client.ts) -- it is
+        // deliberate, universal app behavior, not a defect, so every
+        // generated app needs this ignored the same way the reference app
+        // does, not just apps that happen not to trip it. Prettier collapses
+        // a single-element array literal like this onto one line, so the
+        // template must match that canonical form exactly.
+        '    const consoleTracker = createConsoleTracker(page, [/^\\[build\\]/])',
         '    const captures: Array<Awaited<ReturnType<typeof captureFullPageAudit>>> = []',
         '    const routes = representativeRoutes()',
         '',
