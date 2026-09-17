@@ -73,6 +73,12 @@ intact. Nuxt phases stay sequential because they share generated files and local
 runtime state. The pnpm store may fall back to an older main cache across
 lockfile changes; frozen installs and artifact validation remain mandatory.
 
+The disposable app restricts Nuxt Fonts to its local provider through the
+`fonts:providers` hook. Nuxt Fonts and its CSS processing still run, but public
+font catalogs are outside this package-compatibility proof. This removes font
+network retries from the build without changing published modules or generated
+production apps. The build must report that the fixture hook activated.
+
 ### Consumer scope
 
 The affected-package planner selects two levels of consumer proof. Both use the
