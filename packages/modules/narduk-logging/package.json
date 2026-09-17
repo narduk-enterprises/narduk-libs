@@ -118,6 +118,7 @@
   "devDependencies": {
     "hookable": "5.5.3",
     "@nuxt/kit": "^4.0.0",
+    "@nuxt/schema": "^4.5.2",
     "h3": "^1.15.11",
     "nitropack": "^2.13.4",
     "@opentelemetry/api-logs": "^0.222.0",

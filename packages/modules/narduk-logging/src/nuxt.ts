@@ -1,4 +1,6 @@
 import { addServerImports, addServerPlugin, createResolver, defineNuxtModule } from '@nuxt/kit'
+import type { NuxtModule } from '@nuxt/schema'
+
 import type { RequestLoggingOptions } from './h3.js'
 
 export interface ModuleOptions {
@@ -13,7 +15,10 @@ export interface ModuleOptions {
   includeStack?: boolean
 }
 
-export default defineNuxtModule<ModuleOptions>({
+// Annotated explicitly: @nuxt/kit 4.5.x infers the return type from
+// @nuxt/schema without re-exporting `NuxtModule`, so declaration emit cannot
+// name it from a bare specifier (TS2742).
+const nardukLoggingModule: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
   meta: { name: '@narduk-enterprises/narduk-logging', configKey: 'nardukLogging' },
   defaults: { service: '', requestLogging: true },
   setup(options, nuxt) {
@@ -32,3 +37,5 @@ export default defineNuxtModule<ModuleOptions>({
     addServerImports({ name: 'useLogger', from: resolver.resolve('./h3') })
   },
 })
+
+export default nardukLoggingModule
