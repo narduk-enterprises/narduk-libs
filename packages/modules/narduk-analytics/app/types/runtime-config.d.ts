@@ -22,6 +22,8 @@ interface AnalyticsPublicRuntimeConfig {
   posthogPublicKey: string
   posthogSessionReplayEnabled: boolean
   posthogSurveysEnabled: boolean
+  posthogWebVitalsAttributionEnabled: boolean
+  posthogWebVitalsEnabled: boolean
 }
 
 declare module 'nuxt/schema' {

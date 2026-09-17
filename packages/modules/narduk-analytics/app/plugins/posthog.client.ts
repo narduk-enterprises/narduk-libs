@@ -7,14 +7,17 @@ import {
   resolveAnalyticsEnvironment,
   runWithAnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
+import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
 
 import type {
   AnalyticsDeploymentTarget,
   AnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
+import type { PostHogExtensionsHost } from '../utils/webVitals'
 import type { PostHog, Properties } from 'posthog-js'
 
 type LegacyNuxtWindow = Window & { $nuxt?: { $posthog?: PostHog } }
+type PostHogExtensionsWindow = Window & PostHogExtensionsHost
 
 export default defineNuxtPlugin<{ posthog?: PostHog }>({
   name: 'posthog',
@@ -30,6 +33,9 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
     )
     const isLocalhost = isLocalAnalyticsHost(window.location.hostname)
     const sessionReplayEnabled = runtimeConfig.public.posthogSessionReplayEnabled === true
+    const webVitalsEnabled = runtimeConfig.public.posthogWebVitalsEnabled === true
+    const webVitalsAttributionEnabled =
+      webVitalsEnabled && runtimeConfig.public.posthogWebVitalsAttributionEnabled === true
 
     if (
       !posthogApiKey ||
@@ -54,6 +60,24 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
     async function initializePosthog() {
       const { posthog } = await import('posthog-js')
 
+      // PostHog's `$web_vitals` autocapture reaches for an external
+      // `web-vitals.js` asset unless the callbacks are already published, and
+      // `disable_external_dependency_loading` below blocks that fetch. Publish
+      // them from the pinned package first, so `posthog.init` starts the
+      // extension straight away. See `../utils/webVitals`.
+      if (webVitalsEnabled) {
+        const webVitals = webVitalsAttributionEnabled
+          ? await import('web-vitals/attribution')
+          : await import('web-vitals')
+
+        installPostHogWebVitalsCallbacks(window as PostHogExtensionsWindow, {
+          onCLS: webVitals.onCLS,
+          onFCP: webVitals.onFCP,
+          onINP: webVitals.onINP,
+          onLCP: webVitals.onLCP,
+        })
+      }
+
       const posthogClient = posthog.init(posthogApiKey, {
         api_host: posthogHost === '' ? 'https://us.i.posthog.com' : posthogHost,
         capture_pageview: false, // We'll handle this manually for Nuxt SPA navigation
@@ -71,6 +95,24 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
 
         // Use XHR instead of sendBeacon on page unload (avoids 64KB cap entirely)
         transport: 'XHR',
+
+        // Pinned explicitly in both directions: PostHog also accepts a
+        // server-side `capturePerformance` remote config, and an app that has
+        // not opted in must not start collecting vitals because a project
+        // setting changed. `network_timing` stays unset, exactly as before.
+        capture_performance: {
+          web_vitals: webVitalsEnabled,
+          web_vitals_attribution: webVitalsAttributionEnabled,
+        },
+        ...(webVitalsEnabled
+          ? {
+              before_send: createWebVitalsBeforeSend({
+                buildVersion: runtimeConfig.public.buildVersion,
+                navigator: typeof navigator === 'undefined' ? undefined : navigator,
+                resolveRoute: (path: string) => router.resolve(path),
+              }),
+            }
+          : {}),
 
         loaded: (ph) => {
           if (import.meta.dev) ph.debug()
