@@ -53,6 +53,23 @@ mode-0600 temporary home for its git push credential, created only after the
 dependency install and removed on exit. The release's exact version registry
 proof uses the same temporary token config.
 
+## Packed consumer preparation
+
+`node scripts/prepare-packed-consumer.mjs` builds every publishable workspace
+package and its dependency closure with two concurrent Turbo tasks by default.
+CI uses `--build-concurrency=4` on its public Ubuntu runner (4 CPUs, 16 GiB) and
+adds `--install-browser` to install Chromium and its Linux libraries alongside
+that build; both operations must finish successfully before consumer validation.
+Private applications such as the design preview keep their normal package CI
+gate, but are not built solely to prepare tarballs they never publish.
+
+The smoke script packs each library once and runs strict `publint` against that
+same tarball before installing it outside the workspace. Its generated-app
+typecheck, build, browser, migration, performance and deployment checks remain
+intact. Nuxt phases stay sequential because they share generated files and local
+runtime state. The pnpm store may fall back to an older main cache across
+lockfile changes; frozen installs and artifact validation remain mandatory.
+
 ## When a Changeset is required
 
 `pnpm run release-plan:check` decides this in the `contracts` gate. It compares

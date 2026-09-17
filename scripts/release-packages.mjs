@@ -994,11 +994,6 @@ try {
     const label = `validate and pack ${manifest.name}@${manifest.version}`
     writeLine(`[consumer-smoke] ${label}`)
     try {
-      const lint = await execFileAsync('pnpm', ['exec', 'publint', directory, '--strict'], {
-        cwd: root,
-        env: childEnvironment(),
-        maxBuffer: 8 * 1024 * 1024,
-      })
       const pack = await execFileAsync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
         cwd: directory,
         env: packEnvironment(),
@@ -1007,10 +1002,17 @@ try {
       const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
       const path = join(tarballDirectory, expectedTarball)
       if (!existsSync(path)) throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+      // Lint exactly what the consumer will install. Linting the directory
+      // first made publint run a second pnpm pack for every package.
+      const lint = await execFileAsync('pnpm', ['exec', 'publint', path, '--strict'], {
+        cwd: root,
+        env: childEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
       return {
         name: manifest.name,
         path,
-        output: `${lint.stdout}${lint.stderr}${pack.stdout}${pack.stderr}`,
+        output: `${pack.stdout}${pack.stderr}${lint.stdout}${lint.stderr}`,
       }
     } catch (error) {
       if (error.stdout) process.stdout.write(error.stdout)

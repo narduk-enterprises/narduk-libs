@@ -176,7 +176,7 @@ jobs:
           pnpm run surface:check
 
   packed-consumer-smoke:
-    # Build every package, then run the packed consumer's Chromium and platform gates.
+    # Build every publishable package, then run Chromium and platform gates.
     name: package / packed-consumer-smoke
     needs: [affected]
     if: needs.affected.outputs.packed-consumer == 'true'
@@ -240,7 +240,9 @@ jobs:
       # Restore the store seeded by a successful main run before the root and
       # external installs. On its first run, warm the root from the existing
       # browser job's main-only cache; the consumer's later main run saves its
-      # own expanded store with generated-app dependencies.
+      # own expanded store with generated-app dependencies. A lockfile change
+      # can reuse unchanged content from the previous store; frozen installs
+      # still resolve and verify the current lockfile.
       - name: Restore pnpm store cache
         id: pnpm-store-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -249,6 +251,7 @@ jobs:
           key: narduk-libs-packed-consumer-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+            narduk-libs-packed-consumer-pnpm-store-${{ runner.os }}-
 
       # Turbo's content hashes invalidate stale restored build output.
       - name: Restore turbo build cache
@@ -263,13 +266,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium and Linux browser dependencies
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Build coordinated release set
-        run: >-
-          pnpm exec turbo run build --filter='./packages/*/*'
-          --concurrency=2 --cache-dir="${TURBO_CACHE_DIR}" --cache-workers=4
+      - name: Build release packages and install Chromium in parallel
+        # Public ubuntu-latest has 4 CPUs / 16 GiB; keep each Node heap at 2 GiB.
+        run: node scripts/prepare-packed-consumer.mjs --install-browser --build-concurrency=4
 
       - name: Prove packed artifacts in an external generated consumer
         env:
