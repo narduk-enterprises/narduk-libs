@@ -1445,6 +1445,9 @@ importers:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@22.19.19)
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 4.20260511.1
+        version: 4.20260511.1
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config

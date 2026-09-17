@@ -82,6 +82,10 @@
     "./server/kit/managed-supabase": {
       "types": "./dist/server/kit/managed-supabase.d.ts",
       "import": "./dist/server/kit/managed-supabase.js"
+    },
+    "./server/handlers": {
+      "types": "./dist/server/handlers/index.d.ts",
+      "import": "./dist/server/handlers/index.js"
     }
   },
   "files": [
@@ -119,6 +123,7 @@
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@playwright/test": "1.61.1",
     "@supabase/supabase-js": "^2.105.4",
