@@ -122,7 +122,7 @@ export async function verifyOwnerProof(
 
   const iatRaw = token.slice(0, separator)
   const signature = token.slice(separator + 1)
-  if (!/^[0-9]+$/u.test(iatRaw) || !/^[0-9a-f]+$/u.test(signature)) return false
+  if (!/^\d+$/u.test(iatRaw) || !/^[0-9a-f]+$/u.test(signature)) return false
 
   const iat = Number(iatRaw)
   if (!Number.isSafeInteger(iat)) return false

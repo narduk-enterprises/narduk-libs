@@ -281,12 +281,12 @@ function stripSqlComments(sql: string): string {
 const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   {
     label: 'CREATE INDEX CONCURRENTLY',
-    pattern: /^(?:CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b)/iu,
+    pattern: /^CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/iu,
   },
-  { label: 'VACUUM', pattern: /^(?:VACUUM\b)/iu },
+  { label: 'VACUUM', pattern: /^VACUUM\b/iu },
   {
     label: 'ALTER TYPE ... ADD VALUE',
-    pattern: /^(?:ALTER\s+TYPE\b)[\s\S]*\bADD\s+VALUE\b/iu,
+    pattern: /^ALTER\s+TYPE\s+\S[\s\S]*\bADD\s+VALUE\b/iu,
   },
 ]
 
