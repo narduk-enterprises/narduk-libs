@@ -2,11 +2,14 @@
 '@narduk-enterprises/narduk-seo': patch
 ---
 
-Stop shipping an unsigned OG renderer, and stop protocol-relative paths from
+Require a stable OG signing secret, and stop protocol-relative paths from
 poisoning `og:url` / canonical.
 
-**OG images.** `nuxt-og-image` treats an empty `security.secret` as unset and
-skips URL signatures, so `/_og/d/<params>.png` rendered attacker-chosen images.
+**OG images.** With no `security.secret`, `nuxt-og-image` auto-generates one per
+build, so every previously signed `/_og/d/<params>.png` URL stops verifying: a
+rolling Worker release serves two secrets at once and cached signed URLs 403
+until they are regenerated. Signing is resolved at build time, so the secret
+belongs in a Workers Builds Build variable rather than a runtime Worker secret.
 Non-dev builds that still enable runtime generation now fail unless
 `NUXT_OG_IMAGE_SECRET` is a non-empty value (whitespace does not count).
 `nuxt dev` and `nuxt prepare` stay permissive. Operators: set

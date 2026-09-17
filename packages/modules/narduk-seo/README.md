@@ -17,12 +17,17 @@ unlisted pages can still request it with an explicit `ogImage` object. A page
 can opt out with `ogImage: false`. Private data never belongs in image props.
 
 Non-dev builds that leave runtime OG generation enabled require a non-empty
-`NUXT_OG_IMAGE_SECRET`. An empty string is not a secret: `nuxt-og-image` skips
-URL signatures and `/_og/` becomes an unauthenticated WASM renderer. `nuxt dev`
-stays permissive. Provision the secret in every deployed environment, or set
-`ogImage.enabled: false` / `ogImage.zeroRuntime: true` if the app only uses the
-static `defaultOgImage`. The committed CI placeholder is rejected on production
-and Workers Builds; `build:ci` may still use it.
+`NUXT_OG_IMAGE_SECRET`. An empty string is not a secret: `nuxt-og-image` then
+auto-generates a fresh one per build, so every previously signed `/_og/` URL
+stops verifying -- a rolling Worker release serves two secrets at once and
+cached signed URLs 403 until regenerated. Signing is resolved at **build** time,
+so provision it as a Workers Builds **Build variable**, not as a runtime Worker
+secret. `nuxt dev` stays permissive. Set `ogImage.enabled: false` /
+`ogImage.zeroRuntime: true` instead if the app only uses the static
+`defaultOgImage`. The committed CI placeholder is rejected on production and
+Workers Builds; `build:ci` may still use it. Never set
+`ogImage.security.secret: false` -- that is the setting that actually disables
+signing and leaves `/_og/` an unauthenticated renderer.
 
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
