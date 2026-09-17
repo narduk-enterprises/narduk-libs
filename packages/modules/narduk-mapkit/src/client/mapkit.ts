@@ -14,7 +14,7 @@
  *    So the `error` handler clears the singleton, and recovery belongs to the
  *    caller (`<AppMapKit>`'s `retry()`).
  */
-import type { MapKit, MapKitConfigurationErrorEvent } from '@apple/mapkit-loader'
+import type { MapKit } from '@apple/mapkit-loader'
 
 /**
  * A MapKit JS v6 library name -- `'map'`, `'annotations'`, `'overlays'`, and
@@ -116,7 +116,8 @@ export interface MapKitClientOptions {
 
 const DEFAULT_TOKEN_ENDPOINT = '/api/mapkit-token'
 const DEFAULT_VERSION = '6'
-const ORIGIN_MISMATCH = /Origin does not match - expected:\s*(?<expected>\S+),\s*actual:\s*(?<actual>\S+)/
+const ORIGIN_MISMATCH =
+  /Origin does not match - expected:\s*(?<expected>\S+),\s*actual:\s*(?<actual>\S+)/
 
 let initPromise: Promise<MapKit> | null = null
 let initPromiseKey = ''

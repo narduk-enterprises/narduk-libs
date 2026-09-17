@@ -32,10 +32,7 @@ const RATE_LIMIT_DEFAULT_RETRY_AFTER_SECONDS = 60
 const DEPRECATED_CONFIG_KEYS = ['allowedOrigins', 'staticToken'] as const
 
 export type MapKitTokenRefusal =
-  | 'method-not-allowed'
-  | 'not-same-origin'
-  | 'rate-limited'
-  | 'unconfigured'
+  'method-not-allowed' | 'not-same-origin' | 'rate-limited' | 'unconfigured'
 
 export interface MapKitRateLimitContext {
   /** Kept for 2.0.x callers; always equal to `self`. */

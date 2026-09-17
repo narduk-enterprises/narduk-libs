@@ -3,9 +3,9 @@ import { Hono } from 'hono'
 
 const app = new Hono()
 
-const mapKitTokenHandler = createMapKitTokenHandler({
-  allowedOrigins: ['http://localhost:5173', 'https://maps.example.com'],
-})
+// No origin allowlist: the route mints only for the origin that routed the
+// request (narduk-libs#421 §e).
+const mapKitTokenHandler = createMapKitTokenHandler()
 
 app.get('/api/mapkit-token', (c) => mapKitTokenHandler(c.req.raw))
 

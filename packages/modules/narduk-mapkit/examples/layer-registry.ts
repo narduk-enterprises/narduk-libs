@@ -56,7 +56,11 @@ const moistureLayer: MapKitLayerDescriptor = {
 }
 
 export async function mountLayerRegistryMap(container: HTMLElement) {
-  await initializeMapKit({ tokenEndpoint: '/api/mapkit-token' })
+  // `libraries` is mandatory in MapKit JS 6; overlays are not in the stub.
+  await initializeMapKit({
+    libraries: ['map', 'overlays'],
+    tokenEndpoint: '/api/mapkit-token',
+  })
   const mapkit = window.mapkit
   if (!mapkit) throw new Error('MapKit JS did not expose window.mapkit')
 

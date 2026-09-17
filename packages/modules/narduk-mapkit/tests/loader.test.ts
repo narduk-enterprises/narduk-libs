@@ -190,7 +190,11 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
     // A retry re-runs load() rather than handing back the dead namespace.
     const retry = harness()
     await expect(
-      initializeMapKit({ fetchImpl: tokenResponse(), libraries: LIBRARIES, loadImpl: retry.loadImpl }),
+      initializeMapKit({
+        fetchImpl: tokenResponse(),
+        libraries: LIBRARIES,
+        loadImpl: retry.loadImpl,
+      }),
     ).resolves.toBeDefined()
     expect(retry.loadCalls).toHaveLength(1)
   })
@@ -218,7 +222,9 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
   it('never calls done("") when the token route refuses', async () => {
     const { fake, loadImpl } = harness()
     const fetchImpl = (async () =>
-      new Response(JSON.stringify({ error: 'not-same-origin' }), { status: 403 })) as unknown as typeof fetch
+      new Response(JSON.stringify({ error: 'not-same-origin' }), {
+        status: 403,
+      })) as unknown as typeof fetch
 
     const error = await initializeMapKit({
       fetchImpl,
@@ -247,7 +253,9 @@ describe('fetchMapKitToken failure mapping (§c.7)', () => {
   ] as const)('maps HTTP %s onto Apple status %s', async (httpStatus, status) => {
     expect(mapKitErrorStatusForHttpStatus(httpStatus)).toBe(status)
     const fetchImpl = (async () =>
-      new Response(JSON.stringify({ error: 'refused' }), { status: httpStatus })) as unknown as typeof fetch
+      new Response(JSON.stringify({ error: 'refused' }), {
+        status: httpStatus,
+      })) as unknown as typeof fetch
     const error = await fetchMapKitToken('/api/mapkit-token', fetchImpl).catch(
       (reason: unknown) => reason,
     )

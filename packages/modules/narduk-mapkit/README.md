@@ -97,9 +97,9 @@ The adapter auto-registers `AppMapKit`, `useMapKit`, `useMapkitToken`, and the
 token route. The component fills its parent, so the parent must establish an
 explicit height. The adapter has no Nuxt UI or color-mode-module dependency.
 
-Missing token credentials return `503` with `configured: false`; disallowed
-origins return `403`. See `packages/nuxt/README.md` for options and runtime
-configuration.
+Missing signing material returns `503` with `{"error": "unconfigured"}`; a
+request that is not same-origin returns `403`. See `packages/nuxt/README.md` for
+options and runtime configuration.
 
 ## Server Token Route
 
@@ -108,25 +108,43 @@ Mount the Fetch handler at your app's token endpoint:
 ```ts
 import { createMapKitTokenHandler } from '@narduk-enterprises/narduk-mapkit/node'
 
-export const GET = createMapKitTokenHandler({
-  allowedOrigins: ['http://localhost:3000', 'https://maps.example.com'],
-})
+export const GET = createMapKitTokenHandler()
 ```
 
-The response shape is stable:
+The route is **same-host and fail-closed** (narduk-libs#421 §e): it mints a
+token only for the origin that routed the request, and refuses anything that is
+not same-origin. There is no origin allowlist to configure and no static-token
+path — an allowlist cannot make a token work on a host Apple will reject anyway,
+because Apple enforces the `origin` claim itself.
+
+The success body is:
 
 ```json
 {
-  "configured": true,
-  "expiresAt": "2026-07-05T14:00:00.000Z",
-  "origin": "http://localhost:3000",
+  "expiresAt": 1767625200,
   "token": "..."
 }
 ```
 
-Misconfiguration returns `503` with `configured: false`; blocked origins return
-`403`. The `/node` entry point is the only surface that reads `process.env` or
-uses the optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
+`expiresAt` is the JWT `exp`, in seconds since the epoch. Refusals answer
+`{"error": "...", "message": "..."}` — `not-same-origin` (403),
+`method-not-allowed` (405, with `Allow: GET`), `rate-limited` (429, with
+`Retry-After`), `unconfigured` (503), `signing-failed` (500). Every response
+carries `Cache-Control: no-store` and `Vary: Origin, Sec-Fetch-Site`, and none
+carries `Access-Control-Allow-Origin`.
+
+Behind a proxy, derive the routed origin yourself and pass it as `self` so a
+forwarded host header can never reach the claim:
+
+```ts
+import { getRequestURL } from 'h3'
+import { mapKitTokenResponse } from '@narduk-enterprises/narduk-mapkit/server'
+
+const self = getRequestURL(event, { xForwardedHost: false }).origin
+```
+
+The `/node` entry point is the only surface that reads `process.env` or uses the
+optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
 configuration in Web-standard runtimes.
 
 ### Cloudflare Workers
@@ -139,9 +157,7 @@ import { mapKitTokenResponseFromEnv } from '@narduk-enterprises/narduk-mapkit/wo
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     if (new URL(request.url).pathname === '/api/mapkit-token') {
-      return mapKitTokenResponseFromEnv(request, env, {
-        allowedOrigins: env.MAPKIT_ALLOWED_ORIGINS,
-      })
+      return mapKitTokenResponseFromEnv(request, env)
     }
     return new Response('Not found', { status: 404 })
   },
@@ -160,8 +176,11 @@ bindings. Recognized runtime names:
 - `APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY`
 - `APPLE_TEAM_ID`
 - `APPLE_KEY_ID`
-- `MAPKIT_ALLOWED_ORIGINS`
-- `MAPKIT_TOKEN` or `APPLE_MAPKIT_TOKEN` as a fallback static JWT
+
+`MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN`, and `APPLE_MAPKIT_TOKEN` are still
+read for 2.0.x compatibility and then ignored: the route mints per routed
+origin, and a static portal token can only ever work on one host. Their presence
+is reported through the route's log hook as a deprecation.
 
 `APPLE_PRIVATE_KEY` must be PKCS#8 PEM with `BEGIN PRIVATE KEY`. Escaped
 newlines are accepted.
@@ -206,29 +225,40 @@ fresh pre-signed auth JWT as `authToken`.
 ```ts
 import { initializeMapKit } from '@narduk-enterprises/narduk-mapkit/client'
 
-await initializeMapKit({ tokenEndpoint: '/api/mapkit-token' })
-
-const map = new window.mapkit.Map('map')
-```
-
-`initializeMapKit()` is a singleton. It shares the script load, initializes
-MapKit once, reuses fresh tokens until they approach expiry, and coalesces
-concurrent token refreshes.
-
-For MapKit JS 6 async tile sources, load the core bundle and map libraries:
-
-```ts
-import {
-  MAPKIT_JS_V6_SCRIPT_URL,
-  initializeMapKit,
-  loadMapKitLibraries,
-} from '@narduk-enterprises/narduk-mapkit/client'
-
 const mapkit = await initializeMapKit({
-  scriptUrl: MAPKIT_JS_V6_SCRIPT_URL,
+  libraries: ['map', 'annotations', 'overlays'],
   tokenEndpoint: '/api/mapkit-token',
 })
-await loadMapKitLibraries(mapkit)
+
+const map = new mapkit.Map('map')
+```
+
+`libraries` is **required**: MapKit JS 6 loads `mapkit.core.js`, which is a stub
+without them. The load goes through Apple's own `@apple/mapkit-loader`, so the
+script URL and version handling belong to Apple — there is no `scriptUrl`
+option, and no separate `loadMapKitLibraries()` step.
+
+`initializeMapKit()` is a singleton: the four call sites share one load and one
+token exchange. The token is delivered **only** through
+`mapkit.init({ authorizationCallback })`, never as a `token` on the load call —
+a token there wires MapKit's static, non-refreshable path and the map stops
+working when it expires.
+
+MapKit never re-asks for a token once an exchange fails, so a failure clears the
+singleton and recovery is the caller's (`<AppMapKit>`'s `retry()`):
+
+```ts
+const mapkit = await initializeMapKit({
+  libraries: ['map'],
+  onConfigurationChange: (status) => {
+    // 'Initialized' once, then 'Refreshed' about every 1800 s.
+  },
+  onFailure: (failure) => {
+    // failure.status is Apple's own ConfigurationErrorStatus.
+    // failure.originMismatch names the expected and actual origins.
+  },
+  tokenEndpoint: '/api/mapkit-token',
+})
 ```
 
 ## Shared Region Framing
@@ -1185,7 +1215,7 @@ The repository keeps internal migration notes under `docs/`, but those notes are
 not part of the published package artifact. The short version:
 
 1. Move token routes to `server` helpers.
-2. Move local script loaders to `initializeMapKit()`.
+2. Move local script loaders to `initializeMapKit()` and pass `libraries`.
 3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client` region
    helpers.
 4. Move MapKit tile overlay construction and fade loops to `client` runtime
@@ -1201,11 +1231,14 @@ not part of the published package artifact. The short version:
 Apple private keys belong only on the server side. Never pass
 `APPLE_PRIVATE_KEY` or `APPLE_SECRET_KEY` to browser code.
 
-Origin allowlists are optional for local tools, but production token endpoints
-should set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`. Token issuance is
-GET-only in the Nuxt adapter. Apps own provider-specific rate limiting and can
-pass a `rateLimit` hook to the core handler or set the request-scoped Nuxt hook
-documented in `packages/nuxt/README.md`.
+The token route is same-host: it mints only for the origin that routed the
+request, and never trusts `Origin`, `Referer`, or an `X-Forwarded-*` header as
+the source of truth for that origin. `allowedOrigins` and
+`MAPKIT_ALLOWED_ORIGINS` are accepted for 2.0.x compatibility and ignored; the
+route logs their presence as deprecated. Token issuance is GET-only. Apps own
+provider-specific rate limiting and pass a `rateLimit` hook to the handler — the
+hook is part of the handler, not a path-matched middleware, so no URL spelling
+can route around it.
 
 Report vulnerabilities through the process in `SECURITY.md`, not public issues.
 

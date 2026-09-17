@@ -19,8 +19,7 @@ import {
 } from '../src/server/index.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
 
-import type { MapKitTokenRouteLogEntry } from '../src/server/index.js'
-import type { MapKitServerConfig } from '../src/server/index.js'
+import type { MapKitServerConfig, MapKitTokenRouteLogEntry } from '../src/server/index.js'
 
 const ROUTE = 'https://app.example.com/api/mapkit-token'
 const SELF = 'https://app.example.com'
@@ -141,10 +140,7 @@ describe('§e.1 request rules', () => {
 
   it('refuses a present Origin that disagrees even when Sec-Fetch-Site says same-origin', () => {
     expect(
-      isMapKitRequestSameOrigin(
-        sameOriginRequest(ROUTE, { origin: 'https://evil.example' }),
-        SELF,
-      ),
+      isMapKitRequestSameOrigin(sameOriginRequest(ROUTE, { origin: 'https://evil.example' }), SELF),
     ).toBe(false)
   })
 
@@ -163,7 +159,10 @@ describe('§e.1 request rules', () => {
     const config = await signingConfig()
     const responses = await Promise.all([
       mapKitTokenResponse(sameOriginRequest(), config),
-      mapKitTokenResponse(new Request(ROUTE, { headers: { 'sec-fetch-site': 'cross-site' } }), config),
+      mapKitTokenResponse(
+        new Request(ROUTE, { headers: { 'sec-fetch-site': 'cross-site' } }),
+        config,
+      ),
       mapKitTokenResponse(new Request(ROUTE, { method: 'OPTIONS' }), config),
       mapKitTokenResponse(sameOriginRequest(), {}),
     ])
@@ -327,16 +326,12 @@ describe('§e.4 rate limit, cache and logging', () => {
 
   it('hands the limiter the routed origin, not a caller-supplied one', async () => {
     const contexts: Array<{ origin: string; self: string }> = []
-    await mapKitTokenResponse(
-      sameOriginRequest(ROUTE, { origin: SELF }),
-      await signingConfig(),
-      {
-        rateLimit: (context) => {
-          contexts.push({ origin: context.origin, self: context.self })
-          return true
-        },
+    await mapKitTokenResponse(sameOriginRequest(ROUTE, { origin: SELF }), await signingConfig(), {
+      rateLimit: (context) => {
+        contexts.push({ origin: context.origin, self: context.self })
+        return true
       },
-    )
+    })
 
     expect(contexts).toStrictEqual([{ origin: SELF, self: SELF }])
   })

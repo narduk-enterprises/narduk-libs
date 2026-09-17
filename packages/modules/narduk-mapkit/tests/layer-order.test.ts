@@ -6,8 +6,11 @@
 import { crossfadeMapKitOverlayOpacity } from '../src/client/runtime.js'
 import { MapKitLayerRegistry } from '../src/client/index.js'
 
-import type { MapKitLayerDescriptor, MapKitLayerMapHandle } from '../src/client/index.js'
-import type { MapKitTileOverlaySource } from '../src/client/index.js'
+import type {
+  MapKitLayerDescriptor,
+  MapKitLayerMapHandle,
+  MapKitTileOverlaySource,
+} from '../src/client/index.js'
 
 class TileOverlay {
   opacity: number

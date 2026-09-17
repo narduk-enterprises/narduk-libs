@@ -37,7 +37,11 @@ export interface MarkerPoint extends MapKitPoint {
 }
 
 export async function mountMarkerMap(container: HTMLElement, points: readonly MarkerPoint[]) {
-  await initializeMapKit({ tokenEndpoint: '/api/mapkit-token' })
+  // `libraries` is mandatory in MapKit JS 6; annotations are not in the stub.
+  await initializeMapKit({
+    libraries: ['map', 'annotations'],
+    tokenEndpoint: '/api/mapkit-token',
+  })
   const mapkit = window.mapkit
   if (!mapkit) throw new Error('MapKit JS did not expose window.mapkit')
 

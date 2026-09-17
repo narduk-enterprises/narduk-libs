@@ -141,7 +141,11 @@ describe('token route behind a real h3 event', () => {
 describe('§e.5 preview host (narduk-libs#408, landed in #426)', () => {
   it('answers the token from the preview host itself, never a redirect', async () => {
     const response = await fetch(`${base}/api/mapkit-token`, {
-      headers: { 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-origin' },
+      headers: {
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+      },
       redirect: 'manual',
     })
     const payload = (await response.json()) as { token: string }
