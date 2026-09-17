@@ -581,6 +581,12 @@ describe('create-narduk-app generation contract', () => {
       const e2eDoc = byPath.get('docs/e2e-testing.md')
       expect(e2eDoc, label).toBeDefined()
       expect(e2eDoc, label).toContain('## Visual site QA')
+      // The quarantine convention travels with the policy: a scaffolded app
+      // that ships failOnFlakyTests without telling anyone how to quarantine a
+      // flake teaches the retry-hides-it habit the policy exists to end.
+      expect(e2eDoc, label).toContain('## Flake policy')
+      expect(e2eDoc, label).toContain('### Quarantine convention')
+      expect(e2eDoc, label).toContain('test.fixme(')
       expect(e2eDoc, label).toContain('@narduk-enterprises/narduk-testkit/playwright/ui-quality')
       expect(e2eDoc, label).not.toContain('.template-reference')
       expect(e2eDoc, label).not.toContain('run-web-e2e.mjs')
@@ -872,6 +878,17 @@ describe('create-narduk-app generation contract', () => {
     )
     expect(generatedPlaywrightConfig).toContain(
       'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000',
+    )
+    // Flake policy: one retry with a trace on it, and on the default branch a
+    // test that only passes on the retry FAILS rather than reporting green.
+    // The event branch must be fail-CLOSED -- an unset GITHUB_EVENT_NAME takes
+    // the strict path -- so assert the negated pull-request form, not a
+    // positive push check that an unset variable would fall out of.
+    expect(generatedPlaywrightConfig).toContain('retries: isCI ? 1 : 0,')
+    expect(generatedPlaywrightConfig).not.toContain('retries: process.env.CI ? 2 : 0,')
+    expect(generatedPlaywrightConfig).toContain('failOnFlakyTests: strictFlakePolicy,')
+    expect(generatedPlaywrightConfig).toContain(
+      "isCI && !(process.env.GITHUB_EVENT_NAME ?? '').startsWith('pull_request')",
     )
     // narduk-libs#62: the port must be overridable by PLAYWRIGHT_PORT and
     // flow into baseURL, the webServer url, AND the webServer command's PORT
