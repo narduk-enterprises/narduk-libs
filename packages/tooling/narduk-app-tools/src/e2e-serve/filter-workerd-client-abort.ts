@@ -1,5 +1,6 @@
-// Narrow filter for workerd's client-abort EPIPE block. The launcher hooks
-// process.stderr.write (that is the stream Playwright copies from webServer).
+// Narrow filter for workerd's client-abort block (EPIPE or ECONNRESET on write).
+// The launcher hooks process.stderr.write (that is the stream Playwright copies
+// from webServer).
 //
 // workerd does not print onto our stderr itself. Installed wrangler 4.133.0:
 // miniflare handleStructuredLogsFromStream reads the workerd child stdout/stderr,
@@ -7,10 +8,15 @@
 // console.error, and Node writes that string to process.stderr.
 //
 // Lifted from narduk-enterprises/buoys `apps/web/scripts/filter-workerd-client-abort.mjs`
-// (fix/e2e-workerd-epipe-filter, buoys#124). Do not write a second filter.
+// (5b040144, buoys#124 / PR #128). Do not write a second filter.
 
 const ANSI_ESCAPE = new RegExp(`${String.fromCodePoint(0x1b)}\\[[\\d;]*m`, 'g')
 const WEBSERVER_PREFIX = /^\[WebServer\] ?/
+
+// The same aborted write surfaces as either errno, depending on whether the
+// peer had already reset the socket: EPIPE or ECONNRESET. Buoys CI run
+// 35264335486 showed only the second form.
+const CLIENT_ABORT_ERRORS = ['Broken pipe', 'Connection reset by peer']
 
 export type WorkerdClientAbortFilterPhase =
   'idle' | 'after-start' | 'after-stack-header' | 'complete'
@@ -83,7 +89,7 @@ function classify(line: string): {
       visible.includes('kj::getCaughtExceptionAsKj()') &&
       visible.includes('disconnected:') &&
       visible.includes('::write(') &&
-      visible.includes('Broken pipe'),
+      CLIENT_ABORT_ERRORS.some((text) => visible.includes(text)),
     stackHeader: /^\s*stack:/.test(visible),
     workerdFrame: visible.includes('workerd@'),
   }

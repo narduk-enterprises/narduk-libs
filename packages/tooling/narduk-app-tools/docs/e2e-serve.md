@@ -61,14 +61,18 @@ A multi-route `page.goto` aborts in-flight Worker responses. workerd logs:
   stack: …workerd@…
 ```
 
+The last words are `Broken pipe` or `Connection reset by peer` depending on
+whether the browser had already reset the socket; both are the same aborted
+write and both are filtered.
+
 That block (including esbuild blank-line wrapping and Playwright's `[WebServer]`
-prefix) is swallowed. Every other `✘ [ERROR]`, and a `Broken pipe` that is not
-the `::write` disconnect form, still prints. A following `ECONNREFUSED` is the
-real crash
+prefix) is swallowed. Every other `✘ [ERROR]`, a `Broken pipe` that is not the
+`::write` disconnect form, and a `::read` reset still print. A following
+`ECONNREFUSED` is the real crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 
-The filter is the Buoys function from `fix/e2e-workerd-epipe-filter`
-(buoys#124). Do not write a second one.
+The filter is the Buoys function from `5b040144` (buoys#124 / PR #128). Do not
+write a second one.
 
 ## Scaffold and adoption
 

@@ -37,6 +37,22 @@ describe('filterWorkerdClientAbort', () => {
     expect(apply([complete.slice(0, splitAt), complete.slice(splitAt)])).toBe('')
   })
 
+  it('removes the Connection reset by peer form of the same aborted write', () => {
+    // CI run 35264335486: esbuild puts a blank line between the header and the stack.
+    const reset = [
+      '\u001B[31m✘ \u001B[41;31m[\u001B[41;97mERROR\u001B[41;31m]\u001B[0m kj::getCaughtExceptionAsKj() = kj/async-io-unix.c++:186: disconnected: ::write(fd, buffer.begin(), buffer.size()): Connection reset by peer',
+      '',
+      '  stack: .../workerd-linux-64/bin/workerd@586691a .../workerd-linux-64/bin/workerd@5867801',
+      '',
+      '',
+    ].join('\n')
+    expect(apply([reset])).toBe('')
+
+    const readReset =
+      '✘ [ERROR] kj/async-io-unix.c++:120: disconnected: ::read(fd): Connection reset by peer\n'
+    expect(apply([readReset])).toBe(readReset)
+  })
+
   it('removes a burst of four client-abort blocks', () => {
     expect(apply([Array.from({ length: 4 }, () => `${ISSUE_BLOCK}\n`).join('')])).toBe('')
   })

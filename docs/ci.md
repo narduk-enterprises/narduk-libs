@@ -118,5 +118,6 @@ the app to serve `.output/server/index.mjs` rather than `nuxt dev`. New
 scaffolds wire that to `narduk-app e2e-serve <port>`
 (`@narduk-enterprises/narduk-app-tools`). The command binds 127.0.0.1 only,
 refuses to build when the artifact is missing, writes `[e2e-serve]` startup
-notes to stderr, and filters only workerd's client-abort `Broken pipe` block
-(buoys#124). See `packages/tooling/narduk-app-tools/docs/e2e-serve.md`.
+notes to stderr, and filters only workerd's client-abort `Broken pipe` /
+`Connection reset by peer` `::write` block (buoys#124). See
+`packages/tooling/narduk-app-tools/docs/e2e-serve.md`.

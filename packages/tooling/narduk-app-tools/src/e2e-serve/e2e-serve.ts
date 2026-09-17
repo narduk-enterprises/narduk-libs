@@ -4,7 +4,8 @@
  * Same contract as the Buoys `serve-e2e-build` launcher: prebuilt artifact
  * only (no compile fallback), 127.0.0.1 only, `[e2e-serve]` startup notes on
  * stderr, real worker errors passed through, and only the workerd client-abort
- * `Broken pipe` block filtered (buoys#124 / narduk-libs#447).
+ * `Broken pipe` / `Connection reset by peer` block filtered
+ * (buoys#124 / narduk-libs#447).
  *
  * `wrangler` is the app's dependency. This package resolves it from the app
  * cwd (optional peer) and fails with one line when it is missing.
