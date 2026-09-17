@@ -65,22 +65,33 @@ export interface SecurityHeadersAllowlist {
 }
 
 export interface SecurityHeadersHstsOptions {
+  includeSubdomains?: boolean
   /** Seconds. Default 15552000 (180 days) -- long enough to matter, short
    * enough that a mistake ages out inside two quarters. */
   maxAge?: number
-  includeSubdomains?: boolean
   /** Submitting to the preload list is irreversible for practical purposes,
    * so it is never defaulted on. */
   preload?: boolean
 }
 
 export interface SecurityHeadersOptions {
+  /** Extra origins per directive, merged onto the estate baseline. */
+  allow?: SecurityHeadersAllowlist
   /** Serve the strict nonce policy. Off by default: an upgrade must not change
    * an app's headers without the app asking for it. */
   enabled?: boolean
   /** Promote the strict policy from report-only to enforcing, and retire the
    * legacy CSP. Only meaningful with `enabled`. */
   enforce?: boolean
+  /** Who may frame this app. Default `["'none'"]`. */
+  frameAncestors?: readonly string[]
+  hsts?: SecurityHeadersHstsOptions | false
+  /** Merged onto the baseline; a `false` value drops a baseline directive. */
+  permissionsPolicy?: Record<string, readonly string[] | string | false>
+  referrerPolicy?: string
+  /** Where violations are POSTed. `false` serves no report route and emits no
+   * `report-uri`. */
+  reportRoute?: string | false
   /**
    * Keep `'strict-dynamic'` in `script-src`. Default true, because it is what
    * makes a nonce policy actually strong: a script the page's own nonced code
@@ -96,24 +107,13 @@ export interface SecurityHeadersOptions {
    * where that decision gets made from evidence rather than from guessing.
    */
   strictDynamic?: boolean
-  /** Extra origins per directive, merged onto the estate baseline. */
-  allow?: SecurityHeadersAllowlist
-  /** Who may frame this app. Default `["'none'"]`. */
-  frameAncestors?: readonly string[]
-  hsts?: SecurityHeadersHstsOptions | false
-  /** Where violations are POSTed. `false` serves no report route and emits no
-   * `report-uri`. */
-  reportRoute?: string | false
-  referrerPolicy?: string
-  /** Merged onto the baseline; a `false` value drops a baseline directive. */
-  permissionsPolicy?: Record<string, readonly string[] | string | false>
 }
 
 export interface ResolvedSecurityHeaders {
-  mode: SecurityHeadersMode
   csp: Record<string, string[] | string | boolean>
   frameAncestors: string[]
   hsts: Required<SecurityHeadersHstsOptions> | false
+  mode: SecurityHeadersMode
   permissionsPolicy: Record<string, readonly string[] | string | false>
   referrerPolicy: string
   reportRoute: string | false
@@ -262,7 +262,7 @@ export function resolveSecurityHeadersMode(
   options: SecurityHeadersOptions | boolean | undefined,
 ): SecurityHeadersMode {
   if (options === true) return 'report-only'
-  if (!options || options === false || !options.enabled) return 'off'
+  if (!options || !options.enabled) return 'off'
   return options.enforce ? 'enforce' : 'report-only'
 }
 
@@ -336,32 +336,32 @@ export function resolveSecurityHeaders(
  * emitted, and the policy would silently stay enforcing.
  */
 export interface NuxtSecurityPresetConfig {
-  enabled: true
-  nonce: true
-  contentSecurityPolicyReportOnly: boolean
-  headers: Record<string, unknown>
+  allowedMethodsRestricter: false
   // Every non-header capability nuxt-security ships is off. narduk-core owns
   // three of them already (`csrf.ts`, `cors.ts`, `rateLimit.ts`), and the rest
   // change request or build behaviour that nothing asked this preset for --
   // `removeLoggers` strips `console.*` from the production bundle and `sri`
   // adds integrity attributes, both defaulted ON upstream.
   basicAuth: false
-  csrf: false
+  contentSecurityPolicyReportOnly: boolean
   corsHandler: false
-  rateLimiter: false
-  xssValidator: false
-  requestSizeLimiter: false
-  allowedMethodsRestricter: false
+  csrf: false
+  enabled: true
+  headers: Record<string, unknown>
   hidePoweredBy: false
+  nonce: true
+  rateLimiter: false
   removeLoggers: false
+  requestSizeLimiter: false
   sri: false
   ssg: {
-    meta: false
+    exportToPresets: false
     hashScripts: false
     hashStyles: false
+    meta: false
     nitroHeaders: false
-    exportToPresets: false
   }
+  xssValidator: false
 }
 
 export function buildNuxtSecurityConfig(

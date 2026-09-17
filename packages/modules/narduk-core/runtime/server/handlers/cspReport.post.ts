@@ -36,7 +36,7 @@ const MAX_REPORTS_PER_REQUEST = 20
 interface CspReportBody {
   'blocked-uri'?: unknown
   'column-number'?: unknown
-  'disposition'?: unknown
+  disposition?: unknown
   'document-uri'?: unknown
   'effective-directive'?: unknown
   'line-number'?: unknown
@@ -103,9 +103,7 @@ export function normalizeCspReports(payload: unknown): NormalizedCspViolation[] 
     }
   } else if (payload && typeof payload === 'object') {
     const wrapped = (payload as { 'csp-report'?: unknown })['csp-report']
-    candidates.push(
-      (wrapped && typeof wrapped === 'object' ? wrapped : payload) as CspReportBody,
-    )
+    candidates.push((wrapped && typeof wrapped === 'object' ? wrapped : payload) as CspReportBody)
   }
 
   return candidates

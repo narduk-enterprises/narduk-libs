@@ -2,15 +2,23 @@ import { describe, expect, it } from 'vitest'
 
 import { normalizeCspReports } from '../runtime/server/handlers/cspReport.post'
 
+/** The wire spelling browsers actually send, as opposed to the camelCase one
+ * the Reporting API spec drafts used. Named because it appears in almost every
+ * case below. */
+const DIRECTIVE = 'effective-directive'
+
+/** The directive most of these cases violate. */
+const SCRIPT_SRC = 'script-src'
+
 describe('report-uri envelope (application/csp-report)', () => {
   it('unwraps the csp-report object browsers actually send', () => {
     expect(
       normalizeCspReports({
         'csp-report': {
           'document-uri': 'https://app.example/stations',
-          'effective-directive': 'script-src',
+          [DIRECTIVE]: SCRIPT_SRC,
           'blocked-uri': 'https://evil.example/x.js',
-          'disposition': 'report',
+          disposition: 'report',
           'source-file': 'https://app.example/stations',
           'line-number': 42,
         },
@@ -33,12 +41,12 @@ describe('report-uri envelope (application/csp-report)', () => {
   })
 
   it('defaults disposition to report, which is what a soak produces', () => {
-    const [report] = normalizeCspReports({ 'csp-report': { 'effective-directive': 'img-src' } })
+    const [report] = normalizeCspReports({ 'csp-report': { [DIRECTIVE]: 'img-src' } })
     expect(report?.disposition).toBe('report')
   })
 
   it('accepts a bare body for a client that omits the wrapper', () => {
-    const [report] = normalizeCspReports({ 'effective-directive': 'connect-src' })
+    const [report] = normalizeCspReports({ [DIRECTIVE]: 'connect-src' })
     expect(report?.effectiveDirective).toBe('connect-src')
   })
 })
@@ -50,7 +58,7 @@ describe('Reporting API envelope (application/reports+json)', () => {
       {
         type: 'csp-violation',
         url: 'https://app.example/',
-        body: { 'effective-directive': 'script-src', 'blocked-uri': 'inline' },
+        body: { [DIRECTIVE]: SCRIPT_SRC, 'blocked-uri': 'inline' },
       },
     ])
     // The first entry uses the camelCase spelling no browser sends over the
@@ -70,8 +78,8 @@ describe('Reporting API envelope (application/reports+json)', () => {
   it('ignores deprecation and intervention reports sharing the endpoint', () => {
     expect(
       normalizeCspReports([
-        { type: 'deprecation', body: { 'effective-directive': 'script-src' } },
-        { type: 'intervention', body: { 'effective-directive': 'script-src' } },
+        { type: 'deprecation', body: { [DIRECTIVE]: SCRIPT_SRC } },
+        { type: 'intervention', body: { [DIRECTIVE]: SCRIPT_SRC } },
       ]),
     ).toEqual([])
   })
@@ -79,7 +87,9 @@ describe('Reporting API envelope (application/reports+json)', () => {
 
 describe('hostile and malformed input', () => {
   it('drops a report with no directive rather than logging an empty line', () => {
-    expect(normalizeCspReports({ 'csp-report': { 'blocked-uri': 'https://x.example' } })).toEqual([])
+    expect(normalizeCspReports({ 'csp-report': { 'blocked-uri': 'https://x.example' } })).toEqual(
+      [],
+    )
   })
 
   it('ignores a non-object payload', () => {
@@ -91,14 +101,14 @@ describe('hostile and malformed input', () => {
   it('caps a batch so one request cannot flood the log', () => {
     const batch = Array.from({ length: 200 }, () => ({
       type: 'csp-violation',
-      body: { 'effective-directive': 'script-src' },
+      body: { [DIRECTIVE]: SCRIPT_SRC },
     }))
     expect(normalizeCspReports(batch)).toHaveLength(20)
   })
 
   it('truncates an oversized field instead of writing a page into the log', () => {
     const [report] = normalizeCspReports({
-      'csp-report': { 'effective-directive': 'script-src', 'source-file': 'x'.repeat(5000) },
+      'csp-report': { [DIRECTIVE]: SCRIPT_SRC, 'source-file': 'x'.repeat(5000) },
     })
     expect(report?.sourceFile).toHaveLength(513)
     expect(report?.sourceFile.endsWith('…')).toBe(true)
@@ -106,7 +116,7 @@ describe('hostile and malformed input', () => {
 
   it('refuses a non-integer or negative line number', () => {
     const [report] = normalizeCspReports({
-      'csp-report': { 'effective-directive': 'script-src', 'line-number': -1 },
+      'csp-report': { [DIRECTIVE]: SCRIPT_SRC, 'line-number': -1 },
     })
     expect(report?.lineNumber).toBeUndefined()
   })

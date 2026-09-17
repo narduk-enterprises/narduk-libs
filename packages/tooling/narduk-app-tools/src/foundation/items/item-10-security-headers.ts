@@ -1,13 +1,13 @@
 /**
- * Item 9 -- security-headers (narduk-core `security.headers`, company-hq#745).
+ * Item 10 -- security-headers (narduk-core `security.headers`, company-hq#745).
  *
  * Not one of the seven ratified D-WEBFOUND-2 Q9 (a) items, for the same reason
- * item 8 is not: `foundation-check.json` is the exact contract company-hq's
+ * items 8 and 9 are not: `foundation-check.json` is the exact contract company-hq's
  * `check-web-foundation.py` validates, `FOUNDATION_ITEM_COUNT` is 7, and an
  * `id` outside `1..7` is a rollup-red F3 ARTEFACT finding. It is invoked by
  * `foundation:check:security-headers` and writes its own one-item artefact.
  *
- * WHAT MAKES THIS ITEM DIFFERENT FROM 1-8
+ * WHAT MAKES THIS ITEM DIFFERENT FROM 1-9
  * ---------------------------------------
  * Every other item decides from the app's own files. This one cannot: a
  * response header is produced by a running server, and a repository can
@@ -27,12 +27,7 @@
  */
 
 import { check } from '../schema.js'
-import {
-  STATUS_FAIL,
-  STATUS_PASS,
-  STATUS_UNKNOWN,
-  type FoundationSubCheck,
-} from '../types.js'
+import { STATUS_FAIL, STATUS_PASS, STATUS_UNKNOWN, type FoundationSubCheck } from '../types.js'
 
 /** What the probe managed to read back from one route. */
 export interface ProbedRoute {
@@ -104,7 +99,7 @@ function unreadable(route: ProbedRoute): FoundationSubCheck[] {
   const reason = route.error ?? `HTTP ${route.status ?? 'unknown'}`
   return [
     check(
-      '9.0',
+      '10.0',
       'base URL responds',
       STATUS_UNKNOWN,
       `${route.url} could not be read (${reason}) -- no header verdict is possible`,
@@ -114,7 +109,7 @@ function unreadable(route: ProbedRoute): FoundationSubCheck[] {
 }
 
 /**
- * Evaluate ONE probed route. `evaluateItem9` folds several of these together;
+ * Evaluate ONE probed route. `evaluateItem10` folds several of these together;
  * keeping the per-route logic separate is what lets the tests state a header
  * set literally instead of standing up a server.
  */
@@ -190,7 +185,7 @@ export function evaluateProbedRoute(route: ProbedRoute, prefix: string): Foundat
             weaknesses.length === 0
               ? `${csp.mode} script-src is nonce-based with no unsafe-* source`
               : `${csp.mode} script-src is nonce-based; ${weaknesses.join(' and ')} is ` +
-                'present but ignored by a browser honouring strict-dynamic',
+                  'present but ignored by a browser honouring strict-dynamic',
             sources.join(' '),
           )
         : check(
@@ -199,9 +194,9 @@ export function evaluateProbedRoute(route: ProbedRoute, prefix: string): Foundat
             STATUS_FAIL,
             hasNonce(sources)
               ? `${csp.mode} script-src carries ${weaknesses.join(' and ')} beside its nonce, ` +
-                'which defeats it'
+                  'which defeats it'
               : `${csp.mode} script-src has no nonce source` +
-                (weaknesses.length > 0 ? ` and allows ${weaknesses.join(' and ')}` : ''),
+                  (weaknesses.length > 0 ? ` and allows ${weaknesses.join(' and ')}` : ''),
             sources.join(' ') || '(no script-src or default-src)',
           ),
     )
@@ -255,9 +250,7 @@ export function evaluateProbedRoute(route: ProbedRoute, prefix: string): Foundat
   ] as const) {
     const value = headers[header]
     checks.push(
-      value
-        ? check(id, name, STATUS_PASS, value, value)
-        : check(id, name, STATUS_FAIL, 'absent'),
+      value ? check(id, name, STATUS_PASS, value, value) : check(id, name, STATUS_FAIL, 'absent'),
     )
   }
 
@@ -277,21 +270,21 @@ export function evaluateProbedRoute(route: ProbedRoute, prefix: string): Foundat
 }
 
 /**
- * Fold every probed route into one sub-check list. Sub-check ids are `9.N.M`
+ * Fold every probed route into one sub-check list. Sub-check ids are `10.N.M`
  * beyond the first route so a multi-route probe stays readable; the single
- * route case keeps the plain `9.M` ids items 1-8 use.
+ * route case keeps the plain `10.M` ids items 1-9 use.
  */
-export function evaluateItem9(routes: readonly ProbedRoute[]): FoundationSubCheck[] {
+export function evaluateItem10(routes: readonly ProbedRoute[]): FoundationSubCheck[] {
   if (routes.length === 0) {
     return [
       check(
-        '9.0',
+        '10.0',
         'base URL responds',
         STATUS_UNKNOWN,
         'no base URL was given -- pass --base-url https://app.example to probe a deployment',
       ),
     ]
   }
-  if (routes.length === 1) return evaluateProbedRoute(routes[0]!, '9')
-  return routes.flatMap((route, index) => evaluateProbedRoute(route, `9.${index + 1}`))
+  if (routes.length === 1) return evaluateProbedRoute(routes[0]!, '10')
+  return routes.flatMap((route, index) => evaluateProbedRoute(route, `10.${index + 1}`))
 }

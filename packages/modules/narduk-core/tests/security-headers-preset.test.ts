@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   BASELINE_ALLOWLIST,
+  buildNuxtSecurityConfig,
   DEFAULT_HSTS_MAX_AGE,
   DEFAULT_REPORT_ROUTE,
-  buildNuxtSecurityConfig,
   mergeLegacyAllowlist,
   parseLegacyCspSources,
   resolveSecurityHeaders,
@@ -108,7 +108,10 @@ describe('allowlist surface', () => {
   })
 
   it("keeps each directive anchored to 'self' and the shared-module baseline", () => {
-    const resolved = resolveSecurityHeaders({ enabled: true, allow: { img: ['https://a.example'] } })
+    const resolved = resolveSecurityHeaders({
+      enabled: true,
+      allow: { img: ['https://a.example'] },
+    })
     expect(resolved.csp['img-src']).toEqual([
       "'self'",
       ...BASELINE_ALLOWLIST.img,
@@ -123,7 +126,9 @@ describe('allowlist surface', () => {
   it('de-duplicates and trims, so a repeated origin appears once', () => {
     const resolved = resolveSecurityHeaders({
       enabled: true,
-      allow: { connect: ['  https://us.i.posthog.com  ', 'https://x.example', 'https://x.example'] },
+      allow: {
+        connect: ['  https://us.i.posthog.com  ', 'https://x.example', 'https://x.example'],
+      },
     })
     const connect = resolved.csp['connect-src'] as string[]
     expect(connect.filter((source) => source === 'https://us.i.posthog.com')).toHaveLength(1)
@@ -198,9 +203,7 @@ describe('nuxt-security configuration', () => {
   })
 
   it('flips to the enforcing header only at enforce', () => {
-    const config = buildNuxtSecurityConfig(
-      resolveSecurityHeaders({ enabled: true, enforce: true }),
-    )
+    const config = buildNuxtSecurityConfig(resolveSecurityHeaders({ enabled: true, enforce: true }))
     expect(config.contentSecurityPolicyReportOnly).toBe(false)
   })
 

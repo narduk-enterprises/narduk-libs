@@ -142,6 +142,52 @@ product names do not require `narduk-ui` or `status-runtime`. Existing
 status-runtime consumers remain supported. All actual capability checks and
 exact-pin requirements continue to apply.
 
+### Security headers (`foundation:check:security-headers`)
+
+`narduk-app foundation:check:security-headers --base-url <url> [--path <p>]... [--json [path]]`
+-- narduk-core's `security.headers` preset
+([company-hq#745](https://github.com/narduk-enterprises/company-hq/issues/745)).
+The evaluator is `src/foundation/items/item-10-security-headers.ts` and matches
+items 1-7 (`check()` sub-checks, no warn tier). Like items 8 and 9 it is a separate
+command and JSON artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/security-headers'`) because
+`foundation:check --json` is the exact 7-item contract company-hq
+`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3
+ARTEFACT finding. Same exit codes (`0` PASS, `1` FAIL, `2` UNKNOWN).
+
+**This item is the one that cannot read the repository.** Every other item
+decides from the app's own files. A response header is produced by a running
+server, and a checkout can describe a policy it does not serve -- a Cloudflare
+Transform Rule can add or strip a header the Worker never wrote. So this is a
+live probe and nothing else: **no `--base-url` means `unknown`, never `pass`.**
+"We did not look" is not evidence of absence, and it is not evidence of presence
+either.
+
+Repeat `--path` to probe several routes; each gets its own `10.N.M` sub-checks,
+and a single route keeps the plain `10.M` ids. Probes are sequential against one
+origin, because a burst looks like an attack to a WAF.
+
+What it decides, per route:
+
+| Sub-check                                            | Proven when                                                                                                                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.0` base URL responds                               | the route answered at all; otherwise the route is `unknown`                                                                                                                                                        |
+| `.1` CSP is enforcing                                | a `Content-Security-Policy` header is served. Report-only alone is a **gap**: nothing is enforced. Both headers together is a pass and is reported as "a soak is in progress"                                      |
+| `.2` enforced `script-src` uses a nonce              | the policy actually in force has a `'nonce-…'` source and no effective `'unsafe-inline'` / `'unsafe-eval'`. `'strict-dynamic'` neutralises those two, and the detail says so rather than failing on an inert token |
+| `.3` `Strict-Transport-Security`                     | present with `max-age` of at least six months                                                                                                                                                                      |
+| `.4` framing is restricted                           | a `frame-ancestors` directive **or** an `X-Frame-Options` header                                                                                                                                                   |
+| `.5` / `.6` `Referrer-Policy` / `Permissions-Policy` | present                                                                                                                                                                                                            |
+| `.7` `X-Content-Type-Options`                        | exactly `nosniff`                                                                                                                                                                                                  |
+
+Sub-check `.2` deliberately assesses the **enforcing** policy even when a
+stricter report-only one is served beside it. Reading the report-only header
+would claim a strictness the browser is not applying, which is precisely the
+false green a soak makes easy.
+
+**No credential is needed.** This reads public response headers, so it can be
+wired into a generated CI job after the install step has dropped the GitHub
+Packages token.
+
 ### Shared UI pinned (`foundation:check:shared-ui-pinned`)
 
 `narduk-app foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]`

@@ -86,9 +86,11 @@ function buildPermissionsPolicy(allowGeolocation: boolean): string {
   ].join(', ')
 }
 
-function resolvePresetMode(config: { nardukSecurityHeaders?: unknown }): SecurityHeadersMode {
-  const preset = config.nardukSecurityHeaders as { mode?: unknown } | undefined
+function resolvePresetMode(config: object): SecurityHeadersMode {
+  const preset = (config as { nardukSecurityHeaders?: { mode?: unknown } }).nardukSecurityHeaders
   const mode = preset?.mode
+  // An unrecognised value reads as 'off' on purpose: the failure mode of
+  // guessing wrong here is an app silently losing headers it serves today.
   return mode === 'report-only' || mode === 'enforce' ? mode : 'off'
 }
 

@@ -52,5 +52,11 @@
     "runtime/shared/**/*.ts",
     "src/**/*.ts",
     "tests/**/*.ts"
+  ],
+  "exclude": [
+    // A standalone Nuxt app driven by `scripts/prove-nonce.mjs`, not layer
+    // source. Its `defineNuxtConfig` comes from its own Nuxt context, which
+    // this project never generates.
+    "tests/fixtures/**"
   ]
 }
