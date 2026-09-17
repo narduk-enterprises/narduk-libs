@@ -4,6 +4,7 @@
 import { uploadToR2 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/r2'
 import {
   capIncomingMessageBytes,
+  enforceUploadBodyByteCap,
   getUploadPerformanceWarnings,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
@@ -46,6 +47,7 @@ export default defineUserMutation(
     parseBody: async (event) => {
       rejectOversizedUploadRequest(event)
       capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
+      await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
       let formData
       try {
         formData = await readMultipartFormData(event)
