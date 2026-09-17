@@ -68,6 +68,14 @@ const COMPOUND_SEGMENTS = new Set([
 ])
 /** Keep infix on the punctuation-stripped key only for these compounds. */
 const SENSITIVE_INFIX = ['apikey', 'accesskey', 'privatekey', 'authorization'] as const
+/**
+ * Suffix match on the punctuation-stripped key. Segment splitting cannot see a
+ * boundary in an all-lowercase concatenation such as `refreshtoken` or
+ * `dbpassword`, so without this the narrowing would stop redacting names the
+ * suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not
+ * end in these words, and `tokencount` / `passwordless` are carved out above.
+ */
+const SENSITIVE_SUFFIXES = ['token', 'password', 'secret'] as const
 /** Metric / method flags that contain `token`, `password`, or `auth` but are not secrets. */
 const SAFE_NORMALIZED_KEYS = new Set([
   'tokencount',
@@ -116,6 +124,7 @@ export function isSensitiveKey(key: string, extra: readonly string[] = []): bool
     if (COMPOUND_SEGMENTS.has(`${segments[index]}${segments[index + 1]}`)) return true
   }
   if (segments.includes('auth')) return true
+  if (SENSITIVE_SUFFIXES.some((part) => normalized.endsWith(part))) return true
   return SENSITIVE_INFIX.some((part) => normalized.includes(part))
 }
 

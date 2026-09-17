@@ -64,6 +64,12 @@ _SENSITIVE_SEGMENTS = {
 _COMPOUND_SEGMENTS = {"apikey", "accesskey", "privatekey", "clientsecret", "setcookie"}
 # Keep infix on the punctuation-stripped key only for these compounds.
 _SENSITIVE_INFIX = ("apikey", "accesskey", "privatekey", "authorization")
+# Suffix match on the punctuation-stripped key. Segment splitting cannot see a
+# boundary in an all-lowercase concatenation such as `refreshtoken` or
+# `dbpassword`, so without this the narrowing would stop redacting names the
+# suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not end
+# in these words, and `tokencount` / `passwordless` are carved out below.
+_SENSITIVE_SUFFIXES = ("token", "password", "secret")
 # Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
 _SAFE_NORMALIZED_KEYS = {"tokencount", "passwordless", "authmethod", "authbackend", "authprovider"}
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -110,6 +116,8 @@ def sensitive_key(key: str, redact: tuple[str, ...] = ()) -> bool:
     ):
         return True
     if "auth" in segments:
+        return True
+    if normalized.endswith(_SENSITIVE_SUFFIXES):
         return True
     return any(part in normalized for part in _SENSITIVE_INFIX)
 

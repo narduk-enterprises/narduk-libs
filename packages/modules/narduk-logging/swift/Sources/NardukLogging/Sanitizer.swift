@@ -20,6 +20,13 @@ public enum LogSanitizer {
     ]
     /// Keep infix on the punctuation-stripped key only for these compounds.
     static let sensitiveInfix = ["apikey", "accesskey", "privatekey", "authorization"]
+    /// Suffix match on the punctuation-stripped key. Segment splitting cannot
+    /// see a boundary in an all-lowercase concatenation such as `refreshtoken`
+    /// or `dbpassword`, so without this the narrowing would stop redacting
+    /// names the suffix matcher already covered. `tokenizer` / `secretary` /
+    /// `jwtid` do not end in these words, and `tokencount` / `passwordless`
+    /// are carved out by `safeNormalizedKeys`.
+    static let sensitiveSuffixes = ["token", "password", "secret"]
     /// Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
     static let safeNormalizedKeys: Set<String> = [
         "tokencount", "passwordless", "authmethod", "authbackend", "authprovider",
@@ -79,6 +86,7 @@ public enum LogSanitizer {
             }
         }
         if segments.contains("auth") { return true }
+        if sensitiveSuffixes.contains(where: normalizedKey.hasSuffix) { return true }
         return sensitiveInfix.contains(where: normalizedKey.contains)
     }
 
