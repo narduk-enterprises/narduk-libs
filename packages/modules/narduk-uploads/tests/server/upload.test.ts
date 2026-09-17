@@ -6,6 +6,7 @@ import {
   ALLOWED_TYPES,
   capIncomingMessageBytes,
   CRITICAL_RASTER_WARNING_SIZE,
+  enforceUploadBodyByteCap,
   getUploadPerformanceWarnings,
   isAllowedUploadContentType,
   MAX_FILE_SIZE,
@@ -252,5 +253,194 @@ describe('normalizeExtension', () => {
 
   it('falls back to bin for unknown types', () => {
     expect(normalizeExtension('application')).toBe('bin')
+  })
+})
+
+type CapEvent = {
+  _requestBody?: unknown
+  web?: { request?: { body?: unknown } }
+  node?: { req?: unknown }
+}
+
+type StreamProbe = {
+  /** Bytes the source actually handed out — what the Worker read off the wire. */
+  produced: number
+  pulls: number
+  cancelled: unknown
+}
+
+/**
+ * A web `ReadableStream` with `highWaterMark: 0`, so the source is pulled only
+ * when the reader asks for the next chunk. `produced` is then exactly the byte
+ * count the runtime read, which is the number the cap has to bound. The same
+ * chunk instance is re-enqueued so a 100MB-cap test costs one chunk of memory.
+ */
+function makeProbedStream(
+  chunk: Uint8Array,
+  maxChunks: number,
+): { stream: ReadableStream<Uint8Array>; probe: StreamProbe } {
+  const probe: StreamProbe = { produced: 0, pulls: 0, cancelled: undefined }
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (probe.pulls >= maxChunks) {
+          controller.close()
+          return
+        }
+        probe.pulls += 1
+        probe.produced += chunk.byteLength
+        controller.enqueue(chunk)
+      },
+      cancel(reason) {
+        probe.cancelled = reason ?? true
+      },
+    },
+    { highWaterMark: 0 },
+  )
+  return { stream, probe }
+}
+
+async function loadParseBody(): Promise<(event: unknown) => Promise<unknown>> {
+  const route = await import('../../runtime/server/api/upload.post')
+  const handler = route.default as {
+    options: { parseBody: (event: unknown) => Promise<unknown> }
+  }
+  return handler.options.parseBody
+}
+
+describe('enforceUploadBodyByteCap', () => {
+  it('aborts a web stream the moment the cap is passed and cancels the source', async () => {
+    const chunk = new Uint8Array(4)
+    const { stream, probe } = makeProbedStream(chunk, 1000)
+    const event: CapEvent = { web: { request: { body: stream } } }
+
+    await expect(enforceUploadBodyByteCap(event, 8)).rejects.toMatchObject({ statusCode: 413 })
+    expect(probe.produced).toBeLessThanOrEqual(8 + chunk.byteLength)
+    expect(probe.cancelled).toBeDefined()
+    expect(event._requestBody).toBeUndefined()
+  })
+
+  it('accepts a web stream whose total is exactly the cap', async () => {
+    const { stream, probe } = makeProbedStream(new Uint8Array(4), 2)
+    const event: CapEvent = { web: { request: { body: stream } } }
+
+    const body = (await enforceUploadBodyByteCap(event, 8)) as Uint8Array
+    expect(body.byteLength).toBe(8)
+    expect(probe.produced).toBe(8)
+    expect(probe.cancelled).toBeUndefined()
+    expect(event._requestBody).toBe(body)
+  })
+
+  it('rejects an already-materialised body above the cap before the parse', async () => {
+    const event: CapEvent = { node: { req: { body: new Uint8Array(9) } } }
+
+    await expect(enforceUploadBodyByteCap(event, 8)).rejects.toMatchObject({ statusCode: 413 })
+  })
+
+  it('passes a materialised body within the cap straight through', async () => {
+    const body = new Uint8Array(8)
+    const event: CapEvent = { node: { req: { body } } }
+
+    await expect(enforceUploadBodyByteCap(event, 8)).resolves.toBe(body)
+  })
+
+  it('leaves a live node request stream to capIncomingMessageBytes', async () => {
+    const req = new EventEmitter()
+    const event: CapEvent = { node: { req } }
+
+    await expect(enforceUploadBodyByteCap(event, 8)).resolves.toBeUndefined()
+    expect(event._requestBody).toBeUndefined()
+  })
+})
+
+describe('upload endpoint streamed body cap', () => {
+  it('rejects a streamed body past the cap even when Content-Length is small', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue('1024')
+
+    const chunk = new Uint8Array(26 * 1024 * 1024)
+    const { stream, probe } = makeProbedStream(chunk, 1000)
+    const event: CapEvent = { web: { request: { body: stream } } }
+
+    const parseBody = await loadParseBody()
+    await expect(parseBody(event)).rejects.toMatchObject({
+      message: `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`,
+      statusCode: 413,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+    expect(probe.produced).toBeLessThanOrEqual(MAX_UPLOAD_REQUEST_SIZE + chunk.byteLength)
+    expect(probe.cancelled).toBeDefined()
+  })
+
+  it('accepts a streamed body exactly at the cap and parses the bounded bytes', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    readMultipartFormData.mockResolvedValue([{ data: new Uint8Array(1), filename: 'a.png' }])
+    getHeader.mockReturnValue(String(MAX_UPLOAD_REQUEST_SIZE))
+
+    const { stream, probe } = makeProbedStream(new Uint8Array(MAX_UPLOAD_REQUEST_SIZE), 1)
+    const event: CapEvent = { web: { request: { body: stream } } }
+
+    const parseBody = await loadParseBody()
+    await expect(parseBody(event)).resolves.toEqual([
+      { data: expect.any(Uint8Array), filename: 'a.png' },
+    ])
+    expect(readMultipartFormData).toHaveBeenCalledTimes(1)
+    expect(probe.produced).toBe(MAX_UPLOAD_REQUEST_SIZE)
+    expect((event._requestBody as Uint8Array).byteLength).toBe(MAX_UPLOAD_REQUEST_SIZE)
+  })
+
+  it('rejects the Workers pre-buffered body above the cap before the parse', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue('1024')
+
+    const event: CapEvent = {
+      node: { req: { body: new Uint8Array(MAX_UPLOAD_REQUEST_SIZE + 1) } },
+    }
+
+    const parseBody = await loadParseBody()
+    await expect(parseBody(event)).rejects.toMatchObject({
+      message: `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`,
+      statusCode: 413,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+
+  it('rejects a streamed body with no Content-Length before reading a byte', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue(undefined)
+
+    const { stream, probe } = makeProbedStream(new Uint8Array(4), 1000)
+    const event: CapEvent = { web: { request: { body: stream } } }
+
+    const parseBody = await loadParseBody()
+    await expect(parseBody(event)).rejects.toMatchObject({
+      message: 'Content-Length is required',
+      statusCode: 411,
+    })
+    expect(probe.produced).toBe(0)
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+
+  it('still hard-stops the live node request stream past the cap', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    readMultipartFormData.mockResolvedValue([{ data: new Uint8Array(1), filename: 'a.png' }])
+    getHeader.mockReturnValue('1024')
+
+    const req = new EventEmitter() as EventEmitter & { destroy: ReturnType<typeof vi.fn> }
+    req.destroy = vi.fn()
+
+    const parseBody = await loadParseBody()
+    await expect(parseBody({ node: { req } })).resolves.toEqual([
+      { data: expect.any(Uint8Array), filename: 'a.png' },
+    ])
+
+    req.emit('data', { byteLength: MAX_UPLOAD_REQUEST_SIZE + 1 })
+    expect(req.destroy).toHaveBeenCalledTimes(1)
+    expect(req.destroy.mock.calls[0]?.[0]).toMatchObject({ statusCode: 413 })
   })
 })
