@@ -56,11 +56,14 @@ export function readPreviewSafeModeFlag(
 export function readErrorStatusCode(error: SanitizableServerError): number {
   const raw = error.statusCode
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  // A string status only counts when it names a real HTTP status. `Number()`
+  // alone would read `"-1"` or `"0"` as sub-500 and skip the sanitizer on an
+  // error that carries no usable status at all.
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
-    if (trimmed !== '') {
+    if (/^\d{3}$/u.test(trimmed)) {
       const parsed = Number(trimmed)
-      if (Number.isFinite(parsed)) return parsed
+      if (parsed >= 100 && parsed <= 599) return parsed
     }
   }
   return 500

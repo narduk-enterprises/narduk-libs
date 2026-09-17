@@ -10,6 +10,7 @@ import {
   GENERIC_SERVER_ERROR_MESSAGE,
   prependNitroErrorHandler,
   readErrorRequestId,
+  readErrorStatusCode,
   readPreviewSafeModeFlag,
   sanitizeProductionError,
   shouldSanitizeProductionError,
@@ -71,6 +72,17 @@ describe('production error sanitizer policy', () => {
   it('coerces a string 4xx statusCode instead of treating it as 500', () => {
     expect(shouldSanitizeProductionError({ statusCode: '404' }, false, false)).toBe(false)
     expect(shouldSanitizeProductionError({ statusCode: '503' }, false, false)).toBe(true)
+  })
+
+  it('fails closed on a string statusCode outside the HTTP range', () => {
+    // `"-1"` and `"0"` are finite, so a bare Number() coercion would read them
+    // as sub-500 and skip the sanitizer on an error that carries no real
+    // status. Anything that is not an integer 100-599 falls back to 500.
+    for (const statusCode of ['-1', '0', '99', '600', '404.5', '1e3', '404abc', ' ']) {
+      expect(shouldSanitizeProductionError({ statusCode }, false, false)).toBe(true)
+    }
+    expect(readErrorStatusCode({ statusCode: '-1' })).toBe(500)
+    expect(readErrorStatusCode({ statusCode: ' 404 ' })).toBe(404)
   })
 
   it('strips message, statusMessage, data, cause and stack in place', () => {
