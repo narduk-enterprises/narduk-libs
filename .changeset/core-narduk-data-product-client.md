@@ -28,7 +28,6 @@ const client = createNardukDataClient({ userAgent: 'BuoyStat.us/1.17' })
 const { data, freshness, manifest } = await client.read(
   {
     artifactPath: 'public-buoy-data.json',
-    freshness: { agingAfterMs: 45 * 60_000, staleAfterMs: 6 * 60 * 60_000 },
     maxStaleMs: 10 * 60_000,
     productId: 'buoy-status-v1',
     schema: productSchema,
@@ -37,36 +36,59 @@ const { data, freshness, manifest } = await client.read(
 )
 ```
 
-`read` fetches the manifest, fetches the artifact the manifest names, refuses it
-unless its SHA-256 matches, and validates both against caller-supplied schemas.
+`read` fetches the manifest, fetches the artifact **the manifest names** under
+`releases/<releaseId>/`, refuses it unless its SHA-256 matches, and validates
+both against caller-supplied schemas; `artifactPath` is an optional assertion
+that refuses a manifest naming anything else. Optional `acceptManifest` and
+`validate` hooks let a consumer refuse a release before the artifact is
+downloaded and before the pair is cached, so a bad release is never memoised.
 Each attempt carries its own `AbortSignal.timeout`; the bounded retry applies
 only to an idempotent `GET`/`HEAD` and only on a network failure, a timeout or
 an HTTP 5xx, so a 4xx, a schema failure and a checksum mismatch are never
 repeated and a non-GET is attempted exactly once. Concurrent readers of the same
-product join the read already in flight. `maxStaleMs` opts into serving the last
-good value after an upstream failure; it defaults to 0, so the client fails
-closed exactly as today's hand-rolled reads do.
+product join the read already in flight, keyed on every ceiling, validator and
+hook that decides whether a value is valid — so a stricter caller is never
+answered from a permissive one's entry — and a caller's own `signal` cancels
+only its own wait, never the shared read. `maxStaleMs` opts into serving the
+last good value after an upstream failure; it defaults to 0, so the client fails
+closed exactly as today's hand-rolled reads do, and a `failureCooldownMs`
+(default 10 s) keeps an outage from making every request re-pay the retry
+budget.
 
 **Freshness that stays honest.** Every result carries `fetchedAt`, `ageMs`,
-`stale`, `source` (`upstream` | `memo` | `stale-if-error`), `releaseId`,
-`publishedAt`, `publishedAgeMs`, the producer's own `publishedState` republished
-verbatim, and a `state` of `fresh` | `aging` | `stale` | `unknown` derived from
-the product's own thresholds. A manifest that states no publish time, and a
-product that declares no thresholds, both yield `unknown` — never `fresh`. A
-value served from the stale path says so rather than arriving as if it were
-current, and an artifact that is validly empty stays distinguishable from a
-missing or stale one.
+`source` (`upstream` | `memo` | `stale-if-error`), `releaseId`, `observedAt` and
+`observedAgeMs` (the newest observation in the release), `evaluatedAt` (when the
+producer cut it — a different instant, kept apart), the producer's own
+`publishedState` republished verbatim, and a `state` of `fresh` | `aging` |
+`stale` | `unknown`. Thresholds come from the product, or from the manifest's
+own `fresh_if_less_than_minutes` / `warning_if_at_most_minutes` when it declares
+none, so an app need not hardcode a duplicate that can drift; with neither, the
+state is `unknown` — never `fresh`. `source` and `state` are the only two
+staleness signals and they answer different questions. A value served from the
+stale path says so rather than arriving as if it were current, and an artifact
+that is validly empty stays distinguishable from a missing or stale one.
 
 **Errors, not silence.** Every failure is a `NardukDataError` carrying `reason`
-(`aborted` | `checksum` | `http` | `network` | `schema` | `timeout` |
-`too-large`), `status` and `url`, so a caller can tell an outage from a contract
-break from its own cancellation.
+(`aborted` | `checksum` | `http` | `network` | `rejected` | `schema` | `timeout`
+| `too-large`), `status` and `url`, so a caller can tell an outage from a
+contract break from a consumer refusal from its own cancellation. A caller that
+cancelled is always told it cancelled, never handed stale data in place of the
+answer it withdrew.
 
 **Worker-safe by construction.** No Node-only API, no module-level cache — the
-caller owns the client instance and its cache is bounded by `maxEntries`
-(default 8, least recently used evicted) — a hard body ceiling enforced against
-bytes actually accumulated rather than a `content-length` the upstream declares,
-and no timer of its own: cancellation rides on `AbortSignal`.
+caller owns the client instance and its cache is bounded by both `maxEntries`
+(default 8) and `maxCacheBytes` (default 32 MiB) of retained artifact bytes,
+least recently used evicted, with `clear()` to drop it — hard body ceilings
+enforced against bytes actually accumulated rather than a `content-length` the
+upstream declares (`manifestMaxBytes`, default 256 KiB, is separate from the
+artifact's `maxBytes`), and no timer of its own: cancellation rides on
+`AbortSignal`.
+
+**Credential hygiene.** `accept`, `user-agent` and `x-request-id` are managed
+and cannot be overridden by a caller; `authorization`, `cookie` and
+`proxy-authorization` are dropped rather than forwarded to the data origin;
+every URL is pinned to the configured origin and a redirect is an error rather
+than a hop off it.
 
 **Request-id ready.** `context.requestId` is sent as `x-request-id` and
 `context.headers` is merged in, so the request-id middleware plugs in without

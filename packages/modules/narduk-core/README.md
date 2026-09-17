@@ -950,41 +950,72 @@ the Nitro auto-import inside an app that has the layer installed.
 
 ### What it does
 
+- **The manifest names the artifact** — the artifact URL is always built from
+  `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed artifact
+  keeps working. `product.artifactPath` is an optional assertion: set it and a
+  manifest naming anything else is refused. A path that is not a single safe
+  segment is refused before any request.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
-  (`timeoutMs`, default 15000), combined with a caller `signal` when one is
-  supplied.
+  (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
+  read only; it is never given to the shared upstream read, so one client
+  disconnecting cannot fail the readers coalesced onto it.
 - **Bounded retry** — only for an idempotent `GET`/`HEAD`, and only on a
   transport failure: network, timeout, or HTTP 5xx. A 4xx, a schema failure and
   a checksum mismatch are never repeated, and a non-GET is attempted exactly
   once whatever it returns. `retries` (default 1) is the number of extra
   attempts; there is no backoff sleep, so no timer is left behind.
 - **Single-flight** — concurrent readers of the same product join the read
-  already in flight instead of each issuing their own.
-- **Stale-if-error** — opt in with `maxStaleMs` (default 0, fail closed). Inside
-  the window an upstream failure is answered from the last good value, marked
-  `stale: true` and `source: 'stale-if-error'`; outside it the failure is
-  raised.
-- **Freshness** — every result carries `fetchedAt`, `ageMs`, `stale`, `source`,
-  `releaseId`, `publishedAt`, `publishedAgeMs`, the producer's own
-  `publishedState` verbatim, and a `state` derived from the product's
-  thresholds. A manifest that states no publish time, or a product that declares
-  no thresholds, yields `state: 'unknown'` — never `'fresh'`.
-- **Bounded cache** — one client holds at most `maxEntries` products (default
-  8), least recently used evicted, so a module-scoped client cannot grow without
-  limit in a Worker isolate.
-- **Request-id propagation** — `context.requestId` is sent as `x-request-id` and
-  `context.headers` is merged in, so a request-id middleware plugs in without
-  this module generating ids. Single-flight means the joined callers are
-  answered by a request carrying the first caller's id.
+  already in flight instead of each issuing their own. The cache key includes
+  every ceiling, validator and hook that decides whether a value is valid, so a
+  stricter caller is never answered from a permissive caller's entry.
+- **Stale-if-error, with a cooldown** — opt in with `maxStaleMs` (default 0,
+  fail closed). Inside the window an upstream failure is answered from the last
+  good value with `source: 'stale-if-error'`; outside it the failure is raised.
+  A cancelled caller always gets its cancellation, never stale data instead.
+  After a failure answered from the window, `failureCooldownMs` (default 10000)
+  serves stale without re-attempting upstream, so a burst does not each pay the
+  budget again. **Worst-case added latency** on the outage path is one
+  `(retries + 1) x timeoutMs` per upstream leg — 30 s at the defaults for the
+  manifest, 60 s if the artifact is the failing leg — paid by the first request
+  of each cooldown period, not by every request.
+- **Freshness** — every result carries `fetchedAt`, `ageMs`, `source`,
+  `releaseId`, `observedAt`/`observedAgeMs` (the newest observation in the
+  release, `staleness.newest_as_of`), `evaluatedAt` (when the producer cut the
+  release), the producer's own `publishedState` verbatim, and a `state` derived
+  from the thresholds in force. Thresholds come from `product.freshness`, or —
+  when it declares none — from the manifest's own `fresh_if_less_than_minutes` /
+  `warning_if_at_most_minutes`, so an app need not hardcode a duplicate that can
+  drift. With neither, `state` is `'unknown'` — never `'fresh'`. `source` and
+  `state` are the only two staleness signals, and they answer different
+  questions: how it was served, and how old it is.
+- **Bounded cache** — one client holds at most `maxEntries` products (default 8)
+  and at most `maxCacheBytes` of retained artifact bytes (default 32 MiB), least
+  recently used evicted first, so a module-scoped client cannot grow without
+  limit in a Worker isolate. `clear()` drops the whole cache and
+  `clear(productId)` drops one product's entries.
+- **Consumer gates** — `acceptManifest(manifest)` runs before the artifact is
+  downloaded and `validate(data, manifest)` before the pair is cached. Either
+  throwing refuses the release with `reason: 'rejected'`, and the refusal is
+  never cached, so a bad release is re-checked rather than memoised.
+- **Request-id propagation and header hygiene** — `context.requestId` is sent as
+  `x-request-id` and `context.headers` is merged in, so a request-id middleware
+  plugs in without this module generating ids. `accept`, `user-agent` and
+  `x-request-id` are managed and cannot be overridden; `authorization`, `cookie`
+  and `proxy-authorization` are dropped rather than forwarded; every URL is
+  pinned to the configured origin and a redirect is an error. Single-flight
+  means the joined callers are answered by a request carrying the first caller's
+  id.
 
 Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
-`http` | `network` | `schema` | `timeout` | `too-large`), `status` and `url`. A
-schema failure is an error state, not a silent pass-through, and an
+`http` | `network` | `rejected` | `schema` | `timeout` | `too-large`), `status`
+and `url`. A schema failure is an error state, not a silent pass-through, and an
 empty-but-valid artifact stays distinct from a missing or stale one.
 
 `schema` and `manifestSchema` are any validator with a zod-shaped `safeParse`,
 so an app's existing zod schemas plug in and this package adds no validator
-dependency of its own.
+dependency of its own. The manifest read has its own ceiling
+(`manifestMaxBytes`, default 256 KiB) independent of the artifact's `maxBytes`
+(default 16 MiB).
 
 ### Before / after: a real Buoys call site
 
@@ -1054,7 +1085,9 @@ export async function readCachedPublishedBuoyStatus(
 
 **After**, the same util is a product declaration plus a client instance. The
 route body is unchanged, and it gains freshness metadata, a retry it never had,
-and an explicit stale window it can opt into:
+an explicit stale window it can opt into, and the manifest/artifact URLs the
+app's `MANIFEST_URL` export exists to provide. It declares no `freshness`
+thresholds because the published `buoy-status-v1` manifest carries its own:
 
 ```ts
 // server/utils/buoy-status-product.ts (after)
@@ -1067,7 +1100,6 @@ const client = createNardukDataClient({ userAgent: PUBLISHED_DATA_USER_AGENT })
 
 const buoyStatusProduct = {
   artifactPath: 'public-buoy-data.json',
-  freshness: { agingAfterMs: 45 * 60_000, staleAfterMs: 6 * 60 * 60_000 },
   manifestSchema,
   maxStaleMs: 10 * 60_000,
   productId: 'buoy-status-v1',
@@ -1078,11 +1110,9 @@ const buoyStatusProduct = {
 export async function readCachedPublishedBuoyStatus(
   context?: NardukDataRequestContext,
 ) {
-  const { data, freshness, manifest } = await client.read(
-    buoyStatusProduct,
-    context,
-  )
-  return { freshness, manifest, product: data }
+  const { artifactUrl, data, freshness, manifest, manifestUrl } =
+    await client.read(buoyStatusProduct, context)
+  return { artifactUrl, freshness, manifest, manifestUrl, product: data }
 }
 ```
 
