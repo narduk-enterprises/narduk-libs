@@ -71,7 +71,13 @@ function toHex(bytes: Uint8Array): string {
   return hex
 }
 
-function timingSafeEqual(left: string, right: string): boolean {
+/**
+ * Constant-time string compare. Used for the proof signature and for the
+ * `POST /api/owner-tag` mint secret so neither comparison exits early on the
+ * first differing byte. Length is compared first, so this hides the contents
+ * but not the length; both callers compare against a high-entropy secret.
+ */
+export function timingSafeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false
   let difference = 0
   for (let index = 0; index < left.length; index += 1) {

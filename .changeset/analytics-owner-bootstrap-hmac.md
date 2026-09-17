@@ -15,6 +15,11 @@ The proof is `iat.hex(HMAC-SHA256(secret, narduk-owner-proof:v2:iat))`. Verify
 is constant-time on the signature, fail-closed when the secret is missing, and
 rejects a token older than `OWNER_PROOF_MAX_AGE_SECONDS` (one year).
 
+`POST /api/owner-tag` now compares the submitted `OWNER_TAG_SECRET` with the
+same constant-time helper instead of `!==`, so the mint path no longer exits on
+the first differing byte. The helper compares length first, so it hides the
+secret's contents but not its length.
+
 ## Operator action
 
 Old-format proofs (the static 64-hex HMAC of `narduk-owner-proof:v1`) are

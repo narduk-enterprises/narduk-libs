@@ -13,9 +13,11 @@ import {
   OWNER_PROOF_COOKIE,
   OWNER_PROOF_HOST_COOKIE,
   signOwnerProof,
+  timingSafeEqual,
   verifyOwnerProof,
 } from '../server/utils/owner-tag-proof'
 
+import type * as OwnerTagProofModule from '../server/utils/owner-tag-proof'
 import type { H3Event } from 'h3'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -33,6 +35,25 @@ vi.mock('#layer/server/utils/rateLimit', () => ({
   },
   enforceRateLimitPolicy,
 }))
+
+const definePublicMutation = vi.hoisted(() =>
+  vi.fn((options: unknown, handler: unknown) => ({ handler, options })),
+)
+const timingSafeEqualSpy = vi.hoisted(() => vi.fn())
+
+vi.mock('#layer/server/utils/mutation', () => ({
+  definePublicMutation,
+  requireMutationBody: (body: unknown) => body,
+  withValidatedBody: (parse: (input: unknown) => unknown) => parse,
+}))
+
+// Wrap the real helper so a test can prove the mint route routes its comparison
+// through it rather than through `!==`. Everything else stays the real module.
+vi.mock('../server/utils/owner-tag-proof', async (importOriginal) => {
+  const actual = await importOriginal<typeof OwnerTagProofModule>()
+  timingSafeEqualSpy.mockImplementation(actual.timingSafeEqual)
+  return { ...actual, timingSafeEqual: timingSafeEqualSpy }
+})
 
 function makeEvent(cookieHeader = ''): H3Event {
   const responseHeaders = new Map<string, number | string | string[]>()
@@ -322,5 +343,46 @@ describe('owner bootstrap route wiring', () => {
   it('keeps the PostHog plugin on the unsigned flag cookie', () => {
     const source = readFileSync(join(packageRoot, 'app/plugins/posthog.client.ts'), 'utf8')
     expect(source).toContain("document.cookie.includes('narduk_owner=true')")
+  })
+})
+
+describe('POST /api/owner-tag secret comparison', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    timingSafeEqualSpy.mockClear()
+    vi.stubGlobal('createError', (options: { message: string; statusCode: number }) => {
+      const error = new Error(options.message) as Error & { statusCode: number }
+      error.statusCode = options.statusCode
+      return error
+    })
+    vi.stubGlobal('useRuntimeConfig', () => ({ ownerTagSecret: OWNER_SECRET }))
+  })
+
+  it('compares in constant time and hides contents but not length', () => {
+    expect(timingSafeEqual(OWNER_SECRET, OWNER_SECRET)).toBe(true)
+    expect(timingSafeEqual(OWNER_SECRET, `${OWNER_SECRET.slice(0, -1)}X`)).toBe(false)
+    expect(timingSafeEqual(OWNER_SECRET, `${OWNER_SECRET}x`)).toBe(false)
+    expect(timingSafeEqual('', '')).toBe(true)
+  })
+
+  it('routes the mint secret through the constant-time helper, not `!==`', async () => {
+    const route = (await import('../server/api/owner-tag.post')).default as unknown as {
+      handler: (context: { body: unknown; event: H3Event }) => Promise<unknown>
+    }
+
+    const denied = makeEvent()
+    await expect(
+      route.handler({ body: { enabled: true, secret: `${OWNER_SECRET}x` }, event: denied }),
+    ).rejects.toMatchObject({ statusCode: 403 })
+    expect(timingSafeEqualSpy).toHaveBeenCalledWith(`${OWNER_SECRET}x`, OWNER_SECRET)
+    expect(setCookieHeaders(denied)).toEqual([])
+
+    timingSafeEqualSpy.mockClear()
+    const allowed = makeEvent()
+    await expect(
+      route.handler({ body: { enabled: true, secret: OWNER_SECRET }, event: allowed }),
+    ).resolves.toEqual({ ok: true, tagged: true })
+    expect(timingSafeEqualSpy).toHaveBeenCalledWith(OWNER_SECRET, OWNER_SECRET)
+    expect(setCookieHeaders(allowed).join('\n')).toContain(OWNER_PROOF_HOST_COOKIE)
   })
 })

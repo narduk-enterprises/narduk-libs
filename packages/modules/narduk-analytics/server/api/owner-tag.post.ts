@@ -34,7 +34,10 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { applyOwnerTagCookies } from '#narduk-analytics-server/utils/owner-tag-proof'
+import {
+  applyOwnerTagCookies,
+  timingSafeEqual,
+} from '#narduk-analytics-server/utils/owner-tag-proof'
 
 const ownerTagSchema = z.object({
   secret: z.string(),
@@ -58,7 +61,7 @@ export default definePublicMutation(
       })
     }
 
-    if (input.secret !== ownerSecret) {
+    if (!timingSafeEqual(input.secret, ownerSecret)) {
       throw createError({
         statusCode: 403,
         message: 'Invalid secret.',
