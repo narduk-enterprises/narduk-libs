@@ -87,10 +87,10 @@
     "@nuxt/kit": "^4.0.0",
     "h3": "^1.15.11",
     "nitropack": "^2.13.4",
-    "@opentelemetry/api-logs": "^0.208.0",
-    "@opentelemetry/sdk-logs": "^0.208.0",
-    "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
-    "@opentelemetry/resources": "^2.0.0"
+    "@opentelemetry/api-logs": "^0.222.0",
+    "@opentelemetry/sdk-logs": "^0.222.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0"
   },
   "peerDependenciesMeta": {
     "@nuxt/kit": {
@@ -120,10 +120,10 @@
     "@nuxt/kit": "^4.0.0",
     "h3": "^1.15.11",
     "nitropack": "^2.13.4",
-    "@opentelemetry/api-logs": "^0.208.0",
-    "@opentelemetry/sdk-logs": "^0.208.0",
-    "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
-    "@opentelemetry/resources": "^2.0.0",
+    "@opentelemetry/api-logs": "^0.222.0",
+    "@opentelemetry/sdk-logs": "^0.222.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
     "@types/node": "^22.19.19",
     "typescript": "^5.9.3",
     "vitest": "4.1.6"
