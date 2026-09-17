@@ -620,6 +620,15 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('"previewBindings"')
       expect(runbook, label).toContain('narduk-app foundation:check:deployment')
+      // narduk-libs#451 defect 2: under `on: workflow_run` GITHUB_SHA is the
+      // default branch head at trigger time, not the commit whose run went
+      // green, so a snippet that passes it can promote a commit the gate check
+      // never saw. The runbook must show the triggering commit and must not
+      // hand anyone `$GITHUB_SHA` to copy.
+      expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
+      expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
+      expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
+      expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
       // The generator emits the block to paste, never the file itself:
       // Config/cloudflare-app.json records live Cloudflare facts a checkout
       // cannot know, and onboarding owns it.

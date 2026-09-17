@@ -322,15 +322,24 @@ describe('item 12.4 -- the preview-binding refusal', () => {
     expect(detailOf(root, '12.4')).not.toContain('d1:DB')
   })
 
-  it('allows branch builds once every production binding has a replacement', () => {
+  // narduk-libs#451 defect 4: full `previewBindings` coverage used to report
+  // PASS, which read as preview isolation. Nothing consumes the field, so the
+  // runtime is identical to declaring nothing -- the honest verdict is UNKNOWN.
+  it('does not claim isolation from a declaration nothing consumes', () => {
     const root = withD1(
       block({
         nonProductionBranchBuilds: true,
         previewBindings: { d1: ['DB'], kv: ['CACHE'], r2: [] },
       }),
     )
-    expect(statusOf(root, '12.4')).toBe('pass')
-    expect(run(root).exitCode).toBe(0)
+    expect(statusOf(root, '12.4')).toBe('unknown')
+    expect(statusOf(root, '12.4')).not.toBe('pass')
+    expect(detailOf(root, '12.4')).toContain('declared, not enforced')
+    expect(detailOf(root, '12.4')).toContain('.wrangler.deploy.production.json')
+    const artefact = run(root)
+    expect(artefact.result).toBe('UNKNOWN')
+    expect(artefact.exitCode).toBe(2)
+    expect(artefact.limitations.join(' ')).toContain('previewBindings is a declaration')
   })
 
   it('allows branch builds for an app with no D1, KV or R2 at all', () => {
@@ -689,7 +698,7 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
     expect(detailOf(root, '12.4')).toContain('services/farmdata-refresh/wrangler.toml')
   })
 
-  it('12.4 passes once that second Worker binding has a preview replacement', () => {
+  it('12.4 stays undecided once that second Worker binding has a declared replacement', () => {
     const root = repoWith({
       deployment: block({
         nonProductionBranchBuilds: true,
@@ -704,6 +713,7 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
         ].join('\n'),
       },
     })
-    expect(statusOf(root, '12.4')).toBe('pass')
+    expect(statusOf(root, '12.4')).toBe('unknown')
+    expect(detailOf(root, '12.4')).toContain('declared, not enforced')
   })
 })
