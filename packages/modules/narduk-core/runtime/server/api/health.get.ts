@@ -23,7 +23,14 @@ import { useLogger } from '../utils/logger'
  * - `missingAuthTables` names the absent narduk-auth tables.
  * - `checks` lists the built-in `database` and `auth-tables` probes, then each
  *   check registered with `registerHealthCheck`, as
- *   `{ name, required, result: 'pass' | 'fail' | 'skipped', ... }`.
+ *   `{ name, required, result: 'pass' | 'fail' | 'skipped', ... }`. A check
+ *   registered through a core helper also carries a stable `kind` — today only
+ *   `registerFreshnessCheck`'s `'freshness'` — so a detector can select a
+ *   family of checks without knowing app-chosen names.
+ * - `required` on a failing entry is that failure's own rollup contribution. A
+ *   freshness check with `failAfter` declares `required: true` but publishes
+ *   `required: false` while it is merely stale, so an old feed degrades the app
+ *   instead of taking it down.
  *
  * The auth-table probe runs only when narduk-auth is installed; otherwise D1
  * gets a plain `SELECT 1`. Failure text is fixed and the causes are logged.

@@ -15,12 +15,19 @@ export const MAX_HEALTH_CHECK_DETAIL_BYTES = 1024
 export const RESERVED_HEALTH_CHECK_NAMES: readonly string[] = ['database', 'auth-tables']
 
 const HEALTH_CHECK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/u
+const HEALTH_CHECK_KIND_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/u
 // Uptime monitors match raw substrings such as `"status":"ok"` and
 // `"database":"ok"` anywhere in the body, so check details may not carry
 // either key: a nested value must never be able to mask the top-level result.
 const RESERVED_DETAIL_KEY_PATTERN = /"(?:status|database)":/u
 
 export type HealthCheckDetail = Record<string, unknown>
+
+/**
+ * How one failure rolls up, in the report's own vocabulary: `error` makes the
+ * report `error` (HTTP 503), `degraded` makes it `degraded` (HTTP 200).
+ */
+export type HealthCheckSeverity = 'degraded' | 'error'
 
 export interface HealthCheckContext {
   event: H3Event
@@ -36,12 +43,29 @@ export interface HealthCheckOutcome {
   detail?: HealthCheckDetail
   /** `false` reports a failure without throwing. Omitted, the check passed. */
   ok?: boolean
+  /**
+   * How this particular failure should roll up, for a check that can fail at
+   * more than one severity. It is published as the report entry's `required`
+   * flag (`error` -> `true`, `degraded` -> `false`), so the rollup keeps
+   * reading one field. A check declared `required: false` can only ever report
+   * `degraded`; it cannot escalate itself into an HTTP 503. Ignored when the
+   * check passed.
+   */
+  severity?: HealthCheckSeverity
 }
 
 // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- lets a check be a plain `async () => {}` that passes by resolving
 export type HealthCheckRunResult = HealthCheckOutcome | undefined | void
 
 export interface HealthCheckDefinition {
+  /**
+   * A stable family label published verbatim on the report entry, so a
+   * detector can select every check of one shape without knowing app-chosen
+   * names. 1-32 lowercase letters, digits or hyphens. Core sets it for the
+   * checks it builds (`freshness`); a plain `registerHealthCheck` leaves it
+   * unset and the field is omitted.
+   */
+  kind?: string
   /** Lowercase letters, digits and hyphens; unique per app. */
   name: string
   /**
@@ -72,9 +96,17 @@ export interface HealthCheckReport {
   durationMs?: number
   /** Fixed public text for a failure; underlying errors go to the server log. */
   error?: string
+  /** The check's family label, when it declared one. See `HealthCheckDefinition.kind`. */
+  kind?: string
   name: string
   /** Why a check did not run. Present only when `result` is `skipped`. */
   reason?: string
+  /**
+   * Whether this entry makes the whole report `error` rather than `degraded`.
+   * For a check with one failure mode it is the declared flag. For one that can
+   * fail at more than one severity it is the severity of *this* failure; the
+   * declared ceiling stays visible in `detail`.
+   */
   required: boolean
   result: HealthCheckResult
 }
@@ -103,7 +135,7 @@ export function normalizeHealthCheckDefinition(
   if (definition === null || typeof definition !== 'object') {
     throw new TypeError('[narduk-core] registerHealthCheck expects a check definition object.')
   }
-  const { name, required, run, timeoutMs = DEFAULT_HEALTH_CHECK_TIMEOUT_MS } = definition
+  const { kind, name, required, run, timeoutMs = DEFAULT_HEALTH_CHECK_TIMEOUT_MS } = definition
   if (typeof name !== 'string' || !HEALTH_CHECK_NAME_PATTERN.test(name)) {
     throw new TypeError(
       `[narduk-core] Health check name ${JSON.stringify(name)} must be 1-63 lowercase letters, digits or hyphens.`,
@@ -127,7 +159,28 @@ export function normalizeHealthCheckDefinition(
       `[narduk-core] Health check '${name}' timeoutMs must be an integer from 1 to ${MAX_HEALTH_CHECK_TIMEOUT_MS}.`,
     )
   }
-  return { name, required, run, timeoutMs }
+  if (kind !== undefined && (typeof kind !== 'string' || !HEALTH_CHECK_KIND_PATTERN.test(kind))) {
+    throw new TypeError(
+      `[narduk-core] Health check '${name}' kind ${JSON.stringify(kind)} must be 1-32 lowercase letters, digits or hyphens.`,
+    )
+  }
+  return kind === undefined
+    ? { name, required, run, timeoutMs }
+    : { kind, name, required, run, timeoutMs }
+}
+
+/**
+ * Resolve the `required` flag one failure publishes. A check may lower its own
+ * severity for a single failure, never raise it above what it declared, so an
+ * optional check can never turn the report into an HTTP 503.
+ */
+export function resolveFailureRequired(declaredRequired: boolean, severity: unknown): boolean {
+  // An optional check stays optional, and an unrecognized value falls back to
+  // the declaration rather than silently downgrading a required failure.
+  if (!declaredRequired) {
+    return false
+  }
+  return severity === 'degraded' ? false : true
 }
 
 /**
@@ -208,6 +261,7 @@ export async function runRegisteredHealthCheck(
   const startedAt = Date.now()
   const settled = await settleWithTimeout(check.timeoutMs, (signal) => check.run({ event, signal }))
   const base = {
+    ...(check.kind === undefined ? {} : { kind: check.kind }),
     name: check.name,
     required: check.required,
   }
@@ -234,6 +288,9 @@ export async function runRegisteredHealthCheck(
   }
   return {
     ...base,
+    // A timed-out or thrown check keeps the declared flag: only a check that
+    // reported its own failure may say this one was the milder kind.
+    required: passed ? check.required : resolveFailureRequired(check.required, outcome?.severity),
     result: passed ? 'pass' : 'fail',
     durationMs,
     ...sanitizeHealthCheckDetail(outcome?.detail),
