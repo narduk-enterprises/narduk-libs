@@ -108,7 +108,7 @@ export interface MapKitClientOptions {
   onConfigurationChange?: (status: MapKitConfigurationChangeStatus) => void
   /** Fires for every MapKit `error`, including ones after a successful init. */
   onFailure?: (failure: MapKitFailure) => void
-  /** Relative path only; the fetch must stay same-origin. */
+  /** Relative path only, enforced (§b.1); the fetch must stay same-origin. */
   tokenEndpoint?: string
   /** Defaults to `'6'`. The loader throws on any `5*`. */
   version?: string
@@ -168,6 +168,23 @@ export function mapKitErrorStatusForHttpStatus(httpStatus: number): MapKitErrorS
   return 'Unknown'
 }
 
+/** An absolute (`https://host/p`) or protocol-relative (`//host/p`) endpoint. */
+const CROSS_ORIGIN_CAPABLE_ENDPOINT = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
+
+/**
+ * §b.1: the token endpoint is "relative path only; an absolute URL is a config
+ * error". Enforced rather than commented -- an absolute endpoint is a
+ * cross-origin fetch for a token Apple would refuse on this page anyway, and
+ * failing at configuration time says so far more clearly than a CORS error.
+ */
+function assertRelativeTokenEndpoint(endpoint: string): void {
+  if (!CROSS_ORIGIN_CAPABLE_ENDPOINT.test(endpoint)) return
+  throw new Error(
+    `tokenEndpoint must be a relative path on the serving origin, not ${endpoint}: ` +
+      'the MapKit token route is same-host by design (narduk-libs#421 §b.1)',
+  )
+}
+
 /**
  * Fetch one token from the same-origin route.
  *
@@ -179,6 +196,8 @@ export async function fetchMapKitToken(
   endpoint: string = DEFAULT_TOKEN_ENDPOINT,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
+  assertRelativeTokenEndpoint(endpoint)
+
   let response: Response
   try {
     response = await fetchImpl(endpoint, {
@@ -255,6 +274,9 @@ export async function initializeMapKit(options: MapKitClientOptions): Promise<Ma
   if (options.libraries.length === 0) {
     throw new Error('libraries is required: MapKit JS 6 loads no map library by default')
   }
+  // Before `load()`, not at the first token exchange: a misconfigured endpoint
+  // should not cost a script injection and a MapKit init that can only hang.
+  assertRelativeTokenEndpoint(options.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT)
 
   const cacheKey = mapKitInitCacheKey(options)
   if (initPromise && initPromiseKey !== cacheKey) {
