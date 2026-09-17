@@ -1,6 +1,23 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+const numberFormatLocales: unknown[] = []
+const OriginalNumberFormat = Intl.NumberFormat
+
+beforeAll(() => {
+  function TrackingNumberFormat(locale?: string | string[], options?: Intl.NumberFormatOptions) {
+    numberFormatLocales.push(locale)
+    return new OriginalNumberFormat(locale, options)
+  }
+  vi.spyOn(Intl, 'NumberFormat').mockImplementation(
+    TrackingNumberFormat as unknown as typeof Intl.NumberFormat,
+  )
+})
+
+afterAll(() => {
+  vi.restoreAllMocks()
+})
 
 vi.mock('@nuxt/ui/components/Badge.vue', async () => {
   const { UBadgeStub } = await import('./support/nuxt-ui-stubs')
@@ -31,6 +48,7 @@ describe('NeSectionHeader', () => {
     const count = wrapper.find('[data-slot="count"]')
     expect(count.exists()).toBe(true)
     expect(count.text()).toBe('12,345')
+    expect(numberFormatLocales).toContain('en-US')
     expect(count.attributes('aria-label')).toBe('12345 items')
     // Sibling of the heading, not nested inside it.
     expect(wrapper.find('h2').find('[data-slot="count"]').exists()).toBe(false)

@@ -17,11 +17,28 @@
  * Pattern: packages/design/narduk-charts/src/ssr.test.ts.
  */
 import { renderToString } from '@vue/server-renderer'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createSSRApp, defineComponent, h, type Component } from 'vue'
 
 import NePager from '../src/runtime/components/NePager.vue'
+
+const numberFormatLocales: unknown[] = []
+const OriginalNumberFormat = Intl.NumberFormat
+
+beforeAll(() => {
+  function TrackingNumberFormat(locale?: string | string[], options?: Intl.NumberFormatOptions) {
+    numberFormatLocales.push(locale)
+    return new OriginalNumberFormat(locale, options)
+  }
+  vi.spyOn(Intl, 'NumberFormat').mockImplementation(
+    TrackingNumberFormat as unknown as typeof Intl.NumberFormat,
+  )
+})
+
+afterAll(() => {
+  vi.restoreAllMocks()
+})
 
 import type { NeCollectionState } from '../src/runtime/composables/use-collection'
 
@@ -94,6 +111,7 @@ describe('NePager server-rendered without a DOM', () => {
     })
 
     expect(html).toContain('1,234–1,234 of 1,234 runners')
+    expect(numberFormatLocales).toContain('en-US')
   })
 
   it('emits real hrefs for :to, so a crawler reaches page two without running JS', async () => {
