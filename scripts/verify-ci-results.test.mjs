@@ -23,6 +23,7 @@ const green = {
   CONTRACTS_RESULT: 'success',
   AFFECTED_COUNT: '21',
   PACKED_CONSUMER_EXPECTED: 'true',
+  GENERATED_CONSUMER_EXPECTED: 'true',
   PACKED_CONSUMER_SMOKE_RESULT: 'success',
   BROWSER_EXPECTED: 'true',
   BROWSER_RESULT: 'success',
@@ -75,6 +76,7 @@ test('full and explicitly empty plans pass the actual final aggregate', () => {
     run({
       AFFECTED_COUNT: '0',
       PACKED_CONSUMER_EXPECTED: 'false',
+      GENERATED_CONSUMER_EXPECTED: 'false',
       PACKED_CONSUMER_SMOKE_RESULT: 'skipped',
       BROWSER_EXPECTED: 'false',
       BROWSER_RESULT: 'skipped',
@@ -107,4 +109,14 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
   assert.notEqual(run({ BROWSER_EXPECTED: '', BROWSER_RESULT: 'skipped' }).status, 0)
   assert.notEqual(run({ LOGGING_EXPECTED: 'false' }).status, 0)
   assert.notEqual(run({ LOGGING_EXPECTED: '', LOGGING_RESULT: 'skipped' }).status, 0)
+})
+
+test('artifact-only success is accepted but missing or contradictory app selection fails', () => {
+  assert.equal(run({ GENERATED_CONSUMER_EXPECTED: 'false' }).status, 0)
+  for (const value of ['', 'unknown'])
+    assert.notEqual(run({ GENERATED_CONSUMER_EXPECTED: value }).status, 0)
+  assert.notEqual(
+    run({ PACKED_CONSUMER_EXPECTED: 'false', PACKED_CONSUMER_SMOKE_RESULT: 'skipped' }).status,
+    0,
+  )
 })
