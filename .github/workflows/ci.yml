@@ -266,14 +266,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build release packages and install Chromium in parallel
+      - name: Build coordinated release set
         # Public ubuntu-latest has 4 CPUs / 16 GiB; keep each Node heap at 2 GiB.
-        run: node scripts/prepare-packed-consumer.mjs --install-browser --build-concurrency=4
+        run: node scripts/prepare-packed-consumer.mjs --build-concurrency=4
 
       - name: Prove packed artifacts in an external generated consumer
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: pnpm run release:consumer-smoke
+        # Browser setup overlaps packing/installation; the proof awaits it
+        # before checking the installed browser toolchain or running tests.
+        run: pnpm run release:consumer-smoke --install-browser
 
       - name: Retain the exact installed consumer proof
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

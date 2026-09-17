@@ -58,10 +58,13 @@ proof uses the same temporary token config.
 `node scripts/prepare-packed-consumer.mjs` builds every publishable workspace
 package and its dependency closure with two concurrent Turbo tasks by default.
 CI uses `--build-concurrency=4` on its public Ubuntu runner (4 CPUs, 16 GiB) and
-adds `--install-browser` to install Chromium and its Linux libraries alongside
-that build; both operations must finish successfully before consumer validation.
-Private applications such as the design preview keep their normal package CI
-gate, but are not built solely to prepare tarballs they never publish.
+passes `--install-browser` to `release:consumer-smoke`. Chromium and its Linux
+libraries install alongside packing and consumer installation, so browser setup
+stays off the critical path even with warm build caches. The smoke script waits
+for setup and checks its result before validating the browser toolchain; an
+earlier failure also waits for the installer before cleaning up. Private
+applications such as the design preview keep their normal package CI gate, but
+are not built solely to prepare tarballs they never publish.
 
 The smoke script packs each library once and runs strict `publint` against that
 same tarball before installing it outside the workspace. Its generated-app

@@ -37,6 +37,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
+const installBrowser = args.has('--install-browser')
 const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 // Single source of truth for the generated packed-consumer's Playwright pin:
 // the root workspace devDependency, which package.json already pins exactly
@@ -986,6 +987,21 @@ const tarballDirectory = join(consumerDirectory, 'tarballs')
 const packageJsonPath = join(consumerDirectory, 'package.json')
 mkdirSync(tarballDirectory, { recursive: true })
 
+// Packing and both consumer installs do not need Chromium. Overlap the hosted
+// download/native-library setup with that work even when every build is cached.
+// Capture rejection immediately and drain it in finally on any early failure.
+const browserInstallation = Promise.allSettled(
+  installBrowser
+    ? [
+        runChecked('pnpm', ['exec', 'playwright', 'install', '--with-deps', 'chromium'], {
+          cwd: root,
+          label: 'install Chromium and Linux browser dependencies',
+          rejectWarnings: false,
+        }),
+      ]
+    : [],
+)
+
 try {
   const tarballs = new Map()
 
@@ -1223,6 +1239,9 @@ try {
   })
   assertNoForbiddenGeneratedReferences(generatedDirectory)
 
+  const [browserResult] = await browserInstallation
+  if (browserResult?.status === 'rejected') throw browserResult.reason
+
   let imageIdentity
   if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
     // Isolated-pool path: reject drift instead of trusting the env var alone.
@@ -1376,6 +1395,9 @@ try {
     `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
   )
 } finally {
+  // No installer may outlive cleanup, and no reusable proof is written unless
+  // its result was checked at the browser/toolchain barrier above.
+  await browserInstallation
   for (const { label, seconds } of timings)
     writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
   if (process.env.GITHUB_STEP_SUMMARY)
