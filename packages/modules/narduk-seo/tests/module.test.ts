@@ -15,6 +15,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   const addComponentsDir = vi.fn()
   const addImportsDir = vi.fn()
   const addPlugin = vi.fn()
+  const addServerHandler = vi.fn()
   const addServerScanDir = vi.fn()
   const extendPages = vi.fn()
   const extendRouteRules = vi.fn()
@@ -45,6 +46,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addComponentsDir,
     addImportsDir,
     addPlugin,
+    addServerHandler,
     addServerScanDir,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
@@ -73,6 +75,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   return {
     addImportsDir,
     addPlugin,
+    addServerHandler,
     addServerScanDir,
     extendPages,
     extendRouteRules,
@@ -80,6 +83,27 @@ async function setupModule(options: SetupModuleOptions = {}) {
     installModule,
     nuxt,
   }
+}
+
+/** Frozen snapshot of production robots.txt options on origin/main before this change. */
+const PRODUCTION_ROBOTS_DEFAULTS = {
+  disallowNonIndexableRoutes: false,
+  disallow: [
+    '/__preview/',
+    '/admin',
+    '/admin/',
+    '/auth/',
+    '/login',
+    '/register',
+    '/logout',
+    '/reset-password',
+    '/dashboard',
+    '/dashboard/',
+    '/settings',
+    '/settings/',
+    '/account',
+    '/account/',
+  ],
 }
 
 afterEach(() => {
@@ -323,6 +347,116 @@ describe('narduk-seo module', () => {
     ).toBe(true)
     expect(second.addPlugin).toHaveBeenCalledWith(
       expect.stringContaining('/app/plugins/hostAwareIndexing'),
+    )
+  })
+
+  it('keeps production robots.txt defaults unchanged when aiCrawlers is unset', async () => {
+    const { addServerHandler, installSnapshots, nuxt } = await setupModule()
+
+    expect(nuxt.options.robots).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    expect(
+      installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/robots')?.robots,
+    ).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    expect(addServerHandler).not.toHaveBeenCalled()
+    expect(
+      (nuxt.options.runtimeConfig as { nardukSeoSecurityTxt?: unknown }).nardukSeoSecurityTxt,
+    ).toBeNull()
+  })
+
+  it('keeps the same robots.txt defaults when aiCrawlers is explicitly allow', async () => {
+    const { nuxt } = await setupModule({ moduleOptions: { aiCrawlers: 'allow' } })
+
+    expect(nuxt.options.robots).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+  })
+
+  it('emits @nuxtjs/robots groups that disallow every known AI crawler', async () => {
+    const { AI_CRAWLERS } = await import('../shared/aiCrawlers')
+    const { installSnapshots, nuxt } = await setupModule({
+      moduleOptions: { aiCrawlers: 'disallow' },
+    })
+
+    const expected = {
+      ...PRODUCTION_ROBOTS_DEFAULTS,
+      groups: [{ userAgent: [...AI_CRAWLERS], disallow: ['/'] }],
+    }
+    expect(nuxt.options.robots).toEqual(expected)
+    expect(
+      installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/robots')?.robots,
+    ).toEqual(expected)
+  })
+
+  it('emits named AI-crawler groups from the object form', async () => {
+    const { nuxt } = await setupModule({
+      moduleOptions: {
+        aiCrawlers: { allow: ['GPTBot'], disallow: ['CCBot'] },
+      },
+    })
+
+    expect(nuxt.options.robots).toEqual({
+      ...PRODUCTION_ROBOTS_DEFAULTS,
+      groups: [
+        { userAgent: ['CCBot'], disallow: ['/'] },
+        { userAgent: ['GPTBot'], allow: ['/'] },
+      ],
+    })
+  })
+
+  it('does not add AI-crawler groups on top of staging noindex robots', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'staging')
+
+    const { nuxt } = await setupModule({
+      moduleOptions: { aiCrawlers: 'disallow' },
+    })
+
+    expect(nuxt.options.robots).toMatchObject({
+      allow: [],
+      disallow: ['/'],
+      sitemap: [],
+      robotsDisabledValue: 'noindex, nofollow',
+    })
+    expect(nuxt.options.robots).not.toHaveProperty('groups')
+  })
+
+  it('rejects invalid aiCrawlers config at build time', async () => {
+    await expect(setupModule({ moduleOptions: { aiCrawlers: 'nope' } })).rejects.toThrow(
+      /nardukSeo\.aiCrawlers must be 'allow', 'disallow'/u,
+    )
+  })
+
+  it('registers identical security.txt handlers when contact is set', async () => {
+    const { addServerHandler, nuxt } = await setupModule({
+      moduleOptions: {
+        securityTxt: {
+          contact: 'mailto:security@example.com',
+          expiresDays: 30,
+          policy: 'https://example.com/security',
+        },
+      },
+    })
+
+    const body = (nuxt.options.runtimeConfig as { nardukSeoSecurityTxt: string })
+      .nardukSeoSecurityTxt
+    expect(body).toContain('Contact: mailto:security@example.com')
+    expect(body).toContain('Policy: https://example.com/security')
+    expect(body).toMatch(/^Expires: /m)
+    expect(addServerHandler).toHaveBeenCalledTimes(2)
+    const routes = addServerHandler.mock.calls.map(
+      (call) => (call[0] as { handler: string; route: string }).route,
+    )
+    const handlers = addServerHandler.mock.calls.map(
+      (call) => (call[0] as { handler: string; route: string }).handler,
+    )
+    expect(routes).toEqual(['/.well-known/security.txt', '/security.txt'])
+    expect(handlers[0]).toBe(handlers[1])
+    expect(handlers[0]).toContain('/server/handlers/securityTxt.get')
+  })
+
+  it('rejects security.txt enabled without a contact', async () => {
+    await expect(setupModule({ moduleOptions: { securityTxt: {} } })).rejects.toThrow(
+      /nardukSeo\.securityTxt is enabled but contact is missing/u,
+    )
+    await expect(setupModule({ moduleOptions: { securityTxt: true } })).rejects.toThrow(
+      /nardukSeo\.securityTxt is enabled but contact is missing/u,
     )
   })
 })

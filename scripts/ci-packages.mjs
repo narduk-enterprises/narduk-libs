@@ -137,8 +137,12 @@ function main() {
     )
       throw new Error('A package browser gate failed')
     if (plan.packedConsumer) {
-      run('pnpm', ['run', 'build'])
-      run('pnpm', ['run', 'release:consumer-smoke'])
+      run('node', ['scripts/prepare-packed-consumer.mjs'])
+      run('pnpm', [
+        'run',
+        'release:consumer-smoke',
+        ...(plan.generatedConsumer ? [] : ['--artifacts-only']),
+      ])
     }
   }
 }
