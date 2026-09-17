@@ -10,6 +10,7 @@ import {
   resolveCacheProfile,
   setCacheProfile,
 } from '../runtime/server/utils/cacheProfile'
+import { markPreferencesInfluenced } from '../runtime/shared/utils/preferences'
 
 import type {
   CacheProfileInput,
@@ -307,5 +308,51 @@ describe('Vary', () => {
   it('emits no Vary when nothing varies', () => {
     expect(normalizeVary([], undefined)).toBeUndefined()
     expect(normalizeVary([], [])).toBeUndefined()
+  })
+})
+
+describe('preference-influenced responses', () => {
+  /**
+   * A body whose units, time zone or locale came from the reader's preference
+   * cookie belongs to that reader (narduk-libs#386). Reading preferences marks
+   * the event; the profile is then forced to `none` with `Vary: Cookie`, and a
+   * route that never touched preferences is unaffected.
+   */
+  it('downgrades a shared-cacheable profile to private, no-store', async () => {
+    const { headers } = await respond((event) => {
+      markPreferencesInfluenced(event)
+      setCacheProfile(event, 'live')
+    })
+
+    expect(headers.get('cache-control')).toBe(NO_STORE)
+    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get('vary')).toBe('Cookie')
+  })
+
+  it('reports the suppression so a caller can see why', async () => {
+    const reasons: Array<string | undefined> = []
+    await respond((event) => {
+      markPreferencesInfluenced(event)
+      reasons.push(setCacheProfile(event, 'live').suppressedBy)
+    })
+
+    expect(reasons).toEqual(['preferences-cookie'])
+  })
+
+  it('merges Cookie into a Vary the route already asked for', async () => {
+    const { headers } = await respond((event) => {
+      markPreferencesInfluenced(event)
+      setCacheProfile(event, 'live', { vary: [ACCEPT_ENCODING] })
+    })
+
+    expect(headers.get('vary')).toBe('Accept-Encoding, Cookie')
+  })
+
+  it('changes nothing for a route that never read preferences', async () => {
+    expect(await cacheHeaders('live')).toMatchObject({
+      cacheControl: 'public, max-age=60, stale-while-revalidate=900',
+      cdnCacheControl: 'public, max-age=300, stale-while-revalidate=900',
+      vary: null,
+    })
   })
 })
