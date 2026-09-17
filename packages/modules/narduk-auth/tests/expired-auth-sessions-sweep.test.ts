@@ -4,11 +4,11 @@ import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { User as LocalUser } from '#narduk-core/schema'
-import type { H3Event } from 'h3'
-import type { User as SupabaseUser } from '@supabase/auth-js'
-
 import { EXPIRED_AUTH_SESSION_SWEEP_LIMIT } from '../server/lib/app-auth/session'
+
+import type { User as LocalUser } from '#narduk-core/schema'
+import type { User as SupabaseUser } from '@supabase/auth-js'
+import type { H3Event } from 'h3'
 
 const harness = vi.hoisted(() => ({
   database: null as unknown,

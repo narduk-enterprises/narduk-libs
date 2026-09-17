@@ -4,9 +4,13 @@ import { Socket } from 'node:net'
 import { createEvent } from 'h3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import exchangeGet from '../server/api/auth/session/exchange.get'
+import exchangePost from '../server/api/auth/session/exchange.post'
+
 import type { H3Event } from 'h3'
 
 const RESET_PATH = '/reset-password'
+const PARENT_EMAIL = 'parent@example.com'
 
 interface UserRow {
   appleId?: string | null
@@ -144,7 +148,7 @@ function lookupRow(query: unknown): unknown {
 
 vi.mock('#layer/server/utils/database', () => ({
   createAppDatabase: () => () => createChain('auth_user_links'),
-  executeDatabaseQuery: async () => undefined,
+  executeDatabaseQuery: async () => {},
   getDatabaseRow: async (query: unknown) => lookupRow(query),
   getDatabaseRows: async (query: unknown) => {
     const row = lookupRow(query)
@@ -190,7 +194,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
       data: {
         user: {
           id: 'auth-attacker',
-          email: 'parent@example.com',
+          email: PARENT_EMAIL,
           app_metadata: {},
           user_metadata: {},
         },
@@ -207,7 +211,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
       data: {
         user: {
           id: 'auth-invitee',
-          email: 'parent@example.com',
+          email: PARENT_EMAIL,
           app_metadata: {},
           user_metadata: {},
         },
@@ -237,9 +241,6 @@ vi.mock('#narduk-auth-server/utils/app-auth', async () => {
 vi.mock('../server/utils/verified-email', () => ({
   getLocalEmailVerification: async () => null,
 }))
-
-import exchangeGet from '../server/api/auth/session/exchange.get'
-import exchangePost from '../server/api/auth/session/exchange.post'
 
 interface CapturedMutation {
   __handler: (context: Record<string, unknown>) => Promise<unknown>
@@ -309,7 +310,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     await postExchange({ tokenHash: 'digest', verificationType: 'invite' })
 
     expect(db.userInserts).toHaveLength(1)
-    expect(db.userInserts[0]?.email).toBe('parent@example.com')
+    expect(db.userInserts[0]?.email).toBe(PARENT_EMAIL)
     expect(db.linkInserts).toHaveLength(1)
     expect(db.linkInserts[0]?.authUserId).toBe('auth-invitee')
     expect(persistCalls).toEqual([{ recoveryMode: false }])
@@ -318,7 +319,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
   it('does not link an unlinked local user via POST redirectType:"recovery"', async () => {
     db.users.push({
       id: 'local-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     })
@@ -355,14 +356,14 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
   it('does not stamp recovery_mode on a PKCE login that only deep-links to reset-password', async () => {
     db.users.push({
       id: 'local-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     })
     db.links.push({
       authUserId: 'auth-attacker',
       localUserId: 'local-1',
-      primaryEmail: 'parent@example.com',
+      primaryEmail: PARENT_EMAIL,
     })
 
     await postExchange({ code: 'pkce-code', next: RESET_PATH })
@@ -375,7 +376,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
   it('does not link an unlinked local user via POST next=/reset-password', async () => {
     db.users.push({
       id: 'local-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     })

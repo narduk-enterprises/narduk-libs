@@ -8,6 +8,7 @@ import {
   loadAuthUserRow,
   mergeAuthoritativeSessionUser,
 } from '../lib/app-auth/session'
+
 import {
   isRecoverableSupabaseSessionFailure,
   wasAuthSessionRecentlyValidated,
@@ -23,6 +24,28 @@ function isUnauthorizedError(error: unknown) {
   return (
     typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 401
   )
+}
+
+async function refreshLocalSessionUser(
+  event: H3Event,
+  sessionUser: AppSessionUser,
+  expiresAt: number,
+  principal: AppSessionUser,
+): Promise<AppSessionUser | null> {
+  if (expiresAt <= Math.floor(Date.now() / 1000)) {
+    await clearLayerUserSession(event)
+    return null
+  }
+  if (
+    principal.email !== sessionUser.email ||
+    principal.name !== sessionUser.name ||
+    principal.isAdmin !== sessionUser.isAdmin ||
+    principal.recoveryMode !== sessionUser.recoveryMode ||
+    principal.aal !== sessionUser.aal
+  ) {
+    await replaceLayerUserSession(event, { user: principal })
+  }
+  return principal
 }
 
 function getCoalescedSessionRefresh(event: H3Event, authSessionId: string) {
@@ -87,20 +110,7 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
   const principal = mergeAuthoritativeSessionUser(sessionUser, authSession, dbUser)
 
   if (sessionUser.authBackend === 'local') {
-    if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
-      await clearLayerUserSession(event)
-      return null
-    }
-    if (
-      principal.email !== sessionUser.email ||
-      principal.name !== sessionUser.name ||
-      principal.isAdmin !== sessionUser.isAdmin ||
-      principal.recoveryMode !== sessionUser.recoveryMode ||
-      principal.aal !== sessionUser.aal
-    ) {
-      await replaceLayerUserSession(event, { user: principal })
-    }
-    return principal
+    return refreshLocalSessionUser(event, sessionUser, authSession.expiresAt, principal)
   }
 
   if (wasAuthSessionRecentlyValidated(sessionUser)) {
