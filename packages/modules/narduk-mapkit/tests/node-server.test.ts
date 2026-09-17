@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { decodeJwt } from '../src/token/index.js'
-import { clearMapKitTokenCacheForTests, mapKitTokenResponse } from '../src/server/node.js'
+import {
+  clearMapKitTokenCacheForTests,
+  issueMapKitTokenForRequest,
+  mapKitTokenResponse,
+} from '../src/server/node.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
 
 describe('Node-only MapKit server entry point', () => {
@@ -60,5 +64,29 @@ describe('Node-only MapKit server entry point', () => {
 
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({ error: 'unconfigured' })
+  })
+
+  // GROK-REVIEW-431 F8: the wrapper forwarded `config`, `rateLimit` and
+  // `request` by name, so a caller passing the documented `self` -- new on the
+  // handler in 2.1.0 -- silently got `request.url` instead.
+  it('forwards every handler option, self included, not just the three it names', async () => {
+    const rateLimit = vi.fn(() => true)
+    const result = await issueMapKitTokenForRequest({
+      config: {
+        doppler: false,
+        keyId: 'KEY1234567',
+        privateKey: await createTestPrivateKeyPem(),
+        teamId: 'TEAM123456',
+      },
+      rateLimit,
+      request: new Request('http://internal.invalid/api/mapkit-token', {
+        headers: { 'sec-fetch-site': 'same-origin' },
+      }),
+      self: 'https://preview-42.workers.dev',
+    })
+
+    expect(rateLimit).toHaveBeenCalledTimes(1)
+    expect(result.self).toBe('https://preview-42.workers.dev')
+    expect(decodeJwt(result.token).payload.origin).toBe('https://preview-42.workers.dev')
   })
 })

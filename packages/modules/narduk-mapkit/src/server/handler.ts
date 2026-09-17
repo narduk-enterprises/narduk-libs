@@ -68,11 +68,12 @@ export interface MapKitTokenResponseOptions {
   log?: (entry: MapKitTokenRouteLogEntry) => void
   rateLimit?: MapKitRateLimitHook
   /**
-   * The routed request origin. h3 callers pass
-   * `getRequestURL(event, { xForwardedHost: false }).origin`. Omitted, it is
-   * read from `request.url`, which is correct on Workers and in tests.
+   * The routed request origin. h3 callers build it with `mapKitRoutedOrigin`.
+   * Omitted, it is read from `request.url`, which is correct on Workers and in
+   * tests. `null` means the caller could not determine a routed origin, and is
+   * refused with 403 before any signing work -- never guessed at.
    */
-  self?: string
+  self?: string | null
 }
 
 export interface MapKitTokenRequestOptions extends MapKitTokenResponseOptions {
@@ -105,9 +106,58 @@ const signedTokenCache = new Map<string, CachedMapKitToken>()
  * never `https://example.com:443`): Apple enforces the claim on scheme + host +
  * port exactly, and a spurious `:443` fails every request.
  */
-export function mapKitSelfOrigin(request: Request, self?: string): string {
+export function mapKitSelfOrigin(request: Request, self?: string | null): string {
   if (self) return new URL(self).origin
   return new URL(request.url).origin
+}
+
+/** An absolute-form (`https://host/p`) or protocol-relative (`//host/p`) target. */
+const NON_ORIGIN_FORM_REQUEST_TARGET = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
+
+export interface MapKitRoutedOriginOptions {
+  /**
+   * The origin the framework derived, e.g. h3's
+   * `getRequestURL(event, { xForwardedHost: false }).origin`.
+   */
+  derivedOrigin?: string | undefined
+  /**
+   * The routed Fetch `Request` where the adapter has one -- workerd, and h3's
+   * `event.web.request`. Its `url` is the routed URL and outranks everything.
+   */
+  request?: Request | null | undefined
+  /**
+   * The RAW request target, before any `new URL(target, base)` -- h3's
+   * `event.node.req.originalUrl ?? event.path`, or Node's `req.url`.
+   */
+  requestTarget?: string | null | undefined
+}
+
+/**
+ * §e.1's `self` for a caller that is not already holding the routed `Request`.
+ *
+ * Answers `null` when no origin can be trusted; pass that straight through as
+ * `self` and the route refuses with 403 without minting anything.
+ *
+ * 1. A Fetch `Request` wins. Its `url` is the routed URL; a `Host` header
+ *    cannot move it.
+ * 2. Otherwise the framework-derived origin -- but only for an ORIGIN-FORM
+ *    request target. Node's `http` server accepts an absolute-form request line
+ *    (`GET https://evil.example/api/mapkit-token HTTP/1.1`) and hands it
+ *    through verbatim; `new URL(absolute, base)` then IGNORES the base, so the
+ *    host in the request line, not the host the app was routed on, would name
+ *    the claim Apple enforces. A protocol-relative target does the same.
+ *
+ * NODE CAVEAT: an origin-form target with a forged `Host:` still names the
+ * derived origin. Nothing at this layer can tell a routed `Host` from a forged
+ * one -- the deployment has to refuse unknown hosts. On Cloudflare Workers, the
+ * estate's target, the edge binds `Host` to the routed hostname and step 1
+ * applies anyway.
+ */
+export function mapKitRoutedOrigin(options: MapKitRoutedOriginOptions): string | null {
+  if (options.request) return new URL(options.request.url).origin
+  if (NON_ORIGIN_FORM_REQUEST_TARGET.test(options.requestTarget ?? '')) return null
+  if (!options.derivedOrigin) return null
+  return new URL(options.derivedOrigin).origin
 }
 
 /**
@@ -136,15 +186,17 @@ function originOf(value: string | null): string | null {
  */
 export function isMapKitRequestSameOrigin(request: Request, self: string): boolean {
   const origin = request.headers.get('origin')
-  // In EVERY case, a present Origin that disagrees with the routed origin refuses.
-  if (origin !== null && origin !== '' && origin !== 'null' && originOf(origin) !== self) {
-    return false
-  }
+  const hasOrigin = origin !== null && origin !== ''
+  // In EVERY case, a present Origin that disagrees with the routed origin
+  // refuses -- `null` included. An opaque origin (a sandboxed iframe, a
+  // `data:` document) is BY DEFINITION not same-origin with this route, so it
+  // fails closed rather than falling through to Sec-Fetch-Site.
+  if (hasOrigin && originOf(origin) !== self) return false
 
   const secFetchSite = request.headers.get('sec-fetch-site')
   if (secFetchSite !== null && secFetchSite !== '') return secFetchSite === 'same-origin'
 
-  if (origin !== null && origin !== '' && origin !== 'null') return originOf(origin) === self
+  if (hasOrigin) return originOf(origin) === self
 
   const referer = originOf(request.headers.get('referer'))
   if (referer !== null) return referer === self
@@ -183,6 +235,12 @@ export async function issueMapKitTokenForRequest(
   options: MapKitTokenRequestOptions,
 ): Promise<MapKitTokenResult> {
   const config = options.config ?? {}
+  // An explicit `null` is the caller saying it cannot name the routed origin.
+  // There is nothing to fall back to that would not be caller-controlled, so
+  // the only safe answer is a refusal -- before the limiter, before signing.
+  if (options.self === null) {
+    return { refusal: 'not-same-origin', self: '', status: 403, token: '' }
+  }
   const self = mapKitSelfOrigin(options.request, options.self)
 
   if (options.request.method !== 'GET') {
@@ -236,6 +294,19 @@ export async function issueMapKitTokenForRequest(
   return { expiresAt: expiresAtMs, self, status: 200, token }
 }
 
+/** The ONLY thing a 500 ever says. See the catch in `mapKitTokenResponse`. */
+export const MAPKIT_SIGNING_FAILED_MESSAGE = 'Failed to generate a MapKit token.'
+
+/** The routed origin for a LOG line, on a path where `self` may be the fault. */
+function safeSelfOrigin(request: Request, self: string | null | undefined): string {
+  if (self === null) return ''
+  try {
+    return mapKitSelfOrigin(request, self)
+  } catch {
+    return ''
+  }
+}
+
 const REFUSAL_MESSAGES: Record<MapKitTokenRefusal, string> = {
   'method-not-allowed': 'This route answers GET only.',
   'not-same-origin':
@@ -265,6 +336,9 @@ export async function mapKitTokenResponse(
     'content-type': 'application/json; charset=utf-8',
     // Never an Access-Control-Allow-Origin, on any response (§e.1.4).
     vary: 'origin, sec-fetch-site',
+    // Defence in depth: a JSON body with quoted keys is a SyntaxError as a
+    // script, but nothing here should ever be MIME-sniffed into one.
+    'x-content-type-options': 'nosniff',
   }
 
   try {
@@ -291,21 +365,20 @@ export async function mapKitTokenResponse(
       : { expiresAt: result.expiresAt, token: result.token }
 
     return new Response(JSON.stringify(body), { headers, status: result.status })
-  } catch (error) {
-    // A signing failure is a server fault, never a token; nothing about the key
-    // reaches the body.
-    const self = mapKitSelfOrigin(request, options.self)
+  } catch {
+    // A server fault is never a token, and never a diagnostic either. The
+    // thrown message is the app's own -- a rate-limit hook's connection string,
+    // a signer's report on the key it was handed -- so the body is a CONSTANT
+    // and the error is surfaced only through the caller's own `log` hook.
+    // (narduk-libs#431 review F1/F4: this catch used to echo `error.message`.)
     options.log?.({
       deprecatedKeys: deprecatedKeysPresent(config ?? {}),
       refusal: 'unconfigured',
-      self,
+      self: safeSelfOrigin(request, options.self),
       status: 500,
     })
     return new Response(
-      JSON.stringify({
-        error: 'signing-failed',
-        message: error instanceof Error ? error.message : 'Failed to generate a MapKit token.',
-      }),
+      JSON.stringify({ error: 'signing-failed', message: MAPKIT_SIGNING_FAILED_MESSAGE }),
       { headers, status: 500 },
     )
   }

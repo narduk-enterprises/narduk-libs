@@ -7,17 +7,52 @@
  * devDependency for precisely this proof; nothing in `src/` imports it.
  */
 import { createApp, defineEventHandler, getRequestURL, toNodeListener } from 'h3'
+import { connect } from 'node:net'
 import { createServer } from 'node:http'
 import { decodeJwt } from '../src/token/index.js'
-import { clearMapKitTokenCacheForTests, mapKitTokenResponse } from '../src/server/index.js'
+import {
+  clearMapKitTokenCacheForTests,
+  mapKitRoutedOrigin,
+  mapKitTokenResponse,
+} from '../src/server/index.js'
 import { createTestPrivateKeyPem } from './test-keys.js'
 
 import type { MapKitServerConfig } from '../src/server/index.js'
 import type { AddressInfo } from 'node:net'
+import type { H3Event } from 'h3'
 import type { Server } from 'node:http'
 
 let server: Server
 let base: string
+/** The same handler mounted catch-all -- see the §F2 describe block. */
+let catchAllServer: Server
+let catchAllPort: number
+
+/**
+ * THE lines a Nuxt/Nitro consumer writes.
+ *
+ * `xForwardedHost: false` is what stops an `X-Forwarded-Host` header reaching
+ * the origin claim. `mapKitRoutedOrigin` is what prefers a routed Fetch
+ * `Request` where the adapter provides one and refuses an absolute-form request
+ * line where it does not -- answering `null`, which the handler turns into a
+ * 403 without minting.
+ */
+function routedSelf(event: H3Event): string | null {
+  return mapKitRoutedOrigin({
+    derivedOrigin: getRequestURL(event, { xForwardedHost: false }).origin,
+    request: event.web?.request,
+    // What `getRequestURL` itself reads, before `new URL(target, base)` gets a
+    // chance to ignore the base.
+    requestTarget: event.node.req.originalUrl ?? event.path,
+  })
+}
+
+async function listen(server: Server): Promise<number> {
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  return (server.address() as AddressInfo).port
+}
 
 beforeAll(async () => {
   const config: MapKitServerConfig = {
@@ -26,35 +61,62 @@ beforeAll(async () => {
     teamId: 'TEAM123456',
   }
 
-  const app = createApp()
-  app.use(
-    '/api/mapkit-token',
-    defineEventHandler(async (event) => {
-      // THE two lines a Nuxt/Nitro consumer writes. `xForwardedHost: false` is
-      // what stops an X-Forwarded-Host header reaching the origin claim.
-      const self = getRequestURL(event, { xForwardedHost: false }).origin
-      const request = new Request(getRequestURL(event).toString(), {
-        headers: event.headers,
-        method: event.method,
-      })
-      return await mapKitTokenResponse(request, config, { self })
-    }),
-  )
-
-  server = createServer(toNodeListener(app))
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve)
+  const handler = defineEventHandler(async (event) => {
+    const request = new Request(getRequestURL(event).toString(), {
+      headers: event.headers,
+      method: event.method,
+    })
+    return await mapKitTokenResponse(request, config, { self: routedSelf(event) })
   })
-  base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+
+  const app = createApp()
+  app.use('/api/mapkit-token', handler)
+  server = createServer(toNodeListener(app))
+  base = `http://127.0.0.1:${String(await listen(server))}`
+
+  const catchAllApp = createApp()
+  catchAllApp.use(handler)
+  catchAllServer = createServer(toNodeListener(catchAllApp))
+  catchAllPort = await listen(catchAllServer)
 })
 
-afterAll(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) reject(error)
-      else resolve()
+/**
+ * `fetch` cannot send an absolute-form request line or a `Host` that disagrees
+ * with the connection it opened, so this speaks HTTP/1.1 down a raw socket.
+ */
+async function rawRequest(port: number, requestTarget: string, host: string): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => {
+      socket.write(
+        [
+          `GET ${requestTarget} HTTP/1.1`,
+          `Host: ${host}`,
+          'Sec-Fetch-Site: same-origin',
+          'Connection: close',
+          '',
+          '',
+        ].join('\r\n'),
+      )
     })
+    const chunks: Buffer[] = []
+    socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+    socket.on('error', reject)
+    socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
   })
+}
+
+afterAll(async () => {
+  await Promise.all(
+    [server, catchAllServer].map(
+      async (instance) =>
+        await new Promise<void>((resolve, reject) => {
+          instance.close((error) => {
+            if (error) reject(error)
+            else resolve()
+          })
+        }),
+    ),
+  )
 })
 
 afterEach(() => {
@@ -124,6 +186,67 @@ describe('token route behind a real h3 event', () => {
 
     expect(response.status).toBe(405)
     expect(response.headers.get('allow')).toBe('GET')
+  })
+})
+
+/**
+ * GROK-REVIEW-431 F2: the absolute-form request line.
+ *
+ * h3 documents `getRequestURL().origin` as spoofable. Node's parser hands an
+ * absolute-form target (`GET https://evil.example/... HTTP/1.1`) straight
+ * through as `req.originalUrl`, and `new URL(absolute, base)` IGNORES the base
+ * -- so the host in the request LINE, not the host the app was routed on, named
+ * the claim.
+ *
+ * Measured on h3 1.15.11 (2026-09-17): `app.use('/api/mapkit-token', h)` never
+ * reaches the handler for such a target -- the router matches on `event.path`
+ * and 404s first. The guard therefore has to be proven where the target does
+ * reach a handler: a catch-all mount, which is how a Nitro middleware or a
+ * hand-rolled listener is written. Both mounts serve the SAME handler.
+ */
+describe('§F2 the request line cannot name the origin claim', () => {
+  it('refuses an absolute-form request target instead of minting for its host', async () => {
+    const raw = await rawRequest(
+      catchAllPort,
+      'https://evil.example/api/mapkit-token',
+      'evil.example',
+    )
+
+    expect(raw).toContain('403 ')
+    expect(raw).not.toContain('"token"')
+    expect(raw).not.toContain('evil.example')
+  })
+
+  it('refuses a protocol-relative request target the same way', async () => {
+    const raw = await rawRequest(catchAllPort, '//evil.example/api/mapkit-token', 'evil.example')
+
+    expect(raw).toContain('403 ')
+    expect(raw).not.toContain('"token"')
+    expect(raw).not.toContain('evil.example')
+  })
+
+  it('still mints for an ordinary origin-form target over the same raw socket', async () => {
+    const raw = await rawRequest(
+      catchAllPort,
+      '/api/mapkit-token',
+      `127.0.0.1:${String(catchAllPort)}`,
+    )
+
+    expect(raw).toContain('200 ')
+    expect(raw).toContain('"token"')
+  })
+
+  it('404s an absolute-form target before the handler on a path-mounted route', async () => {
+    // Not our refusal -- h3's router. Recorded so a future h3 bump that starts
+    // routing these lands on the guard above rather than on a mint.
+    const raw = await rawRequest(
+      (server.address() as AddressInfo).port,
+      'https://evil.example/api/mapkit-token',
+      'evil.example',
+    )
+
+    expect(raw).toContain('404 ')
+    expect(raw).not.toContain('"token"')
   })
 })
 

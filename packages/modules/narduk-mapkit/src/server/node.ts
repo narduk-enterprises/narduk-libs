@@ -1,7 +1,9 @@
 import {
+  MAPKIT_SIGNING_FAILED_MESSAGE,
   clearMapKitTokenCacheForTests,
   getOriginFromRequest,
   issueMapKitTokenForRequest as issueWorkerMapKitTokenForRequest,
+  mapKitRoutedOrigin,
   mapKitTokenResponse as workerMapKitTokenResponse,
   mapKitTokenResponseFromEnv,
 } from './handler.js'
@@ -15,11 +17,18 @@ import type {
 import type { MapKitServerConfig } from './shared-config.js'
 
 export * from './config.js'
-export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv }
+export {
+  MAPKIT_SIGNING_FAILED_MESSAGE,
+  clearMapKitTokenCacheForTests,
+  getOriginFromRequest,
+  mapKitRoutedOrigin,
+  mapKitTokenResponseFromEnv,
+}
 export type {
   MapKitRateLimitContext,
   MapKitRateLimitDecision,
   MapKitRateLimitHook,
+  MapKitRoutedOriginOptions,
   MapKitTokenRequestOptions,
   MapKitTokenResponseOptions,
   MapKitTokenResult,
@@ -34,11 +43,10 @@ export async function issueMapKitTokenForRequest(
   options: MapKitTokenRequestOptions,
 ): Promise<MapKitTokenResult> {
   const config = await resolveMapKitServerConfig(options.config)
-  return issueWorkerMapKitTokenForRequest({
-    config,
-    ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
-    request: options.request,
-  })
+  // Spread, never a hand-copied list of three names: `self` is new on the
+  // handler in 2.1.0, and a wrapper that forwards by name silently drops
+  // whatever the handler grows next (narduk-libs#431 review F8).
+  return issueWorkerMapKitTokenForRequest({ ...options, config })
 }
 
 export async function mapKitTokenResponse(
@@ -49,15 +57,21 @@ export async function mapKitTokenResponse(
   try {
     const resolvedConfig = await resolveMapKitServerConfig(config)
     return workerMapKitTokenResponse(request, resolvedConfig, options)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to generate MapKit token'
-    return new Response(JSON.stringify({ configured: false, error: message, token: '' }), {
-      headers: {
-        'cache-control': 'no-store',
-        'content-type': 'application/json; charset=utf-8',
+  } catch {
+    // Same rule as the handler's own catch: a constant, never the thrown
+    // message. Config resolution here can have read a Doppler command line.
+    return new Response(
+      JSON.stringify({ error: 'signing-failed', message: MAPKIT_SIGNING_FAILED_MESSAGE }),
+      {
+        headers: {
+          'cache-control': 'no-store',
+          'content-type': 'application/json; charset=utf-8',
+          vary: 'origin, sec-fetch-site',
+          'x-content-type-options': 'nosniff',
+        },
+        status: 500,
       },
-      status: 500,
-    })
+    )
   }
 }
 
