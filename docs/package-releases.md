@@ -56,13 +56,16 @@ proof uses the same temporary token config.
 ## Packed consumer preparation
 
 Contracts run alongside the selected package and integration jobs. On a
-contracts failure, a separate job cancels queued and running work in that CI run
-without adding a dependency barrier to successful runs. Only this checkout-free
-job gets `actions: write`; GitHub's normal cancellation still lets the final
-`verify` report the failed gates. Cancellation takes effect after GitHub
-schedules the handler and processes the request. Fork and Dependabot runs have
-read-only tokens, so they retain the failed `verify` gate but cannot cancel
-their sibling jobs.
+contracts failure in a same-repository pull request, a separate job cancels
+queued and running work in that CI run without adding a dependency barrier to
+successful runs. Only this checkout-free job gets `actions: write`; GitHub's
+normal cancellation still lets the final `verify` report the failed gates.
+Cancellation takes effect after GitHub schedules the handler and processes the
+request. Fork and Dependabot runs have read-only tokens, so they retain the
+failed `verify` gate but cannot cancel their sibling jobs. Pushes to `main` are
+never cancelled this way: GitHub concludes a cancelled run as "cancelled", not
+"failure", which hid a red `main` twice on 2026-09-17. A broken `main` runs to
+completion and shows a failed run.
 
 `node scripts/prepare-packed-consumer.mjs` builds every publishable workspace
 package and its dependency closure with two concurrent Turbo tasks by default.
