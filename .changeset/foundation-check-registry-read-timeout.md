@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 `foundation:check` sub-check 2.3 (narduk-core N-1 window) now raises the
@@ -10,3 +11,8 @@ backoff on timeout/network-error/5xx responses only -- never on
 runner's slow GitHub path (narduk-libs#341). Fail-closed semantics are
 unchanged: a genuinely unreachable registry still reports `unknown` after
 exhausting the retry budget.
+
+`@narduk-enterprises/create-narduk-app` gets a patch release alongside this
+to refresh its `narduk-app-tools` pin in `src/manifest.ts`
+(`scripts/check-generator-release-plan.mjs` requires a generator release
+whenever a package it pins changes version); no generator behavior changes.
