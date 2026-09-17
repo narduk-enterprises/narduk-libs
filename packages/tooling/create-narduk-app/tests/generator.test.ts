@@ -937,6 +937,27 @@ describe('generated app typecheck and lint surfaces', () => {
     }
   })
 
+  // narduk-libs#349: X reads `og:*` when no `twitter:*` tag is present, and Unhead 3
+  // reports every `twitter:*` meta name -- `twitter:card` included -- as deprecated,
+  // which turns the shared browser-console contract red on every route of a scaffold.
+  it('scaffolds an Open Graph head with declared dimensions and no twitter:* meta', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const nuxtConfig = generate(capabilities).get('apps/web/nuxt.config.ts') ?? ''
+
+      expect(nuxtConfig.includes('twitter:'), label).toBe(false)
+      if (capabilities.includes('seo')) continue
+      // A no-seo scaffold hand-writes the head that narduk-seo would otherwise own.
+      for (const tag of [
+        "{ property: 'og:title', content: appName }",
+        "{ property: 'og:image:alt', content: appName + ' \u2014 ' + appDescription }",
+        "{ property: 'og:image:width', content: '1200' }",
+        "{ property: 'og:image:height', content: '630' }",
+      ]) {
+        expect(nuxtConfig, label).toContain(tag)
+      }
+    }
+  })
+
   // narduk-libs#321: a generated app must not acquire an implicit dependency on
   // a secret manager just by running `pnpm run dev`. The retired wrapper shape
   // `narduk-app dev --project … --config …` meant `doppler run`, so no

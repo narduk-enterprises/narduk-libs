@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('default social image', () => {
-  it('uses an absolute image, canonical page URL, dimensions, and both card formats', () => {
+  it('uses an absolute image, canonical page URL, and declared dimensions', () => {
     const meta = defaultSocialMeta({
       siteUrl: 'https://example.com',
       siteName: 'Example',
@@ -18,9 +18,25 @@ describe('default social image', () => {
     })
     expect(meta).toContainEqual({ property: 'og:image', content: 'https://example.com/og.png' })
     expect(meta).toContainEqual({ property: 'og:url', content: 'https://example.com/login' })
+    expect(meta).toContainEqual({ property: 'og:image:alt', content: 'Example app' })
     expect(meta).toContainEqual({ property: 'og:image:width', content: '1200' })
-    expect(meta).toContainEqual({ name: 'twitter:card', content: 'summary_large_image' })
-    expect(meta).toContainEqual({ name: 'twitter:image', content: 'https://example.com/og.png' })
+    expect(meta).toContainEqual({ property: 'og:image:height', content: '630' })
+  })
+
+  // X reads `og:*` when no `twitter:*` tag is present, and Unhead 3 reports every
+  // `twitter:*` meta name -- `twitter:card` included -- as deprecated, which turns
+  // the shared browser-console contract red on every route (narduk-libs#349).
+  it('emits Open Graph only, with no twitter:* meta name', () => {
+    const meta = defaultSocialMeta({
+      siteUrl: 'https://example.com',
+      siteName: 'Example',
+      description: 'Public app identity',
+      path: '/login',
+      image: { url: '/og.png', alt: 'Example app' },
+    })
+    const names = meta.map((tag) => ('property' in tag ? tag.property : tag.name))
+    expect(names.filter((name) => name.toLowerCase().startsWith('twitter:'))).toEqual([])
+    expect(names.every((name) => name.startsWith('og:'))).toBe(true)
   })
 
   it.each([

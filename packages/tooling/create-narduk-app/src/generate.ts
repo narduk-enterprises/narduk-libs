@@ -989,8 +989,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               "        { property: 'og:image:alt', content: appName + ' — ' + appDescription },",
               "        { property: 'og:image:width', content: '1200' },",
               "        { property: 'og:image:height', content: '630' },",
-              "        { name: 'twitter:card', content: 'summary_large_image' },",
-              "        { name: 'twitter:image', content: new URL('/og.png', siteUrl).href, tagPriority: 'low' },",
               '      ],',
               '    },',
               '  },',

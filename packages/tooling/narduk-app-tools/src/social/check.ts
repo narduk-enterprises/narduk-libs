@@ -188,14 +188,14 @@ async function probePage(
   ) {
     throw new Error('og:url does not identify the sampled page on the canonical origin')
   }
-  if (oneMeta(meta, 'twitter:card') !== 'summary_large_image')
-    throw new Error('Expected twitter:card=summary_large_image')
   if (oneMeta(meta, 'og:image:width') !== '1200' || oneMeta(meta, 'og:image:height') !== '630') {
     throw new Error('Expected declared image dimensions 1200x630')
   }
+  // Open Graph is the whole contract: X reads `og:*` when no `twitter:*` tag is
+  // present, and the estate stopped emitting them because Unhead 3 reports every
+  // `twitter:*` name as deprecated (narduk-libs#349). A page that still carries
+  // them is not rejected here -- the browser-console contract owns that.
   const image = publicUrl(oneMeta(meta, 'og:image'), context.local)
-  const twitterImage = publicUrl(oneMeta(meta, 'twitter:image'), context.local)
-  if (image.href !== twitterImage.href) throw new Error('OG and Twitter must select the same image')
   if (image.origin !== context.site.origin && !context.origins.has(image.origin))
     throw new Error('Image origin is not declared in imageOrigins')
   return { image: image.href, hash: await imageHash(image, agent, context) }
