@@ -19,11 +19,16 @@ export interface ModuleOptions {
   /** Register `useMapKit()`. */
   composables: boolean
   /**
-   * App-wide default for the required `libraries` prop. MapKit JS 6's
-   * `mapkit.core.js` is a stub, so without `'map'` there is no `mapkit.Map` at
-   * all -- which is why neither the option nor the prop has a silent fallback.
+   * App-wide default for the `libraries` prop. MapKit JS 6's `mapkit.core.js`
+   * is a stub, so without `'map'` there is no `mapkit.Map` at all -- which is
+   * why an EMPTY list is a configuration error rather than a silent fallback.
+   *
+   * Omitted, it is `['map', 'annotations', 'overlays']`, the triple 2.0.x
+   * hard-coded. The default is applied in `setup`, NOT in the module's
+   * `defaults`: `defineNuxtModule` merges those with `defu`, which CONCATENATES
+   * arrays, so a default here would make the option impossible to narrow.
    */
-  libraries: MapKitLibrary[]
+  libraries?: MapKitLibrary[]
   /** Passed to Apple's loader. */
   language?: string
   /**

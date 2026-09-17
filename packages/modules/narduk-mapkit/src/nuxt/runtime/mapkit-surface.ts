@@ -59,9 +59,11 @@ export interface MapKitAnnotationOptionsLike {
 /**
  * The map members the runtime touches. Deliberately short: `colorScheme`,
  * `mapType`, `convertCoordinateToPointOnPage` and the overlay methods are NOT
- * here, because the fake does not model them -- they are reached through the
- * narrow, individually guarded helpers in `map-options.ts` and `overlays.ts`
- * instead of being assumed present.
+ * here, because the fake does not model them: `colorScheme` and `mapType` are
+ * constructor options the component never reads back, the projection call is
+ * guarded by a `try`/`catch` with a fallback, and the overlay members live on
+ * `overlay-layer.ts`'s own narrower types, which are only touched when
+ * `geojson` or `circles` is non-empty.
  */
 export interface MapKitMapLike {
   readonly element: HTMLElement | null

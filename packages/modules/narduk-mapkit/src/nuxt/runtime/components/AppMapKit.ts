@@ -178,6 +178,14 @@ const AppMapKitImpl = defineComponent({
 
     const calloutEntries = shallowRef<ReadonlyArray<MapKitCalloutEntry<MapKitItem>>>([])
     const containerRef = ref<HTMLElement | null>(null)
+    /**
+     * `ready` says MapKit JS loaded; this says the `mapkit.Map` exists. They are
+     * one tick apart -- the map is constructed in a post-flush watcher, after
+     * the container element is in the DOM -- and the wrapper's
+     * `data-mapkit-state` has to track the second, not the first. A plain `let`
+     * cannot: it would leave the component rendered as `loading` forever.
+     */
+    const mapReady = ref(false)
     const wrapperRef = ref<HTMLElement | null>(null)
 
     let calloutLayer: MapKitCalloutHostLayer<MapKitItem> | null = null
@@ -188,7 +196,7 @@ const AppMapKitImpl = defineComponent({
 
     const state = computed(() => {
       if (failure.value) return 'error'
-      return ready.value && map ? 'ready' : 'loading'
+      return ready.value && mapReady.value ? 'ready' : 'loading'
     })
 
     function report(cause: unknown): void {
@@ -404,6 +412,7 @@ const AppMapKitImpl = defineComponent({
       pinLayer.setItems(componentProps.items)
       applyOverlays()
       if (componentProps.selectedId !== null) applySelection(componentProps.selectedId)
+      mapReady.value = true
       emit('map-ready', map)
     }
 
@@ -500,6 +509,7 @@ const AppMapKitImpl = defineComponent({
       calloutEntries.value = []
       map?.destroy()
       map = null
+      mapReady.value = false
       retryLoad()
     }
 

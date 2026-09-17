@@ -88,7 +88,9 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
   defaults: {
     component: true,
     composables: true,
-    libraries: [...DEFAULT_MAPKIT_LIBRARIES],
+    // `libraries` is deliberately absent: `defu` concatenates arrays, so a
+    // default here would append to whatever the app configured. It is resolved
+    // in `setup` instead.
     rateLimit: { limit: 30, windowSeconds: 60 },
     ssrPreload: true,
     tokenRoute: true,
@@ -97,7 +99,8 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
     const tokenRoutePath = normalizeRoutePath(options.tokenRoutePath)
-    if (options.libraries.length === 0) {
+    const libraries = options.libraries ?? [...DEFAULT_MAPKIT_LIBRARIES]
+    if (libraries.length === 0) {
       throw new Error(
         'nardukMapKit.libraries must name at least one library: MapKit JS 6 ships ' +
           'mapkit.core.js as a stub, so without "map" there is no mapkit.Map at all.',
@@ -117,7 +120,7 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
     // The client runtime's own non-secret configuration. Deliberately one key,
     // and deliberately not a place a token could ever be put.
     const published: MapKitPublicRuntimeOptions = {
-      libraries: [...options.libraries],
+      libraries: [...libraries],
       ssrPreload: options.ssrPreload,
       tokenRoutePath,
       ...(options.language === undefined ? {} : { language: options.language }),
