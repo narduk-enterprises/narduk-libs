@@ -36,6 +36,24 @@ interface CoreRuntimeConfig {
    * `routes[key]` wins over what the route itself declared.
    */
   nardukRateLimit?: RateLimitRuntimeConfig
+  /**
+   * Edge-cache tuning for `setCacheProfile`. An app overrides the seconds of a
+   * named profile here instead of editing a route. `sMaxAge` is the edge TTL and
+   * is emitted as `CDN-Cache-Control: max-age`, never as `Cache-Control:
+   * s-maxage` — `s-maxage` disables `stale-while-revalidate` (RFC 9111 §4.2.4).
+   */
+  cache: {
+    profiles: Record<
+      string,
+      {
+        maxAge?: number
+        noStore?: boolean
+        private?: boolean
+        sMaxAge?: number
+        swr?: number
+      }
+    >
+  }
   /** Optional per-policy server-side rate limit overrides for shared layer routes. */
   rateLimitPolicies: Record<
     string,
