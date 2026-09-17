@@ -52,8 +52,14 @@ describe('generated CI execution boundary', () => {
     it(`${visibility}: pins actions, bounds jobs, and preserves every test layer`, () => {
       const { workflow, files } = generated(visibility)
       expect(workflow.permissions).toEqual({ contents: 'read' })
-      expect(workflow.concurrency['cancel-in-progress']).toBe(true)
-      expect(workflow.concurrency.group).toContain('github.ref')
+      // Cancel superseded pull-request runs only; a push (main) run queues
+      // instead, so the commit that merged keeps a completed CI record
+      // (buoys#107 parity).
+      expect(workflow.concurrency['cancel-in-progress']).toBe(
+        "${{ github.event_name == 'pull_request' }}",
+      )
+      expect(workflow.concurrency.group).toContain('github.repository')
+      expect(workflow.concurrency.group).toContain('github.event.pull_request.number')
       for (const job of Object.values(workflow.jobs)) {
         expect(job['timeout-minutes']).toBeGreaterThan(0)
         expect(job['timeout-minutes']).toBeLessThanOrEqual(30)

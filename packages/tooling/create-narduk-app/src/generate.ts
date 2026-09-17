@@ -1,7 +1,11 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
-import { createCiRegistryAuthScript, createCiWorkflow } from './ci-workflow.js'
+import {
+  createCiRegistryAuthScript,
+  createCiWorkflow,
+  createCopilotSetupWorkflow,
+} from './ci-workflow.js'
 import { socialPreviewFiles } from './social-previews.js'
 
 import {
@@ -176,7 +180,22 @@ function markdownProductSpec(spec: ProductSpec | undefined): string {
 function moduleList(capabilities: readonly Capability[]): string {
   const moduleNames = [
     '@narduk-enterprises/narduk-core',
-    '@nuxt/ui',
+    // NOT '@nuxt/ui': narduk-core's own setup already calls
+    // installModule('@nuxt/ui') internally (see its module.ts), so a second,
+    // explicit registration here is redundant -- confirmed against the
+    // reference app, whose modules array omits it for the same reason
+    // (generator-parity audit, narduk-libs#D2).
+    //
+    // '@nuxt/icon' IS explicit, though -- this is not redundant. Verified
+    // live: a build with @nuxt/icon only reachable through @nuxt/ui's own
+    // nested installModule('@nuxt/icon') call (i.e. omitted here, matching
+    // the mistaken assumption that narduk-core -> @nuxt/ui -> @nuxt/icon
+    // already covers it) fails with `[UNLOADABLE_DEPENDENCY] Could not load
+    // .nuxt/nuxt-icon-client-bundle` -- the nested install does not finish
+    // registering the icon client-bundle virtual file in time for the build
+    // step that consumes it. Listing '@nuxt/icon' explicitly here (matching
+    // the reference app's own modules array exactly) fixes it.
+    '@nuxt/icon',
     // Ships by default, not behind a capability flag (components-library-plan.md
     // item 4): every generated app starts on the shared Ne* suite.
     '@narduk-enterprises/narduk-shell',
@@ -192,11 +211,18 @@ function moduleList(capabilities: readonly Capability[]): string {
           : '@narduk-enterprises/narduk-' + capability,
       ),
   ]
-  const inline = `  modules: [${moduleNames.map(tsString).join(', ')}],`
+  // nitro-cloudflare-dev provides local Wrangler binding emulation
+  // (KV/D1/R2/queues, etc.) under `nuxt dev`; the actual Cloudflare build
+  // never loads it. Emitted as a raw (unquoted) spread referencing the
+  // `isCloudflareBuild` const declared above in the same generated file --
+  // matches the reference app's own modules array entry exactly.
+  const items = [
+    ...moduleNames.map((module) => tsString(module)),
+    "...(isCloudflareBuild ? [] : ['nitro-cloudflare-dev'])",
+  ]
+  const inline = `  modules: [${items.join(', ')}],`
   if (inline.length <= 100) return inline
-  return ['  modules: [', ...moduleNames.map((module) => `    ${tsString(module)},`), '  ],'].join(
-    '\n',
-  )
+  return ['  modules: [', ...items.map((item) => `    ${item},`), '  ],'].join('\n')
 }
 
 // Mirrors Prettier's own printWidth-driven collapse/expand decision for a JSON
@@ -375,6 +401,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: createCiWorkflow(visibility),
     },
     {
+      // Both visibilities: even a public app's Worker depends on private
+      // @narduk-enterprises/* packages, so Copilot's sandbox needs registry
+      // auth to install regardless of which CI runner policy this app uses.
+      path: '.github/workflows/copilot-setup-steps.yml',
+      contents: createCopilotSetupWorkflow(),
+    },
+    {
       // components-library-plan.md #2 item 6 (narduk-libs#253): one
       // Dependabot group for @narduk-enterprises/* so a fleet-wide bump
       // lands as one PR per app, not one per package. The `groups.*.patterns`
@@ -386,6 +419,23 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // present 2026-09-11) -- Dependabot secrets are a separate store from
       // Actions secrets; the Actions secret of the same name is what CI uses.
       path: '.github/dependabot.yml',
+      // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
+      // coding-standards/toolchain/dependabot.yml), not the older canonical
+      // template: `scope` is FUNCTIONALLY REQUIRED, not decorative --
+      // without it Dependabot's npm_and_yarn update aborts outright the
+      // moment the repo carries any @narduk-enterprises/* dependency, which
+      // every generated app does (coding-standards#9, A/B-proven across
+      // three repos 2026-09-10). `directory: "/"` (singular) also matches
+      // the reference app: Dependabot's npm ecosystem parses the whole pnpm
+      // workspace graph from the root manifest, so the array-of-directories
+      // form this template previously emitted was redundant, not additive.
+      // Cooldown is disabled (default-days/semver-major-days: 0) and
+      // @narduk-enterprises/* is listed only in the (inert while disabled)
+      // `exclude` array -- company-hq#737, confirmed root cause: Dependabot's
+      // pnpm updater does not propagate `cooldown.exclude` into
+      // `minimumReleaseAgeExclude` for the wider recursive resolve, so any
+      // nonzero cooldown here makes every non-excluded dependency fail on
+      // every run given how often @narduk-enterprises/* publishes.
       contents: text(
         'version: 2',
         'registries:',
@@ -393,19 +443,51 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    type: npm-registry',
         '    url: https://npm.pkg.github.com',
         '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
+        "    scope: '@narduk-enterprises'",
         'updates:',
         "  - package-ecosystem: 'npm'",
-        '    directories:',
-        "      - '/'",
-        "      - '/apps/*'",
+        "    directory: '/'",
         '    registries:',
         '      - narduk-github-packages',
         '    schedule:',
         "      interval: 'weekly'",
+        "      day: 'monday'",
+        "      time: '06:00'",
+        "      timezone: 'America/Chicago'",
+        '    labels:',
+        "      - 'dependencies'",
+        '    open-pull-requests-limit: 1',
+        '    cooldown:',
+        '      default-days: 0',
+        '      semver-major-days: 0',
+        '      exclude:',
+        "        - '@narduk-enterprises/*'",
+        '    ignore:',
+        "      - dependency-name: 'typescript'",
+        "        versions: ['>=6.1.0']",
+        "      - dependency-name: '@types/node'",
+        "        versions: ['>=25.0.0']",
+        "      - dependency-name: '@playwright/test'",
+        "        versions: ['>1.61.1']",
         '    groups:',
-        '      narduk-libs:',
+        '      dependencies:',
         '        patterns:',
-        "          - '@narduk-enterprises/*'",
+        "          - '*'",
+        "          - '@narduk-enterprises/*' # explicit scope required by foundation item 5.2",
+        "  - package-ecosystem: 'github-actions'",
+        "    directory: '/'",
+        '    schedule:',
+        "      interval: 'weekly'",
+        "      day: 'monday'",
+        "      time: '06:00'",
+        "      timezone: 'America/Chicago'",
+        '    labels:',
+        "      - 'dependencies'",
+        '    open-pull-requests-limit: 1',
+        '    groups:',
+        '      github-actions:',
+        '        patterns:',
+        "          - '*'",
       ),
     },
     ...(visibility === 'private'
@@ -420,8 +502,65 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'The shared libraries are dependencies, not a control plane. This app creates files only when an operator explicitly asks for a change. Do not add credential material, hidden network calls, background reconciliation, or generated state to the repository.',
         '',
-        'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries.',
+        'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries. [CONTRACT.md](CONTRACT.md) is the API surface this app promises to callers, kept current whenever a route changes. [docs/workers-builds.md](docs/workers-builds.md) covers deployment and recovery. [docs/e2e-testing.md](docs/e2e-testing.md) covers the Playwright layout and the visual QA toolkit.',
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+      ),
+    },
+    {
+      // A generic skeleton, not the reference app's own filled-in shape:
+      // every real endpoint, response envelope, and error contract below is
+      // this specific app's future API surface, which the generator cannot
+      // know in advance. What IS generic -- the health contract, that there
+      // is no database when databaseBackend is 'none', and the section
+      // headings an app-owning agent should fill in -- is filled in for real.
+      path: 'CONTRACT.md',
+      contents: text(
+        '---',
+        'Status: draft',
+        'Owner: apps/web',
+        '---',
+        '',
+        '# API Contract',
+        '',
+        'Keep this file current whenever a route under `apps/web/server/api/` changes shape. It is the promise this app makes to callers -- update it in the same PR as the route, not after.',
+        '',
+        '## Health',
+        '',
+        "`GET /api/health` is narduk-core's shared route." +
+          (hasDatabase
+            ? ' A required database check reports connectivity through the configured D1 binding.'
+            : ' This app declares `databaseBackend: \'none\'`, so the shared report returns `data.database: "not_applicable"` and probes no database.'),
+        'Register any app-owned probe (an upstream API, a published data source, ...) with `registerHealthCheck` from `@narduk-enterprises/narduk-core/server/utils/health-checks` rather than adding an ad hoc route. An available app yields `data.status: "ok"` and HTTP 200; a failed required check yields `data.status: "error"` and HTTP 503; an optional failure is `degraded` at HTTP 200. Every health response uses `Cache-Control: no-store`.',
+        '',
+        '## Endpoints',
+        '',
+        '| Method | Path          | Purpose                          |',
+        '| ------ | ------------- | -------------------------------- |',
+        '| GET    | `/api/health` | Narduk-core shared health report |',
+        '',
+        'Add a row per route as the app grows. Note which methods mutate state, if any.',
+        '',
+        '## Request and response shapes',
+        '',
+        "Document each route's query/body schema and response shape here, or point at the source-of-truth types file once one exists (`apps/web/app/utils/*Types.ts` is the estate convention).",
+        '',
+        '## Errors',
+        '',
+        "Use H3's standard `createError({ statusCode, statusMessage, message, data? })` shape unless this app has a documented reason to layer a different envelope on top. Keep the real error detail server-side (`console.error`) and return only safe, fixed copy in `message`.",
+        '',
+        '## Auth',
+        '',
+        capabilities.includes('auth')
+          ? 'This app includes the auth capability (@narduk-enterprises/narduk-auth). Document which routes require a session and which scopes/roles they require.'
+          : 'Strategy: none by default. Every route is public and unauthenticated until this app adopts the auth capability.',
+        '',
+        '## Rate limits',
+        '',
+        'None by default. Document any per-route limiting this app adds.',
+        '',
+        '## Idempotency',
+        '',
+        'Document idempotency behavior for any mutating (`POST`/`PUT`/`PATCH`/`DELETE`) route once one exists.',
       ),
     },
     {
@@ -498,6 +637,119 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'Enable collection separately using the [library adoption guide](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-logging/docs/adoption.md). Cloudflare native OTLP export requires Workers Paid and beta export support; verify delivery before enabling a destination, use full log sampling initially, and preserve existing persistence settings. This generator provisions nothing.',
         '',
         'Remove old finish listeners, copied loggers, and duplicate error plugins only after the synthetic event is searchable. Roll back by restoring the prior pinned core/logging versions and configuration, rebuilding, and reverting the app-owned collection destination change. Never enable two request-summary implementations at once.',
+      ),
+    },
+    {
+      // Cloudflare connection settings are the same for every generated app
+      // (build/deploy commands, Node/pnpm versions, the build secret name);
+      // the provider connection itself, credential routes, and any live
+      // verification evidence are onboarding's job -- see the TODO markers
+      // below and README's Config/ charter for why this generator does not
+      // fabricate them.
+      path: 'docs/workers-builds.md',
+      contents: text(
+        '# ' + displayName + ' deployments and PR previews',
+        '',
+        'Workers Builds owns delivery; GitHub Actions owns the required quality and browser checks. Protected `main` is the production branch. A trusted non-production branch uploads a Worker version and receives a `workers.dev` preview URL without changing production traffic. Local Wrangler is reserved for explicitly authorized recovery.',
+        '',
+        '## Cloudflare connection',
+        '',
+        'Connect this repository to a Cloudflare Worker. These are provider settings, not settings Wrangler creates automatically -- an onboarding step, not something this generator can configure from a checkout alone.',
+        '',
+        '| Setting                       | Value                                                 |',
+        '| ----------------------------- | ----------------------------------------------------- |',
+        '| Root directory                | `/`                                                   |',
+        '| Production branch             | `main`                                                |',
+        '| Build command                 | `pnpm run cf:build`                                   |',
+        '| Production deploy command     | `pnpm run cf:deploy`                                  |',
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
+        '| Non-production branch builds  | enabled for trusted repository branches               |',
+        '| Build cache                   | enabled                                               |',
+        '| `NODE_VERSION`                | `' +
+          NODE_VERSION +
+          '`                                             |',
+        '| `PNPM_VERSION`                | `10.33.4`                                             |',
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
+        '| Build secret                  | `GH_PACKAGES_READ` (read-only private package access) |',
+        '',
+        "The build command authenticates before installing the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
+        '',
+        'Workers Builds requires user-owned authentication -- register least-privilege build-control and build-execution credentials for this app (see the estate credentials doc) rather than reusing a shared or personal token. TODO(onboarding): fill in the registered nVault config paths and Cloudflare connection/trigger IDs once this app is connected.',
+        '',
+        '## Preview boundaries',
+        '',
+        "Version previews share the Worker's runtime bindings; they are **not isolated staging**. Only trusted repository branches should run with the Builds execution credential. Do not add an untrusted-fork build path." +
+          (visibility === 'public'
+            ? ' An app with private customer data, writes, or a separate authentication boundary needs an isolated, equivalently protected preview Worker and bindings before adopting public previews.'
+            : ''),
+        '',
+        '## Recovery and live proof',
+        '',
+        'From a clean, validated revision, install with `gh-packages-run pnpm install --frozen-lockfile`, then run `pnpm run build:ci`. Deploy with the registered recovery credential once onboarding creates it:',
+        '',
+        '```sh',
+        'nvault run -p cloudflare -e prd -c ' + appName + '-deploy -- \\',
+        '  env NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 pnpm run deploy',
+        '```',
+        '',
+        'The lower-level deploy command preserves existing runtime vars and secrets. Cloudflare owns Worker-version rollback.',
+        '',
+        '## Provider evidence',
+        '',
+        'TODO(onboarding): record the GitHub connection id, production trigger id, and non-production trigger id once this app is connected, so a later audit can verify them against the live Cloudflare dashboard without re-deriving them.',
+      ),
+    },
+    {
+      // Describes THIS generator's actual current e2e layout, not the
+      // reference app's own doc verbatim -- its copy still references
+      // .template-reference (a retired concept this generator never
+      // emits -- see the forbidden-artifacts test) and a scripts/run-web-e2e.mjs
+      // wrapper this generator's simpler `playwright test` invocation does
+      // not need (generator-parity audit, narduk-libs#D2).
+      path: 'docs/e2e-testing.md',
+      contents: text(
+        '# E2E Testing',
+        '',
+        '## Layout',
+        '',
+        '- `playwright.config.ts` defines a `setup` project (runs once, see `global.setup.ts`) and a `chromium` project that depends on it.',
+        '- `apps/web/tests/e2e/fixtures.ts` re-exports the shared readiness and hydration helpers from `@narduk-enterprises/narduk-testkit/e2e/fixtures` -- import from this local file, not the package directly, so a future fixture addition only touches one file.',
+        "- `apps/web/tests/e2e/global.setup.ts` is the `setup` project: it waits for the base URL, asserts `/api/health` reports `status: 'ok'`, and warms the app before any other spec runs.",
+        '- `apps/web/tests/e2e/home.spec.ts` is the starter smoke spec.',
+        '- `apps/web/tests/e2e/visual-audit.spec.ts` captures the starter route across representative viewports using the shared UI-quality toolkit (see below) and asserts a clean browser console.',
+        '',
+        '## How to extend coverage',
+        '',
+        '1. Import fixtures from the local `tests/e2e/fixtures.ts`, not the package directly.',
+        '2. Keep `global.setup.ts` as the readiness gate unless the app intentionally replaces it.',
+        '3. Add local specs for product-specific flows as routes and features ship.',
+        "4. Add a route to `visual-audit.spec.ts`'s `representativeRoutes()` for every key page the app ships.",
+        '5. Promote reusable readiness or capture helpers back into narduk-testkit instead of copying them across apps.',
+        '',
+        '## Visual site QA',
+        '',
+        'This app shares the visual QA capture toolkit through `@narduk-enterprises/narduk-testkit/playwright/ui-quality`:',
+        '',
+        '- `prepareUiQualityRoot(...)` resets `output/playwright/visual-audit`',
+        '- `captureFullPageAudit(...)` captures full-page screenshots',
+        '- `captureNamedLocator(...)` captures focused UI elements',
+        '- `createConsoleTracker(...)` records console warnings and page errors; `visual-audit.spec.ts` asserts it stays clean with `expectClean()`',
+        '- `writeUiQualityManifest(...)` records the route/element manifest',
+        '',
+        'The artifact convention is `output/playwright/visual-audit`. Screenshots and manifests are generated artifacts and must not be committed.',
+        '',
+        '## Running tests',
+        '',
+        '- Full suite: `pnpm run test:e2e`',
+        '- Visual audit only: `pnpm exec playwright test tests/e2e/visual-audit.spec.ts --project=chromium`',
+        '',
+        '## Agent expectations',
+        '',
+        'When adding or changing features:',
+        '',
+        '- add unit tests for core logic where appropriate',
+        '- add E2E coverage for critical user-visible flows',
+        '- keep tests robust enough to run against both local and deployed environments when practical',
       ),
     },
     {
@@ -683,7 +935,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     {
       path: 'apps/web/nuxt.config.ts',
       contents: text(
-        ...(hasDatabase ? ["import { fileURLToPath } from 'node:url'", ''] : []),
+        "import { fileURLToPath } from 'node:url'",
+        '',
         'const localPort = ' + localPort,
         'const siteUrl = ' + tsString(siteUrl),
         'const appName = ' + tsString(displayName),
@@ -693,6 +946,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'const deploymentTarget =',
         "  process.env.NARDUK_DEPLOY_TARGET || (isBranchPreview ? 'preview' : 'production')",
         'process.env.NARDUK_DEPLOY_TARGET ??= deploymentTarget',
+        // Gates the local-only nitro-cloudflare-dev module (see moduleList)
+        // and the nitro.cloudflareDev binding-emulation block below.
+        // build:ci is the only script that sets this; local `nuxt dev` and
+        // `nuxt build` (without it) both keep the dev emulation on -- matches
+        // the reference app's own const exactly.
+        "const isCloudflareBuild = process.env.NARDUK_CLOUDFLARE_BUILD === '1'",
         '',
         'export default defineNuxtConfig({',
         '  compatibilityDate: ' + tsString(DEFAULT_COMPATIBILITY_DATE) + ',',
@@ -778,6 +1037,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  },',
         '  nitro: {',
         "    preset: 'cloudflare_module',",
+        // Local Wrangler binding emulation for `nuxt dev` (nitro-cloudflare-dev,
+        // gated in moduleList above). `preset` stays a literal either way --
+        // foundation:check item 1.1 reads it straight from source, so it
+        // must not become conditional on isCloudflareBuild the way the
+        // reference app's own (preset-less) config forces it to resolve
+        // preset from NITRO_PRESET/`.output/nitro.json` instead.
+        '    ...(isCloudflareBuild',
+        '      ? {}',
+        '      : {',
+        '          cloudflareDev: {',
+        "            configPath: fileURLToPath(new URL('./wrangler.jsonc', import.meta.url)),",
+        '          },',
+        '        }),',
         '    openAPI: {',
         '      meta: {',
         '        title: ' + tsString(displayName + ' API') + ',',
@@ -867,6 +1139,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: 'apps/web/wrangler.jsonc',
       contents: text(
         '{',
+        // Documents the shape for editors/CI without pulling in a real
+        // schema fetch. `account_id` is deliberately absent -- live
+        // Cloudflare account metadata, populated by onboarding after this
+        // generator runs (see README's Config/ charter), never fabricated.
+        '  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",',
         '  "name": ' + JSON.stringify(appName) + ',',
         '  "main": "./.output/server/index.mjs",',
         '  "no_bundle": true,',
@@ -875,6 +1152,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "rules": [{ "type": "ESModule", "globs": ["**/*.mjs"] }],',
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
+        '  "observability": { "enabled": true },',
         '  "workers_dev": ' + (exposure === 'public') + ',',
         '  "preview_urls": ' + (exposure === 'public') + ',',
         ...(hasDatabase
@@ -894,15 +1172,236 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      path: 'apps/web/scripts/validate-manifests.mjs',
+      // foundation:check item 1.3 requires only that a `manifests:validate`
+      // script exist and succeed; it says nothing about the live cross-check
+      // already agreeing on a checkout this generator itself just produced.
+      // ../../Config/cloudflare-app.json is populated by onboarding, AFTER
+      // this generator runs (see README's Config/ charter) -- a checkout
+      // fresh from `create-narduk-app` has no such file yet, so unlike the
+      // reference app's own script (which assumes the file exists) this one
+      // no-ops with an explanatory message when it is absent, and only runs
+      // the real binding cross-check once onboarding creates it.
+      contents: text(
+        "import { readFile } from 'node:fs/promises'",
+        '',
+        "const cloudflareAppPath = '../../Config/cloudflare-app.json'",
+        '',
+        'let manifestText',
+        'try {',
+        "  manifestText = await readFile(cloudflareAppPath, 'utf8')",
+        '} catch (error) {',
+        "  if (error.code === 'ENOENT') {",
+        '    console.log(',
+        '      `manifests: ${cloudflareAppPath} does not exist yet (populated by onboarding) -- skipping the live binding cross-check`,',
+        '    )',
+        '    process.exit(0)',
+        '  }',
+        '  throw error',
+        '}',
+        '',
+        'const [wrangler, manifest] = await Promise.all([',
+        "  readFile('wrangler.jsonc', 'utf8').then((text) => JSON.parse(stripJsonComments(text))),",
+        '  Promise.resolve(JSON.parse(manifestText)),',
+        '])',
+        '',
+        'const actual = {',
+        '  cron: wrangler.triggers?.crons ?? [],',
+        '  d1: (wrangler.d1_databases ?? []).map((entry) => entry.binding).sort(),',
+        '  kv: (wrangler.kv_namespaces ?? []).map((entry) => entry.binding).sort(),',
+        '  queues: [',
+        '    ...(wrangler.queues?.producers ?? []).map((entry) => `${entry.binding}:producer`),',
+        '    ...(wrangler.queues?.consumers ?? []).map((entry) => `${entry.queue}:consumer`),',
+        '  ].sort(),',
+        '  r2: (wrangler.r2_buckets ?? []).map((entry) => entry.binding).sort(),',
+        '}',
+        'const expected = {',
+        '  cron: [...(manifest.bindings?.cron ?? [])].sort(),',
+        '  d1: (manifest.bindings?.d1 ?? []).map((entry) => entry.binding).sort(),',
+        '  kv: (manifest.bindings?.kv ?? []).map((entry) => entry.binding).sort(),',
+        '  queues: (manifest.bindings?.queues ?? [])',
+        '    .map((entry) => `${entry.binding ?? entry.queue}:${entry.role}`)',
+        '    .sort(),',
+        '  r2: (manifest.bindings?.r2 ?? []).map((entry) => entry.binding).sort(),',
+        '}',
+        'if (JSON.stringify(actual) !== JSON.stringify(expected)) {',
+        '  throw new Error(',
+        '    `wrangler bindings disagree with ${cloudflareAppPath}\\nactual=${JSON.stringify(actual)}\\nexpected=${JSON.stringify(expected)}`,',
+        '  )',
+        '}',
+        'console.log(`manifests: wrangler.jsonc and ${cloudflareAppPath} agree`)',
+        '',
+        // wrangler.jsonc (JSONC) needs its `//`/`/* */` comments AND its
+        // trailing commas stripped before JSON.parse -- this file's own
+        // "preview_urls": ...,\n} has one. The naive `//.*$` line-comment
+        // pattern would also eat the "https://" in this file's own
+        // `$schema` URL, so the negative lookbehind skips a `//` immediately
+        // preceded by `:` (a real line comment is preceded by
+        // whitespace/start-of-line, never a bare colon).
+        'function stripJsonComments(text) {',
+        "  return text.replace(/\\/\\*[\\s\\S]*?\\*\\/|(?<!:)\\/\\/.*$/gm, '').replace(/,(\\s*[}\\]])/gu, '$1')",
+        '}',
+      ),
+    },
+    {
       path: 'apps/web/tests/e2e/home.spec.ts',
       contents: text(
-        "import { expect, test } from '@playwright/test'",
+        "import { expect, test } from './fixtures'",
         '',
         "test('home page renders', async ({ page }) => {",
         "  await page.goto('/')",
         "  await expect(page.getByRole('heading', { name: " +
           tsString(displayName) +
           ' })).toBeVisible()',
+        '})',
+      ),
+    },
+    {
+      // A thin re-export, not a copy: narduk-testkit is the single source of
+      // truth for these fixtures (waitForBaseUrlReady, waitForHydration,
+      // warmUpApp), and importing from './fixtures' rather than the package
+      // directly everywhere means a future fixture addition only has to
+      // touch this one file. Matches the reference app's own fixtures.ts.
+      path: 'apps/web/tests/e2e/fixtures.ts',
+      contents: text(
+        'export {',
+        '  expect,',
+        '  test,',
+        '  waitForBaseUrlReady,',
+        '  waitForHydration,',
+        '  warmUpApp,',
+        "} from '@narduk-enterprises/narduk-testkit/e2e/fixtures'",
+      ),
+    },
+    {
+      // Playwright "setup project" (see playwright.config.ts's setup/chromium
+      // projects and the chromium project's dependencies: ['setup']): runs
+      // once, before any other e2e spec, with real browser/baseURL fixtures
+      // rather than a plain globalSetup function (which has no fixture
+      // access). webServer.url already checks for an HTTP 200-403 response,
+      // but that alone does not prove Nuxt/Vite has finished compiling a
+      // real page on this cold start, or that a required health check
+      // actually passed rather than degrading -- this closes both gaps
+      // before any dependent spec can race them. Matches the reference
+      // app's own global.setup.ts, minus its product-specific health-check
+      // name assertion (this app registers none by default).
+      path: 'apps/web/tests/e2e/global.setup.ts',
+      contents: text(
+        "import { waitForBaseUrlReady, warmUpApp } from '@narduk-enterprises/narduk-testkit/e2e/fixtures'",
+        '',
+        "import { expect, test } from './fixtures'",
+        '',
+        "test('app is ready for e2e navigation', async ({ browser, baseURL, request }) => {",
+        '  test.setTimeout(150_000)',
+        "  expect(baseURL, 'Playwright baseURL must be configured').toBeTruthy()",
+        '  await waitForBaseUrlReady(baseURL!)',
+        "  const health = await request.get('/api/health')",
+        '  expect(health.status()).toBe(200)',
+        '  const body = await health.json()',
+        '  expect(body).toMatchObject({',
+        '    success: true,',
+        "    data: { status: 'ok', database: " +
+          (hasDatabase ? "'ok'" : "'not_applicable'") +
+          ' },',
+        '  })',
+        '  await warmUpApp(browser, baseURL!)',
+        '})',
+      ),
+    },
+    {
+      // Generic skeleton, not the reference app's own filled-in shape: its
+      // visual-audit.spec.ts hardcodes ~10 real product routes and
+      // app-specific selectors this generator cannot know in advance (same
+      // reasoning as CONTRACT.md above). What IS generic -- the shared
+      // narduk-testkit UI-quality toolkit wiring, the four representative
+      // viewports, and the console-clean assertion -- is filled in for real,
+      // scoped to the one route every scaffold actually has: '/'.
+      path: 'apps/web/tests/e2e/visual-audit.spec.ts',
+      contents: text(
+        "import path from 'node:path'",
+        '',
+        'import {',
+        '  captureFullPageAudit,',
+        '  captureNamedLocator,',
+        '  createConsoleTracker,',
+        '  prepareUiQualityRoot,',
+        '  writeUiQualityManifest,',
+        "} from '@narduk-enterprises/narduk-testkit/playwright/ui-quality'",
+        '',
+        "import { expect, test, waitForBaseUrlReady, waitForHydration, warmUpApp } from './fixtures'",
+        '',
+        "const SCREENSHOT_ROOT = path.resolve(process.cwd(), 'output/playwright/visual-audit')",
+        'const SCREENSHOT_SCOPE = ' + tsString(appName + '-visual-audit') + '',
+        'const VIEWPORTS = [',
+        "  { height: 844, name: 'mobile', width: 390 },",
+        "  { height: 1024, name: 'tablet', width: 768 },",
+        "  { height: 900, name: 'desktop', width: 1280 },",
+        ']',
+        '',
+        // Every scaffold has exactly one route: '/'. Add a row per route as
+        // the app grows past its starter page (mirrors CONTRACT.md's
+        // Endpoints table instruction).
+        'function representativeRoutes() {',
+        "  return [{ name: 'home', path: '/' }]",
+        '}',
+        '',
+        "test.describe('visual audit', () => {",
+        "  test.describe.configure({ mode: 'serial' })",
+        '  test.setTimeout(180_000)',
+        '  let screenshotRoot = SCREENSHOT_ROOT',
+        '',
+        '  test.beforeAll(async ({ browser, baseURL }) => {',
+        '    if (!baseURL) {',
+        "      throw new Error('visual audit requires Playwright baseURL to be configured.')",
+        '    }',
+        '',
+        '    await waitForBaseUrlReady(baseURL)',
+        '    await warmUpApp(browser, baseURL)',
+        '    screenshotRoot = prepareUiQualityRoot(SCREENSHOT_ROOT, { scope: SCREENSHOT_SCOPE })',
+        '  }, 60_000)',
+        '',
+        "  test('captures representative routes across target viewports', async ({ page }) => {",
+        '    const consoleTracker = createConsoleTracker(page)',
+        '    const captures: Array<Awaited<ReturnType<typeof captureFullPageAudit>>> = []',
+        '    const routes = representativeRoutes()',
+        '',
+        '    for (const viewport of VIEWPORTS) {',
+        '      await page.setViewportSize({ height: viewport.height, width: viewport.width })',
+        '      for (const route of routes) {',
+        "        const response = await page.goto(route.path, { waitUntil: 'domcontentloaded' })",
+        '        expect(response?.ok(), `Expected ${route.path} to return an OK response`).toBeTruthy()',
+        '        await waitForHydration(page)',
+        "        await expect(page.locator('main')).toBeVisible()",
+        '        captures.push(',
+        '          await captureFullPageAudit(',
+        '            page,',
+        '            screenshotRoot,',
+        '            route.path,',
+        '            `${route.name}-${viewport.name}`,',
+        '            async (directory, elements) => {',
+        '              await captureNamedLocator(',
+        '                page,',
+        "                page.locator('main').first(),",
+        "                'main content',",
+        '                directory,',
+        '                elements,',
+        '              )',
+        '            },',
+        '          ),',
+        '        )',
+        '      }',
+        '    }',
+        '',
+        '    writeUiQualityManifest(screenshotRoot, {',
+        '      app: ' + tsString(appName) + ',',
+        '      generatedAt: new Date().toISOString(),',
+        '      minimumFullPageCount: VIEWPORTS.length * routes.length,',
+        '      minimumScreenshotCount: VIEWPORTS.length * routes.length * 2,',
+        '      captures,',
+        '    })',
+        '',
+        '    await consoleTracker.expectClean()',
+        '  })',
         '})',
       ),
     },
@@ -971,12 +1470,32 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  },',
         '  webServer: {',
         '    command: `PORT=${port} NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 pnpm --filter web run dev:test`,',
-        '    url: `http://127.0.0.1:${port}`,',
+        // Health, not '/': Playwright's own readiness probe only checks for
+        // an HTTP 200-403 response, so a plain '/' base URL is satisfied by
+        // a page that has accepted the connection but not finished an SSR
+        // render. The 'setup' project below verifies the health body and
+        // warms a real page render before any other test starts -- see
+        // global.setup.ts for the full "why" (matches the reference app).
+        '    url: `http://127.0.0.1:${port}/api/health`,',
         '    reuseExistingServer: !process.env.CI,',
         '  },',
         '  projects: [',
         '    {',
+        "      // Runs once, before any 'chromium' project test file, via that",
+        "      // project's dependencies below. See global.setup.ts.",
+        "      name: 'setup',",
+        '      testMatch: /global\\.setup\\.ts/,',
+        "      use: { ...devices['Desktop Chrome'] },",
+        '    },',
+        '    {',
+        // Kept as 'chromium', not renamed to the reference app's 'web': the
+        // generated CI workflow (ci-workflow.ts) already shards and filters
+        // on this exact project name (`--project=chromium`), both in the
+        // private path's e2e-args and the public path's browser job --
+        // renaming it would silently break those invocations.
         "      name: 'chromium',",
+        '      testIgnore: /global\\.setup\\.ts/,',
+        "      dependencies: ['setup'],",
         "      use: { ...devices['Desktop Chrome'] },",
         '    },',
         '  ],',
