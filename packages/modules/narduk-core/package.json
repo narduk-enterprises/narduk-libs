@@ -129,6 +129,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
+    "@nuxt/schema": "^4.5.2",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",

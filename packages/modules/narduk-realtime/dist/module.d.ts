@@ -1,3 +1,4 @@
+import type { NuxtModule } from '@nuxt/schema';
 import type { NardukRealtimeUpgrade } from './options.js';
 export interface NardukRealtimeModuleOptions {
     /**
@@ -45,8 +46,8 @@ export interface NardukRealtimeModuleOptions {
      */
     upgrades?: NardukRealtimeUpgrade[];
 }
-declare const _default: import("nuxt/schema").NuxtModule<NardukRealtimeModuleOptions, NardukRealtimeModuleOptions, false>;
-export default _default;
+declare const nardukRealtimeModule: NuxtModule<NardukRealtimeModuleOptions>;
+export default nardukRealtimeModule;
 export { NardukRealtimeConfigurationError, resolveDurableObjects, resolveUpgrades, } from './options.js';
 export type { NardukRealtimeUpgrade } from './options.js';
 export { installDurableObjectExports, installRealtimeWorkerEntry } from './setup.js';

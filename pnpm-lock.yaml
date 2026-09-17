@@ -711,6 +711,9 @@ importers:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../../tooling/eslint-config
+      '@nuxt/schema':
+        specifier: ^4.5.2
+        version: 4.5.2
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.39(typescript@5.9.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.9)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
@@ -979,6 +982,9 @@ importers:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../../tooling/eslint-config
+      '@nuxt/schema':
+        specifier: ^4.5.2
+        version: 4.5.2
       '@types/node':
         specifier: 22.19.19
         version: 22.19.19
