@@ -50,6 +50,106 @@ export function capIncomingMessageBytes(req, maxBytes) {
     else req.emit?.('error', error)
   })
 }
+
+const H3_RAW_BODY = Symbol.for('h3RawBody')
+
+function uploadTooLargeError(maxBytes) {
+  return createError({
+    statusCode: 413,
+    message: `Upload request exceeds ${maxBytes / 1024 / 1024}MB limit`,
+  })
+}
+
+function isWebReadableStream(value) {
+  return typeof value?.getReader === 'function'
+}
+
+function isNodeReadableStream(value) {
+  return typeof value?.pipe === 'function' && typeof value?.on === 'function'
+}
+
+/**
+ * Read a web `ReadableStream` while counting bytes, and abort the moment the
+ * running total would pass `maxBytes`. The overflowing chunk is never kept and
+ * no further chunk is pulled, so at most `maxBytes + one chunk` is ever read.
+ * The source is cancelled on abort so the Worker stops reading the request.
+ */
+export async function readCappedWebStream(stream, maxBytes) {
+  const reader = stream.getReader()
+  const chunks = []
+  let seen = 0
+
+  try {
+    for (;;) {
+      // Sequential by design: each chunk has to be counted before the next is
+      // pulled, so the cap stops the stream instead of racing a parallel drain.
+      // eslint-disable-next-line no-await-in-loop -- see above
+      const { done, value } = await reader.read()
+      if (done) break
+      const size = chunkByteLength(value)
+      if (seen + size > maxBytes) throw uploadTooLargeError(maxBytes)
+      seen += size
+      chunks.push(value)
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {})
+    throw error
+  }
+
+  if (chunks.length === 1) return chunks[0]
+
+  const body = new Uint8Array(seen)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunkByteLength(chunk)
+  }
+  return body
+}
+
+/**
+ * Hold `maxBytes` while the request body is READ, before the multipart parse.
+ *
+ * `capIncomingMessageBytes` only covers a live Node request stream. On
+ * Cloudflare Workers — the only runtime Narduk apps deploy to — there is no
+ * such stream: h3 resolves the body from `event._requestBody` /
+ * `event.web.request.body` (a web `ReadableStream`, which `readRawBody`
+ * buffers with no limit) or from the bytes the Nitro `cloudflare_module`
+ * handler already materialised onto `event.node.req.body`. A client that
+ * declares a small `Content-Length` and then sends more passes the header
+ * check and is bounded by neither.
+ *
+ * Resolution order mirrors h3's own so no body shape it would read is missed.
+ * A web stream is read through a counting reader; already-materialised bytes
+ * are measured and refused before the parse; a live Node stream is left to
+ * `capIncomingMessageBytes`, which owns that path.
+ */
+export async function enforceUploadBodyByteCap(event, maxBytes) {
+  const req = event?.node?.req
+  let body =
+    event?._requestBody ??
+    event?.web?.request?.body ??
+    req?.[H3_RAW_BODY] ??
+    req?.rawBody ??
+    req?.body
+  if (typeof body?.then === 'function') body = await body
+  if (body == null || isNodeReadableStream(body)) return undefined
+
+  if (!isWebReadableStream(body)) {
+    if (chunkByteLength(body) > maxBytes) throw uploadTooLargeError(maxBytes)
+    return body
+  }
+
+  const bytes = await readCappedWebStream(body, maxBytes)
+  // Zero-copy view so h3's `Buffer.isBuffer` short-circuit skips another copy.
+  const bounded = globalThis.Buffer
+    ? globalThis.Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : bytes
+  // h3 reads `_requestBody` first, so the parse gets these bounded bytes and
+  // never touches the stream we just drained.
+  event._requestBody = bounded
+  return bounded
+}
 export const PUBLIC_RASTER_WARNING_SIZE = 800 * 1024
 export const CRITICAL_RASTER_WARNING_SIZE = 350 * 1024
 

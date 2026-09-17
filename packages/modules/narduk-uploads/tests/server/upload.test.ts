@@ -256,17 +256,17 @@ describe('normalizeExtension', () => {
   })
 })
 
-type CapEvent = {
+interface CapEvent {
   _requestBody?: unknown
-  web?: { request?: { body?: unknown } }
   node?: { req?: unknown }
+  web?: { request?: { body?: unknown } }
 }
 
-type StreamProbe = {
+interface StreamProbe {
+  cancelled: unknown
   /** Bytes the source actually handed out — what the Worker read off the wire. */
   produced: number
   pulls: number
-  cancelled: unknown
 }
 
 /**
@@ -278,8 +278,8 @@ type StreamProbe = {
 function makeProbedStream(
   chunk: Uint8Array,
   maxChunks: number,
-): { stream: ReadableStream<Uint8Array>; probe: StreamProbe } {
-  const probe: StreamProbe = { produced: 0, pulls: 0, cancelled: undefined }
+): { probe: StreamProbe; stream: ReadableStream<Uint8Array> } {
+  const probe: StreamProbe = { cancelled: undefined, produced: 0, pulls: 0 }
   const stream = new ReadableStream<Uint8Array>(
     {
       pull(controller) {
