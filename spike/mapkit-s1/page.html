@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MapKit S1 spike</title>
+    <style nonce="{{nonce}}">
+      html,body{margin:0;height:100%}
+      #map{width:100vw;height:100vh}
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module" nonce="{{nonce}}">
+      const results = {
+        violations: [],
+        consoleErrors: [],
+        mapkitErrors: [],
+        configChanges: [],
+        tokenCalls: 0,
+        wasm: null,
+        webgl: null,
+        loaded: false,
+        annotationsAdded: 0,
+        annotationMs: null,
+        initMs: null,
+        error: null,
+      };
+      window.__spike = results;
+
+      results.webgl = (() => {
+        try {
+          const c = document.createElement('canvas');
+          const gl = c.getContext('webgl2') || c.getContext('webgl');
+          if (!gl) return { ok: false };
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          return { ok: true, renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
+        } catch (e) { return { ok: false, err: String(e).slice(0, 120) }; }
+      })();
+      results.wasm = { compile: 0, instantiate: 0, streaming: 0, errors: [] };
+      if (typeof WebAssembly !== 'undefined') {
+        for (const k of ['compile', 'instantiate', 'compileStreaming', 'instantiateStreaming']) {
+          const orig = WebAssembly[k];
+          if (typeof orig !== 'function') continue;
+          WebAssembly[k] = function (...args) {
+            results.wasm[k.includes('Streaming') ? 'streaming' : (k === 'compile' ? 'compile' : 'instantiate')] += 1;
+            try {
+              const r = orig.apply(this, args);
+              if (r && r.catch) r.catch((e) => results.wasm.errors.push(String(e).slice(0, 200)));
+              return r;
+            } catch (e) {
+              results.wasm.errors.push(String(e).slice(0, 200));
+              throw e;
+            }
+          };
+        }
+      }
+
+      document.addEventListener('securitypolicyviolation', (e) => {
+        results.violations.push({
+          directive: e.effectiveDirective || e.violatedDirective,
+          blockedURI: e.blockedURI,
+          sample: (e.sample || '').slice(0, 120),
+          disposition: e.disposition,
+        });
+      });
+
+      const params = new URLSearchParams(location.search);
+      const scenario = params.get('scenario') || 'basic';
+      const annotationCount = Number(params.get('annotations') || 0);
+      const useAuthCallback = params.get('authCallback') === '1';
+      const LIBRARIES = (params.get('libraries') || 'map,annotations,overlays').split(',');
+      const NONCE_TO_LOADER = params.get('noNonce') === '1' ? undefined : '{{nonce}}';
+      const MAP_TYPE = params.get('mapType') || null;
+      const WANT_3D = params.get('threeD') === '1';
+
+      async function fetchToken() {
+        results.tokenCalls += 1;
+        const r = await fetch('/api/token', { cache: 'no-store' });
+        const j = await r.json();
+        return j.token;
+      }
+
+      try {
+        const t0 = performance.now();
+        const { load } = await import('/mapkit-loader.js');
+        let mapkit;
+        if (useAuthCallback) {
+          // Refresh-capable wiring: load WITHOUT a token, then init with a callback.
+          mapkit = await load({ nonce: NONCE_TO_LOADER, version: '6', libraries: LIBRARIES });
+          mapkit.addEventListener('configuration-change', (e) => {
+            results.configChanges.push(e.status);
+          });
+          mapkit.addEventListener('error', (e) => {
+            results.mapkitErrors.push({ status: e.status, message: e.message });
+          });
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('init timeout')), 20000);
+            mapkit.addEventListener('configuration-change', function once(e) {
+              if (e.status === 'Initialized') {
+                clearTimeout(timer);
+                mapkit.removeEventListener('configuration-change', once);
+                resolve();
+              }
+            });
+            mapkit.addEventListener('error', function onerr(e) {
+              clearTimeout(timer);
+              reject(new Error('mapkit error: ' + e.status + ' ' + (e.message || '')));
+            });
+            mapkit.init({
+              authorizationCallback: (done) => {
+                fetchToken().then(done);
+              },
+            });
+          });
+        } else {
+          // Static-token wiring: the loader puts the token in data-token and MapKit self-inits.
+          const token = await fetchToken();
+          mapkit = await load({ token, nonce: NONCE_TO_LOADER, version: '6', libraries: LIBRARIES });
+          mapkit.addEventListener('configuration-change', (e) => {
+            results.configChanges.push(e.status);
+          });
+          mapkit.addEventListener('error', (e) => {
+            results.mapkitErrors.push({ status: e.status, message: e.message });
+          });
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('init timeout')), 20000);
+            const check = () => {
+              if (results.configChanges.includes('Initialized')) {
+                clearTimeout(timer);
+                resolve();
+              } else if (results.mapkitErrors.length) {
+                clearTimeout(timer);
+                reject(new Error('mapkit error: ' + JSON.stringify(results.mapkitErrors)));
+              } else setTimeout(check, 50);
+            };
+            check();
+          });
+        }
+        results.initMs = Math.round(performance.now() - t0);
+        results.loaded = true;
+
+        const map = new mapkit.Map('map', {
+          center: new mapkit.Coordinate(37.3349, -122.00902),
+          cameraDistance: 60000,
+        });
+        window.__map = map;
+        if (MAP_TYPE) map.mapType = MAP_TYPE;
+        if (WANT_3D) {
+          try {
+            map.showsMapTypeControl = true;
+            map.cameraDistance = 900;
+            map.cameraZoomRange = new mapkit.CameraZoomRange(200, 100000);
+          } catch (e) { results.consoleErrors.push('3d: ' + String(e).slice(0, 120)); }
+        }
+        await new Promise((r) => setTimeout(r, MAP_TYPE || WANT_3D ? 6000 : 0));
+
+        if (annotationCount > 0) {
+          const a0 = performance.now();
+          const annos = [];
+          for (let i = 0; i < annotationCount; i += 1) {
+            const lat = 37.3349 + (Math.sin(i * 1.7) * 0.12);
+            const lon = -122.00902 + (Math.cos(i * 2.3) * 0.12);
+            annos.push(
+              new mapkit.MarkerAnnotation(new mapkit.Coordinate(lat, lon), {
+                title: 'P' + i,
+                glyphText: String(i % 10),
+                collisionMode: mapkit.Annotation.CollisionMode.None,
+              }),
+            );
+          }
+          map.addAnnotations(annos);
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          results.annotationMs = Math.round(performance.now() - a0);
+          results.annotationsAdded = map.annotations.length;
+        }
+        if (params.get('keepalive') === '1') {
+          let k = 0;
+          setInterval(() => {
+            k += 1;
+            try {
+              map.setCenterAnimated(
+                new mapkit.Coordinate(37.3349 + (k % 2 ? 0.02 : -0.02), -122.00902 + (k % 3) * 0.01),
+                false,
+              );
+            } catch { /* ignore */ }
+          }, 20000);
+        }
+        results.done = true;
+      } catch (err) {
+        results.error = String(err && err.message ? err.message : err);
+        results.done = true;
+      }
+    </script>
+  </body>
+</html>

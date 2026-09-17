@@ -1,0 +1,11 @@
+{
+  "name": "mapkit-s1-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@apple/mapkit-loader": "1.0.0"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
