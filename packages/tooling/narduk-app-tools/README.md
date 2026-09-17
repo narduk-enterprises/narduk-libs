@@ -334,3 +334,98 @@ that would trip a naive detector: a `defineNitroPlugin` registering health
 checks, PostHog named throughout the analytics configuration, and a built
 `.output` tree -- are committed as fixtures in
 `tests/foundation/capability-coverage-artefact.test.ts`.
+
+### Single-source toolchain versions (`foundation:check:toolchain`)
+
+`narduk-app foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]`
+-- item 11 (Logan, askme 2026-09-17: _"Single-source toolchain versions
+(Recommended)"_ — one declared Node/pnpm source per app; every other place
+either reads it or is checked against it, so a bump is one edit;
+[company-hq#745](https://github.com/narduk-enterprises/company-hq/issues/745)).
+The evaluator is `src/foundation/items/item-11-toolchain-single-source.ts` and
+matches items 1-7 (`check()` sub-checks, no warn tier). Like items 8, 9 and 10
+it is a separate command and JSON artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/toolchain-single-source'`) because
+`foundation:check --json` is the exact 7-item contract company-hq
+`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3
+ARTEFACT finding. Same exit codes (`0` PASS, `1` FAIL, `2` UNKNOWN).
+
+**No credential is needed.** Every verdict comes from the app's own files, so
+this can be wired into generated CI after the install step has dropped the
+GitHub Packages token.
+
+#### The two sources, and why
+
+| Tool / consumer               | Reads for **Node**                                                                            | Reads for **pnpm**                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `actions/setup-node@v7`       | `node-version`, or `node-version-file` pointed at `.node-version` / `.nvmrc` / `package.json` | —                                                      |
+| `pnpm/action-setup@v6`        | —                                                                                             | `packageManager`, when the step declares no `version:` |
+| Volta                         | `package.json` → `volta.node` **only**                                                        | `volta.pnpm`                                           |
+| corepack, pnpm itself         | —                                                                                             | `packageManager`                                       |
+| npm / pnpm engine enforcement | `engines.node`                                                                                | `engines.pnpm`                                         |
+| fnm, mise, nodenv             | `.node-version` (and `.nvmrc`)                                                                | —                                                      |
+| nvm                           | `.nvmrc` **only**                                                                             | —                                                      |
+| Cloudflare Workers Builds     | dashboard `NODE_VERSION`                                                                      | dashboard `PNPM_VERSION`                               |
+
+- **Node → `.node-version`.** The widest native readership (setup-node via
+  `node-version-file`, fnm, mise, nodenv) and — the deciding property — the only
+  Node declaration a workflow can **point at** instead of restating. The shared
+  `nuxt-cloudflare.yml` accepts a `node-version-file` caller input for exactly
+  that (workflows#97), and a caller that uses it carries no Node literal at all.
+- **pnpm → root `package.json` `packageManager`.** corepack, pnpm and
+  `pnpm/action-setup` all read it natively; the shared workflow's own pnpm step
+  declares no `version:` and proves the path in production. There is no dotfile
+  equivalent worth preferring.
+
+Everything else is a **mirror**, because Volta and npm can read a version from
+nowhere but a manifest, and a Markdown table reads nothing at all. A mirror
+either derives from the source (a workflow's `node-version-file`, an unpinned
+`pnpm/action-setup`) or is compared against it here. `--fix` rewrites a drifted
+mirror's literal in place, so bumping Node is: edit `.node-version`, run
+`narduk-app foundation:check:toolchain --fix`.
+
+`.nvmrc` is **optional**. Every consumer in this estate that reads it also reads
+`.node-version`; the only tool that reads `.nvmrc` and not `.node-version` is
+`nvm`, which is not the installed manager here. The generator emits
+`.node-version` alone, and this item fails on a kept `.nvmrc` only when it
+disagrees.
+
+#### What `--fix` will and will not do
+
+It swaps a **value**, never a file's **shape**. It rewrites `engines.*`,
+`volta.*`, `.nvmrc`, `.tool-versions` and the Workers Builds table rows on the
+exact line the scan located, leaving every other byte alone (an app's own
+manifest is not reformatted, reordered, or round-tripped through
+`JSON.stringify`). A Markdown row keeps its column width where the padding can
+absorb the change; otherwise the app's formatter re-pads it.
+
+It does **not** rewrite a workflow. Turning `node-version:` into
+`node-version-file:`, or deleting a `pnpm/action-setup` `version:` input,
+changes the structure of a file the app owns and the caller's contract with the
+shared workflow — a one-time migration, reported with the exact edit and left
+for a human. It also does not invent a missing `.node-version`: with no source
+there is nothing to derive from, and picking a mirror to promote would be a
+guess.
+
+#### Rule table
+
+| Sub-check   | Condition                                                                                | Verdict                                                                                                                              |
+| ----------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 11.0        | No `package.json` readable at a known monorepo-candidate path                            | `unknown` (whole item)                                                                                                               |
+| 11.0        | No `.node-version`, or no root `packageManager`                                          | `fail` — the source is missing                                                                                                       |
+| 11.0        | A source declares a range (`24`, `^10.33`) rather than an exact `x.y.z`                  | `fail` — a range pins nothing a second tool could agree with                                                                         |
+| 11.0        | Both sources present and exact (a corepack `+sha512…` suffix is accepted)                | `pass`                                                                                                                               |
+| 11.1 / 11.2 | A mirror's value differs from its source                                                 | `fail`, naming `file:line`, the value found, and the value expected                                                                  |
+| 11.1 / 11.2 | Every mirror agrees, or no mirror restates a version                                     | `pass`                                                                                                                               |
+| 11.3        | A workflow pins a Node literal — **even one that currently agrees**                      | `fail`; a second declaration is the thing being removed                                                                              |
+| 11.3        | A `node-version-file` points at something other than `.node-version`                     | `fail`                                                                                                                               |
+| 11.3        | No workflow sets up Node                                                                 | `not-applicable`                                                                                                                     |
+| 11.4        | A `pnpm/action-setup` step declares a `version:` input                                   | `fail` — drop it and let the action read `packageManager`                                                                            |
+| 11.4        | No workflow installs pnpm with `pnpm/action-setup`                                       | `not-applicable`                                                                                                                     |
+| 11.5        | A `docs/workers-builds.md` `NODE_VERSION` / `PNPM_VERSION` row disagrees with its source | `fail` — these record the Cloudflare dashboard build environment, which no checkout can read, so update the dashboard alongside them |
+| 11.5        | No such doc or rows                                                                      | `not-applicable`                                                                                                                     |
+
+The `--json` artefact carries a first-class `sites` block — every declaration
+site with its file, line, value, role (`source` / `derives` / `mirror`) and
+verdict — so the estate roster reads the table as data rather than parsing
+sub-check prose, and a `fixes` block recording what `--fix` rewrote.

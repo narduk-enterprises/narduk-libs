@@ -127,7 +127,7 @@ describe('upgrade ownership contract', () => {
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
-      'nuxt-cloudflare.yml@4e99dafc81e09eb10c6e404f67e3ca34a17b42a6',
+      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
     )
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
       pristine.copilot,

@@ -1,12 +1,23 @@
-import { NODE_VERSION } from './manifest.js'
+import { NODE_SOURCE_FILE } from './ownership.js'
 
 import type { AppVisibility } from './types.js'
 
-// Kept in sync with the reference app (narduk-enterprises/buoys) rather than
-// left to drift: buoys#107 moved to this exact SHA, the tip of
-// narduk-enterprises/workflows main as of 2026-09-16 (generator-parity audit,
-// narduk-libs#D2). Bump deliberately alongside a verified Buoys/CI adoption.
-const workflowSha = '4e99dafc81e09eb10c6e404f67e3ca34a17b42a6'
+// workflows#97, the commit that ADDS the `node-version-file` caller input this
+// template now passes. The bump is not optional: a reusable workflow rejects an
+// input it does not declare, so a caller passing `node-version-file` to the
+// previous pin (#93, `4e99dafc`) fails at startup.
+//
+// It also brings #94 (caller-defined E2E subset on pull requests -- additive
+// opt-in inputs, no caller change required) and #97's OWN second half: a new
+// always-run required `caller-lint` job that actionlints the CALLING repo's
+// workflows and audits them for workflow-level concurrency, a top-level and a
+// per-job `permissions:` block, per-job `timeout-minutes`, and 40-character SHA
+// pins. That gate is why this file now emits a job-level `permissions:` block on
+// every job it writes -- `tests/caller-lint-hygiene.test.ts` re-runs the audit's
+// own rules over the generated output so the templates cannot drift back.
+//
+// Deliberately NOT main's tip: #99 and #100 are separate decisions.
+const workflowSha = '6f56678ad7562234e465284e48f27008e0f32db7'
 
 // Resolved from fleet's organization routes. Creating files does not grant
 // selected-repository membership; onboarding remains an explicit fleet action.
@@ -26,13 +37,19 @@ function setupSteps(): string[] {
     '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
     '        with:',
     '          persist-credentials: false',
+    // No `version:` input: pnpm/action-setup v6 resolves the root manifest's
+    // `packageManager`, which is this app's declared pnpm source. Restating the
+    // version here would be a second declaration that has to be bumped in step
+    // -- exactly what `foundation:check:toolchain` (item 11) fails on, and what
+    // the shared nuxt-cloudflare workflow's own pnpm step already avoids.
     '      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0',
     '        with:',
-    '          version: 10.33.4',
     '          dest: ${{ runner.temp }}/setup-pnpm',
     '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0',
     '        with:',
-    `          node-version: ${NODE_VERSION}`,
+    // Points at the declared Node source instead of restating its value, so a
+    // Node bump is one edit to `.node-version` and nothing here.
+    `          node-version-file: ${NODE_SOURCE_FILE}`,
     '          package-manager-cache: false',
     '      - name: Install workspace',
     '        env:',
@@ -105,6 +122,13 @@ export function createCopilotSetupWorkflow(): string {
     'jobs:',
     '  copilot-setup-steps:',
     '    runs-on: ubuntu-latest',
+    // A job-level permissions block REPLACES the workflow level rather than
+    // merging with it, so both are stated. Required by the shared workflow's
+    // caller-lint gate, which audits every file in the caller's own
+    // .github/workflows -- this one included.
+    '    permissions:',
+    '      contents: read',
+    '      packages: read',
     '    environment: copilot',
     '    timeout-minutes: 30',
     '    steps:',
@@ -148,7 +172,12 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '      packages: read',
       '    with:',
       `      runner: '${linuxRoute}'`,
-      `      node-version: '${NODE_VERSION}'`,
+      // `node-version-file` (workflows#97) instead of a literal: the shared
+      // workflow passes it straight through to actions/setup-node, so the
+      // caller reads the app's declared Node source rather than carrying a
+      // second copy of it. Generated apps build from the repository root, so
+      // the path resolves the same whichever base setup-node joins it to.
+      `      node-version-file: '${NODE_SOURCE_FILE}'`,
       '      package-manager: pnpm',
       '      require-scripts: true',
       '      typecheck-worker-script: typecheck',
@@ -190,6 +219,11 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '  quality:',
     '    name: Static, unit, and build',
     '    runs-on: ubuntu-24.04',
+    // Job level replaces, never merges, the workflow level -- see the
+    // caller-lint note beside workflowSha above.
+    '    permissions:',
+    '      contents: read',
+    '      packages: read',
     '    timeout-minutes: 30',
     '    env:',
     '      NODE_OPTIONS: --max-old-space-size=3072',
@@ -206,6 +240,9 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '      matrix:',
     '        shard: [1, 2, 3]',
     '    runs-on: ubuntu-24.04',
+    '    permissions:',
+    '      contents: read',
+    '      packages: read',
     '    timeout-minutes: 30',
     '    env:',
     '      NODE_OPTIONS: --max-old-space-size=3072',
@@ -232,6 +269,9 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     "    if: always() && needs.quality.result == 'success'",
     '    needs: [quality, browser]',
     '    runs-on: ubuntu-24.04',
+    '    permissions:',
+    '      contents: read',
+    '      packages: read',
     '    timeout-minutes: 20',
     '    env:',
     '      PLAYWRIGHT_HTML_OPEN: never',
@@ -262,6 +302,8 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '    if: always()',
     '    needs: [quality, browser, browser-report]',
     '    runs-on: ubuntu-24.04',
+    '    permissions:',
+    '      contents: read',
     '    timeout-minutes: 5',
     '    steps:',
     '      - name: Require static and browser success',
