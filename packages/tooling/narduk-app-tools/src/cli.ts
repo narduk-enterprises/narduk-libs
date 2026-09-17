@@ -32,6 +32,7 @@ import {
 import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
 import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/deployment-check.js'
 import { runOgCommand } from './commands/og.js'
+import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
 
 function usage(): string {
   return [
@@ -67,6 +68,10 @@ function usage(): string {
     '                                       and one smoke route, read no-cache and refused if a',
     '                                       redirect leaves the origin. Exit 2 unreachable, 3 build',
     '                                       version mismatch, 4 health, 5 smoke, 6 wrong origin.',
+    '  e2e-serve <port> [--entrypoint <file>] [--config <file>] [--assets <dir>] [--cwd <dir>]',
+    '                                       Serve a prebuilt Worker for Playwright',
+    '                                       (E2E_PREBUILT_ARTIFACT=1). 127.0.0.1 only;',
+    '                                       refuses to build when the artifact is missing.',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  doctor                              Check app-local prerequisites',
@@ -136,6 +141,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'e2e-serve') return await runE2eServe(parseE2eServeArgs(rest))
     if (command === 'og:check' || command === 'og:generate')
       return await runOgCommand(command, rest)
     if (command === 'db') {

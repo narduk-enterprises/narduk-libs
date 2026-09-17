@@ -115,14 +115,16 @@ every run so a wrong reading is visible before `--write`.
 
 Two things are deliberately absent from that table, and running the codemod
 against the reference app is what settled both. `playwright.config.ts` is not
-managed at all: Buoys' own configuration is ahead of this template
-(prebuilt-artefact web server, port resolution, list mode), so managing it would
-have proposed a downgrade rather than an upgrade. `docs/e2e-testing.md` is
-managed only as a region for the same reason — Buoys' copy documents its real
-specs, and a whole-file rewrite would have handed it a document about a
-different app. Dependency versions are absent too: Dependabot owns estate
-package currency (company-hq `D-TOOLCHAIN-1`), and two mechanisms editing the
-same lines is exactly the reconcile relationship this generator must not have.
+managed at all: existing apps already carry their own port resolution, list
+mode, and (for Buoys) a local prebuilt-Worker launcher, so managing the file
+would propose a downgrade. New scaffolds now emit the prebuilt path themselves
+(`E2E_PREBUILT_ARTIFACT=1` → `narduk-app e2e-serve <port>`; default remains
+`nuxt dev`). `docs/e2e-testing.md` is managed only as a region for the same
+reason — Buoys' copy documents its real specs, and a whole-file rewrite would
+have handed it a document about a different app. Dependency versions are absent
+too: Dependabot owns estate package currency (company-hq `D-TOOLCHAIN-1`), and
+two mechanisms editing the same lines is exactly the reconcile relationship
+this generator must not have.
 
 `.node-version` is absent from the table for that last reason. It is the app's
 declared **Node source** (see "One declared source per toolchain" below), and a
@@ -234,7 +236,10 @@ Scaffolds match the reference app shape Buoys is being brought to
   `README.md`/`AGENTS.md`, documenting the app's own health contract and its
   Cloudflare Workers Builds connection settings.
 - `playwright.config.ts` splits a `setup` project (global auth/session
-  bootstrap) from a `chromium` project that depends on it.
+  bootstrap) from a `chromium` project that depends on it. Local
+  `pnpm run test:e2e` still starts `nuxt dev`. `E2E_PREBUILT_ARTIFACT=1` (the
+  shared `nuxt-cloudflare` callable) runs `narduk-app e2e-serve <port>` against
+  the already-built Worker instead.
 - `docs/e2e-testing.md` and `apps/web/tests/e2e/visual-audit.spec.ts` describe
   and exercise the generated Playwright layout. The visual-audit spec is a
   generic, one-route (`/`) skeleton built on narduk-testkit's

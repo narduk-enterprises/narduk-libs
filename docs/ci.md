@@ -110,3 +110,13 @@ latency or CPU utilization.
 The packed-consumer proof hashes the downloaded Chromium binary, installed
 Playwright packages and manifest, OS release and native package inventory. A
 different hosted image or browser binary causes a full generated-app proof.
+
+## Prebuilt-Worker e2e
+
+The shared `nuxt-cloudflare` callable sets `E2E_PREBUILT_ARTIFACT=1` and
+expects the app to serve `.output/server/index.mjs` rather than `nuxt dev`.
+New scaffolds wire that to `narduk-app e2e-serve <port>`
+(`@narduk-enterprises/narduk-app-tools`). The command binds 127.0.0.1 only,
+refuses to build when the artifact is missing, writes `[e2e-serve]` startup
+notes to stderr, and filters only workerd's client-abort `Broken pipe` block
+(buoys#124). See `packages/tooling/narduk-app-tools/docs/e2e-serve.md`.
