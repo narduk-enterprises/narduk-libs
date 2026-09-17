@@ -247,9 +247,8 @@ describe('canonical-host middleware', () => {
     })
 
     it('keeps the retired middleware path importable as an alias for the live handler', async () => {
-      const alias = (await import(
-        '../runtime/server/handlers/canonicalRedirect'
-      )) as typeof import('../runtime/server/handlers/canonicalRedirect')
+      const alias =
+        (await import('../runtime/server/handlers/canonicalRedirect')) as typeof import('../runtime/server/handlers/canonicalRedirect')
 
       expect(alias.default).toBe(canonicalHost)
 

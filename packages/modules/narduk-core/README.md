@@ -257,6 +257,51 @@ and segment fetches; native HLS needs the media origin in `cspMediaSrc`. These
 options extend only their named directives and leave scripts, frames, and
 workers unchanged.
 
+## Canonical host redirect
+
+`server/middleware/00-canonical-host` sends a request that arrives on a
+non-canonical hostname to the canonical origin with a `308`. It is off unless
+`ENFORCE_CANONICAL_HOST` or `AUTH_ENFORCE_CANONICAL_HOST` is set (env or
+`runtimeConfig.public`), takes the canonical origin from `SITE_URL` falling back
+to `runtimeConfig.public.appUrl`, and disables itself when that origin is not
+`https:` or is localhost. It reads the `host` header only — never
+`x-forwarded-host`, which a client can set to bypass the redirect.
+
+**It redirects top-level document navigations only.** Canonicalisation is worth
+something on a navigation: search engines, bookmarks, and an auth cookie that
+has to be set on the canonical host. On a `fetch()` or a sub-resource it is only
+harmful — the browser follows the `308` cross-origin, the response carries no
+`Access-Control-Allow-Origin`, the call fails, and the canonical host has
+already run the handler and paid whatever that route costs. This broke
+same-origin API calls on every preview hostname (`*.workers.dev`, per-version
+preview URLs, branch aliases) until narduk-libs#408.
+
+The rule, in order:
+
+| request                                                                 | redirected?                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------- |
+| `Sec-Fetch-Dest: document` (any path)                                   | yes                                               |
+| `Sec-Fetch-Dest` present, anything else (`empty`, `script`, `image`, …) | no                                                |
+| no fetch metadata, page path                                            | yes — crawlers and old clients still canonicalise |
+| no fetch metadata, `/api/**` or `/_**`                                  | no                                                |
+| `POST`/`PUT`/`PATCH`/`DELETE`                                           | no (safe methods only)                            |
+
+Because the first row is keyed on the navigation and not on the path, an auth
+route that the browser navigates to — `/auth/callback`, `/auth/confirm`, or a
+`GET /api/auth/session/exchange` a provider redirects into — still canonicalises
+before it sets its cookie. The one behaviour change beyond the fix: a client
+that sends no `Sec-Fetch-*` headers at all (curl, server-to-server, Safari
+before 16.4) is no longer redirected on `/api/**`, so an auth navigation from
+such a client would set its cookie on the hostname it arrived at. Providers are
+sent to `appUrl`-derived URLs, which are already canonical, so this is the
+fallback path rather than the flow.
+
+`server/middleware/canonicalRedirect` was a second, auto-registered
+canonical-host middleware that redirected with `301` and gated on
+`import.meta.dev` instead (narduk-libs#409). It has been removed from the
+middleware tree; the import path still resolves, as a deprecated alias for the
+live handler, for apps that run the middleware chain by hand.
+
 ## Database backend
 
 Every app states whether it has a database with the `databaseBackend` module
