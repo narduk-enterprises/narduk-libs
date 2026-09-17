@@ -25,9 +25,10 @@ describe('00-runtime-public Nitro plugin', () => {
       public: { gaMeasurementId: '', posthogPublicKey: '' },
     }
     const hooks = new Map<string, (value: H3Event) => void>()
-    const plugin = (await import('../runtime/server/plugins/00-runtime-public')).default as (
-      nitro: { hooks: { hook: (name: string, handler: (event: H3Event) => void) => void } },
-    ) => void
+    const plugin = (await import('../runtime/server/plugins/00-runtime-public'))
+      .default as (nitro: {
+      hooks: { hook: (name: string, handler: (event: H3Event) => void) => void }
+    }) => void
 
     plugin({
       hooks: {

@@ -292,12 +292,10 @@ describe('narduk-core databaseBackend declaration', () => {
   })
 
   it('seeds public analytics keys from NUXT_PUBLIC_* when the short names are unset', async () => {
-    const previous = {
-      GA_MEASUREMENT_ID: process.env.GA_MEASUREMENT_ID,
-      NUXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID,
-      POSTHOG_PUBLIC_KEY: process.env.POSTHOG_PUBLIC_KEY,
-      NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY,
-    }
+    const previousGa = process.env.GA_MEASUREMENT_ID
+    const previousGaAlias = process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID
+    const previousPosthog = process.env.POSTHOG_PUBLIC_KEY
+    const previousPosthogAlias = process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY
     try {
       delete process.env.GA_MEASUREMENT_ID
       delete process.env.POSTHOG_PUBLIC_KEY
@@ -314,10 +312,14 @@ describe('narduk-core databaseBackend declaration', () => {
         },
       })
     } finally {
-      for (const [name, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[name]
-        else process.env[name] = value
-      }
+      if (previousGa === undefined) delete process.env.GA_MEASUREMENT_ID
+      else process.env.GA_MEASUREMENT_ID = previousGa
+      if (previousGaAlias === undefined) delete process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID
+      else process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID = previousGaAlias
+      if (previousPosthog === undefined) delete process.env.POSTHOG_PUBLIC_KEY
+      else process.env.POSTHOG_PUBLIC_KEY = previousPosthog
+      if (previousPosthogAlias === undefined) delete process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY
+      else process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = previousPosthogAlias
     }
   })
 })

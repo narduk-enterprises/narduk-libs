@@ -168,14 +168,10 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
         ),
     posthogPublicKey: previewSafeMode
       ? ''
-      : readRuntimeStringFromKeys(
-          event,
-          ['POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'],
-          {
-            config,
-            fallbacks: [readPublic(config, 'posthogPublicKey')],
-          },
-        ),
+      : readRuntimeStringFromKeys(event, ['POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'], {
+          config,
+          fallbacks: [readPublic(config, 'posthogPublicKey')],
+        }),
     posthogHost:
       readRuntimeStringFromKeys(event, ['POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST'], {
         config,
@@ -183,14 +179,10 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
       }) || DEFAULT_POSTHOG_HOST,
     gaMeasurementId: previewSafeMode
       ? ''
-      : readRuntimeStringFromKeys(
-          event,
-          ['GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'],
-          {
-            config,
-            fallbacks: [readPublic(config, 'gaMeasurementId')],
-          },
-        ),
+      : readRuntimeStringFromKeys(event, ['GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'], {
+          config,
+          fallbacks: [readPublic(config, 'gaMeasurementId')],
+        }),
     allowGeolocation: readRuntimeBoolean(event, 'NUXT_PUBLIC_ALLOW_GEOLOCATION', {
       config,
       fallback: readPublic(config, 'allowGeolocation'),
