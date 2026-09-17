@@ -36,6 +36,51 @@ import type {
   ProductSpec,
 } from './types.js'
 
+/**
+ * The `deployment` block a generated app is told to paste into
+ * `Config/cloudflare-app.json`, serialized rather than hand-typed.
+ *
+ * This is the same object `defaultDeploymentBlock()` in
+ * `@narduk-enterprises/narduk-app-tools` returns, and the generator test pins it
+ * to that function and runs the emitted text through `readDeploymentBlock`. It
+ * is duplicated here rather than imported because `narduk-app-tools` is a
+ * development dependency of this generator, not a runtime one -- a published
+ * `create-narduk-app` must not require it. The test is what keeps the copy
+ * honest: add a required key to the schema and this block stops validating, in
+ * CI, instead of in the first app that pastes it.
+ */
+export function defaultDeploymentBlockFor(appName: string): Record<string, unknown> {
+  return {
+    standard: 'narduk-v1',
+    builder: 'workers-builds',
+    productionBranch: 'main',
+    productionDeployCommand: 'narduk-app deploy versions-upload',
+    nonProductionDeployCommand: 'narduk-app deploy versions-upload',
+    nonProductionBranchBuilds: false,
+    promotion: {
+      mode: 'auto-on-green',
+      gateCheck: 'ci / Required',
+      credential: 'cloudflare/prd/narduk-enterprises-' + appName + '-promote',
+    },
+    liveProof: {
+      buildVersionHeader: 'x-build-version',
+      healthPath: '/api/health',
+      smokePath: '/',
+      attempts: 6,
+      intervalSeconds: 10,
+    },
+    rollback: { mode: 'auto', alert: 'resend' },
+    staging: { enabled: false },
+    previewBindings: { d1: [], kv: [], r2: [] },
+  }
+}
+
+/** The block above as the lines of a `"deployment": { ... }` runbook fragment. */
+export function deploymentBlockLines(appName: string): string[] {
+  const body = JSON.stringify(defaultDeploymentBlockFor(appName), null, 2)
+  return ('"deployment": ' + body).split('\n')
+}
+
 const DEFAULT_DESCRIPTION = 'A production-ready Nuxt application built with Narduk libraries.'
 const DEFAULT_COMPATIBILITY_DATE = '2026-06-01'
 
@@ -715,7 +760,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         '# ' + displayName + ' deployments and PR previews',
         '',
-        'Workers Builds owns delivery; GitHub Actions owns the required quality and browser checks. Protected `main` is the production branch. A trusted non-production branch uploads a Worker version and receives a `workers.dev` preview URL without changing production traffic. Local Wrangler is reserved for explicitly authorized recovery.',
+        '**Cloudflare builds. GitHub promotes. Production is a promotion, never a push.** Workers Builds runs on every branch and _uploads a Worker version that serves no traffic_; a GitHub Actions job deploys one of those versions at 100% only after the required check is green on that exact commit, then proves it live. Protected `main` is the production branch. Local Wrangler is reserved for explicitly authorized recovery.',
         '',
         '## Cloudflare connection',
         '',
@@ -726,9 +771,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '| Root directory                | `/`                                                   |',
         '| Production branch             | `main`                                                |',
         '| Build command                 | `pnpm run cf:build`                                   |',
-        '| Production deploy command     | `pnpm run cf:deploy`                                  |',
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
         '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
-        '| Non-production branch builds  | enabled for trusted repository branches               |',
+        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
         '| Build cache                   | enabled                                               |',
         '| `NODE_VERSION`                | `' +
           NODE_VERSION +
@@ -741,11 +786,35 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         "The build command authenticates before installing the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
         '',
+        'Both deploy commands are the same command on purpose. `cf:deploy:preview` runs `narduk-app deploy versions-upload`, which uploads a version and changes no traffic; the name is historical. Setting the _production_ deploy command to anything that deploys would put a `main` push straight into production and defeat the standard. The separate `cf:deploy` script stays for authorized recovery only.',
+        '',
+        '## The deployment standard',
+        '',
+        'This app declares its half of the standard in `Config/cloudflare-app.json`. That file is created during onboarding -- this generator does not write it, because the rest of it records live Cloudflare facts a checkout cannot know. Add this block to it verbatim, then run `pnpm run foundation:deployment`:',
+        '',
+        '```jsonc',
+        ...deploymentBlockLines(appName),
+        '```',
+        '',
+        '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',
+        '',
+        '## Promotion, live proof and rollback',
+        '',
+        'The promote job resolves the version Workers Builds uploaded for the merged commit, deploys it at 100%, and then proves it:',
+        '',
+        '```sh',
+        'narduk-app deploy versions-promote --sha "$GITHUB_SHA" --json',
+        'narduk-app verify --live https://<hostname> --expect-sha "$GITHUB_SHA"',
+        'narduk-app deploy rollback --to "<previousVersionId>"   # only if the proof fails',
+        '```',
+        '',
+        'The commit-to-version link is made at upload time, not discovered: inside a Workers Build, `narduk-app deploy versions-upload` stamps the build commit as the version tag, and `versions-promote` reads it back. `versions-promote` refuses to run outside GitHub Actions unless `NARDUK_ALLOW_MANUAL_PROMOTE=1` is set for a recovery.',
+        '',
         'Workers Builds requires user-owned authentication -- register least-privilege build-control and build-execution credentials for this app (see the estate credentials doc) rather than reusing a shared or personal token. TODO(onboarding): fill in the registered nVault config paths and Cloudflare connection/trigger IDs once this app is connected.',
         '',
         '## Preview boundaries',
         '',
-        "Version previews share the Worker's runtime bindings; they are **not isolated staging**. Only trusted repository branches should run with the Builds execution credential. Do not add an untrusted-fork build path." +
+        "Version previews share the Worker's runtime bindings; they are **not isolated staging**. A version captures its binding _configuration_, but the state behind D1, KV and R2 is not versioned, and `preview_database_id` / `preview_id` / `preview_bucket_name` apply to `wrangler dev` only -- they do nothing for a Workers Builds preview. So a branch build of an app that binds production D1, KV or R2 reads and writes production data from every pull request. That is why `nonProductionBranchBuilds` starts `false`: turn it on only after creating a preview resource for each of those bindings and listing them under `deployment.previewBindings`. `foundation:check:deployment` refuses the combination. Only trusted repository branches should run with the Builds execution credential. Do not add an untrusted-fork build path." +
           (visibility === 'public'
             ? ' An app with private customer data, writes, or a separate authentication boundary needs an isolated, equivalently protected preview Worker and bindings before adopting public previews.'
             : ''),

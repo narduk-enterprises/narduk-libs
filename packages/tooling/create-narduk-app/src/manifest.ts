@@ -519,6 +519,9 @@ export function createWebPackageManifest(
       // `--checkout ..` because the item reads the WHOLE checkout (root and
       // apps/web manifests, nuxt.config, pages/components), and pnpm runs this
       // script with the cwd at apps/web.
+      // Same `--checkout ..` reasoning: the item reads Config/cloudflare-app.json
+      // and the wrangler config from the repository root.
+      'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ..',
       'foundation:shared-ui-pinned': 'narduk-app foundation:check:shared-ui-pinned --checkout ..',
       'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
       'og:generate': 'narduk-app og:generate',
