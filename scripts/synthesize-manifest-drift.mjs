@@ -32,7 +32,7 @@
 //    manifest and would synthesize a release on every single run.
 
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -133,10 +133,12 @@ export function renderDriftChangeset(name, drift) {
  * @param {Array<{name: string, version: string, manifest: object}>} options.packages publishable packages
  * @param {Set<string>|string[]} options.covered packages a pending Changeset already releases
  * @param {Map<string, {published: boolean, manifest?: object}>} options.registryRecords
- * @returns {{skipped?: string, releases: Array<{name: string, drift: Array, body: string, path: string}>, covered: string[]}}
+ * @param {Set<string>|string[]} [options.ignored] packages Changesets refuses to version
+ * @returns {{skipped?: string, releases: Array<{name: string, drift: Array, body: string, path: string}>, covered: string[], ignored: string[]}}
  */
-export function planDriftSynthesis({ packages, covered, registryRecords }) {
+export function planDriftSynthesis({ packages, covered, registryRecords, ignored = [] }) {
   const coveredNames = new Set(covered)
+  const ignoredNames = new Set(ignored)
   const pendingPublication = packages
     .filter(({ name }) => registryRecords.get(name)?.published !== true)
     .map(({ name, version }) => `${name}@${version}`)
@@ -150,6 +152,7 @@ export function planDriftSynthesis({ packages, covered, registryRecords }) {
       skipped: `${pendingPublication.length} version(s) are not published yet: ${pendingPublication.join(', ')}`,
       releases: [],
       covered: [],
+      ignored: [],
     }
   }
 
@@ -159,9 +162,20 @@ export function planDriftSynthesis({ packages, covered, registryRecords }) {
   // different states, and an operator diagnosing a missing release needs to see
   // which one this run was in.
   const coveredDrift = []
+  // A package in the Changesets `ignore` list cannot be versioned at all, so a
+  // Changeset naming it does not release it -- it makes `changeset version`
+  // throw ("Mixed changesets that contain both ignored and not ns are not
+  // allowed") and takes the whole release job down with it. Report the drift,
+  // write nothing. Freezing a package is a deliberate decision; unfreezing it
+  // is the operator's, not this script's.
+  const ignoredDrift = []
   for (const { name, manifest } of packages) {
     const drift = manifestDrift(manifest, registryRecords.get(name).manifest)
     if (drift.length === 0) continue
+    if (ignoredNames.has(name)) {
+      ignoredDrift.push(name)
+      continue
+    }
     if (coveredNames.has(name)) {
       coveredDrift.push(name)
       continue
@@ -173,13 +187,34 @@ export function planDriftSynthesis({ packages, covered, registryRecords }) {
       body: renderDriftChangeset(name, drift),
     })
   }
-  return { releases, covered: coveredDrift }
+  return { releases, covered: coveredDrift, ignored: ignoredDrift }
 }
 
-export function renderSynthesisSummary(covered) {
-  return covered.length === 0
-    ? 'Every published package manifest matches main.\n'
-    : `No manifest drift left to synthesize; a pending Changeset already releases ${covered.length} drifted package(s): ${[...covered].sort().join(', ')}.\n`
+/**
+ * The `ignore` list as Changesets itself matches it: exact package names.
+ * `@changesets/config` also expands globs there; this repository has never
+ * used one, and a glob that this function under-matches degrades to the old
+ * behaviour -- a synthesized Changeset that fails the release job loudly --
+ * rather than to a silent wrong release.
+ *
+ * @param {object} config parsed `.changeset/config.json`
+ * @returns {string[]}
+ */
+export function ignoredPackageNames(config) {
+  const ignore = config?.ignore
+  return Array.isArray(ignore) ? ignore.filter((name) => typeof name === 'string') : []
+}
+
+export function renderSynthesisSummary(covered, ignored = []) {
+  const frozen =
+    ignored.length === 0
+      ? ''
+      : ` ${ignored.length} drifted package(s) are in the Changesets \`ignore\` list and were left alone: ${[...ignored].sort().join(', ')}.\n`
+  const base =
+    covered.length === 0
+      ? 'Every published package manifest matches main.\n'
+      : `No manifest drift left to synthesize; a pending Changeset already releases ${covered.length} drifted package(s): ${[...covered].sort().join(', ')}.\n`
+  return frozen ? `${base.trimEnd()}\n${frozen.trimStart()}` : base
 }
 
 export function renderGeneratorChangeset(names) {
@@ -273,18 +308,26 @@ async function main() {
     packages.map(({ name, version }) => [name, registryManifest(name, version)]),
   )
 
+  const ignored = ignoredPackageNames(
+    JSON.parse(readFileSync(join(root, '.changeset/config.json'), 'utf8')),
+  )
+
   const {
     skipped,
     releases,
     covered: coveredDrift,
-  } = planDriftSynthesis({ packages, covered, registryRecords })
+    ignored: ignoredDrift,
+  } = planDriftSynthesis({ packages, covered, registryRecords, ignored })
   if (skipped) {
     process.stdout.write(`Skipping manifest-drift synthesis: ${skipped}\n`)
     return
   }
   if (releases.length === 0) {
-    process.stdout.write(renderSynthesisSummary(coveredDrift))
+    process.stdout.write(renderSynthesisSummary(coveredDrift, ignoredDrift))
     return
+  }
+  if (ignoredDrift.length > 0) {
+    process.stdout.write(renderSynthesisSummary([], ignoredDrift))
   }
 
   for (const release of releases) {

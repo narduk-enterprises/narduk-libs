@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -14,6 +14,7 @@ import {
   manifestDrift,
   RESOLVED_AT_PUBLISH_PROTOCOLS,
   isResolvedAtPublish,
+  ignoredPackageNames,
   planDriftSynthesis,
   renderDriftChangeset,
   renderSynthesisSummary,
@@ -160,6 +161,91 @@ test('a package a pending changeset already releases is skipped', () => {
   assert.equal(
     plan.releases[0].path,
     '.changeset/auto-manifest-narduk-enterprises-narduk-testkit.md',
+  )
+})
+
+test('a frozen package never gets a synthesized changeset', () => {
+  // `@narduk-enterprises/narduk-mapkit-nuxt` is frozen at 2.0.x in
+  // `.changeset/config.json`'s `ignore` list. A Changeset naming an ignored
+  // package does not release it -- `changeset version` throws on it, which
+  // fails the release job for every other package in the same run. Drift on a
+  // frozen package is reported and left alone.
+  const frozen = {
+    name: '@narduk-enterprises/narduk-mapkit-nuxt',
+    version: '2.0.6',
+    dependencies: { h3: '^1.15.4' },
+  }
+  const packages = [
+    {
+      name: frozen.name,
+      version: '2.0.6',
+      manifest: { ...frozen, dependencies: { h3: '^1.16.0' } },
+    },
+    {
+      name: testkit.name,
+      version: '1.3.2',
+      manifest: { ...testkit, dependencies: { sharp: '^0.35.4' } },
+    },
+  ]
+  const registryRecords = new Map([
+    [frozen.name, record(frozen)],
+    [testkit.name, record(testkit)],
+  ])
+
+  const plan = planDriftSynthesis({
+    packages,
+    covered: [],
+    registryRecords,
+    ignored: [frozen.name],
+  })
+
+  // The frozen package drifts, is reported, and is not written.
+  assert.deepEqual(plan.ignored, [frozen.name])
+  assert.deepEqual(
+    plan.releases.map((release) => release.name),
+    [testkit.name],
+  )
+  assert.match(
+    renderSynthesisSummary([], plan.ignored),
+    /in the Changesets `ignore` list and were left alone: @narduk-enterprises\/narduk-mapkit-nuxt\.$/mu,
+  )
+
+  // Without the freeze the same drift is synthesized -- the frozen list is
+  // what makes the difference, not the shape of the drift.
+  assert.deepEqual(
+    planDriftSynthesis({ packages, covered: [], registryRecords })
+      .releases.map((release) => release.name)
+      .sort(),
+    [frozen.name, testkit.name].sort(),
+  )
+
+  // A frozen package that does not drift is not reported either way.
+  assert.deepEqual(
+    planDriftSynthesis({
+      packages: [{ name: frozen.name, version: '2.0.6', manifest: frozen }],
+      covered: [],
+      registryRecords,
+      ignored: [frozen.name],
+    }).ignored,
+    [],
+  )
+})
+
+test('the ignore list is read from the real changesets config', () => {
+  // The freeze has to come from the file Changesets itself reads, or the two
+  // can disagree and the release job breaks on the difference.
+  assert.deepEqual(ignoredPackageNames({ ignore: ['a', 'b'] }), ['a', 'b'])
+  assert.deepEqual(ignoredPackageNames({ ignore: [] }), [])
+  assert.deepEqual(ignoredPackageNames({}), [])
+  assert.deepEqual(ignoredPackageNames(undefined), [])
+  assert.deepEqual(ignoredPackageNames({ ignore: 'not-an-array' }), [])
+
+  const config = JSON.parse(
+    readFileSync(new URL('../.changeset/config.json', import.meta.url), 'utf8'),
+  )
+  assert.ok(
+    ignoredPackageNames(config).includes('@narduk-enterprises/narduk-mapkit-nuxt'),
+    'narduk-mapkit-nuxt must stay frozen in .changeset/config.json until a 2.0.x release path exists',
   )
 })
 
