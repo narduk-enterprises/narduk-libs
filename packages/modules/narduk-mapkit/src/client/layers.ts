@@ -33,6 +33,16 @@ interface MapKitLayerDescriptorBase<TData = unknown> {
   maximumZ?: number
   minimumZ?: number
   opacity?: number
+  /**
+   * Draw order among the registry's own overlays: lower draws first, i.e.
+   * underneath. Ties break on registration order. Omitted, a layer sorts by the
+   * order it was registered, which is what `addTileOverlay` alone produced
+   * before narduk-libs#402.
+   *
+   * `reconcile()` overrides this with array position unless a descriptor
+   * carries an explicit `order`.
+   */
+  order?: number
 }
 
 export interface MapKitUrlLayerDescriptor<
@@ -57,12 +67,24 @@ export interface MapKitLayerRegionOptions extends MapKitRegionOptions {}
 export interface MapKitLayerMapHandle<TTileOverlay> {
   addTileOverlay(overlay: TTileOverlay): void
   removeTileOverlay(overlay: TTileOverlay): void
+  /**
+   * MapKit's own overlay list. Optional because a 2.0.x-era handle (and the
+   * gonogo case: a v5 map driven through 2.1.0 controllers) supplies only the
+   * two methods above. Present and array-valued, the registry re-asserts draw
+   * order through it after every attach and detach; absent, `null`, or not an
+   * array, ordering silently degrades to attach order rather than throwing.
+   */
+  tileOverlays?: TTileOverlay[] | null
 }
 
 export interface MapKitLayerRegistryOptions<TTileOverlay> {
+  cancelAnimationFrame?: (handle: number) => void
   crossfadeDurationMs?: number
   map: MapKitLayerMapHandle<TTileOverlay>
   mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>
+  /** Crossfade clock. Injected together with `requestAnimationFrame` under test. */
+  now?: () => number
+  requestAnimationFrame?: (callback: FrameRequestCallback) => number
 }
 
 interface MapKitLayerRegistryEntry<TTileOverlay extends MapKitOpacityTarget> {
@@ -70,6 +92,9 @@ interface MapKitLayerRegistryEntry<TTileOverlay extends MapKitOpacityTarget> {
   /** Last applied descriptor; used by `reconcile()` to skip no-op source swaps. */
   descriptor?: MapKitLayerDescriptor
   fading: Set<TTileOverlay>
+  /** Registration sequence; breaks ties between equal `order` values. */
+  sequence: number
+  order: number
   overlay: TTileOverlay
   pending?: { cancel: () => void }
 }
@@ -313,12 +338,19 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
   readonly #entries = new Map<string, MapKitLayerRegistryEntry<TTileOverlay>>()
   readonly #map: MapKitLayerMapHandle<TTileOverlay>
   readonly #mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>
+  readonly #cancelAnimationFrame: ((handle: number) => void) | undefined
+  readonly #now: (() => number) | undefined
+  readonly #requestAnimationFrame: ((callback: FrameRequestCallback) => number) | undefined
+  #nextSequence = 0
 
   constructor(options: MapKitLayerRegistryOptions<TTileOverlay>) {
     this.#mapkit = options.mapkit
     this.#map = options.map
     this.#defaultCrossfadeDurationMs =
       options.crossfadeDurationMs ?? DEFAULT_REPLACE_CROSSFADE_DURATION_MS
+    this.#now = options.now
+    this.#requestAnimationFrame = options.requestAnimationFrame
+    this.#cancelAnimationFrame = options.cancelAnimationFrame
   }
 
   register(descriptor: MapKitLayerDescriptor): TTileOverlay {
@@ -329,11 +361,15 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
 
     const overlay = this.#createOverlay(descriptor, descriptor.opacity ?? 1)
     this.#map.addTileOverlay(overlay)
+    const sequence = this.#nextSequence++
     this.#entries.set(descriptor.id, {
       descriptor,
       fading: new Set(),
+      order: descriptor.order ?? sequence,
       overlay,
+      sequence,
     })
+    this.#reassertOrder()
     return overlay
   }
 
@@ -347,6 +383,55 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
       this.#map.removeTileOverlay(overlay)
     }
     this.#entries.delete(id)
+    this.#reassertOrder()
+  }
+
+  /**
+   * The registry's own overlays in draw order: lowest `order` first, ties on
+   * registration sequence, and within one layer every retiring overlay sits
+   * directly beneath the incoming one so a crossfade reveals the new tiles
+   * rather than the layer above (narduk-libs#402).
+   */
+  overlays(): readonly TTileOverlay[] {
+    const entries = [...this.#entries.values()].sort(
+      (left, right) => left.order - right.order || left.sequence - right.sequence,
+    )
+    const ordered: TTileOverlay[] = []
+    for (const entry of entries) {
+      for (const overlay of entry.fading) {
+        if (overlay !== entry.overlay) ordered.push(overlay)
+      }
+      ordered.push(entry.overlay)
+    }
+    return uniqueOverlays(ordered)
+  }
+
+  /**
+   * Re-assign `map.tileOverlays` so the registry's overlays appear in descriptor
+   * order. Overlays the registry does not own keep their relative order; the
+   * owned block lands where the first owned overlay already sat, or at the end
+   * when the map holds none yet.
+   */
+  #reassertOrder(): void {
+    const current = this.#map.tileOverlays
+    if (!Array.isArray(current)) return
+
+    const ordered = this.overlays()
+    const owned = new Set(ordered)
+    const foreign: TTileOverlay[] = []
+    let insertAt = -1
+    for (const overlay of current) {
+      if (owned.has(overlay)) {
+        if (insertAt === -1) insertAt = foreign.length
+        continue
+      }
+      foreign.push(overlay)
+    }
+    if (insertAt === -1) insertAt = foreign.length
+
+    const next = [...foreign.slice(0, insertAt), ...ordered, ...foreign.slice(insertAt)]
+    if (next.length === current.length && next.every((overlay, i) => overlay === current[i])) return
+    this.#map.tileOverlays = next
   }
 
   setOpacity(id: string, opacity: number): void {
@@ -389,6 +474,10 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     this.#map.addTileOverlay(nextOverlay)
     entry.overlay = nextOverlay
     entry.descriptor = descriptor
+    if (descriptor.order !== undefined) entry.order = descriptor.order
+    // The new overlay was appended to MapKit's list; without this the replaced
+    // layer would draw above every layer registered after it (narduk-libs#402).
+    this.#reassertOrder()
 
     let cancelPending: () => void = () => {}
     const cancelled = new Promise<'cancel'>((resolve) => {
@@ -424,6 +513,7 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
           this.#map.removeTileOverlay(overlay)
           entry.fading.delete(overlay)
         }
+        this.#reassertOrder()
         return
       }
 
@@ -435,11 +525,19 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
         onDone: () => {
           for (const overlay of oldOverlays) entry.fading.delete(overlay)
           if (entry.controller === controller) delete entry.controller
+          this.#reassertOrder()
         },
         removeOverlay: (overlay) => this.#map.removeTileOverlay(overlay),
         targetOpacity,
       }
       if (options.signal !== undefined) crossfadeOptions.signal = options.signal
+      if (this.#now !== undefined) crossfadeOptions.now = this.#now
+      if (this.#requestAnimationFrame !== undefined) {
+        crossfadeOptions.requestAnimationFrame = this.#requestAnimationFrame
+      }
+      if (this.#cancelAnimationFrame !== undefined) {
+        crossfadeOptions.cancelAnimationFrame = this.#cancelAnimationFrame
+      }
 
       controller = crossfadeMapKitOverlayOpacity(crossfadeOptions)
       entry.controller = controller
@@ -493,23 +591,29 @@ export class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarget> {
     const crossfadeDurationMs = options.crossfadeDurationMs ?? this.#defaultCrossfadeDurationMs
     const replacements: Array<Promise<void>> = []
 
-    for (const descriptor of descriptors) {
+    for (const [index, descriptor] of descriptors.entries()) {
+      // Array position IS the draw order (narduk-libs#402): descriptors[0] is
+      // the bottom layer. An explicit `order` on the descriptor still wins.
+      const ordered =
+        descriptor.order === undefined ? { ...descriptor, order: index } : { ...descriptor }
       const entry = this.#entries.get(descriptor.id)
       const opacity = descriptor.opacity ?? 1
       if (!entry) {
-        this.register(descriptor)
+        this.register(ordered)
         continue
       }
 
+      entry.order = ordered.order ?? index
       const previous = entry.descriptor
       if (previous && layerSourceIdentity(previous) === layerSourceIdentity(descriptor)) {
         this.setOpacity(descriptor.id, opacity)
         entry.descriptor = descriptor
+        this.#reassertOrder()
         continue
       }
 
       replacements.push(
-        this.replace(descriptor.id, descriptor, {
+        this.replace(descriptor.id, ordered, {
           crossfadeDurationMs,
           ...(options.signal !== undefined ? { signal: options.signal } : {}),
         }).then(() => {
