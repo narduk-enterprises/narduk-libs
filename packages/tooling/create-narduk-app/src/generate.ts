@@ -6,6 +6,7 @@ import {
   createCiWorkflow,
   createCopilotSetupWorkflow,
 } from './ci-workflow.js'
+import { REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
 
 import {
@@ -502,8 +503,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'The shared libraries are dependencies, not a control plane. This app creates files only when an operator explicitly asks for a change. Do not add credential material, hidden network calls, background reconciliation, or generated state to the repository.',
         '',
+        // The router block is the one generator-owned region of an otherwise
+        // app-owned file: `create-narduk-app upgrade` refreshes what sits
+        // between these markers and never reads a byte outside them. An app
+        // that deletes the markers keeps the text and opts out of the
+        // refresh; see the README's ownership table.
+        REGION_MARKERS.agentsRouter.start,
+        '',
         'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries. [CONTRACT.md](CONTRACT.md) is the API surface this app promises to callers, kept current whenever a route changes. [docs/workers-builds.md](docs/workers-builds.md) covers deployment and recovery. [docs/e2e-testing.md](docs/e2e-testing.md) covers the Playwright layout and the visual QA toolkit.',
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+        '',
+        REGION_MARKERS.agentsRouter.end,
       ),
     },
     {
@@ -718,6 +728,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- `apps/web/tests/e2e/home.spec.ts` is the starter smoke spec.',
         '- `apps/web/tests/e2e/visual-audit.spec.ts` captures the starter route across representative viewports using the shared UI-quality toolkit (see below) and asserts a clean browser console.',
         '',
+        REGION_MARKERS.e2eFlakePolicy.start,
+        '',
         '## Flake policy',
         '',
         'A flaky test cannot report green.',
@@ -741,6 +753,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- `test.fixme` and not `test.skip`: `fixme` states that the test is expected to fail and is waiting on a fix, which is what a quarantine is. `test.skip` is for a case that legitimately does not apply in this environment.',
         '',
         "To leave quarantine: fix the defect, delete the `test.fixme` line, and let the change's own CI prove it. `failOnFlakyTests` on the merge to the default branch is what proves stability, because a pass that needed the retry still fails there. Close the issue with that run as the evidence.",
+        '',
+        REGION_MARKERS.e2eFlakePolicy.end,
         '',
         '## How to extend coverage',
         '',
