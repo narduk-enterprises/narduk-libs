@@ -56,10 +56,25 @@ describe('strict policy', () => {
     expect(directive('style-src')).toContain("'unsafe-inline'")
   })
 
-  it('adds the form-action and upgrade-insecure-requests the legacy policy lacked', () => {
+  it('adds the form-action the legacy policy lacked', () => {
     const csp = resolveSecurityHeaders(true).csp
     expect(csp['form-action']).toEqual(["'self'"])
-    expect(csp['upgrade-insecure-requests']).toBe(true)
+  })
+
+  it('omits upgrade-insecure-requests from report-only and keeps it when enforcing', () => {
+    const reportOnly = resolveSecurityHeaders({ enabled: true })
+    const reportOnlyHeaders = buildNuxtSecurityConfig(reportOnly).headers
+      .contentSecurityPolicy as Record<string, unknown>
+    expect(reportOnly.mode).toBe('report-only')
+    expect(reportOnly.csp['upgrade-insecure-requests']).toBeUndefined()
+    expect(reportOnlyHeaders).not.toHaveProperty('upgrade-insecure-requests')
+
+    const enforced = resolveSecurityHeaders({ enabled: true, enforce: true })
+    const enforcedHeaders = buildNuxtSecurityConfig(enforced).headers
+      .contentSecurityPolicy as Record<string, unknown>
+    expect(enforced.mode).toBe('enforce')
+    expect(enforced.csp['upgrade-insecure-requests']).toBe(true)
+    expect(enforcedHeaders['upgrade-insecure-requests']).toBe(true)
   })
 
   it('defaults frame-ancestors to none and mirrors it into X-Frame-Options', () => {
