@@ -178,7 +178,9 @@ const CROSS_ORIGIN_CAPABLE_ENDPOINT = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
  * failing at configuration time says so far more clearly than a CORS error.
  */
 function assertRelativeTokenEndpoint(endpoint: string): void {
-  if (!CROSS_ORIGIN_CAPABLE_ENDPOINT.test(endpoint)) return
+  // WHATWG treats `\` as `/` in a relative URL, so `/\host/p` is protocol-relative.
+  const canonical = endpoint.trim().replaceAll('\\', '/')
+  if (!CROSS_ORIGIN_CAPABLE_ENDPOINT.test(canonical)) return
   throw new Error(
     `tokenEndpoint must be a relative path on the serving origin, not ${endpoint}: ` +
       'the MapKit token route is same-host by design (narduk-libs#421 §b.1)',

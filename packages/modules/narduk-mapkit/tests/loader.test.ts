@@ -308,6 +308,8 @@ describe('§b.1 the token endpoint is a relative path, enforced', () => {
     'https://evil.example/api/mapkit-token',
     'http://evil.example/t',
     '//evil.example/api/mapkit-token',
+    '/\\evil.example/api/mapkit-token',
+    '/\\\\evil.example/api/mapkit-token',
   ])('refuses %s as a config error rather than fetching it', async (endpoint) => {
     const fetchImpl = vi.fn(tokenResponse())
 
