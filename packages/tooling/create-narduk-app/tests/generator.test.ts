@@ -951,13 +951,36 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedPlaywrightConfig).toContain(
       "isCI && !(process.env.GITHUB_EVENT_NAME ?? '').startsWith('pull_request')",
     )
-    // narduk-libs#62: the port must be overridable by PLAYWRIGHT_PORT and
-    // flow into baseURL, the webServer url, AND the webServer command's PORT
-    // env — otherwise two concurrent worktrees silently attach to the same
-    // fixed port and one test run exercises the other lane's app.
+    // narduk-libs#62 and #417: the port must come from the shared resolver --
+    // declared in the primary checkout and CI, derived from the checkout path
+    // in a linked worktree, PLAYWRIGHT_PORT over both -- and flow into baseURL,
+    // the webServer url, AND the webServer command's PORT env. Otherwise two
+    // concurrent worktrees attach to the same fixed port and one test run
+    // silently exercises the other lane's app.
     expect(generatedPlaywrightConfig).toContain(
-      'const port = Number(process.env.PLAYWRIGHT_PORT) || 4377',
+      "} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'",
     )
+    expect(generatedPlaywrightConfig).toContain('declaredPort: 4377,')
+    // Playwright transpiles this config to CJS (the generated root package.json
+    // is not `"type": "module"` and nothing injects tsx), where `import.meta`
+    // is a SYNTAX error -- caught live by packed-consumer-smoke.
+    expect(generatedPlaywrightConfig).toContain('rootDir: process.cwd(),')
+    expect(
+      generatedPlaywrightConfig
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//') && line.includes('import.meta')),
+    ).toEqual([])
+    expect(generatedPlaywrightConfig).toContain('const port = devPort.port')
+    // Reuse is a decision the resolver makes, never the old `!isCI`: a derived
+    // port must not adopt a server this checkout did not start.
+    expect(generatedPlaywrightConfig).toContain(
+      'const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })',
+    )
+    expect(generatedPlaywrightConfig).toContain(
+      'assertLocalDevPortAvailable({ resolution: devPort })',
+    )
+    expect(generatedPlaywrightConfig).toContain('reuseExistingServer,')
+    expect(generatedPlaywrightConfig).not.toContain('reuseExistingServer: !isCI,')
     expect(generatedPlaywrightConfig).toContain('baseURL: `http://127.0.0.1:${port}`')
     // /api/health, not just '/': Playwright's own readiness probe only checks
     // for an HTTP 200-403 response, which a page that has not finished SSR

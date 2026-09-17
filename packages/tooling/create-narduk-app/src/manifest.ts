@@ -309,6 +309,11 @@ export function createRootPackageManifest(
       // Matches the reference app's own root devDependency.
       '@narduk-enterprises/narduk-app-tools':
         PACKAGE_VERSIONS['@narduk-enterprises/narduk-app-tools'],
+      // Root-level for the same reason as narduk-app-tools above: the root
+      // `playwright.config.ts` imports the shared local-dev-port resolver
+      // (narduk-libs#417) at config-load time, and pnpm will not resolve the
+      // web workspace's own copy from here.
+      '@narduk-enterprises/narduk-testkit': PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
       '@playwright/test': PACKAGE_VERSIONS['@playwright/test'],
       '@types/node': PACKAGE_VERSIONS['@types/node'],
       eslint: PACKAGE_VERSIONS.eslint,

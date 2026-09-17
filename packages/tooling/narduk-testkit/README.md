@@ -361,6 +361,51 @@ This subpath is deliberately absent from the root barrel: it is imported from a
 Playwright _config_, which is evaluated before the runner exists, and the barrel
 registers Playwright fixtures at module scope.
 
+## Local dev port
+
+One scaffolded dev port per app is one port per _machine_: every worktree of the
+app shares it, so `reuseExistingServer` attaches to whichever worktree's
+`nuxt dev` got there first and the suite silently tests the wrong branch
+(narduk-libs#417).
+
+```ts
+import {
+  assertLocalDevPortAvailable,
+  resolveLocalDevPort,
+  shouldReuseExistingServer,
+} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'
+
+const devPort = resolveLocalDevPort({
+  rootDir: process.cwd(),
+  declaredPort: 51952,
+})
+const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })
+if (!reuseExistingServer) assertLocalDevPortAvailable({ resolution: devPort })
+```
+
+`rootDir` is any directory inside the checkout — the resolver walks up to the
+nearest `.git`, so `process.cwd()` is enough. Prefer it to `import.meta.url`:
+Playwright transpiles a TypeScript config to CJS unless something
+(`--import tsx`, `"type": "module"`) says otherwise, and `import.meta` is a
+syntax error there.
+
+A **linked git worktree** derives `declaredPort + hash(checkout path) % 1000`,
+so two lanes on one machine cannot collide with no environment variable set, and
+the port is the same on every run of that worktree. The **primary checkout** and
+every **CI** run keep the declared port, so muscle memory, bookmarks and any
+localhost allowlist (OAuth callbacks, map-token origins) still work.
+`PLAYWRIGHT_PORT`, then `NUXT_PORT`, overrides both.
+
+A derived port is not reused: `shouldReuseExistingServer` returns `false` there,
+so a residual collision — a hash clash, or an unrelated process — fails loudly
+via `assertLocalDevPortAvailable`, which names the port and the override,
+instead of becoming another silent wrong-branch pass.
+`PLAYWRIGHT_REUSE_SERVER=1` opts back in for a lane driving its own long-lived
+`nuxt dev`.
+
+Like `e2e/fixture-server`, this subpath is deliberately absent from the root
+barrel — it is imported from a Playwright config, before the runner exists.
+
 The UI-quality analyzer is also available as a small binary:
 
 ```sh
