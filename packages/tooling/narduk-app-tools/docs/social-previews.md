@@ -57,12 +57,13 @@ image or configure this fallback; existing consumers must supply the real asset
 and option. The option is additive and unset for older consumers.
 
 The generator also wires server-visible defaults for core-only apps. In other
-frameworks, emit equivalent OG title, description, type, URL, image, alt text,
-width/height, `twitter:card=summary_large_image`, and `twitter:image` in the
-initial HTML head. Use absolute HTTPS URLs. JavaScript hydration is not a
-delivery mechanism for social crawlers. SPAs need metadata in their HTML shell
-or a public SSR/static landing page. A native app's custom URL scheme is not an
-HTTP preview page.
+frameworks, emit equivalent OG title, description, type, URL, image, alt text
+and width/height in the initial HTML head. Do **not** emit `twitter:*` meta: X
+reads the Open Graph tags when none is present, and Unhead 3 reports every
+`twitter:*` name as deprecated (narduk-libs#349). Use absolute HTTPS URLs.
+JavaScript hydration is not a delivery mechanism for social crawlers. SPAs need
+metadata in their HTML shell or a public SSR/static landing page. A native app's
+custom URL scheme is not an HTTP preview page.
 
 ## Route-specific images
 

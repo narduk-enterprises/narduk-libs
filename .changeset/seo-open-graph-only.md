@@ -19,3 +19,13 @@ declared dimensions, and the generated-image path already declares its own.
 accepted so existing deployments keep booting, but nothing reads them; the field
 is marked `@deprecated`. The internal helper
 `app/utils/resolvePublicTwitterSite.ts` is removed with its only caller.
+
+The module now also stops its bundled dependencies from re-adding the tags
+`useSeo` gave up. It sets `seo.automaticTwitterTags: false`, so nuxt-seo-utils'
+`InferSeoMetaPlugin` no longer pushes a low-priority `twitter:card` into every
+head while keeping its Open Graph inference, and
+`ogImage.includeTwitter: false`, so nuxt-og-image stops emitting `twitter:card`,
+`twitter:image`, `twitter:image:src`, `twitter:image:width`,
+`twitter:image:height` and `twitter:image:alt` next to each generated
+`og:image`. Both are plain `defu` defaults, so an app that wants the tags back
+can set either option to `true`.

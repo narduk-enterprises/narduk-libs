@@ -74,6 +74,7 @@ interface MutableNuxtOptionsRecord {
   ogImage?: Record<string, unknown>
   robots?: Record<string, unknown>
   runtimeConfig: Record<string, unknown>
+  seo?: Record<string, unknown>
   site?: Record<string, unknown>
   sitemap?: Record<string, unknown>
   typescript?: Record<string, unknown>
@@ -318,8 +319,21 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         seoSearchActionUrlTemplate: process.env.NUXT_PUBLIC_SEO_SEARCH_ACTION_URL_TEMPLATE || '',
       },
     })
+    // narduk-libs#349: nuxt-seo-utils' InferSeoMetaPlugin pushes a low-priority
+    // `twitter:card` into every head by default, and Unhead 3's ValidatePlugin
+    // reports every `twitter:*` name as deprecated. `automaticTwitterTags: false`
+    // makes seo-utils emit its sentinel card and then strip it, leaving the
+    // Open Graph inference intact. It is also the fallback nuxt-og-image reads
+    // when `ogImage.includeTwitter` is unset, but that is set explicitly below.
+    nuxtOptions.seo = defu((nuxtOptions.seo ?? {}) as Record<string, unknown>, {
+      automaticTwitterTags: false,
+    })
     nuxtOptions.ogImage = defu((nuxtOptions.ogImage ?? {}) as Record<string, unknown>, {
       enabled: true,
+      // narduk-libs#349: without this, every `defineOgImage` route also emits
+      // `twitter:card`, `twitter:image`, `twitter:image:src` and the
+      // `twitter:image:*` dimensions. The `og:image*` tags are unaffected.
+      includeTwitter: false,
       security: {
         secret: process.env.NUXT_OG_IMAGE_SECRET || '',
       },
