@@ -179,15 +179,15 @@ const consoleTracker = createConsoleTracker(page, {
 await consoleTracker.ready // before the first navigation
 ```
 
-It fulfils every request to an optional-telemetry origin with `204` — Cloudflare
-Insights, Google Tag Manager, Google Analytics, PostHog, and any host in
-`extraTelemetryHosts` — and drops the console and `pageerror` entries those
-origins produce. Use it when a suite runs against a real deployment and the
-question it is meant to answer is about the app, not about whether this laptop
-can reach an analytics CDN: a tailnet resolver answering `0.0.0.0` for
-`static.cloudflareinsights.com` otherwise turns `expectClean()` into a test of
-the operator's DNS, and the only available fix is to stop asserting console
-cleanliness at all.
+It blocks every request to an optional-telemetry origin before it reaches the
+network, the way a content blocker does — Cloudflare Insights, Google Tag
+Manager, Google Analytics, PostHog, and any host in `extraTelemetryHosts` — and
+drops the console and `pageerror` entries those origins produce. Use it when a
+suite runs against a real deployment and the question it is meant to answer is
+about the app, not about whether this laptop can reach an analytics CDN: a
+tailnet resolver answering `0.0.0.0` for `static.cloudflareinsights.com`
+otherwise turns `expectClean()` into a test of the operator's DNS, and the only
+available fix is to stop asserting console cleanliness at all.
 
 **What stays fatal, in both modes**: every first-party console error, including
 a first-party request that fails; Vue and Nuxt hydration warnings; every console
@@ -196,6 +196,16 @@ itself telemetry code. Requests are matched by ORIGIN rather than by message
 text on purpose — `Failed to load resource` is the same sentence whether the
 resource was an analytics beacon or the app's own API, so an allowlist written
 against that text would hide the second along with the first.
+
+The requests are **aborted rather than answered** with an empty `204`, which is
+what this option shipped as in 1.3.1. Cloudflare injects its RUM beacon with an
+`integrity` attribute, so an empty body is a body that fails Subresource
+Integrity, and Chromium reports that failure against the DOCUMENT rather than
+the beacon — which is to say, as an error no origin-scoped filter can attribute
+to telemetry. Measured against a real deployment, the `204` traded three
+`ERR_CONNECTION_REFUSED` errors for six unattributable SRI errors. An aborted
+request is never integrity-checked, and the `ERR_BLOCKED_BY_CLIENT` entry it
+leaves does carry the telemetry URL.
 
 `extraTelemetryHosts` exists because an app's own analytics host is not knowable
 from here. The Narduk fleet proxies PostHog under a per-app `POSTHOG_HOST`
