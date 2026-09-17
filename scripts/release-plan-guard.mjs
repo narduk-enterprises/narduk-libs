@@ -9,9 +9,14 @@
 // release plan itself is read with `@changesets/get-release-plan`, which never
 // errors on "changed but no changeset".
 //
-// Three verdicts per changed package:
+// Four verdicts per changed package:
 //
 // - `ok`             nothing about the published artifact changed.
+// - `frozen`         the package is in the Changesets `ignore` list, so it
+//                    cannot be versioned at all and owes no release however
+//                    much of it changed. A Changeset naming it would make
+//                    `changeset version` throw rather than release it, so
+//                    "add a Changeset" is not an available answer here.
 // - `deferred`       only runtime dependency *ranges* moved. The published
 //                    manifest now differs from `main`, so the package does
 //                    need a patch release -- but the release job synthesizes
@@ -208,7 +213,7 @@ function packageForPath(packages, path) {
  * Classify every workspace package touched by a diff.
  *
  * @param {object} options
- * @param {Array<{name: string, relativeDirectory: string, private?: boolean}>} options.packages
+ * @param {Array<{name: string, relativeDirectory: string, private?: boolean, frozen?: boolean}>} options.packages
  * @param {string[]} options.changedFiles posix paths relative to the repo root
  * @param {(relativeDirectory: string) => {before: object|undefined, after: object|undefined}} options.readManifests
  * @returns {Array<{name: string, verdict: string, otherFiles: string[], manifest: object}>}
@@ -241,7 +246,14 @@ export function classifyChangedPackages({ packages, changedFiles, readManifests 
       }
 
       let verdict = 'ok'
-      if (otherFiles.length > 0 || manifest.releaseRelevant.length > 0) verdict = 'needs-changeset'
+      // A package in the Changesets `ignore` list cannot be versioned at all,
+      // so no release is owed however much of it changed -- and a Changeset
+      // naming it would make `changeset version` throw rather than release it.
+      // Reported as its own verdict, not folded into `ok`: a frozen package
+      // whose source keeps moving is a fact an operator should see.
+      if (workspacePackage.frozen === true) verdict = 'frozen'
+      else if (otherFiles.length > 0 || manifest.releaseRelevant.length > 0)
+        verdict = 'needs-changeset'
       else if (manifest.deferred.length > 0) {
         // A private package is never published, so no registry drift exists
         // for synthesis to find and no release is owed.
@@ -251,12 +263,33 @@ export function classifyChangedPackages({ packages, changedFiles, readManifests 
       return {
         name: workspacePackage.name,
         private: workspacePackage.private === true,
+        frozen: workspacePackage.frozen === true,
         verdict,
         otherFiles: otherFiles.sort(),
         manifest,
       }
     })
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/**
+ * The Changesets `ignore` list, matched the way Changesets itself matches it:
+ * exact package names (`@changesets/should-skip-package` does
+ * `ignore.includes(packageJson.name)`). `@changesets/config` also expands
+ * globs there; this workspace has never used one, and a glob this function
+ * under-matches degrades to the previous loud failure rather than to a silent
+ * wrong release.
+ *
+ * Lives here because this module has no imports of its own, so both
+ * `check-generator-release-plan.mjs` and `synthesize-manifest-drift.mjs` can
+ * read one definition without an import cycle between them.
+ *
+ * @param {object} config parsed `.changeset/config.json`
+ * @returns {string[]}
+ */
+export function ignoredPackageNames(config) {
+  const ignore = config?.ignore
+  return Array.isArray(ignore) ? ignore.filter((name) => typeof name === 'string') : []
 }
 
 function describeEntry({ field, keys, reason }) {
@@ -272,7 +305,12 @@ export function describePackageVerdict(entry) {
   if (reasons.length === 0) {
     reasons.push(...entry.manifest.deferred.map(describeEntry))
   }
-  return `${entry.name}: ${reasons.join('; ')}`
+  // A frozen package can be reported for a dev-only change, which no other
+  // verdict reaches; without this the line would end at the colon.
+  if (reasons.length === 0) {
+    reasons.push(...entry.manifest.devOnly.map(describeEntry))
+  }
+  return reasons.length === 0 ? entry.name : `${entry.name}: ${reasons.join('; ')}`
 }
 
 // The exact file a contributor must add. Printed verbatim by the failure so a
@@ -303,7 +341,15 @@ export function renderGuardReport(entries, coveredNames) {
   const deferred = entries.filter(
     (entry) => entry.verdict === 'deferred' && !covered.has(entry.name),
   )
+  const frozen = entries.filter((entry) => entry.verdict === 'frozen')
   const lines = []
+
+  if (frozen.length > 0) {
+    lines.push(
+      `${frozen.length} changed package(s) are frozen in the Changesets \`ignore\` list and release nothing:`,
+      ...frozen.map((entry) => `- ${describePackageVerdict(entry)}`),
+    )
+  }
 
   if (deferred.length > 0) {
     lines.push(
@@ -313,7 +359,7 @@ export function renderGuardReport(entries, coveredNames) {
   }
 
   if (uncovered.length === 0) {
-    const settled = entries.filter((entry) => !deferred.includes(entry))
+    const settled = entries.filter((entry) => !deferred.includes(entry) && !frozen.includes(entry))
     // With every changed package deferred, the count above is 0 and the line
     // reads as if nothing was examined. The deferred block already said what
     // happened, so say nothing more.

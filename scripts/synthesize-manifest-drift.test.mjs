@@ -163,6 +163,73 @@ test('a package a pending changeset already releases is skipped', () => {
   )
 })
 
+test('a frozen package never gets a synthesized changeset', () => {
+  // `@narduk-enterprises/narduk-mapkit-nuxt` is frozen at 2.0.x in
+  // `.changeset/config.json`'s `ignore` list. A Changeset naming an ignored
+  // package does not release it -- `changeset version` throws on it, which
+  // fails the release job for every other package in the same run. Drift on a
+  // frozen package is reported and left alone.
+  const frozen = {
+    name: '@narduk-enterprises/narduk-mapkit-nuxt',
+    version: '2.0.6',
+    dependencies: { h3: '^1.15.4' },
+  }
+  const packages = [
+    {
+      name: frozen.name,
+      version: '2.0.6',
+      manifest: { ...frozen, dependencies: { h3: '^1.16.0' } },
+    },
+    {
+      name: testkit.name,
+      version: '1.3.2',
+      manifest: { ...testkit, dependencies: { sharp: '^0.35.4' } },
+    },
+  ]
+  const registryRecords = new Map([
+    [frozen.name, record(frozen)],
+    [testkit.name, record(testkit)],
+  ])
+
+  const plan = planDriftSynthesis({
+    packages,
+    covered: [],
+    registryRecords,
+    ignored: [frozen.name],
+  })
+
+  // The frozen package drifts, is reported, and is not written.
+  assert.deepEqual(plan.ignored, [frozen.name])
+  assert.deepEqual(
+    plan.releases.map((release) => release.name),
+    [testkit.name],
+  )
+  assert.match(
+    renderSynthesisSummary([], plan.ignored),
+    /in the Changesets `ignore` list and were left alone: @narduk-enterprises\/narduk-mapkit-nuxt\.$/mu,
+  )
+
+  // Without the freeze the same drift is synthesized -- the frozen list is
+  // what makes the difference, not the shape of the drift.
+  assert.deepEqual(
+    planDriftSynthesis({ packages, covered: [], registryRecords })
+      .releases.map((release) => release.name)
+      .sort(),
+    [frozen.name, testkit.name].sort(),
+  )
+
+  // A frozen package that does not drift is not reported either way.
+  assert.deepEqual(
+    planDriftSynthesis({
+      packages: [{ name: frozen.name, version: '2.0.6', manifest: frozen }],
+      covered: [],
+      registryRecords,
+      ignored: [frozen.name],
+    }).ignored,
+    [],
+  )
+})
+
 test('a covered drift is reported as covered, not as no drift', () => {
   // The run after synthesis writes a Changeset -- and any run where a human
   // Changeset already covers the drifted package -- has nothing to write. It
