@@ -29,6 +29,7 @@ import {
   NardukChartStack,
   NardukBrandBackdrop,
 } from './index'
+import { defaultTimeAxisLabel } from './utils/xAxis'
 
 /** The globals a Workers-style server runtime does not have. */
 it('runs in an environment with no DOM, which is the whole point of this file', () => {
@@ -178,5 +179,71 @@ describe('NardukChartStack under SSR', () => {
     expect(html).toContain('narduk-chart-stack')
     expect(html).toContain('<svg')
     expect(html).toContain('Stacked under SSR')
+  })
+})
+
+describe('time-axis labels are host-timezone stable under SSR', () => {
+  /**
+   * 02:00 UTC on 15 May is still 14 May in America/Chicago. An unpinned
+   * `toLocaleString` therefore emits different label text (and can emit a
+   * different tick set) on workerd vs the browser. Bars are built with
+   * `Date.UTC` so construction itself cannot leak `TZ`.
+   */
+  const t0 = Date.UTC(2026, 4, 15, 2, 0)
+  const t1 = Date.UTC(2026, 4, 15, 8, 0)
+  const bars = [
+    { t: t0, o: 1, h: 2, l: 0.5, c: 1.5 },
+    { t: t1, o: 1.5, h: 2.5, l: 1.2, c: 2 },
+  ]
+  const times = [t0, t1]
+  const labels = ['a', 'b']
+  const series = [{ name: 'Wind', data: [4, 6] }]
+
+  async function renderUnderTz(
+    tz: string,
+    component: Component,
+    props: Record<string, unknown>,
+  ): Promise<string> {
+    const previous = process.env.TZ
+    process.env.TZ = tz
+    try {
+      return await render(component, props)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  }
+
+  function axisLabels(html: string): string[] {
+    return [...html.matchAll(/<text[^>]*>([^<]*)<\/text>/g)]
+      .map(match => match[1]!.trim())
+      .filter(text => /May \d/.test(text))
+  }
+
+  it('NardukCandleChart emits the same labels and markup under TZ=UTC and TZ=America/Chicago', async () => {
+    const props = { bars, animate: false, chartTitle: 'Candle TZ' }
+    const utc = await renderUnderTz('UTC', NardukCandleChart, props)
+    const chicago = await renderUnderTz('America/Chicago', NardukCandleChart, props)
+    expect(utc).toBe(chicago)
+    expect(axisLabels(utc)).toEqual(axisLabels(chicago))
+    expect(utc).toContain(defaultTimeAxisLabel(t0))
+    expect(utc).not.toMatch(/May 14/)
+  })
+
+  it('NardukLineChart time axis emits the same labels and markup under both host zones', async () => {
+    const props = {
+      series,
+      labels,
+      times,
+      xAxisType: 'time',
+      animate: false,
+      chartTitle: 'Line TZ',
+    }
+    const utc = await renderUnderTz('UTC', NardukLineChart, props)
+    const chicago = await renderUnderTz('America/Chicago', NardukLineChart, props)
+    expect(utc).toBe(chicago)
+    expect(axisLabels(utc)).toEqual(axisLabels(chicago))
+    expect(utc).toContain(defaultTimeAxisLabel(t0))
+    expect(utc).not.toMatch(/May 14/)
   })
 })

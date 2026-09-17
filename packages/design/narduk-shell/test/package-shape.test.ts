@@ -82,7 +82,7 @@ describe('narduk-shell package shape', () => {
       // and `NePager`'s `:to` resolves through the router, so vue-router is a
       // real peer rather than something reached only through Nuxt. The range
       // matches @nuxt/ui's own so a consumer cannot end up with two copies.
-      'vue-router': '^4.5.0 || ^5.0.0',
+      'vue-router': '^5.3.1',
     })
   })
 

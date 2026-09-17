@@ -31,10 +31,15 @@
  * Nothing here is ever disabled while a request is in flight. Disabling a link
  * is how a pager takes middle-click and "open in new tab" away from a reader
  * for 200ms; the summary carries `aria-busy` instead.
+ *
+ * Window and total counts go through `formatNumber` (fixed `en-US`), never
+ * `new Intl.NumberFormat()` — the same SSR-stability rule as `NeKpiTile`.
  */
 import UButton from '@nuxt/ui/components/Button.vue'
 import UPagination from '@nuxt/ui/components/Pagination.vue'
 import { computed } from 'vue'
+
+import { formatNumber } from '../../format'
 
 import type { NeCollectionState } from '../composables/use-collection'
 import type { NePagerProps } from './ne-pager-types'
@@ -56,8 +61,6 @@ const state = defineModel<NeCollectionState<unknown>>('state', { required: true 
 
 const dense = computed(() => props.density === 'dense')
 
-const numberFormat = new Intl.NumberFormat()
-
 const first = computed(() => state.value.offset + 1)
 const last = computed(() => state.value.offset + state.value.items.length)
 
@@ -71,10 +74,10 @@ const summary = computed(() => {
   if (items.length === 0) {
     return total === null || total === 0 ? `No ${props.noun}` : `No ${props.noun} on this page`
   }
-  const window = `${numberFormat.format(first.value)}–${numberFormat.format(last.value)}`
+  const window = `${formatNumber(first.value)}–${formatNumber(last.value)}`
   return total === null
     ? `${window} ${props.noun}`
-    : `${window} of ${numberFormat.format(total)} ${props.noun}`
+    : `${window} of ${formatNumber(total)} ${props.noun}`
 })
 
 /** `UPagination` cannot page an uncounted collection; the fallback can. */

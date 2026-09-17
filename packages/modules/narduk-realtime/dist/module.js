@@ -8,7 +8,7 @@ const nardukRealtimeModule = defineNuxtModule({
         name: '@narduk-enterprises/narduk-realtime',
         configKey: 'realtime',
         compatibility: {
-            nuxt: '>=3.16.0',
+            nuxt: '>=4.0.0',
         },
     },
     defaults: {

@@ -128,6 +128,12 @@ const props = withDefaults(
     /** Unix milliseconds aligned 1:1 with `labels` and series values. */
     times?: number[]
     /**
+     * IANA zone for the default time-axis labels (`en-US`). Ignored when
+     * `formatTime` is set. Default `'UTC'` — never the host zone — so SSR
+     * and the browser cannot disagree on label text or the tick set.
+     */
+    timeZone?: string
+    /**
      * Volume values aligned index-for-index with `labels`. Applies to `series[0]` only—
      * additional series are ignored for the volume pane (documented, no runtime warning).
      * Omit to leave rendering unchanged.
@@ -197,6 +203,7 @@ const props = withDefaults(
     showDataTable: false,
     legendGroupLabel: 'Data series',
     xAxisType: 'category',
+    timeZone: 'UTC',
     chrome: true,
     showTooltip: true,
     focusable: true,
@@ -936,7 +943,7 @@ function formatXAxisLabel(i: number): string {
   if (props.xAxisType === 'time') {
     const t = effTimes.value?.[i]
     if (typeof t === 'number' && Number.isFinite(t)) {
-      return props.formatTime ? props.formatTime(t) : defaultTimeAxisLabel(t)
+      return props.formatTime ? props.formatTime(t) : defaultTimeAxisLabel(t, props.timeZone)
     }
   }
   return props.formatXLabel ? props.formatXLabel(raw, i) : raw

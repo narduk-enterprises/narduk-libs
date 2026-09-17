@@ -107,7 +107,7 @@
   },
   "peerDependencies": {
     "@narduk-enterprises/narduk-core": ">=1.19.15 <3.0.0",
-    "nuxt": ">=3.16.0"
+    "nuxt": ">=4.0.0"
   },
   "overrides": {
     "@cloudflare/unenv-preset": "2.12.1",

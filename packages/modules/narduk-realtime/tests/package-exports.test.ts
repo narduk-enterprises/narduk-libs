@@ -13,6 +13,7 @@ interface PackageManifest {
   exports: Record<string, { import: string; types: string }>
   files: string[]
   name: string
+  peerDependencies: Record<string, string>
   publishConfig: { access: string; registry: string }
   private: boolean
   scripts: Record<string, string>
@@ -78,6 +79,11 @@ describe('narduk-realtime package surface', () => {
   // @cloudflare/workers-types stays a type-only devDependency.
   it('adds no runtime dependency beyond @nuxt/kit', () => {
     expect(Object.keys(manifest.dependencies)).toEqual(['@nuxt/kit'])
+  })
+
+  it('pins Nuxt 4 for both the nuxt and @nuxt/schema peers', () => {
+    expect(manifest.peerDependencies.nuxt).toBe('>=4.0.0')
+    expect(manifest.peerDependencies['@nuxt/schema']).toBe('>=4.0.0')
   })
 
   // This package's `dist/` is committed, so a refactor pushed without a rebuild

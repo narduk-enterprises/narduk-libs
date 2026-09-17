@@ -6,16 +6,36 @@ export interface AxisLabelIndexOptions {
   labelAt?: (index: number) => string
 }
 
-export function defaultTimeAxisLabel(tMs: number): string {
+/**
+ * Default time-axis labels. Locale is a fixed `en-US` and the zone defaults
+ * to `UTC` — never the host's resolved locale or `TZ`.
+ *
+ * workerd renders charts in UTC/`en`; the browser uses the reader's zone and
+ * locale. `toLocaleString(undefined, …)` without `timeZone` produces two
+ * strings (and sometimes two tick sets, because {@link selectEvenAxisLabelIndices}
+ * dedupes on the formatted label) and Vue's hydration check fails. Passing an
+ * own `undefined` `timeZone` is the same bug: `Intl` treats it as the host
+ * zone, so this helper coalesces with `|| 'UTC'` rather than a default
+ * argument (which `fn(t, undefined)` would skip).
+ */
+export const TIME_AXIS_LOCALE = 'en-US'
+export const DEFAULT_TIME_AXIS_TIME_ZONE = 'UTC'
+
+export function resolveTimeAxisTimeZone(timeZone?: string): string {
+  return timeZone || DEFAULT_TIME_AXIS_TIME_ZONE
+}
+
+export function defaultTimeAxisLabel(tMs: number, timeZone?: string): string {
   const d = new Date(tMs)
-  return Number.isNaN(d.getTime())
-    ? String(tMs)
-    : d.toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+  if (Number.isNaN(d.getTime())) return String(tMs)
+  return d.toLocaleString(TIME_AXIS_LOCALE, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: resolveTimeAxisTimeZone(timeZone),
+  })
 }
 
 export function dedupeAdjacentAxisLabelIndices(

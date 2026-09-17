@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultTimeAxisLabel,
   dedupeAdjacentAxisLabelIndices,
+  resolveTimeAxisTimeZone,
   selectEvenAxisLabelIndices,
 } from './xAxis'
 
@@ -37,8 +38,20 @@ describe('xAxis helpers', () => {
     expect(indices).toEqual([0, 1, 2, 3, 4, 5])
   })
 
-  it('formats valid and invalid timestamps', () => {
-    expect(defaultTimeAxisLabel(Date.UTC(2026, 4, 15, 2))).toContain('May')
+  it('formats valid and invalid timestamps in pinned en-US / UTC', () => {
+    const t = Date.UTC(2026, 4, 15, 2, 0)
+    const label = defaultTimeAxisLabel(t)
+    expect(label).toMatch(/May 15/)
+    expect(label).not.toMatch(/May 14/)
+    expect(defaultTimeAxisLabel(t, undefined)).toBe(label)
+    expect(defaultTimeAxisLabel(t, '')).toBe(label)
+    expect(defaultTimeAxisLabel(t, 'America/Chicago')).toMatch(/May 14/)
     expect(defaultTimeAxisLabel(Number.NaN)).toBe('NaN')
+  })
+
+  it('treats an omitted or undefined timeZone as UTC, never the host zone', () => {
+    expect(resolveTimeAxisTimeZone()).toBe('UTC')
+    expect(resolveTimeAxisTimeZone(undefined)).toBe('UTC')
+    expect(resolveTimeAxisTimeZone('America/Chicago')).toBe('America/Chicago')
   })
 })

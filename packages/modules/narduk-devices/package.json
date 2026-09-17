@@ -81,7 +81,7 @@
     "vue-tsc": "^3.2.5"
   },
   "peerDependencies": {
-    "nuxt": ">=3.16.0"
+    "nuxt": ">=4.0.0"
   },
   "volta": {
     "node": "22.22.3"

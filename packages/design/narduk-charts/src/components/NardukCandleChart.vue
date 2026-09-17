@@ -85,6 +85,12 @@ const props = withDefaults(
     /** Used when `yScale` is `symlog`. */
     symlogLinthresh?: number
     theme?: ChartTheme
+    /**
+     * IANA zone for the default time-axis labels (`en-US`). Ignored when
+     * `formatTime` is set. Default `'UTC'` — never the host zone — so SSR
+     * and the browser cannot disagree on label text or the tick set.
+     */
+    timeZone?: string
     /** Fraction of plot height for volume when `showVolume` is set. */
     volumeFraction?: number
     width?: number
@@ -128,6 +134,7 @@ const props = withDefaults(
     candleStyle: 'candle',
     drawings: () => [],
     drawingTool: null,
+    timeZone: 'UTC',
   },
 )
 
@@ -1224,7 +1231,7 @@ const effectiveChartTitle = computed(
 
 function formatTimeLabel(t: number): string {
   if (props.formatTime) return props.formatTime(t)
-  return defaultTimeAxisLabel(t)
+  return defaultTimeAxisLabel(t, props.timeZone)
 }
 
 const displayIndex = computed(() =>

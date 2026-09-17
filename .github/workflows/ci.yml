@@ -156,7 +156,7 @@ jobs:
 
       - name: Check repository contracts and formatting
         env:
-          IS_CHANGESET_RELEASE: ${{ startsWith(github.head_ref, 'changeset-release/') || startsWith(github.ref_name, 'changeset-release/') }}
+          IS_CHANGESET_RELEASE: ${{ (github.head_ref == 'changeset-release/main' || github.ref_name == 'changeset-release/main') && github.actor == 'github-actions[bot]' }}
         run: |
           set -euo pipefail
           pnpm run versions:check

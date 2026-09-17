@@ -288,6 +288,37 @@ test('a changeset-only diff with no package touched is inert, not a full run', (
   }
 })
 
+test('changeset config is a global trigger; changeset markdown stays release metadata', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const configResult = computeAffectedSet({
+      root,
+      changedFiles: ['.changeset/config.json'],
+    })
+    assert.equal(configResult.fullRun, true)
+    assert.deepEqual(names(configResult), ['one', 'two'])
+    assert.ok(configResult.matrix.length > 0)
+    assert.equal(configResult.packedConsumer, true)
+    assert.equal(configResult.generatedConsumer, true)
+    assert.match(
+      configResult.reasons.join('\n'),
+      /Changesets publish policy: \.changeset\/config\.json/u,
+    )
+
+    const markdownResult = computeAffectedSet({
+      root,
+      changedFiles: ['.changeset/some-change.md'],
+    })
+    assert.equal(markdownResult.fullRun, false)
+    assert.deepEqual(names(markdownResult), [])
+    assert.equal(markdownResult.matrix.length, 0)
+    assert.equal(markdownResult.packedConsumer, false)
+    assert.equal(markdownResult.generatedConsumer, false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('an explicit full run cannot produce an empty matrix', () => {
   const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
   try {

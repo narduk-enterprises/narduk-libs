@@ -1,3 +1,20 @@
+// Test-only secrets for the generated-app `nuxt build`. Empty fails closed in
+// narduk-seo; these must never be treated as production credentials.
+export const CONSUMER_SMOKE_TEST_OG_IMAGE_SECRET = 'narduk-test-only-og-image-secret-000000'
+export const CONSUMER_SMOKE_TEST_SESSION_PASSWORD = 'narduk-test-only-session-password-000000'
+
+// Fill fixture-build secrets only when the caller or process.env left them unset.
+export function consumerSmokeTestEnv(env = {}) {
+  const next = { ...env }
+  if (!next.NUXT_OG_IMAGE_SECRET) {
+    next.NUXT_OG_IMAGE_SECRET = CONSUMER_SMOKE_TEST_OG_IMAGE_SECRET
+  }
+  if (!next.NUXT_SESSION_PASSWORD) {
+    next.NUXT_SESSION_PASSWORD = CONSUMER_SMOKE_TEST_SESSION_PASSWORD
+  }
+  return next
+}
+
 // Expand only plain sequential pnpm script calls. Shell logic, lifecycle hooks,
 // arguments and unknown forms remain intact and execute through pnpm as before.
 export function qualityPhases(scripts, name = 'quality', ancestors = []) {
