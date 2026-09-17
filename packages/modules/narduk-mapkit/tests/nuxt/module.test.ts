@@ -151,7 +151,9 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
   })
 
   it('names a retired key without reading its value', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // Swallow the deprecation notice; the assertions read the spy.
+    })
 
     await setup({}, { mapkitAllowedOrigins: 'https://secret.example' })
 
@@ -162,7 +164,9 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
   })
 
   it('names a retired public token key without printing the token', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // Swallow the deprecation notice; the assertions read the spy.
+    })
     const nuxt = nuxtStub()
     nuxt.options.runtimeConfig.public['mapkitToken'] = 'eyJ.static.portal'
 

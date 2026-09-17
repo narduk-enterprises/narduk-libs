@@ -9,8 +9,8 @@
  * ever placed there: no token, no key, no origin list.
  */
 import { useRuntimeConfig } from '#imports';
-export const DEFAULT_MAPKIT_LIBRARIES = ['map', 'annotations', 'overlays'];
-export const DEFAULT_MAPKIT_TOKEN_ROUTE = '/api/mapkit-token';
+import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './defaults.js';
+export { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './defaults.js';
 export function readMapKitPublicOptions() {
     const config = useRuntimeConfig();
     const published = config.public['nardukMapKit'];

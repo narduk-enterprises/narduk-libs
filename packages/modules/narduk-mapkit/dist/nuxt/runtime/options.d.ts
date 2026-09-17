@@ -1,6 +1,5 @@
 import type { MapKitLibrary } from '../../client/mapkit.js';
-export declare const DEFAULT_MAPKIT_LIBRARIES: MapKitLibrary[];
-export declare const DEFAULT_MAPKIT_TOKEN_ROUTE = "/api/mapkit-token";
+export { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './defaults.js';
 /** The non-secret shape the module publishes for the client runtime. */
 export interface MapKitPublicRuntimeOptions {
     language?: string;

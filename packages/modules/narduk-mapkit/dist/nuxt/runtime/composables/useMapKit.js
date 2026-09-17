@@ -41,21 +41,26 @@ function start(options) {
             failure.value = next;
         },
     });
-    void pending.then((loaded) => {
-        namespace.value = loaded;
-        ready.value = true;
-        failure.value = null;
-    }, (cause) => {
-        // `initializeMapKit` already reported the structured failure through
-        // `onFailure`; this only makes the next call able to try again.
-        pending = null;
-        ready.value = false;
-        failure.value ??= {
-            message: cause instanceof Error ? cause.message : String(cause),
-            source: 'mapkit',
-            status: 'Unknown',
-        };
-    });
+    const attempt = pending;
+    void (async () => {
+        try {
+            const loaded = await attempt;
+            namespace.value = loaded;
+            ready.value = true;
+            failure.value = null;
+        }
+        catch (cause) {
+            // `initializeMapKit` already reported the structured failure through
+            // `onFailure`; this only makes the next call able to try again.
+            pending = null;
+            ready.value = false;
+            failure.value ??= {
+                message: cause instanceof Error ? cause.message : String(cause),
+                source: 'mapkit',
+                status: 'Unknown',
+            };
+        }
+    })();
 }
 export function useMapKit(options = {}) {
     // Nothing loads MapKit during SSR: `renderHTMLAttributes()` (emitted by the

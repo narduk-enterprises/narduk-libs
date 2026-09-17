@@ -53,6 +53,14 @@ function requestFromEvent(event) {
  * it; this only stops an unconfigured route from signing without a ceiling.
  */
 let fallbackRateLimit = null;
+/**
+ * Drop the memoized fallback limiter. A test that changes the configured
+ * ceiling needs the next request to rebuild it; without this the only way to
+ * get a fresh one is a second module instance, which no supported runtime has.
+ */
+export function resetMapKitRateLimitForTests() {
+    fallbackRateLimit = null;
+}
 function resolveRateLimit(event, config) {
     const mounted = event.context
         .nardukMapKit?.rateLimit;

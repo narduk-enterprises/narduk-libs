@@ -66,13 +66,14 @@ function start(options: UseMapKitOptions): void {
     },
   })
 
-  void pending.then(
-    (loaded) => {
+  const attempt = pending
+  void (async () => {
+    try {
+      const loaded = await attempt
       namespace.value = loaded
       ready.value = true
       failure.value = null
-    },
-    (cause: unknown) => {
+    } catch (cause: unknown) {
       // `initializeMapKit` already reported the structured failure through
       // `onFailure`; this only makes the next call able to try again.
       pending = null
@@ -82,8 +83,8 @@ function start(options: UseMapKitOptions): void {
         source: 'mapkit',
         status: 'Unknown',
       }
-    },
-  )
+    }
+  })()
 }
 
 export function useMapKit(options: UseMapKitOptions = {}): UseMapKitResult {

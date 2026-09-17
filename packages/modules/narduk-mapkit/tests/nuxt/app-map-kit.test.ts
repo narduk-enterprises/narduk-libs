@@ -20,6 +20,7 @@ import { createFakeMapKit } from '../../src/testing/index.js'
 
 import { headEntries, resetNuxtImportsStub, setTestRuntimeConfig } from './nuxt-imports.js'
 
+import type * as MapKitLoader from '@apple/mapkit-loader'
 import type { MapKitDiff, MapKitPinItem } from '../../src/nuxt/runtime/pin-layer.js'
 import type { FakeMapKitHandle, FakeMapKitOptions } from '../../src/testing/index.js'
 
@@ -49,7 +50,7 @@ const loader = vi.hoisted(() => ({
 }))
 
 vi.mock('@apple/mapkit-loader', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apple/mapkit-loader')>()
+  const actual = await importOriginal<typeof MapKitLoader>()
   return {
     ...actual,
     load: (options: Record<string, unknown>) => loader.load?.(options),

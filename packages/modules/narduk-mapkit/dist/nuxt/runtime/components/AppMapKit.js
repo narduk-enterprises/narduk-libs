@@ -18,7 +18,7 @@
  * TypeScript and the seam has to hold without Vue (narduk-libs#422). This file
  * turns props into calls on those controllers and renders the slots.
  */
-import { Teleport, computed, defineComponent, h, inject, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { Teleport, computed, defineComponent, h, inject, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
 import { MapKitCalloutHostLayer } from '../callout-host.js';
 import { useMapKitPreload } from '../preload.js';
 import { MapKitOverlayLayer } from '../overlay-layer.js';
@@ -86,7 +86,10 @@ const props = {
     showsPointsOfInterest: { default: false, type: Boolean },
     /** 4 of 5 selection users set this, so 2.1.0 flips the default. */
     suppressSelectionZoom: { default: true, type: Boolean },
-    zoomSpan: { default: () => ({ lat: 0.002, lng: 0.0025 }), type: Object },
+    zoomSpan: {
+        default: () => ({ lat: 0.002, lng: 0.0025 }),
+        type: Object,
+    },
 };
 const AppMapKitImpl = defineComponent({
     name: 'AppMapKit',
@@ -113,13 +116,21 @@ const AppMapKitImpl = defineComponent({
         // Emitted from the component, so a page with no map downloads nothing (§f).
         useMapKitPreload({
             ...mapKitOptions,
-            ...(componentProps.nonce ?? injectedNonce
+            ...((componentProps.nonce ?? injectedNonce)
                 ? { nonce: componentProps.nonce ?? injectedNonce ?? undefined }
                 : {}),
         });
         const { failure, mapkit, ready, retry: retryLoad } = useMapKit(mapKitOptions);
         const calloutEntries = shallowRef([]);
         const containerRef = ref(null);
+        /**
+         * `ready` says MapKit JS loaded; this says the `mapkit.Map` exists. They are
+         * one tick apart -- the map is constructed in a post-flush watcher, after
+         * the container element is in the DOM -- and the wrapper's
+         * `data-mapkit-state` has to track the second, not the first. A plain `let`
+         * cannot: it would leave the component rendered as `loading` forever.
+         */
+        const mapReady = ref(false);
         const wrapperRef = ref(null);
         let calloutLayer = null;
         let map = null;
@@ -129,7 +140,7 @@ const AppMapKitImpl = defineComponent({
         const state = computed(() => {
             if (failure.value)
                 return 'error';
-            return ready.value && map ? 'ready' : 'loading';
+            return ready.value && mapReady.value ? 'ready' : 'loading';
         });
         function report(cause) {
             const next = {
@@ -185,7 +196,10 @@ const AppMapKitImpl = defineComponent({
                     const point = convert.call(map, new namespace.Coordinate(coordinate.lat, coordinate.lng));
                     if (point) {
                         const box = container.getBoundingClientRect();
-                        return { x: point.x - box.left - globalThis.scrollX, y: point.y - box.top - globalThis.scrollY };
+                        return {
+                            x: point.x - box.left - globalThis.scrollX,
+                            y: point.y - box.top - globalThis.scrollY,
+                        };
                     }
                 }
             }
@@ -283,7 +297,8 @@ const AppMapKitImpl = defineComponent({
             };
             if (overviewRegion)
                 mapOptions['region'] = overviewRegion;
-            if (componentProps.clusteringIdentifier !== undefined && componentProps.createClusterElement) {
+            if (componentProps.clusteringIdentifier !== undefined &&
+                componentProps.createClusterElement) {
                 mapOptions['annotationForCluster'] = (cluster) => new namespace.Annotation(cluster.coordinate, () => componentProps.createClusterElement(cluster, cluster.memberAnnotations.length), { calloutEnabled: false });
             }
             map = new namespace.Map(container, mapOptions);
@@ -318,6 +333,7 @@ const AppMapKitImpl = defineComponent({
             applyOverlays();
             if (componentProps.selectedId !== null)
                 applySelection(componentProps.selectedId);
+            mapReady.value = true;
             emit('map-ready', map);
         }
         function applyOverlays() {
@@ -334,9 +350,7 @@ const AppMapKitImpl = defineComponent({
                 mapkit: namespace,
                 maxCircleRadius: componentProps.maxCircleRadius,
                 minCircleRadius: componentProps.minCircleRadius,
-                ...(componentProps.overlayStyleFn
-                    ? { overlayStyleFn: componentProps.overlayStyleFn }
-                    : {}),
+                ...(componentProps.overlayStyleFn ? { overlayStyleFn: componentProps.overlayStyleFn } : {}),
             });
             overlayLayer.setGeoJSON(componentProps.geojson);
             overlayLayer.setCircles(componentProps.circles);
@@ -403,6 +417,7 @@ const AppMapKitImpl = defineComponent({
             calloutEntries.value = [];
             map?.destroy();
             map = null;
+            mapReady.value = false;
             retryLoad();
         }
         expose({

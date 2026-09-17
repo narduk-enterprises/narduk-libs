@@ -12,7 +12,7 @@
  * callout need is met by the `#callout` slot instead.
  */
 import { addComponent, addImports, addServerHandler, addTypeTemplate, createResolver, defineNuxtModule, } from '@nuxt/kit';
-import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/options.js';
+import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js';
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
 function normalizeRoutePath(path) {
     const trimmed = path.trim();
@@ -55,7 +55,9 @@ const module = defineNuxtModule({
     defaults: {
         component: true,
         composables: true,
-        libraries: [...DEFAULT_MAPKIT_LIBRARIES],
+        // `libraries` is deliberately absent: `defu` concatenates arrays, so a
+        // default here would append to whatever the app configured. It is resolved
+        // in `setup` instead.
         rateLimit: { limit: 30, windowSeconds: 60 },
         ssrPreload: true,
         tokenRoute: true,
@@ -64,7 +66,8 @@ const module = defineNuxtModule({
     setup(options, nuxt) {
         const resolver = createResolver(import.meta.url);
         const tokenRoutePath = normalizeRoutePath(options.tokenRoutePath);
-        if (options.libraries.length === 0) {
+        const libraries = options.libraries ?? [...DEFAULT_MAPKIT_LIBRARIES];
+        if (libraries.length === 0) {
             throw new Error('nardukMapKit.libraries must name at least one library: MapKit JS 6 ships ' +
                 'mapkit.core.js as a stub, so without "map" there is no mapkit.Map at all.');
         }
@@ -80,7 +83,7 @@ const module = defineNuxtModule({
         // The client runtime's own non-secret configuration. Deliberately one key,
         // and deliberately not a place a token could ever be put.
         const published = {
-            libraries: [...options.libraries],
+            libraries: [...libraries],
             ssrPreload: options.ssrPreload,
             tokenRoutePath,
             ...(options.language === undefined ? {} : { language: options.language }),
@@ -91,7 +94,10 @@ const module = defineNuxtModule({
         // published Nuxt module's is.
         nuxt.options.build.transpile.push(resolver.resolve('./runtime'));
         if (options.component) {
-            addComponent({ filePath: resolver.resolve('./runtime/components/AppMapKit'), name: 'AppMapKit' });
+            addComponent({
+                filePath: resolver.resolve('./runtime/components/AppMapKit'),
+                name: 'AppMapKit',
+            });
         }
         if (options.composables) {
             addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }]);
