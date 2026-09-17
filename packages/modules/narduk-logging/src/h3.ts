@@ -38,7 +38,6 @@ interface RequestState {
   completed: boolean
   options?: RequestLoggingOptions
   logger?: Logger
-  error?: unknown
 }
 
 function state(event: H3Event): RequestState {
@@ -135,27 +134,29 @@ export function installNitroLogging(
     })
   }
 
-  nitro.hooks.hook('afterResponse', (event) =>
-    complete(event, getResponseStatus(event), state(event).error),
-  )
+  nitro.hooks.hook('afterResponse', (event) => complete(event, getResponseStatus(event)))
   nitro.hooks.hook('error', (error, context) => {
-    if (context.event) {
-      const status = statusOf(error)
-      if (status >= 500) {
-        const current = state(context.event)
-        if (current.completed || (context.tags && !context.tags.includes('request'))) {
-          useLogger(context.event, current.options ?? options(context.event)).error(
-            'Captured server error',
-            { error },
-          )
-        } else {
-          // Record completion at the response boundary, after status and duration are final.
-          current.error = error
-        }
-      }
-    } else {
+    if (!context.event) {
       createLogger(options()).error('Unhandled server error', { error })
+      return
     }
+    const current = state(context.event)
+    const status = statusOf(error)
+    // The error handler sends the response itself, so h3 skips afterResponse on every
+    // failing request in both the Node and Worker builds. This hook is the only boundary
+    // that always runs, and the completed flag keeps the pair to one record either way.
+    if (current.completed || (context.tags && !context.tags.includes('request'))) {
+      if (status >= 500) {
+        useLogger(context.event, current.options ?? options(context.event)).error(
+          'Captured server error',
+          { error },
+        )
+      }
+      return
+    }
+    // A 4xx carries no error payload: its message quotes the raw request target, which the
+    // route-template contract keeps out of records.
+    complete(context.event, status, status >= 500 ? error : undefined)
   })
 }
 

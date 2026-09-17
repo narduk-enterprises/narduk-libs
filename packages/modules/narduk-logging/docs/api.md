@@ -69,11 +69,17 @@ Slash-suffixed custom entries are prefixes; other custom entries are exact
 paths. The two core framework prefixes retain their legacy prefix behavior.
 
 Nitro registration is idempotent across the standalone module and core bridge.
-The `request` hook creates context, the error hook captures a failure, and
-`afterResponse` emits one completion summary with the final status and duration.
-Explicit background errors after completion produce a separate captured-error
-record without repeating the summary. Unhandled errors without an event use a
-service logger. `silent` applies to every path.
+The `request` hook creates context, and every request produces exactly one
+completion summary with its status and duration. A successful request is
+completed by `afterResponse`; a failing one is completed by the error hook,
+because h3 sends the error response from its own handler and then skips
+`afterResponse` on that request in both the Node and Worker builds. A summary
+carries the canonical `error` object when the status is 5xx; a 4xx summary omits
+it, since the error message quotes the raw request target that the route
+template deliberately withholds. Explicit background errors after completion
+produce a separate captured-error record without repeating the summary.
+Unhandled errors without an event use a service logger. `silent` applies to
+every path.
 
 `./worker` exports `createWorkerLogger`,
 `logRequest(request, logger, handler, { route })`, and
