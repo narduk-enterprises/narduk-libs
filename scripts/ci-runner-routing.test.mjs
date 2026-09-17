@@ -18,7 +18,8 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.match(ci, /runner: '"ubuntu-latest"'/u)
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)
-  assert.equal((ci.match(/playwright install --with-deps chromium/gu) || []).length, 2)
+  assert.match(ci, /pnpm run release:consumer-smoke --install-browser/u)
+  assert.equal((ci.match(/playwright install --with-deps chromium/gu) || []).length, 1)
   assert.equal(
     (ci.match(/git rev-parse --verify "refs\/remotes\/origin\/main\^\{commit\}"/gu) || []).length,
     2,
