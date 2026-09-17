@@ -44,6 +44,7 @@ const db = vi.hoisted(() => ({
 }))
 
 const persistCalls = vi.hoisted(() => [] as Array<{ recoveryMode?: boolean }>)
+const authConfig = vi.hoisted(() => ({ publicSignup: false }))
 
 vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: <T>(plugin: T) => plugin,
@@ -175,7 +176,7 @@ vi.mock('../server/lib/app-auth/session', () => ({
 vi.mock('../server/lib/app-auth/supabase-client', () => ({
   getAuthConfig: () => ({
     backend: 'supabase',
-    publicSignup: false,
+    publicSignup: authConfig.publicSignup,
     providers: ['apple'],
     appUrl: 'https://app.test',
     callbackPath: '/auth/callback',
@@ -273,6 +274,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     db.userInserts = []
     db.linkInserts = []
     persistCalls.length = 0
+    authConfig.publicSignup = false
   })
 
   it('refuses POST {code, redirectType:"invite"} and does not INSERT a users row', async () => {
@@ -331,6 +333,22 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     expect(db.linkInserts).toEqual([])
     expect(db.links).toEqual([])
     expect(db.userInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+
+  it('refuses to insert a users row when recovery has no existing local account', async () => {
+    authConfig.publicSignup = true
+
+    await expect(
+      postExchange({ tokenHash: 'digest', verificationType: 'recovery' }),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      statusMessage: 'This recovery link is not tied to an existing local account.',
+    })
+
+    expect(db.userInserts).toEqual([])
+    expect(db.users).toEqual([])
+    expect(db.linkInserts).toEqual([])
     expect(persistCalls).toEqual([])
   })
 

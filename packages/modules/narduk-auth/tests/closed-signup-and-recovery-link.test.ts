@@ -1,7 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { H3Event } from 'h3'
@@ -216,16 +212,5 @@ describe('password-recovery exchange detection', () => {
         resetPath: RESET_PATH,
       }),
     ).toBe(false)
-  })
-
-  it('refuses to insert a users row when requireExistingUser is set', () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../server/lib/app-auth/linking.ts'),
-      'utf8',
-    )
-    expect(source).toContain('options.requireExistingUser')
-    expect(source.indexOf('options.requireExistingUser')).toBeLessThan(
-      source.indexOf('db.insert(users)'),
-    )
   })
 })
