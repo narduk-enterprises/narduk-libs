@@ -1,5 +1,208 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.6.0
+
+### Minor Changes
+
+- 49e249b: Add the promote half of the Narduk deployment standard:
+  `narduk-app deploy versions-promote`, `narduk-app deploy rollback`, and
+  `narduk-app verify --live` (company-hq#745, deployment-standard design §1.5,
+  §6.1–§6.3; Logan approved every recommended option on 2026-09-17).
+
+  The standard is **Cloudflare builds, GitHub promotes**. Workers Builds already
+  runs `wrangler versions upload` on every branch, so a push produces a version
+  that serves no traffic; what was missing was the half that makes one live only
+  after the gate check is green on that exact main SHA. `DeployAction` was
+  `'deploy' | 'versions-upload'` and nothing more.
+
+  **The commit-to-version link had to be built, not found.** The design's §6.1
+  pseudocode reads "the version whose upload annotation/commit ==
+  `$GITHUB_SHA`". No such field exists. Read live on 2026-09-17 against the
+  deployed `buoys` Worker, `wrangler versions list --name buoys --json` returns
+  only `metadata.{created_on,source,author_id,author_email,has_preview}` and
+  `annotations.{workers/alias,workers/triggered_by}`; Cloudflare's Versions API
+  reference documents no annotation fields at all. The one commit-shaped handle
+  a version can hold is `annotations["workers/tag"]`, written by
+  `wrangler versions upload --tag`. So `narduk-app deploy versions-upload` now
+  stamps `WORKERS_CI_COMMIT_SHA` as the version tag when it runs inside a
+  Workers Build (a caller-supplied `--tag` is left alone, and nothing is added
+  outside a build), and `versions-promote` resolves a SHA back to a version id
+  by reading it. Without that stamp the promote half has no input at all.
+
+  `wrangler versions list` returns the **10 most recent** versions and takes no
+  paging flag, so on a busy repository a main version can fall out of the window
+  before the promote job runs. That is its own outcome — `version-not-found`,
+  with the number of versions actually searched — because the remedy differs
+  from every other failure.
+
+  **Its own guard.** `isWorkersBuildDeployAllowed` refuses to run anywhere
+  except inside a Cloudflare build, so reusing it for a promotion — which runs
+  in GitHub Actions — would force every release through
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` and quietly license local production
+  deploys estate-wide. Promotion carries a separate Actions-context guard (`CI`,
+  `GITHUB_ACTIONS`, `GITHUB_RUN_ID`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW`)
+  with its own override, `NARDUK_ALLOW_MANUAL_PROMOTE=1`.
+
+  **Rollback names its target.** A promote prints `previousVersionId`, and the
+  promote job feeds that to `rollback --to`. Resolving "the previous version"
+  from deployment history is correct exactly once: after a rollback the newest
+  earlier version is the broken one just left, so an unnamed second rollback
+  would roll _forward_ into it. The unnamed path refuses as soon as it can see
+  the live deployment was itself a rollback, and refuses a no-op when the target
+  already serves 100%.
+
+  **`verify --live` is one code path for three callers** — the preview gate, the
+  promote job's post-deploy proof (the auto-rollback trigger) and a human
+  debugging an incident. It asserts `x-build-version` (prefix compare, because
+  7-, 12- and 40-character spellings of one SHA all occur), `/api/health` per
+  the narduk-core health contract, and one app-declared smoke route, with
+  distinct exit codes per failure class (2 unreachable, 3 build version, 4
+  health, 5 smoke) and a bounded retry over the whole pass for propagation and
+  cold isolates. The build-version and smoke assertions share one request.
+
+  `degraded` fails by default: §6.2 asks for both `data.status == "ok"` and
+  "every required check passing", and those disagree exactly in the degraded
+  case. This takes the literal reading; `--allow-degraded` takes the other, and
+  never excuses a failing **required** check.
+
+  Item 10's live header probe and `verify --live` now share one HTTP layer
+  (`createLiveProbe`) rather than two fetch paths with separate timeout,
+  redirect and user-agent behaviour. Every Cloudflare interaction is behind an
+  injectable seam, so no test makes a network call.
+
+  Review round 1 (Tier 2 adversarial, 2026-09-17) added three safety rules that
+  the first cut did not have, each with its own outcome and exit code:
+
+  - **`stale-promote` (exit 7).** A promote refuses a version older than the one
+    already serving production, or one it cannot order against it. Two PRs
+    merging seconds apart would otherwise let the older commit win by finishing
+    last — reporting `promoted`, exiting 0, and passing its own live proof.
+    `--force` is the deliberate revert-by-promote and is logged loudly.
+  - **`branch-mismatch` (exit 8).** With `--production-branch` (or
+    `NARDUK_PROMOTE_PRODUCTION_BRANCH`), a version is promotable only when the
+    branch recorded in its `workers/message` annotation is that branch, and a
+    version recording no branch is refused. The run's own `GITHUB_REF_NAME` and
+    `GITHUB_EVENT_NAME` are checked too; `--any-branch` overrides the first.
+  - **`wrangler-failed` (exit 5) is now reachable.** A wrangler failure returns
+    a result carrying `trafficMayHaveChanged` instead of escaping as an
+    exception the CLI flattened to 1, and usage errors moved to their own exit 2
+    — so exit 1 keeps meaning "the guard refused, production is untouched".
+
+  `verify --live` gained the same treatment: every request is sent no-cache with
+  a per-attempt cache-busting query parameter (`--no-cache-bust` opts out of the
+  parameter), a redirect that leaves the origin under proof now fails with exit
+  6 rather than silently proving a different Worker, and `--allow-degraded` no
+  longer excuses a `database` of `not_available`, `schema_error` or `error`. An
+  unnamed `deploy rollback` also refuses when the live deployment carries no
+  annotations at all, instead of reading unknown provenance as "not a rollback".
+
+- 2c9f995: Add the declaration half of the Narduk deployment standard: the
+  `Config/cloudflare-app.json` `deployment` block schema and
+  `narduk-app foundation:check:deployment` (item 12,
+  `deployment-standard-conformance`) — company-hq#745, deployment-standard
+  design §2.1/§2.2 tier 1; Logan approved every recommended option on
+  2026-09-17.
+
+  The promote half already shipped: a build uploads a version, a GitHub Actions
+  job deploys it at 100% after the gate check is green, and `verify --live`
+  proves it. What was missing was the place an app says so, and anything that
+  checks it. `Config/cloudflare-app.json` is the right home — `foundation:check`
+  items 1 and 3 already read it — and the block is validated with zod, projected
+  to JSON Schema by `deploymentBlockJsonSchema()` so an estate sweep or an
+  editor reads one definition rather than a second hand-written copy.
+
+  **Rollout mode is the default, and it is deliberate.** An app with no
+  `deployment` block reports `NOT ADOPTED` and exits **0**. Publishing this
+  command therefore turns no app's CI red on the day it ships; apps adopt one at
+  a time. `--strict` makes a missing block a failure and is what CI passes once
+  adoption is complete. A block declaring a `standard` other than `narduk-v1` is
+  reported `not-applicable` — an exempt app is not claiming conformance, so
+  reporting it as twenty schema violations would be noise, not a finding.
+
+  **One rule fails even in rollout mode.** A Worker version captures its binding
+  _configuration_, but the state behind D1, KV and R2 is not versioned, and
+  `preview_database_id` / `preview_id` / `preview_bucket_name` apply to
+  `wrangler dev` only — they do nothing for a Workers Builds preview. An app
+  that sets `nonProductionBranchBuilds: true` while its wrangler config binds
+  production D1, KV or R2 would read and write production data from every pull
+  request branch. The check refuses that combination unless `previewBindings`
+  names a replacement for each binding, reading every `env.*` scope of the
+  wrangler config (JSON, JSONC and TOML) so a binding hidden under an
+  environment still counts.
+
+  **What the verdict is honest about.** This is a repository read with no
+  credential, so it cannot see the deploy commands actually configured on the
+  Workers Builds connection — the exact edit that would silently undo the
+  standard — nor whether branch builds are enabled there, nor a second Worker on
+  another account serving the same hostname. Those need the live read (design
+  §2.2 tier 2). Every run prints that limitation beside its verdict and the
+  artefact carries it in `limitations`, so a green repository check is not
+  mistaken for a green deployment.
+
+  Two additions to the design's literal §2.1 sketch, both additive: a
+  `previewBindings` entry may be a bare binding name or an object carrying the
+  preview resource's ids (§3.3 option A has to generate a preview wrangler
+  config from this block, which needs them), and `previewChecks` is accepted and
+  optional — it is the shared workflow's `preview-checks` input, and declaring
+  it here is what lets a sweep see which apps still run the default.
+
+  ## Review round 1
+  - **`staging` now accepts the design's own enabled shape.** The schema
+    modelled `staging` as `{ enabled: boolean }` under `strictObject`, so design
+    §5.2's staging-enabled block — `workerName`, `hostname`, `approval`,
+    `environment`, `bindings` — was five unknown keys and the first app to
+    follow the approved design verbatim would have failed 12.0. The enabled
+    shape is modelled, and an enabled stage must name its Worker, the hostname
+    its proof reads and its gate (`environment`, which then has to name the
+    GitHub Environment carrying `required_reviewers`, or `auto-after-proof`).
+    Configuration left on a **disabled** stage is rejected rather than ignored:
+    it reads as a live staging setup and is not one.
+  - **12.5 reads TOML and compares the account it was told to expect.** It read
+    `account_id` from JSON only, so it was `not-applicable` on exactly the two
+    committed personal-account Workers the standard was written to catch — both
+    are `.toml`. TOML is now read, and an app may declare
+    `deployment.accountId`; every wrangler config in the checkout must then name
+    that account. Without a declared `accountId` the verdict says plainly that
+    it checked internal consistency **only** and cannot decide whether the
+    account is the right one.
+  - **Every wrangler config is scanned, not just the app's own.** 12.4 and 12.5
+    resolved one config by candidate path, so a second Worker under `services/*`
+    — the shape both personal-account offenders have — had its bindings and its
+    account unread. Both now read every wrangler config in the checkout.
+  - **New 12.6: the app and its wrangler config must agree about exposure.**
+    Design §2.2 tier 1 asks that `preview_urls`/`workers_dev` agree between
+    `Config/cloudflare-app.json` and the wrangler config; nothing implemented
+    it. 12.6 compares `worker.workersDev` / `worker.previewUrls` against every
+    scope of the wrangler config, **including by silence** — Cloudflare defaults
+    both to `true`, so an app that records `workersDev: false` and never says so
+    in wrangler ships a live `*.workers.dev` hostname it believes it does not
+    have.
+  - **The block a generated app pastes is pinned to this schema.**
+    `fixtures/default-deployment-block.json` is asserted here to equal
+    `defaultDeploymentBlock()` and to be accepted by `readDeploymentBlock`, and
+    `create-narduk-app`'s generator test asserts its runbook emits exactly that
+    file. Neither package depends on the other, and a schema change cannot reach
+    a newly generated app without turning a test red first.
+
+### Patch Changes
+
+- e8e6892: Patch release alongside the `@narduk-enterprises/narduk-logging`
+  minor release (request ID `cf-ray` fallback, `Server-Timing` emitter,
+  slow-route logging) so `@narduk-enterprises/create-narduk-app` can refresh its
+  pinned `narduk-logging` version in `src/manifest.ts`
+  (`scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version). No generator behavior changes.
+  `narduk-app-tools`, `narduk-realtime`, `narduk-shell`, and `narduk-testkit`
+  release together with the generator per the workspace's own linked-release
+  contract; none of them changed.
+
+  `@narduk-enterprises/narduk-mapkit-nuxt` is deliberately **not** in that list.
+  It is frozen at 2.0.x (`packages/modules/narduk-mapkit/docs/api-2.1.md` §a)
+  and its source on `main` is now the 2.1 contract, so any release from `main`
+  would publish a 2.1 adapter under a 2.0.x version number. The freeze is
+  enforced by the Changesets `ignore` entry in `.changeset/config.json`; this
+  changeset only stops naming it.
+
 ## 0.5.0
 
 ### Minor Changes

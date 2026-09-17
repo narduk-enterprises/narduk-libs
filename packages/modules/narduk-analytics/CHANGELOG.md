@@ -1,5 +1,74 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.21.0
+
+### Minor Changes
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+### Patch Changes
+
+- 8186003: Stop serving `POSTHOG_OWNER_DISTINCT_ID` to anyone who forges
+  `narduk_owner=true`.
+
+  `GET /api/owner/posthog-bootstrap` now requires the httpOnly HMAC proof cookie
+  minted by `POST /api/owner-tag` (`OWNER_TAG_SECRET` via `crypto.subtle`). The
+  unsigned `narduk_owner` flag stays client-readable for `posthog.client`.
+  Clearing the tag deletes both cookies. Bootstrap uses the existing owner-tag
+  rate-limit policy.
+
+  The proof is `iat.hex(HMAC-SHA256(secret, narduk-owner-proof:v2:iat))`. Verify
+  is constant-time on the signature, fail-closed when the secret is missing, and
+  rejects a token older than `OWNER_PROOF_MAX_AGE_SECONDS` (one year).
+
+  `POST /api/owner-tag` now compares the submitted `OWNER_TAG_SECRET` with the
+  same constant-time helper instead of `!==`, so the mint path no longer exits
+  on the first differing byte. The helper compares length first, so it hides the
+  secret's contents but not its length.
+
+  ## Operator action
+
+  Old-format proofs (the static 64-hex HMAC of `narduk-owner-proof:v1`) are
+  rejected. Owner devices must re-run `POST /api/owner-tag` once to mint a v2
+  proof cookie. `OWNER_TAG_SECRET` rotation remains the emergency kill.
+
+- Updated dependencies [f08deca]
+- Updated dependencies [d148560]
+- Updated dependencies [384925d]
+- Updated dependencies [384925d]
+- Updated dependencies [cfa085f]
+- Updated dependencies [3ae6e51]
+- Updated dependencies [77945b9]
+- Updated dependencies [31a43a7]
+- Updated dependencies [384925d]
+  - @narduk-enterprises/narduk-core@2.2.0
+
 ## 1.20.0
 
 ### Minor Changes

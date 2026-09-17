@@ -1,5 +1,314 @@
 # @narduk-enterprises/narduk-core
 
+## 2.2.0
+
+### Minor Changes
+
+- cfa085f: Add `createNardukDataClient` and `fetchNardukDataJson` — a shared
+  server-side client for published narduk-data products, so an app that reads
+  `data.nard.uk` stops re-deriving the manifest/artifact/checksum dance and the
+  resilience policy around it.
+
+  **The gap.** Buoys' `apps/web/server/utils/buoy-status-product.ts` hardcodes
+  `https://data.nard.uk`, fetches `current/manifest.json`, fetches the release
+  artifact, reads it under a byte ceiling, compares its SHA-256 against the
+  manifest, memoises the result for 60 seconds and coalesces concurrent misses —
+  about 120 lines before a single buoy-specific line. RiverStatus'
+  `apps/web/server/utils/narduk-river-data.ts` does the same walk again for
+  `river-status-v1`, with a different manifest validator, no timeout, no retry,
+  no memo and no coalescing. Neither has a retry, a stale-if-error fallback, or
+  freshness metadata a caller can act on, and the next consumer would have
+  written a third copy.
+
+  **The client.**
+
+  ```ts
+  import { createNardukDataClient } from '@narduk-enterprises/narduk-core/server/utils/narduk-data'
+
+  const client = createNardukDataClient({ userAgent: 'BuoyStat.us/1.17' })
+
+  const { data, freshness, manifest } = await client.read(
+    {
+      artifactPath: 'public-buoy-data.json',
+      maxStaleMs: 10 * 60_000,
+      productId: 'buoy-status-v1',
+      schema: productSchema,
+    },
+    { requestId: event.context._requestId },
+  )
+  ```
+
+  `read` fetches the manifest, fetches the artifact **the manifest names** under
+  `releases/<releaseId>/`, refuses it unless its SHA-256 matches, and validates
+  both against caller-supplied schemas; `artifactPath` is an optional assertion
+  that refuses a manifest naming anything else. Optional `acceptManifest` and
+  `validate` hooks let a consumer refuse a release before the artifact is
+  downloaded and before the pair is cached, so a bad release is never memoised.
+  Each attempt carries its own `AbortSignal.timeout`; the bounded retry applies
+  only to an idempotent `GET`/`HEAD` and only on a network failure, a timeout or
+  an HTTP 5xx, so a 4xx, a schema failure and a checksum mismatch are never
+  repeated and a non-GET is attempted exactly once. Concurrent readers of the
+  same product join the read already in flight, keyed on every ceiling,
+  validator and hook that decides whether a value is valid — so a stricter
+  caller is never answered from a permissive one's entry — and a caller's own
+  `signal` cancels only its own wait, never the shared read. `maxStaleMs` opts
+  into serving the last good value after an upstream failure; it defaults to 0,
+  so the client fails closed exactly as today's hand-rolled reads do, and a
+  `failureCooldownMs` (default 10 s) keeps an outage from making every request
+  re-pay the retry budget.
+
+  **Freshness that stays honest.** Every result carries `fetchedAt`, `ageMs`,
+  `source` (`upstream` | `memo` | `stale-if-error`), `releaseId`, `observedAt`
+  and `observedAgeMs` (the newest observation in the release), `evaluatedAt`
+  (when the producer cut it — a different instant, kept apart), the producer's
+  own `publishedState` republished verbatim, and a `state` of `fresh` | `aging`
+  | `stale` | `unknown`. Thresholds come from the product, or from the
+  manifest's own `fresh_if_less_than_minutes` / `warning_if_at_most_minutes`
+  when it declares none, so an app need not hardcode a duplicate that can drift;
+  with neither, the state is `unknown` — never `fresh`. `source` and `state` are
+  the only two staleness signals and they answer different questions. A value
+  served from the stale path says so rather than arriving as if it were current,
+  and an artifact that is validly empty stays distinguishable from a missing or
+  stale one.
+
+  **Errors, not silence.** Every failure is a `NardukDataError` carrying
+  `reason` (`aborted` | `checksum` | `http` | `network` | `rejected` | `schema`
+  | `timeout` | `too-large`), `status` and `url`, so a caller can tell an outage
+  from a contract break from a consumer refusal from its own cancellation. A
+  caller that cancelled is always told it cancelled, never handed stale data in
+  place of the answer it withdrew.
+
+  **Worker-safe by construction.** No Node-only API, no module-level cache — the
+  caller owns the client instance and its cache is bounded by both `maxEntries`
+  (default 8) and `maxCacheBytes` (default 32 MiB) of retained artifact bytes,
+  least recently used evicted, with `clear()` to drop it — hard body ceilings
+  enforced against bytes actually accumulated rather than a `content-length` the
+  upstream declares (`manifestMaxBytes`, default 256 KiB, is separate from the
+  artifact's `maxBytes`), and no timer of its own: cancellation rides on
+  `AbortSignal`.
+
+  **Credential hygiene.** `accept`, `user-agent` and `x-request-id` are managed
+  and cannot be overridden by a caller; `authorization`, `cookie` and
+  `proxy-authorization` are dropped rather than forwarded to the data origin;
+  every URL is pinned to the configured origin and a redirect is an error rather
+  than a hop off it.
+
+  **Request-id ready.** `context.requestId` is sent as `x-request-id` and
+  `context.headers` is merged in, so the request-id middleware plugs in without
+  this module minting ids. Single-flight means the callers joined onto a read
+  are answered by a request carrying the first caller's id; the README says so.
+
+  **Placement.** `narduk-core` rather than a new package: it is already every
+  app's dependency, the consumers are Nitro server routes that install this
+  layer anyway, the freshness vocabulary it echoes lives here, and a new
+  published package would be a second release surface for one module. Additive
+  only — existing exports are untouched, and an app that never imports it gets
+  an identical build.
+
+  **Compatibility.** `schema` and `manifestSchema` accept any validator with a
+  zod-shaped `safeParse`, so zod v4 schemas plug in structurally and this
+  package takes on no validator dependency or version pin of its own.
+
+- 3ae6e51: Add the reader preference store and its formatters:
+  `usePreferences()`, `useFormatters()`, and the pure functions underneath them.
+  An app stores measurements in SI and displays them in whatever the reader
+  asked for, one call site at a time — nothing here rewrites existing display
+  code and nothing is global.
+
+  **One cookie, `ne_prefs`**, carries units, time zone and locale as a small
+  versioned parameter string (`v=1&u=imperial&tz=America%2FChicago&l=en-US`). It
+  is read during SSR, so there is no client-only flash of the wrong unit, and it
+  is validated on read: a future schema version, a truncated or hand-edited
+  value, an unknown time zone, or something that is not a parameter string at
+  all decodes to no selection and the documented defaults apply. A bad cookie is
+  never a 500, and a cookie with one bad field keeps its good ones. Unset,
+  `locale` comes from `Accept-Language` (`en-US` when absent), `units` is
+  imperial for a `US` region and metric otherwise, and `timeZone` is `UTC`.
+
+  **Hydration is the contract, not a hope.** Server and client read the same two
+  inputs — the cookie, and defaults the server resolved once and carried in the
+  Nuxt payload — so the first client render reproduces the server's markup
+  exactly. The browser's time zone is the one input the server cannot have, so
+  it is adopted _after_ mount rather than guessed during render. The proof
+  renders with `renderToString`, hydrates that markup with a real
+  `createSSRApp().mount()`, and fails on a Vue hydration warning; its control
+  case reproduces the naive implementation and requires the warning to appear.
+
+  **Cache safety.** Reading preferences during SSR marks the response, and a
+  marked response is forced to `private, no-store` with
+  `Vary: Cookie, Accept-Language`. Shared-cache headers (`CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`) are removed
+  so Cloudflare cannot ignore `Cache-Control`. Marking strips headers already
+  written; `setCacheProfile` (new `preferences-cookie` suppression reason) and
+  the `preferences-cache` plugin (`render:response` and `beforeResponse`)
+  re-check the flag so call order cannot leak a shared profile. Nitro
+  `routeRules` `swr`/`cache`/`isr` is incompatible with preference-shaped pages
+  and is documented as such. Nothing downgrades a response that never read
+  preferences, so existing app cache profiles are unchanged.
+
+  **The formatters** are standalone pure functions over SI inputs, so importing
+  one does not ship the rest: `formatDistance`, `formatSpeed`,
+  `formatTemperature`, `formatHeight`, `formatLength`, `formatPressure`,
+  `formatDecimal`, and the timezone-aware `formatZonedDate` / `formatZonedTime`
+  / `formatZonedDateTime`. `null`, `undefined`, `NaN`, `Infinity` and an
+  unparseable date all render an em dash rather than `NaN ft`. `timeZone` and
+  `locale` are arguments with fixed fallbacks, never the host's. No new
+  dependency: `Intl` does the work, including every daylight-saving transition
+  date.
+
+- 77945b9: Add `defineValidatedHandler`: a per-route zod contract for Nitro
+  handlers, alongside the existing `defineRateLimitedHandler`. A route declares
+  `query`, `params`, `body` and `response` schemas and receives them parsed and
+  fully typed — it never touches `getQuery`, `getRouterParam` or `readBody`.
+
+  A bad request answers **400** with `data.code = 'VALIDATION_FAILED'` and a
+  flat list of `{ path, message }` rooted at the part it came from
+  (`query.limit`, `params.stationId`, `body.items[0].name`). **A submitted value
+  never appears in that body**, in a message or in a path, so a rejected
+  password or token cannot travel back out through the error. Object keys do
+  appear, as path segments — which for a `z.record` is caller data — and the
+  guarantee covers zod's built-in messages, not a schema's own `error` callback.
+  Params and query are checked together so one response names every bad field;
+  the body is only read once they pass. A body over `maxBodyBytes` (1 MiB by
+  default) answers **413** before it is parsed, and a body that is not JSON —
+  including one sent with no `content-type` at all, which is the cross-origin
+  simple request a declared JSON type would have forced a preflight for —
+  answers **415**; both carry a `data.code`.
+
+  `response` is an assertion, not a transformer: the value the client receives
+  is exactly what the handler returned, whether or not the check ran, so a route
+  cannot behave differently in production because validation was skipped. A
+  broken response contract logs one structured error through
+  `@narduk-enterprises/narduk-logging` and answers **500** — naming the
+  offending paths in development and test, opaque in production. Checking is
+  **on in development and test, off in production by default**: every request on
+  Workers pays for it in metered CPU on data the server itself produced, and a
+  response-shape mismatch is a code defect. Opt in with `validateResponse: true`
+  or sample with `validateResponse: 0.01`.
+
+  Composition order with `defineRateLimitedHandler` is an explicit contract:
+  **rate limit outside, validate inside**, so a throttled caller is rejected
+  before the body is read or a schema runs. There is deliberately no `rateLimit`
+  option on this wrapper.
+
+  No new dependency: zod 4 is already a direct dependency of this package.
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+### Patch Changes
+
+- f08deca: Make the sealed `nuxt-session` cookie a pointer to `auth_sessions`,
+  not the grant itself.
+
+  `requireAuth` now consults an optional session-grant validator that
+  narduk-auth registers on the request. Core-only apps (no validator) keep
+  cookie-as-grant behavior. Apps that install narduk-auth fail closed: a cookie
+  whose `auth_sessions` row is missing, expired (local), or never existed no
+  longer authenticates.
+
+  **Operational consequence.** After deploy, existing sealed cookies whose
+  `auth_sessions` row is absent will stop authenticating. That may log some
+  users out once — including local-email sessions minted before this change,
+  which never wrote a row. They sign in again and receive a server-side session.
+  Logout and password change now revoke other browsers that still hold a copy of
+  the cookie.
+
+  Login (not the per-request refresh path) opportunistically deletes a
+  `LIMIT`-bounded batch of expired `auth_sessions` rows via the existing
+  `expires_at` index. Supabase rows now carry the same 30-day absolute expiry as
+  local sessions so abandoned rows are sweepable.
+
+  This is a patch: exported function signatures are unchanged, and the behavior
+  change is a security correction, not a new API.
+
+- d148560: Restrict the canonical-host redirect to top-level document
+  navigations, and retire the duplicate canonical-redirect middleware.
+
+  `00-canonical-host` redirected every `GET`/`HEAD` with a `308`, including
+  `/api/**` and `/_nuxt/**`. On any non-canonical hostname — a `workers.dev`
+  preview, a per-version preview URL, a branch alias — that turned every
+  same-origin `fetch()` into a cross-origin redirect the browser refuses for
+  want of an `Access-Control-Allow-Origin` header, while the canonical host
+  still ran the handler and paid its cost (a wasted Apple MapKit token mint and
+  rate-limit slot in the case that found it). The redirect now fires when
+  `Sec-Fetch-Dest` is `document`, is skipped when it is anything else, and, for
+  a request carrying no fetch metadata at all, keeps canonicalising page paths
+  for crawlers while never redirecting `/api/**` or `/_**`. Auth routes reached
+  by navigation — `/auth/callback`, `/auth/confirm`, a provider redirect into
+  `GET /api/auth/session/exchange` — still canonicalise before setting a cookie.
+
+  `runtime/server/middleware/canonicalRedirect.ts`, a second auto-registered
+  canonical-host middleware that redirected with `301` and gated on
+  `import.meta.dev`, no longer sits in the scanned middleware tree. The import
+  path `@narduk-enterprises/narduk-core/server/middleware/canonicalRedirect`
+  still resolves, as a deprecated alias exporting the one live handler, so apps
+  that run the core middleware chain by hand keep compiling.
+
+- 384925d: Exempt the configured CSP report route from CSRF so browser
+  `report-uri` POSTs can reach the sink.
+
+  `security.headers` registers `POST` at `reportRoute` (default
+  `/api/_security/csp-report`) and emits that path as `report-uri`. Browsers
+  send `application/csp-report` with no `X-Requested-With`, so the estate CSRF
+  middleware was returning 403 and a report-only soak looked empty. The skip now
+  reads `runtimeConfig.nardukSecurityHeaders.reportRoute` — the same value the
+  module writes when it registers the handler — rather than a hardcoded path.
+  The skip applies only when `nardukSecurityHeaders.mode` is `report-only` or
+  `enforce`, so the default `off` mode does not CSRF-exempt a 404.
+
+- 384925d: Sanitize production 5xx payloads before Nuxt serializes them into
+  `__NUXT_DATA__`, and reject oversized CSP report bodies with 413.
+
+  Nitro's prod handler only redacts `message`/`data` when `unhandled` or `fatal`
+  is set. Vue SSR wraps the throw as a handled H3Error, so the raw message still
+  reached the client. A prepended Nitro error handler now genericizes 5xx when
+  `previewSafeMode` is off, without replacing Nuxt's renderer. `nuxt dev` skips
+  the sanitizer (`import.meta.dev`) so local 5xx still show the original
+  payload. A string `statusCode` such as `"404"` is coerced before the 5xx
+  decision, so 4xx `data` still reaches clients; a string that does not name a
+  real HTTP status (`"-1"`, `"0"`, `"404abc"`) falls back to 500 and is
+  sanitized. The CSRF-exempt CSP report sink now refuses bodies over 64 KiB
+  before parse.
+
+- 384925d: Fix `isPrivateIPv6` so IPv4-mapped, IPv4-compatible, and NAT64
+  addresses decode their embedded IPv4 instead of string-matching `::ffff:`.
+
+  This closes the loopback and unspecified bypass (`::127.0.0.1` / `::7f00:1`,
+  `::`, `64:ff9b::127.0.0.1`) and also **fixes a false-positive** that blocked
+  legitimate IPv4-mapped public hosts such as `::ffff:93.184.216.34`
+  (`::ffff:5db8:d822`). Consumers that previously saw those public mapped
+  addresses rejected as private will now see them allowed.
+
+- Updated dependencies [384925d]
+- Updated dependencies [e8e6892]
+  - @narduk-enterprises/narduk-logging@0.2.0
+
 ## 2.1.0
 
 ### Minor Changes

@@ -1,5 +1,99 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.4.0
+
+### Minor Changes
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+- 96d1d4b: Add opt-in RFC 9116 `security.txt` and an `aiCrawlers` policy on top
+  of the existing `@nuxtjs/robots` groups.
+
+  `nardukSeo.securityTxt` stays off until the app sets `contact` — the package
+  never invents a reporting address. When contact is set, the module bakes
+  `Expires` as build time plus `expiresDays` (default 365, max 365) and serves
+  the body at `/.well-known/security.txt` and `/security.txt` as
+  `text/plain; charset=utf-8`. Enabling the option without a contact is a
+  build-time error.
+
+  `nardukSeo.aiCrawlers` defaults to `'allow'` and emits no extra robots groups,
+  so existing apps keep the same robots.txt. `'disallow'` and
+  `{ allow, disallow }` add groups for the exported `AI_CRAWLERS` list (GPTBot,
+  ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai,
+  Google-Extended, PerplexityBot, CCBot, Bytespider, Amazonbot,
+  Applebot-Extended, meta-externalagent, cohere-ai).
+
+  `securityTxt` field values (`contact`, `canonical`, `policy`,
+  `acknowledgments`, `preferredLanguages`) reject embedded `\r`/`\n` with a
+  build-time error — security.txt is one field per line, so a line break could
+  otherwise inject an extra field. The served route also logs one `console.warn`
+  per isolate when `Expires` is at or within 30 days of passing, since the value
+  is baked in at build time and never refreshes on its own.
+
+### Patch Changes
+
+- 384925d: Require a stable OG signing secret, and stop protocol-relative paths
+  from poisoning `og:url` / canonical.
+
+  **OG images.** With no `security.secret`, `nuxt-og-image` auto-generates one
+  per build, so every previously signed `/_og/d/<params>.png` URL stops
+  verifying: a rolling Worker release serves two secrets at once and cached
+  signed URLs 403 until they are regenerated. Signing is resolved at build time,
+  so the secret belongs in a Workers Builds Build variable rather than a runtime
+  Worker secret. Non-dev builds that still enable runtime generation now fail
+  unless `NUXT_OG_IMAGE_SECRET` is a non-empty value (whitespace does not
+  count). `nuxt dev` and `nuxt prepare` stay permissive. Operators: set
+  `NUXT_OG_IMAGE_SECRET` in every deployed environment, or set
+  `ogImage.enabled: false` / `ogImage.zeroRuntime: true` if the app only uses
+  the static `defaultOgImage`. The committed CI placeholder
+  (`narduk-test-only-og-image-secret-000000`) is rejected on any build the
+  estate deploys -- Workers Builds (`WORKERS_CI` / `WORKERS_CI_BRANCH`) and a
+  local `wrangler deploy` behind `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` -- so it
+  cannot sign a live Worker. Builds that produce nothing deployable (`nuxt dev`,
+  GitHub Actions `build:ci`, packed-consumer fixture apps) may still use it.
+
+  **Canonical URLs.** `new URL('//attacker.example', site)` was accepted as
+  HTTPS with no userinfo. Router paths and explicit `canonicalUrl` values are
+  now sanitized to a same-origin path (or a same-origin absolute URL) before
+  resolution; poisoned input falls back to `/` and never throws.
+
+- Updated dependencies [f08deca]
+- Updated dependencies [d148560]
+- Updated dependencies [384925d]
+- Updated dependencies [384925d]
+- Updated dependencies [cfa085f]
+- Updated dependencies [3ae6e51]
+- Updated dependencies [77945b9]
+- Updated dependencies [31a43a7]
+- Updated dependencies [384925d]
+  - @narduk-enterprises/narduk-core@2.2.0
+
 ## 2.3.0
 
 ### Minor Changes

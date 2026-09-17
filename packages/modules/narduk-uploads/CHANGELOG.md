@@ -1,5 +1,51 @@
 # @narduk-enterprises/narduk-uploads
 
+## 1.21.0
+
+### Minor Changes
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+### Patch Changes
+
+- 8186003: Serve `GET /images/**` only for the same raster MIME allow-list as
+  `POST /api/upload`.
+
+  `X-Content-Type-Options: nosniff` does not stop a stored `text/html` or
+  `application/javascript` object from executing on the first-party origin. The
+  public image route now fail-closes on any stored content type outside
+  `image/jpeg|png|webp|gif|avif` (including missing metadata and SVG).
+
+  `POST /api/upload` now fail-closes on a missing or non-finite `Content-Length`
+  (411) and hard-stops the Node request stream at the 100 MB request cap so a
+  lying header cannot buffer the whole body.
+
 ## 1.20.0
 
 ### Minor Changes

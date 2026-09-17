@@ -1,5 +1,177 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.8.0
+
+### Minor Changes
+
+- 2c9f995: Teach a newly generated app the Narduk deployment standard
+  (company-hq#745, deployment-standard design §2.1/§3.2; Logan approved every
+  recommended option on 2026-09-17).
+
+  `docs/workers-builds.md` previously taught the pre-standard model: a
+  production deploy command that **deploys**, and non-production branch builds
+  enabled for trusted branches. Both are now wrong, and the second is a live
+  safety hole.
+
+  - Both Cloudflare deploy commands are now `pnpm run cf:deploy:preview`, which
+    runs `narduk-app deploy versions-upload`: it uploads a version that serves
+    no traffic. A production command that deploys puts a `main` push straight
+    into production, which is the one thing the standard exists to prevent. The
+    doc says why the two are the same command and that the name is historical.
+  - Non-production branch builds now start **disabled**. A version captures its
+    binding _configuration_ but not the state behind it, and
+    `preview_database_id` / `preview_id` / `preview_bucket_name` apply to
+    `wrangler dev` only, so a branch build of an app that binds production D1,
+    KV or R2 reads and writes production data from every pull request. The doc
+    states the hazard and the exit from it: create a preview resource per
+    binding, list them under `deployment.previewBindings`, then turn branch
+    builds on.
+  - The runbook now carries the exact `deployment` block to paste into
+    `Config/cloudflare-app.json` at onboarding, plus the promote, live-proof and
+    rollback commands.
+  - A new `foundation:deployment` script runs
+    `narduk-app foundation:check:deployment --checkout ..`.
+
+  The generator still does not create `Config/cloudflare-app.json` itself. That
+  file records live Cloudflare facts a checkout cannot know, onboarding owns it,
+  and this generator does not hold a continuing relationship with an app's
+  configuration. It emits the block to paste and a check that reads it.
+
+  ## Review round 1
+
+  The `deployment` block the runbook tells a new app to paste was ~24 hand-typed
+  string literals, and the only assertions on it were substrings. Adding one
+  required key to the schema would have shipped a generator whose paste-this
+  block fails the very check it tells you to run — discovered by the first app
+  to try it, not by CI. The block is now serialized from a single object, and
+  the generator test extracts the fenced block, parses it, and asserts it equals
+  `narduk-app-tools`' committed `fixtures/default-deployment-block.json` — which
+  that package's own suite pins to `defaultDeploymentBlock()` and to
+  `readDeploymentBlock` accepting it. The pin is a fixture rather than an import
+  because the published generator must require nothing at runtime, and because
+  CI's per-package gates run `pnpm --filter <name>` without building a workspace
+  sibling's `dist`. Add a required key to the schema and `narduk-app-tools` goes
+  red; update its fixture and this generator goes red until it emits the new
+  block.
+
+### Patch Changes
+
+- 49e249b: Repin the generator's `@narduk-enterprises/narduk-app-tools`
+  dependency to the release carrying the deployment-standard promote, rollback
+  and live-proof commands. No generator behaviour changes.
+- 8e6c388: Generate a `playwright.config.ts` that resolves its local dev port
+  through `@narduk-enterprises/narduk-testkit/playwright/dev-port` instead of
+  `Number(process.env.PLAYWRIGHT_PORT) || <scaffolded port>`, and add
+  `@narduk-enterprises/narduk-testkit` to the generated app's root
+  devDependencies so the root config can resolve it.
+
+  A linked worktree of a generated app now gets its own derived port and refuses
+  to reuse a server it did not start, which is what stops two lanes on one
+  machine from silently testing each other's branch (narduk-libs#417). The
+  primary checkout and CI keep the scaffolded port, so no pipeline behaviour
+  changes.
+
+- 96d1d4b: Refresh the generator's `@narduk-enterprises/narduk-seo` pin for the
+  security.txt / AI-crawler policy release.
+- 0c4ddd9: Bump the pinned `@narduk-enterprises/narduk-testkit` version to track
+  its new `server/handlers` handler test harness (narduk-libs#380). No generator
+  behavior changes — this only keeps the generator's own release in step with
+  the release-plan guard's generator-pin rule
+  (`scripts/check-generator-release-plan.mjs`), which requires a companion
+  release whenever a changeset moves a package the generator pins by version
+  literal.
+- 77945b9: Move the generator's pinned `@narduk-enterprises/narduk-core` version
+  — and the dependent pins that follow it — to the release carrying
+  `defineValidatedHandler`. The generator emits these versions as string
+  literals, so Changesets cannot see the coupling and the release-plan gate
+  requires the generator to move with them. No generator behaviour changes.
+- cfa085f: Re-pin the generated app's layer versions so a newly generated app
+  starts on the narduk-core release that carries the narduk-data product client.
+
+  No generator behaviour changes: the templates, prompts and generated files are
+  identical. This is the pin refresh `scripts/check-generator-release-plan.mjs`
+  requires whenever a generator-owned package is released, so a generated app
+  does not start life on a narduk-core older than the one the estate just
+  shipped.
+
+- 310121b: Add `@narduk-enterprises/narduk-mapkit/testing`: a deterministic,
+  offline fake of MapKit JS v6 for component and end-to-end tests.
+
+  The fake is modelled on a measured spike against real MapKit JS 6.0.128 rather
+  than on the documentation alone. It covers `load()` with library gating,
+  `init()` with the `configuration-change` and `error` events (Apple's seven
+  `ConfigurationErrorStatus` values verbatim), scriptable authorization outcomes
+  including the measured origin-mismatch shape (the same token retried three
+  times, `authorizationCallback` invoked exactly once, then `Unauthorized`), an
+  injected access-key clock, `mapkit.Map`, the three annotation classes, and the
+  value types. Anything it does not model throws
+  `FakeMapKitNotImplemented: <member>` instead of silently answering
+  `undefined`.
+
+  A separate inspection surface records an operation log with per-annotation
+  add/remove counts, so a component test can assert a reconciliation budget --
+  "updating 1 of 600 pins touched 1 annotation, not 600" -- rather than only a
+  final-state outcome. `fakeMapKitInitScript()` serialises the whole fake for
+  Playwright's `page.addInitScript`; it is one self-contained function, so there
+  is no bundler step and no second implementation.
+
+  `./testing` is a dev-time export: it carries no runtime dependency, and an
+  import-graph test asserts no production entry point can reach it. The fake's
+  public types are declared structurally, so the published `.d.ts` resolves
+  without Apple's types installed, while a type-level conformance suite compares
+  it member by member against `@types/apple-mapkit` v6 and fails typecheck on
+  drift.
+
+  `@narduk-enterprises/create-narduk-app` gets a patch release so it can refresh
+  its pinned `narduk-mapkit` version in `src/manifest.ts`
+  (`scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version). No generator behavior changes.
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+- e8e6892: Patch release alongside the `@narduk-enterprises/narduk-logging`
+  minor release (request ID `cf-ray` fallback, `Server-Timing` emitter,
+  slow-route logging) so `@narduk-enterprises/create-narduk-app` can refresh its
+  pinned `narduk-logging` version in `src/manifest.ts`
+  (`scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version). No generator behavior changes.
+  `narduk-app-tools`, `narduk-realtime`, `narduk-shell`, and `narduk-testkit`
+  release together with the generator per the workspace's own linked-release
+  contract; none of them changed.
+
+  `@narduk-enterprises/narduk-mapkit-nuxt` is deliberately **not** in that list.
+  It is frozen at 2.0.x (`packages/modules/narduk-mapkit/docs/api-2.1.md` §a)
+  and its source on `main` is now the 2.1 contract, so any release from `main`
+  would publish a 2.1 adapter under a 2.0.x version number. The freeze is
+  enforced by the Changesets `ignore` entry in `.changeset/config.json`; this
+  changeset only stops naming it.
+
 ## 0.7.0
 
 ### Minor Changes

@@ -1,5 +1,110 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.28.0
+
+### Minor Changes
+
+- f08deca: Restrict recovery-mode and unstepped MFA sessions at the grant
+  validator, and stop empty-scope API keys from acting as the user.
+
+  A password-recovery callback now sets `auth_sessions.recovery_mode` from the
+  server-side type, a forwarded `type=recovery`, or `next` on the `token_hash`
+  path. A PKCE `?code=` login whose only signal is `next=/reset-password` is not
+  recovery. While that flag is set, `requireAuth` only allows
+  `GET /api/auth/me`, `POST /api/auth/change-password`, and
+  `POST /api/auth/logout`. Successful password change clears the flag; persist
+  no longer defaults omitted `recoveryMode` to `false`.
+
+  When `AUTH_REQUIRE_MFA` is on, Supabase sessions whose row `aal` is not `aal2`
+  are limited to MFA enroll/verify, logout, and `/api/auth/me`. **Local
+  backend:** the flag is ignored (startup warning). There is no TOTP stack to
+  step up, so enforcing it would lock password users out. Passkey
+  user-verification is not treated as AAL2.
+
+  Account delete, password change, profile update, and MFA enroll/verify now
+  require an interactive session. Notification mutations require
+  `auth:notifications:write`. Native Apple honors `AUTH_PUBLIC_SIGNUP=false`.
+  Recovery never inserts a new local user; invite remains the closed-signup
+  door. `isAdmin` (and email/name) are loaded from the current `users` row on
+  every refresh, including inside the Supabase 5-minute window. Static asset
+  prefixes are skipped by session-refresh middleware.
+
+  ## Operator action
+
+  Re-mint or re-scope every `nk_` API key that calls `POST /api/notifications`,
+  `POST /api/notifications/read-all`, `PATCH /api/notifications/:id`, or
+  `DELETE /api/notifications/:id` with `auth:notifications:write` **before**
+  upgrading. Keys minted with the documented empty-scope default (`scopes: []`)
+  currently drive those mutations and will start returning 403 after this
+  release. Account delete, change-password, `PATCH /api/auth/me`, and MFA
+  enroll/verify now refuse API-key principals entirely.
+
+- 31a43a7: Correct published packaging declarations so they match what these
+  packages already require at install time. This is not a runtime change.
+
+  Nine Nuxt modules already depend on `@nuxt/kit` `^4.0.0`, which does not run
+  on Nuxt 3, but advertised `peerDependencies.nuxt` as `>=3.16.0`. The peer is
+  now `>=4.0.0`, matching narduk-shell and narduk-mapkit-nuxt. `narduk-core` and
+  `narduk-realtime` also raise `@nuxt/schema` to `>=4.0.0` so it matches `nuxt`.
+  `narduk-core` and `narduk-analytics` add exact `./app/types/*` entries for the
+  `.ts` files that the `*.d.ts` export pattern could not resolve. The analytics
+  key exports runtime `const`s, so it carries `types` then `import` then
+  `default`. Core `./app/types/api` stays types-only because that file is
+  interfaces. `narduk-app` declares `zod` `^4.4.3` as an optional peer (kept in
+  `devDependencies`) so consumers that typecheck `./server/request-body` can
+  resolve `z.ZodType` without warning HTTP-only consumers. `narduk-shell`
+  tightens `vue-router` to `^5.3.1` so the published package matches `@nuxt/ui`
+  `4.8.1` and the workspace override.
+
+  ## Operator action
+
+  The Nuxt 4 peer (`nuxt` and, where declared, `@nuxt/schema`) is a
+  consumer-visible floor raise, so the nine modules that advertised Nuxt 3 ship
+  as `minor`. Every narduk-app in the estate is already on Nuxt 4; Buoys is on
+  4.5.2. A remaining Nuxt 3 app cannot take this release — and already could not
+  run these modules, because they depend on `@nuxt/kit` `^4.0.0`.
+  `create-narduk-app` is a companion patch so generator pins move with the
+  minors. `narduk-app` (optional zod peer) and `narduk-shell` (vue-router
+  already at UI 4.8.1) stay `patch`.
+
+### Patch Changes
+
+- f08deca: Make the sealed `nuxt-session` cookie a pointer to `auth_sessions`,
+  not the grant itself.
+
+  `requireAuth` now consults an optional session-grant validator that
+  narduk-auth registers on the request. Core-only apps (no validator) keep
+  cookie-as-grant behavior. Apps that install narduk-auth fail closed: a cookie
+  whose `auth_sessions` row is missing, expired (local), or never existed no
+  longer authenticates.
+
+  **Operational consequence.** After deploy, existing sealed cookies whose
+  `auth_sessions` row is absent will stop authenticating. That may log some
+  users out once — including local-email sessions minted before this change,
+  which never wrote a row. They sign in again and receive a server-side session.
+  Logout and password change now revoke other browsers that still hold a copy of
+  the cookie.
+
+  Login (not the per-request refresh path) opportunistically deletes a
+  `LIMIT`-bounded batch of expired `auth_sessions` rows via the existing
+  `expires_at` index. Supabase rows now carry the same 30-day absolute expiry as
+  local sessions so abandoned rows are sweepable.
+
+  This is a patch: exported function signatures are unchanged, and the behavior
+  change is a security correction, not a new API.
+
+- Updated dependencies [f08deca]
+- Updated dependencies [d148560]
+- Updated dependencies [384925d]
+- Updated dependencies [384925d]
+- Updated dependencies [cfa085f]
+- Updated dependencies [3ae6e51]
+- Updated dependencies [77945b9]
+- Updated dependencies [31a43a7]
+- Updated dependencies [384925d]
+  - @narduk-enterprises/narduk-core@2.2.0
+  - @narduk-enterprises/narduk-app@1.20.1
+
 ## 1.27.2
 
 ### Patch Changes

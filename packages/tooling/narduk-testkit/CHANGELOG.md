@@ -1,5 +1,127 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.5.0
+
+### Minor Changes
+
+- 0c4ddd9: Add `@narduk-enterprises/narduk-testkit/server/handlers` — a fake H3
+  event plus in-memory Cloudflare KV, R2 and D1 fakes for unit-testing route
+  handlers without a real Worker runtime.
+
+  **The gap.** Every package that ships Nitro route handlers has been
+  hand-rolling its own `IncomingMessage`/`ServerResponse` pair to build an
+  `H3Event`, and its own ad-hoc canned KV/D1 stubs, scattered across
+  `narduk-core`, `narduk-app` and `narduk-auth` tests (see "Follow-ups" below).
+  This harness centralizes that in one tested, documented place, exported from
+  its own subpath so Playwright-only consumers of this package don't pull it in.
+
+  **`createFakeEvent` / `readFakeEventResponse`.**
+  `createFakeEvent({ method, path, query, params, headers, body, cookies, context })`
+  builds a real `H3Event` on top of h3's own
+  `createEvent(IncomingMessage, ServerResponse)` — the same construction
+  narduk-core's tests already use by hand — so it works with h3's own
+  `getQuery`, `readBody`, `getRouterParam`, `getHeader`, `setResponseStatus` and
+  `setHeader` rather than a hand-rolled event shape.
+  `readFakeEventResponse(event, handlerResult?)` reads back the status, headers
+  and (JSON-decoded when possible) body a handler wrote, falling back to the
+  handler's return value when nothing was written directly.
+
+  **`createFakeKVNamespace`.** An in-memory `KVNamespace` —
+  `get`/`put`/`delete`/ `list`, `expiration`/`expirationTtl` (backed by an
+  injectable clock for deterministic tests) and `metadata`.
+
+  **`createFakeR2Bucket`.** An in-memory `R2Bucket` — `get`/`head`/`put`/
+  `delete`/`list` with prefix filtering, cursor pagination and a real MD5 etag.
+
+  **`createFakeD1Database`.** A `D1Database` backed by `node:sqlite` (a Node
+  built-in — no new dependency; the package now declares `engines.node
+
+  > =
+  > 22.22.0`for it), so`prepare().bind().first()/all()/run()/raw()`, `batch()`and`exec()`actually execute SQL.`batch()`runs inside a real`BEGIN`/`COMMIT`/`ROLLBACK`
+  > transaction, so a failure partway through rolls back every statement in the
+  > batch, matching D1's own all-or-nothing guarantee as far as this fake can
+  > promise it.
+
+  **Fidelity over permissiveness.** Every fake was diffed against a real binding
+  (workerd, via miniflare) and each place SQLite or an in-memory map would have
+  been _more permissive than production_ is enforced instead, because a fake
+  that accepts what production rejects turns a broken handler into a green test:
+  D1 rejects a `bind()` with the wrong number of values rather than binding
+  NULL, `first(column)` throws `D1_COLUMN_NOTFOUND` for a column the result set
+  lacks, `run()` returns rows for a row-returning statement (D1's `run()` and
+  `all()` share one shape), BLOB columns come back as D1's plain byte arrays,
+  and `exec()` counts statements by line; KV stores bytes rather than a UTF-8
+  string (so a binary value survives a round trip) and enforces the key rules
+  and the 60-second expiration floor; R2 honours `range`, gates `list`'s
+  metadata maps behind `include`, and makes a body single-use.
+
+  **`callHandler`.** `callHandler(handler, eventOptions, { env })` wires the
+  fakes (or any object) into `event.context.cloudflare.env`, calls the handler,
+  converts a thrown `H3Error` into the response Nitro's own error handling would
+  send, and returns the same `{ status, headers, body }` shape as
+  `readFakeEventResponse`.
+
+  **What these fakes do NOT emulate**, spelled out in the README: D1's real
+  network latency, multi-region consistency and read-replica sessions
+  (`withSession()` throws); KV's real eventual consistency and its
+  value/metadata size limits; R2's multipart uploads and conditional (`onlyIf`)
+  requests — `get` throws on `onlyIf` rather than quietly ignoring it; and the
+  deprecated D1 `dump()` API (also throws).
+
+  `h3` and `@cloudflare/workers-types` are now declared as optional peer
+  dependencies: the published `server/handlers` entry imports `h3` at runtime
+  and its `.d.ts` files use the Cloudflare ambient globals, neither of which a
+  `devDependencies`-only declaration gives a consumer.
+
+  **Follow-ups (not done in this PR, to avoid touching narduk-core from this
+  lane).** This harness is now capable of replacing several ad-hoc fakes
+  elsewhere in the monorepo:
+
+  - `packages/modules/narduk-core/tests/kv-cache.test.ts`'s local `createKV()`
+  - `packages/modules/narduk-core/tests/auth-api-key-d1.test.ts`'s local
+    `createApiKeyDb()` canned D1 stub
+  - the repeated `createEvent(request, new ServerResponse(request))` pattern in
+    `narduk-core/tests/{request-correlation,database-none,exception-capture, logger,user-session}.test.ts`,
+    `narduk-app/tests/request-body.test.ts`,
+    `narduk-auth/tests/{native-auth-boundary,local-email-runtime}.test.ts` and
+    `narduk-logging/tests/adapters.test.ts`
+
+- 8e6c388: Add `@narduk-enterprises/narduk-testkit/playwright/dev-port`:
+  `resolveLocalDevPort`, `shouldReuseExistingServer`,
+  `assertLocalDevPortAvailable`, `isLinkedWorktree`, `isPortInUse` and
+  `normalizePort`.
+
+  One scaffolded local dev port per app was one port per machine: every worktree
+  of the app shared it, so Playwright's `reuseExistingServer` attached to
+  whichever worktree's `nuxt dev` got there first and the suite silently tested
+  the wrong branch (narduk-libs#417). A linked git worktree now derives its own
+  port from a stable hash of the checkout path, and does not reuse a server it
+  did not start. The primary checkout and every CI run keep the declared port
+  unchanged, so muscle memory, bookmarks and localhost allowlists still work;
+  `PLAYWRIGHT_PORT` (then `NUXT_PORT`) still overrides everything.
+
+  Subpath-only, like `e2e/fixture-server`: it is imported from a Playwright
+  config before the runner exists, so it stays out of the root barrel.
+
+### Patch Changes
+
+- e8e6892: Patch release alongside the `@narduk-enterprises/narduk-logging`
+  minor release (request ID `cf-ray` fallback, `Server-Timing` emitter,
+  slow-route logging) so `@narduk-enterprises/create-narduk-app` can refresh its
+  pinned `narduk-logging` version in `src/manifest.ts`
+  (`scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version). No generator behavior changes.
+  `narduk-app-tools`, `narduk-realtime`, `narduk-shell`, and `narduk-testkit`
+  release together with the generator per the workspace's own linked-release
+  contract; none of them changed.
+
+  `@narduk-enterprises/narduk-mapkit-nuxt` is deliberately **not** in that list.
+  It is frozen at 2.0.x (`packages/modules/narduk-mapkit/docs/api-2.1.md` §a)
+  and its source on `main` is now the 2.1 contract, so any release from `main`
+  would publish a 2.1 adapter under a 2.0.x version number. The freeze is
+  enforced by the Changesets `ignore` entry in `.changeset/config.json`; this
+  changeset only stops naming it.
+
 ## 1.4.0
 
 ### Minor Changes
