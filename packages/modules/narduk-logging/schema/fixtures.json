@@ -82,5 +82,40 @@
       "authProvider": "supabase",
       "itemCount": 7
     }
+  },
+  {
+    "name": "segment match keeps tokenizer secretary jwtid visible",
+    "input": {
+      "tokenizer": "bpe",
+      "tokenization": "wordpiece",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "token": "synthetic",
+      "access_token": "synthetic",
+      "authToken": "synthetic",
+      "x-api-key": "synthetic",
+      "authorization": "synthetic",
+      "cookie": "synthetic",
+      "set-cookie": "synthetic",
+      "secret": "synthetic",
+      "client_secret": "synthetic",
+      "password": "synthetic"
+    },
+    "expected": {
+      "tokenizer": "bpe",
+      "tokenization": "wordpiece",
+      "secretary": "Ada",
+      "jwtid": "jti-1",
+      "token": "[REDACTED]",
+      "access_token": "[REDACTED]",
+      "authToken": "[REDACTED]",
+      "x-api-key": "[REDACTED]",
+      "authorization": "[REDACTED]",
+      "cookie": "[REDACTED]",
+      "set-cookie": "[REDACTED]",
+      "secret": "[REDACTED]",
+      "client_secret": "[REDACTED]",
+      "password": "[REDACTED]"
+    }
   }
 ]

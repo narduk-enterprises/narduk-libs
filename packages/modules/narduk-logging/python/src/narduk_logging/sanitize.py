@@ -40,21 +40,33 @@ _SENSITIVE = {
     "prompt",
     "completion",
 }
-# Infix tokens on the punctuation-stripped key. `secretkey` is covered by `secret`.
-_SENSITIVE_PARTS = (
+# Exact segments after camelCase / snake_case / kebab-case split.
+_SENSITIVE_SEGMENTS = {
+    "password",
+    "passwd",
+    "secret",
+    "token",
     "apikey",
-    "accesskey",
+    "authorization",
+    "cookie",
+    "cookies",
+    "setcookie",
+    "session",
+    "sessionid",
     "privatekey",
+    "clientsecret",
     "jwt",
     "bearer",
     "credential",
-    "authorization",
-    "token",
-    "password",
-    "secret",
-)
+    "credentials",
+}
+# Adjacent segments that together name a secret (`x-api-key` → api+key).
+_COMPOUND_SEGMENTS = {"apikey", "accesskey", "privatekey", "clientsecret", "setcookie"}
+# Keep infix on the punctuation-stripped key only for these compounds.
+_SENSITIVE_INFIX = ("apikey", "accesskey", "privatekey", "authorization")
 # Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
 _SAFE_NORMALIZED_KEYS = {"tokencount", "passwordless", "authmethod", "authbackend", "authprovider"}
+_CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,17 @@ def clean_text(value: str, limit: int = 2048) -> str:
     return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", value[:limit])
 
 
+def _key_segments(key: str) -> list[str]:
+    segments: list[str] = []
+    for piece in re.split(r"[^A-Za-z0-9]+", key):
+        if not piece:
+            continue
+        for part in _CAMEL_SPLIT.split(piece):
+            if part:
+                segments.append(part.lower())
+    return segments
+
+
 def sensitive_key(key: str, redact: tuple[str, ...] = ()) -> bool:
     normalized = re.sub("[^a-z0-9]", "", key.lower())
     if normalized in _SENSITIVE or normalized in {
@@ -78,10 +101,17 @@ def sensitive_key(key: str, redact: tuple[str, ...] = ()) -> bool:
         return True
     if not normalized or normalized in _SAFE_NORMALIZED_KEYS:
         return False
-    # `authorization` contains `author`, so the auth rule cannot stand alone.
-    return any(part in normalized for part in _SENSITIVE_PARTS) or (
-        "auth" in normalized and "author" not in normalized
-    )
+    segments = _key_segments(key)
+    if any(segment in _SENSITIVE_SEGMENTS for segment in segments):
+        return True
+    if any(
+        f"{segments[index]}{segments[index + 1]}" in _COMPOUND_SEGMENTS
+        for index in range(len(segments) - 1)
+    ):
+        return True
+    if "auth" in segments:
+        return True
+    return any(part in normalized for part in _SENSITIVE_INFIX)
 
 
 def sanitize_url(value: str) -> str:

@@ -8,11 +8,18 @@ public enum LogSanitizer {
         "body", "requestbody", "responsebody", "payload", "payment", "cardnumber", "cvv", "email",
         "phone", "address", "latitude", "longitude", "prompt", "completion",
     ]
-    /// Infix tokens on the punctuation-stripped key. `secretkey` is covered by `secret`.
-    static let sensitiveParts = [
-        "apikey", "accesskey", "privatekey", "jwt", "bearer", "credential",
-        "authorization", "token", "password", "secret",
+    /// Exact segments after camelCase / snake_case / kebab-case split.
+    static let sensitiveSegments: Set<String> = [
+        "password", "passwd", "secret", "token", "apikey", "authorization",
+        "cookie", "cookies", "setcookie", "session", "sessionid", "privatekey",
+        "clientsecret", "jwt", "bearer", "credential", "credentials",
     ]
+    /// Adjacent segments that together name a secret (`x-api-key` → api+key).
+    static let compoundSegments: Set<String> = [
+        "apikey", "accesskey", "privatekey", "clientsecret", "setcookie",
+    ]
+    /// Keep infix on the punctuation-stripped key only for these compounds.
+    static let sensitiveInfix = ["apikey", "accesskey", "privatekey", "authorization"]
     /// Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
     static let safeNormalizedKeys: Set<String> = [
         "tokencount", "passwordless", "authmethod", "authbackend", "authprovider",
@@ -34,13 +41,45 @@ public enum LogSanitizer {
                 }))
     }
 
+    static func keySegments(_ key: String) -> [String] {
+        let pieces = key.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        var segments: [String] = []
+        for piece in pieces {
+            var current = ""
+            let characters = Array(piece)
+            for (index, character) in characters.enumerated() {
+                let previous = index > 0 ? characters[index - 1] : nil
+                let next = index + 1 < characters.count ? characters[index + 1] : nil
+                let splitBeforeUpper =
+                    character.isUppercase && previous.map { $0.isLowercase || $0.isNumber } == true
+                let splitAcronym =
+                    character.isUppercase && previous?.isUppercase == true
+                    && next?.isLowercase == true
+                if !current.isEmpty && (splitBeforeUpper || splitAcronym) {
+                    segments.append(current.lowercased())
+                    current = String(character)
+                } else {
+                    current.append(character)
+                }
+            }
+            if !current.isEmpty { segments.append(current.lowercased()) }
+        }
+        return segments
+    }
+
     static func isSensitiveKey(_ key: String, extra: Set<String>) -> Bool {
         let normalizedKey = normalized(key)
         if sensitive.contains(normalizedKey) || extra.contains(normalizedKey) { return true }
         if normalizedKey.isEmpty || safeNormalizedKeys.contains(normalizedKey) { return false }
-        // `authorization` contains `author`, so the auth rule cannot stand alone.
-        return sensitiveParts.contains(where: normalizedKey.contains)
-            || (normalizedKey.contains("auth") && !normalizedKey.contains("author"))
+        let segments = keySegments(key)
+        if segments.contains(where: sensitiveSegments.contains) { return true }
+        if segments.count >= 2 {
+            for index in 0..<(segments.count - 1) {
+                if compoundSegments.contains(segments[index] + segments[index + 1]) { return true }
+            }
+        }
+        if segments.contains("auth") { return true }
+        return sensitiveInfix.contains(where: normalizedKey.contains)
     }
 
     public static func url(_ value: String) -> String {
