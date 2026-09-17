@@ -4,6 +4,7 @@
 # every applicable browser/consumer gate. Keep ci / Required during migration.
 # Planner selection starts the package and integration jobs while contracts run
 # alongside them; verify rejects a failed, cancelled or missing contracts gate.
+# A contracts failure cancels the run when its token has Actions write access.
 # Public fork CI uses GitHub-hosted runners and no registry credential.
 name: CI
 
@@ -210,6 +211,30 @@ jobs:
         run: |
           set -euo pipefail
           pnpm audit --audit-level high
+
+  cancel-after-contracts-failure:
+    name: stop CI after contracts failure
+    needs: [contracts]
+    # Keep the success path parallel. Forks and Dependabot have read-only tokens;
+    # their failed contracts still reject verify, but cannot cancel the run.
+    if: >-
+      ${{ !cancelled() && needs.contracts.result == 'failure'
+          && github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      # No checkout or repository code executes with this write token.
+      - name: Cancel this workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "::notice::Contracts failed; cancelling queued and running CI work."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/cancel"
 
   packed-consumer-smoke:
     # Build every publishable package, then run Chromium and platform gates.

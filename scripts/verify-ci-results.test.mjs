@@ -44,7 +44,9 @@ test('selected execution lanes start after planning while contracts run independ
     source: jobSource.slice(match.index, matches[index + 1]?.index),
   }))
   const preflight = ['affected', 'contracts']
-  const executionJobs = jobs.filter(({ name }) => ![...preflight, 'verify'].includes(name))
+  const executionJobs = jobs.filter(
+    ({ name }) => ![...preflight, 'verify', 'cancel-after-contracts-failure'].includes(name),
+  )
   assert.ok(executionJobs.length > 0, 'the workflow must include execution gates')
   for (const { name, source } of executionJobs) {
     const declaration = source.match(/^    needs:\s*(\[[\s\S]*?\]|[\w-]+)/m)?.[1]
