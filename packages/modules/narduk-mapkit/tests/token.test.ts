@@ -20,7 +20,8 @@ describe('MapKit JWT signing', () => {
     const decoded = decodeJwt(token)
     expect(decoded.header).toMatchObject({ alg: 'ES256', kid: 'KEY123', typ: 'JWT' })
     expect(decoded.payload).toMatchObject({
-      exp: 86500,
+      // 1800 s by default in 2.1.0, down from 24 h (narduk-libs#421 §e.3).
+      exp: 1900,
       iat: 100,
       iss: 'TEAM123',
       origin: 'http://localhost:3000',

@@ -118,13 +118,28 @@ export function interpolateNumber(start, end, progress) {
 function finiteOpacity(value, fallback) {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
+/**
+ * The single clock the crossfade reads.
+ *
+ * `requestAnimationFrame` hands its callback a `performance.now()` timestamp,
+ * whose epoch is page load -- not `Date.now()`'s Unix epoch. Measuring
+ * `frameTimestamp - Date.now()` therefore produced a large negative number that
+ * `Math.max(0, ...)` clamped to `0` on every frame, so progress never advanced
+ * and the fade never completed in a real browser. The fix is to read elapsed
+ * time from ONE clock: `now()` for both the start stamp and every frame, and to
+ * ignore the frame timestamp entirely (narduk-libs#421, spec §d).
+ */
+function defaultCrossfadeNow() {
+    const performanceNow = globalThis.performance?.now;
+    return performanceNow ? performanceNow.call(globalThis.performance) : Date.now();
+}
 export function crossfadeMapKitOverlayOpacity(options) {
     const durationMs = Math.max(0, options.durationMs ?? 520);
     const oldOverlays = uniqueMapKitOverlays(options.oldOverlays);
     const oldStartOpacities = oldOverlays.map((overlay) => finiteOpacity(overlay.opacity, options.targetOpacity));
     const nextStartOpacity = finiteOpacity(options.nextOverlay.opacity, 0);
     const easing = options.easing ?? easeInOutQuad;
-    const now = options.now ?? (() => Date.now());
+    const now = options.now ?? defaultCrossfadeNow;
     const requestFrame = options.requestAnimationFrame ?? defaultMapKitFrameScheduler.requestAnimationFrame;
     const cancelFrame = options.cancelAnimationFrame ?? defaultMapKitFrameScheduler.cancelAnimationFrame;
     const start = now();
@@ -147,14 +162,16 @@ export function crossfadeMapKitOverlayOpacity(options) {
         }
         resolveFinished();
     }
-    function step(timestamp) {
+    function step() {
         if (settled)
             return;
         if (options.signal?.aborted) {
             finish(false);
             return;
         }
-        const elapsed = Math.max(0, timestamp - start);
+        // The frame timestamp is deliberately unread: it belongs to a different
+        // epoch than `now()`. See `defaultCrossfadeNow`.
+        const elapsed = Math.max(0, now() - start);
         const progress = durationMs === 0 ? 1 : Math.min(1, elapsed / durationMs);
         const eased = easing(progress);
         options.nextOverlay.opacity = interpolateNumber(nextStartOpacity, options.targetOpacity, eased);

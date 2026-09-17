@@ -85,11 +85,15 @@
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "//devDependencies": "@apple/mapkit-loader and @types/apple-mapkit are DEV-only on purpose. The ./testing fake declares its own public types structurally, so the published .d.ts resolves without Apple's types installed; the link back to the real surface is tests/testing/apple-types.test.ts, which compares the fake member by member against apple-mapkit/mapkit and fails typecheck on drift. happy-dom is pinned to the exact version already resolved in this workspace's lockfile (see the narduk-mapkit-nuxt package.json note) -- a caret range makes pnpm re-resolve the shared entry for every other package (narduk-libs#124).",
+  "//dependencies": "@apple/mapkit-loader became a real dependency in 2.1.0 (narduk-libs#421 section d): ./client loads MapKit JS v6 through Apple's own loader, and Apple's types arrive with it -- @types/apple-mapkit is a runtime dependency OF the loader, so a consumer resolves the published .d.ts without installing anything extra. ./server, ./node, ./worker and ./token never reach it: the loader is behind a dynamic import inside initializeMapKit().",
+  "dependencies": {
+    "@apple/mapkit-loader": "^1.0.0"
+  },
+  "//devDependencies": "@types/apple-mapkit stays declared here as well because pnpm's isolated node_modules does not expose a transitive dependency to this package's own typecheck. The ./testing fake declares its own public types structurally, so the published .d.ts resolves without Apple's types installed; the link back to the real surface is tests/testing/apple-types.test.ts, which compares the fake member by member against apple-mapkit/mapkit and fails typecheck on drift. happy-dom is pinned to the exact version already resolved in this workspace's lockfile (see the narduk-mapkit-nuxt package.json note) -- a caret range makes pnpm re-resolve the shared entry for every other package (narduk-libs#124).",
   "devDependencies": {
-    "@apple/mapkit-loader": "^1.0.0",
     "@types/apple-mapkit": "^6.0.0",
     "@types/node": "^22.19.19",
+    "h3": "^1.15.11",
     "happy-dom": "20.10.6",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",

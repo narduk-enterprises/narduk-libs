@@ -1,131 +1,216 @@
-import { createMapKitToken, DEFAULT_MAPKIT_TOKEN_TTL_SECONDS } from '../token/jwt.js';
-import { hasSigningConfig, hasUsableStaticToken, isOriginAllowed, mapKitConfigFromEnv, parseAllowedOrigins, } from './shared-config.js';
-const DEFAULT_CACHE_MAX_ENTRIES = 100;
-const DEFAULT_CACHE_REFRESH_WINDOW_MS = 60_000;
+/**
+ * The same-host, fail-closed MapKit token route (narduk-libs#421 §e).
+ *
+ * Everything here is `Request`-level on purpose: the routed request URL is the
+ * ONLY source of the origin claim, so the contract can be stated -- and tested
+ * -- without a framework. An h3/Nitro caller passes
+ * `getRequestURL(event, { xForwardedHost: false }).origin` as `self`; a Worker
+ * caller passes nothing, because `request.url` there is already the routed URL
+ * and cannot be forged.
+ *
+ * What is deliberately NOT trusted: `Origin`, `Referer`, and every
+ * `X-Forwarded-*` header. They are evidence about the caller, never the source
+ * of the claim Apple will enforce.
+ */
+import { createMapKitToken } from '../token/jwt.js';
+import { hasSigningConfig, mapKitConfigFromEnv } from './shared-config.js';
+/** Apple issues a 1800 s accessKey at bootstrap; minting longer than that buys nothing. */
+export const MAPKIT_TOKEN_TTL_MAX_SECONDS = 1800;
+export const MAPKIT_TOKEN_TTL_MIN_SECONDS = 60;
+/** §e.4: capped at 32 entries, keyed on `self` -- not on anything a caller supplies. */
+const CACHE_MAX_ENTRIES = 32;
+/** §e.4: a cached token is reused until five minutes before it expires. */
+const CACHE_REFRESH_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT_DEFAULT_RETRY_AFTER_SECONDS = 60;
+/** Config keys 2.1.0 ignores. Logged by NAME when present; never by value. */
+const DEPRECATED_CONFIG_KEYS = ['allowedOrigins', 'staticToken'];
 const signedTokenCache = new Map();
-export function getOriginFromRequest(request, fallbackOrigin = 'http://localhost:3000') {
-    const origin = request.headers.get('origin');
-    if (origin)
-        return origin;
-    const referer = request.headers.get('referer');
-    if (referer) {
-        try {
-            return new URL(referer).origin;
-        }
-        catch {
-            // Fall back below.
-        }
-    }
+/**
+ * The routed request origin -- §e.1's `self`.
+ *
+ * Built from `URL.origin` so a default port is omitted (`https://example.com`,
+ * never `https://example.com:443`): Apple enforces the claim on scheme + host +
+ * port exactly, and a spurious `:443` fails every request.
+ */
+export function mapKitSelfOrigin(request, self) {
+    if (self)
+        return new URL(self).origin;
+    return new URL(request.url).origin;
+}
+/**
+ * 2.0.x name, kept so no export disappears. It now answers the routed origin,
+ * NOT the `Origin` header -- which is the whole point of §e.1.
+ */
+export function getOriginFromRequest(request, _fallbackOrigin) {
+    return mapKitSelfOrigin(request);
+}
+function originOf(value) {
+    if (!value)
+        return null;
     try {
-        return new URL(request.url).origin;
+        return new URL(value).origin;
     }
     catch {
-        return fallbackOrigin;
-    }
-}
-export async function issueMapKitTokenForRequest(options) {
-    const config = options.config ?? {};
-    const origin = getOriginFromRequest(options.request, config.fallbackOrigin);
-    const allowedOrigins = parseAllowedOrigins(config.allowedOrigins);
-    if (!isOriginAllowed(origin, allowedOrigins)) {
-        return {
-            configured: true,
-            error: 'Origin is not allowed for MapKit token issuance.',
-            origin,
-            token: '',
-        };
-    }
-    const rateLimitDecision = options.rateLimit
-        ? normalizeRateLimitDecision(await options.rateLimit({ origin, request: options.request }))
-        : null;
-    if (rateLimitDecision && !rateLimitDecision.allowed) {
-        return {
-            configured: true,
-            error: rateLimitDecision.error ?? 'Too many MapKit token requests.',
-            origin,
-            ...(rateLimitDecision.retryAfterSeconds === undefined
-                ? {}
-                : { retryAfterSeconds: rateLimitDecision.retryAfterSeconds }),
-            status: 429,
-            token: '',
-        };
-    }
-    if (hasSigningConfig(config)) {
-        const expiresInSeconds = config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS;
-        const cacheKey = cacheEnabled(config) ? await signedTokenCacheKey(config, origin) : null;
-        const cached = cacheKey ? readCachedSignedToken(config, cacheKey) : null;
-        if (cached) {
-            return {
-                configured: true,
-                expiresAt: new Date(cached.expiresAtMs).toISOString(),
-                origin,
-                token: cached.token,
-            };
-        }
-        const issuedAtSeconds = Math.floor(Date.now() / 1000);
-        const tokenOptions = {
-            expiresInSeconds,
-            issuedAtSeconds,
-            keyId: config.keyId,
-            origin,
-            privateKey: config.privateKey,
-            teamId: config.teamId,
-        };
-        const token = await createMapKitToken(tokenOptions);
-        const expiresAtMs = (issuedAtSeconds + expiresInSeconds) * 1000;
-        if (cacheKey)
-            writeCachedSignedToken(config, cacheKey, token, expiresAtMs);
-        return { configured: true, expiresAt: new Date(expiresAtMs).toISOString(), origin, token };
-    }
-    if (hasUsableStaticToken(config)) {
-        return { configured: true, expiresAt: null, origin, token: config.staticToken.trim() };
-    }
-    return {
-        configured: false,
-        error: 'MapKit is not configured. Set APPLE_PRIVATE_KEY, APPLE_TEAM_ID, and APPLE_KEY_ID to sign origin-scoped tokens, or provide a non-expired MAPKIT_TOKEN / APPLE_MAPKIT_TOKEN.',
-        origin,
-        token: '',
-    };
-}
-export async function mapKitTokenResponse(request, config, options = {}) {
-    try {
-        const result = await issueMapKitTokenForRequest(config
-            ? { request, config, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) }
-            : { request, ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}) });
-        const status = result.status ?? (result.configured ? (result.token ? 200 : 403) : 503);
-        const headers = result.retryAfterSeconds === undefined
-            ? undefined
-            : { 'retry-after': String(result.retryAfterSeconds) };
-        return jsonResponse(result, status, headers);
-    }
-    catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to generate MapKit token';
-        return jsonResponse({ configured: false, error: message, token: '' }, 500);
+        return null;
     }
 }
 /**
- * Cloudflare Worker / Fetch convenience. Reads Apple credentials from a passed
- * `env` object (Worker secret bindings, not `process.env`) and returns a token
- * `Response`. The Doppler fallback is disabled because Workers have no
- * `child_process`; token signing is pure Web Crypto and runs natively in workerd.
+ * §e.1: same-origin evidence, required.
  *
- * ```ts
- * export default {
- *   async fetch(request: Request, env: Env): Promise<Response> {
- *     if (new URL(request.url).pathname === '/api/mapkit-token') {
- *       return mapKitTokenResponseFromEnv(request, env)
- *     }
- *     return new Response('Not found', { status: 404 })
- *   },
- * }
- * ```
+ * A MISSING `Origin` is legitimate -- measured in real Chromium, a same-origin
+ * `fetch()` sends no `Origin` at all and `Sec-Fetch-Site: same-origin`. The
+ * signal lives in `Sec-Fetch-Site`; `Origin`, when present, may only confirm.
  */
-export function mapKitTokenResponseFromEnv(request, env, overrides = {}) {
-    return mapKitTokenResponse(request, {
-        ...mapKitConfigFromEnv(env),
-        ...overrides,
-        doppler: false,
+export function isMapKitRequestSameOrigin(request, self) {
+    const origin = request.headers.get('origin');
+    // In EVERY case, a present Origin that disagrees with the routed origin refuses.
+    if (origin !== null && origin !== '' && origin !== 'null' && originOf(origin) !== self) {
+        return false;
+    }
+    const secFetchSite = request.headers.get('sec-fetch-site');
+    if (secFetchSite !== null && secFetchSite !== '')
+        return secFetchSite === 'same-origin';
+    if (origin !== null && origin !== '' && origin !== 'null')
+        return originOf(origin) === self;
+    const referer = originOf(request.headers.get('referer'));
+    if (referer !== null)
+        return referer === self;
+    return false;
+}
+function clampTtlSeconds(value) {
+    const requested = value ?? MAPKIT_TOKEN_TTL_MAX_SECONDS;
+    if (!Number.isFinite(requested))
+        return MAPKIT_TOKEN_TTL_MAX_SECONDS;
+    return Math.min(MAPKIT_TOKEN_TTL_MAX_SECONDS, Math.max(MAPKIT_TOKEN_TTL_MIN_SECONDS, Math.floor(requested)));
+}
+function deprecatedKeysPresent(config) {
+    return DEPRECATED_CONFIG_KEYS.filter((key) => {
+        const value = config[key];
+        return Array.isArray(value) ? value.length > 0 : Boolean(value);
     });
+}
+function normalizeRateLimitDecision(decision) {
+    return typeof decision === 'boolean' ? { allowed: decision } : decision;
+}
+/**
+ * Decide one token request. Order is deliberate: method, then same-origin, then
+ * the rate limiter, then signing config. A cross-origin caller is refused
+ * WITHOUT consuming a legitimate caller's allowance.
+ */
+export async function issueMapKitTokenForRequest(options) {
+    const config = options.config ?? {};
+    const self = mapKitSelfOrigin(options.request, options.self);
+    if (options.request.method !== 'GET') {
+        return { refusal: 'method-not-allowed', self, status: 405, token: '' };
+    }
+    if (!isMapKitRequestSameOrigin(options.request, self)) {
+        return { refusal: 'not-same-origin', self, status: 403, token: '' };
+    }
+    if (options.rateLimit) {
+        const decision = normalizeRateLimitDecision(await options.rateLimit({ origin: self, request: options.request, self }));
+        if (!decision.allowed) {
+            return {
+                refusal: 'rate-limited',
+                retryAfterSeconds: decision.retryAfterSeconds ?? RATE_LIMIT_DEFAULT_RETRY_AFTER_SECONDS,
+                self,
+                status: 429,
+                token: '',
+            };
+        }
+    }
+    if (!hasSigningConfig(config)) {
+        return { refusal: 'unconfigured', self, status: 503, token: '' };
+    }
+    const expiresInSeconds = clampTtlSeconds(config.tokenExpiresInSeconds);
+    const cacheKey = cacheEnabled(config)
+        ? await signedTokenCacheKey(config, self, expiresInSeconds)
+        : null;
+    const cached = cacheKey ? readCachedSignedToken(cacheKey) : null;
+    if (cached) {
+        return { expiresAt: cached.expiresAtMs, self, status: 200, token: cached.token };
+    }
+    const issuedAtSeconds = Math.floor(Date.now() / 1000);
+    const token = await createMapKitToken({
+        expiresInSeconds,
+        issuedAtSeconds,
+        keyId: config.keyId,
+        // The claim is the routed origin and nothing else (§e.3).
+        origin: self,
+        privateKey: config.privateKey,
+        teamId: config.teamId,
+    });
+    const expiresAtMs = (issuedAtSeconds + expiresInSeconds) * 1000;
+    if (cacheKey)
+        writeCachedSignedToken(cacheKey, token, expiresAtMs);
+    return { expiresAt: expiresAtMs, self, status: 200, token };
+}
+const REFUSAL_MESSAGES = {
+    'method-not-allowed': 'This route answers GET only.',
+    'not-same-origin': 'This MapKit token route only answers same-origin requests from the page it serves. ' +
+        'Opening it directly in a browser tab is a cross-site navigation and is refused by design.',
+    'rate-limited': 'Too many MapKit token requests from this client. Try again shortly.',
+    unconfigured: 'MapKit token signing is not configured on this deployment. ' +
+        'APPLE_TEAM_ID, APPLE_KEY_ID and APPLE_PRIVATE_KEY must all be present.',
+};
+/**
+ * The §e route handler.
+ *
+ * The rate-limit hook is consulted by THIS function, so it cannot be bypassed by
+ * the shape of the path that reached it -- a trailing slash, a different case, a
+ * duplicated separator (buoys PR 122 review, F1). A path-matching middleware can
+ * be walked around; a wrapped handler cannot.
+ */
+export async function mapKitTokenResponse(request, config, options = {}) {
+    const headers = {
+        'cache-control': 'no-store',
+        'content-type': 'application/json; charset=utf-8',
+        // Never an Access-Control-Allow-Origin, on any response (§e.1.4).
+        vary: 'origin, sec-fetch-site',
+    };
+    try {
+        const result = await issueMapKitTokenForRequest({
+            ...options,
+            ...(config ? { config } : {}),
+            request,
+        });
+        options.log?.({
+            deprecatedKeys: deprecatedKeysPresent(config ?? {}),
+            ...(result.refusal === undefined ? {} : { refusal: result.refusal }),
+            self: result.self,
+            status: result.status,
+        });
+        if (result.refusal === 'method-not-allowed')
+            headers['allow'] = 'GET';
+        if (result.retryAfterSeconds !== undefined) {
+            headers['retry-after'] = String(result.retryAfterSeconds);
+        }
+        const body = result.refusal
+            ? { error: result.refusal, message: REFUSAL_MESSAGES[result.refusal] }
+            : { expiresAt: result.expiresAt, token: result.token };
+        return new Response(JSON.stringify(body), { headers, status: result.status });
+    }
+    catch (error) {
+        // A signing failure is a server fault, never a token; nothing about the key
+        // reaches the body.
+        const self = mapKitSelfOrigin(request, options.self);
+        options.log?.({
+            deprecatedKeys: deprecatedKeysPresent(config ?? {}),
+            refusal: 'unconfigured',
+            self,
+            status: 500,
+        });
+        return new Response(JSON.stringify({
+            error: 'signing-failed',
+            message: error instanceof Error ? error.message : 'Failed to generate a MapKit token.',
+        }), { headers, status: 500 });
+    }
+}
+/**
+ * Cloudflare Worker / Fetch convenience: reads Apple credentials from a passed
+ * `env` binding object rather than `process.env`, and signs with Web Crypto.
+ */
+export function mapKitTokenResponseFromEnv(request, env, overrides = {}, options = {}) {
+    return mapKitTokenResponse(request, { ...mapKitConfigFromEnv(env), ...overrides, doppler: false }, options);
 }
 export function createMapKitTokenHandler(config, options = {}) {
     return (request) => mapKitTokenResponse(request, config, options);
@@ -136,27 +221,18 @@ export function clearMapKitTokenCacheForTests() {
 function cacheEnabled(config) {
     return config.cache !== false;
 }
-function cacheMaxEntries(config) {
-    const maxEntries = typeof config.cache === 'object' ? config.cache.maxEntries : undefined;
-    return typeof maxEntries === 'number' && Number.isFinite(maxEntries) && maxEntries > 0
-        ? Math.floor(maxEntries)
-        : DEFAULT_CACHE_MAX_ENTRIES;
-}
-function cacheRefreshWindowMs(config) {
-    const refreshWindowMs = typeof config.cache === 'object' ? config.cache.refreshWindowMs : undefined;
-    return typeof refreshWindowMs === 'number' &&
-        Number.isFinite(refreshWindowMs) &&
-        refreshWindowMs >= 0
-        ? refreshWindowMs
-        : DEFAULT_CACHE_REFRESH_WINDOW_MS;
-}
-async function signedTokenCacheKey(config, origin) {
+/**
+ * Keyed on the routed origin plus the signing material, never on anything the
+ * caller supplies -- the 2.0.x key was caller-supplied, so the cache was
+ * unbounded in an attacker's direction.
+ */
+async function signedTokenCacheKey(config, self, expiresInSeconds) {
     return [
         config.teamId?.trim() ?? '',
         config.keyId?.trim() ?? '',
         await signingMaterialFingerprint(config.privateKey ?? ''),
-        config.tokenExpiresInSeconds ?? DEFAULT_MAPKIT_TOKEN_TTL_SECONDS,
-        origin.replace(/\/$/, ''),
+        expiresInSeconds,
+        self,
     ].join('\0');
 }
 async function signingMaterialFingerprint(privateKey) {
@@ -164,43 +240,26 @@ async function signingMaterialFingerprint(privateKey) {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizedPrivateKey));
     return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-function readCachedSignedToken(config, cacheKey) {
-    if (!cacheEnabled(config))
-        return null;
+function readCachedSignedToken(cacheKey) {
     const cached = signedTokenCache.get(cacheKey);
     if (!cached)
         return null;
-    if (cached.expiresAtMs <= Date.now() + cacheRefreshWindowMs(config)) {
+    if (cached.expiresAtMs <= Date.now() + CACHE_REFRESH_WINDOW_MS) {
         signedTokenCache.delete(cacheKey);
         return null;
     }
+    // Re-insert so the Map's insertion order is LRU order.
     signedTokenCache.delete(cacheKey);
     signedTokenCache.set(cacheKey, cached);
     return cached;
 }
-function writeCachedSignedToken(config, cacheKey, token, expiresAtMs) {
-    if (!cacheEnabled(config))
-        return;
+function writeCachedSignedToken(cacheKey, token, expiresAtMs) {
     signedTokenCache.set(cacheKey, { expiresAtMs, token });
-    const maxEntries = cacheMaxEntries(config);
-    while (signedTokenCache.size > maxEntries) {
+    while (signedTokenCache.size > CACHE_MAX_ENTRIES) {
         const oldestKey = signedTokenCache.keys().next().value;
-        if (!oldestKey)
+        if (oldestKey === undefined)
             break;
         signedTokenCache.delete(oldestKey);
     }
-}
-function normalizeRateLimitDecision(decision) {
-    return typeof decision === 'boolean' ? { allowed: decision } : decision;
-}
-function jsonResponse(body, status, additionalHeaders = {}) {
-    return new Response(JSON.stringify(body), {
-        headers: {
-            'cache-control': 'no-store',
-            'content-type': 'application/json; charset=utf-8',
-            ...additionalHeaders,
-        },
-        status,
-    });
 }
 //# sourceMappingURL=handler.js.map

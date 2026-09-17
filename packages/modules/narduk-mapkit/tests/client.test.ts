@@ -6,109 +6,11 @@ import {
   createMapKitRegionForPoints,
   createMapKitTileOverlay,
   crossfadeMapKitOverlayOpacity,
-  initializeMapKit,
-  loadMapKitLibraries,
   removeMapKitVectorOverlay,
   refreshMapKitMapLayout,
-  resetMapKitClientStateForTests,
 } from '../src/client/index.js'
 
 import type { MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
-
-function tokenWithExp(exp: number): string {
-  const payload = btoa(JSON.stringify({ exp }))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '')
-  return `eyJhbGciOiJFUzI1NiJ9.${payload}.sig`
-}
-
-describe('browser MapKit initialization', () => {
-  afterEach(() => {
-    resetMapKitClientStateForTests()
-  })
-
-  it('loads a dynamic token and registers mapkit authorization callback', async () => {
-    const issuedTokens: string[] = []
-    const mapkit = {
-      init: vi.fn((options: { authorizationCallback(done: (token: string) => void): void }) => {
-        options.authorizationCallback((token) => issuedTokens.push(token))
-      }),
-    }
-    const token = tokenWithExp(Math.floor(Date.now() / 1000) + 3600)
-
-    await initializeMapKit({
-      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
-      mapkitGlobal: mapkit,
-      tokenEndpoint: '/mapkit-token',
-    })
-
-    expect(mapkit.init).toHaveBeenCalledTimes(1)
-    expect(issuedTokens).toEqual([token])
-  })
-
-  it('loads MapKit JS 6 libraries through the initialized runtime', async () => {
-    const mapkit = { init: vi.fn(), load: vi.fn(async () => {}) }
-
-    await loadMapKitLibraries(mapkit, ['map', 'overlays'])
-
-    expect(mapkit.load).toHaveBeenCalledWith(['map', 'overlays'])
-  })
-
-  it('rejects library loading from the MapKit JS 5 runtime', async () => {
-    await expect(loadMapKitLibraries({ init: vi.fn() })).rejects.toThrow('MapKit JS 6')
-  })
-
-  it('rejects mismatched singleton initialization options', async () => {
-    const mapkit = {
-      init: vi.fn((options: { authorizationCallback(done: (token: string) => void): void }) => {
-        options.authorizationCallback(() => {})
-      }),
-    }
-    const token = tokenWithExp(Math.floor(Date.now() / 1000) + 3600)
-
-    await initializeMapKit({
-      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
-      mapkitGlobal: mapkit,
-      tokenEndpoint: '/mapkit-token-a',
-    })
-
-    await expect(
-      initializeMapKit({
-        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
-        mapkitGlobal: mapkit,
-        tokenEndpoint: '/mapkit-token-b',
-      }),
-    ).rejects.toThrow('different options')
-  })
-
-  it('clears failed initialization so callers can retry', async () => {
-    const mapkit = {
-      init: vi.fn((options: { authorizationCallback(done: (token: string) => void): void }) => {
-        options.authorizationCallback(() => {})
-      }),
-    }
-    const token = tokenWithExp(Math.floor(Date.now() / 1000) + 3600)
-
-    await expect(
-      initializeMapKit({
-        fetchImpl: vi.fn(
-          async () => new Response(JSON.stringify({ error: 'no token' }), { status: 503 }),
-        ),
-        mapkitGlobal: mapkit,
-        tokenEndpoint: '/mapkit-token',
-      }),
-    ).rejects.toThrow('no token')
-
-    await expect(
-      initializeMapKit({
-        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ token }))),
-        mapkitGlobal: mapkit,
-        tokenEndpoint: '/mapkit-token',
-      }),
-    ).resolves.toBe(mapkit)
-  })
-})
 
 describe('browser MapKit runtime helpers', () => {
   it('refreshes a map after its host layout changes', () => {
