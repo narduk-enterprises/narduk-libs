@@ -359,6 +359,7 @@ const AppMapKitImpl = defineComponent({
       overviewRegion = computeOverview(namespace)
       const mapOptions: Record<string, unknown> = {
         colorScheme: resolveColorScheme(),
+        isRotationEnabled: componentProps.isRotationEnabled,
         isScrollEnabled: componentProps.isScrollEnabled,
         isZoomEnabled: componentProps.isZoomEnabled,
         mapType: componentProps.mapType,

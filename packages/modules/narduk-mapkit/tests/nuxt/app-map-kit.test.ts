@@ -287,6 +287,21 @@ describe('the three flipped defaults (§c.1)', () => {
     expect(wrapper.props('showsPointsOfInterest')).toBe(false)
   })
 
+  it('passes isRotationEnabled: false into the Map, matching the documented default', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+
+    // MapKit JS itself defaults rotation ON. The documented prop default is
+    // false, so the constructor has to name it -- omitting the option leaves
+    // Apple's true in place.
+    expect((api(wrapper).getMap() as { isRotationEnabled: boolean }).isRotationEnabled).toBe(false)
+  })
+
+  it('opts into rotation when the app sets isRotationEnabled', async () => {
+    const wrapper = await mountMap({ items: STATIONS, isRotationEnabled: true })
+
+    expect((api(wrapper).getMap() as { isRotationEnabled: boolean }).isRotationEnabled).toBe(true)
+  })
+
   it('does not re-frame the map when items change', async () => {
     const wrapper = await mountMap({ items: STATIONS })
     fake.inspect.reset()
