@@ -1193,7 +1193,11 @@ That rewrite happens in three places so call order cannot leak a shared profile:
 - **The `preferences-cache` Nitro plugin** re-checks the flag on
   `render:response` (SSR HTML) **and** `beforeResponse` (every response,
   including API routes). `render:response` does not run for `defineEventHandler`
-  routes.
+  routes. On `beforeResponse` it also rewrites a web `Response` the handler
+  returned: h3 copies that object's headers onto the event **after** the hook,
+  so stripping the event alone would still ship the `Response`'s own
+  `CDN-Cache-Control`. A proxied `fetch()` response has immutable headers and is
+  rebuilt around the same body.
 
 `Accept-Language` is in `Vary` because a tz-only cookie
 (`v=1&tz=America/Chicago`) still derives locale and units from that header. Two
@@ -1226,6 +1230,19 @@ handler (`event.context.cache`, the marker Nitro sets) logs a one-time
 `console.warn` for that path. Several estate apps already use `swr` (tx-spends,
 papa-everetts); those pages must not adopt the formatters until the rule is
 gone.
+
+#### Incompatible with `event.respondWith()`
+
+`event.respondWith(response)` is an h3 escape hatch that writes the response
+itself, so h3 never calls `onBeforeResponse` for it and Nitro's `beforeResponse`
+hook — this plugin's last-moment backstop — does not run at all. Anything the
+`Response` carries, `CDN-Cache-Control` included, goes out verbatim over the
+headers `markPreferencesInfluenced` stripped.
+
+A route that reads preferences must `return` its `Response` rather than call
+`event.respondWith()`. Returning it is the normal Nitro shape and is fully
+covered; `respondWith` is not reachable from any hook and cannot be defended
+library-side.
 
 ### The formatters
 

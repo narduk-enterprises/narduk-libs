@@ -479,3 +479,39 @@ describe('a proxied fetch Response with immutable headers', () => {
     }
   })
 })
+
+/**
+ * `event.respondWith()` writes the response itself, so h3 never calls
+ * `onBeforeResponse` and Nitro's `beforeResponse` backstop cannot run. That is
+ * why the README names it a hard incompatibility next to `routeRules.swr`.
+ * This pins the mechanism: if a future h3 does call the hook there, the README
+ * is stale and this test says so.
+ */
+describe('event.respondWith is outside every hook', () => {
+  it('never reaches onBeforeResponse, so the plugin cannot defend it', async () => {
+    let beforeResponseCalls = 0
+    const app = createApp({
+      onBeforeResponse: () => {
+        beforeResponseCalls += 1
+      },
+    }).use(
+      defineEventHandler(async (event) => {
+        await event.respondWith(new Response('ok'))
+      }),
+    )
+    const server = createServer(toNodeListener(app))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/`)
+      expect(await response.text()).toBe('ok')
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
+
+    expect(beforeResponseCalls).toBe(0)
+  })
+})
