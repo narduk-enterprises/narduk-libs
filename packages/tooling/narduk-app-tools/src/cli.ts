@@ -17,6 +17,7 @@ import {
   parseSecurityHeadersCheckArgs,
   runSecurityHeadersCheckCommand,
 } from './commands/security-headers-check.js'
+import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
@@ -45,6 +46,8 @@ function usage(): string {
     '                                       Item 9: estate package inventory and app-local reimplementations',
     '  foundation:check:security-headers --base-url <url> [--path <p>]... [--json [path]]',
     "                                       Item 10: live probe of a deployment's security response headers",
+    '  foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]',
+    '                                       Item 11: one declared Node/pnpm source, every other site reads or matches it',
   ].join('\n')
 }
 
@@ -152,6 +155,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       const { exitCode } = await runSharedUiPinnedCheckCommand(
         parseFoundationCheckArgs(rest, 'foundation:check:shared-ui-pinned'),
       )
+      return exitCode
+    }
+    if (command === 'foundation:check:toolchain') {
+      const { exitCode } = runToolchainCheckCommand(parseToolchainCheckArgs(rest))
       return exitCode
     }
     if (command === 'foundation:check:coverage') {

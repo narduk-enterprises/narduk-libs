@@ -124,6 +124,16 @@ different app. Dependency versions are absent too: Dependabot owns estate
 package currency (company-hq `D-TOOLCHAIN-1`), and two mechanisms editing the
 same lines is exactly the reconcile relationship this generator must not have.
 
+`.node-version` is absent from the table for that last reason. It is the app's
+declared **Node source** (see "One declared source per toolchain" below), and a
+Node version is the same class of fact as a dependency pin: managing it would
+make the generator re-impose its own Node on every app it touched. `upgrade`
+never reads or writes it; `narduk-app foundation:check:toolchain` is what keeps
+an app's own mirrors in step with whatever the app declares. What did change is
+that `copilot-setup-steps.yml` no longer contains a Node or pnpm literal at all,
+so whole-file management of it can no longer move an app's toolchain version
+behind its back.
+
 ### Opting a file out
 
 Any managed file can be disowned by the app. Put `narduk:unmanaged` in a comment
@@ -159,6 +169,43 @@ section they should own. Apps generated from this version carry them already.
    to differ, it opts the file out with a marker and records why.
 4. **Re-run until clean.** `upgrade` is idempotent: a second `--write` writes
    nothing and a following dry run exits 0.
+
+## One declared source per toolchain
+
+A scaffold declares its Node version **once**, in `.node-version`, and its pnpm
+version **once**, in the root manifest's `packageManager` (Logan, askme
+2026-09-17: _"Single-source toolchain versions (Recommended)"_). Nothing else
+restates either value except where a tool can read it from nowhere else:
+
+| Site                                         | Node             | pnpm             | Why                                                                                                                                                         |
+| -------------------------------------------- | ---------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.node-version`                              | **source**       | —                | read natively by `actions/setup-node` (`node-version-file`), fnm, mise and nodenv, and the only Node declaration a workflow can point at instead of copying |
+| `package.json` `packageManager`              | —                | **source**       | read natively by corepack, pnpm itself, and `pnpm/action-setup`                                                                                             |
+| `package.json` `engines.node` / `volta.node` | mirror           | —                | Volta and npm read a version from a manifest and nowhere else                                                                                               |
+| `.github/workflows/ci.yml`                   | reads the source | reads the source | `node-version-file: .node-version` to the shared workflow (workflows#97); the shared workflow's pnpm step resolves `packageManager`                         |
+| `.github/workflows/copilot-setup-steps.yml`  | reads the source | reads the source | `node-version-file: .node-version`; `pnpm/action-setup` with **no** `version:` input                                                                        |
+| `docs/workers-builds.md`                     | mirror           | mirror           | the repo's record of the Cloudflare dashboard build environment, which no checkout can read                                                                 |
+
+No `.nvmrc` is emitted. Every consumer in this estate that reads `.nvmrc` also
+reads `.node-version` (setup-node, fnm, mise); the only tool that reads `.nvmrc`
+and not `.node-version` is `nvm`, which is not the installed manager here — and
+Volta, which is, reads neither. A second dotfile with no exclusive consumer is a
+drift site, so there is not one.
+
+`narduk-app foundation:check:toolchain` enforces all of this against any app,
+and `--fix` rewrites a drifted mirror to its source, so bumping Node is one edit
+to `.node-version` plus one `--fix`.
+
+Passing `node-version-file` requires the shared workflow pin to be
+`6f56678ad7562234e465284e48f27008e0f32db7` (workflows#97) or later — a reusable
+workflow rejects an input it does not declare, so this is not an optional bump.
+That commit also adds an always-run required `caller-lint` job which actionlints
+the **calling** repository's own workflows and audits them for workflow-level
+concurrency, a top-level and per-job `permissions:` block, per-job
+`timeout-minutes`, and 40-character SHA pins. Every workflow this generator
+emits satisfies those rules, and `tests/toolchain-single-source.test.ts` re-runs
+the gate's own checks over the generated output so the templates cannot drift
+back.
 
 ## Buoys-shape parity
 

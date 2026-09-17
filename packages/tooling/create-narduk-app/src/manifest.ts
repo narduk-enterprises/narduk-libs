@@ -1,6 +1,22 @@
 import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
+/**
+ * The generator's own single source for each toolchain, mirroring the contract
+ * `narduk-app foundation:check:toolchain` (item 11) enforces in a generated app:
+ * one declared value, every emission site reading it. Before this, `24.21.0`
+ * appeared in four places and `10.33.4` in three, so a bump was a grep.
+ *
+ * In the SCAFFOLD, `NODE_VERSION` is written to `.node-version` (the app's Node
+ * source) and mirrored into `engines.node` / `volta.node`, which Volta and npm
+ * can only read from a manifest. `PACKAGE_MANAGER` is written to
+ * `packageManager` (the app's pnpm source); corepack, pnpm and
+ * `pnpm/action-setup` all read it natively, so nothing mirrors it.
+ */
 export const NODE_VERSION = '24.21.0'
+
+export const PNPM_VERSION = '10.33.4'
+
+export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
@@ -216,7 +232,7 @@ export function createRootPackageManifest(
     name: appName,
     version: '0.1.0',
     private: true,
-    packageManager: 'pnpm@10.33.4',
+    packageManager: PACKAGE_MANAGER,
     engines: { node: NODE_VERSION },
     volta: { node: NODE_VERSION },
     narduk: {

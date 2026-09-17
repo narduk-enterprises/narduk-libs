@@ -51,26 +51,28 @@ describe('create-narduk-app generation contract', () => {
         }),
       )
       const manifest = JSON.parse(files.get('package.json') ?? '{}')
-      expect(manifest.engines.node).toBe('24.21.0')
+      // `.node-version` is the declared source; `engines`/`volta` are the two
+      // mirrors Volta and npm can read from nowhere else. No `.nvmrc`: see
+      // ownership.ts NODE_SOURCE_FILE.
+      expect(files.get('.node-version')?.trim()).toBe('24.21.0')
+      expect(manifest.engines.node).toBe(files.get('.node-version')?.trim())
       expect(manifest.volta.node).toBe(manifest.engines.node)
-      expect(files.get('.nvmrc')?.trim()).toBe(manifest.engines.node)
+      expect(files.has('.nvmrc')).toBe(false)
+      // CI carries NO Node literal at all -- it points at the source instead.
       const workflow = YAML.parse(files.get('.github/workflows/ci.yml') ?? '')
-      const versions = Object.values(
+      const withBlocks = Object.values(
         workflow.jobs as Record<
           string,
           {
-            with?: { 'node-version'?: string }
-            steps?: Array<{ with?: { 'node-version'?: string } }>
+            with?: Record<string, unknown>
+            steps?: Array<{ with?: Record<string, unknown> }>
           }
         >,
-      )
-        .flatMap((job) => [
-          job.with?.['node-version'],
-          ...(job.steps ?? []).map((step) => step.with?.['node-version']),
-        ])
-        .filter(Boolean)
-      expect(versions.length).toBeGreaterThan(0)
-      expect(versions.every((version) => version === manifest.engines.node)).toBe(true)
+      ).flatMap((job) => [job.with, ...(job.steps ?? []).map((step) => step.with)])
+      const files_ = withBlocks.map((block) => block?.['node-version-file']).filter(Boolean)
+      expect(files_.length).toBeGreaterThan(0)
+      expect(files_.every((value) => value === '.node-version')).toBe(true)
+      expect(withBlocks.some((block) => block?.['node-version'] !== undefined)).toBe(false)
     },
   )
 
@@ -452,7 +454,7 @@ describe('create-narduk-app generation contract', () => {
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'nuxt-cloudflare.yml@4e99dafc81e09eb10c6e404f67e3ca34a17b42a6',
+      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
@@ -863,7 +865,7 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-shell'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('nuxt-cloudflare.yml@4e99dafc81e09eb10c6e404f67e3ca34a17b42a6')
+    expect(generatedCi).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
     expect(generatedCi).toContain('require-scripts: true')
     expect(generatedCi).toContain('run-tests: true')
     expect(generatedCi).toContain('run-e2e: true')
@@ -1034,7 +1036,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.pkg.github.com\n')
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
-      expect(ci, label).toContain('nuxt-cloudflare.yml@4e99dafc81e09eb10c6e404f67e3ca34a17b42a6')
+      expect(ci, label).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
       expect(ci, label).toContain(
         'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
       )

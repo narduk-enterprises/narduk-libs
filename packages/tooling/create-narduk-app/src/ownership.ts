@@ -13,6 +13,32 @@
  * afterwards, and never read or written by `upgrade`.
  */
 
+/**
+ * The app's declared Node source -- the one file every other Node declaration
+ * reads or is checked against (`narduk-app foundation:check:toolchain`, item 11;
+ * Logan, askme 2026-09-17). `actions/setup-node`'s `node-version-file`, fnm,
+ * mise and nodenv all read it natively, and it is the only Node declaration a
+ * workflow can point at instead of restating.
+ *
+ * Deliberately NOT in {@link MANAGED_TARGETS}. It is a version, and versions are
+ * the one class this codemod does not own: D-TOOLCHAIN-1 gives Dependabot estate
+ * package currency, and an app's Node version is the same kind of fact as a
+ * dependency pin. Managing it would make the generator re-impose its own Node on
+ * every app it touched -- the continuing sync relationship this repository's
+ * AGENTS.md forbids. `upgrade` therefore never reads or writes `.node-version`;
+ * `foundation:check:toolchain` is what keeps the app's own mirrors in step with
+ * whatever the app declares.
+ *
+ * The generator emits no `.nvmrc` beside it. Every consumer in this estate that
+ * reads `.nvmrc` also reads `.node-version` (setup-node, fnm, mise); the only
+ * tool that reads `.nvmrc` and not `.node-version` is `nvm`, which is not the
+ * installed manager here -- Volta is, and Volta reads neither, only
+ * `package.json`. A second dotfile with no exclusive consumer is a drift site,
+ * so there is one. Item 11 still accepts an app-kept `.nvmrc` as an optional
+ * mirror and fails only when it disagrees.
+ */
+export const NODE_SOURCE_FILE = '.node-version'
+
 /** Comment forms a file may use to disown a managed target, by extension. */
 const UNMANAGED_COMMENT_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
   [/\.(?:md|markdown)$/u, '<!-- narduk:unmanaged -->'],

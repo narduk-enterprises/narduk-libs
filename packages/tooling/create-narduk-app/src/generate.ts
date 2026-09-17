@@ -6,7 +6,7 @@ import {
   createCiWorkflow,
   createCopilotSetupWorkflow,
 } from './ci-workflow.js'
-import { REGION_MARKERS } from './ownership.js'
+import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
 
 import {
@@ -16,6 +16,7 @@ import {
   createWebPackageManifest,
   NODE_VERSION,
   packageVersionsForCapabilities,
+  PNPM_VERSION,
 } from './manifest.js'
 import {
   CreateNardukAppError,
@@ -344,7 +345,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   ]
 
   const files: GeneratedFile[] = [
-    { path: '.nvmrc', contents: `${NODE_VERSION}\n` },
+    // The app's declared Node source, and the ONLY file that carries the Node
+    // version as a literal outside package.json's engines/volta mirrors (which
+    // Volta and npm can read from nowhere else). Both workflows below point at
+    // this path rather than restating its value. See ownership.ts's
+    // NODE_SOURCE_FILE for why there is no `.nvmrc` beside it and why the
+    // upgrade codemod deliberately does not manage this file.
+    { path: NODE_SOURCE_FILE, contents: `${NODE_VERSION}\n` },
     ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
     {
       path: '.gitignore',
@@ -678,7 +685,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '| `NODE_VERSION`                | `' +
           NODE_VERSION +
           '`                                             |',
-        '| `PNPM_VERSION`                | `10.33.4`                                             |',
+        '| `PNPM_VERSION`                | `' +
+          PNPM_VERSION +
+          '`                                             |',
         '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
         '| Build secret                  | `GH_PACKAGES_READ` (read-only private package access) |',
         '',
