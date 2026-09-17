@@ -58,6 +58,9 @@ domain-specific behavior.
 - Apple Maps access-token exchange, search, and geocoding helpers.
 - A separately published Nuxt adapter with no dependency on Narduk template
   layers or UI packages.
+- A deterministic, offline MapKit JS v6 fake at `/testing` for vitest and
+  Playwright, with per-annotation operation counts and a loud
+  `FakeMapKitNotImplemented` for anything it does not model.
 
 ## Install
 
@@ -1011,6 +1014,136 @@ const lines = buildMapKitPlaybackLineSlices(route, index)
 const label = formatMapKitPlaybackDuration(elapsedMs)
 ```
 
+## Testing: the MapKit fake
+
+`@narduk-enterprises/narduk-mapkit/testing` is a deterministic, offline fake of
+MapKit JS v6. It exists so a component test can assert what the map was _told_
+to do without a network, an Apple key, or a real canvas. It is a dev-time export
+only: no production entry point can reach it, and it adds no runtime dependency.
+
+Its behaviour is modelled on a measured spike against real MapKit JS 6.0.128 on
+2026-09-17, not on the documentation alone. Where the two disagree, the
+measurement wins and the option's doc comment says which is which.
+
+**The fidelity rule.** Reading or writing any member the fake does not model
+throws `FakeMapKitNotImplemented: <member>` instead of answering `undefined`. A
+fake that silently no-ops is how a test goes green for code that would fail
+against Apple, so the fake is loud by construction. If you hit that error and
+the member matters, model it here rather than working around it in the app.
+
+### In vitest (happy-dom or jsdom)
+
+```ts
+// @vitest-environment happy-dom
+import { installFakeMapKit } from '@narduk-enterprises/narduk-mapkit/testing'
+
+// Publishes `globalThis.mapkit`, so code under test sees the real global name.
+// Prefer `fake.mapkit` in the test body itself: it is fully typed.
+const fake = installFakeMapKit({ auth: { mode: 'accept' } })
+fake.mapkit.init({ authorizationCallback: (done) => done('test.token') })
+
+const host = document.body.appendChild(document.createElement('div'))
+const map = new fake.mapkit.Map(host)
+map.addAnnotation(
+  new fake.mapkit.MarkerAnnotation(new fake.mapkit.Coordinate(30.2, -88.1), {
+    title: 'Buoy',
+  }),
+)
+
+expect(fake.inspect.annotationsAdded).toBe(1)
+fake.uninstall()
+```
+
+### In Playwright
+
+```ts
+import { fakeMapKitInitScript } from '@narduk-enterprises/narduk-mapkit/testing'
+
+await page.addInitScript({
+  content: fakeMapKitInitScript({ auth: { mode: 'accept' } }),
+})
+await page.goto('/map')
+await expect(page.locator('.mk-annotation')).toHaveCount(3)
+
+// `__fakeMapKit` is the runtime; its `inspect` surface is readable from the page.
+const added = await page.evaluate(
+  () => (window as any).__fakeMapKit.inspect.annotationsAdded,
+)
+expect(added).toBe(3)
+```
+
+The whole fake is one self-contained function with type-only imports, so
+`fakeMapKitInitScript()` serialises it with `toString()`: no bundler, and no
+second implementation to keep in sync. `tests/testing/init-script.test.ts`
+evaluates the generated source in an isolated realm so a stray free variable
+fails at `pnpm test`, not in a browser run.
+
+### The inspection API
+
+`fake.inspect` is deliberately separate from the Apple-shaped surface, so no
+production code can reach for it by accident.
+
+| Member                             | Answers                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `operations`                       | Every observed call, oldest first, with arguments summarised                 |
+| `count(name)`                      | Calls of one operation -- calls, not annotation instances                    |
+| `annotationsAdded` / `Removed`     | Annotation instances passed to the add/remove methods, cumulative            |
+| `annotationCounts(idOrAnnotation)` | Per-annotation add/remove/mutation counts                                    |
+| `selectAnnotation(map, a)`         | Simulate a user selecting a pin: fires `deselect`, `select`, renders callout |
+| `calloutElement(a)`                | The rendered callout element, or `null`                                      |
+| `tokens` / `tokenCalls`            | Tokens passed to `done()`, and how often the callback ran                    |
+| `bootstrapAttempts`                | Every bootstrap attempt, with the token index it used                        |
+| `configurationChanges` / `errors`  | Statuses dispatched, oldest first                                            |
+| `advanceClock(ms)` / `now`         | The fake access-key clock. No real timer is ever involved                    |
+
+The per-annotation counts are the point. They let a test assert a budget rather
+than an outcome -- "updating 1 of 600 pins touched 1 annotation, not 600" is a
+regression test for the reconciliation defect the annotation registry exists to
+prevent, and it is not expressible against a fake that only reports final state.
+
+### Scriptable authorization
+
+`auth.mode` picks the outcome:
+
+- `'accept'` -- one bootstrap attempt, then `configuration-change` with
+  `status: 'Initialized'`.
+- `'wrong-origin'` -- the measured origin-mismatch shape: MapKit retries the
+  **same** token three times, invokes `authorizationCallback` exactly **once**,
+  then fails `Unauthorized` with Apple's
+  `Origin does not match - expected: ..., actual: ...` message. MapKit does not
+  ask for a fresh token when Apple rejects the one it has; recovery is the
+  application's job, and this mode is how you test that it happens.
+- `'error'` -- any `ConfigurationErrorStatus` via `auth.status`, using Apple's
+  seven values verbatim.
+
+### The access-key clock is injected, and its default is UNVERIFIED
+
+Apple issued an access key valid for 1800 s from bootstrap on all 11 measured
+runs, independent of the JWT's own `exp`. What MapKit does at that boundary was
+**not** established: the 31-minute observation run was cut short. So the clock
+is yours to drive -- `fake.inspect.advanceClock(1_800_001)` -- and
+`auth.onAccessKeyExpiry` chooses what crossing it does:
+
+| Value       | Behaviour                                                      |
+| ----------- | -------------------------------------------------------------- |
+| `'refresh'` | Default. Calls `authorizationCallback` again, then `Refreshed` |
+| `'nothing'` | The key lapses silently                                        |
+| `'error'`   | Dispatches `error` with `auth.status`                          |
+
+`'refresh'` follows Apple's documented contract, but it is a documented
+expectation and not a measurement. **If your code's correctness depends on which
+of these really happens, write the test for both `'refresh'` and `'nothing'`**
+rather than trusting the default.
+
+### What the fake does not model
+
+Overlays (`TileOverlay`, `ImageOverlay`, `Polyline`, `PolygonOverlay`),
+`mapkit.Search` and `mapkit.Geocoder`, user location, directions, real map
+tiles, and real animation timing. Every one of them throws
+`FakeMapKitNotImplemented` on touch. The fake covers what this library's own
+registries and the Narduk map component need; the admission bar for adding to it
+is two live applications or a defect fix.
+
 ## Examples
 
 The `examples/` directory contains copyable integration patterns:
@@ -1042,6 +1175,7 @@ in the app.
 | `@narduk-enterprises/narduk-mapkit/client`     | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
 | `@narduk-enterprises/narduk-mapkit/geometry`   | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
 | `@narduk-enterprises/narduk-mapkit/playback`   | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
+| `@narduk-enterprises/narduk-mapkit/testing`    | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                               |
 | `@narduk-enterprises/narduk-mapkit/token`      | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
 | `@narduk-enterprises/narduk-mapkit-nuxt`       | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                        |
 
