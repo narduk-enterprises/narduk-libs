@@ -602,6 +602,215 @@ means "exempt nothing".
 
 ### Operator overrides
 
+## Typed API contracts: `defineValidatedHandler`
+
+Give a route a signature. The schemas are the contract: the handler receives
+`query`, `params` and `body` already parsed and fully typed, and never touches
+`getQuery`, `getRouterParam` or `readBody`.
+
+```ts
+// server/api/stations/[stationId]/history.get.ts — auto-imported
+export default defineValidatedHandler({
+  params: z.object({ stationId: z.string().min(1) }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(2000).default(500),
+    resolution: z.enum(['raw', 'hourly', 'daily']).default('raw'),
+  }),
+  handler: ({ params, query }) => readHistory(params.stationId, query),
+})
+```
+
+A route declares only the parts it has. An undeclared part is `undefined` in the
+handler and is never read — a route with no `body` schema never touches the
+payload.
+
+| Option             | Default           | Meaning                                                                      |
+| ------------------ | ----------------- | ---------------------------------------------------------------------------- |
+| `handler`          | required          | The route. Receives `{ body, event, params, query }`.                        |
+| `query`            | —                 | Schema for `getQuery`: values arrive as strings, so `z.coerce` most numbers. |
+| `params`           | —                 | Schema for the route params (`[stationId]`): always strings.                 |
+| `body`             | —                 | Schema for the JSON body. Only read for `POST`, `PUT`, `PATCH`, `DELETE`.    |
+| `response`         | —                 | Shape this route promises. **Checked, never used to reshape** — see below.   |
+| `maxBodyBytes`     | `1048576` (1 MiB) | Body ceiling. Over it answers 413 before the payload is parsed.              |
+| `validateResponse` | dev and test      | `true`, `false`, or a sampling rate in `(0, 1)`.                             |
+
+### On a bad request
+
+**400**, with the detail in `data` — the field h3 serializes on every runtime:
+
+```json
+{
+  "statusCode": 400,
+  "statusMessage": "Bad Request",
+  "data": {
+    "code": "VALIDATION_FAILED",
+    "issues": [
+      {
+        "path": "params.stationId",
+        "message": "Too small: expected string to have >=1 characters"
+      },
+      {
+        "path": "query.limit",
+        "message": "Too big: expected number to be <=2000"
+      }
+    ]
+  }
+}
+```
+
+`path` is rooted at the part of the request it came from, so a client can group
+by prefix without a second field. **A submitted value never appears** — not in a
+message, not in the path — so a rejected password or token cannot travel back
+out through the error. The one caller-supplied text that survives is an object
+_key_ a `z.strictObject` rejected, and it survives as a path segment
+(`body.password`) with the constant message `Unrecognized key`, because a path
+with no key in it is not actionable.
+
+Params and query are checked together, so one response names every bad field.
+The body is only read once they pass: a request that is already doomed should
+not buy a payload read.
+
+Two more, both carrying `data.code`:
+
+| Status | `data.code`              | When                                                             |
+| ------ | ------------------------ | ---------------------------------------------------------------- |
+| `413`  | `BODY_TOO_LARGE`         | Declared or measured body over `maxBodyBytes` (also in `data`).  |
+| `415`  | `UNSUPPORTED_MEDIA_TYPE` | A `content-type` that is not JSON. This wrapper reads JSON only. |
+
+A declared `content-length` is rejected before a byte is parsed. A body sent
+chunked — no declared length — is measured after the read, so the ceiling bounds
+what reaches `JSON.parse` and the schema, which is the cost this wrapper owns;
+the request size itself is bounded by the platform.
+
+### On a bad response
+
+`response` is an assertion about what the route promises. A returned value that
+fails it is a server defect: one structured `error` through
+`@narduk-enterprises/narduk-logging` carrying the issue paths and the **matched
+route template** — not the raw path — then **500**. In development and test the
+message names the offending paths; in production it says nothing beyond
+`Internal Server Error`, because the detail describes data the caller was never
+entitled to see.
+
+**Checking is on in development and test, off in production by default.** Every
+request on Workers pays for it in metered CPU, on data the server itself
+produced, and a response-shape mismatch is a code defect — which is what
+`nuxt dev`, vitest and CI are for. Turn it on with `validateResponse: true`, or
+keep most of the signal for a fraction of the cost with
+`validateResponse: 0.01`.
+
+Because it is an assertion, **the value the client receives is exactly what the
+handler returned**, whether or not the check ran. That is deliberate: a route
+must not behave differently in production because validation was skipped. Two
+consequences:
+
+- A response schema must not `.transform()`, default or coerce. Nothing it does
+  would reach the wire.
+- An unpromised field is not silently stripped. Use `z.strictObject` to have one
+  _rejected_ instead — loudly, in dev and test, where you can fix it.
+
+### Composition order with `defineRateLimitedHandler`
+
+**Rate limit outside, validate inside.** A throttled caller is then rejected
+before the body is read or a schema runs, which is the order that matters when
+the caller is abusive:
+
+```ts
+export default defineRateLimitedHandler(
+  defineValidatedHandler({
+    query: stationSearchQuery,
+    handler: ({ query }) => listStations(query),
+  }),
+  { key: 'marine-public-api', limit: 120, windowSeconds: 60 },
+)
+```
+
+Reversed, every request over the limit still pays for parsing and validation
+before the 429. There is no `rateLimit` option on `defineValidatedHandler` on
+purpose: one wrapper, one job, and the order stays visible in the route file.
+
+### Before and after: a real Buoys route
+
+`apps/web/server/api/ndbc/stations/[stationId]/history.get.ts`, as it stands
+today:
+
+```ts
+export default defineEventHandler(async (event) => {
+  setMarinePublishedHistoryCacheHeader(event)
+  const stationId = getRouterParam(event, 'stationId')
+  if (!stationId)
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      message: 'stationId is required',
+    })
+  const result = stationHistoryQuerySchema.safeParse(getQuery(event))
+  if (!result.success)
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      message: 'Invalid station history query',
+      data: result.error.flatten(),
+    })
+  return withPublishedDataErrorHandling(
+    event,
+    'Published station history is unavailable.',
+    async () => {
+      const { product } = await readCachedPublishedBuoyStatus()
+      return publishedStationHistoryResponse(product, stationId, result.data)
+    },
+  )
+})
+```
+
+and the same route through the wrapper:
+
+```ts
+export default defineValidatedHandler({
+  params: z.object({ stationId: z.string().min(1) }),
+  query: stationHistoryQuerySchema,
+  handler: ({ event, params, query }) => {
+    setMarinePublishedHistoryCacheHeader(event)
+    return withPublishedDataErrorHandling(
+      event,
+      'Published station history is unavailable.',
+      async () => {
+        const { product } = await readCachedPublishedBuoyStatus()
+        return publishedStationHistoryResponse(product, params.stationId, query)
+      },
+    )
+  },
+})
+```
+
+What changed: the hand-written presence check is gone and `params.stationId` is
+`string`, not `string | undefined`; the two hand-written 400s collapse into one
+documented body; and a request that is wrong in both the param and the query is
+now told both at once instead of only the first. The route keeps its own cache
+header and its own error wrapper — this wrapper owns the contract, not the
+route's behaviour.
+
+### Sharing the contract with a client
+
+The schemas are ordinary values, so a route can export them and a caller can
+reuse them without a second declaration:
+
+```ts
+// server/api/stations/index.get.ts
+export const contract = { query: stationSearchQuery, response: stationList }
+export default defineValidatedHandler({ ...contract, handler: listStations })
+```
+
+```ts
+// app/composables/useStations.ts
+import { contract } from '~~/server/api/stations/index.get'
+
+type StationQuery = z.input<typeof contract.query>
+```
+
+That needs nothing from this package. Generating a typed `$fetch` client across
+the whole API surface is a larger piece of work and is deliberately not here.
+
 ## Edge cache: setCacheProfile
 
 `setCacheProfile` owns every `Cache-Control` string a route would otherwise
