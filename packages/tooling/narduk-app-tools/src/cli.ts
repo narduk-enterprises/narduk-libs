@@ -30,6 +30,10 @@ import {
   runSecurityHeadersCheckCommand,
 } from './commands/security-headers-check.js'
 import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
+import {
+  parseDeploymentCheckArgs,
+  runDeploymentCheckCommand,
+} from './commands/deployment-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
@@ -83,6 +87,11 @@ function usage(): string {
     "                                       Item 10: live probe of a deployment's security response headers",
     '  foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]',
     '                                       Item 11: one declared Node/pnpm source, every other site reads or matches it',
+    '  foundation:check:deployment [--checkout <dir>] [--strict] [--json [path]]',
+    '                                       Item 12: the Config/cloudflare-app.json deployment block.',
+    '                                       Refuses non-production branch builds that would bind',
+    '                                       production D1/KV/R2. An app with no block is reported,',
+    '                                       not failed, until --strict.',
   ].join('\n')
 }
 
@@ -231,6 +240,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check:toolchain') {
       const { exitCode } = runToolchainCheckCommand(parseToolchainCheckArgs(rest))
+      return exitCode
+    }
+    if (command === 'foundation:check:deployment') {
+      const { exitCode } = runDeploymentCheckCommand(parseDeploymentCheckArgs(rest))
       return exitCode
     }
     if (command === 'foundation:check:coverage') {

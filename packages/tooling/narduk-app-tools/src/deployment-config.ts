@@ -1,0 +1,220 @@
+/**
+ * The `deployment` block of `Config/cloudflare-app.json` -- the single
+ * declaration surface for the Narduk deployment standard (deployment-standard
+ * design §2.1; Logan approved every recommended option on 2026-09-17,
+ * company-hq#745).
+ *
+ * The standard in one line: **Cloudflare builds, GitHub promotes, production is
+ * a promotion and never a push.** Everything an app has to say about that lives
+ * in one object. `wrangler.json` keeps only what Wrangler itself reads; this
+ * block keeps the estate's contract.
+ *
+ * Validation is zod, and `deploymentBlockJsonSchema()` projects the same schema
+ * to JSON Schema so a non-TypeScript consumer (an estate sweep, an editor) reads
+ * one definition rather than a second hand-written copy that could disagree.
+ *
+ * Two shapes deliberately diverge from the design's literal sketch, both
+ * additive:
+ *
+ * - **`previewBindings` entries may be a string or an object.** §2.1 shows
+ *   `{ "d1": [], "kv": [], "r2": [] }` with no element type. A bare binding name
+ *   is enough for the conformance gate here, but §3.3 option A also has to
+ *   generate `.wrangler.deploy.preview.json` from this block, which needs the
+ *   preview resource's own id. Both forms are accepted and the binding name is
+ *   read from either.
+ * - **`previewChecks` is accepted and optional.** §2.1 does not list it; it is
+ *   the `preview-checks` input of the shared workflow (§3.4), and declaring it
+ *   beside the rest of the deployment contract is what lets an estate sweep see
+ *   which apps still run the default. Its members are the workflow's, plus the
+ *   two §3.4 asks for (`health`, `headers`).
+ */
+
+import { z } from 'zod'
+
+/** The conformance key. Any other value means the app is deliberately exempt
+ * from the standard and must justify that elsewhere -- it is not a failure
+ * here, because an exempt app is not claiming conformance. */
+export const DEPLOYMENT_STANDARD = 'narduk-v1'
+
+/** The only builder narduk-v1 supports: Cloudflare Workers Builds. */
+export const DEPLOYMENT_BUILDER = 'workers-builds'
+
+/** Both deploy commands, production and non-production. The whole standard
+ * rests on a build never deploying: it uploads a version that serves no
+ * traffic, and a GitHub Actions job promotes it after the gate check is green.
+ * A build whose command is `deploy` has already pushed to production. */
+export const STANDARD_DEPLOY_COMMAND = 'narduk-app deploy versions-upload'
+
+/** The response header `verify --live` compares against the promoted commit.
+ * narduk-core emits exactly this one from `runtimeConfig.public.buildVersion`. */
+export const BUILD_VERSION_HEADER = 'x-build-version'
+
+/** The three binding kinds whose state is NOT captured by a Worker version, and
+ * which therefore leak from a preview straight into production data unless the
+ * app declares a preview replacement (§3.2). */
+export const PREVIEW_BINDING_KINDS = ['d1', 'kv', 'r2'] as const
+export type PreviewBindingKind = (typeof PREVIEW_BINDING_KINDS)[number]
+
+/** Members of the shared workflow's `preview-checks` input (§3.4). */
+export const PREVIEW_CHECK_MEMBERS = [
+  'none',
+  'og',
+  'health',
+  'headers',
+  'e2e-subset',
+] as const
+
+const appPath = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2000)
+  .refine(
+    (value) => value.startsWith('/') && !value.startsWith('//') && !/[#\\\s]/u.test(value),
+    'Expected a concrete app path beginning with "/", without a fragment',
+  )
+
+const bindingName = z.string().trim().min(1).max(200)
+
+/** A preview replacement for one production binding: the binding name alone, or
+ * an object naming it alongside whatever ids the generated preview wrangler
+ * config will need. */
+const previewBindingEntry = z.union([bindingName, z.looseObject({ binding: bindingName })])
+
+export type PreviewBindingEntry = z.infer<typeof previewBindingEntry>
+
+/** The binding name an entry covers, whichever form it took. */
+export function previewBindingName(entry: PreviewBindingEntry): string {
+  return typeof entry === 'string' ? entry.trim() : entry.binding.trim()
+}
+
+export const previewBindingsSchema = z.strictObject({
+  d1: z.array(previewBindingEntry).max(100).default([]),
+  kv: z.array(previewBindingEntry).max(100).default([]),
+  r2: z.array(previewBindingEntry).max(100).default([]),
+})
+
+export const deploymentBlockSchema = z.strictObject({
+  standard: z.literal(DEPLOYMENT_STANDARD),
+  builder: z.literal(DEPLOYMENT_BUILDER),
+  productionBranch: z.string().trim().min(1).max(200),
+  productionDeployCommand: z.string().trim().min(1).max(500),
+  nonProductionDeployCommand: z.string().trim().min(1).max(500),
+  nonProductionBranchBuilds: z.boolean(),
+  promotion: z.strictObject({
+    mode: z.enum(['auto-on-green', 'manual-dispatch']),
+    gateCheck: z.string().trim().min(1).max(200),
+    credential: z.string().trim().min(1).max(300),
+  }),
+  liveProof: z.strictObject({
+    buildVersionHeader: z.string().trim().min(1).max(200).default(BUILD_VERSION_HEADER),
+    healthPath: appPath,
+    smokePath: appPath,
+    attempts: z.number().int().min(1).max(60).default(6),
+    intervalSeconds: z.number().int().min(1).max(600).default(10),
+  }),
+  rollback: z.strictObject({
+    mode: z.enum(['auto', 'manual']),
+    alert: z.enum(['resend', 'none']),
+  }),
+  /** §5: the single opt-in flag for a staging stage. Default false -- an app
+   * that says nothing does not get one. */
+  staging: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  previewBindings: previewBindingsSchema.default({ d1: [], kv: [], r2: [] }),
+  previewChecks: z.array(z.enum(PREVIEW_CHECK_MEMBERS)).max(10).optional(),
+})
+
+export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>
+
+/** Just enough of the block to decide whether it claims the standard at all.
+ * Read first, so an app on a different standard is reported as exempt rather
+ * than as 20 schema violations against a contract it never claimed. */
+const deploymentEnvelopeSchema = z.looseObject({ standard: z.string().trim().min(1).max(200) })
+
+export interface DeploymentIssue {
+  path: string
+  message: string
+}
+
+export type DeploymentBlockOutcome =
+  /** No `deployment` key at all -- the not-yet-adopted state. */
+  | { kind: 'absent' }
+  /** Present but not an object, or carrying no `standard` key. */
+  | { kind: 'malformed'; detail: string }
+  /** Declares some other standard: out of scope here, not a failure. */
+  | { kind: 'exempt'; standard: string }
+  /** Claims narduk-v1 but does not satisfy it. */
+  | { kind: 'invalid'; standard: string; issues: DeploymentIssue[] }
+  | { kind: 'valid'; block: DeploymentBlock }
+
+function issuesOf(error: z.ZodError): DeploymentIssue[] {
+  return error.issues.map((issue) => ({
+    path: issue.path.length > 0 ? issue.path.join('.') : '(root)',
+    message: issue.message,
+  }))
+}
+
+/**
+ * Reads the `deployment` block out of a parsed `Config/cloudflare-app.json`.
+ * Never throws: every outcome a checkout can present is a named result, because
+ * the caller is a conformance item that must report rather than crash.
+ */
+export function readDeploymentBlock(cloudflareApp: unknown): DeploymentBlockOutcome {
+  if (cloudflareApp === null || typeof cloudflareApp !== 'object' || Array.isArray(cloudflareApp)) {
+    return { kind: 'absent' }
+  }
+  const raw = (cloudflareApp as Record<string, unknown>).deployment
+  if (raw === undefined) return { kind: 'absent' }
+  const envelope = deploymentEnvelopeSchema.safeParse(raw)
+  if (!envelope.success) {
+    return {
+      kind: 'malformed',
+      detail: issuesOf(envelope.error)
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join('; '),
+    }
+  }
+  const standard = envelope.data.standard.trim()
+  if (standard !== DEPLOYMENT_STANDARD) return { kind: 'exempt', standard }
+  const parsed = deploymentBlockSchema.safeParse(raw)
+  if (!parsed.success) return { kind: 'invalid', standard, issues: issuesOf(parsed.error) }
+  return { kind: 'valid', block: parsed.data }
+}
+
+/** The same contract as JSON Schema, for consumers that are not TypeScript. */
+export function deploymentBlockJsonSchema(): Record<string, unknown> {
+  return z.toJSONSchema(deploymentBlockSchema, { io: 'input' }) as Record<string, unknown>
+}
+
+/** The block a newly generated app starts from: the standard, both commands,
+ * branch builds OFF (an app with production data may not turn them on until it
+ * declares preview replacements -- §3.2), and no staging stage. */
+export function defaultDeploymentBlock(options: {
+  appSlug: string
+  productionBranch?: string
+  smokePath?: string
+}): Record<string, unknown> {
+  return {
+    standard: DEPLOYMENT_STANDARD,
+    builder: DEPLOYMENT_BUILDER,
+    productionBranch: options.productionBranch ?? 'main',
+    productionDeployCommand: STANDARD_DEPLOY_COMMAND,
+    nonProductionDeployCommand: STANDARD_DEPLOY_COMMAND,
+    nonProductionBranchBuilds: false,
+    promotion: {
+      mode: 'auto-on-green',
+      gateCheck: 'ci / Required',
+      credential: `cloudflare/prd/narduk-enterprises-${options.appSlug}-promote`,
+    },
+    liveProof: {
+      buildVersionHeader: BUILD_VERSION_HEADER,
+      healthPath: '/api/health',
+      smokePath: options.smokePath ?? '/',
+      attempts: 6,
+      intervalSeconds: 10,
+    },
+    rollback: { mode: 'auto', alert: 'resend' },
+    staging: { enabled: false },
+    previewBindings: { d1: [], kv: [], r2: [] },
+  }
+}
