@@ -519,21 +519,26 @@ describe('narduk-seo module', () => {
     })
   })
 
-  it('rejects the committed CI OG placeholder on a production deploy build', async () => {
+  it('rejects the committed CI OG placeholder on a Workers Builds deploy build', async () => {
     const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
     vi.stubEnv('NUXT_OG_IMAGE_SECRET', `  ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}  `)
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('WORKERS_CI', '1')
+    vi.stubEnv('WORKERS_CI_BRANCH', 'main')
 
     await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
       /test-only placeholder/u,
     )
   })
 
-  it('keeps accepting the CI OG placeholder on build:ci', async () => {
+  it('keeps accepting the CI OG placeholder on a build nothing deploys', async () => {
     const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
     vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
 
     const { nuxt } = await setupModule({ nuxtOptions: { dev: false } })
     expect(nuxt.options.ogImage).toMatchObject({

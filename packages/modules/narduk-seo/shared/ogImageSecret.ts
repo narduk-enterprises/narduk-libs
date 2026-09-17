@@ -11,7 +11,7 @@ export const MISSING_OG_IMAGE_SECRET_MESSAGE =
   '[@narduk-enterprises/narduk-seo] Runtime OG image generation requires a non-empty NUXT_OG_IMAGE_SECRET in non-dev builds. With no secret, nuxt-og-image auto-generates a new one on every build, so every previously signed /_og/ URL stops verifying: a rolling Worker release serves two secrets at once and cached signed URLs 403 until they are regenerated. The estate needs one stable operator-provided secret. Set NUXT_OG_IMAGE_SECRET in every deployed environment (a Workers Builds Build variable, not a runtime Worker secret -- signing is resolved at build time). Local `nuxt dev` stays permissive. Apps that only ship a static defaultOgImage can set ogImage.enabled: false or ogImage.zeroRuntime: true instead. Never set ogImage.security.secret: false; that is the setting that actually disables signing and leaves /_og/ an unauthenticated renderer.'
 
 export const CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE =
-  '[@narduk-enterprises/narduk-seo] NUXT_OG_IMAGE_SECRET equals the committed test-only placeholder. That value is for GitHub Actions `build:ci` only and must never sign a production or Workers Builds (`cf:build`) deployment. Set a real secret as a Workers Builds Build variable.'
+  '[@narduk-enterprises/narduk-seo] NUXT_OG_IMAGE_SECRET equals the committed test-only placeholder, and this build is one the estate deploys. That value is public and must never sign a live Worker. Set a real secret as a Workers Builds Build variable. The placeholder stays valid for builds nothing deploys: `nuxt dev`, GitHub Actions `build:ci`, and the packed-consumer smoke fixture.'
 
 export function resolveOgImageSigningSecret(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -32,23 +32,37 @@ function envFlagOn(value: string | undefined): boolean {
 }
 
 /**
- * The placeholder is allowed only on GitHub Actions `build:ci`.
+ * Is this build one the estate actually deploys?
  *
- * Verified in this repo (not assumed from the review's names):
- * - `build:ci` is the only generated script that sets
- *   `NARDUK_CLOUDFLARE_BUILD=1`.
- * - `cf:build` is `og:generate && og:check && nuxt build --preset=cloudflare_module`
- *   with no placeholder prefix; Workers Builds injects `WORKERS_CI` /
- *   `WORKERS_CI_BRANCH`.
- * - Generated `nuxt.config.ts` does `NARDUK_DEPLOY_TARGET ??= production`
- *   when `WORKERS_CI_BRANCH` is unset, so `build:ci` also sees production.
- *   Rejecting on that env var alone would break CI.
+ * The committed placeholder only matters where a build-time secret ends up
+ * signing a live Worker. In this estate a built artefact reaches production
+ * through exactly two sanctioned routes, both of which `narduk-app-tools`
+ * already gates on (`deploy.ts` `isWorkersBuildDeployAllowed` /
+ * `isLocalDeployAllowed`):
+ *
+ * - Workers Builds, which injects `WORKERS_CI` / `WORKERS_CI_BRANCH`; and
+ * - an explicit local `wrangler deploy` behind
+ *   `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`.
+ *
+ * Everything else -- `nuxt dev`, GitHub Actions `build:ci`, and narduk-libs'
+ * own packed-consumer smoke, which builds a generated fixture app in a temp
+ * directory and throws it away -- produces nothing that is deployed.
+ *
+ * This deliberately keys on the deploy signal rather than enumerating the
+ * allowed build contexts. The first version of this rule allow-listed
+ * `NARDUK_CLOUDFLARE_BUILD=1` (`build:ci`) and broke the packed-consumer smoke
+ * the moment narduk-libs#440 started filling the same placeholder for the
+ * fixture build: an allow-list of sanctioned non-deploy builds is a list that
+ * is always one context out of date.
+ *
+ * `NARDUK_DEPLOY_TARGET` cannot serve here. Generated `nuxt.config.ts` sets it
+ * to `production` itself whenever `WORKERS_CI_BRANCH` is unset, so `build:ci`
+ * and the smoke fixture both report `production`.
  */
-export function allowsCiTestOnlyOgImageSecret(): boolean {
-  const cloudflareCiBuild = process.env.NARDUK_CLOUDFLARE_BUILD?.trim() === '1'
+export function isDeployedBuild(): boolean {
   const workersBuild =
     envFlagOn(process.env.WORKERS_CI) || Boolean(process.env.WORKERS_CI_BRANCH?.trim())
-  return cloudflareCiBuild && !workersBuild
+  return workersBuild || envFlagOn(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY)
 }
 
 /**
@@ -66,7 +80,7 @@ export function assertOgImageSigningSecretForBuild(input: {
   if (!isOgImageSigningSecretConfigured(input.secret)) {
     throw new Error(MISSING_OG_IMAGE_SECRET_MESSAGE)
   }
-  if (isCiTestOnlyOgImageSecret(input.secret) && !allowsCiTestOnlyOgImageSecret()) {
+  if (isCiTestOnlyOgImageSecret(input.secret) && isDeployedBuild()) {
     throw new Error(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   }
 }

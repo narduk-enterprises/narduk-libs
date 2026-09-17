@@ -24,8 +24,10 @@ cached signed URLs 403 until regenerated. Signing is resolved at **build** time,
 so provision it as a Workers Builds **Build variable**, not as a runtime Worker
 secret. `nuxt dev` stays permissive. Set `ogImage.enabled: false` /
 `ogImage.zeroRuntime: true` instead if the app only uses the static
-`defaultOgImage`. The committed CI placeholder is rejected on production and
-Workers Builds; `build:ci` may still use it. Never set
+`defaultOgImage`. The committed CI placeholder is rejected on builds the estate
+deploys -- Workers Builds (`WORKERS_CI`) and a local `wrangler deploy` behind
+`NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds nothing deploys (`nuxt dev`, GitHub
+Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
 signing and leaves `/_og/` an unauthenticated renderer.
 

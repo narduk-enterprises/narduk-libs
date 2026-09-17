@@ -87,11 +87,11 @@ describe('OG image signing secret', () => {
     ).not.toThrow()
   })
 
-  it('rejects the committed CI placeholder on a production deploy build', () => {
+  it('rejects the committed CI placeholder on a Workers Builds deploy build', () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
-    vi.stubEnv('WORKERS_CI', '')
-    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('WORKERS_CI', '1')
+    vi.stubEnv('WORKERS_CI_BRANCH', 'main')
 
     expect(() =>
       assertOgImageSigningSecretForBuild({
@@ -106,6 +106,41 @@ describe('OG image signing secret', () => {
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
     vi.stubEnv('WORKERS_CI', '1')
     vi.stubEnv('WORKERS_CI_BRANCH', 'main')
+
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+      }),
+    ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
+  })
+
+  it('accepts the placeholder for a build no estate path deploys', () => {
+    // narduk-libs#440's packed-consumer smoke fills NUXT_OG_IMAGE_SECRET with
+    // this literal and builds the generated fixture app with the plain `build`
+    // script, so NARDUK_CLOUDFLARE_BUILD is unset. That artefact is built in a
+    // temp directory and never deployed, so it must not be rejected.
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+      }),
+    ).not.toThrow()
+  })
+
+  it('rejects the placeholder when the local wrangler deploy escape hatch is on', () => {
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '1')
 
     expect(() =>
       assertOgImageSigningSecretForBuild({

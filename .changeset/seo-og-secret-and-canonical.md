@@ -16,9 +16,11 @@ Non-dev builds that still enable runtime generation now fail unless
 `NUXT_OG_IMAGE_SECRET` in every deployed environment, or set
 `ogImage.enabled: false` / `ogImage.zeroRuntime: true` if the app only uses the
 static `defaultOgImage`. The committed CI placeholder
-(`narduk-test-only-og-image-secret-000000`) is rejected on production and
-Workers Builds (`cf:build`) so it cannot sign a live Worker; GitHub Actions
-`build:ci` (`NARDUK_CLOUDFLARE_BUILD=1`) may still use it.
+(`narduk-test-only-og-image-secret-000000`) is rejected on any build the estate
+deploys -- Workers Builds (`WORKERS_CI` / `WORKERS_CI_BRANCH`) and a local
+`wrangler deploy` behind `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` -- so it cannot
+sign a live Worker. Builds that produce nothing deployable (`nuxt dev`, GitHub
+Actions `build:ci`, packed-consumer fixture apps) may still use it.
 
 **Canonical URLs.** `new URL('//attacker.example', site)` was accepted as HTTPS
 with no userinfo. Router paths and explicit `canonicalUrl` values are now
