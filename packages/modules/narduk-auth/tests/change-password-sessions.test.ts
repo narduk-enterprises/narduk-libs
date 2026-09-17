@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   },
   passwordHash: 'stored-hash',
   revokeCalls: [] as Array<{ exceptSessionId?: string | null; userId: string }>,
+  refreshedUser: null as AppSessionUser | null,
   user: null as AppSessionUser | null,
   verified: true,
 }))
@@ -56,6 +57,10 @@ vi.mock('#layer/server/utils/password', () => ({
 
 vi.mock('#layer/server/utils/user-session', () => ({
   replaceLayerUserSession: vi.fn(),
+}))
+
+vi.mock('../server/utils/session-user', () => ({
+  useRefreshedSessionUser: async () => state.refreshedUser ?? state.user,
 }))
 
 vi.mock('../server/utils/native-auth', () => ({
@@ -119,6 +124,7 @@ describe('changePassword revokes other web sessions', () => {
     state.config.authNativeClients = []
     state.passwordHash = 'stored-hash'
     state.revokeCalls = []
+    state.refreshedUser = null
     state.user = { ...SESSION_USER }
     state.verified = true
     revokeUserAuthSessions.mockClear()
@@ -157,6 +163,24 @@ describe('changePassword revokes other web sessions', () => {
       exceptSessionId: CURRENT_SESSION_ID,
     })
     expect(clearAuthSessionRecoveryMode).toHaveBeenCalledWith(expect.anything(), CURRENT_SESSION_ID)
+  })
+
+  it('requires the current password from the live session row, not a stale recovery cookie', async () => {
+    state.config.backend = 'supabase'
+    state.user = {
+      ...SESSION_USER,
+      authBackend: 'supabase',
+      authProviders: ['email'],
+      needsPasswordSetup: false,
+      recoveryMode: true,
+    }
+    state.refreshedUser = { ...state.user, recoveryMode: false }
+    const { changePassword } = await import('../server/lib/app-auth/profile')
+
+    await expect(changePassword(event(), { newPassword: 'new-password-1' })).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: 'Current password is required for email-auth accounts.',
+    })
   })
 
   it('clears recovery_mode on the current row after a local password change', async () => {

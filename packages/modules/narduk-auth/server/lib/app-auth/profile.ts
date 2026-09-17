@@ -8,6 +8,7 @@ import { replaceLayerUserSession } from '#layer/server/utils/user-session'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { useNativeAuth } from '../../utils/native-auth'
+import { useRefreshedSessionUser } from '../../utils/session-user'
 
 import { encodeQrCodeDataUrl } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
@@ -106,7 +107,7 @@ export async function updateProfile(event: H3Event, body: UpdateProfileInput) {
 
 export async function changePassword(event: H3Event, body: ChangePasswordInput) {
   const config = getAuthConfig(event)
-  const sessionUser = await getCurrentSessionUser(event)
+  const sessionUser = await useRefreshedSessionUser(event)
   if (!sessionUser) {
     throw createError({
       statusCode: 401,
