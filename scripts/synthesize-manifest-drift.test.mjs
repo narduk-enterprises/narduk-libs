@@ -12,6 +12,8 @@ import {
   generatorFollowUp,
   interpretRegistryResult,
   manifestDrift,
+  RESOLVED_AT_PUBLISH_PROTOCOLS,
+  isResolvedAtPublish,
   planDriftSynthesis,
   renderDriftChangeset,
   renderSynthesisSummary,
@@ -62,6 +64,37 @@ test('a workspace: specifier is never drift', () => {
     dependencies: { '@narduk-enterprises/narduk-platform': '2.1.0', sharp: '^0.34.5' },
   }
   assert.deepEqual(manifestDrift(local, published), [])
+})
+
+test('a catalog: specifier is never drift either', () => {
+  // pnpm resolves `catalog:` at pack time exactly the way it resolves
+  // `workspace:`. Comparing the literal specifier against the published version
+  // would drift forever, and the release it synthesized would not clear it --
+  // a patch release on every push to main, in a loop. pnpm-workspace.yaml
+  // declares no catalog today; this keeps the day it does from being an outage.
+  const local = {
+    ...testkit,
+    dependencies: { sharp: 'catalog:', zod: 'catalog:strict' },
+    peerDependencies: { vue: 'catalog:' },
+  }
+  const published = {
+    ...testkit,
+    dependencies: { sharp: '^0.34.5', zod: '^4.4.3' },
+    peerDependencies: { vue: '^3.5.39' },
+  }
+  assert.deepEqual(manifestDrift(local, published), [])
+  assert.deepEqual([...RESOLVED_AT_PUBLISH_PROTOCOLS], ['workspace:', 'catalog:'])
+  assert.equal(isResolvedAtPublish('catalog:'), true)
+  assert.equal(isResolvedAtPublish('catalog:strict'), true)
+  assert.equal(isResolvedAtPublish('workspace:^'), true)
+  // A literal range that merely mentions a protocol name is still a range.
+  assert.equal(isResolvedAtPublish('^1.0.0'), false)
+  assert.equal(isResolvedAtPublish(undefined), false)
+
+  // A dependency removed while the rest are catalog-linked is still drift.
+  assert.deepEqual(manifestDrift({ ...local, dependencies: { sharp: 'catalog:' } }, published), [
+    { section: 'dependencies', name: 'zod', published: '^4.4.3', local: undefined },
+  ])
 })
 
 test('an added, removed or peer-range drift is reported across every section', () => {

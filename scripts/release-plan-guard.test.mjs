@@ -157,6 +157,21 @@ test('added, removed and workspace-linked runtime dependencies still need a chan
     assert.equal(entry.verdict, 'needs-changeset', label)
     assert.equal(entry.manifest.releaseRelevant[0].field, 'dependencies', label)
   }
+
+  // Moving an existing range onto the catalog is a range-only change by the
+  // letter of the rule, but pnpm resolves `catalog:` at pack time, so
+  // release-time drift synthesis can never see it. Deferring it would owe a
+  // release nothing ever writes.
+  const catalogued = classifyOne({ ...baseManifest, dependencies: { sharp: 'catalog:' } })
+  assert.equal(catalogued.verdict, 'needs-changeset')
+  assert.deepEqual(catalogued.manifest.releaseRelevant, [
+    {
+      field: 'dependencies',
+      keys: ['sharp'],
+      reason: 'workspace- or catalog-linked dependency',
+    },
+  ])
+  assert.deepEqual(catalogued.manifest.deferred, [])
 })
 
 test('a peer dependency range is a semver decision a human makes', () => {

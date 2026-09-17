@@ -92,7 +92,10 @@ export function publishLifecycleScriptKeys(scripts = {}) {
 // widening or moving it is a semver decision a human makes in a Changeset.
 export const DEFERRED_DEPENDENCY_FIELDS = Object.freeze(['dependencies', 'optionalDependencies'])
 
-const WORKSPACE_PROTOCOL = 'workspace:'
+// A range in one of these protocols is resolved to a concrete version at
+// publish time, so release-time drift synthesis cannot compare it against the
+// registry. Deferring such a change would owe a release nothing ever writes.
+const LINKED_PROTOCOLS = ['workspace:', 'catalog:']
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined'
@@ -112,8 +115,8 @@ export function changedKeys(before = {}, after = {}) {
     .sort()
 }
 
-function isWorkspaceSpecifier(value) {
-  return typeof value === 'string' && value.startsWith(WORKSPACE_PROTOCOL)
+function isLinkedSpecifier(value) {
+  return typeof value === 'string' && LINKED_PROTOCOLS.some((p) => value.startsWith(p))
 }
 
 /**
@@ -164,11 +167,11 @@ export function classifyManifestChange(before, after) {
       const keys = changedKeys(beforeSection, afterSection)
       const added = keys.filter((key) => !(key in beforeSection))
       const removed = keys.filter((key) => !(key in afterSection))
-      // A `workspace:` specifier is rewritten to an exact version at publish
-      // time, so drift synthesis cannot compare it against the registry.
+      // A `workspace:` or `catalog:` specifier is rewritten to a concrete
+      // version at publish time, so drift synthesis cannot compare it against
+      // the registry.
       const linked = keys.filter(
-        (key) =>
-          isWorkspaceSpecifier(beforeSection[key]) || isWorkspaceSpecifier(afterSection[key]),
+        (key) => isLinkedSpecifier(beforeSection[key]) || isLinkedSpecifier(afterSection[key]),
       )
       if (added.length > 0 || removed.length > 0 || linked.length > 0) {
         releaseRelevant.push({
@@ -177,7 +180,7 @@ export function classifyManifestChange(before, after) {
           reason:
             added.length > 0 || removed.length > 0
               ? 'dependency added or removed'
-              : 'workspace-linked dependency',
+              : 'workspace- or catalog-linked dependency',
         })
       } else {
         deferred.push({ field, keys })

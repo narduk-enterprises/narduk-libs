@@ -56,7 +56,20 @@ export const DRIFT_SECTIONS = Object.freeze([
   'optionalDependencies',
 ])
 
-const WORKSPACE_PROTOCOL = 'workspace:'
+// Specifier protocols pnpm resolves to a concrete version when it packs, so the
+// published manifest can never carry them and a literal comparison would report
+// drift forever -- a synthesized patch release on every push to main, in a loop.
+// `catalog:` is here before the workspace declares a catalog on purpose: the
+// failure mode is silent and self-sustaining, and the guard rejects nothing
+// today by naming it.
+export const RESOLVED_AT_PUBLISH_PROTOCOLS = Object.freeze(['workspace:', 'catalog:'])
+
+export function isResolvedAtPublish(range) {
+  return (
+    typeof range === 'string' &&
+    RESOLVED_AT_PUBLISH_PROTOCOLS.some((protocol) => range.startsWith(protocol))
+  )
+}
 
 export function packageSlug(name) {
   return name.replace(/^@/u, '').replaceAll('/', '-')
@@ -79,10 +92,12 @@ export function manifestDrift(local, published) {
     const names = new Set([...Object.keys(localSection), ...Object.keys(publishedSection)])
     for (const name of [...names].sort()) {
       const localRange = localSection[name]
-      // pnpm rewrites `workspace:` to an exact version when it packs, so the
-      // published manifest can never match the source and Changesets already
-      // owns internal-dependency bumps (updateInternalDependencies: patch).
-      if (typeof localRange === 'string' && localRange.startsWith(WORKSPACE_PROTOCOL)) continue
+      // pnpm rewrites `workspace:` and `catalog:` to a concrete version when it
+      // packs, so the published manifest can never match the source. Changesets
+      // already owns internal-dependency bumps (updateInternalDependencies:
+      // patch); a catalog bump is an ordinary manifest change on the packages
+      // that use it, which the PR-time guard classifies.
+      if (isResolvedAtPublish(localRange)) continue
       const publishedRange = publishedSection[name]
       if (localRange === publishedRange) continue
       drift.push({ section, name, published: publishedRange, local: localRange })
