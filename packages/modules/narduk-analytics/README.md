@@ -281,6 +281,53 @@ See
 [PostHog Core Web Vitals dashboard per app](../../../docs/operations/posthog-web-vitals-dashboard.md)
 for the per-app dashboard recipe.
 
+## Exception reporting
+
+`posthog-exceptions.client` subscribes PostHog to narduk-core's
+`narduk:exception` seam. This module registers a **destination**; it installs no
+error listeners of its own — the capture sites (`vue:error`, `app:error`, and
+Nitro's `error` hook) belong to narduk-core.
+
+Exceptions are captured through `posthog.captureException()`, PostHog's own
+documented API, which emits the same `$exception` event exception autocapture
+emits, so PostHog's Error tracking UI works with no further setup.
+
+### Why not `capture_exceptions`
+
+`capture_exceptions` autocapture is an _externally loaded_ extension: the bundle
+calls
+`__PosthogExtensions__.loadExternalDependency(instance, 'exception-autocapture', …)`,
+and that loader refuses to run whenever `disable_external_dependency_loading` is
+set — this module's default posture whenever session replay is off, exactly as
+with `$web_vitals`. Setting `capture_exceptions: true` would therefore be a
+switch that silently does nothing. `captureException()` is bundled in the main
+`posthog-js` module, so it works under that posture unchanged.
+
+### Properties
+
+Every property is low cardinality and carries no identifier. The app id rides
+along as the `app` super property `posthog.client` registers.
+
+| Property           | Value                                               |
+| ------------------ | --------------------------------------------------- |
+| `route`            | Matched route **pattern**, never a raw path         |
+| `source`           | `client` or `server`                                |
+| `status_code`      | HTTP status the error carried, or 500               |
+| `fatal`            | Whether the error took down the app                 |
+| `redacted_message` | Message with query strings and emails removed       |
+| `build_version`    | Deployed commit SHA, when known                     |
+| `request_id`       | Correlation id, the same one `x-request-id` carries |
+
+### When nothing is captured
+
+Nothing is reported when analytics never initialized — no `posthogPublicKey`,
+`previewSafeMode`, localhost, or `analyticsLoadStrategy: 'off'` — or when the
+visitor has opted out of capture (`has_opted_out_capturing()`). Server-side
+errors are recorded by narduk-logging as the request summary; this module adds
+no server pipeline, because a Cloudflare Worker has no PostHog server SDK here
+and a hand-rolled HTTP capture path would be exactly the second pipeline the
+module avoids.
+
 ## GA4 pageviews
 
 `gtag.client` configures the Google tag once with `send_page_view: false`, then

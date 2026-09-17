@@ -29,6 +29,9 @@
     "./app/composables/*": {
       "import": "./runtime/app/composables/*.ts"
     },
+    "./app/error-page": {
+      "import": "./runtime/app/error.vue"
+    },
     "./app/stores/*": {
       "import": "./runtime/app/stores/*.ts"
     },

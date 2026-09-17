@@ -20,6 +20,7 @@
   "include": [
     "runtime/internal/**/*.ts",
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
+    "runtime/app/error-page.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",

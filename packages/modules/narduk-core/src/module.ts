@@ -36,6 +36,7 @@ const PACKAGE_NAME = '@narduk-enterprises/narduk-core'
 
 const d1QueryHelperAutoImportSourcePattern = /(?:^|\/)server\/utils\/d1Query(?:\.ts)?$/
 const authApiKeyTextAutoImportSourcePattern = /(?:^|\/)server\/utils\/authApiKeyText(?:\.ts)?$/
+const nuxtBuiltInErrorComponentPattern = /(?:^|\/)components\/nuxt-error-page\.vue$/
 
 interface MutableNuxtIconConfig {
   serverBundle?: Record<string, unknown> | string | false
@@ -131,6 +132,28 @@ function addFallbackLayout(
       file: `#build/${filename}`,
       name,
     }
+  })
+}
+
+/**
+ * Nuxt's own `resolveApp()` assigns `app.errorComponent` before it calls the
+ * `app:resolve` hook: an `app/error.*` from the project or any layer if one
+ * exists, and otherwise Nuxt's built-in `<appDir>/components/nuxt-error-page.vue`
+ * (nuxt 4.4 `resolveApp`). Replacing only that built-in gives every app the
+ * estate error page with no file of its own, while an app that ships its own
+ * `app/error.vue` still wins. Apps consume this package as a module rather than
+ * a layer, so the layer-directory path Nuxt scans never reaches it.
+ */
+function addFallbackErrorPage(
+  nuxt: {
+    hook: (name: 'app:resolve', handler: (app: { errorComponent?: string | null }) => void) => void
+  },
+  src: string,
+): void {
+  nuxt.hook('app:resolve', (app) => {
+    const current = app.errorComponent
+    if (current && !nuxtBuiltInErrorComponentPattern.test(current.replaceAll('\\', '/'))) return
+    app.errorComponent = src
   })
 }
 
@@ -583,7 +606,9 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.client'))
       addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
       addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
+      addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
       addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
+      addFallbackErrorPage(nuxt, resolver.resolve('../runtime/app/error.vue'))
       addFallbackLayout(
         nuxt,
         { src: resolver.resolve('../runtime/app/layouts/dashboard.vue') },

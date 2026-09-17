@@ -93,8 +93,15 @@ export function resolveLoggingOptions(event?: H3Event): RequestLoggingOptions {
   const legacy = event ? resolveLogLevel(event) : resolveSharedLevel(config.logLevel, 'warn')
   const configured = resolveSharedLevel(settings.level, legacy)
   const override = readWorkerRuntimeEnv(event).LOG_LEVEL
+  const buildVersion = publicConfig.buildVersion
   return {
     ...settings,
+    // Every server record carries the deployed commit, so a spike in the logs
+    // can be tied to the release that introduced it without a second lookup.
+    context: {
+      ...settings.context,
+      ...(typeof buildVersion === 'string' && buildVersion !== '' ? { buildVersion } : {}),
+    },
     service:
       settings.service ||
       (typeof publicConfig.appName === 'string' ? publicConfig.appName : 'narduk-app'),

@@ -1,25 +1,31 @@
 <script setup lang="ts">
 import type { NuxtError } from '#app'
+import {
+  clearError,
+  computed,
+  reloadNuxtApp,
+  useHead,
+  useRuntimeConfig,
+  useSeoMeta,
+} from '#imports'
+
+import { useRequestId } from './composables/useRequestId'
+import { resolveErrorDetail, resolveErrorPresentation, resolveErrorStatusCode } from './error-page'
 
 const props = defineProps<{
   error: NuxtError
 }>()
 
-const title = computed(() => {
-  const code = props.error.statusCode
-  if (code === 404) return 'Page not found'
-  if (code === 403) return 'Access denied'
-  if (code === 401) return 'Not authenticated'
-  return 'Something went wrong'
-})
+const runtimeConfig = useRuntimeConfig()
+const requestId = useRequestId()
 
-const description = computed(() => {
-  const code = props.error.statusCode
-  if (code === 404) return "The page you're looking for doesn't exist or has been moved."
-  if (code === 403) return "You don't have permission to access this resource."
-  if (code === 401) return 'Please sign in to access this page.'
-  return 'An unexpected error occurred. Please try again later.'
-})
+const statusCode = computed(() => resolveErrorStatusCode(props.error.statusCode))
+const presentation = computed(() => resolveErrorPresentation(props.error.statusCode))
+const title = computed(() => presentation.value.title)
+const description = computed(() => presentation.value.description)
+const detail = computed(() =>
+  resolveErrorDetail(props.error.message, runtimeConfig.public.previewSafeMode === true),
+)
 
 function handleError() {
   void clearError({ redirect: '/' })
@@ -33,7 +39,7 @@ function refreshPage() {
 }
 
 useSeoMeta({
-  title: () => `${props.error.statusCode ?? 'Error'} — ${title.value}`,
+  title: () => `${statusCode.value} — ${title.value}`,
   description: () => description.value,
 })
 
@@ -43,36 +49,62 @@ useHead({
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-default px-4">
+  <div
+    class="min-h-screen flex items-center justify-center bg-default px-4"
+    data-testid="error-page"
+  >
     <div class="text-center max-w-md">
       <!-- Error code -->
-      <p class="text-7xl font-bold font-display text-primary mb-2">
-        {{ error.statusCode ?? 500 }}
+      <p class="text-7xl font-bold font-display text-primary mb-2" data-testid="error-page-status">
+        {{ statusCode }}
       </p>
 
       <!-- Title -->
-      <h1 class="text-2xl font-semibold text-primary mb-3">
+      <h1 class="text-2xl font-semibold text-primary mb-3" data-testid="error-page-title">
         {{ title }}
       </h1>
 
       <!-- Description -->
-      <p class="text-muted mb-8">
+      <p class="text-muted mb-8" data-testid="error-page-description">
         {{ description }}
       </p>
 
       <!-- Actions -->
       <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <UButton size="lg" icon="i-lucide-home" @click="handleError"> Go Home </UButton>
+        <UButton size="lg" icon="i-lucide-home" data-testid="error-page-home" @click="handleError">
+          Go Home
+        </UButton>
         <UButton
           size="lg"
           variant="ghost"
           color="neutral"
           icon="i-lucide-refresh-cw"
+          data-testid="error-page-retry"
           @click="refreshPage"
         >
           Try Again
         </UButton>
       </div>
+
+      <!--
+        The correlation id support asks for. It is the same value `x-request-id`
+        carries and the same one every narduk-logging server record is keyed by.
+      -->
+      <p v-if="requestId" class="text-muted text-xs mt-8">
+        Request ID
+        <code data-testid="error-page-request-id" class="font-mono select-all">{{
+          requestId
+        }}</code>
+      </p>
+
+      <!-- Preview and staging only; never shown to production traffic. -->
+      <p
+        v-if="detail"
+        data-testid="error-page-detail"
+        class="text-muted text-xs mt-3 font-mono break-words"
+      >
+        {{ detail }}
+      </p>
     </div>
   </div>
 </template>
