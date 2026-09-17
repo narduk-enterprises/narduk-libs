@@ -75,6 +75,68 @@ intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.
 
+## security.txt (RFC 9116)
+
+`/.well-known/security.txt` is off until the app sets a contact. The package
+does not invent a reporting address. When `contact` is present, the module bakes
+an RFC 9116 body at build time and serves it from `/.well-known/security.txt`
+and `/security.txt` with `Content-Type: text/plain; charset=utf-8`. `Expires` is
+build time plus `expiresDays` (default 365, maximum 365). Enabling the option
+without a contact is a build-time error.
+
+```ts
+export default defineNuxtConfig({
+  nardukSeo: {
+    securityTxt: {
+      contact: 'mailto:security@example.com',
+      // expiresDays: 365,
+      // policy: 'https://example.com/security',
+      // acknowledgments: 'https://example.com/hall-of-fame',
+      // preferredLanguages: ['en'],
+      // canonical: 'https://example.com/.well-known/security.txt',
+    },
+  },
+})
+```
+
+`contact` accepts a mailto:, https:, or tel: URI, a bare email (prefixed with
+`mailto:`), or an array of those. `policy`, `acknowledgments`, and `canonical`
+must be `https://` URIs. No field may contain a line break (`\r` or `\n`) —
+security.txt is one field per line, so an embedded line break could inject an
+extra field; the module throws a build-time error instead.
+
+**`Expires` is baked in at build time and never refreshes on its own.** An app
+that goes a year or more without a redeploy will start serving a stale (or
+outright expired) security.txt with no other signal. This package does not add a
+health-check integration for it — the served route logs one `console.warn` per
+isolate when `Expires` is at or within 30 days of passing, which is enough to
+show up in existing log/error tooling. Redeploying refreshes `Expires`, so apps
+that expect to go a long time between deploys should either redeploy
+periodically or set a shorter `expiresDays`.
+
+## AI-crawler policy
+
+`nardukSeo.aiCrawlers` adds extra `@nuxtjs/robots` groups. It does not install a
+second robots.txt generator. The default is `'allow'`, which emits no extra
+groups, so apps that set nothing keep today's robots.txt.
+
+```ts
+export default defineNuxtConfig({
+  nardukSeo: {
+    // Block every known AI crawler:
+    aiCrawlers: 'disallow',
+    // Or name them (must be members of AI_CRAWLERS):
+    // aiCrawlers: { allow: ['GPTBot'], disallow: ['CCBot'] },
+  },
+})
+```
+
+The maintained list is exported as `AI_CRAWLERS` from the package root and from
+`@narduk-enterprises/narduk-seo/shared/aiCrawlers`: GPTBot, ChatGPT-User,
+OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai, Google-Extended,
+PerplexityBot, CCBot, Bytespider, Amazonbot, Applebot-Extended,
+meta-externalagent, cohere-ai.
+
 ## Narduk network directory
 
 **The directory endpoint is injectable and has no default. It is off unless you

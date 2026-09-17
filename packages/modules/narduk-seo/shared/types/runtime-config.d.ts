@@ -1,3 +1,11 @@
+interface SeoPrivateRuntimeConfig {
+  /**
+   * RFC 9116 security.txt body baked at build from `nardukSeo.securityTxt`.
+   * `null` when the app has not set a contact; this package never invents one.
+   */
+  nardukSeoSecurityTxt: string | null
+}
+
 interface SeoPublicRuntimeConfig {
   /** App-owned public fallback; null until the app supplies a real asset. */
   nardukSeoDefaultImage: { url: string; alt: string } | null
@@ -35,10 +43,12 @@ interface SeoPublicRuntimeConfig {
 }
 
 declare module 'nuxt/schema' {
+  interface RuntimeConfig extends SeoPrivateRuntimeConfig {}
   interface PublicRuntimeConfig extends SeoPublicRuntimeConfig {}
 }
 
 declare module '@nuxt/schema' {
+  interface RuntimeConfig extends SeoPrivateRuntimeConfig {}
   interface PublicRuntimeConfig extends SeoPublicRuntimeConfig {}
 }
 

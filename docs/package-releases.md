@@ -53,6 +53,79 @@ mode-0600 temporary home for its git push credential, created only after the
 dependency install and removed on exit. The release's exact version registry
 proof uses the same temporary token config.
 
+## Packed consumer preparation
+
+Contracts run alongside the selected package and integration jobs. On a
+contracts failure in a same-repository pull request, a separate job cancels
+queued and running work in that CI run without adding a dependency barrier to
+successful runs. Only this checkout-free job gets `actions: write`; GitHub's
+normal cancellation still lets the final `verify` report the failed gates.
+Cancellation takes effect after GitHub schedules the handler and processes the
+request. Fork and Dependabot runs have read-only tokens, so they retain the
+failed `verify` gate but cannot cancel their sibling jobs. Pushes to `main` are
+never cancelled this way: GitHub concludes a cancelled run as "cancelled", not
+"failure", which hid a red `main` twice on 2026-09-17. A broken `main` runs to
+completion and shows a failed run.
+
+`node scripts/prepare-packed-consumer.mjs` builds every publishable workspace
+package and its dependency closure with two concurrent Turbo tasks by default.
+CI uses `--build-concurrency=4` on its public Ubuntu runner (4 CPUs, 16 GiB) and
+passes `--install-browser` to `release:consumer-smoke`. Chromium and its Linux
+libraries install alongside packing and consumer installation, so browser setup
+stays off the critical path even with warm build caches. The smoke script waits
+for setup and checks its result before validating the browser toolchain; an
+earlier failure also waits for the installer before cleaning up. Private
+applications such as the design preview keep their normal package CI gate, but
+are not built solely to prepare tarballs they never publish.
+
+The smoke script packs each library once and runs strict `publint` against that
+same tarball before installing it outside the workspace. Its generated-app
+typecheck, build, browser, migration, performance and deployment checks remain
+intact. Nuxt phases stay sequential because they share generated files and local
+runtime state. The pnpm store may fall back to an older main cache across
+lockfile changes; frozen installs and artifact validation remain mandatory.
+
+The disposable app disables the unused Fontshare catalog through Nuxt Fonts'
+`fonts:providers` hook. The fixture's Inter/OG font assets still resolve through
+the other providers and remain subject to the browser's missing-resource checks.
+This removes unrelated Fontshare network retries without changing published
+modules or generated production apps. The build must report that the fixture
+hook activated.
+
+### Consumer scope
+
+The affected-package planner selects two levels of consumer proof. Both use the
+same `release:consumer-smoke` command locally and in CI:
+
+- **Packed artifacts** (`--artifacts-only`): pack and strictly lint every
+  publishable package, install the coordinated tarballs outside the workspace,
+  check versions and export resolution, execute testkit imports and its CLI,
+  then execute the packed generator and validate its manifests and references.
+  This mode never installs Chromium or the generated app, runs Nuxt/browser/D1
+  integration, or produces a reusable generated-app proof.
+- **Generated app** (the default): all artifact checks plus the generated app's
+  initial/frozen installs, typecheck, build, browser tests, D1 migrations,
+  performance budget, and deployment dry-run. Existing exact-input PR-to-main
+  proof reuse remains available only for this level.
+
+The app's inputs come from the generator's manifest factories and the shared
+smoke fixture options in `scripts/consumer-smoke-fixture.mjs`. Selection
+includes runtime, peer, optional, and build dependencies, plus the generator
+itself; there is no package-name allowlist to maintain. The packed generator's
+actual manifests are checked against that scope before the artifact-only path
+can pass. For example, a charts or geogrid source change still gets artifact
+validation, but does not build a generated Nuxt app that never installs that
+package.
+
+Shared repository inputs and unclassified paths select the full proof. Release
+PRs/commits, manual workflow dispatch, and `ci:full` also select full
+validation. Docs, changeset-only and package-test-only changes retain their
+existing skips. A private preview-only change keeps its own package gates; a
+private helper used by a publishable package still selects consumer validation.
+The final `verify` check rejects missing or contradictory selection outputs.
+Only full app runs upload `packed-consumer-proof`, so an artifact-only pass
+cannot be reused as browser or D1 evidence.
+
 ## When a Changeset is required
 
 `pnpm run release-plan:check` decides this in the `contracts` gate. It compares

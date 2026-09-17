@@ -19,6 +19,9 @@ describe('narduk-seo package exports', () => {
     expect(packageJson.exports['./app/composables/*']).toEqual({
       import: './app/composables/*.ts',
     })
+    expect(packageJson.exports['./shared/*']).toEqual({
+      import: './shared/*.ts',
+    })
   })
 
   it('ships immutable OG image renderer dependencies', () => {
