@@ -1,3 +1,4 @@
+import { useLogger } from '#layer/server/utils/logger'
 import { clearLayerUserSession, replaceLayerUserSession } from '#layer/server/utils/user-session'
 
 import {
@@ -59,13 +60,25 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
     return null
   }
 
-  const authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
+  let authSession
+  let dbUser
+  try {
+    authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
+    if (authSession) {
+      dbUser = await loadAuthUserRow(event, sessionUser.id)
+    }
+  } catch (error) {
+    useLogger(event)
+      .child('AppAuth')
+      .warn('Auth session lookup failed; request is unauthenticated', { error })
+    return null
+  }
+
   if (!authSession) {
     await clearLayerUserSession(event)
     return null
   }
 
-  const dbUser = await loadAuthUserRow(event, sessionUser.id)
   if (!dbUser) {
     await clearLayerUserSession(event)
     return null
@@ -106,7 +119,10 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
     if (isRecoverableSupabaseSessionFailure(error)) {
       return sessionUser
     }
-    throw error
+    useLogger(event)
+      .child('AppAuth')
+      .warn('Auth session refresh failed; request is unauthenticated', { error })
+    return null
   }
 }
 

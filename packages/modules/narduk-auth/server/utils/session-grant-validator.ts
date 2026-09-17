@@ -1,3 +1,4 @@
+import { useLogger } from '#layer/server/utils/logger'
 import { setSessionGrantValidator } from '#layer/server/utils/sessionGrant'
 
 import { assertSessionPrivilegeAllowsRequest } from './session-privilege'
@@ -22,13 +23,18 @@ export async function validateRegisteredAuthSessionGrant(
   event: H3Event,
   _sessionUser: unknown,
 ): Promise<SessionGrantValidation> {
-  const user = await useRefreshedSessionUser(event)
-  if (!user) {
+  try {
+    const user = await useRefreshedSessionUser(event)
+    if (!user) {
+      return { status: 'invalid' }
+    }
+
+    assertSessionPrivilegeAllowsRequest(event, user)
+    return { status: 'valid', user }
+  } catch (error) {
+    useLogger(event).child('AppAuth').warn('Auth session grant validation failed closed', { error })
     return { status: 'invalid' }
   }
-
-  assertSessionPrivilegeAllowsRequest(event, user)
-  return { status: 'valid', user }
 }
 
 export function attachAuthSessionGrantValidator(event: H3Event): void {

@@ -8,5 +8,10 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  await useRefreshedSessionUser(event)
+  try {
+    await useRefreshedSessionUser(event)
+  } catch {
+    // A thrown lookup must not 500 the page. The grant validator fails
+    // the request closed without clearing the cookie.
+  }
 })

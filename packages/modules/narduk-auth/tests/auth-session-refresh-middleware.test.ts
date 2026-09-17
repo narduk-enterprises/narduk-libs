@@ -48,4 +48,10 @@ describe('auth-session-refresh middleware', () => {
     await handler({ path: '/api/notifications' })
     expect(useRefreshedSessionUser).toHaveBeenCalledTimes(2)
   })
+
+  it('does not 500 when session refresh throws; the request proceeds unauthenticated', async () => {
+    useRefreshedSessionUser.mockRejectedValueOnce(new Error('D1 unavailable'))
+    await expect(handler({ path: '/dashboard' })).resolves.toBeUndefined()
+    expect(useRefreshedSessionUser).toHaveBeenCalledTimes(1)
+  })
 })

@@ -6,6 +6,7 @@ import type { H3Event } from 'h3'
 const state = vi.hoisted(() => ({
   clearCalls: 0,
   lookups: 0,
+  lookupError: null as Error | null,
   row: null as null | {
     aal?: string | null
     expiresAt: number
@@ -38,6 +39,7 @@ vi.mock('../server/utils/app-auth', () => ({
 vi.mock('../server/lib/app-auth/session', () => ({
   loadAuthSessionRow: async (_event: H3Event, authSessionId: string) => {
     state.lookups += 1
+    if (state.lookupError) throw state.lookupError
     if (state.row && state.row.id === authSessionId) return state.row
     return null
   },
@@ -81,6 +83,7 @@ describe('web session grant validation', () => {
   beforeEach(() => {
     state.clearCalls = 0
     state.lookups = 0
+    state.lookupError = null
     state.row = null
     state.dbUser = {
       id: 'user-1',
@@ -155,6 +158,22 @@ describe('web session grant validation', () => {
     await expect(validateRegisteredAuthSessionGrant(event(), state.user)).resolves.toEqual({
       status: 'invalid',
     })
+  })
+
+  it('treats a throwing session lookup as invalid and does not clear the cookie', async () => {
+    state.user = cookieUser()
+    state.lookupError = new Error('D1 unavailable')
+    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
+    const { validateRegisteredAuthSessionGrant } =
+      await import('../server/utils/session-grant-validator')
+    const request = event()
+
+    await expect(useRefreshedSessionUser(request)).resolves.toBeNull()
+    expect(state.clearCalls).toBe(0)
+    await expect(validateRegisteredAuthSessionGrant(event(), state.user)).resolves.toEqual({
+      status: 'invalid',
+    })
+    expect(state.clearCalls).toBe(0)
   })
 
   it('hits D1 at most once per request for the same session', async () => {
