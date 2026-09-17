@@ -125,6 +125,10 @@ const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul']
 </template>
 ```
 
+Default time-axis labels used to follow the host locale and zone. They are now
+pinned to `en-US` / UTC with a 12-hour clock. Pass `timeZone` (IANA) for local
+labels, or `formatTime` to own the string.
+
 #### Props
 
 | Prop                              | Type                    | Default                                        | Description                                                                                                                                                                                                                                                                                                         |
