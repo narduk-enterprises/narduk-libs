@@ -17,10 +17,16 @@ const browserRoute =
 
 function setupSteps(): string[] {
   return [
-    '      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0',
+    // Both pins verified tag-to-SHA against api.github.com on 2026-09-16 and
+    // both were that action's latest release. The generator was a release
+    // behind the reference app on each, which Dependabot had already bumped
+    // there -- found by running `create-narduk-app upgrade` against Buoys
+    // (narduk-libs#U1), which is exactly the direction this codemod is meant
+    // to surface: the app was right, so the template moved.
+    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
     '        with:',
     '          persist-credentials: false',
-    '      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9',
+    '      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0',
     '        with:',
     '          version: 10.33.4',
     '          dest: ${{ runner.temp }}/setup-pnpm',

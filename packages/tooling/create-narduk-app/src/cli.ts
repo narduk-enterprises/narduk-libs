@@ -6,13 +6,17 @@ import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { createNardukApp } from './generate.js'
+import { MANAGED_TARGETS } from './ownership.js'
+import { formatUpgradeReport, upgradeNardukApp } from './upgrade.js'
 import { CreateNardukAppError, GENERATED_DATABASE_BACKENDS } from './types.js'
 import type {
+  AppVisibility,
   CreateNardukAppCliOptions,
   CreateNardukAppOptions,
   GeneratedDatabaseBackend,
   ProductSpec,
 } from './types.js'
+import type { UpgradeNardukAppOptions } from './upgrade.js'
 
 function usage(): string {
   return (
@@ -41,8 +45,117 @@ function usage(): string {
       '  --force                     Permit writing into a non-empty directory',
       '  --json                      Print only the machine-readable report',
       '  --help                      Show this help',
+      '',
+      'Usage: create-narduk-app upgrade [dir] [options]',
+      '',
+      'Re-applies the generator-owned units of an existing Narduk app. Dry run by',
+      'default: prints a unified diff and exits 1 when a managed unit has drifted,',
+      'so CI can run it as a check. Everything else in the app is left alone.',
+      '',
+      'Options:',
+      '  --write                     Apply the changes (default: report only)',
+      '  --only <path>               Limit to one managed path; may be repeated',
+      '  --capabilities <list>       Override the inferred capability list',
+      '  --database <value>          Override the inferred backend: d1 or none',
+      '  --local-dev-port <port>     Override the inferred local Nuxt port',
+      '  --visibility <value>        Override the inferred repository visibility',
+      '  --json                      Print only the machine-readable report',
+      '',
+      'Managed units:',
+      ...MANAGED_TARGETS.map((target) => {
+        const width = Math.max(...MANAGED_TARGETS.map((entry) => entry.path.length)) + 2
+        return '  ' + target.path.padEnd(width) + target.mode + ' — ' + target.unit
+      }),
     ].join('\n') + '\n'
   )
+}
+
+export function parseUpgradeArguments(
+  argv: readonly string[],
+  currentCwd = cwd(),
+): { json: boolean; options: UpgradeNardukAppOptions } {
+  const positional: string[] = []
+  const only: string[] = []
+  let capabilities: string | undefined
+  let databaseBackend: GeneratedDatabaseBackend | undefined
+  let localPort: number | undefined
+  let visibility: AppVisibility | undefined
+  let write = false
+  let jsonOutput = false
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]
+    if (!argument) continue
+    if (argument === '--help' || argument === '-h') throw new CreateNardukAppError(usage())
+    if (!argument.startsWith('-')) {
+      positional.push(argument)
+      continue
+    }
+    if (argument === '--write') {
+      write = true
+      continue
+    }
+    if (argument === '--json') {
+      jsonOutput = true
+      continue
+    }
+
+    const [flag] = argument.split('=', 1)
+    const parsed = readOptionValue(argument, argv, index)
+    index += parsed.consumed
+    switch (flag) {
+      case '--only':
+        only.push(parsed.value)
+        break
+      case '--capabilities':
+        capabilities = parsed.value
+        break
+      case '--database':
+      case '--database-backend': {
+        if (!(GENERATED_DATABASE_BACKENDS as readonly string[]).includes(parsed.value)) {
+          throw new CreateNardukAppError(
+            `--database must be ${GENERATED_DATABASE_BACKENDS.join(' or ')}.`,
+          )
+        }
+        databaseBackend = parsed.value as GeneratedDatabaseBackend
+        break
+      }
+      case '--local-dev-port':
+      case '--local-port': {
+        const parsedPort = Number(parsed.value)
+        if (!Number.isInteger(parsedPort)) {
+          throw new CreateNardukAppError('--local-dev-port must be an integer.')
+        }
+        localPort = parsedPort
+        break
+      }
+      case '--visibility':
+        if (parsed.value !== 'private' && parsed.value !== 'public') {
+          throw new CreateNardukAppError('--visibility must be private or public.')
+        }
+        visibility = parsed.value
+        break
+      default:
+        throw new CreateNardukAppError('Unknown option "' + flag + '".')
+    }
+  }
+
+  if (positional.length > 1) {
+    throw new CreateNardukAppError('Only one directory may be provided.')
+  }
+
+  return {
+    json: jsonOutput,
+    options: {
+      capabilities,
+      databaseBackend,
+      localPort,
+      only,
+      targetDir: resolve(currentCwd, positional[0] ?? '.'),
+      visibility,
+      write,
+    },
+  }
 }
 
 function nextValue(argv: readonly string[], index: number, flag: string): string {
@@ -223,6 +336,17 @@ export async function runCli(options: CreateNardukAppCliOptions = {}): Promise<n
   }
 
   try {
+    if (argv[0] === 'upgrade') {
+      const parsed = parseUpgradeArguments(argv.slice(1), options.cwd ?? cwd())
+      const report = await upgradeNardukApp(parsed.options)
+      output.write(
+        parsed.json ? JSON.stringify(report, null, 2) + '\n' : formatUpgradeReport(report),
+      )
+      // Dry run is a check: drift is a non-zero exit so CI can gate on it.
+      // `--write` has already applied that drift, so it reports success.
+      return !parsed.options.write && report.driftCount > 0 ? 1 : 0
+    }
+
     const parsed = parseCliArguments(argv, options.cwd ?? cwd())
     const report = await createNardukApp(parsed.options)
     output.write(
