@@ -1175,14 +1175,30 @@ merely a suite that never looks.
 
 HTML rendered with one reader's units must never be served to another reader out
 of a shared cache. Calling `usePreferences()` during SSR, or `readPreferences()`
-in a route, marks the response, and the marked response is forced to
-`Cache-Control: private, no-store` with `Vary: Cookie` in two places:
+in a route, marks the response. A marked response is forced to
+`Cache-Control: private, no-store` with `Vary: Cookie, Accept-Language`, and
+every shared-cache header is **removed** — `CDN-Cache-Control`,
+`Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`, `Expires`, and
+`Age`. Cloudflare honours `CDN-Cache-Control` over `Cache-Control`; leaving it
+in place would store the body at the edge even with `private, no-store`.
 
+That rewrite happens in three places so call order cannot leak a shared profile:
+
+- **`markPreferencesInfluenced`** (called by `usePreferences()` /
+  `readPreferences()`) strips any cache headers already written on the event.
 - **`setCacheProfile`** gains a `preferences-cookie` suppression reason, so a
-  route that reads preferences cannot advertise a shared-cacheable profile.
-- **The `preferences-cache` Nitro plugin** does the same for the rendered SSR
-  document on `render:response`, which is the response that actually carries the
-  preference-shaped HTML.
+  route that reads preferences cannot advertise a shared-cacheable profile, and
+  on suppression it deletes the CDN/tag headers rather than leaving a leftover
+  `CDN-Cache-Control` from an earlier `setCacheProfile('live')`.
+- **The `preferences-cache` Nitro plugin** re-checks the flag on
+  `render:response` (SSR HTML) **and** `beforeResponse` (every response,
+  including API routes). `render:response` does not run for `defineEventHandler`
+  routes.
+
+`Accept-Language` is in `Vary` because a tz-only cookie
+(`v=1&tz=America/Chicago`) still derives locale and units from that header. Two
+Chicago readers, `en-US` vs `de-DE`, share the cookie value and must not share a
+cache key.
 
 Nothing downgrades a response that never read preferences, so **an app's
 existing cache profiles are unchanged** — Buoys' `live`/`slow`/`static` routes
@@ -1191,6 +1207,25 @@ keep exactly the headers they have today until they opt a value in.
 An app that needs its SSR HTML edge-cached should therefore not format on the
 server: return canonical SI values from a shared-cacheable route and bind the
 formatters in the browser, where the preference cookie costs nothing.
+
+#### Incompatible with Nitro `routeRules` `swr` / `cache` / `isr`
+
+Nitro `routeRules: { '/stations': { swr: 60 } }` (and `cache` / `isr`) wraps the
+page in `cachedEventHandler`. That cache keys on the path only, stores the first
+reader's HTML, and **replays it without re-running the page, the formatters, or
+this plugin**. HTTP `private, no-store` on the first response cannot prevent
+that: the wrapper overwrites `Cache-Control` with `s-maxage` and serves reader
+A's Fahrenheit to everyone.
+
+A page that calls `usePreferences()` / `useFormatters()` **must not** sit behind
+those rules. Drop the cache rule on that route, or format in the browser. This
+is not statically knowable at module setup — whether a given page reads
+preferences is a runtime fact — so the module does not fail the build. In
+development, a preference-influenced response produced inside a Nitro cached
+handler (`event.context.cache`, the marker Nitro sets) logs a one-time
+`console.warn` for that path. Several estate apps already use `swr` (tx-spends,
+papa-everetts); those pages must not adopt the formatters until the rule is
+gone.
 
 ### The formatters
 
@@ -1218,6 +1253,9 @@ Rules the whole suite keeps:
 
 - **No ambient clock, zone or locale.** `timeZone` and `locale` are arguments;
   absent, the fixed fallbacks `UTC` and `en-US` apply, never the host's.
+  Offset-less date-time strings (`2026-03-08T00:00:00`) are UTC, never the host
+  zone. A bare `YYYY-MM-DD` is a floating calendar date in `formatZonedDate`
+  only, so Chicago does not render it as the previous day.
 - **Absent input has one answer.** `null`, `undefined`, `NaN`, `Infinity` and an
   unparseable date all render an em dash (`NE_EMPTY_VALUE`), overridable per
   call with `empty`. No call site has to guard and no reader ever sees `NaN ft`.

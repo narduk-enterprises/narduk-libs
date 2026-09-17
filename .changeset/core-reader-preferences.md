@@ -28,11 +28,16 @@ with `renderToString`, hydrates that markup with a real
 reproduces the naive implementation and requires the warning to appear.
 
 **Cache safety.** Reading preferences during SSR marks the response, and a
-marked response is forced to `private, no-store` with `Vary: Cookie` — by
-`setCacheProfile` (new `preferences-cookie` suppression reason) for a route that
-sets its own posture, and by the new `preferences-cache` Nitro plugin for the
-rendered SSR document. Nothing downgrades a response that never read
-preferences, so existing app cache profiles are unchanged.
+marked response is forced to `private, no-store` with
+`Vary: Cookie, Accept-Language`. Shared-cache headers (`CDN-Cache-Control`,
+`Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`) are removed so
+Cloudflare cannot ignore `Cache-Control`. Marking strips headers already
+written; `setCacheProfile` (new `preferences-cookie` suppression reason) and the
+`preferences-cache` plugin (`render:response` and `beforeResponse`) re-check the
+flag so call order cannot leak a shared profile. Nitro `routeRules`
+`swr`/`cache`/`isr` is incompatible with preference-shaped pages and is
+documented as such. Nothing downgrades a response that never read preferences,
+so existing app cache profiles are unchanged.
 
 **The formatters** are standalone pure functions over SI inputs, so importing
 one does not ship the rest: `formatDistance`, `formatSpeed`,

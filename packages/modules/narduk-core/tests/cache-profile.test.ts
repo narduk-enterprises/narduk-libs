@@ -10,6 +10,7 @@ import {
   resolveCacheProfile,
   setCacheProfile,
 } from '../runtime/server/utils/cacheProfile'
+import { readPreferences } from '../runtime/server/utils/preferences'
 import { markPreferencesInfluenced } from '../runtime/shared/utils/preferences'
 
 import type {
@@ -20,6 +21,18 @@ import type { H3Event } from 'h3'
 
 const NO_STORE = 'private, no-store'
 const ACCEPT_ENCODING = 'Accept-Encoding'
+const HEADER_CACHE_CONTROL = 'cache-control'
+const HEADER_CDN_CACHE_CONTROL = 'cdn-cache-control'
+const VARY_COOKIE = 'cookie'
+const VARY_ACCEPT_LANGUAGE = 'accept-language'
+const VARY_ACCEPT_ENCODING = 'accept-encoding'
+
+function varyTokens(headers: Headers): string[] {
+  return (headers.get('vary') ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+}
 
 const { overlay, runtime } = vi.hoisted(() => ({
   overlay: { previewSafeMode: false },
@@ -62,9 +75,9 @@ function cacheHeaders(input: CacheProfileInput, options?: SetCacheProfileOptions
   return respond((event) => {
     setCacheProfile(event, input, options)
   }).then(({ headers }) => ({
-    cacheControl: headers.get('cache-control'),
+    cacheControl: headers.get(HEADER_CACHE_CONTROL),
     cacheTag: headers.get('cache-tag'),
-    cdnCacheControl: headers.get('cdn-cache-control'),
+    cdnCacheControl: headers.get(HEADER_CDN_CACHE_CONTROL),
     vary: headers.get('vary'),
   }))
 }
@@ -184,8 +197,8 @@ describe('no-cache guards', () => {
       setCacheProfile(event, 'live', { tags: ['stations'] })
     })
     expect(status).toBe(503)
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
 
@@ -194,8 +207,8 @@ describe('no-cache guards', () => {
       event.node.res.setHeader('Set-Cookie', 'session=abc; Path=/')
       setCacheProfile(event, 'live', { tags: ['stations'] })
     })
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
 
@@ -315,8 +328,9 @@ describe('preference-influenced responses', () => {
   /**
    * A body whose units, time zone or locale came from the reader's preference
    * cookie belongs to that reader (narduk-libs#386). Reading preferences marks
-   * the event; the profile is then forced to `none` with `Vary: Cookie`, and a
-   * route that never touched preferences is unaffected.
+   * the event; the profile is then forced to `none` with `Vary: Cookie,
+   * Accept-Language`, leftover CDN headers are stripped, and a route that never
+   * touched preferences is unaffected.
    */
   it('downgrades a shared-cacheable profile to private, no-store', async () => {
     const { headers } = await respond((event) => {
@@ -324,9 +338,9 @@ describe('preference-influenced responses', () => {
       setCacheProfile(event, 'live')
     })
 
-    expect(headers.get('cache-control')).toBe(NO_STORE)
-    expect(headers.get('cdn-cache-control')).toBeNull()
-    expect(headers.get('vary')).toBe('Cookie')
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
+    expect(varyTokens(headers)).toEqual(expect.arrayContaining([VARY_COOKIE, VARY_ACCEPT_LANGUAGE]))
   })
 
   it('reports the suppression so a caller can see why', async () => {
@@ -345,7 +359,9 @@ describe('preference-influenced responses', () => {
       setCacheProfile(event, 'live', { vary: [ACCEPT_ENCODING] })
     })
 
-    expect(headers.get('vary')).toBe('Accept-Encoding, Cookie')
+    expect(varyTokens(headers)).toEqual(
+      expect.arrayContaining([VARY_ACCEPT_ENCODING, VARY_COOKIE, VARY_ACCEPT_LANGUAGE]),
+    )
   })
 
   it('changes nothing for a route that never read preferences', async () => {
@@ -354,5 +370,64 @@ describe('preference-influenced responses', () => {
       cdnCacheControl: 'public, max-age=300, stale-while-revalidate=900',
       vary: null,
     })
+  })
+
+  it('downgrades when setCacheProfile runs before the event is marked', async () => {
+    const { headers } = await respond((event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+      markPreferencesInfluenced(event)
+    })
+
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
+    expect(headers.get('cloudflare-cdn-cache-control')).toBeNull()
+    expect(headers.get('surrogate-control')).toBeNull()
+    expect(headers.get('cache-tag')).toBeNull()
+  })
+
+  it('stays private when setCacheProfile is called again after a mark', async () => {
+    const { headers } = await respond((event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+      markPreferencesInfluenced(event)
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+    })
+
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
+    expect(headers.get('cache-tag')).toBeNull()
+  })
+
+  it('downgrades when the documented call order is setCacheProfile then readPreferences', async () => {
+    const { headers } = await respond((event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+      readPreferences(event)
+    })
+
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get(HEADER_CDN_CACHE_CONTROL)).toBeNull()
+    expect(headers.get('cache-tag')).toBeNull()
+  })
+
+  it('merges Cookie and Accept-Language into Vary on a marked response', async () => {
+    const { headers } = await respond((event) => {
+      markPreferencesInfluenced(event)
+      setCacheProfile(event, 'live', { vary: [ACCEPT_ENCODING] })
+    })
+
+    expect(varyTokens(headers)).toEqual(
+      expect.arrayContaining([VARY_ACCEPT_ENCODING, VARY_COOKIE, VARY_ACCEPT_LANGUAGE]),
+    )
+  })
+
+  it('does not clobber an existing Accept-Language Vary token', async () => {
+    const { headers } = await respond((event) => {
+      event.node.res.setHeader('Vary', 'Accept-Language')
+      markPreferencesInfluenced(event)
+      setCacheProfile(event, 'live')
+    })
+
+    const vary = varyTokens(headers)
+    expect(vary.filter((name) => name === VARY_ACCEPT_LANGUAGE)).toHaveLength(1)
+    expect(vary).toEqual(expect.arrayContaining([VARY_ACCEPT_LANGUAGE, VARY_COOKIE]))
   })
 })

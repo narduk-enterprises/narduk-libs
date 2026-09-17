@@ -19,10 +19,11 @@ import type { H3Event } from 'h3'
  * preference-dependent content itself.
  *
  * Reading them marks the response as preference-influenced, so `setCacheProfile`
- * downgrades it to `private, no-store` with `Vary: Cookie` rather than letting
- * one reader's units reach another reader out of a shared cache. A route that
- * wants a shared-cacheable response must return canonical SI values and let the
- * browser format them, not call this.
+ * and the `preferences-cache` plugin downgrade it to `private, no-store` with
+ * `Vary: Cookie, Accept-Language`, stripping leftover CDN headers, rather than
+ * letting one reader's units reach another reader out of a shared cache. A
+ * route that wants a shared-cacheable response must return canonical SI values
+ * and let the browser format them, not call this.
  */
 export function readPreferences(event: H3Event): NePreferences {
   markPreferencesInfluenced(event)

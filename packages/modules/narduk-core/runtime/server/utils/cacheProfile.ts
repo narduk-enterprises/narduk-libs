@@ -1,4 +1,4 @@
-import { getResponseHeader, getResponseStatus, setResponseHeader } from 'h3'
+import { getResponseHeader, getResponseStatus, removeResponseHeader, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { isPreferencesInfluenced } from '../../shared/utils/preferences'
@@ -283,10 +283,12 @@ export function setCacheProfile(
   input: CacheProfileInput,
   options: SetCacheProfileOptions = {},
 ): CacheProfileResult {
-  // A preference-influenced response varies by cookie whatever the caller
-  // asked for, so `Cookie` is merged in before the guards read `Vary`.
+  // A preference-influenced response varies by cookie and Accept-Language
+  // whatever the caller asked for, so those names are merged in before the
+  // guards read `Vary`. Locale and units still come from Accept-Language when
+  // the cookie carries only a time zone.
   const requestedVary = isPreferencesInfluenced(event)
-    ? [...(options.vary ?? []), 'Cookie']
+    ? [...(options.vary ?? []), 'Cookie', 'Accept-Language']
     : options.vary
   const vary = normalizeVary(readResponseHeader(event, 'Vary'), requestedVary)
   const suppressedBy = findSuppression(event, vary)
@@ -298,8 +300,20 @@ export function setCacheProfile(
   const cacheTag = tags.length > 0 ? tags.join(',') : undefined
 
   setResponseHeader(event, 'Cache-Control', cacheControl)
-  if (cdnCacheControl) setResponseHeader(event, 'CDN-Cache-Control', cdnCacheControl)
-  if (cacheTag) setResponseHeader(event, 'Cache-Tag', cacheTag)
+  if (cdnCacheControl) {
+    setResponseHeader(event, 'CDN-Cache-Control', cdnCacheControl)
+  } else {
+    removeResponseHeader(event, 'CDN-Cache-Control')
+    removeResponseHeader(event, 'Cloudflare-CDN-Cache-Control')
+    removeResponseHeader(event, 'Surrogate-Control')
+    removeResponseHeader(event, 'Expires')
+    removeResponseHeader(event, 'Age')
+  }
+  if (cacheTag) {
+    setResponseHeader(event, 'Cache-Tag', cacheTag)
+  } else {
+    removeResponseHeader(event, 'Cache-Tag')
+  }
   if (vary) setResponseHeader(event, 'Vary', vary)
 
   return { cacheControl, cacheTag, cdnCacheControl, profile, suppressedBy, vary }
