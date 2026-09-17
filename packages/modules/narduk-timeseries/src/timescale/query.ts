@@ -59,6 +59,37 @@ function assertPositiveInteger(label: string, value: number): number {
   return value
 }
 
+/**
+ * Client-supplied `maxRows` / `maxPoints` may not exceed the published default
+ * unless a server-side ceiling raises it. `1e12` is a valid integer; it is
+ * still refused.
+ */
+function assertWorkingSetSize(
+  label: string,
+  value: number | undefined,
+  defaultSize: number,
+  ceiling: number,
+): number {
+  const resolvedCeiling = assertPositiveInteger(`${label}Ceiling`, ceiling)
+  const resolved = assertPositiveInteger(label, value ?? Math.min(defaultSize, resolvedCeiling))
+  if (resolved > resolvedCeiling) {
+    throw new NardukTimeseriesError(
+      'RANGE_INVALID',
+      `${label} must be at most ${resolvedCeiling}.`,
+      { ceiling: resolvedCeiling, label, value: resolved },
+    )
+  }
+  return resolved
+}
+
+export interface RollupQueryLimits {
+  maxRowsCeiling?: number
+}
+
+export interface TrackQueryLimits {
+  maxPointsCeiling?: number
+}
+
 export interface RollupRangePlan {
   /** True when the tier window moved `range.start` forward. */
   clipped: boolean
@@ -130,7 +161,11 @@ export interface RollupBuiltQuery extends BuiltQuery {
  * telemetry store cannot promise. The division is guarded so a bucket that
  * somehow recorded zero rows returns 0 instead of NaN.
  */
-export function buildRollupQuery(query: RollupQuery, plan?: RollupRangePlan): RollupBuiltQuery {
+export function buildRollupQuery(
+  query: RollupQuery,
+  plan?: RollupRangePlan,
+  limits?: RollupQueryLimits,
+): RollupBuiltQuery {
   const table = rollupTable(query.bucket)
   // The caller may have clipped already -- the store does, to decide whether
   // there is a statement to run at all. Clipping twice means two `new Date()`
@@ -167,7 +202,12 @@ export function buildRollupQuery(query: RollupQuery, plan?: RollupRangePlan): Ro
     }
   }
 
-  const maxRows = assertPositiveInteger('maxRows', query.maxRows ?? DEFAULT_MAX_ROLLUP_ROWS)
+  const maxRows = assertWorkingSetSize(
+    'maxRows',
+    query.maxRows,
+    DEFAULT_MAX_ROLLUP_ROWS,
+    limits?.maxRowsCeiling ?? DEFAULT_MAX_ROLLUP_ROWS,
+  )
 
   return {
     clipped: resolvedPlan.clipped,
@@ -337,9 +377,14 @@ export interface TrackPlan {
  * be finer than the data. A caller asking for 5000 points over a year gets
  * about 5000 rows; the same caller over ten minutes gets every point.
  */
-export function planTrackQuery(query: TrackQuery): TrackPlan {
+export function planTrackQuery(query: TrackQuery, limits?: TrackQueryLimits): TrackPlan {
   assertRange(query.range)
-  const maxPoints = assertPositiveInteger('maxPoints', query.maxPoints ?? DEFAULT_MAX_TRACK_POINTS)
+  const maxPoints = assertWorkingSetSize(
+    'maxPoints',
+    query.maxPoints,
+    DEFAULT_MAX_TRACK_POINTS,
+    limits?.maxPointsCeiling ?? DEFAULT_MAX_TRACK_POINTS,
+  )
   const rangeMs = query.range.end.getTime() - query.range.start.getTime()
   const bucketMs = Math.ceil(rangeMs / maxPoints)
 

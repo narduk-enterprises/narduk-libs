@@ -49,7 +49,13 @@ import type {
   TrackRow,
   WriteResult,
 } from '../types.js'
-import { buildRollupQuery, clipRollupRange, planTrackQuery } from './query.js'
+import {
+  DEFAULT_MAX_ROLLUP_ROWS,
+  DEFAULT_MAX_TRACK_POINTS,
+  buildRollupQuery,
+  clipRollupRange,
+  planTrackQuery,
+} from './query.js'
 import {
   buildRetentionStatements,
   retentionLockStatement,
@@ -119,6 +125,18 @@ export interface TimescaleStoreOptions {
    */
   retention?: RetentionExecutorOptions
   seriesCacheSize?: number
+  /**
+   * Hard ceiling for `RollupQuery.maxRows`. Defaults to
+   * `DEFAULT_MAX_ROLLUP_ROWS` (50_000). A client value above this is
+   * `RANGE_INVALID`. Raise only from server-side construction.
+   */
+  maxRollupRows?: number
+  /**
+   * Hard ceiling for `TrackQuery.maxPoints`. Defaults to
+   * `DEFAULT_MAX_TRACK_POINTS` (5_000). Raise only from server-side
+   * construction.
+   */
+  maxTrackPoints?: number
 }
 
 interface RollupSqlRow {
@@ -160,6 +178,10 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
 
   #parameterBudget: number | undefined
 
+  #maxRollupRows: number
+
+  #maxTrackPoints: number
+
   #retention: RetentionExecutorOptions | undefined
 
   #inFlightResolves = new Map<string, Promise<ResolvedSeries[]>>()
@@ -172,6 +194,8 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
   constructor(options: TimescaleStoreOptions) {
     this.#executor = options.executor
     this.#parameterBudget = options.parameterBudget
+    this.#maxRollupRows = options.maxRollupRows ?? DEFAULT_MAX_ROLLUP_ROWS
+    this.#maxTrackPoints = options.maxTrackPoints ?? DEFAULT_MAX_TRACK_POINTS
     this.#retention = options.retention
     if (options.retention !== undefined && options.retention.maxConnections !== 1) {
       throw new NardukTimeseriesError(
@@ -343,7 +367,7 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     // The plan computed above is handed on rather than recomputed: clipping
     // twice means two `new Date()` calls and therefore two floors, so the
     // range reported would not be quite the range the statement read.
-    const built = buildRollupQuery(query, plan)
+    const built = buildRollupQuery(query, plan, { maxRowsCeiling: this.#maxRollupRows })
     const result = await this.#executor.query<RollupSqlRow>(built.text, built.params)
     const limit = Number(built.params.at(-1)) - 1
     const truncated = result.rows.length > limit
@@ -363,7 +387,7 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
   }
 
   async queryTrack(query: TrackQuery): Promise<TrackResult> {
-    const plan = planTrackQuery(query)
+    const plan = planTrackQuery(query, { maxPointsCeiling: this.#maxTrackPoints })
     const result = await this.#executor.query<TrackSqlRow>(plan.query.text, plan.query.params)
     const truncated = result.rows.length > plan.maxPoints
     const rows: TrackRow[] = result.rows.slice(0, plan.maxPoints).map((row) => ({

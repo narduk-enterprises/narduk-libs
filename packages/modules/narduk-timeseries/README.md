@@ -64,7 +64,11 @@ and asserts exactly that.
 
 A read never silently truncates. `queryRollup` asks for `maxRows + 1` and
 reports `truncated: true`; `queryTrack` decimates with `time_bucket` and reports
-the `bucketMs` it used.
+the `bucketMs` it used. Client-supplied `maxRows` / `maxPoints` cannot exceed
+the published defaults (50_000 / 5_000); a value of `1e12` is `RANGE_INVALID`. A
+store may raise those ceilings via `TimescaleStoreOptions.maxRollupRows` /
+`maxTrackPoints` — that option is server-side construction, not a field on the
+client query.
 
 ## Refresh races
 

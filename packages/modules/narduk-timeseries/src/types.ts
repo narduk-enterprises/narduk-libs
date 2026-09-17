@@ -84,7 +84,12 @@ export interface WriteResult {
 
 export interface RollupQuery {
   bucket: RollupBucket
-  /** Cap on returned rows. The store reports truncation rather than lying. */
+  /**
+   * Cap on returned rows. The store reports truncation rather than lying.
+   * Client values above `DEFAULT_MAX_ROLLUP_ROWS` (50_000) are
+   * `RANGE_INVALID` unless the store was constructed with a higher
+   * `maxRollupRows` ceiling.
+   */
   maxRows?: number
   /**
    * Optional clock for the tier-floor calculation.
@@ -152,7 +157,9 @@ export interface RollupResult {
 export interface TrackQuery {
   /**
    * The response-byte bound. Above this density the store decimates in the
-   * database with `time_bucket` rather than returning every row.
+   * database with `time_bucket` rather than returning every row. Client
+   * values above `DEFAULT_MAX_TRACK_POINTS` (5_000) are `RANGE_INVALID`
+   * unless the store was constructed with a higher `maxTrackPoints` ceiling.
    */
   maxPoints?: number
   range: TimeRange
