@@ -1097,3 +1097,98 @@ describe('workflow_run commit resolution (#451 defect 2)', () => {
     expect(calls.deployed[0].versionId).toBe('v-verified')
   })
 })
+
+/**
+ * The two behavioural regressions, written so they run against either shape of
+ * `listVersions`: the stub returns an array that ALSO carries the listing
+ * fields, and caps itself at ten when the caller asks for no bound -- which is
+ * exactly what a client that can only read `wrangler versions list` could ever
+ * hand back. The ten is a literal on purpose: a constant imported from the
+ * module under test would be `undefined` on a revision that does not export it,
+ * and an `undefined` cap silently un-caps the stub.
+ */
+describe('#451 regressions, shape-agnostic', () => {
+  const WRANGLER_CAP = 10
+
+  function cappedClient(
+    versions: WorkerVersion[],
+    deployments: WorkerDeployment[],
+  ): { client: WranglerVersionsClient; calls: StubCalls } {
+    const calls: StubCalls = { deployed: [], rolledBack: [] }
+    const listVersions = async (limit?: number) => {
+      const rows = versions.slice(0, limit ?? WRANGLER_CAP)
+      return Object.assign(rows.slice(), {
+        versions: rows,
+        complete: rows.length === versions.length,
+        limit: limit ?? WRANGLER_CAP,
+        source: 'api' as const,
+      })
+    }
+    return {
+      calls,
+      client: {
+        listVersions: listVersions as WranglerVersionsClient['listVersions'],
+        listDeployments: async () => deployments,
+        deployVersion: async (versionId, percentage, message) => {
+          calls.deployed.push({ versionId, percentage, message })
+        },
+        rollback: async () => {},
+      },
+    }
+  }
+
+  it('models wrangler\'s own cap', () => {
+    expect(WRANGLER_CAP).toBe(WRANGLER_VERSION_LIST_CAP)
+  })
+
+  it('promotes a merge whose version is buried under branch uploads (defect 1)', async () => {
+    // 47 branch uploads landed between the main upload and the promote job.
+    const versions = [
+      ...Array.from({ length: 47 }, (_, index) =>
+        version(`v-branch-${String(index)}`, `abcdef${String(index).padStart(2, '0')}`, {
+          number: 500 - index,
+        }),
+      ),
+      version('v-main', SHA, { number: 400 }),
+      version('v-live', 'ffffff00', { number: 399 }),
+    ]
+    const { client, calls } = cappedClient(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--any-branch']),
+      { client, env: ACTIONS_ENV, resolveWorkerName: () => 'buoys', appDir: '/tmp/app' },
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed).toEqual([
+      { versionId: 'v-main', percentage: 100, message: `narduk-app promote ${SHA}` },
+    ])
+  })
+
+  it('never promotes the default-branch head under workflow_run (defect 2)', async () => {
+    const head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+    const versions = [
+      version('v-head', head, { number: 9 }),
+      version('v-verified', SHA, { number: 8 }),
+      version('v-live', 'cccccc00', { number: 7 }),
+    ]
+    const { client, calls } = cappedClient(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const env = {
+      ...ACTIONS_ENV,
+      GITHUB_SHA: head,
+      GITHUB_EVENT_NAME: 'workflow_run',
+      GITHUB_REF_NAME: 'main',
+    }
+    await runVersionsPromote(parseVersionsPromoteArgs(['--any-branch']), {
+      client,
+      env,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+    }).catch(() => undefined)
+    // The commit `ci / Required` verified is SHA, not the branch head. Promoting
+    // `v-head` deploys code that never passed the gate.
+    expect(calls.deployed).toEqual([])
+  })
+})
