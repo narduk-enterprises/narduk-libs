@@ -1,12 +1,6 @@
-import { issueMapKitTokenForRequest } from '@narduk-enterprises/narduk-mapkit/worker'
+import { mapKitTokenResponse } from '@narduk-enterprises/narduk-mapkit/worker'
 import { useRuntimeConfig } from '#imports'
-import {
-  defineEventHandler,
-  getRequestHeaders,
-  getRequestURL,
-  setResponseHeader,
-  setResponseStatus,
-} from 'h3'
+import { defineEventHandler, getRequestHeaders, getRequestURL } from 'h3'
 
 import { readMapKitRuntimeString } from './runtime-env'
 
@@ -32,50 +26,39 @@ function requestFromEvent(event: H3Event): Request {
   for (const [name, value] of Object.entries(getRequestHeaders(event))) {
     if (value) headers.set(name, value)
   }
-  return new Request(getRequestURL(event), { headers, method: 'GET' })
+  // The real method: the handler answers 405 itself, so a POST must not be
+  // laundered into a GET on the way in.
+  return new Request(getRequestURL(event), { headers, method: event.method })
 }
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
-  const publicConfig = config.public as { appUrl?: string; mapkitToken?: string }
   const envSources = [readCloudflareEnv(event), readProcessEnv()]
   const rateLimit = (
     event.context as {
       nardukMapKit?: { rateLimit?: MapKitRateLimitHook }
     }
   ).nardukMapKit?.rateLimit
-  const result = await issueMapKitTokenForRequest({
-    config: {
-      allowedOrigins: readMapKitRuntimeString(
-        envSources,
-        ['MAPKIT_ALLOWED_ORIGINS'],
-        config.mapkitAllowedOrigins,
-      ),
+
+  // The whole response -- status, body, `cache-control`, `vary`, `allow`,
+  // `retry-after` -- comes from the package handler, so the adapter cannot
+  // drift from narduk-libs#421 §e.2 by assembling headers of its own.
+  return await mapKitTokenResponse(
+    requestFromEvent(event),
+    {
       doppler: false,
-      fallbackOrigin: publicConfig.appUrl,
       keyId: readMapKitRuntimeString(envSources, ['APPLE_KEY_ID'], config.appleKeyId),
       privateKey: readMapKitRuntimeString(
         envSources,
         ['APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY'],
         config.applePrivateKey || config.appleSecretKey,
       ),
-      staticToken: readMapKitRuntimeString(
-        envSources,
-        ['APPLE_MAPKIT_TOKEN', 'MAPKIT_TOKEN'],
-        publicConfig.mapkitToken,
-      ),
       teamId: readMapKitRuntimeString(envSources, ['APPLE_TEAM_ID'], config.appleTeamId),
     },
-    ...(rateLimit ? { rateLimit } : {}),
-    request: requestFromEvent(event),
-  })
-
-  setResponseHeader(event, 'cache-control', 'no-store')
-  if (result.retryAfterSeconds !== undefined) {
-    setResponseHeader(event, 'retry-after', result.retryAfterSeconds)
-  }
-  if (result.status) setResponseStatus(event, result.status)
-  else if (!result.configured) setResponseStatus(event, 503)
-  else if (!result.token) setResponseStatus(event, 403)
-  return result
+    {
+      ...(rateLimit ? { rateLimit } : {}),
+      // The routed origin, never a forwarded host header (§e.1).
+      self: getRequestURL(event, { xForwardedHost: false }).origin,
+    },
+  )
 })
