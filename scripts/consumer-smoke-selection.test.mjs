@@ -161,3 +161,52 @@ test('the shipped consumer step runs the selected proof and propagates failures'
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test('the shipped planner keeps release PRs, release commits and manual runs full', () => {
+  const planner = workflow.split(
+    '      - name: Compute changed packages and transitive dependents\n',
+  )[1]
+  const body = planner
+    .split('        run: |\n')[1]
+    .split('\n\n')[0]
+    .split('\n')
+    .map((line) => line.slice(10))
+    .join('\n')
+  const directory = mkdtempSync(join(tmpdir(), 'consumer-release-selection-'))
+  try {
+    writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 })
+    const run = (env) =>
+      spawnSync('bash', ['-e', '-o', 'pipefail', '-c', body], {
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          EVENT_NAME: 'pull_request',
+          PR_HEAD_REF: 'feature',
+          PUSH_MESSAGE: '',
+          PR_BASE_SHA: 'base',
+          PR_HEAD_SHA: 'head',
+          PUSH_BASE_SHA: 'before',
+          PUSH_HEAD_SHA: 'after',
+          GITHUB_OUTPUT: '/dev/null',
+          GITHUB_STEP_SUMMARY: '/dev/null',
+          ...env,
+        },
+        encoding: 'utf8',
+      })
+    assert.match(run({}).stdout, /--base\nbase\n--head\nhead/)
+    for (const env of [
+      { PR_HEAD_REF: 'changeset-release/main' },
+      { EVENT_NAME: 'push', PUSH_MESSAGE: 'chore: release packages\n\nVersion updates' },
+      { EVENT_NAME: 'workflow_dispatch' },
+      { EVENT_NAME: 'push', PUSH_BASE_SHA: '0000000000000000000000000000000000000000' },
+    ]) {
+      const result = run(env)
+      assert.equal(result.status, 0, result.stderr)
+      assert.match(result.stdout, /--all/)
+      assert.doesNotMatch(result.stdout, /--base/)
+    }
+    assert.match(run({ EVENT_NAME: 'push' }).stdout, /--base\nbefore\n--head\nafter/)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
