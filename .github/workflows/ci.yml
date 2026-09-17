@@ -159,6 +159,8 @@ jobs:
           IS_CHANGESET_RELEASE: ${{ startsWith(github.head_ref, 'changeset-release/') || startsWith(github.ref_name, 'changeset-release/') }}
         run: |
           set -euo pipefail
+          echo "::error::Temporary contracts failure canary; removed after cancellation proof."
+          test "${GITHUB_ACTIONS}" != "true"
           pnpm run versions:check
           pnpm run scripts:test
           if [ "${IS_CHANGESET_RELEASE}" != "true" ]; then
