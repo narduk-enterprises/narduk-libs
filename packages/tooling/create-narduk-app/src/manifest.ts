@@ -37,7 +37,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.3.0',
-  '@narduk-enterprises/narduk-testkit': '1.3.0',
+  '@narduk-enterprises/narduk-testkit': '1.3.1',
   '@narduk-enterprises/narduk-uploads': '1.20.0',
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.8.1',

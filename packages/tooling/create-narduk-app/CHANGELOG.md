@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.6.2
+
+### Patch Changes
+
+- 1fe3dde: Update the generator's pinned `@narduk-enterprises/narduk-testkit`
+  version to the release that adds the console tracker's deterministic telemetry
+  profile. Generated apps keep today's behavior: the profile is opt-in and the
+  default stays `'live'`.
+
 ## 0.6.1
 
 ### Patch Changes
