@@ -198,7 +198,7 @@ export interface FakeMapKitInspector {
    */
   advanceClock(milliseconds: number): void
   /** Per-annotation counts, keyed on `annotation.id`. */
-  annotationCounts(id: string): FakeMapKitAnnotationCounts
+  annotationCounts(annotation: FakeMapKitAnnotation | string): FakeMapKitAnnotationCounts
   /** The callout element currently rendered for `annotation`, or `null`. */
   calloutElement(annotation: FakeMapKitAnnotation): HTMLElement | null
   /** Calls of one operation. Counts CALLS, not annotation instances. */
@@ -301,7 +301,13 @@ export interface FakeMapKitAnnotation extends EventTarget {
   data: object
   element: HTMLElement
   enabled: boolean
-  readonly id: string
+  /**
+   * Apple types this `string | null`, so the fake does too. The fake always
+   * assigns one at construction (`options.id`, else `fake-annotation-<n>`), so
+   * in practice it is never null -- but code written against the fake still has
+   * to handle the null real MapKit can return.
+   */
+  readonly id: string | null
   readonly map: FakeMapKitMap | null
   selected: boolean
   size: FakeSize | null
