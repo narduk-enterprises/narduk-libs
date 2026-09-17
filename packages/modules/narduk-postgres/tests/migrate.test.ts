@@ -11,7 +11,7 @@ import {
   splitSqlStatements,
 } from '../src/migrate.js'
 import { type ProtocolFake, createProtocolFake } from '../src/testing.js'
-import type { SqlExecutor } from '../src/types.js'
+import type { QueryResult, SqlExecutor } from '../src/types.js'
 
 const CORE = { name: '0001_history_core.sql', sql: 'CREATE TABLE series ();' }
 const ROLLUPS = { name: '0002_history_rollups.sql', sql: 'CREATE MATERIALIZED VIEW m AS SELECT 1;' }
@@ -270,6 +270,159 @@ describe('applyMigrations', () => {
     }
     await expect(applyMigrations(failing, set)).rejects.toThrow('relation exists')
     expect(database.texts.at(-1)).toContain('pg_advisory_unlock')
+  })
+
+  it('rolls back a transactional file on a plain SqlExecutor when a later statement fails', async () => {
+    const committed = new Set<string>()
+    let open: Set<string> | null = null
+    const ledger: string[] = []
+    let openLedger: string | null = null
+
+    const mark = (key: string): void => {
+      if (open) open.add(key)
+      else committed.add(key)
+    }
+
+    const executor: SqlExecutor = {
+      async query<Row = Record<string, unknown>>(
+        text: string,
+        params: readonly unknown[] = [],
+      ): Promise<QueryResult<Row>> {
+        const normalized = text.replaceAll(/\s+/gu, ' ').trim()
+        if (/pg_try_advisory_lock/u.test(text)) {
+          return { rowCount: 1, rows: [{ locked: true }] as Row[] }
+        }
+        if (/pg_advisory_unlock/u.test(text)) {
+          return { rowCount: 1, rows: [{ unlocked: true }] as Row[] }
+        }
+        if (/to_regclass/u.test(text)) {
+          return { rowCount: 1, rows: [{ exists: false }] as Row[] }
+        }
+        if (normalized === 'BEGIN') {
+          open = new Set()
+          openLedger = null
+          return { rowCount: 0, rows: [] }
+        }
+        if (normalized === 'COMMIT') {
+          if (open) for (const key of open) committed.add(key)
+          if (openLedger !== null) ledger.push(openLedger)
+          open = null
+          openLedger = null
+          return { rowCount: 0, rows: [] }
+        }
+        if (normalized === 'ROLLBACK') {
+          open = null
+          openLedger = null
+          return { rowCount: 0, rows: [] }
+        }
+        if (/CREATE TABLE first/u.test(text)) {
+          mark('first')
+          return { rowCount: 0, rows: [] }
+        }
+        if (/CREATE TABLE second/u.test(text)) {
+          throw new Error('relation exists')
+        }
+        if (/INSERT INTO schema_migrations/u.test(text)) {
+          const name = String(params[0])
+          if (open) openLedger = name
+          else ledger.push(name)
+          return { rowCount: 1, rows: [] }
+        }
+        return { rowCount: 0, rows: [] }
+      },
+    }
+
+    const set = await createMigrationSet([
+      {
+        name: '0001_two_steps.sql',
+        sql: 'CREATE TABLE first (); CREATE TABLE second ();',
+      },
+    ])
+
+    await expect(applyMigrations(executor, set)).rejects.toThrow(/relation exists/u)
+    expect(committed.has('first')).toBe(false)
+    expect(ledger).toEqual([])
+  })
+
+  function plainLockingExecutor(): SqlExecutor & { texts: string[] } {
+    const texts: string[] = []
+    return {
+      texts,
+      async query<Row = Record<string, unknown>>(text: string): Promise<QueryResult<Row>> {
+        texts.push(text)
+        if (/pg_try_advisory_lock/u.test(text)) {
+          return { rowCount: 1, rows: [{ locked: true }] as Row[] }
+        }
+        if (/pg_advisory_unlock/u.test(text)) {
+          return { rowCount: 1, rows: [{ unlocked: true }] as Row[] }
+        }
+        if (/to_regclass/u.test(text)) {
+          return { rowCount: 1, rows: [{ exists: false }] as Row[] }
+        }
+        return { rowCount: 0, rows: [] }
+      },
+    }
+  }
+
+  it('refuses CONCURRENTLY in a default-transactional file before running SQL', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      {
+        name: '0001_concurrent_idx.sql',
+        sql: 'CREATE INDEX CONCURRENTLY idx ON t (a);',
+      },
+    ])
+
+    await expect(applyMigrations(executor, set)).rejects.toThrow(
+      /0001_concurrent_idx\.sql[\s\S]*-- narduk:no-transaction/u,
+    )
+    const joined = executor.texts.join('\n')
+    expect(joined).not.toMatch(/\bBEGIN\b/u)
+    expect(joined).not.toMatch(/CREATE INDEX CONCURRENTLY/iu)
+    expect(joined).toContain('pg_advisory_unlock')
+  })
+
+  it('allows ALTER TYPE ADD VALUE, which Postgres 12+ permits in a transaction', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      { name: '0001_add_value.sql', sql: "ALTER TYPE mood ADD VALUE 'sad';" },
+    ])
+
+    await expect(applyMigrations(executor, set)).resolves.toBeDefined()
+    const joined = executor.texts.join('\n')
+    expect(joined).toMatch(/\bBEGIN\b/u)
+    expect(joined).toMatch(/ALTER TYPE mood ADD VALUE/iu)
+  })
+
+  it('refuses VACUUM and the rest of the CONCURRENTLY family', async () => {
+    for (const [name, sql] of [
+      ['0001_vacuum.sql', 'VACUUM ANALYZE t;'],
+      ['0001_drop_idx.sql', 'DROP INDEX CONCURRENTLY idx;'],
+      ['0001_reindex.sql', 'REINDEX INDEX CONCURRENTLY idx;'],
+    ] as const) {
+      const executor = plainLockingExecutor()
+      const set = await createMigrationSet([{ name, sql }])
+      await expect(applyMigrations(executor, set)).rejects.toThrow(/-- narduk:no-transaction/u)
+      expect(executor.texts.join('\n')).not.toMatch(/\bBEGIN\b/u)
+      expect(executor.texts.some((text) => text.includes(sql.split(' ')[0] ?? ''))).toBe(false)
+    }
+  })
+
+  it('still applies CONCURRENTLY when the file opts out on the first line', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      {
+        name: '0001_concurrent_idx.sql',
+        sql: '-- narduk:no-transaction\nCREATE INDEX CONCURRENTLY idx ON t (a);',
+      },
+    ])
+
+    await expect(applyMigrations(executor, set)).resolves.toMatchObject({
+      applied: ['0001_concurrent_idx.sql'],
+    })
+    const joined = executor.texts.join('\n')
+    expect(joined).not.toMatch(/\bBEGIN\b/u)
+    expect(joined).toMatch(/CREATE INDEX CONCURRENTLY/iu)
   })
 })
 

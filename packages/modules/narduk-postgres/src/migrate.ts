@@ -278,6 +278,54 @@ function stripSqlComments(sql: string): string {
   return sql.replaceAll(/--[^\n]*/gu, ' ').replaceAll(/\/\*[\s\S]*?\*\//gu, ' ')
 }
 
+const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
+  {
+    label: 'CREATE INDEX CONCURRENTLY',
+    pattern: /^CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/iu,
+  },
+  {
+    label: 'DROP INDEX CONCURRENTLY',
+    pattern: /^DROP\s+INDEX\s+CONCURRENTLY\b/iu,
+  },
+  { label: 'REINDEX ... CONCURRENTLY', pattern: /^REINDEX\b[\s\S]+\bCONCURRENTLY\b/iu },
+  { label: 'VACUUM', pattern: /^VACUUM\b/iu },
+]
+
+// `ALTER TYPE ... ADD VALUE` is deliberately absent: Postgres 12 and later
+// allow it inside a transaction block (only *using* the new value in the same
+// transaction is barred), and 11 is long out of support. Rejecting it would
+// fail a consumer's working migration on a patch release.
+
+// This list is the common set, not a proof of completeness. `CREATE DATABASE`,
+// `ALTER SYSTEM`, and a TimescaleDB continuous aggregate are also
+// non-transactional and are not detected; they fail with the raw Postgres
+// error instead of the named one. See the changeset's operator note.
+
+/**
+ * Statements Postgres rejects inside a transaction. Default-transactional
+ * files now wrap in BEGIN/COMMIT, so these must fail closed with the
+ * opt-out directive rather than being auto-run outside a transaction.
+ */
+function findTransactionForbiddenStatement(sql: string): string | null {
+  for (const statement of splitSqlStatements(sql)) {
+    const stripped = stripSqlComments(statement).replaceAll(/\s+/gu, ' ').trim()
+    for (const { label, pattern } of TRANSACTION_FORBIDDEN_PATTERNS) {
+      if (pattern.test(stripped)) return label
+    }
+  }
+  return null
+}
+
+function assertTransactionalMigration(migration: Migration): void {
+  const forbidden = findTransactionForbiddenStatement(migration.sql)
+  if (forbidden === null) return
+  throw new NardukPostgresError(
+    'MIGRATION_TRANSACTION_FORBIDDEN',
+    `${migration.name} contains ${forbidden}, which cannot run inside a transaction. Put "${NO_TRANSACTION_DIRECTIVE}" on the first line to opt this file out. The runner will not silently run it non-transactionally.`,
+    { name: migration.name, statement: forbidden },
+  )
+}
+
 function assertMigrationsTable(table: string): string {
   if (!/^[a-z_][a-z0-9_]*$/u.test(table)) {
     throw new NardukPostgresError(
@@ -475,6 +523,31 @@ async function acquireLock(
   }
 }
 
+/**
+ * The package's own connections are a `SqlExecutor` plus `end()` -- they do
+ * not implement `.transaction`. A file marked transactional (the default)
+ * still has to run as one unit: wrap it ourselves rather than degrade to
+ * autocommit. Files that cannot live in a transaction opt out with
+ * `-- narduk:no-transaction` and never reach this helper.
+ */
+async function applyInOwnTransaction(
+  executor: SqlExecutor,
+  run: (target: SqlExecutor) => Promise<void>,
+): Promise<void> {
+  await executor.query('BEGIN')
+  try {
+    await run(executor)
+    await executor.query('COMMIT')
+  } catch (cause: unknown) {
+    try {
+      await executor.query('ROLLBACK')
+    } catch {
+      // The migration failure is the one the caller must see.
+    }
+    throw cause
+  }
+}
+
 export async function applyMigrations(
   executor: SqlExecutor,
   migrations: readonly Migration[],
@@ -514,6 +587,8 @@ export async function applyMigrations(
     const durationMsByName: Record<string, number> = {}
 
     for (const migration of plan.pending) {
+      if (migration.transactional) assertTransactionalMigration(migration)
+
       const startedAt = now().getTime()
       const recordRow = async (target: SqlExecutor): Promise<void> => {
         await target.query(
@@ -525,6 +600,13 @@ export async function applyMigrations(
       if (migration.transactional && isTransactionalExecutor(executor)) {
         await executor.transaction(async (target) => {
           await target.query(migration.sql)
+          await recordRow(target)
+        })
+      } else if (migration.transactional) {
+        await applyInOwnTransaction(executor, async (target) => {
+          for (const statement of splitSqlStatements(migration.sql)) {
+            await target.query(statement)
+          }
           await recordRow(target)
         })
       } else {

@@ -1,14 +1,20 @@
 /**
  * Owner Tag Endpoint
  *
- * Sets or clears the `narduk_owner` cookie used by the PostHog plugin
- * to tag internal/owner traffic. Protected by a shared secret so only
- * the site owner can call it.
+ * Sets or clears two cookies after `OWNER_TAG_SECRET` succeeds:
+ * - `narduk_owner=true` — unsigned, `httpOnly: false`, so the PostHog client
+ *   plugin can read it from `document.cookie` and set `is_owner`.
+ * - `__Host-narduk_owner_proof` (HTTPS) or `narduk_owner_proof` (HTTP dev) —
+ *   `httpOnly`, HMAC-SHA-256 of `narduk-owner-proof:v2:<iat>` keyed by
+ *   `OWNER_TAG_SECRET`. `/api/owner/posthog-bootstrap` requires this proof
+ *   (and a server-side max age) before releasing `POSTHOG_OWNER_DISTINCT_ID`.
+ *   Clearing the tag deletes both cookies. Old v1 64-hex proofs are rejected.
  *
  * Cross-browser PostHog identity (optional): set the same
  * `POSTHOG_OWNER_DISTINCT_ID` (server-only UUID) in Vault for each app; after
  * owner-tag, the client loads `/api/owner/posthog-bootstrap` and calls
- * `posthog.identify` so all your devices merge into one person.
+ * `posthog.identify` so all your devices merge into one person. The browser
+ * sends the proof cookie automatically; the client never holds the secret.
  *
  * Usage (once per browser/device):
  *   curl -X POST https://myapp.com/api/owner-tag \
@@ -28,6 +34,10 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import {
+  applyOwnerTagCookies,
+  timingSafeEqual,
+} from '#narduk-analytics-server/utils/owner-tag-proof'
 
 const ownerTagSchema = z.object({
   secret: z.string(),
@@ -39,7 +49,7 @@ export default definePublicMutation(
     rateLimit: RATE_LIMIT_POLICIES.ownerTag,
     parseBody: withValidatedBody(ownerTagSchema.parse),
   },
-  ({ event, body }) => {
+  async ({ event, body }) => {
     const input = requireMutationBody(body)
     const config = useRuntimeConfig(event)
     const ownerSecret = config.ownerTagSecret
@@ -51,7 +61,7 @@ export default definePublicMutation(
       })
     }
 
-    if (input.secret !== ownerSecret) {
+    if (!timingSafeEqual(input.secret, ownerSecret)) {
       throw createError({
         statusCode: 403,
         message: 'Invalid secret.',
@@ -59,21 +69,11 @@ export default definePublicMutation(
     }
 
     const enabled = input.enabled
-    const cookieName = 'narduk_owner'
-
-    if (enabled) {
-      setCookie(event, cookieName, 'true', {
-        httpOnly: false, // Must be readable by the PostHog client plugin
-        secure: !import.meta.dev,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 365, // 1 year
-      })
-    } else {
-      deleteCookie(event, cookieName, {
-        path: '/',
-      })
-    }
+    await applyOwnerTagCookies(event, {
+      enabled,
+      secret: ownerSecret,
+      secure: !import.meta.dev,
+    })
 
     return { ok: true, tagged: enabled }
   },

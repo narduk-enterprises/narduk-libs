@@ -64,7 +64,11 @@ and asserts exactly that.
 
 A read never silently truncates. `queryRollup` asks for `maxRows + 1` and
 reports `truncated: true`; `queryTrack` decimates with `time_bucket` and reports
-the `bucketMs` it used.
+the `bucketMs` it used. Client-supplied `maxRows` / `maxPoints` cannot exceed
+the published defaults (50_000 / 5_000); a value of `1e12` is `RANGE_INVALID`. A
+store may raise those ceilings via `TimescaleStoreOptions.maxRollupRows` /
+`maxTrackPoints` — that option is server-side construction, not a field on the
+client query.
 
 ## Refresh races
 
@@ -140,6 +144,12 @@ Optional, the field failed open — a route handler that forgot it served the fu
 retained range and reported `clipped: false` while doing it, and read-side
 clipping is the only tier gate there is. Required, the omission is a type error
 and the exemption is a word a reviewer can see.
+
+`RollupQuery.now` cannot widen that gate: the floor is
+`max(real now, now) - tierWindowMs`. A past `now` (including one forwarded from
+a client body) is ignored on read. `RetentionPolicyInput.now` is the opposite
+safe direction: the sweep clock is `min(real now, now)`, so a future `now`
+cannot delete more than real time would.
 
 A level with **no** `globalRollupWindowMs` entry is never swept. That is a real
 choice — keep 1d rollups indefinitely — so it is reported rather than guessed

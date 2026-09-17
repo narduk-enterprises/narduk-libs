@@ -1,10 +1,12 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inspect } from 'node:util'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { NardukPostgresError } from '../src/errors.js'
+import { getUnredactedCause } from '../src/redact.js'
 
 import {
   loadMigrationsFromDirectory,
@@ -16,6 +18,48 @@ import { createProtocolFake } from '../src/testing.js'
 import type { ManagedConnection } from '../src/types.js'
 
 const DSN = 'postgres://ops:hunter2@10.70.0.4:5432/mybo_history'
+
+function driverConnectError(): Error & { code: string } {
+  const nested = new Error(`lookup failed for ${DSN}`)
+  const error = new Error(`connect ECONNREFUSED ${DSN}`) as Error & { code: string }
+  error.name = 'PostgresError'
+  error.code = 'ECONNREFUSED'
+  error.cause = nested
+  return error
+}
+
+function serializedErrorSurface(error: unknown): string {
+  const chunks: string[] = []
+  const seen = new Set<unknown>()
+  const walk = (value: unknown, depth: number): void => {
+    if (value == null || depth > 12) return
+    if (typeof value === 'string') {
+      chunks.push(value)
+      return
+    }
+    if (typeof value !== 'object') {
+      chunks.push(String(value))
+      return
+    }
+    if (seen.has(value)) return
+    seen.add(value)
+    if (value instanceof Error) {
+      chunks.push(value.name, value.message, value.stack ?? '')
+      if ('code' in value) walk(value.code, depth + 1)
+      walk(value.cause, depth + 1)
+      if ('details' in value) walk(value.details, depth + 1)
+      return
+    }
+    for (const [key, item] of Object.entries(value)) {
+      chunks.push(key)
+      walk(item, depth + 1)
+    }
+  }
+  walk(error, 0)
+  chunks.push(JSON.stringify(error))
+  chunks.push(inspect(error, { depth: 12, getters: true, showHidden: true }))
+  return chunks.join('\n')
+}
 
 const directories: string[] = []
 async function migrationsDirectory(files: Record<string, string>): Promise<string> {
@@ -89,6 +133,26 @@ describe('withNodeConnection', () => {
     )
     expect(error).toBeInstanceOf(NardukPostgresError)
     expect(String(error?.details.connectionString)).not.toContain('hunter2')
+  })
+
+  it('redacts a driver-error cause that embeds the DSN password', async () => {
+    const error = await withNodeConnection<string>(
+      {
+        connect: () => {
+          throw driverConnectError()
+        },
+        connectionString: DSN,
+      },
+      async () => 'unreachable',
+    ).then(
+      () => null,
+      (cause: unknown) => cause,
+    )
+    expect(error).toBeInstanceOf(NardukPostgresError)
+    expect(serializedErrorSurface(error)).not.toContain('hunter2')
+    const original = getUnredactedCause(error as object)
+    expect(original).toBeInstanceOf(Error)
+    expect(String((original as Error).message)).toContain('hunter2')
   })
 
   it('uses the single-socket tuning when asked', async () => {

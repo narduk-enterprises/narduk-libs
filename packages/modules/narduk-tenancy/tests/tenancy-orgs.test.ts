@@ -1,10 +1,42 @@
 import { describe, expect, it } from 'vitest'
 
+import { createTenancy, type TenancyDatabase } from '../server/utils/tenancy'
+
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
 
 const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'user-1' }
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
+
+function tenancyDbWhoseBatchThrows(error: Error): TenancyDatabase {
+  const chain = {
+    from() {
+      return this
+    },
+    where() {
+      return this
+    },
+    limit() {
+      return this
+    },
+    all: async () => [],
+    values() {
+      return this
+    },
+    returning() {
+      return {}
+    },
+  }
+  return {
+    select: () => chain,
+    insert: () => chain,
+    update: () => chain,
+    delete: () => chain,
+    batch: async () => {
+      throw error
+    },
+  } as unknown as TenancyDatabase
+}
 
 describe('orgs and memberships', () => {
   it('creates an org with its creator as sole owner', async () => {
@@ -24,12 +56,67 @@ describe('orgs and memberships', () => {
     })
   })
 
+  it('rolls back the org when the owner membership write fails', async () => {
+    const { tenancy, sqlite } = createTestHarness()
+    sqlite.exec(`
+      CREATE TRIGGER fail_create_org_owner
+      BEFORE INSERT ON tenancy_memberships
+      WHEN NEW.user_id = 'failed-owner'
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated membership failure');
+      END;
+    `)
+
+    await expect(
+      tenancy.createOrg({
+        slug: 'ghost-org',
+        name: 'Ghost',
+        createdByUserId: 'failed-owner',
+      }),
+    ).rejects.toThrow(/simulated membership failure/u)
+
+    expect(sqlite.prepare('SELECT slug FROM tenancy_orgs WHERE slug = ?').all('ghost-org')).toEqual(
+      [],
+    )
+    expect(sqlite.prepare('SELECT id FROM tenancy_memberships').all()).toEqual([])
+    expect(sqlite.prepare('SELECT action FROM tenancy_audit_events').all()).toEqual([])
+
+    sqlite.exec('DROP TRIGGER fail_create_org_owner')
+    await expect(
+      tenancy.createOrg({
+        slug: 'ghost-org',
+        name: 'Ghost',
+        createdByUserId: 'failed-owner',
+      }),
+    ).resolves.toMatchObject({ slug: 'ghost-org' })
+  })
+
   it('rejects an invalid slug and a duplicate slug', async () => {
     const { tenancy } = createTestHarness()
     expect(await codeOf(tenancy.createOrg({ ...ACME, slug: 'not a slug' }))).toBe('invalid')
 
     await tenancy.createOrg(ACME)
     expect(await codeOf(tenancy.createOrg({ ...ACME, slug: 'ACME' }))).toBe('conflict')
+  })
+
+  it('surfaces a unique-index slug race as TenancyError conflict', async () => {
+    const tenancy = createTenancy(
+      tenancyDbWhoseBatchThrows(new Error('UNIQUE constraint failed: tenancy_orgs.slug')),
+    )
+
+    expect(await codeOf(tenancy.createOrg(ACME))).toBe('conflict')
+  })
+
+  it('surfaces a unique-index membership race as TenancyError conflict', async () => {
+    const tenancy = createTenancy(
+      tenancyDbWhoseBatchThrows(
+        new Error(
+          'UNIQUE constraint failed: tenancy_memberships.org_id, tenancy_memberships.user_id',
+        ),
+      ),
+    )
+
+    expect(await codeOf(tenancy.createOrg(ACME))).toBe('conflict')
   })
 
   it('returns null for an unknown org and lists only orgs the user belongs to', async () => {

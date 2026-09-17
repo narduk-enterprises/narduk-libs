@@ -113,6 +113,13 @@ const result = await applyMigrations(connection, migrations, { dryRun: true })
   aware) and sent **one statement per round trip**: a multi-statement simple
   query is itself an implicit transaction, so sending the file whole would
   reject exactly the DDL the directive exists for.
+- Files without that directive now run in a real `BEGIN`/`COMMIT` on a plain
+  `SqlExecutor` (the package's own connections have no `.transaction`). If a
+  default-transactional file contains `CREATE INDEX CONCURRENTLY`, `VACUUM`, or
+  `ALTER TYPE … ADD VALUE`, `applyMigrations` fails **before running the file**
+  with `MIGRATION_TRANSACTION_FORBIDDEN` and names the directive. It does not
+  silently opt the file out. Put `-- narduk:no-transaction` on line 1 for those
+  statements.
 - `applyMigrations(connection, migrations, { table })` puts a set in its own
   ledger table (default `schema_migrations`), so two independent migration sets
   can share a database without either seeing the other's history. The table name

@@ -8,8 +8,48 @@ export const ALLOWED_TYPES = new Set([
   'image/avif',
 ])
 
+/**
+ * Strip MIME parameters and lowercase so `image/PNG; charset=x` matches
+ * `ALLOWED_TYPES`. Used by POST /api/upload and GET /images/** so the
+ * two cannot drift.
+ */
+export function normalizeUploadContentType(contentType) {
+  if (typeof contentType !== 'string') return ''
+  return contentType.toLowerCase().split(';', 1)[0]?.trim() ?? ''
+}
+
+export function isAllowedUploadContentType(contentType) {
+  return ALLOWED_TYPES.has(normalizeUploadContentType(contentType))
+}
+
 export const MAX_FILE_SIZE = 10 * 1024 * 1024
 export const MAX_UPLOAD_REQUEST_SIZE = MAX_FILE_SIZE * 10
+
+function chunkByteLength(chunk) {
+  if (chunk == null) return 0
+  if (typeof chunk.byteLength === 'number') return chunk.byteLength
+  if (typeof chunk.length === 'number') return chunk.length
+  return 0
+}
+
+/**
+ * Hard-stop an incoming Node body once it exceeds `maxBytes`. h3's
+ * `readMultipartFormData` buffers the whole stream with no limit, so a
+ * lying Content-Length would otherwise land the full body in memory.
+ * Destroying the request is the stop; the caller maps that to 413.
+ */
+export function capIncomingMessageBytes(req, maxBytes) {
+  if (!req || typeof req.on !== 'function') return
+  let seen = 0
+  req.on('data', (chunk) => {
+    seen += chunkByteLength(chunk)
+    if (seen <= maxBytes) return
+    const error = new Error(`Upload request exceeds ${maxBytes / 1024 / 1024}MB limit`)
+    error.statusCode = 413
+    if (typeof req.destroy === 'function') req.destroy(error)
+    else req.emit?.('error', error)
+  })
+}
 export const PUBLIC_RASTER_WARNING_SIZE = 800 * 1024
 export const CRITICAL_RASTER_WARNING_SIZE = 350 * 1024
 
@@ -47,7 +87,7 @@ export function getUploadPerformanceWarnings(file) {
 
 export function validateUploadFiles(files) {
   for (const file of files) {
-    if (!file.type || !ALLOWED_TYPES.has(file.type)) {
+    if (!isAllowedUploadContentType(file.type)) {
       throw createError({
         statusCode: 400,
         message: `Unsupported file type: ${file.type ?? 'unknown'}`,

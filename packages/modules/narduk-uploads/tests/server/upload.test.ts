@@ -1,12 +1,17 @@
+import { EventEmitter } from 'node:events'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
   ALLOWED_TYPES,
+  capIncomingMessageBytes,
   CRITICAL_RASTER_WARNING_SIZE,
   getUploadPerformanceWarnings,
+  isAllowedUploadContentType,
   MAX_FILE_SIZE,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
+  normalizeUploadContentType,
   PUBLIC_RASTER_WARNING_SIZE,
   validateUploadFiles,
 } from '../../runtime/server/utils/upload'
@@ -84,6 +89,73 @@ describe('upload endpoint request sizing', () => {
       { data: expect.any(Uint8Array), filename: 'a.png' },
     ])
     expect(readMultipartFormData).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects requests with no Content-Length before buffering', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue(undefined)
+
+    const route = await import('../../runtime/server/api/upload.post')
+    const handler = route.default as {
+      options: { parseBody: (event: unknown) => Promise<unknown> }
+    }
+
+    await expect(handler.options.parseBody({})).rejects.toMatchObject({
+      message: 'Content-Length is required',
+      statusCode: 411,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+
+  it('rejects requests with a non-finite Content-Length before buffering', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue('not-a-length')
+
+    const route = await import('../../runtime/server/api/upload.post')
+    const handler = route.default as {
+      options: { parseBody: (event: unknown) => Promise<unknown> }
+    }
+
+    await expect(handler.options.parseBody({})).rejects.toMatchObject({
+      message: 'Content-Length is required',
+      statusCode: 411,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+})
+
+describe('capIncomingMessageBytes', () => {
+  it('destroys the request once the byte cap is exceeded', () => {
+    const req = new EventEmitter()
+    req.destroy = vi.fn()
+    capIncomingMessageBytes(req, 8)
+    req.emit('data', new Uint8Array(5))
+    expect(req.destroy).not.toHaveBeenCalled()
+    req.emit('data', new Uint8Array(4))
+    expect(req.destroy).toHaveBeenCalledTimes(1)
+    expect(req.destroy.mock.calls[0]?.[0]).toMatchObject({ statusCode: 413 })
+  })
+})
+
+describe('upload content-type allow-list', () => {
+  it('normalizes parameters and case to the shared ALLOWED_TYPES keys', () => {
+    expect(normalizeUploadContentType('image/PNG; charset=x')).toBe('image/png')
+    expect(normalizeUploadContentType('IMAGE/JPEG')).toBe('image/jpeg')
+    expect(normalizeUploadContentType(undefined)).toBe('')
+    expect(normalizeUploadContentType('')).toBe('')
+  })
+
+  it('accepts allow-listed types and rejects HTML, JS, SVG, and missing types', () => {
+    for (const type of ALLOWED_TYPES) {
+      expect(isAllowedUploadContentType(type)).toBe(true)
+    }
+    expect(isAllowedUploadContentType('image/PNG; charset=x')).toBe(true)
+    expect(isAllowedUploadContentType('text/html')).toBe(false)
+    expect(isAllowedUploadContentType('application/javascript')).toBe(false)
+    expect(isAllowedUploadContentType('image/svg+xml')).toBe(false)
+    expect(isAllowedUploadContentType(undefined)).toBe(false)
   })
 })
 

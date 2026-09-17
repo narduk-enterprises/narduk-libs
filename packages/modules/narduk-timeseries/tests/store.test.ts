@@ -9,7 +9,7 @@
  * live-integration.test.ts owns the second question.
  */
 import { createProtocolFake, type ProtocolFake } from '@narduk-enterprises/narduk-postgres/testing'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NardukTimeseriesError } from '../src/errors.js'
 import { createTimescaleHistoryStore, type TimescaleHistoryStore } from '../src/timescale/index.js'
@@ -542,6 +542,17 @@ describe('batch atomicity', () => {
 
 describe('tier clipping on read', () => {
   const now = new Date('2026-09-12T00:00:00.000Z')
+
+  beforeEach(() => {
+    // A past `RollupQuery.now` no longer loosens the floor; freeze Date so the
+    // fixture clock is the real clock and the clip stays deterministic.
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   it('clips the requested range to the tier window and says so', async () => {
     const database = createProtocolFake().respondTo(/FROM telemetry_numeric_1h/u, [])

@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '#imports': fileURLToPath(new URL('./tests/fixtures/nuxt-imports.ts', import.meta.url)),
+      '#narduk-analytics-server': fileURLToPath(new URL('./server', import.meta.url)),
     },
   },
   test: {
