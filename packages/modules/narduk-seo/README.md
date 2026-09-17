@@ -101,7 +101,18 @@ export default defineNuxtConfig({
 
 `contact` accepts a mailto:, https:, or tel: URI, a bare email (prefixed with
 `mailto:`), or an array of those. `policy`, `acknowledgments`, and `canonical`
-must be `https://` URIs.
+must be `https://` URIs. No field may contain a line break (`\r` or `\n`) —
+security.txt is one field per line, so an embedded line break could inject an
+extra field; the module throws a build-time error instead.
+
+**`Expires` is baked in at build time and never refreshes on its own.** An app
+that goes a year or more without a redeploy will start serving a stale (or
+outright expired) security.txt with no other signal. This package does not add a
+health-check integration for it — the served route logs one `console.warn` per
+isolate when `Expires` is at or within 30 days of passing, which is enough to
+show up in existing log/error tooling. Redeploying refreshes `Expires`, so apps
+that expect to go a long time between deploys should either redeploy
+periodically or set a shorter `expiresDays`.
 
 ## AI-crawler policy
 

@@ -2,6 +2,7 @@ const PACKAGE_NAME = '@narduk-enterprises/narduk-seo'
 
 export const SECURITY_TXT_CONTENT_TYPE = 'text/plain; charset=utf-8'
 export const SECURITY_TXT_DEFAULT_EXPIRES_DAYS = 365
+export const SECURITY_TXT_EXPIRY_WARNING_WINDOW_DAYS = 30
 export const SECURITY_TXT_LEGACY_PATH = '/security.txt'
 export const SECURITY_TXT_MAX_EXPIRES_DAYS = 365
 export const SECURITY_TXT_WELL_KNOWN_PATH = '/.well-known/security.txt'
@@ -38,6 +39,15 @@ function enabledWithoutContact(): Error {
   )
 }
 
+// RFC 9116 fields are one per line; an embedded CR or LF would let a config
+// value inject an extra field into the served body. Every field funnels
+// through this one guard rather than five separate checks.
+function assertNoLineBreaks(value: string, field: string): void {
+  if (/[\r\n]/u.test(value)) {
+    throw configError(`nardukSeo.securityTxt.${field} must not contain line breaks.`)
+  }
+}
+
 function asStringList(value: unknown, field: string): string[] {
   if (value === undefined) return []
   const items = Array.isArray(value) ? value : [value]
@@ -45,7 +55,10 @@ function asStringList(value: unknown, field: string): string[] {
     throw configError(`nardukSeo.securityTxt.${field} must be a string or an array of strings.`)
   }
 
-  return items.map((item) => item.trim()).filter((item) => item.length > 0)
+  const trimmed = items.map((item) => item.trim()).filter((item) => item.length > 0)
+  for (const item of trimmed) assertNoLineBreaks(item, field)
+
+  return trimmed
 }
 
 function normalizeContact(value: unknown): string[] {
@@ -130,6 +143,35 @@ export function resolveSecurityTxtBody(option: unknown, now: Date = new Date()):
   if (languages) lines.push(`Preferred-Languages: ${languages}`)
 
   return `${lines.join('\n')}\n`
+}
+
+// A fixed single space after the colon matches exactly what this module
+// generates above; no `\s*`/`.+` overlap, so no super-linear backtracking.
+const EXPIRES_LINE = /^Expires: (.+)$/mu
+
+/**
+ * Parses the `Expires` value baked into a security.txt body by
+ * {@link resolveSecurityTxtBody}. Returns `null` when the body has no
+ * parseable `Expires` line (defensive — {@link resolveSecurityTxtBody}
+ * always emits one).
+ */
+export function resolveSecurityTxtExpiresAt(body: string): Date | null {
+  const match = EXPIRES_LINE.exec(body)
+  if (!match) return null
+
+  const expiresAt = new Date((match[1] ?? '').trim())
+  return Number.isNaN(expiresAt.getTime()) ? null : expiresAt
+}
+
+/**
+ * True once `expiresAt` is at or within
+ * {@link SECURITY_TXT_EXPIRY_WARNING_WINDOW_DAYS} of `now` — the served
+ * route uses this to warn that the app has not rebuilt (and so not
+ * refreshed `Expires`) recently enough.
+ */
+export function isSecurityTxtNearOrPastExpiry(expiresAt: Date, now: Date = new Date()): boolean {
+  const warningWindowMs = SECURITY_TXT_EXPIRY_WARNING_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  return expiresAt.getTime() - now.getTime() <= warningWindowMs
 }
 
 export function resolveSecurityTxtHttpResult(body: unknown): SecurityTxtHttpResult {

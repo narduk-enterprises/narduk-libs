@@ -18,3 +18,10 @@ so existing apps keep the same robots.txt. `'disallow'` and
 ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai,
 Google-Extended, PerplexityBot, CCBot, Bytespider, Amazonbot, Applebot-Extended,
 meta-externalagent, cohere-ai).
+
+`securityTxt` field values (`contact`, `canonical`, `policy`, `acknowledgments`,
+`preferredLanguages`) reject embedded `\r`/`\n` with a build-time error —
+security.txt is one field per line, so a line break could otherwise inject an
+extra field. The served route also logs one `console.warn` per isolate when
+`Expires` is at or within 30 days of passing, since the value is baked in at
+build time and never refreshes on its own.
