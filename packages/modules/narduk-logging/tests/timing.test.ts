@@ -29,7 +29,7 @@ describe('RequestTiming', () => {
 
   it('strips quotes, backslashes, commas, and control characters from a description', () => {
     const timing = new RequestTiming({ exposePhases: true, clock: clockFrom(0, 5, 5) })
-    timing.mark('board', 'ok",\\evil desc')
+    timing.mark('board', 'ok",\\evil\u0007 desc')
     expect(timing.header()).toBe('board;dur=5;desc="okevil desc", total;dur=5')
   })
 
@@ -80,5 +80,38 @@ describe('RequestTiming', () => {
   it('anchors total to a supplied start rather than construction time', () => {
     const timing = new RequestTiming({ start: 100, clock: clockFrom(150) })
     expect(timing.totalMs()).toBe(50)
+  })
+})
+
+describe('RequestTiming header safety', () => {
+  it('drops a description that a header value cannot carry', () => {
+    // A header value is a ByteString: one character above U+00FF makes `Headers.set` throw
+    // `TypeError: Cannot convert argument to a ByteString` and `res.setHeader` throw
+    // ERR_INVALID_CHAR, so an accented word or an emoji in a description would 500 the route.
+    const timing = new RequestTiming({ exposePhases: true, clock: clockFrom(0, 4, 4) })
+    timing.mark('db', 'café ☕ 東京 rows')
+    const header = timing.header()
+    expect(header).toBe('db;dur=4;desc="caf   rows", total;dur=4')
+    expect(() => new Response(null).headers.set('server-timing', header)).not.toThrow()
+    expect([...header].every((character) => character.charCodeAt(0) < 128)).toBe(true)
+  })
+
+  it('bounds the rendered header to 2 KB, not just to 32 phases', () => {
+    const timing = new RequestTiming({ exposePhases: true })
+    for (let index = 0; index < 32; index++) {
+      timing.mark(`phase_with_a_deliberately_long_name_${index}`.slice(0, 64), 'd'.repeat(200))
+    }
+    const header = timing.header()
+    expect(header.length).toBeLessThanOrEqual(2048)
+    expect(header).toMatch(/total;dur=\d+$/)
+  })
+
+  it('validates a phase name before running work, so measure() keeps the real error', async () => {
+    const timing = new RequestTiming()
+    const original = new Error('the failure the caller cares about')
+    await expect(timing.measure('bad name', () => Promise.reject(original))).rejects.toThrow(
+      TypeError,
+    )
+    await expect(timing.measure('good_name', () => Promise.reject(original))).rejects.toBe(original)
   })
 })

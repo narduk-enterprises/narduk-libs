@@ -25,8 +25,9 @@ For an existing core app, keep
 to `useLogger(event, options)` and own request completion in the host lifecycle.
 Only a Nuxt/Nitro host can install `installNitroLogging`.
 
-Every request already gets a `total`-only `Server-Timing` header for free. To
-break a slow route down, call `useRequestTiming`:
+Every request already gets a `total`-only `Server-Timing` header for free
+(except a response a shared cache may replay, which is left unstamped). To break
+a slow route down, call `useRequestTiming`:
 
 ```ts
 import {

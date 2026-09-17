@@ -61,11 +61,18 @@ output.
 standalone H3 callers provide them explicitly. Incoming IDs accept only
 `[a-zA-Z0-9._:-]`, 1–128 characters; a request with no valid ID header falls
 back to a valid `cf-ray` (so it still correlates with Cloudflare's own edge
-trace), then to a generated UUID. The response contains `x-request-id`. An early
-middleware may create the ID without creating a logger. Completion uses the
-final matched route template or `/[unmatched]`. `requestIdHeaders(id)` returns
-`{ 'x-request-id': id }` to forward on an outbound call — for example to a
-`narduk-data` fetch — so a slow upstream stays traceable from the same ID.
+trace), then to a generated UUID. That charset and bound are a safety property,
+not a trust one: they guarantee the value cannot inject a header or a log field,
+and they guarantee nothing about where it came from. A public route's inbound
+`x-request-id` — and its `cf-ray`, on any path that does not actually traverse
+Cloudflare — is chosen by the caller, so a client can pin many requests to one
+ID or reuse an ID it saw elsewhere. Correlate with it; never treat it as
+evidence of identity, and never authorize on it. The response contains
+`x-request-id`. An early middleware may create the ID without creating a logger.
+Completion uses the final matched route template or `/[unmatched]`.
+`requestIdHeaders(id)` returns `{ 'x-request-id': id }` to forward on an
+outbound call — for example to a `narduk-data` fetch — so a slow upstream stays
+traceable from the same ID.
 
 `requestLogging: false` suppresses successful summaries; failures remain visible
 unless the level suppresses them. `skipPaths` replaces the default noise list:
@@ -76,7 +83,13 @@ paths. The two core framework prefixes retain their legacy prefix behavior.
 ### Server-Timing and slow-route logging
 
 Every request gets a `Server-Timing` response header with at least
-`total;dur=<ms>`, whether or not the route touches timing. Call
+`total;dur=<ms>`, whether or not the route touches timing — stamped from Nitro's
+`beforeResponse` hook, the last point at which the response headers are still
+open. Two exceptions: a response whose `cache-control` lets a _shared_ cache
+store it (`public`, `s-maxage`, `immutable`, and not overridden by `private` or
+`no-store`) is left alone, along with its `x-request-id`, because a cache would
+replay one request's identity to every later client; and an upstream
+`Server-Timing` is appended to rather than replaced. Call
 `useRequestTiming(event, { exposePhases? })` from a route to get the request's
 `RequestTiming` instance and call `mark(name, description?)` to close the phase
 running since the previous mark (or since the request started) and start the
@@ -87,17 +100,25 @@ from the Nitro plugin config) controls whether marked phases — and whatever a
 Leave it off for a public route whose phase names or descriptions would leak
 internal shape (a DB table, a subsystem name); a route the app has decided is
 fine to detail can opt in. A phase name must match `[\w-]{1,64}`; a description
-is sanitized (control characters, quotes, backslashes, and commas removed) and
-truncated to 128 characters, then rendered as
-`name;dur=<ms>;desc="<description>"`. At most 32 marked phases are rendered;
-elapsed time keeps accumulating into `total` regardless.
+is sanitized down to printable ASCII (everything outside `[\x20-\x7e]` is
+removed, along with the `"`, `\` and `,` that would break the header grammar)
+and truncated to 128 characters, then rendered as
+`name;dur=<ms>;desc="<description>"`. The non-ASCII rule is load-bearing: a
+header value is a ByteString, so a description carrying an accented word or an
+emoji would make `Headers.set`/`res.setHeader` throw and turn the response into
+a 500. At most 32 marked phases are rendered and the whole header stays under 2
+KB, whichever bound is reached first; elapsed time keeps accumulating into
+`total` regardless.
 
 `RequestLoggingOptions.slowRouteThresholdMs` (and `LogRequestOptions` on
 `./worker`'s `logRequest`) is unset by default — no line is ever emitted. Set it
 to get one structured `warn` "Slow route" log line per request whose total
 duration exceeds it, carrying the route template, method, status, duration, and
 request ID already bound to the request logger — never the raw URL, query
-string, or headers.
+string, or headers. It obeys the same silencing as the completion summary: a
+path matched by `skipPaths` or a host with `requestLogging: false` gets no slow
+line either, so a slow asset or health probe cannot flood the log. A failing
+request (5xx) stays visible on both, as it does for the summary.
 
 Inside a Cloudflare Worker, wall time only advances across I/O: workerd suspends
 the CPU clock between awaits, so a CPU-bound phase with no I/O in it reports
@@ -126,9 +147,10 @@ request's `RequestTiming`, the same API `useRequestTiming` returns for `./h3`.
 `options.timingExposePhases` and `options.slowRouteThresholdMs` mirror
 `RequestLoggingOptions` above, including the same defaults (phases hidden,
 slow-route logging off) — see "Server-Timing and slow-route logging".
-`logRequest` always sets both `x-request-id` and `server-timing` on the
-response, cf-ray fallback included. HTTP response bodies remain streamed. Queue
-acknowledgments and retries remain the handler's decisions.
+`logRequest` sets both `x-request-id` and `server-timing` on the response,
+cf-ray fallback included, under the same shared-cache exception described above.
+HTTP response bodies remain streamed. Queue acknowledgments and retries remain
+the handler's decisions.
 
 `./node` exports `createNodeLogger` and optional async
 `createOtlpSink({ endpoint, headers })`. Install its OpenTelemetry peers before
