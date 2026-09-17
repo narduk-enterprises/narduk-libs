@@ -276,6 +276,24 @@ describe('per-pin geometry on a mounted map (§c.3)', () => {
     expect(map.annotations[0]?.anchorOffset).toMatchObject({ x: -85, y: -150 })
     expect(map.annotations[1]?.anchorOffset).toMatchObject({ x: -8, y: -8 })
   })
+
+  it('rewrites the anchor when pinGeometry changes and the items do not', async () => {
+    const wrapper = await mountMap({
+      items: STATIONS,
+      pinGeometry: () => ({ size: { height: 150, width: 170 } }),
+    })
+    const annotation = (api(wrapper).getMap() as { annotations: Array<{ anchorOffset: DOMPoint }> })
+      .annotations[0]
+
+    await wrapper.setProps({ pinGeometry: () => ({ size: { height: 200, width: 170 } }) })
+    await nextTick()
+
+    expect(annotation?.anchorOffset).toMatchObject({ x: -85, y: -200 })
+    expect(api(wrapper).getDiagnostics().lastDiff).toMatchObject({
+      added: [],
+      removed: [],
+    })
+  })
 })
 
 describe('the three flipped defaults (§c.1)', () => {
