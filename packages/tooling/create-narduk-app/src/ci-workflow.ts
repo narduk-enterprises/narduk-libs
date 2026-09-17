@@ -2,7 +2,11 @@ import { NODE_VERSION } from './manifest.js'
 
 import type { AppVisibility } from './types.js'
 
-const workflowSha = '9070db7244649bf192d392a5b96eb1656997c84c'
+// Kept in sync with the reference app (narduk-enterprises/buoys) rather than
+// left to drift: buoys#107 moved to this exact SHA, the tip of
+// narduk-enterprises/workflows main as of 2026-09-16 (generator-parity audit,
+// narduk-libs#D2). Bump deliberately alongside a verified Buoys/CI adoption.
+const workflowSha = '4e99dafc81e09eb10c6e404f67e3ca34a17b42a6'
 
 // Resolved from fleet's organization routes. Creating files does not grant
 // selected-repository membership; onboarding remains an explicit fleet action.
@@ -58,18 +62,68 @@ export function createCiRegistryAuthScript(): string {
   ].join('\n')
 }
 
+// GitHub Copilot's coding-agent environment runs this workflow once (on
+// `workflow_dispatch`, dispatched by Copilot itself, never by a caller here)
+// to prepare its own sandbox before it can see or run any other script.
+// Reuses setupSteps() -- the same install sequence the public path's
+// quality/browser jobs run on hosted GitHub runners -- because both need the
+// same thing: a hosted `ubuntu-latest` sandbox with no self-hosted-runner
+// access, installing from the standard NARDUK_PLATFORM_GH_PACKAGES_READ
+// Actions secret. Emitted for BOTH visibilities: even a public app's Worker
+// depends on private @narduk-enterprises/* packages, so Copilot needs
+// registry auth to install regardless of the app's own CI runner policy
+// (`runs-on: ubuntu-latest` here is a deliberate carve-out from "no
+// GitHub-hosted CI for real work" -- Copilot's own sandbox prep is not the
+// app's CI, the same reasoning that already applies to the reference app's
+// copilot-setup-steps.yml on a private, self-hosted-CI repo). Its own
+// `environment: copilot` job-level scope is unrelated to setupSteps()'s
+// secret access.
+export function createCopilotSetupWorkflow(): string {
+  return [
+    'name: Copilot Setup Steps',
+    '',
+    'on:',
+    '  workflow_dispatch:',
+    '',
+    'permissions:',
+    '  contents: read',
+    '  packages: read',
+    '',
+    // Missing on the reference app today (buoys#728) -- included here
+    // because a superseded dispatch should not keep an old sandbox prep
+    // running, and every other workflow this generator emits sets both.
+    'concurrency:',
+    '  group: copilot-setup-${{ github.repository }}-${{ github.ref }}',
+    '  cancel-in-progress: true',
+    '',
+    'jobs:',
+    '  copilot-setup-steps:',
+    '    runs-on: ubuntu-latest',
+    '    environment: copilot',
+    '    timeout-minutes: 30',
+    '    steps:',
+    ...setupSteps(),
+    '',
+  ].join('\n')
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
     '',
     'on:',
+    '  pull_request:',
     '  push:',
     '    branches: [main]',
-    '  pull_request:',
+    '  workflow_dispatch:',
     '',
+    // Cancel superseded pull-request runs only. A push run (main) queues
+    // instead of being cancelled, so the commit that actually merged keeps a
+    // completed CI record rather than a cancelled one (buoys#107 fix,
+    // matched here for parity).
     'concurrency:',
-    '  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
-    '  cancel-in-progress: true',
+    '  group: ci-${{ github.repository }}-${{ github.event.pull_request.number || github.sha }}',
+    "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
     '',
     'permissions:',
     '  contents: read',
@@ -93,15 +147,24 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '      require-scripts: true',
       '      typecheck-worker-script: typecheck',
       "      typecheck-web-script: ''",
-      '      build-script: build',
+      // `build:ci` sets NARDUK_CLOUDFLARE_BUILD=1 (drops the local-only
+      // nitro-cloudflare-dev module) and NITRO_PRESET=cloudflare_module, so
+      // CI validates the actual deployable Worker shape instead of the dev
+      // preset (matches the reference app's build-script input exactly).
+      '      build-script: build:ci',
       // The public path runs `quality:static`, which already chains
-      // `foundation:shared-ui-pinned`. The private path calls the shared
-      // workflow instead, so the check has to be named here or CI never runs
-      // it. It reads manifests only, so it needs no registry credential and is
-      // safe outside the token-scoped install step (narduk-libs#282 review).
-      "      extra-scripts: 'format:check lint knip foundation:shared-ui-pinned'",
+      // `foundation:shared-ui-pinned` and `manifests:validate`. The private
+      // path calls the shared workflow instead, so each check has to be
+      // named here or CI never runs it. They read manifests only, so they
+      // need no registry credential and are safe outside the token-scoped
+      // install step (narduk-libs#282 review).
+      "      extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
       '      run-tests: true',
       '      test-script: test:unit',
+      // Fails the build job on a FAIL/UNKNOWN web-foundation conformance
+      // result and uploads the JSON artefact either way (parity with the
+      // reference app's ci.yml).
+      '      foundation-check: true',
       '      run-e2e: true',
       '      e2e-script: test:e2e',
       `      e2e-runner: '${browserRoute}'`,
@@ -146,7 +209,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '      - name: Install Chromium on the hosted runner',
     '        run: pnpm exec playwright install --with-deps chromium',
     '      - name: Build application',
-    '        run: pnpm run build',
+    '        run: pnpm run build:ci',
     '      - name: Run Chromium shard',
     '        run: pnpm run test:e2e --project=chromium --shard=${{ matrix.shard }}/3 --workers=1 --reporter=line,blob',
     '      - name: Upload shard blob report',

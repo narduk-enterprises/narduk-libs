@@ -39,6 +39,12 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-shell': '0.3.0',
   '@narduk-enterprises/narduk-testkit': '1.3.2',
   '@narduk-enterprises/narduk-uploads': '1.20.0',
+  // Explicit module (see generate.ts's moduleList -- narduk-core's own
+  // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
+  // deep in the setup chain to finish registering the icon client-bundle
+  // virtual file before build; making it explicit here fixes that, matching
+  // the reference app's own modules array and devDependency exactly.
+  '@nuxt/icon': '2.5.1',
   '@nuxt/test-utils': '4.0.3',
   '@nuxt/ui': '4.8.1',
   '@playwright/test': '1.61.1',
@@ -50,6 +56,12 @@ export const PACKAGE_VERSIONS = {
   'drizzle-kit': '0.31.10',
   'drizzle-orm': '0.45.2',
   esbuild: '0.28.1',
+  // Local Wrangler binding emulation under `nuxt dev` (gated behind
+  // isCloudflareBuild in the generated nuxt.config.ts). The reference app
+  // pins a caret range that resolves to this exact version; the generator's
+  // own exact-pin discipline (every generated dependency is exact SemVer)
+  // pins it directly instead.
+  'nitro-cloudflare-dev': '0.2.2',
   // @narduk-enterprises/eslint-config v2 (this workspace's own peer
   // requirement, see packages/tooling/eslint-config/package.json) needs
   // eslint@^10.0.0; this pin generates every new app's own devDependency, so
@@ -162,6 +174,7 @@ function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record
     '@cloudflare/workers-types',
     '@narduk-enterprises/narduk-app-tools',
     '@narduk-enterprises/narduk-testkit',
+    '@nuxt/icon',
     '@playwright/test',
     // @nuxt/ui's module dynamically imports('@tailwindcss/vite') at Nuxt
     // setup time to register the Vite plugin itself; the app has to make the
@@ -173,6 +186,10 @@ function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record
     ...(databaseBackend === 'none' ? [] : ['drizzle-kit']),
     'eslint',
     'happy-dom',
+    // Always installed, not gated behind a capability: the module it backs
+    // is itself gated at runtime (isCloudflareBuild) in nuxt.config.ts, not
+    // by whether it is present in node_modules.
+    'nitro-cloudflare-dev',
     'prettier',
     'typescript',
     'vitest',
@@ -208,6 +225,13 @@ export function createRootPackageManifest(
     },
     scripts: {
       build: 'pnpm --filter web run build',
+      // NARDUK_CLOUDFLARE_BUILD=1 drops the local-only nitro-cloudflare-dev
+      // module (see nuxt.config.ts's isCloudflareBuild gate) and
+      // NITRO_PRESET=cloudflare_module makes the build target the actual
+      // deployable Worker shape. CI's ci.yml `build-script: build:ci` and
+      // the public browser job's `pnpm run build:ci` both call this --
+      // matches the reference app's root script exactly.
+      'build:ci': 'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       'cf:build': 'pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
@@ -222,26 +246,39 @@ export function createRootPackageManifest(
       'deploy:version': 'pnpm --filter web run deploy:version',
       dev: 'pnpm --filter web run dev',
       doctor: 'pnpm --filter web run doctor',
+      // Full web-foundation conformance run (company-hq
+      // docs/WEB-FOUNDATION-CHECK.md), for local/manual use -- CI's own gate
+      // is the `foundation-check: true` input on the reusable workflow
+      // (ci-workflow.ts), which invokes narduk-app-tools directly and does
+      // not call this script. Matches the reference app's root script.
+      'foundation:check':
+        'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',
       'foundation:shared-ui-pinned': 'pnpm --filter web run foundation:shared-ui-pinned',
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       knip: 'knip',
       lint: 'pnpm --filter web run lint',
+      // Reads only apps/web/wrangler.jsonc and, once onboarding creates it,
+      // ../../Config/cloudflare-app.json -- no install-time resolution or
+      // registry credential, so it belongs in the static half of quality
+      // like foundation:shared-ui-pinned (see foundation:check item 1.3).
+      'manifests:validate': 'pnpm --filter web run manifests:validate',
       'performance-budget': 'pnpm --filter web run performance-budget',
       'og:generate': 'pnpm --filter web run og:generate',
       'og:check': 'pnpm --filter web run og:check',
       'og:check:live': 'pnpm --filter web run og:check:live',
       quality: 'pnpm run quality:static && pnpm run test:e2e',
-      // `foundation:shared-ui-pinned` sits in the static half because it reads
-      // manifests only: no install-time resolution and, by design, no registry
-      // credential (see narduk-app-tools `item-8-shared-ui-pinned.ts`). That is
-      // what lets it run here at all -- the generated workflow scopes the
-      // GitHub Packages token to the install step, so nothing after it has an
+      // `foundation:shared-ui-pinned` and `manifests:validate` sit in the
+      // static half because they read manifests only: no install-time
+      // resolution and, by design, no registry credential (see
+      // narduk-app-tools `item-8-shared-ui-pinned.ts`). That is what lets
+      // them run here at all -- the generated workflow scopes the GitHub
+      // Packages token to the install step, so nothing after it has an
       // ambient token. narduk-libs' own `packed-consumer-smoke` job expands
       // this chain via `scripts/consumer-smoke-phases.mjs`, so the check also
       // runs against a really-installed generated app on every narduk-libs PR.
       'quality:static':
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit',
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
@@ -249,6 +286,13 @@ export function createRootPackageManifest(
     },
     devDependencies: {
       '@narduk-enterprises/eslint-config': PACKAGE_VERSIONS['@narduk-enterprises/eslint-config'],
+      // Root-level, not just apps/web's: `foundation:check` above runs
+      // `narduk-app` directly from the repo root, and pnpm only symlinks a
+      // package's own dependencies' bins into ITS node_modules/.bin -- the
+      // web workspace's copy (devDependencyEntries) does not resolve here.
+      // Matches the reference app's own root devDependency.
+      '@narduk-enterprises/narduk-app-tools':
+        PACKAGE_VERSIONS['@narduk-enterprises/narduk-app-tools'],
       '@playwright/test': PACKAGE_VERSIONS['@playwright/test'],
       '@types/node': PACKAGE_VERSIONS['@types/node'],
       eslint: PACKAGE_VERSIONS.eslint,
@@ -415,6 +459,14 @@ export function createWebPackageManifest(
       dev: 'nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       lint: 'nuxt prepare && eslint . --max-warnings 0',
+      // Cross-checks wrangler.jsonc's bindings against ../../Config/cloudflare-app.json
+      // (populated by onboarding, after this generator runs). Absent that
+      // file the script exits 0 with an explanatory message instead of
+      // throwing -- see scripts/validate-manifests.mjs's own header comment
+      // for why: foundation:check item 1.3 only requires this script to
+      // exist and succeed, not that live infra metadata already agrees with
+      // it on a checkout this generator itself just produced.
+      'manifests:validate': 'node scripts/validate-manifests.mjs',
       'nuxt:prepare': 'nuxt prepare',
       'test:e2e': 'playwright test',
       'test:unit': 'vitest run --config vitest.config.ts',

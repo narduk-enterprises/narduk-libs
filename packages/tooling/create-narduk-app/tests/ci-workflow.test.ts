@@ -3,7 +3,11 @@ import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createCiRegistryAuthScript, createCiWorkflow } from '../src/ci-workflow.js'
+import {
+  createCiRegistryAuthScript,
+  createCiWorkflow,
+  createCopilotSetupWorkflow,
+} from '../src/ci-workflow.js'
 import { buildGeneratedFiles } from '../src/generate.js'
 import { createRootPackageManifest } from '../src/manifest.js'
 
@@ -21,12 +25,17 @@ describe('generated CI boundaries', () => {
     expect(workflow).toContain('run-e2e: true')
     expect(workflow).toContain('e2e-shards: 3')
     expect(workflow).toContain(
-      "extra-scripts: 'format:check lint knip foundation:shared-ui-pinned'",
+      "extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
     )
+    expect(workflow).toContain('foundation-check: true')
     expect(workflow).toContain('e2e-install-browsers: false')
     expect(workflow).not.toContain('e2e-browsers-path:')
     expect(workflow).not.toContain('playwright install')
     expect(workflow).toContain('selected-repository membership')
+    expect(workflow).toContain('workflow_dispatch:')
+    // Cancel superseded pull-request runs only; a push (main) run queues
+    // instead, so the commit that merged keeps a completed CI record.
+    expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}")
     const manifest = JSON.parse(createRootPackageManifest('ci-fixture', [], 'private'))
     expect(manifest.scripts['test:unit']).toBe('pnpm --filter web run test:unit')
     expect(manifest.scripts['test:e2e']).toBe('playwright test')
@@ -39,11 +48,27 @@ describe('generated CI boundaries', () => {
     expect(workflow).not.toContain('self-hosted')
     expect(workflow).not.toContain('narduk-enterprises/workflows')
     expect(workflow).toContain('timeout-minutes: 30')
-    expect(workflow).toContain('cancel-in-progress: true')
+    expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}")
     expect(workflow).toContain('persist-credentials: false')
     expect(workflow).toContain('pnpm run quality')
+    // build:ci sets NARDUK_CLOUDFLARE_BUILD=1 + NITRO_PRESET=cloudflare_module
+    // so the hosted browser job also builds the real deployable Worker shape.
+    expect(workflow).toContain('pnpm run build:ci')
     const actions = [...workflow.matchAll(/uses: [^@\s]+@(\S+)/gu)]
     expect(new Set(actions.map((action) => action[0].split('@')[0])).size).toBe(5)
+    for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
+  })
+
+  it('emits a visibility-independent Copilot setup workflow with concurrency and a job timeout', () => {
+    const workflow = createCopilotSetupWorkflow()
+    expect(workflow).toContain('on:\n  workflow_dispatch:')
+    expect(workflow).toContain('environment: copilot')
+    expect(workflow).toContain('timeout-minutes: 30')
+    expect(workflow).toContain('concurrency:')
+    expect(workflow).toContain('cancel-in-progress: true')
+    expect(workflow).toContain('runs-on: ubuntu-latest')
+    const actions = [...workflow.matchAll(/uses: [^@\s]+@(\S+)/gu)]
+    expect(actions.length).toBeGreaterThan(0)
     for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
   })
 
