@@ -168,6 +168,9 @@ export function mapKitErrorStatusForHttpStatus(httpStatus: number): MapKitErrorS
   return 'Unknown'
 }
 
+/** WHATWG URL parsing removes every ASCII tab, LF and CR from the input. */
+const URL_IGNORED_CHARACTERS = /[\t\n\r]/g
+
 /** An absolute (`https://host/p`) or protocol-relative (`//host/p`) endpoint. */
 const CROSS_ORIGIN_CAPABLE_ENDPOINT = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
 
@@ -178,8 +181,10 @@ const CROSS_ORIGIN_CAPABLE_ENDPOINT = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
  * failing at configuration time says so far more clearly than a CORS error.
  */
 function assertRelativeTokenEndpoint(endpoint: string): void {
-  // WHATWG treats `\` as `/` in a relative URL, so `/\host/p` is protocol-relative.
-  const canonical = endpoint.trim().replaceAll('\\', '/')
+  // WHATWG canonicalisation, in the parser's own order: every ASCII tab and
+  // newline is REMOVED from the input first, so `/<TAB>/host/p` is `//host/p`;
+  // then `\` reads as `/`, so `/\host/p` is protocol-relative too.
+  const canonical = endpoint.trim().replaceAll(URL_IGNORED_CHARACTERS, '').replaceAll('\\', '/')
   if (!CROSS_ORIGIN_CAPABLE_ENDPOINT.test(canonical)) return
   throw new Error(
     `tokenEndpoint must be a relative path on the serving origin, not ${endpoint}: ` +

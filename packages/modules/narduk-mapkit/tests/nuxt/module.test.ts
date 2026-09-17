@@ -133,15 +133,21 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
     )
   })
 
-  it.each(['/\\evil.example/mk', '/\\\\evil.example/mk'])(
-    'refuses a backslash-disguised protocol-relative token route (%s)',
-    async (tokenRoutePath) => {
-      // WHATWG treats `\` as `/` in a relative URL, so `/\evil.example/mk`
-      // becomes `//evil.example/mk` and the token fetch leaves the origin.
-      // A startsWith('//') check does not see the backslash form.
-      await expect(setup({ tokenRoutePath })).rejects.toThrow('must not start with //')
-    },
-  )
+  it.each([
+    '/\\evil.example/mk',
+    '/\\\\evil.example/mk',
+    // WHATWG removes every ASCII tab and newline from the input BEFORE parsing,
+    // so a separator split by one is still protocol-relative.
+    '/\t/evil.example/mk',
+    '/\n/evil.example/mk',
+    '/\r/evil.example/mk',
+    '/\t\\evil.example/mk',
+  ])('refuses a backslash-disguised protocol-relative token route (%s)', async (tokenRoutePath) => {
+    // WHATWG treats `\` as `/` in a relative URL, so `/\evil.example/mk`
+    // becomes `//evil.example/mk` and the token fetch leaves the origin.
+    // A startsWith('//') check does not see the backslash form.
+    await expect(setup({ tokenRoutePath })).rejects.toThrow('must not start with //')
+  })
 
   it('registers no route at all when the app serves its own', async () => {
     const nuxt = await setup({ tokenRoute: false })

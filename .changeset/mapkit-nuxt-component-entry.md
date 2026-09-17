@@ -82,3 +82,10 @@ Review round (Grok adversarial) on PR 436:
 - The pin layer reads `pinGeometry` / `itemKey` from the live props, so a
   geometry-only `setProps` restyles in place instead of keeping the init-time
   anchor.
+
+Review round 2 (Opus finish pass) on PR 436:
+
+- The same canonicalisation now strips ASCII tab, LF and CR first. WHATWG
+  removes those from the input BEFORE parsing, so `/<TAB>/evil.example/mk` and
+  `/<TAB>\evil.example/mk` were still protocol-relative and the `\`-only fix did
+  not see them.

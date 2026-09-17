@@ -310,6 +310,12 @@ describe('§b.1 the token endpoint is a relative path, enforced', () => {
     '//evil.example/api/mapkit-token',
     '/\\evil.example/api/mapkit-token',
     '/\\\\evil.example/api/mapkit-token',
+    // WHATWG removes every ASCII tab and newline from the input BEFORE parsing,
+    // so a separator split by one is still protocol-relative.
+    '/\t/evil.example/api/mapkit-token',
+    '/\n/evil.example/api/mapkit-token',
+    '/\r/evil.example/api/mapkit-token',
+    '/\t\\evil.example/api/mapkit-token',
   ])('refuses %s as a config error rather than fetching it', async (endpoint) => {
     const fetchImpl = vi.fn(tokenResponse())
 
