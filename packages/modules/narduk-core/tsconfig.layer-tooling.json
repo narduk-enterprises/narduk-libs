@@ -47,6 +47,7 @@
     "runtime/server/utils/listQuery.ts",
     "runtime/server/utils/logger.ts",
     "runtime/server/utils/logSanitizer.ts",
+    "runtime/server/utils/narduk-data.ts",
     "runtime/server/plugins/error-logger.ts",
     "runtime/server/middleware/requestLogger.ts",
     "runtime/server/utils/runtime-env.ts",
