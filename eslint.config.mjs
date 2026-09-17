@@ -1,4 +1,6 @@
 // @ts-check
+import path from 'node:path'
+
 import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'
 
 export default [
@@ -283,13 +285,24 @@ export default [
     // no such singleton -- each listed tsconfig gets its own cached
     // `ts.Program`, so it coexists with the rest of the package's
     // `projectService: true` files in the same run.
+    //
+    // Note on coverage: `narduk/correctness-type-aware` enables no rules of
+    // its own (it is parser wiring so an app can switch type-aware rules on
+    // locally), so today the real project buys no extra lint coverage over
+    // plain `projectService: false` -- it is here so these files are covered
+    // the day a type-aware rule is switched on, and it costs no measurable
+    // lint time.
     files: [
       'packages/tooling/narduk-testkit/src/server/handlers/**/*.ts',
       'packages/tooling/narduk-testkit/tests/server/handlers/**/*.ts',
     ],
     languageOptions: {
       parserOptions: {
-        tsconfigRootDir: new URL('packages/tooling/narduk-testkit', import.meta.url).pathname,
+        // `import.meta.dirname`, not `new URL(...).pathname`: a URL pathname
+        // is percent-encoded, so a checkout under a path containing a space
+        // (or any non-ASCII character) would hand TypeScript a `%20` it
+        // cannot resolve.
+        tsconfigRootDir: path.join(import.meta.dirname, 'packages/tooling/narduk-testkit'),
         project: ['./tsconfig.handlers.json'],
         // Cancels the `projectService: true` these files would otherwise
         // inherit from `narduk/correctness-type-aware` -- a file can't use

@@ -31,13 +31,27 @@ deterministic tests) and `metadata`.
 **`createFakeR2Bucket`.** An in-memory `R2Bucket` — `get`/`head`/`put`/
 `delete`/`list` with prefix filtering, cursor pagination and a real MD5 etag.
 
-**`createFakeD1Database`.** A `D1Database` backed by `node:sqlite` (Node 24,
-already the monorepo's pinned runtime — no new dependency), so
-`prepare().bind().first()/all()/run()/raw()`, `batch()` and `exec()` actually
-execute SQL. `batch()` runs inside a real `BEGIN`/`COMMIT`/`ROLLBACK`
-transaction, so a failure partway through rolls back every statement in the
-batch, matching D1's own all-or-nothing guarantee as far as this fake can
-promise it.
+**`createFakeD1Database`.** A `D1Database` backed by `node:sqlite` (a Node
+built-in — no new dependency; the package now declares `engines.node
+
+> =
+> 22.22.0`for it), so`prepare().bind().first()/all()/run()/raw()`, `batch()`and`exec()`actually execute SQL.`batch()`runs inside a real`BEGIN`/`COMMIT`/`ROLLBACK`
+> transaction, so a failure partway through rolls back every statement in the
+> batch, matching D1's own all-or-nothing guarantee as far as this fake can
+> promise it.
+
+**Fidelity over permissiveness.** Every fake was diffed against a real binding
+(workerd, via miniflare) and each place SQLite or an in-memory map would have
+been _more permissive than production_ is enforced instead, because a fake that
+accepts what production rejects turns a broken handler into a green test: D1
+rejects a `bind()` with the wrong number of values rather than binding NULL,
+`first(column)` throws `D1_COLUMN_NOTFOUND` for a column the result set lacks,
+`run()` returns rows for a row-returning statement (D1's `run()` and `all()`
+share one shape), BLOB columns come back as D1's plain byte arrays, and `exec()`
+counts statements by line; KV stores bytes rather than a UTF-8 string (so a
+binary value survives a round trip) and enforces the key rules and the 60-second
+expiration floor; R2 honours `range`, gates `list`'s metadata maps behind
+`include`, and makes a body single-use.
 
 **`callHandler`.** `callHandler(handler, eventOptions, { env })` wires the fakes
 (or any object) into `event.context.cloudflare.env`, calls the handler, converts
@@ -46,9 +60,15 @@ returns the same `{ status, headers, body }` shape as `readFakeEventResponse`.
 
 **What these fakes do NOT emulate**, spelled out in the README: D1's real
 network latency, multi-region consistency and read-replica sessions
-(`withSession()` throws); KV's real eventual consistency; R2's multipart uploads
-and conditional (`onlyIf`) requests; and the deprecated D1 `dump()` API (also
-throws).
+(`withSession()` throws); KV's real eventual consistency and its value/metadata
+size limits; R2's multipart uploads and conditional (`onlyIf`) requests — `get`
+throws on `onlyIf` rather than quietly ignoring it; and the deprecated D1
+`dump()` API (also throws).
+
+`h3` and `@cloudflare/workers-types` are now declared as optional peer
+dependencies: the published `server/handlers` entry imports `h3` at runtime and
+its `.d.ts` files use the Cloudflare ambient globals, neither of which a
+`devDependencies`-only declaration gives a consumer.
 
 **Follow-ups (not done in this PR, to avoid touching narduk-core from this
 lane).** This harness is now capable of replacing several ad-hoc fakes elsewhere

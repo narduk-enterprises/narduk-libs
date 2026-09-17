@@ -434,13 +434,29 @@ await bucket.put('report.pdf', pdfBytes, {
 })
 ```
 
-`createFakeD1Database` is backed by `node:sqlite` (Node 24, already this
-monorepo's pinned runtime — no new dependency), so SQL actually executes rather
-than returning canned rows: `prepare().bind().first()/all()/run()/raw()` behave
-like the real thing, and `batch()` runs inside a real
-`BEGIN`/`COMMIT`/`ROLLBACK` transaction, so a failing statement partway through
-a batch rolls back every statement in it. Pass an existing `node:sqlite`
-database via `{ database }` to seed schema once and share it across fakes.
+`createFakeD1Database` is backed by `node:sqlite` (a Node built-in — no new
+dependency), so SQL actually executes rather than returning canned rows:
+`prepare().bind().first()/all()/run()/raw()` behave like the real thing, and
+`batch()` runs inside a real `BEGIN`/`COMMIT`/`ROLLBACK` transaction, so a
+failing statement partway through a batch rolls back every statement in it. Pass
+an existing `node:sqlite` database via `{ database }` to seed schema once and
+share it across fakes.
+
+**Runtime requirements.** `server/handlers` is Node-only and test-time only. It
+imports `node:sqlite`, `node:http`, `node:net`, `node:stream` and `node:crypto`,
+so the package declares `engines.node >= 22.22.0` (the floor at which
+`node:sqlite`'s `DatabaseSync`, `columns()` and `setReturnArrays()` are all
+available unflagged). It also imports `h3` at runtime and its types use
+`@cloudflare/workers-types`' ambient globals; both are declared as optional peer
+dependencies, so an app that only uses the Playwright helpers is not made to
+install them.
+
+**Do not import this into a Worker bundle.** These fakes exist to replace the
+bindings inside a Vitest run; bundling them into deployed Worker code would mean
+shipping a SQLite database and a Node HTTP server in place of the real D1/KV/R2
+bindings. The `node:` imports make that fail loudly at build time under
+Cloudflare's runtime rather than silently — but keep the import inside `tests/`,
+and note that this package as a whole is a `devDependency`.
 
 **`callHandler`.** For the common case of a handler that reads its bindings from
 `event.context.cloudflare.env`:
@@ -471,13 +487,35 @@ and the real Worker runtime matters more than a longer feature list:
   useful.
 - **KV**: no eventual consistency. A `put()` is visible to the very next `get()`
   in the same test, which is not how KV behaves in production across regions.
+  The 25 MiB value and 1 KiB metadata size limits are not enforced either.
 - **R2**: no multipart uploads (`createMultipartUpload` and friends) and no
-  conditional requests (`onlyIf`); `list()` supports `prefix`, `cursor` and
-  `limit` but not `delimiter`/`include`.
+  conditional requests — `get()` **throws** on `onlyIf` rather than quietly
+  ignoring it, because a real bucket answers a failed precondition with a
+  body-less `R2Object` and a fake that returned the body would make a broken
+  handler green. `list()` supports `prefix`, `cursor`, `limit` and `include` but
+  not `delimiter`.
+- **Nitro's hooks**: this harness calls a handler directly, so nothing that runs
+  in a Nitro lifecycle hook runs here — including narduk-logging's
+  `Server-Timing` header, which is set in `beforeResponse`. A handler that sets
+  a response header itself is read back normally.
 
 None of that makes these fakes wrong for their job — testing a route handler's
 own logic against realistic bindings — but a test that depends on any of the
 above belongs against a real (or `wrangler dev`) binding instead.
+
+**Where the fakes are deliberately strict.** Each fake was diffed against a real
+binding (workerd, via miniflare), and every place the naive implementation would
+have been _more permissive than production_ raises instead — a fake that accepts
+what production rejects is how a broken handler gets a green test. So: D1
+rejects a `bind()` with the wrong number of values instead of binding NULL,
+`first(column)` throws `D1_COLUMN_NOTFOUND` for a column the result set lacks,
+`run()` returns rows for a row-returning statement, BLOB columns come back as
+D1's plain byte arrays rather than a `Uint8Array`, and `exec()` counts
+statements by line the way D1 does. KV stores bytes rather than a decoded string
+(so a binary value survives a round trip) and enforces the key rules (no
+empty/`.`/`..`/over-512-byte keys) and the 60-second expiration floor. R2
+honours `range`, gates `list`'s two metadata maps behind `include`, and makes an
+object body single-use.
 
 **Follow-ups.** Several packages already hand-roll the `IncomingMessage`/
 `ServerResponse` construction this harness's `createFakeEvent` replaces, plus a
