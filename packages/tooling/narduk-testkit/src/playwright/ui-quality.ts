@@ -362,12 +362,23 @@ export interface ConsoleTrackerOptions {
    * `'live'` (the default) lets optional telemetry reach the network, which is what a suite
    * running against a real browser on a normal network has always done.
    *
-   * `'stub'` fulfils every optional-telemetry request with `204` and drops the console and
-   * `pageerror` entries those origins produce. It exists because whether an analytics CDN is
-   * reachable is a property of the machine, not of the app: a tailnet resolver answering
-   * `0.0.0.0` for `static.cloudflareinsights.com` turns `expectClean()` into a test of the
-   * operator's DNS. Nothing else is excluded — a first-party request that fails, a hydration
-   * mismatch, and every other console error stay fatal in both modes.
+   * `'stub'` blocks every optional-telemetry request before it reaches the network, the way a
+   * content blocker does, and drops the console and `pageerror` entries those origins produce.
+   * It exists because whether an analytics CDN is reachable is a property of the machine, not
+   * of the app: a tailnet resolver answering `0.0.0.0` for `static.cloudflareinsights.com`
+   * turns `expectClean()` into a test of the operator's DNS. Nothing else is excluded — a
+   * first-party request that fails, a hydration mismatch, and every other console error stay
+   * fatal in both modes.
+   *
+   * The requests are ABORTED rather than fulfilled with an empty `204`, which is what this
+   * option shipped as in 1.3.1 and what a first reading of the problem suggests. Cloudflare
+   * injects its beacon with an `integrity` attribute, so an empty body is a body that fails
+   * Subresource Integrity, and Chromium then reports
+   * `Failed to find a valid digest in the 'integrity' attribute` — a console error whose
+   * `location().url` is the DOCUMENT rather than the beacon, which no origin-scoped filter can
+   * attribute to telemetry. Measured against https://buoystat.us on 2026-09-16: the `204`
+   * traded three `ERR_CONNECTION_REFUSED` errors for six unattributable SRI errors, while an
+   * abort leaves `ERR_BLOCKED_BY_CLIENT` entries that do carry the telemetry URL.
    */
   telemetry?: TelemetryMode
 }
@@ -421,7 +432,7 @@ export function createConsoleTracker(
   const installTelemetryRoutes = async () => {
     await page.route(
       (url) => isOptionalTelemetryHost(url.hostname, extraTelemetryHosts),
-      (route) => route.fulfill({ body: '', status: 204 }),
+      (route) => route.abort('blockedbyclient'),
     )
   }
 

@@ -210,19 +210,26 @@ function stubPage() {
       for (const listener of pageErrorListeners) listener(error)
     },
     page: page as unknown as Page,
-    /** Drive a request through whatever routing the tracker installed, as the browser would. */
+    /**
+     * Drive a request through whatever routing the tracker installed, as the browser would, and
+     * report what the handler did with it: `null` for a request no route matched.
+     */
     async request(url: string) {
       const route = routes.find((candidate) => candidate.matcher(new URL(url)))
       if (!route) return null
 
-      const fulfilled: Array<Record<string, unknown>> = []
+      const outcomes: Array<Record<string, unknown>> = []
       await route.handler({
+        abort: (errorCode?: string) => {
+          outcomes.push({ abort: errorCode })
+          return Promise.resolve()
+        },
         fulfill: (options: Record<string, unknown>) => {
-          fulfilled.push(options)
+          outcomes.push({ fulfill: options })
           return Promise.resolve()
         },
       } as unknown as Route)
-      return fulfilled[0] ?? null
+      return outcomes[0] ?? null
     },
     routes,
   }
@@ -296,7 +303,7 @@ describe('createConsoleTracker', () => {
     expect(tracker.getIssues()).toEqual(['[console:error] real failure'])
   })
 
-  it('fulfils optional telemetry with 204 and drops only those origins’ entries when stubbed', async () => {
+  it('blocks optional telemetry and drops only those origins’ entries when stubbed', async () => {
     const stub = stubPage()
     const tracker = createConsoleTracker(stub.page, {
       extraTelemetryHosts: ['https://p.nard.uk'],
@@ -304,26 +311,30 @@ describe('createConsoleTracker', () => {
     })
     await tracker.ready
 
+    /*
+     * Aborted, never fulfilled. An empty 204 for Cloudflare's beacon is a body that fails the
+     * `integrity` attribute Cloudflare injects with it, and the resulting SRI console error is
+     * reported against the DOCUMENT, which no origin filter can attribute to telemetry. An
+     * aborted request is never integrity-checked and its console entry keeps the telemetry URL.
+     */
     await expect(
       stub.request('https://static.cloudflareinsights.com/beacon.min.js'),
-    ).resolves.toEqual({ body: '', status: 204 })
+    ).resolves.toEqual({ abort: 'blockedbyclient' })
     await expect(stub.request('https://www.googletagmanager.com/gtag/js?id=G-1')).resolves.toEqual({
-      body: '',
-      status: 204,
+      abort: 'blockedbyclient',
     })
     await expect(stub.request('https://p.nard.uk/e/?ip=1')).resolves.toEqual({
-      body: '',
-      status: 204,
+      abort: 'blockedbyclient',
     })
 
     stub.emitConsole(
       'error',
-      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector',
       'https://static.cloudflareinsights.com/beacon.min.js',
     )
     stub.emitConsole(
       'error',
-      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector',
       'https://p.nard.uk/e/',
     )
 
@@ -354,6 +365,29 @@ describe('createConsoleTracker', () => {
       '[console:error] Hydration node mismatch',
       '[console:error] no location at all',
     ])
+    await expect(tracker.expectClean()).rejects.toThrow()
+  })
+
+  it('keeps a document-scoped error fatal even when its text names a telemetry URL', async () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, { telemetry: 'stub' })
+    await tracker.ready
+
+    /*
+     * The boundary of what an origin-scoped filter can do, and the reason these requests are
+     * aborted rather than fulfilled. Chromium reports a Subresource Integrity failure against
+     * the DOCUMENT, so this entry is indistinguishable from a first-party error no matter what
+     * URL its text happens to quote, and it stays fatal. Blocking the request means the
+     * integrity check never runs, so this message never occurs in the first place.
+     */
+    stub.emitConsole(
+      'error',
+      "Failed to find a valid digest in the 'integrity' attribute for resource " +
+        "'https://static.cloudflareinsights.com/beacon.min.js'. The resource has been blocked.",
+      'https://buoystat.us/',
+    )
+
+    expect(tracker.getIssues()).toHaveLength(1)
     await expect(tracker.expectClean()).rejects.toThrow()
   })
 
