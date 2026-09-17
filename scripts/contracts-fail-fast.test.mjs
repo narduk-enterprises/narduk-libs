@@ -39,7 +39,8 @@ const selected = ({
 
 test('only a failed contracts gate on a writable run selects cancellation', () => {
   assert.equal(selected(), true)
-  for (const event of ['push', 'workflow_dispatch']) assert.equal(selected({ event }), true)
+  // A cancelled run concludes "cancelled", which hides a red main: main runs to a failure.
+  for (const event of ['push', 'workflow_dispatch']) assert.equal(selected({ event }), false)
   for (const result of ['success', 'cancelled', 'skipped', '']) {
     assert.equal(selected({ result }), false, result)
   }
