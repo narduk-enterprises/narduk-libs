@@ -175,6 +175,35 @@ jobs:
           set -euo pipefail
           pnpm run surface:check
 
+      # The estate security bar -- no fixable high or critical advisory -- was a
+      # point-in-time assertion until this step: #369 reached the bar by hand and
+      # nothing re-checked it, so the next lockfile regeneration could silently
+      # reintroduce a high or critical with every other gate still green. This
+      # job has no `if:` and installs from the lockfile, so a lockfile-only PR
+      # reaches here; `contracts` is a required input of `verify`, which is a
+      # required status check, so a reintroduced high or critical blocks merge.
+      #
+      # `pnpm audit` exits nonzero only for an advisory at or above
+      # `--audit-level`. Proven on this lockfile: `--audit-level high` exits 0
+      # while `--audit-level low` exits 1 on the same tree (1 low + 2 moderate
+      # remain open and are deliberately below the bar). The gate is therefore
+      # fail-capable, not merely absent of findings.
+      #
+      # No allowlist exists on purpose. `pnpm audit --audit-level high` is 0
+      # high / 0 critical on main today, so there is nothing to except, and a
+      # speculative allowlist is a hole waiting for a real advisory to fall into
+      # it. If an unfixable high ever appears, add the exception here with its
+      # GHSA id and the reason it cannot be fixed -- never by lowering the bar.
+      #
+      # This step can go red without a change to this repository, when an
+      # advisory is newly published against an already-pinned version. That is
+      # the bar working: the fix is to raise the floor, not to soften the gate.
+      - name: Check the estate security bar (no fixable high or critical)
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          pnpm audit --audit-level high
+
   packed-consumer-smoke:
     # Build every package, then run the packed consumer's Chromium and platform gates.
     name: package / packed-consumer-smoke
