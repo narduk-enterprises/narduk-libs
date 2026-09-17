@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -412,5 +412,298 @@ describe('foundation:check:deployment arguments', () => {
     expect(() => parseDeploymentCheckArgs(['--nope'], '/tmp/app')).toThrow(
       'Unknown foundation:check:deployment option: --nope',
     )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/* review round 1                                                             */
+/* -------------------------------------------------------------------------- */
+
+/** A repo with an explicit `worker` declaration and a second Worker beside the
+ * app's own -- the shape §2.3 says the estate actually has. */
+function repoWith(options: {
+  deployment?: Record<string, unknown>
+  worker?: Record<string, unknown>
+  wrangler?: Record<string, unknown>
+  extraFiles?: Record<string, string>
+}): string {
+  const root = makeTempRepo()
+  tempDirs.push(root)
+  writeJson(root, 'package.json', { name: 'fixture-app' })
+  writeJson(root, 'wrangler.json', options.wrangler ?? { name: 'fixture' })
+  writeJson(root, CLOUDFLARE_APP_FILE, {
+    schemaVersion: 1,
+    product: { name: 'Fixture', repository: 'narduk-enterprises/fixture' },
+    ...(options.worker ? { worker: options.worker } : {}),
+    deployment: options.deployment ?? block(),
+  })
+  for (const [rel, text] of Object.entries(options.extraFiles ?? {})) writeFile(root, rel, text)
+  return root
+}
+
+const NE_ACCOUNT = '73a8592300000000000000000000beef'
+const PERSONAL_ACCOUNT = 'd715f0aeb6b2e7b10f54e9e72fba8fdd'
+
+describe('S9 -- the block a generated app is told to paste', () => {
+  // `create-narduk-app` emits this block in its runbook and tells the new app
+  // to run `foundation:check:deployment` against it, but the schema that check
+  // enforces lives here. Neither package may depend on the other (see
+  // fixtures/README.md), so this fixture is the pin: these two assertions are
+  // what make the generator's copy impossible to drift out of the contract
+  // without a red test here first.
+  const canonical: unknown = JSON.parse(
+    readFileSync(new URL('../../fixtures/default-deployment-block.json', import.meta.url), 'utf8'),
+  )
+
+  it('is what defaultDeploymentBlock hands a new app', () => {
+    expect(canonical).toEqual(defaultDeploymentBlock({ appSlug: 'paste-check' }))
+  })
+
+  it('satisfies the schema the check it points at actually enforces', () => {
+    const outcome = readDeploymentBlock({ deployment: canonical })
+    expect(outcome.kind === 'invalid' ? outcome.issues : outcome.kind).toBe('valid')
+  })
+})
+
+describe('S8 -- the staging schema accepts the design it was written from', () => {
+  /** Design §5.2's staging-enabled block, verbatim in shape. */
+  const stagingBlock = {
+    enabled: true,
+    workerName: 'operator-portal-staging',
+    hostname: 'staging.ops.nardukenterprises.com',
+    approval: 'environment',
+    environment: 'production',
+    bindings: { d1: ['DB'], kv: ['CACHE'], r2: [] },
+  }
+
+  function outcomeFor(staging: unknown): ReturnType<typeof readDeploymentBlock> {
+    return readDeploymentBlock({ deployment: block({ staging }) })
+  }
+
+  it('accepts design §5.2 staging-enabled block verbatim', () => {
+    const outcome = outcomeFor(stagingBlock)
+    expect(outcome.kind === 'invalid' ? outcome.issues : outcome.kind).toBe('valid')
+  })
+
+  it('keeps the default an app that says nothing gets', () => {
+    const outcome = readDeploymentBlock({
+      deployment: { ...block(), staging: undefined },
+    })
+    if (outcome.kind !== 'valid') throw new Error('expected valid')
+    expect(outcome.block.staging).toEqual({ enabled: false })
+  })
+
+  it('refuses an enabled stage that names no Worker and no hostname', () => {
+    const outcome = outcomeFor({ enabled: true })
+    if (outcome.kind !== 'invalid') throw new Error('expected invalid')
+    const paths = outcome.issues.map((issue) => issue.path)
+    expect(paths).toContain('staging.workerName')
+    expect(paths).toContain('staging.hostname')
+    expect(paths).toContain('staging.approval')
+  })
+
+  it('refuses approval "environment" with no environment to approve in', () => {
+    const outcome = outcomeFor({ ...stagingBlock, environment: undefined })
+    if (outcome.kind !== 'invalid') throw new Error('expected invalid')
+    expect(outcome.issues.map((issue) => issue.path)).toContain('staging.environment')
+  })
+
+  it('accepts auto-after-proof without an environment', () => {
+    const outcome = outcomeFor({
+      enabled: true,
+      workerName: 'x-staging',
+      hostname: 'staging.example.com',
+      approval: 'auto-after-proof',
+    })
+    expect(outcome.kind).toBe('valid')
+  })
+
+  it('refuses a stage configured but switched off, rather than ignoring it', () => {
+    const outcome = outcomeFor({ enabled: false, workerName: 'x-staging' })
+    if (outcome.kind !== 'invalid') throw new Error('expected invalid')
+    expect(outcome.issues.map((issue) => issue.path)).toContain('staging.workerName')
+  })
+
+  it('refuses a hostname that is really a URL', () => {
+    const outcome = outcomeFor({ ...stagingBlock, hostname: 'https://staging.example.com/' })
+    expect(outcome.kind).toBe('invalid')
+  })
+
+  it('still projects to JSON Schema for non-TypeScript consumers', () => {
+    const schema = deploymentBlockJsonSchema()
+    const properties = schema.properties as Record<string, unknown>
+    expect(Object.keys(properties)).toContain('staging')
+    expect(Object.keys(properties)).toContain('accountId')
+  })
+})
+
+describe('S7 -- 12.5 reads TOML and compares the declared account', () => {
+  it('reads account_id out of a second Worker written in TOML', () => {
+    const root = repoWith({
+      deployment: block({ accountId: NE_ACCOUNT }),
+      extraFiles: {
+        'services/farmdata-refresh/wrangler.toml': [
+          'name = "farmdata-refresh"',
+          `account_id = "${PERSONAL_ACCOUNT}"`,
+        ].join('\n'),
+      },
+    })
+    expect(statusOf(root, '12.5')).toBe('fail')
+    expect(detailOf(root, '12.5')).toContain('services/farmdata-refresh/wrangler.toml')
+    expect(detailOf(root, '12.5')).toContain(PERSONAL_ACCOUNT)
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('is not not-applicable when the app itself is TOML', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeJson(root, 'package.json', { name: 'fixture-app' })
+    writeFile(root, 'wrangler.toml', `name = "fixture"\naccount_id = "${NE_ACCOUNT}"\n`)
+    writeJson(root, CLOUDFLARE_APP_FILE, { deployment: block({ accountId: NE_ACCOUNT }) })
+    expect(statusOf(root, '12.5')).toBe('pass')
+  })
+
+  it('does not read a commented-out account_id as a declaration', () => {
+    const root = repoWith({
+      deployment: block({ accountId: NE_ACCOUNT }),
+      extraFiles: {
+        'services/redirect/wrangler.toml': [
+          '# account_id distinguishes the two configs -- the root one is NE',
+          `#   account_id = "${PERSONAL_ACCOUNT}"`,
+          'name = "redirect"',
+        ].join('\n'),
+      },
+    })
+    expect(statusOf(root, '12.5')).toBe('pass')
+  })
+
+  it('says plainly that it did not check the account when none is declared', () => {
+    const root = repoWith({ wrangler: { name: 'fixture', account_id: PERSONAL_ACCOUNT } })
+    expect(statusOf(root, '12.5')).toBe('pass')
+    expect(detailOf(root, '12.5')).toContain('internal consistency ONLY')
+    expect(detailOf(root, '12.5')).toContain('deployment.accountId')
+  })
+
+  it('still fails two different accounts with nothing declared', () => {
+    const root = repoWith({
+      wrangler: { name: 'fixture', account_id: NE_ACCOUNT },
+      extraFiles: {
+        'services/other/wrangler.toml': `name = "other"\naccount_id = "${PERSONAL_ACCOUNT}"\n`,
+      },
+    })
+    expect(statusOf(root, '12.5')).toBe('fail')
+    expect(detailOf(root, '12.5')).toContain('one app deploys to one account')
+  })
+
+  it('passes when every config names the declared account', () => {
+    const root = repoWith({
+      deployment: block({ accountId: NE_ACCOUNT }),
+      wrangler: { name: 'fixture', account_id: NE_ACCOUNT },
+      extraFiles: {
+        'services/other/wrangler.toml': `name = "other"\naccount_id = "${NE_ACCOUNT}"\n`,
+      },
+    })
+    expect(statusOf(root, '12.5')).toBe('pass')
+    expect(detailOf(root, '12.5')).toContain(NE_ACCOUNT)
+  })
+
+  it('refuses an accountId that is not a Cloudflare account id', () => {
+    const outcome = readDeploymentBlock({ deployment: block({ accountId: 'not-an-account' }) })
+    expect(outcome.kind).toBe('invalid')
+  })
+})
+
+describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () => {
+  it('fails when the app declares workersDev false and wrangler never says so', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      wrangler: { name: 'fixture' },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('never sets workers_dev')
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('fails when the two files disagree outright', () => {
+    const root = repoWith({
+      worker: { workersDev: true, previewUrls: true },
+      wrangler: { name: 'fixture', workers_dev: true, preview_urls: false },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('preview_urls=false')
+  })
+
+  it('fails on a disagreement hiding in an env scope', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { production: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('passes when they agree', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      wrangler: { name: 'fixture', workers_dev: false, preview_urls: false },
+    })
+    expect(statusOf(root, '12.6')).toBe('pass')
+  })
+
+  it('is not-applicable when the app declares neither flag', () => {
+    const root = repoWith({ wrangler: { name: 'fixture', workers_dev: false } })
+    expect(statusOf(root, '12.6')).toBe('not-applicable')
+  })
+
+  it('reads the flags out of a TOML app config too', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeJson(root, 'package.json', { name: 'fixture-app' })
+    writeFile(root, 'wrangler.toml', 'name = "fixture"\nworkers_dev = true\n')
+    writeJson(root, CLOUDFLARE_APP_FILE, {
+      worker: { workersDev: false, previewUrls: false },
+      deployment: block(),
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('workers_dev=true')
+  })
+
+  it('12.4 sees a second Worker binding production data', () => {
+    const root = repoWith({
+      deployment: block({ nonProductionBranchBuilds: true }),
+      wrangler: { name: 'fixture' },
+      extraFiles: {
+        'services/farmdata-refresh/wrangler.toml': [
+          'name = "farmdata-refresh"',
+          '[[d1_databases]]',
+          'binding = "FARM_DB"',
+        ].join('\n'),
+      },
+    })
+    expect(statusOf(root, '12.4')).toBe('fail')
+    expect(detailOf(root, '12.4')).toContain('d1:FARM_DB')
+    expect(detailOf(root, '12.4')).toContain('services/farmdata-refresh/wrangler.toml')
+  })
+
+  it('12.4 passes once that second Worker binding has a preview replacement', () => {
+    const root = repoWith({
+      deployment: block({
+        nonProductionBranchBuilds: true,
+        previewBindings: { d1: ['FARM_DB'], kv: [], r2: [] },
+      }),
+      wrangler: { name: 'fixture' },
+      extraFiles: {
+        'services/farmdata-refresh/wrangler.toml': [
+          'name = "farmdata-refresh"',
+          '[[d1_databases]]',
+          'binding = "FARM_DB"',
+        ].join('\n'),
+      },
+    })
+    expect(statusOf(root, '12.4')).toBe('pass')
   })
 })

@@ -36,6 +36,51 @@ import type {
   ProductSpec,
 } from './types.js'
 
+/**
+ * The `deployment` block a generated app is told to paste into
+ * `Config/cloudflare-app.json`, serialized rather than hand-typed.
+ *
+ * This is the same object `defaultDeploymentBlock()` in
+ * `@narduk-enterprises/narduk-app-tools` returns, and the generator test pins it
+ * to that function and runs the emitted text through `readDeploymentBlock`. It
+ * is duplicated here rather than imported because `narduk-app-tools` is a
+ * development dependency of this generator, not a runtime one -- a published
+ * `create-narduk-app` must not require it. The test is what keeps the copy
+ * honest: add a required key to the schema and this block stops validating, in
+ * CI, instead of in the first app that pastes it.
+ */
+export function defaultDeploymentBlockFor(appName: string): Record<string, unknown> {
+  return {
+    standard: 'narduk-v1',
+    builder: 'workers-builds',
+    productionBranch: 'main',
+    productionDeployCommand: 'narduk-app deploy versions-upload',
+    nonProductionDeployCommand: 'narduk-app deploy versions-upload',
+    nonProductionBranchBuilds: false,
+    promotion: {
+      mode: 'auto-on-green',
+      gateCheck: 'ci / Required',
+      credential: 'cloudflare/prd/narduk-enterprises-' + appName + '-promote',
+    },
+    liveProof: {
+      buildVersionHeader: 'x-build-version',
+      healthPath: '/api/health',
+      smokePath: '/',
+      attempts: 6,
+      intervalSeconds: 10,
+    },
+    rollback: { mode: 'auto', alert: 'resend' },
+    staging: { enabled: false },
+    previewBindings: { d1: [], kv: [], r2: [] },
+  }
+}
+
+/** The block above as the lines of a `"deployment": { ... }` runbook fragment. */
+export function deploymentBlockLines(appName: string): string[] {
+  const body = JSON.stringify(defaultDeploymentBlockFor(appName), null, 2)
+  return ('"deployment": ' + body).split('\n')
+}
+
 const DEFAULT_DESCRIPTION = 'A production-ready Nuxt application built with Narduk libraries.'
 const DEFAULT_COMPATIBILITY_DATE = '2026-06-01'
 
@@ -748,29 +793,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'This app declares its half of the standard in `Config/cloudflare-app.json`. That file is created during onboarding -- this generator does not write it, because the rest of it records live Cloudflare facts a checkout cannot know. Add this block to it verbatim, then run `pnpm run foundation:deployment`:',
         '',
         '```jsonc',
-        '"deployment": {',
-        '  "standard": "narduk-v1",',
-        '  "builder": "workers-builds",',
-        '  "productionBranch": "main",',
-        '  "productionDeployCommand": "narduk-app deploy versions-upload",',
-        '  "nonProductionDeployCommand": "narduk-app deploy versions-upload",',
-        '  "nonProductionBranchBuilds": false,',
-        '  "promotion": {',
-        '    "mode": "auto-on-green",',
-        '    "gateCheck": "ci / Required",',
-        '    "credential": "cloudflare/prd/narduk-enterprises-' + appName + '-promote"',
-        '  },',
-        '  "liveProof": {',
-        '    "buildVersionHeader": "x-build-version",',
-        '    "healthPath": "/api/health",',
-        '    "smokePath": "/",',
-        '    "attempts": 6,',
-        '    "intervalSeconds": 10',
-        '  },',
-        '  "rollback": { "mode": "auto", "alert": "resend" },',
-        '  "staging": { "enabled": false },',
-        '  "previewBindings": { "d1": [], "kv": [], "r2": [] }',
-        '}',
+        ...deploymentBlockLines(appName),
         '```',
         '',
         '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',

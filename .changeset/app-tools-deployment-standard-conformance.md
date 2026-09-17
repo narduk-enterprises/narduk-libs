@@ -50,3 +50,40 @@ preview resource's ids (§3.3 option A has to generate a preview wrangler config
 from this block, which needs them), and `previewChecks` is accepted and optional
 — it is the shared workflow's `preview-checks` input, and declaring it here is
 what lets a sweep see which apps still run the default.
+
+## Review round 1
+
+- **`staging` now accepts the design's own enabled shape.** The schema modelled
+  `staging` as `{ enabled: boolean }` under `strictObject`, so design §5.2's
+  staging-enabled block — `workerName`, `hostname`, `approval`, `environment`,
+  `bindings` — was five unknown keys and the first app to follow the approved
+  design verbatim would have failed 12.0. The enabled shape is modelled, and an
+  enabled stage must name its Worker, the hostname its proof reads and its gate
+  (`environment`, which then has to name the GitHub Environment carrying
+  `required_reviewers`, or `auto-after-proof`). Configuration left on a
+  **disabled** stage is rejected rather than ignored: it reads as a live staging
+  setup and is not one.
+- **12.5 reads TOML and compares the account it was told to expect.** It read
+  `account_id` from JSON only, so it was `not-applicable` on exactly the two
+  committed personal-account Workers the standard was written to catch — both
+  are `.toml`. TOML is now read, and an app may declare `deployment.accountId`;
+  every wrangler config in the checkout must then name that account. Without a
+  declared `accountId` the verdict says plainly that it checked internal
+  consistency **only** and cannot decide whether the account is the right one.
+- **Every wrangler config is scanned, not just the app's own.** 12.4 and 12.5
+  resolved one config by candidate path, so a second Worker under `services/*` —
+  the shape both personal-account offenders have — had its bindings and its
+  account unread. Both now read every wrangler config in the checkout.
+- **New 12.6: the app and its wrangler config must agree about exposure.**
+  Design §2.2 tier 1 asks that `preview_urls`/`workers_dev` agree between
+  `Config/cloudflare-app.json` and the wrangler config; nothing implemented it.
+  12.6 compares `worker.workersDev` / `worker.previewUrls` against every scope
+  of the wrangler config, **including by silence** — Cloudflare defaults both to
+  `true`, so an app that records `workersDev: false` and never says so in
+  wrangler ships a live `*.workers.dev` hostname it believes it does not have.
+- **The block a generated app pastes is pinned to this schema.**
+  `fixtures/default-deployment-block.json` is asserted here to equal
+  `defaultDeploymentBlock()` and to be accepted by `readDeploymentBlock`, and
+  `create-narduk-app`'s generator test asserts its runbook emits exactly that
+  file. Neither package depends on the other, and a schema change cannot reach a
+  newly generated app without turning a test red first.

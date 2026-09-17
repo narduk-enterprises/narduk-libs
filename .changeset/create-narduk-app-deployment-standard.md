@@ -32,3 +32,20 @@ The generator still does not create `Config/cloudflare-app.json` itself. That
 file records live Cloudflare facts a checkout cannot know, onboarding owns it,
 and this generator does not hold a continuing relationship with an app's
 configuration. It emits the block to paste and a check that reads it.
+
+## Review round 1
+
+The `deployment` block the runbook tells a new app to paste was ~24 hand-typed
+string literals, and the only assertions on it were substrings. Adding one
+required key to the schema would have shipped a generator whose paste-this block
+fails the very check it tells you to run — discovered by the first app to try
+it, not by CI. The block is now serialized from a single object, and the
+generator test extracts the fenced block, parses it, and asserts it equals
+`narduk-app-tools`' committed `fixtures/default-deployment-block.json` — which
+that package's own suite pins to `defaultDeploymentBlock()` and to
+`readDeploymentBlock` accepting it. The pin is a fixture rather than an import
+because the published generator must require nothing at runtime, and because
+CI's per-package gates run `pnpm --filter <name>` without building a workspace
+sibling's `dist`. Add a required key to the schema and `narduk-app-tools` goes
+red; update its fixture and this generator goes red until it emits the new
+block.

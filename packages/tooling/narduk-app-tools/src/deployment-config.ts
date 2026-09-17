@@ -27,6 +27,13 @@
  *   beside the rest of the deployment contract is what lets an estate sweep see
  *   which apps still run the default. Its members are the workflow's, plus the
  *   two §3.4 asks for (`health`, `headers`).
+ * - **`accountId` is accepted and optional.** §2.2 tier 1 asks that "the account
+ *   id in every wrangler config is the Narduk Enterprises account". A repository
+ *   read cannot know which account that is, and hard-coding one into a published
+ *   package would make the answer a library release rather than an app fact. So
+ *   the app declares the account it deploys to, and the conformance item holds
+ *   every wrangler config in the checkout to it. An app that declares nothing
+ *   gets the weaker internal-consistency check, and is told so in the verdict.
  */
 
 import { z } from 'zod'
@@ -88,9 +95,119 @@ export const previewBindingsSchema = z.strictObject({
   r2: z.array(previewBindingEntry).max(100).default([]),
 })
 
+/** The two §5.2 gates between "proved on staging" and "live in production". */
+export const STAGING_APPROVALS = ['environment', 'auto-after-proof'] as const
+
+/** A Cloudflare account id: 32 lowercase hex characters. */
+export const ACCOUNT_ID_PATTERN = /^[0-9a-f]{32}$/u
+
+const accountId = z
+  .string()
+  .trim()
+  .refine(
+    (value) => ACCOUNT_ID_PATTERN.test(value),
+    'Expected a Cloudflare account id: 32 lowercase hex characters',
+  )
+
+const workerName = z.string().trim().min(1).max(200)
+
+/** A bare hostname, not a URL: the live proof composes the scheme itself, and a
+ * value carrying one would silently probe the wrong thing. */
+const hostname = z
+  .string()
+  .trim()
+  .min(1)
+  .max(253)
+  .refine(
+    (value) => !/[\s/:]/u.test(value) && value.includes('.'),
+    'Expected a bare hostname such as staging.example.com, with no scheme or path',
+  )
+
+/**
+ * §5.2 -- staging is one flag that inserts a stage, never a fork.
+ *
+ * Disabled is the default and says nothing else. Enabled has to name its own
+ * Worker (staging is a separate Worker name; `narduk-app-tools` retires wrangler
+ * `env.staging` outright), the hostname its live proof reads, and the gate
+ * between staging and production -- an unstated approval mode on a production
+ * promotion is exactly the ambiguity §5 exists to remove. `approval:
+ * "environment"` additionally names the GitHub Environment carrying
+ * `required_reviewers`, because that environment *is* the approval.
+ *
+ * Configuration for a stage that is switched off is rejected rather than
+ * ignored: it reads as a live staging setup and is not one.
+ */
+export const stagingSchema = z
+  .strictObject({
+    enabled: z.boolean().default(false),
+    workerName: workerName.optional(),
+    hostname: hostname.optional(),
+    approval: z.enum(STAGING_APPROVALS).optional(),
+    environment: z.string().trim().min(1).max(200).optional(),
+    bindings: previewBindingsSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const configured = ['workerName', 'hostname', 'approval', 'environment', 'bindings'] as const
+    if (!value.enabled) {
+      for (const key of configured) {
+        if (value[key] !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message:
+              `staging.enabled is false, so ${key} configures a stage that never runs -- ` +
+              `set enabled to true or remove it`,
+          })
+        }
+      }
+      return
+    }
+    if (value.workerName === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['workerName'],
+        message:
+          'an enabled staging stage must name its own Worker: staging is a separate Worker ' +
+          'name, never a wrangler env.staging block',
+      })
+    }
+    if (value.hostname === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['hostname'],
+        message: 'an enabled staging stage must name the hostname its live proof reads',
+      })
+    }
+    if (value.approval === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['approval'],
+        message:
+          'an enabled staging stage must state its gate: "environment" for a GitHub Environment ' +
+          'with required_reviewers, or "auto-after-proof" to continue on a green staging proof',
+      })
+    }
+    if (value.approval === 'environment' && value.environment === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['environment'],
+        message:
+          'approval "environment" is a GitHub Environment with required_reviewers -- name it, ' +
+          'or the promotion has no reviewer and the approval is decorative',
+      })
+    }
+  })
+
+export type StagingBlock = z.infer<typeof stagingSchema>
+
 export const deploymentBlockSchema = z.strictObject({
   standard: z.literal(DEPLOYMENT_STANDARD),
   builder: z.literal(DEPLOYMENT_BUILDER),
+  /** The Cloudflare account every wrangler config in this repository must
+   * declare, when it declares one at all (§2.2 tier 1). Optional: an app that
+   * resolves the account from `CLOUDFLARE_ACCOUNT_ID` at deploy time has
+   * nothing to compare, and gets the weaker internal-consistency check. */
+  accountId: accountId.optional(),
   productionBranch: z.string().trim().min(1).max(200),
   productionDeployCommand: z.string().trim().min(1).max(500),
   nonProductionDeployCommand: z.string().trim().min(1).max(500),
@@ -113,7 +230,7 @@ export const deploymentBlockSchema = z.strictObject({
   }),
   /** §5: the single opt-in flag for a staging stage. Default false -- an app
    * that says nothing does not get one. */
-  staging: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  staging: stagingSchema.default({ enabled: false }),
   previewBindings: previewBindingsSchema.default({ d1: [], kv: [], r2: [] }),
   previewChecks: z.array(z.enum(PREVIEW_CHECK_MEMBERS)).max(10).optional(),
 })
