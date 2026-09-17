@@ -1,0 +1,22 @@
+{
+  // `server/handlers` is compiled as its own project, separate from
+  // tsconfig.json, because it needs `@cloudflare/workers-types`' ambient
+  // globals (`D1Database`, `KVNamespace`, `R2Bucket`, ...) and those globals
+  // redeclare `Response`/`Headers`/`ReadableStream` incompatibly with the DOM
+  // lib the Playwright-side helpers in tsconfig.json need. `lib: ["ES2022"]`
+  // (no "dom") matches the pattern already used by narduk-realtime and
+  // narduk-core's tsconfig.layer-tooling.json for the same reason.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "lib": ["ES2022"],
+    "types": ["node", "vitest/globals", "@cloudflare/workers-types"]
+  },
+  "include": ["src/server/handlers/**/*.ts", "tests/server/handlers/**/*.ts"]
+}

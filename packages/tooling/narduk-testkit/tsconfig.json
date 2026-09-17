@@ -10,5 +10,13 @@
     "verbatimModuleSyntax": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  // `server/handlers` needs `@cloudflare/workers-types`' ambient globals
+  // (`D1Database`, `KVNamespace`, `R2Bucket`, ...), which redeclare `Response`,
+  // `Headers`, and `ReadableStream` incompatibly with this config's default
+  // DOM lib (needed by the Playwright-side `src/playwright/*` helpers). It
+  // gets its own project -- see `tsconfig.handlers.json` -- so the two global
+  // environments never compile together. See `typecheck`/`build` in
+  // package.json for the paired invocation.
+  "exclude": ["src/server/handlers/**", "tests/server/handlers/**"]
 }

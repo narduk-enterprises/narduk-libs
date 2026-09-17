@@ -117,7 +117,9 @@ describe('createFakeR2Bucket', () => {
 
     it('accepts a raw ArrayBuffer body', async () => {
       const bucket = createFakeR2Bucket()
-      const buffer = new TextEncoder().encode('raw buffer').buffer
+      // `.buffer` types as `ArrayBufferLike` (it could be a `SharedArrayBuffer`);
+      // it never is one here, so this asserts the narrower type `put()` declares.
+      const buffer = new TextEncoder().encode('raw buffer').buffer as ArrayBuffer
       await bucket.put('buf', buffer)
 
       const object = await bucket.get('buf')
