@@ -68,7 +68,7 @@
   "devDependencies": {
     "@types/node": "^22.19.19",
     "typescript": "^5.9.3",
-    "vitest": "4.1.6"
+    "vitest": "4.1.11"
   },
   "volta": {
     "node": "22.22.3"
