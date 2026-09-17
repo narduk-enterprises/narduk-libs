@@ -327,7 +327,10 @@ describe('crawler-visible delivery', () => {
     [
       'an image that is not the declared 1200x630 card',
       (path: string) =>
-        html(path).replace('property="og:image:width" content="1200"', 'property="og:image:width" content="600"'),
+        html(path).replace(
+          'property="og:image:width" content="1200"',
+          'property="og:image:width" content="600"',
+        ),
       '1200x630',
     ],
     [

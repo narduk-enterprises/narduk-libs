@@ -8,10 +8,7 @@ import {
   useSiteConfig,
 } from '#imports'
 
-import {
-  DEFAULT_SOCIAL_IMAGE_HEIGHT,
-  DEFAULT_SOCIAL_IMAGE_WIDTH,
-} from '../utils/defaultSocialMeta'
+import { DEFAULT_SOCIAL_IMAGE_HEIGHT, DEFAULT_SOCIAL_IMAGE_WIDTH } from '../utils/defaultSocialMeta'
 import { hasNoindexRobots, resolveSeoOgImageDefinition } from '../utils/ogImageDefinition'
 
 import type { SeoOgImageOptions } from '../utils/ogImageDefinition'
