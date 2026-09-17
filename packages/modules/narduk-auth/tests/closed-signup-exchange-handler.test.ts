@@ -334,6 +334,26 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     expect(persistCalls).toEqual([])
   })
 
+  it('does not stamp recovery_mode on a PKCE login that only deep-links to reset-password', async () => {
+    db.users.push({
+      id: 'local-1',
+      email: 'parent@example.com',
+      name: 'Parent',
+      isAdmin: false,
+    })
+    db.links.push({
+      authUserId: 'auth-attacker',
+      localUserId: 'local-1',
+      primaryEmail: 'parent@example.com',
+    })
+
+    await postExchange({ code: 'pkce-code', next: RESET_PATH })
+
+    expect(persistCalls).toEqual([{ recoveryMode: false }])
+    expect(db.userInserts).toEqual([])
+    expect(db.linkInserts).toEqual([])
+  })
+
   it('does not link an unlinked local user via POST next=/reset-password', async () => {
     db.users.push({
       id: 'local-1',

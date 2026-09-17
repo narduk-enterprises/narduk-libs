@@ -69,7 +69,7 @@ function normalizeAppPath(path: string): string {
   return pathname.replace(/\/+$/u, '') || '/'
 }
 
-/** PKCE `?code=` recovery often only carries `next=/reset-password`. */
+/** Token-hash recovery may carry `next=/reset-password` without a type. */
 export function isResetPasswordNextPath(
   next: string | null | undefined,
   resetPath: string,
@@ -79,16 +79,19 @@ export function isResetPasswordNextPath(
 }
 
 export function resolvePasswordRecoveryExchange(input: {
+  /** PKCE `?code=` logins may deep-link to the reset page; next-alone is not recovery. */
+  hasAuthCode?: boolean
   next?: string | null
   redirectType?: string | null
   resetPath: string
   verificationType?: string | null
 }): boolean {
-  return (
-    isPasswordRecoveryRedirectType(input.redirectType) ||
-    isPasswordRecoveryRedirectType(input.verificationType) ||
-    isResetPasswordNextPath(input.next, input.resetPath)
-  )
+  if (isPasswordRecoveryRedirectType(input.redirectType)) return true
+  if (isPasswordRecoveryRedirectType(input.verificationType)) return true
+  // Honour next-alone only on the token_hash path. A legitimate OAuth
+  // `?code=` login whose `next` is the reset page must not self-lock.
+  if (input.hasAuthCode) return false
+  return isResetPasswordNextPath(input.next, input.resetPath)
 }
 
 export async function loginUser(event: H3Event, body: LoginInput): Promise<AuthMutationResult> {
@@ -455,6 +458,7 @@ export async function exchangeSupabaseCode(
     verificationType: hasAuthCode ? null : body.verificationType,
     next: body.next,
     resetPath: config.resetPath,
+    hasAuthCode,
   })
   const isInvite = isInviteRedirectType(serverRedirectType)
   const localUser = await ensureLinkedLocalUser(

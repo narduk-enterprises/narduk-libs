@@ -144,7 +144,7 @@ describe('closed signup and recovery linking', () => {
     expect(state.persistRecovery).toEqual([true])
   })
 
-  it('treats PKCE next=/reset-password as recovery even without type', async () => {
+  it('does not treat a PKCE login whose next is the reset page as recovery', async () => {
     const { exchangeSupabaseCode } = await import('../server/lib/app-auth/auth-flows')
 
     await exchangeSupabaseCode(event(), {
@@ -152,8 +152,8 @@ describe('closed signup and recovery linking', () => {
       next: RESET_PATH,
     })
 
-    expect(state.ensureOptions).toEqual([{ requireExistingUser: true, requireExistingLink: true }])
-    expect(state.persistRecovery).toEqual([true])
+    expect(state.ensureOptions).toEqual([{ requireExistingLink: true }])
+    expect(state.persistRecovery).toEqual([false])
   })
 
   it('keeps invite as the closed-signup exception and does not set recovery_mode', async () => {
@@ -203,6 +203,13 @@ describe('password-recovery exchange detection', () => {
         resetPath: RESET_PATH,
       }),
     ).toBe(true)
+    expect(
+      resolvePasswordRecoveryExchange({
+        hasAuthCode: true,
+        next: RESET_PATH,
+        resetPath: RESET_PATH,
+      }),
+    ).toBe(false)
     expect(
       resolvePasswordRecoveryExchange({
         next: '/dashboard/',
