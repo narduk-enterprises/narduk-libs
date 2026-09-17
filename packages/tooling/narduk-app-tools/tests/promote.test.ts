@@ -882,9 +882,13 @@ describe('bounded version search (#451 defect 1)', () => {
   /** A history whose tagged version sits `depth` versions below the newest. */
   function history(depth: number, tag: string): WorkerVersion[] {
     return Array.from({ length: depth + 40 }, (_, index) =>
-      version(`v-${String(index)}`, index === depth ? tag : `beef${String(index).padStart(3, '0')}`, {
-        number: 10_000 - index,
-      }),
+      version(
+        `v-${String(index)}`,
+        index === depth ? tag : `beef${String(index).padStart(3, '0')}`,
+        {
+          number: 10_000 - index,
+        },
+      ),
     )
   }
 
@@ -951,18 +955,21 @@ describe('bounded version search (#451 defect 1)', () => {
 
   it('promotes nothing with exit 3 -- never 0 -- and names the sha and the count', async () => {
     const versions = [version('v-live', 'aaaaaaa', { number: 2 })]
-    const { context: ctx } = context(versions, [deployment('d-1', 'v-live', '2026-09-17T00:00:00Z')])
-    const result = await runVersionsPromote(
-      { ...parseVersionsPromoteArgs(['--sha', SHA]) },
-      ctx,
-    )
+    const { context: ctx } = context(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const result = await runVersionsPromote({ ...parseVersionsPromoteArgs(['--sha', SHA]) }, ctx)
     expect(result.outcome).toBe('version-not-found')
     expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
     expect(result.exitCode).not.toBe(PROMOTE_EXIT.ok)
     expect(result.detail).toContain(SHA)
     expect(result.detail).toContain('1 version(s) searched')
     expect(result.searchedVersions).toBe(1)
-    expect(result.versionSearch).toEqual({ source: 'api', limit: DEFAULT_VERSION_SEARCH_LIMIT, complete: true })
+    expect(result.versionSearch).toEqual({
+      source: 'api',
+      limit: DEFAULT_VERSION_SEARCH_LIMIT,
+      complete: true,
+    })
   })
 
   it('tells "never uploaded" apart from "older than the bound" and from the wrangler fallback', () => {
@@ -987,18 +994,27 @@ describe('bounded version search (#451 defect 1)', () => {
 
   it('falls back to wrangler only when the account id or token is missing, and says which', async () => {
     expect(resolveVersionsApiAuth({ workerName: 'buoys', accountId: 'acct-1' }, {})).toBeNull()
-    expect(resolveVersionsApiAuth({ workerName: 'buoys' }, { CLOUDFLARE_API_TOKEN: 't' })).toBeNull()
     expect(
-      resolveVersionsApiAuth({ workerName: 'buoys' }, {
-        CLOUDFLARE_ACCOUNT_ID: 'acct-2',
-        CLOUDFLARE_API_TOKEN: 't',
-      }),
+      resolveVersionsApiAuth({ workerName: 'buoys' }, { CLOUDFLARE_API_TOKEN: 't' }),
+    ).toBeNull()
+    expect(
+      resolveVersionsApiAuth(
+        { workerName: 'buoys' },
+        {
+          CLOUDFLARE_ACCOUNT_ID: 'acct-2',
+          CLOUDFLARE_API_TOKEN: 't',
+        },
+      ),
     ).toEqual({ accountId: 'acct-2', apiToken: 't' })
     const cli = createWranglerCli({
       workerName: 'buoys',
       accountId: 'acct-1',
       env: {},
-      spawn: () => ({ status: 0, signal: null, stdout: JSON.stringify([version('v-1', 'aaaaaaa')]) }),
+      spawn: () => ({
+        status: 0,
+        signal: null,
+        stdout: JSON.stringify([version('v-1', 'aaaaaaa')]),
+      }),
     })
     const listing: VersionListing = await cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
     expect(listing.source).toBe('wrangler')
@@ -1137,7 +1153,7 @@ describe('#451 regressions, shape-agnostic', () => {
     }
   }
 
-  it('models wrangler\'s own cap', () => {
+  it("models wrangler's own cap", () => {
     expect(WRANGLER_CAP).toBe(WRANGLER_VERSION_LIST_CAP)
   })
 

@@ -550,7 +550,11 @@ export function resolveVersionForSha(
  * than the bound, and a `wrangler` search means neither was established because
  * only ten versions were visible.
  */
-export function describeVersionSearch(sha: string, searched: number, info: VersionSearchInfo): string {
+export function describeVersionSearch(
+  sha: string,
+  searched: number,
+  info: VersionSearchInfo,
+): string {
   const head =
     `No uploaded version carries ${VERSION_TAG_ANNOTATION} ${sha} among the ` +
     `${String(searched)} version(s) searched (source ${info.source}, bound ${String(info.limit)}).`

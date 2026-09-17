@@ -189,13 +189,47 @@ hold, and `narduk-app deploy versions-upload` now sets it automatically from
 narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
-  [--dry-run] [--json]
+  [--max-versions <n>] [--dry-run] [--json]
 ```
 
 Resolves the version whose `workers/tag` matches the commit (prefix-compared in
 both directions, because 7-, 12- and 40-character spellings of one SHA all
-occur) and deploys it at 100%. `--sha` defaults to `GITHUB_SHA`; the Worker name
-and account id default to the committed Wrangler config.
+occur) and deploys it at 100%. The Worker name and account id default to the
+committed Wrangler config.
+
+**The lookup is bounded, not capped at ten.** `wrangler versions list` prints
+"the 10 most recent Versions of your Worker" and takes no paging flag, so with
+non-production branch builds on, ten branch uploads landing between a merge
+build and its promote job used to bury the version and leave production
+un-updated. The lookup now walks Cloudflare's Versions endpoint with
+`per_page`/`page` up to `--max-versions` (default 500) and never paginates
+unbounded. That path needs an account id and `CLOUDFLARE_API_TOKEN`; without
+both it falls back to `wrangler versions list` and says
+`versionSearch.source: "wrangler"` in the result, because a miss in ten means
+something different from a miss in five hundred.
+
+**A promote that promotes nothing is exit 3, never 0.** The `version-not-found`
+detail names the SHA, how many versions were read, the bound, and whether the
+search reached the end of the Worker's history (no build ever uploaded this
+commit) or stopped at the bound (raise `--max-versions`, or use `--version-id`).
+Wire the step so that exit is a **red** job, never a skip.
+
+**`--sha` under `workflow_run`.** It defaults to `GITHUB_SHA` on every event but
+one. Under `on: workflow_run`, `GITHUB_SHA` is the default branch's head at
+trigger time rather than the commit whose run completed, so the command
+**refuses** to default there (exit 2) instead of promoting a commit the gate
+check never passed. Pass the triggering commit explicitly:
+
+```yaml
+env:
+  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+steps:
+  - run:
+      narduk-app deploy versions-promote --sha "$VERIFIED_SHA"
+      --production-branch main --json
+  - run:
+      narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"
+```
 
 It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
 reusing that would force every promotion through
@@ -436,6 +470,16 @@ KV or R2 would read and write production data from every pull request branch.
 The check refuses that combination unless `previewBindings` names a replacement
 for each of those bindings. Entries may be a bare binding name or an object
 carrying the preview resource's own ids.
+
+**`previewBindings` is a declaration, and 12.4 no longer reports PASS for it.**
+Nothing in this release consumes the field: `narduk-app deploy` generates only
+`.wrangler.deploy.production.json`, and a non-production branch build uploads
+with that same config, so a listed binding still resolves to the production
+resource. An app that lists every binding name gets the identical runtime to one
+that lists none. Full coverage therefore reports **`unknown`** -- "declared, not
+enforced", exit 2 -- rather than a green check standing for an isolation that
+does not exist. The two `pass` states left are the ones a checkout really
+decides: `nonProductionBranchBuilds: false`, or no D1/KV/R2 binding at all.
 
 **Every wrangler config counts, not just the app's own.** A repo with a second
 Worker under `services/*` or beside the app is the exact shape the two committed
