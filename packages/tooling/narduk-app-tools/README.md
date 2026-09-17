@@ -83,8 +83,7 @@ Real worker errors pass through. The only filtered stderr is workerd's
 client-abort block
 (`kj::getCaughtExceptionAsKj() … disconnected: ::write(…): Broken pipe` or
 `Connection reset by peer`, plus the following `stack: …workerd@…` line). A
-following `ECONNREFUSED` is the real
-crash
+following `ECONNREFUSED` is the real crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 See [the e2e-serve guide](docs/e2e-serve.md).
 
