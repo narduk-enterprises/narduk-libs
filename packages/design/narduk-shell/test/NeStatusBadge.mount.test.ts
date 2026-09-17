@@ -22,7 +22,7 @@ import type { NeStatusTone } from '../src/runtime/utils/status-map'
  */
 const FakeUBadge = defineComponent({
   name: 'UBadge',
-  props: ['color', 'variant', 'size', 'icon'],
+  props: ['color', 'variant', 'size', 'icon', 'ui'],
   setup(props, { attrs, slots }) {
     return () =>
       h(
@@ -33,6 +33,7 @@ const FakeUBadge = defineComponent({
           'data-variant': props.variant,
           'data-size': props.size,
           'data-icon': props.icon,
+          'data-ui-base': props.ui?.base,
         },
         slots.default?.(),
       )
@@ -133,6 +134,82 @@ describe('NeStatusBadge', () => {
     const label = wrapper.get('[data-slot="label"]')
     expect(label.classes()).toContain('truncate')
     expect(label.classes()).not.toContain('whitespace-nowrap')
+  })
+
+  /*
+   * Contrast on the tinted variants. Nuxt UI paints `--ui-<color>` -- shade
+   * 500 -- on a 10% tint of the same colour, which axe measured on a live app
+   * at 2.04:1 (success), 1.79:1 (warning), 3.30:1 (error) and 3.34:1 (info)
+   * against the 4.5:1 small text needs. These assert the correction is applied
+   * where it belongs and, just as importantly, NOT where it would break
+   * something.
+   */
+  describe('tinted-variant contrast', () => {
+    const tintedToneShades: Array<[NeStatusTone, string]> = [
+      ['ok', 'success'],
+      ['warn', 'warning'],
+      ['error', 'error'],
+      ['info', 'info'],
+    ]
+
+    for (const [tone, color] of tintedToneShades) {
+      for (const variant of ['soft', 'subtle', 'outline'] as const) {
+        it(`darkens "${tone}" ink on the ${variant} variant to shade 800`, () => {
+          const wrapper = mountBadge({ tone, label: 'Label', variant })
+          expect(wrapper.attributes('data-ui-base')).toBe(
+            `text-[var(--ui-color-${color}-800)] dark:text-[var(--ui-${color})]`,
+          )
+        })
+      }
+    }
+
+    it('reads the shade from the colour ALIAS, never a literal Tailwind ramp', () => {
+      /*
+       * `text-green-800` would be wrong for an app that aliases `success` to
+       * another ramp -- it would paint that app's badge in a colour from a
+       * palette it does not use.
+       */
+      const wrapper = mountBadge({ tone: 'ok', label: 'Live', variant: 'subtle' })
+      const base = wrapper.attributes('data-ui-base') ?? ''
+      expect(base).toContain('--ui-color-success-800')
+      expect(base).not.toMatch(/text-(green|emerald|lime)-800/)
+    })
+
+    it('leaves dark mode exactly as Nuxt UI had it', () => {
+      /*
+       * A dark tint sits on a dark ground and wants a LIGHTER ink, which is
+       * the opposite correction, and nothing has measured it. Restoring
+       * `--ui-<color>` under `dark:` makes this change provably a no-op there.
+       */
+      const wrapper = mountBadge({ tone: 'error', label: 'Offline', variant: 'soft' })
+      expect(wrapper.attributes('data-ui-base')).toContain('dark:text-[var(--ui-error)]')
+    })
+
+    it('leaves the SOLID variant alone — a dark ink there would be unreadable', () => {
+      const wrapper = mountBadge({ tone: 'ok', label: 'Live', variant: 'solid' })
+      expect(wrapper.attributes('data-ui-base')).toBeUndefined()
+    })
+
+    it('leaves an unset variant alone, because UBadge defaults it to solid', () => {
+      const wrapper = mountBadge({ tone: 'ok', label: 'Live' })
+      expect(wrapper.attributes('data-ui-base')).toBeUndefined()
+    })
+
+    it('leaves neutral alone: Nuxt UI already gives it a readable ink', () => {
+      const wrapper = mountBadge({ tone: 'neutral', label: 'Unknown', variant: 'subtle' })
+      expect(wrapper.attributes('data-ui-base')).toBeUndefined()
+    })
+
+    it('still corrects "pending", which defaults itself to a tinted variant', () => {
+      /*
+       * `pending` is neutral-coloured, so it takes no correction -- but the
+       * path that decides has to see the DEFAULTED variant rather than the
+       * unset prop, or a tone that defaults to a tint would be missed.
+       */
+      const wrapper = mountBadge({ tone: 'pending', label: 'Waiting' })
+      expect(wrapper.attributes('data-variant')).toBe('subtle')
+      expect(wrapper.attributes('data-ui-base')).toBeUndefined()
+    })
   })
 
   it('carries the tone into a status role and accessible name, not colour alone', () => {
