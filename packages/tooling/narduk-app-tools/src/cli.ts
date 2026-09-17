@@ -1,9 +1,20 @@
+import { writeFileSync } from 'node:fs'
+
 import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { runDoctor, formatDoctorReport } from './doctor.js'
-import { isWorkersBuildDeployAllowed, runDeploy } from './deploy.js'
+import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
+import {
+  formatPromoteResult,
+  parseRollbackArgs,
+  parseVersionsPromoteArgs,
+  readWranglerAccountId,
+  runRollback,
+  runVersionsPromote,
+} from './promote.js'
+import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
 import { runMigrations, type MigrationLocation } from './migrations.js'
 import {
   formatPerformanceBudgetReport,
@@ -31,6 +42,22 @@ function usage(): string {
     '                                       registered nvault credential route',
     '  db migrate --config <file> --database <name> --local|--remote [--reset]',
     '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
+    '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
+    '      [--account-id <id>] [--message <text>] [--dry-run] [--json]',
+    '                                       Deploy the already-uploaded version for a commit at',
+    '                                       100%. GitHub Actions only (NARDUK_ALLOW_MANUAL_PROMOTE=1',
+    '                                       for recovery). Exit 3 version not found, 4 ambiguous,',
+    '                                       5 wrangler failed.',
+    '  deploy rollback [--to <version-id>] [--name <worker>] [--account-id <id>]',
+    '      [--message <text>] [--dry-run] [--json]',
+    '                                       Roll back to the previous deployed version, or a named',
+    '                                       one. Refuses a no-op (exit 6).',
+    '  verify --live <url> [--expect-sha <sha>] [--health-path <p>] [--smoke-path <p>]',
+    '      [--expect-content-type <t>] [--attempts <n>] [--interval-seconds <n>]',
+    '      [--allow-degraded] [--json [path]]',
+    '                                       Live proof of a deployment: x-build-version, health,',
+    '                                       and one smoke route. Exit 2 unreachable, 3 build',
+    '                                       version mismatch, 4 health, 5 smoke.',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  doctor                              Check app-local prerequisites',
@@ -109,7 +136,34 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       console.log(`[db] ${plan.apply} applied, ${plan.adopt} adopted, ${plan.skip} skipped`)
       return 0
     }
-    if (command === 'deploy') return runDeploy(rest)
+    if (command === 'deploy') {
+      // `versions-promote` and `rollback` are sibling deploy actions with their
+      // own GitHub Actions guard; they never reach `runDeploy`, whose
+      // Workers-Builds guard would refuse them. See `./promote.ts`.
+      const [action, ...actionArgs] = rest
+      if (action === 'versions-promote' || action === 'rollback') {
+        const context = {
+          resolveWorkerName: readWranglerScriptName,
+          resolveAccountId: readWranglerAccountId,
+        }
+        const result =
+          action === 'versions-promote'
+            ? await runVersionsPromote(parseVersionsPromoteArgs(actionArgs), context)
+            : await runRollback(parseRollbackArgs(actionArgs), context)
+        const json = actionArgs.includes('--json')
+        console.log(json ? JSON.stringify(result, null, 2) : formatPromoteResult(result))
+        return result.exitCode
+      }
+      return runDeploy(rest)
+    }
+    if (command === 'verify') {
+      const flags = parseVerifyArgs(rest)
+      const report = await runVerifyLive(flags)
+      if (flags.jsonPath)
+        writeFileSync(flags.jsonPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+      console.log(flags.json ? JSON.stringify(report, null, 2) : formatVerifyReport(report))
+      return report.exitCode
+    }
     if (command === 'deploy-local') {
       return await runDeployLocal({ flags: parseDeployLocalArgs(rest) })
     }

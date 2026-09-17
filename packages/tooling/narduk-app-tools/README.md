@@ -123,6 +123,115 @@ The command never writes secret files. Registry auth writes the requested
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
 
+## Promotion, rollback and live proof
+
+The Narduk deployment standard is **Cloudflare builds, GitHub promotes**:
+Workers Builds runs `wrangler versions upload` on every branch, so a push
+produces a version that serves no traffic, and a GitHub Actions job deploys that
+exact version at 100% only once the gate check is green on that exact main SHA
+(company-hq#745, deployment-standard design §1.5).
+
+### How a commit is linked to a version
+
+A Worker version carries **no commit field**. Read live on 2026-09-17 against
+the deployed `buoys` Worker, `wrangler versions list --name buoys --json`
+returns only `metadata.{created_on,source,author_id,author_email,has_preview}`
+and `annotations.{workers/alias,workers/triggered_by}` — and Cloudflare's
+Versions API reference documents no annotation fields at all.
+
+So the link is **made, not discovered**. `wrangler versions upload --tag <sha>`
+writes `annotations["workers/tag"]`, the only commit-shaped handle a version can
+hold, and `narduk-app deploy versions-upload` now sets it automatically from
+`WORKERS_CI_COMMIT_SHA` when it runs inside a Workers Build. A caller-supplied
+`--tag` is always left alone.
+
+> **Window:** `wrangler versions list` returns the 10 most recent versions and
+> takes no paging flag. On a repository with many branch builds a main version
+> can fall out of that window before the promote job runs; that is reported as
+> `version-not-found` with the number of versions searched, not as a generic
+> failure. Promote by `--version-id` to recover.
+
+### `narduk-app deploy versions-promote`
+
+```sh
+narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
+  [--name <worker>] [--account-id <id>] [--message <text>] [--dry-run] [--json]
+```
+
+Resolves the version whose `workers/tag` matches the commit (prefix-compared in
+both directions, because 7-, 12- and 40-character spellings of one SHA all
+occur) and deploys it at 100%. `--sha` defaults to `GITHUB_SHA`; the Worker name
+and account id default to the committed Wrangler config.
+
+It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
+reusing that would force every promotion through
+`NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` and so license local production deploys
+estate-wide. Its own override is `NARDUK_ALLOW_MANUAL_PROMOTE=1`, for deliberate
+recovery work.
+
+| Exit | Outcome                                                     |
+| ---- | ----------------------------------------------------------- |
+| 0    | `promoted`, `already-live` (idempotent no-op) or `dry-run`  |
+| 1    | guard refusal or usage error                                |
+| 3    | `version-not-found` inside the searched window              |
+| 4    | `ambiguous-version` — more than one version carries the tag |
+| 5    | wrangler itself failed                                      |
+
+The machine-readable result names `previousVersionId`: **feed it to
+`rollback --to`.** Resolving "the previous version" from history is only correct
+once — after a rollback the newest earlier version is the broken one you just
+left, so an unnamed second rollback would roll _forward_.
+
+### `narduk-app deploy rollback`
+
+```sh
+narduk-app deploy rollback [--to <version-id>] [--name <worker>] \
+  [--account-id <id>] [--message <text>] [--dry-run] [--json]
+```
+
+Same guard. Refuses (exit 6) when the target already serves 100%, when there is
+no earlier deployed version, and when the live deployment is itself a rollback
+and no `--to` was given.
+
+### `narduk-app verify --live`
+
+```sh
+narduk-app verify --live <url> [--expect-sha <sha>] [--health-path <p>] \
+  [--smoke-path <p>] [--expect-content-type <t>] [--attempts <n>] \
+  [--interval-seconds <n>] [--allow-degraded] [--json [path]]
+```
+
+Three assertions against a running deployment, so the preview gate, the promote
+job's post-deploy proof and a human debugging an incident all run one code path
+(design §6.2):
+
+1. `x-build-version` is the expected commit (prefix compare; narduk-core
+   publishes 12 characters).
+2. `/api/health` is healthy per the narduk-core health contract —
+   `{ success, data: { status, checks } }`, with every `required: true` check
+   passing.
+3. One app-declared smoke route answers 2xx with the expected content type.
+
+The build-version and smoke assertions share one request. Defaults match design
+§2.1 `liveProof`: `/api/health`, `/`, 6 attempts, 10 s apart, 15 s timeout.
+Retries cover the whole pass, because a promotion has to propagate and a cold
+isolate is roughly 10× slower than a warm one.
+
+`degraded` fails by default. Design §6.2 asks for both `data.status == "ok"` and
+"every required check passing", and those two disagree exactly in the degraded
+case; this command takes the literal reading, and `--allow-degraded` takes the
+other. The status is recorded verbatim either way, and `--allow-degraded` never
+excuses a failing **required** check.
+
+| Exit | Failure class                                      |
+| ---- | -------------------------------------------------- |
+| 0    | every assertion passed                             |
+| 1    | usage error                                        |
+| 2    | the deployment could not be read at all            |
+| 3    | `x-build-version` mismatch after the bounded retry |
+| 4    | `/api/health` not healthy                          |
+| 5    | smoke route wrong status or content type           |
+
 ## Web foundation conformance
 
 `narduk-app foundation:check [--checkout <dir>] [--json [path]]` evaluates the

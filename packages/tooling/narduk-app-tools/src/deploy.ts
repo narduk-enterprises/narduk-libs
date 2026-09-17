@@ -79,6 +79,42 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+function hasFlag(args: readonly string[], flag: string): boolean {
+  return args.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+}
+
+/**
+ * The commit tag that makes a promotion possible.
+ *
+ * A Worker version carries no commit field: read live on 2026-09-17,
+ * `wrangler versions list --name buoys --json` returns only
+ * `metadata.{created_on,source,author_id,author_email,has_preview}` and
+ * `annotations.{workers/alias,workers/triggered_by}`, and Cloudflare's Versions
+ * API reference documents no annotation fields at all. The single
+ * commit-shaped handle a version can hold is `annotations["workers/tag"]`,
+ * written by `wrangler versions upload --tag` (and `wrangler deploy --tag`).
+ *
+ * So the build stamps it. Inside a Workers Build, `WORKERS_CI_COMMIT_SHA` is
+ * the commit being built, and `narduk-app deploy versions-upload` passes it as
+ * `--tag` unless the caller supplied one; `narduk-app deploy versions-promote`
+ * then resolves a SHA back to a version id by reading that annotation. Without
+ * this, the promote half of the standard has no input at all.
+ */
+export function resolveVersionTagArgs(
+  passthroughArgs: readonly string[],
+  env: DeployEnv = process.env,
+): string[] {
+  if (hasFlag(passthroughArgs, '--tag')) return []
+  const sha = env.WORKERS_CI_COMMIT_SHA?.trim() ?? ''
+  if (!/^[a-f\d]{7,64}$/iu.test(sha)) return []
+  const args = ['--tag', sha.toLowerCase()]
+  const branch = env.WORKERS_CI_BRANCH?.trim()
+  if (branch && !hasFlag(passthroughArgs, '--message')) {
+    args.push('--message', `Workers Builds ${branch} @ ${sha.slice(0, 12).toLowerCase()}`)
+  }
+  return args
+}
+
 export function hasExplicitWranglerEnvTarget(args: string[]): boolean {
   return args.some(
     (arg) => arg === '--env' || arg.startsWith('--env=') || arg === '-e' || arg.startsWith('-e='),
@@ -126,10 +162,12 @@ export function buildWranglerCommandArgs(options: {
   passthroughArgs: string[]
   sourceConfigPath: string | null
   appDir?: string
+  env?: DeployEnv
 }): string[] {
   const command = options.action === 'deploy' ? ['deploy'] : ['versions', 'upload']
   const keepVars = options.action === 'deploy' ? ['--keep-vars'] : []
   const envTarget = hasExplicitWranglerEnvTarget(options.passthroughArgs) ? [] : ['--env=']
+  const tag = resolveVersionTagArgs(options.passthroughArgs, options.env ?? process.env)
   const appDir = options.appDir ?? process.cwd()
   if (options.sourceConfigPath) {
     return [
@@ -140,6 +178,7 @@ export function buildWranglerCommandArgs(options: {
       ...command,
       ...envTarget,
       ...keepVars,
+      ...tag,
       ...options.passthroughArgs,
     ]
   }
@@ -152,6 +191,7 @@ export function buildWranglerCommandArgs(options: {
       ...command,
       ...envTarget,
       ...keepVars,
+      ...tag,
       ...options.passthroughArgs,
     ]
   }
@@ -166,6 +206,7 @@ export function buildWranglerCommandArgs(options: {
       '--assets',
       'public',
       ...keepVars,
+      ...tag,
       ...options.passthroughArgs,
     ]
   }
@@ -201,6 +242,7 @@ export function runDeploy(
     hasOutputEntrypoint: existsSync(outputEntrypoint),
     passthroughArgs,
     sourceConfigPath,
+    env,
   })
   const result = spawnSync('pnpm', commandArgs, { cwd: appDir, env, stdio: 'inherit' })
   if (result.error) {
