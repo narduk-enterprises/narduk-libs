@@ -18,6 +18,15 @@ describe('narduk-core package exports', () => {
     })
   })
 
+  it('pins Nuxt 4 for both the nuxt and @nuxt/schema peers', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      peerDependencies: Record<string, string>
+    }
+
+    expect(packageJson.peerDependencies.nuxt).toBe('>=4.0.0')
+    expect(packageJson.peerDependencies['@nuxt/schema']).toBe('>=4.0.0')
+  })
+
   it('exports app composables for package-owned UI state reuse', async () => {
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
       exports: Record<string, unknown>

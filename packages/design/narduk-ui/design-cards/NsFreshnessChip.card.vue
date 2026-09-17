@@ -25,6 +25,8 @@ const now = new Date("2026-07-30T12:00:00Z");
     <h2>Freshness chip</h2>
     <p>
       Classifies an observation's age against its own source interval: live, aging, stale, void.
+      Each sample is handed a fixed <code>now</code> so the first paint (and this card) do not read
+      the ambient clock.
     </p>
     <div class="preview-row">
       <NsFreshnessChip observed-at="2026-07-30T11:55:00Z" :interval-minutes="10" :now="now" />

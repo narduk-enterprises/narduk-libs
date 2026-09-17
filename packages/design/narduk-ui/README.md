@@ -61,28 +61,36 @@ the source's own `intervalMinutes` and let the chip classify. The second form is
 preferred: it keeps the definition of "fresh" in one place rather than in each
 caller.
 
+A classified first paint also needs `now`. The chip never reads the ambient
+clock during SSR — that is the hydration miss
+`narduk-shell/format` documents (`formatRelative` taking `now`). Omit `now`
+and the server emits a stable `ns-chip--pending` placeholder; the client
+classifies after mount. Explicit `state` still renders on the server.
+
 ```vue
 <script setup lang="ts">
 import { NsFreshnessChip } from "@narduk-enterprises/narduk-ui/instruments";
+
+const now = new Date("2026-07-30T12:00:00Z");
 </script>
 
 <template>
-  <NsFreshnessChip observed-at="2026-07-30T11:56:00Z" :interval-minutes="10" show-age />
+  <NsFreshnessChip observed-at="2026-07-30T11:56:00Z" :interval-minutes="10" :now="now" show-age />
 </template>
 ```
 
 #### Props
 
-| Prop              | Type                                     | Default      | Description                                                                                         |
-| ----------------- | ---------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
-| `state`           | `'live' \| 'aging' \| 'stale' \| 'void'` | —            | Explicit state. Omit to derive from `observedAt` + `intervalMinutes`                                |
-| `observedAt`      | `Date \| string \| null`                 | —            | When the measurement was taken. Used with `intervalMinutes` when `state` is omitted                 |
-| `intervalMinutes` | `number`                                 | —            | The source's own publishing interval, not an arbitrary threshold. Required to classify from a clock |
-| `now`             | `Date`                                   | `new Date()` | Injectable clock, for deterministic tests and stories                                               |
-| `showAge`         | `boolean`                                | `false`      | Append the compact age, e.g. `STALE · 3 d`. A stale value is shown with its age rather than hidden  |
+| Prop              | Type                                     | Default | Description                                                                                                             |
+| ----------------- | ---------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `state`           | `'live' \| 'aging' \| 'stale' \| 'void'` | —       | Explicit state. Omit to derive from `observedAt` + `intervalMinutes`                                                    |
+| `observedAt`      | `Date \| string \| null`                 | —       | When the measurement was taken. Used with `intervalMinutes` when `state` is omitted                                     |
+| `intervalMinutes` | `number`                                 | —       | The source's own publishing interval, not an arbitrary threshold. Required to classify from a clock                     |
+| `now`             | `Date`                                   | —       | Injectable clock. Pass it for a classified first paint; omit it and the chip renders a stable placeholder until mount   |
+| `showAge`         | `boolean`                                | `false` | Append the compact age, e.g. `STALE · 3 d`. A stale value is shown with its age rather than hidden. Needs `now` on SSR. |
 
-When `state` is omitted and `intervalMinutes` is missing, the chip renders
-`void` rather than guessing live.
+When `state` is omitted and `intervalMinutes` (or `observedAt`) is missing, the
+chip renders `void` rather than guessing live.
 
 #### Events
 

@@ -13,8 +13,25 @@
  * rather than rewriting these cases.
  */
 import { createSSRApp, type Component } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderToString } from '@vue/server-renderer'
+
+const numberFormatLocales: unknown[] = []
+const OriginalNumberFormat = Intl.NumberFormat
+
+beforeAll(() => {
+  function TrackingNumberFormat(locale?: string | string[], options?: Intl.NumberFormatOptions) {
+    numberFormatLocales.push(locale)
+    return new OriginalNumberFormat(locale, options)
+  }
+  vi.spyOn(Intl, 'NumberFormat').mockImplementation(
+    TrackingNumberFormat as unknown as typeof Intl.NumberFormat,
+  )
+})
+
+afterAll(() => {
+  vi.restoreAllMocks()
+})
 
 vi.mock('@nuxt/ui/components/PageHeader.vue', async () => {
   const { UPageHeaderStub } = await import('./support/nuxt-ui-stubs')
@@ -79,7 +96,8 @@ describe('NeSectionHeader', () => {
 
     expect(html).toContain('<h2')
     expect(html).toContain('Deployments')
-    expect(html).toContain(new Intl.NumberFormat().format(1234))
+    expect(html).toContain('1,234')
+    expect(numberFormatLocales).toContain('en-US')
     expect(html).toContain('data-slot="count"')
   })
 

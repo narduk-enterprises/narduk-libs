@@ -10,9 +10,15 @@
  *
  * Components-library backlog item 9 (narduk-libs#256); plan
  * docs/plans/components-library-plan.md §2 item 9.
+ *
+ * `count` is formatted through `formatNumber` (fixed `en-US`), never
+ * `new Intl.NumberFormat()`, so SSR and the browser cannot disagree on
+ * grouping.
  */
 import UBadge from '@nuxt/ui/components/Badge.vue'
 import { computed } from 'vue'
+
+import { formatNumber } from '../../format'
 
 export type NeSectionHeaderHeading = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 
@@ -44,7 +50,7 @@ defineSlots<{
 }>()
 
 const formattedCount = computed(() =>
-  typeof props.count === 'number' ? new Intl.NumberFormat().format(props.count) : null,
+  typeof props.count === 'number' ? formatNumber(props.count) : null,
 )
 
 const countLabel = computed(() =>

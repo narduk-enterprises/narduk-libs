@@ -14,7 +14,7 @@
  * empty string without throwing — so each case also asserts that real markup
  * came back.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "@vue/server-renderer";
 import { createSSRApp, type Component } from "vue";
 
@@ -102,5 +102,59 @@ describe("server rendering without a DOM", () => {
 
   it("does not touch a DOM global merely by importing the instruments entry", async () => {
     await expect(render(NsFreshnessChip, { state: "void" })).resolves.toContain("ns-chip");
+  });
+});
+
+describe("NsFreshnessChip does not read the host clock during SSR", () => {
+  const preferred = {
+    observedAt: "2026-07-30T11:56:00Z",
+    intervalMinutes: 10,
+    showAge: true,
+  };
+
+  async function renderAt(iso: string): Promise<string> {
+    // Freeze only `Date` so the render sees a fixed host clock without
+    // disturbing timers the SSR renderer may rely on.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(iso));
+    try {
+      return await render(NsFreshnessChip, preferred);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("emits identical markup when now is omitted and Date is 10 minutes apart", async () => {
+    const noon = await renderAt("2026-07-30T12:00:00Z");
+    const later = await renderAt("2026-07-30T12:10:00Z");
+    expect(noon).toBe(later);
+    expect(noon).toContain("ns-chip--pending");
+    expect(noon).toContain("aria-busy");
+    expect(noon).not.toContain("ns-chip--live");
+    expect(noon).not.toContain("ns-chip--aging");
+    expect(noon).not.toContain("ns-chip--stale");
+    expect(noon).not.toContain("4 min");
+    expect(noon).not.toContain("14 min");
+  });
+
+  it("still classifies on the server when now is injected", async () => {
+    const html = await render(NsFreshnessChip, {
+      ...preferred,
+      now: new Date("2026-07-30T12:00:00Z"),
+    });
+    expect(html).toContain("ns-chip--live");
+    expect(html).toContain("4 min");
+    expect(html).not.toContain("ns-chip--pending");
+  });
+
+  it("still server-renders an explicit state without reading the clock", async () => {
+    const html = await render(NsFreshnessChip, {
+      state: "stale",
+      observedAt: "2026-07-30T11:56:00Z",
+      showAge: true,
+    });
+    expect(html).toContain("ns-chip--stale");
+    expect(html).toContain(SIGNALS.stale.label);
+    expect(html).not.toContain("ns-chip__age");
   });
 });

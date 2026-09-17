@@ -7,8 +7,22 @@
  * Either pass an explicit `state`, or pass `observedAt` plus the source's own
  * `intervalMinutes` and let the chip classify. The second form is preferred:
  * it keeps the definition of "fresh" in one place rather than in each caller.
+ *
+ * Classification and age both need a clock. Reading `new Date()` during SSR
+ * is the hydration bug `narduk-shell/format` exists to prevent — workerd and
+ * the browser disagree near thresholds, minute boundaries, and whenever
+ * `showAge` is on. So:
+ *
+ * - `now` is the SSR-stable path. Tests, stories, and any first paint that
+ *   must already say Live/Stale inject it.
+ * - Explicit `state` still classifies on the server (no clock). `showAge`
+ *   without `now` still waits for mount.
+ * - `observedAt` + `intervalMinutes` without `now` renders a stable
+ *   `ns-chip--pending` placeholder on the server and on the client's first
+ *   paint, then classifies in `onMounted`. Existing `state` / `now` callers
+ *   are unchanged.
  */
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { classifySignal, formatAge, SIGNALS, type SignalState } from "../_core/signal";
 
@@ -16,7 +30,7 @@ const props = withDefaults(
   defineProps<{
     /** The source's own publishing interval, not an arbitrary threshold. */
     intervalMinutes?: number;
-    /** Injectable clock, for deterministic tests and stories. */
+    /** Injectable clock. Pass this for a classified first paint; omit for a stable placeholder until mount. */
     now?: Date;
     observedAt?: Date | string | null;
     /** Append the age, e.g. "STALE · 3 d". The design system requires a stale
@@ -28,27 +42,60 @@ const props = withDefaults(
   { showAge: false },
 );
 
-const resolved = computed<SignalState>(() => {
-  if (props.state) return props.state;
-  if (props.intervalMinutes == null) return "void";
-  return classifySignal(props.observedAt, props.intervalMinutes, props.now ?? new Date());
+const PENDING_LABEL = "…";
+const PENDING_MEANING = "Waiting to classify this observation against a clock.";
+
+const canReadClock = ref(false);
+onMounted(() => {
+  canReadClock.value = true;
 });
 
-const descriptor = computed(() => SIGNALS[resolved.value]);
+const clock = computed<Date | null>(() => {
+  if (props.now) return props.now;
+  if (canReadClock.value) return new Date();
+  return null;
+});
+
+function isDateable(value: Date | string | null | undefined): boolean {
+  if (value == null) return false;
+  const observed = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(observed.getTime());
+}
+
+const resolved = computed<SignalState | null>(() => {
+  if (props.state) return props.state;
+  const interval = props.intervalMinutes;
+  if (interval == null || !(interval > 0) || !isDateable(props.observedAt)) return "void";
+  if (clock.value == null) return null;
+  return classifySignal(props.observedAt, interval, clock.value);
+});
+
+const appearance = computed(() => {
+  if (resolved.value == null) {
+    return { stateClass: "pending", label: PENDING_LABEL, meaning: PENDING_MEANING };
+  }
+  const descriptor = SIGNALS[resolved.value];
+  return { stateClass: resolved.value, label: descriptor.label, meaning: descriptor.meaning };
+});
 
 const age = computed(() =>
-  props.showAge && props.observedAt != null
-    ? formatAge(props.observedAt, props.now ?? new Date())
+  props.showAge && props.observedAt != null && clock.value != null
+    ? formatAge(props.observedAt, clock.value)
     : null,
 );
 </script>
 
 <template>
-  <span class="ns-chip" :class="`ns-chip--${resolved}`" :title="descriptor.meaning">
+  <span
+    class="ns-chip"
+    :class="`ns-chip--${appearance.stateClass}`"
+    :title="appearance.meaning"
+    :aria-busy="resolved == null ? 'true' : undefined"
+  >
     <span class="ns-chip__dot" aria-hidden="true" />
-    <span>{{ descriptor.label }}</span>
+    <span>{{ appearance.label }}</span>
     <span v-if="age" class="ns-chip__age">· {{ age }}</span>
-    <span class="ns-chip__sr">{{ descriptor.meaning }}</span>
+    <span class="ns-chip__sr">{{ appearance.meaning }}</span>
   </span>
 </template>
 
@@ -110,7 +157,8 @@ const age = computed(() =>
   box-shadow: inset 0 0 0 1px var(--ns-stale-ring);
 }
 
-.ns-chip--void {
+.ns-chip--void,
+.ns-chip--pending {
   color: var(--ns-void);
   background: var(--ns-void-bg);
   box-shadow: inset 0 0 0 1px var(--ns-void-ring);

@@ -61,6 +61,22 @@ describe('NePager: the summary says what is on screen', () => {
     )
   })
 
+  it('formats grouped counts with pinned en-US, not the host locale', () => {
+    const wrapper = render({
+      noun: 'runners',
+      state: state({
+        items: [{ id: 1 }],
+        limit: 25,
+        offset: 1233,
+        page: 50,
+        pageCount: 50,
+        total: 1234,
+      }),
+    })
+
+    expect(wrapper.get('[data-ne-pager-summary]').text()).toBe('1,234–1,234 of 1,234 runners')
+  })
+
   it('reports only the window when the route did not count, inventing no total', () => {
     const wrapper = render({ noun: 'runners', state: state({ pageCount: null, total: null }) })
 

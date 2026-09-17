@@ -17,13 +17,30 @@
  * Pattern: packages/design/narduk-charts/src/ssr.test.ts.
  */
 import { renderToString } from '@vue/server-renderer'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createSSRApp, defineComponent, h, type Component } from 'vue'
 
 import NePager from '../src/runtime/components/NePager.vue'
 
 import type { NeCollectionState } from '../src/runtime/composables/use-collection'
+
+const numberFormatLocales: unknown[] = []
+const OriginalNumberFormat = Intl.NumberFormat
+
+beforeAll(() => {
+  function TrackingNumberFormat(locale?: string | string[], options?: Intl.NumberFormatOptions) {
+    numberFormatLocales.push(locale)
+    return new OriginalNumberFormat(locale, options)
+  }
+  vi.spyOn(Intl, 'NumberFormat').mockImplementation(
+    TrackingNumberFormat as unknown as typeof Intl.NumberFormat,
+  )
+})
+
+afterAll(() => {
+  vi.restoreAllMocks()
+})
 
 /** The globals a Workers-style server runtime does not have. */
 it('runs in an environment with no DOM, which is the whole point of this file', () => {
@@ -78,6 +95,23 @@ describe('NePager server-rendered without a DOM', () => {
     expect(html).toContain('data-ne-pager')
     expect(html).toContain('51–75 of 712 runners')
     expect(html).toContain('aria-label="Pagination"')
+  })
+
+  it('formats grouped counts with pinned en-US in the server output', async () => {
+    const html = await renderPager({
+      noun: 'runners',
+      state: state({
+        items: [{ id: 1 }],
+        limit: 25,
+        offset: 1233,
+        page: 50,
+        pageCount: 50,
+        total: 1234,
+      }),
+    })
+
+    expect(html).toContain('1,234–1,234 of 1,234 runners')
+    expect(numberFormatLocales).toContain('en-US')
   })
 
   it('emits real hrefs for :to, so a crawler reaches page two without running JS', async () => {

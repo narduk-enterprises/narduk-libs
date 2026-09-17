@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { consumerSmokePhases, mapPackages, qualityPhases } from './consumer-smoke-phases.mjs'
+import {
+  CONSUMER_SMOKE_TEST_OG_IMAGE_SECRET,
+  CONSUMER_SMOKE_TEST_SESSION_PASSWORD,
+  consumerSmokePhases,
+  consumerSmokeTestEnv,
+  mapPackages,
+  qualityPhases,
+} from './consumer-smoke-phases.mjs'
 
 test('expands the complete quality chain in order without discarding duplicate calls', () => {
   assert.deepEqual(
@@ -58,6 +65,28 @@ test('release smoke trims scaffold checks and retains compatibility and future c
   ])
   assert.equal(qualityPhases(scripts).includes('lint'), true)
   assert.throws(() => consumerSmokePhases({ quality: 'pnpm run absent' }), /Missing/)
+})
+
+test('fixture env fills test-only OG and session secrets only when unset', () => {
+  assert.deepEqual(consumerSmokeTestEnv({}), {
+    NUXT_OG_IMAGE_SECRET: CONSUMER_SMOKE_TEST_OG_IMAGE_SECRET,
+    NUXT_SESSION_PASSWORD: CONSUMER_SMOKE_TEST_SESSION_PASSWORD,
+  })
+  assert.deepEqual(
+    consumerSmokeTestEnv({
+      NUXT_OG_IMAGE_SECRET: 'already-set-og',
+      NUXT_SESSION_PASSWORD: 'already-set-session',
+    }),
+    {
+      NUXT_OG_IMAGE_SECRET: 'already-set-og',
+      NUXT_SESSION_PASSWORD: 'already-set-session',
+    },
+  )
+  assert.deepEqual(consumerSmokeTestEnv({ FOO: 'bar', NUXT_OG_IMAGE_SECRET: '' }), {
+    FOO: 'bar',
+    NUXT_OG_IMAGE_SECRET: CONSUMER_SMOKE_TEST_OG_IMAGE_SECRET,
+    NUXT_SESSION_PASSWORD: CONSUMER_SMOKE_TEST_SESSION_PASSWORD,
+  })
 })
 
 test('package work is bounded and preserves every result in input order', async () => {
