@@ -9,10 +9,13 @@ let startPromise: Promise<unknown> | null = null
 export function useMapKit() {
   if (import.meta.client && !startPromise) {
     const config = useRuntimeConfig()
-    const staticToken = String(config.public.mapkitToken || '')
     const tokenEndpoint = String(config.public.mapkitTokenEndpoint || '/api/mapkit-token')
+    // `libraries` is mandatory in MapKit JS 6 and `staticToken` is gone
+    // (narduk-libs#421 §d). S5 owns exposing the library list as module
+    // configuration; this is the set the adapter's own components need.
+    const libraries = ['map', 'annotations', 'overlays']
 
-    startPromise = initializeMapKit({ staticToken, tokenEndpoint })
+    startPromise = initializeMapKit({ libraries, tokenEndpoint })
       .then((mapkit) => {
         ready.value = true
         error.value = null

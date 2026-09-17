@@ -7,6 +7,16 @@ interface MapKitLayerDescriptorBase<TData = unknown> {
     maximumZ?: number;
     minimumZ?: number;
     opacity?: number;
+    /**
+     * Draw order among the registry's own overlays: lower draws first, i.e.
+     * underneath. Ties break on registration order. Omitted, a layer sorts by the
+     * order it was registered, which is what `addTileOverlay` alone produced
+     * before narduk-libs#402.
+     *
+     * `reconcile()` overrides this with array position unless a descriptor
+     * carries an explicit `order`.
+     */
+    order?: number;
 }
 export interface MapKitUrlLayerDescriptor<TData = unknown> extends MapKitLayerDescriptorBase<TData> {
     urlTemplate: string;
@@ -21,11 +31,23 @@ export interface MapKitLayerRegionOptions extends MapKitRegionOptions {
 export interface MapKitLayerMapHandle<TTileOverlay> {
     addTileOverlay(overlay: TTileOverlay): void;
     removeTileOverlay(overlay: TTileOverlay): void;
+    /**
+     * MapKit's own overlay list. Optional because a 2.0.x-era handle (and the
+     * gonogo case: a v5 map driven through 2.1.0 controllers) supplies only the
+     * two methods above. Present and array-valued, the registry re-asserts draw
+     * order through it after every attach and detach; absent, `null`, or not an
+     * array, ordering silently degrades to attach order rather than throwing.
+     */
+    tileOverlays?: TTileOverlay[] | null;
 }
 export interface MapKitLayerRegistryOptions<TTileOverlay> {
+    cancelAnimationFrame?: (handle: number) => void;
     crossfadeDurationMs?: number;
     map: MapKitLayerMapHandle<TTileOverlay>;
     mapkit: MapKitTileOverlayConstructors<TTileOverlay, MapKitTileOverlaySource<unknown>>;
+    /** Crossfade clock. Injected together with `requestAnimationFrame` under test. */
+    now?: () => number;
+    requestAnimationFrame?: (callback: FrameRequestCallback) => number;
 }
 export interface MapKitLayerReplaceOptions {
     activateWhen?: 'immediate' | 'first-image';
@@ -51,6 +73,13 @@ export declare class MapKitLayerRegistry<TTileOverlay extends MapKitOpacityTarge
     constructor(options: MapKitLayerRegistryOptions<TTileOverlay>);
     register(descriptor: MapKitLayerDescriptor): TTileOverlay;
     unregister(id: string): void;
+    /**
+     * The registry's own overlays in draw order: lowest `order` first, ties on
+     * registration sequence, and within one layer every retiring overlay sits
+     * directly beneath the incoming one so a crossfade reveals the new tiles
+     * rather than the layer above (narduk-libs#402).
+     */
+    overlays(): readonly TTileOverlay[];
     setOpacity(id: string, opacity: number): void;
     replace(id: string, descriptor: MapKitLayerDescriptor, options?: MapKitLayerReplaceOptions): Promise<void>;
     get(id: string): TTileOverlay | undefined;

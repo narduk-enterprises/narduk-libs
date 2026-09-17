@@ -1,5 +1,5 @@
 import { mapKitTokenResponseFromEnv } from '@narduk-enterprises/narduk-mapkit/worker'
-import { toWebRequest } from 'h3'
+import { getRequestURL } from 'h3'
 
 import type { MapKitEnv } from '@narduk-enterprises/narduk-mapkit/worker'
 
@@ -13,18 +13,18 @@ export default defineEventHandler((event) => {
       stringFromEnv(cloudflareEnv, 'APPLE_SECRET_KEY') ||
       config.applePrivateKey,
     APPLE_TEAM_ID: stringFromEnv(cloudflareEnv, 'APPLE_TEAM_ID') || config.appleTeamId,
-    MAPKIT_ALLOWED_ORIGINS:
-      stringFromEnv(cloudflareEnv, 'MAPKIT_ALLOWED_ORIGINS') || config.mapkitAllowedOrigins,
-    MAPKIT_TOKEN:
-      stringFromEnv(cloudflareEnv, 'MAPKIT_TOKEN') ||
-      stringFromEnv(cloudflareEnv, 'APPLE_MAPKIT_TOKEN') ||
-      config.public.mapkitToken,
   }
 
-  return mapKitTokenResponseFromEnv(toWebRequest(event), env, {
-    allowedOrigins: env.MAPKIT_ALLOWED_ORIGINS,
-    fallbackOrigin: config.public.appUrl,
+  // `xForwardedHost: false` is the whole point: the origin in the JWT claim is
+  // the one this app is actually routed as, never one a proxy header names
+  // (narduk-libs#421 §e.1). The request object is rebuilt from that same URL.
+  const self = getRequestURL(event, { xForwardedHost: false }).origin
+  const request = new Request(getRequestURL(event).toString(), {
+    headers: event.headers,
+    method: event.method,
   })
+
+  return mapKitTokenResponseFromEnv(request, env, {}, { self })
 })
 
 function stringFromEnv(env: Record<string, unknown>, key: string): string {
