@@ -7,7 +7,8 @@
   "access": "restricted",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [],
+  "//ignore": "@narduk-enterprises/narduk-mapkit-nuxt is frozen at 2.0.x (packages/modules/narduk-mapkit/docs/api-2.1.md section a) and receives no 2.1.0. Its source on main is already the 2.1 contract, and its `workspace:*` pin on @narduk-enterprises/narduk-mapkit resolves to the published 2.0.2 -- which narduk-mapkit 2.1.0 does not satisfy. Changesets therefore FORCE-bumps the adapter to 2.0.7 as an out-of-range dependent even when no changeset names it (measured: removing it from sync-generator-pins-request-id-server-timing.md left `changeset status` still planning the patch). That publish would ship the 2.1 token/composable contract, and a core 2.1.0 dependency, to consumers pinned at 2.0.0/2.0.4/2.0.6. This entry is the only thing that stops it. Removing it re-arms that publish: do not remove it without a release path that pins published core 2.0.2 (narduk-libs#405, #421).",
+  "ignore": ["@narduk-enterprises/narduk-mapkit-nuxt"],
   "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
     "onlyUpdatePeerDependentsWhenOutOfRange": true
   }
