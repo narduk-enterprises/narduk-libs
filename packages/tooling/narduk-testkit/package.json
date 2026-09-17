@@ -125,7 +125,7 @@
   },
   "peerDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@cloudflare/workers-types": "^4.20260511.1",
+    "@cloudflare/workers-types": ">=4.20260511.1",
     "@playwright/test": ">=1.50.0",
     "h3": "^1.15.11",
     "vitest": ">=2.0.0"
