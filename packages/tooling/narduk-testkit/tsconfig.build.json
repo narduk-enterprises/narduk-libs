@@ -11,5 +11,7 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["tests/**"]
+  // See tsconfig.json: `server/handlers` builds separately via
+  // tsconfig.build.handlers.json to avoid the DOM/workers-types global clash.
+  "exclude": ["tests/**", "src/server/handlers/**"]
 }

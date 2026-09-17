@@ -369,3 +369,156 @@ narduk-testkit ui analyze output/playwright/visual-audit
 
 Playwright and Vitest are peer dependencies so each app controls its test runner
 version. The analyzer uses `sharp` as a package runtime dependency.
+
+## Handler test harness
+
+`server/handlers` is for unit-testing a Nitro route handler — an H3 event
+handler backed by Cloudflare bindings — without a real Worker runtime, a running
+Nitro server, or an HTTP round trip. It belongs to the Vitest runner, alongside
+`server/kit`, and is exported from its own subpath so a Playwright-only consumer
+of this package never pulls in `node:sqlite` or a `@cloudflare/workers-types`
+reference.
+
+```ts
+import {
+  createFakeEvent,
+  readFakeEventResponse,
+} from '@narduk-enterprises/narduk-testkit/server/handlers'
+
+const event = createFakeEvent({
+  method: 'POST',
+  path: '/api/buoys/1',
+  params: { id: '1' },
+  body: { status: 'active' },
+})
+await myHandler(event)
+const { status, headers, body } = readFakeEventResponse(event)
+```
+
+`createFakeEvent` builds a real `H3Event` on top of h3's own
+`createEvent(IncomingMessage, ServerResponse)` — the same construction this
+monorepo's own tests already build by hand — so it works with h3's public API
+(`getQuery`, `readBody`, `getRouterParam`, `getHeader`, `setResponseStatus`,
+`setHeader`, ...) rather than a hand-rolled event shape that happens to look
+right. `readFakeEventResponse(event, handlerResult?)` reads back what the
+handler wrote to the response, decoding a JSON body automatically, and falls
+back to the handler's return value when nothing was written directly (the common
+case for a plain `defineEventHandler(() => ({ ... }))`).
+
+**Bindings.** `createFakeKVNamespace()`, `createFakeR2Bucket()` and
+`createFakeD1Database()` return in-memory fakes shaped like the real
+`KVNamespace`, `R2Bucket` and `D1Database` interfaces:
+
+```ts
+import {
+  createFakeD1Database,
+  createFakeKVNamespace,
+  createFakeR2Bucket,
+} from '@narduk-enterprises/narduk-testkit/server/handlers'
+
+const db = createFakeD1Database()
+await db.exec('CREATE TABLE buoys (id INTEGER PRIMARY KEY, status TEXT)')
+await db
+  .prepare('INSERT INTO buoys (id, status) VALUES (?, ?)')
+  .bind(1, 'active')
+  .run()
+
+const cache = createFakeKVNamespace()
+await cache.put('buoy-status:1', JSON.stringify({ id: 1 }), {
+  expirationTtl: 60,
+})
+
+const bucket = createFakeR2Bucket()
+await bucket.put('report.pdf', pdfBytes, {
+  httpMetadata: { contentType: 'application/pdf' },
+})
+```
+
+`createFakeD1Database` is backed by `node:sqlite` (a Node built-in — no new
+dependency), so SQL actually executes rather than returning canned rows:
+`prepare().bind().first()/all()/run()/raw()` behave like the real thing, and
+`batch()` runs inside a real `BEGIN`/`COMMIT`/`ROLLBACK` transaction, so a
+failing statement partway through a batch rolls back every statement in it. Pass
+an existing `node:sqlite` database via `{ database }` to seed schema once and
+share it across fakes.
+
+**Runtime requirements.** `server/handlers` is Node-only and test-time only. It
+imports `node:sqlite`, `node:http`, `node:net`, `node:stream` and `node:crypto`,
+so the package declares `engines.node >= 22.22.0` (the floor at which
+`node:sqlite`'s `DatabaseSync`, `columns()` and `setReturnArrays()` are all
+available unflagged). It also imports `h3` at runtime and its types use
+`@cloudflare/workers-types`' ambient globals; both are declared as optional peer
+dependencies, so an app that only uses the Playwright helpers is not made to
+install them.
+
+**Do not import this into a Worker bundle.** These fakes exist to replace the
+bindings inside a Vitest run; bundling them into deployed Worker code would mean
+shipping a SQLite database and a Node HTTP server in place of the real D1/KV/R2
+bindings. The `node:` imports make that fail loudly at build time under
+Cloudflare's runtime rather than silently — but keep the import inside `tests/`,
+and note that this package as a whole is a `devDependency`.
+
+**`callHandler`.** For the common case of a handler that reads its bindings from
+`event.context.cloudflare.env`:
+
+```ts
+import { callHandler } from '@narduk-enterprises/narduk-testkit/server/handlers'
+
+const response = await callHandler(
+  buoyStatusHandler,
+  { params: { id: '1' } },
+  { env: { DB: db, STATUS_CACHE: cache } },
+)
+expect(response.status).toBe(200)
+```
+
+`callHandler` builds the fake event, wires `env` into
+`event.context.cloudflare.env`, calls the handler, and converts a thrown
+`H3Error` into the same response Nitro's own error handling would send — so a
+handler that `throw createError({ statusCode: 404, ... })` is tested the same
+way it runs in production.
+
+**What these fakes do NOT emulate.** Being honest about the gap between a fake
+and the real Worker runtime matters more than a longer feature list:
+
+- **D1**: no network latency, no multi-region read consistency, and no
+  read-replica sessions — `withSession()` throws, and the deprecated `dump()`
+  API throws too, both intentionally, rather than silently returning nothing
+  useful.
+- **KV**: no eventual consistency. A `put()` is visible to the very next `get()`
+  in the same test, which is not how KV behaves in production across regions.
+  The 25 MiB value and 1 KiB metadata size limits are not enforced either.
+- **R2**: no multipart uploads (`createMultipartUpload` and friends) and no
+  conditional requests — `get()` **throws** on `onlyIf` rather than quietly
+  ignoring it, because a real bucket answers a failed precondition with a
+  body-less `R2Object` and a fake that returned the body would make a broken
+  handler green. `list()` supports `prefix`, `cursor`, `limit` and `include` but
+  not `delimiter`.
+- **Nitro's hooks**: this harness calls a handler directly, so nothing that runs
+  in a Nitro lifecycle hook runs here — including narduk-logging's
+  `Server-Timing` header, which is set in `beforeResponse`. A handler that sets
+  a response header itself is read back normally.
+
+None of that makes these fakes wrong for their job — testing a route handler's
+own logic against realistic bindings — but a test that depends on any of the
+above belongs against a real (or `wrangler dev`) binding instead.
+
+**Where the fakes are deliberately strict.** Each fake was diffed against a real
+binding (workerd, via miniflare), and every place the naive implementation would
+have been _more permissive than production_ raises instead — a fake that accepts
+what production rejects is how a broken handler gets a green test. So: D1
+rejects a `bind()` with the wrong number of values instead of binding NULL,
+`first(column)` throws `D1_COLUMN_NOTFOUND` for a column the result set lacks,
+`run()` returns rows for a row-returning statement, BLOB columns come back as
+D1's plain byte arrays rather than a `Uint8Array`, and `exec()` counts
+statements by line the way D1 does. KV stores bytes rather than a decoded string
+(so a binary value survives a round trip) and enforces the key rules (no
+empty/`.`/`..`/over-512-byte keys) and the 60-second expiration floor. R2
+honours `range`, gates `list`'s two metadata maps behind `include`, and makes an
+object body single-use.
+
+**Follow-ups.** Several packages already hand-roll the `IncomingMessage`/
+`ServerResponse` construction this harness's `createFakeEvent` replaces, plus a
+couple of ad-hoc canned KV/D1 stubs (`narduk-core`'s `kv-cache.test.ts` and
+`auth-api-key-d1.test.ts`); migrating those is left as follow-up work outside
+this package rather than done in this PR.
