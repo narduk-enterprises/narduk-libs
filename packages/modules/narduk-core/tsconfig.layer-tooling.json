@@ -42,6 +42,7 @@
     "runtime/server/utils/client-ip.ts",
     "runtime/server/rate-limit/**/*.ts",
     "runtime/server/utils/rateLimitedHandler.ts",
+    "runtime/server/utils/validatedHandler.ts",
     "runtime/server/utils/kv.ts",
     "runtime/server/utils/kvCache.ts",
     "runtime/server/utils/listQuery.ts",
