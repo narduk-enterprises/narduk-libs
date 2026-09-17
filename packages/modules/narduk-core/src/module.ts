@@ -14,7 +14,6 @@ import {
   defineNuxtModule,
   installModule,
 } from '@nuxt/kit'
-import type { NuxtModule } from '@nuxt/schema'
 import { defu } from 'defu'
 
 import {
@@ -32,6 +31,8 @@ import {
   applyCoreViteBuildWarningPolicy,
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
+
+import type { NuxtModule } from '@nuxt/schema'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-core'
 
