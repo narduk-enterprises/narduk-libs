@@ -118,7 +118,7 @@ export function renderDriftChangeset(name, drift) {
  * @param {Array<{name: string, version: string, manifest: object}>} options.packages publishable packages
  * @param {Set<string>|string[]} options.covered packages a pending Changeset already releases
  * @param {Map<string, {published: boolean, manifest?: object}>} options.registryRecords
- * @returns {{skipped?: string, releases: Array<{name: string, drift: Array, body: string, path: string}>}}
+ * @returns {{skipped?: string, releases: Array<{name: string, drift: Array, body: string, path: string}>, covered: string[]}}
  */
 export function planDriftSynthesis({ packages, covered, registryRecords }) {
   const coveredNames = new Set(covered)
@@ -134,14 +134,23 @@ export function planDriftSynthesis({ packages, covered, registryRecords }) {
     return {
       skipped: `${pendingPublication.length} version(s) are not published yet: ${pendingPublication.join(', ')}`,
       releases: [],
+      covered: [],
     }
   }
 
   const releases = []
+  // Packages that drift but whose release a pending Changeset already carries.
+  // Tracked, not silently dropped: "nothing to write" and "nothing drifts" are
+  // different states, and an operator diagnosing a missing release needs to see
+  // which one this run was in.
+  const coveredDrift = []
   for (const { name, manifest } of packages) {
-    if (coveredNames.has(name)) continue
     const drift = manifestDrift(manifest, registryRecords.get(name).manifest)
     if (drift.length === 0) continue
+    if (coveredNames.has(name)) {
+      coveredDrift.push(name)
+      continue
+    }
     releases.push({
       name,
       drift,
@@ -149,7 +158,13 @@ export function planDriftSynthesis({ packages, covered, registryRecords }) {
       body: renderDriftChangeset(name, drift),
     })
   }
-  return { releases }
+  return { releases, covered: coveredDrift }
+}
+
+export function renderSynthesisSummary(covered) {
+  return covered.length === 0
+    ? 'Every published package manifest matches main.\n'
+    : `No manifest drift left to synthesize; a pending Changeset already releases ${covered.length} drifted package(s): ${[...covered].sort().join(', ')}.\n`
 }
 
 export function renderGeneratorChangeset(names) {
@@ -243,13 +258,17 @@ async function main() {
     packages.map(({ name, version }) => [name, registryManifest(name, version)]),
   )
 
-  const { skipped, releases } = planDriftSynthesis({ packages, covered, registryRecords })
+  const {
+    skipped,
+    releases,
+    covered: coveredDrift,
+  } = planDriftSynthesis({ packages, covered, registryRecords })
   if (skipped) {
     process.stdout.write(`Skipping manifest-drift synthesis: ${skipped}\n`)
     return
   }
   if (releases.length === 0) {
-    process.stdout.write('Every published package manifest matches main.\n')
+    process.stdout.write(renderSynthesisSummary(coveredDrift))
     return
   }
 

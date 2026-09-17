@@ -311,11 +311,16 @@ export function renderGuardReport(entries, coveredNames) {
 
   if (uncovered.length === 0) {
     const settled = entries.filter((entry) => !deferred.includes(entry))
-    lines.push(
-      entries.length === 0
-        ? 'No workspace package changed against the Changesets base branch.'
-        : `${settled.length} changed package(s) are already released by a Changeset or need no release.`,
-    )
+    // With every changed package deferred, the count above is 0 and the line
+    // reads as if nothing was examined. The deferred block already said what
+    // happened, so say nothing more.
+    if (entries.length === 0) {
+      lines.push('No workspace package changed against the Changesets base branch.')
+    } else if (settled.length > 0) {
+      lines.push(
+        `${settled.length} changed package(s) are already released by a Changeset or need no release.`,
+      )
+    }
     return { ok: true, text: `${lines.join('\n')}\n` }
   }
 

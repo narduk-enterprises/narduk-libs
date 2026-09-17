@@ -96,6 +96,28 @@ test('a runtime dependency range bump is deferred to release-time synthesis', ()
   assert.match(report.text, /narduk-testkit: dependencies \(sharp\)/u)
 })
 
+test('an all-deferred report does not claim zero packages were settled', () => {
+  // Every changed package deferred used to print "0 changed package(s) are
+  // already released by a Changeset or need no release", which reads as if the
+  // check examined nothing. The deferred block above it already says what
+  // happened.
+  const entry = classifyOne({ ...baseManifest, dependencies: { sharp: '^0.35.4' } })
+  assert.equal(entry.verdict, 'deferred')
+
+  const report = renderGuardReport([entry], [])
+  assert.equal(report.ok, true)
+  assert.match(report.text, /^1 changed package\(s\) only moved runtime dependency ranges/u)
+  assert.doesNotMatch(report.text, /^0 changed package\(s\)/mu)
+  assert.equal(report.text.trimEnd().split('\n').length, 2)
+
+  // A settled package alongside a deferred one still gets its own line.
+  const settled = classifyOne(baseManifest, { workspacePackages: packages })
+  assert.match(
+    renderGuardReport([entry, settled], []).text,
+    /^1 changed package\(s\) are already released by a Changeset or need no release\.$/mu,
+  )
+})
+
 test('a deferred verdict is only sound while the release workflow synthesizes the changeset', () => {
   // `deferred` lets a package merge without a Changeset because the release
   // job writes one from registry drift. If that step ever leaves release.yml,

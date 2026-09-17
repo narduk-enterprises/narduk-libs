@@ -14,6 +14,7 @@ import {
   manifestDrift,
   planDriftSynthesis,
   renderDriftChangeset,
+  renderSynthesisSummary,
 } from './synthesize-manifest-drift.mjs'
 
 const generatorName = '@narduk-enterprises/create-narduk-app'
@@ -126,6 +127,51 @@ test('a package a pending changeset already releases is skipped', () => {
   assert.equal(
     plan.releases[0].path,
     '.changeset/auto-manifest-narduk-enterprises-narduk-testkit.md',
+  )
+})
+
+test('a covered drift is reported as covered, not as no drift', () => {
+  // The run after synthesis writes a Changeset -- and any run where a human
+  // Changeset already covers the drifted package -- has nothing to write. It
+  // used to print "Every published package manifest matches main", which is
+  // false: the manifests still drift, they are just already being released.
+  const packages = [
+    {
+      name: testkit.name,
+      version: '1.3.2',
+      manifest: { ...testkit, dependencies: { sharp: '^0.35.4' } },
+    },
+  ]
+  const registryRecords = new Map([[testkit.name, record(testkit)]])
+
+  const plan = planDriftSynthesis({ packages, covered: [testkit.name], registryRecords })
+  assert.deepEqual(plan.releases, [])
+  assert.deepEqual(plan.covered, [testkit.name])
+  assert.match(
+    renderSynthesisSummary(plan.covered),
+    /a pending Changeset already releases 1 drifted package\(s\): @narduk-enterprises\/narduk-testkit\.$/mu,
+  )
+
+  // A covered package that does not drift is not reported either way.
+  const clean = planDriftSynthesis({
+    packages: [{ name: testkit.name, version: '1.3.2', manifest: testkit }],
+    covered: [testkit.name],
+    registryRecords,
+  })
+  assert.deepEqual(clean.covered, [])
+  assert.equal(
+    renderSynthesisSummary(clean.covered),
+    'Every published package manifest matches main.\n',
+  )
+
+  // Skipping for a pending publication still reports nothing as covered.
+  assert.deepEqual(
+    planDriftSynthesis({
+      packages: [{ name: testkit.name, version: '9.9.9', manifest: testkit }],
+      covered: [],
+      registryRecords: new Map([[testkit.name, { published: false }]]),
+    }).covered,
+    [],
   )
 })
 
