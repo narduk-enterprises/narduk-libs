@@ -30,6 +30,22 @@ describe('narduk-testkit runner boundaries', () => {
     expect(Object.keys(packageJson.exports)).toContain('./e2e/fixture-server')
   })
 
+  it('keeps the dev-port helper out of the root barrel', () => {
+    const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
+
+    /*
+     * Same boundary as `e2e/fixture-server` above, and for the same reason:
+     * `playwright/dev-port` is imported from a Playwright CONFIG, evaluated
+     * before the runner exists. Re-exporting it from the barrel would drag
+     * `e2e/fixtures.js` and its module-scope `test.extend` into config load.
+     */
+    expect(rootSource).not.toContain('./playwright/dev-port')
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+    }
+    expect(Object.keys(packageJson.exports)).toContain('./playwright/dev-port')
+  })
+
   it('publishes the deterministic-capture and request-accounting helpers to the Playwright family', () => {
     const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {

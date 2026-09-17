@@ -47,6 +47,10 @@
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
     },
+    "./playwright/dev-port": {
+      "types": "./dist/playwright/dev-port.d.ts",
+      "import": "./dist/playwright/dev-port.js"
+    },
     "./playwright/deterministic-capture": {
       "types": "./dist/playwright/deterministic-capture.d.ts",
       "import": "./dist/playwright/deterministic-capture.js"
