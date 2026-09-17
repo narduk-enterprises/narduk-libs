@@ -13,12 +13,13 @@ test('every public CI and language job uses a hosted runner without package cred
     assert.doesNotMatch(workflow, /self-hosted|BLACKSMITH_|secrets\.|GH_PACKAGES_READ/u)
     assert.doesNotMatch(workflow, /packages: (?:read|write)/u)
   }
-  assert.equal((ci.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 5)
+  assert.equal((ci.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 6)
   assert.equal((logging.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 2)
   assert.match(ci, /runner: '"ubuntu-latest"'/u)
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)
-  assert.equal((ci.match(/playwright install --with-deps chromium/gu) || []).length, 2)
+  assert.match(ci, /pnpm run release:consumer-smoke --install-browser/u)
+  assert.equal((ci.match(/playwright install --with-deps chromium/gu) || []).length, 1)
   assert.equal(
     (ci.match(/git rev-parse --verify "refs\/remotes\/origin\/main\^\{commit\}"/gu) || []).length,
     2,

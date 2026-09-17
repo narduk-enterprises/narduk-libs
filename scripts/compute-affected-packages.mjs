@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { batchPackages, packageGates, packageJobs } from './ci-package-plan.mjs'
+import { consumerDependencyNames, consumerSmokeGenerator } from './consumer-smoke-fixture.mjs'
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dependencySections = [
@@ -213,13 +214,14 @@ export function computeAffectedSet({
   const globalReasons = new Set()
   const unclassifiedPaths = []
   let packedConsumer = false
+  const consumerChangedNames = new Set()
 
   for (const path of normalizedFiles) {
     const workspacePackage = packageForPath(workspace.packages, path)
     if (workspacePackage) {
       changedNames.add(workspacePackage.name)
       const relativePath = path.slice(workspacePackage.relativeDirectory.length + 1)
-      if (!isPackageValidationOnly(relativePath)) packedConsumer = true
+      if (!isPackageValidationOnly(relativePath)) consumerChangedNames.add(workspacePackage.name)
       continue
     }
 
@@ -240,10 +242,27 @@ export function computeAffectedSet({
     packedConsumer = true
   }
   if (unclassifiedPaths.length > 0) {
+    packedConsumer = true
     for (const path of unclassifiedPaths) {
       globalReasons.add(`unclassified repository path: ${path}`)
     }
   }
+
+  // The artifact gate follows publishable dependents, including packages built
+  // with private helpers. A standalone private preview has its own package gate.
+  const consumerAffectedNames = transitiveDependents(consumerChangedNames, workspace.dependents)
+  const sharedConsumerInputs = packedConsumer
+  packedConsumer ||= workspace.packages.some(
+    ({ name, manifest }) => manifest.private !== true && consumerAffectedNames.has(name),
+  )
+  // Synthetic/minimal workspaces without the app generator conservatively keep
+  // the full proof. The real workspace derives its scope from generated manifests.
+  const consumerInputs = workspace.byName.has(consumerSmokeGenerator)
+    ? consumerDependencyNames(workspace)
+    : workspace.packages.map(({ name }) => name)
+  const generatedConsumer =
+    packedConsumer &&
+    (sharedConsumerInputs || consumerInputs.some((name) => consumerAffectedNames.has(name)))
 
   const affectedNames = fullRun
     ? new Set(workspace.packages.map(({ name }) => name))
@@ -284,6 +303,8 @@ export function computeAffectedSet({
     fullRun,
     reasons: [...globalReasons].sort(),
     packedConsumer,
+    generatedConsumer,
+    consumerInputs,
   }
 }
 
@@ -329,7 +350,12 @@ export function renderSummary(result) {
     '',
     markdownList(result.reasons),
     '',
-    `**Packed consumer smoke:** ${result.packedConsumer ? 'required' : 'not applicable'}`,
+    `**Packed artifacts:** ${result.packedConsumer ? 'required' : 'not applicable'}`,
+    `**Generated app proof:** ${result.generatedConsumer ? 'required' : 'not applicable'}`,
+    '',
+    '### Generated app inputs (including build dependencies)',
+    '',
+    markdownList(result.consumerInputs),
     '',
   ].join('\n')
 }
@@ -409,6 +435,7 @@ function main() {
         `batches=${JSON.stringify(result.batches)}`,
         `browser-packages=${JSON.stringify(result.browserPackages)}`,
         `packed-consumer=${result.packedConsumer}`,
+        `generated-consumer=${result.generatedConsumer}`,
         `full-run=${result.fullRun}`,
         `affected-count=${result.affectedNames.length}`,
         '',

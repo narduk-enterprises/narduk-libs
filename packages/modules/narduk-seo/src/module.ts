@@ -5,6 +5,7 @@ import {
   addComponentsDir,
   addImportsDir,
   addPlugin,
+  addServerHandler,
   addServerScanDir,
   createResolver,
   defineNuxtModule,
@@ -13,6 +14,30 @@ import {
   installModule,
 } from '@nuxt/kit'
 import { defu } from 'defu'
+
+import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
+import {
+  type NardukSecurityTxtOptions,
+  resolveSecurityTxtBody,
+  SECURITY_TXT_LEGACY_PATH,
+  SECURITY_TXT_WELL_KNOWN_PATH,
+} from '../shared/securityTxt'
+
+export {
+  AI_CRAWLERS,
+  type AiCrawlerLists,
+  type AiCrawlerRobotsGroup,
+  type AiCrawlerUserAgent,
+  type AiCrawlersOption,
+} from '../shared/aiCrawlers'
+export {
+  type NardukSecurityTxtOptions,
+  SECURITY_TXT_CONTENT_TYPE,
+  SECURITY_TXT_DEFAULT_EXPIRES_DAYS,
+  SECURITY_TXT_LEGACY_PATH,
+  SECURITY_TXT_MAX_EXPIRES_DAYS,
+  SECURITY_TXT_WELL_KNOWN_PATH,
+} from '../shared/securityTxt'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-seo'
 const nonProductionRobotsRule = 'noindex, nofollow'
@@ -93,6 +118,13 @@ interface TypePrepareOptions {
 }
 
 export interface NardukSeoModuleOptions {
+  /**
+   * Extra @nuxtjs/robots groups for known AI crawlers. `'allow'` (default)
+   * emits nothing, so existing apps keep the same robots.txt. `'disallow'`
+   * blocks the exported `AI_CRAWLERS` list; the object form targets named
+   * crawlers only.
+   */
+  aiCrawlers?: AiCrawlersOption
   app?: boolean
   /** App-owned 1200x630 static fallback for every page, including noindex routes. */
   defaultOgImage?: { alt: string; url: string }
@@ -118,6 +150,12 @@ export interface NardukSeoModuleOptions {
    * package will not fetch a hostname the consuming app never chose.
    */
   networkDirectoryUrl?: string
+  /**
+   * RFC 9116 `security.txt`. Disabled unless the app sets `contact` — this
+   * package never invents a reporting address. `expires` is build time plus
+   * `expiresDays` (default 365, max 365).
+   */
+  securityTxt?: NardukSecurityTxtOptions | false
   seoModule?: boolean
   server?: boolean
 }
@@ -264,6 +302,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     compatibility: { nuxt: '>=3.16.0' },
   },
   defaults: {
+    aiCrawlers: 'allow',
     app: true,
     hostAwareIndexing: false,
     indexNonProduction: false,
@@ -305,8 +344,10 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       description: 'A Nuxt 4 application deployed on Cloudflare Workers.',
     })
     const hostAwareIndexing = shouldEnableHostAwareIndexing(options)
+    const securityTxtBody = resolveSecurityTxtBody(options.securityTxt)
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
+      nardukSeoSecurityTxt: securityTxtBody,
       public: {
         nardukSeoDefaultImage: options.defaultOgImage ?? null,
         nardukNetworkDirectoryUrl,
@@ -365,6 +406,11 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     })
     if (shouldForceNonProductionNoindex(options)) {
       applyNonProductionSeoSafety(nuxtOptions)
+    } else {
+      nuxtOptions.robots = mergeAiCrawlerRobotsGroups(
+        (nuxtOptions.robots ?? {}) as Record<string, unknown>,
+        options.aiCrawlers,
+      )
     }
     if (hostAwareIndexing) {
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
@@ -408,6 +454,20 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
 
     if (options.server) {
       addServerScanDir(resolver.resolve('../server'))
+    }
+
+    if (securityTxtBody) {
+      const securityTxtHandler = resolver.resolve('../server/handlers/securityTxt.get')
+      addServerHandler({
+        handler: securityTxtHandler,
+        method: 'get',
+        route: SECURITY_TXT_WELL_KNOWN_PATH,
+      })
+      addServerHandler({
+        handler: securityTxtHandler,
+        method: 'get',
+        route: SECURITY_TXT_LEGACY_PATH,
+      })
     }
 
     nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
