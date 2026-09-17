@@ -1,4 +1,11 @@
-import { defineEventHandler, getRequestHeader, getRequestURL, sendRedirect } from 'h3'
+import {
+  appendResponseHeader,
+  defineEventHandler,
+  getRequestHeader,
+  getRequestURL,
+  sendRedirect,
+  setResponseHeader,
+} from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
@@ -102,6 +109,10 @@ export default defineEventHandler((event) => {
     `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`,
     canonicalUrl,
   )
+
+  // 308 is cacheable by default; this response varies by Sec-Fetch-Dest.
+  appendResponseHeader(event, 'Vary', 'Sec-Fetch-Dest')
+  setResponseHeader(event, 'Cache-Control', 'private, no-store')
 
   return sendRedirect(event, redirectUrl.toString(), 308)
 })

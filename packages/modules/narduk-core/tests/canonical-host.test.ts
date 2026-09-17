@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,11 +25,14 @@ const middlewareDirectory = join(packageRoot, 'runtime/server/middleware')
 
 /** Env wins over `runtimeConfig.public`, so a stray value would silently rewrite every case. */
 const ENV_KEYS = ['SITE_URL', 'ENFORCE_CANONICAL_HOST', 'AUTH_ENFORCE_CANONICAL_HOST']
+const HANDLER_RAN = 'handler-ran'
 
 interface Probe {
+  cacheControl: string | null
   location: string | null
   status: number
   text: string
+  vary: string | null
 }
 
 async function probe(
@@ -37,7 +41,7 @@ async function probe(
 ): Promise<Probe> {
   const app = createApp()
     .use(canonicalHost)
-    .use(() => 'handler-ran')
+    .use(() => HANDLER_RAN)
   const server = createServer(toNodeListener(app))
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -49,15 +53,24 @@ async function probe(
       redirect: 'manual',
     })
     return {
+      cacheControl: response.headers.get('cache-control'),
       location: response.headers.get('location'),
       status: response.status,
       text: await response.text(),
+      vary: response.headers.get('vary'),
     }
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     )
   }
+}
+
+function varyTokens(vary: string | null): string[] {
+  return (vary ?? '')
+    .split(',')
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean)
 }
 
 /** Chromium 1243, measured: a top-level tab navigation (narduk-libs#408). */
@@ -135,6 +148,28 @@ describe('canonical-host middleware', () => {
       expect(result.status).toBe(308)
       expect(result.location).toBe('https://www.example.com/api/auth/session/exchange?code=abc123')
     })
+
+    it('sends the 308 private, no-store with Vary: Sec-Fetch-Dest', async () => {
+      const result = await probe(PAGE_PATH, { headers: DOCUMENT_NAVIGATION })
+
+      expect(result.status).toBe(308)
+      expect(result.location).toBe(CANONICAL_PAGE_URL)
+      expect(result.cacheControl).toBe('private, no-store')
+      expect(varyTokens(result.vary)).toContain('sec-fetch-dest')
+    })
+
+    it('redirects a document form GET and preserves the query string', async () => {
+      const result = await probe('/login?email=user%40example.com', {
+        headers: {
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'same-origin',
+        },
+      })
+
+      expect(result.status).toBe(308)
+      expect(result.location).toBe('https://www.example.com/login?email=user%40example.com')
+    })
   })
 
   describe('sub-resource requests are never redirected cross-origin', () => {
@@ -143,7 +178,7 @@ describe('canonical-host middleware', () => {
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
-      expect(result.text).toBe('handler-ran')
+      expect(result.text).toBe(HANDLER_RAN)
     })
 
     it('lets a fetch of a page path run on the routed host', async () => {
@@ -165,6 +200,33 @@ describe('canonical-host middleware', () => {
         expect(result.location).toBeNull()
       }
     })
+
+    it('does not redirect an iframe navigation of /auth/callback', async () => {
+      const result = await probe('/auth/callback?code=abc123', {
+        headers: {
+          'sec-fetch-dest': 'iframe',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'cross-site',
+        },
+      })
+
+      expect(result.status).toBe(200)
+      expect(result.location).toBeNull()
+      expect(result.text).toBe(HANDLER_RAN)
+    })
+
+    it('does not redirect a prefetch of a page path', async () => {
+      const result = await probe(PAGE_PATH, {
+        headers: {
+          'sec-fetch-dest': 'empty',
+          'sec-purpose': 'prefetch',
+        },
+      })
+
+      expect(result.status).toBe(200)
+      expect(result.location).toBeNull()
+      expect(result.text).toBe(HANDLER_RAN)
+    })
   })
 
   describe('requests carrying no fetch metadata', () => {
@@ -180,7 +242,15 @@ describe('canonical-host middleware', () => {
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
-      expect(result.text).toBe('handler-ran')
+      expect(result.text).toBe(HANDLER_RAN)
+    })
+
+    it('does not redirect a no-metadata GET of /api/auth/session/exchange', async () => {
+      const result = await probe('/api/auth/session/exchange?code=abc123')
+
+      expect(result.status).toBe(200)
+      expect(result.location).toBeNull()
+      expect(result.text).toBe(HANDLER_RAN)
     })
 
     it('does not redirect framework-internal paths', async () => {
@@ -241,10 +311,15 @@ describe('canonical-host middleware', () => {
       expect(canonicalMiddleware).toEqual(['00-canonical-host.ts'])
     })
 
-    it('keeps the retired middleware path importable as an alias for the live handler', async () => {
-      const alias = await import('../runtime/server/handlers/canonicalRedirect')
+    it('resolves the retired middleware specifier to the live handler', () => {
+      const specifier = '@narduk-enterprises/narduk-core/server/middleware/canonicalRedirect'
+      const resolved = (
+        typeof import.meta.resolve === 'function'
+          ? fileURLToPath(import.meta.resolve(specifier))
+          : createRequire(import.meta.url).resolve(specifier)
+      ).replaceAll('\\', '/')
 
-      expect(alias.default).toBe(canonicalHost)
+      expect(resolved.endsWith('runtime/server/handlers/canonicalRedirect.ts')).toBe(true)
 
       const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
         exports: Record<string, unknown>

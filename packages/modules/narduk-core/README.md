@@ -260,7 +260,8 @@ workers unchanged.
 ## Canonical host redirect
 
 `server/middleware/00-canonical-host` sends a request that arrives on a
-non-canonical hostname to the canonical origin with a `308`. It is off unless
+non-canonical hostname to the canonical origin with a `308`. The 308 is sent
+`private, no-store` with `Vary: Sec-Fetch-Dest`. It is off unless
 `ENFORCE_CANONICAL_HOST` or `AUTH_ENFORCE_CANONICAL_HOST` is set (env or
 `runtimeConfig.public`), takes the canonical origin from `SITE_URL` falling back
 to `runtimeConfig.public.appUrl`, and disables itself when that origin is not
