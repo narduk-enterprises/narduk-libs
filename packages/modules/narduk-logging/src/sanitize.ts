@@ -38,6 +38,27 @@ const SENSITIVE = new Set([
   'prompt',
   'completion',
 ])
+/** Infix tokens on the punctuation-stripped key. `secretkey` is covered by `secret`. */
+const SENSITIVE_PARTS = [
+  'apikey',
+  'accesskey',
+  'privatekey',
+  'jwt',
+  'bearer',
+  'credential',
+  'authorization',
+  'token',
+  'password',
+  'secret',
+] as const
+/** Metric / method flags that contain `token`, `password`, or `auth` but are not secrets. */
+const SAFE_NORMALIZED_KEYS = new Set([
+  'tokencount',
+  'passwordless',
+  'authmethod',
+  'authbackend',
+  'authprovider',
+])
 
 /** Mark a value as private. It is redacted before any sink sees the record. */
 export function privateValue(value: unknown): object {
@@ -55,12 +76,14 @@ function normalizeKey(key: string): string {
 
 export function isSensitiveKey(key: string, extra: readonly string[] = []): boolean {
   const normalized = normalizeKey(key)
+  if (SENSITIVE.has(normalized) || extra.some((item) => normalizeKey(item) === normalized)) {
+    return true
+  }
+  if (!normalized || SAFE_NORMALIZED_KEYS.has(normalized)) return false
+  // `authorization` contains `author`, so the auth rule cannot stand alone.
   return (
-    SENSITIVE.has(normalized) ||
-    normalized.endsWith('token') ||
-    normalized.endsWith('password') ||
-    normalized.endsWith('secret') ||
-    extra.some((item) => normalizeKey(item) === normalized)
+    SENSITIVE_PARTS.some((part) => normalized.includes(part)) ||
+    (normalized.includes('auth') && !normalized.includes('author'))
   )
 }
 
@@ -194,7 +217,7 @@ function walk(value: unknown, state: WalkState, depth: number, key = ''): JsonVa
       const descriptor = descriptors[String(i)]
       result.push(
         descriptor && 'value' in descriptor
-          ? walk(descriptor.value, state, depth + 1)
+          ? walk(descriptor.value, state, depth + 1, key)
           : '[Accessor]',
       )
     }

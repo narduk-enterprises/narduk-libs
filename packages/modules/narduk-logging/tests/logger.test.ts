@@ -10,7 +10,7 @@ import {
 } from '../src/index.js'
 import { createMemorySink } from '../src/testing.js'
 import { logRecordSchema } from '../src/schema.js'
-import { MAX_RECORD_BYTES, recordBytes } from '../src/sanitize.js'
+import { MAX_RECORD_BYTES, isSensitiveKey, recordBytes } from '../src/sanitize.js'
 import type { LogRecord } from '../src/index.js'
 
 const fixtureSchema = z.array(
@@ -34,6 +34,12 @@ describe('cross-language contract', () => {
   for (const fixture of fixtures) {
     it(fixture.name, () => expect(sanitizeFields(fixture.input)).toEqual(fixture.expected))
   }
+
+  it('treats extra redact as an exact normalized override of carve-outs', () => {
+    expect(isSensitiveKey('tokenCount')).toBe(false)
+    expect(isSensitiveKey('tokenCount', ['tokenCount'])).toBe(true)
+    expect(isSensitiveKey('')).toBe(false)
+  })
 
   it('emits the canonical record and does not collapse repeated events', () => {
     const sink = createMemorySink()

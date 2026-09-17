@@ -14,26 +14,45 @@ interface SeoMetaPayload extends Record<string, unknown> {
   ogImageWidth?: unknown
 }
 
-async function callUseSeo(
+interface UseSeoRun {
+  canonicalHref: string | undefined
+  meta: SeoMetaPayload
+}
+
+async function runUseSeo(
   options: Parameters<typeof useSeo>[0],
-  publicRuntime: Record<string, unknown> = {},
-): Promise<SeoMetaPayload> {
+  extras: { path?: string; publicRuntime?: Record<string, unknown> } = {},
+): Promise<UseSeoRun> {
   const useSeoMeta = vi.fn()
-  const defineOgImage = vi.fn()
+  const useHead = vi.fn()
   vi.doMock('#imports', () => ({
-    defineOgImage,
+    defineOgImage: vi.fn(),
     toValue: (value: unknown) => (typeof value === 'function' ? value() : value),
-    useHead: vi.fn(),
-    useRoute: () => ({ path: '/pages/example' }),
+    useHead,
+    useRoute: () => ({ path: extras.path ?? '/pages/example' }),
     useRuntimeConfig: () => ({
-      public: { appUrl: 'https://example.com', appName: 'Example', ...publicRuntime },
+      public: { appUrl: 'https://example.com', appName: 'Example', ...extras.publicRuntime },
     }),
     useSeoMeta,
     useSiteConfig: () => ({ url: 'https://example.com', name: 'Example' }),
   }))
   const composables = await import('../app/composables/useSeo')
   composables.useSeo(options)
-  return (useSeoMeta.mock.calls[0]?.[0] ?? {}) as SeoMetaPayload
+  const meta = (useSeoMeta.mock.calls[0]?.[0] ?? {}) as SeoMetaPayload
+  const head = useHead.mock.calls[0]?.[0] as
+    { link?: Array<{ href?: string; rel?: string }> } | undefined
+  return {
+    canonicalHref: head?.link?.[0]?.href,
+    meta,
+  }
+}
+
+async function callUseSeo(
+  options: Parameters<typeof useSeo>[0],
+  publicRuntime: Record<string, unknown> = {},
+): Promise<SeoMetaPayload> {
+  const { meta } = await runUseSeo(options, { publicRuntime })
+  return meta
 }
 
 /**
@@ -86,5 +105,66 @@ describe('useSeo social metadata', () => {
     expect(meta).not.toHaveProperty('ogImage')
     expect(meta).not.toHaveProperty('ogImageWidth')
     expect(meta).not.toHaveProperty('ogImageHeight')
+  })
+})
+
+describe('useSeo canonical resolution', () => {
+  const SITE = 'https://example.com'
+  const SAFE_ROOT = `${SITE}/`
+  const poisoned = [
+    '//attacker.example',
+    '\\attacker.example',
+    '/%5cattacker',
+    'https://attacker.example/x',
+  ] as const
+
+  it.each(poisoned)('falls back to the site root when route.path is %s', async (path) => {
+    const { canonicalHref, meta } = await runUseSeo({ ...BASE, ogImage: false }, { path })
+
+    expect(meta.ogUrl).toBe(SAFE_ROOT)
+    expect(canonicalHref).toBe(SAFE_ROOT)
+  })
+
+  it.each(poisoned)('falls back to the site root when canonicalUrl is %s', async (canonicalUrl) => {
+    const { canonicalHref, meta } = await runUseSeo({
+      ...BASE,
+      ogImage: false,
+      canonicalUrl,
+    })
+
+    expect(meta.ogUrl).toBe(SAFE_ROOT)
+    expect(canonicalHref).toBe(SAFE_ROOT)
+  })
+
+  it('keeps a normal path and query from the route', async () => {
+    const { canonicalHref, meta } = await runUseSeo(
+      { ...BASE, ogImage: false },
+      { path: '/path?q=1' },
+    )
+
+    expect(meta.ogUrl).toBe(`${SITE}/path?q=1`)
+    expect(canonicalHref).toBe(`${SITE}/path?q=1`)
+  })
+
+  it('keeps a normal path and query from canonicalUrl', async () => {
+    const { canonicalHref, meta } = await runUseSeo({
+      ...BASE,
+      ogImage: false,
+      canonicalUrl: '/path?q=1',
+    })
+
+    expect(meta.ogUrl).toBe(`${SITE}/path?q=1`)
+    expect(canonicalHref).toBe(`${SITE}/path?q=1`)
+  })
+
+  it('allows an explicit absolute canonical only when it matches the site origin', async () => {
+    const { canonicalHref, meta } = await runUseSeo({
+      ...BASE,
+      ogImage: false,
+      canonicalUrl: `${SITE}/narduk-network`,
+    })
+
+    expect(meta.ogUrl).toBe(`${SITE}/narduk-network`)
+    expect(canonicalHref).toBe(`${SITE}/narduk-network`)
   })
 })

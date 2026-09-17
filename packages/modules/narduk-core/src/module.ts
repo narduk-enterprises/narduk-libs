@@ -383,8 +383,10 @@ function addNardukServerRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecor
     'getRequestHeader',
     'getRequestHeaders',
     'getRequestURL',
+    'getRequestWebStream',
     'getRouterParam',
     'getValidatedQuery',
+    'isError',
     'readBody',
     'sendRedirect',
     'setCookie',
@@ -489,6 +491,29 @@ function registerTypeReference(options: TypePrepareOptions, path: string): void 
   options.tsConfig.include ??= []
   if (!options.tsConfig.include.includes(path)) {
     options.tsConfig.include.push(path)
+  }
+}
+
+/**
+ * Nitro 2.13's generated wrapper imports `errorHandler` paths in array order
+ * and stops only when `event.handled`. Nuxt already pushed its Vue renderer
+ * before `nitro:init`; prepending our sanitizer mutates the error first and
+ * then returns so that renderer (and the estate error.vue) still run.
+ *
+ * Kept local so `src/module.ts` does not import the runtime handler (that
+ * file loads `nitropack/runtime`, which is only safe inside a Nitro app).
+ */
+function prependNitroErrorHandler(
+  errorHandler: string | string[] | undefined,
+  handlerPath: string,
+): string[] {
+  const existing = Array.isArray(errorHandler) ? errorHandler : errorHandler ? [errorHandler] : []
+  return [handlerPath, ...existing.filter((entry) => entry !== handlerPath)]
+}
+
+interface NitroErrorHandlerHost {
+  options: {
+    errorHandler?: string | string[]
   }
 }
 
@@ -839,6 +864,20 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxt.hook('vite:extendConfig', (config) => {
         applyCoreViteBuildWarningPolicy(config)
       })
+      // After createNitro, Nuxt's error handler is already on the array (and
+      // Nitro has appended its builtin). Prepend so we sanitize before Nuxt
+      // copies message/data onto `/__nuxt_error`. Do not assign
+      // `nitro.options.errorHandler` as a string — that would drop Nuxt's
+      // handler and the estate error.vue.
+      ;(nuxt.hook as (name: string, handler: (nitro: NitroErrorHandlerHost) => void) => void)(
+        'nitro:init',
+        (nitro) => {
+          nitro.options.errorHandler = prependNitroErrorHandler(
+            nitro.options.errorHandler,
+            resolver.resolve('../runtime/server/error-sanitizer'),
+          )
+        },
+      )
     },
   })
 

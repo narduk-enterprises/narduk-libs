@@ -8,6 +8,15 @@ public enum LogSanitizer {
         "body", "requestbody", "responsebody", "payload", "payment", "cardnumber", "cvv", "email",
         "phone", "address", "latitude", "longitude", "prompt", "completion",
     ]
+    /// Infix tokens on the punctuation-stripped key. `secretkey` is covered by `secret`.
+    static let sensitiveParts = [
+        "apikey", "accesskey", "privatekey", "jwt", "bearer", "credential",
+        "authorization", "token", "password", "secret",
+    ]
+    /// Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+    static let safeNormalizedKeys: Set<String> = [
+        "tokencount", "passwordless", "authmethod", "authbackend", "authprovider",
+    ]
 
     static func clean(_ value: String, limit: Int = 2048) -> String {
         String(
@@ -23,6 +32,15 @@ public enum LogSanitizer {
                 key.lowercased().unicodeScalars.filter {
                     (97...122).contains($0.value) || (48...57).contains($0.value)
                 }))
+    }
+
+    static func isSensitiveKey(_ key: String, extra: Set<String>) -> Bool {
+        let normalizedKey = normalized(key)
+        if sensitive.contains(normalizedKey) || extra.contains(normalizedKey) { return true }
+        if normalizedKey.isEmpty || safeNormalizedKeys.contains(normalizedKey) { return false }
+        // `authorization` contains `author`, so the auth rule cannot stand alone.
+        return sensitiveParts.contains(where: normalizedKey.contains)
+            || (normalizedKey.contains("auth") && !normalizedKey.contains("author"))
     }
 
     public static func url(_ value: String) -> String {
@@ -57,12 +75,7 @@ public enum LogSanitizer {
         let extra = Set(redact.map(normalized))
         var nodes = 0
         func walk(_ value: LogValue, key: String = "", depth: Int = 0) -> LogValue {
-            let normalizedKey = normalized(key)
-            if sensitive.contains(normalizedKey) || extra.contains(normalizedKey)
-                || ["token", "password", "secret"].contains(where: normalizedKey.hasSuffix)
-            {
-                return "[REDACTED]"
-            }
+            if isSensitiveKey(key, extra: extra) { return "[REDACTED]" }
             if case .private = value { return "[REDACTED]" }
             nodes += 1
             guard depth <= 6, nodes <= 500 else { return "[Truncated]" }
@@ -77,7 +90,7 @@ public enum LogSanitizer {
                 return .string(
                     key.hasSuffix("url") || key.hasSuffix("uri") ? url(string) : clean(string))
             case .array(let array):
-                var result = array.prefix(50).map { walk($0, depth: depth + 1) }
+                var result = array.prefix(50).map { walk($0, key: key, depth: depth + 1) }
                 if array.count > 50 { result.append("[Truncated]") }
                 return .array(result)
             case .object(let object):

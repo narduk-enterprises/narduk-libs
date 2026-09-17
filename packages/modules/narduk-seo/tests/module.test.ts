@@ -29,6 +29,9 @@ async function setupModule(options: SetupModuleOptions = {}) {
     options: {
       build: { transpile: [] },
       runtimeConfig: {},
+      // Tests describe module wiring, not a production build. Production
+      // secret enforcement is covered explicitly below.
+      dev: true,
       ...options.nuxtOptions,
     },
     hook: vi.fn(),
@@ -458,5 +461,61 @@ describe('narduk-seo module', () => {
     await expect(setupModule({ moduleOptions: { securityTxt: true } })).rejects.toThrow(
       /nardukSeo\.securityTxt is enabled but contact is missing/u,
     )
+  })
+
+  it('never treats an empty OG image secret as configured', async () => {
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', '')
+
+    const { nuxt } = await setupModule()
+    const ogImage = nuxt.options.ogImage as { security?: { secret?: unknown } }
+
+    expect(ogImage.security?.secret).toBeUndefined()
+  })
+
+  it('fails a non-dev build when runtime OG generation has no signing secret', async () => {
+    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
+      /NUXT_OG_IMAGE_SECRET/u,
+    )
+  })
+
+  it('fails a non-dev build when the OG secret is only whitespace', async () => {
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', '   ')
+
+    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
+      /NUXT_OG_IMAGE_SECRET/u,
+    )
+  })
+
+  it('keeps prepare and disabled-runtime builds from requiring a secret', async () => {
+    await expect(setupModule({ nuxtOptions: { _prepare: true, dev: false } })).resolves.toBeTruthy()
+
+    vi.resetModules()
+    vi.clearAllMocks()
+    await expect(
+      setupModule({ moduleOptions: { seoModule: false }, nuxtOptions: { dev: false } }),
+    ).resolves.toBeTruthy()
+
+    vi.resetModules()
+    vi.clearAllMocks()
+    await expect(
+      setupModule({ nuxtOptions: { dev: false, ogImage: { enabled: false } } }),
+    ).resolves.toBeTruthy()
+
+    vi.resetModules()
+    vi.clearAllMocks()
+    await expect(
+      setupModule({ nuxtOptions: { dev: false, ogImage: { zeroRuntime: true } } }),
+    ).resolves.toBeTruthy()
+  })
+
+  it('trims and keeps a configured OG signing secret for non-dev builds', async () => {
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', '  production-og-secret  ')
+
+    const { nuxt } = await setupModule({ nuxtOptions: { dev: false } })
+
+    expect(nuxt.options.ogImage).toMatchObject({
+      enabled: true,
+      security: { secret: 'production-og-secret' },
+    })
   })
 })

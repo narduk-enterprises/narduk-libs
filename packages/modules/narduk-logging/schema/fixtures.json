@@ -41,5 +41,46 @@
       "callbackUrl": "https://[invalid?token=synthetic"
     },
     "expected": { "url": "[unsupported URL]", "callbackUrl": "[invalid URL]" }
+  },
+  {
+    "name": "API-key headers and credential substrings",
+    "input": {
+      "x-api-key": ["synthetic-a", "synthetic-b"],
+      "openai_api_key": "synthetic",
+      "AWS_SECRET_ACCESS_KEY": "synthetic",
+      "AWS_ACCESS_KEY_ID": "synthetic",
+      "x-secret-key": "synthetic",
+      "cf-access-jwt-assertion": "synthetic",
+      "x-authorization": "synthetic",
+      "x-auth": "synthetic",
+      "credentials": "synthetic",
+      "x-bearer": "synthetic",
+      "ssh_private_key": "synthetic",
+      "authorName": "Ada",
+      "passwordless": true,
+      "authMethod": "session",
+      "authBackend": "local",
+      "authProvider": "supabase",
+      "itemCount": 7
+    },
+    "expected": {
+      "x-api-key": "[REDACTED]",
+      "openai_api_key": "[REDACTED]",
+      "AWS_SECRET_ACCESS_KEY": "[REDACTED]",
+      "AWS_ACCESS_KEY_ID": "[REDACTED]",
+      "x-secret-key": "[REDACTED]",
+      "cf-access-jwt-assertion": "[REDACTED]",
+      "x-authorization": "[REDACTED]",
+      "x-auth": "[REDACTED]",
+      "credentials": "[REDACTED]",
+      "x-bearer": "[REDACTED]",
+      "ssh_private_key": "[REDACTED]",
+      "authorName": "Ada",
+      "passwordless": true,
+      "authMethod": "session",
+      "authBackend": "local",
+      "authProvider": "supabase",
+      "itemCount": 7
+    }
   }
 ]

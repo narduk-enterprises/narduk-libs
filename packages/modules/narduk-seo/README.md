@@ -16,6 +16,13 @@ Dynamic OG images are enabled by default for crawlable pages that call
 unlisted pages can still request it with an explicit `ogImage` object. A page
 can opt out with `ogImage: false`. Private data never belongs in image props.
 
+Non-dev builds that leave runtime OG generation enabled require a non-empty
+`NUXT_OG_IMAGE_SECRET`. An empty string is not a secret: `nuxt-og-image` skips
+URL signatures and `/_og/` becomes an unauthenticated WASM renderer. `nuxt dev`
+stays permissive. Provision the secret in every deployed environment, or set
+`ogImage.enabled: false` / `ogImage.zeroRuntime: true` if the app only uses the
+static `defaultOgImage`.
+
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
 emit it site-wide, including pages that never call `useSeo`. Page-specific

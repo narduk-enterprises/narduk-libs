@@ -11,6 +11,7 @@ import {
   SEO_OG_IMAGE_DEFAULT_PRIMARY,
   SEO_OG_IMAGE_DEFAULT_SECONDARY,
 } from '../../../app/utils/ogImageDefinition'
+import { isOgImageSigningSecretConfigured } from '../../../shared/ogImageSecret'
 
 const PREVIEW_MAX_LENGTH = {
   key: 120,
@@ -86,7 +87,7 @@ export default defineEventHandler(async (event) => {
   const access = getOgImagePreviewResolverAccess({
     isDev: import.meta.dev,
     previewLabEnabled: Boolean(runtimeConfig.public.ogImagePreviewLab),
-    hasSigningSecret: Boolean(ogImageConfig?.security?.secret),
+    hasSigningSecret: isOgImageSigningSecretConfigured(ogImageConfig?.security?.secret),
   })
 
   if (!access.allowed) {

@@ -40,6 +40,21 @@ _SENSITIVE = {
     "prompt",
     "completion",
 }
+# Infix tokens on the punctuation-stripped key. `secretkey` is covered by `secret`.
+_SENSITIVE_PARTS = (
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "jwt",
+    "bearer",
+    "credential",
+    "authorization",
+    "token",
+    "password",
+    "secret",
+)
+# Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+_SAFE_NORMALIZED_KEYS = {"tokencount", "passwordless", "authmethod", "authbackend", "authprovider"}
 
 
 @dataclass(frozen=True)
@@ -57,10 +72,15 @@ def clean_text(value: str, limit: int = 2048) -> str:
 
 def sensitive_key(key: str, redact: tuple[str, ...] = ()) -> bool:
     normalized = re.sub("[^a-z0-9]", "", key.lower())
-    return (
-        normalized in _SENSITIVE
-        or normalized.endswith(("token", "password", "secret"))
-        or normalized in {re.sub("[^a-z0-9]", "", item.lower()) for item in redact}
+    if normalized in _SENSITIVE or normalized in {
+        re.sub("[^a-z0-9]", "", item.lower()) for item in redact
+    }:
+        return True
+    if not normalized or normalized in _SAFE_NORMALIZED_KEYS:
+        return False
+    # `authorization` contains `author`, so the auth rule cannot stand alone.
+    return any(part in normalized for part in _SENSITIVE_PARTS) or (
+        "auth" in normalized and "author" not in normalized
     )
 
 
@@ -167,7 +187,7 @@ def sanitize_fields(
         if type(item) in {list, tuple}:
             # The exact type check excludes user-defined iterators.
             values = list(item[:50])  # type: ignore[index]
-            result = [walk(child, depth + 1) for child in values]
+            result = [walk(child, depth + 1, key) for child in values]
             if len(item) > 50:  # type: ignore[arg-type] -- same built-in container check
                 result.append("[Truncated]")
             return result
