@@ -5,9 +5,10 @@
  * - `narduk_owner=true` — unsigned, `httpOnly: false`, so the PostHog client
  *   plugin can read it from `document.cookie` and set `is_owner`.
  * - `__Host-narduk_owner_proof` (HTTPS) or `narduk_owner_proof` (HTTP dev) —
- *   `httpOnly`, HMAC-SHA-256 of a fixed payload keyed by `OWNER_TAG_SECRET`.
- *   `/api/owner/posthog-bootstrap` requires this proof before releasing
- *   `POSTHOG_OWNER_DISTINCT_ID`. Clearing the tag deletes both cookies.
+ *   `httpOnly`, HMAC-SHA-256 of `narduk-owner-proof:v2:<iat>` keyed by
+ *   `OWNER_TAG_SECRET`. `/api/owner/posthog-bootstrap` requires this proof
+ *   (and a server-side max age) before releasing `POSTHOG_OWNER_DISTINCT_ID`.
+ *   Clearing the tag deletes both cookies. Old v1 64-hex proofs are rejected.
  *
  * Cross-browser PostHog identity (optional): set the same
  * `POSTHOG_OWNER_DISTINCT_ID` (server-only UUID) in Vault for each app; after

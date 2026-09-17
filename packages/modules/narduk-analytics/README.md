@@ -163,9 +163,12 @@ filter yourself and non-production traffic out of dashboards (Project Settings �
   (`POST /api/owner-tag`). That flag stays readable by `posthog.client`.
   Cross-device identity (`GET /api/owner/posthog-bootstrap`) additionally
   requires the httpOnly HMAC proof cookie minted with `OWNER_TAG_SECRET`
-  (`narduk_owner_proof` on HTTP, `__Host-narduk_owner_proof` on HTTPS). Forging
-  the flag cookie alone does not release `POSTHOG_OWNER_DISTINCT_ID`. Clearing
-  the tag deletes both cookies.
+  (`narduk_owner_proof` on HTTP, `__Host-narduk_owner_proof` on HTTPS). The
+  proof is `iat.hex(HMAC-SHA256(secret, narduk-owner-proof:v2:iat))` and is
+  rejected after `OWNER_PROOF_MAX_AGE_SECONDS` (one year) or if it is the
+  previous static v1 64-hex format — re-run `POST /api/owner-tag` once per owner
+  device. Forging the flag cookie alone does not release
+  `POSTHOG_OWNER_DISTINCT_ID`. Clearing the tag deletes both cookies.
 - `is_internal_user` — set for any request whose deployment target
   (`runtimeConfig.public.deploymentTarget`) is not `production`, or whose
   hostname ends in `.pages.dev` or `.workers.dev` (covers both legacy Pages

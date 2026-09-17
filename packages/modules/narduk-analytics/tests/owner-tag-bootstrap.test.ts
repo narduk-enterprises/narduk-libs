@@ -3,15 +3,17 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createEvent } from 'h3'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   applyOwnerTagCookies,
   loadOwnerPosthogBootstrap,
+  OWNER_COOKIE_MAX_AGE_SECONDS,
   OWNER_FLAG_COOKIE,
   OWNER_PROOF_COOKIE,
   OWNER_PROOF_HOST_COOKIE,
   signOwnerProof,
+  verifyOwnerProof,
 } from '../server/utils/owner-tag-proof'
 
 import type { H3Event } from 'h3'
@@ -80,6 +82,15 @@ function cookieHeaderFromSetCookie(headers: string[]): string {
 }
 
 describe('owner-tag proof cookies', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_700_000_000_000)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('sets a client-readable flag and an httpOnly HMAC proof', async () => {
     const event = makeEvent()
 
@@ -104,7 +115,7 @@ describe('owner-tag proof cookies', () => {
     expect(flag).toMatch(/path=\//i)
 
     const expectedProof = await signOwnerProof(OWNER_SECRET)
-    expect(proof).toMatch(new RegExp(`^${OWNER_PROOF_COOKIE}=${expectedProof};`))
+    expect(proof?.startsWith(`${OWNER_PROOF_COOKIE}=${expectedProof};`)).toBe(true)
     expect(proof).toMatch(/httponly/i)
     expect(proof).toMatch(/samesite=lax/i)
     expect(proof).toMatch(/path=\//i)
@@ -219,6 +230,45 @@ describe('GET /api/owner/posthog-bootstrap', () => {
         },
       ),
     ).resolves.toEqual({ distinctId: DISTINCT_ID })
+  })
+
+  it('issues a proof that carries an issued-at timestamp', async () => {
+    const token = await signOwnerProof(OWNER_SECRET, 1_700_000_000_000)
+    expect(token).toMatch(/^\d+\.[0-9a-f]{64}$/u)
+    expect(token.startsWith('1700000000.')).toBe(true)
+  })
+
+  it('rejects a proof older than the server max age', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_800_000_000_000)
+    try {
+      const issuedAt = Date.now() - (OWNER_COOKIE_MAX_AGE_SECONDS + 120) * 1000
+      const token = await signOwnerProof(OWNER_SECRET, issuedAt)
+      await expect(
+        loadOwnerPosthogBootstrap(
+          makeEvent(`${OWNER_FLAG_COOKIE}=true; ${OWNER_PROOF_COOKIE}=${token}`),
+          {
+            ownerTagSecret: OWNER_SECRET,
+            posthogOwnerDistinctId: DISTINCT_ID,
+          },
+        ),
+      ).rejects.toMatchObject({ statusCode: 403 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects the previous static HMAC proof format', async () => {
+    expect(await verifyOwnerProof(OWNER_SECRET, 'ab'.repeat(32))).toBe(false)
+    await expect(
+      loadOwnerPosthogBootstrap(
+        makeEvent(`${OWNER_FLAG_COOKIE}=true; ${OWNER_PROOF_COOKIE}=${'ab'.repeat(32)}`),
+        {
+          ownerTagSecret: OWNER_SECRET,
+          posthogOwnerDistinctId: DISTINCT_ID,
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 403 })
   })
 })
 

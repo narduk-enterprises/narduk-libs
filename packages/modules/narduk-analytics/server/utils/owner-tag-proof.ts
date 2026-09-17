@@ -17,10 +17,16 @@ export const OWNER_FLAG_COOKIE = 'narduk_owner'
 export const OWNER_PROOF_COOKIE = 'narduk_owner_proof'
 export const OWNER_PROOF_HOST_COOKIE = '__Host-narduk_owner_proof'
 
-/** Fixed HMAC payload. The cookie is the signature; the secret never leaves the server. */
-export const OWNER_PROOF_PAYLOAD = 'narduk-owner-proof:v1'
+/** v2 payload prefix. The cookie is `iat.hex(HMAC-SHA256(secret, prefix:iat))`. */
+export const OWNER_PROOF_PAYLOAD_PREFIX = 'narduk-owner-proof:v2'
 
 export const OWNER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
+
+/** Server-side max age. Cookie Max-Age is not a security boundary. */
+export const OWNER_PROOF_MAX_AGE_SECONDS = OWNER_COOKIE_MAX_AGE_SECONDS
+
+/** Allow a short future iat so a host clock a few seconds ahead still verifies. */
+const OWNER_PROOF_CLOCK_SKEW_SECONDS = 60
 
 export interface OwnerBootstrapConfig {
   ownerTagSecret: string
@@ -84,26 +90,50 @@ async function importHmacKey(secret: string): Promise<CryptoKey> {
   )
 }
 
-export async function signOwnerProof(secret: string): Promise<string> {
+async function hmacHex(secret: string, payload: string): Promise<string> {
+  const key = await importHmacKey(secret)
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+  return toHex(new Uint8Array(signature))
+}
+
+function proofPayload(iat: number): string {
+  return `${OWNER_PROOF_PAYLOAD_PREFIX}:${iat}`
+}
+
+export async function signOwnerProof(secret: string, nowMs: number = Date.now()): Promise<string> {
   if (!secret) {
     throw new Error('OWNER_TAG_SECRET is required to sign the owner proof cookie.')
   }
 
-  const key = await importHmacKey(secret)
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode(OWNER_PROOF_PAYLOAD),
-  )
-  return toHex(new Uint8Array(signature))
+  const iat = Math.floor(nowMs / 1000)
+  const signature = await hmacHex(secret, proofPayload(iat))
+  return `${iat}.${signature}`
 }
 
-export async function verifyOwnerProof(secret: string, token: string): Promise<boolean> {
+export async function verifyOwnerProof(
+  secret: string,
+  token: string,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
   if (!secret || !token) return false
 
+  const separator = token.indexOf('.')
+  if (separator <= 0) return false
+
+  const iatRaw = token.slice(0, separator)
+  const signature = token.slice(separator + 1)
+  if (!/^[0-9]+$/u.test(iatRaw) || !/^[0-9a-f]+$/u.test(signature)) return false
+
+  const iat = Number(iatRaw)
+  if (!Number.isSafeInteger(iat)) return false
+
+  const nowSec = Math.floor(nowMs / 1000)
+  if (iat > nowSec + OWNER_PROOF_CLOCK_SKEW_SECONDS) return false
+  if (nowSec - iat > OWNER_PROOF_MAX_AGE_SECONDS) return false
+
   try {
-    const expected = await signOwnerProof(secret)
-    return timingSafeEqual(expected, token)
+    const expected = await hmacHex(secret, proofPayload(iat))
+    return timingSafeEqual(expected, signature)
   } catch {
     return false
   }
