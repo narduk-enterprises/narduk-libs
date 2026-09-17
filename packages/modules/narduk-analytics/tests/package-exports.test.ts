@@ -19,5 +19,22 @@ describe('narduk-analytics package exports', () => {
     expect(packageJson.exports['./app/plugins/*']).toEqual({
       import: './app/plugins/*.ts',
     })
+    expect(packageJson.exports['./app/types/adminPosthogDashboardTypes']).toEqual({
+      types: './app/types/adminPosthogDashboardTypes.ts',
+      import: './app/types/adminPosthogDashboardTypes.ts',
+      default: './app/types/adminPosthogDashboardTypes.ts',
+    })
+  })
+
+  it('value-imports adminPosthogDashboardTypes through the package name', async () => {
+    // Built at runtime so Vite does not fail the whole file at collect time
+    // when the exact export key is still types-only.
+    const specifier = [
+      '@narduk-enterprises',
+      'narduk-analytics',
+      'app/types/adminPosthogDashboardTypes',
+    ].join('/')
+    const mod = (await import(specifier)) as { adminPosthogPagesApi: string }
+    expect(mod.adminPosthogPagesApi).toBe('/api/admin/posthog/pages')
   })
 })

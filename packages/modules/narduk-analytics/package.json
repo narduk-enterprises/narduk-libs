@@ -36,7 +36,9 @@
       "types": "./app/types/*.d.ts"
     },
     "./app/types/adminPosthogDashboardTypes": {
-      "types": "./app/types/adminPosthogDashboardTypes.ts"
+      "types": "./app/types/adminPosthogDashboardTypes.ts",
+      "import": "./app/types/adminPosthogDashboardTypes.ts",
+      "default": "./app/types/adminPosthogDashboardTypes.ts"
     },
     "./app/utils/*": {
       "import": "./app/utils/*.ts"
