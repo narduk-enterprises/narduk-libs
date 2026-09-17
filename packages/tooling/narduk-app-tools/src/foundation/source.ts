@@ -218,6 +218,34 @@ export function findWranglerConfig(repo: AppRepo): string | null {
   return WRANGLER_CANDIDATES.find((rel) => repo.read(rel) !== null) ?? null
 }
 
+/** The three filenames Wrangler itself accepts. */
+export const WRANGLER_FILENAMES = ['wrangler.json', 'wrangler.jsonc', 'wrangler.toml'] as const
+
+/**
+ * EVERY wrangler config in the checkout, not just the app's own.
+ *
+ * `findWranglerConfig` answers "which config is this app's Worker?", which is
+ * the right question for anything describing the app. It is the wrong question
+ * for a repository-wide safety rule: a repo with a second Worker under
+ * `services/*` or `<name>-worker/` has that Worker's account and bindings
+ * entirely unread, and that is the exact shape of the two committed
+ * personal-account Workers the deployment standard was written to catch
+ * (design §2.3). The candidate paths come first and in their own order so the
+ * app's own config stays first in the list; the walk adds the rest.
+ */
+export function findWranglerConfigs(repo: AppRepo): string[] {
+  const found = WRANGLER_CANDIDATES.filter((rel) => repo.read(rel) !== null) as string[]
+  const seen = new Set(found)
+  for (const rel of repo.walk('', WRANGLER_FILENAMES)) {
+    const base = rel.split('/').pop() ?? ''
+    if (!WRANGLER_FILENAMES.includes(base as (typeof WRANGLER_FILENAMES)[number])) continue
+    if (seen.has(rel)) continue
+    seen.add(rel)
+    found.push(rel)
+  }
+  return found
+}
+
 /** True when this checkout is a Nuxt app with a pages or components
  * directory. Reuses `NUXT_CONFIG_CANDIDATES` (item 1.1) rather than a second
  * "is this Nuxt?" heuristic such as a `nuxt` dependency. API-only apps --

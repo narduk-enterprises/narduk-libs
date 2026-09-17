@@ -47,6 +47,11 @@
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
     },
+    "./playwright/dev-port": {
+      "types": "./dist/playwright/dev-port.d.ts",
+      "import": "./dist/playwright/dev-port.js",
+      "require": "./dist/playwright/dev-port.js"
+    },
     "./playwright/deterministic-capture": {
       "types": "./dist/playwright/deterministic-capture.d.ts",
       "import": "./dist/playwright/deterministic-capture.js"
@@ -82,6 +87,10 @@
     "./server/kit/managed-supabase": {
       "types": "./dist/server/kit/managed-supabase.d.ts",
       "import": "./dist/server/kit/managed-supabase.js"
+    },
+    "./server/handlers": {
+      "types": "./dist/server/handlers/index.d.ts",
+      "import": "./dist/server/handlers/index.js"
     }
   },
   "files": [
@@ -94,12 +103,12 @@
   },
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
-    "build": "tsc --project tsconfig.build.json",
+    "build": "tsc --project tsconfig.build.json && tsc --project tsconfig.build.handlers.json",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "lint": "eslint src tests bin --max-warnings 0",
-    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.handlers.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "prettier": "pnpm run format:check",
@@ -111,14 +120,23 @@
   "peerDependenciesMeta": {
     "@axe-core/playwright": {
       "optional": true
+    },
+    "@cloudflare/workers-types": {
+      "optional": true
+    },
+    "h3": {
+      "optional": true
     }
   },
   "peerDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@cloudflare/workers-types": ">=4.20260511.1",
     "@playwright/test": ">=1.50.0",
+    "h3": "^1.15.11",
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@playwright/test": "1.61.1",
     "@supabase/supabase-js": "^2.105.4",
@@ -129,6 +147,9 @@
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=22.22.0"
   },
   "volta": {
     "node": "22.22.3"

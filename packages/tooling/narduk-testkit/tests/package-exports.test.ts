@@ -30,6 +30,41 @@ describe('narduk-testkit runner boundaries', () => {
     expect(Object.keys(packageJson.exports)).toContain('./e2e/fixture-server')
   })
 
+  it('keeps the dev-port helper out of the root barrel', () => {
+    const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
+
+    /*
+     * Same boundary as `e2e/fixture-server` above, and for the same reason:
+     * `playwright/dev-port` is imported from a Playwright CONFIG, evaluated
+     * before the runner exists. Re-exporting it from the barrel would drag
+     * `e2e/fixtures.js` and its module-scope `test.extend` into config load.
+     */
+    expect(rootSource).not.toContain('./playwright/dev-port')
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+    }
+    expect(Object.keys(packageJson.exports)).toContain('./playwright/dev-port')
+  })
+
+  it('lets the dev-port helper be required, because Playwright loads a config as CJS', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, Record<string, string>>
+    }
+
+    /*
+     * Playwright transpiles a TypeScript config to CJS unless the consumer says
+     * otherwise (`--import tsx`, `"type": "module"`), so an `import` of this
+     * subpath becomes a `require`. Without a `require` condition that fails with
+     * ERR_PACKAGE_PATH_NOT_EXPORTED before a single line runs -- which is
+     * exactly how narduk-libs#417's first attempt died in packed-consumer-smoke.
+     * Node >= 22 requires an ESM file with no top-level await, so both
+     * conditions point at the same build output.
+     */
+    const devPort = packageJson.exports['./playwright/dev-port']
+    expect(devPort.require).toBe('./dist/playwright/dev-port.js')
+    expect(devPort.require).toBe(devPort.import)
+  })
+
   it('publishes the deterministic-capture and request-accounting helpers to the Playwright family', () => {
     const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {

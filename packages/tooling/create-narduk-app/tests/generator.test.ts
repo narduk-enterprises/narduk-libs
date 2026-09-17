@@ -11,6 +11,27 @@ import * as YAML from 'yaml'
 
 import { buildGeneratedFiles, createNardukApp, PACKAGE_VERSIONS, runCli } from '../src/index.js'
 
+/**
+ * The block `narduk-app-tools` hands a new app, read by relative path rather
+ * than imported.
+ *
+ * This generator must not depend on `narduk-app-tools` -- a published
+ * `create-narduk-app` requires nothing at runtime -- and a development
+ * dependency would not survive CI either, whose per-package gates run
+ * `pnpm --filter <name>` without building a workspace sibling's `dist`. The
+ * fixture is the pin instead: `narduk-app-tools`' own suite asserts it equals
+ * `defaultDeploymentBlock()` and that `readDeploymentBlock` accepts it, so a
+ * schema change cannot reach this assertion without going through that one.
+ */
+const CANONICAL_DEPLOYMENT_BLOCK = new URL(
+  '../../narduk-app-tools/fixtures/default-deployment-block.json',
+  import.meta.url,
+)
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 const tempDirectories: string[] = []
 
 async function makeTempDirectory(): Promise<string> {
@@ -575,6 +596,38 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('TODO(onboarding):')
 
+      // The deployment standard: a build uploads a version and deploys
+      // nothing, so BOTH Cloudflare deploy commands must be the upload one --
+      // a production command that deploys puts a `main` push straight into
+      // production, which is the failure the standard exists to prevent.
+      expect(runbook, label).toContain(
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
+      )
+      expect(runbook, label).toContain(
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
+      )
+      expect(runbook, label).toContain('## The deployment standard')
+      expect(runbook, label).toContain('"standard": "narduk-v1"')
+      expect(runbook, label).toContain(
+        '"productionDeployCommand": "narduk-app deploy versions-upload"',
+      )
+      // Branch builds start OFF: a preview binds the Worker's production D1,
+      // KV and R2, so turning them on before preview bindings exist would let
+      // every pull request write production data.
+      expect(runbook, label).toContain('"nonProductionBranchBuilds": false')
+      expect(runbook, label).toContain(
+        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
+      )
+      expect(runbook, label).toContain('"previewBindings"')
+      expect(runbook, label).toContain('narduk-app foundation:check:deployment')
+      // The generator emits the block to paste, never the file itself:
+      // Config/cloudflare-app.json records live Cloudflare facts a checkout
+      // cannot know, and onboarding owns it.
+      expect(
+        files.some((file) => file.path === 'Config/cloudflare-app.json'),
+        label,
+      ).toBe(false)
+
       // docs/e2e-testing.md + apps/web/tests/e2e/visual-audit.spec.ts: the
       // shared narduk-testkit UI-quality toolkit, scoped to the one route
       // every scaffold actually has (generator-parity audit narduk-libs#D2 --
@@ -681,6 +734,12 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(webManifest.devDependencies['nitro-cloudflare-dev'], label).toBe(
         PACKAGE_VERSIONS['nitro-cloudflare-dev'],
+      )
+      // `--checkout ..` because the item reads Config/cloudflare-app.json and
+      // the wrangler config from the repository root, while pnpm runs this
+      // script with the cwd at apps/web.
+      expect(webManifest.scripts['foundation:deployment'], label).toBe(
+        'narduk-app foundation:check:deployment --checkout ..',
       )
     }
   })
@@ -892,13 +951,36 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedPlaywrightConfig).toContain(
       "isCI && !(process.env.GITHUB_EVENT_NAME ?? '').startsWith('pull_request')",
     )
-    // narduk-libs#62: the port must be overridable by PLAYWRIGHT_PORT and
-    // flow into baseURL, the webServer url, AND the webServer command's PORT
-    // env — otherwise two concurrent worktrees silently attach to the same
-    // fixed port and one test run exercises the other lane's app.
+    // narduk-libs#62 and #417: the port must come from the shared resolver --
+    // declared in the primary checkout and CI, derived from the checkout path
+    // in a linked worktree, PLAYWRIGHT_PORT over both -- and flow into baseURL,
+    // the webServer url, AND the webServer command's PORT env. Otherwise two
+    // concurrent worktrees attach to the same fixed port and one test run
+    // silently exercises the other lane's app.
     expect(generatedPlaywrightConfig).toContain(
-      'const port = Number(process.env.PLAYWRIGHT_PORT) || 4377',
+      "} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'",
     )
+    expect(generatedPlaywrightConfig).toContain('declaredPort: 4377,')
+    // Playwright transpiles this config to CJS (the generated root package.json
+    // is not `"type": "module"` and nothing injects tsx), where `import.meta`
+    // is a SYNTAX error -- caught live by packed-consumer-smoke.
+    expect(generatedPlaywrightConfig).toContain('rootDir: process.cwd(),')
+    expect(
+      generatedPlaywrightConfig
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//') && line.includes('import.meta')),
+    ).toEqual([])
+    expect(generatedPlaywrightConfig).toContain('const port = devPort.port')
+    // Reuse is a decision the resolver makes, never the old `!isCI`: a derived
+    // port must not adopt a server this checkout did not start.
+    expect(generatedPlaywrightConfig).toContain(
+      'const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })',
+    )
+    expect(generatedPlaywrightConfig).toContain(
+      'assertLocalDevPortAvailable({ resolution: devPort })',
+    )
+    expect(generatedPlaywrightConfig).toContain('reuseExistingServer,')
+    expect(generatedPlaywrightConfig).not.toContain('reuseExistingServer: !isCI,')
     expect(generatedPlaywrightConfig).toContain('baseURL: `http://127.0.0.1:${port}`')
     // /api/health, not just '/': Playwright's own readiness probe only checks
     // for an HTTP 200-403 response, which a page that has not finished SSR
@@ -1374,6 +1456,47 @@ describe('CLI argument parsing', () => {
     ).config
     expect(wrangler.workers_dev).toBe(false)
     expect(wrangler.preview_urls).toBe(false)
+  })
+
+  // S9 -- the runbook tells every new app to paste this block and then run the
+  // check. Until now the block was ~24 hand-typed string literals and the only
+  // assertions on it were substrings, so adding a required key to the schema
+  // would have shipped a generator whose paste-this block fails the very check
+  // it tells you to run -- discovered by the first app to try it, not by CI.
+  describe('the deployment block the runbook tells you to paste', () => {
+    function pastedBlock(appName: string): unknown {
+      const files = asFileMap(buildGeneratedFiles({ appName, targetDir: `/tmp/${appName}` }))
+      const runbook = files.get('docs/workers-builds.md') ?? ''
+      const fence = /```jsonc\n("deployment": [\s\S]*?)\n```/u.exec(runbook)
+      expect(fence, 'the runbook carries a fenced jsonc deployment block').not.toBeNull()
+      // The fence holds a fragment ("deployment": {...}) meant to be pasted
+      // INTO an object, so it is parsed as one.
+      return JSON.parse(`{${fence?.[1] ?? ''}}`)
+    }
+
+    it('is valid JSON, not prose that happens to look like it', () => {
+      const parsed = pastedBlock('paste-check') as Record<string, unknown>
+      expect(isRecord(parsed.deployment)).toBe(true)
+    })
+
+    it('is exactly the block narduk-app-tools hands a new app', async () => {
+      // narduk-app-tools' own suite pins this fixture to
+      // `defaultDeploymentBlock()` AND to `readDeploymentBlock` accepting it,
+      // so equality here means the pasted block satisfies the very check the
+      // runbook tells the new app to run.
+      const canonical: unknown = JSON.parse(await readFile(CANONICAL_DEPLOYMENT_BLOCK, 'utf8'))
+      const parsed = pastedBlock('paste-check') as Record<string, unknown>
+      expect(parsed.deployment).toEqual(canonical)
+    })
+
+    it('names this app in the promotion credential', () => {
+      const parsed = pastedBlock('other-app') as {
+        deployment: { promotion: { credential: string } }
+      }
+      expect(parsed.deployment.promotion.credential).toBe(
+        'cloudflare/prd/narduk-enterprises-other-app-promote',
+      )
+    })
   })
 
   it('rejects a public-preview override for an auth app', () => {

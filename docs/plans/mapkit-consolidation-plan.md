@@ -1,15 +1,28 @@
 # MapKit consolidation plan — one canonical `narduk-mapkit` in narduk-libs
 
-Status: **decisions recorded 2026-09-14 (§12); plan-only, pending final PR
-gate**. Logan selected the aggressive v6 default move, a fixed 3.0.0 release of
-the two existing packages, the family-location risk bump, and no React library
-surface. The freeze, migrate and fast-track deletion direction remains (§3, §6,
-§9); surveyed 2026-09-14 from the narduk-libs worktree
-`narduk-mapkit-consolidation-07e309` (base `main` c1fb48f), company-hq
-`origin/main` 609aa3e, GitHub code search across `narduk-enterprises` and
-`narduk-incubator`, the GitHub Packages registry (names and versions only), and
-six read-only inventory lanes whose evidence is cited inline. Survey claims are
-hypotheses: every lane that mutates an app re-verifies the cited file live
+> **SUPERSEDED by
+> [`packages/modules/narduk-mapkit/docs/api-2.1.md`](../../packages/modules/narduk-mapkit/docs/api-2.1.md)
+> on 2026-09-17.** The **design** in this document is void: the two-package
+> shape, the fixed 3.0.0 release group, the MapKit-JS-v5 fallback, and the
+> opt-in-and-off token policy were all replaced by Logan's 2026-09-17 decisions
+> (one package with a `./nuxt` entry, 2.1.0, Apple's `@apple/mapkit-loader`, a
+> same-host fail-closed token route). What is **retained**, and the only reason
+> this file stays in the repository, is its **dated inventory** — treat the
+> whole document from here down as an appendix of 2026-09-14 survey evidence,
+> not as instructions. Its freeze list and deletion preconditions (§3, §6, §9)
+> continue under company-hq#741, as amended. Per-slice tracking lives in the
+> issues linked from narduk-libs#391.
+
+Status (2026-09-14, retained as appendix): **decisions recorded 2026-09-14
+(§12); plan-only, pending final PR gate**. Logan selected the aggressive v6
+default move, a fixed 3.0.0 release of the two existing packages, the
+family-location risk bump, and no React library surface. The freeze, migrate and
+fast-track deletion direction remains (§3, §6, §9); surveyed 2026-09-14 from the
+narduk-libs worktree `narduk-mapkit-consolidation-07e309` (base `main` c1fb48f),
+company-hq `origin/main` 609aa3e, GitHub code search across `narduk-enterprises`
+and `narduk-incubator`, the GitHub Packages registry (names and versions only),
+and six read-only inventory lanes whose evidence is cited inline. Survey claims
+are hypotheses: every lane that mutates an app re-verifies the cited file live
 before acting (AGENTS.md § Native-lane orchestration).
 
 ## 1. Goal

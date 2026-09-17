@@ -1,4 +1,6 @@
 // @ts-check
+import path from 'node:path'
+
 import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'
 
 export default [
@@ -253,6 +255,60 @@ export default [
     files: ['packages/modules/narduk-mapkit-nuxt/src/runtime/components/AppMapKitCallout.vue'],
     rules: {
       'narduk/no-attrs-on-fragment': 'off',
+    },
+  },
+  {
+    // narduk-testkit's `server/handlers` (the Cloudflare D1/KV/R2 + fake-H3
+    // handler test harness) is deliberately excluded from the package's main
+    // tsconfig.json: it needs `@cloudflare/workers-types`' ambient globals,
+    // which redeclare `Response`/`Headers`/`ReadableStream` incompatibly with
+    // the DOM lib the package's Playwright-side helpers need, so it builds
+    // and typechecks as its own project (tsconfig.handlers.json). The
+    // `narduk/correctness-type-aware` project service (see
+    // configs/correctness.mjs) only auto-discovers the nearest literal
+    // `tsconfig.json` per file, so without this override these files are in
+    // no discovered project at all -- "was not found by the project service".
+    //
+    // A `projectService.defaultProject` override (matching
+    // `patchCorrectnessProjectServiceConfig`'s Nuxt shape in
+    // eslint-app-config.mjs) does NOT work here: typescript-eslint's project
+    // service is a single process-wide singleton
+    // (`TSSERVER_PROJECT_SERVICE` in createParseSettings.js), created once
+    // from whichever file ESLint parses first and never reconfigured after.
+    // Linting this package's other files (under the shared `projectService:
+    // true` from correctness.mjs) always parses one of them first, so the
+    // singleton locks in *their* settings -- this override's
+    // `allowDefaultProject`/`defaultProject` are silently ignored for the
+    // rest of the run. (Linting a `server/handlers` file in isolation "works"
+    // only because no other file gets there first to create the singleton
+    // with different settings.) Traditional `parserOptions.project` mode has
+    // no such singleton -- each listed tsconfig gets its own cached
+    // `ts.Program`, so it coexists with the rest of the package's
+    // `projectService: true` files in the same run.
+    //
+    // Note on coverage: `narduk/correctness-type-aware` enables no rules of
+    // its own (it is parser wiring so an app can switch type-aware rules on
+    // locally), so today the real project buys no extra lint coverage over
+    // plain `projectService: false` -- it is here so these files are covered
+    // the day a type-aware rule is switched on, and it costs no measurable
+    // lint time.
+    files: [
+      'packages/tooling/narduk-testkit/src/server/handlers/**/*.ts',
+      'packages/tooling/narduk-testkit/tests/server/handlers/**/*.ts',
+    ],
+    languageOptions: {
+      parserOptions: {
+        // `import.meta.dirname`, not `new URL(...).pathname`: a URL pathname
+        // is percent-encoded, so a checkout under a path containing a space
+        // (or any non-ASCII character) would hand TypeScript a `%20` it
+        // cannot resolve.
+        tsconfigRootDir: path.join(import.meta.dirname, 'packages/tooling/narduk-testkit'),
+        project: ['./tsconfig.handlers.json'],
+        // Cancels the `projectService: true` these files would otherwise
+        // inherit from `narduk/correctness-type-aware` -- a file can't use
+        // both `project` and `projectService`.
+        projectService: false,
+      },
     },
   },
 ]
