@@ -12,6 +12,7 @@ import {
 } from './performance.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
+import { runCapabilityCoverageCheckCommand } from './commands/capability-coverage-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
@@ -36,6 +37,8 @@ function usage(): string {
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
     '  foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]',
     '                                       Item 8: UI apps must exact-pin published shared-UI packages',
+    '  foundation:check:coverage [--checkout <dir>] [--json [path]]',
+    '                                       Item 9: estate package inventory and app-local reimplementations',
   ].join('\n')
 }
 
@@ -138,6 +141,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (command === 'foundation:check:shared-ui-pinned') {
       const { exitCode } = await runSharedUiPinnedCheckCommand(
         parseFoundationCheckArgs(rest, 'foundation:check:shared-ui-pinned'),
+      )
+      return exitCode
+    }
+    if (command === 'foundation:check:coverage') {
+      const { exitCode } = runCapabilityCoverageCheckCommand(
+        parseFoundationCheckArgs(rest, 'foundation:check:coverage'),
       )
       return exitCode
     }

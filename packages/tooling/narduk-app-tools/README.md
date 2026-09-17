@@ -194,3 +194,97 @@ apps are `not-applicable` in full.
 | 8.1 / 8.2 / 8.3 | not a dependency, but listed in `PRESENCE_REQUIRED` (today: none are)                     | `fail` -- "required of every UI app and is not a dependency"                      |
 | 8.1 / 8.2 / 8.3 | depended on, but the pin is a range or a `workspace:` / `file:` specifier                 | `fail`, names the package and the fix                                             |
 | 8.1 / 8.2 / 8.3 | depended on and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                   | `pass`, annotated with the latest published version when the registry is readable |
+
+### Shared-capability coverage (`foundation:check:coverage`)
+
+`narduk-app foundation:check:coverage [--checkout <dir>] [--json [path]]` --
+item 9, company-hq
+[`docs/NARDUK-APP-COMPLIANCE.md`](https://github.com/narduk-enterprises/company-hq/blob/main/docs/NARDUK-APP-COMPLIANCE.md)
+§3.9 (Logan, 2026-09-16: _"the rule is to fix the lib if there is a bug rather
+than working around the issue in the app"_). Like item 8, it is a separate
+command and JSON artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/capability-coverage'`) because
+`foundation:check --json` is the exact 7-item contract company-hq
+`check-web-foundation.py` validates; an `id` outside `1..7` is a rollup-red F3
+ARTEFACT finding. No registry credential is needed -- every verdict comes from
+the app's own manifests and its own source.
+
+It reports two things.
+
+**(a) Inventory.** Every `@narduk-enterprises/*` dependency the app pins, with
+its version, the manifest it came from and the dependency block it sat in -- one
+row per `(package, manifest, block)`, across the root manifest and the workspace
+manifests at the same monorepo-candidate paths item 1 already reads. Beside it,
+the catalog of shared capabilities the estate publishes, each marked adopted or
+not. **The catalog is derived, never hand-typed**:
+`scripts/generate-capability-catalog.mjs` reads narduk-libs'
+`pnpm-workspace.yaml` (the four families, D-WEBFOUND-2 Q2 (a)) and writes
+`src/foundation/capability-catalog.ts`; `--check` fails when the committed file
+falls out of step with the workspace, and `pnpm run scripts:test` runs that
+comparison in required CI. Private workspace packages are excluded because an
+app cannot depend on one. The whole inventory is a first-class `inventory` block
+in the `--json` artefact, so the estate roster reads it as data rather than
+parsing sub-check prose.
+
+**(b) Reimplementation detection.** App-local code doing a shared package's job.
+Every detector is a source signal plus one question -- _is the owning shared
+package a dependency of this app?_
+
+- **Yes → `confirmed`**, reported as a **FAIL** naming the exact file path and
+  the owning package. The package is installed and the app wrote its own anyway;
+  that is the §3.9 duplication finding.
+- **No → `heuristic`**, reported as a **WARN**. There is app-local code doing a
+  shared package's job, but nothing proves it is a fork rather than something
+  the app genuinely owns.
+
+There is no fifth status. A WARN carries the foundation vocabulary's `unknown`
+(exit `2`) with `confidence: 'heuristic'` in the artefact, because "we found
+code doing a shared package's job but cannot prove it is a fork" is exactly what
+`unknown` already means here -- never a pass, never a decided failure. The four
+verdicts read as _proven_ (`pass`), _gap_ (`fail`), _unknown_, and
+_not-applicable_.
+
+Only tracked-source directories at the usual monorepo prefixes are walked
+(`app/`, `src/`, `server/`, `shared/`, `composables/`, `utils/`, `plugins/`,
+`components/`, `layers/`, `scripts/`), bounded at 2000 files. `AppRepo.walk()`
+skips `node_modules`, `.git`, `dist`, `.output`, `.nuxt`, `.nitro`, `.wrangler`,
+`.turbo` and `coverage` -- which matters most here: a built Nitro bundle inlines
+every dependency, so a conformant app's `.output/server/chunks` contains
+`createLogger`, `posthog-js` and a health route, and a scan that reached it
+would fail every app in the estate.
+
+**Rule table:**
+
+| Sub-check | Condition                                                                                                                                              | Verdict                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 9.0       | No `package.json` readable at a known monorepo-candidate path                                                                                          | `unknown` (whole item)                                                             |
+| 9.0       | At least one manifest readable                                                                                                                         | `pass`, names the manifests read                                                   |
+| 9.1       | The inventory and capability coverage, always produced once 9.0 passes                                                                                 | `pass`, summarizing pins, manifests and adopted capabilities                       |
+| 9.2       | An `@narduk-enterprises/*` pin the derived catalog cannot classify (retired, renamed, external)                                                        | `unknown` -- the roster cannot score it                                            |
+| 9.2       | Every estate pin resolves to a published capability                                                                                                    | `pass`                                                                             |
+| 9.3       | A `createLogger` declaration, or a `logger.ts`/`logging.ts` exporting a logger, **with** a `console.*` transport and no `@narduk-enterprises/*` import | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
+| 9.4       | An app-local `useSeo` / `defaultSocialMeta` declaration or file that shadows narduk-seo's auto-import, and does not import narduk-seo                  | `fail` if narduk-seo is a dependency, else `unknown` (WARN)                        |
+| 9.5       | An `import`/`require` of `posthog-js` in scanned source                                                                                                | `fail` if narduk-analytics is a dependency, else `unknown` (WARN)                  |
+| 9.5       | A direct `posthog-js` pin with no such import in the scan                                                                                              | `unknown` (WARN) -- manifest-level signal only                                     |
+| 9.6       | A `server/api/**/health*` route that never references `registerHealthCheck`                                                                            | `fail` if narduk-core is a dependency, else `unknown` (WARN)                       |
+| 9.6       | No `server/api` directory at any known prefix                                                                                                          | `not-applicable`                                                                   |
+| 9.7       | A Nitro plugin that hooks `error`/`afterResponse` or attaches a response `finish` listener **and** logs from it (narduk-logging adoption guide step 5) | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
+| 9.7       | No `server/plugins` directory and no `defineNitroPlugin` in the scan                                                                                   | `not-applicable`                                                                   |
+| 9.3-9.7   | The scan found no source directory at a known path                                                                                                     | `unknown` -- nothing could be looked for                                           |
+| 9.3-9.7   | Scanned, and no reimplementation found                                                                                                                 | `pass` (_proven_); `unknown` if the 2000-file ceiling was reached                  |
+
+The hook alone is not a 9.7 finding: the adoption guide says "Do not replace
+product-specific error handling", so an app may hook `error` for its own
+behaviour. The finding is a hook that **also logs** -- a second request-summary
+or error-log implementation running beside the shared one, which is what "Keep
+only one request-summary implementation active" forbids.
+
+**Zero false positives** is the acceptance bar, proven against two conformant
+checkouts: `narduk-enterprises/buoys` at `cc72c3d` (PASS, exit 0, 13 estate pins
+across two manifests, 112 files scanned, 0 detections) and a freshly generated
+`create-narduk-app@0.6.3` scaffold (PASS, exit 0, 11 pins, 7 files scanned, 0
+detections, 9.6/9.7 `not-applicable`). Both shapes -- including the near-misses
+that would trip a naive detector: a `defineNitroPlugin` registering health
+checks, PostHog named throughout the analytics configuration, and a built
+`.output` tree -- are committed as fixtures in
+`tests/foundation/capability-coverage-artefact.test.ts`.
