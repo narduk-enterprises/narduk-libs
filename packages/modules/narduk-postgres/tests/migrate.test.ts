@@ -382,10 +382,23 @@ describe('applyMigrations', () => {
     expect(joined).toContain('pg_advisory_unlock')
   })
 
-  it('refuses VACUUM and ALTER TYPE ADD VALUE in a default-transactional file', async () => {
+  it('allows ALTER TYPE ADD VALUE, which Postgres 12+ permits in a transaction', async () => {
+    const executor = plainLockingExecutor()
+    const set = await createMigrationSet([
+      { name: '0001_add_value.sql', sql: "ALTER TYPE mood ADD VALUE 'sad';" },
+    ])
+
+    await expect(applyMigrations(executor, set)).resolves.toBeDefined()
+    const joined = executor.texts.join('\n')
+    expect(joined).toMatch(/\bBEGIN\b/u)
+    expect(joined).toMatch(/ALTER TYPE mood ADD VALUE/iu)
+  })
+
+  it('refuses VACUUM and the rest of the CONCURRENTLY family', async () => {
     for (const [name, sql] of [
       ['0001_vacuum.sql', 'VACUUM ANALYZE t;'],
-      ['0001_add_value.sql', "ALTER TYPE mood ADD VALUE 'sad';"],
+      ['0001_drop_idx.sql', 'DROP INDEX CONCURRENTLY idx;'],
+      ['0001_reindex.sql', 'REINDEX INDEX CONCURRENTLY idx;'],
     ] as const) {
       const executor = plainLockingExecutor()
       const set = await createMigrationSet([{ name, sql }])

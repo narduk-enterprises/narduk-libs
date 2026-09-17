@@ -283,12 +283,23 @@ const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: Re
     label: 'CREATE INDEX CONCURRENTLY',
     pattern: /^CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/iu,
   },
-  { label: 'VACUUM', pattern: /^VACUUM\b/iu },
   {
-    label: 'ALTER TYPE ... ADD VALUE',
-    pattern: /^ALTER\s+TYPE\s+\S[\s\S]*\bADD\s+VALUE\b/iu,
+    label: 'DROP INDEX CONCURRENTLY',
+    pattern: /^DROP\s+INDEX\s+CONCURRENTLY\b/iu,
   },
+  { label: 'REINDEX ... CONCURRENTLY', pattern: /^REINDEX\b[\s\S]+\bCONCURRENTLY\b/iu },
+  { label: 'VACUUM', pattern: /^VACUUM\b/iu },
 ]
+
+// `ALTER TYPE ... ADD VALUE` is deliberately absent: Postgres 12 and later
+// allow it inside a transaction block (only *using* the new value in the same
+// transaction is barred), and 11 is long out of support. Rejecting it would
+// fail a consumer's working migration on a patch release.
+
+// This list is the common set, not a proof of completeness. `CREATE DATABASE`,
+// `ALTER SYSTEM`, and a TimescaleDB continuous aggregate are also
+// non-transactional and are not detected; they fail with the raw Postgres
+// error instead of the named one. See the changeset's operator note.
 
 /**
  * Statements Postgres rejects inside a transaction. Default-transactional
