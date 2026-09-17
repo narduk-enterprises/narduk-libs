@@ -81,7 +81,7 @@ at the call site:
   settled page alternate between two rasterisations. `fullPage: true` here grows
   the viewport to the document and takes one ordinary capture.
 
-## Request accounting
+## Accessibility
 
 `playwright/accessibility` asserts a WCAG 2.2 AA claim against a recorded
 baseline instead of against zero. An app that has never run axe almost always
@@ -132,6 +132,120 @@ heading structure, invalid ARIA, form labelling. It cannot judge whether a
 reading order makes sense, whether an accessible name is useful, or whether a
 person using a screen reader can complete a task. A conformance claim resting on
 this alone should say so.
+
+### The estate bar: zero serious/critical on the PR subset
+
+The ledger above answers "did this change move the debt?". It tolerates known
+debt by design, which is what lets it be pointed at an app on day one. It is not
+a shipping gate.
+
+`expectAccessible` is the gate. It runs the scan itself — estate tag set, estate
+disable list — and fails on any violation whose impact is `serious` or
+`critical` (Logan, 2026-09-17: "Zero serious/critical in the PR subset").
+Moderate and minor findings are recorded and do not fail:
+
+```ts
+import { expectAccessible } from '@narduk-enterprises/narduk-testkit/playwright/accessibility'
+
+test('/map is accessible', async ({ page }) => {
+  await page.goto('/map')
+  await expectAccessible(page, { key: '/map' })
+})
+```
+
+Unlike the ledger helpers, this one owns the scan, and that is the point: the
+tag set and the disable list are the _estate's_, so an app cannot quietly lower
+the bar in its own spec file. It asserts against **WCAG 2.1 AA**
+(`WCAG_2_1_AA_TAGS`) rather than the 2.2 set the ledger uses — a gate that fails
+a PR should fail it against the level the product actually claims.
+
+A failure gives you both halves of the evidence:
+
+- **the message** carries one line per blocking violation — rule id, impact, the
+  first selector, the Deque help URL — because that is what fits in a CI log and
+  is usually enough to start the fix;
+- **the attachment** (`accessibility-<route>.json` on the Playwright test)
+  carries _every_ violation at _every_ impact, because the moderate and minor
+  findings that did not fail this run are the inventory the next piece of work
+  is planned from. A gate that discards them makes the app look cleaner than it
+  is.
+
+`expectAccessible` returns that report, so a spec sweeping several routes can
+aggregate them into an inventory of its own.
+
+**`ESTATE_DISABLED_AXE_RULES` is empty, and the empty list is the position.** A
+disabled rule is permanent silence on every route of every app and it outlives
+the component that justified it, so the bar for adding one is that the rule is
+_wrong_ on this stack — not that it is inconvenient here. "The component library
+emits it" is not grounds: that makes the library the owning layer and the fix
+belongs there. "It is noisy" is not grounds either: noise below the threshold
+already fails nothing. The rules a list like this usually exists for — `region`,
+`landmark-one-main`, `page-has-heading-one`, `heading-order` — are
+best-practice-tagged and never reach the gate at all. An entry that does earn
+its place carries a reason and a link, so a later reader can retire it once
+upstream fixes it.
+
+`@axe-core/playwright` stays an optional peer: the import is dynamic, so an app
+that uses only the ledger helpers never installs a scanner it does not run, and
+an app that calls `expectAccessible` without it gets a sentence naming the
+package rather than a module-resolution stack trace.
+
+### Adding the bar to an app's PR subset
+
+The gate belongs on the deterministic routes a PR is already gated on, at the
+two widths where the layout actually differs — not on a crawl, which turns a
+blocking check into a flaky one.
+
+1. **Install the runner** in the app: `pnpm add -D @axe-core/playwright`.
+2. **Reuse the PR project's route list rather than writing a second one.** If
+   the app already runs a visual audit over a fixed list, export that list and
+   import it here; two lists drift, and the day they disagree is the day the
+   gate stops covering the route someone actually changed.
+3. **Add one spec in the PR project**, iterating routes at one desktop and one
+   mobile width:
+
+   ```ts
+   import { expect, test } from '@playwright/test'
+   import { expectAccessible } from '@narduk-enterprises/narduk-testkit/playwright/accessibility'
+
+   import { PR_SUBSET_ROUTES } from './routes'
+
+   const VIEWPORTS = [
+     { height: 900, name: 'desktop', width: 1280 },
+     { height: 844, name: 'mobile', width: 390 },
+   ]
+
+   for (const viewport of VIEWPORTS) {
+     for (const route of PR_SUBSET_ROUTES) {
+       test(`a11y ${viewport.name} ${route}`, async ({ page }) => {
+         await page.setViewportSize({
+           height: viewport.height,
+           width: viewport.width,
+         })
+         await page.goto(route)
+         await expectAccessible(page, { key: `${viewport.name} ${route}` })
+       })
+     }
+   }
+   ```
+
+   Pass a `key` that names both the route and the width. It is what the failure
+   message and the attachment filename are keyed off, and `page.url()` alone
+   cannot tell two widths apart.
+
+4. **Wait for the page to settle before scanning.** Axe photographs the DOM at
+   the moment it is called; a route whose content arrives after hydration should
+   `await expect(page.getByRole(...)).toBeVisible()` first, or the scan grades a
+   skeleton and passes.
+5. **Fix what it finds in the layer that owns the markup.** A violation in a
+   shared component is a `narduk-libs` change, not an app-local override — one
+   fix there clears it for every consumer, and an app-local patch leaves the
+   next consumer to rediscover it.
+6. **Do not silence a rule to get green.** If a finding is genuinely wrong, the
+   entry goes in `ESTATE_DISABLED_AXE_RULES` with its reason and link, where
+   every app can see it and someone can retire it later.
+
+## Request accounting
 
 `playwright/request-accounting` pins what a page costs, read from the browser's
 own Resource Timing entries rather than argued from the code:
