@@ -22,11 +22,13 @@ const state = vi.hoisted(() => ({
   user: null as AppSessionUser | null,
 }))
 
+const replaceLayerUserSession = vi.hoisted(() => vi.fn())
+
 vi.mock('#layer/server/utils/user-session', () => ({
   clearLayerUserSession: async () => {
     state.clearCalls += 1
   },
-  replaceLayerUserSession: vi.fn(),
+  replaceLayerUserSession,
 }))
 
 vi.mock('../server/utils/app-auth', () => ({
@@ -92,6 +94,7 @@ describe('web session grant validation', () => {
       isAdmin: false,
     }
     state.user = null
+    replaceLayerUserSession.mockClear()
     vi.resetModules()
   })
 
@@ -125,6 +128,24 @@ describe('web session grant validation', () => {
     await expect(useRefreshedSessionUser(event())).resolves.toMatchObject({
       id: 'user-1',
       isAdmin: false,
+    })
+  })
+
+  it('writes the merged local principal back so /api/_auth/session drops isAdmin', async () => {
+    state.user = cookieUser({ authBackend: 'local', isAdmin: true })
+    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
+    state.dbUser = {
+      id: 'user-1',
+      email: 'parent@example.com',
+      name: 'Parent',
+      isAdmin: false,
+    }
+    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
+
+    await useRefreshedSessionUser(event())
+
+    expect(replaceLayerUserSession).toHaveBeenCalledWith(expect.anything(), {
+      user: expect.objectContaining({ id: 'user-1', isAdmin: false }),
     })
   })
 

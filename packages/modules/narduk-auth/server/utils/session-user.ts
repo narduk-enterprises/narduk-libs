@@ -91,6 +91,15 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
       await clearLayerUserSession(event)
       return null
     }
+    if (
+      principal.email !== sessionUser.email ||
+      principal.name !== sessionUser.name ||
+      principal.isAdmin !== sessionUser.isAdmin ||
+      principal.recoveryMode !== sessionUser.recoveryMode ||
+      principal.aal !== sessionUser.aal
+    ) {
+      await replaceLayerUserSession(event, { user: principal })
+    }
     return principal
   }
 
