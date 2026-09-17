@@ -9,6 +9,7 @@ import {
   SUGGESTED_CHANGESET_PATH,
   classifyChangedPackages,
   classifyManifestChange,
+  publishLifecycleScriptKeys,
   renderGuardReport,
   renderSuggestedChangeset,
 } from './release-plan-guard.mjs'
@@ -42,11 +43,14 @@ const baseManifest = {
   peerDependencies: { vue: '>=3.5.0' },
 }
 
-function classifyOne(after, { changedFiles = [], workspacePackages = packages } = {}) {
+function classifyOne(
+  after,
+  { changedFiles = [], workspacePackages = packages, before = baseManifest } = {},
+) {
   return classifyChangedPackages({
     packages: workspacePackages,
     changedFiles: ['packages/tooling/narduk-testkit/package.json', ...changedFiles],
-    readManifests: () => ({ before: baseManifest, after }),
+    readManifests: () => ({ before, after }),
   })[0]
 }
 
@@ -180,6 +184,52 @@ test('publish and install lifecycle scripts are release-relevant; other scripts 
   })
   assert.equal(entry.verdict, 'ok')
   assert.deepEqual(entry.manifest.devOnly, [{ field: 'scripts', keys: ['test:unit'] }])
+})
+
+test('a script the packing lifecycle reaches is release-relevant, however it is spelled', () => {
+  // `prebuild` runs before `build`, which every packing lifecycle script in
+  // this workspace delegates to; seven packages define it. narduk-timeseries'
+  // goes one hop further (`... && pnpm run deps:build`). Both change the
+  // packed artifact, and the literal lifecycle list named neither.
+  const manifest = {
+    ...baseManifest,
+    scripts: {
+      ...baseManifest.scripts,
+      prebuild: 'node scripts/clean-dist.mjs && pnpm run deps:build',
+      'deps:build': 'pnpm --filter @narduk-enterprises/narduk-postgres run build',
+    },
+  }
+
+  for (const key of ['prebuild', 'deps:build']) {
+    const entry = classifyOne(
+      { ...manifest, scripts: { ...manifest.scripts, [key]: 'node ./tools/changed.mjs' } },
+      { before: manifest },
+    )
+    assert.equal(entry.verdict, 'needs-changeset', key)
+    assert.deepEqual(entry.manifest.releaseRelevant, [
+      { field: 'scripts', keys: [key], reason: 'publish lifecycle script' },
+    ])
+  }
+
+  // Removing the delegation is the same change seen from the other side.
+  const removed = classifyOne({ ...manifest, scripts: baseManifest.scripts }, { before: manifest })
+  assert.equal(removed.verdict, 'needs-changeset')
+  assert.deepEqual(removed.manifest.releaseRelevant, [
+    { field: 'scripts', keys: ['deps:build', 'prebuild'], reason: 'publish lifecycle script' },
+  ])
+
+  // A script nothing published reaches stays dev-only even next to them.
+  const unreached = classifyOne(
+    { ...manifest, scripts: { ...manifest.scripts, 'test:unit': 'vitest run --coverage' } },
+    { before: manifest },
+  )
+  assert.equal(unreached.verdict, 'ok')
+  assert.deepEqual(unreached.manifest.devOnly, [{ field: 'scripts', keys: ['test:unit'] }])
+
+  assert.equal(publishLifecycleScriptKeys(manifest.scripts).has('deps:build'), true)
+  assert.equal(publishLifecycleScriptKeys(manifest.scripts).has('test:unit'), false)
+  // Reachability is per manifest: the same key is dev-only where nothing runs it.
+  assert.equal(publishLifecycleScriptKeys({ 'deps:build': 'tsc' }).has('deps:build'), false)
 })
 
 test('reordering a manifest is not a change', () => {

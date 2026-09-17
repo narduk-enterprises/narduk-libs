@@ -56,6 +56,36 @@ export const PUBLISH_LIFECYCLE_SCRIPTS = Object.freeze([
   'publish',
 ])
 
+// The list above is a seed, not the answer. npm runs `pre<name>`/`post<name>`
+// around each of those keys, and this workspace's lifecycle scripts delegate
+// further: `prebuild` exists in seven packages, and narduk-timeseries' is
+// `node scripts/clean-dist.mjs && pnpm run deps:build`. Editing either changes
+// the packed artifact, so the release-relevant set is the closure of the seed
+// over `run <key>` references inside the same manifest. Over-approximating is
+// deliberate: a script key that turns out not to run costs one Changeset,
+// while a missed one ships a changed tarball with no release.
+export function publishLifecycleScriptKeys(scripts = {}) {
+  const relevant = new Set()
+  const pending = []
+  for (const key of PUBLISH_LIFECYCLE_SCRIPTS) {
+    for (const name of [key, `pre${key}`, `post${key}`]) {
+      if (relevant.has(name)) continue
+      relevant.add(name)
+      pending.push(name)
+    }
+  }
+  while (pending.length > 0) {
+    const body = scripts[pending.pop()]
+    if (typeof body !== 'string') continue
+    for (const [, referenced] of body.matchAll(/\brun\s+(?:-\S+\s+)*([\w@/:.-]+)/gu)) {
+      if (!(referenced in scripts) || relevant.has(referenced)) continue
+      relevant.add(referenced)
+      pending.push(referenced)
+    }
+  }
+  return relevant
+}
+
 // Dependency sections whose *range* changes are released automatically by
 // release-time manifest-drift synthesis. `peerDependencies` is deliberately
 // absent: a peer range is the package's own compatibility contract, and
@@ -109,7 +139,12 @@ export function classifyManifestChange(before, after) {
   for (const field of changedKeys(before, after)) {
     if (field === 'scripts') {
       const keys = changedKeys(before.scripts, after.scripts)
-      const lifecycle = keys.filter((key) => PUBLISH_LIFECYCLE_SCRIPTS.includes(key))
+      // Both sides: adding and removing a delegation are equally relevant.
+      const reachable = new Set([
+        ...publishLifecycleScriptKeys(before.scripts),
+        ...publishLifecycleScriptKeys(after.scripts),
+      ])
+      const lifecycle = keys.filter((key) => reachable.has(key))
       if (lifecycle.length > 0) {
         releaseRelevant.push({ field, keys: lifecycle, reason: 'publish lifecycle script' })
       } else {
