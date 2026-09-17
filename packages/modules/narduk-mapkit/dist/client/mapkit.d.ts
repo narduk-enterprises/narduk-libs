@@ -82,7 +82,7 @@ export interface MapKitClientOptions {
     onConfigurationChange?: (status: MapKitConfigurationChangeStatus) => void;
     /** Fires for every MapKit `error`, including ones after a successful init. */
     onFailure?: (failure: MapKitFailure) => void;
-    /** Relative path only; the fetch must stay same-origin. */
+    /** Relative path only, enforced (§b.1); the fetch must stay same-origin. */
     tokenEndpoint?: string;
     /** Defaults to `'6'`. The loader throws on any `5*`. */
     version?: string;
