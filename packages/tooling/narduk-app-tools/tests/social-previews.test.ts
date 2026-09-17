@@ -336,7 +336,7 @@ describe('crawler-visible delivery', () => {
     [
       'a head with no declared image dimensions',
       (path: string) =>
-        html(path).replace(/<meta property="og:image:(?:width|height)"[^>]*>/gu, ''),
+        html(path).replaceAll(/<meta property="og:image:(?:width|height)"[^>]*>/gu, ''),
       'exactly one nonempty og:image:width',
     ],
     [

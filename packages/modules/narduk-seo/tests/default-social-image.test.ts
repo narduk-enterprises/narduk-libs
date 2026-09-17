@@ -7,17 +7,20 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+const SITE_URL = 'https://example.com'
+const LOGIN_CARD = {
+  siteUrl: SITE_URL,
+  siteName: 'Example',
+  description: 'Public app identity',
+  path: '/login',
+  image: { url: '/og.png', alt: 'Example app' },
+} as const
+
 describe('default social image', () => {
   it('uses an absolute image, canonical page URL, and declared dimensions', () => {
-    const meta = defaultSocialMeta({
-      siteUrl: 'https://example.com',
-      siteName: 'Example',
-      description: 'Public app identity',
-      path: '/login',
-      image: { url: '/og.png', alt: 'Example app' },
-    })
-    expect(meta).toContainEqual({ property: 'og:image', content: 'https://example.com/og.png' })
-    expect(meta).toContainEqual({ property: 'og:url', content: 'https://example.com/login' })
+    const meta = defaultSocialMeta(LOGIN_CARD)
+    expect(meta).toContainEqual({ property: 'og:image', content: SITE_URL + '/og.png' })
+    expect(meta).toContainEqual({ property: 'og:url', content: SITE_URL + '/login' })
     expect(meta).toContainEqual({ property: 'og:image:alt', content: 'Example app' })
     expect(meta).toContainEqual({ property: 'og:image:width', content: '1200' })
     expect(meta).toContainEqual({ property: 'og:image:height', content: '630' })
@@ -27,13 +30,7 @@ describe('default social image', () => {
   // `twitter:*` meta name -- `twitter:card` included -- as deprecated, which turns
   // the shared browser-console contract red on every route (narduk-libs#349).
   it('emits Open Graph only, with no twitter:* meta name', () => {
-    const meta = defaultSocialMeta({
-      siteUrl: 'https://example.com',
-      siteName: 'Example',
-      description: 'Public app identity',
-      path: '/login',
-      image: { url: '/og.png', alt: 'Example app' },
-    })
+    const meta = defaultSocialMeta(LOGIN_CARD)
     const names = meta.map((tag) => ('property' in tag ? tag.property : tag.name))
     expect(names.filter((name) => name.toLowerCase().startsWith('twitter:'))).toEqual([])
     expect(names.every((name) => name.startsWith('og:'))).toBe(true)
@@ -46,7 +43,7 @@ describe('default social image', () => {
   ])('rejects unsafe image URL %s', (url) => {
     expect(() =>
       defaultSocialMeta({
-        siteUrl: 'https://example.com',
+        siteUrl: SITE_URL,
         siteName: 'Example',
         description: 'App',
         path: '/',
@@ -65,7 +62,7 @@ describe('default social image', () => {
       useRuntimeConfig: () => ({
         public: { nardukSeoDefaultImage: { url: '/og.png', alt: 'Example' } },
       }),
-      useSiteConfig: () => ({ url: 'https://example.com', name: 'Example', description: 'App' }),
+      useSiteConfig: () => ({ url: SITE_URL, name: 'Example', description: 'App' }),
     }))
     const { default: plugin } = await import('../app/plugins/defaultSocialImage')
     ;(plugin as unknown as () => void)()
@@ -76,7 +73,7 @@ describe('default social image', () => {
     route.path = '/account'
     expect(metadata().meta).toContainEqual({
       property: 'og:url',
-      content: 'https://example.com/account',
+      content: SITE_URL + '/account',
     })
   })
 
@@ -89,7 +86,7 @@ describe('default social image', () => {
       useRuntimeConfig: () => ({
         public: { nardukSeoDefaultImage: { url: '/og.png' } },
       }),
-      useSiteConfig: () => ({ url: 'https://example.com', name: 'Example', description: 'App' }),
+      useSiteConfig: () => ({ url: SITE_URL, name: 'Example', description: 'App' }),
     }))
     const { default: plugin } = await import('../app/plugins/defaultSocialImage')
 

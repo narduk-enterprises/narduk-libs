@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { useSeo } from '../app/composables/useSeo'
+
 afterEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
@@ -13,7 +15,7 @@ interface SeoMetaPayload extends Record<string, unknown> {
 }
 
 async function callUseSeo(
-  options: Parameters<typeof import('../app/composables/useSeo').useSeo>[0],
+  options: Parameters<typeof useSeo>[0],
   publicRuntime: Record<string, unknown> = {},
 ): Promise<SeoMetaPayload> {
   const useSeoMeta = vi.fn()
@@ -29,8 +31,8 @@ async function callUseSeo(
     useSeoMeta,
     useSiteConfig: () => ({ url: 'https://example.com', name: 'Example' }),
   }))
-  const { useSeo } = await import('../app/composables/useSeo')
-  useSeo(options)
+  const composables = await import('../app/composables/useSeo')
+  composables.useSeo(options)
   return (useSeoMeta.mock.calls[0]?.[0] ?? {}) as SeoMetaPayload
 }
 
