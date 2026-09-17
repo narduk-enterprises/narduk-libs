@@ -1,14 +1,35 @@
 /**
- * Security headers middleware.
+ * Legacy security headers middleware.
  *
  * Sets standard security headers on every response to protect against
  * common web vulnerabilities. These supplement Cloudflare's built-in
  * protections with application-level defense-in-depth.
+ *
+ * WHAT `security.headers` DOES TO THIS FILE
+ * -----------------------------------------
+ * This middleware predates the `security.headers` preset and, because
+ * `addServerScanDir` registers it for every app on the module's default
+ * `server: true`, its output is what every fleet app serves today. Turning the
+ * preset on hands ownership of each header to nuxt-security in stages rather
+ * than all at once (`runtime/shared/security-headers.ts` has the full
+ * rationale):
+ *
+ *   'off'          everything below, byte-for-byte as before. The default.
+ *   'report-only'  the enforcing CSP below stays, because the strict policy is
+ *                  only being *reported* on and something has to still enforce.
+ *                  Every other header comes from nuxt-security, so this file
+ *                  stops emitting its duplicates.
+ *   'enforce'      only the X-*-Version / X-Build-Time diagnostics, which
+ *                  nuxt-security knows nothing about. Serving two enforcing
+ *                  CSP headers would make the browser intersect them, which is
+ *                  miserable to debug and buys nothing.
  */
 import { defineEventHandler, setResponseHeaders } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
+
+import type { SecurityHeadersMode } from '../../shared/security-headers'
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 
@@ -65,12 +86,32 @@ function buildPermissionsPolicy(allowGeolocation: boolean): string {
   ].join(', ')
 }
 
+function resolvePresetMode(config: object): SecurityHeadersMode {
+  const preset = (config as { nardukSecurityHeaders?: { mode?: unknown } }).nardukSecurityHeaders
+  const mode = preset?.mode
+  // An unrecognised value reads as 'off' on purpose: the failure mode of
+  // guessing wrong here is an app silently losing headers it serves today.
+  return mode === 'report-only' || mode === 'enforce' ? mode : 'off'
+}
+
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig(event)
   const isDev = import.meta.dev
+  const presetMode = resolvePresetMode(config)
   const appVersion = config.public.appVersion
   const buildVersion = config.public.buildVersion || appVersion
   const buildTime = config.public.buildTime
+
+  const diagnosticHeaders: Record<string, string> = {}
+  if (appVersion) diagnosticHeaders['X-App-Version'] = appVersion
+  if (buildVersion) diagnosticHeaders['X-Build-Version'] = buildVersion
+  if (buildTime) diagnosticHeaders['X-Build-Time'] = buildTime
+
+  if (presetMode === 'enforce') {
+    setResponseHeaders(event, diagnosticHeaders)
+    return
+  }
+
   const posthogHost = readRuntimeString(event, 'POSTHOG_HOST', {
     fallback: config.public.posthogHost,
   })
@@ -111,17 +152,21 @@ export default defineEventHandler((event) => {
     mergeCspSources(["'self'"], parseCspSources(config.public.cspMediaSrc)),
   )
 
-  const diagnosticHeaders: Record<string, string> = {}
-  if (appVersion) diagnosticHeaders['X-App-Version'] = appVersion
-  if (buildVersion) diagnosticHeaders['X-Build-Version'] = buildVersion
-  if (buildTime) diagnosticHeaders['X-Build-Time'] = buildTime
+  // In 'report-only' nuxt-security already emits each of these, so repeating
+  // them here would mean two identical headers on every response.
+  const ownedByPreset =
+    presetMode === 'off'
+      ? {
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+          'X-XSS-Protection': '0',
+          'Referrer-Policy': 'strict-origin-when-cross-origin',
+          'Permissions-Policy': buildPermissionsPolicy(allowGeolocation),
+        }
+      : {}
 
   setResponseHeaders(event, {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '0',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': buildPermissionsPolicy(allowGeolocation),
+    ...ownedByPreset,
     'Content-Security-Policy': [
       "default-src 'self'",
       "base-uri 'self'",

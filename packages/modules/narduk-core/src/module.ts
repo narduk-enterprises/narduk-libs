@@ -7,6 +7,7 @@ import {
   addComponentsDir,
   addImportsDir,
   addPlugin,
+  addServerHandler,
   addServerScanDir,
   addTemplate,
   createResolver,
@@ -20,6 +21,11 @@ import {
   findDatabaseBackendConflict,
   resolveDatabaseBackendSelection,
 } from '../runtime/shared/database-backend'
+import {
+  buildNuxtSecurityConfig,
+  resolveSecurityHeaders,
+  type SecurityHeadersOptions,
+} from '../runtime/shared/security-headers'
 import {
   applyCoreRollupBuildWarningPolicy,
   applyCoreViteBuildWarningPolicy,
@@ -90,6 +96,15 @@ export interface NardukCoreModuleOptions {
    */
   databaseBackend?: DatabaseBackend
   image?: boolean
+  /**
+   * The opt-in shared security-headers preset. `false` or omitted leaves an
+   * app's headers exactly as they are today; see
+   * `../runtime/shared/security-headers.ts` for the three modes and why the
+   * default has to be "change nothing".
+   */
+  security?: {
+    headers?: SecurityHeadersOptions | boolean
+  }
   server?: boolean
 }
 
@@ -596,6 +611,42 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       addServerScanDir(resolver.resolve('../runtime/server'))
     }
 
+    // The app's existing CSP_*_SRC values are folded into the preset's
+    // allowlist so an app that configured its origins that way keeps them when
+    // it turns `security.headers` on. Silently dropping them would break the
+    // app the moment the strict policy went enforcing.
+    const securityHeaders = resolveSecurityHeaders(options.security?.headers, {
+      cspConnectSrc: process.env.CSP_CONNECT_SRC,
+      cspFrameSrc: process.env.CSP_FRAME_SRC,
+      cspMediaSrc: process.env.CSP_MEDIA_SRC,
+      cspScriptSrc: process.env.CSP_SCRIPT_SRC,
+      cspWorkerSrc: process.env.CSP_WORKER_SRC,
+    })
+    if (securityHeaders.mode !== 'off') {
+      if (securityHeaders.reportRoute) {
+        // Registered explicitly rather than living under `runtime/server/api`,
+        // because the route is configurable and `addServerScanDir` would
+        // otherwise also bind it to a second, fixed path.
+        addServerHandler({
+          route: securityHeaders.reportRoute,
+          method: 'post',
+          handler: resolver.resolve('../runtime/server/handlers/cspReport.post'),
+        })
+      }
+      try {
+        await installModule('nuxt-security', buildNuxtSecurityConfig(securityHeaders))
+      } catch (error) {
+        throw new Error(
+          `${PACKAGE_NAME}: security.headers is enabled but nuxt-security could not be ` +
+            'installed. It is an optional peer dependency, so add it to the app: ' +
+            `pnpm add -D nuxt-security. Original failure: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          { cause: error },
+        )
+      }
+    }
+
     nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {
       ui: {
         colors: {
@@ -612,6 +663,12 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
       logLevel: process.env.LOG_LEVEL || 'warn',
       session: {
         password: process.env.NUXT_SESSION_PASSWORD || '',
+      },
+      // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
+      // headers it still owns, and by the app-tools live probe.
+      nardukSecurityHeaders: {
+        mode: securityHeaders.mode,
+        reportRoute: securityHeaders.reportRoute,
       },
       public: {
         appVersion,

@@ -27,6 +27,130 @@ that intentionally need user-location prompts can set
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
 blocked.
 
+## Security headers (`security.headers`)
+
+narduk-core has always set security headers.
+`runtime/server/middleware/securityHeaders.ts` is registered by
+`addServerScanDir` whenever the module's default `server: true` is in effect, so
+every app on this module already serves an enforcing Content-Security-Policy,
+`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` and
+`X-Content-Type-Options`. What that legacy policy is missing is the part that
+makes a CSP worth having:
+
+- no `Strict-Transport-Security` at all;
+- `script-src` carries `'unsafe-inline' 'unsafe-eval'`, so an injected inline
+  script is allowed by the very header meant to stop it;
+- no report-only mode and nowhere for violations to go;
+- per-app origins expressible only through `CSP_*_SRC` environment variables;
+- no `form-action` and no `upgrade-insecure-requests`.
+
+`security.headers` closes exactly those gaps. It wraps
+[`nuxt-security`](https://github.com/Baroshem/nuxt-security) (MIT) rather than
+reimplementing a header stack: it is maintained, targets Nuxt 4 through
+`@nuxt/kit ^4`, and its runtime imports no Node builtin — `crypto.subtle`,
+`crypto.getRandomValues`, `btoa` and `TextEncoder` are all workerd APIs.
+nuxt-security is an **optional peer dependency**, so an app that never enables
+the preset installs nothing extra.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: {
+    security: {
+      headers: {
+        enabled: true,
+        allow: {
+          script: ['https://p.nard.uk'],
+          connect: ['https://p.nard.uk', 'https://api.iconify.design'],
+          img: ['https://tiles.example'],
+        },
+      },
+    },
+  },
+})
+```
+
+### Three modes, and why the default is "change nothing"
+
+| `security.headers`                 | What is served                                                                                                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted or `false`                 | Exactly today's headers. Upgrading narduk-core changes nothing.                                                                                                                                           |
+| `{ enabled: true }`                | The legacy enforcing CSP **keeps being served**, and the strict nonce policy is served beside it as `Content-Security-Policy-Report-Only`. Every other header comes from nuxt-security, and HSTS appears. |
+| `{ enabled: true, enforce: true }` | The strict nonce policy becomes the enforcing `Content-Security-Policy` and the legacy one is retired.                                                                                                    |
+
+Both literal readings of "opt-in, report-only first" would have been regressions
+here. Making the headers opt-in would strip headers from every app that has them
+today, and starting an already-enforcing app in report-only would downgrade a
+live policy. Serving the two policies side by side during the soak avoids both:
+a browser enforces the `Content-Security-Policy` it is given and only _reports_
+on the `-Report-Only` one, so the soak cannot break a page.
+
+### The adoption path
+
+1. **Turn it on.** Set `security.headers.enabled` and deploy. Nothing a user can
+   see changes; the app now also serves HSTS and a report-only strict policy.
+2. **Soak, and read the violations.** Every violation is logged through
+   narduk-logging at `warn` from the report route (`/api/_security/csp-report`
+   by default). They go nowhere else — a report body carries the document URI
+   and, for an inline violation, a sample of the offending source, and shipping
+   that to a third-party collector is a data-egress decision nobody made. Change
+   the path with `reportRoute`, or set `reportRoute: false` to serve no route
+   and emit no `report-uri`.
+3. **Fix what it found**, usually by adding the origin to `allow`. A week of
+   real traffic across the routes that matter is a reasonable soak; a quiet
+   route proves nothing about a busy one.
+4. **Enforce.** Set `enforce: true` and deploy. From here the legacy CSP is gone
+   and the strict policy is the one in force.
+
+Prove the deployment at any step with
+`narduk-app foundation:check:security-headers --base-url https://your.app`,
+which reads the live response headers and reports each one proven, a gap, or
+unknown.
+
+### Options
+
+| Option              | Default                                                                        | Notes                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`           | `false`                                                                        | Serve the strict policy at all.                                                                                                                            |
+| `enforce`           | `false`                                                                        | Promote it from report-only to enforcing.                                                                                                                  |
+| `allow`             | baseline only                                                                  | Extra origins per directive: `script`, `connect`, `img`, `font`, `style`, `frame`, `worker`, `media`. Merged onto the estate baseline, never replacing it. |
+| `strictDynamic`     | `true`                                                                         | Keep `'strict-dynamic'` in `script-src`. See the warning below.                                                                                            |
+| `hsts`              | 180 days, `includeSubdomains`, no preload                                      | `false` disables it. `preload` is never defaulted on, because submitting to the preload list is irreversible in practice.                                  |
+| `frameAncestors`    | `["'none'"]`                                                                   | Also drives the `X-Frame-Options` fallback, which can only express `DENY` and `SAMEORIGIN`.                                                                |
+| `referrerPolicy`    | `strict-origin-when-cross-origin`                                              |                                                                                                                                                            |
+| `permissionsPolicy` | camera, microphone, geolocation, payment, usb and `interest-cohort` all denied | Merged onto the baseline, so granting one does not restate the rest.                                                                                       |
+| `reportRoute`       | `/api/_security/csp-report`                                                    | `false` serves no route and emits no `report-uri`.                                                                                                         |
+
+An app that already sets `CSP_SCRIPT_SRC`, `CSP_CONNECT_SRC`, `CSP_FRAME_SRC`,
+`CSP_WORKER_SRC` or `CSP_MEDIA_SRC` keeps those origins: they are folded into
+the preset's allowlist, so turning the preset on does not quietly drop them.
+
+> [!WARNING] `'strict-dynamic'` makes a conforming browser **ignore every host**
+> in `script-src`, `'self'` included, and trust only scripts created by already-
+> trusted script. That is what makes a nonce policy strong, and it is also why a
+> script injected into the HTML _after_ Nitro responds — Cloudflare's Web
+> Analytics beacon, added by the edge HTML rewriter, is the estate's real case —
+> is not covered by listing its host. The report-only soak is where that gets
+> decided from evidence; `strictDynamic: false` falls back to host allowlisting.
+
+`style-src` keeps `'unsafe-inline'`. A nonce applies to elements, never to a
+`style="…"` attribute, and Vue's scoped-style runtime writes those constantly.
+It is the accepted cost of a nonce policy on a Vue app and does not weaken
+`script-src`, which is where injection actually lands.
+
+### Proving the nonce
+
+`scripts/prove-nonce.mjs` builds `tests/fixtures/nonce-app` with the strict
+policy **enforcing**, serves it on workerd through `wrangler dev --local`, and
+asserts that the CSP carries a real per-request nonce, that every script tag
+including Nuxt's inline `__NUXT_DATA__` hydration payload is stamped with it,
+that two requests get two different nonces, and that Chromium logs no CSP
+violation while the page hydrates. It is not part of `test:unit` — it needs a
+full Nitro build and a browser binary — so run it by hand when the preset, the
+Nuxt major, or the nuxt-security version moves.
+`tests/nuxt-security-contract.test.ts` is the cheap tripwire that runs in CI
+instead.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set

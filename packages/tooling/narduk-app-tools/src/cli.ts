@@ -13,6 +13,10 @@ import {
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
 import { runCapabilityCoverageCheckCommand } from './commands/capability-coverage-check.js'
+import {
+  parseSecurityHeadersCheckArgs,
+  runSecurityHeadersCheckCommand,
+} from './commands/security-headers-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {
@@ -39,6 +43,8 @@ function usage(): string {
     '                                       Item 8: UI apps must exact-pin published shared-UI packages',
     '  foundation:check:coverage [--checkout <dir>] [--json [path]]',
     '                                       Item 9: estate package inventory and app-local reimplementations',
+    '  foundation:check:security-headers --base-url <url> [--path <p>]... [--json [path]]',
+    "                                       Item 10: live probe of a deployment's security response headers",
   ].join('\n')
 }
 
@@ -136,6 +142,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check') {
       const { exitCode } = await runFoundationCheckCommand(parseFoundationCheckArgs(rest))
+      return exitCode
+    }
+    if (command === 'foundation:check:security-headers') {
+      const { exitCode } = await runSecurityHeadersCheckCommand(parseSecurityHeadersCheckArgs(rest))
       return exitCode
     }
     if (command === 'foundation:check:shared-ui-pinned') {

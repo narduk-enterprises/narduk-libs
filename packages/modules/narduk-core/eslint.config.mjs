@@ -81,9 +81,28 @@ const sequentialByDesign = {
   },
 }
 
+/**
+ * 4. The nonce proof fixture is a separate app, not layer source.
+ *
+ * `tests/fixtures/nonce-app` is a standalone Nuxt app that
+ * `scripts/prove-nonce.mjs` builds and serves on workerd. Its `.vue` files
+ * belong to its own Nuxt TypeScript project, which this layer never generates,
+ * so the typed linter cannot resolve them and reports a parsing error. It is
+ * excluded from `tsconfig.layer-tooling.json` for the same reason.
+ */
+const nonceFixture = {
+  name: 'narduk-core/ignore-nonce-fixture',
+  ignores: ['tests/fixtures/**'],
+}
+
 export default createAppLintConfig({
   withNuxt,
   capabilityPacks: [...nardukTemplateStrictCapabilityPacks],
-  extraOverrides: [portableLayerServerImports, ssrfValidatorNodeNet, sequentialByDesign],
+  extraOverrides: [
+    nonceFixture,
+    portableLayerServerImports,
+    ssrfValidatorNodeNet,
+    sequentialByDesign,
+  ],
   seoMode: 'required',
 })
