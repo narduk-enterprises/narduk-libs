@@ -31,6 +31,12 @@ export function useDatabase() {
   return createChain()
 }
 
+export function createAppDatabase() {
+  return function useAppDatabase() {
+    return createChain()
+  }
+}
+
 export async function executeDatabaseQuery<T>(query: unknown): Promise<T> {
   databaseStub.executedQueries.push(query)
   return databaseStub.rows as T

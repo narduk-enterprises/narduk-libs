@@ -23,6 +23,7 @@ const emailVerificationTypeSchema = z.enum([
 const bodySchema = z.union([
   z.object({
     code: z.string().min(1),
+    redirectType: emailVerificationTypeSchema.optional(),
     next: z.string().optional(),
   }),
   z.object({

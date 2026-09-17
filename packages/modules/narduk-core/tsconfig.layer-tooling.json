@@ -61,6 +61,7 @@
     "runtime/server/utils/runtime-env.ts",
     "runtime/server/utils/runtime-public.ts",
     "runtime/server/utils/runtime-url.ts",
+    "runtime/server/utils/sessionGrant.ts",
     "runtime/server/utils/user-session.ts",
     "runtime/server/utils/worker-env.ts",
     "runtime/shared/**/*.ts",

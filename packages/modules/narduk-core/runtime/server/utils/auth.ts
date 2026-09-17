@@ -17,6 +17,7 @@ import {
 } from './authApiKeyText'
 import { executeDatabaseQuery, getDatabaseRow, getDatabaseRows, useDatabase } from './database'
 import { useLogger } from './logger'
+import { validateSealedSessionGrant } from './sessionGrant'
 import { getLayerUserSession } from './user-session'
 
 import type { User } from '#narduk-core/schema'
@@ -27,6 +28,10 @@ import type { H3Event } from 'h3'
  *
  * Primary session: nuxt-auth-utils (sealed cookie). requireAuth / requireAdmin
  * use that by default, but an explicit API key bearer header takes precedence.
+ *
+ * When a session-grant validator is registered on the event (narduk-auth does
+ * this), the cookie is only a pointer: a missing or revoked server-side session
+ * fails closed with 401. Core-only apps have no validator and keep cookie-as-grant.
  *
  * Optional D1 session helpers (createSession, getSessionUser, destroySession) are
  * for apps that want server-side session listing/revocation in addition to sealed cookies.
@@ -235,8 +240,17 @@ export async function requireAuth(event: H3Event): Promise<AuthUser> {
 
   const session = await getLayerUserSession(event)
   if (session?.user) {
+    const grant = await validateSealedSessionGrant(event, session.user)
+    if (grant.status === 'invalid') {
+      throw createError({
+        statusCode: 401,
+        message: 'Unauthorized',
+      })
+    }
+
+    const principal = grant.status === 'valid' && grant.user ? grant.user : session.user
     return {
-      ...(session.user as unknown as Omit<AuthUser, 'authMethod' | 'scopes'>),
+      ...(principal as unknown as Omit<AuthUser, 'authMethod' | 'scopes'>),
       authMethod: 'session',
       scopes: [],
     }

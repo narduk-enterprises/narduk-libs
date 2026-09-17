@@ -72,6 +72,8 @@ export interface CookieLikeStorage {
 
 export type ExchangeCodeOptions = {
   next?: string | null
+  /** PKCE callbacks drop official `type`; the client forwards `?type=` here. */
+  redirectType?: string | null
 } & (
   | {
       code: string

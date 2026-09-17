@@ -49,21 +49,58 @@ export default defineConfig({
     // Each key is an exact module id: no other `#layer` / `#narduk-*` import in
     // this package shares one of these as a prefix.
     alias: {
+      'nitropack/runtime': join(packageRoot, 'tests/stubs/nitropack-runtime.ts'),
       '#auth-test-imports': join(packageRoot, 'tests/fixtures/nuxt-auto-imports.ts'),
       '#layer/server/database/schema': join(packageRoot, 'tests/stubs/layer-schema.ts'),
       '#layer/server/utils/auth': join(packageRoot, 'tests/stubs/layer-auth.ts'),
       '#layer/server/utils/database': join(packageRoot, 'tests/stubs/layer-database.ts'),
       // Resolved to the real narduk-core helper: the list-query contract is
       // what the route tests exercise, so it is never stubbed.
+      '#layer/server/utils/logger': join(packageRoot, 'tests/stubs/layer-logger.ts'),
       '#layer/server/utils/listQuery': join(
         packageRoot,
         '../narduk-core/runtime/server/utils/listQuery.ts',
       ),
       '#layer/server/utils/mutation': join(packageRoot, 'tests/stubs/layer-mutation.ts'),
+      '#layer/server/utils/password': join(
+        packageRoot,
+        '../narduk-core/runtime/server/utils/password.ts',
+      ),
       '#layer/server/utils/rateLimit': join(packageRoot, 'tests/stubs/layer-rate-limit.ts'),
+      '#layer/server/utils/sessionGrant': join(
+        packageRoot,
+        '../narduk-core/runtime/server/utils/sessionGrant.ts',
+      ),
+      '#narduk-auth-server/app-orm-tables': join(packageRoot, 'server/app-orm-tables.ts'),
+      '#narduk-auth-server/database/app-schema': join(packageRoot, 'server/database/app-schema.ts'),
       '#narduk-auth-server/utils/app-auth': join(packageRoot, 'tests/stubs/app-auth.ts'),
+      '#narduk-auth-server/utils/auth-bridge-database': join(
+        packageRoot,
+        'server/utils/auth-bridge-database.ts',
+      ),
+      '#narduk-auth-server/utils/auth-session-stability': join(
+        packageRoot,
+        'server/utils/auth-session-stability.ts',
+      ),
       '#narduk-auth-server/utils/auth-callback': join(packageRoot, 'tests/stubs/auth-callback.ts'),
+      '#narduk-auth-server/utils/auth-session-refresh-path': join(
+        packageRoot,
+        'server/utils/auth-session-refresh-path.ts',
+      ),
+      '#narduk-auth-server/utils/interactive-principal': join(
+        packageRoot,
+        'server/utils/interactive-principal.ts',
+      ),
       '#narduk-auth-server/utils/notifications': join(packageRoot, 'server/utils/notifications.ts'),
+      '#narduk-auth-server/utils/session-privilege': join(
+        packageRoot,
+        'server/utils/session-privilege.ts',
+      ),
+      '#narduk-auth-server/utils/session-grant-validator': join(
+        packageRoot,
+        'server/utils/session-grant-validator.ts',
+      ),
+      '#narduk-auth-server/utils/session-user': join(packageRoot, 'server/utils/session-user.ts'),
       '#narduk-core/schema': join(packageRoot, 'tests/stubs/core-schema.ts'),
     },
   },

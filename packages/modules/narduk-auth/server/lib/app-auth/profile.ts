@@ -12,9 +12,11 @@ import { useNativeAuth } from '../../utils/native-auth'
 import { encodeQrCodeDataUrl } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
 import {
+  clearAuthSessionRecoveryMode,
   commitSupabaseSessionFromClient,
   getCurrentSessionUser,
   getCurrentSupabaseContext,
+  revokeUserAuthSessions,
 } from './session'
 import {
   createSupabaseUserClient,
@@ -153,6 +155,7 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
       localUser: context.localUser,
       authUser: data.user,
       authSessionId: context.authSessionId,
+      recoveryMode: false,
     })
 
     await replaceLayerUserSession(event, {
@@ -162,6 +165,12 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
         recoveryMode: false,
       },
     })
+
+    // Keep this browser's session; stolen copies of other cookies die with their rows.
+    await revokeUserAuthSessions(event, sessionUser.id, {
+      exceptSessionId: sessionUser.authSessionId,
+    })
+    await clearAuthSessionRecoveryMode(event, sessionUser.authSessionId)
 
     return { success: true }
   }
@@ -200,6 +209,12 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   if (useRuntimeConfig(event).authNativeClients?.length) {
     await useNativeAuth(event).revokeUser(sessionUser.id)
   }
+
+  // Keep this browser's session; stolen copies of other cookies die with their rows.
+  await revokeUserAuthSessions(event, sessionUser.id, {
+    exceptSessionId: sessionUser.authSessionId,
+  })
+  await clearAuthSessionRecoveryMode(event, sessionUser.authSessionId)
   return { success: true }
 }
 

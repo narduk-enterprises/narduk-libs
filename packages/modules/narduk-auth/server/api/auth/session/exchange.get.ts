@@ -22,6 +22,7 @@ const emailVerificationTypeSchema = z.enum([
 const querySchema = z.union([
   z.object({
     code: z.string().min(1),
+    type: emailVerificationTypeSchema.optional(),
     next: z.string().optional(),
     returnPath: z.string().optional(),
   }),
@@ -53,6 +54,7 @@ export default defineEventHandler(async (event) => {
         ? await exchangeSupabaseCode(event, {
             code: query.data.code,
             next: query.data.next,
+            redirectType: query.data.type,
           })
         : await exchangeSupabaseCode(event, {
             tokenHash: query.data.token_hash,

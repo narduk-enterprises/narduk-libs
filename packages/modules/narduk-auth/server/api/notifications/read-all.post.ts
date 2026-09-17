@@ -5,11 +5,15 @@
  */
 import { defineUserMutation } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { markAllNotificationsAsRead } from '#narduk-auth-server/utils/notifications'
+import {
+  AUTH_NOTIFICATION_SCOPES,
+  markAllNotificationsAsRead,
+} from '#narduk-auth-server/utils/notifications'
 
 export default defineUserMutation(
   {
     rateLimit: RATE_LIMIT_POLICIES.notifications,
+    requiredScopes: [AUTH_NOTIFICATION_SCOPES.write],
   },
   async ({ event, user }) => {
     await markAllNotificationsAsRead(event, user.id)

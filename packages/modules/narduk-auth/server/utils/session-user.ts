@@ -1,5 +1,11 @@
 import { clearLayerUserSession, replaceLayerUserSession } from '#layer/server/utils/user-session'
 
+import {
+  loadAuthSessionRow,
+  loadAuthUserRow,
+  mergeAuthoritativeSessionUser,
+} from '../lib/app-auth/session'
+
 import { getCurrentSessionUser, getCurrentSupabaseContext } from './app-auth'
 import {
   isRecoverableSupabaseSessionFailure,
@@ -10,6 +16,7 @@ import type { AppSessionUser } from './app-auth'
 import type { H3Event } from 'h3'
 
 const inFlightSessionRefreshes = new Map<string, Promise<AppSessionUser>>()
+const REFRESHED_SESSION_USER_KEY = '_nardukRefreshedSessionUser'
 
 function isUnauthorizedError(error: unknown) {
   return (
@@ -41,14 +48,41 @@ function getCoalescedSessionRefresh(event: H3Event, authSessionId: string) {
   }
 }
 
-export async function useRefreshedSessionUser(event: H3Event): Promise<AppSessionUser | null> {
+async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null> {
   const sessionUser = await getCurrentSessionUser(event)
-  if (!sessionUser?.authSessionId) {
-    return sessionUser
+  if (!sessionUser) {
+    return null
+  }
+
+  if (!sessionUser.authSessionId) {
+    await clearLayerUserSession(event)
+    return null
+  }
+
+  const authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
+  if (!authSession) {
+    await clearLayerUserSession(event)
+    return null
+  }
+
+  const dbUser = await loadAuthUserRow(event, sessionUser.id)
+  if (!dbUser) {
+    await clearLayerUserSession(event)
+    return null
+  }
+
+  const principal = mergeAuthoritativeSessionUser(sessionUser, authSession, dbUser)
+
+  if (sessionUser.authBackend === 'local') {
+    if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
+      await clearLayerUserSession(event)
+      return null
+    }
+    return principal
   }
 
   if (wasAuthSessionRecentlyValidated(sessionUser)) {
-    return sessionUser
+    return principal
   }
 
   let reusedRefresh = false
@@ -74,6 +108,20 @@ export async function useRefreshedSessionUser(event: H3Event): Promise<AppSessio
     }
     throw error
   }
+}
+
+export async function useRefreshedSessionUser(event: H3Event): Promise<AppSessionUser | null> {
+  const context = event.context as H3Event['context'] & {
+    [REFRESHED_SESSION_USER_KEY]?: Promise<AppSessionUser | null>
+  }
+  const cached = context[REFRESHED_SESSION_USER_KEY]
+  if (cached) {
+    return cached
+  }
+
+  const pending = refreshSessionUser(event)
+  context[REFRESHED_SESSION_USER_KEY] = pending
+  return pending
 }
 
 export async function useRefreshedSessionUserResponse(event: H3Event) {
