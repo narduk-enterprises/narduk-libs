@@ -23,18 +23,21 @@ export async function validateRegisteredAuthSessionGrant(
   event: H3Event,
   _sessionUser: unknown,
 ): Promise<SessionGrantValidation> {
+  let user
   try {
-    const user = await useRefreshedSessionUser(event)
-    if (!user) {
-      return { status: 'invalid' }
-    }
-
-    assertSessionPrivilegeAllowsRequest(event, user)
-    return { status: 'valid', user }
+    user = await useRefreshedSessionUser(event)
   } catch (error) {
     useLogger(event).child('AppAuth').warn('Auth session grant validation failed closed', { error })
     return { status: 'invalid' }
   }
+
+  if (!user) {
+    return { status: 'invalid' }
+  }
+
+  // Privilege 403s (recovery_mode / mfa_required) must reach requireAuth.
+  assertSessionPrivilegeAllowsRequest(event, user)
+  return { status: 'valid', user }
 }
 
 export function attachAuthSessionGrantValidator(event: H3Event): void {

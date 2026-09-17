@@ -31,14 +31,11 @@ vi.mock('#layer/server/utils/user-session', () => ({
   replaceLayerUserSession,
 }))
 
-vi.mock('../server/utils/app-auth', () => ({
+vi.mock('../server/lib/app-auth/session', () => ({
   getCurrentSessionUser: async () => state.user,
   getCurrentSupabaseContext: async () => {
     throw new Error('supabase refresh must not run for a deleted or local session')
   },
-}))
-
-vi.mock('../server/lib/app-auth/session', () => ({
   loadAuthSessionRow: async (_event: H3Event, authSessionId: string) => {
     state.lookups += 1
     if (state.lookupError) throw state.lookupError

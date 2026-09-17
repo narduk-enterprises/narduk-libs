@@ -2,18 +2,18 @@ import { useLogger } from '#layer/server/utils/logger'
 import { clearLayerUserSession, replaceLayerUserSession } from '#layer/server/utils/user-session'
 
 import {
+  getCurrentSessionUser,
+  getCurrentSupabaseContext,
   loadAuthSessionRow,
   loadAuthUserRow,
   mergeAuthoritativeSessionUser,
 } from '../lib/app-auth/session'
-
-import { getCurrentSessionUser, getCurrentSupabaseContext } from './app-auth'
 import {
   isRecoverableSupabaseSessionFailure,
   wasAuthSessionRecentlyValidated,
 } from './auth-session-stability'
 
-import type { AppSessionUser } from './app-auth'
+import type { AppSessionUser } from '../lib/app-auth/types'
 import type { H3Event } from 'h3'
 
 const inFlightSessionRefreshes = new Map<string, Promise<AppSessionUser>>()
