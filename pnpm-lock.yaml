@@ -882,7 +882,7 @@ importers:
         specifier: ^4.4.8
         version: 4.5.2(magic-string@1.4.1)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.9)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.9)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
       h3:
-        specifier: ^1.15.4
+        specifier: ^1.15.11
         version: 1.15.11
     devDependencies:
       '@nuxt/schema':
@@ -10136,7 +10136,7 @@ snapshots:
   '@babel/template@7.29.7':
     dependencies:
       '@babel/code-frame': 7.29.7
-      '@babel/parser': 7.29.8
+      '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
 
   '@babel/traverse@7.29.7':

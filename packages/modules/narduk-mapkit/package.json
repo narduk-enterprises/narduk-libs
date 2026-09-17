@@ -93,7 +93,7 @@
   "dependencies": {
     "@apple/mapkit-loader": "^1.0.0",
     "@nuxt/kit": "^4.4.8",
-    "h3": "^1.15.4"
+    "h3": "^1.15.11"
   },
   "//devDependencies": "@types/apple-mapkit stays declared here as well because pnpm's isolated node_modules does not expose a transitive dependency to this package's own typecheck. The ./testing fake declares its own public types structurally, so the published .d.ts resolves without Apple's types installed; the link back to the real surface is tests/testing/apple-types.test.ts, which compares the fake member by member against apple-mapkit/mapkit and fails typecheck on drift. happy-dom is pinned to the exact version already resolved in this workspace's lockfile (see the narduk-mapkit-nuxt package.json note) -- a caret range makes pnpm re-resolve the shared entry for every other package (narduk-libs#124).",
   "devDependencies": {
