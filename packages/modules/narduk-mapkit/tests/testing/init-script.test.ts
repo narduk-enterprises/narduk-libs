@@ -26,7 +26,7 @@ function evaluateInitScript(options: FakeMapKitOptions = {}): Record<string, unk
     DOMPoint: (globalThis as { DOMPoint?: unknown }).DOMPoint,
     document: globalThis.document,
   }
-  // eslint-disable-next-line no-new-func -- evaluating the generated source IS the assertion.
+  // Evaluating the generated source IS the assertion.
   const run = new Function('globalThis', fakeMapKitInitScript(options)) as (
     scope: Record<string, unknown>,
   ) => void

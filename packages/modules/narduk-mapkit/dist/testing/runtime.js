@@ -12,7 +12,6 @@
  * Do not add a value import to this file, do not reference a module-scope
  * constant from inside the function, and do not hoist a helper out of it.
  */
-// eslint-disable-next-line sonarjs/cognitive-complexity -- one function by design; see the note above.
 export function createFakeMapKitRuntime(rawOptions = {}) {
     // ---------------------------------------------------------------- errors --
     class FakeMapKitNotImplemented extends Error {
@@ -64,8 +63,10 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                         ? value
                         : value.bind(object);
                 }
+                // A probe key answers `undefined`; a bare `return` says exactly that
+                // without the literal the lint rule rightly calls redundant.
                 if (probeKeys.has(property))
-                    return undefined;
+                    return;
                 return notImplemented(`${label}.${property}`);
             },
             set(object, property, value) {

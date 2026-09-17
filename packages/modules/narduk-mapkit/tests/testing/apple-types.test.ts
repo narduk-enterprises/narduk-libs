@@ -60,11 +60,9 @@ type Fakeify<T> = T extends Apple.Annotation
     ? FakeMapKitMap
     : T extends null
       ? null
-      : T extends readonly (infer Element)[]
-        ? Fakeify<Element>[]
+      : T extends ReadonlyArray<infer Element>
+        ? Array<Fakeify<Element>>
         : T
-
-/* eslint-disable @typescript-eslint/no-unused-vars -- each alias IS the assertion. */
 
 // ------------------------------------------------------------ status enums --
 // Apple keeps these as non-exported const objects, so they are read off the
@@ -315,8 +313,6 @@ type _namespaceRegionCtor = Expect<
     ConstructorParameters<Apple.MapKit['CoordinateRegion']>
   >
 >
-
-/* eslint-enable @typescript-eslint/no-unused-vars */
 
 describe('apple type conformance', () => {
   it('is enforced at compile time, not here', () => {

@@ -84,7 +84,7 @@ describe('authorization', () => {
         origin: 'https://preview.buoystat.us',
       },
     })
-    const errors: { message: string; status: string }[] = []
+    const errors: Array<{ message: string; status: string }> = []
     fake.mapkit.addEventListener('error', (event) => {
       const detail = event as Event & { message: string; status: string }
       errors.push({ message: detail.message, status: detail.status })
@@ -402,51 +402,57 @@ describe('the fidelity rule', () => {
     () =>
       (host as Record<string, unknown>)[key]
 
-  const expectNotImplemented = (member: string, attempt: () => unknown): void => {
+  /**
+   * Run `attempt`, require it to have thrown the fake's not-implemented error,
+   * and hand back the member it named so the caller can assert on it.
+   */
+  const notImplementedMember = (attempt: () => unknown): string => {
     let thrown: unknown
     try {
       attempt()
     } catch (error) {
       thrown = error
     }
-    expect(isFakeMapKitNotImplemented(thrown)).toBe(true)
-    expect((thrown as { member: string }).member).toBe(member)
+    if (!isFakeMapKitNotImplemented(thrown)) {
+      throw new Error(`Expected FakeMapKitNotImplemented, got: ${String(thrown)}`)
+    }
+    return thrown.member
   }
 
   it('throws for an unmodelled namespace member rather than answering undefined', () => {
     const fake = createFakeMapKit()
-    expectNotImplemented('mapkit.Geocoder', read(fake.mapkit, 'Geocoder'))
-    expectNotImplemented('mapkit.Search', read(fake.mapkit, 'Search'))
-    expectNotImplemented('mapkit.importGeoJSON', read(fake.mapkit, 'importGeoJSON'))
+    expect(notImplementedMember(read(fake.mapkit, 'Geocoder'))).toBe('mapkit.Geocoder')
+    expect(notImplementedMember(read(fake.mapkit, 'Search'))).toBe('mapkit.Search')
+    expect(notImplementedMember(read(fake.mapkit, 'importGeoJSON'))).toBe('mapkit.importGeoJSON')
   })
 
   it('throws for a member Apple has not shipped either', () => {
     const fake = createFakeMapKit()
-    expectNotImplemented(
+    expect(notImplementedMember(read(fake.mapkit, 'somethingInventedByATest'))).toBe(
       'mapkit.somethingInventedByATest',
-      read(fake.mapkit, 'somethingInventedByATest'),
     )
   })
 
   it('throws on a write to an unmodelled member', () => {
     const fake = createFakeMapKit()
-    expectNotImplemented('mapkit.tileCacheBudget (write)', () => {
-      ;(fake.mapkit as unknown as Record<string, unknown>)['tileCacheBudget'] = 1
-    })
+    expect(
+      notImplementedMember(() => {
+        ;(fake.mapkit as unknown as Record<string, unknown>)['tileCacheBudget'] = 1
+      }),
+    ).toBe('mapkit.tileCacheBudget (write)')
   })
 
   it('throws for an unmodelled map member', () => {
     const { map } = readyMap()
-    expectNotImplemented('mapkit.Map.overlays', read(map, 'overlays'))
-    expectNotImplemented('mapkit.Map.cameraDistance', read(map, 'cameraDistance'))
+    expect(notImplementedMember(read(map, 'overlays'))).toBe('mapkit.Map.overlays')
+    expect(notImplementedMember(read(map, 'cameraDistance'))).toBe('mapkit.Map.cameraDistance')
   })
 
   it('throws for an unmodelled annotation member', () => {
     const { fake } = readyMap()
     const pin = new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 })
-    expectNotImplemented(
+    expect(notImplementedMember(read(pin, 'clusteringIdentifier'))).toBe(
       'mapkit.Annotation.clusteringIdentifier',
-      read(pin, 'clusteringIdentifier'),
     )
   })
 

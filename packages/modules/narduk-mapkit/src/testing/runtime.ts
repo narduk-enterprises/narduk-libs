@@ -41,7 +41,6 @@ import type {
  * Do not add a value import to this file, do not reference a module-scope
  * constant from inside the function, and do not hoist a helper out of it.
  */
-// eslint-disable-next-line sonarjs/cognitive-complexity -- one function by design; see the note above.
 export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): FakeMapKitRuntime {
   // ---------------------------------------------------------------- errors --
 
@@ -95,7 +94,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
             ? value
             : (value as (...args: never[]) => unknown).bind(object)
         }
-        if (probeKeys.has(property)) return undefined
+        // A probe key answers `undefined`; a bare `return` says exactly that
+        // without the literal the lint rule rightly calls redundant.
+        if (probeKeys.has(property)) return
         return notImplemented(`${label}.${property}`)
       },
       set(object, property, value) {
@@ -127,9 +128,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
   const operations: FakeMapKitOperation[] = []
   const tokens: string[] = []
-  const bootstrapAttempts: { attempt: number; tokenIndex: number }[] = []
+  const bootstrapAttempts: Array<{ attempt: number; tokenIndex: number }> = []
   const configurationChanges: FakeMapKitConfigurationChangeStatus[] = []
-  const errors: { message: string; status: FakeMapKitConfigurationErrorStatus }[] = []
+  const errors: Array<{ message: string; status: FakeMapKitConfigurationErrorStatus }> = []
   const annotationCounts = new Map<
     string,
     { added: number; deselected: number; removed: number; selected: number }
