@@ -136,7 +136,10 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
       return null
     }
     if (isRecoverableSupabaseSessionFailure(error)) {
-      return sessionUser
+      // Degrade to "token not refreshed this request", never to
+      // "cookie is authoritative": the live users and auth_sessions rows
+      // were already read above, so isAdmin/recoveryMode stay server-sourced.
+      return principal
     }
     useLogger(event)
       .child('AppAuth')

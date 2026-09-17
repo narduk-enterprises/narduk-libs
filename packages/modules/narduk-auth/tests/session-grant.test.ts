@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   clearCalls: 0,
   lookups: 0,
   lookupError: null as Error | null,
+  supabaseError: null as Error | null,
   row: null as null | {
     aal?: string | null
     expiresAt: number
@@ -34,6 +35,7 @@ vi.mock('#layer/server/utils/user-session', () => ({
 vi.mock('../server/lib/app-auth/session', () => ({
   getCurrentSessionUser: async () => state.user,
   getCurrentSupabaseContext: async () => {
+    if (state.supabaseError) throw state.supabaseError
     throw new Error('supabase refresh must not run for a deleted or local session')
   },
   loadAuthSessionRow: async (_event: H3Event, authSessionId: string) => {
@@ -60,11 +62,12 @@ vi.mock('../server/lib/app-auth/session', () => ({
 
 const recentlyValidatedAt = new Date().toISOString()
 const STOLEN_SESSION_ID = 'sess-stolen'
+const PARENT_EMAIL = 'parent@example.com'
 
 function cookieUser(overrides: Partial<AppSessionUser> = {}): AppSessionUser {
   return {
     id: 'user-1',
-    email: 'parent@example.com',
+    email: PARENT_EMAIL,
     name: 'Parent',
     isAdmin: false,
     authBackend: 'supabase',
@@ -83,10 +86,11 @@ describe('web session grant validation', () => {
     state.clearCalls = 0
     state.lookups = 0
     state.lookupError = null
+    state.supabaseError = null
     state.row = null
     state.dbUser = {
       id: 'user-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     }
@@ -116,7 +120,7 @@ describe('web session grant validation', () => {
     state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
     state.dbUser = {
       id: 'user-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     }
@@ -133,7 +137,7 @@ describe('web session grant validation', () => {
     state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
     state.dbUser = {
       id: 'user-1',
-      email: 'parent@example.com',
+      email: PARENT_EMAIL,
       name: 'Parent',
       isAdmin: false,
     }
@@ -191,6 +195,17 @@ describe('web session grant validation', () => {
     await expect(validateRegisteredAuthSessionGrant(event(), state.user)).resolves.toEqual({
       status: 'invalid',
     })
+    expect(state.clearCalls).toBe(0)
+  })
+
+  it('keeps the live users row isAdmin when a Supabase refresh fails recoverably', async () => {
+    state.user = cookieUser({ isAdmin: true, authSessionValidatedAt: '2020-01-01T00:00:00.000Z' })
+    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
+    state.dbUser = { id: 'user-1', email: PARENT_EMAIL, name: 'Parent', isAdmin: false }
+    state.supabaseError = new Error('fetch failed')
+    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
+
+    await expect(useRefreshedSessionUser(event())).resolves.toMatchObject({ isAdmin: false })
     expect(state.clearCalls).toBe(0)
   })
 
