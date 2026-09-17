@@ -24,8 +24,8 @@ if (!TEAM_ID || !KEY_ID || !PRIVATE_KEY) {
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 
 /** Mint a MapKit JS token. `origin` null => no origin claim at all. */
-export function mintToken({ origin, ttlSeconds = 1800 }) {
-  const iat = Math.floor(Date.now() / 1000);
+export function mintToken({ origin, ttlSeconds = 1800, iatOffset = 0 }) {
+  const iat = Math.floor(Date.now() / 1000) + iatOffset;
   const header = { alg: 'ES256', kid: KEY_ID, typ: 'JWT' };
   const payload = { iss: TEAM_ID, iat, exp: iat + ttlSeconds };
   if (origin) payload.origin = origin;
