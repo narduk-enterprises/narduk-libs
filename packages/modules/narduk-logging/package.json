@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-logging",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Structured, private-by-default logging for Narduk applications, services, and jobs.",
   "license": "MIT",

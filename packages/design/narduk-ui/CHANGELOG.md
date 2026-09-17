@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-ui
 
+## 0.1.4
+
+### Patch Changes
+
+- 31a43a7: Stop `NsFreshnessChip` from reading the ambient clock during SSR. Without `now`,
+  the preferred `observedAt` path renders a stable placeholder until mount.
+
 ## 0.1.3
 
 ### Patch Changes
