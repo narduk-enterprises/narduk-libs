@@ -473,6 +473,8 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     selectedValue: FakeMapKitAnnotation | null = null
     readonly ownedAnnotations: FakeMapKitAnnotation[] = []
     destroyed = false
+    /** Apple's constructor default is `true`; the documented `<AppMapKit>` default is `false`. */
+    isRotationEnabled: boolean
 
     constructor(parent?: string | HTMLElement | null, options: FakeMapKitMapOptions = {}) {
       super()
@@ -492,6 +494,7 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       element.style.height = `${viewportHeight}px`
       host.append(element)
       this.element = element
+      this.isRotationEnabled = options.isRotationEnabled ?? true
       this.regionValue = options.region
         ? new CoordinateRegion(options.region.center, options.region.span)
         : new CoordinateRegion(options.center ?? new Coordinate(), new CoordinateSpan(1, 1))

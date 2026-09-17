@@ -4,9 +4,11 @@ Canonical Apple MapKit JS workspace for Narduk web apps. It publishes two
 public, independently versioned packages through GitHub Packages:
 
 - `@narduk-enterprises/narduk-mapkit` — framework-neutral client, server, token,
-  geometry, temporal, vector-overlay, and Apple Maps Server API helpers.
-- `@narduk-enterprises/narduk-mapkit-nuxt` — `AppMapKit`, `useMapKit`,
-  `useMapkitToken`, Nuxt registration, and `/api/mapkit-token`.
+  geometry, temporal, vector-overlay, and Apple Maps Server API helpers, plus
+  the `./nuxt` entry: a Nuxt 4 module registering `<AppMapKit>`, `useMapKit()`,
+  and the same-host token route.
+- `@narduk-enterprises/narduk-mapkit-nuxt` — the 2.0.x adapter, for apps that
+  have not moved to the `./nuxt` entry.
 
 This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
 token routes, browser bootstrapping, coordinate and region math, GeoJSON and
@@ -93,13 +95,107 @@ versions normally.
 
 ## Nuxt integration
 
-The adapter auto-registers `AppMapKit`, `useMapKit`, `useMapkitToken`, and the
-token route. The component fills its parent, so the parent must establish an
-explicit height. The adapter has no Nuxt UI or color-mode-module dependency.
+`@narduk-enterprises/narduk-mapkit/nuxt` is a Nuxt 4 module. It registers
+`<AppMapKit>`, `useMapKit()`, and the same-host token route, and it has no Nuxt
+UI and no color-mode-module dependency.
 
-Missing signing material returns `503` with `{"error": "unconfigured"}`; a
-request that is not same-origin returns `403`. See `packages/nuxt/README.md` for
-options and runtime configuration.
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-mapkit/nuxt'],
+  nardukMapKit: {
+    libraries: ['map', 'annotations', 'overlays'],
+    tokenRoute: true,
+  },
+})
+```
+
+| Option           | Default                              | What it does                                                      |
+| ---------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `component`      | `true`                               | Register `<AppMapKit>`.                                           |
+| `composables`    | `true`                               | Register `useMapKit()`.                                           |
+| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.  |
+| `language`       | _unset_                              | Passed to Apple's loader.                                         |
+| `rateLimit`      | `{ limit: 30, windowSeconds: 60 }`   | Fixed-window ceiling on the token route, per routed origin.       |
+| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.   |
+| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.    |
+| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup. |
+
+`libraries` is **configurable, not hard-coded**. MapKit JS 6 ships
+`mapkit.core.js` as a stub, so an app that only draws annotations can drop
+`'overlays'` and an app that needs `'services'` can add it. An empty list is a
+configuration error rather than a silent fallback, because it would only move
+the failure to the first `new mapkit.Map(...)`.
+
+The signing material reaches the token route through `runtimeConfig`, seeded
+empty by the module so the app can fill it from the environment. The environment
+variable **names** are `APPLE_KEY_ID`, `APPLE_TEAM_ID`, and `APPLE_PRIVATE_KEY`
+(`APPLE_SECRET_KEY` is also read); on Cloudflare the same names are read from
+the Worker `env` binding. No option, log line, or `runtimeConfig.public` key
+ever carries a value. Missing signing material returns `503` with
+`{"error": "unconfigured"}`; a request that is not same-origin returns `403`.
+
+### `<AppMapKit>`
+
+The component fills its parent, so the parent must establish an explicit height.
+
+```vue
+<script setup lang="ts">
+const stations = ref([{ id: 'b7', label: 'Buoy 7', lat: 30.1, lng: -88.2 }])
+const selectedId = ref<string | null>(null)
+</script>
+
+<template>
+  <div style="height: 420px">
+    <AppMapKit
+      v-model:selectedId="selectedId"
+      :items="stations"
+      :item-key="(s) => s.id"
+      :item-label="(s) => s.label"
+      :pin-geometry="
+        () => ({ anchor: 'bottom-center', size: { height: 36, width: 28 } })
+      "
+    >
+      <template #callout="{ item, close }">
+        <NuxtLink :to="`/stations/${item.id}`" @click="close">{{
+          item.label
+        }}</NuxtLink>
+      </template>
+    </AppMapKit>
+  </div>
+</template>
+```
+
+- **`itemKey`** is the buoys#112 fix. With a stable key per item, a change to
+  `items` is diffed — added, moved, removed, restyled — instead of tearing every
+  annotation off the map and rebuilding it. It defaults to the item's `id`.
+- **`pinGeometry`** returns `{ anchor, anchorOffset, size }` per pin, replacing
+  2.0.x's single global `annotationSize`. `anchor` defaults to
+  `'bottom-center'`, which is what a teardrop pin wants; MapKit positions the
+  element's top-left, so the library computes the offset from the size rather
+  than making each app do it.
+- **`#callout`** is a scoped slot (`{ close, id, item, placement, position }`)
+  rendered through a `Teleport` into a host the library positions. MapKit's own
+  callout can only hold DOM handed to it as an element, which is why a
+  `NuxtLink` inside one never routes.
+- **`retry()`** is on the exposed API, alongside `closeCallout`,
+  `getDiagnostics`, `getMap`, `openCallout`, `scrollIntoView`, `select`,
+  `setRegion`, and `zoomToFit`. A MapKit failure clears the cached
+  initialization, so recovery is the caller's call — `#error` receives
+  `{ failure, retry }`.
+
+Three defaults flip in 2.1.0, each measured across the existing consumers:
+`preserveRegion` and `suppressSelectionZoom` are now `true`, and
+`showsPointsOfInterest` is now `false`.
+
+The SSR preload is emitted **by the component** through `useHead`, not by the
+module into the app head, so a page that renders no map makes no request to
+`cdn.apple-mapkit.com` at all. It carries no token: a token in the tag is
+MapKit's static, non-refreshable path.
+
+`@narduk-enterprises/narduk-mapkit-nuxt` stays at 2.0.x and is not part of this
+release; it remains the adapter for apps that have not moved to the `./nuxt`
+entry.
 
 ## Server Token Route
 

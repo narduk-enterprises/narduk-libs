@@ -25,7 +25,15 @@ const DEFAULT_DOPPLER_TIMEOUT_MS = 10_000
 
 export function readProcessEnv(): MapKitEnv {
   if (typeof process === 'undefined') return {}
-  return process.env
+  // Read it as the string dictionary it is. `NodeJS.ProcessEnv` is declared
+  // with an index signature and no properties of its own, but any package in
+  // the type graph may augment it with an optional key of its own
+  // (autoprefixer's AUTOPREFIXER_GRID, browserslist's BROWSERSLIST*). The
+  // moment one does, `MapKitEnv` -- whose keys are all optional -- becomes a
+  // weak type with no property in common with it, and the direct assignment
+  // stops compiling for a reason that has nothing to do with either type.
+  const env: Record<string, string | undefined> = process.env
+  return env
 }
 
 export function mapKitConfigFromEnv(env: MapKitEnv = readProcessEnv()): MapKitServerConfig {

@@ -334,6 +334,8 @@ export interface FakeMapKitShowItemsOptions {
 
 export interface FakeMapKitMapOptions {
   center?: { latitude: number; longitude: number }
+  /** Apple's constructor default is `true`. */
+  isRotationEnabled?: boolean
   region?: {
     center: { latitude: number; longitude: number }
     span: { latitudeDelta: number; longitudeDelta: number }
@@ -343,6 +345,7 @@ export interface FakeMapKitMapOptions {
 export interface FakeMapKitMap extends EventTarget {
   annotations: FakeMapKitAnnotation[]
   readonly element: HTMLElement | null
+  isRotationEnabled: boolean
   region: FakeCoordinateRegion
   selectedAnnotation: FakeMapKitAnnotation | null
   addAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation | null
