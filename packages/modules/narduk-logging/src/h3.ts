@@ -7,10 +7,12 @@ import {
 } from 'h3'
 import { createLogger } from './logger.js'
 import { requestId } from './worker.js'
+import { RequestTiming } from './timing.js'
 import { receiveClientLogs } from './ingestion.js'
 import type { H3Event } from 'h3'
 import type { Logger, LoggerOptions } from './types.js'
 import type { ClientIngestionOptions } from './ingestion.js'
+import type { RequestTimingOptions } from './timing.js'
 
 const INSTALLED = Symbol.for('@narduk/logging/nitro-installed')
 const STATE_KEY = '_nardukLoggingState'
@@ -19,6 +21,13 @@ const DEFAULT_SKIP = ['/_nuxt/', '/__nuxt', '/favicon', '/api/health', '/api/_na
 export interface RequestLoggingOptions extends LoggerOptions {
   requestLogging?: boolean
   skipPaths?: readonly string[]
+  /** Exposes named Server-Timing phases recorded via `useRequestTiming`. Default false: a public
+   *  response only carries `total`. */
+  timingExposePhases?: boolean
+  /** When set, a request whose total duration exceeds this many ms gets one structured `warn`
+   *  "Slow route" log line carrying the route, method, status, duration, and request ID already
+   *  bound to the request logger. Disabled (no line ever emitted) when left unset. */
+  slowRouteThresholdMs?: number
 }
 
 /** Structural adapter keeps standalone H3 consumers independent of Nitro's type imports. */
@@ -38,6 +47,7 @@ interface RequestState {
   completed: boolean
   options?: RequestLoggingOptions
   logger?: Logger
+  timing?: RequestTiming
 }
 
 function state(event: H3Event): RequestState {
@@ -49,6 +59,9 @@ function state(event: H3Event): RequestState {
       : event.node?.req
         ? getRequestHeader(event, 'x-request-id')
         : undefined,
+    // cf-ray gives a request that never sent its own ID an identity that still correlates with
+    // Cloudflare's own edge trace, instead of a UUID disconnected from everything else.
+    event.node?.req ? getRequestHeader(event, 'cf-ray') : undefined,
   )
   const value: RequestState = { id, start: performance.now(), completed: false }
   event.context[STATE_KEY] = value
@@ -59,6 +72,25 @@ function state(event: H3Event): RequestState {
 
 export function ensureRequestId(event: H3Event): string {
   return state(event).id
+}
+
+/**
+ * Returns the request's phase timer, creating it on first call. `exposePhases` (default false,
+ * or `current.options.timingExposePhases` from the Nitro plugin config) controls whether marked
+ * phases are rendered in the `Server-Timing` header at completion, or only the aggregate `total`.
+ * Calling this is optional — every request gets a `total`-only header from `installNitroLogging`
+ * even when a route never touches timing.
+ */
+export function useRequestTiming(event: H3Event, options?: RequestTimingOptions): RequestTiming {
+  const current = state(event)
+  if (!current.timing) {
+    current.timing = new RequestTiming({
+      start: current.start,
+      exposePhases: options?.exposePhases ?? current.options?.timingExposePhases,
+      clock: options?.clock,
+    })
+  }
+  return current.timing
 }
 
 /** The matched route avoids recording user-controlled path identifiers or query parameters. */
@@ -124,12 +156,20 @@ export function installNitroLogging(
     const config = current.options ?? options(event)
     if (current.completed) return
     current.completed = true
+    const timing = current.timing ?? new RequestTiming({ start: current.start })
+    const durationMs = Math.round(timing.totalMs())
+    if (event.node?.res && !event.node.res.headersSent) {
+      setResponseHeader(event, 'server-timing', timing.header())
+    }
+    if (config.slowRouteThresholdMs !== undefined && durationMs > config.slowRouteThresholdMs) {
+      useLogger(event, config).warn('Slow route', { status, durationMs })
+    }
     // Failures must remain visible even on health/internal routes skipped for normal traffic.
     if ((config.requestLogging === false || skipped(event, config)) && status < 500) return
     const log = useLogger(event, config).withContext({ path: requestRoute(event) })
     log[status >= 500 ? 'error' : 'info']('Request completed', {
       status,
-      durationMs: Math.round(performance.now() - current.start),
+      durationMs,
       ...(error === undefined ? {} : { error }),
     })
   }
@@ -187,4 +227,6 @@ export function defineClientLogHandler(options: DiagnosticsHandlerOptions) {
   )
 }
 
+export { requestIdHeaders } from './worker.js'
 export type { Logger, LoggerOptions } from './types.js'
+export type { RequestTiming, RequestTimingOptions } from './timing.js'

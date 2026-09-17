@@ -1,6 +1,8 @@
 export { createLogger, resolveLogLevel } from './logger.js'
 export { createConsoleSink, formatRecord } from './sinks.js'
 export { privateValue, sanitizeErrorForLog, sanitizeFields, sanitizeUrlForLog } from './sanitize.js'
+export { RequestTiming } from './timing.js'
+export type { RequestTimingOptions } from './timing.js'
 export type {
   ConfiguredLogLevel,
   JsonValue,
