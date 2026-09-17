@@ -168,6 +168,10 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         posthogFeatureFlagsEnabled: readBooleanEnv('POSTHOG_FEATURE_FLAGS_ENABLED'),
         posthogSessionReplayEnabled: readBooleanEnv('POSTHOG_SESSION_REPLAY_ENABLED'),
         posthogSurveysEnabled: readBooleanEnv('POSTHOG_SURVEYS_ENABLED'),
+        posthogWebVitalsEnabled: readBooleanEnv('POSTHOG_WEB_VITALS_ENABLED'),
+        posthogWebVitalsAttributionEnabled: readBooleanEnv(
+          'POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED',
+        ),
         indexNowKey: process.env.NUXT_PUBLIC_INDEXNOW_KEY || '',
       },
     })

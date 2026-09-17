@@ -69,6 +69,8 @@ takes priority over the build-time value) via narduk-core's `readRuntimeString`
 | `POSTHOG_FEATURE_FLAGS_ENABLED`                                   | `posthogFeatureFlagsEnabled`              | `false`                    | Enables PostHog feature flags.                                                                                             |
 | `POSTHOG_SESSION_REPLAY_ENABLED`                                  | `posthogSessionReplayEnabled`             | `false`                    | Enables PostHog session replay recording when explicitly set to `true`.                                                    |
 | `POSTHOG_SURVEYS_ENABLED`                                         | `posthogSurveysEnabled`                   | `false`                    | Enables PostHog surveys and their automatic display.                                                                       |
+| `POSTHOG_WEB_VITALS_ENABLED`                                      | `posthogWebVitalsEnabled`                 | `false`                    | Enables Core Web Vitals reporting (`$web_vitals`). See below.                                                              |
+| `POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED`                          | `posthogWebVitalsAttributionEnabled`      | `false`                    | Adds web-vitals attribution debug data. Ignored unless web vitals are enabled.                                             |
 | `NUXT_PUBLIC_INDEXNOW_KEY`                                        | `indexNowKey`                             | `''`                       | Public IndexNow key, used by the client-visible config surface (see also the private key below).                           |
 | — (from `narduk-core`)                                            | `posthogPublicKey`                        | `''`                       | PostHog **project API key**. Without this, `posthog.client` no-ops. Seeded by the runtime-public overlay, not this module. |
 | — (from `narduk-core`)                                            | `deploymentTarget`                        | `production`               | `production` \| `staging` \| `preview`. Drives the `is_internal_user`/`environment` PostHog super-properties (see below).  |
@@ -181,6 +183,103 @@ filter yourself and non-production traffic out of dashboards (Project Settings �
 
 `00-analytics-head.client` additionally preconnects to the PostHog/GA origins
 when the strategy is `immediate`.
+
+## Core Web Vitals
+
+Off by default, like every other PostHog capture feature in this module. Turn it
+on per app:
+
+```ts
+// nuxt.config.ts
+runtimeConfig: {
+  public: {
+    posthogWebVitalsEnabled: true,
+  },
+},
+```
+
+or set `POSTHOG_WEB_VITALS_ENABLED=true` in the build environment.
+
+This is **PostHog's own `$web_vitals` autocapture**, not a second pipeline.
+`posthog-js` ships a `webVitalsAutocapture` extension that buffers metrics and
+emits one `$web_vitals` event carrying `$web_vitals_<METRIC>_value` and
+`$web_vitals_<METRIC>_event` properties; enabling it is
+`capture_performance: { web_vitals: true }`, which `posthog.client` now sets
+from the flag above. PostHog's built-in Web Vitals dashboard reads the same
+event, so it works with no further setup.
+
+One thing does need help. The extension does not bundle the measurement code: it
+fetches `/static/web-vitals.js` from the PostHog host unless
+`window.__PosthogExtensions__.postHogWebVitalsCallbacks` is already populated —
+and that fetch is refused whenever `disable_external_dependency_loading` is set,
+which is this module's default whenever session replay is off. So
+`posthog.client` publishes those callbacks itself, from the pinned `web-vitals`
+package (the same library, and the same object PostHog's own asset publishes)
+before calling `posthog.init`. Net effect: no extra network request, no change
+to the module's external-dependency posture, and no roll-your-own collector.
+
+### Metrics
+
+`SupportedWebVitalsMetrics` in `posthog-js` is exactly `LCP | CLS | FCP | INP`,
+and all four are captured. **TTFB is not available** — PostHog's autocapture
+does not support it, and adding it would mean a second, parallel event stream.
+
+### Properties added by this module
+
+`posthog.client` installs a `before_send` hook that enriches `$web_vitals`
+events only; every other event passes through untouched.
+
+| Property                    | Example         | Notes                                                                                                                                                                                        |
+| --------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route`                     | `/stations/:id` | The **matched route pattern**, resolved from the URL recorded with the metric. Never a raw path, so record ids and slugs stay out of PostHog. `(unmatched)` when the router cannot match it. |
+| `build_version`             | `a1b2c3d4e5f6`  | Deployed commit SHA, from narduk-core's `runtimeConfig.public.buildVersion`. Omitted when unset.                                                                                             |
+| `connection_effective_type` | `4g`            | `navigator.connection.effectiveType`, where the browser exposes it.                                                                                                                          |
+| `connection_save_data`      | `false`         | `navigator.connection.saveData`, where the browser exposes it.                                                                                                                               |
+| `device_memory_gb`          | `8`             | `navigator.deviceMemory`, where the browser exposes it.                                                                                                                                      |
+| `cpu_cores`                 | `10`            | `navigator.hardwareConcurrency`, where the browser exposes it.                                                                                                                               |
+
+The app id needs no extra property: the `app` super property (plus
+`environment`, `is_internal_user`, `is_owner`, and `app_version`) is already
+registered on every event — see "Owner and preview traffic tagging" above.
+
+The route is resolved from the `$current_url` stamped on the nested metric
+payload rather than the event's own `$current_url`, because PostHog buffers
+before capturing and the page can change in between.
+
+### Batching and delivery
+
+Batching is PostHog's: buffered metrics are captured as one `$web_vitals` event
+when the URL changes, when every allowed metric has arrived, or after
+`web_vitals_delayed_flush_ms` (5s default). The `web-vitals` library finalizes
+CLS and INP when the page is hidden, so those normally arrive last and complete
+the batch. A caveat worth knowing: if the document is discarded before that
+timer fires and fewer than all four metrics are buffered, the batch is lost.
+That is upstream behavior, shared with every PostHog project using
+`$web_vitals`.
+
+### When nothing is captured
+
+Web vitals inherit every existing analytics gate — PostHog is never initialized
+at all when the app is in preview safe mode, has no `posthogPublicKey`, is on a
+local development host, or sets `analyticsLoadStrategy: 'off'`, so no vitals are
+collected in any of those states. On top of that,
+`capture_performance.web_vitals` is pinned explicitly to `false` when the flag
+is off, so a PostHog project-side `capturePerformance` remote config cannot
+start collecting vitals for an app that has not opted in.
+
+### Attribution
+
+`POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED` / `posthogWebVitalsAttributionEnabled`
+switches to the `web-vitals/attribution` build, which adds debugging detail such
+as the element responsible for a layout shift. It roughly doubles the size of
+the lazily-imported web-vitals chunk, so it is off by default and best used
+while investigating a specific regression.
+
+### Dashboard
+
+See
+[PostHog Core Web Vitals dashboard per app](../../../docs/operations/posthog-web-vitals-dashboard.md)
+for the per-app dashboard recipe.
 
 ## GA4 pageviews
 
