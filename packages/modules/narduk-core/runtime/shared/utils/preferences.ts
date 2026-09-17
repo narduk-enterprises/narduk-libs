@@ -469,3 +469,53 @@ export function applyPreferencesCacheToEvent(event: PreferenceAwareEvent | null 
   res.setHeader('Cache-Control', next['cache-control'] ?? 'private, no-store')
   if (next.vary) res.setHeader('Vary', next.vary)
 }
+
+/** Statuses the Fetch spec forbids a body on, so a rebuilt response must pass `null`. */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
+
+function isWebResponseLike(value: unknown): value is Response {
+  if (!value || typeof value !== 'object') return false
+  const headers = (value as { headers?: unknown }).headers
+  if (!headers || typeof headers !== 'object') return false
+  const candidate = headers as { delete?: unknown; get?: unknown; set?: unknown }
+  return (
+    typeof candidate.get === 'function' &&
+    typeof candidate.set === 'function' &&
+    typeof candidate.delete === 'function' &&
+    typeof (value as { status?: unknown }).status === 'number'
+  )
+}
+
+/**
+ * Strip the shared-cache headers off a web `Response` a handler returned.
+ *
+ * h3 runs `onBeforeResponse` **before** `handleHandlerResponse`, so a returned
+ * `Response` copies its own headers onto `event.node.res` after every strip
+ * this module does. Without this the documented shape — read preferences, then
+ * `return new Response(body, { headers })` — ships `CDN-Cache-Control` intact
+ * and Cloudflare stores one reader's units for the next one.
+ *
+ * Headers from a `fetch()` response are immutable, so an in-place edit that
+ * throws falls back to rebuilding the response around the same body.
+ */
+export function applyPreferencesCacheToWebResponse(response: unknown): Response | undefined {
+  if (!isWebResponseLike(response)) return undefined
+  const vary = varyWithPreferences(response.headers.get('vary'))
+
+  try {
+    for (const name of SHARED_CACHE_HEADER_NAMES) response.headers.delete(name)
+    response.headers.set('Cache-Control', 'private, no-store')
+    response.headers.set('Vary', vary)
+    return response
+  } catch {
+    const headers = new Headers(response.headers)
+    for (const name of SHARED_CACHE_HEADER_NAMES) headers.delete(name)
+    headers.set('Cache-Control', 'private, no-store')
+    headers.set('Vary', vary)
+    return new Response(NULL_BODY_STATUSES.has(response.status) ? null : response.body, {
+      headers,
+      status: response.status,
+      statusText: response.statusText,
+    })
+  }
+}

@@ -3,6 +3,7 @@ import { defineNitroPlugin } from 'nitropack/runtime'
 import {
   applyPreferencesCacheHeaders,
   applyPreferencesCacheToEvent,
+  applyPreferencesCacheToWebResponse,
   isPreferencesInfluenced,
 } from '../../shared/utils/preferences'
 
@@ -60,9 +61,15 @@ export default defineNitroPlugin((nitro) => {
     if (!isPreferencesInfluenced(context?.event)) return
     response.headers = applyPreferencesCacheHeaders(response.headers ?? {})
   })
-  nitro.hooks.hook('beforeResponse', (event) => {
+  nitro.hooks.hook('beforeResponse', (event, response) => {
     if (!isPreferencesInfluenced(event)) return
     applyPreferencesCacheToEvent(event)
+    // h3 writes a returned `Response`'s own headers onto `event.node.res`
+    // after this hook, so stripping the event alone is not enough: the
+    // response body itself has to be sanitised while it is still mutable.
+    const body = (response as { body?: unknown } | undefined)?.body
+    const sanitized = applyPreferencesCacheToWebResponse(body)
+    if (sanitized && response) (response as { body?: unknown }).body = sanitized
     warnIfPreferenceResponseInsideNitroCache(event)
   })
 })
