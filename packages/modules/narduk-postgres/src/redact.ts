@@ -58,6 +58,16 @@ const unredactedCauses = new WeakMap<object, unknown>()
 const SKIP_ERROR_KEYS = new Set(['cause', 'code', 'errors', 'message', 'name', 'stack'])
 
 /**
+ * Key names whose value is replaced wholesale rather than passed through
+ * `redactSecrets`. A driver holds the password as a bare value (`pg` attaches
+ * `parameters.password`), and a bare value carries none of the `scheme://u:p@`
+ * or `password=` shape `redactSecrets` matches. Biased to over-redact: an
+ * unnecessarily masked error extra costs a debugging hint, an unmasked one
+ * costs the credential.
+ */
+const SECRET_KEY_PATTERN = /pass|pwd|secret|token|credential|auth|key/iu
+
+/**
  * The driver object `redactErrorCause` copied. Not attached to the redacted
  * error (JSON.stringify / inspect would leak it). Server-side logging may
  * read it here; do not serialize the result.
@@ -81,8 +91,9 @@ export function rememberUnredactedCause(copy: object, original: unknown): void {
  *
  * `name` and a primitive `code` are preserved so callers can still branch
  * the way they do on the raw driver error. Enumerable extras (`address`,
- * `hostname`, `parameters.connectionString`) are copied after redaction so
- * `JSON.stringify` of the attached copy cannot carry a DSN.
+ * `hostname`, `parameters.connectionString`) are copied after redaction, and a
+ * secret-named key (`SECRET_KEY_PATTERN`) is replaced outright, so
+ * `JSON.stringify` of the attached copy cannot carry a DSN or a bare password.
  */
 export function redactErrorCause(
   cause: unknown,
@@ -160,10 +171,13 @@ function copyEnumerableOwn(
 ): void {
   for (const key of Object.keys(source)) {
     if (skip.has(key)) continue
+    const value = SECRET_KEY_PATTERN.test(key)
+      ? REDACTED
+      : redactErrorCause((source as Record<string, unknown>)[key], depth + 1, seen)
     Object.defineProperty(target, key, {
       configurable: true,
       enumerable: true,
-      value: redactErrorCause((source as Record<string, unknown>)[key], depth + 1, seen),
+      value,
       writable: true,
     })
   }

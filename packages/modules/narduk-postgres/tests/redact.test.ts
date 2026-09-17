@@ -112,3 +112,48 @@ describe('redactErrorCause', () => {
     expect(getUnredactedCause(copy)).toBe(original)
   })
 })
+
+describe('redactErrorCause enumerable extras', () => {
+  it('redacts a bare secret value held under a secret-named key', () => {
+    // `pg` attaches the resolved connection parameters to a connect error.
+    // The password is a bare value there, so `redactSecrets` (which matches a
+    // DSN or a `password=` pair) never sees a shape it can redact.
+    const driverError = Object.assign(new Error('connect ECONNREFUSED 10.70.0.4:5432'), {
+      code: 'ECONNREFUSED',
+      parameters: {
+        database: 'mybo_history',
+        host: '10.70.0.4',
+        password: 'hunter2',
+        user: 'ingest',
+      },
+    })
+
+    const redacted = redactErrorCause(driverError) as Error & {
+      parameters: Record<string, unknown>
+    }
+
+    expect(redacted.parameters.password).toBe(REDACTED)
+    expect(redacted.parameters.user).toBe('ingest')
+    expect(redacted.parameters.host).toBe('10.70.0.4')
+    expect(JSON.stringify(redacted)).not.toContain('hunter2')
+    expect(inspect(redacted, { depth: null, showHidden: true })).not.toContain('hunter2')
+    // The original is untouched and still recoverable for server-side logging.
+    expect(driverError.parameters.password).toBe('hunter2')
+    expect(getUnredactedCause(redacted)).toBe(driverError)
+  })
+
+  it('redacts secret-named keys on a nested plain object extra', () => {
+    const driverError = Object.assign(new Error('SASL authentication failed'), {
+      connection: { accessToken: 'abc123', sslPassword: 'hunter2' },
+    })
+
+    const redacted = redactErrorCause(driverError) as Error & {
+      connection: Record<string, unknown>
+    }
+
+    expect(redacted.connection.sslPassword).toBe(REDACTED)
+    expect(redacted.connection.accessToken).toBe(REDACTED)
+    expect(JSON.stringify(redacted)).not.toContain('hunter2')
+    expect(JSON.stringify(redacted)).not.toContain('abc123')
+  })
+})
