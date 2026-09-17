@@ -30,10 +30,7 @@ import {
   runSecurityHeadersCheckCommand,
 } from './commands/security-headers-check.js'
 import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
-import {
-  parseDeploymentCheckArgs,
-  runDeploymentCheckCommand,
-} from './commands/deployment-check.js'
+import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/deployment-check.js'
 import { runOgCommand } from './commands/og.js'
 
 function usage(): string {

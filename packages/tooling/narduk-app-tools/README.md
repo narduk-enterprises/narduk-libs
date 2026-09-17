@@ -309,6 +309,76 @@ Cloudflare's configuration matches what the repository declares (that is
 | 5    | smoke route wrong status or content type           |
 | 6    | a redirect left the origin under proof             |
 
+## The deployment standard block
+
+An app declares its half of the standard in the `deployment` block of
+`Config/cloudflare-app.json`.
+`narduk-app foundation:check:deployment [--checkout <dir>] [--strict] [--json [path]]`
+checks it (item 12, `deployment-standard-conformance`). Like items 8-11 it
+writes its own one-item artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/deployment-standard'`) rather than
+entering `foundation-check.json`, which is the ratified 7-item contract.
+
+```jsonc
+"deployment": {
+  "standard": "narduk-v1",
+  "builder": "workers-builds",
+  "productionBranch": "main",
+  "productionDeployCommand": "narduk-app deploy versions-upload",
+  "nonProductionDeployCommand": "narduk-app deploy versions-upload",
+  "nonProductionBranchBuilds": false,
+  "promotion": {
+    "mode": "auto-on-green",
+    "gateCheck": "ci / Required",
+    "credential": "cloudflare/prd/narduk-enterprises-<app>-promote"
+  },
+  "liveProof": {
+    "buildVersionHeader": "x-build-version",
+    "healthPath": "/api/health",
+    "smokePath": "/",
+    "attempts": 6,
+    "intervalSeconds": 10
+  },
+  "rollback": { "mode": "auto", "alert": "resend" },
+  "staging": { "enabled": false },
+  "previewBindings": { "d1": [], "kv": [], "r2": [] }
+}
+```
+
+`staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
+block that omits them still validates. `previewChecks` is accepted and optional
+(the shared workflow's `preview-checks` input). A `standard` other than
+`narduk-v1` means the app is deliberately exempt: it is reported as
+`not-applicable`, never as twenty violations of a contract it never claimed.
+
+**Rollout mode is the default, and it is the point.** An app with no
+`deployment` block reports `NOT ADOPTED` and exits **0**, so publishing this
+command turns no app's CI red; adoption happens app by app. `--strict` makes a
+missing block a failure, and is what CI passes once the estate has adopted.
+
+| Exit | Meaning                                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------- |
+| 0    | conformant, exempt, or not yet adopted (rollout mode)                                                      |
+| 1    | claims `narduk-v1` and does not satisfy it, or the preview-binding rule fired, or `--strict` with no block |
+| 2    | the block is valid but something it depends on could not be read                                           |
+
+**The rule that fails even in rollout mode.** A Worker version captures its
+binding _configuration_ but not the state behind it, and `preview_database_id`,
+`preview_id` and `preview_bucket_name` apply to `wrangler dev` only -- they do
+nothing for a Workers Builds preview. So an app that sets
+`nonProductionBranchBuilds: true` while its wrangler config binds production D1,
+KV or R2 would read and write production data from every pull request branch.
+The check refuses that combination unless `previewBindings` names a replacement
+for each of those bindings. Entries may be a bare binding name or an object
+carrying the preview resource's own ids.
+
+**What a green verdict does not mean.** This is a repository read with no
+credential. It cannot see the deploy commands actually configured on the Workers
+Builds connection, whether branch builds are enabled there, or whether a second
+Worker on another account serves the same hostname. Those need the live read.
+Every run prints that limitation beside its verdict, and the artefact carries it
+in `limitations`.
+
 ## Web foundation conformance
 
 `narduk-app foundation:check [--checkout <dir>] [--json [path]]` evaluates the

@@ -37,7 +37,10 @@ export interface DeploymentCheckFlags {
   strict: boolean
 }
 
-export function parseDeploymentCheckArgs(args: string[], cwd = process.cwd()): DeploymentCheckFlags {
+export function parseDeploymentCheckArgs(
+  args: string[],
+  cwd = process.cwd(),
+): DeploymentCheckFlags {
   const flags: DeploymentCheckFlags = {
     checkoutDir: cwd,
     jsonPath: null,

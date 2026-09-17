@@ -56,13 +56,7 @@ export const PREVIEW_BINDING_KINDS = ['d1', 'kv', 'r2'] as const
 export type PreviewBindingKind = (typeof PREVIEW_BINDING_KINDS)[number]
 
 /** Members of the shared workflow's `preview-checks` input (§3.4). */
-export const PREVIEW_CHECK_MEMBERS = [
-  'none',
-  'og',
-  'health',
-  'headers',
-  'e2e-subset',
-] as const
+export const PREVIEW_CHECK_MEMBERS = ['none', 'og', 'health', 'headers', 'e2e-subset'] as const
 
 const appPath = z
   .string()

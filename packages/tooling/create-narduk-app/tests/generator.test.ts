@@ -575,6 +575,38 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('TODO(onboarding):')
 
+      // The deployment standard: a build uploads a version and deploys
+      // nothing, so BOTH Cloudflare deploy commands must be the upload one --
+      // a production command that deploys puts a `main` push straight into
+      // production, which is the failure the standard exists to prevent.
+      expect(runbook, label).toContain(
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
+      )
+      expect(runbook, label).toContain(
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
+      )
+      expect(runbook, label).toContain('## The deployment standard')
+      expect(runbook, label).toContain('"standard": "narduk-v1"')
+      expect(runbook, label).toContain(
+        '"productionDeployCommand": "narduk-app deploy versions-upload"',
+      )
+      // Branch builds start OFF: a preview binds the Worker's production D1,
+      // KV and R2, so turning them on before preview bindings exist would let
+      // every pull request write production data.
+      expect(runbook, label).toContain('"nonProductionBranchBuilds": false')
+      expect(runbook, label).toContain(
+        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
+      )
+      expect(runbook, label).toContain('"previewBindings": { "d1": [], "kv": [], "r2": [] }')
+      expect(runbook, label).toContain('narduk-app foundation:check:deployment')
+      // The generator emits the block to paste, never the file itself:
+      // Config/cloudflare-app.json records live Cloudflare facts a checkout
+      // cannot know, and onboarding owns it.
+      expect(
+        files.some((file) => file.path === 'Config/cloudflare-app.json'),
+        label,
+      ).toBe(false)
+
       // docs/e2e-testing.md + apps/web/tests/e2e/visual-audit.spec.ts: the
       // shared narduk-testkit UI-quality toolkit, scoped to the one route
       // every scaffold actually has (generator-parity audit narduk-libs#D2 --
@@ -681,6 +713,12 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(webManifest.devDependencies['nitro-cloudflare-dev'], label).toBe(
         PACKAGE_VERSIONS['nitro-cloudflare-dev'],
+      )
+      // `--checkout ..` because the item reads Config/cloudflare-app.json and
+      // the wrangler config from the repository root, while pnpm runs this
+      // script with the cwd at apps/web.
+      expect(webManifest.scripts['foundation:deployment'], label).toBe(
+        'narduk-app foundation:check:deployment --checkout ..',
       )
     }
   })
