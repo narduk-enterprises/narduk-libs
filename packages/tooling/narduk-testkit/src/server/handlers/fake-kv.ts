@@ -17,7 +17,30 @@ export interface CreateFakeKVOptions {
 interface StoredEntry {
   expiresAtMs?: number
   metadata?: unknown
-  value: string
+  /**
+   * The raw bytes, never a decoded string. KV stores bytes: round-tripping a
+   * binary value through a UTF-8 string would silently replace every byte
+   * that is not valid UTF-8 with U+FFFD, so `get(key, 'arrayBuffer')` would
+   * hand back corrupted data while the real binding hands back the exact
+   * bytes that were written.
+   */
+  value: Buffer
+}
+
+/** KV's own key rules, enforced so a key a real namespace rejects fails here too. */
+const MAX_KEY_BYTES = 512
+/** KV's own floor: an `expirationTtl` below this is a 400 from the real API. */
+const MIN_EXPIRATION_TTL_SECONDS = 60
+
+function assertValidKey(key: string): void {
+  if (key === '') throw new TypeError('Key name cannot be empty.')
+  if (key === '.' || key === '..') throw new TypeError(`"${key}" is not allowed as a key name.`)
+  const byteLength = Buffer.byteLength(key, 'utf8')
+  if (byteLength > MAX_KEY_BYTES) {
+    throw new Error(
+      `KV PUT failed: 414 UTF-8 encoded length of ${byteLength} exceeds key length limit of ${MAX_KEY_BYTES}.`,
+    )
+  }
 }
 
 function isExpired(entry: StoredEntry, nowMs: number): boolean {
@@ -29,16 +52,18 @@ function resolveType(typeOrOptions: KVNamespaceGetOptions<string> | string | und
   return typeOrOptions?.type ?? 'text'
 }
 
-function decodeValue(value: string, type: string): unknown {
-  if (type === 'json') return JSON.parse(value)
+function decodeValue(value: Buffer, type: string): unknown {
+  if (type === 'json') return JSON.parse(value.toString('utf8'))
   if (type === 'arrayBuffer') {
-    const buf = Buffer.from(value, 'utf8')
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+    // A fresh copy, so a caller mutating the returned buffer cannot reach
+    // back into the stored entry.
+    const copy = Buffer.from(value)
+    return copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength)
   }
   if (type === 'stream') {
-    return Readable.toWeb(Readable.from([Buffer.from(value, 'utf8')]))
+    return Readable.toWeb(Readable.from([Buffer.from(value)]))
   }
-  return value
+  return value.toString('utf8')
 }
 
 /**
@@ -48,12 +73,17 @@ function decodeValue(value: string, type: string): unknown {
  * subset of the KV binding narduk-core and its consumers actually call (see
  * `packages/modules/narduk-core/runtime/server/utils/kv.ts`).
  *
+ * Key rules and expiration floors the real API enforces are enforced here too
+ * (empty/`.`/`..`/over-512-byte keys, `expirationTtl` under 60 seconds, an
+ * `expiration` in the past or less than 60 seconds out), because a fake that
+ * accepts what production rejects turns a broken handler into a green test.
+ *
  * Not emulated: KV's real eventual consistency (a write here is visible to
  * every subsequent read immediately, which a real KV replica does not
- * promise), per-namespace size/key-count limits, and `list`'s `cursor` is a
- * plain offset rather than KV's opaque cursor token — good enough to page
- * through a `list` result in a test, not to model a stable cursor across
- * concurrent writes.
+ * promise), the 25 MiB value and 1 KiB metadata size limits, per-namespace
+ * key-count limits, and `list`'s `cursor` is a plain offset rather than KV's
+ * opaque cursor token — good enough to page through a `list` result in a
+ * test, not to model a stable cursor across concurrent writes.
  */
 export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVNamespace {
   const now = options.now ?? Date.now
@@ -71,6 +101,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
 
   const namespace = {
     async delete(key: string): Promise<void> {
+      assertValidKey(key)
       store.delete(key)
     },
 
@@ -78,6 +109,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
       key: string,
       typeOrOptions?: KVNamespaceGetOptions<string> | string,
     ): Promise<unknown> {
+      assertValidKey(key)
       const entry = readEntry(key)
       if (!entry) return null
       return decodeValue(entry.value, resolveType(typeOrOptions))
@@ -87,6 +119,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
       key: string,
       typeOrOptions?: KVNamespaceGetOptions<string> | string,
     ): Promise<KVNamespaceGetWithMetadataResult<unknown, unknown>> {
+      assertValidKey(key)
       const entry = readEntry(key)
       if (!entry) return { cacheStatus: null, metadata: null, value: null }
       return {
@@ -101,6 +134,11 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
     ): Promise<KVNamespaceListResult<unknown, string>> {
       const prefix = listOptions.prefix ?? ''
       const limit = listOptions.limit ?? 1000
+      if (limit > 1000) {
+        throw new Error(
+          `KV GET failed: 400 Invalid key_count_limit of ${limit}. Please specify an integer less than 1000.`,
+        )
+      }
       const nowMs = now()
 
       const keys = [...store.entries()]
@@ -120,7 +158,7 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
 
       return (
         listComplete
-          ? { keys: page, list_complete: true }
+          ? { cacheStatus: null, keys: page, list_complete: true }
           : {
               cacheStatus: null,
               cursor: String(startIndex + limit),
@@ -135,15 +173,17 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
       value: ArrayBuffer | ArrayBufferView | ReadableStream | string,
       putOptions?: KVNamespacePutOptions,
     ): Promise<void> {
-      const text =
+      assertValidKey(key)
+
+      const bytes =
         typeof value === 'string'
-          ? value
+          ? Buffer.from(value, 'utf8')
           : Buffer.isBuffer(value)
-            ? value.toString('utf8')
+            ? Buffer.from(value)
             : ArrayBuffer.isView(value)
-              ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8')
+              ? Buffer.from(Buffer.from(value.buffer, value.byteOffset, value.byteLength as number))
               : value instanceof ArrayBuffer
-                ? Buffer.from(value).toString('utf8')
+                ? Buffer.from(value)
                 : (() => {
                     throw new TypeError(
                       'createFakeKVNamespace: put() only accepts a string, Buffer, ArrayBuffer, or ArrayBufferView in this fake — streamed bodies are not supported.',
@@ -152,12 +192,30 @@ export function createFakeKVNamespace(options: CreateFakeKVOptions = {}): KVName
 
       let expiresAtMs: number | undefined
       if (putOptions?.expirationTtl !== undefined) {
-        expiresAtMs = now() + putOptions.expirationTtl * 1000
+        const ttl = putOptions.expirationTtl
+        if (ttl < MIN_EXPIRATION_TTL_SECONDS) {
+          throw new Error(
+            `KV PUT failed: 400 Invalid expiration_ttl of ${ttl}. Expiration TTL must be at least ${MIN_EXPIRATION_TTL_SECONDS}.`,
+          )
+        }
+        expiresAtMs = now() + ttl * 1000
       } else if (putOptions?.expiration !== undefined) {
-        expiresAtMs = putOptions.expiration * 1000
+        const expiration = putOptions.expiration
+        const nowSeconds = Math.floor(now() / 1000)
+        if (expiration <= nowSeconds) {
+          throw new Error(
+            `KV PUT failed: 400 Invalid expiration of ${expiration}. Please specify integer greater than the current number of seconds since the UNIX epoch.`,
+          )
+        }
+        if (expiration - nowSeconds < MIN_EXPIRATION_TTL_SECONDS) {
+          throw new Error(
+            `KV PUT failed: 400 Invalid expiration of ${expiration}. Expiration times must be at least ${MIN_EXPIRATION_TTL_SECONDS} seconds in the future.`,
+          )
+        }
+        expiresAtMs = expiration * 1000
       }
 
-      store.set(key, { expiresAtMs, metadata: putOptions?.metadata, value: text })
+      store.set(key, { expiresAtMs, metadata: putOptions?.metadata, value: bytes })
     },
   }
 

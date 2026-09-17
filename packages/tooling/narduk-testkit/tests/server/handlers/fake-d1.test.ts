@@ -76,13 +76,124 @@ describe('createFakeD1Database', () => {
     expect(rows[1]).toEqual([1, 'A'])
   })
 
-  it('exec() runs multiple ;-separated statements and counts them', async () => {
+  // D1 counts exec() statements by LINE, not by semicolon. Verified against a
+  // real binding via miniflare: three statements on one line all execute and
+  // report `count: 1`; the same statements newline-separated report `count: 2`
+  // / `count: 3`.
+  it('exec() runs every ;-separated statement but counts by line, as D1 does', async () => {
     const db = createFakeD1Database()
     const result = await db.exec(
       'CREATE TABLE a (id INTEGER); CREATE TABLE b (id INTEGER); INSERT INTO a (id) VALUES (1)',
     )
-    expect(result.count).toBe(3)
+    expect(result.count).toBe(1)
     await expect(db.prepare('SELECT id FROM a').first()).resolves.toEqual({ id: 1 })
+    await expect(db.prepare('SELECT id FROM b').all()).resolves.toMatchObject({ results: [] })
+  })
+
+  it('exec() counts newline-separated statements individually', async () => {
+    const db = createFakeD1Database()
+    const result = await db.exec('CREATE TABLE a (id INTEGER);\nCREATE TABLE b (id INTEGER);')
+    expect(result.count).toBe(2)
+  })
+
+  describe('D1 rules SQLite alone would not enforce', () => {
+    // Real D1: `D1_ERROR: Wrong number of parameter bindings for SQL query.`
+    // node:sqlite on its own binds NULL for the missing value and returns a
+    // confidently wrong (empty) result, so a handler with a dropped bind
+    // would pass every test here and break in production.
+    it('rejects a bind() with too few values', async () => {
+      const db = await withSchema()
+      await expect(
+        db.prepare('SELECT * FROM users WHERE name = ? AND email = ?').bind('Logan').first(),
+      ).rejects.toThrow(/Wrong number of parameter bindings/)
+    })
+
+    it('rejects a bind() with too many values', async () => {
+      const db = await withSchema()
+      await expect(
+        db.prepare('SELECT * FROM users WHERE name = ?').bind('Logan', 'extra').all(),
+      ).rejects.toThrow(/Wrong number of parameter bindings/)
+    })
+
+    it('does not miscount a ? inside a string literal or a comment', async () => {
+      const db = await withSchema()
+      await db.prepare('INSERT INTO users (name, email) VALUES (?, ?)').bind('a?b', 'e@x').run()
+
+      await expect(
+        db
+          .prepare('SELECT name FROM users WHERE name = ? -- is it ?\n')
+          .bind('a?b')
+          .first<string>('name'),
+      ).resolves.toBe('a?b')
+      await expect(
+        db.prepare("SELECT * FROM users WHERE name = 'a?b'").first(),
+      ).resolves.toMatchObject({ name: 'a?b' })
+    })
+
+    it('leaves a named-parameter statement to the driver', async () => {
+      const db = await withSchema()
+      // D1 accepts a positional bind against a named statement without an
+      // arity complaint, so the fake must not invent one.
+      expect(() => db.prepare('SELECT * FROM users WHERE name = :name').bind('x')).not.toThrow()
+    })
+
+    // Real D1: `D1_COLUMN_NOTFOUND: Column not found (nope)`.
+    it('first(column) throws when the result set has no such column', async () => {
+      const db = await withSchema()
+      await db.prepare('INSERT INTO users (name, email) VALUES (?, ?)').bind('A', 'a@x.com').run()
+
+      await expect(db.prepare('SELECT name FROM users').first('nope')).rejects.toThrow(
+        /D1_COLUMN_NOTFOUND/,
+      )
+    })
+
+    it('first(column) still resolves null when there is no row at all', async () => {
+      const db = await withSchema()
+      await expect(
+        db.prepare('SELECT name FROM users WHERE email = ?').bind('missing').first('name'),
+      ).resolves.toBeNull()
+    })
+
+    // Real D1 returns a BLOB as a plain Array of byte values, not a Uint8Array.
+    it('returns a BLOB column as a plain byte array', async () => {
+      const db = createFakeD1Database()
+      await db.exec('CREATE TABLE b (id INTEGER PRIMARY KEY, payload BLOB)')
+      await db.exec("INSERT INTO b (id, payload) VALUES (1, x'0102ff')")
+
+      const row = await db.prepare('SELECT payload FROM b').first<{ payload: number[] }>()
+      expect(Array.isArray(row?.payload)).toBe(true)
+      expect(row?.payload).toEqual([1, 2, 255])
+
+      const column = await db.prepare('SELECT payload FROM b').first<number[]>('payload')
+      expect(column).toEqual([1, 2, 255])
+
+      const raw = await db.prepare('SELECT payload FROM b').raw<[number[]]>()
+      expect(raw[0]?.[0]).toEqual([1, 2, 255])
+    })
+
+    // Real D1's run() and all() return the identical shape; both carry rows.
+    it('run() returns rows for a row-returning statement, like all()', async () => {
+      const db = await withSchema()
+      await db.prepare('INSERT INTO users (name, email) VALUES (?, ?)').bind('A', 'a@x.com').run()
+
+      const result = await db.prepare('SELECT name FROM users').run<{ name: string }>()
+      expect(result.results).toEqual([{ name: 'A' }])
+      expect(result.meta.changes).toBe(0)
+      expect(result.meta.changed_db).toBe(false)
+    })
+
+    it('run() on INSERT ... RETURNING reports both the rows and the write', async () => {
+      const db = await withSchema()
+      const result = await db
+        .prepare('INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name')
+        .bind('A', 'a@x.com')
+        .run<{ id: number; name: string }>()
+
+      expect(result.results).toEqual([{ id: 1, name: 'A' }])
+      expect(result.meta.changes).toBe(1)
+      expect(result.meta.changed_db).toBe(true)
+      expect(result.meta.last_row_id).toBe(1)
+    })
   })
 
   describe('batch()', () => {

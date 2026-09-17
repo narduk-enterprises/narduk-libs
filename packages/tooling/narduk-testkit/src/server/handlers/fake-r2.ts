@@ -50,14 +50,63 @@ function computeEtag(body: Buffer): string {
   return createHash('md5').update(body).digest('hex')
 }
 
-function toR2Object(key: string, stored: StoredObject): R2Object {
+/**
+ * `list`'s options, plus the `include` the runtime honours.
+ *
+ * `@cloudflare/workers-types@4.20260511.1` omits `include` from
+ * `R2ListOptions`, but a real bucket does gate `httpMetadata`/`customMetadata`
+ * on it (verified against workerd via miniflare), so the fake must accept it.
+ */
+export type FakeR2ListOptions = R2ListOptions & {
+  include?: Array<'customMetadata' | 'httpMetadata'>
+}
+
+/** The byte window a `get` resolved to, in the `{ offset, length }` shape R2 reports. */
+interface ResolvedRange {
+  length: number
+  offset: number
+}
+
+/**
+ * Resolve an `R2Range` against a known object size the way R2 does: `suffix`
+ * counts back from the end, a bare `offset` runs to the end, and a window that
+ * starts past the end is unsatisfiable rather than empty.
+ */
+function resolveRange(range: Headers | R2Range | undefined, size: number): ResolvedRange {
+  if (!range) return { length: size, offset: 0 }
+
+  if (typeof (range as Headers).get === 'function') {
+    throw new TypeError(
+      'createFakeR2Bucket: get() does not accept a `Range` header object — pass the `{ offset, length }` / `{ suffix }` form instead.',
+    )
+  }
+
+  if ('suffix' in range && range.suffix !== undefined) {
+    const length = Math.min(range.suffix, size)
+    return { length, offset: size - length }
+  }
+
+  const offset = 'offset' in range && range.offset !== undefined ? range.offset : 0
+  if (offset >= size && size > 0) {
+    throw new Error('get: The requested range is not satisfiable (10039)')
+  }
+  const requested = 'length' in range && range.length !== undefined ? range.length : size - offset
+  return { length: Math.min(requested, size - offset), offset }
+}
+
+function toR2Object(key: string, stored: StoredObject, range?: ResolvedRange): R2Object {
   return {
-    checksums: { toJSON: () => ({}) } as unknown as R2Object['checksums'],
-    customMetadata: stored.customMetadata,
+    checksums: { toJSON: () => ({ md5: stored.etag }) } as unknown as R2Object['checksums'],
+    // R2 reports `{}` rather than `undefined` when an object carries no
+    // metadata, so a handler doing `object.customMetadata.owner` throws in
+    // exactly the same place it would in production.
+    customMetadata: stored.customMetadata ?? {},
     etag: stored.etag,
     httpEtag: `"${stored.etag}"`,
-    httpMetadata: stored.httpMetadata,
+    httpMetadata: stored.httpMetadata ?? {},
     key,
+    range: range ?? { length: stored.body.byteLength, offset: 0 },
+    // `size` is always the whole object's size, even for a ranged read.
     size: stored.body.byteLength,
     storageClass: 'Standard',
     uploaded: stored.uploaded,
@@ -71,39 +120,48 @@ function toR2Object(key: string, stored: StoredObject): R2Object {
   } as unknown as R2Object
 }
 
-function toR2ObjectBody(key: string, stored: StoredObject): R2ObjectBody {
+/** The message R2 itself raises when a body is consumed twice. */
+const BODY_ALREADY_USED =
+  'Body has already been used. It can only be used once. Use tee() first if you need to read it twice.'
+
+function toR2ObjectBody(key: string, stored: StoredObject, range: ResolvedRange): R2ObjectBody {
   let used = false
-  const base = toR2Object(key, stored)
+  const base = toR2Object(key, stored, range)
+  const bytes = stored.body.subarray(range.offset, range.offset + range.length)
+
+  // R2's body is single-use: a second read throws rather than replaying the
+  // bytes. A fake that replays them hides a double-read bug until production.
+  const consume = (): Buffer => {
+    if (used) throw new TypeError(BODY_ALREADY_USED)
+    used = true
+    return bytes
+  }
+
   return {
     ...base,
     async arrayBuffer() {
-      used = true
-      return stored.body.buffer.slice(
-        stored.body.byteOffset,
-        stored.body.byteOffset + stored.body.byteLength,
-      )
+      const body = consume()
+      const copy = Buffer.from(body)
+      return copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength)
     },
     get body() {
-      return Readable.toWeb(Readable.from(stored.body)) as unknown as ReadableStream
+      const body = consume()
+      return Readable.toWeb(Readable.from(body)) as unknown as ReadableStream
     },
     get bodyUsed() {
       return used
     },
     async blob() {
-      used = true
-      return new Blob([new Uint8Array(stored.body)])
+      return new Blob([new Uint8Array(consume())])
     },
     async bytes() {
-      used = true
-      return new Uint8Array(stored.body)
+      return new Uint8Array(consume())
     },
     async json<T>() {
-      used = true
-      return JSON.parse(stored.body.toString('utf8')) as T
+      return JSON.parse(consume().toString('utf8')) as T
     },
     async text() {
-      used = true
-      return stored.body.toString('utf8')
+      return consume().toString('utf8')
     },
   } as unknown as R2ObjectBody
 }
@@ -113,10 +171,15 @@ function toR2ObjectBody(key: string, stored: StoredObject): R2ObjectBody {
  * the body as a `Buffer` and computing a real MD5 etag so equality
  * assertions against a known upload's etag hold.
  *
+ * Ranged reads (`get(key, { range })`), R2's single-use body, and `list`'s
+ * `include` gate on the two metadata maps all behave as the real binding
+ * does, because each is a place where a more permissive fake would turn a
+ * broken handler into a green test.
+ *
  * Not emulated: multipart uploads (`createMultipartUpload` and friends),
- * conditional requests (`onlyIf`), R2's real per-region consistency
- * behavior, and `list`'s `delimiter`/`include` options beyond a flat
- * `prefix` + `cursor` page.
+ * conditional requests (`onlyIf` — `get` throws rather than quietly ignoring
+ * it), R2's real per-region consistency behavior, and `list`'s `delimiter`
+ * beyond a flat `prefix` + `cursor` page.
  */
 export function createFakeR2Bucket(options: CreateFakeR2Options = {}): R2Bucket {
   const now = options.now ?? (() => new Date())
@@ -127,9 +190,20 @@ export function createFakeR2Bucket(options: CreateFakeR2Options = {}): R2Bucket 
       for (const key of Array.isArray(keys) ? keys : [keys]) store.delete(key)
     },
 
-    async get(key: string): Promise<R2ObjectBody | null> {
+    async get(key: string, getOptions?: R2GetOptions): Promise<R2ObjectBody | null> {
+      if (getOptions?.onlyIf !== undefined) {
+        // Silently ignoring `onlyIf` would be the worst outcome: a real bucket
+        // answers a failed precondition with a body-less R2Object, so a
+        // handler that mishandles that path would pass here and 500 in
+        // production. Refusing is honest about the gap.
+        throw new Error(
+          'createFakeR2Bucket: get() does not emulate conditional requests (`onlyIf`) — a real bucket answers a failed precondition with a body-less R2Object. Test that path against a real (or `wrangler dev`) binding.',
+        )
+      }
+
       const stored = store.get(key)
-      return stored ? toR2ObjectBody(key, stored) : null
+      if (!stored) return null
+      return toR2ObjectBody(key, stored, resolveRange(getOptions?.range, stored.body.byteLength))
     },
 
     async head(key: string): Promise<R2Object | null> {
@@ -137,13 +211,23 @@ export function createFakeR2Bucket(options: CreateFakeR2Options = {}): R2Bucket 
       return stored ? toR2Object(key, stored) : null
     },
 
-    async list(listOptions: R2ListOptions = {}): Promise<R2Objects> {
+    async list(listOptions: FakeR2ListOptions = {}): Promise<R2Objects> {
       const prefix = listOptions.prefix ?? ''
       const limit = listOptions.limit ?? 1000
+      // `list` omits both metadata maps unless the caller opts in with
+      // `include`, so a test that reads `object.customMetadata` off a list
+      // result fails here exactly as it would against a real bucket.
+      const include = new Set(listOptions.include ?? [])
       const objects = [...store.entries()]
         .filter(([key]) => key.startsWith(prefix))
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([key, stored]) => toR2Object(key, stored))
+        .map(([key, stored]) =>
+          toR2Object(key, {
+            ...stored,
+            customMetadata: include.has('customMetadata') ? stored.customMetadata : undefined,
+            httpMetadata: include.has('httpMetadata') ? stored.httpMetadata : undefined,
+          }),
+        )
 
       const startIndex = listOptions.cursor ? Number.parseInt(listOptions.cursor, 10) : 0
       const page = objects.slice(startIndex, startIndex + limit)

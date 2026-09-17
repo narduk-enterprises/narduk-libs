@@ -1,4 +1,14 @@
-import { createError, defineEventHandler, getRouterParam, readBody } from 'h3'
+import {
+  createError,
+  defineEventHandler,
+  getQuery,
+  getRequestHeader,
+  getRouterParam,
+  getRouterParams,
+  readBody,
+  readRawBody,
+  setResponseHeader,
+} from 'h3'
 import { describe, expect, it } from 'vitest'
 
 import { callHandler } from '../../../src/server/handlers/call-handler'
@@ -122,5 +132,92 @@ describe('callHandler', () => {
   it('reports a validation failure as its own status', async () => {
     const response = await callHandler(echoNameHandler, { body: {}, method: 'POST' })
     expect(response.status).toBe(422)
+  })
+
+  /**
+   * `defineValidatedHandler` (narduk-core, narduk-libs#394) reads a request
+   * through exactly these h3 calls, in this order: `event.method`,
+   * `getRouterParams`, `getQuery`, `getRequestHeader('content-length')`,
+   * `readRawBody`, then `createError` for a rejected field. Driving the same
+   * sequence here proves the fake event supports the wrapper's whole request
+   * path without narduk-testkit taking a dependency on narduk-core (which
+   * would pull in narduk-logging and zod, and add a build-order edge, for one
+   * test). The end-to-end test against the real wrapper belongs in
+   * narduk-core's own suite, where that dependency direction already exists.
+   */
+  const validatedShapeHandler = defineEventHandler(async (event: H3Event) => {
+    const params = getRouterParams(event)
+    const query = getQuery(event)
+    const declaredLength = Number(getRequestHeader(event, 'content-length'))
+
+    if (!params.stationId) {
+      throw createError({
+        data: {
+          code: 'VALIDATION_FAILED',
+          issues: [{ message: 'Required', path: 'params.stationId' }],
+        },
+        statusCode: 400,
+        statusMessage: 'Validation failed',
+      })
+    }
+
+    const raw = BODY_METHODS.has(event.method ?? 'GET') ? await readRawBody(event) : undefined
+
+    return {
+      body: raw === undefined ? undefined : JSON.parse(String(raw)),
+      declaredLength,
+      limit: Number(query.limit),
+      stationId: params.stationId,
+    }
+  })
+
+  const BODY_METHODS = new Set(['DELETE', 'PATCH', 'POST', 'PUT'])
+
+  it('supports the whole defineValidatedHandler request path in one call', async () => {
+    const response = await callHandler(validatedShapeHandler, {
+      body: { reading: 4.2 },
+      method: 'POST',
+      params: { stationId: 'BUOY-12' },
+      query: { limit: 500 },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual({
+      body: { reading: 4.2 },
+      // createFakeEvent sets content-length itself, which is the header the
+      // wrapper bounds the body read on -- an absent one would make its
+      // maxBodyBytes guard untestable.
+      declaredLength: JSON.stringify({ reading: 4.2 }).length,
+      limit: 500,
+      stationId: 'BUOY-12',
+    })
+  })
+
+  it('maps a validation-shaped createError to its status, message and data', async () => {
+    const response = await callHandler(validatedShapeHandler, { method: 'POST' })
+
+    expect(response.status).toBe(400)
+    expect(response.body).toMatchObject({
+      data: { code: 'VALIDATION_FAILED', issues: [{ path: 'params.stationId' }] },
+      statusCode: 400,
+      statusMessage: 'Validation failed',
+    })
+  })
+
+  /**
+   * narduk-logging's `Server-Timing` emitter (narduk-libs#395) sets its header
+   * from Nitro's `beforeResponse` hook, which is Nitro's, not h3's — this
+   * harness calls a handler directly and never runs it. A handler that sets
+   * the header itself is read back correctly, which is what this asserts; a
+   * route relying on the hook needs an integration test, not this harness.
+   */
+  it('reads back a response header a handler set itself', async () => {
+    const timedHandler = defineEventHandler((event: H3Event) => {
+      setResponseHeader(event, 'Server-Timing', 'total;dur=12')
+      return { ok: true }
+    })
+
+    const response = await callHandler(timedHandler, {})
+    expect(response.headers['server-timing']).toBe('total;dur=12')
   })
 })

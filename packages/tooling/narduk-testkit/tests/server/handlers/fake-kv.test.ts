@@ -101,10 +101,10 @@ describe('createFakeKVNamespace', () => {
 
     it('omits an expired key from list()', async () => {
       const kv = createFakeKVNamespace()
-      await kv.put('expiring', 'value', { expirationTtl: 30 })
+      await kv.put('expiring', 'value', { expirationTtl: 60 })
       await kv.put('permanent', 'value')
 
-      vi.setSystemTime(new Date('2026-09-17T12:00:31.000Z'))
+      vi.setSystemTime(new Date('2026-09-17T12:01:01.000Z'))
       const result = await kv.list({})
       expect(result.keys.map((key) => key.name)).toEqual(['permanent'])
     })
@@ -112,13 +112,88 @@ describe('createFakeKVNamespace', () => {
     it('accepts an injected clock instead of the system clock', async () => {
       let currentMs = 0
       const kv = createFakeKVNamespace({ now: () => currentMs })
-      await kv.put('key', 'value', { expirationTtl: 10 })
+      await kv.put('key', 'value', { expirationTtl: 60 })
 
-      currentMs = 9_999
+      currentMs = 59_999
       await expect(kv.get('key')).resolves.toBe('value')
 
-      currentMs = 10_000
+      currentMs = 60_000
       await expect(kv.get('key')).resolves.toBeNull()
+    })
+  })
+
+  // Every rule below is one a real namespace enforces (verified against a real
+  // binding via miniflare). A fake that accepts what production rejects turns a
+  // broken handler into a green test.
+  describe('rules a real namespace enforces', () => {
+    it('round-trips binary bytes without UTF-8 corruption', async () => {
+      const kv = createFakeKVNamespace()
+      const bytes = new Uint8Array([0x00, 0xff, 0xfe, 0x41])
+      await kv.put('bin', bytes)
+
+      const roundTripped = new Uint8Array((await kv.get('bin', 'arrayBuffer')) as ArrayBuffer)
+      expect([...roundTripped]).toEqual([0x00, 0xff, 0xfe, 0x41])
+    })
+
+    it('streams the stored bytes back unchanged', async () => {
+      const kv = createFakeKVNamespace()
+      await kv.put('bin', new Uint8Array([0xff, 0x00]))
+
+      const stream = (await kv.get('bin', 'stream')) as ReadableStream<Uint8Array>
+      const chunks: number[] = []
+      const reader = stream.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) chunks.push(...value)
+      }
+      expect(chunks).toEqual([0xff, 0x00])
+    })
+
+    it('rejects an expirationTtl below 60 seconds', async () => {
+      const kv = createFakeKVNamespace()
+      await expect(kv.put('k', 'v', { expirationTtl: 30 })).rejects.toThrow(
+        /Expiration TTL must be at least 60/,
+      )
+    })
+
+    it('rejects an expiration in the past', async () => {
+      const kv = createFakeKVNamespace()
+      await expect(kv.put('k', 'v', { expiration: 100 })).rejects.toThrow(/Invalid expiration/)
+    })
+
+    it('rejects an expiration less than 60 seconds out', async () => {
+      const kv = createFakeKVNamespace()
+      const soon = Math.floor(Date.now() / 1000) + 30
+      await expect(kv.put('k', 'v', { expiration: soon })).rejects.toThrow(
+        /at least 60 seconds in the future/,
+      )
+    })
+
+    it.each([
+      ['an empty key', ''],
+      ['a "." key', '.'],
+      ['a ".." key', '..'],
+    ])('rejects %s', async (_label, key) => {
+      const kv = createFakeKVNamespace()
+      await expect(kv.put(key, 'v')).rejects.toThrow(TypeError)
+      await expect(kv.get(key)).rejects.toThrow(TypeError)
+    })
+
+    it('rejects a key over 512 UTF-8 bytes', async () => {
+      const kv = createFakeKVNamespace()
+      await expect(kv.put('k'.repeat(513), 'v')).rejects.toThrow(/key length limit of 512/)
+    })
+
+    it('rejects a list limit above 1000', async () => {
+      const kv = createFakeKVNamespace()
+      await expect(kv.list({ limit: 5000 })).rejects.toThrow(/key_count_limit/)
+    })
+
+    it('reports cacheStatus on a completed list, as the real binding does', async () => {
+      const kv = createFakeKVNamespace()
+      await kv.put('only', 'v')
+      await expect(kv.list({})).resolves.toMatchObject({ cacheStatus: null, list_complete: true })
     })
   })
 })

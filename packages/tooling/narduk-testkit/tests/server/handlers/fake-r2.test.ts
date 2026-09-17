@@ -212,6 +212,126 @@ describe('createFakeR2Bucket', () => {
       await object?.text()
       expect(object?.bodyUsed).toBe(true)
     })
+
+    // A real R2 body is single-use and throws on a second read. A fake that
+    // replays the bytes hides a double-read bug until production.
+    it('refuses a second read of the same body', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'value')
+
+      const object = await bucket.get('key')
+      await expect(object?.text()).resolves.toBe('value')
+      await expect(object?.text()).rejects.toThrow(/already been used/)
+    })
+
+    it('refuses a text() read after the body stream was taken', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'value')
+
+      const object = await bucket.get('key')
+      expect(object).not.toBeNull()
+      void object?.body
+      await expect(object?.text()).rejects.toThrow(/already been used/)
+    })
+  })
+
+  // Each case below was verified against a real binding via miniflare.
+  describe('ranged reads', () => {
+    it('returns only the requested window and reports it', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'hello world')
+
+      const object = await bucket.get('key', { range: { length: 5, offset: 0 } })
+      await expect(object?.text()).resolves.toBe('hello')
+      expect(object?.range).toEqual({ length: 5, offset: 0 })
+      // `size` stays the whole object's size, even for a ranged read.
+      expect(object?.size).toBe(11)
+    })
+
+    it('resolves a suffix range from the end', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'hello world')
+
+      const object = await bucket.get('key', { range: { suffix: 5 } })
+      await expect(object?.text()).resolves.toBe('world')
+      expect(object?.range).toEqual({ length: 5, offset: 6 })
+    })
+
+    it('runs a bare offset to the end of the object', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'hello world')
+
+      const object = await bucket.get('key', { range: { offset: 6 } })
+      await expect(object?.text()).resolves.toBe('world')
+      expect(object?.range).toEqual({ length: 5, offset: 6 })
+    })
+
+    it('rejects a range starting past the end of the object', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'hello world')
+
+      await expect(bucket.get('key', { range: { length: 5, offset: 100 } })).rejects.toThrow(
+        /not satisfiable/,
+      )
+    })
+
+    it('reports a full-object range on an unranged get and on head', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'hello world')
+
+      expect((await bucket.get('key'))?.range).toEqual({ length: 11, offset: 0 })
+      expect((await bucket.head('key'))?.range).toEqual({ length: 11, offset: 0 })
+    })
+  })
+
+  describe('metadata fidelity', () => {
+    it('omits both metadata maps from list() unless include asks for them', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('report.pdf', 'body', {
+        customMetadata: { owner: 'logan' },
+        httpMetadata: { contentType: 'application/pdf' },
+      })
+
+      const bare = await bucket.list({ prefix: 'report' })
+      expect(bare.objects[0]?.httpMetadata).toEqual({})
+      expect(bare.objects[0]?.customMetadata).toEqual({})
+
+      // `include` is cast because @cloudflare/workers-types@4.20260511.1 omits
+      // it from `R2ListOptions`, though a real bucket honours it.
+      const included = await bucket.list({
+        include: ['customMetadata', 'httpMetadata'],
+        prefix: 'report',
+      } as R2ListOptions)
+      expect(included.objects[0]?.httpMetadata).toEqual({ contentType: 'application/pdf' })
+      expect(included.objects[0]?.customMetadata).toEqual({ owner: 'logan' })
+    })
+
+    it('reports empty metadata maps, not undefined, for an object with none', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('plain', 'body')
+
+      const object = await bucket.head('plain')
+      expect(object?.httpMetadata).toEqual({})
+      expect(object?.customMetadata).toEqual({})
+    })
+
+    it('exposes the md5 checksum the etag is computed from', async () => {
+      const bucket = createFakeR2Bucket()
+      // `put` resolves to workers-types' nullable `onlyIf` overload (its
+      // `options` parameter is optional), so narrow before asserting.
+      const object = await bucket.put('key', 'hello world')
+      expect(object).not.toBeNull()
+      expect(object?.checksums.toJSON()).toEqual({ md5: object?.etag })
+    })
+  })
+
+  it('refuses a conditional get rather than silently ignoring onlyIf', async () => {
+    const bucket = createFakeR2Bucket()
+    await bucket.put('key', 'value')
+
+    // A real bucket answers a failed precondition with a body-less R2Object.
+    // Quietly returning the full body here would make a broken handler green.
+    await expect(bucket.get('key', { onlyIf: { etagMatches: 'bogus' } })).rejects.toThrow(/onlyIf/)
   })
 
   describe('writeHttpMetadata()', () => {
