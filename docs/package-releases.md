@@ -73,6 +73,40 @@ intact. Nuxt phases stay sequential because they share generated files and local
 runtime state. The pnpm store may fall back to an older main cache across
 lockfile changes; frozen installs and artifact validation remain mandatory.
 
+### Consumer scope
+
+The affected-package planner selects two levels of consumer proof. Both use the
+same `release:consumer-smoke` command locally and in CI:
+
+- **Packed artifacts** (`--artifacts-only`): pack and strictly lint every
+  publishable package, install the coordinated tarballs outside the workspace,
+  check versions and export resolution, execute testkit imports and its CLI,
+  then execute the packed generator and validate its manifests and references.
+  This mode never installs Chromium or the generated app, runs Nuxt/browser/D1
+  integration, or produces a reusable generated-app proof.
+- **Generated app** (the default): all artifact checks plus the generated app's
+  initial/frozen installs, typecheck, build, browser tests, D1 migrations,
+  performance budget, and deployment dry-run. Existing exact-input PR-to-main
+  proof reuse remains available only for this level.
+
+The app's inputs come from the generator's manifest factories and the shared
+smoke fixture options in `scripts/consumer-smoke-fixture.mjs`. Selection
+includes runtime, peer, optional, and build dependencies, plus the generator
+itself; there is no package-name allowlist to maintain. The packed generator's
+actual manifests are checked against that scope before the artifact-only path
+can pass. For example, a charts or geogrid source change still gets artifact
+validation, but does not build a generated Nuxt app that never installs that
+package.
+
+Shared repository inputs and unclassified paths select the full proof. Release
+PRs/commits, manual workflow dispatch, and `ci:full` also select full
+validation. Docs, changeset-only and package-test-only changes retain their
+existing skips. A private preview-only change keeps its own package gates; a
+private helper used by a publishable package still selects consumer validation.
+The final `verify` check rejects missing or contradictory selection outputs.
+Only full app runs upload `packed-consumer-proof`, so an artifact-only pass
+cannot be reused as browser or D1 evidence.
+
 ## When a Changeset is required
 
 `pnpm run release-plan:check` decides this in the `contracts` gate. It compares

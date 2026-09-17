@@ -1,0 +1,145 @@
+# Temporary PR #381 measurement and negative control; removed before final review.
+name: Packed consumer benchmark
+on:
+  push:
+    branches: [codex/packed-consumer-speed]
+permissions:
+  contents: read
+concurrency:
+  group: packed-consumer-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  benchmark:
+    name: packed artifacts / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [valid, invalid-export]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # Bound parent and nested pnpm lifecycle Node heaps.
+      NODE_OPTIONS: --max-old-space-size=2048
+      npm_config_node_options: --max-old-space-size=2048
+      # narduk-charts' build script overrides NODE_OPTIONS from this value.
+      NARDUK_BUILD_MAX_OLD_SPACE_SIZE: "2048"
+      TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Point TMPDIR at disk, outside the checkout
+        # The fixture must live outside the workspace: pnpm otherwise finds
+        # pnpm-workspace.yaml and treats it as another workspace member.
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP}/consumer-smoke"
+          mkdir -p "${tmp}"
+          echo "TMPDIR=${tmp}" >>"${GITHUB_ENV}"
+          df -h "${tmp}" | tail -1
+
+      - name: Materialize Changesets base branch
+        run: |
+          git rev-parse --verify "refs/remotes/origin/main^{commit}"
+          if [ "$(git branch --show-current)" != "main" ]; then
+            git branch --force main origin/main
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.33.4
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+
+      # Share one store across the root and every external consumer install.
+      - name: Share a job-local pnpm store across consumer installs
+        run: |
+          set -euo pipefail
+          store="${RUNNER_TEMP}/pnpm-store"
+          mkdir -p "${store}"
+          echo "npm_config_store_dir=${store}" >>"${GITHUB_ENV}"
+
+      # The packed consumer's root install is cold on every fresh hosted VM.
+      # Restore the store seeded by a successful main run before the root and
+      # external installs. On its first run, warm the root from the existing
+      # browser job's main-only cache; the consumer's later main run saves its
+      # own expanded store with generated-app dependencies. A lockfile change
+      # can reuse unchanged content from the previous store; frozen installs
+      # still resolve and verify the current lockfile.
+      - name: Restore pnpm store cache
+        id: pnpm-store-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/pnpm-store
+          key: narduk-libs-packed-consumer-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            narduk-libs-journeys-e2e-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+            narduk-libs-packed-consumer-pnpm-store-${{ runner.os }}-
+
+      # Turbo's content hashes invalidate stale restored build output.
+      - name: Restore turbo build cache
+        id: turbo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.turbo-cache
+          key: narduk-libs-packed-consumer-turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            narduk-libs-packed-consumer-turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build coordinated release set
+        # Public ubuntu-latest has 4 CPUs / 16 GiB; keep each Node heap at 2 GiB.
+        run: node scripts/prepare-packed-consumer.mjs --build-concurrency=4
+
+      - name: Select a representative geogrid source change
+        id: scope
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { appendFileSync } from 'node:fs'
+          import { computeAffectedSet } from './scripts/compute-affected-packages.mjs'
+          const plan = computeAffectedSet({ changedFiles: ['packages/modules/geogrid-web/src/index.ts'] })
+          assert.equal(plan.packedConsumer, true)
+          assert.equal(plan.generatedConsumer, false)
+          console.log(JSON.stringify(plan, null, 2))
+          appendFileSync(process.env.GITHUB_OUTPUT, `generated-consumer=${plan.generatedConsumer}\n`)
+          JS
+
+      - name: Seed a nonexistent published export
+        if: matrix.scenario == 'invalid-export'
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          import { loadWorkspace } from './scripts/compute-affected-packages.mjs'
+          const entry = loadWorkspace().byName.get('@narduk-enterprises/geogrid-web')
+          const path = `${entry.directory}/package.json`
+          const manifest = JSON.parse(readFileSync(path, 'utf8'))
+          manifest.exports['./consumer-speed-canary'] = './dist/does-not-exist.js'
+          writeFileSync(path, JSON.stringify(manifest, null, 2))
+          JS
+
+      - name: Prove packed artifacts and applicable generated app integration
+        env:
+          GENERATED_CONSUMER: ${{ steps.scope.outputs.generated-consumer }}
+        run: |
+          set -euo pipefail
+          case "${GENERATED_CONSUMER}" in
+            true) pnpm run release:consumer-smoke --install-browser ;;
+            false) pnpm run release:consumer-smoke --artifacts-only ;;
+            *) echo "::error::Planner did not report generated consumer applicability"; exit 1 ;;
+          esac
+
+      - name: Confirm no reusable generated app proof exists
+        run: test ! -e .ci-evidence/packed-consumer-proof/proof.json

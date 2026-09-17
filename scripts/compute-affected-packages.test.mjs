@@ -231,13 +231,14 @@ test('test-only and release-metadata changes keep package gates but skip packed 
   }
 })
 
-test('unclassified repository files fail closed to a full package run', () => {
+test('unclassified repository files fail closed to package and full consumer proof', () => {
   const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
   try {
     const result = computeAffectedSet({ root, changedFiles: ['config/unknown.yaml'] })
     assert.deepEqual(names(result), ['one', 'two'])
     assert.equal(result.fullRun, true)
-    assert.equal(result.packedConsumer, false)
+    assert.equal(result.packedConsumer, true)
+    assert.equal(result.generatedConsumer, true)
     assert.match(result.reasons.join('\n'), /unclassified repository path/u)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -381,4 +382,26 @@ test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () =>
     readFileSync(join(repoRoot, 'scripts/ci-package-durations.json'), 'utf8'),
   )
   assert.equal(typeof durations.gateSeconds['narduk-shell'], 'number')
+})
+
+test('private previews skip consumer proof but private build inputs retain it', () => {
+  const root = createWorkspace([
+    { directory: 'preview', manifest: { private: true } },
+    { directory: 'compiler', manifest: { private: true } },
+    {
+      directory: 'library',
+      manifest: { devDependencies: { [`${scope}compiler`]: 'workspace:*' } },
+    },
+  ])
+  try {
+    const preview = computeAffectedSet({ root, changedFiles: ['packages/preview/app.vue'] })
+    assert.deepEqual(names(preview), ['preview'])
+    assert.equal(preview.packedConsumer, false)
+    assert.equal(preview.generatedConsumer, false)
+    const compiler = computeAffectedSet({ root, changedFiles: ['packages/compiler/index.js'] })
+    assert.equal(compiler.packedConsumer, true)
+    assert.equal(compiler.generatedConsumer, true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
