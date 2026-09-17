@@ -10,7 +10,7 @@
     "directory": "packages/design/narduk-ui"
   },
   "publishConfig": {
-    "access": "restricted",
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "sideEffects": [

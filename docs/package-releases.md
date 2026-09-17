@@ -1,8 +1,11 @@
 # Package release and rollback runbook
 
 `narduk-libs` publishes independent, immutable SemVer packages to GitHub
-Packages. A release never republishes an existing version and never unpublishes
-an artifact.
+Packages as **public** artifacts (`publishConfig.access: public`). A release
+never republishes an existing version and never unpublishes an artifact.
+GitHub's npm registry still requires a packages-scoped token to install, even
+when the package visibility is public; public npmjs.org is a separate D-PKG-1
+exception and is not the registry used here.
 
 For the consumer-side sequence after publication, including exact-version lock
 regeneration, app-owned configuration, migration adoption, exact-head CI, and

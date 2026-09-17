@@ -22,11 +22,11 @@ const manifest = JSON.parse(
 ) as PackageManifest
 
 describe('narduk-timeseries package surface', () => {
-  it('publishes to GitHub Packages under restricted access', () => {
+  it('publishes to GitHub Packages as a public GitHub Package', () => {
     expect(manifest.name).toBe('@narduk-enterprises/narduk-timeseries')
     expect(manifest.private).toBe(false)
     expect(manifest.publishConfig).toEqual({
-      access: 'restricted',
+      access: 'public',
       registry: 'https://npm.pkg.github.com',
     })
   })

@@ -34,11 +34,11 @@ function exportTargets(): string[] {
 }
 
 describe('narduk-tenancy package boundary', () => {
-  it('publishes under the restricted GitHub Packages scope', () => {
+  it('publishes as a public GitHub Package', () => {
     expect(manifest.name).toBe('@narduk-enterprises/narduk-tenancy')
     expect(manifest.private).toBe(false)
     expect(manifest.publishConfig).toEqual({
-      access: 'restricted',
+      access: 'public',
       registry: 'https://npm.pkg.github.com',
     })
   })

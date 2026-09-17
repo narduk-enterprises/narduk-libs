@@ -10,7 +10,7 @@
     "directory": "packages/design/status-runtime"
   },
   "publishConfig": {
-    "access": "restricted",
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "main": "index.mjs",
