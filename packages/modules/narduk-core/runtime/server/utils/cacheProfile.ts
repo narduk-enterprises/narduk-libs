@@ -1,6 +1,7 @@
 import { getResponseHeader, getResponseStatus, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { isPreferencesInfluenced } from '../../shared/utils/preferences'
 import { resolveRuntimePublicOverlay } from './runtime-public'
 
 import type { H3Event } from 'h3'
@@ -103,7 +104,7 @@ export const CACHE_PROFILES = {
 
 /** Why a requested profile was downgraded to `none`. */
 export type CacheSuppressionReason =
-  'error-status' | 'preview-safe-mode' | 'set-cookie' | 'vary-wildcard'
+  'error-status' | 'preferences-cookie' | 'preview-safe-mode' | 'set-cookie' | 'vary-wildcard'
 
 export interface SetCacheProfileOptions {
   /**
@@ -246,6 +247,12 @@ function formatCdnCacheControl(profile: CacheProfile): string | undefined {
  * A preview build, an error response, and a response already carrying a
  * `Set-Cookie` are all cases where a cacheable header is a defect rather than a
  * tuning choice, so none of them are overridable by configuration.
+ *
+ * `preferences-cookie` joins them (narduk-libs#386): a body whose units, time
+ * zone or locale came from the reader's preference cookie belongs to that
+ * reader. The flag is set only by `usePreferences()` and `readPreferences()`,
+ * so a route that never touched preferences keeps exactly the profile it asked
+ * for and no existing app's cache posture changes.
  */
 function findSuppression(
   event: H3Event,
@@ -254,6 +261,7 @@ function findSuppression(
   if (getResponseStatus(event) >= 400) return 'error-status'
   if (readResponseHeader(event, 'Set-Cookie').length > 0) return 'set-cookie'
   if (vary === '*') return 'vary-wildcard'
+  if (isPreferencesInfluenced(event)) return 'preferences-cookie'
   if (resolveRuntimePublicOverlay(event).previewSafeMode) return 'preview-safe-mode'
   return undefined
 }
@@ -274,7 +282,12 @@ export function setCacheProfile(
   input: CacheProfileInput,
   options: SetCacheProfileOptions = {},
 ): CacheProfileResult {
-  const vary = normalizeVary(readResponseHeader(event, 'Vary'), options.vary)
+  // A preference-influenced response varies by cookie whatever the caller
+  // asked for, so `Cookie` is merged in before the guards read `Vary`.
+  const requestedVary = isPreferencesInfluenced(event)
+    ? [...(options.vary ?? []), 'Cookie']
+    : options.vary
+  const vary = normalizeVary(readResponseHeader(event, 'Vary'), requestedVary)
   const suppressedBy = findSuppression(event, vary)
   const profile = suppressedBy ? { ...CACHE_PROFILES.none } : resolveCacheProfile(event, input)
 
