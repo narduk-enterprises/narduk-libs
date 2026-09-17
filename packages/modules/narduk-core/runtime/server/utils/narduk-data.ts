@@ -3,30 +3,34 @@
  *
  * Every Narduk app that reads a narduk-data product performs the same three
  * steps: fetch `<origin>/<product>/current/manifest.json`, fetch the immutable
- * artifact the manifest names, and check that artifact against the manifest's
- * SHA-256 before trusting a byte of it. Apps were re-deriving that dance — and
- * the timeout, retry, coalescing and freshness policy around it — one server
- * util at a time.
+ * artifact **the manifest names**, and check that artifact against the
+ * manifest's SHA-256 before trusting a byte of it. Apps were re-deriving that
+ * dance — and the timeout, retry, coalescing and freshness policy around it —
+ * one server util at a time.
  *
  * Two layers live here, and nothing else is exported:
  *
  * - `fetchNardukDataJson` — one typed request: per-attempt timeout, a bounded
  *   retry that only ever applies to an idempotent `GET`/`HEAD`, a hard body-size
- *   ceiling, request-id propagation, and a caller-supplied response schema.
+ *   ceiling, an origin pin, request-id propagation, and a response schema.
  * - `createNardukDataClient` — the product read built on top of it: manifest,
- *   artifact, checksum, a short isolate-local memo, single-flight coalescing,
- *   an opt-in stale-if-error window, and freshness metadata.
+ *   artifact, checksum, consumer validation hooks, a short isolate-local memo,
+ *   single-flight coalescing, an opt-in stale-if-error window with a failure
+ *   cooldown, and freshness metadata.
  *
- * Truth is preserved rather than flattened. A value served from the stale path
- * says so; a manifest that states no publish time yields `state: 'unknown'`
- * rather than `'fresh'`; the producer's own staleness word is republished
- * verbatim beside the derived verdict instead of being mapped onto it; and a
- * schema failure, a checksum mismatch and an upstream outage stay distinct
- * error reasons rather than collapsing into an empty result.
+ * Truth is preserved rather than flattened. A value served from the fallback
+ * path says so through `source`; a manifest that states no observation time
+ * yields `state: 'unknown'` rather than `'fresh'`; the producer's own staleness
+ * word is republished verbatim beside the derived verdict instead of being
+ * mapped onto it; a cancelled caller is always told it was cancelled and is
+ * never handed stale data instead; and a schema failure, a consumer rejection,
+ * a checksum mismatch and an upstream outage stay distinct error reasons rather
+ * than collapsing into an empty result.
  *
  * Cloudflare Workers constraints: no Node-only APIs, no module-level cache (the
- * caller owns a client instance, whose cache is bounded by entry count), and no
- * timer this module has to clear — cancellation rides on `AbortSignal`.
+ * caller owns a client instance, whose cache is bounded by both entry count and
+ * retained bytes), and no timer this module has to clear — cancellation rides
+ * on `AbortSignal`.
  */
 
 /** Origin every published narduk-data product is served from. */
@@ -35,23 +39,40 @@ export const NARDUK_DATA_ORIGIN = 'https://data.nard.uk'
 const DEFAULT_TIMEOUT_MS = 15_000
 const DEFAULT_RETRIES = 1
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
+const DEFAULT_MANIFEST_MAX_BYTES = 256 * 1024
 const DEFAULT_TTL_MS = 60_000
 const DEFAULT_MAX_ENTRIES = 8
+const DEFAULT_MAX_CACHE_BYTES = 32 * 1024 * 1024
+const DEFAULT_FAILURE_COOLDOWN_MS = 10_000
 const REQUEST_ID_HEADER = 'x-request-id'
+
+/**
+ * Headers a caller may never forward to the data origin.
+ *
+ * A published product is public and needs no credential, so a caller's own
+ * `authorization` or `cookie` reaching it would be a credential leak to a
+ * different service, not a feature.
+ */
+const FORBIDDEN_FORWARD_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
+
+/** An artifact file name: one path segment, so a manifest cannot escape its release prefix. */
+const ARTIFACT_PATH_PATTERN = /^[A-Za-z0-9][\w.-]*$/u
 
 /**
  * Why a narduk-data read failed.
  *
- * - `aborted` — the caller's own signal cancelled the request.
+ * - `aborted` — the caller's own signal cancelled its read.
  * - `checksum` — the artifact does not match its immutable manifest.
  * - `http` — the upstream answered a non-2xx status (see `status`).
  * - `network` — the request never produced a response.
+ * - `rejected` — a consumer hook, the origin pin or the expected artifact path
+ *   refused an otherwise well-formed response.
  * - `schema` — the body was not JSON, or did not satisfy the supplied schema.
  * - `timeout` — an attempt ran past its timeout.
  * - `too-large` — the body exceeded the caller's byte ceiling.
  */
 export type NardukDataErrorReason =
-  'aborted' | 'checksum' | 'http' | 'network' | 'schema' | 'timeout' | 'too-large'
+  'aborted' | 'checksum' | 'http' | 'network' | 'rejected' | 'schema' | 'timeout' | 'too-large'
 
 /** Every failure this module raises, so callers can branch on `reason`. */
 export class NardukDataError extends Error {
@@ -89,20 +110,27 @@ export interface NardukDataSchema<T> {
 }
 
 /**
- * Per-request correlation and cancellation.
+ * Per-request correlation, cancellation and fetch injection.
  *
  * `requestId` is sent as `x-request-id`; a request-id middleware supplies it
- * from the incoming request rather than this module generating one. Note that
- * single-flight coalescing means only the caller whose read actually reached
- * the network contributes its id — callers joined onto that read are answered
- * by a request carrying the first caller's id.
+ * from the incoming request rather than this module generating one.
+ *
+ * `signal` cancels **this caller's read only**. It is deliberately not given to
+ * the shared upstream read: one caller disconnecting must not fail the other
+ * callers coalesced onto the same flight.
  */
 export interface NardukDataRequestContext {
-  /** Extra request headers; `accept` and `x-request-id` are set for you. */
+  /** Fetch implementation for this read, overriding the client's. */
+  fetch?: typeof fetch
+  /**
+   * Extra request headers. `accept`, `user-agent` and `x-request-id` are
+   * managed and cannot be overridden; `authorization`, `cookie` and
+   * `proxy-authorization` are dropped.
+   */
   headers?: Readonly<Record<string, string>>
   /** Correlation id propagated upstream as `x-request-id`. */
   requestId?: string
-  /** Caller cancellation, combined with the per-attempt timeout. */
+  /** Cancels this caller's read. Never cancels the shared upstream read. */
   signal?: AbortSignal
 }
 
@@ -116,6 +144,8 @@ interface NardukDataRequestPolicy {
   fetch?: typeof fetch
   /** Hard ceiling on the response body. Defaults to 16 MiB. */
   maxBytes?: number
+  /** Origin the URL must belong to. Defaults to `https://data.nard.uk`. */
+  origin?: string
   /** Extra attempts after the first, for an idempotent method. Defaults to 1. */
   retries?: number
   /** Timeout for each attempt, in milliseconds. Defaults to 15000. */
@@ -136,15 +166,20 @@ export interface NardukDataFetchOptions<T> extends NardukDataRequestPolicy {
  * The manifest fields this client depends on.
  *
  * A product may publish (and validate) far more; a caller-supplied
- * `manifestSchema` only has to produce at least this much.
+ * `manifestSchema` only has to produce at least this much. `newest_as_of` is
+ * the newest observation in the release and `evaluated_at` is when the producer
+ * cut it — they are different instants and this module keeps them apart.
  */
 export interface NardukDataReleaseManifest {
   artifact: { path: string; sha256: string }
   releaseId: string
   staleness?: {
     age_minutes?: number | null
+    evaluated_at?: string | null
+    fresh_if_less_than_minutes?: number | null
     newest_as_of?: string | null
     state?: string | null
+    warning_if_at_most_minutes?: number | null
   } | null
 }
 
@@ -152,41 +187,48 @@ export interface NardukDataReleaseManifest {
 export type NardukDataFreshnessState = 'aging' | 'fresh' | 'stale' | 'unknown'
 
 /**
- * When published data stops counting as current.
+ * When published data stops counting as current, mirroring the producer's own
+ * `fresh_if_less_than_minutes` / `warning_if_at_most_minutes` boundaries.
  *
- * Only the consumer knows a product's publish cadence, so there is no default:
- * a product that declares no thresholds reports `state: 'unknown'` rather than
- * inventing a verdict.
+ * Omitted, the client falls back to the thresholds the manifest publishes; with
+ * neither, the state is `unknown` rather than an invented verdict.
  */
 export interface NardukDataFreshnessThresholds {
-  /** Age past which the state is `aging`, in milliseconds. */
-  agingAfterMs: number
-  /** Age past which the state is `stale`, in milliseconds. */
-  staleAfterMs: number
+  /** Age up to and including which the state is `aging`; beyond it, `stale`. */
+  agingAtMostMs: number
+  /** Age below which the state is `fresh`. */
+  freshBelowMs: number
 }
 
 /** Where a served value came from. */
 export type NardukDataSource = 'memo' | 'stale-if-error' | 'upstream'
 
-/** Freshness metadata published beside every value this client returns. */
+/**
+ * Freshness metadata published beside every value this client returns.
+ *
+ * There is exactly one staleness signal a caller acts on — `source` says how
+ * the value was served, `state` says how old the data is. An observation
+ * timestamp in the future is reported as a negative `observedAgeMs` and counts
+ * as `fresh`, because producer clock skew is not staleness.
+ */
 export interface NardukDataFreshness {
   /** Milliseconds since `fetchedAt`, by this isolate's clock. */
   ageMs: number
-  /** When the served value was read from upstream. */
+  /** When the producer cut the release; `null` when the manifest states none. */
+  evaluatedAt: string | null
+  /** When this client read the served value from upstream. */
   fetchedAt: string
-  /** Age of `publishedAt`; `null` when the manifest states no publish time. */
-  publishedAgeMs: number | null
-  /** The producer's publish instant; `null` when the manifest states none. */
-  publishedAt: string | null
+  /** Age of `observedAt`; `null` when the manifest states no observation time. */
+  observedAgeMs: number | null
+  /** Newest observation in the release; `null` when the manifest states none. */
+  observedAt: string | null
   /** The producer's own staleness word, verbatim and unmapped; `null` when absent. */
   publishedState: string | null
   /** Release the served value belongs to. */
   releaseId: string
-  /** Where this value came from. */
+  /** How this value was served. `stale-if-error` is the fallback path. */
   source: NardukDataSource
-  /** True only when the value was served by the stale-if-error path. */
-  stale: boolean
-  /** Verdict derived from `publishedAgeMs` and the product's thresholds. */
+  /** Verdict derived from `observedAgeMs` and the thresholds in force. */
   state: NardukDataFreshnessState
 }
 
@@ -195,17 +237,30 @@ export interface NardukDataProduct<
   TArtifact,
   TManifest extends NardukDataReleaseManifest = NardukDataReleaseManifest,
 > {
-  /** Artifact file name inside the release, e.g. `public-buoy-data.json`. */
-  artifactPath: string
-  /** Thresholds for the derived state. Omitted, the state is `unknown`. */
+  /**
+   * Reject a release before its artifact is downloaded — a gate on
+   * `staleness.state`, a lifecycle field, a provenance check. Throw to refuse;
+   * the refusal is never cached.
+   */
+  acceptManifest?: (manifest: TManifest) => void
+  /**
+   * The artifact file name you expect inside the release. The URL is always
+   * built from `manifest.artifact.path`; when this is set, a manifest naming a
+   * different artifact is refused rather than silently followed.
+   */
+  artifactPath?: string
+  /** Thresholds for the derived state; defaults to the manifest's own. */
   freshness?: NardukDataFreshnessThresholds
+  /** Hard ceiling on the manifest body. Defaults to 256 KiB. */
+  manifestMaxBytes?: number
   /** Stricter manifest validator; defaults to the shared release contract. */
   manifestSchema?: NardukDataSchema<TManifest>
-  /** Hard ceiling on each body read for this product. Defaults to 16 MiB. */
+  /** Hard ceiling on the artifact body. Defaults to 16 MiB. */
   maxBytes?: number
   /**
-   * How long a last-good value may be served after an upstream failure.
-   * Defaults to 0 — fail closed, exactly as a hand-rolled read does today.
+   * How long a last-good value may be served after an upstream failure,
+   * measured from when that value was fetched — it never ratchets forward.
+   * Defaults to 0: fail closed, exactly as a hand-rolled read does today.
    */
   maxStaleMs?: number
   /** Product family id, e.g. `buoy-status-v1`. */
@@ -214,19 +269,36 @@ export interface NardukDataProduct<
   schema: NardukDataSchema<TArtifact>
   /** How long a value is served without re-reading upstream. Defaults to 60000. */
   ttlMs?: number
+  /**
+   * Cross-check the artifact against its manifest before the pair is cached.
+   * Throw to refuse; the refusal is never cached.
+   */
+  validate?: (data: TArtifact, manifest: TManifest) => void
 }
 
-/** A product read: the artifact, its manifest, and how fresh the pair is. */
+/** A product read: the artifact, its manifest, how fresh the pair is, and where it came from. */
 export interface NardukDataResult<TArtifact, TManifest> {
+  /** The artifact URL this value was read from — release provenance. */
+  artifactUrl: string
   data: TArtifact
   freshness: NardukDataFreshness
   manifest: TManifest
+  /** The manifest URL this value was resolved through. */
+  manifestUrl: string
 }
 
 /** Options shared by every product one client reads. */
 export interface NardukDataClientOptions {
+  /**
+   * After a failure that was answered from the stale window, how long to serve
+   * stale without re-attempting upstream. Defaults to 10000. `0` disables the
+   * cooldown, so every request re-pays the full retry budget during an outage.
+   */
+  failureCooldownMs?: number
   /** Fetch implementation; defaults to the global `fetch`. */
   fetch?: typeof fetch
+  /** Retained artifact bytes held across all entries. Defaults to 32 MiB. */
+  maxCacheBytes?: number
   /** Products held at once. Defaults to 8; the least recently used is evicted. */
   maxEntries?: number
   /** Epoch-millisecond clock, injected by tests. Defaults to `Date.now`. */
@@ -243,6 +315,12 @@ export interface NardukDataClientOptions {
 
 /** A narduk-data reader bound to one origin, holding one bounded cache. */
 export interface NardukDataClient {
+  /**
+   * Drop every cached value for one `productId`, or the whole cache when called
+   * bare. Clearing by id drops each validation variant of that product, so a
+   * test or an invalidation hook does not have to reconstruct a cache key.
+   */
+  clear: (productId?: string) => void
   read: <TArtifact, TManifest extends NardukDataReleaseManifest>(
     product: NardukDataProduct<TArtifact, TManifest>,
     context?: NardukDataRequestContext,
@@ -287,20 +365,38 @@ function isAbortError(error: unknown): boolean {
   return error.name === 'AbortError' || error.name === 'TimeoutError'
 }
 
-function combineSignals(timeout: AbortSignal, caller?: AbortSignal): AbortSignal {
-  if (!caller) return timeout
-  if (caller.aborted) return caller
-  return AbortSignal.any([timeout, caller])
+function abortedError(url: string, cause?: unknown): NardukDataError {
+  return new NardukDataError(
+    `narduk-data read of ${url} was cancelled by the caller.`,
+    'aborted',
+    url,
+    null,
+    cause,
+  )
+}
+
+/**
+ * Correlation headers for one read.
+ *
+ * TODO(narduk-libs#395): narduk-logging is adding `requestIdHeaders(id)`. Adopt
+ * it once that export is published; until then this stays local rather than
+ * taking a dependency on an unmerged export.
+ */
+function correlationHeaders(requestId: string | undefined): Record<string, string> {
+  return requestId ? { [REQUEST_ID_HEADER]: requestId } : {}
 }
 
 function requestHeaders(policy: NardukDataRequestPolicy): Record<string, string> {
-  const headers: Record<string, string> = { accept: 'application/json' }
+  const headers: Record<string, string> = {}
+  // Caller headers first, so the managed ones below cannot be overridden and a
+  // credential-bearing header is dropped rather than forwarded.
   for (const [name, value] of Object.entries(policy.context?.headers ?? {})) {
-    headers[name.toLowerCase()] = value
+    const lower = name.toLowerCase()
+    if (!FORBIDDEN_FORWARD_HEADERS.has(lower)) headers[lower] = value
   }
-  if (policy.context?.requestId) headers[REQUEST_ID_HEADER] = policy.context.requestId
+  headers.accept = 'application/json'
   if (policy.userAgent) headers['user-agent'] = policy.userAgent
-  return headers
+  return { ...headers, ...correlationHeaders(policy.context?.requestId) }
 }
 
 function tooLargeError(url: string, maxBytes: number): NardukDataError {
@@ -311,12 +407,39 @@ function tooLargeError(url: string, maxBytes: number): NardukDataError {
   )
 }
 
+/** Refuse a URL that does not belong to the origin this client was pointed at. */
+function assertOrigin(url: string, origin: string): void {
+  let actual: string
+  let expected: string
+  try {
+    actual = new URL(url).origin
+    expected = new URL(origin).origin
+  } catch (error) {
+    throw new NardukDataError(
+      `narduk-data URL ${url} is not a valid URL.`,
+      'rejected',
+      url,
+      null,
+      error,
+    )
+  }
+  if (actual !== expected) {
+    throw new NardukDataError(
+      `narduk-data URL ${url} is not on the configured origin ${expected}.`,
+      'rejected',
+      url,
+    )
+  }
+}
+
 /**
  * Read a body while holding `maxBytes` as a hard ceiling.
  *
  * The ceiling is enforced against bytes actually accumulated, so an upstream
  * that omits or lies about `content-length` cannot push more than one chunk
- * past it into isolate memory; the stream is cancelled rather than drained.
+ * past it into isolate memory; the stream is cancelled rather than drained. A
+ * single-chunk body is returned as-is, so the common small response never pays
+ * for a merged copy.
  */
 async function readBoundedBody(
   response: Response,
@@ -336,7 +459,7 @@ async function readBoundedBody(
   }
 
   const reader = body.getReader()
-  const chunks: Uint8Array[] = []
+  const chunks: Array<Uint8Array<ArrayBufferLike>> = []
   let byteCount = 0
   try {
     for (;;) {
@@ -355,6 +478,10 @@ async function readBoundedBody(
     reader.releaseLock()
   }
 
+  const only = chunks.length === 1 ? chunks[0] : undefined
+  if (only && only.byteLength === byteCount && only.buffer instanceof ArrayBuffer) {
+    return only as Uint8Array<ArrayBuffer>
+  }
   const merged = new Uint8Array(byteCount)
   let offset = 0
   for (const chunk of chunks) {
@@ -370,13 +497,16 @@ async function attemptRequest(
   method: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const timeoutSignal = AbortSignal.timeout(policy.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-  const fetcher = policy.fetch ?? fetch
+  const fetcher = policy.context?.fetch ?? policy.fetch ?? fetch
   try {
     const response = await fetcher(url, {
       body: policy.body,
       headers: requestHeaders(policy),
       method,
-      signal: combineSignals(timeoutSignal, policy.context?.signal),
+      // A published artifact never redirects; following one off-origin would
+      // defeat the origin pin, so a redirect is an error rather than a hop.
+      redirect: 'error',
+      signal: timeoutSignal,
     })
     if (!response.ok) {
       throw new NardukDataError(
@@ -398,13 +528,7 @@ async function attemptRequest(
             null,
             error,
           )
-        : new NardukDataError(
-            `narduk-data request to ${url} was cancelled by the caller.`,
-            'aborted',
-            url,
-            null,
-            error,
-          )
+        : abortedError(url, error)
     }
     throw new NardukDataError(
       `narduk-data request to ${url} failed before a response arrived.`,
@@ -427,14 +551,16 @@ function isRetryableFailure(error: NardukDataError): boolean {
  *
  * The retry budget applies to `GET` and `HEAD` alone: a method that may have
  * changed state upstream is attempted exactly once, whatever it returns. Each
- * attempt gets its own timeout, so the worst case is `retries + 1` timeouts;
- * there is no backoff sleep, and so no timer to leave behind.
+ * attempt gets its own timeout, so one request costs at most
+ * `(retries + 1) x timeoutMs`; there is no backoff sleep, and so no timer to
+ * leave behind.
  */
 async function requestBytes(
   url: string,
   policy: NardukDataRequestPolicy,
   method: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
+  assertOrigin(url, policy.origin ?? NARDUK_DATA_ORIGIN)
   const idempotent = method === 'GET' || method === 'HEAD'
   const attempts = idempotent ? Math.max(0, policy.retries ?? DEFAULT_RETRIES) + 1 : 1
   let attempt = 0
@@ -487,6 +613,22 @@ function applySchema<T>(url: string, value: unknown, schema: NardukDataSchema<T>
   return parsed.data
 }
 
+/** Run a consumer hook, reporting anything it throws as a refusal of this release. */
+function runHook(url: string, label: string, hook: () => void): void {
+  try {
+    hook()
+  } catch (error) {
+    if (error instanceof NardukDataError) throw error
+    throw new NardukDataError(
+      `narduk-data release at ${url} was refused by ${label}.`,
+      'rejected',
+      url,
+      null,
+      error,
+    )
+  }
+}
+
 /**
  * One typed narduk-data request.
  *
@@ -508,19 +650,39 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function freshnessState(
-  publishedAgeMs: number | null,
-  thresholds?: NardukDataFreshnessThresholds,
-): NardukDataFreshnessState {
-  if (publishedAgeMs === null || !thresholds) return 'unknown'
-  if (publishedAgeMs > thresholds.staleAfterMs) return 'stale'
-  if (publishedAgeMs > thresholds.agingAfterMs) return 'aging'
-  return 'fresh'
+function finiteMinutesToMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value * 60_000 : null
 }
 
-function publishedInstant(manifest: NardukDataReleaseManifest): string | null {
-  const at = manifest.staleness?.newest_as_of
-  return typeof at === 'string' && Number.isFinite(Date.parse(at)) ? at : null
+/**
+ * The thresholds in force for one read.
+ *
+ * A product's own thresholds win. Otherwise the producer's published
+ * boundaries are used, so an app does not have to hardcode a duplicate that can
+ * drift from the release it is reading.
+ */
+function resolveThresholds(
+  declared: NardukDataFreshnessThresholds | undefined,
+  manifest: NardukDataReleaseManifest,
+): NardukDataFreshnessThresholds | null {
+  if (declared) return declared
+  const freshBelowMs = finiteMinutesToMs(manifest.staleness?.fresh_if_less_than_minutes)
+  const agingAtMostMs = finiteMinutesToMs(manifest.staleness?.warning_if_at_most_minutes)
+  return freshBelowMs === null || agingAtMostMs === null ? null : { agingAtMostMs, freshBelowMs }
+}
+
+function freshnessState(
+  observedAgeMs: number | null,
+  thresholds: NardukDataFreshnessThresholds | null,
+): NardukDataFreshnessState {
+  if (observedAgeMs === null || !thresholds) return 'unknown'
+  if (observedAgeMs < thresholds.freshBelowMs) return 'fresh'
+  if (observedAgeMs <= thresholds.agingAtMostMs) return 'aging'
+  return 'stale'
+}
+
+function instantOrNull(value: unknown): string | null {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null
 }
 
 function describeFreshness(
@@ -528,28 +690,33 @@ function describeFreshness(
   fetchedAtMs: number,
   now: number,
   source: NardukDataSource,
-  thresholds?: NardukDataFreshnessThresholds,
+  declared: NardukDataFreshnessThresholds | undefined,
 ): NardukDataFreshness {
-  const publishedAt = publishedInstant(manifest)
-  const publishedAgeMs = publishedAt === null ? null : now - Date.parse(publishedAt)
+  const observedAt = instantOrNull(manifest.staleness?.newest_as_of)
+  const observedAgeMs = observedAt === null ? null : now - Date.parse(observedAt)
   const publishedState = manifest.staleness?.state
   return {
     ageMs: now - fetchedAtMs,
+    evaluatedAt: instantOrNull(manifest.staleness?.evaluated_at),
     fetchedAt: new Date(fetchedAtMs).toISOString(),
-    publishedAgeMs,
-    publishedAt,
+    observedAgeMs,
+    observedAt,
     publishedState: typeof publishedState === 'string' ? publishedState : null,
     releaseId: manifest.releaseId,
     source,
-    stale: source === 'stale-if-error',
-    state: freshnessState(publishedAgeMs, thresholds),
+    state: freshnessState(observedAgeMs, resolveThresholds(declared, manifest)),
   }
 }
 
 interface CacheEntry {
+  artifactUrl: string
+  /** Serve this entry without re-attempting upstream until this instant. */
+  cooldownUntilMs: number
   data: unknown
   fetchedAtMs: number
   manifest: NardukDataReleaseManifest
+  manifestUrl: string
+  retainedBytes: number
 }
 
 function joinUrl(origin: string, ...segments: string[]): string {
@@ -557,26 +724,117 @@ function joinUrl(origin: string, ...segments: string[]): string {
 }
 
 /**
+ * Wait for the shared read, but let this caller's own signal end its wait.
+ *
+ * The shared read is never given a caller's signal, so one caller walking away
+ * cannot fail the others coalesced onto it. The listener is removed on every
+ * path, so nothing is left attached to a long-lived signal.
+ */
+async function withCallerSignal<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | undefined,
+  url: string,
+): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) throw abortedError(url, signal.reason)
+  let onAbort = () => {}
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        onAbort = () => {
+          reject(abortedError(url, signal.reason))
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+      }),
+    ])
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
  * Create a narduk-data reader.
  *
  * One client per isolate is the intended shape: an app holds it at module scope
  * in its own server util so concurrent handlers share the memo and the
- * single-flight map. The cache lives on the instance and is bounded by
- * `maxEntries`, so even a module-scoped client cannot grow without limit.
+ * single-flight map. The cache lives on the instance and is bounded by both
+ * `maxEntries` and `maxCacheBytes`, so even a module-scoped client cannot grow
+ * without limit; `clear()` drops it, which is what a test suite wants between
+ * cases.
  */
 export function createNardukDataClient(options: NardukDataClientOptions = {}): NardukDataClient {
   const origin = options.origin ?? NARDUK_DATA_ORIGIN
   const now = options.now ?? (() => Date.now())
   const maxEntries = Math.max(1, options.maxEntries ?? DEFAULT_MAX_ENTRIES)
+  const maxCacheBytes = Math.max(0, options.maxCacheBytes ?? DEFAULT_MAX_CACHE_BYTES)
+  const failureCooldownMs = Math.max(0, options.failureCooldownMs ?? DEFAULT_FAILURE_COOLDOWN_MS)
   const cache = new Map<string, CacheEntry>()
   const inFlight = new Map<string, Promise<CacheEntry>>()
+  // Identity of the objects that decide whether a cached value is valid for a
+  // caller. Weak, so a schema that goes out of scope does not pin an id.
+  const identities = new WeakMap<object, number>()
+  let nextIdentity = 0
+
+  function identityOf(value: unknown): string {
+    if (typeof value !== 'object' && typeof value !== 'function') return '-'
+    if (value === null) return '-'
+    const object = value as object
+    let id = identities.get(object)
+    if (id === undefined) {
+      nextIdentity += 1
+      id = nextIdentity
+      identities.set(object, id)
+    }
+    return String(id)
+  }
+
+  /**
+   * The cache key.
+   *
+   * Everything that decides what a read returns is in it: the product, the
+   * ceilings that bound the fetch, and the identity of every validator and hook
+   * that has to agree before a value counts as valid — plus the fetcher, since
+   * a different fetcher is a different upstream. Two callers with different
+   * contracts therefore get two entries instead of one silently answering for
+   * the other.
+   *
+   * Keying was chosen over caching raw bytes and re-validating per serve
+   * because the artifact is multi-megabyte: re-parsing it on every request
+   * would put a JSON parse of the whole product on the hot path of every
+   * Worker invocation. Distinct contracts genuinely are distinct values.
+   */
+  function cacheKey<TArtifact, TManifest extends NardukDataReleaseManifest>(
+    product: NardukDataProduct<TArtifact, TManifest>,
+    context: NardukDataRequestContext | undefined,
+  ): string {
+    return [
+      product.productId,
+      product.artifactPath ?? '',
+      product.maxBytes ?? DEFAULT_MAX_BYTES,
+      product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
+      identityOf(product.schema),
+      identityOf(product.manifestSchema),
+      identityOf(product.validate),
+      identityOf(product.acceptManifest),
+      identityOf(context?.fetch ?? options.fetch),
+    ].join(' ')
+  }
+
+  function retainedBytes(): number {
+    let total = 0
+    for (const entry of cache.values()) total += entry.retainedBytes
+    return total
+  }
 
   function remember(key: string, entry: CacheEntry): void {
     cache.delete(key)
     cache.set(key, entry)
-    while (cache.size > maxEntries) {
+    let held = retainedBytes()
+    while (cache.size > maxEntries || (held > maxCacheBytes && cache.size > 1)) {
       const oldest = cache.keys().next()
       if (oldest.done) break
+      held -= cache.get(oldest.value)?.retainedBytes ?? 0
       cache.delete(oldest.value)
     }
   }
@@ -592,30 +850,59 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
   async function load<TArtifact, TManifest extends NardukDataReleaseManifest>(
     product: NardukDataProduct<TArtifact, TManifest>,
     context: NardukDataRequestContext | undefined,
+    manifestUrl: string,
   ): Promise<CacheEntry> {
+    // The shared read carries the first caller's correlation and fetcher, but
+    // never a caller's signal: cancellation is raced per caller instead.
     const policy: NardukDataRequestPolicy = {
-      context,
+      context: { fetch: context?.fetch, headers: context?.headers, requestId: context?.requestId },
       fetch: options.fetch,
-      maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES,
+      origin,
       retries: options.retries,
       timeoutMs: options.timeoutMs,
       userAgent: options.userAgent,
     }
-    const productSegment = encodeURIComponent(product.productId)
-    const manifestUrl = joinUrl(origin, productSegment, 'current', 'manifest.json')
     const manifest = await fetchNardukDataJson(manifestUrl, {
       ...policy,
+      maxBytes: product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
       schema: product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>),
     })
 
+    if (product.acceptManifest) {
+      const accept = product.acceptManifest
+      runHook(manifestUrl, 'acceptManifest', () => {
+        accept(manifest)
+      })
+    }
+
+    const artifactName = manifest.artifact.path
+    if (!ARTIFACT_PATH_PATTERN.test(artifactName)) {
+      throw new NardukDataError(
+        `narduk-data manifest at ${manifestUrl} names an unusable artifact path.`,
+        'rejected',
+        manifestUrl,
+      )
+    }
+    if (product.artifactPath !== undefined && product.artifactPath !== artifactName) {
+      throw new NardukDataError(
+        `narduk-data manifest at ${manifestUrl} names artifact '${artifactName}', not the expected '${product.artifactPath}'.`,
+        'rejected',
+        manifestUrl,
+      )
+    }
+
     const artifactUrl = joinUrl(
       origin,
-      productSegment,
+      encodeURIComponent(product.productId),
       'releases',
       encodeURIComponent(manifest.releaseId),
-      product.artifactPath.replace(/^\/+/u, ''),
+      encodeURIComponent(artifactName),
     )
-    const bytes = await requestBytes(artifactUrl, policy, 'GET')
+    const bytes = await requestBytes(
+      artifactUrl,
+      { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
+      'GET',
+    )
     const observed = await sha256Hex(bytes)
     if (observed !== manifest.artifact.sha256.toLowerCase()) {
       throw new NardukDataError(
@@ -625,20 +912,50 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       )
     }
 
+    const data = applySchema(artifactUrl, decodeJson(artifactUrl, bytes), product.schema)
+    if (product.validate) {
+      const validate = product.validate
+      runHook(artifactUrl, 'validate', () => {
+        validate(data, manifest)
+      })
+    }
+
     return {
-      data: applySchema(artifactUrl, decodeJson(artifactUrl, bytes), product.schema),
+      artifactUrl,
+      cooldownUntilMs: 0,
+      data,
       fetchedAtMs: now(),
       manifest,
+      manifestUrl,
+      retainedBytes: bytes.byteLength,
     }
   }
 
   return {
+    clear(productId) {
+      if (productId === undefined) {
+        cache.clear()
+        return
+      }
+      const prefix = `${productId}\u0000`
+      for (const key of [...cache.keys()]) {
+        if (key.startsWith(prefix)) cache.delete(key)
+      }
+    },
+
     async read<TArtifact, TManifest extends NardukDataReleaseManifest>(
       product: NardukDataProduct<TArtifact, TManifest>,
       context?: NardukDataRequestContext,
     ): Promise<NardukDataResult<TArtifact, TManifest>> {
-      const key = `${product.productId}/${product.artifactPath}`
+      const key = cacheKey(product, context)
+      const manifestUrl = joinUrl(
+        origin,
+        encodeURIComponent(product.productId),
+        'current',
+        'manifest.json',
+      )
       const present = (entry: CacheEntry, source: NardukDataSource) => ({
+        artifactUrl: entry.artifactUrl,
         data: entry.data as TArtifact,
         freshness: describeFreshness(
           entry.manifest,
@@ -648,16 +965,27 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
           product.freshness,
         ),
         manifest: entry.manifest as TManifest,
+        manifestUrl: entry.manifestUrl,
       })
+      const maxStaleMs = product.maxStaleMs ?? 0
+      const servableStale = (entry: CacheEntry | undefined, at: number) =>
+        entry !== undefined && maxStaleMs > 0 && at - entry.fetchedAtMs <= maxStaleMs
 
       const memo = recall(key)
-      if (memo && now() - memo.fetchedAtMs < (product.ttlMs ?? DEFAULT_TTL_MS)) {
+      const startedAt = now()
+      if (memo && startedAt - memo.fetchedAtMs < (product.ttlMs ?? DEFAULT_TTL_MS)) {
         return present(memo, 'memo')
+      }
+      // An upstream that has just failed is not retried by every request in the
+      // burst: while the cooldown holds and a stale value is still servable, it
+      // is served without paying the retry budget again.
+      if (memo && startedAt < memo.cooldownUntilMs && servableStale(memo, startedAt)) {
+        return present(memo, 'stale-if-error')
       }
 
       let flight = inFlight.get(key)
       if (!flight) {
-        flight = load(product, context)
+        flight = load(product, context, manifestUrl)
           .then((entry) => {
             remember(key, entry)
             return entry
@@ -669,11 +997,15 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       }
 
       try {
-        return present(await flight, 'upstream')
+        return present(await withCallerSignal(flight, context?.signal, manifestUrl), 'upstream')
       } catch (error) {
-        const maxStaleMs = product.maxStaleMs ?? 0
-        const last = cache.get(key)
-        if (last && maxStaleMs > 0 && now() - last.fetchedAtMs <= maxStaleMs) {
+        // A caller that cancelled is told it cancelled. Handing it stale data
+        // instead would answer a question it withdrew.
+        if (error instanceof NardukDataError && error.reason === 'aborted') throw error
+        const failedAt = now()
+        const last = recall(key)
+        if (servableStale(last, failedAt) && last) {
+          last.cooldownUntilMs = failedAt + failureCooldownMs
           return present(last, 'stale-if-error')
         }
         throw error
