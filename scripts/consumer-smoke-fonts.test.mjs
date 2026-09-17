@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import consumerSmokeFonts from './consumer-smoke-fonts.mjs'
 
-test('the fixture retains local font processing and removes every remote provider before initialization', () => {
+test('the fixture removes Fontshare before initialization and preserves required font resolution', () => {
   let hook
   consumerSmokeFonts(
     {},
@@ -14,12 +14,18 @@ test('the fixture retains local font processing and removes every remote provide
     },
   )
   const local = () => 'local files'
-  const remote = () => {
-    throw new Error('Remote font provider must never initialize')
+  const google = () => 'Inter font data'
+  const futureProvider = () => 'other font data'
+  const providers = {
+    local,
+    google,
+    futureProvider,
+    fontshare() {
+      throw new Error('Unused Fontshare catalog must never initialize')
+    },
   }
-  const providers = { local, google: remote, fontshare: remote, futureProvider: remote }
   hook(providers)
-  assert.deepEqual(Object.keys(providers), ['local'])
+  assert.deepEqual(providers, { local, google, futureProvider })
+  assert.equal(providers.google(), 'Inter font data')
   assert.equal(providers.local(), 'local files')
-  assert.throws(() => hook({ google: remote }), /requires the local font provider/)
 })

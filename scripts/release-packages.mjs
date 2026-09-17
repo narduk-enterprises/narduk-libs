@@ -501,13 +501,13 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   writeFileSync(rootManifestPath, `${JSON.stringify(rootManifest, null, 2)}\n`)
 }
 
-function addLocalConsumerFonts(generatedDirectory) {
+function configureConsumerFonts(generatedDirectory) {
   const webDirectory = join(generatedDirectory, 'apps', 'web')
   const configPath = join(webDirectory, 'nuxt.config.ts')
   const config = readFileSync(configPath, 'utf8')
   const modules = /\bmodules:\s*\[/gu
   if ([...config.matchAll(modules)].length !== 1) {
-    throw new Error('Expected one generated Nuxt modules list for the local font fixture.')
+    throw new Error('Expected one generated Nuxt modules list for the consumer font fixture.')
   }
   writeFileSync(
     join(webDirectory, 'packed-consumer-fonts.mjs'),
@@ -977,7 +977,7 @@ async function proveGeneratedConsumer({
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
   addTarballOverrides(generatedDirectory, packages, tarballs)
-  addLocalConsumerFonts(generatedDirectory)
+  configureConsumerFonts(generatedDirectory)
   addPackedCoreUiRuntimeSmoke(generatedDirectory)
   addPackedShellRootValueImportSmoke(generatedDirectory)
   addPackedSeoMetadataSmoke(generatedDirectory)
@@ -1093,8 +1093,11 @@ async function proveGeneratedConsumer({
           cwd: generatedDirectory,
           label: `generated app ${phase}`,
         })
-        if (phase === 'build' && !output.includes('[consumer-smoke] Font providers: local only')) {
-          throw new Error('The generated build did not activate its local-only font fixture.')
+        if (
+          phase === 'build' &&
+          !output.includes('[consumer-smoke] Unused Fontshare provider disabled')
+        ) {
+          throw new Error('The generated build did not activate its font provider fixture.')
         }
       } finally {
         if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
