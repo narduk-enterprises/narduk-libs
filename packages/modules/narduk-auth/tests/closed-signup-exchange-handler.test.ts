@@ -49,6 +49,8 @@ const db = vi.hoisted(() => ({
 
 const persistCalls = vi.hoisted(() => [] as Array<{ recoveryMode?: boolean }>)
 const authConfig = vi.hoisted(() => ({ publicSignup: false }))
+/** What the server-side PKCE exchange itself reports, independent of the client body. */
+const exchangeResult = vi.hoisted(() => ({ redirectType: null as string | null }))
 
 vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: <T>(plugin: T) => plugin,
@@ -192,6 +194,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
   createSupabaseUserClient: () => ({
     exchangeCodeForSession: async () => ({
       data: {
+        redirectType: exchangeResult.redirectType,
         user: {
           id: 'auth-attacker',
           email: PARENT_EMAIL,
@@ -276,6 +279,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     db.linkInserts = []
     persistCalls.length = 0
     authConfig.publicSignup = false
+    exchangeResult.redirectType = null
   })
 
   it('refuses POST {code, redirectType:"invite"} and does not INSERT a users row', async () => {
@@ -371,6 +375,25 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     expect(persistCalls).toEqual([{ recoveryMode: false }])
     expect(db.userInserts).toEqual([])
     expect(db.linkInserts).toEqual([])
+  })
+
+  it('keeps recovery_mode when the client declares a non-recovery redirectType', async () => {
+    exchangeResult.redirectType = 'recovery'
+    db.users.push({
+      id: 'local-1',
+      email: PARENT_EMAIL,
+      name: 'Parent',
+      isAdmin: false,
+    })
+    db.links.push({
+      authUserId: 'auth-attacker',
+      localUserId: 'local-1',
+      primaryEmail: PARENT_EMAIL,
+    })
+
+    await postExchange({ code: 'pkce-code', redirectType: 'magiclink' })
+
+    expect(persistCalls).toEqual([{ recoveryMode: true }])
   })
 
   it('does not link an unlinked local user via POST next=/reset-password', async () => {

@@ -453,8 +453,14 @@ export async function exchangeSupabaseCode(
   const serverRedirectType =
     (data as { redirectType?: string | null }).redirectType ??
     (!hasAuthCode ? body.verificationType : null)
+  // Recovery is add-only from the client: a client `redirectType` that is not
+  // itself recovery must never suppress a server-derived recovery callback
+  // into a full-privilege session.
+  const recoveryRedirectType = isPasswordRecoveryRedirectType(body.redirectType)
+    ? body.redirectType
+    : serverRedirectType
   const isPasswordRecovery = resolvePasswordRecoveryExchange({
-    redirectType: typeof body.redirectType === 'string' ? body.redirectType : serverRedirectType,
+    redirectType: recoveryRedirectType,
     verificationType: hasAuthCode ? null : body.verificationType,
     next: body.next,
     resetPath: config.resetPath,
