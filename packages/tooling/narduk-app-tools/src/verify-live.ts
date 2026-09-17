@@ -32,6 +32,26 @@
  * propagate, and a cold isolate answered in 3.1 s where a warm one answered in
  * 0.26 s when the design measured it, so a single-shot proof is a flaky gate.
  * The retry is bounded and every attempt is reported.
+ *
+ * WHAT THIS PROVES, AND WHAT IT DOES NOT
+ * --------------------------------------
+ * It proves that, at this moment, a request this process made to the origin of
+ * `--base-url` was answered by a deployment reporting the expected build, a
+ * healthy `/api/health`, and a 2xx smoke route.
+ *
+ * It does NOT prove:
+ *   - that a *cached* copy of the previous release is gone from every edge. The
+ *     proof asks every hop not to cache (`no-store`, `cache-control: no-cache`)
+ *     and adds a per-run query parameter, so the answer it reads is the origin's
+ *     current one -- which is what triggers a rollback -- but other visitors may
+ *     still be served a cached page. Cache purge is a separate concern (§6.5).
+ *   - anything about a different origin. Redirects are followed, because an
+ *     apex that 308s to `www` is ordinary, but a final origin other than
+ *     `--base-url`'s is refused: §2.3's hazard is exactly a second Worker, in a
+ *     second account, answering the same hostname, and a proof that reads *its*
+ *     headers is a proof of the wrong deployment.
+ *   - that every route works, that the release is correct, or that Cloudflare's
+ *     own configuration matches what the repository declares.
  */
 
 import { createLiveProbe, type LiveProbe, type LiveResponse } from './live-probe.js'
@@ -49,9 +69,11 @@ export const VERIFY_EXIT = {
   healthFailed: 4,
   /** Build and health are fine and the smoke route is not. */
   smokeFailed: 5,
+  /** The request was answered by a different origin than the one under proof. */
+  offOrigin: 6,
 } as const
 
-export type VerifyAssertionId = 'build-version' | 'health' | 'smoke'
+export type VerifyAssertionId = 'origin' | 'build-version' | 'health' | 'smoke'
 export type VerifyAssertionStatus = 'pass' | 'fail' | 'unknown' | 'skipped'
 
 export interface VerifyAssertion {
@@ -92,6 +114,8 @@ export interface VerifyFlags {
   intervalSeconds: number
   timeoutMs: number
   allowDegraded: boolean
+  /** Add a per-run query parameter so no cache key can be shared with a browser's. */
+  cacheBust: boolean
   json: boolean
   jsonPath: string | null
 }
@@ -149,6 +173,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     intervalSeconds: DEFAULT_VERIFY_FLAGS.intervalSeconds,
     timeoutMs: DEFAULT_VERIFY_FLAGS.timeoutMs,
     allowDegraded: false,
+    cacheBust: true,
     json: false,
     jsonPath: null,
   }
@@ -198,6 +223,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
         '--timeout-ms',
       )
     else if (arg === '--allow-degraded') flags.allowDegraded = true
+    else if (arg === '--no-cache-bust') flags.cacheBust = false
     else if (arg === '--json') {
       const next = args[index + 1]
       if (next && !next.startsWith('--')) {
@@ -239,6 +265,14 @@ export interface HealthEnvelope {
     checks?: Array<{ name?: string; required?: boolean; result?: string; error?: string }>
   }
 }
+
+/**
+ * The `DatabaseHealthStatus` values that mean the database is not usable
+ * (`packages/modules/narduk-core/runtime/server/health/report.ts`). `ok` and
+ * `not_applicable` are the two that are fine -- the second is an app that
+ * declared `databaseBackend: 'none'` on purpose.
+ */
+export const BROKEN_DATABASE_STATUSES = new Set(['not_available', 'schema_error', 'error'])
 
 export function assessHealth(
   response: LiveResponse,
@@ -300,6 +334,23 @@ export function assessHealth(
     }
   }
   if (report.status === 'degraded') {
+    // `--allow-degraded` is for an app whose *optional* checks flap. It is not a
+    // licence to ship without a database: narduk-core reports a missing D1
+    // binding as `required: false` when the app never declared
+    // `databaseBackend` (`runtime/server/health/report.ts`
+    // `reportMissingD1Binding`), so a release whose `DB` binding was dropped
+    // summarises to `degraded` and would otherwise be waved through with
+    // `data.database === "not_available"`.
+    if (options.allowDegraded && report.database && BROKEN_DATABASE_STATUSES.has(report.database)) {
+      return {
+        ...base,
+        status: 'fail',
+        detail:
+          `health status degraded with database ${report.database}. --allow-degraded covers a ` +
+          'flapping optional check, never a missing or broken database binding.',
+        evidence,
+      }
+    }
     return options.allowDegraded
       ? {
           ...base,
@@ -398,12 +449,52 @@ export function assessSmoke(response: LiveResponse, expectContentType: string): 
 }
 
 /**
+ * Did the request stay on the origin we were asked about?
+ *
+ * Redirects are followed -- an apex that 308s to `www`, or `/` to `/en`, is
+ * ordinary and the app is the same app. A redirect to a *different origin* is
+ * not ordinary: design §2.3's named hazard is two Workers in two accounts
+ * answering one hostname, and every later assertion in this pass would then be
+ * describing the other one. `null` when nothing redirected.
+ */
+export function assessOrigin(response: LiveResponse, baseUrl: string): VerifyAssertion | null {
+  if (!response.redirected || !response.finalUrl) return null
+  const base = { id: 'origin' as const, exitCode: VERIFY_EXIT.offOrigin }
+  let expected: string
+  let actual: string
+  try {
+    expected = new URL(baseUrl).origin
+    actual = new URL(response.finalUrl).origin
+  } catch {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `Could not compare the final URL ${response.finalUrl} against ${baseUrl}`,
+      evidence: { finalUrl: response.finalUrl },
+    }
+  }
+  if (expected === actual) return null
+  return {
+    ...base,
+    status: 'fail',
+    detail:
+      `the request to ${response.url} was answered by ${actual}, not ${expected}. Every other ` +
+      'assertion in this pass describes that other origin, so this is not a proof of the ' +
+      'deployment under test.',
+    evidence: { requested: response.url, finalUrl: response.finalUrl, expected, actual },
+  }
+}
+
+/**
  * The exit code of a whole pass: the failing assertion's own code, in severity
- * order. Unreachable beats a wrong build beats an unhealthy app beats a broken
- * smoke route, because each later answer is only meaningful once the earlier
- * one holds.
+ * order. A wrong origin beats everything -- the other answers are about some
+ * other deployment. Then unreachable beats a wrong build beats an unhealthy app
+ * beats a broken smoke route, because each later answer is only meaningful once
+ * the earlier one holds.
  */
 export function resolveExitCode(assertions: readonly VerifyAssertion[]): number {
+  const offOrigin = assertions.find((entry) => entry.id === 'origin' && entry.status === 'fail')
+  if (offOrigin) return VERIFY_EXIT.offOrigin
   const order: VerifyAssertionId[] = ['build-version', 'health', 'smoke']
   const unreachable = assertions.find((assertion) => assertion.exitCode === VERIFY_EXIT.unreachable)
   if (unreachable && unreachable.status !== 'pass') return VERIFY_EXIT.unreachable
@@ -422,17 +513,42 @@ export interface VerifyContext {
   sleep?: (ms: number) => Promise<void>
   generated?: string
   onAttempt?: (attempt: VerifyAttempt) => void
+  /** Injected in tests so the cache-busting URL is deterministic. */
+  cacheBustToken?: (attempt: number) => string
 }
 
-async function runOnce(flags: VerifyFlags, probe: LiveProbe): Promise<VerifyAssertion[]> {
+/** The query parameter name the cache buster uses. */
+export const CACHE_BUST_PARAM = '_nardukProof'
+
+/**
+ * A URL no intermediary can already hold a cached copy of. The value is unique
+ * per attempt, not per run: a retry exists because the promotion had not
+ * propagated on the previous try, and reusing the first attempt's key would let
+ * the first answer be served back for the whole window.
+ */
+export function cacheBustedUrl(url: string, token: string, enabled: boolean): string {
+  if (!enabled) return url
+  const parsed = new URL(url)
+  parsed.searchParams.set(CACHE_BUST_PARAM, token)
+  return parsed.toString()
+}
+
+async function runOnce(
+  flags: VerifyFlags,
+  probe: LiveProbe,
+  token: string,
+): Promise<VerifyAssertion[]> {
   const assertions: VerifyAssertion[] = []
   const base = new URL(flags.baseUrl)
+  const bust = (url: string): string => cacheBustedUrl(url, token, flags.cacheBust)
   // The build-version header and the smoke route are read from ONE request:
   // `x-build-version` is on every response, so probing the smoke path twice
   // would only double the load on a deployment that is already under proof.
   if (flags.expectSha || flags.smokePath) {
-    const url = new URL(flags.smokePath ?? '/', base).toString()
+    const url = bust(new URL(flags.smokePath ?? '/', base).toString())
     const response = await probe(url, { timeoutMs: flags.timeoutMs })
+    const origin = assessOrigin(response, flags.baseUrl)
+    if (origin) assertions.push(origin)
     if (flags.expectSha) {
       assertions.push(assessBuildVersion(response, flags.expectSha, flags.buildVersionHeader))
     }
@@ -441,12 +557,11 @@ async function runOnce(flags: VerifyFlags, probe: LiveProbe): Promise<VerifyAsse
     }
   }
   if (flags.healthPath) {
-    const url = new URL(flags.healthPath, base).toString()
-    assertions.push(
-      assessHealth(await probe(url, { readBody: true, timeoutMs: flags.timeoutMs }), {
-        allowDegraded: flags.allowDegraded,
-      }),
-    )
+    const url = bust(new URL(flags.healthPath, base).toString())
+    const response = await probe(url, { readBody: true, timeoutMs: flags.timeoutMs })
+    const origin = assessOrigin(response, flags.baseUrl)
+    if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
+    assertions.push(assessHealth(response, { allowDegraded: flags.allowDegraded }))
   }
   return assertions
 }
@@ -460,9 +575,13 @@ export async function runVerifyLive(
   let assertions: VerifyAssertion[] = []
   let attempt = 0
   let exitCode: number = VERIFY_EXIT.pass
+  const token =
+    context.cacheBustToken ??
+    ((n: number) =>
+      `${Date.now().toString(36)}-${String(n)}-${Math.random().toString(36).slice(2, 8)}`)
   while (attempt < flags.attempts) {
     attempt += 1
-    assertions = await runOnce(flags, probe)
+    assertions = await runOnce(flags, probe, token(attempt))
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
     if (exitCode === VERIFY_EXIT.pass) break

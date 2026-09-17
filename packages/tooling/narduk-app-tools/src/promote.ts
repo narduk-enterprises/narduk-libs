@@ -54,7 +54,15 @@ import type { DeployEnv } from './deploy.js'
 
 export type PromoteAction = 'versions-promote' | 'rollback'
 
-/** A Worker version as `wrangler versions list --json` returns it. */
+/**
+ * A Worker version as `wrangler versions list --json` returns it.
+ *
+ * `number` is Cloudflare's own "sequential version number" (Versions list API
+ * reference, read 2026-09-17) and is what orders two versions of the same
+ * Worker. `metadata.created_on` was read live off `buoys` the same day and is
+ * the fallback when a payload carries no `number`; the ordering guard refuses
+ * rather than guesses when neither can order a pair.
+ */
 export interface WorkerVersion {
   id: string
   number?: number
@@ -85,19 +93,35 @@ export const VERSION_MESSAGE_ANNOTATION = 'workers/message'
  * rollback can recognise one it made and refuse to roll *forward*. */
 export const ROLLBACK_MESSAGE_PREFIX = 'narduk-app rollback'
 
-/** Distinct exit codes, so a workflow step can branch on the failure class. */
+/**
+ * Distinct exit codes, so a workflow step can branch on the failure class.
+ *
+ * The split that matters to a promote job is 1/2 versus 5: a `refused` or
+ * `usage` exit means nothing was attempted and production is untouched, while
+ * `wranglerFailed` means a `versions deploy` or `rollback` was in flight when it
+ * died and the traffic state is unknown. A workflow that cannot tell those
+ * apart must either ignore a real half-applied deploy or roll production back
+ * every time a flag is mistyped. Every code here is reachable and tested
+ * (`tests/promote.test.ts`, "every documented exit code is reachable").
+ */
 export const PROMOTE_EXIT = {
   ok: 0,
-  /** Usage, guard refusal, or a missing Worker name/account. */
+  /** The Actions/branch/event guard refused. Nothing was attempted. */
   refused: 1,
+  /** Bad arguments or unresolvable Worker name. Nothing was attempted. */
+  usage: 2,
   /** No version carries this commit's tag inside the searched window. */
   versionNotFound: 3,
   /** More than one version carries this commit's tag. */
   ambiguousVersion: 4,
-  /** Wrangler itself failed. */
+  /** Wrangler itself failed. Traffic state unknown if it died mid-deploy. */
   wranglerFailed: 5,
   /** The rollback target is already the live version, or cannot be resolved safely. */
   rollbackRefused: 6,
+  /** The target version is older than the one already serving production. */
+  stalePromote: 7,
+  /** The target version was not built from the production branch. */
+  branchMismatch: 8,
 } as const
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on'])
@@ -122,6 +146,11 @@ export function isManualPromoteAllowed(env: DeployEnv = process.env): boolean {
  * forgeable locally, so this also wants the run identity that a real Actions
  * job always has -- the same shape of attestation `isWorkersBuildDeployAllowed`
  * demands of a Cloudflare build.
+ *
+ * WHAT THIS DOES NOT PROVE: that `ci / Required` is green on this commit. That
+ * is an assertion about GitHub's check state, and reading it needs a token this
+ * command is deliberately never given. The workflow step ordering is what
+ * supplies it; this guard proves only the execution context.
  */
 export function isActionsPromoteAllowed(env: DeployEnv = process.env): boolean {
   return (
@@ -133,10 +162,69 @@ export function isActionsPromoteAllowed(env: DeployEnv = process.env): boolean {
   )
 }
 
+/**
+ * The Actions events that may promote. A `pull_request` or
+ * `pull_request_target` run carries a contributor's ref, so a workflow holding
+ * the promote credential must not be reachable from one; anything unrecognised
+ * is refused rather than assumed benign.
+ */
+export const PROMOTE_EVENTS = new Set([
+  'push',
+  'workflow_run',
+  'workflow_dispatch',
+  'repository_dispatch',
+  'schedule',
+  'release',
+])
+
+export type ContextRefusal = { reason: string } | null
+
+/**
+ * The ref and event half of the guard, separate from the "are we in Actions"
+ * half because it is the half that is opt-in: it can only compare against a
+ * production branch the caller names (`--production-branch`, or
+ * `NARDUK_PROMOTE_PRODUCTION_BRANCH`, which `Config/cloudflare-app.json`
+ * supplies through the workflow). Without one, no ref comparison is possible
+ * and the command says so rather than implying it made one.
+ */
+export function checkPromoteContext(
+  env: DeployEnv,
+  productionBranch: string | null,
+): ContextRefusal {
+  const event = env.GITHUB_EVENT_NAME?.trim()
+  if (event && !PROMOTE_EVENTS.has(event)) {
+    return {
+      reason:
+        `refusing to promote from a ${event} event. A workflow holding the promote ` +
+        `credential must run on one of: ${[...PROMOTE_EVENTS].sort().join(', ')}.`,
+    }
+  }
+  if (!productionBranch) return null
+  const ref = env.GITHUB_REF_NAME?.trim()
+  if (!ref) {
+    return {
+      reason:
+        `--production-branch ${productionBranch} was declared but GITHUB_REF_NAME is not set, ` +
+        'so the ref this run carries cannot be confirmed. Run the promote from GitHub Actions, ' +
+        'or drop --production-branch to promote without a ref check.',
+    }
+  }
+  if (ref !== productionBranch) {
+    return {
+      reason:
+        `this run is on ref ${ref}, not the declared production branch ${productionBranch}. ` +
+        'Production is promoted from the production branch only; pass --any-branch to override.',
+    }
+  }
+  return null
+}
+
 export function getPromoteGuardMessage(action: PromoteAction): string {
   const label = action === 'rollback' ? 'Rollback' : 'Promotion to 100%'
   return (
-    `${label} runs in GitHub Actions, after the gate check is green on this exact commit. ` +
+    `${label} runs in GitHub Actions. This command proves the execution context only -- ` +
+    'it does not and cannot read whether the gate check is green on this commit; the ' +
+    'workflow must run the promote step only after that gate. ' +
     'Set NARDUK_ALLOW_MANUAL_PROMOTE=1 for deliberate recovery work; ' +
     'NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY does not grant it.'
   )
@@ -156,12 +244,44 @@ export interface WranglerVersionsClient {
   rollback: (versionId: string, message?: string) => Promise<void>
 }
 
+/**
+ * The process boundary itself, narrowed to what `runWrangler` uses, so a test
+ * can drive `createWranglerCli` -- the argv that will run against production
+ * Cloudflare -- without a network or a wrangler install.
+ */
+export interface SpawnResult {
+  status: number | null
+  signal: NodeJS.Signals | null
+  stdout?: string | null
+  error?: Error
+}
+
+export type SpawnWrangler = (
+  command: string,
+  args: string[],
+  options: {
+    cwd: string
+    env: NodeJS.ProcessEnv
+    stdio: 'inherit' | Array<'ignore' | 'pipe' | 'inherit'>
+  },
+) => SpawnResult
+
 export interface WranglerCliOptions {
   workerName: string
   accountId?: string
   appDir?: string
   env?: DeployEnv
+  /** Injected in tests; `spawnSync` otherwise. */
+  spawn?: SpawnWrangler
 }
+
+const spawnWranglerSync: SpawnWrangler = (command, args, options) =>
+  spawnSync(command, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: options.stdio,
+    encoding: 'utf8',
+  })
 
 function runWrangler(
   options: WranglerCliOptions,
@@ -172,10 +292,10 @@ function runWrangler(
   if (options.accountId && !env.CLOUDFLARE_ACCOUNT_ID?.trim()) {
     env.CLOUDFLARE_ACCOUNT_ID = options.accountId
   }
-  const result = spawnSync('pnpm', ['exec', 'wrangler', ...args, '--name', options.workerName], {
+  const spawn = options.spawn ?? spawnWranglerSync
+  const result = spawn('pnpm', ['exec', 'wrangler', ...args, '--name', options.workerName], {
     cwd: options.appDir ?? process.cwd(),
     env: env as NodeJS.ProcessEnv,
-    encoding: 'utf8',
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
   })
   if (result.error) throw new Error(`Could not run wrangler: ${result.error.message}`)
@@ -272,6 +392,53 @@ export function resolveVersionForSha(
 }
 
 /**
+ * Which of two versions is newer: `1` when `a` is newer, `-1` when `b` is,
+ * `0` when they are the same version, and `null` when the payload cannot order
+ * them at all.
+ *
+ * `null` is the important return. It is the difference between "this promote is
+ * not stale" and "nothing here can tell whether it is stale", and the promote
+ * path treats the second as a refusal rather than as permission.
+ */
+export function compareVersionRecency(a: WorkerVersion, b: WorkerVersion): number | null {
+  if (a.id === b.id) return 0
+  if (typeof a.number === 'number' && typeof b.number === 'number') {
+    return Math.sign(a.number - b.number)
+  }
+  const aTime = Date.parse(a.metadata?.created_on ?? '')
+  const bTime = Date.parse(b.metadata?.created_on ?? '')
+  if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+    return Math.sign(aTime - bTime)
+  }
+  return null
+}
+
+/**
+ * The branch a Workers Build recorded on a version.
+ *
+ * `narduk-app deploy versions-upload` writes `--message "Workers Builds
+ * <branch> @ <sha12>"` from `WORKERS_CI_BRANCH` (`./deploy.ts
+ * resolveVersionTagArgs`), and Cloudflare stores that as the `workers/message`
+ * annotation. `null` means the version carries no branch this tool can read --
+ * which is not the same as "it came from main", and the promote path treats it
+ * that way.
+ */
+export const VERSION_MESSAGE_PREFIX = 'Workers Builds '
+
+export function versionBranch(version: WorkerVersion): string | null {
+  const message = version.annotations?.[VERSION_MESSAGE_ANNOTATION]?.trim()
+  if (!message?.toLowerCase().startsWith(VERSION_MESSAGE_PREFIX.toLowerCase())) return null
+  // Split on the last ` @ `, not a regexp: a branch name may contain anything,
+  // and a pattern permissive enough for that backtracks on a crafted message.
+  const separator = message.lastIndexOf(' @ ')
+  if (separator < 0) return null
+  const sha = message.slice(separator + 3).trim()
+  if (!SHA_PATTERN.test(sha)) return null
+  const branch = message.slice(VERSION_MESSAGE_PREFIX.length, separator).trim()
+  return branch || null
+}
+
+/**
  * The live deployment. `wrangler deployments list --json` returns the 10 most
  * recent oldest-first (observed live against `buoys`, 2026-09-17), so the last
  * entry is the current one; `created_on` is used as the tiebreak rather than
@@ -293,14 +460,30 @@ export function soleDeployedVersionId(deployment: WorkerDeployment | null): stri
   return full.length === 1 && deployment.versions.length === 1 ? full[0].version_id : null
 }
 
-/** True when this deployment was itself produced by a rollback. */
-export function isRollbackDeployment(deployment: WorkerDeployment | null): boolean {
-  if (!deployment) return false
-  const annotations = deployment.annotations ?? {}
-  return (
-    annotations[TRIGGERED_BY_ANNOTATION] === 'rollback' ||
+/**
+ * Whether this deployment was itself produced by a rollback.
+ *
+ * Three answers, not two. A deployment carrying no `annotations` object at all
+ * tells us nothing about its provenance, and "we cannot see that it was a
+ * rollback" is not "it was not a rollback" -- reading it as the latter is what
+ * lets a second unnamed rollback roll *forward* into the broken version it
+ * just left. Unknown provenance is refused, not assumed benign.
+ */
+export type RollbackProvenance = 'rollback' | 'not-rollback' | 'unknown'
+
+export function rollbackProvenance(deployment: WorkerDeployment | null): RollbackProvenance {
+  if (!deployment) return 'unknown'
+  const annotations = deployment.annotations
+  if (!annotations || typeof annotations !== 'object') return 'unknown'
+  return annotations[TRIGGERED_BY_ANNOTATION] === 'rollback' ||
     (annotations[VERSION_MESSAGE_ANNOTATION] ?? '').startsWith(ROLLBACK_MESSAGE_PREFIX)
-  )
+    ? 'rollback'
+    : 'not-rollback'
+}
+
+/** True only when the deployment is *known* to be a rollback. */
+export function isRollbackDeployment(deployment: WorkerDeployment | null): boolean {
+  return rollbackProvenance(deployment) === 'rollback'
 }
 
 export type RollbackTarget =
@@ -308,6 +491,8 @@ export type RollbackTarget =
   | { kind: 'no-previous' }
   /** The live deployment is itself a rollback: resolving "previous" again would roll forward. */
   | { kind: 'would-roll-forward'; versionId: string }
+  /** The live deployment carries no annotations, so it cannot be ruled out as one. */
+  | { kind: 'unknown-provenance'; versionId: string }
 
 /**
  * The version to roll back to when the caller named none: the most recent
@@ -330,9 +515,10 @@ export function resolvePreviousVersion(deployments: readonly WorkerDeployment[])
   for (let index = ordered.length - 2; index >= 0; index -= 1) {
     const candidate = soleDeployedVersionId(ordered[index])
     if (!candidate || liveVersions.has(candidate)) continue
-    return isRollbackDeployment(live)
-      ? { kind: 'would-roll-forward', versionId: candidate }
-      : { kind: 'resolved', versionId: candidate }
+    const provenance = rollbackProvenance(live)
+    if (provenance === 'rollback') return { kind: 'would-roll-forward', versionId: candidate }
+    if (provenance === 'unknown') return { kind: 'unknown-provenance', versionId: candidate }
+    return { kind: 'resolved', versionId: candidate }
   }
   return { kind: 'no-previous' }
 }
@@ -348,6 +534,12 @@ export interface PromoteFlags {
   accountId: string | null
   percentage: number
   message: string | null
+  /** The branch a production version must have been built from. */
+  productionBranch: string | null
+  /** Promote a version built from any branch. */
+  anyBranch: boolean
+  /** Promote a version older than the live one -- a deliberate revert. */
+  force: boolean
   json: boolean
   dryRun: boolean
 }
@@ -355,6 +547,14 @@ export interface PromoteFlags {
 function requireValue(args: string[], index: number, flag: string): string {
   const value = args[index]
   if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`)
+  return value
+}
+
+function requirePercentage(raw: string): number {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new Error(`--percentage must be an integer 1..100, got ${JSON.stringify(raw)}`)
+  }
   return value
 }
 
@@ -366,6 +566,9 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     accountId: null,
     percentage: 100,
     message: null,
+    productionBranch: null,
+    anyBranch: false,
+    force: false,
     json: false,
     dryRun: false,
   }
@@ -378,6 +581,12 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     else if (arg === '--account-id')
       flags.accountId = requireValue(args, (index += 1), '--account-id')
     else if (arg === '--message') flags.message = requireValue(args, (index += 1), '--message')
+    else if (arg === '--production-branch')
+      flags.productionBranch = requireValue(args, (index += 1), '--production-branch')
+    else if (arg === '--percentage')
+      flags.percentage = requirePercentage(requireValue(args, (index += 1), '--percentage'))
+    else if (arg === '--any-branch') flags.anyBranch = true
+    else if (arg === '--force') flags.force = true
     else if (arg === '--json') flags.json = true
     else if (arg === '--dry-run') flags.dryRun = true
     else throw new Error(`Unknown deploy versions-promote option: ${arg}`)
@@ -435,6 +644,12 @@ export type PromoteOutcome =
   | 'guard-refused'
   | 'rolled-back'
   | 'rollback-refused'
+  /** The target version is older than, or not orderable against, the live one. */
+  | 'stale-promote'
+  /** The target version was not built from the production branch. */
+  | 'branch-mismatch'
+  /** Wrangler exited non-zero. `trafficMayHaveChanged` says whether traffic is at risk. */
+  | 'wrangler-failed'
   | 'dry-run'
 
 /** The machine-readable line a workflow step reads. */
@@ -450,6 +665,14 @@ export interface PromoteResult {
   /** How many versions the SHA lookup could see. `wrangler versions list` caps at 10. */
   searchedVersions?: number
   candidates?: string[]
+  /**
+   * Set only on `wrangler-failed`. `true` means a `versions deploy` or
+   * `rollback` was in flight when wrangler died, so the traffic state is
+   * unknown and the caller must look before it acts.
+   */
+  trafficMayHaveChanged?: boolean
+  /** Set when `--force` overrode the ordering guard, so the log carries it. */
+  forced?: boolean
   detail: string
   exitCode: number
 }
@@ -467,6 +690,17 @@ export function formatPromoteResult(result: PromoteResult): string {
     lines.push(`  searched   ${String(result.searchedVersions)} most recent versions`)
   }
   if (result.candidates?.length) lines.push(`  candidates ${result.candidates.join(', ')}`)
+  if (result.trafficMayHaveChanged !== undefined) {
+    lines.push(
+      `  traffic risk ${result.trafficMayHaveChanged ? 'YES -- a deploy was in flight' : 'no -- nothing was attempted'}`,
+    )
+  }
+  if (result.forced) {
+    lines.push(
+      '  !! FORCED   --force overrode the ordering guard: a version older than the one ' +
+        'serving production was deployed on purpose.',
+    )
+  }
   lines.push(`  detail     ${result.detail}`)
   return lines.join('\n')
 }
@@ -498,7 +732,11 @@ function resolveWorker(
   return { workerName, accountId, appDir }
 }
 
-function guardRefusal(action: PromoteAction, worker: string | null): PromoteResult {
+function guardRefusal(
+  action: PromoteAction,
+  worker: string | null,
+  detail?: string,
+): PromoteResult {
   return {
     action,
     outcome: 'guard-refused',
@@ -507,8 +745,49 @@ function guardRefusal(action: PromoteAction, worker: string | null): PromoteResu
     versionId: null,
     previousVersionId: null,
     percentage: null,
-    detail: getPromoteGuardMessage(action),
+    detail: detail ?? getPromoteGuardMessage(action),
     exitCode: PROMOTE_EXIT.refused,
+  }
+}
+
+/**
+ * Everything that talks to wrangler runs inside this, so a non-zero wrangler
+ * exit becomes a `PromoteResult` with `wranglerFailed` (5) rather than an
+ * exception the CLI flattens into 1. `trafficMayHaveChanged` is the whole point
+ * of the distinction: a failed `deployments list` changed nothing, a failed
+ * `versions deploy` may have changed everything.
+ */
+async function withWranglerFailure<T>(
+  action: PromoteAction,
+  worker: string | null,
+  phase: string,
+  trafficMayHaveChanged: boolean,
+  run: () => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; result: PromoteResult }> {
+  try {
+    return { ok: true, value: await run() }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      ok: false,
+      result: {
+        action,
+        outcome: 'wrangler-failed',
+        worker,
+        sha: null,
+        versionId: null,
+        previousVersionId: null,
+        percentage: null,
+        trafficMayHaveChanged,
+        detail:
+          `wrangler failed during ${phase}: ${message}. ` +
+          (trafficMayHaveChanged
+            ? 'A traffic change was in flight, so the live version is unknown: read ' +
+              '`wrangler deployments list` before deciding whether to roll back.'
+            : 'Nothing was deployed; production is untouched.'),
+        exitCode: PROMOTE_EXIT.wranglerFailed,
+      },
+    }
   }
 }
 
@@ -522,6 +801,16 @@ export async function runVersionsPromote(
   }
 
   const { workerName, accountId, appDir } = resolveWorker(flags, context)
+
+  // The ref/event half of the guard. Skipped under the manual override, which
+  // is the deliberate-recovery path and by definition runs outside Actions.
+  const productionBranch =
+    flags.productionBranch ?? env.NARDUK_PROMOTE_PRODUCTION_BRANCH?.trim() ?? null
+  if (!isManualPromoteAllowed(env)) {
+    const refusal = checkPromoteContext(env, productionBranch)
+    if (refusal) return guardRefusal('versions-promote', workerName, refusal.reason)
+  }
+
   const client =
     context.client ??
     createWranglerCli({ workerName, accountId: accountId ?? undefined, appDir, env })
@@ -530,14 +819,34 @@ export async function runVersionsPromote(
     throw new Error('Pass --sha <commit> or --version-id <id> (GITHUB_SHA was not set)')
   }
 
-  const deployments = await client.listDeployments()
+  const deploymentsRead = await withWranglerFailure(
+    'versions-promote',
+    workerName,
+    'deployments list',
+    false,
+    async () => client.listDeployments(),
+  )
+  if (!deploymentsRead.ok) return deploymentsRead.result
+  const deployments = deploymentsRead.value
   const live = currentDeployment(deployments)
   const previousVersionId = soleDeployedVersionId(live)
+
+  // One `versions list` serves both the SHA lookup and the ordering guard, so
+  // the guard costs no extra call and sees exactly the window the lookup saw.
+  const versionsRead = await withWranglerFailure(
+    'versions-promote',
+    workerName,
+    'versions list',
+    false,
+    async () => client.listVersions(),
+  )
+  if (!versionsRead.ok) return versionsRead.result
+  const versions = versionsRead.value
 
   let versionId = flags.versionId
   let searchedVersions: number | undefined
   if (!versionId && sha) {
-    const match = resolveVersionForSha(await client.listVersions(), sha)
+    const match = resolveVersionForSha(versions, sha)
     searchedVersions = match.searched
     if (match.kind === 'not-found') {
       return {
@@ -578,6 +887,78 @@ export async function runVersionsPromote(
 
   if (!versionId) throw new Error('Could not resolve a version to promote')
 
+  const target = versions.find((version) => version.id === versionId) ?? null
+  const liveVersion = previousVersionId
+    ? (versions.find((version) => version.id === previousVersionId) ?? null)
+    : null
+
+  const refuse = (
+    outcome: 'stale-promote' | 'branch-mismatch',
+    exitCode: number,
+    detail: string,
+  ): PromoteResult => ({
+    action: 'versions-promote',
+    outcome,
+    worker: workerName,
+    sha,
+    versionId,
+    previousVersionId,
+    percentage: null,
+    searchedVersions,
+    detail,
+    exitCode,
+  })
+
+  // S2: a version built from a feature branch carries the same commit tag as
+  // main's build of that commit. Promoting the wrong one is how a branch's code
+  // reaches production without ever being on main.
+  if (productionBranch && !flags.anyBranch && target) {
+    const branch = versionBranch(target)
+    if (branch === null) {
+      return refuse(
+        'branch-mismatch',
+        PROMOTE_EXIT.branchMismatch,
+        `Version ${versionId} records no branch (no readable ${VERSION_MESSAGE_ANNOTATION} ` +
+          `annotation), so it cannot be confirmed as a ${productionBranch} build. Re-run the ` +
+          'Workers Build for this commit, or pass --any-branch to promote it anyway.',
+      )
+    }
+    if (branch !== productionBranch) {
+      return refuse(
+        'branch-mismatch',
+        PROMOTE_EXIT.branchMismatch,
+        `Version ${versionId} was built from branch ${branch}, not the production branch ` +
+          `${productionBranch}. Promote the ${productionBranch} build of this commit, or pass ` +
+          '--any-branch.',
+      )
+    }
+  }
+
+  // B1: the ordering guard. Two promotes racing (PRs merged seconds apart, a
+  // re-run of an older job, a manual recovery promote) would otherwise let the
+  // older commit win simply by finishing last, with outcome `promoted` and exit
+  // 0 -- and the live proof passes, because the older version really does serve
+  // the SHA that job expects.
+  let forced: true | undefined
+  if (liveVersion && target && liveVersion.id !== target.id) {
+    const order = compareVersionRecency(target, liveVersion)
+    if (order === null || order < 0) {
+      const detail =
+        order === null
+          ? `Cannot tell whether version ${versionId} is newer than the live version ` +
+            `${previousVersionId}: neither carries a comparable version number or created_on. ` +
+            'Refusing rather than risking a silent roll-back of production. Pass --force to ' +
+            'deploy it anyway.'
+          : `Version ${versionId} is OLDER than the version already serving production ` +
+            `(${previousVersionId}). Promoting it would roll production backwards -- this is ` +
+            'what a superseded or re-run promote job looks like. Pass --force for a deliberate ' +
+            'revert-by-promote.'
+      if (!flags.force) return refuse('stale-promote', PROMOTE_EXIT.stalePromote, detail)
+      forced = true
+      console.warn(`[promote] !! FORCED PAST THE ORDERING GUARD -- ${detail}`)
+    }
+  }
+
   if (previousVersionId === versionId && flags.percentage === 100) {
     return {
       action: 'versions-promote',
@@ -608,11 +989,19 @@ export async function runVersionsPromote(
     }
   }
 
-  await client.deployVersion(
-    versionId,
-    flags.percentage,
-    flags.message ?? (sha ? `narduk-app promote ${sha}` : undefined),
+  const deployed = await withWranglerFailure(
+    'versions-promote',
+    workerName,
+    `versions deploy ${versionId}@${String(flags.percentage)}`,
+    true,
+    async () =>
+      client.deployVersion(
+        versionId,
+        flags.percentage,
+        flags.message ?? (sha ? `narduk-app promote ${sha}` : undefined),
+      ),
   )
+  if (!deployed.ok) return { ...deployed.result, sha, versionId, previousVersionId }
   return {
     action: 'versions-promote',
     outcome: 'promoted',
@@ -622,6 +1011,7 @@ export async function runVersionsPromote(
     previousVersionId,
     percentage: flags.percentage,
     searchedVersions,
+    forced,
     detail: `Deployed version ${versionId} at ${String(flags.percentage)}%.`,
     exitCode: PROMOTE_EXIT.ok,
   }
@@ -641,7 +1031,15 @@ export async function runRollback(
     context.client ??
     createWranglerCli({ workerName, accountId: accountId ?? undefined, appDir, env })
 
-  const deployments = await client.listDeployments()
+  const deploymentsRead = await withWranglerFailure(
+    'rollback',
+    workerName,
+    'deployments list',
+    false,
+    async () => client.listDeployments(),
+  )
+  if (!deploymentsRead.ok) return deploymentsRead.result
+  const deployments = deploymentsRead.value
   const live = currentDeployment(deployments)
   const liveVersionId = soleDeployedVersionId(live)
 
@@ -675,6 +1073,15 @@ export async function runRollback(
         resolved.versionId,
       )
     }
+    if (resolved.kind === 'unknown-provenance') {
+      return refuse(
+        'The live deployment carries no annotations, so it cannot be ruled out as a rollback -- ' +
+          'and if it is one, the newest earlier version is the broken one it left, so an unnamed ' +
+          'rollback would roll forward into it. Unknown provenance is refused, not assumed ' +
+          'benign. Pass --to <version-id> explicitly (a promote prints previousVersionId).',
+        resolved.versionId,
+      )
+    }
     target = resolved.versionId
   }
 
@@ -699,7 +1106,16 @@ export async function runRollback(
     }
   }
 
-  await client.rollback(target, flags.message ?? `${ROLLBACK_MESSAGE_PREFIX} to ${target}`)
+  const versionId = target
+  const rolled = await withWranglerFailure(
+    'rollback',
+    workerName,
+    `rollback ${versionId}`,
+    true,
+    async () =>
+      client.rollback(versionId, flags.message ?? `${ROLLBACK_MESSAGE_PREFIX} to ${versionId}`),
+  )
+  if (!rolled.ok) return { ...rolled.result, versionId: target, previousVersionId: liveVersionId }
   return {
     action: 'rollback',
     outcome: 'rolled-back',

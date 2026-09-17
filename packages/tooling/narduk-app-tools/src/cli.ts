@@ -10,6 +10,7 @@ import {
   formatPromoteResult,
   parseRollbackArgs,
   parseVersionsPromoteArgs,
+  PROMOTE_EXIT,
   readWranglerAccountId,
   runRollback,
   runVersionsPromote,
@@ -43,21 +44,28 @@ function usage(): string {
     '  db migrate --config <file> --database <name> --local|--remote [--reset]',
     '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
-    '      [--account-id <id>] [--message <text>] [--dry-run] [--json]',
+    '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
+    '      [--percentage <1-100>] [--message <text>] [--dry-run] [--json]',
     '                                       Deploy the already-uploaded version for a commit at',
     '                                       100%. GitHub Actions only (NARDUK_ALLOW_MANUAL_PROMOTE=1',
-    '                                       for recovery). Exit 3 version not found, 4 ambiguous,',
-    '                                       5 wrangler failed.',
+    '                                       for recovery). Exit 1 guard refused (nothing attempted),',
+    '                                       2 usage, 3 version not found, 4 ambiguous, 5 wrangler',
+    '                                       failed (traffic state may be unknown), 7 the target is',
+    '                                       older than the live version, 8 not a production-branch',
+    '                                       build.',
     '  deploy rollback [--to <version-id>] [--name <worker>] [--account-id <id>]',
     '      [--message <text>] [--dry-run] [--json]',
     '                                       Roll back to the previous deployed version, or a named',
-    '                                       one. Refuses a no-op (exit 6).',
+    '                                       one. Refuses a no-op, and refuses to guess "previous"',
+    '                                       when the live deployment may itself be a rollback',
+    '                                       (exit 6).',
     '  verify --live <url> [--expect-sha <sha>] [--health-path <p>] [--smoke-path <p>]',
     '      [--expect-content-type <t>] [--attempts <n>] [--interval-seconds <n>]',
-    '      [--allow-degraded] [--json [path]]',
+    '      [--allow-degraded] [--no-cache-bust] [--json [path]]',
     '                                       Live proof of a deployment: x-build-version, health,',
-    '                                       and one smoke route. Exit 2 unreachable, 3 build',
-    '                                       version mismatch, 4 health, 5 smoke.',
+    '                                       and one smoke route, read no-cache and refused if a',
+    '                                       redirect leaves the origin. Exit 2 unreachable, 3 build',
+    '                                       version mismatch, 4 health, 5 smoke, 6 wrong origin.',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  doctor                              Check app-local prerequisites',
@@ -146,10 +154,20 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
           resolveWorkerName: readWranglerScriptName,
           resolveAccountId: readWranglerAccountId,
         }
-        const result =
-          action === 'versions-promote'
-            ? await runVersionsPromote(parseVersionsPromoteArgs(actionArgs), context)
-            : await runRollback(parseRollbackArgs(actionArgs), context)
+        // A usage error carries PROMOTE_EXIT.usage (2), never the generic 1: a
+        // promote workflow branches on the code, and 1 must keep meaning
+        // "the guard refused, production is untouched" rather than doubling as
+        // "you mistyped a flag".
+        let result
+        try {
+          result =
+            action === 'versions-promote'
+              ? await runVersionsPromote(parseVersionsPromoteArgs(actionArgs), context)
+              : await runRollback(parseRollbackArgs(actionArgs), context)
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error))
+          return PROMOTE_EXIT.usage
+        }
         const json = actionArgs.includes('--json')
         console.log(json ? JSON.stringify(result, null, 2) : formatPromoteResult(result))
         return result.exitCode

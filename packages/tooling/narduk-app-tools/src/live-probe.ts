@@ -12,10 +12,23 @@
  *   - GET, never HEAD. A HEAD can be answered by a different handler than the
  *     GET a browser makes, and Nitro's render hooks -- where nuxt-security sets
  *     headers -- only run for a rendered response.
- *   - redirect: follow. `verify --live` reports `redirected` and the final URL
- *     so a caller can still tell that it happened.
+ *   - redirect: follow. `verify --live` reports `redirected` and the final URL,
+ *     and refuses the proof when the final origin is not the one it was asked
+ *     about.
  *   - A transport failure is returned as `{ error }`, not thrown: "we could not
  *     read it" is a verdict the callers render, not an exception they catch.
+ *
+ * WHY EVERY REQUEST IS NO-CACHE
+ * -----------------------------
+ * Both callers are asserting something about the process that is running right
+ * now: which build is serving, what headers it sets. Design §6.5 tells apps to
+ * turn Cloudflare's cache on, so an uncontrolled GET of `/` can be answered
+ * from cache by the *previous* release for the whole proof window -- the live
+ * proof then fails on a good release and, under the standard, auto-rolls it
+ * back. `cache: 'no-store'` plus the two request headers is the client half of
+ * that; `verify --live` adds a per-run query parameter as the server half,
+ * because a cache key is built from the URL and an intermediary is free to
+ * ignore a request header.
  */
 
 export interface LiveResponse {
@@ -42,6 +55,12 @@ export interface LiveProbeOptions {
   maxBodyBytes?: number
   timeoutMs?: number
   userAgent?: string
+  /**
+   * Ask every hop not to answer from cache. On by default: both callers assert
+   * something about the running deployment, and a cached answer is a different
+   * deployment's answer.
+   */
+  noCache?: boolean
 }
 
 export type LiveProbe = (url: string, options?: LiveProbeOptions) => Promise<LiveResponse>
@@ -57,13 +76,20 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
     const maxBodyBytes = options.maxBodyBytes ?? defaults.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
     const readBody = options.readBody ?? defaults.readBody ?? false
     const userAgent = options.userAgent ?? defaults.userAgent ?? DEFAULT_LIVE_USER_AGENT
+    const noCache = options.noCache ?? defaults.noCache ?? true
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const headersSent: Record<string, string> = { 'user-agent': userAgent }
+    if (noCache) {
+      headersSent['cache-control'] = 'no-cache, no-store, max-age=0'
+      headersSent.pragma = 'no-cache'
+    }
     try {
       const response = await fetch(url, {
         method: 'GET',
         redirect: 'follow',
-        headers: { 'user-agent': userAgent },
+        cache: noCache ? 'no-store' : 'default',
+        headers: headersSent,
         signal: controller.signal,
       })
       const headers: Record<string, string> = {}
@@ -72,10 +98,11 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       })
       const buffer = await response.arrayBuffer().catch(() => new ArrayBuffer(0))
       const result: LiveResponse = { url, status: response.status, headers }
-      if (response.url && response.url !== url) {
-        result.finalUrl = response.url
-        result.redirected = true
-      }
+      // `response.redirected` is the authority; `response.url` alone is not,
+      // because fetch normalises (`https://x.test` -> `https://x.test/`) and a
+      // normalisation is not a redirect.
+      if (response.url) result.finalUrl = response.url
+      if (response.redirected) result.redirected = true
       if (readBody) {
         const bytes = new Uint8Array(buffer)
         const truncated = bytes.byteLength > maxBodyBytes

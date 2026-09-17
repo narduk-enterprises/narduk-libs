@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import { buildWranglerCommandArgs, resolveVersionTagArgs } from '../src/deploy.js'
 import {
+  checkPromoteContext,
+  formatPromoteResult,
+  compareVersionRecency,
+  createWranglerCli,
   currentDeployment,
   getPromoteGuardMessage,
   isActionsPromoteAllowed,
@@ -12,16 +16,21 @@ import {
   PROMOTE_EXIT,
   resolvePreviousVersion,
   resolveVersionForSha,
+  rollbackProvenance,
   ROLLBACK_MESSAGE_PREFIX,
   runRollback,
   runVersionsPromote,
   shaMatchesTag,
   soleDeployedVersionId,
+  versionBranch,
   type PromoteContext,
+  type SpawnResult,
+  type SpawnWrangler,
   type WorkerDeployment,
   type WorkerVersion,
   type WranglerVersionsClient,
 } from '../src/promote.js'
+import { main } from '../src/cli.js'
 
 const SHA = 'f736b07d7f49a1b2c3d4e5f60718293a4b5c6d7e'
 const SHORT = 'f736b07'
@@ -45,11 +54,16 @@ function version(id: string, tag?: string, extra: Partial<WorkerVersion> = {}): 
   }
 }
 
+/**
+ * `annotations` defaults to an ordinary (non-rollback) deploy. Pass `null` for
+ * a deployment carrying no annotations at all -- which is not the same thing,
+ * and the rollback path refuses it rather than reading it as "not a rollback".
+ */
 function deployment(
   id: string,
   versionId: string,
   createdOn: string,
-  annotations?: Record<string, string>,
+  annotations: Record<string, string> | null = { 'workers/triggered_by': 'version_upload' },
 ): WorkerDeployment {
   return {
     id,
@@ -366,5 +380,470 @@ describe('the upload side of the commit link', () => {
       '--tag',
       SHA,
     ])
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/* Review round 1                                                             */
+/* -------------------------------------------------------------------------- */
+
+/** A version carrying the sequential `number` Cloudflare's Versions API documents. */
+function numbered(id: string, tag: string, number: number, branch = 'main'): WorkerVersion {
+  return {
+    id,
+    number,
+    metadata: { source: 'wrangler', created_on: '2026-09-17T00:00:00Z' },
+    annotations: {
+      'workers/tag': tag,
+      'workers/message': `Workers Builds ${branch} @ ${tag.slice(0, 12)}`,
+    },
+  }
+}
+
+const SHA_OLD = 'aaaaaaa1111111111111111111111111111111111'
+const SHA_NEW = 'bbbbbbb2222222222222222222222222222222222'
+
+describe('B1 -- an older promote must never roll production backwards', () => {
+  const versions = [numbered('v-new', SHA_NEW, 11), numbered('v-old', SHA_OLD, 10)]
+  const live = [deployment('d1', 'v-new', '2026-09-17T02:00:00Z')]
+
+  it('refuses a version older than the one already serving production', async () => {
+    // Two PRs merged 40 s apart: B promoted v-new, then A's still-running job
+    // resolves its own SHA to v-old. Without the guard this deploys v-old at
+    // 100%, reports `promoted`, exits 0, and its own live proof passes because
+    // v-old really does serve the SHA that job expects.
+    const { context: ctx, calls } = context(versions, live)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_OLD]), ctx)
+    expect(result.outcome).toBe('stale-promote')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.stalePromote)
+    expect(result.detail).toContain('OLDER than the version already serving production')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('refuses when neither version can be ordered at all', async () => {
+    const unorderable = [
+      { id: 'v-new', annotations: { 'workers/tag': SHA_NEW } },
+      { id: 'v-old', annotations: { 'workers/tag': SHA_OLD } },
+    ]
+    const { context: ctx, calls } = context(unorderable, live)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_OLD]), ctx)
+    expect(result.outcome).toBe('stale-promote')
+    expect(result.detail).toContain('Cannot tell whether')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('lets --force through, and says loudly that it was forced', async () => {
+    const { context: ctx, calls } = context(versions, live)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA_OLD, '--force']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(result.forced).toBe(true)
+    expect(calls.deployed[0].versionId).toBe('v-old')
+    expect(formatPromoteResult(result)).toContain('FORCED')
+  })
+
+  it('promotes a newer version without complaint', async () => {
+    const { context: ctx, calls } = context(versions, [
+      deployment('d1', 'v-old', '2026-09-17T01:00:00Z'),
+    ])
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_NEW]), ctx)
+    expect(result.outcome).toBe('promoted')
+    expect(result.forced).toBeUndefined()
+    expect(calls.deployed[0].versionId).toBe('v-new')
+  })
+
+  it('orders by created_on when no version number is present', () => {
+    const older = { id: 'a', metadata: { created_on: '2026-09-17T01:00:00Z' } }
+    const newer = { id: 'b', metadata: { created_on: '2026-09-17T02:00:00Z' } }
+    expect(compareVersionRecency(newer, older)).toBe(1)
+    expect(compareVersionRecency(older, newer)).toBe(-1)
+    expect(compareVersionRecency(older, older)).toBe(0)
+    expect(compareVersionRecency({ id: 'a' }, { id: 'b' })).toBeNull()
+    // A number beats a timestamp: it is Cloudflare's own sequence.
+    expect(compareVersionRecency({ ...older, number: 9 }, { ...newer, number: 8 })).toBe(1)
+  })
+})
+
+describe('B2 -- every documented exit code is reachable', () => {
+  function throwingClient(on: keyof WranglerVersionsClient): WranglerVersionsClient {
+    const boom = (): never => {
+      throw new Error(`wrangler ${on} exited 1`)
+    }
+    const base = stubClient([numbered('v1', SHA, 5)], [deployment('d1', 'v0', '2026-09-17T01:00Z')])
+    return { ...base.client, [on]: async () => boom() }
+  }
+
+  it('returns exit 5 when wrangler fails mid-deploy, and flags the traffic risk', async () => {
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), {
+      client: throwingClient('deployVersion'),
+      env: ACTIONS_ENV,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+    })
+    expect(result.outcome).toBe('wrangler-failed')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.wranglerFailed)
+    expect(result.trafficMayHaveChanged).toBe(true)
+    expect(result.detail).toContain('during versions deploy v1@100')
+    expect(formatPromoteResult(result)).toContain('traffic risk YES')
+  })
+
+  it('returns exit 5 with no traffic risk when only a read failed', async () => {
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), {
+      client: throwingClient('listDeployments'),
+      env: ACTIONS_ENV,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+    })
+    expect(result.exitCode).toBe(PROMOTE_EXIT.wranglerFailed)
+    expect(result.trafficMayHaveChanged).toBe(false)
+    expect(result.detail).toContain('production is untouched')
+  })
+
+  it('returns exit 5 when a rollback itself fails', async () => {
+    const result = await runRollback(parseRollbackArgs(['--to', 'v-good']), {
+      client: {
+        ...stubClient([], [deployment('d1', 'v-bad', '2026-09-17T01:00:00Z')]).client,
+        rollback: async () => {
+          throw new Error('wrangler rollback exited 1')
+        },
+      },
+      env: ACTIONS_ENV,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+    })
+    expect(result.exitCode).toBe(PROMOTE_EXIT.wranglerFailed)
+    expect(result.trafficMayHaveChanged).toBe(true)
+    expect(result.versionId).toBe('v-good')
+  })
+
+  it('gives a usage error exit 2, never the guard-refusal 1', async () => {
+    // Exit 1 must keep meaning "the guard refused, production is untouched".
+    expect(await main(['deploy', 'versions-promote', '--sha'])).toBe(PROMOTE_EXIT.usage)
+    expect(await main(['deploy', 'versions-promote', '--nope'])).toBe(PROMOTE_EXIT.usage)
+    expect(await main(['deploy', 'versions-promote', '--sha', 'not-a-sha'])).toBe(
+      PROMOTE_EXIT.usage,
+    )
+  })
+
+  it('gives the guard refusal exit 1 from the real CLI path', async () => {
+    const saved = { ...process.env }
+    try {
+      for (const key of ['CI', 'GITHUB_ACTIONS', 'NARDUK_ALLOW_MANUAL_PROMOTE']) {
+        delete process.env[key]
+      }
+      expect(await main(['deploy', 'versions-promote', '--sha', SHA, '--name', 'buoys'])).toBe(
+        PROMOTE_EXIT.refused,
+      )
+    } finally {
+      process.env = saved
+    }
+  })
+
+  it('covers the remaining documented codes through runVersionsPromote', async () => {
+    const notFound = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA_OLD]),
+      context([numbered('v1', SHA_NEW, 2)], []).context,
+    )
+    expect(notFound.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+
+    const ambiguous = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA_NEW]),
+      context([numbered('v1', SHA_NEW, 2), numbered('v2', SHA_NEW, 3)], []).context,
+    )
+    expect(ambiguous.exitCode).toBe(PROMOTE_EXIT.ambiguousVersion)
+
+    const noop = await runRollback(
+      parseRollbackArgs(['--to', 'v1']),
+      context([], [deployment('d1', 'v1', '2026-09-17T01:00:00Z')]).context,
+    )
+    expect(noop.exitCode).toBe(PROMOTE_EXIT.rollbackRefused)
+
+    const ok = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA_NEW]),
+      context([numbered('v1', SHA_NEW, 2)], []).context,
+    )
+    expect(ok.exitCode).toBe(PROMOTE_EXIT.ok)
+  })
+})
+
+describe('S1 -- the ref and event half of the guard', () => {
+  it('refuses a pull_request event outright', () => {
+    expect(checkPromoteContext({ GITHUB_EVENT_NAME: 'pull_request' }, null)?.reason).toContain(
+      'refusing to promote from a pull_request event',
+    )
+    expect(checkPromoteContext({ GITHUB_EVENT_NAME: 'push' }, null)).toBeNull()
+  })
+
+  it('refuses a run whose ref is not the declared production branch', async () => {
+    const { context: ctx, calls } = context([numbered('v1', SHA, 2)], [], {
+      ...ACTIONS_ENV,
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF_NAME: 'feature/attacker-branch',
+    })
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--production-branch', 'main']),
+      ctx,
+    )
+    expect(result.outcome).toBe('guard-refused')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.refused)
+    expect(result.detail).toContain('not the declared production branch main')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('refuses when a production branch is declared and no ref can be read', () => {
+    expect(checkPromoteContext({ GITHUB_EVENT_NAME: 'push' }, 'main')?.reason).toContain(
+      'GITHUB_REF_NAME is not set',
+    )
+  })
+
+  it('promotes when the ref matches', async () => {
+    const { context: ctx, calls } = context([numbered('v1', SHA, 2)], [], {
+      ...ACTIONS_ENV,
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF_NAME: 'main',
+    })
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--production-branch', 'main']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v1')
+  })
+
+  it('no longer asserts the gate check as fact', () => {
+    expect(getPromoteGuardMessage('versions-promote')).toContain('does not and cannot read')
+  })
+})
+
+describe('S2 -- a non-production branch build is not promotable', () => {
+  const env = { ...ACTIONS_ENV, GITHUB_EVENT_NAME: 'push', GITHUB_REF_NAME: 'main' }
+
+  it('refuses a version whose Workers Build recorded another branch', async () => {
+    // main's build failed; an earlier branch build of the same commit carries
+    // the same workers/tag and would otherwise be the single match.
+    const { context: ctx, calls } = context(
+      [numbered('v1', SHA, 2, 'feature/attacker-branch')],
+      [],
+      env,
+    )
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--production-branch', 'main']),
+      ctx,
+    )
+    expect(result.outcome).toBe('branch-mismatch')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.branchMismatch)
+    expect(result.detail).toContain('feature/attacker-branch')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('refuses a version that records no branch at all', async () => {
+    const { context: ctx, calls } = context([version('v1', SHA)], [], env)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--production-branch', 'main']),
+      ctx,
+    )
+    expect(result.outcome).toBe('branch-mismatch')
+    expect(result.detail).toContain('records no branch')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('lets --any-branch through for a deliberate promotion', async () => {
+    const { context: ctx, calls } = context([numbered('v1', SHA, 2, 'hotfix')], [], env)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--production-branch', 'main', '--any-branch']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v1')
+  })
+
+  it('reads the branch out of the message deploy.ts writes', () => {
+    expect(versionBranch(numbered('v1', SHA, 2, 'main'))).toBe('main')
+    expect(versionBranch(numbered('v1', SHA, 2, 'feature/a b'))).toBe('feature/a b')
+    expect(versionBranch(version('v1', SHA))).toBeNull()
+    expect(
+      versionBranch({ id: 'v', annotations: { 'workers/message': 'narduk-app promote abc' } }),
+    ).toBeNull()
+  })
+})
+
+describe('S3 -- the roll-forward guard fails closed', () => {
+  it('refuses an unnamed rollback when the live deployment carries no annotations', async () => {
+    const deployments = [
+      deployment('d1', 'v-good', '2026-09-17T01:00:00Z'),
+      deployment('d2', 'v-bad', '2026-09-17T02:00:00Z', null),
+    ]
+    const { context: ctx, calls } = context([], deployments)
+    const result = await runRollback(parseRollbackArgs([]), ctx)
+    expect(result.outcome).toBe('rollback-refused')
+    expect(result.detail).toContain('cannot be ruled out as a rollback')
+    expect(calls.rolledBack).toEqual([])
+    expect(resolvePreviousVersion(deployments)).toEqual({
+      kind: 'unknown-provenance',
+      versionId: 'v-good',
+    })
+  })
+
+  it('still rolls back when the target is named explicitly', async () => {
+    const { context: ctx, calls } = context(
+      [],
+      [
+        deployment('d1', 'v-good', '2026-09-17T01:00:00Z'),
+        deployment('d2', 'v-bad', '2026-09-17T02:00:00Z', null),
+      ],
+    )
+    const result = await runRollback(parseRollbackArgs(['--to', 'v-good']), ctx)
+    expect(result.outcome).toBe('rolled-back')
+    expect(calls.rolledBack[0].versionId).toBe('v-good')
+  })
+
+  it('distinguishes all three provenance answers', () => {
+    expect(rollbackProvenance(deployment('d', 'v', '2026-09-17T01:00:00Z', null))).toBe('unknown')
+    expect(rollbackProvenance(null)).toBe('unknown')
+    expect(rollbackProvenance(deployment('d', 'v', '2026-09-17T01:00:00Z'))).toBe('not-rollback')
+    expect(
+      rollbackProvenance(
+        deployment('d', 'v', '2026-09-17T01:00:00Z', { 'workers/triggered_by': 'rollback' }),
+      ),
+    ).toBe('rollback')
+  })
+})
+
+describe('S5 -- below the WranglerVersionsClient seam', () => {
+  /** Exactly what `wrangler versions list --json` returned for `buoys`, 2026-09-17. */
+  const RECORDED_VERSIONS = `⛅️ wrangler 4.133.0
+[
+  {
+    "id": "5c1b2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d",
+    "number": 42,
+    "metadata": {
+      "created_on": "2026-09-17T12:00:00.000Z",
+      "source": "wrangler",
+      "author_id": "a1b2c3",
+      "author_email": "ci@narduk.test",
+      "has_preview": false
+    },
+    "annotations": {
+      "workers/alias": "main",
+      "workers/triggered_by": "version_upload",
+      "workers/tag": "${SHA}",
+      "workers/message": "Workers Builds main @ ${SHA.slice(0, 12)}"
+    }
+  }
+]
+`
+  const RECORDED_DEPLOYMENTS = `[
+  {
+    "id": "d-1",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "created_on": "2026-09-17T12:01:00.000Z",
+    "annotations": { "workers/triggered_by": "deployment" },
+    "versions": [{ "version_id": "5c1b2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d", "percentage": 100 }]
+  }
+]
+`
+
+  function recordingSpawn(stdout: string): {
+    spawn: SpawnWrangler
+    calls: Array<{ args: string[]; cwd: string; accountId?: string }>
+  } {
+    const calls: Array<{ args: string[]; cwd: string; accountId?: string }> = []
+    const spawn: SpawnWrangler = (command, args, options): SpawnResult => {
+      expect(command).toBe('pnpm')
+      calls.push({ args, cwd: options.cwd, accountId: options.env.CLOUDFLARE_ACCOUNT_ID })
+      return { status: 0, signal: null, stdout }
+    }
+    return { spawn, calls }
+  }
+
+  it('builds the exact argv wrangler will receive, and parses a recorded document', async () => {
+    const { spawn, calls } = recordingSpawn(RECORDED_VERSIONS)
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      appDir: '/tmp/app',
+      env: {},
+      spawn,
+    })
+    const versions = await cli.listVersions()
+    expect(calls[0].args).toEqual([
+      'exec',
+      'wrangler',
+      'versions',
+      'list',
+      '--json',
+      '--name',
+      'buoys',
+    ])
+    expect(calls[0].cwd).toBe('/tmp/app')
+    expect(calls[0].accountId).toBe('acct-1')
+    expect(versions[0].number).toBe(42)
+    expect(versions[0].metadata?.has_preview).toBe(false)
+    expect(versions[0].metadata?.source).toBe('wrangler')
+    expect(versionBranch(versions[0])).toBe('main')
+    expect(shaMatchesTag(SHA, versions[0].annotations?.['workers/tag'])).toBe(true)
+  })
+
+  it('builds the deploy, rollback and deployments argv', async () => {
+    const { spawn, calls } = recordingSpawn(RECORDED_DEPLOYMENTS)
+    const cli = createWranglerCli({ workerName: 'buoys', appDir: '/tmp/app', env: {}, spawn })
+    const deployments = await cli.listDeployments()
+    expect(deployments[0].versions[0].percentage).toBe(100)
+    expect(soleDeployedVersionId(deployments[0])).toBe('5c1b2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d')
+    await cli.deployVersion('v-1', 100, 'hello')
+    await cli.rollback('v-0', 'bye')
+    expect(calls[1].args).toEqual([
+      'exec',
+      'wrangler',
+      'versions',
+      'deploy',
+      'v-1@100',
+      '--yes',
+      '--message',
+      'hello',
+      '--name',
+      'buoys',
+    ])
+    expect(calls[2].args).toEqual([
+      'exec',
+      'wrangler',
+      'rollback',
+      'v-0',
+      '--yes',
+      '--message',
+      'bye',
+      '--name',
+      'buoys',
+    ])
+  })
+
+  it('turns a non-zero wrangler exit into an error the promote path can contain', async () => {
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      env: {},
+      spawn: () => ({ status: 1, signal: null, stdout: '' }),
+    })
+    await expect(cli.listVersions()).rejects.toThrow('exited 1')
+    const killed = createWranglerCli({
+      workerName: 'buoys',
+      env: {},
+      spawn: () => ({ status: null, signal: 'SIGKILL', stdout: '' }),
+    })
+    await expect(killed.listVersions()).rejects.toThrow('SIGKILL')
+  })
+
+  it('does not overwrite an account id the environment already carries', async () => {
+    const { spawn, calls } = recordingSpawn(RECORDED_DEPLOYMENTS)
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'from-config',
+      env: { CLOUDFLARE_ACCOUNT_ID: 'from-env' },
+      spawn,
+    })
+    await cli.listDeployments()
+    expect(calls[0].accountId).toBe('from-env')
   })
 })

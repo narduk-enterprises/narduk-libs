@@ -67,3 +67,29 @@ Item 10's live header probe and `verify --live` now share one HTTP layer
 (`createLiveProbe`) rather than two fetch paths with separate timeout, redirect
 and user-agent behaviour. Every Cloudflare interaction is behind an injectable
 seam, so no test makes a network call.
+
+Review round 1 (Tier 2 adversarial, 2026-09-17) added three safety rules that
+the first cut did not have, each with its own outcome and exit code:
+
+- **`stale-promote` (exit 7).** A promote refuses a version older than the one
+  already serving production, or one it cannot order against it. Two PRs merging
+  seconds apart would otherwise let the older commit win by finishing last —
+  reporting `promoted`, exiting 0, and passing its own live proof. `--force` is
+  the deliberate revert-by-promote and is logged loudly.
+- **`branch-mismatch` (exit 8).** With `--production-branch` (or
+  `NARDUK_PROMOTE_PRODUCTION_BRANCH`), a version is promotable only when the
+  branch recorded in its `workers/message` annotation is that branch, and a
+  version recording no branch is refused. The run's own `GITHUB_REF_NAME` and
+  `GITHUB_EVENT_NAME` are checked too; `--any-branch` overrides the first.
+- **`wrangler-failed` (exit 5) is now reachable.** A wrangler failure returns a
+  result carrying `trafficMayHaveChanged` instead of escaping as an exception
+  the CLI flattened to 1, and usage errors moved to their own exit 2 — so exit 1
+  keeps meaning "the guard refused, production is untouched".
+
+`verify --live` gained the same treatment: every request is sent no-cache with a
+per-attempt cache-busting query parameter (`--no-cache-bust` opts out of the
+parameter), a redirect that leaves the origin under proof now fails with exit 6
+rather than silently proving a different Worker, and `--allow-degraded` no
+longer excuses a `database` of `not_available`, `schema_error` or `error`. An
+unnamed `deploy rollback` also refuses when the live deployment carries no
+annotations at all, instead of reading unknown provenance as "not a rollback".
