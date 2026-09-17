@@ -8,8 +8,8 @@ import {
   useSiteConfig,
 } from '#imports'
 
+import { DEFAULT_SOCIAL_IMAGE_HEIGHT, DEFAULT_SOCIAL_IMAGE_WIDTH } from '../utils/defaultSocialMeta'
 import { hasNoindexRobots, resolveSeoOgImageDefinition } from '../utils/ogImageDefinition'
-import { resolvePublicTwitterSite } from '../utils/resolvePublicTwitterSite'
 
 import type { SeoOgImageOptions } from '../utils/ogImageDefinition'
 import type { MaybeRefOrGetter } from 'vue'
@@ -19,6 +19,10 @@ interface SeoOptions {
   canonicalUrl?: string
   description: MaybeRefOrGetter<string>
   image?: string
+  /** Declared pixel height of `image`. Defaults to the 1200x630 social-card ratio. */
+  imageHeight?: number | string
+  /** Declared pixel width of `image`. Defaults to the 1200x630 social-card ratio. */
+  imageWidth?: number | string
   keywords?: string[]
   modifiedAt?: string
   ogImage?: SeoOgImageOptions | false
@@ -43,6 +47,8 @@ export function useSeo(options: SeoOptions) {
     title,
     description,
     image,
+    imageWidth = DEFAULT_SOCIAL_IMAGE_WIDTH,
+    imageHeight = DEFAULT_SOCIAL_IMAGE_HEIGHT,
     type = 'website',
     publishedAt,
     modifiedAt,
@@ -83,10 +89,6 @@ export function useSeo(options: SeoOptions) {
       })
     : null
 
-  const twitterSiteFromConfig = resolvePublicTwitterSite(
-    runtimeConfig.public as { twitterSite?: string },
-  )
-
   useSeoMeta({
     title: resolveTitle,
     description: resolveDescription,
@@ -95,11 +97,15 @@ export function useSeo(options: SeoOptions) {
     // ogType accepts 'website' | 'article' | 'profile' etc.
     ogType: type,
     ogUrl: resolvedCanonicalUrl,
-    twitterCard: 'summary_large_image',
-    twitterTitle: resolveTitle,
-    twitterDescription: resolveDescription,
-    ...(twitterSiteFromConfig && { twitterSite: twitterSiteFromConfig }),
-    ...(image && !dynamicOgImage && { ogImage: image, twitterImage: image }),
+    // No `twitter:*` meta: X reads `og:*` when none is present, and Unhead 3 reports
+    // every `twitter:*` name as deprecated (narduk-libs#349).
+    // `defineOgImage` declares its own dimensions, so only the static image needs them.
+    ...(image &&
+      !dynamicOgImage && {
+        ogImage: image,
+        ogImageWidth: imageWidth,
+        ogImageHeight: imageHeight,
+      }),
     // Article-specific
     ...(type === 'article' && publishedAt && { articlePublishedTime: publishedAt }),
     ...(type === 'article' && modifiedAt && { articleModifiedTime: modifiedAt }),

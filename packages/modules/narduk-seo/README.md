@@ -204,9 +204,15 @@ after SSR.
   from overrides when you need a path the env cannot express.
 - **`resolveSiteOriginForSchemaInput` —** Shared helper to normalize `url` for
   JSON-LD (site config first, then `public.appUrl`).
-- **`useSeo` + `NUXT_PUBLIC_TWITTER_SITE` —** When this public string is
-  non-empty, `useSeo` also sets `twitter:site` (X/Twitter site attribution) for
-  all pages that call the composable.
+- **`useSeo` emits Open Graph only —** No `twitter:*` meta at all. X reads
+  `og:*` when no `twitter:` tag is present, and Unhead 3 reports every
+  `twitter:*` name (including `twitter:card`) as deprecated, which turns the
+  shared browser-console contract red on every route (narduk-libs#349). `useSeo`
+  declares `og:image:width` / `og:image:height` alongside a static `image` —
+  1200x630 by default, overridable with `imageWidth` / `imageHeight` — because
+  Unhead also warns on an `og:image` without dimensions.
+  `NUXT_PUBLIC_TWITTER_SITE` is still accepted as public runtime config but is
+  no longer read by anything.
 
 ## Admin OG route previews (SSR HTML)
 

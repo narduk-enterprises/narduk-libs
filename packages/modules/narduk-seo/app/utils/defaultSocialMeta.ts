@@ -3,9 +3,16 @@ export interface DefaultSocialImage {
   url: string
 }
 
+/** Declared dimensions of the estate's social card artwork (the `summary_large_image` ratio). */
+export const DEFAULT_SOCIAL_IMAGE_WIDTH = '1200'
+export const DEFAULT_SOCIAL_IMAGE_HEIGHT = '630'
+
 /**
  * One tag per entry, keyed by exactly one of `property` or `name`. Unhead 3 types
  * meta as that discriminated union, and Unhead 2 accepts it as well.
+ *
+ * Open Graph only: X reads `og:*` when no `twitter:*` tag is present, and Unhead 3
+ * reports every `twitter:*` meta name as deprecated (narduk-libs#349).
  */
 export type DefaultSocialMetaTag =
   { content: string; property: string } | { content: string; name: string }
@@ -42,18 +49,8 @@ export function defaultSocialMeta(input: {
     url: canonical.href,
     image: image.href,
     'image:alt': input.image.alt,
-    'image:width': '1200',
-    'image:height': '630',
+    'image:width': DEFAULT_SOCIAL_IMAGE_WIDTH,
+    'image:height': DEFAULT_SOCIAL_IMAGE_HEIGHT,
   }
-  const twitter = {
-    card: 'summary_large_image',
-    title: input.siteName,
-    description: input.description,
-    image: image.href,
-    'image:alt': input.image.alt,
-  }
-  return [
-    ...Object.entries(og).map(([key, content]) => ({ property: `og:${key}`, content })),
-    ...Object.entries(twitter).map(([key, content]) => ({ name: `twitter:${key}`, content })),
-  ]
+  return Object.entries(og).map(([key, content]) => ({ property: `og:${key}`, content }))
 }

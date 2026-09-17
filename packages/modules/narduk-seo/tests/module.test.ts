@@ -112,6 +112,25 @@ describe('narduk-seo module', () => {
     expect(extendRouteRules).toHaveBeenCalledWith('/_og/**', { prerender: false })
   })
 
+  it('suppresses every automatic twitter:* meta tag (narduk-libs#349)', async () => {
+    const { nuxt } = await setupModule()
+
+    // nuxt-seo-utils' InferSeoMetaPlugin and nuxt-og-image's generateMeta are
+    // the two sources that would otherwise re-add `twitter:*` names after
+    // useSeo stopped emitting them.
+    expect(nuxt.options.seo).toMatchObject({ automaticTwitterTags: false })
+    expect(nuxt.options.ogImage).toMatchObject({ includeTwitter: false })
+  })
+
+  it('lets the app opt back into automatic twitter:* meta', async () => {
+    const { nuxt } = await setupModule({
+      nuxtOptions: { ogImage: { includeTwitter: true }, seo: { automaticTwitterTags: true } },
+    })
+
+    expect(nuxt.options.seo).toMatchObject({ automaticTwitterTags: true })
+    expect(nuxt.options.ogImage).toMatchObject({ includeTwitter: true })
+  })
+
   it('keeps production deployments indexable by default', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
 

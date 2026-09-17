@@ -65,6 +65,11 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true })
 })
 
+/**
+ * Open Graph only. The estate stopped emitting `twitter:*` meta because Unhead 3
+ * reports every one of those names as deprecated (narduk-libs#349), so the served
+ * fixture is what a current app renders and the checker must accept it.
+ */
 function html(path: string, image = path === '/' ? '/og.png' : path + '.png'): string {
   const meta = {
     'og:title': path,
@@ -75,8 +80,6 @@ function html(path: string, image = path === '/' ? '/og.png' : path + '.png'): s
     'og:image:alt': 'An example',
     'og:image:width': '1200',
     'og:image:height': '630',
-    'twitter:card': 'summary_large_image',
-    'twitter:image': new URL(image, config.siteUrl).href,
   }
   return (
     '<!DOCTYPE html><html><head>' +
@@ -321,6 +324,21 @@ describe('crawler-visible delivery', () => {
       'exactly one',
     ],
     ['generic dynamic image', (path: string) => html(path, '/og.png'), 'reused the default'],
+    [
+      'an image that is not the declared 1200x630 card',
+      (path: string) =>
+        html(path).replace(
+          'property="og:image:width" content="1200"',
+          'property="og:image:width" content="600"',
+        ),
+      '1200x630',
+    ],
+    [
+      'a head with no declared image dimensions',
+      (path: string) =>
+        html(path).replaceAll(/<meta property="og:image:(?:width|height)"[^>]*>/gu, ''),
+      'exactly one nonempty og:image:width',
+    ],
     [
       'wrong canonical',
       (path: string) =>

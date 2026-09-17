@@ -721,9 +721,9 @@ useWebPageSchema({
 </template>
 `
 
-// The gate itself: server-rendered title, description, Open Graph and Twitter
-// meta, canonical link and WebPage JSON-LD, plus a client-side navigation that
-// has to re-apply the head. The generated consumer resolves its own Nuxt, and
+// The gate itself: server-rendered title, description, Open Graph meta (and
+// the absence of every `twitter:*` name, narduk-libs#349), canonical link and
+// WebPage JSON-LD, plus a client-side navigation that has to re-apply the head. The generated consumer resolves its own Nuxt, and
 // therefore its own Unhead major, so this is what catches an Unhead-
 // incompatible module set before it is published.
 const PACKED_SEO_FIXTURE_SPEC = `import { expect, test } from '@playwright/test'
@@ -762,8 +762,17 @@ test('packed narduk-seo renders SSR metadata (narduk-libs#316)', async ({ reques
   expect(metaContent(html, 'property', 'og:title')).toBe(pageTitle)
   expect(metaContent(html, 'property', 'og:description')).toBe(pageDescription)
   expect(metaContent(html, 'property', 'og:url')).toBe(canonical)
-  expect(metaContent(html, 'name', 'twitter:card')).toBe('summary_large_image')
-  expect(metaContent(html, 'name', 'twitter:title')).toBe(pageTitle)
+  expect(metaContent(html, 'property', 'og:image:width')).toBe('1200')
+  expect(metaContent(html, 'property', 'og:image:height')).toBe('630')
+  // narduk-libs#349: the packed module set must render no \`twitter:*\` meta at
+  // all. Unhead 3 reports every one of those names as deprecated, and the
+  // warnings reach the browser console of every adopting app
+  // (narduk-enterprises/buoys#111). nuxt-seo-utils and nuxt-og-image both
+  // re-add their own twitter tags unless narduk-seo turns them off, so this
+  // asserts the rendered head rather than just the composable's payload.
+  expect(
+    [...html.matchAll(/<meta[^>]*\\sname="(twitter:[^"]*)"/gu)].map(([, name]) => name),
+  ).toEqual([])
   expect(metaContent(html, 'name', 'robots')).toContain('noindex')
   expect(response.headers()['x-robots-tag']).toContain('noindex')
 
