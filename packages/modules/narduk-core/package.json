@@ -58,6 +58,9 @@
     "./internal/*": {
       "import": "./runtime/internal/*.ts"
     },
+    "./server/middleware/canonicalRedirect": {
+      "import": "./runtime/server/handlers/canonicalRedirect.ts"
+    },
     "./server/*": {
       "import": "./runtime/server/*.ts"
     },
