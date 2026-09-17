@@ -1,10 +1,42 @@
 import { describe, expect, it } from 'vitest'
 
+import { createTenancy, type TenancyDatabase } from '../server/utils/tenancy'
+
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
 
 const ACME = { slug: 'acme', name: 'Acme', createdByUserId: 'user-1' }
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
+
+function tenancyDbWhoseBatchThrows(error: Error): TenancyDatabase {
+  const chain = {
+    from() {
+      return this
+    },
+    where() {
+      return this
+    },
+    limit() {
+      return this
+    },
+    all: async () => [],
+    values() {
+      return this
+    },
+    returning() {
+      return {}
+    },
+  }
+  return {
+    select: () => chain,
+    insert: () => chain,
+    update: () => chain,
+    delete: () => chain,
+    batch: async () => {
+      throw error
+    },
+  } as unknown as TenancyDatabase
+}
 
 describe('orgs and memberships', () => {
   it('creates an org with its creator as sole owner', async () => {
@@ -65,6 +97,26 @@ describe('orgs and memberships', () => {
 
     await tenancy.createOrg(ACME)
     expect(await codeOf(tenancy.createOrg({ ...ACME, slug: 'ACME' }))).toBe('conflict')
+  })
+
+  it('surfaces a unique-index slug race as TenancyError conflict', async () => {
+    const tenancy = createTenancy(
+      tenancyDbWhoseBatchThrows(new Error('UNIQUE constraint failed: tenancy_orgs.slug')),
+    )
+
+    expect(await codeOf(tenancy.createOrg(ACME))).toBe('conflict')
+  })
+
+  it('surfaces a unique-index membership race as TenancyError conflict', async () => {
+    const tenancy = createTenancy(
+      tenancyDbWhoseBatchThrows(
+        new Error(
+          'UNIQUE constraint failed: tenancy_memberships.org_id, tenancy_memberships.user_id',
+        ),
+      ),
+    )
+
+    expect(await codeOf(tenancy.createOrg(ACME))).toBe('conflict')
   })
 
   it('returns null for an unknown org and lists only orgs the user belongs to', async () => {

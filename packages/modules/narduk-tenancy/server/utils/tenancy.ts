@@ -12,7 +12,7 @@ import {
 
 import { claimInviteMembership } from './tenancy-accept-invite'
 import { preservesAnOwner, runTenancyBatch } from './tenancy-atomic'
-import { TenancyError } from './tenancy-error'
+import { isTenancyUniqueConstraint, TenancyError } from './tenancy-error'
 
 import type {
   TenancyAuditAction,
@@ -507,36 +507,49 @@ export function createTenancy(
       // Four auto-commits used to leave an ownerless org (and a burned slug)
       // when the membership write failed after the org insert. Invite
       // acceptance already batches for the same reason.
-      await runTenancyBatch(db, [
-        db.insert(tenancyOrgs).values(org).returning({ id: tenancyOrgs.id }),
-        db
-          .insert(tenancyAuditEvents)
-          .values({
-            id: orgCreateAuditId,
-            orgId: org.id,
-            actorUserId: createdByUserId,
-            action: 'org.create',
-            subjectKind: 'org',
-            subjectId: org.id,
-            detailsJson: JSON.stringify({ slug, name }),
-            createdAt: timestamp,
-          })
-          .returning({ id: tenancyAuditEvents.id }),
-        db.insert(tenancyMemberships).values(membership).returning({ id: tenancyMemberships.id }),
-        db
-          .insert(tenancyAuditEvents)
-          .values({
-            id: nextId(),
-            orgId: org.id,
-            actorUserId: createdByUserId,
-            action: 'membership.add',
-            subjectKind: 'membership',
-            subjectId: membership.id,
-            detailsJson: JSON.stringify({ userId: createdByUserId, role: 'owner' }),
-            createdAt: timestamp,
-          })
-          .returning({ id: tenancyAuditEvents.id }),
-      ])
+      try {
+        await runTenancyBatch(db, [
+          db.insert(tenancyOrgs).values(org).returning({ id: tenancyOrgs.id }),
+          db
+            .insert(tenancyAuditEvents)
+            .values({
+              id: orgCreateAuditId,
+              orgId: org.id,
+              actorUserId: createdByUserId,
+              action: 'org.create',
+              subjectKind: 'org',
+              subjectId: org.id,
+              detailsJson: JSON.stringify({ slug, name }),
+              createdAt: timestamp,
+            })
+            .returning({ id: tenancyAuditEvents.id }),
+          db.insert(tenancyMemberships).values(membership).returning({ id: tenancyMemberships.id }),
+          db
+            .insert(tenancyAuditEvents)
+            .values({
+              id: nextId(),
+              orgId: org.id,
+              actorUserId: createdByUserId,
+              action: 'membership.add',
+              subjectKind: 'membership',
+              subjectId: membership.id,
+              detailsJson: JSON.stringify({ userId: createdByUserId, role: 'owner' }),
+              createdAt: timestamp,
+            })
+            .returning({ id: tenancyAuditEvents.id }),
+        ])
+      } catch (cause: unknown) {
+        if (isTenancyUniqueConstraint(cause, 'org-slug')) {
+          throw new TenancyError('conflict', `Org slug ${slug} is already taken.`)
+        }
+        if (isTenancyUniqueConstraint(cause, 'membership')) {
+          throw new TenancyError(
+            'conflict',
+            `User ${createdByUserId} is already a member of org ${org.id}.`,
+          )
+        }
+        throw cause
+      }
       return org
     },
 
