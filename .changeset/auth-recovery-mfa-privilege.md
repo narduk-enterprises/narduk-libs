@@ -1,5 +1,5 @@
 ---
-'@narduk-enterprises/narduk-auth': patch
+'@narduk-enterprises/narduk-auth': minor
 ---
 
 Restrict recovery-mode and unstepped MFA sessions at the grant validator, and
@@ -25,3 +25,13 @@ Recovery never inserts a new local user; invite remains the closed-signup door.
 `isAdmin` (and email/name) are loaded from the current `users` row on every
 refresh, including inside the Supabase 5-minute window. Static asset prefixes
 are skipped by session-refresh middleware.
+
+## Operator action
+
+Re-mint or re-scope every `nk_` API key that calls `POST /api/notifications`,
+`POST /api/notifications/read-all`, `PATCH /api/notifications/:id`, or
+`DELETE /api/notifications/:id` with `auth:notifications:write` **before**
+upgrading. Keys minted with the documented empty-scope default (`scopes: []`)
+currently drive those mutations and will start returning 403 after this release.
+Account delete, change-password, `PATCH /api/auth/me`, and MFA enroll/verify now
+refuse API-key principals entirely.
