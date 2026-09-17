@@ -77,4 +77,12 @@ describe('csrf middleware — CSP report exemption', () => {
     })
     expect(formerDefault.status).toBe(403)
   })
+
+  it('does not CSRF-skip the default report path when security headers are off', async () => {
+    runtime.nardukSecurityHeaders.mode = 'off'
+    const response = await post(DEFAULT_REPORT_ROUTE, {
+      'content-type': 'application/csp-report',
+    })
+    expect(response.status).toBe(403)
+  })
 })

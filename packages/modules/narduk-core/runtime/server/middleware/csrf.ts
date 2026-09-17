@@ -42,8 +42,12 @@ function requestPathname(path: string): string {
  * so this skip tracks a consumer override instead of a hardcoded literal.
  */
 function configuredCspReportRoute(config: object): string | null {
-  const reportRoute = (config as { nardukSecurityHeaders?: { reportRoute?: unknown } })
-    .nardukSecurityHeaders?.reportRoute
+  const headers = (config as { nardukSecurityHeaders?: { mode?: unknown; reportRoute?: unknown } })
+    .nardukSecurityHeaders
+  // No handler is registered when mode is `off` (the default). Skipping CSRF
+  // for the fallback report path would exempt a 404.
+  if (headers?.mode !== 'report-only' && headers?.mode !== 'enforce') return null
+  const reportRoute = headers.reportRoute
   if (reportRoute === false) return null
   if (typeof reportRoute === 'string' && reportRoute.length > 0) return reportRoute
   return DEFAULT_REPORT_ROUTE
