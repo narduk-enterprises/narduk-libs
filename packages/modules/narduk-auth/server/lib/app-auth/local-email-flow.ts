@@ -12,7 +12,6 @@ import { type User as LocalUser, users } from '#narduk-core/schema'
 import { useNativeAuth } from '../../utils/native-auth'
 import { recordLocalEmailVerification } from '../../utils/verified-email'
 
-import { toSessionUser } from './helpers'
 import {
   buildLocalEmailActionUrl,
   generateLocalEmailToken,
@@ -32,7 +31,7 @@ import {
   clearLocalEmailAttempts,
   recordLocalEmailAttemptFailure,
 } from './local-email-throttle'
-import { setCurrentSessionUser } from './session'
+import { establishLocalSessionUser, revokeUserAuthSessions } from './session'
 import { getAuthConfig } from './supabase-client'
 
 import type { AuthMutationResult, LocalEmailPasswordComplete } from './types'
@@ -198,14 +197,13 @@ export async function completeLocalEmailPassword(
   if (useRuntimeConfig(event).authNativeClients?.length) {
     await useNativeAuth(event).revokeUser(user.id)
   }
-  const sessionUser = toSessionUser(user, {
-    authBackend: 'local',
+  await revokeUserAuthSessions(event, user.id)
+  const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: 'email',
     authProviders: ['email'],
     needsPasswordSetup: false,
     emailConfirmedAt: consumedAt,
   })
-  await setCurrentSessionUser(event, sessionUser)
   await clearLocalEmailAttempts(event, 'complete', tokenHash)
 
   return {

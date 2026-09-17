@@ -261,6 +261,7 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       },
     })
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
+      nardukSessionGrantRequired: true,
       appBackendPreset,
       authBackend,
       authAuthorityUrl,
@@ -305,6 +306,9 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       ...(nardukHealth !== null && typeof nardukHealth === 'object' ? nardukHealth : {}),
       authTables: true,
     }
+    // Force the grant-required flag even if an app pre-set runtimeConfig: a
+    // narduk-auth install must not silently fall back to cookie-as-grant.
+    nuxtOptions.runtimeConfig.nardukSessionGrantRequired = true
 
     for (const route of [
       '/login',

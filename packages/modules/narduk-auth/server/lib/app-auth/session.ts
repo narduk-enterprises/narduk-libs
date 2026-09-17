@@ -1,9 +1,9 @@
 import { deleteAppCookie } from '@narduk-enterprises/narduk-app/server/http'
 import { AuthSessionMissingError } from '@supabase/auth-js'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, lt, ne } from 'drizzle-orm'
 import { createError } from 'h3'
 
-import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/database'
+import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import {
   clearLayerUserSession,
@@ -20,12 +20,13 @@ import {
   isTerminalSupabaseSessionFailure,
   stampAuthSessionValidated,
 } from '#narduk-auth-server/utils/auth-session-stability'
+import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { decodeAccessTokenPayload, extractProviderMetadata, toSessionUser } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
+import { resolvePersistedRecoveryMode } from './recovery-mode'
 import { createSupabaseUserClient } from './supabase-client'
 
-import type { User as LocalUser } from '#narduk-core/schema'
 import type {
   AppAuthenticatorAssuranceLevel,
   AppSessionUser,
@@ -39,10 +40,46 @@ import type {
 } from '@supabase/auth-js'
 import type { H3Event } from 'h3'
 
+export { resolvePersistedRecoveryMode } from './recovery-mode'
+
 const PKCE_COOKIE_NAME = 'app_auth_pkce'
 const AUTH_SESSION_ROTATION_RETRY_DELAYS_MS = [100, 250, 650] as const
+const LOCAL_AUTH_SESSION_DAYS = 30
+/** Bounded opportunistic purge of expired rows. Login only — never the request path. */
+export const EXPIRED_AUTH_SESSION_SWEEP_LIMIT = 50
+const AUTH_SESSION_ROW_CACHE_KEY = '_nardukAuthSessionRowCache'
+const AUTH_USER_ROW_CACHE_KEY = '_nardukAuthUserRowCache'
+
+function absoluteAuthSessionExpiry(nowSeconds = Math.floor(Date.now() / 1000)): number {
+  return nowSeconds + LOCAL_AUTH_SESSION_DAYS * 86400
+}
+
+/**
+ * Delete a capped batch of expired `auth_sessions` rows using
+ * `auth_sessions_expires_at_idx`. Called from login inserts only.
+ */
+export async function sweepExpiredAuthSessions(event: H3Event): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  const appDb = useAuthBridgeDatabase(event)
+  await executeDatabaseQuery(
+    appDb
+      .delete(authSessions)
+      .where(
+        inArray(
+          authSessions.id,
+          appDb
+            .select({ id: authSessions.id })
+            .from(authSessions)
+            .where(lt(authSessions.expiresAt, now))
+            .limit(EXPIRED_AUTH_SESSION_SWEEP_LIMIT),
+        ),
+      ),
+  )
+}
 
 type AuthSessionRow = typeof authSessions.$inferSelect
+type AuthSessionRowCache = Map<string, Promise<AuthSessionRow | null>>
+type AuthUserRowCache = Map<string, Promise<LocalUser | null>>
 
 interface SupabaseSetSessionResult {
   data: {
@@ -72,6 +109,12 @@ export async function persistSupabaseSession(
   const metadata = extractProviderMetadata(params.authUser)
   const authSessionId = params.sessionId ?? crypto.randomUUID()
 
+  const existing =
+    params.sessionId != null && params.sessionId !== ''
+      ? await loadAuthSessionRow(event, params.sessionId)
+      : null
+  const recoveryMode = resolvePersistedRecoveryMode(params.recoveryMode, existing?.recoveryMode)
+
   const values = {
     localUserId: params.localUser.id,
     authUserId: params.authUser.id,
@@ -79,13 +122,13 @@ export async function persistSupabaseSession(
       typeof payload.session_id === 'string' ? payload.session_id : params.session.user.id,
     accessToken: params.session.access_token,
     refreshToken: params.session.refresh_token,
-    expiresAt:
-      params.session.expires_at ??
-      Math.floor(Date.now() / 1000) + Math.max(0, params.session.expires_in),
+    // Absolute row lifetime so abandoned Supabase sessions are sweepable.
+    // Access-token TTL stays on the tokens; refresh updates this window.
+    expiresAt: absoluteAuthSessionExpiry(),
     aal: toAppAuthenticatorAssuranceLevel(payload.aal),
     currentProvider: metadata.primaryProvider,
     providersJson: JSON.stringify(metadata.providers),
-    recoveryMode: params.recoveryMode ?? false,
+    recoveryMode,
     updatedAt: now,
   }
 
@@ -93,7 +136,9 @@ export async function persistSupabaseSession(
     await executeDatabaseQuery(
       appDb.update(authSessions).set(values).where(eq(authSessions.id, params.sessionId)),
     )
+    forgetCachedAuthSessionRow(event, params.sessionId)
   } else {
+    await sweepExpiredAuthSessions(event)
     await appDb.insert(authSessions).values({
       id: authSessionId,
       createdAt: now,
@@ -147,6 +192,159 @@ async function getAuthSessionById(
       appDb.select().from(authSessions).where(eq(authSessions.id, authSessionId)),
     )) ?? null
   )
+}
+
+function authSessionRowCache(event: H3Event): AuthSessionRowCache {
+  const context = event.context as H3Event['context'] & {
+    [AUTH_SESSION_ROW_CACHE_KEY]?: AuthSessionRowCache
+  }
+  return (context[AUTH_SESSION_ROW_CACHE_KEY] ??= new Map())
+}
+
+/**
+ * Look up an `auth_sessions` row by id. Memoized on the event so requireAuth,
+ * session refresh, and grant validation share one D1 read per session per request.
+ */
+export async function loadAuthSessionRow(
+  event: H3Event,
+  authSessionId: string,
+): Promise<AuthSessionRow | null> {
+  const cache = authSessionRowCache(event)
+  const existing = cache.get(authSessionId)
+  if (existing) {
+    return existing
+  }
+
+  const pending = getAuthSessionById(useAuthBridgeDatabase(event), authSessionId)
+  cache.set(authSessionId, pending)
+  return pending
+}
+
+function forgetCachedAuthSessionRow(event: H3Event, authSessionId: string): void {
+  authSessionRowCache(event).delete(authSessionId)
+}
+
+function authUserRowCache(event: H3Event): AuthUserRowCache {
+  const context = event.context as H3Event['context'] & {
+    [AUTH_USER_ROW_CACHE_KEY]?: AuthUserRowCache
+  }
+  return (context[AUTH_USER_ROW_CACHE_KEY] ??= new Map())
+}
+
+/**
+ * Current `users` row for authorization fields (`isAdmin`, email, name).
+ * Memoized on the event so grant validation and session refresh share one read.
+ */
+export async function loadAuthUserRow(event: H3Event, userId: string): Promise<LocalUser | null> {
+  const cache = authUserRowCache(event)
+  const existing = cache.get(userId)
+  if (existing) {
+    return existing
+  }
+
+  const pending = Promise.resolve(
+    getDatabaseRow<LocalUser>(useDatabase(event).select().from(users).where(eq(users.id, userId))),
+  ).then((row) => row ?? null)
+  cache.set(userId, pending)
+  return pending
+}
+
+export function mergeAuthoritativeSessionUser(
+  sessionUser: AppSessionUser,
+  authSession: Pick<AuthSessionRow, 'aal' | 'recoveryMode'>,
+  dbUser: LocalUser,
+): AppSessionUser {
+  return {
+    ...sessionUser,
+    email: dbUser.email,
+    name: dbUser.name,
+    isAdmin: dbUser.isAdmin,
+    recoveryMode: Boolean(authSession.recoveryMode),
+    aal: toAppAuthenticatorAssuranceLevel(authSession.aal) ?? sessionUser.aal ?? null,
+  }
+}
+
+export async function clearAuthSessionRecoveryMode(
+  event: H3Event,
+  authSessionId: string | null | undefined,
+): Promise<void> {
+  if (!authSessionId) return
+  await executeDatabaseQuery(
+    useAuthBridgeDatabase(event)
+      .update(authSessions)
+      .set({ recoveryMode: false, updatedAt: new Date().toISOString() })
+      .where(eq(authSessions.id, authSessionId)),
+  )
+  forgetCachedAuthSessionRow(event, authSessionId)
+}
+
+export async function persistLocalAuthSession(
+  event: H3Event,
+  localUser: LocalUser,
+): Promise<{ authSessionId: string }> {
+  const appDb = useAuthBridgeDatabase(event)
+  const now = new Date().toISOString()
+  const authSessionId = crypto.randomUUID()
+  const token = `local-session:${crypto.randomUUID()}`
+
+  await sweepExpiredAuthSessions(event)
+  await appDb.insert(authSessions).values({
+    id: authSessionId,
+    localUserId: localUser.id,
+    authUserId: localUser.id,
+    sessionIdentifier: authSessionId,
+    accessToken: token,
+    refreshToken: token,
+    expiresAt: absoluteAuthSessionExpiry(),
+    aal: null,
+    currentProvider: 'local',
+    providersJson: '[]',
+    recoveryMode: false,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  return { authSessionId }
+}
+
+export async function establishLocalSessionUser(
+  event: H3Event,
+  user: LocalUser,
+  extras: Partial<AppSessionUser> = {},
+): Promise<AppSessionUser> {
+  const persisted = await persistLocalAuthSession(event, user)
+  const sessionUser = stampAuthSessionValidated(
+    toSessionUser(user, {
+      authBackend: 'local',
+      ...extras,
+      authSessionId: persisted.authSessionId,
+    }),
+  )
+  await setCurrentSessionUser(event, sessionUser)
+  return sessionUser
+}
+
+/**
+ * Delete `auth_sessions` rows for a local user. Pass `exceptSessionId` to leave
+ * the caller's current web session alive (password change on this browser).
+ */
+export async function revokeUserAuthSessions(
+  event: H3Event,
+  userId: string,
+  options: { exceptSessionId?: string | null } = {},
+): Promise<void> {
+  const appDb = useAuthBridgeDatabase(event)
+  const exceptSessionId = options.exceptSessionId
+  if (exceptSessionId) {
+    await executeDatabaseQuery(
+      appDb
+        .delete(authSessions)
+        .where(and(eq(authSessions.localUserId, userId), ne(authSessions.id, exceptSessionId))),
+    )
+    return
+  }
+
+  await executeDatabaseQuery(appDb.delete(authSessions).where(eq(authSessions.localUserId, userId)))
 }
 
 function authSessionRowChanged(
@@ -382,7 +580,7 @@ export async function getCurrentSupabaseContext(event: H3Event): Promise<AppSupa
   }
 
   const appDb = useAuthBridgeDatabase(event)
-  const authSession = await getAuthSessionById(appDb, sessionUser.authSessionId)
+  const authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
 
   if (!authSession) {
     await clearLayerUserSession(event)
@@ -423,7 +621,32 @@ export async function commitSupabaseSessionFromClient(
 export async function getSessionUserResponse(event: H3Event) {
   const user = await getCurrentSessionUser(event)
   if (!user?.authSessionId) {
-    return { user }
+    if (user) {
+      await clearLayerUserSession(event)
+    }
+    return { user: null }
+  }
+
+  const authSession = await loadAuthSessionRow(event, user.authSessionId)
+  if (!authSession) {
+    await clearLayerUserSession(event)
+    return { user: null }
+  }
+
+  const dbUser = await loadAuthUserRow(event, user.id)
+  if (!dbUser) {
+    await clearLayerUserSession(event)
+    return { user: null }
+  }
+
+  const hydrated = mergeAuthoritativeSessionUser(user, authSession, dbUser)
+
+  if (user.authBackend === 'local') {
+    if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
+      await clearLayerUserSession(event)
+      return { user: null }
+    }
+    return { user: hydrated }
   }
 
   try {
@@ -431,7 +654,7 @@ export async function getSessionUserResponse(event: H3Event) {
     return { user: context.sessionUser }
   } catch (error) {
     if (isRecoverableSupabaseSessionFailure(error)) {
-      return { user }
+      return { user: hydrated }
     }
     if (
       typeof error === 'object' &&

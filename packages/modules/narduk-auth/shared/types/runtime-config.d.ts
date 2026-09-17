@@ -1,6 +1,7 @@
 import type { NativeAuthClient } from './native-auth'
 
 interface AuthRuntimeConfig {
+  nardukSessionGrantRequired: boolean
   authNativeClients: NativeAuthClient[]
   authLocalEmailVerification: boolean
   appBackendPreset: 'default' | 'managed-supabase'

@@ -7,9 +7,12 @@ export type {
 
 export { ensureLinkedLocalUser } from '#narduk-auth-server/lib/app-auth/linking'
 export {
+  establishLocalSessionUser,
   getCurrentSessionUser,
   getCurrentSupabaseContext,
   getSessionUserResponse,
+  loadAuthSessionRow,
+  revokeUserAuthSessions,
 } from '#narduk-auth-server/lib/app-auth/session'
 export {
   loginUser,

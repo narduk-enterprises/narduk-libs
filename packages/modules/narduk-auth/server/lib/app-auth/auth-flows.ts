@@ -29,6 +29,7 @@ import {
 } from './local-email-throttle'
 import {
   clearCurrentSession,
+  establishLocalSessionUser,
   getCurrentSessionUser,
   getCurrentSupabaseContext,
   persistSupabaseSession,
@@ -62,6 +63,37 @@ function isInviteRedirectType(value: string | null | undefined) {
   return value?.trim().toLowerCase() === 'invite'
 }
 
+function normalizeAppPath(path: string): string {
+  const pathname = (path.split('?')[0] ?? path).trim()
+  if (!pathname || pathname === '/') return '/'
+  return pathname.replace(/\/+$/u, '') || '/'
+}
+
+/** Token-hash recovery may carry `next=/reset-password` without a type. */
+export function isResetPasswordNextPath(
+  next: string | null | undefined,
+  resetPath: string,
+): boolean {
+  if (!next) return false
+  return normalizeAppPath(next) === normalizeAppPath(resetPath)
+}
+
+export function resolvePasswordRecoveryExchange(input: {
+  /** PKCE `?code=` logins may deep-link to the reset page; next-alone is not recovery. */
+  hasAuthCode?: boolean
+  next?: string | null
+  redirectType?: string | null
+  resetPath: string
+  verificationType?: string | null
+}): boolean {
+  if (isPasswordRecoveryRedirectType(input.redirectType)) return true
+  if (isPasswordRecoveryRedirectType(input.verificationType)) return true
+  // Honour next-alone only on the token_hash path. A legitimate OAuth
+  // `?code=` login whose `next` is the reset page must not self-lock.
+  if (input.hasAuthCode) return false
+  return isResetPasswordNextPath(input.next, input.resetPath)
+}
+
 export async function loginUser(event: H3Event, body: LoginInput): Promise<AuthMutationResult> {
   const config = getAuthConfig(event)
   if (config.backend === 'supabase' && isSupabaseConfigured(config)) {
@@ -90,14 +122,12 @@ async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<Aut
     })
   }
 
-  const sessionUser = toSessionUser(user, {
-    authBackend: 'local',
+  const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: user.appleId ? 'apple' : 'email',
     authProviders: user.appleId ? ['apple', 'email'] : ['email'],
     emailConfirmedAt: await getLocalEmailVerification(event, user.id, user.email),
     needsPasswordSetup: false,
   })
-  await setCurrentSessionUser(event, sessionUser)
   await clearLocalEmailAttempts(event, 'login', normalizedEmail)
 
   return {
@@ -201,13 +231,11 @@ async function registerWithLocalAuth(
     })
   }
 
-  const sessionUser = toSessionUser(user, {
-    authBackend: 'local',
+  const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: 'email',
     authProviders: ['email'],
     needsPasswordSetup: false,
   })
-  await setCurrentSessionUser(event, sessionUser)
 
   return {
     user: sessionUser,
@@ -360,7 +388,9 @@ export async function signInWithNativeApple(
     })
   }
 
-  const localUser = await ensureLinkedLocalUser(event, data.user)
+  const localUser = await ensureLinkedLocalUser(event, data.user, {
+    requireExistingLink: !config.publicSignup,
+  })
   const persisted = await persistSupabaseSession(event, {
     authUser: data.user,
     localUser,
@@ -416,17 +446,34 @@ export async function exchangeSupabaseCode(
     })
   }
 
-  const redirectType =
-    typeof (data as { redirectType?: string | null }).redirectType === 'string'
-      ? (data as { redirectType?: string | null }).redirectType
-      : !hasAuthCode
-        ? body.verificationType
-        : null
-  const isPasswordRecovery = isPasswordRecoveryRedirectType(redirectType)
-  const permitsClosedSignupLink = isInviteRedirectType(redirectType) || isPasswordRecovery
-  const localUser = await ensureLinkedLocalUser(event, data.user, {
-    requireExistingLink: !config.publicSignup && !permitsClosedSignupLink,
+  // Invite is the closed-signup door and must come from the server-side
+  // exchange, never from a client-supplied `redirectType`. Client
+  // `redirectType` / `next` may only feed recovery detection, which
+  // restricts the session; it cannot open signup.
+  const serverRedirectType =
+    (data as { redirectType?: string | null }).redirectType ??
+    (!hasAuthCode ? body.verificationType : null)
+  // Recovery is add-only from the client: a client `redirectType` that is not
+  // itself recovery must never suppress a server-derived recovery callback
+  // into a full-privilege session.
+  const recoveryRedirectType = isPasswordRecoveryRedirectType(body.redirectType)
+    ? body.redirectType
+    : serverRedirectType
+  const isPasswordRecovery = resolvePasswordRecoveryExchange({
+    redirectType: recoveryRedirectType,
+    verificationType: hasAuthCode ? null : body.verificationType,
+    next: body.next,
+    resetPath: config.resetPath,
+    hasAuthCode,
   })
+  const isInvite = isInviteRedirectType(serverRedirectType)
+  const localUser = await ensureLinkedLocalUser(
+    event,
+    data.user,
+    isPasswordRecovery
+      ? { requireExistingUser: true, requireExistingLink: !config.publicSignup }
+      : { requireExistingLink: !config.publicSignup && !isInvite },
+  )
   const next = sanitizeNextPath(body.next, config.redirectPath)
   // Same-origin path, not an absolute URL: the client panel feeds this to
   // navigateTo, which rejects absolute URLs without `external: true`.

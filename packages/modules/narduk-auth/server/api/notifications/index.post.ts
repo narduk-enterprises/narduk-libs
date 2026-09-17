@@ -7,7 +7,10 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { createNotification } from '#narduk-auth-server/utils/notifications'
+import {
+  AUTH_NOTIFICATION_SCOPES,
+  createNotification,
+} from '#narduk-auth-server/utils/notifications'
 
 const createNotificationSchema = z.object({
   userId: z.string().min(1).optional(),
@@ -30,6 +33,7 @@ export default defineUserMutation(
   {
     rateLimit: RATE_LIMIT_POLICIES.notifications,
     parseBody: withValidatedBody(createNotificationSchema.parse),
+    requiredScopes: [AUTH_NOTIFICATION_SCOPES.write],
   },
   async ({ event, user, body }) => {
     const input = requireMutationBody(body)

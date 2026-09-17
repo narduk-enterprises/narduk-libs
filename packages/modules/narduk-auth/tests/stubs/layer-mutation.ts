@@ -23,3 +23,10 @@ export function requireMutationBody<T>(body: T | null | undefined): T {
 export function withValidatedBody<T>(parse: (input: unknown) => T) {
   return parse
 }
+
+export function withOptionalValidatedBody<T>(parse: (input: unknown) => T, fallback: T) {
+  return (input: unknown) => {
+    if (input === undefined || input === null) return fallback
+    return parse(input)
+  }
+}

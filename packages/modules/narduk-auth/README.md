@@ -189,6 +189,29 @@ Machine access such as `/mcp` should continue to use a scoped API key or another
 explicit machine credential; browser email sessions are not a machine-auth
 substitute.
 
+## Restricted sessions (recovery and MFA)
+
+The session-grant validator (registered on every request) is the per-request
+enforcement point. A live `auth_sessions` row that is in recovery mode, or a
+Supabase session that is below AAL2 while `AUTH_REQUIRE_MFA=true`, can only call
+the allowlisted routes below. Everything else that goes through `requireAuth` /
+`requireAdmin` fails closed with 403 (`recovery_mode` / `mfa_required`).
+
+**Recovery allowlist:** `GET /api/auth/me`, `POST /api/auth/change-password`,
+`POST /api/auth/logout`. Successful password change clears `recovery_mode`.
+
+**MFA step-up allowlist:** `GET /api/auth/me`, `POST /api/auth/logout`,
+`POST /api/auth/mfa/enroll`, `POST /api/auth/mfa/verify`.
+
+`AUTH_REQUIRE_MFA` is **ignored on the local backend**. Local auth has no TOTP
+enroll/verify stack; treating the flag as a lockout would brick password
+sessions. A startup warning is logged when the flag is on and the backend is
+local. Passkey user-verification is not treated as AAL2.
+
+Notification mutations require the API-key scope `auth:notifications:write`.
+Account deletion, password change, profile update, and MFA enroll/verify refuse
+API-key principals entirely.
+
 ## Passkeys
 
 Passkeys (WebAuthn discoverable credentials) sit **beside** email + password on

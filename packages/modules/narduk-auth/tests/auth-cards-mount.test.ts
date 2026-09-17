@@ -204,6 +204,19 @@ describe('AuthExchangePanel mount', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/app', { replace: true })
     wrapper.unmount()
   })
+
+  it('forwards PKCE ?type=recovery so the server can set recovery_mode', async () => {
+    routeQuery.value = { code: 'pkce-code', type: 'recovery', next: '/reset-password' }
+    authMocks.exchangeSession.mockResolvedValue({ redirectTo: '/reset-password?recovery=1' })
+    const wrapper = mountAuthCard(AuthExchangePanel)
+    await flushPromises()
+    expect(authMocks.exchangeSession).toHaveBeenCalledWith({
+      code: 'pkce-code',
+      next: '/reset-password',
+      redirectType: 'recovery',
+    })
+    wrapper.unmount()
+  })
 })
 
 describe('AuthPasskeysPanel mount', () => {

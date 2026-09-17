@@ -41,6 +41,7 @@ describe('narduk-auth module', () => {
 
     mod.setup({ app: true, server: true }, nuxt)
 
+    expect(nuxt.options.runtimeConfig.nardukSessionGrantRequired).toBe(true)
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-auth')
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
