@@ -22,7 +22,10 @@ interface SeoPublicRuntimeConfig {
    */
   publicCatalogBaseUrl: string
   /**
-   * Optional X/Twitter @handle or URL for `twitter:site` on pages using `useSeo`.
+   * @deprecated Unused since narduk-libs#349. `useSeo` no longer emits any
+   * `twitter:*` meta — X reads `og:*` instead, and Unhead 3 reports every
+   * `twitter:*` name as deprecated. The key stays accepted so existing apps and
+   * `NUXT_PUBLIC_TWITTER_SITE` deployments keep booting; nothing reads it.
    */
   twitterSite: string
   /**

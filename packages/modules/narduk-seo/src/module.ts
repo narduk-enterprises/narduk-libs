@@ -312,6 +312,8 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         nardukSeoHostAwareIndexing: hostAwareIndexing,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
+        // Deprecated and unread since narduk-libs#349; kept so existing
+        // NUXT_PUBLIC_TWITTER_SITE deployments keep booting unchanged.
         twitterSite: process.env.NUXT_PUBLIC_TWITTER_SITE || '',
         seoSearchActionUrlTemplate: process.env.NUXT_PUBLIC_SEO_SEARCH_ACTION_URL_TEMPLATE || '',
       },
