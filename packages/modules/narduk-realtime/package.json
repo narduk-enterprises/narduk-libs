@@ -67,6 +67,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
+    "@nuxt/schema": "^4.5.2",
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",

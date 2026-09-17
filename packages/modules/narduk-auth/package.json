@@ -121,7 +121,7 @@
     "h3": "^1.15.11",
     "happy-dom": "20.10.6",
     "miniflare": "4.20260701.0",
-    "nuxt": "^4.4.2",
+    "nuxt": "^4.5.2",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.1",

@@ -32,6 +32,8 @@ import {
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
 
+import type { NuxtModule } from '@nuxt/schema'
+
 const PACKAGE_NAME = '@narduk-enterprises/narduk-core'
 
 const d1QueryHelperAutoImportSourcePattern = /(?:^|\/)server\/utils\/d1Query(?:\.ts)?$/
@@ -490,344 +492,354 @@ function registerTypeReference(options: TypePrepareOptions, path: string): void 
   }
 }
 
-export default defineNuxtModule<NardukCoreModuleOptions>({
-  meta: {
-    name: PACKAGE_NAME,
-    configKey: 'nardukCore',
-    compatibility: { nuxt: '>=3.16.0' },
-  },
-  defaults: {
-    app: true,
-    coreModules: true,
-    image: true,
-    server: true,
-  },
-  async setup(options, nuxt) {
-    const resolver = createResolver(import.meta.url)
-    const runtimeRoot = resolver.resolve('../runtime')
-    const nuxtOptions = nuxt.options as unknown as MutableNuxtOptionsRecord
-    const existingRuntimeConfig: Record<string, unknown> = nuxtOptions.runtimeConfig ?? {}
-    const { backend: databaseBackend, source: databaseBackendSource } =
-      resolveDatabaseBackendSelection({
-        option: options.databaseBackend,
-        env: process.env.NUXT_DATABASE_BACKEND,
-        runtimeConfig: {
-          databaseBackend: existingRuntimeConfig.databaseBackend,
-          databaseBackendSource: existingRuntimeConfig.databaseBackendSource,
+// Annotated explicitly: @nuxt/kit 4.5.x infers the return type from
+// @nuxt/schema without re-exporting `NuxtModule`, so declaration emit cannot
+// name it from a bare specifier (TS2742).
+const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
+  defineNuxtModule<NardukCoreModuleOptions>({
+    meta: {
+      name: PACKAGE_NAME,
+      configKey: 'nardukCore',
+      compatibility: { nuxt: '>=3.16.0' },
+    },
+    defaults: {
+      app: true,
+      coreModules: true,
+      image: true,
+      server: true,
+    },
+    async setup(options, nuxt) {
+      const resolver = createResolver(import.meta.url)
+      const runtimeRoot = resolver.resolve('../runtime')
+      const nuxtOptions = nuxt.options as unknown as MutableNuxtOptionsRecord
+      const existingRuntimeConfig: Record<string, unknown> = nuxtOptions.runtimeConfig ?? {}
+      const { backend: databaseBackend, source: databaseBackendSource } =
+        resolveDatabaseBackendSelection({
+          option: options.databaseBackend,
+          env: process.env.NUXT_DATABASE_BACKEND,
+          runtimeConfig: {
+            databaseBackend: existingRuntimeConfig.databaseBackend,
+            databaseBackendSource: existingRuntimeConfig.databaseBackendSource,
+          },
+        })
+      const appVersion =
+        process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
+      const buildVersion =
+        process.env.BUILD_VERSION ||
+        process.env.GITHUB_SHA?.slice(0, 12) ||
+        process.env.CF_PAGES_COMMIT_SHA?.slice(0, 12) ||
+        readGitSha() ||
+        appVersion
+      const buildTime = process.env.BUILD_TIME || new Date().toISOString()
+      const openApiProduction: OpenApiProductionMode = (() => {
+        switch (process.env.NUXT_OPENAPI_PRODUCTION) {
+          case 'false':
+          case 'disabled':
+            return false
+          case 'runtime':
+            return 'runtime'
+          default:
+            return 'prerender'
+        }
+      })()
+      const colorModePreference = process.env.NUXT_COLOR_MODE_PREFERENCE || 'system'
+      const devServerPort = resolveDevServerPort(process.env.NUXT_PORT, 3000)
+      const ormTablesEntry =
+        databaseBackend === 'postgres'
+          ? 'server/database/pg-schema.ts'
+          : 'server/database/schema.ts'
+      const postgresRuntimeEntry =
+        databaseBackend === 'postgres'
+          ? 'internal/postgres-runtime.ts'
+          : 'internal/postgres-runtime.stub.ts'
+      const includeLegacyUtilitiesCss = !['0', 'false', 'off'].includes(
+        (process.env.NARDUK_CORE_LEGACY_UTILITIES ?? '').trim().toLowerCase(),
+      )
+      const allowGeolocation = ['1', 'true', 'yes', 'on'].includes(
+        (process.env.NUXT_PUBLIC_ALLOW_GEOLOCATION ?? '').trim().toLowerCase(),
+      )
+      const verboseBuildLogs = ['1', 'true', 'yes', 'on'].includes(
+        (process.env.NARDUK_VERBOSE_BUILD_LOGS ?? '').trim().toLowerCase(),
+      )
+      const coreRuntimeConfigTypesPath = resolver.resolve(
+        '../runtime/shared/types/runtime-config.d.ts',
+      )
+
+      pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
+
+      nuxtOptions.alias = {
+        ...nuxtOptions.alias,
+        '#layer': runtimeRoot,
+        '#narduk-core/schema': resolver.resolve(`../runtime/${ormTablesEntry}`),
+        '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
+      }
+
+      // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
+      // collection contract before that installation so the icon server bundles
+      // Lucide instead of attempting runtime API fallback.
+      nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
+        provider: 'server',
+        fallbackToApi: false,
+        clientBundle: {
+          icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+        },
+        serverBundle: {
+          collections: ['lucide'],
+          remote: false,
         },
       })
-    const appVersion =
-      process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
-    const buildVersion =
-      process.env.BUILD_VERSION ||
-      process.env.GITHUB_SHA?.slice(0, 12) ||
-      process.env.CF_PAGES_COMMIT_SHA?.slice(0, 12) ||
-      readGitSha() ||
-      appVersion
-    const buildTime = process.env.BUILD_TIME || new Date().toISOString()
-    const openApiProduction: OpenApiProductionMode = (() => {
-      switch (process.env.NUXT_OPENAPI_PRODUCTION) {
-        case 'false':
-        case 'disabled':
-          return false
-        case 'runtime':
-          return 'runtime'
-        default:
-          return 'prerender'
+
+      if (options.coreModules) {
+        dedupeIconServerCollections({ options: nuxtOptions })
+        await installModule('@pinia/nuxt')
+        await installModule('@nuxtjs/color-mode')
+        await installModule('@nuxt/ui')
+        await installModule('@nuxt/fonts')
+        if (options.image !== false) {
+          await installModule('@nuxt/image')
+        }
+        await installModule('@nuxt/eslint')
+        await installModule('nuxt-auth-utils')
+        dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
       }
-    })()
-    const colorModePreference = process.env.NUXT_COLOR_MODE_PREFERENCE || 'system'
-    const devServerPort = resolveDevServerPort(process.env.NUXT_PORT, 3000)
-    const ormTablesEntry =
-      databaseBackend === 'postgres' ? 'server/database/pg-schema.ts' : 'server/database/schema.ts'
-    const postgresRuntimeEntry =
-      databaseBackend === 'postgres'
-        ? 'internal/postgres-runtime.ts'
-        : 'internal/postgres-runtime.stub.ts'
-    const includeLegacyUtilitiesCss = !['0', 'false', 'off'].includes(
-      (process.env.NARDUK_CORE_LEGACY_UTILITIES ?? '').trim().toLowerCase(),
-    )
-    const allowGeolocation = ['1', 'true', 'yes', 'on'].includes(
-      (process.env.NUXT_PUBLIC_ALLOW_GEOLOCATION ?? '').trim().toLowerCase(),
-    )
-    const verboseBuildLogs = ['1', 'true', 'yes', 'on'].includes(
-      (process.env.NARDUK_VERBOSE_BUILD_LOGS ?? '').trim().toLowerCase(),
-    )
-    const coreRuntimeConfigTypesPath = resolver.resolve(
-      '../runtime/shared/types/runtime-config.d.ts',
-    )
 
-    pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
+      if (options.app) {
+        addImportsDir(resolver.resolve('../runtime/app/composables'))
+        addImportsDir(resolver.resolve('../runtime/app/stores'))
+        addImportsDir(resolver.resolve('../runtime/app/utils'))
+        addComponentsDir({
+          path: resolver.resolve('../runtime/app/components'),
+          pathPrefix: false,
+        })
+        addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.client'))
+        addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
+        addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
+        addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
+        addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
+        addFallbackErrorPage(nuxt, resolver.resolve('../runtime/app/error.vue'))
+        addFallbackLayout(
+          nuxt,
+          { src: resolver.resolve('../runtime/app/layouts/dashboard.vue') },
+          'dashboard',
+        )
+        addFallbackLayout(
+          nuxt,
+          { src: resolver.resolve('../runtime/app/layouts/landing.vue') },
+          'landing',
+        )
 
-    nuxtOptions.alias = {
-      ...nuxtOptions.alias,
-      '#layer': runtimeRoot,
-      '#narduk-core/schema': resolver.resolve(`../runtime/${ormTablesEntry}`),
-      '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
-    }
-
-    // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
-    // collection contract before that installation so the icon server bundles
-    // Lucide instead of attempting runtime API fallback.
-    nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
-      provider: 'server',
-      fallbackToApi: false,
-      clientBundle: {
-        icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
-      },
-      serverBundle: {
-        collections: ['lucide'],
-        remote: false,
-      },
-    })
-
-    if (options.coreModules) {
-      dedupeIconServerCollections({ options: nuxtOptions })
-      await installModule('@pinia/nuxt')
-      await installModule('@nuxtjs/color-mode')
-      await installModule('@nuxt/ui')
-      await installModule('@nuxt/fonts')
-      if (options.image !== false) {
-        await installModule('@nuxt/image')
-      }
-      await installModule('@nuxt/eslint')
-      await installModule('nuxt-auth-utils')
-      dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
-    }
-
-    if (options.app) {
-      addImportsDir(resolver.resolve('../runtime/app/composables'))
-      addImportsDir(resolver.resolve('../runtime/app/stores'))
-      addImportsDir(resolver.resolve('../runtime/app/utils'))
-      addComponentsDir({
-        path: resolver.resolve('../runtime/app/components'),
-        pathPrefix: false,
-      })
-      addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.client'))
-      addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
-      addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
-      addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
-      addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
-      addFallbackErrorPage(nuxt, resolver.resolve('../runtime/app/error.vue'))
-      addFallbackLayout(
-        nuxt,
-        { src: resolver.resolve('../runtime/app/layouts/dashboard.vue') },
-        'dashboard',
-      )
-      addFallbackLayout(
-        nuxt,
-        { src: resolver.resolve('../runtime/app/layouts/landing.vue') },
-        'landing',
-      )
-
-      pushUnique(
-        nuxtOptions.css,
-        fileURLToPath(new URL('../runtime/app/assets/css/main.css', import.meta.url)),
-      )
-      if (includeLegacyUtilitiesCss) {
         pushUnique(
           nuxtOptions.css,
-          fileURLToPath(new URL('../runtime/app/assets/css/legacy-utilities.css', import.meta.url)),
+          fileURLToPath(new URL('../runtime/app/assets/css/main.css', import.meta.url)),
         )
+        if (includeLegacyUtilitiesCss) {
+          pushUnique(
+            nuxtOptions.css,
+            fileURLToPath(
+              new URL('../runtime/app/assets/css/legacy-utilities.css', import.meta.url),
+            ),
+          )
+        }
       }
-    }
 
-    if (options.server) {
-      addServerScanDir(resolver.resolve('../runtime/server'))
-    }
-
-    // The app's existing CSP_*_SRC values are folded into the preset's
-    // allowlist so an app that configured its origins that way keeps them when
-    // it turns `security.headers` on. Silently dropping them would break the
-    // app the moment the strict policy went enforcing.
-    const securityHeaders = resolveSecurityHeaders(options.security?.headers, {
-      cspConnectSrc: process.env.CSP_CONNECT_SRC,
-      cspFrameSrc: process.env.CSP_FRAME_SRC,
-      cspMediaSrc: process.env.CSP_MEDIA_SRC,
-      cspScriptSrc: process.env.CSP_SCRIPT_SRC,
-      cspWorkerSrc: process.env.CSP_WORKER_SRC,
-    })
-    if (securityHeaders.mode !== 'off') {
-      if (securityHeaders.reportRoute) {
-        // Registered explicitly rather than living under `runtime/server/api`,
-        // because the route is configurable and `addServerScanDir` would
-        // otherwise also bind it to a second, fixed path.
-        addServerHandler({
-          route: securityHeaders.reportRoute,
-          method: 'post',
-          handler: resolver.resolve('../runtime/server/handlers/cspReport.post'),
-        })
+      if (options.server) {
+        addServerScanDir(resolver.resolve('../runtime/server'))
       }
-      try {
-        await installModule('nuxt-security', buildNuxtSecurityConfig(securityHeaders))
-      } catch (error) {
-        throw new Error(
-          `${PACKAGE_NAME}: security.headers is enabled but nuxt-security could not be ` +
-            'installed. It is an optional peer dependency, so add it to the app: ' +
-            `pnpm add -D nuxt-security. Original failure: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          { cause: error },
-        )
+
+      // The app's existing CSP_*_SRC values are folded into the preset's
+      // allowlist so an app that configured its origins that way keeps them when
+      // it turns `security.headers` on. Silently dropping them would break the
+      // app the moment the strict policy went enforcing.
+      const securityHeaders = resolveSecurityHeaders(options.security?.headers, {
+        cspConnectSrc: process.env.CSP_CONNECT_SRC,
+        cspFrameSrc: process.env.CSP_FRAME_SRC,
+        cspMediaSrc: process.env.CSP_MEDIA_SRC,
+        cspScriptSrc: process.env.CSP_SCRIPT_SRC,
+        cspWorkerSrc: process.env.CSP_WORKER_SRC,
+      })
+      if (securityHeaders.mode !== 'off') {
+        if (securityHeaders.reportRoute) {
+          // Registered explicitly rather than living under `runtime/server/api`,
+          // because the route is configurable and `addServerScanDir` would
+          // otherwise also bind it to a second, fixed path.
+          addServerHandler({
+            route: securityHeaders.reportRoute,
+            method: 'post',
+            handler: resolver.resolve('../runtime/server/handlers/cspReport.post'),
+          })
+        }
+        try {
+          await installModule('nuxt-security', buildNuxtSecurityConfig(securityHeaders))
+        } catch (error) {
+          throw new Error(
+            `${PACKAGE_NAME}: security.headers is enabled but nuxt-security could not be ` +
+              'installed. It is an optional peer dependency, so add it to the app: ' +
+              `pnpm add -D nuxt-security. Original failure: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            { cause: error },
+          )
+        }
       }
-    }
 
-    nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {
-      ui: {
-        colors: {
-          primary: 'emerald',
-          neutral: 'slate',
-        },
-      },
-    })
-
-    nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
-      hyperdriveBinding: process.env.NUXT_HYPERDRIVE_BINDING || 'HYPERDRIVE',
-      cache: { profiles: {} },
-      rateLimitPolicies: {},
-      // Defaults for `defineRateLimitedHandler`. Empty `routes`/`bindings` are
-      // seeded so an app can set one key via NUXT_NARDUK_RATE_LIMIT_* env
-      // without the parent object being absent at runtime.
-      nardukRateLimit: {
-        enabled: true,
-        limit: 120,
-        windowSeconds: 60,
-        headers: 'both',
-        bindings: {},
-        routes: {},
-      },
-      cronSecret: process.env.CRON_SECRET || '',
-      logLevel: process.env.LOG_LEVEL || 'warn',
-      session: {
-        password: process.env.NUXT_SESSION_PASSWORD || '',
-      },
-      // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
-      // headers it still owns, and by the app-tools live probe.
-      nardukSecurityHeaders: {
-        mode: securityHeaders.mode,
-        reportRoute: securityHeaders.reportRoute,
-      },
-      public: {
-        appVersion,
-        buildVersion,
-        buildTime,
-        cspScriptSrc: process.env.CSP_SCRIPT_SRC || '',
-        cspConnectSrc: process.env.CSP_CONNECT_SRC || '',
-        cspFrameSrc: process.env.CSP_FRAME_SRC || '',
-        cspWorkerSrc: process.env.CSP_WORKER_SRC || '',
-        cspMediaSrc: process.env.CSP_MEDIA_SRC || '',
-        allowGeolocation,
-      },
-    })
-
-    // The resolved selection overwrites any earlier value so the schema alias,
-    // the server runtime and /api/health all agree on one backend.
-    nuxtOptions.runtimeConfig.databaseBackend = databaseBackend
-    nuxtOptions.runtimeConfig.databaseBackendSource = databaseBackendSource
-
-    // Other modules (narduk-auth) finish configuring after this setup runs, so
-    // the conflict check waits until every module is installed.
-    nuxt.hook('modules:done', () => {
-      const conflict = findDatabaseBackendConflict(nuxtOptions.runtimeConfig)
-      if (conflict) {
-        throw new Error(conflict)
-      }
-    })
-
-    nuxtOptions.compatibilityDate ??= '2026-03-03'
-    nuxtOptions.devServer = defu((nuxtOptions.devServer ?? {}) as Record<string, unknown>, {
-      port: devServerPort,
-    })
-    nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
-      compatibilityVersion: 4,
-    })
-    nuxtOptions.ui = defu((nuxtOptions.ui ?? {}) as Record<string, unknown>, { colorMode: true })
-    nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
-      preference: colorModePreference,
-      fallback: 'dark',
-    })
-    nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
-      customLogger: createCoreViteBuildLogger(),
-      logLevel: 'warn' as const,
-      build: {
-        reportCompressedSize: false,
-      },
-    })
-    nuxtOptions.nitro = defu((nuxtOptions.nitro ?? {}) as Record<string, unknown>, {
-      preset: 'cloudflare-module',
-      logLevel: verboseBuildLogs ? 3 : 1,
-      logging: {
-        compressedSizes: verboseBuildLogs,
-        buildSuccess: true,
-      },
-      experimental: {
-        openAPI: true,
-      },
-      imports: {
-        dirsScanOptions: {
-          fileFilter: shouldScanNitroAutoImportSource,
-        },
-        exclude: [
-          /nuxt-auth-utils\/dist\/runtime\/server\/utils\/password/,
-          d1QueryHelperAutoImportSourcePattern,
-          authApiKeyTextAutoImportSourcePattern,
-        ],
-      },
-      openAPI: {
-        meta: {
-          title: process.env.APP_NAME?.trim()
-            ? `${process.env.APP_NAME.trim()} API`
-            : 'Application API',
-          description: 'Auto-generated OpenAPI specification for this application.',
-          version: appVersion || '0.0.0',
-        },
-        production: openApiProduction,
+      nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {
         ui: {
-          scalar: false,
-          swagger: false as const,
+          colors: {
+            primary: 'emerald',
+            neutral: 'slate',
+          },
         },
-      },
-      esbuild: {
-        options: {
-          target: 'esnext',
-        },
-      },
-      externals: {
-        inline: ['drizzle-orm', 'postgres'],
-      },
-    })
-    addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)
-    allowNitroEsbuildForNardukPackages(nuxtOptions)
-    addNardukAppRuntimeImportBridge(nuxtOptions)
-    addNardukServerRuntimeImportBridge(nuxtOptions)
-    ;(nuxt.hook as (name: string, handler: (value: TypePrepareOptions) => void) => void)(
-      'nitro:prepare:types',
-      (prepareOptions) => {
-        registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
-      },
-    )
-    nuxt.hook('prepare:types', (prepareOptions) => {
-      registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
-    })
-    nuxt.hook('imports:extend', (imports) => {
-      for (let i = imports.length - 1; i >= 0; i--) {
-        const entry = imports[i]
-        if (typeof entry?.from === 'string' && isAuthApiKeyTextAutoImportSource(entry.from)) {
-          imports.splice(i, 1)
-          continue
-        }
+      })
 
-        if (
-          entry?.name === 'options' &&
-          typeof entry.from === 'string' &&
-          entry.from.includes('useResizable')
-        ) {
-          imports.splice(i, 1)
+      nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
+        hyperdriveBinding: process.env.NUXT_HYPERDRIVE_BINDING || 'HYPERDRIVE',
+        cache: { profiles: {} },
+        rateLimitPolicies: {},
+        // Defaults for `defineRateLimitedHandler`. Empty `routes`/`bindings` are
+        // seeded so an app can set one key via NUXT_NARDUK_RATE_LIMIT_* env
+        // without the parent object being absent at runtime.
+        nardukRateLimit: {
+          enabled: true,
+          limit: 120,
+          windowSeconds: 60,
+          headers: 'both',
+          bindings: {},
+          routes: {},
+        },
+        cronSecret: process.env.CRON_SECRET || '',
+        logLevel: process.env.LOG_LEVEL || 'warn',
+        session: {
+          password: process.env.NUXT_SESSION_PASSWORD || '',
+        },
+        // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
+        // headers it still owns, and by the app-tools live probe.
+        nardukSecurityHeaders: {
+          mode: securityHeaders.mode,
+          reportRoute: securityHeaders.reportRoute,
+        },
+        public: {
+          appVersion,
+          buildVersion,
+          buildTime,
+          cspScriptSrc: process.env.CSP_SCRIPT_SRC || '',
+          cspConnectSrc: process.env.CSP_CONNECT_SRC || '',
+          cspFrameSrc: process.env.CSP_FRAME_SRC || '',
+          cspWorkerSrc: process.env.CSP_WORKER_SRC || '',
+          cspMediaSrc: process.env.CSP_MEDIA_SRC || '',
+          allowGeolocation,
+        },
+      })
+
+      // The resolved selection overwrites any earlier value so the schema alias,
+      // the server runtime and /api/health all agree on one backend.
+      nuxtOptions.runtimeConfig.databaseBackend = databaseBackend
+      nuxtOptions.runtimeConfig.databaseBackendSource = databaseBackendSource
+
+      // Other modules (narduk-auth) finish configuring after this setup runs, so
+      // the conflict check waits until every module is installed.
+      nuxt.hook('modules:done', () => {
+        const conflict = findDatabaseBackendConflict(nuxtOptions.runtimeConfig)
+        if (conflict) {
+          throw new Error(conflict)
         }
-      }
-    })
-    nuxt.hook('vite:extendConfig', (config) => {
-      applyCoreViteBuildWarningPolicy(config)
-    })
-  },
-})
+      })
+
+      nuxtOptions.compatibilityDate ??= '2026-03-03'
+      nuxtOptions.devServer = defu((nuxtOptions.devServer ?? {}) as Record<string, unknown>, {
+        port: devServerPort,
+      })
+      nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
+        compatibilityVersion: 4,
+      })
+      nuxtOptions.ui = defu((nuxtOptions.ui ?? {}) as Record<string, unknown>, { colorMode: true })
+      nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
+        preference: colorModePreference,
+        fallback: 'dark',
+      })
+      nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
+        customLogger: createCoreViteBuildLogger(),
+        logLevel: 'warn' as const,
+        build: {
+          reportCompressedSize: false,
+        },
+      })
+      nuxtOptions.nitro = defu((nuxtOptions.nitro ?? {}) as Record<string, unknown>, {
+        preset: 'cloudflare-module',
+        logLevel: verboseBuildLogs ? 3 : 1,
+        logging: {
+          compressedSizes: verboseBuildLogs,
+          buildSuccess: true,
+        },
+        experimental: {
+          openAPI: true,
+        },
+        imports: {
+          dirsScanOptions: {
+            fileFilter: shouldScanNitroAutoImportSource,
+          },
+          exclude: [
+            /nuxt-auth-utils\/dist\/runtime\/server\/utils\/password/,
+            d1QueryHelperAutoImportSourcePattern,
+            authApiKeyTextAutoImportSourcePattern,
+          ],
+        },
+        openAPI: {
+          meta: {
+            title: process.env.APP_NAME?.trim()
+              ? `${process.env.APP_NAME.trim()} API`
+              : 'Application API',
+            description: 'Auto-generated OpenAPI specification for this application.',
+            version: appVersion || '0.0.0',
+          },
+          production: openApiProduction,
+          ui: {
+            scalar: false,
+            swagger: false as const,
+          },
+        },
+        esbuild: {
+          options: {
+            target: 'esnext',
+          },
+        },
+        externals: {
+          inline: ['drizzle-orm', 'postgres'],
+        },
+      })
+      addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)
+      allowNitroEsbuildForNardukPackages(nuxtOptions)
+      addNardukAppRuntimeImportBridge(nuxtOptions)
+      addNardukServerRuntimeImportBridge(nuxtOptions)
+      ;(nuxt.hook as (name: string, handler: (value: TypePrepareOptions) => void) => void)(
+        'nitro:prepare:types',
+        (prepareOptions) => {
+          registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
+        },
+      )
+      nuxt.hook('prepare:types', (prepareOptions) => {
+        registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
+      })
+      nuxt.hook('imports:extend', (imports) => {
+        for (let i = imports.length - 1; i >= 0; i--) {
+          const entry = imports[i]
+          if (typeof entry?.from === 'string' && isAuthApiKeyTextAutoImportSource(entry.from)) {
+            imports.splice(i, 1)
+            continue
+          }
+
+          if (
+            entry?.name === 'options' &&
+            typeof entry.from === 'string' &&
+            entry.from.includes('useResizable')
+          ) {
+            imports.splice(i, 1)
+          }
+        }
+      })
+      nuxt.hook('vite:extendConfig', (config) => {
+        applyCoreViteBuildWarningPolicy(config)
+      })
+    },
+  })
+
+export default nardukCoreModule
