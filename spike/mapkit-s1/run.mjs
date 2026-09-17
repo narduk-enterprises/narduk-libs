@@ -129,6 +129,11 @@ const scenarios = {
   canonicalRedirect: { host: HOST_B, port: PORT_B, csp: null, tokenOrigin: null, canonicalRedirect: true, query: '' },
   // Already-expired token: error taxonomy for S2.
   expired: { host: HOST_A, port: PORT_A, csp: null, tokenOrigin: ORIGIN_A, iatOffset: -7200, query: '' },
+  // Q-C without a 30-minute wait: authorizationCallback path whose FIRST token is already
+  // expired. If MapKit re-invokes the callback to retry, the refresh wiring is proven now.
+  refreshRetry: { host: HOST_A, port: PORT_A, csp: null, tokenOrigin: ORIGIN_A, iatOffset: -7200, query: 'authCallback=1' },
+  // Second token is valid: proves the callback path recovers, not just retries.
+  refreshRecover: { host: HOST_A, port: PORT_A, csp: null, tokenOrigin: ORIGIN_A, firstExpired: true, query: 'authCallback=1' },
   // Refresh wiring: authorizationCallback + short TTL.
   refresh: { host: HOST_A, port: PORT_A, csp: null, tokenOrigin: ORIGIN_A, query: 'authCallback=1', short: true },
   refreshLong: { host: HOST_A, port: PORT_A, csp: 'nardukCoreActual', tokenOrigin: ORIGIN_A, query: 'authCallback=1&annotations=600&keepalive=1', short: true },
@@ -160,7 +165,11 @@ const { server, state, origin } = await startServer({
   host: cfg.host,
   port: cfg.port,
   csp: cfg.csp ? CSP_PRESETS[cfg.csp] : null,
-  tokenPlan: () => ({ origin: cfg.tokenOrigin, ttlSeconds: ttlFor, iatOffset: cfg.iatOffset || 0 }),
+  tokenPlan: (n) => ({
+    origin: cfg.tokenOrigin,
+    ttlSeconds: ttlFor,
+    iatOffset: cfg.firstExpired ? (n === 1 ? -7200 : 0) : (cfg.iatOffset || 0),
+  }),
 });
 
 const engine = process.env.SPIKE_BROWSER === 'webkit' ? webkit : chromium;
