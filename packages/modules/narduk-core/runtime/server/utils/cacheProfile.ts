@@ -49,6 +49,10 @@ import type { H3Event } from 'h3'
 export interface CacheProfile {
   /** Browser freshness window, emitted as `Cache-Control: max-age`. */
   maxAge: number
+  /** Emit nothing cacheable: `private, no-store`. */
+  noStore?: boolean
+  /** Emit `private` instead of `public`, and no edge header at all. */
+  private?: boolean
   /**
    * Edge freshness window, emitted as `CDN-Cache-Control: max-age`. Ignored
    * when `private` is true — a private response must never be edge-cached.
@@ -56,10 +60,6 @@ export interface CacheProfile {
   sMaxAge: number
   /** Stale-serving window, emitted as `stale-while-revalidate` on both headers. */
   swr: number
-  /** Emit `private` instead of `public`, and no edge header at all. */
-  private?: boolean
-  /** Emit nothing cacheable: `private, no-store`. */
-  noStore?: boolean
 }
 
 export type CacheProfileOverride = Partial<CacheProfile>
@@ -103,10 +103,7 @@ export const CACHE_PROFILES = {
 
 /** Why a requested profile was downgraded to `none`. */
 export type CacheSuppressionReason =
-  | 'error-status'
-  | 'preview-safe-mode'
-  | 'set-cookie'
-  | 'vary-wildcard'
+  'error-status' | 'preview-safe-mode' | 'set-cookie' | 'vary-wildcard'
 
 export interface SetCacheProfileOptions {
   /**
@@ -214,7 +211,7 @@ export function normalizeVary(
     .map((value) => value.trim())
     .filter(Boolean)
 
-  if (names.some((name) => name === '*')) return '*'
+  if (names.includes('*')) return '*'
 
   const seen = new Set<string>()
   const kept: string[] = []
@@ -250,7 +247,10 @@ function formatCdnCacheControl(profile: CacheProfile): string | undefined {
  * `Set-Cookie` are all cases where a cacheable header is a defect rather than a
  * tuning choice, so none of them are overridable by configuration.
  */
-function findSuppression(event: H3Event, vary: string | undefined): CacheSuppressionReason | undefined {
+function findSuppression(
+  event: H3Event,
+  vary: string | undefined,
+): CacheSuppressionReason | undefined {
   if (getResponseStatus(event) >= 400) return 'error-status'
   if (readResponseHeader(event, 'Set-Cookie').length > 0) return 'set-cookie'
   if (vary === '*') return 'vary-wildcard'

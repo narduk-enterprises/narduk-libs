@@ -507,6 +507,117 @@ means "exempt nothing".
 
 ### Operator overrides
 
+## Edge cache: setCacheProfile
+
+`setCacheProfile` owns every `Cache-Control` string a route would otherwise
+hand-write. Import it from
+`@narduk-enterprises/narduk-core/server/utils/cacheProfile`.
+
+```ts
+import { setCacheProfile } from '@narduk-enterprises/narduk-core/server/utils/cacheProfile'
+
+export default defineEventHandler(async (event) => {
+  const stations = await readPublishedStations()
+  setCacheProfile(event, 'live', { tags: ['stations', 'published-data'] })
+  return stations
+})
+```
+
+| Profile  | Browser | Edge  | Stale window | For                                                     |
+| -------- | ------- | ----- | ------------ | ------------------------------------------------------- |
+| `live`   | 60s     | 300s  | 900s         | the live-ish surface of a published product             |
+| `slow`   | 300s    | 900s  | 1800s        | history, coverage, other slower-changing published data |
+| `static` | 300s    | 3600s | 86400s       | documents that change on deploy, not per request        |
+| `none`   | —       | —     | —            | `private, no-store`                                     |
+
+A route that genuinely needs its own numbers passes them inline instead of
+adding a profile:
+`setCacheProfile(event, { maxAge: 30, sMaxAge: 120, swr: 600 })`. Add
+`private: true` to keep the response off the edge entirely.
+
+### Why no `s-maxage`
+
+The obvious encoding of "60s in the browser, 300s at the edge, serve stale for
+900s" is `public, max-age=60, s-maxage=300, stale-while-revalidate=900`. **It
+does not work.** Cloudflare, following
+[RFC 9111 §4.2.4](https://www.rfc-editor.org/rfc/rfc9111#section-4.2.4),
+documents that `s-maxage`, `must-revalidate` and `proxy-revalidate` each
+_disable_ `stale-while-revalidate` and `stale-if-error`:
+
+> When you want `stale-while-revalidate` to take effect at the edge, use
+> `max-age` for the freshness window — not `s-maxage`. If you need a longer edge
+> TTL than browsers should honor while still using `stale-while-revalidate`, use
+> `cdn-cache-control` for the edge directive.
+>
+> —
+> [Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/)
+
+So a profile's `sMaxAge` is emitted as `CDN-Cache-Control: max-age=<n>`, never
+as `Cache-Control: s-maxage=<n>`. The browser reads `Cache-Control`, the edge
+reads the more specific `CDN-Cache-Control`, and the stale window survives in
+both. Header precedence at Cloudflare is `cloudflare-cdn-cache-control` >
+`cdn-cache-control` > `Cache-Control`; the helper uses the middle one because
+Cloudflare respects it _and_ passes it downstream, so the edge TTL stays visible
+when you are debugging a response.
+
+### This needs Workers Cache turned on
+
+Workers run _before_ the cache, so a response a Worker generates is not stored
+by the zone cache at all. These headers bind only once the app opts into Workers
+Cache in its Wrangler config (Wrangler >= 4.69.0):
+
+```jsonc
+{
+  "cache": { "enabled": true },
+}
+```
+
+Until an app adds that, `setCacheProfile` still produces a correct browser
+`Cache-Control` and the edge headers are inert. Adding it is a one-line change
+and the profiles are already correct when you do.
+
+By default Workers Cache partitions its cache by Worker version, so **a
+deployment already starts from a cold cache** — a release is visible immediately
+with nothing to purge. That default only changes if an app sets
+`cache.cross_version_cache: true`.
+
+### Cache-Tag
+
+`tags` emits a `Cache-Tag` header so a later purge can invalidate exactly the
+responses a change affected. Purge by tag is available on every Cloudflare plan
+(it stopped being Enterprise-only on 2025-04-01), and Cloudflare strips the
+header before the client sees it.
+
+Tags must be printable ASCII with no spaces or commas, at most 1024 characters
+each, and at most 1000 per response. Tags that violate that are dropped rather
+than throwing — the platform drops them silently too — and the header is omitted
+when none survive. Deduplication is case-insensitive because purge matching is.
+
+Purging is `cache.purge({ tags: [...] })` from `cloudflare:workers` inside the
+Worker. A zone-level purge — dashboard, `/zones/{id}/purge_cache`, or Terraform
+— does **not** reach Workers Cache content.
+
+### Guards
+
+`setCacheProfile` emits `private, no-store` instead of the requested profile,
+and no `Cache-Tag`, when any of these hold:
+
+| Guard               | Reason                                                         |
+| ------------------- | -------------------------------------------------------------- |
+| `error-status`      | the response status is >= 400                                  |
+| `set-cookie`        | a `Set-Cookie` is already on the response                      |
+| `vary-wildcard`     | `Vary: *`, which Cloudflare treats as uncacheable anyway       |
+| `preview-safe-mode` | `previewSafeMode` — a preview must not populate a shared cache |
+
+None of these are overridable by configuration. The returned
+`CacheProfileResult` carries `suppressedBy` so a caller or a test can see which
+guard fired rather than discovering a missing header later.
+
+### Tuning without touching a route
+
+`runtimeConfig.cache.profiles` overrides the seconds of any named profile. Each
+field is optional and the rest of the profile is kept:
+
 ```ts
 // nuxt.config.ts
 runtimeConfig: {
@@ -517,6 +628,12 @@ runtimeConfig: {
     headers: 'both',
     bindings: { 'marine-public-api': 'MARINE_RL' },
     routes: { 'marine-public-api': { limit: 60, windowSeconds: 10 } },
+
+  cache: {
+    profiles: {
+      live: { sMaxAge: 120 },
+      static: { noStore: true },
+    },
   },
 }
 ```
@@ -541,6 +658,55 @@ as well as on `error`, because the substring is simply absent. That is often the
 point — a stale feed should be noticed — but it makes `warnAfter` an alerting
 threshold, not just a dashboard one. Pick it accordingly, or move the monitor to
 the HTTP status so only `failAfter` pages.
+
+Negative, fractional and non-numeric overrides are ignored rather than emitted.
+An inline profile is the app's own configuration already, so it is used
+verbatim.
+
+### Migrating an app off hand-written strings
+
+`buoys` is the worked example. Its three helpers become three calls, and the
+broken stale windows start working:
+
+```diff
+--- a/apps/web/server/utils/marine-api-route.ts
++++ b/apps/web/server/utils/marine-api-route.ts
++import { setCacheProfile } from '@narduk-enterprises/narduk-core/server/utils/cacheProfile'
++
+ export function setMarinePublishedDataCacheHeader(event: H3Event) {
+-  setHeader(event, 'Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=900')
++  setCacheProfile(event, 'live', { tags: ['published-data'] })
+ }
+
+ export function setMarinePublishedHistoryCacheHeader(event: H3Event) {
+-  setHeader(
+-    event,
+-    'Cache-Control',
+-    'public, max-age=300, s-maxage=900, stale-while-revalidate=1800',
+-  )
++  setCacheProfile(event, 'slow', { tags: ['published-data', 'ndbc-history'] })
+ }
+```
+
+```diff
+--- a/apps/web/server/utils/marine-sitemap.ts
++++ b/apps/web/server/utils/marine-sitemap.ts
++import { setCacheProfile } from '@narduk-enterprises/narduk-core/server/utils/cacheProfile'
++
+ export function setMarineSitemapCacheHeader(event: H3Event) {
+-  setHeader(
+-    event,
+-    'Cache-Control',
+-    'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
+-  )
++  setCacheProfile(event, 'static', { tags: ['sitemap'] })
+ }
+```
+
+The `live`, `slow` and `static` profiles carry Buoys' existing numbers
+unchanged, so the browser TTL of every route is identical before and after. What
+changes is that the edge TTL moves to a header Cloudflare will honor and the
+stale windows stop being silently discarded.
 
 ## Database alias contract
 

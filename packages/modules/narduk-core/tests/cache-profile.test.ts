@@ -1,5 +1,6 @@
-import { createApp, defineEventHandler, toNodeListener } from 'h3'
 import { createServer } from 'node:http'
+
+import { createApp, defineEventHandler, toNodeListener } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -10,8 +11,14 @@ import {
   setCacheProfile,
 } from '../runtime/server/utils/cacheProfile'
 
-import type { CacheProfileInput, SetCacheProfileOptions } from '../runtime/server/utils/cacheProfile'
+import type {
+  CacheProfileInput,
+  SetCacheProfileOptions,
+} from '../runtime/server/utils/cacheProfile'
 import type { H3Event } from 'h3'
+
+const NO_STORE = 'private, no-store'
+const ACCEPT_ENCODING = 'Accept-Encoding'
 
 const { overlay, runtime } = vi.hoisted(() => ({
   overlay: { previewSafeMode: false },
@@ -91,7 +98,7 @@ describe('named profiles', () => {
 
   it('emits nothing cacheable for the none profile', async () => {
     expect(await cacheHeaders('none')).toMatchObject({
-      cacheControl: 'private, no-store',
+      cacheControl: NO_STORE,
       cdnCacheControl: null,
     })
   })
@@ -151,7 +158,7 @@ describe('runtimeConfig.cache.profiles overrides', () => {
   it('lets an app turn a profile off entirely', async () => {
     runtime.cache = { profiles: { live: { noStore: true } } }
     expect(await cacheHeaders('live')).toMatchObject({
-      cacheControl: 'private, no-store',
+      cacheControl: NO_STORE,
       cdnCacheControl: null,
     })
   })
@@ -176,7 +183,7 @@ describe('no-cache guards', () => {
       setCacheProfile(event, 'live', { tags: ['stations'] })
     })
     expect(status).toBe(503)
-    expect(headers.get('cache-control')).toBe('private, no-store')
+    expect(headers.get('cache-control')).toBe(NO_STORE)
     expect(headers.get('cdn-cache-control')).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
@@ -186,7 +193,7 @@ describe('no-cache guards', () => {
       event.node.res.setHeader('Set-Cookie', 'session=abc; Path=/')
       setCacheProfile(event, 'live', { tags: ['stations'] })
     })
-    expect(headers.get('cache-control')).toBe('private, no-store')
+    expect(headers.get('cache-control')).toBe(NO_STORE)
     expect(headers.get('cdn-cache-control')).toBeNull()
     expect(headers.get('cache-tag')).toBeNull()
   })
@@ -194,7 +201,7 @@ describe('no-cache guards', () => {
   it('refuses to cache in preview safe mode', async () => {
     overlay.previewSafeMode = true
     expect(await cacheHeaders('live', { tags: ['stations'] })).toMatchObject({
-      cacheControl: 'private, no-store',
+      cacheControl: NO_STORE,
       cacheTag: null,
       cdnCacheControl: null,
     })
@@ -202,7 +209,7 @@ describe('no-cache guards', () => {
 
   it('refuses to cache a Vary: * response, which Cloudflare bypasses anyway', async () => {
     expect(await cacheHeaders('live', { tags: ['stations'], vary: ['*'] })).toMatchObject({
-      cacheControl: 'private, no-store',
+      cacheControl: NO_STORE,
       cacheTag: null,
       cdnCacheControl: null,
       vary: '*',
@@ -275,12 +282,12 @@ describe('Cache-Tag', () => {
 
 describe('Vary', () => {
   it('emits the requested header names', async () => {
-    expect((await cacheHeaders('live', { vary: ['Accept-Encoding'] })).vary).toBe('Accept-Encoding')
+    expect((await cacheHeaders('live', { vary: [ACCEPT_ENCODING] })).vary).toBe(ACCEPT_ENCODING)
   })
 
   it('merges with a Vary another handler already set', async () => {
     const { headers } = await respond((event) => {
-      event.node.res.setHeader('Vary', 'Accept-Encoding')
+      event.node.res.setHeader('Vary', ACCEPT_ENCODING)
       setCacheProfile(event, 'live', { vary: ['Accept-Language'] })
     })
     expect(headers.get('vary')).toBe('Accept-Encoding, Accept-Language')
@@ -293,8 +300,8 @@ describe('Vary', () => {
   })
 
   it('collapses to the wildcard when either side asks for it', () => {
-    expect(normalizeVary(['Accept-Encoding'], ['*'])).toBe('*')
-    expect(normalizeVary(['*'], ['Accept-Encoding'])).toBe('*')
+    expect(normalizeVary([ACCEPT_ENCODING], ['*'])).toBe('*')
+    expect(normalizeVary(['*'], [ACCEPT_ENCODING])).toBe('*')
   })
 
   it('emits no Vary when nothing varies', () => {
