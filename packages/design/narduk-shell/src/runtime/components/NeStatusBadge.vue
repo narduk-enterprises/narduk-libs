@@ -90,6 +90,63 @@ const icon = computed<string | undefined>(
 const ariaLabel = computed(() => `${props.tone}: ${props.label}`)
 
 const labelClass = computed(() => (props.truncate ? 'truncate' : 'whitespace-nowrap'))
+
+/**
+ * Ink for the TINTED variants, because Nuxt UI's own is not readable.
+ *
+ * `soft`, `subtle` and `outline` all paint `--ui-<color>` text on a 10% tint
+ * of that same colour, and `--ui-<color>` is shade 500. Measured with axe on
+ * a live app (buoys, 2026-09-17), on white: success 2.04:1, warning 1.79:1,
+ * error 3.30:1, info 3.34:1 -- against the 4.5:1 a badge label needs, since
+ * badge text is small. On an elevated surface each is worse again. Every
+ * status this component exists to report was failing WCAG 1.4.3 in every app
+ * that used a tinted variant, which is the whole estate.
+ *
+ * Shade 800 is the first that clears 4.5:1 on BOTH grounds (worst case 5.71:1,
+ * warning on an elevated surface); shade 700 passes on white and lands at
+ * 4.02:1 on elevated, which is the near-miss that reads as fixed and is not.
+ * The shade is read through `--ui-color-<color>-800` rather than a literal
+ * `text-green-800`, so an app that aliases `success` to a different ramp gets
+ * its own ramp's shade 800 rather than this component's guess.
+ *
+ * DARK MODE IS DELIBERATELY LEFT AS IT WAS. `dark:` restores `--ui-<color>`
+ * exactly, so this changes nothing there. A dark tint sits on a dark ground
+ * and wants a LIGHTER ink, not a darker one -- the opposite correction -- and
+ * nothing has measured it yet. Guessing a second colour here would be
+ * shipping an unverified change beside a verified one.
+ *
+ * `solid` is untouched for a different reason: it paints white on the full
+ * colour, so a dark ink would be unreadable rather than merely low-contrast.
+ * That variant has its own contrast question (white on `success` shade 500 is
+ * about 1.9:1) which is a fill-shade decision, not a text one, and no audited
+ * surface uses it. It is named here so the omission is visibly a scope line
+ * rather than an oversight.
+ */
+const TINTED_TEXT_CLASS: Partial<Record<NeStatusBadgeColor, string>> = {
+  error: 'text-[var(--ui-color-error-800)] dark:text-[var(--ui-error)]',
+  info: 'text-[var(--ui-color-info-800)] dark:text-[var(--ui-info)]',
+  success: 'text-[var(--ui-color-success-800)] dark:text-[var(--ui-success)]',
+  warning: 'text-[var(--ui-color-warning-800)] dark:text-[var(--ui-warning)]',
+}
+
+/**
+ * `neutral` is absent above on purpose: Nuxt UI already gives its tinted
+ * variants a near-body ink rather than a 500 shade, and axe found no neutral
+ * badge failing.
+ */
+const TINTED_VARIANTS = new Set<NeStatusBadgeVariant>(['soft', 'subtle', 'outline'])
+
+/**
+ * Applied to the badge ROOT rather than to the label span, so the leading icon
+ * is recoloured with the words. An icon left at shade 500 on its own 10% tint
+ * is around 1.8:1, under the 3:1 floor non-text content has to clear, and axe
+ * has no rule that would have told us.
+ */
+const ui = computed<{ base: string } | undefined>(() => {
+  const tinted = variant.value !== undefined && TINTED_VARIANTS.has(variant.value)
+  const base = tinted ? TINTED_TEXT_CLASS[color.value] : undefined
+  return base ? { base } : undefined
+})
 </script>
 
 <template>
@@ -99,6 +156,7 @@ const labelClass = computed(() => (props.truncate ? 'truncate' : 'whitespace-now
     :variant="variant"
     :size="size"
     :icon="icon"
+    :ui="ui"
     :aria-label="ariaLabel"
   >
     <span :class="labelClass" data-slot="label">{{ label }}</span>

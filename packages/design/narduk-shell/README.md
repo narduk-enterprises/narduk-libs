@@ -463,6 +463,24 @@ assistive tech always hears the tone even when the visible label is
 domain-specific and says nothing about severity on its own (`"Major"` vs.
 `"error: Major"`).
 
+The tinted variants also carry their own ink. `soft`, `subtle` and `outline`
+paint `--ui-<color>` — shade 500 — on a 10% tint of the same colour, which axe
+measured on a live app at 2.04:1 (`success`), 1.79:1 (`warning`), 3.30:1
+(`error`) and 3.34:1 (`info`) against the 4.5:1 a small badge label needs. Every
+status this component exists to report was failing WCAG 1.4.3 wherever a tinted
+variant was used. It now sets the badge's text to `--ui-color-<color>-800`,
+which is the first shade that clears 4.5:1 on both a white and an elevated
+ground (worst case 5.71:1); shade 700 passes on white and lands at 4.02:1 on
+elevated. The shade is read through the colour ALIAS, so an app that points
+`success` at a different ramp gets that ramp's shade 800.
+
+Two deliberate omissions. **Dark mode is unchanged** — `dark:` restores
+`--ui-<color>` exactly, because a dark tint wants a lighter ink rather than a
+darker one and nothing has measured it yet. **`solid` is unchanged** — it paints
+white on the full colour, so a dark ink would be unreadable rather than merely
+low-contrast; its own contrast question (white on `success` shade 500 is about
+1.9:1) is a fill-shade decision and no audited surface uses it.
+
 #### `defineStatusMap`
 
 Most consumers have their own status vocabulary — a flood stage, a device health
