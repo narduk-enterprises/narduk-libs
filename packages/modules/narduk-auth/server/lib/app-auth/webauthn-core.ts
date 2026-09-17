@@ -25,8 +25,7 @@ import {
   type WebauthnConfig,
 } from '../../../shared/utils/webauthn-config'
 
-import { toSessionUser } from './helpers'
-import { setCurrentSessionUser } from './session'
+import { establishLocalSessionUser } from './session'
 import { consumeWebauthnChallenge, issueWebauthnChallenge } from './webauthn-challenges'
 import {
   assertPasskeyManagementPrincipal,
@@ -447,13 +446,11 @@ export async function finishPasskeyAuthentication(
     throw genericFailure
   }
 
-  const sessionUser = toSessionUser(user, {
-    authBackend: 'local',
+  const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: 'passkey',
     authProviders: user.appleId ? ['passkey', 'apple', 'email'] : ['passkey', 'email'],
     needsPasswordSetup: false,
   })
-  await setCurrentSessionUser(event, sessionUser)
   log.info('Passkey sign-in succeeded', { userId: user.id })
 
   return { user: sessionUser }

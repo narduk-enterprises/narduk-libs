@@ -79,7 +79,7 @@ export function useAuthApi() {
 
   function exchangeSession(
     payload:
-      | { code: string; next?: string }
+      | { code: string; next?: string; redirectType?: EmailVerificationType }
       | { next?: string; tokenHash: string; verificationType: EmailVerificationType },
   ) {
     return csrfFetch<AuthMutationResult>('/api/auth/session/exchange', {

@@ -13,6 +13,7 @@ function createChain(): Record<string, unknown> {
     'delete',
     'from',
     'insert',
+    'limit',
     'onConflictDoUpdate',
     'returning',
     'select',
@@ -29,6 +30,12 @@ function createChain(): Record<string, unknown> {
 
 export function useDatabase() {
   return createChain()
+}
+
+export function createAppDatabase() {
+  return function useAppDatabase() {
+    return createChain()
+  }
 }
 
 export async function executeDatabaseQuery<T>(query: unknown): Promise<T> {

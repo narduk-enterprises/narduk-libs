@@ -14,6 +14,8 @@ import type { H3Event } from 'h3'
 
 interface EnsureLinkedLocalUserOptions {
   requireExistingLink?: boolean
+  /** Never INSERT a users row — recovery must attach to an existing account. */
+  requireExistingUser?: boolean
 }
 
 export async function ensureLinkedLocalUser(
@@ -64,6 +66,13 @@ export async function ensureLinkedLocalUser(
   }
 
   if (!localUser) {
+    if (options.requireExistingUser) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'This recovery link is not tied to an existing local account.',
+      })
+    }
+
     const newUserId = crypto.randomUUID()
     const fallbackName = metadata.displayName ?? deriveDisplayName(normalizedEmail)
 

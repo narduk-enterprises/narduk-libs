@@ -46,7 +46,7 @@ export function useAuth() {
 
   async function exchangeSession(
     payload:
-      | { code: string; next?: string }
+      | { code: string; next?: string; redirectType?: EmailVerificationType }
       | { next?: string; tokenHash: string; verificationType: EmailVerificationType },
   ) {
     const result = await api.exchangeSession(payload)

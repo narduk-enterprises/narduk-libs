@@ -45,7 +45,11 @@ onMounted(async () => {
   // `token_hash` + `type` pair; both exchange into an app session.
   let payload: Parameters<typeof exchangeSession>[0] | null = null
   if (code) {
-    payload = { code, next }
+    payload = {
+      code,
+      next,
+      ...(verificationType ? { redirectType: verificationType } : {}),
+    }
   } else if (tokenHash && verificationType) {
     payload = { tokenHash, verificationType, next }
   }

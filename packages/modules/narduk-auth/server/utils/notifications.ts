@@ -8,6 +8,11 @@ import type { Notification } from '#narduk-core/schema'
 import type { ListSort } from '@narduk-enterprises/narduk-platform/list-query'
 import type { H3Event } from 'h3'
 
+/** API-key scope for notification mutations. Empty-scope `nk_` keys must not pass. */
+export const AUTH_NOTIFICATION_SCOPES = {
+  write: 'auth:notifications:write',
+} as const
+
 /**
  * In-app notification service.
  *

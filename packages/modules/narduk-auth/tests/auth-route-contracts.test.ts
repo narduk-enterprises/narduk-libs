@@ -37,6 +37,14 @@ describe('POST /api/auth/session/exchange body contract', () => {
     })
   })
 
+  it('accepts PKCE code plus forwarded redirectType', () => {
+    expect(parseBody({ code: 'abc', redirectType: 'recovery', next: '/reset-password' })).toEqual({
+      code: 'abc',
+      redirectType: 'recovery',
+      next: '/reset-password',
+    })
+  })
+
   it('accepts the token_hash shape the client contract advertises', () => {
     expect(parseBody({ tokenHash: 'digest', verificationType: 'recovery' })).toEqual({
       tokenHash: 'digest',

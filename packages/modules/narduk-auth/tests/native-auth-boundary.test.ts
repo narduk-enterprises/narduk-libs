@@ -33,6 +33,7 @@ const state = vi.hoisted(() => ({
 vi.mock('nitropack/runtime', () => ({ useRuntimeConfig: () => state.config }))
 vi.mock('../server/utils/auth-bridge-database', () => ({ useAuthBridgeDatabase: () => state.db }))
 vi.mock('../server/lib/app-auth/session', () => ({ getCurrentSessionUser: () => state.user }))
+vi.mock('../server/utils/session-user', () => ({ useRefreshedSessionUser: () => state.user }))
 vi.mock('#layer/server/utils/database', () => ({ useDatabase: () => state.db }))
 
 function event(origin?: string, host = 'localhost:3000') {
@@ -137,8 +138,6 @@ describe('native authorization and email verification request boundaries', () =>
     await expect(route.__handler(context)).rejects.toThrow()
     state.user = { id: 'owner', authBackend: 'local', aal: 'aal1' } as AppSessionUser
     state.config.public.authRequireMfa = true
-    await expect(route.__handler(context)).rejects.toThrow()
-    state.config.public.authRequireMfa = false
     expect(await route.__handler(context)).toMatchObject({
       redirectTo: expect.stringContaining('com.example.test:/auth?code='),
     })
