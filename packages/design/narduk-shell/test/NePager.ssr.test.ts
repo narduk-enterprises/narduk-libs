@@ -23,6 +23,8 @@ import { createSSRApp, defineComponent, h, type Component } from 'vue'
 
 import NePager from '../src/runtime/components/NePager.vue'
 
+import type { NeCollectionState } from '../src/runtime/composables/use-collection'
+
 const numberFormatLocales: unknown[] = []
 const OriginalNumberFormat = Intl.NumberFormat
 
@@ -39,8 +41,6 @@ beforeAll(() => {
 afterAll(() => {
   vi.restoreAllMocks()
 })
-
-import type { NeCollectionState } from '../src/runtime/composables/use-collection'
 
 /** The globals a Workers-style server runtime does not have. */
 it('runs in an environment with no DOM, which is the whole point of this file', () => {
