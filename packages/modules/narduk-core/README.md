@@ -151,6 +151,101 @@ Nuxt major, or the nuxt-security version moves.
 `tests/nuxt-security-contract.test.ts` is the cheap tripwire that runs in CI
 instead.
 
+## Error page and exception capture
+
+Both ship with the module. An app that pins narduk-core gets them with no file
+of its own — no `error.vue`, no error listeners, no configuration.
+
+### The error page
+
+The module sets Nuxt's `app.errorComponent` from the `app:resolve` hook. Nuxt's
+own `resolveApp()` assigns that field just before calling the hook: an
+`app/error.*` from the project or any layer when one exists, and otherwise
+Nuxt's built-in `nuxt-error-page.vue`. The module replaces **only** the
+built-in, so an app-owned error page still wins and nothing has to be copied
+into a repository or managed by a codemod. Apps install this package as a module
+rather than a layer, which is why the layer-directory path Nuxt scans never
+reaches `runtime/app/error.vue` on its own.
+
+The page shows the status code with plain-language copy for the outcome (404,
+403, 401, 429, 503, and a fallback), a **Go Home** action (`clearError`), a
+**Try Again** action (`reloadNuxtApp`), `robots: noindex, nofollow`, and the
+**request id**.
+
+The request id is the value `x-request-id` carries and the one every
+narduk-logging server record is keyed by, so a user reading it off the page
+hands support the key that finds the log line. It is resolved during SSR from
+`event.context._requestId` and transferred through the Nuxt payload
+(`useRequestId()`), because a browser cannot read the response header of the
+document it is running in. The `requestLogger` middleware also echoes the id
+back onto the incoming request headers, so a re-entrant render of the failed
+page adopts the same id instead of minting a new one.
+
+The raw error message appears only where `previewSafeMode` is on — preview,
+staging, and any deployment an operator has explicitly marked non-production.
+Production traffic sees the status-code copy and nothing else.
+
+E2E selectors: `error-page`, `error-page-status`, `error-page-title`,
+`error-page-description`, `error-page-request-id`, `error-page-home`,
+`error-page-retry`, `error-page-detail`.
+
+To override the page, add `app/error.vue` to the app. To keep this page and wrap
+it, re-export it:
+
+```vue
+<script setup lang="ts">
+export { default } from '@narduk-enterprises/narduk-core/app/error-page'
+</script>
+```
+
+### Exception capture
+
+One seam, `narduk:exception`, carried on the runtime's own hook bus. Three
+capture sites feed it and never talk to a reporter directly, so adding a
+destination never means adding a second capture path:
+
+| Site                | Hook                 | Fatal    |
+| ------------------- | -------------------- | -------- |
+| Vue component error | `vue:error` (client) | no       |
+| Fatal app error     | `app:error` (client) | yes      |
+| Any Nitro error     | `error` (server)     | 5xx only |
+
+One report per error. `vue:error` and `app:error` both fire when a component
+failure is escalated to the app error boundary, and Nitro can announce one
+handled error twice; both are deduplicated.
+
+Each report carries the route **pattern** (`/stations/:id`, never a raw path, so
+record ids and slugs stay out of it), the build version, the request id, the
+status code, and a message with query strings and email addresses redacted.
+
+**Nothing here logs.** narduk-logging's `installNitroLogging` already writes
+exactly one record per failing request — including 4xx and unrouted paths since
+narduk-libs#359 — so a record written by the capture plugin would double every
+server error. Server log records now also carry `buildVersion`.
+
+Subscribe a destination:
+
+```ts
+import { onNardukException } from '@narduk-enterprises/narduk-core/shared/exception-report'
+import { defineNuxtPlugin } from '#imports'
+
+export default defineNuxtPlugin({
+  name: 'app-exception-reporter',
+  setup(nuxtApp) {
+    onNardukException(nuxtApp as never, (report) => {
+      // report.route, report.requestId, report.statusCode, report.buildVersion
+    })
+  },
+})
+```
+
+`@narduk-enterprises/narduk-analytics` registers the PostHog reporter for client
+exceptions; see its README. When a reporter throws, the error being reported is
+not escalated.
+
+Operational guide:
+[an error page is showing / exceptions are spiking](../../../docs/operations/error-page-and-exceptions.md).
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
