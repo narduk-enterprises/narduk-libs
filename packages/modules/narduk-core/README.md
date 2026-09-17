@@ -1167,6 +1167,194 @@ return listResponse(rows, { query, total })
 unknown field; the contract **rejects** that key instead — the bug class
 stonx#208 named. The stonx adoption PR is deferred from this narduk-libs PR.
 
+## Published data: the narduk-data product client
+
+`createNardukDataClient` reads a published [narduk-data](https://data.nard.uk)
+product — manifest, immutable artifact, SHA-256 check — with the timeout, retry,
+coalescing, stale and freshness policy every consumer was otherwise re-deriving.
+`fetchNardukDataJson` is the typed request underneath it, for the reads that are
+not a product artifact.
+
+Import from `@narduk-enterprises/narduk-core/server/utils/narduk-data`, or use
+the Nitro auto-import inside an app that has the layer installed.
+
+### What it does
+
+- **The manifest names the artifact** — the artifact URL is always built from
+  `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed artifact
+  keeps working. `product.artifactPath` is an optional assertion: set it and a
+  manifest naming anything else is refused. A path that is not a single safe
+  segment is refused before any request.
+- **Timeout** — every attempt carries its own `AbortSignal.timeout`
+  (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
+  read only; it is never given to the shared upstream read, so one client
+  disconnecting cannot fail the readers coalesced onto it.
+- **Bounded retry** — only for an idempotent `GET`/`HEAD`, and only on a
+  transport failure: network, timeout, or HTTP 5xx. A 4xx, a schema failure and
+  a checksum mismatch are never repeated, and a non-GET is attempted exactly
+  once whatever it returns. `retries` (default 1) is the number of extra
+  attempts; there is no backoff sleep, so no timer is left behind.
+- **Single-flight** — concurrent readers of the same product join the read
+  already in flight instead of each issuing their own. The cache key includes
+  every ceiling, validator and hook that decides whether a value is valid, so a
+  stricter caller is never answered from a permissive caller's entry.
+- **Stale-if-error, with a cooldown** — opt in with `maxStaleMs` (default 0,
+  fail closed). Inside the window an upstream failure is answered from the last
+  good value with `source: 'stale-if-error'`; outside it the failure is raised.
+  A cancelled caller always gets its cancellation, never stale data instead.
+  After a failure answered from the window, `failureCooldownMs` (default 10000)
+  serves stale without re-attempting upstream, so a burst does not each pay the
+  budget again. **Worst-case added latency** on the outage path is one
+  `(retries + 1) x timeoutMs` per upstream leg — 30 s at the defaults for the
+  manifest, 60 s if the artifact is the failing leg — paid by the first request
+  of each cooldown period, not by every request.
+- **Freshness** — every result carries `fetchedAt`, `ageMs`, `source`,
+  `releaseId`, `observedAt`/`observedAgeMs` (the newest observation in the
+  release, `staleness.newest_as_of`), `evaluatedAt` (when the producer cut the
+  release), the producer's own `publishedState` verbatim, and a `state` derived
+  from the thresholds in force. Thresholds come from `product.freshness`, or —
+  when it declares none — from the manifest's own `fresh_if_less_than_minutes` /
+  `warning_if_at_most_minutes`, so an app need not hardcode a duplicate that can
+  drift. With neither, `state` is `'unknown'` — never `'fresh'`. `source` and
+  `state` are the only two staleness signals, and they answer different
+  questions: how it was served, and how old it is.
+- **Bounded cache** — one client holds at most `maxEntries` products (default 8)
+  and at most `maxCacheBytes` of retained artifact bytes (default 32 MiB), least
+  recently used evicted first, so a module-scoped client cannot grow without
+  limit in a Worker isolate. `clear()` drops the whole cache and
+  `clear(productId)` drops one product's entries.
+- **Consumer gates** — `acceptManifest(manifest)` runs before the artifact is
+  downloaded and `validate(data, manifest)` before the pair is cached. Either
+  throwing refuses the release with `reason: 'rejected'`, and the refusal is
+  never cached, so a bad release is re-checked rather than memoised.
+- **Request-id propagation and header hygiene** — `context.requestId` is sent as
+  `x-request-id` and `context.headers` is merged in, so a request-id middleware
+  plugs in without this module generating ids. `accept`, `user-agent` and
+  `x-request-id` are managed and cannot be overridden; `authorization`, `cookie`
+  and `proxy-authorization` are dropped rather than forwarded; every URL is
+  pinned to the configured origin and a redirect is an error. Single-flight
+  means the joined callers are answered by a request carrying the first caller's
+  id.
+
+Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
+`http` | `network` | `rejected` | `schema` | `timeout` | `too-large`), `status`
+and `url`. A schema failure is an error state, not a silent pass-through, and an
+empty-but-valid artifact stays distinct from a missing or stale one.
+
+`schema` and `manifestSchema` are any validator with a zod-shaped `safeParse`,
+so an app's existing zod schemas plug in and this package adds no validator
+dependency of its own. The manifest read has its own ceiling
+(`manifestMaxBytes`, default 256 KiB) independent of the artifact's `maxBytes`
+(default 16 MiB).
+
+### Before / after: a real Buoys call site
+
+Buoys' `apps/web/server/api/stations/index.get.ts` reads the published
+`buoy-status-v1` product. **Before**, the route's
+`readCachedPublishedBuoyStatus` came from an app-owned
+`server/utils/buoy-status-product.ts` that hand-rolled the whole path — a
+hardcoded `https://data.nard.uk`, its own manifest fetch, a 15-second
+`AbortSignal.timeout`, a bounded body read, a SHA-256 comparison, a 60-second
+memo and an in-flight promise — roughly 120 lines before any buoy-specific
+shaping:
+
+```ts
+// server/utils/buoy-status-product.ts (app-owned, abridged)
+const DATA_ORIGIN = 'https://data.nard.uk'
+export const MANIFEST_URL = `${DATA_ORIGIN}/buoy-status-v1/current/manifest.json`
+
+async function fetchJson(fetcher: typeof fetch, url: string) {
+  const response = await fetcher(url, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': PUBLISHED_DATA_USER_AGENT,
+    },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error(`… failed with ${response.status}.`)
+  return response
+}
+
+export async function readPublishedBuoyStatus(fetcher: typeof fetch = fetch) {
+  const manifest = manifestSchema.parse(
+    await (await fetchJson(fetcher, MANIFEST_URL)).json(),
+  )
+  const artifactBytes = await readBoundedBody(
+    await fetchJson(fetcher, artifactUrl(manifest.releaseId)),
+  )
+  if (
+    (await sha256Hex(artifactBytes)) !== manifest.artifact.sha256.toLowerCase()
+  ) {
+    throw new Error('… checksum does not match its immutable manifest.')
+  }
+  return {
+    manifest,
+    product: productSchema.parse(
+      JSON.parse(new TextDecoder().decode(artifactBytes)),
+    ),
+  }
+}
+
+export async function readCachedPublishedBuoyStatus(
+  fetcher = fetch,
+  cache = sharedBuoyStatusCache,
+) {
+  const memo = cache.entry
+  if (memo && memo.expiresAt > cache.now()) return memo.value
+  cache.inFlight ??= readPublishedBuoyStatus(fetcher)
+    .then((value) => {
+      cache.entry = { expiresAt: cache.now() + cache.ttlMs, value }
+      return value
+    })
+    .finally(() => {
+      cache.inFlight = null
+    })
+  return cache.inFlight
+}
+```
+
+**After**, the same util is a product declaration plus a client instance. The
+route body is unchanged, and it gains freshness metadata, a retry it never had,
+an explicit stale window it can opt into, and the manifest/artifact URLs the
+app's `MANIFEST_URL` export exists to provide. It declares no `freshness`
+thresholds because the published `buoy-status-v1` manifest carries its own:
+
+```ts
+// server/utils/buoy-status-product.ts (after)
+import {
+  createNardukDataClient,
+  type NardukDataRequestContext,
+} from '@narduk-enterprises/narduk-core/server/utils/narduk-data'
+
+const client = createNardukDataClient({ userAgent: PUBLISHED_DATA_USER_AGENT })
+
+const buoyStatusProduct = {
+  artifactPath: 'public-buoy-data.json',
+  manifestSchema,
+  maxStaleMs: 10 * 60_000,
+  productId: 'buoy-status-v1',
+  schema: productSchema,
+  ttlMs: 60_000,
+} as const
+
+export async function readCachedPublishedBuoyStatus(
+  context?: NardukDataRequestContext,
+) {
+  const { artifactUrl, data, freshness, manifest, manifestUrl } =
+    await client.read(buoyStatusProduct, context)
+  return { artifactUrl, freshness, manifest, manifestUrl, product: data }
+}
+```
+
+```ts
+// server/api/stations/index.get.ts — unchanged
+const { product } = await readCachedPublishedBuoyStatus()
+const data = listPublishedStations(product, result.data)
+```
+
+The adoption itself is a Buoys-side change and is not part of this package's
+release; the snippet above is the shape it takes.
+
 ## Deprecated components
 
 ### `AppEmptyState` — deprecated, removed in the next major
