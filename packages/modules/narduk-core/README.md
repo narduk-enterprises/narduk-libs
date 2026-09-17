@@ -1033,6 +1033,167 @@ unchanged, so the browser TTL of every route is identical before and after. What
 changes is that the edge TTL moves to a header Cloudflare will honor and the
 stale windows stop being silently discarded.
 
+## Reader preferences: units, time zone and locale
+
+A Narduk app stores measurements in SI and displays them in whatever the reader
+asked for. `usePreferences()` holds the choice, `useFormatters()` applies it,
+and the pure formatters underneath do the arithmetic. **Adoption is per value**:
+nothing here rewrites an app's existing display code, and a page opts in one
+call site at a time.
+
+```vue
+<script setup lang="ts">
+const format = useFormatters()
+const { setUnits, units } = usePreferences()
+</script>
+
+<template>
+  <dl>
+    <dt>Wave height</dt>
+    <dd>{{ format.height(buoy.waveHeightMetres) }}</dd>
+    <dt>Wind</dt>
+    <dd>{{ format.speed(buoy.windSpeedMetresPerSecond) }}</dd>
+    <dt>Observed</dt>
+    <dd>{{ format.dateTime(buoy.observedAt) }}</dd>
+  </dl>
+  <UButton @click="setUnits(units === 'imperial' ? 'metric' : 'imperial')">
+    Switch units
+  </UButton>
+</template>
+```
+
+Both composables are auto-imported by this module. The pure functions import
+explicitly from `@narduk-enterprises/narduk-core/shared/utils/units`, and a
+Nitro route reads the same preferences with `readPreferences(event)` from
+`@narduk-enterprises/narduk-core/server/utils/preferences`.
+
+### The cookie
+
+One cookie, `ne_prefs`, carries the whole selection as a small versioned
+parameter string:
+
+```text
+v=1&u=imperial&tz=America%2FChicago&l=en-US
+```
+
+It is read during SSR, so the first paint already has the reader's units — there
+is no client-only flash of the wrong one. It is **validated on read**: a cookie
+from a future schema version, a truncated one, a hand-edited one, one naming a
+time zone this runtime does not know, or one that is not a parameter string at
+all decodes to _no selection_ and the documented defaults apply. A bad cookie is
+never a 500, and a cookie with one bad field keeps its good ones.
+
+Only fields the reader actually chose are written, so setting units leaves the
+time zone following the defaults.
+
+### Defaults when the cookie is unset
+
+| Preference | Default                                                                        |
+| ---------- | ------------------------------------------------------------------------------ |
+| `locale`   | the highest-quality usable tag in `Accept-Language`, else `en-US`              |
+| `units`    | `imperial` when that locale's region is `US` (`en-US`, `es-US`), else `metric` |
+| `timeZone` | `UTC`, until the browser reports its own — see below                           |
+
+The region is read as written and never maximised:
+`Intl.Locale('en').maximize()` answers `en-Latn-US`, which would quietly make
+every region-less English speaker in the world imperial.
+
+### Hydration
+
+The server-rendered text and the client's first render are the same string, so
+Vue reports no hydration mismatch (Buoys' end-to-end console tracker fails on
+one). Two rules get that:
+
+1. **Both sides read the same cookie.** `useCookie` gives the same value during
+   SSR and in the browser.
+2. **Both sides read the same defaults.** The server resolves them once from
+   `Accept-Language` and puts the answer in the Nuxt payload through `useState`.
+   The client never re-derives them from `navigator.language`, which can
+   disagree with the header that was actually sent.
+
+The browser's time zone is the one input the server cannot have, so it is
+**not** read during render. When the cookie carries no zone, both sides render
+`UTC`; after mount, `usePreferences()` detects
+`Intl.DateTimeFormat().resolvedOptions().timeZone` and writes it to the cookie,
+which is an ordinary reactive update on an already-hydrated page. A reader who
+has chosen a zone is left alone.
+
+`tests/preferences-state.test.ts` proves this the way Vue does: it renders with
+`renderToString`, hydrates that exact markup with a real
+`createSSRApp().mount()`, and fails on a hydration warning. Its last case is a
+control that reproduces the naive implementation — the client re-deriving its
+own defaults — and requires the warning to appear, so a passing suite is not
+merely a suite that never looks.
+
+### Cache safety
+
+HTML rendered with one reader's units must never be served to another reader out
+of a shared cache. Calling `usePreferences()` during SSR, or `readPreferences()`
+in a route, marks the response, and the marked response is forced to
+`Cache-Control: private, no-store` with `Vary: Cookie` in two places:
+
+- **`setCacheProfile`** gains a `preferences-cookie` suppression reason, so a
+  route that reads preferences cannot advertise a shared-cacheable profile.
+- **The `preferences-cache` Nitro plugin** does the same for the rendered SSR
+  document on `render:response`, which is the response that actually carries the
+  preference-shaped HTML.
+
+Nothing downgrades a response that never read preferences, so **an app's
+existing cache profiles are unchanged** — Buoys' `live`/`slow`/`static` routes
+keep exactly the headers they have today until they opt a value in.
+
+An app that needs its SSR HTML edge-cached should therefore not format on the
+server: return canonical SI values from a shared-cacheable route and bind the
+formatters in the browser, where the preference cookie costs nothing.
+
+### The formatters
+
+Every formatter is a standalone pure function over its arguments, so importing
+one does not ship the rest. Canonical inputs are SI.
+
+| Function                                                      | Input                                  | Imperial                    | Metric                     | Default precision |
+| ------------------------------------------------------------- | -------------------------------------- | --------------------------- | -------------------------- | ----------------- |
+| `formatDistance`                                              | metres                                 | feet below 1 mi, then miles | metres below 1 km, then km | 0 small / 1 large |
+| `formatSpeed`                                                 | metres per second                      | mph                         | km/h                       | 1                 |
+| `formatTemperature`                                           | degrees Celsius                        | Fahrenheit                  | Celsius                    | 0                 |
+| `formatHeight`                                                | metres                                 | feet                        | metres                     | 1                 |
+| `formatLength`                                                | metres                                 | feet                        | metres                     | 0                 |
+| `formatPressure`                                              | hectopascals                           | inHg                        | hPa                        | 2 / 0             |
+| `formatDecimal`                                               | number                                 | n/a                         | n/a                        | up to 3           |
+| `formatZonedDate` / `formatZonedTime` / `formatZonedDateTime` | `Date`, epoch ms or a parseable string | n/a                         | n/a                        | `Intl` styles     |
+
+`formatHeight` and `formatLength` never auto-scale, which is why a 1.4 m swell
+stays `4.6 ft` instead of becoming `0.0 mi`. `formatPressure` appends its symbol
+itself because `Intl`'s sanctioned unit list has neither hectopascals nor inches
+of mercury; everything else uses a real `style: 'unit'` so the locale decides
+spacing and symbol form.
+
+Rules the whole suite keeps:
+
+- **No ambient clock, zone or locale.** `timeZone` and `locale` are arguments;
+  absent, the fixed fallbacks `UTC` and `en-US` apply, never the host's.
+- **Absent input has one answer.** `null`, `undefined`, `NaN`, `Infinity` and an
+  unparseable date all render an em dash (`NE_EMPTY_VALUE`), overridable per
+  call with `empty`. No call site has to guard and no reader ever sees `NaN ft`.
+- **Per-call options win**, so one value can opt out of the reader's units
+  without touching the rest of the page:
+  `format.height(x, { units: 'metric' })`.
+- **No new dependency.** `Intl.NumberFormat` and `Intl.DateTimeFormat` do the
+  work, and `Intl` owns every daylight-saving transition date rather than a
+  hand-rolled table.
+
+Knots are deliberately not a third unit system: the preference has two values,
+and a maritime app that wants knots should say so at the call site rather than
+make a stored preference mean something other than what it says.
+
+### Relation to `narduk-shell/format`
+
+`@narduk-enterprises/narduk-shell/format` is the estate's framework-free
+formatter suite for dates, numbers, money and percentages, with no notion of a
+reader. This module is the preference layer: unit conversion plus the store that
+decides which units. An app can use either or both; nothing here duplicates a
+`narduk-shell` export, and this package does not depend on `narduk-shell`.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
