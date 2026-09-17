@@ -60,7 +60,9 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                     // `instanceof` and identity survive. Everything else is bound to the
                     // real target: EventTarget's methods read internal slots a Proxy
                     // receiver does not have.
-                    return Object.hasOwn(value, 'prototype') ? value : value.bind(object);
+                    return Object.hasOwn(value, 'prototype')
+                        ? value
+                        : value.bind(object);
                 }
                 if (probeKeys.has(property))
                     return undefined;
@@ -119,6 +121,8 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         }
         return entry;
     };
+    /** The fake always assigns an id; Apple's type still allows null. */
+    const idOf = (annotation) => annotation.id ?? '';
     // ---------------------------------------------------------------- the DOM --
     const documentOf = () => {
         const candidate = globalThis.document;
@@ -176,7 +180,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             return new CoordinateSpan(this.latitudeDelta, this.longitudeDelta);
         }
         equals(other) {
-            return this.latitudeDelta === other.latitudeDelta && this.longitudeDelta === other.longitudeDelta;
+            return (this.latitudeDelta === other.latitudeDelta && this.longitudeDelta === other.longitudeDelta);
         }
         toString() {
             return `<mapkit.CoordinateSpan latitudeDelta=${this.latitudeDelta} longitudeDelta=${this.longitudeDelta}>`;
@@ -238,7 +242,9 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         const spanY = north - south;
         return {
             x: spanX === 0 ? viewportWidth / 2 : ((coordinate.longitude - west) / spanX) * viewportWidth,
-            y: spanY === 0 ? viewportHeight / 2 : ((north - mercator(coordinate.latitude)) / spanY) * viewportHeight,
+            y: spanY === 0
+                ? viewportHeight / 2
+                : ((north - mercator(coordinate.latitude)) / spanY) * viewportHeight,
         };
     };
     // ----------------------------------------------------------- annotations --
@@ -374,7 +380,9 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             super();
             mapSequence += 1;
             const doc = documentOf();
-            const host = typeof parent === 'string' ? doc.getElementById(parent) : (parent ?? doc.createElement('div'));
+            const host = typeof parent === 'string'
+                ? doc.getElementById(parent)
+                : (parent ?? doc.createElement('div'));
             if (!host)
                 throw new Error(`fake MapKit: no element with id "${String(parent)}" to attach the map to`);
             const element = doc.createElement('div');
@@ -396,7 +404,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         set annotations(next) {
             // Real MapKit replaces wholesale here. Logged under its own name so a
             // budget test can see a full rebuild that `addAnnotations` would hide.
-            log('annotations=', next.map((annotation) => annotation.id), `${this.ownedAnnotations.length} -> ${next.length}`);
+            log('annotations=', next.map(idOf), `${this.ownedAnnotations.length} -> ${next.length}`);
             this.removeAnnotations([...this.ownedAnnotations]);
             this.addAnnotations(next);
         }
@@ -412,7 +420,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             return this.selectedValue;
         }
         set selectedAnnotation(next) {
-            log('selectedAnnotation=', next ? [next.id] : []);
+            log('selectedAnnotation=', next ? [idOf(next)] : []);
             this.applySelection(next);
         }
         applyRegion(next) {
@@ -433,15 +441,15 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             if (previous) {
                 previous.selected = false;
                 this.removeCallout(previous);
-                countsFor(previous.id).deselected += 1;
-                log('deselect', [previous.id]);
+                countsFor(idOf(previous)).deselected += 1;
+                log('deselect', [idOf(previous)]);
                 this.dispatchEvent(new AnnotationEvent('deselect', previous));
             }
             this.selectedValue = next;
             if (next) {
                 next.selected = true;
-                countsFor(next.id).selected += 1;
-                log('select', [next.id]);
+                countsFor(idOf(next)).selected += 1;
+                log('select', [idOf(next)]);
                 this.dispatchEvent(new AnnotationEvent('select', next));
                 this.renderCallout(next);
             }
@@ -463,9 +471,9 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 if (content)
                     element.append(content);
                 else
-                    element.textContent = annotation.title ?? annotation.id;
+                    element.textContent = annotation.title ?? idOf(annotation);
             }
-            element.dataset['calloutFor'] = annotation.id;
+            element.dataset['calloutFor'] = idOf(annotation);
             const size = annotation.size ?? { height: 0, width: 0 };
             const offset = delegate?.calloutAnchorOffsetForAnnotation?.(annotation, size) ?? annotation.calloutOffset;
             const point = project(annotation.coordinate, this.regionValue);
@@ -474,7 +482,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             element.style.top = `${point.y + offset.y}px`;
             this.element?.append(element);
             callouts.set(annotation, element);
-            log('callout-render', [annotation.id]);
+            log('callout-render', [idOf(annotation)]);
         }
         removeCallout(annotation) {
             const element = callouts.get(annotation);
@@ -482,7 +490,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 return;
             element.remove();
             callouts.delete(annotation);
-            log('callout-remove', [annotation.id]);
+            log('callout-remove', [idOf(annotation)]);
         }
         attach(annotation) {
             asAnnotation(annotation).ownerMap = this.view;
@@ -490,7 +498,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             this.place(annotation);
             this.element?.append(annotation.element);
             annotationsAdded += 1;
-            countsFor(annotation.id).added += 1;
+            countsFor(idOf(annotation)).added += 1;
         }
         detach(annotation) {
             const index = this.ownedAnnotations.indexOf(annotation);
@@ -502,17 +510,17 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             asAnnotation(annotation).ownerMap = null;
             annotation.element.remove();
             annotationsRemoved += 1;
-            countsFor(annotation.id).removed += 1;
+            countsFor(idOf(annotation)).removed += 1;
         }
         addAnnotation(annotation) {
-            log('addAnnotation', [annotation.id]);
+            log('addAnnotation', [idOf(annotation)]);
             if (this.ownedAnnotations.includes(annotation))
                 return null;
             this.attach(annotation);
             return annotation;
         }
         addAnnotations(annotations) {
-            log('addAnnotations', annotations.map((annotation) => annotation.id), String(annotations.length));
+            log('addAnnotations', annotations.map(idOf), String(annotations.length));
             for (const annotation of annotations) {
                 if (!this.ownedAnnotations.includes(annotation))
                     this.attach(annotation);
@@ -520,12 +528,12 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             return annotations;
         }
         removeAnnotation(annotation) {
-            log('removeAnnotation', [annotation.id]);
+            log('removeAnnotation', [idOf(annotation)]);
             this.detach(annotation);
             return annotation;
         }
         removeAnnotations(annotations) {
-            log('removeAnnotations', annotations.map((annotation) => annotation.id), String(annotations.length));
+            log('removeAnnotations', annotations.map(idOf), String(annotations.length));
             for (const annotation of annotations)
                 this.detach(annotation);
             return annotations;
@@ -543,7 +551,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             return this.view;
         }
         showItems(items, options = {}) {
-            log('showItems', items.map((item) => item.id), String(items.length));
+            log('showItems', items.map(idOf), String(items.length));
             if (items.length === 0)
                 return items;
             let minLatitude = Number.POSITIVE_INFINITY;
@@ -839,7 +847,8 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             }
             requestToken();
         },
-        annotationCounts(id) {
+        annotationCounts(annotation) {
+            const id = typeof annotation === 'string' ? annotation : (annotation.id ?? '');
             const entry = annotationCounts.get(id);
             return entry ? { ...entry } : { added: 0, deselected: 0, removed: 0, selected: 0 };
         },

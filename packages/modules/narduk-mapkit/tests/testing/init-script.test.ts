@@ -27,7 +27,9 @@ function evaluateInitScript(options: FakeMapKitOptions = {}): Record<string, unk
     document: globalThis.document,
   }
   // eslint-disable-next-line no-new-func -- evaluating the generated source IS the assertion.
-  const run = new Function('globalThis', fakeMapKitInitScript(options)) as (scope: Record<string, unknown>) => void
+  const run = new Function('globalThis', fakeMapKitInitScript(options)) as (
+    scope: Record<string, unknown>,
+  ) => void
   run(realm)
   return realm
 }
@@ -68,7 +70,9 @@ describe('fakeMapKitInitScript', () => {
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const map = new runtime.mapkit.Map(host)
-    const pin = new runtime.mapkit.MarkerAnnotation(new runtime.mapkit.Coordinate(30, -88), { title: 'Buoy' })
+    const pin = new runtime.mapkit.MarkerAnnotation(new runtime.mapkit.Coordinate(30, -88), {
+      title: 'Buoy',
+    })
     map.addAnnotation(pin)
 
     expect(map.annotations).toHaveLength(1)

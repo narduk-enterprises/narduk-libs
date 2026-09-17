@@ -54,7 +54,9 @@ export function createFakeMapKit(options: FakeMapKitOptions = {}): FakeMapKitHan
 }
 
 /** `createFakeMapKit(...)` with `install()` already called; returns the handle. */
-export function installFakeMapKit(options: FakeMapKitOptions = {}): FakeMapKitHandle & { uninstall: () => void } {
+export function installFakeMapKit(
+  options: FakeMapKitOptions = {},
+): FakeMapKitHandle & { uninstall: () => void } {
   const handle = createFakeMapKit(options)
   return { ...handle, uninstall: handle.install() }
 }

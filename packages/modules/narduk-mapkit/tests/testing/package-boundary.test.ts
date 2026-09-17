@@ -66,7 +66,9 @@ function reachableFrom(entry: string): Set<string> {
   return seen
 }
 
-const productionEntries = Object.entries(packageJson.exports).filter(([subpath]) => subpath !== './testing')
+const productionEntries = Object.entries(packageJson.exports).filter(
+  ([subpath]) => subpath !== './testing',
+)
 
 describe('./testing package boundary', () => {
   it.each(productionEntries)('%s cannot reach src/testing', (_subpath, target) => {
@@ -95,10 +97,11 @@ describe('./testing package boundary', () => {
   })
 
   it('the fake declares no runtime dependency', () => {
-    const bare = ['src/testing/index.ts', 'src/testing/runtime.ts', 'src/testing/types.ts'].flatMap((file) =>
-      specifiersIn(readFileSync(resolve(packageRoot, file), 'utf8')).filter(
-        (specifier) => !specifier.startsWith('.'),
-      ),
+    const bare = ['src/testing/index.ts', 'src/testing/runtime.ts', 'src/testing/types.ts'].flatMap(
+      (file) =>
+        specifiersIn(readFileSync(resolve(packageRoot, file), 'utf8')).filter(
+          (specifier) => !specifier.startsWith('.'),
+        ),
     )
     expect(bare).toEqual([])
   })

@@ -42,7 +42,8 @@ import type {
 } from '../../src/testing/index.js'
 
 type Extends<Real, Fake> = [Real] extends [Fake] ? true : false
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 type Expect<T extends true> = T
 
 /**
@@ -72,12 +73,16 @@ type Fakeify<T> = T extends Apple.Annotation
 type _changeStatus = Expect<
   Equal<FakeMapKitConfigurationChangeStatus, Apple.MapKitConfigurationChangeEvent['status']>
 >
-type _errorStatus = Expect<Equal<FakeMapKitConfigurationErrorStatus, Apple.MapKitConfigurationErrorEvent['status']>>
+type _errorStatus = Expect<
+  Equal<FakeMapKitConfigurationErrorStatus, Apple.MapKitConfigurationErrorEvent['status']>
+>
 type _errorMessage = Expect<Extends<Apple.MapKitConfigurationErrorEvent['message'], string>>
 
 // ------------------------------------------------------------ init options --
 
-type _initOptions = Expect<Equal<FakeMapKitInitializationOptions, Apple.MapKitInitializationOptions>>
+type _initOptions = Expect<
+  Equal<FakeMapKitInitializationOptions, Apple.MapKitInitializationOptions>
+>
 type _authorizationCallback = Expect<
   Equal<
     FakeMapKitInitializationOptions['authorizationCallback'],
@@ -88,7 +93,9 @@ type _authorizationCallback = Expect<
 // ------------------------------------------------------- loader-shaped load --
 
 type _loadOptions = Expect<Extends<FakeMapKitLoadOptions, MapKitLoaderOptions>>
-type _loadAcceptsRealOptions = Expect<Extends<Parameters<typeof appleLoad>[0], FakeMapKitLoadOptions>>
+type _loadAcceptsRealOptions = Expect<
+  Extends<Parameters<typeof appleLoad>[0], FakeMapKitLoadOptions>
+>
 
 // -------------------------------------------------------------- value types --
 
@@ -103,23 +110,42 @@ type _size = Expect<Equal<FakeSize, Apple.Size>>
 // `map` is excluded: Apple's `Map` carries `showItems`, whose real return type
 // is `(Annotation | Overlay)[]`, and the fake models no overlays (see below).
 
-type _annotationCoordinate = Expect<Extends<Apple.Annotation['coordinate'], FakeMapKitAnnotation['coordinate']>>
-type _annotationElement = Expect<Extends<Apple.Annotation['element'], FakeMapKitAnnotation['element']>>
+type _annotationCoordinate = Expect<
+  Extends<Apple.Annotation['coordinate'], FakeMapKitAnnotation['coordinate']>
+>
+type _annotationElement = Expect<
+  Extends<Apple.Annotation['element'], FakeMapKitAnnotation['element']>
+>
 type _annotationId = Expect<Extends<Apple.Annotation['id'], FakeMapKitAnnotation['id']>>
 type _annotationTitle = Expect<Extends<Apple.Annotation['title'], FakeMapKitAnnotation['title']>>
-type _annotationSubtitle = Expect<Extends<Apple.Annotation['subtitle'], FakeMapKitAnnotation['subtitle']>>
+type _annotationSubtitle = Expect<
+  Extends<Apple.Annotation['subtitle'], FakeMapKitAnnotation['subtitle']>
+>
 type _annotationData = Expect<Extends<Apple.Annotation['data'], FakeMapKitAnnotation['data']>>
-type _annotationEnabled = Expect<Extends<Apple.Annotation['enabled'], FakeMapKitAnnotation['enabled']>>
-type _annotationVisible = Expect<Extends<Apple.Annotation['visible'], FakeMapKitAnnotation['visible']>>
-type _annotationSelected = Expect<Extends<Apple.Annotation['selected'], FakeMapKitAnnotation['selected']>>
+type _annotationEnabled = Expect<
+  Extends<Apple.Annotation['enabled'], FakeMapKitAnnotation['enabled']>
+>
+type _annotationVisible = Expect<
+  Extends<Apple.Annotation['visible'], FakeMapKitAnnotation['visible']>
+>
+type _annotationSelected = Expect<
+  Extends<Apple.Annotation['selected'], FakeMapKitAnnotation['selected']>
+>
 type _annotationSize = Expect<Extends<Apple.Annotation['size'], FakeMapKitAnnotation['size']>>
-type _annotationAnchorOffset = Expect<Extends<Apple.Annotation['anchorOffset'], FakeMapKitAnnotation['anchorOffset']>>
-type _annotationCalloutOffset = Expect<Extends<Apple.Annotation['calloutOffset'], FakeMapKitAnnotation['calloutOffset']>>
+type _annotationAnchorOffset = Expect<
+  Extends<Apple.Annotation['anchorOffset'], FakeMapKitAnnotation['anchorOffset']>
+>
+type _annotationCalloutOffset = Expect<
+  Extends<Apple.Annotation['calloutOffset'], FakeMapKitAnnotation['calloutOffset']>
+>
 type _annotationCalloutEnabled = Expect<
   Extends<Apple.Annotation['calloutEnabled'], FakeMapKitAnnotation['calloutEnabled']>
 >
 type _annotationCalloutNullable = Expect<
-  Equal<null extends Apple.Annotation['callout'] ? true : false, null extends FakeMapKitAnnotation['callout'] ? true : false>
+  Equal<
+    null extends Apple.Annotation['callout'] ? true : false,
+    null extends FakeMapKitAnnotation['callout'] ? true : false
+  >
 >
 type _annotationAccessibilityLabel = Expect<
   Extends<Apple.Annotation['accessibilityLabel'], FakeMapKitAnnotation['accessibilityLabel']>
@@ -132,23 +158,43 @@ type _annotationIsEventTarget = Expect<Extends<Apple.Annotation, EventTarget>>
 type CalloutMethod<K extends keyof FakeMapKitCalloutDelegate> = ReturnType<
   NonNullable<Apple.AnnotationCalloutDelegate[K]>
 >
-type _calloutKeys = Expect<Extends<keyof FakeMapKitCalloutDelegate, keyof Apple.AnnotationCalloutDelegate>>
+type _calloutKeys = Expect<
+  Extends<keyof FakeMapKitCalloutDelegate, keyof Apple.AnnotationCalloutDelegate>
+>
 type _calloutAnchorOffset = Expect<
-  Equal<CalloutMethod<'calloutAnchorOffsetForAnnotation'>, ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutAnchorOffsetForAnnotation']>>>
+  Equal<
+    CalloutMethod<'calloutAnchorOffsetForAnnotation'>,
+    ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutAnchorOffsetForAnnotation']>>
+  >
 >
 type _calloutContent = Expect<
-  Equal<CalloutMethod<'calloutContentForAnnotation'>, ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutContentForAnnotation']>>>
+  Equal<
+    CalloutMethod<'calloutContentForAnnotation'>,
+    ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutContentForAnnotation']>>
+  >
 >
 type _calloutElement = Expect<
-  Equal<CalloutMethod<'calloutElementForAnnotation'>, ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutElementForAnnotation']>>>
+  Equal<
+    CalloutMethod<'calloutElementForAnnotation'>,
+    ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutElementForAnnotation']>>
+  >
 >
 type _calloutShouldAppear = Expect<
-  Equal<CalloutMethod<'calloutShouldAppearForAnnotation'>, ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutShouldAppearForAnnotation']>>>
+  Equal<
+    CalloutMethod<'calloutShouldAppearForAnnotation'>,
+    ReturnType<NonNullable<FakeMapKitCalloutDelegate['calloutShouldAppearForAnnotation']>>
+  >
 >
 
-type _markerColor = Expect<Extends<Apple.MarkerAnnotation['color'], FakeMapKitMarkerAnnotation['color']>>
-type _markerGlyphColor = Expect<Extends<Apple.MarkerAnnotation['glyphColor'], FakeMapKitMarkerAnnotation['glyphColor']>>
-type _markerGlyphText = Expect<Extends<Apple.MarkerAnnotation['glyphText'], FakeMapKitMarkerAnnotation['glyphText']>>
+type _markerColor = Expect<
+  Extends<Apple.MarkerAnnotation['color'], FakeMapKitMarkerAnnotation['color']>
+>
+type _markerGlyphColor = Expect<
+  Extends<Apple.MarkerAnnotation['glyphColor'], FakeMapKitMarkerAnnotation['glyphColor']>
+>
+type _markerGlyphText = Expect<
+  Extends<Apple.MarkerAnnotation['glyphText'], FakeMapKitMarkerAnnotation['glyphText']>
+>
 // Apple's `ImageAnnotation.url` is a union that also covers an ImageDelegate and
 // a Promise; the fake models the plain `{ 1: url, 2: url2x }` hash only, so the
 // assertion is that the fake's shape is ONE of Apple's accepted forms.
@@ -158,7 +204,9 @@ type _imageUrl = Expect<Extends<FakeMapKitImageAnnotation['url'], Apple.ImageAnn
 
 type _mapElement = Expect<Extends<Apple.Map['element'], FakeMapKitMap['element']>>
 type _mapRegion = Expect<Extends<Apple.Map['region'], FakeMapKitMap['region']>>
-type _mapAnnotations = Expect<Equal<Fakeify<Apple.Map['annotations']>, FakeMapKitMap['annotations']>>
+type _mapAnnotations = Expect<
+  Equal<Fakeify<Apple.Map['annotations']>, FakeMapKitMap['annotations']>
+>
 type _mapSelectedAnnotation = Expect<
   Equal<Fakeify<Apple.Map['selectedAnnotation']>, FakeMapKitMap['selectedAnnotation']>
 >
@@ -166,21 +214,38 @@ type _mapAddAnnotation = Expect<
   Equal<Fakeify<ReturnType<Apple.Map['addAnnotation']>>, ReturnType<FakeMapKitMap['addAnnotation']>>
 >
 type _mapAddAnnotations = Expect<
-  Equal<Fakeify<ReturnType<Apple.Map['addAnnotations']>>, ReturnType<FakeMapKitMap['addAnnotations']>>
+  Equal<
+    Fakeify<ReturnType<Apple.Map['addAnnotations']>>,
+    ReturnType<FakeMapKitMap['addAnnotations']>
+  >
 >
 type _mapRemoveAnnotation = Expect<
-  Equal<Fakeify<ReturnType<Apple.Map['removeAnnotation']>>, ReturnType<FakeMapKitMap['removeAnnotation']>>
+  Equal<
+    Fakeify<ReturnType<Apple.Map['removeAnnotation']>>,
+    ReturnType<FakeMapKitMap['removeAnnotation']>
+  >
 >
 type _mapRemoveAnnotations = Expect<
-  Equal<Fakeify<ReturnType<Apple.Map['removeAnnotations']>>, ReturnType<FakeMapKitMap['removeAnnotations']>>
+  Equal<
+    Fakeify<ReturnType<Apple.Map['removeAnnotations']>>,
+    ReturnType<FakeMapKitMap['removeAnnotations']>
+  >
 >
 type _mapSetRegionAnimated = Expect<
-  Extends<Parameters<FakeMapKitMap['setRegionAnimated']>, Parameters<Apple.Map['setRegionAnimated']>>
+  Extends<
+    Parameters<FakeMapKitMap['setRegionAnimated']>,
+    Parameters<Apple.Map['setRegionAnimated']>
+  >
 >
 type _mapSetRegionAnimatedReturn = Expect<
-  Equal<Fakeify<ReturnType<Apple.Map['setRegionAnimated']>>, ReturnType<FakeMapKitMap['setRegionAnimated']>>
+  Equal<
+    Fakeify<ReturnType<Apple.Map['setRegionAnimated']>>,
+    ReturnType<FakeMapKitMap['setRegionAnimated']>
+  >
 >
-type _mapDestroy = Expect<Equal<ReturnType<Apple.Map['destroy']>, ReturnType<FakeMapKitMap['destroy']>>>
+type _mapDestroy = Expect<
+  Equal<ReturnType<Apple.Map['destroy']>, ReturnType<FakeMapKitMap['destroy']>>
+>
 type _mapIsEventTarget = Expect<Extends<Apple.Map, EventTarget>>
 // `showItems` is compared on its arguments only: Apple's return type includes
 // `Overlay`, which the fake does not model at all.
@@ -196,16 +261,25 @@ type _mapShowItemsItems = Expect<
 // Catches the other drift direction: a member the fake declares that Apple does
 // not have, either because it was invented or because Apple removed it.
 
-type _annotationKeys = Expect<Extends<Exclude<keyof FakeMapKitAnnotation, keyof EventTarget>, keyof Apple.Annotation>>
+type _annotationKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitAnnotation, keyof EventTarget>, keyof Apple.Annotation>
+>
 type _markerKeys = Expect<
-  Extends<Exclude<keyof FakeMapKitMarkerAnnotation, keyof EventTarget>, keyof Apple.MarkerAnnotation>
+  Extends<
+    Exclude<keyof FakeMapKitMarkerAnnotation, keyof EventTarget>,
+    keyof Apple.MarkerAnnotation
+  >
 >
 type _imageKeys = Expect<
   Extends<Exclude<keyof FakeMapKitImageAnnotation, keyof EventTarget>, keyof Apple.ImageAnnotation>
 >
 type _mapKeys = Expect<Extends<Exclude<keyof FakeMapKitMap, keyof EventTarget>, keyof Apple.Map>>
-type _namespaceKeys = Expect<Extends<Exclude<keyof FakeMapKitNamespace, keyof EventTarget>, keyof Apple.MapKit>>
-type _showItemsOptionKeys = Expect<Extends<keyof FakeMapKitShowItemsOptions, keyof Apple.MapShowItemsOptions>>
+type _namespaceKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitNamespace, keyof EventTarget>, keyof Apple.MapKit>
+>
+type _showItemsOptionKeys = Expect<
+  Extends<keyof FakeMapKitShowItemsOptions, keyof Apple.MapShowItemsOptions>
+>
 
 // --------------------------------------------------------------- namespace --
 
@@ -215,14 +289,19 @@ type _namespaceLanguage = Expect<Extends<Apple.MapKit['language'], FakeMapKitNam
 type _namespaceLoadedLibraries = Expect<
   Extends<Apple.MapKit['loadedLibraries'], FakeMapKitNamespace['loadedLibraries']>
 >
-type _namespaceInit = Expect<Equal<Parameters<Apple.MapKit['init']>, Parameters<FakeMapKitNamespace['init']>>>
+type _namespaceInit = Expect<
+  Equal<Parameters<Apple.MapKit['init']>, Parameters<FakeMapKitNamespace['init']>>
+>
 type _namespaceLoad = Expect<
   Extends<Parameters<FakeMapKitNamespace['load']>, Parameters<NonNullable<Apple.MapKit['load']>>>
 >
 type _namespaceIsEventTarget = Expect<Extends<Apple.MapKit, EventTarget>>
 type _namespaceMapCtor = Expect<Extends<Apple.MapKit['Map'], new (...args: never[]) => unknown>>
 type _namespaceCoordinateCtor = Expect<
-  Extends<ConstructorParameters<FakeMapKitNamespace['Coordinate']>, ConstructorParameters<Apple.MapKit['Coordinate']>>
+  Extends<
+    ConstructorParameters<FakeMapKitNamespace['Coordinate']>,
+    ConstructorParameters<Apple.MapKit['Coordinate']>
+  >
 >
 type _namespaceSpanCtor = Expect<
   Extends<

@@ -334,7 +334,10 @@ export interface FakeMapKitShowItemsOptions {
 
 export interface FakeMapKitMapOptions {
   center?: { latitude: number; longitude: number }
-  region?: { center: { latitude: number; longitude: number }; span: { latitudeDelta: number; longitudeDelta: number } }
+  region?: {
+    center: { latitude: number; longitude: number }
+    span: { latitudeDelta: number; longitudeDelta: number }
+  }
 }
 
 export interface FakeMapKitMap extends EventTarget {
@@ -348,7 +351,10 @@ export interface FakeMapKitMap extends EventTarget {
   removeAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation
   removeAnnotations(annotations: FakeMapKitAnnotation[]): FakeMapKitAnnotation[]
   setRegionAnimated(region: FakeCoordinateRegion, animated?: boolean): FakeMapKitMap
-  showItems(items: FakeMapKitAnnotation[], options?: FakeMapKitShowItemsOptions): FakeMapKitAnnotation[]
+  showItems(
+    items: FakeMapKitAnnotation[],
+    options?: FakeMapKitShowItemsOptions,
+  ): FakeMapKitAnnotation[]
 }
 
 export interface FakeMapKitInitializationOptions {
@@ -375,12 +381,18 @@ export interface FakeMapKitNamespace extends EventTarget {
     center?: { latitude: number; longitude: number },
     span?: { latitudeDelta: number; longitudeDelta: number },
   ) => FakeCoordinateRegion
-  readonly CoordinateSpan: new (latitudeDelta?: number, longitudeDelta?: number) => FakeCoordinateSpan
+  readonly CoordinateSpan: new (
+    latitudeDelta?: number,
+    longitudeDelta?: number,
+  ) => FakeCoordinateSpan
   readonly ImageAnnotation: new (
     location: { latitude: number; longitude: number },
     options: FakeMapKitImageAnnotationOptions,
   ) => FakeMapKitImageAnnotation
-  readonly Map: new (parent?: string | HTMLElement | null, options?: FakeMapKitMapOptions) => FakeMapKitMap
+  readonly Map: new (
+    parent?: string | HTMLElement | null,
+    options?: FakeMapKitMapOptions,
+  ) => FakeMapKitMap
   readonly MarkerAnnotation: new (
     location: { latitude: number; longitude: number },
     options?: FakeMapKitMarkerAnnotationOptions,

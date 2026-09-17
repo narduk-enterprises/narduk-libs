@@ -91,7 +91,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
           // `instanceof` and identity survive. Everything else is bound to the
           // real target: EventTarget's methods read internal slots a Proxy
           // receiver does not have.
-          return Object.hasOwn(value, 'prototype') ? value : (value as (...args: never[]) => unknown).bind(object)
+          return Object.hasOwn(value, 'prototype')
+            ? value
+            : (value as (...args: never[]) => unknown).bind(object)
         }
         if (probeKeys.has(property)) return undefined
         return notImplemented(`${label}.${property}`)
@@ -128,7 +130,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
   const bootstrapAttempts: { attempt: number; tokenIndex: number }[] = []
   const configurationChanges: FakeMapKitConfigurationChangeStatus[] = []
   const errors: { message: string; status: FakeMapKitConfigurationErrorStatus }[] = []
-  const annotationCounts = new Map<string, { added: number; deselected: number; removed: number; selected: number }>()
+  const annotationCounts = new Map<
+    string,
+    { added: number; deselected: number; removed: number; selected: number }
+  >()
   const liveMaps: FakeMapKitMap[] = []
   const callouts = new WeakMap<object, HTMLElement>()
 
@@ -144,11 +149,17 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
   let authorizationCallback: FakeMapKitInitializationOptions['authorizationCallback']
   let loadedLibraries: string[] | undefined
 
-  const log = (name: FakeMapKitOperationName, annotationIds: readonly string[] = [], detail = ''): void => {
+  const log = (
+    name: FakeMapKitOperationName,
+    annotationIds: readonly string[] = [],
+    detail = '',
+  ): void => {
     operations.push({ annotationIds, at: clock, detail, name })
   }
 
-  const countsFor = (id: string): { added: number; deselected: number; removed: number; selected: number } => {
+  const countsFor = (
+    id: string,
+  ): { added: number; deselected: number; removed: number; selected: number } => {
     let entry = annotationCounts.get(id)
     if (!entry) {
       entry = { added: 0, deselected: 0, removed: 0, selected: 0 }
@@ -225,7 +236,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       return new CoordinateSpan(this.latitudeDelta, this.longitudeDelta)
     }
     equals(other: FakeCoordinateSpan): boolean {
-      return this.latitudeDelta === other.latitudeDelta && this.longitudeDelta === other.longitudeDelta
+      return (
+        this.latitudeDelta === other.latitudeDelta && this.longitudeDelta === other.longitudeDelta
+      )
     }
     toString(): string {
       return `<mapkit.CoordinateSpan latitudeDelta=${this.latitudeDelta} longitudeDelta=${this.longitudeDelta}>`
@@ -288,7 +301,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     return Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360))
   }
 
-  const project = (coordinate: FakeCoordinate, region: FakeCoordinateRegion): { x: number; y: number } => {
+  const project = (
+    coordinate: FakeCoordinate,
+    region: FakeCoordinateRegion,
+  ): { x: number; y: number } => {
     const west = region.center.longitude - region.span.longitudeDelta / 2
     const east = region.center.longitude + region.span.longitudeDelta / 2
     const north = mercator(region.center.latitude + region.span.latitudeDelta / 2)
@@ -297,7 +313,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     const spanY = north - south
     return {
       x: spanX === 0 ? viewportWidth / 2 : ((coordinate.longitude - west) / spanX) * viewportWidth,
-      y: spanY === 0 ? viewportHeight / 2 : ((north - mercator(coordinate.latitude)) / spanY) * viewportHeight,
+      y:
+        spanY === 0
+          ? viewportHeight / 2
+          : ((north - mercator(coordinate.latitude)) / spanY) * viewportHeight,
     }
   }
 
@@ -397,7 +416,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
   class ImageAnnotation extends Annotation implements FakeMapKitImageAnnotation {
     url: Record<string, string>
-    constructor(location: { latitude: number; longitude: number }, options: FakeMapKitImageAnnotationOptions) {
+    constructor(
+      location: { latitude: number; longitude: number },
+      options: FakeMapKitImageAnnotationOptions,
+    ) {
       super(location, defaultElement('fake-mapkit-image-annotation', ''), options)
       this.url = options.url ?? {}
     }
@@ -456,8 +478,11 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       mapSequence += 1
       const doc = documentOf()
       const host =
-        typeof parent === 'string' ? doc.getElementById(parent) : (parent ?? doc.createElement('div'))
-      if (!host) throw new Error(`fake MapKit: no element with id "${String(parent)}" to attach the map to`)
+        typeof parent === 'string'
+          ? doc.getElementById(parent)
+          : (parent ?? doc.createElement('div'))
+      if (!host)
+        throw new Error(`fake MapKit: no element with id "${String(parent)}" to attach the map to`)
       const element = doc.createElement('div')
       element.className = 'fake-mapkit-map'
       element.dataset['mapId'] = `fake-map-${mapSequence}`
@@ -503,7 +528,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       this.applySelection(next)
     }
 
-    applyRegion(next: { center: { latitude: number; longitude: number }; span: { latitudeDelta: number; longitudeDelta: number } }): void {
+    applyRegion(next: {
+      center: { latitude: number; longitude: number }
+      span: { latitudeDelta: number; longitudeDelta: number }
+    }): void {
       this.regionValue = new CoordinateRegion(next.center, next.span)
       for (const annotation of this.ownedAnnotations) this.place(annotation)
     }
@@ -551,7 +579,8 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       }
       element.dataset['calloutFor'] = idOf(annotation)
       const size: FakeSize = annotation.size ?? { height: 0, width: 0 }
-      const offset = delegate?.calloutAnchorOffsetForAnnotation?.(annotation, size) ?? annotation.calloutOffset
+      const offset =
+        delegate?.calloutAnchorOffsetForAnnotation?.(annotation, size) ?? annotation.calloutOffset
       const point = project(annotation.coordinate, this.regionValue)
       element.style.position = 'absolute'
       element.style.left = `${point.x + offset.x}px`
@@ -623,14 +652,20 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       return this.view
     }
 
-    setCenterAnimated(coordinate: { latitude: number; longitude: number }, _animated?: boolean): FakeMapKitMap {
+    setCenterAnimated(
+      coordinate: { latitude: number; longitude: number },
+      _animated?: boolean,
+    ): FakeMapKitMap {
       log('setCenterAnimated')
       this.applyRegion({ center: coordinate, span: this.regionValue.span })
       fireRegionChange(this)
       return this.view
     }
 
-    showItems(items: FakeMapKitAnnotation[], options: FakeMapKitShowItemsOptions = {}): FakeMapKitAnnotation[] {
+    showItems(
+      items: FakeMapKitAnnotation[],
+      options: FakeMapKitShowItemsOptions = {},
+    ): FakeMapKitAnnotation[] {
       log('showItems', items.map(idOf), String(items.length))
       if (items.length === 0) return items
       let minLatitude = Number.POSITIVE_INFINITY
@@ -647,7 +682,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
         Math.max(maxLatitude - minLatitude, options.minimumSpan?.latitudeDelta ?? 0.01),
         Math.max(maxLongitude - minLongitude, options.minimumSpan?.longitudeDelta ?? 0.01),
       )
-      const center = new Coordinate((minLatitude + maxLatitude) / 2, (minLongitude + maxLongitude) / 2)
+      const center = new Coordinate(
+        (minLatitude + maxLatitude) / 2,
+        (minLongitude + maxLongitude) / 2,
+      )
       this.applyRegion({ center, span })
       fireRegionChange(this)
       return items
@@ -770,7 +808,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     const instance = new MapImpl(parent, options)
     liveMaps.push(instance.view)
     return instance.view
-  } as unknown as new (parent?: string | HTMLElement | null, options?: FakeMapKitMapOptions) => FakeMapKitMap
+  } as unknown as new (
+    parent?: string | HTMLElement | null,
+    options?: FakeMapKitMapOptions,
+  ) => FakeMapKitMap
 
   const AnnotationConstructor = function FakeAnnotation(
     location: { latitude: number; longitude: number },
@@ -778,7 +819,11 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     options: FakeMapKitAnnotationOptions = {},
   ): FakeMapKitAnnotation {
     log('Annotation')
-    return new Annotation(location, factory(new Coordinate(location.latitude, location.longitude), options), options)
+    return new Annotation(
+      location,
+      factory(new Coordinate(location.latitude, location.longitude), options),
+      options,
+    )
   } as unknown as new (
     location: { latitude: number; longitude: number },
     factory: (location?: FakeCoordinate, options?: FakeMapKitAnnotationOptions) => HTMLElement,
@@ -855,7 +900,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
     requireLibrary<T>(library: string, member: string, value: T): T {
       if (!(loadedLibraries ?? availableLibraries).includes(library)) {
-        throw new Error(`[MapKit] mapkit.${member} is available after loading the following library: ${library}.`)
+        throw new Error(
+          `[MapKit] mapkit.${member} is available after loading the following library: ${library}.`,
+        )
       }
       return value
     }
@@ -909,7 +956,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
   }
 
   const namespaceTarget = new NamespaceImpl()
-  const namespace = guard<FakeMapKitNamespace>(namespaceTarget as unknown as FakeMapKitNamespace, 'mapkit')
+  const namespace = guard<FakeMapKitNamespace>(
+    namespaceTarget as unknown as FakeMapKitNamespace,
+    'mapkit',
+  )
 
   // ------------------------------------------------------ loader-shaped load --
 

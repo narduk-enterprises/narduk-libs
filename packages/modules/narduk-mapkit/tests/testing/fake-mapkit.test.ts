@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 import { MapKitAnnotationRegistry } from '../../src/client/annotations.js'
 import { createFakeMapKit, isFakeMapKitNotImplemented } from '../../src/testing/index.js'
-import type { FakeMapKitAnnotation, FakeMapKitHandle, FakeMapKitMap } from '../../src/testing/index.js'
+import type {
+  FakeMapKitAnnotation,
+  FakeMapKitHandle,
+  FakeMapKitMap,
+} from '../../src/testing/index.js'
 
 function initialize(fake: FakeMapKitHandle, token = 'test-token'): void {
   fake.mapkit.init({
@@ -28,7 +32,9 @@ function readyMap(options: Parameters<typeof createFakeMapKit>[0] = {}): {
 describe('loading and libraries', () => {
   it('returns the namespace from a load(options)-compatible entry', async () => {
     const fake = createFakeMapKit()
-    await expect(fake.load({ libraries: ['map', 'annotations'], version: '6' })).resolves.toBe(fake.mapkit)
+    await expect(fake.load({ libraries: ['map', 'annotations'], version: '6' })).resolves.toBe(
+      fake.mapkit,
+    )
     expect(fake.mapkit.loadedLibraries).toEqual(['map', 'annotations'])
   })
 
@@ -40,7 +46,9 @@ describe('loading and libraries', () => {
   })
 
   it('rejects a v5 version string', async () => {
-    await expect(createFakeMapKit().load({ version: '5.77.0' })).rejects.toThrow('Unsupported MapKit JS version')
+    await expect(createFakeMapKit().load({ version: '5.77.0' })).rejects.toThrow(
+      'Unsupported MapKit JS version',
+    )
   })
 
   it('installs and uninstalls a global mapkit', () => {
@@ -68,7 +76,7 @@ describe('authorization', () => {
     expect(fake.inspect.errors).toEqual([])
   })
 
-  it('reproduces Apple\'s wrong-origin shape: same token 3x, one callback, then Unauthorized', () => {
+  it("reproduces Apple's wrong-origin shape: same token 3x, one callback, then Unauthorized", () => {
     const fake = createFakeMapKit({
       auth: {
         expectedOrigin: 'https://buoystat.us',
@@ -93,7 +101,8 @@ describe('authorization', () => {
     ])
     expect(errors).toEqual([
       {
-        message: 'Origin does not match - expected: https://buoystat.us, actual: https://preview.buoystat.us',
+        message:
+          'Origin does not match - expected: https://buoystat.us, actual: https://preview.buoystat.us',
         status: 'Unauthorized',
       },
     ])
@@ -132,7 +141,9 @@ describe('authorization', () => {
   it('refuses a second init() rather than quietly re-running the exchange', () => {
     const fake = createFakeMapKit()
     initialize(fake)
-    expect(() => initialize(fake)).toThrow('FakeMapKitNotImplemented: mapkit.init (called twice on one namespace)')
+    expect(() => initialize(fake)).toThrow(
+      'FakeMapKitNotImplemented: mapkit.init (called twice on one namespace)',
+    )
   })
 })
 
@@ -150,7 +161,9 @@ describe('the access-key clock (behaviour past 1800 s is UNVERIFIED against Appl
   })
 
   it('models the pessimistic branch too: no refresh at all', () => {
-    const fake = createFakeMapKit({ auth: { accessKeyTtlSeconds: 60, onAccessKeyExpiry: 'nothing' } })
+    const fake = createFakeMapKit({
+      auth: { accessKeyTtlSeconds: 60, onAccessKeyExpiry: 'nothing' },
+    })
     initialize(fake)
     fake.inspect.advanceClock(120_000)
     expect(fake.inspect.tokenCalls).toBe(1)
@@ -175,7 +188,10 @@ describe('the access-key clock (behaviour past 1800 s is UNVERIFIED against Appl
 describe('map and annotations', () => {
   it('adds, counts and removes annotations', () => {
     const { fake, map } = readyMap()
-    const pin = new fake.mapkit.MarkerAnnotation({ latitude: 30.1, longitude: -97.7 }, { id: 'buoy-1' })
+    const pin = new fake.mapkit.MarkerAnnotation(
+      { latitude: 30.1, longitude: -97.7 },
+      { id: 'buoy-1' },
+    )
 
     expect(map.addAnnotation(pin)).toBe(pin)
     expect(map.annotations).toEqual([pin])
@@ -199,7 +215,10 @@ describe('map and annotations', () => {
       },
       { anchorOffset: new DOMPoint(-85, -150), id: 'tall-pin', size: { height: 150, width: 170 } },
     )
-    map.region = new fake.mapkit.CoordinateRegion({ latitude: 0, longitude: 0 }, { latitudeDelta: 2, longitudeDelta: 2 })
+    map.region = new fake.mapkit.CoordinateRegion(
+      { latitude: 0, longitude: 0 },
+      { latitudeDelta: 2, longitudeDelta: 2 },
+    )
     map.addAnnotation(annotation)
 
     // Centre of an 800x600 viewport, shifted by the anchor offset.
@@ -229,7 +248,10 @@ describe('map and annotations', () => {
       ends += 1
     })
     map.setRegionAnimated(
-      new fake.mapkit.CoordinateRegion({ latitude: 1, longitude: 1 }, { latitudeDelta: 1, longitudeDelta: 1 }),
+      new fake.mapkit.CoordinateRegion(
+        { latitude: 1, longitude: 1 },
+        { latitudeDelta: 1, longitudeDelta: 1 },
+      ),
       true,
     )
     expect(ends).toBe(1)
@@ -247,7 +269,10 @@ describe('map and annotations', () => {
 
 describe('the buoys#112 budget: updating 1 of 600 pins', () => {
   const markerFor = (fake: FakeMapKitHandle, index: number): FakeMapKitAnnotation =>
-    new fake.mapkit.MarkerAnnotation({ latitude: index / 100, longitude: index / 100 }, { id: `pin-${index}` })
+    new fake.mapkit.MarkerAnnotation(
+      { latitude: index / 100, longitude: index / 100 },
+      { id: `pin-${index}` },
+    )
 
   const pins = (fake: FakeMapKitHandle, count: number, changed?: number) =>
     Array.from({ length: count }, (_unused, index) => ({
@@ -305,7 +330,9 @@ describe('selection and callouts', () => {
     const events: string[] = []
     for (const type of ['select', 'deselect']) {
       map.addEventListener(type, (event) => {
-        events.push(`${type}:${(event as Event & { annotation: FakeMapKitAnnotation }).annotation.id ?? ''}`)
+        events.push(
+          `${type}:${(event as Event & { annotation: FakeMapKitAnnotation }).annotation.id ?? ''}`,
+        )
       })
     }
 
@@ -332,7 +359,10 @@ describe('selection and callouts', () => {
       { latitude: 0, longitude: 0 },
       { callout: { calloutShouldAppearForAnnotation: () => false }, id: 'quiet' },
     )
-    const disabled = new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 1 }, { calloutEnabled: false, id: 'off' })
+    const disabled = new fake.mapkit.MarkerAnnotation(
+      { latitude: 0, longitude: 1 },
+      { calloutEnabled: false, id: 'off' },
+    )
     map.addAnnotations([suppressed, disabled])
 
     fake.inspect.selectAnnotation(map, suppressed)
@@ -367,7 +397,10 @@ describe('selection and callouts', () => {
 describe('the fidelity rule', () => {
   // Members the fake does not model are, by definition, absent from its public
   // types, so a test reaches them the way untyped consumer code does.
-  const read = (host: object, key: string): (() => unknown) => () => (host as Record<string, unknown>)[key]
+  const read =
+    (host: object, key: string): (() => unknown) =>
+    () =>
+      (host as Record<string, unknown>)[key]
 
   const expectNotImplemented = (member: string, attempt: () => unknown): void => {
     let thrown: unknown
@@ -389,7 +422,10 @@ describe('the fidelity rule', () => {
 
   it('throws for a member Apple has not shipped either', () => {
     const fake = createFakeMapKit()
-    expectNotImplemented('mapkit.somethingInventedByATest', read(fake.mapkit, 'somethingInventedByATest'))
+    expectNotImplemented(
+      'mapkit.somethingInventedByATest',
+      read(fake.mapkit, 'somethingInventedByATest'),
+    )
   })
 
   it('throws on a write to an unmodelled member', () => {
@@ -408,7 +444,10 @@ describe('the fidelity rule', () => {
   it('throws for an unmodelled annotation member', () => {
     const { fake } = readyMap()
     const pin = new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 })
-    expectNotImplemented('mapkit.Annotation.clusteringIdentifier', read(pin, 'clusteringIdentifier'))
+    expectNotImplemented(
+      'mapkit.Annotation.clusteringIdentifier',
+      read(pin, 'clusteringIdentifier'),
+    )
   })
 
   it('answers undefined for the keys a test runner probes', () => {
@@ -423,10 +462,19 @@ describe('the operation log', () => {
     const { fake, map } = readyMap()
     fake.inspect.reset()
     fake.inspect.advanceClock(500)
-    map.addAnnotation(new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 }, { id: 'one' }))
+    map.addAnnotation(
+      new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 }, { id: 'one' }),
+    )
 
-    expect(fake.inspect.operations.map((operation) => operation.name)).toEqual(['MarkerAnnotation', 'addAnnotation'])
-    expect(fake.inspect.operations.at(-1)).toMatchObject({ annotationIds: ['one'], at: 500, name: 'addAnnotation' })
+    expect(fake.inspect.operations.map((operation) => operation.name)).toEqual([
+      'MarkerAnnotation',
+      'addAnnotation',
+    ])
+    expect(fake.inspect.operations.at(-1)).toMatchObject({
+      annotationIds: ['one'],
+      at: 500,
+      name: 'addAnnotation',
+    })
     expect(fake.inspect.now).toBe(500)
   })
 })
