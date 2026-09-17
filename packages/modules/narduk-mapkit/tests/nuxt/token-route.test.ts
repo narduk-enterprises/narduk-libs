@@ -172,6 +172,40 @@ describe('the module-registered token route (§e)', () => {
     expect(raw).toContain('200 ')
   })
 
+  it('refuses a protocol-relative request target the same way', async () => {
+    const raw = await rawRequest(
+      catchAllPort,
+      '//evil.example/api/mapkit-token',
+      `127.0.0.1:${String(catchAllPort)}`,
+    )
+
+    expect(raw).toContain('403 ')
+    expect(raw).not.toContain('evil.example"')
+  })
+
+  it('refuses a request with no Origin, no Referer, and no Sec-Fetch-Site', async () => {
+    const response = await fetch(`${base}/api/mapkit-token`)
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: 'not-same-origin' })
+  })
+
+  it('never emits Access-Control-Allow-Origin', async () => {
+    const allowed = await fetch(`${base}/api/mapkit-token`, { headers: SAME_ORIGIN })
+    const refused = await fetch(`${base}/api/mapkit-token`)
+
+    expect(allowed.headers.get('access-control-allow-origin')).toBeNull()
+    expect(refused.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('mints with a 1800 s TTL, not the 2.0.x 24 h window', async () => {
+    const response = await fetch(`${base}/api/mapkit-token`, { headers: SAME_ORIGIN })
+    const body = (await response.json()) as { token: string }
+    const claims = decodeJwt(body.token).payload as { exp: number; iat: number }
+
+    expect(claims.exp - claims.iat).toBe(1800)
+  })
+
   it('answers 405 with Allow for a non-GET', async () => {
     const response = await fetch(`${base}/api/mapkit-token`, {
       headers: SAME_ORIGIN,

@@ -313,4 +313,9 @@ describe('itemKey (§c.1)', () => {
     layer.setItems([station(1)])
     expect(layer.keys()).toStrictEqual(['buoy:Station 1'])
   })
+
+  it('names a duplicate key rather than silently dropping a pin', () => {
+    const layer = layerFor()
+    expect(() => layer.setItems([station(1), station(1)])).toThrow('duplicate annotation key')
+  })
 })
