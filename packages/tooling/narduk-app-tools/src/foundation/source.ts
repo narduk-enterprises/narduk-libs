@@ -70,6 +70,24 @@ export const NITRO_OUTPUT_CANDIDATES = [
   'web/.output/nitro.json',
 ] as const
 
+/** Directories `walk()` never descends into. `.output` and `.nuxt` are build
+ * trees: a built Nitro bundle inlines every dependency, so a conformant app's
+ * `.output/server/chunks` contains the source text of narduk-core, narduk-seo
+ * and posthog-js. Any content scan that reached them would report the whole
+ * estate as forking itself. `.wrangler` and `coverage` are the same class of
+ * generated tree. */
+export const SKIPPED_WALK_DIRECTORIES = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  '.output',
+  '.nuxt',
+  '.nitro',
+  '.wrangler',
+  '.turbo',
+  'coverage',
+])
+
 export class AppRepo {
   readonly root: string
 
@@ -119,7 +137,7 @@ export class AppRepo {
         continue
       }
       for (const entry of entries) {
-        if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue
+        if (SKIPPED_WALK_DIRECTORIES.has(entry)) continue
         const full = join(dir, entry)
         let entryStat
         try {
