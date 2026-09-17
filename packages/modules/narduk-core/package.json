@@ -124,7 +124,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "hookable": "5.5.3",
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
@@ -136,8 +135,10 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
+    "hookable": "5.5.3",
     "nitropack": "2.13.4",
     "nuxt": "^4.4.2",
+    "nuxt-security": "^2.6.0",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
@@ -150,13 +151,17 @@
     "@narduk-enterprises/eslint-config": ">=1.2.17 <3",
     "nuxt": ">=3.16.0",
     "vue": ">=3.5.0",
-    "wrangler": ">=4.90.1"
+    "wrangler": ">=4.90.1",
+    "nuxt-security": "^2.6.0"
   },
   "peerDependenciesMeta": {
     "@narduk-enterprises/eslint-config": {
       "optional": true
     },
     "wrangler": {
+      "optional": true
+    },
+    "nuxt-security": {
       "optional": true
     }
   },
