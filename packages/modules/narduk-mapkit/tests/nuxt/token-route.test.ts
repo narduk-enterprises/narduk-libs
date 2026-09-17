@@ -181,6 +181,35 @@ describe('the module-registered token route (§e)', () => {
     expect(response.status).toBe(405)
     expect(response.headers.get('allow')).toBe('GET')
   })
+
+  it('still mints a GET that lands on the method catch-all, so a shadow cannot 503 the map', async () => {
+    // Nitro registers the method-less handler for every method. If that file
+    // is a dummy with empty credentials, a GET that reaches it 503s an
+    // otherwise configured route. The catch-all has to be the same handler.
+    const catchAllOnly = (
+      await import('../../src/nuxt/runtime/server/mapkit-token.method-not-allowed.js')
+    ).default
+    const app = createApp()
+    app.use('/api/mapkit-token', catchAllOnly)
+    const only = createServer(toNodeListener(app))
+    await new Promise<void>((resolve) => {
+      only.listen(0, '127.0.0.1', resolve)
+    })
+    const url = `http://127.0.0.1:${String((only.address() as AddressInfo).port)}/api/mapkit-token`
+
+    try {
+      const response = await fetch(url, { headers: SAME_ORIGIN })
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { token?: string }
+      expect(typeof body.token).toBe('string')
+    } finally {
+      await new Promise<void>((resolve) => {
+        only.close(() => {
+          resolve()
+        })
+      })
+    }
+  })
 })
 
 describe('the route ceiling', () => {
