@@ -23,6 +23,7 @@ const green = {
   CONTRACTS_RESULT: 'success',
   AFFECTED_COUNT: '21',
   PACKED_CONSUMER_EXPECTED: 'true',
+  GENERATED_CONSUMER_EXPECTED: 'true',
   PACKED_CONSUMER_SMOKE_RESULT: 'success',
   BROWSER_EXPECTED: 'true',
   BROWSER_RESULT: 'success',
@@ -43,7 +44,9 @@ test('selected execution lanes start after planning while contracts run independ
     source: jobSource.slice(match.index, matches[index + 1]?.index),
   }))
   const preflight = ['affected', 'contracts']
-  const executionJobs = jobs.filter(({ name }) => ![...preflight, 'verify'].includes(name))
+  const executionJobs = jobs.filter(
+    ({ name }) => ![...preflight, 'verify', 'cancel-after-contracts-failure'].includes(name),
+  )
   assert.ok(executionJobs.length > 0, 'the workflow must include execution gates')
   for (const { name, source } of executionJobs) {
     const declaration = source.match(/^    needs:\s*(\[[\s\S]*?\]|[\w-]+)/m)?.[1]
@@ -75,6 +78,7 @@ test('full and explicitly empty plans pass the actual final aggregate', () => {
     run({
       AFFECTED_COUNT: '0',
       PACKED_CONSUMER_EXPECTED: 'false',
+      GENERATED_CONSUMER_EXPECTED: 'false',
       PACKED_CONSUMER_SMOKE_RESULT: 'skipped',
       BROWSER_EXPECTED: 'false',
       BROWSER_RESULT: 'skipped',
@@ -107,4 +111,14 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
   assert.notEqual(run({ BROWSER_EXPECTED: '', BROWSER_RESULT: 'skipped' }).status, 0)
   assert.notEqual(run({ LOGGING_EXPECTED: 'false' }).status, 0)
   assert.notEqual(run({ LOGGING_EXPECTED: '', LOGGING_RESULT: 'skipped' }).status, 0)
+})
+
+test('artifact-only success is accepted but missing or contradictory app selection fails', () => {
+  assert.equal(run({ GENERATED_CONSUMER_EXPECTED: 'false' }).status, 0)
+  for (const value of ['', 'unknown'])
+    assert.notEqual(run({ GENERATED_CONSUMER_EXPECTED: value }).status, 0)
+  assert.notEqual(
+    run({ PACKED_CONSUMER_EXPECTED: 'false', PACKED_CONSUMER_SMOKE_RESULT: 'skipped' }).status,
+    0,
+  )
 })

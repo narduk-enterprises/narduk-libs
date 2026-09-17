@@ -1,5 +1,162 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.5.0
+
+### Minor Changes
+
+- 1af628c: Add `narduk-app foundation:check:toolchain` — foundation item 11,
+  `toolchain-single-source` (Logan, askme 2026-09-17: _"Single-source toolchain
+  versions (Recommended)"_ — one declared Node/pnpm source per app; every other
+  place either reads it or is checked against it, so a bump is one edit).
+
+  The command prints every place the app writes a Node or pnpm version down,
+  with its file, line, value and verdict, and fails on any disagreement. Like
+  items 8, 9 and 10 it is a separate command and JSON artefact
+  (`tool: '@narduk-enterprises/narduk-app-tools/toolchain-single-source'`),
+  because `foundation:check --json` is the exact 7-item contract company-hq
+  `check-web-foundation.py` validates. Same exit codes, no warn tier, no
+  credential required.
+
+  **The sources, chosen on what tools actually read.** Node is `.node-version`:
+  the widest native readership (`actions/setup-node` via `node-version-file`,
+  fnm, mise, nodenv) and, decisively, the only Node declaration a workflow can
+  _point at_ rather than restate — which is what removes the CI literal
+  entirely. pnpm is the root manifest's `packageManager`: corepack, pnpm itself
+  and `pnpm/action-setup` all read it natively, and the shared
+  `nuxt-cloudflare.yml`'s own pnpm step already relies on exactly that.
+
+  Everything else is a mirror, because Volta and npm can read a version from
+  nowhere but a manifest and a Markdown table reads nothing: `engines.*`,
+  `volta.*`, an optional `.nvmrc` or `.tool-versions`, and the
+  `docs/workers-builds.md` rows that record the Cloudflare dashboard build
+  environment. A mirror either derives from the source — a workflow's
+  `node-version-file`, a `pnpm/action-setup` with no `version:` — or is compared
+  against it.
+
+  **`--fix` closes the loop.** It rewrites a drifted mirror's literal on the
+  exact line the scan located, leaving every other byte alone (no
+  `JSON.stringify` round trip, so an app's own manifest is not reformatted or
+  reordered), and a Markdown row keeps its column width where the padding can
+  absorb the change. Bumping Node becomes: edit `.node-version`, run `--fix`.
+
+  It deliberately does not rewrite a workflow. Turning `node-version:` into
+  `node-version-file:`, or dropping a `pnpm/action-setup` `version:` input,
+  changes the shape of a file the app owns and its contract with the shared
+  workflow — a one-time migration, reported with the exact edit and left for a
+  human. It also will not invent a missing `.node-version`: with no source there
+  is nothing to derive from, and promoting a mirror would be a guess.
+
+  A CI literal that currently _agrees_ with the source is still a finding: it is
+  a second declaration, and the second declaration is the thing being removed.
+
+- 9da4063: Add `narduk-app foundation:check:coverage` — foundation item 9,
+  `shared-capability-coverage`.
+
+  **What it reports.**
+
+  _(a) Inventory._ Every `@narduk-enterprises/*` dependency the app pins, with
+  its version, the manifest it came from and the dependency block it sat in —
+  one row per `(package, manifest, block)` across the root manifest and the
+  workspace manifests at the monorepo-candidate paths item 1 already reads.
+  Beside it, the catalog of shared capabilities the estate publishes, each
+  marked adopted or not. The catalog is **derived from narduk-libs' own
+  `pnpm-workspace.yaml`**, not hand-typed:
+  `scripts/generate-capability-catalog.mjs` writes
+  `src/foundation/capability-catalog.ts`, private workspace packages are
+  excluded because an app cannot depend on one, and `pnpm run scripts:test`
+  fails in required CI when the committed file falls out of step with the
+  workspace. The whole inventory is a first-class `inventory` block in the
+  `--json` artefact so the estate roster consumes it as data rather than parsing
+  sub-check prose.
+
+  _(b) Reimplementation detection._ Five detectors for app-local code doing a
+  shared package's job — an app-local `createLogger`/`logger.ts` with a console
+  transport (`@narduk-enterprises/narduk-logging`), a local `useSeo` /
+  `defaultSocialMeta` twin (`narduk-seo`), a direct `posthog-js` import
+  (`narduk-analytics`), a `server/api/**/health*` route that never references
+  `registerHealthCheck` (`narduk-core`), and a Nitro plugin that hooks
+  `error`/`afterResponse` or attaches a response `finish` listener and logs from
+  it (narduk-logging adoption guide step 5). Each detector asks one further
+  question: is the owning shared package a dependency? If yes the match is
+  **confirmed** and reported as a **FAIL** naming the exact file path and the
+  owning package; if no it is **heuristic** and reported as a **WARN**, which
+  carries the existing `unknown` status (exit 2) plus `confidence: 'heuristic'`
+  in the artefact. The four verdicts read as _proven_ (`pass`), _gap_ (`fail`),
+  _unknown_ and _not-applicable_; there is no fifth status and no new
+  vocabulary.
+
+  **Shape.** Its own command and its own artefact
+  (`tool: '@narduk-enterprises/narduk-app-tools/capability-coverage'`), exactly
+  as item 8 `shared-ui-pinned` is: `foundation-check.json` stays the precise
+  7-item contract company-hq `check-web-foundation.py` `validate_artefact()`
+  consumes, and an `id` outside `1..7` would be a rollup-red F3 ARTEFACT finding
+  on every app. No registry credential is required — every verdict comes from
+  the app's own manifests and source.
+
+  **Zero false positives** is the acceptance bar, proven against
+  `narduk-enterprises/buoys` at `cc72c3d` (PASS, exit 0, 13 estate pins, 112
+  files scanned, 0 detections) and a freshly generated `create-narduk-app@0.6.3`
+  scaffold (PASS, exit 0, 11 pins, 7 files scanned, 0 detections). Both shapes
+  are committed as fixtures.
+
+  Also: `AppRepo.walk()` now skips `.output`, `.nuxt`, `.nitro`, `.wrangler`,
+  `.turbo` and `coverage` alongside `node_modules`, `.git` and `dist`. A built
+  Nitro bundle inlines every dependency, so a conformant app's
+  `.output/server/chunks` contains `createLogger`, `posthog-js` and a health
+  route — a content scan that reached it would report the whole estate as
+  forking itself.
+
+- 894cd17: Add
+  `narduk-app foundation:check:security-headers --base-url <url> [--path <p>]...`,
+  a live probe of a deployment's security response headers for narduk-core's
+  `security.headers` preset.
+
+  It reports, per probed route, whether a Content-Security-Policy is enforcing,
+  report-only, or absent; whether the policy actually in force uses a nonce
+  rather than `'unsafe-inline'` / `'unsafe-eval'`; and whether
+  `Strict-Transport-Security`, framing restriction, `Referrer-Policy`,
+  `Permissions-Policy` and `X-Content-Type-Options` are present — each proven, a
+  gap, or unknown.
+
+  Unlike items 1-8 this one has no filesystem verdict. A response header is
+  produced by a running server and a checkout can describe a policy it does not
+  serve, so no `--base-url` means `unknown` (exit 2), never `pass`. It is a
+  separate command and one-item artefact
+  (`tool: '@narduk-enterprises/narduk-app-tools/security-headers'`) for the same
+  reason `foundation:check:shared-ui-pinned` and `foundation:check:coverage`
+  are: `foundation-check.json` is the ratified 7-item contract company-hq
+  `check-web-foundation.py` validates, and an `id` outside `1..7` is a
+  rollup-red F3 ARTEFACT finding. No registry credential is required.
+
+### Patch Changes
+
+- b59907e: The social-preview check no longer requires
+  `twitter:card=summary_large_image` or `twitter:image`, because the estate
+  stopped emitting every `twitter:*` meta name (narduk-libs#349). The Open Graph
+  contract is unchanged and still strict: exactly one non-empty `og:title`,
+  `og:description`, `og:type`, `og:image:alt` and `og:url`, a canonical `og:url`
+  on the declared origin, declared `og:image:width` / `og:image:height` of
+  1200x630, and an `og:image` from a declared origin. Both the Twitterbot and
+  Applebot profiles still probe every sampled route.
+- 39c28ff: Raise the `sharp` runtime dependency from `^0.34.5` to `^0.35.4` in
+  `narduk-app-tools` and `narduk-testkit`, and release the generator so its
+  hard-coded pins for both packages move with them.
+
+  `sharp` is a published runtime `dependencies` entry in both packages, so the
+  fix only reaches consumers through a release. `0.35.4` closes two
+  high-severity inherited advisories: GHSA-f88m-g3jw-g9cj (libvips
+  CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591, fixed in
+  0.35.0) and GHSA-rgj7-g3m4-5g8c (libheif GHSA-g89c-p67h-r497 and
+  GHSA-2jg2-4ch7-h545, fixed in 0.35.4).
+
+  `sharp@0.35` raises its Node floor to `>=20.9.0` and drops the `install`
+  script, so a platform without a prebuilt `@img/sharp-*` binary must now fall
+  back to WebAssembly or build libvips by hand. Neither package declares
+  `engines`, and the estate runs Node 24, so no supported consumer loses a
+  platform. The call sites — `metadata()`, `stats()`, `resize()`, `toFormat()`,
+  `ensureAlpha().raw()`, `failOn` and `limitInputPixels` — are unchanged in
+  0.35.x; the removed `failOnError` and `paletteBitDepth` APIs were never used.
+
 ## 0.4.2
 
 ### Patch Changes

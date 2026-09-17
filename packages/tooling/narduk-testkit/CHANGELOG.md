@@ -1,5 +1,72 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.4.0
+
+### Minor Changes
+
+- 7c96708: Add `expectAccessible`, the estate accessibility bar: zero
+  serious/critical axe violations on the routes a PR is gated on (Logan,
+  2026-09-17, "Zero serious/critical in the PR subset"). Moderate and minor
+  findings are recorded and do not fail.
+
+  `playwright/accessibility` previously only asserted a scan the app had already
+  built against a recorded baseline. That ledger answers "did this change move
+  the debt?" and deliberately tolerates known debt, so it is not a shipping gate
+  — and because each app built its own `AxeBuilder`, the tag set and any
+  disabled rules were per-app and free to drift.
+
+  `expectAccessible` owns the scan instead, so the rule set is the estate's:
+  `WCAG_2_1_AA_TAGS` (2.1 AA, the level the products claim, rather than the 2.2
+  set the ledger uses) plus `ESTATE_DISABLED_AXE_RULES`. That list ships EMPTY
+  and the empty list is the position — a disabled rule is permanent silence on
+  every route of every app, so an entry must show the rule is wrong on this
+  stack and carry a reason and a link. The rules such a list usually exists for
+  (`region`, `landmark-one-main`, `page-has-heading-one`, `heading-order`) are
+  best-practice-tagged and never reach the gate.
+
+  A failure carries both halves of the evidence: one line per blocking violation
+  in the message (rule id, impact, first selector, help URL), and the full
+  violations JSON at every impact attached to the Playwright test, because the
+  sub-threshold findings are the inventory the next piece of work is planned
+  from. The helper returns that report so a spec can aggregate routes.
+
+  Also exported for composition and testing: `AXE_IMPACT_ORDER`,
+  `isImpactAtOrAbove` (fails closed on a missing or unrecognised impact),
+  `partitionViolationsByImpact`, `summarizeViolation`, `countViolationsByImpact`
+  (rules AND nodes — one rule over sixty nodes is a day of work),
+  `buildAccessibilityReport`, `runEstateAxeScan`, `analyzeWithAxeBuilder` and
+  `resolveAxeBuilder`.
+
+  `@axe-core/playwright` remains an OPTIONAL peer and this package still does
+  not import it: the load is a dynamic import behind a `string`-typed specifier,
+  so an app using only the ledger helpers installs no scanner, and an app
+  calling `expectAccessible` without the peer gets a sentence naming the package
+  instead of a module-resolution stack trace.
+
+  `AxeViolation` gains optional `helpUrl` and `description`, and
+  `AxeViolationNode` an optional `html`; all three are additive.
+
+### Patch Changes
+
+- 39c28ff: Raise the `sharp` runtime dependency from `^0.34.5` to `^0.35.4` in
+  `narduk-app-tools` and `narduk-testkit`, and release the generator so its
+  hard-coded pins for both packages move with them.
+
+  `sharp` is a published runtime `dependencies` entry in both packages, so the
+  fix only reaches consumers through a release. `0.35.4` closes two
+  high-severity inherited advisories: GHSA-f88m-g3jw-g9cj (libvips
+  CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591, fixed in
+  0.35.0) and GHSA-rgj7-g3m4-5g8c (libheif GHSA-g89c-p67h-r497 and
+  GHSA-2jg2-4ch7-h545, fixed in 0.35.4).
+
+  `sharp@0.35` raises its Node floor to `>=20.9.0` and drops the `install`
+  script, so a platform without a prebuilt `@img/sharp-*` binary must now fall
+  back to WebAssembly or build libvips by hand. Neither package declares
+  `engines`, and the estate runs Node 24, so no supported consumer loses a
+  platform. The call sites — `metadata()`, `stats()`, `resize()`, `toFormat()`,
+  `ensureAlpha().raw()`, `failOn` and `limitInputPixels` — are unchanged in
+  0.35.x; the removed `failOnError` and `paletteBitDepth` APIs were never used.
+
 ## 1.3.2
 
 ### Patch Changes

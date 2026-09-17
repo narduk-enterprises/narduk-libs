@@ -19,6 +19,10 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { runConsumerCommand } from './consumer-smoke-command.mjs'
 import { consumerSmokePhases, mapPackages } from './consumer-smoke-phases.mjs'
+import {
+  assertConsumerDependencyScope,
+  consumerSmokeGeneratorArgs,
+} from './consumer-smoke-fixture.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
@@ -37,6 +41,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = new Set(process.argv.slice(2))
 const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
+const installBrowser = args.has('--install-browser')
+const artifactsOnly = args.has('--artifacts-only')
+if (artifactsOnly && !consumerSmoke) throw new Error('--artifacts-only requires --consumer-smoke.')
 const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 // Single source of truth for the generated packed-consumer's Playwright pin:
 // the root workspace devDependency, which package.json already pins exactly
@@ -494,6 +501,21 @@ function addTarballOverrides(generatedDirectory, packages, tarballs) {
   writeFileSync(rootManifestPath, `${JSON.stringify(rootManifest, null, 2)}\n`)
 }
 
+function configureConsumerFonts(generatedDirectory) {
+  const webDirectory = join(generatedDirectory, 'apps', 'web')
+  const configPath = join(webDirectory, 'nuxt.config.ts')
+  const config = readFileSync(configPath, 'utf8')
+  const modules = /\bmodules:\s*\[/gu
+  if ([...config.matchAll(modules)].length !== 1) {
+    throw new Error('Expected one generated Nuxt modules list for the consumer font fixture.')
+  }
+  writeFileSync(
+    join(webDirectory, 'packed-consumer-fonts.mjs'),
+    readFileSync(new URL('./consumer-smoke-fonts.mjs', import.meta.url)),
+  )
+  writeFileSync(configPath, config.replace(modules, "$&'./packed-consumer-fonts.mjs',"))
+}
+
 function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
   const loggingPlugin = join(
     generatedDirectory,
@@ -940,6 +962,215 @@ function packEnvironment() {
   return childEnvironment({ npm_config_ignore_scripts: 'true' })
 }
 
+async function proveGeneratedConsumer({
+  consumerDirectory,
+  packages,
+  tarballs,
+  browserInstallation,
+}) {
+  const generatedDirectory = join(consumerDirectory, 'generated-app')
+  await runChecked('pnpm', consumerSmokeGeneratorArgs(generatedDirectory), {
+    cwd: consumerDirectory,
+    label: 'run the packed one-shot app generator',
+  })
+
+  const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
+  assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
+  addTarballOverrides(generatedDirectory, packages, tarballs)
+  configureConsumerFonts(generatedDirectory)
+  addPackedCoreUiRuntimeSmoke(generatedDirectory)
+  addPackedShellRootValueImportSmoke(generatedDirectory)
+  addPackedSeoMetadataSmoke(generatedDirectory)
+  assertNoForbiddenGeneratedReferences(generatedDirectory)
+  assertConsumerDependencyScope(loadWorkspace(root), [
+    readJson(join(generatedDirectory, 'package.json')),
+    readJson(join(generatedDirectory, 'apps', 'web', 'package.json')),
+  ])
+  if (artifactsOnly) {
+    writeLine(
+      `Packed artifact proof passed for ${packages.length} package(s); generated app integration is not affected.`,
+    )
+    if (process.env.GITHUB_STEP_SUMMARY)
+      appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        '\n**Consumer coverage:** packed artifacts, export resolution, testkit execution, and generated manifests. Nuxt/browser/D1 integration is not affected; no reusable generated-app proof was produced.\n',
+      )
+    return
+  }
+
+  await runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
+    cwd: generatedDirectory,
+    label: 'install the generated app from packed artifacts',
+  })
+  await runChecked('pnpm', ['install', '--frozen-lockfile'], {
+    cwd: generatedDirectory,
+    label: 'repeat generated app install with the frozen lockfile',
+  })
+  assertNoForbiddenGeneratedReferences(generatedDirectory)
+
+  const [browserResult] = await browserInstallation
+  if (browserResult?.status === 'rejected') throw browserResult.reason
+
+  let imageIdentity
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    // Isolated-pool path: reject drift instead of trusting the env var alone.
+    // A stale pin or a wrong/job-local PLAYWRIGHT_BROWSERS_PATH must fail
+    // here, before `pnpm run quality` below ever launches the real suite.
+    imageIdentity = await assertIsolatedPlaywrightToolchain({
+      cwd: generatedDirectory,
+      expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
+      requiredBrowsers: ['chromium'],
+    })
+  } else {
+    if (!process.env.GITHUB_ACTIONS) {
+      await runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+        cwd: generatedDirectory,
+        label: 'install the generated app browser fixture',
+      })
+    }
+    // Hosted CI installs Chromium and its native libraries before the proof.
+    // Local runs still download a browser but do not create reusable evidence.
+    if (process.env.GITHUB_ACTIONS) {
+      imageIdentity = await assertHostedPlaywrightToolchain({
+        cwd: generatedDirectory,
+        expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
+      })
+    }
+  }
+  // Resolve and install both external consumers before considering reuse. A
+  // floating registry dependency or different installed package content forces execution,
+  // even when GitHub reports identical source trees across the merge.
+  const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  const packedInputs = new Map([...tarballs].map(([name, path]) => [name, packedInput(path)]))
+  const proofInputs = {
+    schemaVersion: 2,
+    tree,
+    tarballs: Object.fromEntries([...packedInputs].map(([name, input]) => [name, input.digest])),
+    consumerLock: consumerLockDigest(join(consumerDirectory, 'pnpm-lock.yaml'), packedInputs),
+    generatedSources: Object.fromEntries(
+      listGeneratedTextFiles(generatedDirectory).map((path) => [
+        relative(generatedDirectory, path),
+        basename(path) === 'pnpm-lock.yaml'
+          ? consumerLockDigest(path, packedInputs)
+          : fileDigest(path),
+      ]),
+    ),
+    node: {
+      version: process.version,
+      executable: fileDigest(process.execPath),
+      platform: process.platform,
+      arch: process.arch,
+    },
+    pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
+    imageIdentity: imageIdentity ?? null,
+    nodeOptions: process.env.NODE_OPTIONS || '',
+  }
+  const fingerprint = fingerprintInputs(proofInputs)
+  const inputDigests = Object.fromEntries(
+    Object.entries(proofInputs).map(([key, value]) => [key, fingerprintInputs(value)]),
+  )
+  const inputFiles = {
+    tarballs: proofInputs.tarballs,
+    generatedSources: proofInputs.generatedSources,
+  }
+  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests, inputFiles })
+  if (prior) {
+    writeLine(
+      `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
+    )
+  } else {
+    // The release boundary needs compatibility proof, not a second full
+    // scaffold-quality run. The generated app's own quality command is intact.
+    for (const phase of consumerSmokePhases(
+      readJson(join(generatedDirectory, 'package.json')).scripts,
+    )) {
+      if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
+      try {
+        const output = await runChecked('pnpm', ['run', phase], {
+          cwd: generatedDirectory,
+          label: `generated app ${phase}`,
+        })
+        if (
+          phase === 'build' &&
+          !output.includes('[consumer-smoke] Unused Fontshare provider disabled')
+        ) {
+          throw new Error('The generated build did not activate its font provider fixture.')
+        }
+      } finally {
+        if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
+      }
+    }
+    assertNoRetiredBuiltReferences(generatedDirectory)
+
+    const firstMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'apply generated app migrations to a fresh local D1 database',
+    })
+    const firstMigrationMatch = firstMigration.match(
+      /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
+    )
+    if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
+      throw new Error('Fresh generated app migration did not apply at least one migration.')
+    }
+
+    const secondMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
+      cwd: generatedDirectory,
+      label: 'prove generated app migrations are idempotent',
+    })
+    const secondMigrationMatch = secondMigration.match(
+      /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
+    )
+    if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
+      throw new Error('Second generated app migration was not an empty idempotent run.')
+    }
+
+    await runChecked('pnpm', ['run', 'performance-budget'], {
+      cwd: generatedDirectory,
+      label: 'enforce generated app performance budgets',
+    })
+    const deployDryRun = await runChecked('pnpm', ['run', 'deploy:dry-run'], {
+      cwd: generatedDirectory,
+      label: 'build the generated Worker with Wrangler deploy dry-run',
+    })
+    if (!deployDryRun.includes('--dry-run: exiting now.')) {
+      throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
+    }
+    assertNoForbiddenGeneratedReferences(generatedDirectory)
+  }
+
+  if (process.env.GITHUB_RUN_ID && imageIdentity) {
+    const evidenceDirectory = join(root, '.ci-evidence', 'packed-consumer-proof')
+    mkdirSync(evidenceDirectory, { recursive: true })
+    writeFileSync(
+      join(evidenceDirectory, 'proof.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: prior ? 'reused' : 'executed',
+          repository: process.env.GITHUB_REPOSITORY,
+          runId: Number(process.env.GITHUB_RUN_ID),
+          runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+          tree,
+          fingerprint,
+          inputDigests,
+          inputFiles,
+          completedAt: new Date().toISOString(),
+          ...(prior ? { prior } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+    )
+  }
+
+  writeLine(
+    `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
+  )
+}
+
 const packages = loadWorkspace(root)
   .packages.map(({ directory, manifest }) => ({ directory, manifest }))
   .filter(({ manifest }) => manifest.private !== true)
@@ -986,6 +1217,21 @@ const tarballDirectory = join(consumerDirectory, 'tarballs')
 const packageJsonPath = join(consumerDirectory, 'package.json')
 mkdirSync(tarballDirectory, { recursive: true })
 
+// Packing and both consumer installs do not need Chromium. Overlap the hosted
+// download/native-library setup with that work even when every build is cached.
+// Capture rejection immediately and drain it in finally on any early failure.
+const browserInstallation = Promise.allSettled(
+  installBrowser && !artifactsOnly
+    ? [
+        runChecked('pnpm', ['exec', 'playwright', 'install', '--with-deps', 'chromium'], {
+          cwd: root,
+          label: 'install Chromium and Linux browser dependencies',
+          rejectWarnings: false,
+        }),
+      ]
+    : [],
+)
+
 try {
   const tarballs = new Map()
 
@@ -994,11 +1240,6 @@ try {
     const label = `validate and pack ${manifest.name}@${manifest.version}`
     writeLine(`[consumer-smoke] ${label}`)
     try {
-      const lint = await execFileAsync('pnpm', ['exec', 'publint', directory, '--strict'], {
-        cwd: root,
-        env: childEnvironment(),
-        maxBuffer: 8 * 1024 * 1024,
-      })
       const pack = await execFileAsync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
         cwd: directory,
         env: packEnvironment(),
@@ -1007,10 +1248,17 @@ try {
       const expectedTarball = `${manifest.name.replace(/^@/, '').replaceAll('/', '-')}-${manifest.version}.tgz`
       const path = join(tarballDirectory, expectedTarball)
       if (!existsSync(path)) throw new Error(`pnpm did not create a tarball for ${manifest.name}.`)
+      // Lint exactly what the consumer will install. Linting the directory
+      // first made publint run a second pnpm pack for every package.
+      const lint = await execFileAsync('pnpm', ['exec', 'publint', path, '--strict'], {
+        cwd: root,
+        env: childEnvironment(),
+        maxBuffer: 8 * 1024 * 1024,
+      })
       return {
         name: manifest.name,
         path,
-        output: `${lint.stdout}${lint.stderr}${pack.stdout}${pack.stderr}`,
+        output: `${pack.stdout}${pack.stderr}${lint.stdout}${lint.stderr}`,
       }
     } catch (error) {
       if (error.stdout) process.stdout.write(error.stdout)
@@ -1180,200 +1428,11 @@ try {
     label: 'execute the packed testkit CLI through built JavaScript',
   })
 
-  const generatedDirectory = join(consumerDirectory, 'generated-app')
-  await runChecked(
-    'pnpm',
-    [
-      'exec',
-      'create-narduk-app',
-      'narduk-libs-release-smoke',
-      '--display-name=Narduk Libs Release Smoke',
-      '--description=Tarball-only generated release consumer',
-      '--site-url=https://narduk-libs-release-smoke.invalid',
-      `--target-dir=${generatedDirectory}`,
-      '--capabilities=auth,seo,analytics,uploads,ai',
-      '--visibility=private',
-      '--local-dev-port=3199',
-      '--json',
-      '--no-git',
-    ],
-    {
-      cwd: consumerDirectory,
-      label: 'run the packed one-shot app generator',
-    },
-  )
-
-  const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
-  assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
-  addTarballOverrides(generatedDirectory, packages, tarballs)
-  addPackedCoreUiRuntimeSmoke(generatedDirectory)
-  addPackedShellRootValueImportSmoke(generatedDirectory)
-  addPackedSeoMetadataSmoke(generatedDirectory)
-  assertNoForbiddenGeneratedReferences(generatedDirectory)
-
-  await runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
-    cwd: generatedDirectory,
-    label: 'install the generated app from packed artifacts',
-  })
-  await runChecked('pnpm', ['install', '--frozen-lockfile'], {
-    cwd: generatedDirectory,
-    label: 'repeat generated app install with the frozen lockfile',
-  })
-  assertNoForbiddenGeneratedReferences(generatedDirectory)
-
-  let imageIdentity
-  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    // Isolated-pool path: reject drift instead of trusting the env var alone.
-    // A stale pin or a wrong/job-local PLAYWRIGHT_BROWSERS_PATH must fail
-    // here, before `pnpm run quality` below ever launches the real suite.
-    imageIdentity = await assertIsolatedPlaywrightToolchain({
-      cwd: generatedDirectory,
-      expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
-      requiredBrowsers: ['chromium'],
-    })
-  } else {
-    if (!process.env.GITHUB_ACTIONS) {
-      await runChecked('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
-        cwd: generatedDirectory,
-        label: 'install the generated app browser fixture',
-      })
-    }
-    // Hosted CI installs Chromium and its native libraries before the proof.
-    // Local runs still download a browser but do not create reusable evidence.
-    if (process.env.GITHUB_ACTIONS) {
-      imageIdentity = await assertHostedPlaywrightToolchain({
-        cwd: generatedDirectory,
-        expectedVersion: PLAYWRIGHT_TOOLCHAIN_VERSION,
-      })
-    }
-  }
-  // Resolve and install both external consumers before considering reuse. A
-  // floating registry dependency or different installed package content forces execution,
-  // even when GitHub reports identical source trees across the merge.
-  const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).trim()
-  const packedInputs = new Map([...tarballs].map(([name, path]) => [name, packedInput(path)]))
-  const proofInputs = {
-    schemaVersion: 2,
-    tree,
-    tarballs: Object.fromEntries([...packedInputs].map(([name, input]) => [name, input.digest])),
-    consumerLock: consumerLockDigest(join(consumerDirectory, 'pnpm-lock.yaml'), packedInputs),
-    generatedSources: Object.fromEntries(
-      listGeneratedTextFiles(generatedDirectory).map((path) => [
-        relative(generatedDirectory, path),
-        basename(path) === 'pnpm-lock.yaml'
-          ? consumerLockDigest(path, packedInputs)
-          : fileDigest(path),
-      ]),
-    ),
-    node: {
-      version: process.version,
-      executable: fileDigest(process.execPath),
-      platform: process.platform,
-      arch: process.arch,
-    },
-    pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
-    imageIdentity: imageIdentity ?? null,
-    nodeOptions: process.env.NODE_OPTIONS || '',
-  }
-  const fingerprint = fingerprintInputs(proofInputs)
-  const inputDigests = Object.fromEntries(
-    Object.entries(proofInputs).map(([key, value]) => [key, fingerprintInputs(value)]),
-  )
-  const inputFiles = {
-    tarballs: proofInputs.tarballs,
-    generatedSources: proofInputs.generatedSources,
-  }
-  const prior = await lookupConsumerProof({ tree, fingerprint, inputDigests, inputFiles })
-  if (prior) {
-    writeLine(
-      `[consumer-smoke] Reused generated-app proof from PR #${prior.pullRequest}, run ${prior.runId}, attempt ${prior.runAttempt}; exact installed inputs ${fingerprint}.`,
-    )
-  } else {
-    // The release boundary needs compatibility proof, not a second full
-    // scaffold-quality run. The generated app's own quality command is intact.
-    for (const phase of consumerSmokePhases(
-      readJson(join(generatedDirectory, 'package.json')).scripts,
-    )) {
-      if (process.env.GITHUB_ACTIONS) writeLine(`::group::Generated app: ${phase}`)
-      try {
-        await runChecked('pnpm', ['run', phase], {
-          cwd: generatedDirectory,
-          label: `generated app ${phase}`,
-        })
-      } finally {
-        if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
-      }
-    }
-    assertNoRetiredBuiltReferences(generatedDirectory)
-
-    const firstMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
-      cwd: generatedDirectory,
-      label: 'apply generated app migrations to a fresh local D1 database',
-    })
-    const firstMigrationMatch = firstMigration.match(
-      /\[db\]\s+(\d+) applied,\s+(\d+) adopted,\s+(\d+) skipped/u,
-    )
-    if (!firstMigrationMatch || Number(firstMigrationMatch[1]) < 1) {
-      throw new Error('Fresh generated app migration did not apply at least one migration.')
-    }
-
-    const secondMigration = await runChecked('pnpm', ['run', 'db:migrate:local'], {
-      cwd: generatedDirectory,
-      label: 'prove generated app migrations are idempotent',
-    })
-    const secondMigrationMatch = secondMigration.match(
-      /\[db\]\s+0 applied,\s+0 adopted,\s+(\d+) skipped/u,
-    )
-    if (!secondMigrationMatch || Number(secondMigrationMatch[1]) < 1) {
-      throw new Error('Second generated app migration was not an empty idempotent run.')
-    }
-
-    await runChecked('pnpm', ['run', 'performance-budget'], {
-      cwd: generatedDirectory,
-      label: 'enforce generated app performance budgets',
-    })
-    const deployDryRun = await runChecked('pnpm', ['run', 'deploy:dry-run'], {
-      cwd: generatedDirectory,
-      label: 'build the generated Worker with Wrangler deploy dry-run',
-    })
-    if (!deployDryRun.includes('--dry-run: exiting now.')) {
-      throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
-    }
-    assertNoForbiddenGeneratedReferences(generatedDirectory)
-  }
-
-  if (process.env.GITHUB_RUN_ID && imageIdentity) {
-    const evidenceDirectory = join(root, '.ci-evidence', 'packed-consumer-proof')
-    mkdirSync(evidenceDirectory, { recursive: true })
-    writeFileSync(
-      join(evidenceDirectory, 'proof.json'),
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          kind: prior ? 'reused' : 'executed',
-          repository: process.env.GITHUB_REPOSITORY,
-          runId: Number(process.env.GITHUB_RUN_ID),
-          runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
-          tree,
-          fingerprint,
-          inputDigests,
-          inputFiles,
-          completedAt: new Date().toISOString(),
-          ...(prior ? { prior } : {}),
-        },
-        null,
-        2,
-      )}\n`,
-    )
-  }
-
-  writeLine(
-    `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
-  )
+  await proveGeneratedConsumer({ consumerDirectory, packages, tarballs, browserInstallation })
 } finally {
+  // No installer may outlive cleanup, and no reusable proof is written unless
+  // its result was checked at the browser/toolchain barrier above.
+  await browserInstallation
   for (const { label, seconds } of timings)
     writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
   if (process.env.GITHUB_STEP_SUMMARY)
