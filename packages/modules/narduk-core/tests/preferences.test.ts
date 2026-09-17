@@ -192,3 +192,21 @@ describe('cache-safety marking', () => {
     expect(varyWithCookie('*')).toBe('*')
   })
 })
+
+describe('hostile cookie values never throw from the decoder', () => {
+  it('keeps a page rendering when the cookie carries an unknown zone or invalid tag', async () => {
+    const { createFormatters } = await import('../runtime/shared/utils/units')
+    const defaults = resolvePreferenceDefaults({ acceptLanguage: 'en-US' })
+    const preferences = resolvePreferences({
+      cookie: 'v=1&tz=Not%2FAZone&l=not!a!tag&u=imperial',
+      defaults,
+    })
+
+    expect(preferences).toEqual({ locale: 'en-US', timeZone: 'UTC', units: 'imperial' })
+    const format = createFormatters(preferences)
+    expect(() => format.date('2026-03-08T00:00:00Z')).not.toThrow()
+    expect(() => format.height(1.4)).not.toThrow()
+    expect(format.date('2026-03-08T00:00:00Z')).toBe('Mar 8, 2026')
+    expect(format.height(1.4)).toBe('4.6 ft')
+  })
+})

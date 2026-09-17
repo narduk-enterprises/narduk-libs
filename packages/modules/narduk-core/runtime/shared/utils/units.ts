@@ -19,7 +19,10 @@
  *   (`UTC`, `en-US`) apply, never the host's. A formatter that reads the host's
  *   zone renders one string on the server and another in the browser, which is
  *   a hydration mismatch — see `narduk-shell/format`'s header for the four
- *   times the estate shipped exactly that bug.
+ *   times the estate shipped exactly that bug. Offset-less date-time strings
+ *   (`2026-03-08T00:00:00`) are treated as UTC, never as the host's local
+ *   zone, for the same reason. A bare `YYYY-MM-DD` is a floating calendar date
+ *   in {@link formatZonedDate} only.
  * - **Absent input has one answer.** `null`, `undefined`, `NaN`, `Infinity` and
  *   an unparseable date all render {@link NE_EMPTY_VALUE} (an em dash). No
  *   call site has to guard, and no user ever sees `NaN ft`.
@@ -149,29 +152,53 @@ export interface NeZonedOptions {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Constructing an `Intl.*Format` is the expensive part and these are called
- * once per cell in a table, so every constructor goes through here, keyed by
- * the locale plus the full option set.
+ * Memoised `Intl` constructors.
+ *
+ * A formatter runs once per cell, so constructing `Intl.*Format` per call is
+ * the measured cost. The key is the locale plus the full option set with its
+ * keys sorted, so two callers spelling the same options in a different order
+ * share one instance.
+ *
+ * The cap exists because an option set can in principle be derived from data
+ * (`digits` off a column definition, `timeZone` off a row), which is the one
+ * way this could grow with the working set rather than with the code. Clearing
+ * wholesale rather than evicting one entry keeps that to a branch and a
+ * `Map.clear()`: real call sites re-populate a handful of entries immediately,
+ * and an adversarial one pays a rebuild instead of growing without bound.
  */
+const MAX_CACHE_ENTRIES = 256
 const numberFormatCache = new Map<string, Intl.NumberFormat>()
 const dateFormatCache = new Map<string, Intl.DateTimeFormat>()
 
-function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
-  const key = JSON.stringify([locale, options])
-  const cached = numberFormatCache.get(key)
-  if (cached) return cached
-  const created = new Intl.NumberFormat(locale, options)
-  numberFormatCache.set(key, created)
+function intlCacheKey(locale: string, options: object): string {
+  const entries = Object.entries(options)
+    .filter(([, value]) => value !== undefined)
+    .sort(([first], [second]) => (first < second ? -1 : 1))
+  return `${locale}\u0000${JSON.stringify(entries)}`
+}
+
+function cached<T>(cache: Map<string, T>, locale: string, options: object, build: () => T): T {
+  const key = intlCacheKey(locale, options)
+  const hit = cache.get(key)
+  if (hit) return hit
+  if (cache.size >= MAX_CACHE_ENTRIES) cache.clear()
+  const created = build()
+  cache.set(key, created)
   return created
 }
 
+function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  return cached(numberFormatCache, locale, options, () => new Intl.NumberFormat(locale, options))
+}
+
 function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = JSON.stringify([locale, options])
-  const cached = dateFormatCache.get(key)
-  if (cached) return cached
-  const created = new Intl.DateTimeFormat(locale, options)
-  dateFormatCache.set(key, created)
-  return created
+  return cached(dateFormatCache, locale, options, () => new Intl.DateTimeFormat(locale, options))
+}
+
+/** Test seam: empty the isolate-lifetime Intl caches. */
+export function clearFormatterCachesForTests(): void {
+  numberFormatCache.clear()
+  dateFormatCache.clear()
 }
 
 /* -------------------------------------------------------------------------- */
@@ -233,12 +260,28 @@ function formatUnit(
   }
 }
 
+/**
+ * A bare `YYYY-MM-DD`. `Date.parse('2026-03-08')` is midnight **UTC**, so
+ * rendering it in `America/Chicago` shows the 7th — the most common way a date
+ * lands on screen one day early. {@link formatZonedDate} treats a value of this
+ * shape as a calendar date with no instant.
+ */
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * An ISO date-time with no `Z` or numeric offset. `Date.parse` of that shape
+ * is the **host** zone, so a Worker (UTC) and a Chicago browser disagree.
+ * These formatters treat it as UTC instead.
+ */
+const OFFSET_LESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+
 /** Coerce the accepted date inputs to milliseconds, or `undefined` if unusable. */
 function toEpochMilliseconds(value: NeDateInput): number | undefined {
   if (value === null || value === undefined) return undefined
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.getTime()
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
-  const parsed = Date.parse(value)
+  const normalised = OFFSET_LESS_DATE_TIME.test(value) ? `${value}Z` : value
+  const parsed = Date.parse(normalised)
   return Number.isNaN(parsed) ? undefined : parsed
 }
 
@@ -436,8 +479,24 @@ export function formatDecimal(
 /* Date and time formatters                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** A calendar date in the given zone. `medium` style by default. */
+/**
+ * A calendar date in the given zone. `medium` style by default.
+ *
+ * A bare `YYYY-MM-DD` string is treated as a **calendar date, not an instant**
+ * and renders as itself in every zone. `Date.parse('2026-03-08')` is midnight
+ * UTC, so the ordinary reading shows `Mar 7` for every zone west of Greenwich.
+ * {@link formatZonedDateTime} deliberately does *not* do this.
+ */
 export function formatZonedDate(value: NeDateInput, options: NeZonedOptions = {}): string {
+  if (typeof value === 'string' && CALENDAR_DATE.test(value)) {
+    const milliseconds = toEpochMilliseconds(`${value}T12:00:00Z`)
+    if (milliseconds === undefined) return options.empty ?? NE_EMPTY_VALUE
+    const locale = safeLocale(options.locale)
+    return dateFormat(locale, {
+      dateStyle: options.dateStyle ?? 'medium',
+      timeZone: 'UTC',
+    }).format(new Date(milliseconds))
+  }
   return formatZoned(value, options, { dateStyle: options.dateStyle ?? 'medium' })
 }
 

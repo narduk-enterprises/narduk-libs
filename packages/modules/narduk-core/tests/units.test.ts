@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   celsiusToFahrenheit,
+  clearFormatterCachesForTests,
   createFormatters,
   formatDecimal,
   formatDistance,
@@ -25,8 +26,10 @@ import type { NePreferences } from '../runtime/shared/utils/preferences'
 
 /** 08:30Z on the day the United States moved its clocks forward in 2026. */
 const OBSERVED_AT = '2026-03-08T08:30:00Z'
+const CHICAGO = 'America/Chicago'
+const MAR_8 = 'Mar 8, 2026'
 
-const IMPERIAL: NePreferences = { locale: 'en-US', timeZone: 'America/Chicago', units: 'imperial' }
+const IMPERIAL: NePreferences = { locale: 'en-US', timeZone: CHICAGO, units: 'imperial' }
 const METRIC: NePreferences = { locale: 'de-DE', timeZone: 'Europe/Berlin', units: 'metric' }
 
 describe('conversion accuracy', () => {
@@ -154,14 +157,14 @@ describe('timezone-aware dates across a DST boundary', () => {
   const after = OBSERVED_AT
 
   it('renders the hour the zone was actually on, either side of the jump', () => {
-    const options = { locale: 'en-US', timeZone: 'America/Chicago' } as const
+    const options = { locale: 'en-US', timeZone: CHICAGO } as const
 
     expect(formatZonedTime(before, options)).toBe('1:30 AM')
     expect(formatZonedTime(after, options)).toBe('3:30 AM')
   })
 
   it('names the zone correctly on each side without a hand-rolled table', () => {
-    const options = { locale: 'en-US', timeZone: 'America/Chicago', timeZoneName: 'short' } as const
+    const options = { locale: 'en-US', timeZone: CHICAGO, timeZoneName: 'short' } as const
 
     expect(formatZonedDateTime(before, options)).toBe('Mar 8, 2026, 1:30 AM CST')
     expect(formatZonedDateTime(after, options)).toBe('Mar 8, 2026, 3:30 AM CDT')
@@ -176,7 +179,7 @@ describe('timezone-aware dates across a DST boundary', () => {
 
   it('defaults to UTC rather than the host zone', () => {
     expect(formatZonedTime(after, { locale: 'en-US' })).toBe('8:30 AM')
-    expect(formatZonedDate(after, { locale: 'en-US' })).toBe('Mar 8, 2026')
+    expect(formatZonedDate(after, { locale: 'en-US' })).toBe(MAR_8)
     expect(formatZonedTime(after, { locale: 'en-US', timeZone: 'Nowhere/Nothing' })).toBe('8:30 AM')
   })
 
@@ -201,7 +204,7 @@ describe('createFormatters', () => {
     expect(format.distance(4300)).toBe('2.7 mi')
     expect(format.length(94)).toBe('308 ft')
     expect(format.number(1234.5)).toBe('1,234.5')
-    expect(format.date(OBSERVED_AT)).toBe('Mar 8, 2026')
+    expect(format.date(OBSERVED_AT)).toBe(MAR_8)
     expect(format.time(OBSERVED_AT)).toBe('3:30 AM')
     expect(format.dateTime(OBSERVED_AT)).toBe('Mar 8, 2026, 3:30 AM')
   })
@@ -228,5 +231,123 @@ describe('createFormatters', () => {
 
     expect(format.height(1.4, { units: 'metric' })).toBe('1.4 m')
     expect(format.time(OBSERVED_AT, { timeZone: 'UTC' })).toBe('8:30 AM')
+  })
+})
+
+describe('formatZonedDate calendar dates', () => {
+  it('treats a bare YYYY-MM-DD as a floating calendar date, not UTC midnight', () => {
+    // `Date.parse('2026-03-08')` is midnight UTC; Chicago is still the 7th.
+    expect(formatZonedDate('2026-03-08', { locale: 'en-US', timeZone: CHICAGO })).toBe(MAR_8)
+    expect(formatZonedDate('2026-03-08', { locale: 'en-US', timeZone: 'Asia/Tokyo' })).toBe(MAR_8)
+    expect(formatZonedDate('2026-03-08', { locale: 'en-US', timeZone: 'UTC' })).toBe(MAR_8)
+  })
+})
+
+describe('offset-less date-times are UTC', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('normalises an offset-less date-time to UTC before Date.parse', () => {
+    const parse = vi.spyOn(Date, 'parse')
+    formatZonedDateTime('2026-03-08T00:00:00', { locale: 'en-US', timeZone: CHICAGO })
+    expect(parse.mock.calls.flat()).toContain('2026-03-08T00:00:00Z')
+    expect(parse.mock.calls.flat()).not.toContain('2026-03-08T00:00:00')
+    parse.mockRestore()
+
+    expect(formatZonedDateTime('2026-03-08T00:00:00', { locale: 'en-US', timeZone: 'UTC' })).toBe(
+      'Mar 8, 2026, 12:00 AM',
+    )
+    expect(
+      formatZonedDateTime('2026-03-08T00:00:00', {
+        locale: 'en-US',
+        timeZone: CHICAGO,
+      }),
+    ).toBe('Mar 7, 2026, 6:00 PM')
+  })
+
+  it('leaves an explicit offset alone', () => {
+    const parse = vi.spyOn(Date, 'parse')
+    formatZonedDateTime('2026-03-08T00:00:00-06:00', { locale: 'en-US', timeZone: 'UTC' })
+    expect(parse.mock.calls.flat()).toContain('2026-03-08T00:00:00-06:00')
+    parse.mockRestore()
+    expect(
+      formatZonedDateTime('2026-03-08T00:00:00-06:00', { locale: 'en-US', timeZone: 'UTC' }),
+    ).toBe('Mar 8, 2026, 6:00 AM')
+  })
+})
+
+describe('Intl instance cache cap', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('caps NumberFormat instances at 256 and clears wholesale', () => {
+    clearFormatterCachesForTests()
+    const Original = Intl.NumberFormat
+    let constructions = 0
+    vi.spyOn(Intl, 'NumberFormat').mockImplementation(function mockNumberFormat(
+      this: Intl.NumberFormat,
+      locales?: Intl.LocalesArgument,
+      options?: Intl.NumberFormatOptions,
+    ) {
+      constructions += 1
+      return new Original(locales, options)
+    } as typeof Intl.NumberFormat)
+
+    const locales = [
+      'sv-SE',
+      'pl-PL',
+      'cs-CZ',
+      'hu-HU',
+      'fi-FI',
+      'da-DK',
+      'nb-NO',
+      'ro-RO',
+      'bg-BG',
+      'el-GR',
+      'tr-TR',
+      'he-IL',
+      'th-TH',
+      'vi-VN',
+      'id-ID',
+    ]
+    const keys: Array<{ locale: string; maximumFractionDigits: number }> = []
+    for (const locale of locales) {
+      for (let digits = 0; digits <= 20; digits += 1) {
+        keys.push({ locale, maximumFractionDigits: digits })
+      }
+    }
+    expect(keys.length).toBeGreaterThan(256)
+
+    for (const key of keys.slice(0, 256)) {
+      formatDecimal(1, key)
+    }
+    const atCap = constructions
+    formatDecimal(1, keys[0])
+    expect(constructions).toBe(atCap)
+
+    formatDecimal(1, keys[256])
+    formatDecimal(1, keys[0])
+    expect(constructions).toBeGreaterThan(atCap + 1)
+  })
+})
+
+describe('hostile cookie values cannot throw out of a formatter', () => {
+  it('drops an invalid IANA zone and malformed BCP-47 tag rather than throwing RangeError', () => {
+    const format = createFormatters({
+      locale: 'en-US',
+      timeZone: 'UTC',
+      units: 'metric',
+    })
+
+    expect(() => format.date('2026-03-08T00:00:00Z')).not.toThrow()
+    expect(() =>
+      formatZonedDate('2026-03-08T00:00:00Z', { locale: '!!!', timeZone: 'Not/AZone' }),
+    ).not.toThrow()
+    expect(() => formatDecimal(1.4, { locale: 'not!a!tag' })).not.toThrow()
+    expect(formatZonedDate('2026-03-08T00:00:00Z', { locale: '!!!', timeZone: 'Not/AZone' })).toBe(
+      MAR_8,
+    )
   })
 })
