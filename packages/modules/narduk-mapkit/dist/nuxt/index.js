@@ -16,18 +16,21 @@ import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
 function normalizeRoutePath(path) {
     const trimmed = path.trim();
-    if (!trimmed.startsWith('/')) {
+    // WHATWG treats `\` as `/` in a relative URL, so `/\evil.example/mk` is the
+    // same protocol-relative fetch as `//evil.example/mk`. Canonicalise first.
+    const canonical = trimmed.replaceAll('\\', '/');
+    if (!canonical.startsWith('/')) {
         throw new Error('nardukMapKit.tokenRoutePath must start with / -- the route is same-host only');
     }
     // `//evil.example/mk` starts with `/` and is still cross-origin: the browser
     // reads it as protocol-relative. `fetchMapKitToken` throws on one, but at
     // first paint and from inside the loader -- so the module refuses it at
     // setup, where the message can name the option (§b.1).
-    if (trimmed.startsWith('//')) {
+    if (canonical.startsWith('//')) {
         throw new Error('nardukMapKit.tokenRoutePath must not start with // -- a protocol-relative path ' +
             'leaves the serving origin, and the route is same-host only');
     }
-    return trimmed.replace(/\/$/, '') || DEFAULT_MAPKIT_TOKEN_ROUTE;
+    return canonical.replace(/\/$/, '') || DEFAULT_MAPKIT_TOKEN_ROUTE;
 }
 /**
  * A retired key that is still set is reported by NAME, once, at startup.

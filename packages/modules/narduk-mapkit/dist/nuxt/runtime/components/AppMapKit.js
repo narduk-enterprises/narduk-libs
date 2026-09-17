@@ -290,6 +290,7 @@ const AppMapKitImpl = defineComponent({
             overviewRegion = computeOverview(namespace);
             const mapOptions = {
                 colorScheme: resolveColorScheme(),
+                isRotationEnabled: componentProps.isRotationEnabled,
                 isScrollEnabled: componentProps.isScrollEnabled,
                 isZoomEnabled: componentProps.isZoomEnabled,
                 mapType: componentProps.mapType,
@@ -307,11 +308,17 @@ const AppMapKitImpl = defineComponent({
                     ? {}
                     : { clusteringIdentifier: componentProps.clusteringIdentifier }),
                 ...(componentProps.createPinElement
-                    ? { createPinElement: componentProps.createPinElement }
+                    ? {
+                        createPinElement: (item, selected) => componentProps.createPinElement(item, selected),
+                    }
                     : {}),
-                ...(componentProps.itemLabel ? { itemLabel: componentProps.itemLabel } : {}),
-                ...(componentProps.pinGeometry ? { pinGeometry: componentProps.pinGeometry } : {}),
-                itemKey: componentProps.itemKey,
+                ...(componentProps.itemLabel
+                    ? { itemLabel: (item) => componentProps.itemLabel(item) }
+                    : {}),
+                // Read the live prop, not the function identity captured at init -- a
+                // pinGeometry-only setProps would otherwise restyle nothing.
+                itemKey: (item, index) => componentProps.itemKey(item, index),
+                pinGeometry: (item) => componentProps.pinGeometry?.(item) ?? {},
                 map,
                 mapkit: namespace,
                 onSelect: select,
@@ -391,6 +398,19 @@ const AppMapKitImpl = defineComponent({
         });
         watch(() => [componentProps.geojson, componentProps.circles], () => {
             applyOverlays();
+        });
+        watch(() => [
+            componentProps.createPinElement,
+            componentProps.itemKey,
+            componentProps.itemLabel,
+            componentProps.pinGeometry,
+        ], () => {
+            try {
+                applyItems();
+            }
+            catch (cause) {
+                report(cause);
+            }
         });
         watch(() => failure.value, (value) => {
             if (value)
