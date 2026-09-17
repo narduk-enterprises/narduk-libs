@@ -78,6 +78,20 @@ export function mapKitErrorStatusForHttpStatus(httpStatus) {
         return 'Timeout';
     return 'Unknown';
 }
+/** An absolute (`https://host/p`) or protocol-relative (`//host/p`) endpoint. */
+const CROSS_ORIGIN_CAPABLE_ENDPOINT = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
+/**
+ * §b.1: the token endpoint is "relative path only; an absolute URL is a config
+ * error". Enforced rather than commented -- an absolute endpoint is a
+ * cross-origin fetch for a token Apple would refuse on this page anyway, and
+ * failing at configuration time says so far more clearly than a CORS error.
+ */
+function assertRelativeTokenEndpoint(endpoint) {
+    if (!CROSS_ORIGIN_CAPABLE_ENDPOINT.test(endpoint))
+        return;
+    throw new Error(`tokenEndpoint must be a relative path on the serving origin, not ${endpoint}: ` +
+        'the MapKit token route is same-host by design (narduk-libs#421 §b.1)');
+}
 /**
  * Fetch one token from the same-origin route.
  *
@@ -86,6 +100,7 @@ export function mapKitErrorStatusForHttpStatus(httpStatus) {
  * The token is never persisted, never logged, and never put in a URL.
  */
 export async function fetchMapKitToken(endpoint = DEFAULT_TOKEN_ENDPOINT, fetchImpl = fetch) {
+    assertRelativeTokenEndpoint(endpoint);
     let response;
     try {
         response = await fetchImpl(endpoint, {
@@ -158,6 +173,9 @@ export async function initializeMapKit(options) {
     if (options.libraries.length === 0) {
         throw new Error('libraries is required: MapKit JS 6 loads no map library by default');
     }
+    // Before `load()`, not at the first token exchange: a misconfigured endpoint
+    // should not cost a script injection and a MapKit init that can only hang.
+    assertRelativeTokenEndpoint(options.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT);
     const cacheKey = mapKitInitCacheKey(options);
     if (initPromise && initPromiseKey !== cacheKey) {
         throw new Error('MapKit is already initialized or initializing with different options');

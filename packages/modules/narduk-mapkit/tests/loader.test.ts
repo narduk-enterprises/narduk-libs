@@ -292,6 +292,55 @@ describe('fetchMapKitToken failure mapping (§c.7)', () => {
   })
 })
 
+/**
+ * GROK-REVIEW-431 F9. `api-2.1.md` §b.1 states it outright:
+ * `public.mapkitTokenEndpoint` is a "relative path only; an absolute URL is a
+ * config error". The comment on `tokenEndpoint` said so; nothing enforced it,
+ * so a misconfigured absolute endpoint became a cross-origin `fetch` for a
+ * token that Apple would reject on this page anyway.
+ */
+describe('§b.1 the token endpoint is a relative path, enforced', () => {
+  afterEach(() => {
+    resetMapKitClientStateForTests()
+  })
+
+  it.each([
+    'https://evil.example/api/mapkit-token',
+    'http://evil.example/t',
+    '//evil.example/api/mapkit-token',
+  ])('refuses %s as a config error rather than fetching it', async (endpoint) => {
+    const fetchImpl = vi.fn(tokenResponse())
+
+    await expect(fetchMapKitToken(endpoint, fetchImpl as unknown as typeof fetch)).rejects.toThrow(
+      /relative path/,
+    )
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('refuses an absolute endpoint before load(), not at the first token fetch', async () => {
+    const { fake, loadCalls, loadImpl } = harness()
+
+    await expect(
+      initializeMapKit({
+        fetchImpl: tokenResponse(),
+        libraries: LIBRARIES,
+        loadImpl,
+        tokenEndpoint: 'https://evil.example/api/mapkit-token',
+      }),
+    ).rejects.toThrow(/relative path/)
+    expect(loadCalls).toHaveLength(0)
+    expect(fake.inspect.tokenCalls).toBe(0)
+  })
+
+  it('still accepts an ordinary relative endpoint with a query string', async () => {
+    const fetchImpl = vi.fn(tokenResponse('relative.jwt.value'))
+
+    await expect(
+      fetchMapKitToken('/api/mapkit-token?cache=0', fetchImpl as unknown as typeof fetch),
+    ).resolves.toBe('relative.jwt.value')
+  })
+})
+
 describe('parseMapKitOriginMismatch', () => {
   it("reads Apple's expected/actual diagnostic", () => {
     expect(

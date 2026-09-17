@@ -13,6 +13,7 @@ import {
   getOriginFromRequest,
   isMapKitRequestSameOrigin,
   issueMapKitTokenForRequest,
+  mapKitRoutedOrigin,
   mapKitSelfOrigin,
   mapKitTokenResponse,
   mapKitTokenResponseFromEnv,
@@ -473,5 +474,181 @@ describe('§e adapters', () => {
 
     expect(response.status).toBe(500)
     expect(await body(response)).not.toHaveProperty('token')
+  })
+})
+
+/**
+ * Round 1 of the adversarial review of narduk-libs#431 (GROK-REVIEW-431).
+ *
+ * Every test here is the failing case the review named, written before the fix.
+ */
+describe('review round 1 -- the 500 body is a constant, never a thrown message', () => {
+  afterEach(() => {
+    clearMapKitTokenCacheForTests()
+  })
+
+  // F1: a throwing rate-limit hook put ITS message on the wire.
+  it('never puts a thrown rate-limit hook message on the wire', async () => {
+    const sentinel = 'redis-dsn-sentinel-must-not-reach-the-client'
+    const response = await mapKitTokenResponse(sameOriginRequest(), await signingConfig(), {
+      rateLimit: () => {
+        throw new Error(sentinel)
+      },
+    })
+    const payload = await body(response)
+
+    expect(response.status).toBe(500)
+    expect(payload).not.toHaveProperty('token')
+    expect(JSON.stringify(payload)).not.toContain(sentinel)
+    expect(payload.message).toBe('Failed to generate a MapKit token.')
+  })
+
+  // F4: the old "no leak" test only asserted the body had no `token` property.
+  it('never puts key material or a signer diagnostic on the wire', async () => {
+    const privateKey = '-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----'
+    const response = await mapKitTokenResponse(sameOriginRequest(), {
+      keyId: 'KEY1234567',
+      privateKey,
+      teamId: 'TEAM123456',
+    })
+    const serialized = JSON.stringify(await body(response))
+
+    expect(response.status).toBe(500)
+    expect(serialized).not.toContain(privateKey)
+    expect(serialized).not.toContain('BEGIN PRIVATE')
+    expect(serialized).not.toContain('not-a-key')
+    expect(JSON.parse(serialized)).toMatchObject({
+      error: 'signing-failed',
+      message: 'Failed to generate a MapKit token.',
+    })
+  })
+
+  // F1 again, through the other way into the same catch: a malformed explicit
+  // `self` is a caller mistake, and its diagnostic is not the client's business.
+  it('never puts a URL-parser diagnostic on the wire for a malformed self', async () => {
+    const response = await mapKitTokenResponse(sameOriginRequest(), await signingConfig(), {
+      self: 'not a routed origin',
+    })
+    const payload = await body(response)
+
+    expect(response.status).toBe(500)
+    expect(payload).toMatchObject({
+      error: 'signing-failed',
+      message: 'Failed to generate a MapKit token.',
+    })
+  })
+})
+
+describe('review round 1 -- published response contract', () => {
+  afterEach(() => {
+    clearMapKitTokenCacheForTests()
+  })
+
+  // F3: `MapKitTokenResult.expiresAt` is documented as epoch MILLISECONDS.
+  it('answers expiresAt in epoch milliseconds, exactly exp * 1000', async () => {
+    const response = await mapKitTokenResponse(sameOriginRequest(), await signingConfig())
+    const payload = await body(response)
+    const { payload: claims } = decodeJwt(payload.token as string)
+
+    expect(payload.expiresAt).toBe((claims.exp as number) * 1000)
+  })
+
+  // F6: defence in depth for a UA that MIME-sniffs a JSON body.
+  it('sends x-content-type-options: nosniff on every response', async () => {
+    const config = await signingConfig()
+    const responses = await Promise.all([
+      mapKitTokenResponse(sameOriginRequest(), config),
+      mapKitTokenResponse(
+        new Request(ROUTE, { headers: { 'sec-fetch-site': 'cross-site' } }),
+        config,
+      ),
+      mapKitTokenResponse(new Request(ROUTE, { method: 'OPTIONS' }), config),
+      mapKitTokenResponse(sameOriginRequest(), {}),
+    ])
+
+    for (const response of responses) {
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    }
+  })
+})
+
+describe('review round 1 -- §e.1 fails closed on an opaque origin', () => {
+  afterEach(() => {
+    clearMapKitTokenCacheForTests()
+  })
+
+  // F7: `Origin: null` is an opaque origin. It is not `self`, so it refuses --
+  // it was previously skipped as neither a mismatch nor positive evidence, and
+  // `Sec-Fetch-Site` was then allowed to carry the request through.
+  it('refuses Origin: null even when sec-fetch-site says same-origin', async () => {
+    expect(isMapKitRequestSameOrigin(sameOriginRequest(ROUTE, { origin: 'null' }), SELF)).toBe(
+      false,
+    )
+
+    const response = await mapKitTokenResponse(
+      sameOriginRequest(ROUTE, { origin: 'null' }),
+      await signingConfig(),
+    )
+
+    expect(response.status).toBe(403)
+    expect(await body(response)).toMatchObject({ error: 'not-same-origin' })
+  })
+})
+
+describe('review round 1 -- §e.1 the routed origin a non-Fetch caller must pass', () => {
+  afterEach(() => {
+    clearMapKitTokenCacheForTests()
+  })
+
+  // F2: a Fetch `Request` carries the routed URL; nothing else may outrank it.
+  it('prefers the Fetch Request url over a framework-derived origin', () => {
+    expect(
+      mapKitRoutedOrigin({
+        derivedOrigin: 'https://evil.example',
+        request: sameOriginRequest(),
+      }),
+    ).toBe(SELF)
+  })
+
+  // F2: Node's http server accepts an absolute-form request line, and
+  // `new URL(absolute, base)` ignores the base -- so the request line, not the
+  // routed host, would name the claim.
+  it('refuses an absolute-form or protocol-relative request target', () => {
+    expect(
+      mapKitRoutedOrigin({
+        derivedOrigin: 'https://evil.example',
+        requestTarget: 'https://evil.example/api/mapkit-token',
+      }),
+    ).toBeNull()
+    expect(
+      mapKitRoutedOrigin({
+        derivedOrigin: 'https://evil.example',
+        requestTarget: '//evil.example/api/mapkit-token',
+      }),
+    ).toBeNull()
+  })
+
+  it('answers the derived origin for an ordinary origin-form target', () => {
+    expect(
+      mapKitRoutedOrigin({ derivedOrigin: SELF, requestTarget: '/api/mapkit-token?cache=0' }),
+    ).toBe(SELF)
+  })
+
+  // F2: `self: null` is how a caller says "I cannot name the routed origin".
+  it('refuses with 403 and mints nothing when self is null', async () => {
+    const rateLimit = vi.fn(() => ({ allowed: true }))
+    const logs: MapKitTokenRouteLogEntry[] = []
+    const response = await mapKitTokenResponse(sameOriginRequest(), await signingConfig(), {
+      log: (entry) => logs.push(entry),
+      rateLimit,
+      self: null,
+    })
+
+    expect(response.status).toBe(403)
+    expect(await body(response)).toMatchObject({ error: 'not-same-origin' })
+    expect(rateLimit).not.toHaveBeenCalled()
+    expect(logs).toEqual([
+      { deprecatedKeys: [], refusal: 'not-same-origin', self: '', status: 403 },
+    ])
   })
 })

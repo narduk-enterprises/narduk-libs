@@ -1,9 +1,9 @@
-import { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv } from './handler.js';
+import { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitRoutedOrigin, mapKitTokenResponseFromEnv } from './handler.js';
 import type { MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult } from './handler.js';
 import type { MapKitServerConfig } from './shared-config.js';
 export * from './config.js';
-export { clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitTokenResponseFromEnv };
-export type { MapKitRateLimitContext, MapKitRateLimitDecision, MapKitRateLimitHook, MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult, } from './handler.js';
+export { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitRoutedOrigin, mapKitTokenResponseFromEnv, };
+export type { MapKitRateLimitContext, MapKitRateLimitDecision, MapKitRateLimitHook, MapKitRoutedOriginOptions, MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult, } from './handler.js';
 /**
  * Node-only token resolver. It may read `process.env` and use the optional
  * Doppler CLI fallback before delegating token creation to the Web Crypto

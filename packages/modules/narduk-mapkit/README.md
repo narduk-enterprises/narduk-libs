@@ -217,27 +217,45 @@ The success body is:
 
 ```json
 {
-  "expiresAt": 1767625200,
+  "expiresAt": 1767625200000,
   "token": "..."
 }
 ```
 
-`expiresAt` is the JWT `exp`, in seconds since the epoch. Refusals answer
+`expiresAt` is the JWT `exp` in **epoch milliseconds** — `exp * 1000`, so it
+compares directly against `Date.now()`. Refusals answer
 `{"error": "...", "message": "..."}` — `not-same-origin` (403),
 `method-not-allowed` (405, with `Allow: GET`), `rate-limited` (429, with
 `Retry-After`), `unconfigured` (503), `signing-failed` (500). Every response
 carries `Cache-Control: no-store` and `Vary: Origin, Sec-Fetch-Site`, and none
-carries `Access-Control-Allow-Origin`.
+carries `Access-Control-Allow-Origin`. Every response also carries
+`X-Content-Type-Options: nosniff`.
 
 Behind a proxy, derive the routed origin yourself and pass it as `self` so a
 forwarded host header can never reach the claim:
 
 ```ts
 import { getRequestURL } from 'h3'
-import { mapKitTokenResponse } from '@narduk-enterprises/narduk-mapkit/server'
+import {
+  mapKitRoutedOrigin,
+  mapKitTokenResponse,
+} from '@narduk-enterprises/narduk-mapkit/server'
 
-const self = getRequestURL(event, { xForwardedHost: false }).origin
+const self = mapKitRoutedOrigin({
+  derivedOrigin: getRequestURL(event, { xForwardedHost: false }).origin,
+  request: event.web?.request,
+  requestTarget: event.node.req.originalUrl ?? event.path,
+})
 ```
+
+`mapKitRoutedOrigin` prefers the routed Fetch `Request` when the adapter has one
+— on Cloudflare Workers it always does, and `request.url` there is the routed
+URL — and answers `null` for an absolute-form request line, which the handler
+turns into a `403` rather than a token for the host in that line. **On a Node
+listener a forged `Host:` header on an ordinary request target still names the
+origin claim**: nothing at this layer can tell a routed `Host` from a forged
+one, so a Node deployment must refuse unknown hosts itself (a vhost filter, or a
+proxy that only forwards the hostnames it serves) before this route is exposed.
 
 The `/node` entry point is the only surface that reads `process.env` or uses the
 optional Doppler CLI fallback. Use `/server` or `/worker` with explicit

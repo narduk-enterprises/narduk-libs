@@ -31,11 +31,12 @@ export interface MapKitTokenResponseOptions {
     log?: (entry: MapKitTokenRouteLogEntry) => void;
     rateLimit?: MapKitRateLimitHook;
     /**
-     * The routed request origin. h3 callers pass
-     * `getRequestURL(event, { xForwardedHost: false }).origin`. Omitted, it is
-     * read from `request.url`, which is correct on Workers and in tests.
+     * The routed request origin. h3 callers build it with `mapKitRoutedOrigin`.
+     * Omitted, it is read from `request.url`, which is correct on Workers and in
+     * tests. `null` means the caller could not determine a routed origin, and is
+     * refused with 403 before any signing work -- never guessed at.
      */
-    self?: string;
+    self?: string | null;
 }
 export interface MapKitTokenRequestOptions extends MapKitTokenResponseOptions {
     config?: MapKitServerConfig;
@@ -58,7 +59,46 @@ export interface MapKitTokenResult {
  * never `https://example.com:443`): Apple enforces the claim on scheme + host +
  * port exactly, and a spurious `:443` fails every request.
  */
-export declare function mapKitSelfOrigin(request: Request, self?: string): string;
+export declare function mapKitSelfOrigin(request: Request, self?: string | null): string;
+export interface MapKitRoutedOriginOptions {
+    /**
+     * The origin the framework derived, e.g. h3's
+     * `getRequestURL(event, { xForwardedHost: false }).origin`.
+     */
+    derivedOrigin?: string | undefined;
+    /**
+     * The routed Fetch `Request` where the adapter has one -- workerd, and h3's
+     * `event.web.request`. Its `url` is the routed URL and outranks everything.
+     */
+    request?: Request | null | undefined;
+    /**
+     * The RAW request target, before any `new URL(target, base)` -- h3's
+     * `event.node.req.originalUrl ?? event.path`, or Node's `req.url`.
+     */
+    requestTarget?: string | null | undefined;
+}
+/**
+ * §e.1's `self` for a caller that is not already holding the routed `Request`.
+ *
+ * Answers `null` when no origin can be trusted; pass that straight through as
+ * `self` and the route refuses with 403 without minting anything.
+ *
+ * 1. A Fetch `Request` wins. Its `url` is the routed URL; a `Host` header
+ *    cannot move it.
+ * 2. Otherwise the framework-derived origin -- but only for an ORIGIN-FORM
+ *    request target. Node's `http` server accepts an absolute-form request line
+ *    (`GET https://evil.example/api/mapkit-token HTTP/1.1`) and hands it
+ *    through verbatim; `new URL(absolute, base)` then IGNORES the base, so the
+ *    host in the request line, not the host the app was routed on, would name
+ *    the claim Apple enforces. A protocol-relative target does the same.
+ *
+ * NODE CAVEAT: an origin-form target with a forged `Host:` still names the
+ * derived origin. Nothing at this layer can tell a routed `Host` from a forged
+ * one -- the deployment has to refuse unknown hosts. On Cloudflare Workers, the
+ * estate's target, the edge binds `Host` to the routed hostname and step 1
+ * applies anyway.
+ */
+export declare function mapKitRoutedOrigin(options: MapKitRoutedOriginOptions): string | null;
 /**
  * 2.0.x name, kept so no export disappears. It now answers the routed origin,
  * NOT the `Origin` header -- which is the whole point of §e.1.
@@ -78,6 +118,8 @@ export declare function isMapKitRequestSameOrigin(request: Request, self: string
  * WITHOUT consuming a legitimate caller's allowance.
  */
 export declare function issueMapKitTokenForRequest(options: MapKitTokenRequestOptions): Promise<MapKitTokenResult>;
+/** The ONLY thing a 500 ever says. See the catch in `mapKitTokenResponse`. */
+export declare const MAPKIT_SIGNING_FAILED_MESSAGE = "Failed to generate a MapKit token.";
 /**
  * The §e route handler.
  *
