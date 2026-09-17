@@ -23,6 +23,9 @@ import {
 
 import type { NePreferences } from '../runtime/shared/utils/preferences'
 
+/** 08:30Z on the day the United States moved its clocks forward in 2026. */
+const OBSERVED_AT = '2026-03-08T08:30:00Z'
+
 const IMPERIAL: NePreferences = { locale: 'en-US', timeZone: 'America/Chicago', units: 'imperial' }
 const METRIC: NePreferences = { locale: 'de-DE', timeZone: 'Europe/Berlin', units: 'metric' }
 
@@ -92,12 +95,12 @@ describe('measurement formatting and rounding', () => {
   })
 
   it('lets a call site override the documented precision', () => {
-    expect(
-      formatSpeed(10, { units: 'imperial', locale: 'en-US', maximumFractionDigits: 0 }),
-    ).toBe('22 mph')
-    expect(
-      formatHeight(1.4, { units: 'metric', locale: 'en-US', minimumFractionDigits: 3 }),
-    ).toBe('1.400 m')
+    expect(formatSpeed(10, { units: 'imperial', locale: 'en-US', maximumFractionDigits: 0 })).toBe(
+      '22 mph',
+    )
+    expect(formatHeight(1.4, { units: 'metric', locale: 'en-US', minimumFractionDigits: 3 })).toBe(
+      '1.400 m',
+    )
   })
 })
 
@@ -148,7 +151,7 @@ describe('absent input', () => {
 describe('timezone-aware dates across a DST boundary', () => {
   // The United States moved its clocks forward at 02:00 local on 2026-03-08.
   const before = '2026-03-08T07:30:00Z'
-  const after = '2026-03-08T08:30:00Z'
+  const after = OBSERVED_AT
 
   it('renders the hour the zone was actually on, either side of the jump', () => {
     const options = { locale: 'en-US', timeZone: 'America/Chicago' } as const
@@ -198,9 +201,9 @@ describe('createFormatters', () => {
     expect(format.distance(4300)).toBe('2.7 mi')
     expect(format.length(94)).toBe('308 ft')
     expect(format.number(1234.5)).toBe('1,234.5')
-    expect(format.date('2026-03-08T08:30:00Z')).toBe('Mar 8, 2026')
-    expect(format.time('2026-03-08T08:30:00Z')).toBe('3:30 AM')
-    expect(format.dateTime('2026-03-08T08:30:00Z')).toBe('Mar 8, 2026, 3:30 AM')
+    expect(format.date(OBSERVED_AT)).toBe('Mar 8, 2026')
+    expect(format.time(OBSERVED_AT)).toBe('3:30 AM')
+    expect(format.dateTime(OBSERVED_AT)).toBe('Mar 8, 2026, 3:30 AM')
   })
 
   it('renders the same values the other way for a metric reader', () => {
@@ -208,7 +211,7 @@ describe('createFormatters', () => {
 
     expect(format.height(1.4)).toBe('1,4 m')
     expect(format.temperature(20)).toBe('20 \u00b0C')
-    expect(format.dateTime('2026-03-08T08:30:00Z')).toBe('08.03.2026, 09:30')
+    expect(format.dateTime(OBSERVED_AT)).toBe('08.03.2026, 09:30')
   })
 
   it('reads a getter on every call, so switching units re-renders', () => {
@@ -224,6 +227,6 @@ describe('createFormatters', () => {
     const format = createFormatters(IMPERIAL)
 
     expect(format.height(1.4, { units: 'metric' })).toBe('1.4 m')
-    expect(format.time('2026-03-08T08:30:00Z', { timeZone: 'UTC' })).toBe('8:30 AM')
+    expect(format.time(OBSERVED_AT, { timeZone: 'UTC' })).toBe('8:30 AM')
   })
 })

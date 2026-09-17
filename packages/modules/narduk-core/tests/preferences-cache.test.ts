@@ -6,11 +6,14 @@ vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: (plugin: unknown) => plugin,
 }))
 
-const { applyPreferencesCacheHeaders, default: plugin } = await import(
-  '../runtime/server/plugins/preferences-cache'
-)
+const { applyPreferencesCacheHeaders, default: plugin } =
+  await import('../runtime/server/plugins/preferences-cache')
 
-type RenderResponse = { headers: Record<string, string | undefined> }
+const CACHEABLE = 'public, max-age=60'
+
+interface RenderResponse {
+  headers: Record<string, string | undefined>
+}
 type RenderHook = (response: RenderResponse, context: { event?: unknown }) => void
 
 /** Register the plugin against a fake Nitro and hand back its `render:response` hook. */
@@ -38,19 +41,19 @@ function installedHook(): RenderHook {
 describe('preferences-cache Nitro plugin', () => {
   it('leaves a response alone when nothing read preferences', () => {
     const hook = installedHook()
-    const response: RenderResponse = { headers: { 'cache-control': 'public, max-age=60' } }
+    const response: RenderResponse = { headers: { 'cache-control': CACHEABLE } }
 
     hook(response, { event: { context: {} } })
 
-    expect(response.headers).toEqual({ 'cache-control': 'public, max-age=60' })
+    expect(response.headers).toEqual({ 'cache-control': CACHEABLE })
   })
 
   it('leaves a response alone when there is no event at all', () => {
     const hook = installedHook()
-    const response: RenderResponse = { headers: { 'cache-control': 'public, max-age=60' } }
+    const response: RenderResponse = { headers: { 'cache-control': CACHEABLE } }
 
     expect(() => hook(response, {})).not.toThrow()
-    expect(response.headers['cache-control']).toBe('public, max-age=60')
+    expect(response.headers['cache-control']).toBe(CACHEABLE)
   })
 
   it('forces private, no-store with Vary: Cookie once preferences were read', () => {
@@ -58,7 +61,7 @@ describe('preferences-cache Nitro plugin', () => {
     const event = { context: {} as Record<string, unknown> }
     markPreferencesInfluenced(event)
     const response: RenderResponse = {
-      headers: { 'cache-control': 'public, max-age=60', 'content-type': 'text/html' },
+      headers: { 'cache-control': CACHEABLE, 'content-type': 'text/html' },
     }
 
     hook(response, { event })
@@ -79,7 +82,7 @@ describe('preferences-cache Nitro plugin', () => {
 
   it('never emits two spellings of the same header', () => {
     const headers = applyPreferencesCacheHeaders({
-      'Cache-Control': 'public, max-age=60',
+      'Cache-Control': CACHEABLE,
       Vary: 'Accept-Encoding',
       vary: 'Cookie',
     })

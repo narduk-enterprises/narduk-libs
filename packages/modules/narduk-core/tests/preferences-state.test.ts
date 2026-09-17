@@ -1,7 +1,15 @@
+/// <reference lib="dom" />
 // @vitest-environment happy-dom
+/* The triple-slash directive above
+   must stay the first thing in the file: anything hoisted above it, an import
+   included, silently turns the DOM lib reference off again. The DOM lib is
+   referenced per file rather than widened in `tsconfig.layer-tooling.json`:
+   this is the one test in the package that hydrates into a real document, and
+   every other file in that project is server or shared code that should keep
+   failing on a `document` reference. */
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createPreferencesState } from '../runtime/app/utils/preferencesState'
 import {
@@ -36,19 +44,18 @@ function preferenceComponent(bindings: PreferencesStateBindings) {
     setup() {
       const state = createPreferencesState(bindings)
       const format = createFormatters(() => state.preferences.value)
-      return () =>
-        h('p', {}, `${format.height(SWELL_METRES)} at ${format.dateTime(OBSERVED_AT)}`)
+      return () => h('p', {}, `${format.height(SWELL_METRES)} at ${format.dateTime(OBSERVED_AT)}`)
     },
   })
 }
 
 interface HydrationResult {
-  /** Vue's warnings during hydration, if any. */
-  warnings: string[]
   /** What the browser shows once the app has mounted and settled. */
   mountedHtml: string
   /** What the server sent. */
   serverHtml: string
+  /** Vue's warnings during hydration, if any. */
+  warnings: string[]
 }
 
 /**
@@ -75,7 +82,7 @@ async function hydrate(
 
   const container = document.createElement('div')
   container.innerHTML = serverHtml
-  document.body.append(container)
+  document.body.appendChild(container)
 
   try {
     createSSRApp(preferenceComponent(clientBindings)).mount(container)

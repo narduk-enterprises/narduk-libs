@@ -51,5 +51,3 @@ export function usePreferences(): NePreferencesState {
 
   return createPreferencesState({ cookie, defaults, detectTimeZone: detectClientTimeZone })
 }
-
-export default usePreferences

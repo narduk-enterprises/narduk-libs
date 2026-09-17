@@ -2,6 +2,7 @@ import { getResponseHeader, getResponseStatus, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { isPreferencesInfluenced } from '../../shared/utils/preferences'
+
 import { resolveRuntimePublicOverlay } from './runtime-public'
 
 import type { H3Event } from 'h3'

@@ -10,7 +10,11 @@ import {
   resolvePreferences,
 } from '../../shared/utils/preferences'
 
-import type { NePreferenceSelection, NePreferences, NeUnitSystem } from '../../shared/utils/preferences'
+import type {
+  NePreferences,
+  NePreferenceSelection,
+  NeUnitSystem,
+} from '../../shared/utils/preferences'
 import type { ComputedRef, Ref } from 'vue'
 
 /**
@@ -89,9 +93,7 @@ export interface NePreferencesState {
  * setters are wired to user-facing controls, and a thrown `RangeError` from a
  * select element is a 500 nobody wants.
  */
-export function createPreferencesState(
-  bindings: PreferencesStateBindings,
-): NePreferencesState {
+export function createPreferencesState(bindings: PreferencesStateBindings): NePreferencesState {
   const { cookie, defaults } = bindings
 
   const preferences = computed(() =>

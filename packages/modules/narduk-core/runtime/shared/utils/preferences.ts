@@ -197,7 +197,9 @@ export function localeFromAcceptLanguage(header: string | null | undefined): str
       const weight = quality === undefined ? 1 : Number.parseFloat(quality)
       return { tag, weight: Number.isFinite(weight) ? weight : 0 }
     })
-    .filter((candidate) => candidate.tag.length > 0 && candidate.tag !== '*' && candidate.weight > 0)
+    .filter(
+      (candidate) => candidate.tag.length > 0 && candidate.tag !== '*' && candidate.weight > 0,
+    )
     .sort((left, right) => right.weight - left.weight)
 
   for (const candidate of candidates) {

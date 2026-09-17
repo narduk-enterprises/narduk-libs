@@ -1,4 +1,5 @@
 import { createFormatters } from '../../shared/utils/units'
+
 import { usePreferences } from './usePreferences'
 
 import type { NeBoundFormatters } from '../../shared/utils/units'
@@ -32,5 +33,3 @@ export function useFormatters(): NeBoundFormatters {
   const { preferences } = usePreferences()
   return createFormatters(() => preferences.value)
 }
-
-export default useFormatters

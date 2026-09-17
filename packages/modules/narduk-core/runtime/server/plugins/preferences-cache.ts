@@ -23,8 +23,8 @@ import { isPreferencesInfluenced, varyWithCookie } from '../../shared/utils/pref
  */
 export function applyPreferencesCacheHeaders(
   headers: Record<string, string | undefined>,
-): Record<string, string | undefined> {
-  const kept: Record<string, string | undefined> = {}
+): Record<string, string> {
+  const kept: Record<string, string> = {}
   let vary: string | undefined
 
   // Header names are case-insensitive, and this response's are whatever the
@@ -34,10 +34,10 @@ export function applyPreferencesCacheHeaders(
     const lowered = name.toLowerCase()
     if (lowered === 'cache-control') continue
     if (lowered === 'vary') {
-      vary = vary === undefined ? value : `${vary}, ${value ?? ''}`
+      vary = vary === undefined ? (value ?? '') : `${vary}, ${value ?? ''}`
       continue
     }
-    kept[name] = value
+    if (value !== undefined) kept[name] = value
   }
 
   return { ...kept, 'cache-control': 'private, no-store', vary: varyWithCookie(vary) }
