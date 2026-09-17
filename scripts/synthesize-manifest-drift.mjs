@@ -40,6 +40,7 @@ import getReleasePlan from '@changesets/get-release-plan'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
 import { generatorPinnedPackages } from './check-generator-release-plan.mjs'
+import { ignoredPackageNames } from './release-plan-guard.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const registry = 'https://npm.pkg.github.com'
@@ -188,21 +189,6 @@ export function planDriftSynthesis({ packages, covered, registryRecords, ignored
     })
   }
   return { releases, covered: coveredDrift, ignored: ignoredDrift }
-}
-
-/**
- * The `ignore` list as Changesets itself matches it: exact package names.
- * `@changesets/config` also expands globs there; this repository has never
- * used one, and a glob that this function under-matches degrades to the old
- * behaviour -- a synthesized Changeset that fails the release job loudly --
- * rather than to a silent wrong release.
- *
- * @param {object} config parsed `.changeset/config.json`
- * @returns {string[]}
- */
-export function ignoredPackageNames(config) {
-  const ignore = config?.ignore
-  return Array.isArray(ignore) ? ignore.filter((name) => typeof name === 'string') : []
 }
 
 export function renderSynthesisSummary(covered, ignored = []) {

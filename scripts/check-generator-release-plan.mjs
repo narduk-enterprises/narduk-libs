@@ -26,7 +26,11 @@ import { fileURLToPath } from 'node:url'
 import getReleasePlan from '@changesets/get-release-plan'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
-import { classifyChangedPackages, renderGuardReport } from './release-plan-guard.mjs'
+import {
+  classifyChangedPackages,
+  ignoredPackageNames,
+  renderGuardReport,
+} from './release-plan-guard.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const generatorName = '@narduk-enterprises/create-narduk-app'
@@ -145,11 +149,18 @@ function main() {
       .split('\0')
       .filter(Boolean)
 
+    // Read from the file Changesets itself reads, so the guard and the
+    // versioner cannot disagree about which packages are frozen.
+    const frozenNames = new Set(
+      ignoredPackageNames(JSON.parse(readFileSync(join(root, '.changeset/config.json'), 'utf8'))),
+    )
+
     const entries = classifyChangedPackages({
       packages: workspace.packages.map(({ name, relativeDirectory, manifest }) => ({
         name,
         relativeDirectory,
         private: manifest.private === true,
+        frozen: frozenNames.has(name),
       })),
       changedFiles,
       readManifests: (relativeDirectory) => ({

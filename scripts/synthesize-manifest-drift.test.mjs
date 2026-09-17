@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -14,7 +14,6 @@ import {
   manifestDrift,
   RESOLVED_AT_PUBLISH_PROTOCOLS,
   isResolvedAtPublish,
-  ignoredPackageNames,
   planDriftSynthesis,
   renderDriftChangeset,
   renderSynthesisSummary,
@@ -228,24 +227,6 @@ test('a frozen package never gets a synthesized changeset', () => {
       ignored: [frozen.name],
     }).ignored,
     [],
-  )
-})
-
-test('the ignore list is read from the real changesets config', () => {
-  // The freeze has to come from the file Changesets itself reads, or the two
-  // can disagree and the release job breaks on the difference.
-  assert.deepEqual(ignoredPackageNames({ ignore: ['a', 'b'] }), ['a', 'b'])
-  assert.deepEqual(ignoredPackageNames({ ignore: [] }), [])
-  assert.deepEqual(ignoredPackageNames({}), [])
-  assert.deepEqual(ignoredPackageNames(undefined), [])
-  assert.deepEqual(ignoredPackageNames({ ignore: 'not-an-array' }), [])
-
-  const config = JSON.parse(
-    readFileSync(new URL('../.changeset/config.json', import.meta.url), 'utf8'),
-  )
-  assert.ok(
-    ignoredPackageNames(config).includes('@narduk-enterprises/narduk-mapkit-nuxt'),
-    'narduk-mapkit-nuxt must stay frozen in .changeset/config.json until a 2.0.x release path exists',
   )
 })
 

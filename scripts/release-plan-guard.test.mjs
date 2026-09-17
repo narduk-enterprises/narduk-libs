@@ -9,6 +9,7 @@ import {
   SUGGESTED_CHANGESET_PATH,
   classifyChangedPackages,
   classifyManifestChange,
+  ignoredPackageNames,
   publishLifecycleScriptKeys,
   renderGuardReport,
   renderSuggestedChangeset,
@@ -305,6 +306,95 @@ test('a private package is never published, so a range change owes no release', 
   })
   assert.equal(entries[0].name, '@narduk-enterprises/design-system-build')
   assert.equal(entries[0].verdict, 'ok')
+})
+
+test('a frozen package owes no changeset however much of it changed', () => {
+  // `@narduk-enterprises/narduk-mapkit-nuxt` is frozen at 2.0.x in
+  // `.changeset/config.json`'s `ignore`. Its source on main is the 2.1
+  // contract, which the guard read as four changed files owing a patch
+  // release -- but a Changeset naming an ignored package makes
+  // `changeset version` throw instead of releasing it, so the only
+  // satisfiable answer was to un-freeze it and publish a false 2.0.7.
+  const frozenPackages = [
+    ...packages,
+    {
+      name: '@narduk-enterprises/narduk-mapkit-nuxt',
+      relativeDirectory: 'packages/modules/narduk-mapkit-nuxt',
+      frozen: true,
+    },
+  ]
+  const changedFiles = [
+    'packages/modules/narduk-mapkit-nuxt/src/runtime/server/mapkit-token.get.ts',
+    'packages/modules/narduk-mapkit-nuxt/test/nuxt.test.ts',
+  ]
+
+  const entries = classifyChangedPackages({
+    packages: frozenPackages,
+    changedFiles,
+    readManifests: () => ({ before: baseManifest, after: baseManifest }),
+  })
+  assert.equal(entries[0].name, '@narduk-enterprises/narduk-mapkit-nuxt')
+  assert.equal(entries[0].verdict, 'frozen')
+  assert.equal(entries[0].frozen, true)
+
+  // The report passes, names the package, and does not count it as settled.
+  const report = renderGuardReport(entries, [])
+  assert.equal(report.ok, true)
+  assert.match(
+    report.text,
+    /1 changed package\(s\) are frozen in the Changesets `ignore` list and release nothing:/u,
+  )
+  assert.match(report.text, /- @narduk-enterprises\/narduk-mapkit-nuxt: .*mapkit-token\.get\.ts/u)
+  assert.doesNotMatch(report.text, /need a Changeset/u)
+  assert.doesNotMatch(report.text, /are already released by a Changeset/u)
+
+  // The same diff on the same package, not frozen, still owes a Changeset.
+  const unfrozen = classifyChangedPackages({
+    packages: frozenPackages.map((entry) => ({ ...entry, frozen: false })),
+    changedFiles,
+    readManifests: () => ({ before: baseManifest, after: baseManifest }),
+  })
+  assert.equal(unfrozen[0].verdict, 'needs-changeset')
+  assert.equal(renderGuardReport(unfrozen, []).ok, false)
+})
+
+test('a frozen package reported for a dev-only change still names a reason', () => {
+  // Every other verdict reaches the report with at least one non-devOnly
+  // reason, so the reason list used to end at the colon here.
+  const entry = classifyChangedPackages({
+    packages: [
+      {
+        name: '@narduk-enterprises/narduk-testkit',
+        relativeDirectory: 'packages/tooling/narduk-testkit',
+        frozen: true,
+      },
+    ],
+    changedFiles: ['packages/tooling/narduk-testkit/package.json'],
+    readManifests: () => ({
+      before: baseManifest,
+      after: { ...baseManifest, devDependencies: { vitest: '^4.1.11' } },
+    }),
+  })[0]
+  assert.equal(entry.verdict, 'frozen')
+  assert.match(renderGuardReport([entry], []).text, /- @narduk-enterprises\/narduk-testkit: \S/u)
+})
+
+test('the frozen list is the one Changesets reads', () => {
+  assert.deepEqual(ignoredPackageNames({ ignore: ['a', 'b'] }), ['a', 'b'])
+  assert.deepEqual(ignoredPackageNames({ ignore: [] }), [])
+  assert.deepEqual(ignoredPackageNames({}), [])
+  assert.deepEqual(ignoredPackageNames(undefined), [])
+  // A non-array `ignore` is malformed config, not an excuse to throw here;
+  // Changesets' own schema rejects it.
+  assert.deepEqual(ignoredPackageNames({ ignore: 'not-an-array' }), [])
+
+  const config = JSON.parse(
+    readFileSync(new URL('../.changeset/config.json', import.meta.url), 'utf8'),
+  )
+  assert.ok(
+    ignoredPackageNames(config).includes('@narduk-enterprises/narduk-mapkit-nuxt'),
+    'narduk-mapkit-nuxt must stay frozen until a release path that pins published core 2.0.2 exists',
+  )
 })
 
 test('the failure prints the exact changeset file to add', () => {
