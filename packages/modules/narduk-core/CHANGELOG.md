@@ -1,5 +1,321 @@
 # @narduk-enterprises/narduk-core
 
+## 2.1.0
+
+### Minor Changes
+
+- 9051c12: Ship the estate error page and a shared exception-capture seam, so
+  every app that pins narduk-core gets both with no file of its own.
+
+  **The error page reaches apps through Nuxt, not through a copy.** The module
+  sets `app.errorComponent` from the `app:resolve` hook. Nuxt's own
+  `resolveApp()` assigns that field immediately before calling the hook — an
+  `app/error.*` from the project or any layer when one exists, and otherwise
+  Nuxt's built-in `nuxt-error-page.vue` — so replacing only the built-in leaves
+  an app-owned error page winning and needs no shim, no generator copy and no
+  upgrade codemod. Apps install this package as a module rather than a layer,
+  which is why `runtime/app/error.vue` was previously dead code: nothing
+  referenced it and the layer-directory path Nuxt scans never reached it.
+
+  The page now shows the **request id** — the same value `x-request-id` carries
+  and the one every narduk-logging record is keyed by — resolved during SSR and
+  transferred through the Nuxt payload, because a browser cannot read the
+  response header of its own document. `requestLogger` also echoes the id back
+  onto the incoming request headers so a re-entrant render of the failed page
+  adopts it rather than minting a second one. It adds copy for 429 and 503,
+  `data-testid` hooks for E2E, and a diagnostic detail line gated on
+  `previewSafeMode` so a raw error message never reaches production traffic.
+
+  **Exception capture is one seam.** A client plugin (`vue:error`, `app:error`)
+  and a Nitro plugin (`error`) publish one report per error on a
+  `narduk:exception` hook carried on the runtime's own bus. Reports carry the
+  route _pattern_ — never a raw path — plus the build version, request id and
+  status code, with query strings and email addresses redacted out of the
+  message. Duplicate announcements are collapsed: `vue:error` and `app:error`
+  both fire when a component failure is escalated, and Nitro can announce one
+  handled error twice.
+
+  Neither plugin logs. narduk-logging already writes exactly one record per
+  failing request (narduk-libs#359), so a record here would double every server
+  error. Server records now also carry `buildVersion`.
+
+  New export `@narduk-enterprises/narduk-core/app/error-page` for an app that
+  wants to wrap the page rather than fork it.
+
+- 97b0ac3: Add `registerFreshnessCheck` — a shared data-freshness health check,
+  so an app that serves published data can report how stale that data is instead
+  of looking perfectly healthy while its feed has gone quiet.
+
+  **The gap.** `/api/health` proved the app was answering and the database was
+  reachable. Nothing on the health contract could say "the last observation this
+  app publishes is nine hours old". Buoys already computes that age
+  (`product.freshness`, `manifest.staleness`) and publishes it as inert `detail`
+  on its `publication` check — "Source age describes the publication, not this
+  viewer's availability" — because the only two outcomes available were pass and
+  HTTP 503, and a stale marine feed is neither.
+
+  **The helper.**
+
+  ```ts
+  registerFreshnessCheck({
+    name: 'observations-freshness',
+    source: 'ndbc-realtime-observations',
+    warnAfter: 45 * 60, // seconds
+    failAfter: 6 * 60 * 60, // seconds, optional
+    async read({ signal }) {
+      const { product } = await readPublishedProduct({ signal })
+      return {
+        at: product.freshness.asOf,
+        detail: { releaseId: product.releaseId },
+      }
+    },
+  })
+  ```
+
+  It publishes one `checks` entry carrying a stable `kind: 'freshness'`, plus
+  `detail.source`, `detail.observedAt`, `detail.ageSeconds`,
+  `detail.warnAfterSeconds` and `detail.failAfterSeconds`. `observedAt` and
+  `ageSeconds` are published while the check is passing too, so a dashboard can
+  plot age before anything is wrong. `at` accepts a `Date`, an ISO 8601 string
+  or epoch milliseconds, and `now` injects the clock for tests.
+
+  **The rollup.** Past `warnAfter` the entry fails with `required: false`, so
+  the report is `degraded` and `/api/health` still answers HTTP 200 — a stale
+  feed does not take the app down. Past `failAfter` it fails with
+  `required: true`, so the report is `error` and the route answers 503. A check
+  registered without `failAfter` can never reach that state. It **fails
+  closed**: a missing timestamp, an unparseable one, a `read` that throws and a
+  `read` that times out all fail at the strongest severity the thresholds allow,
+  with `detail.reason` saying which, and never pass for want of evidence. A
+  timestamp in the future is never stale; producer clock skew shows up as a
+  negative `ageSeconds`.
+
+  **No new status vocabulary.** The report keeps `ok`/`degraded`/`error` and
+  each entry keeps `result: 'pass' | 'fail' | 'skipped'`. A check that can fail
+  at two severities returns `{ ok: false, severity: 'degraded' }` from `run`,
+  which is published as that entry's existing `required` flag, so
+  `summarizeHealthStatus` is unchanged and every consumer that already derives
+  the rollup from `required` stays correct. A check declared `required: false`
+  can never escalate itself into an HTTP 503.
+
+  **Compatibility.** Additive only. `kind` is omitted for every check that does
+  not declare one, `severity` is an input to `run` rather than a response field,
+  and an app that registers no freshness check gets a byte-identical
+  `/api/health` body. `registerHealthCheck` also accepts an optional `kind` now,
+  validated as 1-32 lowercase letters, digits or hyphens.
+
+  **Watch the monitor.** An uptime monitor that matches the `"status":"ok"`
+  substring alerts on `degraded` as well as on `error`, because the substring is
+  simply absent. That makes `warnAfter` an alerting threshold, not just a
+  dashboard one; the README's "Monitoring the endpoint" section now says so.
+
+- fff943d: Add `defineRateLimitedHandler`, a per-route rate limit an app opts
+  into by wrapping one handler — so no app writes its own limiter and no app
+  edits this package's closed `RATE_LIMIT_POLICIES` registry to limit a route it
+  owns.
+
+  Both layers run and a denial from either answers 429. The Cloudflare Rate
+  Limiting binding goes first where the app declared a matching top-level
+  `ratelimits` entry, because its counters are coordinated per Cloudflare
+  location rather than per isolate. An in-isolate fixed window always runs too:
+  the binding's `.limit()` resolves to `{ success }` with no remaining count and
+  no reset instant, so it cannot produce the `RateLimit-*` headers; its `period`
+  accepts only 10 or 60 seconds, so it cannot express any other window; and it
+  is a `workerd` primitive with no documented local-dev simulation, so it is
+  absent in `nuxt dev`, in unit tests and under plain Node.
+
+  The binding is an upgrade, never a prerequisite. Cloudflare's documentation,
+  its GA changelog entry and the Workers pricing page are all silent on whether
+  the binding is available on the Workers Free plan, so an app on Free adopts
+  the helper with no wrangler change and can add the binding later without
+  touching route code.
+
+  A denial answers `Retry-After`, `RateLimit-Remaining: 0`, the request's
+  `x-request-id`, and one structured warning through
+  `@narduk-enterprises/narduk-logging` keyed on the matched route template
+  rather than the raw path. `/api/health`, `robots.txt` and the sitemap surfaces
+  are never limited, query string included, because a 429 on a health probe
+  reads as an outage and a throttled crawler is an SEO self-injury.
+
+  Response headers follow draft-ietf-httpapi-ratelimit-headers-11, which
+  specifies `RateLimit-Policy` and `RateLimit` as Structured Fields rather than
+  the `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` triad that
+  earlier revisions defined and that deployed APIs actually ship; both families
+  are emitted by default and the choice is configurable.
+
+  `runtimeConfig.nardukRateLimit` carries the defaults plus per-key `routes`
+  overrides that win over what a route declared, so an operator can retune an
+  allowance without a code change. Existing `enforceRateLimitPolicy` callers are
+  unaffected; `CloudflareRateLimitBinding` keeps its export from
+  `runtime/server/utils/rateLimit.ts`.
+
+- b94ac04: Add `setCacheProfile`: typed edge-cache profiles, so apps stop
+  hand-writing `Cache-Control` strings per route.
+
+  The strings were not merely repetitive, they were wrong. `buoys` has three of
+  them and all three pair `s-maxage` with `stale-while-revalidate`. `s-maxage`
+  _disables_ stale-serving — RFC 9111 §4.2.4, and Cloudflare's Workers Caching
+  docs state it outright: "If your response includes any of `s-maxage`,
+  `must-revalidate`, or `proxy-revalidate`, the stale-serving behavior is
+  disabled". The 900s, 1800s and 86400s stale windows those three strings
+  advertise do not exist. A hand-written header string has nothing to catch
+  that; a typed profile does.
+
+  `setCacheProfile(event, 'live' | 'slow' | 'static' | 'none' | inline)` emits
+  the split pair Cloudflare documents for this case instead: the browser window
+  on `Cache-Control: max-age` and the longer edge window on
+  `CDN-Cache-Control: max-age`, with `stale-while-revalidate` intact on both.
+  `CDN-Cache-Control` is the middle rung of Cloudflare's precedence
+  (`cloudflare-cdn-cache-control` > `cdn-cache-control` > `Cache-Control`) and
+  is respected by Cloudflare _and_ passed downstream, so the edge TTL stays
+  visible while debugging. Nothing in the library ever emits `s-maxage`, and a
+  test asserts that across every profile.
+
+  The three named profiles carry Buoys' existing numbers, so a migrating app's
+  browser TTLs are byte-identical before and after; only the edge behavior is
+  repaired. `runtimeConfig.cache.profiles` overrides the seconds of any profile
+  per app, ignoring negative, fractional and non-numeric values.
+
+  An optional `tags` array emits `Cache-Tag` for purge-by-tag, validated against
+  Cloudflare's contract — printable ASCII, no spaces or commas, 1024 characters
+  per tag, 1000 tags per response, case-insensitive dedupe to match
+  case-insensitive purge matching. Invalid tags are dropped rather than
+  throwing, which is what the platform does at storage time. Purge by tag is
+  available on every plan (Enterprise-only until 2025-04-01), so no
+  purge-everything fallback is needed.
+
+  `vary` merges with any `Vary` another handler already set, deduplicating
+  case-insensitively while preserving the first spelling.
+
+  `setCacheProfile` refuses to emit a cacheable posture — falling back to
+  `private, no-store` with no `Cache-Tag` — when the response status is >= 400,
+  when a `Set-Cookie` is already present, when `Vary: *` (which Cloudflare
+  treats as uncacheable regardless), or in `previewSafeMode`. None of those are
+  configurable, and the returned result names which guard fired.
+
+  One caveat worth reading the README section for: Workers run _before_ the
+  cache, so none of these edge headers bind until an app opts into Workers Cache
+  with `"cache": { "enabled": true }` in its Wrangler config (Wrangler >=
+  4.69.0). Until then the browser `Cache-Control` is still correct and the edge
+  headers are inert. Workers Cache also partitions by Worker version by default,
+  so a deployment already starts from a cold cache — a release is visible
+  immediately with nothing to purge.
+
+- 894cd17: Add the opt-in `security.headers` preset, which wraps `nuxt-security`
+  with estate defaults: a nonce-based Content-Security-Policy,
+  `Strict-Transport-Security`, `form-action`, `upgrade-insecure-requests`, a
+  violation report route that logs through narduk-logging at `warn`, and a
+  per-app allowlist for the `script`, `connect`, `img`, `font`, `style`,
+  `frame`, `worker` and `media` directives.
+
+  narduk-core already served security headers on every app taking the module's
+  default `server: true` — `runtime/server/middleware/securityHeaders.ts` is
+  picked up by `addServerScanDir`, and production Buoys was verified on
+  2026-09-17 serving an enforcing CSP, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy` and `X-Content-Type-Options`. The gaps this closes are
+  HSTS, the nonce (the legacy `script-src` carries
+  `'unsafe-inline' 'unsafe-eval'`), a report-only soak path, a violation sink,
+  and a module-level allowlist.
+
+  The preset is additive, and the default is `off`, so **upgrading changes no
+  app's headers**. With `enabled: true` the legacy enforcing CSP keeps being
+  served and the strict nonce policy soaks beside it as
+  `Content-Security-Policy-Report-Only`; `enforce: true` promotes the strict
+  policy and retires the legacy one. Serving both during the soak is what avoids
+  downgrading an already-enforcing app to report-only.
+
+  `nuxt-security` is an **optional peer dependency**: an app that never enables
+  the preset installs nothing extra. It was chosen over a hand-rolled Nitro
+  handler because it is maintained (2.6.0, 2026-05-12, MIT), targets Nuxt 4 via
+  `@nuxt/kit ^4`, and its runtime imports no Node builtin, using only
+  `crypto.subtle`, `crypto.getRandomValues`, `btoa` and `TextEncoder` — all
+  workerd APIs. Its non-header features (`csrf`, `corsHandler`, `rateLimiter`,
+  `xssValidator`, `requestSizeLimiter`, `allowedMethodsRestricter`, `basicAuth`)
+  are all disabled, as are `removeLoggers` and `sri`, which upstream defaults on
+  and which change bundle and build behaviour a headers preset has no business
+  changing.
+
+### Patch Changes
+
+- 57ba098: Record the three published `dependencies` floors narduk-core raised
+  to reach the estate security bar. All three are runtime `dependencies`, so the
+  fix only reaches a consumer through a release; none of them is a widening, and
+  none crosses a major.
+
+  `undici` `^8.1.0` → `^8.9.0` closes GHSA-4cwx-7wf7-3272 (high, "cross-user
+  information disclosure and parse-time crash via degenerate private cache
+  directives", vulnerable `>=8.0.0 <8.9.0`). `8.9.0` also closes four moderates
+  on the same range: GHSA-8xcm-r25x-g524 (retry-interceptor response
+  desynchronization), GHSA-jr45-8vmc-qm54 (whitespace around equals in
+  `Cache-Control`), GHSA-m8rv-5g2x-5cg5 (CRLF injection via a blob-like body
+  `type`) and GHSA-v3r7-h72x-cjcm (cookie attribute injection). `8.9.0` is a
+  minor inside the already-declared `^8` major, and narduk-core's call sites —
+  `fetch`, `Agent`, `ProxyAgent` and `setGlobalDispatcher` — are unchanged
+  across it.
+
+  `postcss` `^8.5.14` → `^8.5.18` closes GHSA-r28c-9q8g-f849 (high, "Path
+  Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to
+  Arbitrary .map File Disclosure", vulnerable `<=8.5.17`). A moderate on the
+  same package, GHSA-fxqj-rqcc-2cmp (`<=8.5.22`, incomplete fix of
+  GHSA-6g55-p6wh-862q), is below the bar and stays open at this floor.
+
+  `@nuxt/image` `^2.0.0` → `^2.1.0` is what closes the two high `sharp`
+  advisories, GHSA-f88m-g3jw-g9cj (libvips CVE-2026-33327, CVE-2026-33328,
+  CVE-2026-35590, CVE-2026-35591, fixed in `0.35.0`) and GHSA-rgj7-g3m4-5g8c
+  (libheif GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545, fixed in `0.35.4`).
+  `sharp` reaches narduk-core only through `@nuxt/image`'s optional `ipx`:
+  `@nuxt/image@2.0.0` pairs with `ipx@3.1.1`, which declares `sharp: ^0.34.3`
+  and resolved to the vulnerable `0.34.5`; `@nuxt/image@2.1.0` pairs with
+  `ipx@4.0.0-beta.1`, which declares `sharp: ^0.35.3` and resolves to `0.35.4`.
+  Raising the floor is therefore load-bearing, not cosmetic — leaving `^2.0.0`
+  in place lets a fresh lockfile resolve back onto the vulnerable `sharp` line.
+  `sharp@0.35` raises its Node floor to `>=20.9.0`; the estate runs Node 24, and
+  `ipx` is optional, so no supported consumer loses a platform.
+
+  `pnpm audit --audit-level high` reports zero high or critical advisories at
+  this floor.
+
+- 57ba098: Declare `@nuxt/schema` as a peer dependency in every package whose
+  **published** files name it. It was a phantom dependency in all four: declared
+  only as a `devDependency`, while the shipped artifact imports it by bare
+  specifier — narduk-core's `src/module.ts` (published through `files`),
+  narduk-logging's `dist/nuxt.d.ts`, narduk-realtime's `dist/module.d.ts`, and
+  narduk-mapkit-nuxt's `dist/module.d.mts` and `dist/types.d.mts`.
+
+  Nothing supplied it to a consumer. `@nuxt/kit@4.5.2` imports `NuxtModule` from
+  `@nuxt/schema` in its own `index.d.mts` but declares no `dependencies` entry
+  for it and no peers at all, so resolution worked only through pnpm's hidden
+  `node_modules/.pnpm/node_modules` hoist or a flat npm/yarn install. A consumer
+  on pnpm with a restricted `hoist-pattern`, or a `node-linker` setting that
+  suppresses that hoist, got `TS2307: Cannot find module '@nuxt/schema'` when
+  type-checking against these packages.
+
+  Rewriting the import to `nuxt/schema` — a subpath of the already-declared
+  `nuxt` peer — was tried and rejected. narduk-realtime has no `nuxt`
+  devDependency, so `tsc` fails with TS2307 against `nuxt/schema` until one is
+  added, and narduk-logging declares no `nuxt` peer at all (its Nuxt entry point
+  rests on an optional `@nuxt/kit` peer), so `nuxt/schema` would have been
+  exactly as undeclared there as `@nuxt/schema` is today. A `dependencies` entry
+  was rejected too: the repo augments `@nuxt/schema`'s interfaces, so the
+  consumer must resolve the same instance its own Nuxt does, which only a peer
+  guarantees.
+
+  Each range mirrors the package's existing Nuxt peer — `>=3.16.0` for
+  narduk-core and narduk-realtime, `>=4.0.0` for narduk-mapkit-nuxt, and
+  `^4.0.0` for narduk-logging, matching its `@nuxt/kit` peer. narduk-logging's
+  is **optional**, exactly as its `@nuxt/kit` peer is, so a consumer using only
+  the node, browser or h3 entry points installs nothing extra. `@nuxt/schema`
+  ships as a dependency of `nuxt` itself, so any Nuxt app already has a
+  satisfying copy and this declaration adds no install.
+
+  No source file changes: the explicit `NuxtModule` annotations that solved
+  TS2742 are untouched, and the emitted types are byte-identical.
+
+- Updated dependencies [3ab7ff2]
+- Updated dependencies [119042d]
+- Updated dependencies [57ba098]
+  - @narduk-enterprises/narduk-logging@0.1.1
+
 ## 2.0.0
 
 ### Major Changes

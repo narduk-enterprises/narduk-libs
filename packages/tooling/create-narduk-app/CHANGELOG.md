@@ -1,5 +1,191 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.7.0
+
+### Minor Changes
+
+- 1af628c: Scaffold the single-source toolchain shape, and single-source the
+  generator's own copy of it.
+
+  A generated app now declares its Node version once, in `.node-version`, and
+  its pnpm version once, in the root manifest's `packageManager`. Both workflows
+  read those rather than restating them: `ci.yml` passes
+  `node-version-file: .node-version` to the shared workflow (workflows#97),
+  `copilot-setup-steps.yml` passes the same to `actions/setup-node`, and
+  `pnpm/action-setup` drops its `version:` input so it resolves `packageManager`
+  itself — the shape the shared `nuxt-cloudflare.yml`'s own pnpm step already
+  uses. `engines.node` and `volta.node` stay as mirrors, because Volta and npm
+  can read a version from a manifest and nowhere else. Node literals in a
+  generated app fall from six sites to three; pnpm from three to one plus a doc
+  row.
+
+  **No `.nvmrc`.** Every consumer in this estate that reads it also reads
+  `.node-version` (setup-node, fnm, mise); the only tool that reads `.nvmrc` and
+  not `.node-version` is `nvm`, which is not the installed manager here — and
+  Volta, which is, reads neither, only `package.json`. A second dotfile with no
+  exclusive consumer is a drift site. `narduk-app foundation:check:toolchain`
+  still accepts an app-kept `.nvmrc` as an optional mirror and fails only if it
+  disagrees.
+
+  Inside the generator, `24.21.0` appeared in four places and `10.33.4` in
+  three, so a bump was a grep. `manifest.ts` now exports `NODE_VERSION`,
+  `PNPM_VERSION` and `PACKAGE_MANAGER`, and every emission site — the manifest,
+  the two workflows and the Workers Builds connection table — reads them.
+
+  **The shared-workflow pin moves to `6f56678` (workflows#97).** This is not
+  optional: a reusable workflow rejects an input it does not declare, so a
+  caller passing `node-version-file` to the previous pin would fail at startup.
+  That commit also adds an always-run required `caller-lint` job which
+  actionlints the **calling** repository's own workflows and audits them for
+  workflow-level concurrency, a top-level and a per-job `permissions:` block,
+  per-job `timeout-minutes`, and 40-character SHA pins. Every job this generator
+  emits now carries a job-level `permissions:` block for that reason (a
+  job-level block replaces the workflow level rather than merging with it), and
+  `tests/toolchain-single-source.test.ts` re-runs the gate's own rules over the
+  generated output so the templates cannot drift back. The pin deliberately
+  stops at `6f56678` rather than main's tip; #99 and #100 are separate
+  decisions.
+
+  `.node-version` is deliberately **not** a managed target of the `upgrade`
+  codemod. A Node version is the same class of fact as a dependency pin, which
+  `ownership.ts` already excludes on the grounds that D-TOOLCHAIN-1 gives
+  Dependabot estate package currency — managing it would make the generator
+  re-impose its own Node on every app it touched, the continuing sync
+  relationship this repository's AGENTS.md forbids. `copilot-setup-steps.yml`
+  stays managed whole-file, and is now safer for it: the file no longer carries
+  a version literal at all, so re-applying it cannot move an app's toolchain
+  behind its back.
+
+- 7181db7: Add a `create-narduk-app upgrade [dir]` codemod that re-applies the
+  units the generator still owns in an already-scaffolded app, as a reviewable
+  diff (narduk-enterprises/company-hq#745). It is dry-run by default — printing
+  a unified diff and exiting 1 when a managed unit has drifted, so CI can use it
+  as a check — and `--write` applies exactly what the dry run printed. `--only`
+  limits a run to one path and `--json` prints the machine-readable report.
+
+  Ownership is explicit and deliberately narrower than "the generated file", so
+  app-owned content is never clobbered: the shared-workflow **pin** inside an
+  app-owned `.github/workflows/ci.yml`, the **whole** `copilot-setup-steps.yml`
+  and `dependabot.yml`, the marker-delimited `narduk:router` **region** of
+  `AGENTS.md` and `narduk:e2e-policy` region of `docs/e2e-testing.md`, and the
+  named contract **script bodies** in the root `package.json` (`build:ci`,
+  `foundation:check`, `manifests:validate`, and the `db:migrate:*` pair on an
+  app with a database). Everything else the generator emits is seeded: written
+  once and never read again. Any managed file can be disowned with a
+  `narduk:unmanaged` header comment. The generator's `AGENTS.md` template now
+  emits the router markers so new apps are opted in from scaffold.
+
+  Also bumps two stale GitHub Action pins in the generated workflows —
+  `actions/checkout` to v7.0.1 and `pnpm/action-setup` to v6.1.0, both verified
+  tag-to-SHA upstream. Running the new codemod against the reference app is what
+  surfaced them: the app was current and the template was a release behind.
+
+- f0a74b3: Bring the generated scaffold to parity with the Buoys reference app
+  shape (narduk-enterprises/company-hq#745): explicit `@nuxt/icon` module
+  registration (fixes an `UNLOADABLE_DEPENDENCY` build failure), a pinned
+  `nitro-cloudflare-dev` devDependency, a `copilot-setup-steps.yml` workflow, a
+  corrected `.github/dependabot.yml` shape (single `directory`, `github-actions`
+  ecosystem group), root `build:ci` / `foundation:check` / `manifests:validate`
+  scripts plus the `@narduk-enterprises/narduk-app-tools` devDependency that
+  back them, a generated `apps/web/scripts/validate-manifests.mjs` pre-deploy
+  check, new `CONTRACT.md` and `docs/workers-builds.md` templates, a Playwright
+  `setup`/`chromium` project split, and a generic `docs/e2e-testing.md` plus
+  `apps/web/tests/e2e/visual-audit.spec.ts` skeleton built on narduk-testkit's
+  `playwright/ui-quality` toolkit (`consoleTracker`, full-page and named-locator
+  capture). Every generated file remains Prettier-canonical under the package's
+  own format:check.
+- 9051c12: Document the shared error page and exception capture in generated
+  apps, and prove a generated app never shadows them.
+
+  narduk-core supplies the error page through Nuxt's `app:resolve` hook only
+  when the app has not provided one, so a generated `apps/web/app/error.vue` —
+  even a placeholder — would silently take the estate page out of every new app.
+  A generator test now asserts that no generated file is an `error.vue` and that
+  no generated source registers a `vue:error`, `app:error` or Nitro `error`
+  listener.
+
+  New `docs/error-page.md` in the generated repository covers what the page
+  shows, its E2E selectors, where exceptions are reported, how to subscribe
+  another destination, and how to override or wrap the page; README links to it.
+
+### Patch Changes
+
+- cbaf741: Scaffold the estate E2E flake policy into new apps, so a flaky test
+  cannot report green from the first commit.
+
+  The generated `playwright.config.ts` now sets `retries` to 1 in CI (was 2) and
+  enables `failOnFlakyTests` for push/default-branch runs: a test that fails and
+  then passes on its retry FAILS the merge rather than being reported as
+  flaky-but-green. Pull requests keep the single retry as a cheap defence
+  against browser-pool noise — the merge to the default branch is where the
+  suite has to be believed. `trace: 'on-first-retry'` is unchanged and is now
+  the trace on the one retry that exists.
+
+  The tier is resolved from `GITHUB_EVENT_NAME`, a GitHub Actions default
+  environment variable exported into every step, so a reusable workflow does not
+  have to forward it. The branch is fail-closed: anything not recognisably a
+  pull-request event, including an unset variable, takes the strict path, so a
+  missing variable can only make the gate harsher, never green. The generated
+  config prints the policy it resolved (`[e2e] flake policy: ...`) once per run,
+  from the runner process only, so which policy a run used is readable in the
+  log instead of inferred.
+
+  The scaffolded `docs/e2e-testing.md` gains a matching **Flake policy** section
+  and a **Quarantine convention**:
+  `test.fixme(<condition>, '<repo>#<issue> -- <YYYY-MM-DD> -- <owner>')`, why it
+  is `fixme` rather than `skip`, and how a test leaves quarantine. A scaffold
+  that ships `failOnFlakyTests` without telling anyone how to quarantine a flake
+  teaches exactly the retry-hides-it habit the policy exists to end.
+
+  `@narduk-enterprises/narduk-testkit` exports fixtures, contracts and
+  UI-quality helpers but no Playwright config preset — there is no
+  `defineConfig` in its source and no `./playwright/config` export — so the
+  generator's scaffold is the only place in this repository that can own this
+  policy today. Existing apps carry it in their own `playwright.config.ts`.
+
+- b59907e: The scaffolded no-seo `nuxt.config.ts` head drops its `twitter:card`
+  and `twitter:image` meta entries and keeps the full Open Graph set, including
+  `og:image:width` / `og:image:height`. A fresh app therefore starts clean
+  against the shared browser-console contract instead of emitting tags Unhead 3
+  reports as deprecated (narduk-libs#349).
+- 119042d: Move the optional `@opentelemetry/*` peer and dev ranges from the
+  0.208 / 2.x-early line to `^0.222.0` / `^2.11.0`.
+
+  The experimental `0.2xx` packages pin their stable siblings exactly, so
+  `^0.208.0` forced `@opentelemetry/core@2.2.0` on every consumer that opts into
+  the OTLP sink. That version carries GHSA-8988-4f7v-96qf (unbounded memory
+  allocation in W3C Baggage propagation, medium), first fixed in
+  `@opentelemetry/core@2.8.0`. `@opentelemetry/sdk-logs@0.219.0` is the first
+  experimental release pinning `2.8.0`; `0.222.0` is the current matched line
+  and resolves `@opentelemetry/core@2.11.0`.
+
+  The generator is released alongside it because its manifest hard-codes the
+  exact pins of the packages this release moves.
+
+  The peers stay optional, so a consumer that never calls `createOtlpSink` is
+  unaffected. The sink's API surface — `LoggerProvider({ processors })`,
+  `OTLPLogExporter`, `SeverityNumber`, `ReadableLogRecord` — is unchanged across
+  the move.
+
+- 39c28ff: Raise the `sharp` runtime dependency from `^0.34.5` to `^0.35.4` in
+  `narduk-app-tools` and `narduk-testkit`, and release the generator so its
+  hard-coded pins for both packages move with them.
+
+  `sharp` is a published runtime `dependencies` entry in both packages, so the
+  fix only reaches consumers through a release. `0.35.4` closes two
+  high-severity inherited advisories: GHSA-f88m-g3jw-g9cj (libvips
+  CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591, fixed in
+  0.35.0) and GHSA-rgj7-g3m4-5g8c (libheif GHSA-g89c-p67h-r497 and
+  GHSA-2jg2-4ch7-h545, fixed in 0.35.4).
+
+  `sharp@0.35` raises its Node floor to `>=20.9.0` and drops the `install`
+  script, so a platform without a prebuilt `@img/sharp-*` binary must now fall
+  back to WebAssembly or build libvips by hand. Neither package declares
+  `engines`, and the estate runs Node 24, so no supported consumer loses a
+  platform. The call sites — `metadata()`, `stats()`, `resize()`, `toFormat()`,
+  `ensureAlpha().raw()`, `failOn` and `limitInputPixels` — are unchanged in
+  0.35.x; the removed `failOnError` and `paletteBitDepth` APIs were never used.
+
 ## 0.6.3
 
 ### Patch Changes
