@@ -14,11 +14,14 @@
 import { addComponent, addImports, addServerHandler, addTypeTemplate, createResolver, defineNuxtModule, } from '@nuxt/kit';
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js';
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
+/** WHATWG URL parsing removes every ASCII tab, LF and CR from the input. */
+const URL_IGNORED_CHARACTERS = /[\t\n\r]/g;
 function normalizeRoutePath(path) {
-    const trimmed = path.trim();
-    // WHATWG treats `\` as `/` in a relative URL, so `/\evil.example/mk` is the
-    // same protocol-relative fetch as `//evil.example/mk`. Canonicalise first.
-    const canonical = trimmed.replaceAll('\\', '/');
+    // WHATWG canonicalisation, in the parser's own order: every ASCII tab and
+    // newline is REMOVED from the input first, so `/<TAB>/evil.example/mk` is
+    // `//evil.example/mk`; then `\` reads as `/`, so `/\evil.example/mk` is too.
+    // Checking the raw string sees neither (narduk-libs#422 review round 2).
+    const canonical = path.trim().replaceAll(URL_IGNORED_CHARACTERS, '').replaceAll('\\', '/');
     if (!canonical.startsWith('/')) {
         throw new Error('nardukMapKit.tokenRoutePath must start with / -- the route is same-host only');
     }
