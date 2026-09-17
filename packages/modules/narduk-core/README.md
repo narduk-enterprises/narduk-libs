@@ -252,8 +252,8 @@ response is never cached (`Cache-Control: no-store`).
 
 `checks` lists every check as `{ name, required, result }`, where `result` is
 `pass`, `fail` or `skipped`, with `reason` for a skipped check, `error` for a
-failed one, and `durationMs` and `detail` when present. The first two entries
-are built in:
+failed one, `kind` for a check built by a core helper, and `durationMs` and
+`detail` when present. The first two entries are built in:
 
 - `database` runs `SELECT 1` against D1, or `select 1` through Hyperdrive.
 - `auth-tables` runs only when narduk-auth is installed on D1. It looks up the
@@ -287,7 +287,10 @@ export default defineNitroPlugin(() => {
   `auth-tables` are reserved. Registering a name again replaces the earlier
   check, and `registerHealthCheck` returns a function that removes it.
 - `required`: a failed required check makes the report `error` (HTTP 503); a
-  failed optional check makes it `degraded`.
+  failed optional check makes it `degraded`. On a failing entry, `required` is
+  that failure's own rollup contribution, which matters only for a check that
+  can fail at more than one severity — see
+  [freshness checks](#reporting-data-freshness) below.
 - `timeoutMs`: defaults to 3000 and may be at most 30000. A check that runs out
   of time fails, and its `signal` is aborted.
 - `run`: resolve to pass; throw or return `{ ok: false }` to fail. Checks run
@@ -299,6 +302,91 @@ export default defineNitroPlugin(() => {
 
 A failed check publishes fixed text such as `Check failed.`; the thrown error
 goes only to the server log.
+
+### Reporting data freshness
+
+An app that serves published data is up long after its feed has gone stale. A
+plain `registerHealthCheck` cannot say so without a choice between silence and a
+503, so core ships the freshness check as its own helper.
+`registerFreshnessCheck` is auto-imported in server code, or import it from
+`@narduk-enterprises/narduk-core/server/utils/freshness-checks`:
+
+```ts
+// server/plugins/health-checks.ts
+export default defineNitroPlugin(() => {
+  registerFreshnessCheck({
+    name: 'observations-freshness',
+    source: 'ndbc-realtime-observations',
+    warnAfter: 45 * 60,
+    failAfter: 6 * 60 * 60,
+    timeoutMs: 30_000,
+    async read({ signal }) {
+      const { product } = await readPublishedProduct({ signal })
+      return {
+        at: product.freshness.asOf,
+        detail: { releaseId: product.releaseId },
+      }
+    },
+  })
+})
+```
+
+Each registration adds one entry to `checks`:
+
+```json
+{
+  "kind": "freshness",
+  "name": "observations-freshness",
+  "required": false,
+  "result": "fail",
+  "durationMs": 12,
+  "detail": {
+    "releaseId": "2026-09-16.1",
+    "source": "ndbc-realtime-observations",
+    "warnAfterSeconds": 2700,
+    "failAfterSeconds": 21600,
+    "observedAt": "2026-09-16T13:10:00.000Z",
+    "ageSeconds": 3000,
+    "reason": "stale"
+  }
+}
+```
+
+- `name` and `timeoutMs` follow the rules above; `kind` is always the literal
+  `freshness`, so a detector can select every freshness entry across apps
+  without knowing app-chosen names.
+- `source`: which upstream feed this check watches, 1-128 characters. Register
+  one check per feed.
+- `read`: resolve to `{ at, detail? }`. `at` is a `Date`, an ISO 8601 string or
+  epoch **milliseconds**; the optional `detail` is published underneath the
+  computed fields.
+- `warnAfter` / `failAfter`: ages in **seconds**, at most one year. `failAfter`
+  must be at least `warnAfter` and may be omitted.
+- `now`: an epoch-millisecond clock, for tests. Defaults to `Date.now`.
+
+| Data age            | `result` | `required`  | Report     | HTTP |
+| ------------------- | -------- | ----------- | ---------- | ---- |
+| at most `warnAfter` | `pass`   | as declared | unchanged  | 200  |
+| past `warnAfter`    | `fail`   | `false`     | `degraded` | 200  |
+| past `failAfter`    | `fail`   | `true`      | `error`    | 503  |
+
+A stale feed therefore degrades the app; it takes it down only once `failAfter`
+is crossed, and a check registered without `failAfter` can never get there.
+`observedAt` and `ageSeconds` are published while the check is passing too, so a
+dashboard can plot age before anything is wrong. A timestamp in the future is
+never stale — a producer clock ahead of the Worker shows up as a negative
+`ageSeconds`.
+
+A freshness check **fails closed**. No timestamp, an unparseable one, a `read`
+that throws, and a `read` that runs out of time all fail at the strongest
+severity the thresholds allow, never pass, and say which in `detail.reason`
+(`missing-timestamp`, `invalid-timestamp`, `unreadable`, or `stale`). The cause
+of a thrown read goes to the server log only.
+
+Under the hood a check that can fail at two severities returns
+`{ ok: false, severity: 'degraded' }` from `run`, which publishes that entry's
+`required` as `false`. A check declared `required: false` can never escalate
+itself to `error`, so the rollup keeps reading a single field.
 
 ### Monitoring the endpoint
 
@@ -446,6 +534,13 @@ calling `enforceRateLimitPolicy` are unaffected. `defineRateLimitedHandler` is
 the surface for an **app's own** routes: it adds the handler wrapper, the
 `RateLimit-*` headers, the exempt list and the denial log record, over the same
 `ratelimits` bindings and the same client-address resolver.
+
+Note what that means before adding a freshness check to an app already enrolled
+in an uptime detector: a monitor matching `"status":"ok"` alerts on `degraded`
+as well as on `error`, because the substring is simply absent. That is often the
+point — a stale feed should be noticed — but it makes `warnAfter` an alerting
+threshold, not just a dashboard one. Pick it accordingly, or move the monitor to
+the HTTP status so only `failAfter` pages.
 
 ## Database alias contract
 

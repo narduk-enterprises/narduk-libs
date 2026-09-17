@@ -31,6 +31,7 @@
     "runtime/server/health/**/*.ts",
     "runtime/server/utils/auth.ts",
     "runtime/server/utils/database.ts",
+    "runtime/server/utils/freshness-checks.ts",
     "runtime/server/utils/health-checks.ts",
     "runtime/server/utils/hyperdrive.ts",
     "runtime/server/utils/approximateLocation.ts",
