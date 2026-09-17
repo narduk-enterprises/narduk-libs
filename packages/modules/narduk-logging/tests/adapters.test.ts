@@ -8,6 +8,7 @@ import {
   defineEventHandler,
   getResponseHeader,
   send,
+  setResponseHeader,
   setResponseStatus,
   toNodeListener,
   toWebHandler,
@@ -15,17 +16,28 @@ import {
 import { createHooks } from 'hookable'
 import { describe, expect, it, vi } from 'vitest'
 import { createLogger } from '../src/index.js'
-import { ensureRequestId, installNitroLogging, useLogger } from '../src/h3.js'
+import {
+  ensureRequestId,
+  installNitroLogging,
+  requestIdHeaders,
+  useLogger,
+  useRequestTiming,
+} from '../src/h3.js'
 import { createMemorySink } from '../src/testing.js'
 import { logJob, logRequest } from '../src/worker.js'
 import { createNodeLogger } from '../src/node.js'
 import type { H3Event } from 'h3'
 
-function event(path = '/items/123?token=synthetic', id?: string): H3Event {
+function event(
+  path = '/items/123?token=synthetic',
+  id?: string,
+  headers: Record<string, string> = {},
+): H3Event {
   const request = new IncomingMessage(new Socket())
   request.url = path
   request.method = 'GET'
   if (id) request.headers['x-request-id'] = id
+  for (const [name, value] of Object.entries(headers)) request.headers[name] = value
   const event = createEvent(request, new ServerResponse(request))
   event.context.matchedRoute = { path: '/items/:id', handlers: {} }
   return event
@@ -33,15 +45,55 @@ function event(path = '/items/123?token=synthetic', id?: string): H3Event {
 
 function setup(level: 'info' | 'silent' = 'info') {
   const sink = createMemorySink()
-  const hooks = createHooks<{
-    request(event: H3Event): void
-    afterResponse(event: H3Event): void
-    error(error: Error, context: { event?: H3Event; tags?: string[] }): void
-  }>()
+  const hooks = createHooks<NitroHooks>()
   const nitro = { hooks }
   const options = () => ({ service: 'fixture', environment: 'production', level, sinks: [sink] })
   installNitroLogging(nitro, options)
   return { sink, nitro, options }
+}
+
+interface NitroHooks {
+  request(event: H3Event): void
+  beforeResponse(event: H3Event): void
+  afterResponse(event: H3Event): void
+  error(error: Error, context: { event?: H3Event; tags?: string[] }): void
+}
+
+/**
+ * A real Nitro-shaped app: `beforeResponse`/`afterResponse` are wired exactly as
+ * `nitropack/dist/runtime/internal/app.mjs` wires them, so a hook that runs too late here runs
+ * too late in production. `serve` puts it behind a real `http.Server` (the node-server preset,
+ * `nuxt dev`, `nuxt preview`); `fetchWeb` drives the same app through h3's web handler, the shape
+ * the Cloudflare preset uses. narduk-libs#395: the header was set from `afterResponse`, which h3
+ * calls *after* the response is written, so it reached the Workers path and never the Node one.
+ */
+function nitroApp(options: () => Record<string, unknown>) {
+  const hooks = createHooks<NitroHooks>()
+  installNitroLogging({ hooks }, options as never)
+  const app = createApp({
+    onRequest: (event) => hooks.callHook('request', event),
+    onBeforeResponse: (event) => hooks.callHook('beforeResponse', event),
+    onAfterResponse: (event) => hooks.callHook('afterResponse', event),
+    onError: (error, event) => hooks.callHook('error', error, { event, tags: ['request'] }),
+  })
+  return {
+    app,
+    use: (router: ReturnType<typeof createRouter>) => app.use(router),
+    async serve(path: string): Promise<Response> {
+      const server = createServer(toNodeListener(app))
+      try {
+        await new Promise<void>((resolve) => server.listen(0, resolve))
+        const address = server.address()
+        const port = typeof address === 'object' && address ? address.port : 0
+        return await fetch(`http://127.0.0.1:${port}${path}`)
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    },
+    fetchWeb(path: string): Promise<Response> {
+      return toWebHandler(app)(new Request(`http://fixture.invalid${path}`))
+    },
+  }
 }
 
 describe('Nitro request lifecycle', () => {
@@ -126,6 +178,123 @@ describe('Nitro request lifecycle', () => {
   })
 })
 
+describe('Request ID fallback and outbound headers', () => {
+  it('falls back to cf-ray when the caller sends no request ID', () => {
+    const request = event(undefined, undefined, { 'cf-ray': '830b3a1f9c1b4e9a-DFW' })
+    expect(ensureRequestId(request)).toBe('830b3a1f9c1b4e9a-DFW')
+  })
+
+  it('prefers a valid caller-supplied ID over cf-ray', () => {
+    const request = event(undefined, 'caller-id', { 'cf-ray': '830b3a1f9c1b4e9a-DFW' })
+    expect(ensureRequestId(request)).toBe('caller-id')
+  })
+
+  it('ignores an unsafe caller ID and an unsafe cf-ray fallback, generating a UUID', () => {
+    const request = event(undefined, 'bad id with spaces', { 'cf-ray': 'also bad; ray' })
+    const id = ensureRequestId(request)
+    expect(id).not.toContain(' ')
+    expect(id).not.toContain(';')
+  })
+
+  it('generates a UUID when neither the caller nor cf-ray supply an ID', () => {
+    const request = event()
+    expect(typeof ensureRequestId(request)).toBe('string')
+    expect(ensureRequestId(request).length).toBeGreaterThan(0)
+  })
+
+  it('returns a forwardable header bag for outbound calls', () => {
+    expect(requestIdHeaders('abc-123')).toEqual({ 'x-request-id': 'abc-123' })
+  })
+})
+
+describe('Server-Timing and slow-route logging (h3/Nitro)', () => {
+  it('emits a total-only header by default, even when the route never touches timing', async () => {
+    const { sink, nitro } = setup()
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    await nitro.hooks.callHook('beforeResponse', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    expect(getResponseHeader(request, 'server-timing')).toMatch(/^total;dur=\d+$/)
+    expect(sink.records).toHaveLength(1)
+  })
+
+  it('exposes named phases only once the route opts in via useRequestTiming', async () => {
+    const { nitro } = setup()
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    const timing = useRequestTiming(request, { exposePhases: true })
+    timing.mark('auth')
+    timing.mark('board', '18 stmt / 11 rt')
+    await nitro.hooks.callHook('beforeResponse', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    const header = getResponseHeader(request, 'server-timing') as string
+    expect(header).toMatch(/^auth;dur=\d+, board;dur=\d+;desc="18 stmt \/ 11 rt", total;dur=\d+$/)
+  })
+
+  it('keeps phases out of the header when useRequestTiming is called without exposePhases', async () => {
+    const { nitro } = setup()
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    useRequestTiming(request).mark('auth')
+    await nitro.hooks.callHook('beforeResponse', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    expect(getResponseHeader(request, 'server-timing')).toMatch(/^total;dur=\d+$/)
+  })
+
+  it('logs a structured warning when total duration exceeds the configured threshold', async () => {
+    const sink = createMemorySink()
+    const hooks = createHooks<{
+      request(event: H3Event): void
+      afterResponse(event: H3Event): void
+      error(error: Error, context: { event?: H3Event; tags?: string[] }): void
+    }>()
+    const nitro = { hooks }
+    installNitroLogging(nitro, () => ({
+      service: 'fixture',
+      environment: 'production',
+      sinks: [sink],
+      slowRouteThresholdMs: -1, // any nonnegative duration exceeds this, deterministically
+    }))
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    const slow = sink.records.find((record) => record.message === 'Slow route')
+    expect(slow).toBeDefined()
+    expect(slow).toMatchObject({ level: 'warn', path: '/items/:id', method: 'GET' })
+    expect(typeof slow?.data?.durationMs).toBe('number')
+    expect(slow?.data?.status).toBe(200)
+    expect(slow?.requestId).toBe(ensureRequestId(request))
+  })
+
+  it('never logs a slow-route warning when no threshold is configured (disabled by default)', async () => {
+    const { sink, nitro } = setup()
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(false)
+  })
+
+  it('does not log slow-route below the threshold', async () => {
+    const sink = createMemorySink()
+    const hooks = createHooks<{
+      request(event: H3Event): void
+      afterResponse(event: H3Event): void
+      error(error: Error, context: { event?: H3Event; tags?: string[] }): void
+    }>()
+    const nitro = { hooks }
+    installNitroLogging(nitro, () => ({
+      service: 'fixture',
+      environment: 'production',
+      sinks: [sink],
+      slowRouteThresholdMs: Number.MAX_SAFE_INTEGER,
+    }))
+    const request = event()
+    await nitro.hooks.callHook('request', request)
+    await nitro.hooks.callHook('afterResponse', request)
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(false)
+  })
+})
+
 describe('Workers and Node', () => {
   it('preserves streaming responses and adds correlation without logging URL input', async () => {
     const sink = createMemorySink()
@@ -145,6 +314,85 @@ describe('Workers and Node', () => {
     expect(response.headers.get('x-request-id')).toBe(sink.records[0]?.requestId)
     expect(await response.text()).toBe('streamed body')
     expect(sink.records[0]?.path).toBe('/items/:id')
+  })
+
+  it('falls back to cf-ray for the correlation ID and always emits a total-only header', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    const response = await logRequest(
+      new Request('https://example.invalid/items/7', {
+        headers: { 'cf-ray': '830b3a1f9c1b4e9a-DFW' },
+      }),
+      logger,
+      () => new Response('ok'),
+      { route: '/items/:id' },
+    )
+    expect(response.headers.get('x-request-id')).toBe('830b3a1f9c1b4e9a-DFW')
+    expect(sink.records[0]?.requestId).toBe('830b3a1f9c1b4e9a-DFW')
+    expect(response.headers.get('server-timing')).toMatch(/^total;dur=\d+$/)
+  })
+
+  it('exposes phases marked via the timing argument only when opted in', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    const response = await logRequest(
+      new Request('https://example.invalid/items/7'),
+      logger,
+      async (_log, timing) => {
+        await timing.measure('upstream', async () => {})
+        return new Response('ok')
+      },
+      { route: '/items/:id', timingExposePhases: true },
+    )
+    expect(response.headers.get('server-timing')).toMatch(/^upstream;dur=\d+, total;dur=\d+$/)
+  })
+
+  it('logs a slow-route warning on a successful response over threshold', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    await logRequest(
+      new Request('https://example.invalid/items/7'),
+      logger,
+      () => new Response('ok'),
+      {
+        route: '/items/:id',
+        slowRouteThresholdMs: -1,
+      },
+    )
+    const slow = sink.records.find((record) => record.message === 'Slow route')
+    expect(slow).toMatchObject({ level: 'warn', path: '/items/:id', data: { status: 200 } })
+  })
+
+  it('logs a slow-route warning when the handler throws over threshold, without suppressing it', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    const original = new Error('Synthetic failure')
+    await expect(
+      logRequest(
+        new Request('https://example.invalid/items/7'),
+        logger,
+        () => {
+          throw original
+        },
+        { route: '/items/:id', slowRouteThresholdMs: -1 },
+      ),
+    ).rejects.toBe(original)
+    const slow = sink.records.find((record) => record.message === 'Slow route')
+    expect(slow).toMatchObject({ level: 'warn', data: { status: 500 } })
+  })
+
+  it('never logs slow-route when no threshold is configured', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    await logRequest(
+      new Request('https://example.invalid/items/7'),
+      logger,
+      () => new Response('ok'),
+      {
+        route: '/items/:id',
+      },
+    )
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(false)
   })
 
   it('preserves thrown HTTP errors and queue retry or acknowledgment decisions', async () => {
@@ -304,5 +552,178 @@ describe('Nitro-shaped lifecycle over real h3 routing', () => {
     expect(await overFetch(app, '/api/nope?token=synthetic')).toBe(404)
     expect(JSON.stringify(sink.records)).not.toContain('synthetic')
     expect(JSON.stringify(sink.records)).not.toContain('/api/nope')
+  })
+})
+
+describe('Server-Timing reaches a real response (narduk-libs#395)', () => {
+  function app(options: Record<string, unknown> = {}) {
+    const sink = createMemorySink()
+    const host = nitroApp(() => ({
+      service: 'fixture',
+      environment: 'production',
+      sinks: [sink],
+      ...options,
+    }))
+    const router = createRouter()
+    router.get(
+      '/items/:id',
+      defineEventHandler((event) => {
+        useRequestTiming(event).mark('db')
+        return { ok: true }
+      }),
+    )
+    router.get(
+      '/cached',
+      defineEventHandler((event) => {
+        setResponseHeader(event, 'cache-control', 'public, max-age=3600')
+        return { ok: true }
+      }),
+    )
+    router.get(
+      '/private',
+      defineEventHandler((event) => {
+        setResponseHeader(event, 'cache-control', 'private, max-age=60')
+        return { ok: true }
+      }),
+    )
+    router.get(
+      '/upstream-timing',
+      defineEventHandler((event) => {
+        setResponseHeader(event, 'server-timing', 'cf-cache;dur=3')
+        return { ok: true }
+      }),
+    )
+    router.get(
+      '/boom',
+      defineEventHandler(() => {
+        throw createError({ statusCode: 500, message: 'Synthetic failure' })
+      }),
+    )
+    host.use(router)
+    return { sink, host }
+  }
+
+  it('sets the header on a 200 served by a real Node http server', async () => {
+    // Regression: stamped from `afterResponse`, h3 has already ended the response here and
+    // `headersSent` is true, so every successful Node response went out with no header at all.
+    const response = await app().host.serve('/items/7')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('server-timing')).toMatch(/^total;dur=\d+$/)
+    expect(response.headers.get('x-request-id')).toBeTruthy()
+  })
+
+  it('sets the header on a 200 through the web handler the Workers preset uses', async () => {
+    const response = await app().host.fetchWeb('/items/7')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('server-timing')).toMatch(/^total;dur=\d+$/)
+  })
+
+  it('still carries the ID and timing on a failing response', async () => {
+    const response = await app().host.serve('/boom')
+    expect(response.status).toBe(500)
+    expect(response.headers.get('server-timing')).toMatch(/total;dur=\d+/)
+    expect(response.headers.get('x-request-id')).toBeTruthy()
+  })
+
+  it('exposes phases end to end once the plugin opts in', async () => {
+    const response = await app({ timingExposePhases: true }).host.serve('/items/7')
+    expect(response.headers.get('server-timing')).toMatch(/^db;dur=\d+, total;dur=\d+$/)
+  })
+
+  it('leaves a shared-cacheable response free of per-request headers', async () => {
+    // The edge stores this body; a request ID baked into it would be replayed to every later
+    // client, so a log search for that ID would answer one request while the header claims many.
+    const response = await app().host.serve('/cached')
+    expect(response.headers.get('cache-control')).toBe('public, max-age=3600')
+    expect(response.headers.get('x-request-id')).toBeNull()
+    expect(response.headers.get('server-timing')).toBeNull()
+  })
+
+  it('still stamps a response that is only privately cacheable', async () => {
+    const response = await app().host.serve('/private')
+    expect(response.headers.get('x-request-id')).toBeTruthy()
+    expect(response.headers.get('server-timing')).toMatch(/total;dur=\d+/)
+  })
+
+  it('appends to an upstream Server-Timing instead of clobbering it', async () => {
+    const response = await app().host.serve('/upstream-timing')
+    expect(response.headers.get('server-timing')).toMatch(/^cf-cache;dur=3, total;dur=\d+$/)
+  })
+})
+
+describe('Slow-route logging respects the routes an app silenced', () => {
+  function host(options: Record<string, unknown>) {
+    const sink = createMemorySink()
+    const hooks = createHooks<NitroHooks>()
+    const nitro = { hooks }
+    installNitroLogging(nitro, () => ({
+      service: 'fixture',
+      environment: 'production',
+      sinks: [sink],
+      ...options,
+    }))
+    return { sink, nitro }
+  }
+
+  async function run(nitro: ReturnType<typeof host>['nitro'], request: H3Event) {
+    await nitro.hooks.callHook('request', request)
+    await nitro.hooks.callHook('beforeResponse', request)
+    await nitro.hooks.callHook('afterResponse', request)
+  }
+
+  it('stays quiet on a skipped path', async () => {
+    const { sink, nitro } = host({ slowRouteThresholdMs: -1 })
+    await run(nitro, event('/api/health'))
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(false)
+  })
+
+  it('stays quiet when request logging is switched off', async () => {
+    const { sink, nitro } = host({ slowRouteThresholdMs: -1, requestLogging: false })
+    await run(nitro, event())
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(false)
+  })
+
+  it('still reports a slow failure on an otherwise skipped path', async () => {
+    const { sink, nitro } = host({ slowRouteThresholdMs: -1 })
+    const request = event('/api/health')
+    await nitro.hooks.callHook('request', request)
+    setResponseStatus(request, 500)
+    await nitro.hooks.callHook('afterResponse', request)
+    expect(sink.records.some((record) => record.message === 'Slow route')).toBe(true)
+  })
+})
+
+describe('Worker response stamping', () => {
+  const logger = () => createLogger({ service: 'fixture', environment: 'test', sinks: [] })
+
+  it('leaves a shared-cacheable response unstamped', async () => {
+    const response = await logRequest(
+      new Request('https://example.invalid/a'),
+      logger(),
+      () => new Response('ok', { headers: { 'cache-control': 's-maxage=60' } }),
+      { route: '/a' },
+    )
+    expect(response.headers.get('x-request-id')).toBeNull()
+    expect(response.headers.get('server-timing')).toBeNull()
+  })
+
+  it('stamps a no-store response', async () => {
+    const response = await logRequest(
+      new Request('https://example.invalid/a'),
+      logger(),
+      () => new Response('ok', { headers: { 'cache-control': 'public, no-store' } }),
+      { route: '/a' },
+    )
+    expect(response.headers.get('x-request-id')).toBeTruthy()
+  })
+
+  it('appends to an upstream Server-Timing instead of clobbering it', async () => {
+    const response = await logRequest(
+      new Request('https://example.invalid/a'),
+      logger(),
+      () => new Response('ok', { headers: { 'server-timing': 'cf-cache;dur=3' } }),
+      { route: '/a' },
+    )
+    expect(response.headers.get('server-timing')).toMatch(/^cf-cache;dur=3, total;dur=\d+$/)
   })
 })
