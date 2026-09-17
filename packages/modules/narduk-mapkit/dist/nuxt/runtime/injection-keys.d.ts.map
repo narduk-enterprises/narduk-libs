@@ -1,0 +1,1 @@
+{"version":3,"file":"injection-keys.d.ts","sourceRoot":"","sources":["../../../src/nuxt/runtime/injection-keys.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;GAkBG;AACH,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,KAAK,CAAA;AAEvC,mFAAmF;AACnF,eAAO,MAAM,2BAA2B,EAAE,YAAY,CAAC;IAAE,QAAQ,CAAC,KAAK,EAAE,MAAM,CAAA;CAAE,CAEhF,CAAA;AAED,eAAO,MAAM,uBAAuB,EAAE,YAAY,CAAC,MAAM,CAAqC,CAAA"}

@@ -71,6 +71,10 @@
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt/index.d.ts",
+      "import": "./dist/nuxt/index.js"
     }
   },
   "scripts": {
@@ -85,19 +89,23 @@
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "//dependencies": "@apple/mapkit-loader became a real dependency in 2.1.0 (narduk-libs#421 section d): ./client loads MapKit JS v6 through Apple's own loader, and Apple's types arrive with it -- @types/apple-mapkit is a runtime dependency OF the loader, so a consumer resolves the published .d.ts without installing anything extra. ./server, ./node, ./worker and ./token never reach it: the loader is behind a dynamic import inside initializeMapKit().",
+  "//dependencies": "@apple/mapkit-loader became a real dependency in 2.1.0 (narduk-libs#421 section d): ./client loads MapKit JS v6 through Apple's own loader, and Apple's types arrive with it -- @types/apple-mapkit is a runtime dependency OF the loader, so a consumer resolves the published .d.ts without installing anything extra. ./server, ./node, ./worker and ./token never reach it: the loader is behind a dynamic import inside initializeMapKit(). @nuxt/kit and h3 join them for the ./nuxt entry (narduk-libs#422 section b): the module is defineNuxtModule and the token route is an h3 event handler. Neither is reachable from ., ./client, ./geometry, ./playback, ./server, ./node, ./worker, ./token or ./testing -- tests/testing/package-boundary.test.ts walks that graph.",
   "dependencies": {
-    "@apple/mapkit-loader": "^1.0.0"
+    "@apple/mapkit-loader": "^1.0.0",
+    "@nuxt/kit": "^4.4.8",
+    "h3": "^1.15.4"
   },
   "//devDependencies": "@types/apple-mapkit stays declared here as well because pnpm's isolated node_modules does not expose a transitive dependency to this package's own typecheck. The ./testing fake declares its own public types structurally, so the published .d.ts resolves without Apple's types installed; the link back to the real surface is tests/testing/apple-types.test.ts, which compares the fake member by member against apple-mapkit/mapkit and fails typecheck on drift. happy-dom is pinned to the exact version already resolved in this workspace's lockfile (see the narduk-mapkit-nuxt package.json note) -- a caret range makes pnpm re-resolve the shared entry for every other package (narduk-libs#124).",
   "devDependencies": {
+    "@nuxt/schema": "^4.5.2",
     "@types/apple-mapkit": "^6.0.0",
     "@types/node": "^22.19.19",
-    "h3": "^1.15.11",
+    "@vue/test-utils": "2.4.11",
     "happy-dom": "20.10.6",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "vue": "^3.5.39"
   },
   "engines": {
     "node": ">=20"
@@ -105,5 +113,22 @@
   "publishConfig": {
     "access": "restricted",
     "registry": "https://npm.pkg.github.com"
-  }
+  },
+  "peerDependencies": {
+    "@nuxt/schema": ">=4.0.0",
+    "nuxt": ">=4.0.0",
+    "vue": ">=3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@nuxt/schema": {
+      "optional": true
+    },
+    "nuxt": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "//peerDependencies": "Optional on purpose: nine of the ten published entries are framework-free, and a consumer of ./geometry or ./worker must not be told it is missing Nuxt. Only ./nuxt needs them, and a consumer of ./nuxt has all three by construction. @nuxt/schema is named because dist/nuxt/index.d.ts refers to its NuxtModule type: @nuxt/kit types defineNuxtModule with it but does not re-export it, so a consumer under pnpm's isolated node_modules needs its own resolution path to it."
 }

@@ -54,8 +54,15 @@ export interface MapKitCalloutHostOptions<T> {
   onChange?: (entries: ReadonlyArray<MapKitCalloutEntry<T>>) => void
   /** Preferred side. Flips when the callout would leave the container. */
   placement?: MapKitCalloutPlacement
-  /** Container-relative point for a coordinate, or `null` when it cannot be projected. */
-  projectCoordinate: (coordinate: { lat: number; lng: number }) => MapKitCalloutPoint | null
+  /**
+   * Container-relative point for a coordinate, or `null` when it cannot be
+   * projected. The open callout's id comes along so a caller whose map cannot
+   * project (see the class comment) can fall back to the pin's own position.
+   */
+  projectCoordinate: (
+    coordinate: { lat: number; lng: number },
+    id: string,
+  ) => MapKitCalloutPoint | null
 }
 
 interface MapKitCalloutRecord<T> extends MapKitCalloutEntry<T> {
@@ -146,7 +153,7 @@ export class MapKitCalloutHostLayer<T> {
   }
 
   #place(record: MapKitCalloutRecord<T>): void {
-    const projected = this.#options.projectCoordinate(record.coordinate)
+    const projected = this.#options.projectCoordinate(record.coordinate, record.id)
     if (!projected) {
       // Off-projection is not a reason to strand a stale position on screen.
       record.host.hidden = true
