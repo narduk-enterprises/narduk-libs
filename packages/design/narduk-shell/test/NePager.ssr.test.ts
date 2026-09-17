@@ -80,6 +80,22 @@ describe('NePager server-rendered without a DOM', () => {
     expect(html).toContain('aria-label="Pagination"')
   })
 
+  it('formats grouped counts with pinned en-US in the server output', async () => {
+    const html = await renderPager({
+      noun: 'runners',
+      state: state({
+        items: [{ id: 1 }],
+        limit: 25,
+        offset: 1233,
+        page: 50,
+        pageCount: 50,
+        total: 1234,
+      }),
+    })
+
+    expect(html).toContain('1,234–1,234 of 1,234 runners')
+  })
+
   it('emits real hrefs for :to, so a crawler reaches page two without running JS', async () => {
     const html = await renderPager({
       to: (page: number) => ({ path: '/runners', query: { page } }),

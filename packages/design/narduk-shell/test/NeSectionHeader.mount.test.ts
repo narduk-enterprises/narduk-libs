@@ -30,7 +30,7 @@ describe('NeSectionHeader', () => {
 
     const count = wrapper.find('[data-slot="count"]')
     expect(count.exists()).toBe(true)
-    expect(count.text()).toBe(new Intl.NumberFormat().format(12345))
+    expect(count.text()).toBe('12,345')
     expect(count.attributes('aria-label')).toBe('12345 items')
     // Sibling of the heading, not nested inside it.
     expect(wrapper.find('h2').find('[data-slot="count"]').exists()).toBe(false)

@@ -136,6 +136,9 @@ function globalTriggerReason(path) {
   if (path.startsWith('.github/actions/')) return 'shared CI action'
   if (path.startsWith('scripts/')) return 'shared repository script'
   if (path.startsWith('tools/')) return 'shared build tooling'
+  if (path.startsWith('.changeset/') && !isReleaseMetadata(path)) {
+    return 'Changesets publish policy'
+  }
   return undefined
 }
 
@@ -144,13 +147,20 @@ function globalTriggerAffectsPackedConsumer(path) {
 }
 
 function isReleaseMetadata(path) {
-  return path.startsWith('.changeset/')
+  // Only the per-release queue: `.changeset/*.md`. Those files name a bump
+  // and do not change who publishes, what is ignored, or which packages
+  // version together. `.changeset/config.json` (access, ignore, linked,
+  // fixed) and any other non-markdown path under `.changeset/` are publish
+  // policy -- a global trigger in `globalTriggerReason`, not metadata.
+  return /^\.changeset\/[^/]+\.md$/u.test(path)
 }
 
 // Paths that cannot affect any package's build/test/lint/pack output, so a
-// diff touching only these (plus release metadata) never needs the package
-// matrix. Narrow and explicit on purpose -- do not widen this to cover
-// anything a package's own files could plausibly read.
+// diff touching only these (plus `.changeset/*.md` release metadata) never
+// needs the package matrix. Narrow and explicit on purpose -- do not widen
+// this to cover anything a package's own files could plausibly read, and do
+// not fold `.changeset/config.json` in with the markdown queue: that file
+// is policy the next publish honors, not an inert note.
 //
 // - `docs/**`: nothing under scripts/, .github/workflows/, or any package's
 //   package.json reads from the top-level docs/ directory, and workspace

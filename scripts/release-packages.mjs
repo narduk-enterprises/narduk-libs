@@ -18,7 +18,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { runConsumerCommand } from './consumer-smoke-command.mjs'
-import { consumerSmokePhases, mapPackages } from './consumer-smoke-phases.mjs'
+import { consumerSmokePhases, consumerSmokeTestEnv, mapPackages } from './consumer-smoke-phases.mjs'
 import {
   assertConsumerDependencyScope,
   consumerSmokeGeneratorArgs,
@@ -145,7 +145,7 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
-  return { ...environment, ...overrides }
+  return consumerSmokeTestEnv({ ...environment, ...overrides })
 }
 
 async function runChecked(command, commandArgs, options) {

@@ -38,6 +38,9 @@
     "./app/types/*": {
       "types": "./runtime/app/types/*.d.ts"
     },
+    "./app/types/api": {
+      "types": "./runtime/app/types/api.ts"
+    },
     "./app/utils/*": {
       "import": "./runtime/app/utils/*.ts"
     },
@@ -157,7 +160,7 @@
   "peerDependencies": {
     "@narduk-enterprises/eslint-config": ">=1.2.17 <3",
     "@nuxt/schema": ">=3.16.0",
-    "nuxt": ">=3.16.0",
+    "nuxt": ">=4.0.0",
     "nuxt-security": "^2.6.0",
     "vue": ">=3.5.0",
     "wrangler": ">=4.90.1"

@@ -594,17 +594,19 @@ None.
 
 A section heading for use below `NePageHeader`. The optional `count` renders as
 a Nuxt UI `UBadge` (`color="neutral"`, `variant="subtle"`) next to the title and
-is hidden when `count` is `undefined`. Zero is a real, visible count. The
+is hidden when `count` is `undefined`. Zero is a real, visible count. The count
+is formatted through `formatNumber` (`en-US`), never an unpinned
+`Intl.NumberFormat()`, so SSR and the browser cannot disagree on grouping. The
 heading is an `h2` by default.
 
 #### Props
 
-| Prop          | Type                                           | Default | Description                                                        |
-| ------------- | ---------------------------------------------- | ------- | ------------------------------------------------------------------ |
-| `title`       | `string`                                       | —       | Section title. Required.                                           |
-| `count`       | `number`                                       | —       | Item count shown as a token-themed badge. Hidden when `undefined`. |
-| `description` | `string`                                       | —       | Supporting copy below the title.                                   |
-| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h2'`  | Heading level for the title.                                       |
+| Prop          | Type                                           | Default | Description                                                                                  |
+| ------------- | ---------------------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `title`       | `string`                                       | —       | Section title. Required.                                                                     |
+| `count`       | `number`                                       | —       | Item count shown as a token-themed badge (`formatNumber`, `en-US`). Hidden when `undefined`. |
+| `description` | `string`                                       | —       | Supporting copy below the title.                                                             |
+| `as`          | `'h1' \| 'h2' \| 'h3' \| 'h4' \| 'h5' \| 'h6'` | `'h2'`  | Heading level for the title.                                                                 |
 
 #### Slots
 
@@ -1029,15 +1031,15 @@ outside a router; that is why `vue-router` is a declared peer.
 
 #### NePager props
 
-| Prop           | Type                                 | Default     | Notes                                                                 |
-| -------------- | ------------------------------------ | ----------- | --------------------------------------------------------------------- |
-| `state`        | `NeCollectionState<T>`               | —           | Required, `v-model:state`. Assigning applies `page` and nothing else. |
-| `density`      | `'default' \| 'dense'`               | `'default'` | `dense` is pacc-trac's `DenseListPager`.                              |
-| `noun`         | `string`                             | `'results'` | The word in the summary: `51–75 of 712 runners`.                      |
-| `siblingCount` | `number`                             | `2`         | Passed to `UPagination`.                                              |
-| `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                             |
-| `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                          |
-| `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                           |
+| Prop           | Type                                 | Default     | Notes                                                                                                          |
+| -------------- | ------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `state`        | `NeCollectionState<T>`               | —           | Required, `v-model:state`. Assigning applies `page` and nothing else.                                          |
+| `density`      | `'default' \| 'dense'`               | `'default'` | `dense` is pacc-trac's `DenseListPager`.                                                                       |
+| `noun`         | `string`                             | `'results'` | The word in the summary: `51–75 of 712 runners`. Window and total are formatted with `formatNumber` (`en-US`). |
+| `siblingCount` | `number`                             | `2`         | Passed to `UPagination`.                                                                                       |
+| `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                                                                      |
+| `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                                                                   |
+| `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                                                                    |
 
 #### NePager slots and events
 

@@ -182,6 +182,11 @@ export interface NardukLineChartProps {
   times?: number[]
   /** Timestamp formatter for time axes. */
   formatTime?: (timestamp: number) => string
+  /**
+   * IANA zone for the default time-axis labels (`en-US`). Ignored when
+   * `formatTime` is set. Default `'UTC'`.
+   */
+  timeZone?: string
   /** Minimum horizontal label spacing. Defaults to 112px for time axes and 50px for category axes. */
   xAxisMinLabelPx?: number
   /** Override chart padding, useful for compact axis-free previews. */

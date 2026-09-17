@@ -45,7 +45,12 @@ export const SIGNALS: Readonly<Record<SignalState, SignalDescriptor>> = Object.f
  *
  * @param observedAt   when the measurement was taken, or null if nothing published
  * @param intervalMinutes the source's own publishing interval
- * @param now          injectable for deterministic tests
+ * @param now          injectable for deterministic tests. The default reads
+ *                     the ambient clock and is **not** SSR-safe — Vue
+ *                     hydration fails when the server and the browser
+ *                     disagree near a threshold. SSR and first-paint callers
+ *                     must pass `now`. `NsFreshnessChip` does not use this
+ *                     default: it requires `now` or waits until `onMounted`.
  *
  * Returns "void" for a missing or unparseable timestamp — never "live". A
  * measurement we cannot date is one we cannot vouch for, and defaulting to
@@ -72,7 +77,8 @@ export function classifySignal(
   return "stale";
 }
 
-/** Whole minutes since an observation, or null when it cannot be dated. */
+/** Whole minutes since an observation, or null when it cannot be dated.
+ *  The default `now` reads the ambient clock; pass an instant for SSR. */
 export function ageMinutes(
   observedAt: Date | string | null | undefined,
   now: Date = new Date(),
@@ -87,7 +93,8 @@ export function ageMinutes(
 /**
  * Compact human age for the mono metadata line: "4 min", "3 h", "2 d".
  * Returns an em-dash for an undateable observation so the caller never has to
- * special-case a null into layout.
+ * special-case a null into layout. The default `now` reads the ambient clock
+ * and will fail hydration; pass an instant on the server.
  */
 export function formatAge(
   observedAt: Date | string | null | undefined,

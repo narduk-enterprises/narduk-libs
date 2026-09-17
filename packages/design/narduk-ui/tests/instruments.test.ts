@@ -52,6 +52,15 @@ describe("NsFreshnessChip", () => {
     });
     expect(w.find(".ns-chip__age").text()).toBe("· 4 min");
   });
+
+  it("classifies after mount when now is omitted", async () => {
+    const observedAt = new Date(Date.now() - 60_000).toISOString();
+    const w = mount(NsFreshnessChip, {
+      props: { observedAt, intervalMinutes: 10 },
+    });
+    await w.vm.$nextTick();
+    expect(w.find(".ns-chip").classes()).toContain("ns-chip--live");
+  });
 });
 
 describe("NsLevelWell", () => {

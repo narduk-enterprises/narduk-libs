@@ -79,7 +79,7 @@ describe('NeSectionHeader', () => {
 
     expect(html).toContain('<h2')
     expect(html).toContain('Deployments')
-    expect(html).toContain(new Intl.NumberFormat().format(1234))
+    expect(html).toContain('1,234')
     expect(html).toContain('data-slot="count"')
   })
 

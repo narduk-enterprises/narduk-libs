@@ -29,7 +29,10 @@ const bars: CandleBar[] = Array.from({ length: 24 }, (_, i) => {
     data-group="Charts"
   >
     <h2>Candle chart</h2>
-    <p>OHLCV time-series with zoom, volume and domain sync.</p>
+    <p>
+      OHLCV time-series with zoom, volume and domain sync. Default time labels are
+      <code>en-US</code> in <code>UTC</code> so SSR and the browser agree.
+    </p>
     <div class="preview-row">
       <NardukCandleChart :bars="bars" :width="420" :height="220" :animate="false" />
     </div>
