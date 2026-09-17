@@ -1,5 +1,34 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.9.1
+
+### Patch Changes
+
+- fa41027: Bump the generated-app pin for `@narduk-enterprises/narduk-core` (and
+  the workspace dependents Changesets will move with it) so a fresh scaffold
+  gets the empty `colorMode.classSuffix` and the report-only CSP that omits
+  `upgrade-insecure-requests`. The generator templates do not set `classSuffix`
+  themselves.
+- cbee698: Fix the generated deployment runbook's promote snippet, which told
+  every new app to promote the wrong commit (narduk-libs#451 defect 2).
+
+  The snippet passed `--sha "$GITHUB_SHA"`, but the promote job runs on
+  `workflow_run`, where `GITHUB_SHA` is the default branch's head at trigger
+  time rather than the commit whose run completed -- so a commit that never
+  passed `ci / Required` could reach production. The runbook now shows a
+  `workflow_run` workflow excerpt binding `VERIFIED_SHA` to
+  `${{ github.event.workflow_run.head_sha }}`, uses it for both the promote and
+  the live proof, and states why `$GITHUB_SHA` is wrong there. It also records
+  that the `--sha` lookup is bounded by `--max-versions` rather than capped at
+  ten, and that a lookup finding nothing exits 3 and must be a red job.
+
+- a1efa4e: Patch release alongside the `@narduk-enterprises/narduk-uploads`
+  patch (the upload byte cap is now enforced while the body is read) so
+  `@narduk-enterprises/create-narduk-app` can refresh its pinned
+  `narduk-uploads` version in `src/manifest.ts`.
+  `scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version. No generator behavior changes.
+
 ## 0.9.0
 
 ### Minor Changes
