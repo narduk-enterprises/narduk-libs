@@ -291,3 +291,70 @@ describe('narduk-core databaseBackend declaration', () => {
     expect(modulesDone).not.toThrow()
   })
 })
+
+describe('narduk-core colorMode defaults', () => {
+  async function loadCoreModule(colorMode: Record<string, unknown> = {}) {
+    vi.resetModules()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponentsDir: vi.fn(),
+      addImportsDir: vi.fn(),
+      addPlugin: vi.fn(),
+      addServerScanDir: vi.fn(),
+      addTemplate: vi.fn((template: { src: string }) => ({
+        filename: template.src.split('/').pop(),
+      })),
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+      installModule: vi.fn(),
+    }))
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    const nuxt = {
+      options: {
+        alias: {},
+        app: {},
+        appConfig: {},
+        build: { transpile: [] },
+        colorMode,
+        css: [],
+        devServer: {},
+        future: {},
+        icon: {},
+        nitro: {},
+        runtimeConfig: {},
+        ui: {},
+        vite: {},
+      },
+      hook() {},
+    }
+    await mod.setup({ app: false, coreModules: false, server: false }, nuxt)
+    return nuxt
+  }
+
+  it('sets classSuffix to empty so Tailwind v4 / Nuxt UI 4 match .dark', async () => {
+    const nuxt = await loadCoreModule()
+
+    expect(nuxt.options.colorMode).toEqual(
+      expect.objectContaining({
+        preference: 'system',
+        fallback: 'dark',
+        classSuffix: '',
+      }),
+    )
+  })
+
+  it('lets an app override classSuffix through the same defu defaults', async () => {
+    const nuxt = await loadCoreModule({ classSuffix: '-mode' })
+
+    expect(nuxt.options.colorMode).toEqual(
+      expect.objectContaining({
+        classSuffix: '-mode',
+        preference: 'system',
+        fallback: 'dark',
+      }),
+    )
+  })
+})

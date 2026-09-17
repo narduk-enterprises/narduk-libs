@@ -780,6 +780,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
         preference: colorModePreference,
         fallback: 'dark',
+        // Tailwind v4 / Nuxt UI 4 key dark styles on `.dark`. The color-mode
+        // default suffix is `-mode`, which writes `class="dark-mode"` and
+        // leaves every dark token inert. An app can still override this.
+        classSuffix: '',
       })
       nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
         customLogger: createCoreViteBuildLogger(),

@@ -302,7 +302,12 @@ export function resolveSecurityHeaders(
     // an app that never posts cross-origin loses nothing by declaring it.
     'form-action': ["'self'"],
     'frame-ancestors': frameAncestors,
-    'upgrade-insecure-requests': true,
+  }
+  // Browsers ignore upgrade-insecure-requests in a report-only policy and
+  // Chromium logs a console error on every page. Keep it on the enforcing
+  // header only.
+  if (mode === 'enforce') {
+    csp['upgrade-insecure-requests'] = true
   }
   for (const key of Object.keys(DIRECTIVE_OF) as Array<keyof SecurityHeadersAllowlist>) {
     csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic)

@@ -27,6 +27,15 @@ that intentionally need user-location prompts can set
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
 blocked.
 
+narduk-core enables Nuxt UI color mode and defaults `@nuxtjs/color-mode` to
+`preference: system` (or `NUXT_COLOR_MODE_PREFERENCE`), `fallback: 'dark'`, and
+`classSuffix: ''`. The empty suffix is required so the document class is `dark`,
+which is what Tailwind v4 and Nuxt UI 4 key on. Apps with no dark styling will
+start rendering Nuxt UI chrome dark for dark-preference users on adoption; an
+app that wants light-only sets
+`colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
+still override `classSuffix`.
+
 ## Security headers (`security.headers`)
 
 narduk-core has always set security headers.
@@ -72,11 +81,11 @@ export default defineNuxtConfig({
 
 ### Three modes, and why the default is "change nothing"
 
-| `security.headers`                 | What is served                                                                                                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| omitted or `false`                 | Exactly today's headers. Upgrading narduk-core changes nothing.                                                                                                                                           |
-| `{ enabled: true }`                | The legacy enforcing CSP **keeps being served**, and the strict nonce policy is served beside it as `Content-Security-Policy-Report-Only`. Every other header comes from nuxt-security, and HSTS appears. |
-| `{ enabled: true, enforce: true }` | The strict nonce policy becomes the enforcing `Content-Security-Policy` and the legacy one is retired.                                                                                                    |
+| `security.headers`                 | What is served                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted or `false`                 | Exactly today's headers. Upgrading narduk-core changes nothing.                                                                                                                                                                                                                       |
+| `{ enabled: true }`                | The legacy enforcing CSP **keeps being served**, and the strict nonce policy is served beside it as `Content-Security-Policy-Report-Only` (without `upgrade-insecure-requests`, which browsers ignore in report-only). Every other header comes from nuxt-security, and HSTS appears. |
+| `{ enabled: true, enforce: true }` | The strict nonce policy becomes the enforcing `Content-Security-Policy` and the legacy one is retired.                                                                                                                                                                                |
 
 Both literal readings of "opt-in, report-only first" would have been regressions
 here. Making the headers opt-in would strip headers from every app that has them
