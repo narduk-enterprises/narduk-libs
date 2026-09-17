@@ -13,10 +13,7 @@ const ANSI_ESCAPE = new RegExp(`${String.fromCodePoint(0x1b)}\\[[\\d;]*m`, 'g')
 const WEBSERVER_PREFIX = /^\[WebServer\] ?/
 
 export type WorkerdClientAbortFilterPhase =
-  | 'idle'
-  | 'after-start'
-  | 'after-stack-header'
-  | 'complete'
+  'idle' | 'after-start' | 'after-stack-header' | 'complete'
 
 export interface WorkerdClientAbortFilterState {
   carry: string

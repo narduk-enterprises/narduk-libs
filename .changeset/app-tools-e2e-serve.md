@@ -8,10 +8,10 @@ launcher the estate `nuxt-cloudflare` callable assumes every narduk-app has
 (narduk-libs#447).
 
 It serves an already-built `.output/server/index.mjs` through the app's own
-`wrangler` (`unstable_startWorker`, watch off), binds 127.0.0.1 only, refuses
-to compile a fallback, and writes `[e2e-serve]` startup notes to stderr so a
-stalled start is visible in Playwright's webServer log. Real worker errors
-pass through; the only filtered stderr is workerd's client-abort
+`wrangler` (`unstable_startWorker`, watch off), binds 127.0.0.1 only, refuses to
+compile a fallback, and writes `[e2e-serve]` startup notes to stderr so a
+stalled start is visible in Playwright's webServer log. Real worker errors pass
+through; the only filtered stderr is workerd's client-abort
 `kj::getCaughtExceptionAsKj() … Broken pipe` block, lifted with its tests from
 Buoys `fix/e2e-workerd-epipe-filter` (buoys#124).
 

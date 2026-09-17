@@ -123,8 +123,8 @@ would propose a downgrade. New scaffolds now emit the prebuilt path themselves
 reason — Buoys' copy documents its real specs, and a whole-file rewrite would
 have handed it a document about a different app. Dependency versions are absent
 too: Dependabot owns estate package currency (company-hq `D-TOOLCHAIN-1`), and
-two mechanisms editing the same lines is exactly the reconcile relationship
-this generator must not have.
+two mechanisms editing the same lines is exactly the reconcile relationship this
+generator must not have.
 
 `.node-version` is absent from the table for that last reason. It is the app's
 declared **Node source** (see "One declared source per toolchain" below), and a

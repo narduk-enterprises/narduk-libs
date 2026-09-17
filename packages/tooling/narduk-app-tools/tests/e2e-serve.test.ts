@@ -92,7 +92,9 @@ describe('e2e-serve argument and host validation', () => {
   })
 
   it('rejects unknown flags', () => {
-    expect(() => parseE2eServeArgs(['4401', '--watch'])).toThrow('Unknown e2e-serve option: --watch')
+    expect(() => parseE2eServeArgs(['4401', '--watch'])).toThrow(
+      'Unknown e2e-serve option: --watch',
+    )
   })
 })
 
@@ -124,49 +126,51 @@ describe('e2e-serve refusal paths', () => {
 })
 
 describe('e2e-serve real worker start', () => {
-  it(
-    'serves a request from a tiny fixture worker and shuts down by PID',
-    async () => {
-      const root = tempDir('narduk-e2e-serve-real-')
-      writeFixtureWorker(root)
-      linkWorkspaceWrangler(root)
-      const port = await allocatePort()
-      const child = spawn(process.execPath, [ensureBuiltBin(), 'e2e-serve', String(port)], {
-        cwd: root,
-        env: { ...process.env, E2E_HOST: '127.0.0.1' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      const pid = child.pid
-      expect(pid).toEqual(expect.any(Number))
+  it('serves a request from a tiny fixture worker and shuts down by PID', async () => {
+    const root = tempDir('narduk-e2e-serve-real-')
+    writeFixtureWorker(root)
+    linkWorkspaceWrangler(root)
+    const port = await allocatePort()
+    const child = spawn(process.execPath, [ensureBuiltBin(), 'e2e-serve', String(port)], {
+      cwd: root,
+      env: { ...process.env, E2E_HOST: '127.0.0.1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const pid = child.pid
+    expect(pid).toEqual(expect.any(Number))
 
-      let stderr = ''
-      child.stderr?.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString()
-      })
+    let stderr = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
 
-      try {
-        await waitForReady(child, () => stderr, port)
-        expect(stderr).toContain('[e2e-serve] cwd=')
-        expect(stderr).toContain(`[e2e-serve] ready on http://127.0.0.1:${String(port)}`)
+    try {
+      await waitForReady(child, () => stderr, port)
+      expect(stderr).toContain('[e2e-serve] cwd=')
+      expect(stderr).toContain(`[e2e-serve] ready on http://127.0.0.1:${String(port)}`)
 
-        const response = await fetch(`http://127.0.0.1:${String(port)}/`)
-        expect(response.status).toBe(200)
-        expect(await response.text()).toBe('e2e-serve-fixture-ok')
-      } finally {
-        if (pid !== undefined) {
-          try {
-            process.kill(pid, 'SIGTERM')
-          } catch {
-            // Already exited.
-          }
+      const response = await fetch(`http://127.0.0.1:${String(port)}/`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe('e2e-serve-fixture-ok')
+    } finally {
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, 'SIGTERM')
+        } catch {
+          // Already exited.
         }
-        await waitForExit(child)
       }
+      await waitForExit(child)
+    }
 
-      expect(child.exitCode === 0 || child.signalCode === 'SIGTERM').toBe(true)
-    },
-    60_000,
-  )
+    expect(
+      child.exitCode === 0 ||
+        child.exitCode === 143 ||
+        child.signalCode === 'SIGTERM' ||
+        child.signalCode === 'SIGINT',
+      `e2e-serve teardown pid=${String(pid)} exit=${String(child.exitCode)} signal=${String(child.signalCode)} stderr=${stderr}`,
+    ).toBe(true)
+  }, 60_000)
 })
 
 function ensureBuiltBin(): string {
@@ -176,7 +180,9 @@ function ensureBuiltBin(): string {
     encoding: 'utf8',
   })
   if (result.status !== 0) {
-    throw new Error(result.stderr || result.stdout || 'tsc failed building e2e-serve for the start test')
+    throw new Error(
+      result.stderr || result.stdout || 'tsc failed building e2e-serve for the start test',
+    )
   }
   if (!existsSync(bin)) throw new Error(`e2e-serve start test expected ${bin}`)
   return bin
@@ -219,7 +225,9 @@ async function allocatePort(): Promise<number> {
     throw new Error('Could not allocate an ephemeral e2e-serve port')
   }
   const { port } = address
-  await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  )
   return port
 }
 

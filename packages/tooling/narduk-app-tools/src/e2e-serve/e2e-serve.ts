@@ -138,15 +138,22 @@ export function parseE2eServeArgs(
 export async function importAppWrangler(cwd: string, appDir = cwd): Promise<WranglerModule> {
   const roots = uniqueRoots(cwd, appDir)
   for (const root of roots) {
-    try {
-      const requireFromApp = createRequire(join(root, 'package.json'))
-      const entry = requireFromApp.resolve('wrangler')
-      return (await import(pathToFileURL(entry).href)) as WranglerModule
-    } catch {
-      // Try the next narduk-app layout candidate.
-    }
+    const entry = resolveWranglerEntry(root)
+    if (!entry) continue
+    return (await import(pathToFileURL(entry).href)) as WranglerModule
   }
   throw new Error(MISSING_WRANGLER_MESSAGE)
+}
+
+/** Only the app's own install. Do not walk out of `root` to a workspace wrangler. */
+function resolveWranglerEntry(root: string): string | null {
+  if (!existsSync(join(root, 'node_modules', 'wrangler', 'package.json'))) return null
+  try {
+    const requireFromApp = createRequire(join(root, 'package.json'))
+    return requireFromApp.resolve('wrangler')
+  } catch {
+    return null
+  }
 }
 
 export function installWorkerdClientAbortStderrFilter(): () => void {

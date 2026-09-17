@@ -64,8 +64,8 @@ narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
 
 Serves an already-built Worker for Playwright when the shared `nuxt-cloudflare`
 callable sets `E2E_PREBUILT_ARTIFACT=1`. Defaults match the narduk-app layout
-(`apps/web/.output/server/index.mjs` and `wrangler.jsonc` / `wrangler.json`
-from the app directory or repository root). Flags override those paths; nothing
+(`apps/web/.output/server/index.mjs` and `wrangler.jsonc` / `wrangler.json` from
+the app directory or repository root). Flags override those paths; nothing
 app-specific is baked in.
 
 The command will not compile a fallback. A missing artifact fails immediately.
@@ -74,15 +74,16 @@ notes go to stderr as `[e2e-serve] cwd=…` / `ready on …` because Playwright
 forwards only a webServer's stderr — without them a stalled start looks like a
 hung poll.
 
-`wrangler` is the app's dependency (optional peer here). It is resolved from
-the app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
+`wrangler` is the app's dependency (optional peer here). It is resolved from the
+app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
 
 `wrangler is not installed in this app. Add it as a dependency and retry.`
 
 Real worker errors pass through. The only filtered stderr is workerd's
-client-abort block (`kj::getCaughtExceptionAsKj() … disconnected: ::write(…):
-Broken pipe` plus the following `stack: …workerd@…` line). A following
-`ECONNREFUSED` is the real crash
+client-abort block
+(`kj::getCaughtExceptionAsKj() … disconnected: ::write(…): Broken pipe` plus the
+following `stack: …workerd@…` line). A following `ECONNREFUSED` is the real
+crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 See [the e2e-serve guide](docs/e2e-serve.md).
 
