@@ -30,7 +30,7 @@ export interface SanitizableServerError {
   message?: string
   requestId?: unknown
   stack?: string
-  statusCode?: number
+  statusCode?: number | string
   statusMessage?: string
   statusText?: string
 }
@@ -54,15 +54,24 @@ export function readPreviewSafeModeFlag(
 }
 
 export function readErrorStatusCode(error: SanitizableServerError): number {
-  return typeof error.statusCode === 'number' && Number.isFinite(error.statusCode)
-    ? error.statusCode
-    : 500
+  const raw = error.statusCode
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (trimmed !== '') {
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return 500
 }
 
 export function shouldSanitizeProductionError(
   error: SanitizableServerError,
   previewSafeMode: boolean,
+  isDev: boolean = Boolean(import.meta.dev),
 ): boolean {
+  if (isDev) return false
   return !previewSafeMode && readErrorStatusCode(error) >= 500
 }
 
@@ -131,16 +140,25 @@ function readPreviewSafeModeFromRuntime(event: unknown): boolean {
 
 /**
  * Nitro error handler. Mutates 5xx in place when preview-safe mode is off, then
- * returns without sending so Nuxt still renders `error.vue`.
+ * returns without sending so Nuxt still renders `error.vue`. `nuxt dev` keeps
+ * the original payload so operators can still see the leak locally.
  */
-export default function nardukProductionErrorSanitizer(
+export function applyProductionErrorSanitizer(
   error: SanitizableServerError,
   event: ProductionErrorSanitizerEvent,
+  isDev: boolean = Boolean(import.meta.dev),
 ): void {
   if (!error || typeof error !== 'object') return
-  if (!shouldSanitizeProductionError(error, readPreviewSafeModeFromRuntime(event))) {
+  if (!shouldSanitizeProductionError(error, readPreviewSafeModeFromRuntime(event), isDev)) {
     return
   }
 
   sanitizeProductionError(error, readErrorRequestId(error, event))
+}
+
+export default function nardukProductionErrorSanitizer(
+  error: SanitizableServerError,
+  event: ProductionErrorSanitizerEvent,
+): void {
+  applyProductionErrorSanitizer(error, event, Boolean(import.meta.dev))
 }

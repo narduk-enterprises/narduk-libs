@@ -6,6 +6,7 @@ import { createHooks } from 'hookable'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  applyProductionErrorSanitizer,
   GENERIC_SERVER_ERROR_MESSAGE,
   prependNitroErrorHandler,
   readErrorRequestId,
@@ -55,12 +56,21 @@ describe('production error sanitizer policy', () => {
   })
 
   it('sanitizes 5xx and a missing status (SSR wrap defaults to 500), not 4xx', () => {
-    expect(shouldSanitizeProductionError({ statusCode: 500 }, false)).toBe(true)
-    expect(shouldSanitizeProductionError({ statusCode: 503 }, false)).toBe(true)
-    expect(shouldSanitizeProductionError({}, false)).toBe(true)
-    expect(shouldSanitizeProductionError({ statusCode: 404 }, false)).toBe(false)
-    expect(shouldSanitizeProductionError({ statusCode: 400 }, false)).toBe(false)
-    expect(shouldSanitizeProductionError({ statusCode: 500 }, true)).toBe(false)
+    expect(shouldSanitizeProductionError({ statusCode: 500 }, false, false)).toBe(true)
+    expect(shouldSanitizeProductionError({ statusCode: 503 }, false, false)).toBe(true)
+    expect(shouldSanitizeProductionError({}, false, false)).toBe(true)
+    expect(shouldSanitizeProductionError({ statusCode: 404 }, false, false)).toBe(false)
+    expect(shouldSanitizeProductionError({ statusCode: 400 }, false, false)).toBe(false)
+    expect(shouldSanitizeProductionError({ statusCode: 500 }, true, false)).toBe(false)
+  })
+
+  it('does not sanitize 5xx while nuxt dev is running', () => {
+    expect(shouldSanitizeProductionError({ statusCode: 500 }, false, true)).toBe(false)
+  })
+
+  it('coerces a string 4xx statusCode instead of treating it as 500', () => {
+    expect(shouldSanitizeProductionError({ statusCode: '404' }, false, false)).toBe(false)
+    expect(shouldSanitizeProductionError({ statusCode: '503' }, false, false)).toBe(true)
   })
 
   it('strips message, statusMessage, data, cause and stack in place', () => {
@@ -109,15 +119,14 @@ describe('Nitro error handler', () => {
     config.current = { public: { previewSafeMode: false } }
   })
 
-  it('mutates a handled SSR 500 and returns without marking the event handled', async () => {
-    const { default: sanitizer } = await import('../runtime/server/error-sanitizer')
+  it('mutates a handled SSR 500 and returns without marking the event handled', () => {
     const error = leakyError()
     const event: ProductionErrorSanitizerEvent = {
       handled: false,
       context: { _requestId: 'req-1234' },
     }
 
-    sanitizer(error, event)
+    applyProductionErrorSanitizer(error, event, false)
 
     expect(event.handled).toBe(false)
     expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
@@ -126,18 +135,35 @@ describe('Nitro error handler', () => {
     expect(error.requestId).toBe('req-1234')
   })
 
-  it('leaves a 4xx and a previewSafeMode 500 untouched', async () => {
-    const { default: sanitizer } = await import('../runtime/server/error-sanitizer')
+  it('leaves a 4xx and a previewSafeMode 500 untouched', () => {
     const notFound = leakyError({ statusCode: 404, message: 'Station not found' })
-    sanitizer(notFound, { context: {} })
+    applyProductionErrorSanitizer(notFound, { context: {} }, false)
     expect(notFound.message).toBe('Station not found')
     expect(notFound.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
 
     config.current = { public: { previewSafeMode: true } }
     const preview = leakyError()
-    sanitizer(preview, { context: {} })
+    applyProductionErrorSanitizer(preview, { context: {} }, false)
     expect(preview.message).toBe('D1_ERROR: no such table: users')
     expect(preview.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
+  })
+
+  it('keeps 4xx data when statusCode is the string 404', () => {
+    const notFound = leakyError({
+      statusCode: '404',
+      message: 'Station not found',
+      data: { reason: 'missing-station' },
+    })
+    applyProductionErrorSanitizer(notFound, { context: {} }, false)
+    expect(notFound.message).toBe('Station not found')
+    expect(notFound.data).toEqual({ reason: 'missing-station' })
+  })
+
+  it('leaves a leaky 500 intact in nuxt dev', () => {
+    const error = leakyError()
+    applyProductionErrorSanitizer(error, { context: {} }, true)
+    expect(error.message).toBe('D1_ERROR: no such table: users')
+    expect(error.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
   })
 })
 
@@ -165,8 +191,7 @@ describe('narduk:exception still receives the original error', () => {
     // hooks synchronously inside map(), so this report lands on the original.
     await nitro.hooks.callHook('error', error, { event, tags: ['request'] })
 
-    const { default: sanitizer } = await import('../runtime/server/error-sanitizer')
-    sanitizer(error, event)
+    applyProductionErrorSanitizer(error, event, false)
 
     expect(reports).toHaveLength(1)
     expect(reports[0]?.message).toBe('D1_ERROR: no such table: users')

@@ -8,5 +8,8 @@ Sanitize production 5xx payloads before Nuxt serializes them into
 Nitro's prod handler only redacts `message`/`data` when `unhandled` or `fatal`
 is set. Vue SSR wraps the throw as a handled H3Error, so the raw message still
 reached the client. A prepended Nitro error handler now genericizes 5xx when
-`previewSafeMode` is off, without replacing Nuxt's renderer. The CSRF-exempt CSP
-report sink now refuses bodies over 64 KiB before parse.
+`previewSafeMode` is off, without replacing Nuxt's renderer. `nuxt dev` skips
+the sanitizer (`import.meta.dev`) so local 5xx still show the original payload.
+A string `statusCode` such as `"404"` is coerced before the 5xx decision, so 4xx
+`data` still reaches clients. The CSRF-exempt CSP report sink now refuses bodies
+over 64 KiB before parse.
