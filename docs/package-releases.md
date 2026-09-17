@@ -87,6 +87,17 @@ any publishable version is still waiting to publish, and it fails the release
 job on any registry read it cannot resolve rather than silently withholding a
 release.
 
+Synthesis only runs when the release workflow does, and the release workflow
+only runs on a push to `main` (or a manual dispatch). A `deferred` bump whose
+release run never happened -- red CI on that push, or a queued run cancelled by
+the `narduk-libs-release` concurrency group when a third run arrived -- leaves
+the drift on `main` with nothing scheduled to release it, until the next
+unrelated push. The escape hatch is to run the **Release packages** workflow by
+hand:
+`gh workflow run release.yml --repo narduk-enterprises/narduk-libs -f verified-sha=$(git rev-parse origin/main)`.
+Passing current `main` is what makes the job synthesize; an older ancestor SHA
+publishes but does not compare manifests.
+
 Everything else still needs a Changeset, and the failure prints the exact
 `.changeset/*.md` file to add: any file other than `package.json` under the
 package directory, any `peerDependencies` change (that range is the package's

@@ -143,6 +143,13 @@ jobs:
       # Changesets action's version path and appear in the release PR. The
       # script writes nothing while any version is still waiting to publish,
       # and fails the job on any registry read it cannot resolve.
+      #
+      # This is the only automatic trigger for that comparison, and it needs a
+      # push to main to fire. When a release run is lost -- red CI on the push,
+      # or the concurrency group cancelling a queued run -- re-run this workflow
+      # by hand with `verified-sha` set to current main; that is what puts
+      # `main-state.current` back to `true`. See docs/package-releases.md,
+      # "When a Changeset is required".
       - name: Synthesize patch changesets for published manifest drift
         if: steps.main-state.outputs.current == 'true'
         run: pnpm run release:synthesize-drift
