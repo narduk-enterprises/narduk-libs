@@ -7,12 +7,17 @@ import sharp from 'sharp'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  OPTIONAL_TELEMETRY_HOSTS,
+  createConsoleTracker,
   default as uiQuality,
+  isOptionalTelemetryHost,
   prepareUiQualityRoot,
   slugify,
   writeUiQualityManifest,
 } from '../src/playwright/ui-quality'
 import { analyzeUiQualityRoot } from '../src/playwright/ui-quality-analyzer'
+
+import type { ConsoleMessage, Page, Route } from '@playwright/test'
 
 const tempDirs: string[] = []
 
@@ -155,5 +160,220 @@ describe('analyzeUiQualityRoot', () => {
     await expect(analyzeUiQualityRoot(rootDir)).rejects.toThrow(
       `Failed to parse visual QA manifest at ${join(rootDir, 'manifest.json')}.`,
     )
+  })
+})
+
+/** Enough of a Playwright console message for the tracker to classify it. */
+function consoleMessage(type: string, text: string, url = '') {
+  return {
+    location: () => ({ columnNumber: 0, lineNumber: 0, url }),
+    text: () => text,
+    type: () => type,
+  } as unknown as ConsoleMessage
+}
+
+interface StubRoute {
+  handler: (route: Route) => unknown
+  matcher: (url: URL) => boolean
+}
+
+/**
+ * A page that records its listeners and route patterns, so a test can emit the console and
+ * network events a real browser would and watch what the tracker does with them. Stubbing the
+ * tracker's OUTPUT instead would leave the part that decides anything — the origin test — untested.
+ */
+function stubPage() {
+  const consoleListeners: Array<(message: ConsoleMessage) => void> = []
+  const pageErrorListeners: Array<(error: Error) => void> = []
+  const routes: StubRoute[] = []
+
+  const page = {
+    on(event: string, listener: unknown) {
+      if (event === 'console') consoleListeners.push(listener as (message: ConsoleMessage) => void)
+      if (event === 'pageerror') pageErrorListeners.push(listener as (error: Error) => void)
+      return page
+    },
+    route(matcher: unknown, handler: unknown) {
+      routes.push({
+        handler: handler as StubRoute['handler'],
+        matcher: matcher as StubRoute['matcher'],
+      })
+      return Promise.resolve()
+    },
+  }
+
+  return {
+    emitConsole(type: string, text: string, url = '') {
+      for (const listener of consoleListeners) listener(consoleMessage(type, text, url))
+    },
+    emitPageError(error: Error) {
+      for (const listener of pageErrorListeners) listener(error)
+    },
+    page: page as unknown as Page,
+    /** Drive a request through whatever routing the tracker installed, as the browser would. */
+    async request(url: string) {
+      const route = routes.find((candidate) => candidate.matcher(new URL(url)))
+      if (!route) return null
+
+      const fulfilled: Array<Record<string, unknown>> = []
+      await route.handler({
+        fulfill: (options: Record<string, unknown>) => {
+          fulfilled.push(options)
+          return Promise.resolve()
+        },
+      } as unknown as Route)
+      return fulfilled[0] ?? null
+    },
+    routes,
+  }
+}
+
+describe('isOptionalTelemetryHost', () => {
+  it('matches the known analytics domains and their subdomains', () => {
+    expect(isOptionalTelemetryHost('static.cloudflareinsights.com')).toBe(true)
+    expect(isOptionalTelemetryHost('cloudflareinsights.com')).toBe(true)
+    expect(isOptionalTelemetryHost('www.googletagmanager.com')).toBe(true)
+    expect(isOptionalTelemetryHost('www.google-analytics.com')).toBe(true)
+    expect(isOptionalTelemetryHost('us.i.posthog.com')).toBe(true)
+    expect(isOptionalTelemetryHost('EU.I.POSTHOG.COM')).toBe(true)
+    expect(uiQuality.isOptionalTelemetryHost('posthog.com')).toBe(true)
+  })
+
+  it('does not match a first-party host, or a lookalike that merely ends the same way', () => {
+    expect(isOptionalTelemetryHost('buoystat.us')).toBe(false)
+    expect(isOptionalTelemetryHost('127.0.0.1')).toBe(false)
+    expect(isOptionalTelemetryHost('notposthog.com')).toBe(false)
+    expect(isOptionalTelemetryHost('posthog.com.evil.test')).toBe(false)
+  })
+
+  it('accepts a caller host as a bare hostname or as the configured URL', () => {
+    expect(isOptionalTelemetryHost('p.nard.uk', ['p.nard.uk'])).toBe(true)
+    expect(isOptionalTelemetryHost('p.nard.uk', ['https://p.nard.uk'])).toBe(true)
+    expect(isOptionalTelemetryHost('p.nard.uk', ['https://p.nard.uk/'])).toBe(true)
+    expect(isOptionalTelemetryHost('nard.uk', ['p.nard.uk'])).toBe(false)
+    expect(isOptionalTelemetryHost('p.nard.uk', ['', '   '])).toBe(false)
+  })
+
+  it('keeps the shipped list to domains whose absence cannot change the product', () => {
+    expect([...OPTIONAL_TELEMETRY_HOSTS]).toEqual([
+      'cloudflareinsights.com',
+      'google-analytics.com',
+      'googletagmanager.com',
+      'posthog.com',
+    ])
+  })
+})
+
+describe('createConsoleTracker', () => {
+  it('installs no routing and records every console error by default', async () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page)
+
+    expect(stub.routes).toEqual([])
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'https://static.cloudflareinsights.com/beacon.min.js',
+    )
+    stub.emitConsole('warning', 'a warning', 'https://buoystat.us/_nuxt/entry.js')
+    stub.emitPageError(new Error('boom'))
+
+    expect(tracker.getIssues()).toEqual([
+      '[console:error] Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      '[console:warning] a warning',
+      '[pageerror] boom',
+    ])
+    await expect(tracker.expectClean()).rejects.toThrow()
+  })
+
+  it('still accepts a bare pattern list as the second argument', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, [/^\[build\]/])
+
+    stub.emitConsole('error', '[build] noisy', 'https://buoystat.us/_nuxt/entry.js')
+    stub.emitConsole('error', 'real failure', 'https://buoystat.us/_nuxt/entry.js')
+
+    expect(tracker.getIssues()).toEqual(['[console:error] real failure'])
+  })
+
+  it('fulfils optional telemetry with 204 and drops only those origins’ entries when stubbed', async () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, {
+      extraTelemetryHosts: ['https://p.nard.uk'],
+      telemetry: 'stub',
+    })
+    await tracker.ready
+
+    await expect(
+      stub.request('https://static.cloudflareinsights.com/beacon.min.js'),
+    ).resolves.toEqual({ body: '', status: 204 })
+    await expect(stub.request('https://www.googletagmanager.com/gtag/js?id=G-1')).resolves.toEqual({
+      body: '',
+      status: 204,
+    })
+    await expect(stub.request('https://p.nard.uk/e/?ip=1')).resolves.toEqual({
+      body: '',
+      status: 204,
+    })
+
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'https://static.cloudflareinsights.com/beacon.min.js',
+    )
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'https://p.nard.uk/e/',
+    )
+
+    expect(tracker.getIssues()).toEqual([])
+    await expect(tracker.expectClean()).resolves.toBeUndefined()
+  })
+
+  it('leaves first-party traffic unrouted and its failures fatal when stubbed', async () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, {
+      extraTelemetryHosts: ['p.nard.uk'],
+      telemetry: 'stub',
+    })
+    await tracker.ready
+
+    await expect(stub.request('https://buoystat.us/api/stations')).resolves.toBeNull()
+
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 500',
+      'https://buoystat.us/api/stations',
+    )
+    stub.emitConsole('error', 'Hydration node mismatch', 'https://buoystat.us/_nuxt/DlAUqK2U.js')
+    stub.emitConsole('error', 'no location at all')
+
+    expect(tracker.getIssues()).toEqual([
+      '[console:error] Failed to load resource: the server responded with a status of 500',
+      '[console:error] Hydration node mismatch',
+      '[console:error] no location at all',
+    ])
+    await expect(tracker.expectClean()).rejects.toThrow()
+  })
+
+  it('drops a pageerror thrown by telemetry code but keeps one that merely mentions it', async () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, { telemetry: 'stub' })
+    await tracker.ready
+
+    const fromTelemetry = new Error('posthog exploded')
+    fromTelemetry.stack =
+      'Error: posthog exploded\n    at https://us.i.posthog.com/static/array.js:1:2\n    at https://buoystat.us/_nuxt/entry.js:3:4'
+    stub.emitPageError(fromTelemetry)
+
+    const fromApp = new Error('app exploded')
+    fromApp.stack =
+      'Error: app exploded\n    at https://buoystat.us/_nuxt/entry.js:3:4\n    at https://us.i.posthog.com/static/array.js:1:2'
+    stub.emitPageError(fromApp)
+
+    stub.emitPageError(new Error('no stack at all'))
+
+    expect(tracker.getIssues()).toEqual(['[pageerror] app exploded', '[pageerror] no stack at all'])
   })
 })

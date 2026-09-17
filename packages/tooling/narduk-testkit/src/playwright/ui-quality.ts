@@ -272,30 +272,169 @@ export async function captureFullPageAudit(
   }
 }
 
-export function createConsoleTracker(page: Page, ignoredPatterns: RegExp[] = []) {
+export type TelemetryMode = 'live' | 'stub'
+
+/**
+ * Registrable domains whose traffic is OPTIONAL analytics/telemetry: the product renders and
+ * behaves identically when they never answer. A host matches this list exactly or as a
+ * subdomain of it, so `posthog.com` also covers `us.i.posthog.com` and `cloudflareinsights.com`
+ * also covers `static.cloudflareinsights.com`.
+ *
+ * An app that proxies its own analytics under a first-party-looking hostname — the Narduk
+ * fleet's PostHog reverse proxy is configured per app as `POSTHOG_HOST` and surfaces as
+ * `runtimeConfig.public.posthogHost` — cannot be discovered from here, because this package
+ * has no runtime dependency on the app or on `@narduk-enterprises/narduk-analytics`. Those
+ * hosts are supplied by the caller through
+ * {@link ConsoleTrackerOptions.extraTelemetryHosts}, which accepts a bare hostname or the
+ * configured URL itself.
+ */
+export const OPTIONAL_TELEMETRY_HOSTS = [
+  'cloudflareinsights.com',
+  'google-analytics.com',
+  'googletagmanager.com',
+  'posthog.com',
+] as const
+
+function normalizeTelemetryHost(value: string): string | null {
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) return null
+
+  if (trimmed.includes('://')) {
+    try {
+      return new URL(trimmed).hostname.replace(/\.$/, '') || null
+    } catch {
+      return null
+    }
+  }
+
+  return trimmed.split('/')[0]?.replaceAll(/^\.+|\.$/g, '') || null
+}
+
+/**
+ * Whether `hostname` belongs to an optional-telemetry origin, matching the registrable domain
+ * itself or any subdomain of it.
+ */
+export function isOptionalTelemetryHost(hostname: string, extraHosts: readonly string[] = []) {
+  const host = normalizeTelemetryHost(hostname)
+  if (!host) return false
+
+  return [...OPTIONAL_TELEMETRY_HOSTS, ...extraHosts].some((entry) => {
+    const candidate = normalizeTelemetryHost(entry)
+    if (!candidate) return false
+
+    return host === candidate || host.endsWith(`.${candidate}`)
+  })
+}
+
+function hostnameOf(value: string | null | undefined): string | null {
+  if (!value) return null
+
+  try {
+    return new URL(value).hostname || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The URL of the FIRST stack frame, which is the code that actually threw. Matching any frame
+ * would drop a first-party error merely because a telemetry script appears further down its
+ * stack.
+ */
+function topFrameUrl(stack: string | undefined): string | null {
+  if (!stack) return null
+
+  return /\bhttps?:\/\/[^\s)]+/.exec(stack)?.[0] ?? null
+}
+
+export interface ConsoleTrackerOptions {
+  /**
+   * Extra optional-telemetry hosts for this app, as a bare hostname (`p.nard.uk`) or as the
+   * configured URL (`https://p.nard.uk`). Only consulted when `telemetry` is `'stub'`.
+   */
+  extraTelemetryHosts?: string[]
+  /**
+   * Console text this suite has already decided is not a defect. Passing a bare `RegExp[]` as
+   * the second argument is the same thing and stays supported.
+   */
+  ignoredPatterns?: RegExp[]
+  /**
+   * `'live'` (the default) lets optional telemetry reach the network, which is what a suite
+   * running against a real browser on a normal network has always done.
+   *
+   * `'stub'` fulfils every optional-telemetry request with `204` and drops the console and
+   * `pageerror` entries those origins produce. It exists because whether an analytics CDN is
+   * reachable is a property of the machine, not of the app: a tailnet resolver answering
+   * `0.0.0.0` for `static.cloudflareinsights.com` turns `expectClean()` into a test of the
+   * operator's DNS. Nothing else is excluded — a first-party request that fails, a hydration
+   * mismatch, and every other console error stay fatal in both modes.
+   */
+  telemetry?: TelemetryMode
+}
+
+export interface ConsoleTracker {
+  expectClean(): Promise<void>
+  getIssues(): string[]
+  /**
+   * Resolves once telemetry routing is installed. Await it before the first navigation when
+   * `telemetry` is `'stub'`; {@link ConsoleTracker.expectClean} awaits it too, so a failed
+   * install surfaces as a test failure rather than as a silently live run.
+   */
+  ready: Promise<void>
+}
+
+export function createConsoleTracker(
+  page: Page,
+  options: ConsoleTrackerOptions | RegExp[] = {},
+): ConsoleTracker {
+  const resolved: ConsoleTrackerOptions = Array.isArray(options)
+    ? { ignoredPatterns: options }
+    : options
+  const ignoredPatterns = resolved.ignoredPatterns ?? []
+  const extraTelemetryHosts = resolved.extraTelemetryHosts ?? []
+  const stubTelemetry = resolved.telemetry === 'stub'
+
+  const isTelemetryUrl = (value: string | null | undefined) => {
+    const hostname = hostnameOf(value)
+    return hostname ? isOptionalTelemetryHost(hostname, extraTelemetryHosts) : false
+  }
+
   const issues: string[] = []
 
   page.on('console', (message) => {
     const type = message.type()
     const text = message.text()
 
-    if (
-      (type === 'error' || type === 'warning') &&
-      !ignoredPatterns.some((pattern) => pattern.test(text))
-    ) {
-      issues.push(`[console:${type}] ${text}`)
-    }
+    if (type !== 'error' && type !== 'warning') return
+    if (ignoredPatterns.some((pattern) => pattern.test(text))) return
+    if (stubTelemetry && isTelemetryUrl(message.location()?.url)) return
+
+    issues.push(`[console:${type}] ${text}`)
   })
 
   page.on('pageerror', (error) => {
+    if (stubTelemetry && isTelemetryUrl(topFrameUrl(error.stack))) return
+
     issues.push(`[pageerror] ${error.message}`)
   })
 
+  const installTelemetryRoutes = async () => {
+    await page.route(
+      (url) => isOptionalTelemetryHost(url.hostname, extraTelemetryHosts),
+      (route) => route.fulfill({ body: '', status: 204 }),
+    )
+  }
+
+  const ready: Promise<void> = stubTelemetry ? installTelemetryRoutes() : Promise.resolve()
+  void ready.catch(() => {})
+
   return {
+    ready,
     getIssues() {
       return [...issues]
     },
     async expectClean() {
+      await ready
       expect(issues, issues.join('\n')).toEqual([])
     },
   }
@@ -306,6 +445,7 @@ const uiQuality = {
   captureNamedLocator,
   captureSelectOverlay,
   createConsoleTracker,
+  isOptionalTelemetryHost,
   loadLazyMediaForFullPageCapture,
   prepareUiQualityRoot,
   slugify,

@@ -151,6 +151,59 @@ Counts are exact, and with `scope` set a request that matches no budget entry is
 also a failure — so a page that starts fetching a fifth thing on boot has to say
 so.
 
+## Console tracking and optional telemetry
+
+`playwright/ui-quality`'s `createConsoleTracker` collects console errors,
+console warnings and `pageerror`s for the run and asserts the page produced
+none:
+
+```ts
+import { createConsoleTracker } from '@narduk-enterprises/narduk-testkit/playwright/ui-quality'
+
+const consoleTracker = createConsoleTracker(page, {
+  ignoredPatterns: [/^\[build\]/],
+})
+// ... navigate, capture, assert ...
+await consoleTracker.expectClean()
+```
+
+`telemetry: 'stub'` is for the suite that has to pass on a machine whose network
+is not the internet's:
+
+```ts
+const consoleTracker = createConsoleTracker(page, {
+  extraTelemetryHosts: [process.env.POSTHOG_HOST ?? 'https://p.nard.uk'],
+  ignoredPatterns: [/^\[build\]/],
+  telemetry: 'stub',
+})
+await consoleTracker.ready // before the first navigation
+```
+
+It fulfils every request to an optional-telemetry origin with `204` — Cloudflare
+Insights, Google Tag Manager, Google Analytics, PostHog, and any host in
+`extraTelemetryHosts` — and drops the console and `pageerror` entries those
+origins produce. Use it when a suite runs against a real deployment and the
+question it is meant to answer is about the app, not about whether this laptop
+can reach an analytics CDN: a tailnet resolver answering `0.0.0.0` for
+`static.cloudflareinsights.com` otherwise turns `expectClean()` into a test of
+the operator's DNS, and the only available fix is to stop asserting console
+cleanliness at all.
+
+**What stays fatal, in both modes**: every first-party console error, including
+a first-party request that fails; Vue and Nuxt hydration warnings; every console
+error with no source URL; and any `pageerror` whose topmost stack frame is not
+itself telemetry code. Requests are matched by ORIGIN rather than by message
+text on purpose — `Failed to load resource` is the same sentence whether the
+resource was an analytics beacon or the app's own API, so an allowlist written
+against that text would hide the second along with the first.
+
+`extraTelemetryHosts` exists because an app's own analytics host is not knowable
+from here. The Narduk fleet proxies PostHog under a per-app `POSTHOG_HOST`
+(`runtimeConfig.public.posthogHost`), and this package has no runtime dependency
+on the app or on `@narduk-enterprises/narduk-analytics` to read it from. Entries
+accept a bare hostname or the configured URL, and match that host and its
+subdomains.
+
 ## Fixture server
 
 `e2e/fixture-server` serves an app's BUILT output with recorded responses
