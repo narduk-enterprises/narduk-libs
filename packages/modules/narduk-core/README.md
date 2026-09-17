@@ -661,10 +661,24 @@ payload.
 `path` is rooted at the part of the request it came from, so a client can group
 by prefix without a second field. **A submitted value never appears** — not in a
 message, not in the path — so a rejected password or token cannot travel back
-out through the error. The one caller-supplied text that survives is an object
-_key_ a `z.strictObject` rejected, and it survives as a path segment
-(`body.password`) with the constant message `Unrecognized key`, because a path
-with no key in it is not actionable.
+out through the error.
+
+What does survive is an object _key_, because a path with no key in it is not
+actionable. A key `z.strictObject` rejected comes back as a path segment
+(`body.password`) with the constant message `Unrecognized key`, never as prose.
+Three things worth knowing about that narrow exception:
+
+- For a declared field the key is the schema's own. For a `z.record` it is
+  caller data, so a route whose _keys_ are secrets (`{ [apiKey]: … }`) should
+  not use one.
+- The guarantee covers zod's built-in messages. A schema that supplies its own
+  `error` callback interpolating `issue.input` is forwarded verbatim and owns
+  that choice.
+- A failed `z.union` reports one issue at the union's own path
+  (`{ "path": "body", "message": "Invalid input" }`) and its branch failures are
+  deliberately not flattened: they contradict each other, and their prose
+  carries caller key names. Use `z.discriminatedUnion` when a sum-typed body
+  needs per-field detail — it reports against the discriminator directly.
 
 Params and query are checked together, so one response names every bad field.
 The body is only read once they pass: a request that is already doomed should
@@ -672,15 +686,22 @@ not buy a payload read.
 
 Two more, both carrying `data.code`:
 
-| Status | `data.code`              | When                                                             |
-| ------ | ------------------------ | ---------------------------------------------------------------- |
-| `413`  | `BODY_TOO_LARGE`         | Declared or measured body over `maxBodyBytes` (also in `data`).  |
-| `415`  | `UNSUPPORTED_MEDIA_TYPE` | A `content-type` that is not JSON. This wrapper reads JSON only. |
+| Status | `data.code`              | When                                                            |
+| ------ | ------------------------ | --------------------------------------------------------------- |
+| `413`  | `BODY_TOO_LARGE`         | Declared or measured body over `maxBodyBytes` (also in `data`). |
+| `415`  | `UNSUPPORTED_MEDIA_TYPE` | A body that is not JSON. This wrapper reads JSON only.          |
 
 A declared `content-length` is rejected before a byte is parsed. A body sent
 chunked — no declared length — is measured after the read, so the ceiling bounds
 what reaches `JSON.parse` and the schema, which is the cost this wrapper owns;
 the request size itself is bounded by the platform.
+
+The 415 covers a body sent with **no `content-type` at all**, not only one sent
+with the wrong type. Declaring `application/json` is what forces a CORS
+preflight, so a body with no media type is a simple request any cross-origin
+page can send; accepting it would hand back the protection the 415 buys. A
+request carrying no body is left to the schema's own 400 instead — there is no
+media type to object to.
 
 ### On a bad response
 

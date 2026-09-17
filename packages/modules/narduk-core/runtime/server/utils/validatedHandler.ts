@@ -25,9 +25,15 @@ const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\b/i
  *
  * `path` is rooted at the part of the request it came from — `query.limit`,
  * `params.stationId`, `body.items[0].name` — so a client can group by prefix
- * without a second field. Paths contain caller-supplied object keys and array
- * indices, because that is what makes them actionable; **values never appear**,
- * in the path or the message.
+ * without a second field. **A submitted value never appears**, in the path or
+ * the message.
+ *
+ * A path does carry object keys and array indices, because an issue is not
+ * actionable without them. For a declared field that key is the schema's own;
+ * for a `z.record` it is caller data, so a route whose *keys* are secrets
+ * (`{ [apiKey]: ... }`) should not use one. The guarantee covers zod's built-in
+ * messages: a schema that supplies its own `error` callback interpolating
+ * `issue.input` is forwarded verbatim, and owns that choice.
  */
 export interface ValidationIssue {
   message: string
@@ -108,7 +114,8 @@ export interface ValidatedHandlerOptions<
  * response lists every bad field; a body is only read once they pass.
  *
  * A body over `maxBodyBytes` answers **413** before it is parsed, and a body
- * sent as something other than JSON answers **415**.
+ * sent as anything other than JSON — including one sent with no `content-type`
+ * at all — answers **415**.
  *
  * ## On a bad response
  *
@@ -238,6 +245,8 @@ async function readJsonBody(event: H3Event, maxBodyBytes: number): Promise<unkno
   const lengthDeclared = Number.isFinite(declared)
   if (lengthDeclared && declared > maxBodyBytes) throw payloadTooLarge(maxBodyBytes)
 
+  // A *declared* non-JSON type is refused before the read, so an oversized form
+  // or multipart post never reaches memory at all.
   const contentType = getRequestHeader(event, 'content-type')
   if (contentType && !JSON_CONTENT_TYPE.test(contentType)) throw unsupportedMediaType()
 
@@ -245,16 +254,39 @@ async function readJsonBody(event: H3Event, maxBodyBytes: number): Promise<unkno
   if (raw === undefined || raw === '') return undefined
 
   // Only measured when the sender declared nothing to hold it to (a chunked
-  // upload); `TextEncoder` is the Workers-safe way to count UTF-8 bytes.
-  if (!lengthDeclared && new TextEncoder().encode(raw).byteLength > maxBodyBytes) {
+  // upload).
+  if (!lengthDeclared && exceedsByteCeiling(raw, maxBodyBytes)) {
     throw payloadTooLarge(maxBodyBytes)
   }
+
+  // An *absent* `content-type` is refused here rather than above, once a body
+  // has actually arrived: a request carrying nothing has no media type to
+  // object to and deserves the schema's own 400. Refusing it matters because
+  // declaring `application/json` is what forces a CORS preflight — a body with
+  // no `content-type` is a simple request any cross-origin page can send, so
+  // accepting one would hand back the protection the 415 buys.
+  if (!contentType) throw unsupportedMediaType()
 
   try {
     return JSON.parse(raw)
   } catch {
     throw badRequest([{ message: 'Body is not valid JSON', path: 'body' }])
   }
+}
+
+/**
+ * Whether the decoded body is over the ceiling, without allocating a second
+ * full copy of one that already is.
+ *
+ * `TextEncoder` is the Workers-safe way to count UTF-8 bytes, but it allocates
+ * the whole encoding to do it — doubling the peak cost of exactly the request
+ * the ceiling exists to refuse. A UTF-16 code-unit count is never greater than
+ * the UTF-8 byte count, so a string longer than the ceiling is over it outright
+ * and the exact count is only ever taken on one the ceiling already bounds.
+ */
+function exceedsByteCeiling(raw: string, maxBodyBytes: number): boolean {
+  if (raw.length > maxBodyBytes) return true
+  return new TextEncoder().encode(raw).byteLength > maxBodyBytes
 }
 
 /** Minimal shape of a zod issue — narrower than importing zod's own union. */
@@ -265,6 +297,19 @@ interface RawIssue {
   path: readonly PropertyKey[]
 }
 
+/**
+ * Flatten zod's issues into the wire shape.
+ *
+ * Only `error.issues` is walked. A failed `z.union` reports one issue at the
+ * union's own path and buries its branch failures in `errors`, which are
+ * deliberately left there: they contradict each other (every branch complains
+ * about the fields the others declare), and their `unrecognized_keys` prose
+ * carries caller key names that the sanitising below would have to be taught to
+ * reach. A route that wants per-field detail from a sum type uses
+ * `z.discriminatedUnion`, which reports against the discriminator directly.
+ * Anything that starts traversing `errors` has to recurse *through here*, or
+ * the no-value-leak guarantee above stops being true.
+ */
 function collectIssues(source: string, raw: readonly RawIssue[], into: ValidationIssue[]): void {
   for (const issue of raw) {
     // zod writes the rejected key names into this message; they are caller

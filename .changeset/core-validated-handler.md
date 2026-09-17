@@ -11,10 +11,14 @@ A bad request answers **400** with `data.code = 'VALIDATION_FAILED'` and a flat
 list of `{ path, message }` rooted at the part it came from (`query.limit`,
 `params.stationId`, `body.items[0].name`). **A submitted value never appears in
 that body**, in a message or in a path, so a rejected password or token cannot
-travel back out through the error. Params and query are checked together so one
-response names every bad field; the body is only read once they pass. A body
-over `maxBodyBytes` (1 MiB by default) answers **413** before it is parsed, and
-a non-JSON `content-type` answers **415**; both carry a `data.code`.
+travel back out through the error. Object keys do appear, as path segments —
+which for a `z.record` is caller data — and the guarantee covers zod's built-in
+messages, not a schema's own `error` callback. Params and query are checked
+together so one response names every bad field; the body is only read once they
+pass. A body over `maxBodyBytes` (1 MiB by default) answers **413** before it is
+parsed, and a body that is not JSON — including one sent with no `content-type`
+at all, which is the cross-origin simple request a declared JSON type would have
+forced a preflight for — answers **415**; both carry a `data.code`.
 
 `response` is an assertion, not a transformer: the value the client receives is
 exactly what the handler returned, whether or not the check ran, so a route

@@ -232,6 +232,61 @@ describe('defineValidatedHandler', () => {
       })
     })
 
+    it('names a record key as a path segment, and never its value', async () => {
+      // A `z.record` key is caller *data*, not a declared field name, so this is
+      // the case the no-leak guarantee is narrowest about: the key travels back
+      // because the issue is unaddressable without it, the value never does.
+      const handler = defineValidatedHandler({
+        body: z.record(z.string(), z.number()),
+        handler: () => ({ ok: true }),
+      })
+
+      const result = await request(handler, GREET, json({ 'tenant-42': 'hunter2-secret' }))
+
+      expect(result.status).toBe(400)
+      expect(result.body).not.toContain('hunter2-secret')
+      expect(issuesOf(result)).toEqual([
+        { message: 'Invalid input: expected number, received string', path: 'body.tenant-42' },
+      ])
+    })
+
+    it('reports a union at the union path without leaking a rejected key', async () => {
+      // zod reports a failed `z.union` as one issue and buries the branch
+      // errors — which carry caller key names in their prose — in `errors`.
+      // Those are deliberately not flattened: see the wrapper's note on unions.
+      const handler = defineValidatedHandler({
+        body: z.union([z.strictObject({ a: z.string() }), z.strictObject({ b: z.string() })]),
+        handler: () => ({ ok: true }),
+      })
+
+      const result = await request(handler, GREET, json({ a: 'x', 'hunter2-key': 1 }))
+
+      expect(result.status).toBe(400)
+      expect(result.body).not.toContain('hunter2-key')
+      expect(issuesOf(result)).toEqual([{ message: 'Invalid input', path: 'body' }])
+    })
+
+    it('strips a __proto__ key instead of letting it reach Object.prototype', async () => {
+      const handler = defineValidatedHandler({
+        body: z.object({ name: z.string() }),
+        handler: ({ body }) => ({
+          greeted: body.name,
+          // Read through a fresh object: a polluted prototype would show here.
+          polluted: ({} as { polluted?: unknown }).polluted ?? null,
+        }),
+      })
+
+      const result = await request(handler, GREET, {
+        body: '{"name":"buoy","__proto__":{"polluted":true}}',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      })
+
+      expect(result.status).toBe(200)
+      expect(JSON.parse(result.body)).toEqual({ greeted: 'buoy', polluted: null })
+      expect(({} as { polluted?: unknown }).polluted).toBeUndefined()
+    })
+
     it('does not read the body when params or query already failed', async () => {
       const handler = defineValidatedHandler({
         body: z.object({ name: z.string() }),
@@ -348,6 +403,81 @@ describe('defineValidatedHandler', () => {
       expect((JSON.parse(result.body) as { data?: unknown }).data).toEqual({
         code: 'UNSUPPORTED_MEDIA_TYPE',
       })
+    })
+
+    it('answers 415 when a body arrives with no content-type at all', async () => {
+      // A `Blob` with an empty type sends a measured body and no `content-type`.
+      // That combination is a CORS *simple* request, so a cross-origin page can
+      // produce it without a preflight — which is exactly what declaring
+      // `application/json` would have forced. Accepting it would hand back the
+      // cross-origin protection the 415 buys.
+      const result = await request(handler, GREET, {
+        body: new Blob([JSON.stringify({ name: 'buoy' })], { type: '' }),
+        method: 'POST',
+      })
+
+      expect(result.status).toBe(415)
+      expect((JSON.parse(result.body) as { data?: unknown }).data).toEqual({
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+      })
+    })
+
+    it('leaves a bodyless request to the schema rather than answering 415', async () => {
+      // No body means no media type to object to; the honest answer is the
+      // schema's own 400, not a complaint about a header that had nothing to
+      // describe.
+      const result = await request(handler, GREET, { method: 'POST' })
+
+      expect(result.status).toBe(400)
+      expect(issuesOf(result).map((issue) => issue.path)).toEqual(['body'])
+    })
+
+    it('accepts a JSON media type carrying parameters, and a vendor +json type', async () => {
+      for (const contentType of [
+        'application/json; charset=utf-8',
+        'application/vnd.narduk.station+json',
+      ]) {
+        const result = await request(handler, GREET, {
+          body: JSON.stringify({ name: 'buoy' }),
+          headers: { 'content-type': contentType },
+          method: 'POST',
+        })
+
+        expect({ contentType, status: result.status }).toEqual({ contentType, status: 200 })
+      }
+    })
+
+    it('measures an oversized body without decoding a second copy of it', async () => {
+      // The ceiling exists to bound memory. Counting UTF-8 bytes with
+      // `TextEncoder` allocates a full second copy, so doing it on a body that
+      // is already over the ceiling doubles the peak cost of the request the
+      // ceiling was meant to refuse — on a 128 MiB Workers isolate that is the
+      // difference between a 413 and a dead isolate.
+      const payload = JSON.stringify({ name: 'b'.repeat(200_000) })
+      const encoded = new TextEncoder().encode(payload)
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoded)
+          controller.close()
+        },
+      })
+
+      const encode = vi.spyOn(TextEncoder.prototype, 'encode')
+      try {
+        const result = await request(handler, GREET, {
+          body: stream,
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        })
+
+        expect(result.status).toBe(413)
+        const oversized = encode.mock.calls
+          .map(([value]) => (typeof value === 'string' ? value.length : 0))
+          .filter((length) => length > 64)
+        expect(oversized).toEqual([])
+      } finally {
+        encode.mockRestore()
+      }
     })
   })
 
