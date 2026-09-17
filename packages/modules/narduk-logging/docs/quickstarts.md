@@ -25,6 +25,27 @@ For an existing core app, keep
 to `useLogger(event, options)` and own request completion in the host lifecycle.
 Only a Nuxt/Nitro host can install `installNitroLogging`.
 
+Every request already gets a `total`-only `Server-Timing` header for free. To
+break a slow route down, call `useRequestTiming`:
+
+```ts
+import {
+  useLogger,
+  useRequestTiming,
+} from '@narduk-enterprises/narduk-logging/h3'
+
+export default defineEventHandler(async (event) => {
+  const timing = useRequestTiming(event)
+  const session = await timing.measure('auth', () => loadSession(event))
+  const board = await timing.measure('board', () => loadBoard(session))
+  useLogger(event).info('Board served', { boardId: board.id })
+  return board
+})
+```
+
+See [`docs/api.md`](api.md#server-timing-and-slow-route-logging) for
+`exposePhases` and `slowRouteThresholdMs`.
+
 ## Workers, schedules, queues, and Durable Objects
 
 [worker.ts](../examples/worker.ts) contains HTTP, scheduled, and queue handlers.

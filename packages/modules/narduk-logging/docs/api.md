@@ -55,18 +55,54 @@ output.
 ## Framework adapters
 
 `./h3` exports `useLogger(event, options?)`, `ensureRequestId(event)`,
-`requestRoute(event)`, `installNitroLogging(nitro, optionsFactory)`, and
+`requestRoute(event)`, `installNitroLogging(nitro, optionsFactory)`,
+`useRequestTiming(event, options?)`, `requestIdHeaders(id)`, and
 `defineClientLogHandler(options)`. A configured Nitro plugin supplies options;
 standalone H3 callers provide them explicitly. Incoming IDs accept only
-`[a-zA-Z0-9._:-]`, 1–128 characters, otherwise a UUID is generated. The response
-contains `x-request-id`. An early middleware may create the ID without creating
-a logger. Completion uses the final matched route template or `/[unmatched]`.
+`[a-zA-Z0-9._:-]`, 1–128 characters; a request with no valid ID header falls
+back to a valid `cf-ray` (so it still correlates with Cloudflare's own edge
+trace), then to a generated UUID. The response contains `x-request-id`. An early
+middleware may create the ID without creating a logger. Completion uses the
+final matched route template or `/[unmatched]`. `requestIdHeaders(id)` returns
+`{ 'x-request-id': id }` to forward on an outbound call — for example to a
+`narduk-data` fetch — so a slow upstream stays traceable from the same ID.
 
 `requestLogging: false` suppresses successful summaries; failures remain visible
 unless the level suppresses them. `skipPaths` replaces the default noise list:
 `/_nuxt/`, `/__nuxt`, `/favicon`, `/api/health`, and `/api/_narduk/logs`.
 Slash-suffixed custom entries are prefixes; other custom entries are exact
 paths. The two core framework prefixes retain their legacy prefix behavior.
+
+### Server-Timing and slow-route logging
+
+Every request gets a `Server-Timing` response header with at least
+`total;dur=<ms>`, whether or not the route touches timing. Call
+`useRequestTiming(event, { exposePhases? })` from a route to get the request's
+`RequestTiming` instance and call `mark(name, description?)` to close the phase
+running since the previous mark (or since the request started) and start the
+next one, or `await measure(name, work)` to wrap a callback the same way.
+`exposePhases` (default `false`, or `RequestLoggingOptions.timingExposePhases`
+from the Nitro plugin config) controls whether marked phases — and whatever a
+`description` says — are rendered in the header, or only the aggregate `total`.
+Leave it off for a public route whose phase names or descriptions would leak
+internal shape (a DB table, a subsystem name); a route the app has decided is
+fine to detail can opt in. A phase name must match `[\w-]{1,64}`; a description
+is sanitized (control characters, quotes, backslashes, and commas removed) and
+truncated to 128 characters, then rendered as
+`name;dur=<ms>;desc="<description>"`. At most 32 marked phases are rendered;
+elapsed time keeps accumulating into `total` regardless.
+
+`RequestLoggingOptions.slowRouteThresholdMs` (and `LogRequestOptions` on
+`./worker`'s `logRequest`) is unset by default — no line is ever emitted. Set it
+to get one structured `warn` "Slow route" log line per request whose total
+duration exceeds it, carrying the route template, method, status, duration, and
+request ID already bound to the request logger — never the raw URL, query
+string, or headers.
+
+Inside a Cloudflare Worker, wall time only advances across I/O: workerd suspends
+the CPU clock between awaits, so a CPU-bound phase with no I/O in it reports
+close to zero regardless of how long it actually ran. Treat a phase's duration
+as "time this phase waited on something external," not as a CPU profile.
 
 Nitro registration is idempotent across the standalone module and core bridge.
 The `request` hook creates context, and every request produces exactly one
@@ -82,10 +118,17 @@ Unhandled errors without an event use a service logger. `silent` applies to
 every path.
 
 `./worker` exports `createWorkerLogger`,
-`logRequest(request, logger, handler, { route })`, and
-`logJob(logger, name, handler, fields?)`. Supply a route template; the library
-never extracts a raw URL path automatically. HTTP response bodies remain
-streamed. Queue acknowledgments and retries remain the handler's decisions.
+`logRequest(request, logger, handler, options?)`,
+`logJob(logger, name, handler, fields?)`, and `requestIdHeaders(id)`. Supply a
+route template via `options.route`; the library never extracts a raw URL path
+automatically. `handler` receives `(log, timing)` — the second argument is the
+request's `RequestTiming`, the same API `useRequestTiming` returns for `./h3`.
+`options.timingExposePhases` and `options.slowRouteThresholdMs` mirror
+`RequestLoggingOptions` above, including the same defaults (phases hidden,
+slow-route logging off) — see "Server-Timing and slow-route logging".
+`logRequest` always sets both `x-request-id` and `server-timing` on the
+response, cf-ray fallback included. HTTP response bodies remain streamed. Queue
+acknowledgments and retries remain the handler's decisions.
 
 `./node` exports `createNodeLogger` and optional async
 `createOtlpSink({ endpoint, headers })`. Install its OpenTelemetry peers before

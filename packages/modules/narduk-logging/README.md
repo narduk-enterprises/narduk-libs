@@ -22,6 +22,20 @@ Production defaults to `info`, development to `debug`. `fatal` logs a record; it
 does not exit. Use `silent` to suppress every level. Application identity and
 environment are explicit; the old core bridge retains its legacy defaults.
 
+Every server request also gets a correlation ID (accepted from a trusted inbound
+header, falling back to `cf-ray`, then a generated UUID; see
+`requestIdHeaders(id)` to forward it on an outbound call) and a `Server-Timing`
+response header. The header is `total`-only by default; opt in per route to
+expose named phases, and set a threshold to get a "Slow route" warn log for
+requests over budget. See
+[`docs/api.md`](docs/api.md#server-timing-and-slow-route-logging).
+
+**Timing inside a Worker:** `Date.now()` and `performance.now()` only advance
+across I/O in workerd — the CPU clock is suspended between awaits. A phase that
+does synchronous work with no `await` in it will time close to zero no matter
+how long it actually took. Don't trust a phase's duration as a CPU profile; it
+measures wall time waiting on something external.
+
 | Runtime                   | Support / entry point                         | Output                                                                    |
 | ------------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
 | Nuxt 4 + Nitro 2 / H3 1   | `./nuxt`, `./h3`                              | Request-scoped console records and lifecycle summaries                    |
