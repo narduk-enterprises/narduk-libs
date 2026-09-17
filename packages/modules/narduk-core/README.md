@@ -27,6 +27,54 @@ that intentionally need user-location prompts can set
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
 blocked.
 
+## Public runtime overlay (Workers Builds)
+
+Workers Builds runs `nuxt build` in a process that **does not** receive
+`wrangler.json` / `wrangler.jsonc` `vars`. `process.env.GA_MEASUREMENT_ID || ''`
+(and the same pattern for `POSTHOG_PUBLIC_KEY`, `NUXT_PUBLIC_ALLOW_GEOLOCATION`,
+and other public keys) therefore bakes an empty string into the Worker artifact.
+Nuxt then serializes that bake into the homepage `__NUXT__` payload. The live
+Worker still has the bindings, so `GET /api/runtime/public` looks healthy while
+the HTML payload looks intentionally dark (buoys#133).
+
+That is a platform bug, not an app-local one. The long-term fix is **not**
+reading `wrangler.json` from `nuxt.config.ts`.
+
+narduk-core owns the request-time contract:
+
+1. `resolveRuntimePublicOverlay(event)` reads live Worker bindings (short names
+   such as `GA_MEASUREMENT_ID` / `POSTHOG_PUBLIC_KEY`, plus optional
+   `NUXT_PUBLIC_*` aliases that Nuxt's own env overlay understands).
+2. `applyRuntimePublicOverlay(event)` copies that overlay onto
+   `useRuntimeConfig(event).public` for the current request.
+3. The `00-runtime-public` Nitro plugin runs that apply on every request
+   **before SSR**, so `__NUXT__` matches the Worker env.
+4. `GET /api/runtime/public` returns the same overlay. The client plugin
+   `runtime-public` still fetches it after hydration so SPA navigations stay
+   aligned.
+
+Preview aliases (`*.workers.dev` / `*.pages.dev` that are not the canonical
+host) still blank analytics via the overlay. An empty string after the overlay
+means the Worker does not have the key — turn collection off with
+`analyticsLoadStrategy: 'off'` or by removing the var, not by baking `''`.
+
+### What apps should do
+
+Keep the short public names in `wrangler.json` `vars`. Do not duplicate them as
+`NUXT_PUBLIC_*` aliases unless you want Nuxt's native overlay as well; both
+shapes work. Do not add a build-time `readFileSync('wrangler.json')` helper.
+
+After this package is published, an app that added that helper (Buoys PR #136)
+can delete it, drop the `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+`NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler copies, and leave
+`runtimeConfig.public.gaMeasurementId` / `posthogPublicKey` unset or empty at
+build time. The Nitro plugin fills them on the Worker.
+
+`NUXT_PUBLIC_ALLOW_GEOLOCATION` is the same class for **build-time**
+nuxt-security / Permissions-Policy configuration. Request-time headers already
+read the Worker binding through `readRuntimeBoolean`. Prefer that path over
+baking a wrangler default into `nuxt.config.ts`.
+
 ## Security headers (`security.headers`)
 
 narduk-core has always set security headers.

@@ -752,6 +752,19 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           cspWorkerSrc: process.env.CSP_WORKER_SRC || '',
           cspMediaSrc: process.env.CSP_MEDIA_SRC || '',
           allowGeolocation,
+          // Build-time seeds only. Workers Builds does not copy wrangler.json
+          // vars into `nuxt build`, so these are often empty in CI; the
+          // request-time overlay fills them from Worker bindings before SSR.
+          gaMeasurementId: (
+            process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID ||
+            process.env.GA_MEASUREMENT_ID ||
+            ''
+          ).trim(),
+          posthogPublicKey: (
+            process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY ||
+            process.env.POSTHOG_PUBLIC_KEY ||
+            ''
+          ).trim(),
         },
       })
 

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { resolveRuntimePublicOverlay } from '../runtime/server/utils/runtime-public'
+import {
+  applyRuntimePublicOverlay,
+  resolveRuntimePublicOverlay,
+} from '../runtime/server/utils/runtime-public'
 
 import type { H3Event } from 'h3'
 
@@ -73,6 +76,74 @@ describe('runtime-public analytics defaults', () => {
       deploymentTarget: 'production',
       previewSafeMode: false,
       gaMeasurementId: 'G-TEST',
+    })
+  })
+
+  it('reads NUXT_PUBLIC_* aliases when the short Worker names are absent', () => {
+    runtimeConfig.current = {
+      public: { gaMeasurementId: '', posthogPublicKey: '', posthogHost: '' },
+    }
+    expect(
+      resolveRuntimePublicOverlay(
+        event({
+          NUXT_PUBLIC_GA_MEASUREMENT_ID: 'G-ALIAS',
+          NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: 'phc_alias',
+          NUXT_PUBLIC_POSTHOG_HOST: 'https://p.example',
+        }),
+      ),
+    ).toMatchObject({
+      gaMeasurementId: 'G-ALIAS',
+      posthogPublicKey: 'phc_alias',
+      posthogHost: 'https://p.example',
+    })
+  })
+
+  it('prefers the short Worker name over a NUXT_PUBLIC_* alias', () => {
+    runtimeConfig.current = { public: { gaMeasurementId: '', posthogPublicKey: '' } }
+    expect(
+      resolveRuntimePublicOverlay(
+        event({
+          GA_MEASUREMENT_ID: 'G-SHORT',
+          NUXT_PUBLIC_GA_MEASUREMENT_ID: 'G-ALIAS',
+          POSTHOG_PUBLIC_KEY: 'phc_short',
+          NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: 'phc_alias',
+        }),
+      ),
+    ).toMatchObject({
+      gaMeasurementId: 'G-SHORT',
+      posthogPublicKey: 'phc_short',
+    })
+  })
+
+  it('applies Worker bindings onto baked-empty runtimeConfig.public for SSR', () => {
+    runtimeConfig.current = {
+      public: {
+        appUrl: 'https://app.example',
+        gaMeasurementId: '',
+        posthogPublicKey: '',
+      },
+    }
+    const overlay = applyRuntimePublicOverlay(
+      event({
+        GA_MEASUREMENT_ID: 'G-LIVE',
+        POSTHOG_PUBLIC_KEY: 'phc_live',
+      }),
+    )
+    expect(overlay).toMatchObject({
+      gaMeasurementId: 'G-LIVE',
+      posthogPublicKey: 'phc_live',
+    })
+    expect(runtimeConfig.current.public).toMatchObject({
+      gaMeasurementId: 'G-LIVE',
+      posthogPublicKey: 'phc_live',
+    })
+  })
+
+  it('does not treat an empty bake as configured when Worker bindings are also absent', () => {
+    runtimeConfig.current = { public: { gaMeasurementId: '', posthogPublicKey: '' } }
+    expect(applyRuntimePublicOverlay(event())).toMatchObject({
+      gaMeasurementId: '',
+      posthogPublicKey: '',
     })
   })
 

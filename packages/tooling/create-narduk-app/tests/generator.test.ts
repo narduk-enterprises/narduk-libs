@@ -620,6 +620,9 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('"previewBindings"')
       expect(runbook, label).toContain('narduk-app foundation:check:deployment')
+      expect(runbook, label).toContain('## Public runtime keys vs wrangler vars')
+      expect(runbook, label).toContain('does **not** export `wrangler.jsonc` `vars`')
+      expect(runbook, label).toContain('Do **not** read `wrangler.jsonc` from `nuxt.config.ts`')
       // The generator emits the block to paste, never the file itself:
       // Config/cloudflare-app.json records live Cloudflare facts a checkout
       // cannot know, and onboarding owns it.

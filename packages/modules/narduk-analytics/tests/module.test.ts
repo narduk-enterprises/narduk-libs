@@ -106,6 +106,47 @@ describe('narduk-analytics module', () => {
     expect(installModule).not.toHaveBeenCalled()
   })
 
+  it('seeds public analytics keys from NUXT_PUBLIC_* aliases when short names are unset', async () => {
+    const previousGa = process.env.GA_MEASUREMENT_ID
+    const previousGaAlias = process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID
+    const previousPosthog = process.env.POSTHOG_PUBLIC_KEY
+    const previousPosthogAlias = process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY
+    const previousHost = process.env.POSTHOG_HOST
+    const previousHostAlias = process.env.NUXT_PUBLIC_POSTHOG_HOST
+    try {
+      delete process.env.GA_MEASUREMENT_ID
+      delete process.env.POSTHOG_PUBLIC_KEY
+      delete process.env.POSTHOG_HOST
+      process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID = ' G-ALIAS '
+      process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = ' phc_alias '
+      process.env.NUXT_PUBLIC_POSTHOG_HOST = ' https://p.example '
+      mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      const nuxt = makeNuxt()
+      await mod.setup({ app: false, server: false }, nuxt)
+      expect(nuxt.options.runtimeConfig.public).toMatchObject({
+        gaMeasurementId: 'G-ALIAS',
+        posthogPublicKey: 'phc_alias',
+        posthogHost: 'https://p.example',
+      })
+    } finally {
+      if (previousGa === undefined) delete process.env.GA_MEASUREMENT_ID
+      else process.env.GA_MEASUREMENT_ID = previousGa
+      if (previousGaAlias === undefined) delete process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID
+      else process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID = previousGaAlias
+      if (previousPosthog === undefined) delete process.env.POSTHOG_PUBLIC_KEY
+      else process.env.POSTHOG_PUBLIC_KEY = previousPosthog
+      if (previousPosthogAlias === undefined) delete process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY
+      else process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = previousPosthogAlias
+      if (previousHost === undefined) delete process.env.POSTHOG_HOST
+      else process.env.POSTHOG_HOST = previousHost
+      if (previousHostAlias === undefined) delete process.env.NUXT_PUBLIC_POSTHOG_HOST
+      else process.env.NUXT_PUBLIC_POSTHOG_HOST = previousHostAlias
+    }
+  })
+
   it('keeps session replay off by default while preserving explicit build opt-in', async () => {
     const previous = process.env.POSTHOG_SESSION_REPLAY_ENABLED
     try {

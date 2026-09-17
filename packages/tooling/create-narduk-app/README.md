@@ -269,3 +269,9 @@ apps; selecting the `auth` capability defaults to that exposure and rejects
 repository can serve a public app. Version previews share runtime bindings;
 isolate private data and write-capable bindings before enabling them. Keep
 previews noindex and analytics disabled.
+
+Workers Builds does not inject `wrangler.jsonc` `vars` into `nuxt build`.
+Generated `docs/workers-builds.md` records that contract: public analytics and
+geolocation keys live on the Worker, and narduk-core's request-time overlay
+fills `__NUXT__`. New apps must not add a `nuxt.config.ts` helper that reads
+wrangler at build time.
