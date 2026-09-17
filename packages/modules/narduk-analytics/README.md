@@ -12,9 +12,11 @@ This module has a hard runtime dependency on
 (`posthog.client`, `gtag.client`, `analytics-head.client`) declare
 `dependsOn: ['runtime-public']` and read `posthogPublicKey`, `gaMeasurementId`,
 `deploymentTarget`, and `previewSafeMode` from the **runtime-public overlay**
-that only `narduk-core`'s `00-runtime-public.client` plugin and
-`/api/runtime/public` route provide
-(`packages/modules/narduk-core/runtime/server/utils/runtime-public.ts`).
+that `narduk-core` applies on every request (Nitro `00-runtime-public` plugin
+so `__NUXT__` is filled from Worker bindings, plus `/api/runtime/public` and
+the `00-runtime-public.client` fetch). See narduk-core README § "Public runtime
+overlay (Workers Builds)". Do not read `wrangler.json` from `nuxt.config.ts`
+to paper over empty baked keys.
 
 If `narduk-core` is not already installed, this module **installs it
 automatically** during `setup()` so analytics still works — you do not need to
@@ -51,19 +53,22 @@ export default defineNuxtConfig({
 
 ## Runtime config (env vars)
 
-All keys below are read once at build/start time via `process.env` in
-`src/module.ts` unless noted otherwise. Server-side Google/PostHog admin routes
-additionally support Worker-runtime-secret overrides (Cloudflare binding/secret
-takes priority over the build-time value) via narduk-core's `readRuntimeString`
-— see each route for its specific env var name.
+Build-time `process.env` reads in `src/module.ts` are **seeds only**. Workers
+Builds does not export `wrangler.json` `vars` into `nuxt build`, so those seeds
+are often empty in CI even when the Worker already has the keys (buoys#133).
+narduk-core's request-time overlay fills `gaMeasurementId`, `posthogPublicKey`,
+and `posthogHost` from the Worker env (short names or `NUXT_PUBLIC_*` aliases)
+before SSR. Server-side Google/PostHog admin routes also prefer a live Worker
+binding via narduk-core's `readRuntimeString`.
 
 ### Public (client-visible) config
 
 | Env var                                                           | `runtimeConfig.public` key                | Default                    | Purpose                                                                                                                    |
 | ----------------------------------------------------------------- | ----------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `NUXT_PUBLIC_ANALYTICS_LOAD_STRATEGY` / `ANALYTICS_LOAD_STRATEGY` | `analyticsLoadStrategy`                   | `idle`                     | `immediate` \| `idle` \| `interaction` \| `off` — when client analytics scripts load.                                      |
-| `GA_MEASUREMENT_ID`                                               | `gaMeasurementId`                         | `''`                       | GA4 measurement ID (`G-XXXXXXX`). Empty disables `gtag.client`.                                                            |
-| `POSTHOG_HOST`                                                    | `posthogHost`                             | `https://us.i.posthog.com` | PostHog ingestion host.                                                                                                    |
+| `NUXT_PUBLIC_GA_MEASUREMENT_ID` / `GA_MEASUREMENT_ID`             | `gaMeasurementId`                         | `''`                       | GA4 measurement ID (`G-XXXXXXX`). Empty disables `gtag.client`. Filled at request time from the Worker binding.            |
+| `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` / `POSTHOG_PUBLIC_KEY`           | `posthogPublicKey`                        | `''`                       | PostHog **project API key**. Empty disables `posthog.client`. Build seed plus narduk-core request-time overlay.            |
+| `NUXT_PUBLIC_POSTHOG_HOST` / `POSTHOG_HOST`                       | `posthogHost`                             | `https://us.i.posthog.com` | PostHog ingestion host.                                                                                                    |
 | `POSTHOG_DEAD_CLICKS_ENABLED`                                     | `posthogDeadClicksEnabled`                | `false`                    | Enables PostHog dead-click autocapture.                                                                                    |
 | `POSTHOG_EXTERNAL_DEPENDENCY_LOADING_ENABLED`                     | `posthogExternalDependencyLoadingEnabled` | `false`                    | Allows PostHog to load its own external dependencies (e.g. for surveys) when session replay is off.                        |
 | `POSTHOG_FEATURE_FLAGS_ENABLED`                                   | `posthogFeatureFlagsEnabled`              | `false`                    | Enables PostHog feature flags.                                                                                             |
@@ -72,7 +77,6 @@ takes priority over the build-time value) via narduk-core's `readRuntimeString`
 | `POSTHOG_WEB_VITALS_ENABLED`                                      | `posthogWebVitalsEnabled`                 | `false`                    | Enables Core Web Vitals reporting (`$web_vitals`). See below.                                                              |
 | `POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED`                          | `posthogWebVitalsAttributionEnabled`      | `false`                    | Adds web-vitals attribution debug data. Ignored unless web vitals are enabled.                                             |
 | `NUXT_PUBLIC_INDEXNOW_KEY`                                        | `indexNowKey`                             | `''`                       | Public IndexNow key, used by the client-visible config surface (see also the private key below).                           |
-| — (from `narduk-core`)                                            | `posthogPublicKey`                        | `''`                       | PostHog **project API key**. Without this, `posthog.client` no-ops. Seeded by the runtime-public overlay, not this module. |
 | — (from `narduk-core`)                                            | `deploymentTarget`                        | `production`               | `production` \| `staging` \| `preview`. Drives the `is_internal_user`/`environment` PostHog super-properties (see below).  |
 | — (from `narduk-core`)                                            | `previewSafeMode`                         | `false`                    | When true, all client analytics plugins no-op regardless of load strategy.                                                 |
 

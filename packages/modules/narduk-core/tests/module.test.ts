@@ -290,4 +290,34 @@ describe('narduk-core databaseBackend declaration', () => {
 
     expect(modulesDone).not.toThrow()
   })
+
+  it('seeds public analytics keys from NUXT_PUBLIC_* when the short names are unset', async () => {
+    const previous = {
+      GA_MEASUREMENT_ID: process.env.GA_MEASUREMENT_ID,
+      NUXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID,
+      POSTHOG_PUBLIC_KEY: process.env.POSTHOG_PUBLIC_KEY,
+      NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY,
+    }
+    try {
+      delete process.env.GA_MEASUREMENT_ID
+      delete process.env.POSTHOG_PUBLIC_KEY
+      process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID = ' G-BUILD '
+      process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = ' phc_build '
+      const { nuxt, setup } = await loadCoreModule()
+
+      await setup({ app: false, coreModules: false, server: false })
+
+      expect(nuxt.options.runtimeConfig).toMatchObject({
+        public: {
+          gaMeasurementId: 'G-BUILD',
+          posthogPublicKey: 'phc_build',
+        },
+      })
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
 })

@@ -106,6 +106,41 @@ describe('narduk-analytics module', () => {
     expect(installModule).not.toHaveBeenCalled()
   })
 
+  it('seeds public analytics keys from NUXT_PUBLIC_* aliases when short names are unset', async () => {
+    const previous = {
+      GA_MEASUREMENT_ID: process.env.GA_MEASUREMENT_ID,
+      NUXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID,
+      POSTHOG_PUBLIC_KEY: process.env.POSTHOG_PUBLIC_KEY,
+      NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY,
+      POSTHOG_HOST: process.env.POSTHOG_HOST,
+      NUXT_PUBLIC_POSTHOG_HOST: process.env.NUXT_PUBLIC_POSTHOG_HOST,
+    }
+    try {
+      delete process.env.GA_MEASUREMENT_ID
+      delete process.env.POSTHOG_PUBLIC_KEY
+      delete process.env.POSTHOG_HOST
+      process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID = ' G-ALIAS '
+      process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = ' phc_alias '
+      process.env.NUXT_PUBLIC_POSTHOG_HOST = ' https://p.example '
+      mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      const nuxt = makeNuxt()
+      await mod.setup({ app: false, server: false }, nuxt)
+      expect(nuxt.options.runtimeConfig.public).toMatchObject({
+        gaMeasurementId: 'G-ALIAS',
+        posthogPublicKey: 'phc_alias',
+        posthogHost: 'https://p.example',
+      })
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
+
   it('keeps session replay off by default while preserving explicit build opt-in', async () => {
     const previous = process.env.POSTHOG_SESSION_REPLAY_ENABLED
     try {

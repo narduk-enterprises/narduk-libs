@@ -168,21 +168,29 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
         ),
     posthogPublicKey: previewSafeMode
       ? ''
-      : readRuntimeString(event, 'POSTHOG_PUBLIC_KEY', {
-          config,
-          fallback: readPublic(config, 'posthogPublicKey'),
-        }),
+      : readRuntimeStringFromKeys(
+          event,
+          ['POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'],
+          {
+            config,
+            fallbacks: [readPublic(config, 'posthogPublicKey')],
+          },
+        ),
     posthogHost:
-      readRuntimeString(event, 'POSTHOG_HOST', {
+      readRuntimeStringFromKeys(event, ['POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST'], {
         config,
-        fallback: readPublic(config, 'posthogHost'),
+        fallbacks: [readPublic(config, 'posthogHost')],
       }) || DEFAULT_POSTHOG_HOST,
     gaMeasurementId: previewSafeMode
       ? ''
-      : readRuntimeString(event, 'GA_MEASUREMENT_ID', {
-          config,
-          fallback: readPublic(config, 'gaMeasurementId'),
-        }),
+      : readRuntimeStringFromKeys(
+          event,
+          ['GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'],
+          {
+            config,
+            fallbacks: [readPublic(config, 'gaMeasurementId')],
+          },
+        ),
     allowGeolocation: readRuntimeBoolean(event, 'NUXT_PUBLIC_ALLOW_GEOLOCATION', {
       config,
       fallback: readPublic(config, 'allowGeolocation'),
@@ -265,4 +273,26 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
     supabaseUrl,
     supabasePublishableKey,
   }
+}
+
+/**
+ * Copy the request-time overlay onto `useRuntimeConfig(event).public`.
+ *
+ * Workers Builds does not export `wrangler.json` `vars` into `nuxt build`, so
+ * baked `runtimeConfig.public` keys are often empty strings even when the
+ * Worker already has the live bindings. Nuxt serializes that bake into
+ * `__NUXT__` unless this overlay runs before SSR. `/api/runtime/public` and
+ * the `00-runtime-public` Nitro plugin both use this so the HTML payload and
+ * the JSON route stay on one contract.
+ *
+ * Apps should not read `wrangler.json` from `nuxt.config.ts` to paper over
+ * the empty bake. Short Worker names (`GA_MEASUREMENT_ID`,
+ * `POSTHOG_PUBLIC_KEY`) are enough; optional `NUXT_PUBLIC_*` aliases are
+ * accepted for Nuxt's native env overlay.
+ */
+export function applyRuntimePublicOverlay(event: H3Event): RuntimePublicOverlay {
+  const overlay = resolveRuntimePublicOverlay(event)
+  const config = useRuntimeConfig(event) as { public?: Record<string, unknown> }
+  config.public = Object.assign(config.public ?? {}, overlay)
+  return overlay
 }

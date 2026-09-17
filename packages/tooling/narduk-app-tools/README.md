@@ -137,7 +137,16 @@ App Worker configuration may use `wrangler.jsonc` (preferred) or legacy
 `pnpm exec wrangler`. Dry runs are allowed without credentials or the local
 deployment override. Production and preview deploys are allowed in Cloudflare
 Workers Builds only when its injected `CI`, `WORKERS_CI`, build UUID, commit
-SHA, and branch variables form a complete attestation. A real local deploy
+SHA, and branch variables form a complete attestation.
+
+Workers Builds does **not** copy those wrangler `vars` into the `nuxt build`
+process environment. Public keys such as `GA_MEASUREMENT_ID` and
+`POSTHOG_PUBLIC_KEY` must be read at request time. `@narduk-enterprises/narduk-core`
+applies them to `runtimeConfig.public` before SSR so `__NUXT__` is not an empty
+bake while `/api/runtime/public` looks healthy (buoys#133). Apps must not read
+`wrangler.json` from `nuxt.config.ts` to paper over that gap. The same class of
+bug is a build-time `NUXT_PUBLIC_ALLOW_GEOLOCATION` default used for
+Permissions-Policy; prefer the core request-time header path. A real local deploy
 requires the explicit `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` recovery opt-in;
 unrelated environment flags never bypass that guard. A package-manager
 passthrough separator is normalized before invoking Wrangler so it cannot
