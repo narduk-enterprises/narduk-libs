@@ -27,6 +27,8 @@ export const UNMATCHED_EXCEPTION_ROUTE = '(unmatched)'
 export const REDACTED = '[redacted]'
 
 export interface NardukExceptionReport {
+  /** Deployed commit SHA — `runtimeConfig.public.buildVersion`. */
+  buildVersion?: string
   /**
    * The captured error itself, normalized to an `Error` so a reporter that
    * wants a stack (PostHog's `captureException`) always gets one. Not redacted:
@@ -34,8 +36,6 @@ export interface NardukExceptionReport {
    * the redacted `message` below is what this module puts on the wire.
    */
   error: Error
-  /** Deployed commit SHA — `runtimeConfig.public.buildVersion`. */
-  buildVersion?: string
   /** `true` when the error took down the app rather than one component. */
   fatal: boolean
   /** Redacted, single-line error message. Safe to attach to an event. */
@@ -71,7 +71,7 @@ export interface ExceptionHookHost {
 const ROUTE_PARAM_PATTERN_GROUP = /\([^()]*\)/g
 const ROUTE_PARAM_MODIFIER = /(:\w+)[?*+]/g
 const QUERY_STRING = /\?[^\s'"]*/g
-const EMAIL = /[^\s<>()[\]{}'"]+@[^\s<>()[\]{}'",;:]+\.[a-z]{2,}/gi
+const EMAIL = /[^\s@<>()[\]{}'",;:]+@(?:[a-z0-9-]+\.)+[a-z]{2,}/gi
 const WHITESPACE_RUN = /\s+/g
 
 const MAX_MESSAGE_LENGTH = 500
@@ -165,10 +165,7 @@ export function onNardukException(host: ExceptionHookHost, handler: ExceptionHan
  * Publishes a report. A reporter that throws must never turn one error into
  * two, so the returned promise's rejection is swallowed here.
  */
-export function emitNardukException(
-  host: ExceptionHookHost,
-  report: NardukExceptionReport,
-): void {
+export function emitNardukException(host: ExceptionHookHost, report: NardukExceptionReport): void {
   try {
     const result = host.callHook(NARDUK_EXCEPTION_HOOK, report)
     if (result && typeof (result as Promise<unknown>).catch === 'function') {

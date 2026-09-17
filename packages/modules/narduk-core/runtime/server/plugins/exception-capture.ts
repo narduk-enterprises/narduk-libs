@@ -16,10 +16,10 @@ export default defineNitroPlugin((nitro) => {
     resolveBuildVersion: () => {
       try {
         const value = (useRuntimeConfig().public as Record<string, unknown>).buildVersion
-        return typeof value === 'string' && value !== '' ? value : undefined
+        return typeof value === 'string' && value !== '' ? value : ''
       } catch {
         // Runtime configuration is unavailable in isolated consumer fixtures.
-        return undefined
+        return ''
       }
     },
   })

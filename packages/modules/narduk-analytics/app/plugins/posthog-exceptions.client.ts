@@ -1,10 +1,11 @@
 import { onNardukException } from '@narduk-enterprises/narduk-core/shared/exception-report'
+
 import { defineNuxtPlugin } from '#imports'
 
 import { reportExceptionToPostHog } from '../utils/exceptionReporting'
 
-import type { ExceptionHookHost } from '@narduk-enterprises/narduk-core/shared/exception-report'
 import type { PostHogExceptionClient } from '../utils/exceptionReporting'
+import type { ExceptionHookHost } from '@narduk-enterprises/narduk-core/shared/exception-report'
 
 /**
  * Subscribes PostHog to narduk-core's `narduk:exception` seam. It registers a

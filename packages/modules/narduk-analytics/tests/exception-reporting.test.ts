@@ -90,9 +90,8 @@ describe('PostHog exception reporter', () => {
 
 describe('PostHog exception plugin', () => {
   it('subscribes to narduk-core’s seam and reads the client at report time', async () => {
-    const { emitNardukException } = await import(
-      '@narduk-enterprises/narduk-core/shared/exception-report'
-    )
+    const { emitNardukException } =
+      await import('@narduk-enterprises/narduk-core/shared/exception-report')
     const plugin = (await import('../app/plugins/posthog-exceptions.client')).default as {
       dependsOn: string[]
       name: string
@@ -127,9 +126,8 @@ describe('PostHog exception plugin', () => {
   })
 
   it('reports nothing while the client is still undefined', async () => {
-    const { emitNardukException } = await import(
-      '@narduk-enterprises/narduk-core/shared/exception-report'
-    )
+    const { emitNardukException } =
+      await import('@narduk-enterprises/narduk-core/shared/exception-report')
     const plugin = (await import('../app/plugins/posthog-exceptions.client')).default as {
       setup: (app: unknown) => void
     }

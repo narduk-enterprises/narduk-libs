@@ -14,8 +14,8 @@ import {
   installServerExceptionCapture,
 } from '../runtime/shared/exception-capture'
 import {
-  NARDUK_EXCEPTION_HOOK,
   buildExceptionReport,
+  NARDUK_EXCEPTION_HOOK,
   normalizeExceptionRoute,
   onNardukException,
   readExceptionStatusCode,
@@ -33,6 +33,9 @@ vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: (plugin: unknown) => plugin,
 }))
 
+const ROUTE_PATTERN = '/stations/:id'
+const RAW_ROUTE_PATTERN = '/stations/:id(\\d+)'
+
 function host(): { hooks: ExceptionHookHost; reports: NardukExceptionReport[] } {
   const hooks = createHooks() as unknown as ExceptionHookHost
   const reports: NardukExceptionReport[] = []
@@ -45,7 +48,7 @@ function event(path = '/stations/42?token=synthetic'): H3Event {
   request.method = 'GET'
   request.url = path
   const created = createEvent(request, new ServerResponse(request))
-  created.context.matchedRoute = { path: '/stations/:id(\\d+)', handlers: {} }
+  created.context.matchedRoute = { path: RAW_ROUTE_PATTERN, handlers: {} }
   created.context._requestId = 'req-1234'
   return created
 }
@@ -66,7 +69,7 @@ describe('exception report shape', () => {
   })
 
   it('normalizes a route pattern so one page is one value', () => {
-    expect(normalizeExceptionRoute('/stations/:id(\\d+)?')).toBe('/stations/:id')
+    expect(normalizeExceptionRoute('/stations/:id(\\d+)?')).toBe(ROUTE_PATTERN)
     expect(normalizeExceptionRoute('')).toBe('/')
   })
 
@@ -86,7 +89,7 @@ describe('exception report shape', () => {
     const report = buildExceptionReport(Object.assign(new Error('nope'), { statusCode: 404 }), {
       buildVersion: 'abc123def456',
       requestId: 'req-1234',
-      route: '/stations/:id(\\d+)',
+      route: RAW_ROUTE_PATTERN,
       source: 'server',
     })
 
@@ -96,7 +99,7 @@ describe('exception report shape', () => {
       message: 'nope',
       name: 'Error',
       requestId: 'req-1234',
-      route: '/stations/:id',
+      route: ROUTE_PATTERN,
       source: 'server',
       statusCode: 404,
     })
@@ -132,7 +135,7 @@ describe('client capture', () => {
     installClientExceptionCapture(hooks, {
       resolveBuildVersion: () => 'abc123def456',
       resolveRequestId: () => 'req-1234',
-      resolveRoute: () => '/stations/:id',
+      resolveRoute: () => ROUTE_PATTERN,
     })
     const error = new Error('render failed')
 
@@ -144,7 +147,7 @@ describe('client capture', () => {
       buildVersion: 'abc123def456',
       fatal: false,
       requestId: 'req-1234',
-      route: '/stations/:id',
+      route: ROUTE_PATTERN,
       source: 'client',
     })
   })
@@ -196,9 +199,7 @@ describe('server capture', () => {
   it('reports once per request with the route pattern, request id and status', async () => {
     const nitro = { hooks: createHooks() }
     const reports: NardukExceptionReport[] = []
-    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) =>
-      reports.push(report),
-    )
+    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) => reports.push(report))
     installServerExceptionCapture(nitro as never, {
       resolveBuildVersion: () => 'abc123def456',
     })
@@ -217,7 +218,7 @@ describe('server capture', () => {
       fatal: false,
       message: 'Cannot find any route matching /nope?[redacted]',
       requestId: 'req-1234',
-      route: '/stations/:id',
+      route: ROUTE_PATTERN,
       source: 'server',
       statusCode: 404,
     })
@@ -226,9 +227,7 @@ describe('server capture', () => {
   it('marks a 5xx fatal and dedupes an eventless error by identity', async () => {
     const nitro = { hooks: createHooks() }
     const reports: NardukExceptionReport[] = []
-    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) =>
-      reports.push(report),
-    )
+    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) => reports.push(report))
     installServerExceptionCapture(nitro as never)
 
     const error = new Error('boom')
@@ -250,9 +249,7 @@ describe('server capture', () => {
 
     const nitro = { hooks: createHooks() }
     const reports: NardukExceptionReport[] = []
-    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) =>
-      reports.push(report),
-    )
+    onNardukException(nitro.hooks as unknown as ExceptionHookHost, (report) => reports.push(report))
     installNitroLogging(nitro as never, resolveLoggingOptions)
     installServerExceptionCapture(nitro as never)
 

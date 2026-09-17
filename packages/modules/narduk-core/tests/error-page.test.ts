@@ -56,7 +56,7 @@ describe('error page contract', () => {
 
   it('gates the diagnostic detail on previewSafeMode', () => {
     expect(errorPage).toContain(
-      "resolveErrorDetail(props.error.message, runtimeConfig.public.previewSafeMode === true)",
+      'resolveErrorDetail(props.error.message, runtimeConfig.public.previewSafeMode === true)',
     )
   })
 

@@ -146,10 +146,7 @@ function addFallbackLayout(
  */
 function addFallbackErrorPage(
   nuxt: {
-    hook: (
-      name: 'app:resolve',
-      handler: (app: { errorComponent?: string | null }) => void,
-    ) => void
+    hook: (name: 'app:resolve', handler: (app: { errorComponent?: string | null }) => void) => void
   },
   src: string,
 ): void {

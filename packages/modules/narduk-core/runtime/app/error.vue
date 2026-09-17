@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NuxtError } from '#app'
 import {
   clearError,
   computed,
@@ -10,8 +11,6 @@ import {
 
 import { useRequestId } from './composables/useRequestId'
 import { resolveErrorDetail, resolveErrorPresentation, resolveErrorStatusCode } from './error-page'
-
-import type { NuxtError } from '#app'
 
 const props = defineProps<{
   error: NuxtError
@@ -50,7 +49,10 @@ useHead({
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-default px-4" data-testid="error-page">
+  <div
+    class="min-h-screen flex items-center justify-center bg-default px-4"
+    data-testid="error-page"
+  >
     <div class="text-center max-w-md">
       <!-- Error code -->
       <p class="text-7xl font-bold font-display text-primary mb-2" data-testid="error-page-status">
@@ -90,7 +92,9 @@ useHead({
       -->
       <p v-if="requestId" class="text-muted text-xs mt-8">
         Request ID
-        <code data-testid="error-page-request-id" class="font-mono select-all">{{ requestId }}</code>
+        <code data-testid="error-page-request-id" class="font-mono select-all">{{
+          requestId
+        }}</code>
       </p>
 
       <!-- Preview and staging only; never shown to production traffic. -->
