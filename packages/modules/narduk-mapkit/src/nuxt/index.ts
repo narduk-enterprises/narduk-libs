@@ -46,6 +46,16 @@ function normalizeRoutePath(path: string): string {
   if (!trimmed.startsWith('/')) {
     throw new Error('nardukMapKit.tokenRoutePath must start with / -- the route is same-host only')
   }
+  // `//evil.example/mk` starts with `/` and is still cross-origin: the browser
+  // reads it as protocol-relative. `fetchMapKitToken` throws on one, but at
+  // first paint and from inside the loader -- so the module refuses it at
+  // setup, where the message can name the option (§b.1).
+  if (trimmed.startsWith('//')) {
+    throw new Error(
+      'nardukMapKit.tokenRoutePath must not start with // -- a protocol-relative path ' +
+        'leaves the serving origin, and the route is same-host only',
+    )
+  }
   return trimmed.replace(/\/$/, '') || DEFAULT_MAPKIT_TOKEN_ROUTE
 }
 

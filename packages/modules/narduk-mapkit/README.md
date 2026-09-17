@@ -110,16 +110,16 @@ export default defineNuxtConfig({
 })
 ```
 
-| Option           | Default                              | What it does                                                     |
-| ---------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `component`      | `true`                               | Register `<AppMapKit>`.                                          |
-| `composables`    | `true`                               | Register `useMapKit()`.                                          |
-| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws. |
-| `language`       | _unset_                              | Passed to Apple's loader.                                        |
-| `rateLimit`      | `{ limit: 30, windowSeconds: 60 }`   | Fixed-window ceiling on the token route, per routed origin.      |
-| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.  |
-| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.   |
-| `tokenRoutePath` | `'/api/mapkit-token'`                | Must start with `/`. An absolute URL is a configuration error.   |
+| Option           | Default                              | What it does                                                      |
+| ---------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `component`      | `true`                               | Register `<AppMapKit>`.                                           |
+| `composables`    | `true`                               | Register `useMapKit()`.                                           |
+| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.  |
+| `language`       | _unset_                              | Passed to Apple's loader.                                         |
+| `rateLimit`      | `{ limit: 30, windowSeconds: 60 }`   | Fixed-window ceiling on the token route, per routed origin.       |
+| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.   |
+| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.    |
+| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup. |
 
 `libraries` is **configurable, not hard-coded**. MapKit JS 6 ships
 `mapkit.core.js` as a stub, so an app that only draws annotations can drop

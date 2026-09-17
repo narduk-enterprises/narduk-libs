@@ -125,6 +125,14 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
     )
   })
 
+  it('refuses a protocol-relative token route, which also leaves the origin', async () => {
+    // It starts with `/`, so a startsWith check alone lets it through and the
+    // failure surfaces later, inside the loader, as a cross-origin fetch.
+    await expect(setup({ tokenRoutePath: '//tokens.example/mk' })).rejects.toThrow(
+      'must not start with //',
+    )
+  })
+
   it('registers no route at all when the app serves its own', async () => {
     const nuxt = await setup({ tokenRoute: false })
 

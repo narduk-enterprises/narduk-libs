@@ -8,6 +8,7 @@
  * correctness, not the app's.
  */
 import { createApp, toNodeListener } from 'h3'
+import { connect } from 'node:net'
 import { createServer } from 'node:http'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
@@ -25,6 +26,9 @@ const SAME_ORIGIN = { 'sec-fetch-site': 'same-origin' }
 
 let base: string
 let server: Server
+/** The same handler mounted catch-all: h3's router 404s an absolute-form path. */
+let catchAllPort: number
+let catchAllServer: Server
 
 beforeAll(async () => {
   const privateKey = await createTestPrivateKeyPem()
@@ -52,16 +56,53 @@ beforeAll(async () => {
     server.listen(0, '127.0.0.1', resolve)
   })
   base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+
+  // A Nitro middleware or hand-rolled listener mounts the same handler with no
+  // path, which is where an absolute-form request target actually reaches it.
+  const catchAllApp = createApp()
+  catchAllApp.use(tokenRoute)
+  catchAllServer = createServer(toNodeListener(catchAllApp))
+  await new Promise<void>((resolve) => {
+    catchAllServer.listen(0, '127.0.0.1', resolve)
+  })
+  catchAllPort = (catchAllServer.address() as AddressInfo).port
 })
+
+/** `fetch` cannot send an absolute-form request line, so this speaks HTTP/1.1. */
+async function rawRequest(port: number, requestTarget: string, host: string): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => {
+      socket.write(
+        [
+          `GET ${requestTarget} HTTP/1.1`,
+          `Host: ${host}`,
+          'Sec-Fetch-Site: same-origin',
+          'Connection: close',
+          '',
+          '',
+        ].join('\r\n'),
+      )
+    })
+    const chunks: Buffer[] = []
+    socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+    socket.on('error', reject)
+    socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+  })
+}
 
 afterAll(async () => {
   resetNuxtImportsStub()
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) reject(error)
-      else resolve()
-    })
-  })
+  await Promise.all(
+    [server, catchAllServer].map(
+      async (instance) =>
+        await new Promise<void>((resolve, reject) => {
+          instance.close((error) => {
+            if (error) reject(error)
+            else resolve()
+          })
+        }),
+    ),
+  )
 })
 
 afterEach(() => {
@@ -94,6 +135,41 @@ describe('the module-registered token route (§e)', () => {
     const response = await fetch(`${base}/api/mapkit-token`, { headers: SAME_ORIGIN })
 
     expect(response.headers.get('cache-control')).toContain('no-store')
+  })
+
+  it('sends x-content-type-options: nosniff, like every other response', async () => {
+    const response = await fetch(`${base}/api/mapkit-token`, { headers: SAME_ORIGIN })
+
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
+  it('refuses Origin: null, which is an opaque origin and not a same-origin claim', async () => {
+    const response = await fetch(`${base}/api/mapkit-token`, {
+      headers: { ...SAME_ORIGIN, origin: 'null' },
+    })
+
+    expect(response.status).toBe(403)
+  })
+
+  it('refuses an absolute-form request target instead of minting for its host', async () => {
+    const raw = await rawRequest(
+      catchAllPort,
+      'http://evil.example/api/mapkit-token',
+      `127.0.0.1:${String(catchAllPort)}`,
+    )
+
+    expect(raw).toContain('403 ')
+    expect(raw).not.toContain('evil.example"')
+  })
+
+  it('still mints for an ordinary origin-form target over the same raw socket', async () => {
+    const raw = await rawRequest(
+      catchAllPort,
+      '/api/mapkit-token',
+      `127.0.0.1:${String(catchAllPort)}`,
+    )
+
+    expect(raw).toContain('200 ')
   })
 
   it('answers 405 with Allow for a non-GET', async () => {

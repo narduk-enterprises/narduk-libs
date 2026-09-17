@@ -53,10 +53,15 @@ from the module into the app head, so a page that renders no map makes no
 request to `cdn.apple-mapkit.com`. It carries no token: a token in the tag is
 MapKit's static, non-refreshable path.
 
-The token route the module registers is the same fail-closed handler `/server`
-exports, plus a fixed-window ceiling
-(`rateLimit: { limit: 30, windowSeconds: 60 }`) applied per routed origin. An
-app that mounts narduk-core's own limiter on
+The token route the module registers resolves its `self` through
+`mapKitRoutedOrigin`, so an absolute-form request line cannot name the origin
+claim, and `tokenRoutePath` now refuses a `//`-prefixed path at module setup —
+it starts with `/` but is protocol-relative, so `fetchMapKitToken` would
+otherwise only throw at first paint from inside the loader.
+
+Otherwise it is the same fail-closed handler `/server` exports, plus a
+fixed-window ceiling (`rateLimit: { limit: 30, windowSeconds: 60 }`) applied per
+routed origin. An app that mounts narduk-core's own limiter on
 `event.context.nardukMapKit.rateLimit` still wins; the default only means an
 unconfigured JWT-signing route is not an unlimited one. The 2.0.x adapter's
 zero-consumer surface is deliberately not carried over.
