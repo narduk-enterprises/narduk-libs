@@ -4,18 +4,15 @@ import { useRuntimeConfig } from 'nitropack/runtime'
 import { getClientIp } from './client-ip'
 import { readWorkerRuntimeEnv } from './worker-env'
 
+import type { CloudflareRateLimitBinding } from '../rate-limit/binding'
 import type { H3Event } from 'h3'
 
 /**
- * Cloudflare Workers Rate Limiting binding (see `ratelimits` in wrangler.json).
- * Counters are coordinated per PoP (not per-isolate memory). Complements the
- * in-memory limiter below for defense in depth.
- *
- * @see https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+ * Re-exported so this module's long-standing public surface is unchanged. The
+ * one declaration now lives beside `defineRateLimitedHandler`, which reads the
+ * same `ratelimits` bindings.
  */
-export interface CloudflareRateLimitBinding {
-  limit(input: { key: string }): Promise<{ success: boolean }>
-}
+export type { CloudflareRateLimitBinding }
 
 /** Wrangler binding names — must match `ratelimits[].name` in each app. */
 export type LayerRateLimitBindingName =

@@ -183,6 +183,146 @@ substring can rely on `"status":"ok"`: `status`, `timestamp` and `database` are
 the first fields of `data`, well inside the first 4096 bytes, and no check
 detail can contain a `status` or `database` key.
 
+## Per-route rate limits: `defineRateLimitedHandler`
+
+Wrap a route handler and it is rate limited. The app declares the allowance; it
+never writes a limiter, and it never edits a registry in this package.
+
+```ts
+// server/api/stations/index.get.ts — auto-imported, like defineEventHandler
+export default defineRateLimitedHandler(
+  async (event) => listStations(getQuery(event)),
+  { key: 'marine-public-api', limit: 120, windowSeconds: 60 },
+)
+```
+
+`key` names the allowance — use a slug, not a path, because it is also the
+`runtimeConfig` override key and the field in the denial log record.
+
+| Option          | Default       | Meaning                                                                                                                           |
+| --------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `key`           | required      | Stable identifier for this route's allowance.                                                                                     |
+| `limit`         | `120`         | Requests permitted per window.                                                                                                    |
+| `windowSeconds` | `60`          | Window length.                                                                                                                    |
+| `scope`         | `'ip'`        | `'ip'` — one allowance per client address; `'ip-path'` — per address per path; `'global'` — one allowance shared by every caller. |
+| `headers`       | `'both'`      | `'standard'`, `'legacy'`, `'both'` or `'none'` (see below).                                                                       |
+| `binding`       | by convention | Explicit wrangler `ratelimits[].name`.                                                                                            |
+| `enabled`       | `true`        | Turn the limit off without removing the wrapper.                                                                                  |
+
+### What enforces the limit
+
+Two layers run, and a denial from either answers 429.
+
+1. **The Cloudflare Rate Limiting binding**, when the app declared a matching
+   `ratelimits` entry. Its counters are coordinated per Cloudflare location
+   rather than per isolate, so it is the more accurate enforcer and it runs
+   first.
+2. **An in-isolate fixed window**, always. On its own it permits roughly
+   `limit x live isolates`, so it is a brute-force and scraper dampener rather
+   than a quota. It runs regardless because it is the only source of the
+   `RateLimit-*` quota headers — the binding's `.limit()` resolves to
+   `{ success }` with no remaining count and no reset instant — the only path
+   that supports a window other than 10 or 60 seconds, and the only one that
+   exists in `nuxt dev`, in unit tests and under plain Node.
+
+**The binding is an upgrade, never a prerequisite.** Cloudflare does not
+document whether it is available on the Workers Free plan, so an app adopts this
+helper with no wrangler change at all and can add the binding later without
+touching a line of route code.
+
+To enable it, declare the binding under the top-level `ratelimits` array (GA
+since 2025-09-19; needs Wrangler >= 4.36.0) and name it `RL_<limit>` to match
+the convention this package already uses, or pass `binding` explicitly:
+
+```jsonc
+// wrangler.json
+{
+  "ratelimits": [
+    {
+      "name": "RL_120",
+      "namespace_id": "1001",
+      "simple": { "limit": 120, "period": 60 },
+    },
+  ],
+}
+```
+
+Cloudflare's `period` accepts only `10` or `60` seconds, so a route with any
+other `windowSeconds` is enforced by the in-isolate window alone and looks for
+no binding. Cloudflare also describes these counters as "permissive, eventually
+consistent, and intentionally designed to not be used as an accurate accounting
+system", which is the other reason the local window is kept.
+
+### Response headers
+
+The IETF work is at
+[draft-ietf-httpapi-ratelimit-headers-11](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-ratelimit-headers-11),
+which defines `RateLimit-Policy` (the quota policy) and `RateLimit` (the quota
+currently available) as Structured Fields — _not_ the familiar
+`RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` triad, which earlier
+revisions specified and which is what public APIs actually ship. Both families
+are emitted by default so neither kind of client is broken:
+
+```http
+RateLimit-Policy: "marine-public-api";q=120;w=60
+RateLimit: "marine-public-api";r=119;t=60
+RateLimit-Limit: 120
+RateLimit-Remaining: 119
+RateLimit-Reset: 60
+```
+
+Set `headers` to `'standard'` for the draft fields only, `'legacy'` for the
+triad only, or `'none'` to publish nothing but `Retry-After`.
+
+A denial answers **429** with `Retry-After`, `RateLimit-Remaining: 0`, the
+request's `x-request-id` preserved so a client's report correlates to the server
+record, and exactly one structured `warn` through
+`@narduk-enterprises/narduk-logging` carrying `rateLimitKey`, `limit`,
+`windowSeconds`, `scope`, `enforcedBy` and the **matched route template** — not
+the raw path, which carries caller-chosen identifiers and query values.
+
+### Exemptions
+
+These paths are never limited, whatever a route declares: `/api/health`,
+`/favicon.ico`, `/robots.txt`, `/sitemap.xml`, `/sitemap_index.xml`,
+`/sitemap/*`, `/__sitemap__/*`. A 429 on a health probe reads as an outage, and
+a throttled crawler is an SEO self-injury. The query string is ignored, so a
+monitor URL with a cache-buster stays exempt.
+
+`runtimeConfig.nardukRateLimit.exemptPaths` **replaces** that list rather than
+extending it; a trailing `*` matches by prefix, and an explicitly empty array
+means "exempt nothing".
+
+### Operator overrides
+
+```ts
+// nuxt.config.ts
+runtimeConfig: {
+  nardukRateLimit: {
+    enabled: true,          // false disables every rate-limited route
+    limit: 120,             // default for routes that declare none
+    windowSeconds: 60,
+    headers: 'both',
+    bindings: { 'marine-public-api': 'MARINE_RL' },
+    routes: { 'marine-public-api': { limit: 60, windowSeconds: 10 } },
+  },
+}
+```
+
+`routes[key]` wins over what the route itself declared, so an allowance can be
+retuned without editing route code. `enabled` is an AND across every layer: the
+block switch disables every route regardless of what a route asks for. A
+non-integer or non-positive override is rejected rather than adopted.
+
+### Relationship to `enforceRateLimitPolicy`
+
+`runtime/server/utils/rateLimit.ts` keeps its closed `RATE_LIMIT_POLICIES`
+registry for this layer's own auth, admin and upload routes, and apps already
+calling `enforceRateLimitPolicy` are unaffected. `defineRateLimitedHandler` is
+the surface for an **app's own** routes: it adds the handler wrapper, the
+`RateLimit-*` headers, the exempt list and the denial log record, over the same
+`ratelimits` bindings and the same client-address resolver.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
