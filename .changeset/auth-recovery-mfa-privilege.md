@@ -5,12 +5,13 @@
 Restrict recovery-mode and unstepped MFA sessions at the grant validator, and
 stop empty-scope API keys from acting as the user.
 
-A password-recovery PKCE `?code=` callback now sets
-`auth_sessions.recovery_mode` (from forwarded `type` or `next` targeting the
-reset route). While that flag is set, `requireAuth` only allows
-`GET /api/auth/me`, `POST /api/auth/change-password`, and
-`POST /api/auth/logout`. Successful password change clears the flag; persist no
-longer defaults omitted `recoveryMode` to `false`.
+A password-recovery callback now sets `auth_sessions.recovery_mode` from the
+server-side type, a forwarded `type=recovery`, or `next` on the `token_hash`
+path. A PKCE `?code=` login whose only signal is `next=/reset-password` is not
+recovery. While that flag is set, `requireAuth` only allows `GET /api/auth/me`,
+`POST /api/auth/change-password`, and `POST /api/auth/logout`. Successful
+password change clears the flag; persist no longer defaults omitted
+`recoveryMode` to `false`.
 
 When `AUTH_REQUIRE_MFA` is on, Supabase sessions whose row `aal` is not `aal2`
 are limited to MFA enroll/verify, logout, and `/api/auth/me`. **Local backend:**
