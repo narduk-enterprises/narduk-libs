@@ -6,6 +6,8 @@
  */
 import type { RequestLoggingOptions } from '@narduk-enterprises/narduk-logging/h3'
 
+import type { RateLimitRuntimeConfig } from '../../server/rate-limit/policy'
+
 interface CoreRuntimeConfig {
   /** Explicit logging identity and controls; absent level retains legacy logLevel behavior. */
   nardukLogging?: Partial<Omit<RequestLoggingOptions, 'sinks' | 'clock' | 'context'>>
@@ -28,6 +30,12 @@ interface CoreRuntimeConfig {
   }
   /** Wrangler Hyperdrive binding name; used by `useHyperdriveConnectionString`. */
   hyperdriveBinding: string
+  /**
+   * Defaults and per-route overrides for `defineRateLimitedHandler`. An
+   * operator can retune a route's allowance here without editing route code;
+   * `routes[key]` wins over what the route itself declared.
+   */
+  nardukRateLimit?: RateLimitRuntimeConfig
   /** Optional per-policy server-side rate limit overrides for shared layer routes. */
   rateLimitPolicies: Record<
     string,

@@ -659,6 +659,17 @@ export default defineNuxtModule<NardukCoreModuleOptions>({
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
       hyperdriveBinding: process.env.NUXT_HYPERDRIVE_BINDING || 'HYPERDRIVE',
       rateLimitPolicies: {},
+      // Defaults for `defineRateLimitedHandler`. Empty `routes`/`bindings` are
+      // seeded so an app can set one key via NUXT_NARDUK_RATE_LIMIT_* env
+      // without the parent object being absent at runtime.
+      nardukRateLimit: {
+        enabled: true,
+        limit: 120,
+        windowSeconds: 60,
+        headers: 'both',
+        bindings: {},
+        routes: {},
+      },
       cronSecret: process.env.CRON_SECRET || '',
       logLevel: process.env.LOG_LEVEL || 'warn',
       session: {
