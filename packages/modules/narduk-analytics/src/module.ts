@@ -147,6 +147,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       addPlugin(resolver.resolve('../app/plugins/00-analytics-head.client'))
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog.client'))
+      addPlugin(resolver.resolve('../app/plugins/posthog-exceptions.client'))
     }
 
     if (options.server) {
