@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { EventEmitter } from 'node:events'
+
 import {
   ALLOWED_TYPES,
+  capIncomingMessageBytes,
   CRITICAL_RASTER_WARNING_SIZE,
   getUploadPerformanceWarnings,
   isAllowedUploadContentType,
@@ -86,6 +89,53 @@ describe('upload endpoint request sizing', () => {
       { data: expect.any(Uint8Array), filename: 'a.png' },
     ])
     expect(readMultipartFormData).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects requests with no Content-Length before buffering', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue(undefined)
+
+    const route = await import('../../runtime/server/api/upload.post')
+    const handler = route.default as {
+      options: { parseBody: (event: unknown) => Promise<unknown> }
+    }
+
+    await expect(handler.options.parseBody({})).rejects.toMatchObject({
+      message: 'Content-Length is required',
+      statusCode: 411,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+
+  it('rejects requests with a non-finite Content-Length before buffering', async () => {
+    vi.resetModules()
+    readMultipartFormData.mockReset()
+    getHeader.mockReturnValue('not-a-length')
+
+    const route = await import('../../runtime/server/api/upload.post')
+    const handler = route.default as {
+      options: { parseBody: (event: unknown) => Promise<unknown> }
+    }
+
+    await expect(handler.options.parseBody({})).rejects.toMatchObject({
+      message: 'Content-Length is required',
+      statusCode: 411,
+    })
+    expect(readMultipartFormData).not.toHaveBeenCalled()
+  })
+})
+
+describe('capIncomingMessageBytes', () => {
+  it('destroys the request once the byte cap is exceeded', () => {
+    const req = new EventEmitter()
+    req.destroy = vi.fn()
+    capIncomingMessageBytes(req, 8)
+    req.emit('data', new Uint8Array(5))
+    expect(req.destroy).not.toHaveBeenCalled()
+    req.emit('data', new Uint8Array(4))
+    expect(req.destroy).toHaveBeenCalledTimes(1)
+    expect(req.destroy.mock.calls[0]?.[0]).toMatchObject({ statusCode: 413 })
   })
 })
 

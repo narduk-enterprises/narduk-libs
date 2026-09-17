@@ -15,7 +15,10 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
 ## Runtime Surface
 
 - `POST /api/upload` accepts authenticated multipart image uploads
-  (`image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`).
+  (`image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`). Requests
+  without a finite `Content-Length` are rejected with 411 before the body is
+  read. Declared length above 100 MB is 413. The Node request stream is also
+  hard-stopped at that byte cap so a lying header cannot buffer past it.
 - `GET /images/uploads/*` streams those objects from R2 when the stored content
   type is on the same allow-list (parameters stripped, lowercased). Other types
   — including missing metadata, SVG, HTML, and JavaScript — return 415.

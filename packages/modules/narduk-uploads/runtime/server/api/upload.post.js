@@ -3,6 +3,7 @@
  */
 import { uploadToR2 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/r2'
 import {
+  capIncomingMessageBytes,
   getUploadPerformanceWarnings,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
@@ -16,10 +17,20 @@ import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 
 function rejectOversizedUploadRequest(event) {
   const contentLengthHeader = getHeader(event, 'content-length')
-  if (!contentLengthHeader) return
+  if (!contentLengthHeader) {
+    throw createError({
+      statusCode: 411,
+      message: 'Content-Length is required',
+    })
+  }
 
   const contentLength = Number.parseInt(contentLengthHeader, 10)
-  if (!Number.isFinite(contentLength)) return
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
+    throw createError({
+      statusCode: 411,
+      message: 'Content-Length is required',
+    })
+  }
 
   if (contentLength > MAX_UPLOAD_REQUEST_SIZE) {
     throw createError({
@@ -34,7 +45,19 @@ export default defineUserMutation(
     rateLimit: RATE_LIMIT_POLICIES.upload,
     parseBody: async (event) => {
       rejectOversizedUploadRequest(event)
-      const formData = await readMultipartFormData(event)
+      capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
+      let formData
+      try {
+        formData = await readMultipartFormData(event)
+      } catch (cause) {
+        if (cause?.statusCode === 413) {
+          throw createError({
+            statusCode: 413,
+            message: `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`,
+          })
+        }
+        throw cause
+      }
       if (!formData || formData.length === 0) {
         throw createError({ statusCode: 400, message: 'No file uploaded' })
       }
