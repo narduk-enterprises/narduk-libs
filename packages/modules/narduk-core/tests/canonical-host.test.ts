@@ -1,5 +1,5 @@
-import { createServer } from 'node:http'
 import { readdirSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -74,45 +74,40 @@ const SAME_ORIGIN_FETCH = {
   'sec-fetch-site': 'same-origin',
 }
 
-describe('canonical-host middleware', () => {
-  const removedEnv = new Map<string, string | undefined>()
+const PAGE_PATH = '/lakes/superior'
+const API_PATH = '/api/mapkit/token'
+const CANONICAL_PAGE_URL = 'https://www.example.com/lakes/superior'
 
+describe('canonical-host middleware', () => {
   beforeEach(() => {
-    for (const key of ENV_KEYS) {
-      removedEnv.set(key, process.env[key])
-      delete process.env[key]
-    }
+    for (const key of ENV_KEYS) vi.stubEnv(key, undefined)
     runtime.public.appUrl = 'https://www.example.com'
     runtime.public.enforceCanonicalHost = true
     runtime.public.authEnforceCanonicalHost = false
   })
 
   afterEach(() => {
-    for (const [key, value] of removedEnv) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-    removedEnv.clear()
+    vi.unstubAllEnvs()
   })
 
   describe('top-level document navigations still canonicalise', () => {
     it('redirects a page navigation on a non-canonical host', async () => {
-      const result = await probe('/lakes/superior?utm_source=gsc', {
+      const result = await probe(`${PAGE_PATH}?utm_source=gsc`, {
         headers: DOCUMENT_NAVIGATION,
       })
 
       expect(result.status).toBe(308)
-      expect(result.location).toBe('https://www.example.com/lakes/superior?utm_source=gsc')
+      expect(result.location).toBe(`${CANONICAL_PAGE_URL}?utm_source=gsc`)
     })
 
     it('redirects a HEAD navigation', async () => {
-      const result = await probe('/lakes/superior', {
+      const result = await probe(PAGE_PATH, {
         method: 'HEAD',
         headers: DOCUMENT_NAVIGATION,
       })
 
       expect(result.status).toBe(308)
-      expect(result.location).toBe('https://www.example.com/lakes/superior')
+      expect(result.location).toBe(CANONICAL_PAGE_URL)
     })
 
     it('redirects the auth callback page so the session cookie lands on the canonical host', async () => {
@@ -144,7 +139,7 @@ describe('canonical-host middleware', () => {
 
   describe('sub-resource requests are never redirected cross-origin', () => {
     it('lets a same-origin fetch of an API route run on the routed host', async () => {
-      const result = await probe('/api/mapkit/token', { headers: SAME_ORIGIN_FETCH })
+      const result = await probe(API_PATH, { headers: SAME_ORIGIN_FETCH })
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
@@ -152,7 +147,7 @@ describe('canonical-host middleware', () => {
     })
 
     it('lets a fetch of a page path run on the routed host', async () => {
-      const result = await probe('/lakes/superior', { headers: SAME_ORIGIN_FETCH })
+      const result = await probe(PAGE_PATH, { headers: SAME_ORIGIN_FETCH })
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
@@ -174,14 +169,14 @@ describe('canonical-host middleware', () => {
 
   describe('requests carrying no fetch metadata', () => {
     it('still canonicalises page paths for crawlers and old clients', async () => {
-      const result = await probe('/lakes/superior')
+      const result = await probe(PAGE_PATH)
 
       expect(result.status).toBe(308)
-      expect(result.location).toBe('https://www.example.com/lakes/superior')
+      expect(result.location).toBe(CANONICAL_PAGE_URL)
     })
 
     it('does not redirect API paths', async () => {
-      const result = await probe('/api/mapkit/token')
+      const result = await probe(API_PATH)
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
@@ -198,7 +193,7 @@ describe('canonical-host middleware', () => {
 
   describe('gates that must keep working', () => {
     it('skips non-safe methods', async () => {
-      const result = await probe('/lakes/superior', {
+      const result = await probe(PAGE_PATH, {
         method: 'POST',
         headers: DOCUMENT_NAVIGATION,
       })
@@ -210,7 +205,7 @@ describe('canonical-host middleware', () => {
     it('skips when canonical host enforcement is disabled', async () => {
       runtime.public.enforceCanonicalHost = false
 
-      const result = await probe('/lakes/superior', { headers: DOCUMENT_NAVIGATION })
+      const result = await probe(PAGE_PATH, { headers: DOCUMENT_NAVIGATION })
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
@@ -219,19 +214,19 @@ describe('canonical-host middleware', () => {
     it('skips when the canonical URL is localhost', async () => {
       runtime.public.appUrl = 'http://localhost:3000'
 
-      const result = await probe('/lakes/superior', { headers: DOCUMENT_NAVIGATION })
+      const result = await probe(PAGE_PATH, { headers: DOCUMENT_NAVIGATION })
 
       expect(result.status).toBe(200)
       expect(result.location).toBeNull()
     })
 
     it('does not trust x-forwarded-host to bypass the redirect', async () => {
-      const result = await probe('/lakes/superior', {
+      const result = await probe(PAGE_PATH, {
         headers: { ...DOCUMENT_NAVIGATION, 'x-forwarded-host': 'www.example.com' },
       })
 
       expect(result.status).toBe(308)
-      expect(result.location).toBe('https://www.example.com/lakes/superior')
+      expect(result.location).toBe(CANONICAL_PAGE_URL)
     })
   })
 
@@ -247,8 +242,7 @@ describe('canonical-host middleware', () => {
     })
 
     it('keeps the retired middleware path importable as an alias for the live handler', async () => {
-      const alias =
-        (await import('../runtime/server/handlers/canonicalRedirect')) as typeof import('../runtime/server/handlers/canonicalRedirect')
+      const alias = await import('../runtime/server/handlers/canonicalRedirect')
 
       expect(alias.default).toBe(canonicalHost)
 

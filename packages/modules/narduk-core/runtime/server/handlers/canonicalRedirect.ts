@@ -13,9 +13,9 @@
  * @deprecated Import
  * `@narduk-enterprises/narduk-core/server/middleware/00-canonical-host`.
  */
-import { useRuntimeConfig } from 'nitropack/runtime'
-
 import { readRuntimeString } from '../utils/runtime-env'
+
+import type { useRuntimeConfig } from 'nitropack/runtime'
 
 export { default } from '../middleware/00-canonical-host'
 
