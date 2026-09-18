@@ -495,7 +495,10 @@ export function createWebPackageManifest(
       // runs this same command under `narduk-app dev --credentials nvault`.
       dev: 'nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
-      lint: 'nuxt prepare && eslint . --max-warnings 0',
+      // narduk-lint (from @narduk-enterprises/eslint-config) replaces
+      // `eslint . --max-warnings 0`: errors fail, warnings are held to the
+      // checked-in apps/web/lint-budget.json, which starts empty.
+      lint: 'nuxt prepare && narduk-lint',
       // Cross-checks wrangler.jsonc's bindings against ../../Config/cloudflare-app.json
       // (populated by onboarding, after this generator runs). Absent that
       // file the script exits 0 with an explanatory message instead of
