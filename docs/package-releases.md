@@ -194,6 +194,56 @@ legitimately rewrite every manifest with the Changesets already consumed.
 - If package manifests had to change, create a new Changeset and publish higher
   versions instead of attempting to replace an artifact.
 
+### A publish looks skipped or missing
+
+Every CI completion creates a Release run, and runs for PR branches skip
+instantly because `verify-ci` requires a push to `main`. A "skipped" Release run
+is therefore not evidence of a missed publish. Work through these steps in order
+and stop at the first one that explains the gap:
+
+1. Find the Release run whose `verify-ci` `VERIFIED_SHA` is the release-PR merge
+   commit. Read its "Prepare or publish" and "Verify immutable published package
+   versions" steps; grep the step log for `Publishing "` rather than dumping
+   full logs. A merge commit whose own `.changeset/` is empty publishes even
+   when `main` has already moved on.
+2. Treat that verify step as the GitHub Packages proof. The `gh` CLI token lacks
+   `read:packages` and gets a 403 from the packages API.
+3. Check the mirror:
+   `curl -s "https://npm.nard.uk/@narduk-enterprises%2f<pkg>" | jq '.versions|has("<ver>")'`.
+   `npm.nard.uk` is a mirror synced by `narduk-enterprises/package-delivery`
+   "Sync to R2", whose cron can run hours apart. If GitHub Packages has the
+   version and the mirror does not, dispatch the sync with
+   `gh workflow run sync.yml --repo narduk-enterprises/package-delivery`. Do not
+   republish.
+4. Only if a version truly was not published, recover just the packages that no
+   newer open or merged release PR will ship. If a newer release PR supersedes a
+   package, ship that newer version instead and record the skipped run ID on
+   that release PR.
+5. Only then use the `verified-sha` escape hatch described in
+   [When a Changeset is required](#when-a-changeset-is-required).
+
+Worked example, 2026-09-18: release PR #477 merged as `f862443a`. Release run
+35365638662 showed "skipped", but a PR-branch CI completion had triggered it.
+The push CI for `f862443a` (35365631679) triggered Release run 35366115556,
+which published narduk-core 2.2.2, narduk-app-tools 0.9.0 and create-narduk-app
+0.9.4 at 16:05Z, after `main` had already moved to `7ae9278c` (#476). The next
+run (35366209232) queued FIFO in the `narduk-libs-release` concurrency group
+rather than being replaced. #476 carried a pending Changeset, so that run opened
+release PR #479 (narduk-core 2.2.3). The manual `verified-sha` dispatch
+35366749247 only re-verified versions that were already published. The versions
+looked missing because the mirror had last synced at 15:48Z. A manual Sync to R2
+run (35367304736, package-delivery#4) made them appear. Step 4 is Logan's rule
+from that day: "There was a later release that has both fixes in it".
+
+Prevention:
+
+- Merge the release PR last, or wait for its publish run to finish before
+  merging anything else to `main`. A later run still works; this only keeps the
+  evidence unambiguous.
+- A pending change adds a post-publish mirror dispatch and a `branches: [main]`
+  filter on the `workflow_run` trigger. Check whether it has merged before
+  relying on either.
+
 ## Bad release rollback
 
 1. Stop app rollouts and identify the last known-good exact package versions.
