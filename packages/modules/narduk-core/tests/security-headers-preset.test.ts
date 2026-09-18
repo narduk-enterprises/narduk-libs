@@ -151,6 +151,26 @@ describe('allowlist surface', () => {
   })
 })
 
+describe('GA4 Google-signals beacon (issue #472)', () => {
+  // Pins the exact GA host set so a later edit to either directive shows up
+  // in review, per the issue's own request.
+  const gaHosts = (sources: readonly string[]) =>
+    sources.filter((source) => source.includes('google') || source.includes('doubleclick'))
+
+  it('allows the Google-signals page_view beacon on connect-src', () => {
+    expect(gaHosts(BASELINE_ALLOWLIST.connect)).toEqual([
+      'https://*.google-analytics.com',
+      'https://*.analytics.google.com',
+      'https://*.googletagmanager.com',
+      'https://www.google.com',
+    ])
+  })
+
+  it('allows the Google-signals image-beacon fallback on img-src', () => {
+    expect(gaHosts(BASELINE_ALLOWLIST.img)).toEqual(['https://www.google.com'])
+  })
+})
+
 describe('legacy CSP_*_SRC environment variables', () => {
   it('parses the comma-separated form, ignoring blanks', () => {
     expect(parseLegacyCspSources('blob:, https://a.example ,,')).toEqual([

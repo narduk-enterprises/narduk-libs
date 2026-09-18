@@ -148,13 +148,23 @@ export const BASELINE_ALLOWLIST: Required<SecurityHeadersAllowlist> = {
     'https://*.google-analytics.com',
     'https://*.analytics.google.com',
     'https://*.googletagmanager.com',
+    // GA4's Google-signals feature sends a second page_view beacon straight
+    // to https://www.google.com/g/collect (not a *.google-analytics.com
+    // host), and falls back to an <img> beacon at the same origin when
+    // fetch/sendBeacon is unavailable. A property with Google signals off
+    // never sends this beacon and does not need this host (issue #472;
+    // https://developers.google.com/tag-platform/security/guides/csp,
+    // 2026-07-30 revision, read 2026-09-18).
+    'https://www.google.com',
     'https://us.i.posthog.com',
     'https://us-assets.i.posthog.com',
     'https://*.apple-mapkit.com',
     'https://*.apple.com',
   ],
   // MapKit serves raster tiles and the Nuxt image pipeline serves data: URIs.
-  img: ['data:', 'https://*.apple-mapkit.com'],
+  // https://www.google.com is GA4's Google-signals image-beacon fallback --
+  // see the connect-src comment above.
+  img: ['data:', 'https://*.apple-mapkit.com', 'https://www.google.com'],
   font: ['https://fonts.gstatic.com'],
   style: ['https://fonts.googleapis.com'],
   frame: [],
