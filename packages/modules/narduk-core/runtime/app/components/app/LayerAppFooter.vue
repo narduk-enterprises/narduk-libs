@@ -19,7 +19,7 @@ const props = withDefaults(
 // Read the clock once on the server and hydrate with the same value: a
 // `new Date()` in the template renders twice, and the two reads disagree
 // across a year boundary (narduk/no-render-clock).
-const copyrightNow = useState<number>('narduk-core:footer-now', () => Date.now())
+const copyrightNow = useSsrNow('layer-app-footer')
 
 const resolvedAppName = computed(() => {
   if (props.appName) return props.appName
