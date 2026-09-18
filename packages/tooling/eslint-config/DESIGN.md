@@ -394,3 +394,100 @@ traversal completes.
 Consumer app migrations (per-repo follow-ups), archiving the incubator repo
 (publish workflow already disabled 2026-08-01), and the ESLint-10 rollout in
 apps (happens per app as they adopt v2).
+
+## Warning budgets and the 2026-09 rules (recorded 2026-09-18)
+
+### Why budgets
+
+`eslint . --max-warnings 0` made every new warning rule a coordinated event:
+someone had to track each rollout and step in wherever it went red. Logan,
+2026-09-18: "I dont like the next pack....its hard on me cause it requires i
+keep track of it and intervene.....i wonder how we can not enforce warnings and
+keep the warnings in check maybe like max warnings? and just accept the super
+offenders go red and have to be fixed?"
+
+So there are two tiers. **Errors** are defects worth a red build, and they fail
+everywhere. **Warnings** are held to a per-package `lint-budget.json`: a rule
+may not grow past its recorded count, an unbudgeted rule passes, and a local run
+ratchets counts down (never up) and prunes zeros. A new warning rule therefore
+ships without turning anyone red, and existing debt can only shrink unless a
+reviewer accepts a hand-edited increase.
+
+Decisions inside that design:
+
+- **The budget lives in the working directory, not next to the ESLint config.**
+  Most narduk-libs packages share the root config; one file next to it would
+  pool their counts and let one package's cleanup pay for another's new
+  warnings.
+- **CI never writes.** A stale budget (counts below the recorded budget, or an
+  unbudgeted rule) prints a notice, not a failure. Failing on staleness would
+  recreate the intervention the design exists to remove.
+- **Unused-directive warnings** have no rule id in ESLint's output; they are
+  counted as `eslint/unused-disable-directive`.
+- **`--max-warnings` is refused**, so a lint script cannot quietly reinstate the
+  old gate alongside the budget.
+- **Turbo** declares `lint-budget.json` as a `lint` output, so a cache hit
+  restores the file a real run would have written.
+
+### Secrets rule choice
+
+The brief asked for a secrets rule at error, choosing between
+`eslint-plugin-no-secrets` and a custom rule.
+
+`eslint-plugin-no-secrets` 2.3.3 (Shannon-entropy string scanning) was run
+across narduk-libs: **222 reports in 104 files; every report spot-checked was a
+false positive**. Examples: env-catalog selectors such as
+`"doppler:narduk/tokens/TURNSTILE_SECRET_KEY"`, content hashes, and base64 test
+fixtures. At error severity that is unshippable, and at warn it would be noise
+that budgets would freeze in place.
+
+The custom `narduk/no-secret-in-public-runtime-config` looks only where Nuxt
+actually publishes values: credential-named keys under `runtimeConfig.public`
+(serialized into every page), and credential-named keys with a string literal
+default anywhere in `runtimeConfig`. It reported **0** on narduk-libs, which is
+the expected result for a tree with no leaks. It trades recall (a literal token
+pasted into ordinary code is out of scope; secret scanning in CI covers that)
+for a zero false-positive rate at error.
+
+### SQL rules
+
+`sonarjs/sql-queries` (S2077, string-built SQL) is on at warn in the server
+pack, test trees excluded, and counts toward budgets. It reported 0 in the
+narduk-libs packages that use the server pack. `eslint-plugin-drizzle`,
+`eslint-plugin-sql`, SafeQL and `eslint-plugin-sqlite` were evaluated by the
+orchestrating lane and rejected, so none of them is added.
+
+### `require-limit-on-drizzle-list-queries`: wider, with an escape hatch
+
+The rule now also reports `.where(eq(<non-key column>, …))` with no `.limit()`.
+An equality on a foreign or ordinary column is a list, not a lookup; the one
+libs hit was `GET /api/auth/api-keys`, filtering by `userId`. Nothing caps how
+many keys a user may create (the POST route is rate limited only), so it got a
+real bound (`orderBy(desc(createdAt)).limit(100)`) rather than a
+`narduk-bounded` comment, which would have been a false claim. The
+`// narduk-bounded: <reason>` comment exists for sets that are bounded by
+construction, and requires a reason so review can check it.
+
+### `no-render-clock` precision choices
+
+The rule is an error, so it stays inside one component: a composable that reads
+the clock and is invoked during render is out of scope. A mounted flag (a
+`useMounted()` ref, or a ref assigned `true` inside `onMounted`) guards its true
+side only, including after `if (!mounted.value) return`; its false side is
+exactly the SSR and hydrating render, so it stays reported. That was added after
+narduk-ui's `NsFreshnessChip`, which renders a placeholder until mount, was
+reported.
+
+### Type-aware rules and the plugin copy
+
+The server pack's promise rules and the correctness pack's type-aware warnings
+are the first type-aware rules the packs turn on. `withNuxt()` registers
+`@nuxt/eslint-config`'s own `@typescript-eslint` plugin, while the packs parse
+with this package's `tseslint.parser`. In narduk-libs those two resolved
+different TypeScript versions (5.9 through the modules, 6.0 through this
+package, D-TOOLCHAIN-1), `TypeFlags` differ between them, and
+`no-misused-promises` crashed. `createAppLintConfig()` now calls the composer's
+`replacePlugin('@typescript-eslint', tseslint.plugin)`, so rules and program
+always come from one install. In a consumer app both copies usually resolve the
+app's single TypeScript, so the swap changes little there beyond the plugin
+version.

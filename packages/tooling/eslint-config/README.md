@@ -51,10 +51,10 @@ disable. Use `composeSharedConfigs()` unless you are assembling those yourself.
 | `nuxt-ui`       | Nuxt UI v4 legacy overlay/options API migration                                                                                    |
 | `seo`           | Registered, contributes no rules in v2                                                                                             |
 | `cloudflare`    | Worker runtime guardrails and the Node-built-in import ban                                                                         |
-| `server`        | Nitro handler data discipline, Cloudflare guardrails, server import hygiene                                                        |
+| `server`        | Nitro handler data discipline, Cloudflare guardrails, server import hygiene, type-aware promise errors                             |
 | `auth`          | CSRF and rate-limit gates on mutation routes                                                                                       |
 | `template`      | Starter/layer structure, file-size budgets, layer-source import ban                                                                |
-| `correctness`   | TypeScript hygiene (warn-only) plus type-aware parser wiring                                                                       |
+| `correctness`   | TypeScript hygiene and type-aware checks (warn-only) plus type-aware parser wiring                                                 |
 | `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only                                                                                     |
 | `complexity`    | High-signal `sonarjs` rules, warn-only                                                                                             |
 | `formatting`    | `eslint-plugin-perfectionist` import/type ordering                                                                                 |
@@ -71,11 +71,125 @@ Prettier's formatting. It deliberately does **not** disable the `formatting`
 pack: perfectionist owns _ordering_, Prettier owns _whitespace_. Run
 `eslint --fix` first, then Prettier.
 
+## Warning budgets: `narduk-lint`
+
+`narduk-lint` runs ESLint and holds warnings to a checked-in `lint-budget.json`
+instead of `--max-warnings 0`. Use it as the lint script:
+
+```json
+{ "scripts": { "lint": "narduk-lint" } }
+```
+
+```json
+{
+  "rules": {
+    "narduk/require-fetch-timeout": 3
+  }
+}
+```
+
+- **Errors always fail.**
+- **A rule over its budget fails.** The output names the rule, its count, its
+  budget, and the top five `file:line` locations.
+- **A rule with no budget entry passes.** A new warning rule never turns anyone
+  red on its own; only growth past a recorded count does.
+- **Local runs ratchet down, never up.** Outside CI, `narduk-lint` lowers an
+  entry to the current count, records a rule that has no entry, deletes an entry
+  that reaches zero, and rewrites the file (keys sorted, trailing newline). It
+  never raises an entry: to accept more warnings, edit the file by hand and let
+  review see it.
+- **CI never writes.** With `--ci` or `CI=true`, an unbudgeted rule or a count
+  below its budget prints a notice asking for a local `pnpm lint` and a commit;
+  only errors and over-budget rules fail.
+
+The budget file is read from the directory `narduk-lint` runs in (the package
+root under `pnpm run lint`), not from next to the ESLint config, so packages
+that share one config still keep separate budgets. Run it over the same paths
+the lint script uses: counting a subset would lower the budget for the rest.
+`--no-write` counts without rewriting.
+
+Paths are positional (default `.`). `--fix`, `--cache`, `--cache-location` and
+`--ignore-pattern` pass through to ESLint. `--max-warnings` is refused.
+`--budget <path>` points at another file, `--verbose` prints every warning.
+
+Exit codes: `0` pass; `1` a lint error or a rule over budget; `2` a usage or
+configuration error, or ESLint itself crashed.
+
+If Turbo caches the lint task, declare `lint-budget.json` as an output so a
+cache hit restores it.
+
+## Rules added in the budget release
+
+| Rule                                                   | Severity | Pack        | Scope                                        |
+| ------------------------------------------------------ | -------- | ----------- | -------------------------------------------- |
+| `@typescript-eslint/no-floating-promises`              | error    | server      | `server/**` TS, type-aware                   |
+| `@typescript-eslint/no-misused-promises`               | error    | server      | `server/**` TS, type-aware                   |
+| `narduk/no-render-clock`                               | error    | core        | `.vue`                                       |
+| `narduk/no-secret-in-public-runtime-config`            | error    | core        | `nuxt.config.*`                              |
+| `narduk/require-limit-on-drizzle-list-queries` (wider) | error    | server      | now also `.where(eq(<non-key column>))`      |
+| `@typescript-eslint/no-floating-promises`              | warn     | correctness | outside `server/**`, type-aware              |
+| `@typescript-eslint/no-misused-promises`               | warn     | correctness | outside `server/**`, type-aware              |
+| `@typescript-eslint/await-thenable`                    | warn     | correctness | type-aware                                   |
+| `@typescript-eslint/switch-exhaustiveness-check`       | warn     | correctness | type-aware                                   |
+| `narduk/require-fetch-timeout`                         | warn     | server      | `fetch`/`$fetch`/`ofetch` in server code     |
+| `narduk/prefer-db-batch`                               | warn     | server      | consecutive awaited drizzle writes           |
+| `sonarjs/sql-queries`                                  | warn     | server      | server code, not tests                       |
+| `no-console`                                           | warn     | shared tail | `server/**`                                  |
+| unused `eslint-disable` directives                     | warn     | shared tail | everywhere (`reportUnusedDisableDirectives`) |
+
+- **`narduk/no-render-clock`** reports `Date.now()`, `new Date()` and
+  `performance.now()` read while a component renders: in a template expression
+  (not `v-on`, not inside `<ClientOnly>`), a `computed` getter, or top-level
+  `<script setup>`. Server and client read different times and the page hydrates
+  with mismatches (buoys PR #202). Read the clock once and hydrate it
+  (`useSsrNow(key)` from narduk-core, or `useState(key, () => Date.now())`), or
+  read it after mount: lifecycle hooks, handlers, `import.meta.client` guards,
+  or a mounted flag (`useMounted()`, or a ref set to `true` in `onMounted`).
+- **`narduk/no-secret-in-public-runtime-config`** reports a credential-named key
+  (`secret`, `token`, `password`, `private`, `apiKey`) anywhere under
+  `runtimeConfig.public`, which ships to every browser, and a credential-named
+  key anywhere in `runtimeConfig` with a string literal default. Credentials
+  come from the environment (`NUXT_*`). See DESIGN.md, "Secrets rule choice".
+- **`narduk/require-limit-on-drizzle-list-queries`** now also reports
+  `.where(eq(column, value))` on a column that is not the primary key when
+  nothing bounds it. Add `.limit(n)`, or mark a set that is bounded by
+  construction with a comment on the statement: `// narduk-bounded: <reason>`
+  (the reason is required).
+- **`narduk/require-fetch-timeout`** reports an outbound `fetch`, `$fetch` or
+  `ofetch` call in server code with no `signal` or `timeout`. Internal `'/…'`
+  paths through `$fetch`/`ofetch`, and option objects it cannot see into
+  (variables, spreads), are not reported.
+- **`narduk/prefer-db-batch`** reports two or more consecutive awaited
+  `db.insert|update|delete` statements that do not depend on each other, and
+  `Promise.all(items.map(… db.insert …))`. Use `db.batch([...])`, one round trip
+  and one transaction on D1. Option: `receivers` (default `['db']`).
+
+## Upgrading to the budget release
+
+**This release turns consumer lint red on purpose.** The error-severity rules
+above (`no-floating-promises` and `no-misused-promises` in `server/**`,
+`narduk/no-render-clock`, `narduk/no-secret-in-public-runtime-config`, and the
+wider `require-limit-on-drizzle-list-queries`) report real defects, and an app
+that has them fails lint after the bump. That is the design: warnings are
+budgeted, and the super offenders go red and get fixed.
+
+1. Switch the lint script from `eslint . --max-warnings 0` to `narduk-lint`
+   (keep any `nuxt prepare &&` prefix).
+2. Run `pnpm lint` locally once. It writes `lint-budget.json` with the current
+   warning counts; commit it.
+3. Fix the errors it prints. For a list query that is bounded by construction,
+   add `// narduk-bounded: <reason>` instead of a `.limit()`.
+
+`createAppLintConfig()` also now uses the `@typescript-eslint` plugin that ships
+with this package's parser in place of the copy `withNuxt()` registers, so
+type-aware rules and the program they read come from one TypeScript.
+
 ## Published contents
 
-`dist/` (the bundled plugin and its types), `configs/` (the fourteen packs),
-`eslint-app-config.mjs`, `eslint-nuxt-flat-fragments.mjs`, and this README.
-There is no postinstall hook.
+`bin/narduk-lint.mjs` and `lint-budget.mjs` (the budget runner, also exported as
+`@narduk-enterprises/eslint-config/lint-budget`), `dist/` (the bundled plugin
+and its types), `configs/` (the fourteen packs), `eslint-app-config.mjs`,
+`eslint-nuxt-flat-fragments.mjs`, and this README. There is no postinstall hook.
 
 ## Migrating from v1
 
