@@ -218,7 +218,7 @@ jobs:
   # downscoped to exactly package-delivery and `contents: write`, and reads it
   # back before use -- the same shape as company-hq's
   # operator-portal-read-model-dispatch.yml. Until LANE_AUTOMATION_APP_KEY
-  # (environment npm-release, gated to main) and LANE_AUTOMATION_APP_ID
+  # (environment npm-release, gated to main) and LANE_AUTOMATION_CLIENT_ID
   # (repository variable) are delivered, the job records a notice and
   # dispatches nothing. It checks out no code and installs nothing, so the key
   # never shares a job with dependency install scripts.
@@ -235,14 +235,14 @@ jobs:
         id: credential
         env:
           LANE_AUTOMATION_APP_KEY: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
-          LANE_AUTOMATION_APP_ID: ${{ vars.LANE_AUTOMATION_APP_ID }}
+          LANE_AUTOMATION_CLIENT_ID: ${{ vars.LANE_AUTOMATION_CLIENT_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_APP_ID:-}" ]; then
+          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_CLIENT_ID:-}" ]; then
             echo 'present=true' >> "$GITHUB_OUTPUT"
           else
-            echo "::notice title=Mirror dispatch skipped::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_APP_ID (repository variable) is absent, so package-delivery was not notified. npm.nard.uk picks up this release on its next scheduled sync."
+            echo "::notice title=Mirror dispatch skipped::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_CLIENT_ID (repository variable) is absent, so package-delivery was not notified. npm.nard.uk picks up this release on its next scheduled sync."
           fi
 
       - name: Mint a dispatch token scoped to package-delivery
@@ -250,7 +250,7 @@ jobs:
         if: steps.credential.outputs.present == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.LANE_AUTOMATION_APP_ID }}
+          client-id: ${{ vars.LANE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
           owner: narduk-enterprises
           repositories: package-delivery
