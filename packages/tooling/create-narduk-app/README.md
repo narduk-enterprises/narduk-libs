@@ -16,7 +16,7 @@ await createNardukApp({
 The CLI is `create-narduk-app`:
 
 ```sh
-pnpm dlx @narduk-enterprises/create-narduk-app@0.9.8 harbor-notes \
+pnpm dlx @narduk-enterprises/create-narduk-app@0.9.9 harbor-notes \
   --display-name='Harbor Notes' \
   --description='A harbor log.' \
   --site-url=https://harbor.example \
