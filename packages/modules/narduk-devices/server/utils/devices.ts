@@ -22,6 +22,14 @@ import {
   type ReissueOutcome,
   type ScopedNonceRef,
 } from './devices-complete-claim'
+import {
+  type ContextBoundCompletionProof,
+  contextBoundSigningBytes,
+  DEVICE_PROOF_CONTEXT_PATTERN,
+  isContextBoundProof,
+  parseContextBoundRequest,
+  timingSafeEqualText,
+} from './devices-context-proof'
 import { DevicesError } from './devices-error'
 import {
   createLockoutGate,
@@ -83,6 +91,15 @@ export interface DevicesServiceOptions {
   approvalTtlSeconds?: number
   /** Session-open challenge lifetime; also bounds the replay cache. Default 5 minutes. */
   challengeTtlSeconds?: number
+  /**
+   * The one signing context a `ContextBoundCompletionProof` may carry, such as
+   * `mybo/claim-handoff/v1` (narduk-libs#237). Unset, every context-bound
+   * proof is refused `invalid`: the context is what keeps a signature made for
+   * another protocol from being replayed as a completion proof, so the library
+   * never accepts one it was not told to expect. Must match
+   * `DEVICE_PROOF_CONTEXT_PATTERN` and must not name this package.
+   */
+  completionProofContext?: string
   /** Primary-key generator. Defaults to `crypto.randomUUID()`. */
   idGenerator?: () => string
   /** Millisecond epoch clock. Injectable so tests own time. */
@@ -382,6 +399,14 @@ export interface DeviceCompletionProof {
 }
 
 /**
+ * Either proof shape `completeClaimWithRecordedApproval` verifies: the
+ * library's own `DeviceCompletionProof`, or the consumer-shaped
+ * `ContextBoundCompletionProof` a device signing its own domain-separated
+ * handoff body can produce (narduk-libs#237).
+ */
+export type CompletionProof = ContextBoundCompletionProof | DeviceCompletionProof
+
+/**
  * Completion driven by the *device*, on the strength of the approval already
  * recorded on the claim session by `issueApprovalToken`.
  *
@@ -407,7 +432,7 @@ export interface CompleteClaimWithRecordedApprovalInput {
    * Optional for a first completion; **required** for
    * `reissueOnIdempotentReplay`, which rotates live credentials.
    */
-  deviceProof?: DeviceCompletionProof
+  deviceProof?: CompletionProof
   /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
   devicePublicKey: string
   hardwareFingerprint: string
@@ -438,6 +463,14 @@ export interface CompleteClaimResult {
    */
   credentials: IssuedCredential[]
   deviceId?: string
+  /**
+   * Set only on a served re-issue: the installation id the device was
+   * completed with. A consumer that mints a fresh installation id per attempt
+   * (because the device cannot sign one) returns this instead of the id it
+   * minted for the replay, which the device row never recorded
+   * (narduk-libs#237).
+   */
+  installationId?: string
   retryAfterSeconds?: number
   status: ClaimCompleteStatus
 }
@@ -734,6 +767,16 @@ export function createDevices(
   const challengeTtlMs = (options.challengeTtlSeconds ?? CHALLENGE_DEFAULT_TTL_SECONDS) * 1000
   const sessionTtlMs = (options.sessionTtlSeconds ?? SESSION_DEFAULT_TTL_SECONDS) * 1000
   const skewSeconds = options.timestampSkewSeconds ?? TIMESTAMP_SKEW_DEFAULT_SECONDS
+  const proofContext = options.completionProofContext
+  if (
+    proofContext !== undefined &&
+    (!DEVICE_PROOF_CONTEXT_PATTERN.test(proofContext) || proofContext.startsWith('narduk-devices'))
+  ) {
+    throw new DevicesError(
+      'invalid',
+      'completionProofContext must be a versioned context such as "app/claim-handoff/v1", and must not name narduk-devices.',
+    )
+  }
   const lockouts = createLockoutGate(db, now, nextId)
 
   async function audit(input: {
@@ -1124,8 +1167,9 @@ export function createDevices(
       idempotencyKey: string
       installationId: string
     },
-    proof: DeviceCompletionProof,
+    proof: CompletionProof,
   ): Promise<boolean> {
+    if (isContextBoundProof(proof)) return contextBoundProofBinds(session, bound, proof)
     const request = proof.canonicalRequest
     if (
       request.claimSessionId !== session.id ||
@@ -1152,14 +1196,62 @@ export function createDevices(
     return verified
   }
 
-  /** The single-use row a completion proof's nonce occupies for this session. */
-  function completionProofNonceRef(
+  /**
+   * `completionProofBinds` for a `ContextBoundCompletionProof`. The context is
+   * the configured one, the canonical request is exactly the six signed keys
+   * in canonical form, each bound field equals resolved state, `signedAt` is
+   * inside the skew window, and the signature over
+   * `context + "\n" + canonicalRequest` verifies against the key the claim
+   * session recorded. `installationId` is deliberately not bound: the cloud
+   * mints it, so the device cannot sign it. Every comparison is constant-time.
+   */
+  async function contextBoundProofBinds(
     session: ClaimSession,
-    proof: DeviceCompletionProof,
-  ): ScopedNonceRef {
+    bound: { devicePublicKey: string; hardwareFingerprint: string; idempotencyKey: string },
+    proof: ContextBoundCompletionProof,
+  ): Promise<boolean> {
+    if (proofContext === undefined) return false
+    if (typeof proof.context !== 'string' || typeof proof.signature !== 'string') return false
+    const request = parseContextBoundRequest(proof.canonicalRequest)
+    if (request === null) return false
+    const matches = await Promise.all([
+      timingSafeEqualText(proof.context, proofContext),
+      timingSafeEqualText(request.claimSessionId, session.id),
+      timingSafeEqualText(request.devicePublicKey, session.publicKey),
+      timingSafeEqualText(request.devicePublicKey, bound.devicePublicKey),
+      timingSafeEqualText(request.hardwareFingerprint, bound.hardwareFingerprint),
+      timingSafeEqualText(request.idempotencyKey, bound.idempotencyKey),
+    ])
+    if (!matches.every(Boolean)) return false
+    if (!isWithinTimestampSkew(request.signedAt, now(), skewSeconds)) return false
+    const signatureBytes = tryBase64UrlDecode(proof.signature)
+    const publicKeyBytes = tryBase64UrlDecode(session.publicKey)
+    if (!signatureBytes || publicKeyBytes?.length !== ED25519_PUBLIC_KEY_BYTES) return false
+    return verifySignature({
+      message: contextBoundSigningBytes(proofContext, proof.canonicalRequest),
+      publicKey: publicKeyBytes,
+      signature: signatureBytes,
+    })
+  }
+
+  /**
+   * The nonce a proof carries. Only reached after `completionProofBinds`
+   * accepted the proof, so a context-bound request is known to parse.
+   */
+  function completionProofNonce(proof: CompletionProof): string {
+    if (!isContextBoundProof(proof)) return proof.canonicalRequest.nonce
+    const request = parseContextBoundRequest(proof.canonicalRequest)
+    if (request === null) {
+      throw new DevicesError('invalid', 'The completion proof does not parse.')
+    }
+    return request.nonce
+  }
+
+  /** The single-use row a completion proof's nonce occupies for this session. */
+  function completionProofNonceRef(session: ClaimSession, proof: CompletionProof): ScopedNonceRef {
     return {
       scope: completionNonceScope(session.id),
-      nonce: proof.canonicalRequest.nonce,
+      nonce: completionProofNonce(proof),
       expiresAt: session.expiresAt,
     }
   }
@@ -1263,6 +1355,7 @@ export function createDevices(
       result: {
         status: 'completed',
         deviceId: device.id,
+        installationId: device.installationId,
         credentials: prepared.map((entry) => entry.issued),
       },
     }
@@ -1883,7 +1976,16 @@ export function createDevices(
     async completeClaimWithRecordedApproval(input) {
       const devicePublicKey = requireText(input.devicePublicKey, 'devicePublicKey')
       const reissue = input.reissueOnIdempotentReplay ?? false
-      const proof = input.deviceProof
+      // `null` from a JavaScript caller is no proof, never a crash.
+      const proof = input.deviceProof ?? undefined
+      if (proof !== undefined && isContextBoundProof(proof) && proofContext === undefined) {
+        // A misconfiguration, not a device failing to authenticate: said
+        // loudly rather than counted, so it cannot hide as a lockout.
+        throw new DevicesError(
+          'invalid',
+          'A context-bound deviceProof needs createDevices({ completionProofContext }): the library accepts only a context it was told to expect.',
+        )
+      }
       if (reissue && proof === undefined) {
         // Refused loudly rather than served: a re-issue revokes the genuine
         // device's credentials and sessions and hands the caller live secrets,

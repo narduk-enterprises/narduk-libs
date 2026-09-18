@@ -337,6 +337,56 @@ Two ways to close that:
 A binding mismatch is `hardware_mismatch`; a proof that does not verify is
 `unauthorized_user`. Both count against the lockout.
 
+#### A device that signs its own handoff body
+
+`CanonicalCompletionRequest` binds `installationId`, which the cloud mints, so a
+device cannot sign it, and it carries no domain separator. A consumer whose
+device signs its own domain-separated handoff body passes that body as a
+`ContextBoundCompletionProof` instead (narduk-libs#237). The layout is mybo.at's
+`mybo/claim-handoff/v1`: the signature covers the UTF-8 of
+`context + "\n" + canonicalRequest`, and `canonicalRequest` is the canonical
+JSON of exactly six keys: `claimSessionId`, `devicePublicKey`,
+`hardwareFingerprint`, `idempotencyKey`, `nonce` and `signedAt`.
+
+```ts
+const devices = createDevices(db, {
+  // The one context a context-bound proof may carry. Unset, every such proof
+  // is refused `invalid`.
+  completionProofContext: 'mybo/claim-handoff/v1',
+})
+
+const result = await devices.completeClaimWithRecordedApproval({
+  claimSessionId: body.claimSessionId,
+  devicePublicKey: body.devicePublicKey,
+  hardwareFingerprint: body.hardwareFingerprint,
+  idempotencyKey: body.idempotencyKey,
+  installationId: crypto.randomUUID(), // minted per attempt, never signed
+  deviceProof: {
+    context: 'mybo/claim-handoff/v1',
+    canonicalRequest: canonicalJson(claimHandoffSigningValue(body)), // the signed string
+    signature: body.signature.sig, // base64url Ed25519
+  },
+  reissueOnIdempotentReplay: true,
+  remote: { ip },
+})
+// A served re-issue carries `installationId`: return that, not the one minted
+// for this attempt, which the device row never recorded.
+```
+
+The library fails closed on every part of it. The context must equal
+`completionProofContext` exactly, and the signature is verified over the
+configured context, never the presented one, so a signature the device key made
+for another protocol cannot be replayed here. `canonicalRequest` must already be
+canonical, with exactly the six keys and nothing else, so a reordered, spaced,
+extended or duplicate-keyed body is refused rather than normalised. Each signed
+field must equal resolved state: the claim session, the key it recorded, and the
+fingerprint and idempotency key of the call. `signedAt` must be inside the skew
+window. The nonce is burned in the same per-session scope as the library's own
+proof, so a captured proof is spent once served. The binding compares run in
+constant time over SHA-256 digests. `installationId` is deliberately unbound.
+The context must match `DEVICE_PROOF_CONTEXT_PATTERN` and must not name
+`narduk-devices`, or `createDevices` throws.
+
 `approval_required` covers "not approved yet" and "the approval expired";
 `unauthorized_user` covers an approval recorded for a different org or resource
 than the claim token names.
@@ -369,7 +419,9 @@ gate it:
    above cannot get destructive replay without asking for it.
 2. **Prove the device.** On `completeClaimWithRecordedApproval`,
    `reissueOnIdempotentReplay: true` without `deviceProof` throws
-   `DevicesError('invalid')` — it is not silently downgraded. On
+   `DevicesError('invalid')` — it is not silently downgraded. Either proof shape
+   qualifies: the library's `DeviceCompletionProof`, or a
+   `ContextBoundCompletionProof` over the device's own handoff body. On
    `completeClaim`, the raw approval token is already that proof.
 3. **A refusal is a failed authentication — a refusal, and nothing else.** A
    replay that fails the binding check records an attempt, counts against the
