@@ -10,7 +10,7 @@
     "directory": "packages/tooling/narduk-testkit"
   },
   "publishConfig": {
-    "access": "restricted",
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "types": "./dist/index.d.ts",

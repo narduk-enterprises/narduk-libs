@@ -121,7 +121,7 @@
     "url": "https://github.com/narduk-enterprises/narduk-charts/issues"
   },
   "publishConfig": {
-    "access": "restricted",
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   }
 }
