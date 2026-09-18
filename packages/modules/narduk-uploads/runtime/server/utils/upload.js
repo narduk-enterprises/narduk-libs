@@ -22,6 +22,51 @@ export function isAllowedUploadContentType(contentType) {
   return ALLOWED_TYPES.has(normalizeUploadContentType(contentType))
 }
 
+function asciiAt(bytes, offset, text) {
+  if (bytes.length < offset + text.length) return false
+  for (let index = 0; index < text.length; index += 1) {
+    if (bytes[offset + index] !== text.charCodeAt(index)) return false
+  }
+  return true
+}
+
+function startsWith(bytes, signature) {
+  if (bytes.length < signature.length) return false
+  return signature.every((byte, index) => bytes[index] === byte)
+}
+
+const AVIF_BRANDS = ['avif', 'avis']
+
+function isAvif(bytes) {
+  if (!asciiAt(bytes, 4, 'ftyp')) return false
+  const boxSize = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
+  const end = Math.min(boxSize, bytes.length)
+  if (end < 16) return false
+  // Major brand at 8, minor version at 12, compatible brands from 16.
+  if (AVIF_BRANDS.some((brand) => asciiAt(bytes, 8, brand))) return true
+  for (let offset = 16; offset + 4 <= end; offset += 4) {
+    if (AVIF_BRANDS.some((brand) => asciiAt(bytes, offset, brand))) return true
+  }
+  return false
+}
+
+/**
+ * The allow-listed raster type the bytes actually are, or `''`.
+ *
+ * The multipart `part.type` is a client header, so an HTML or SVG payload can
+ * arrive labelled `image/png` (DR-DATA-7). The upload route stores the type
+ * this returns, never the label, and refuses a file it cannot identify.
+ */
+export function sniffUploadImageType(bytes) {
+  if (!bytes || typeof bytes.length !== 'number') return ''
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg'
+  if (asciiAt(bytes, 0, 'GIF87a') || asciiAt(bytes, 0, 'GIF89a')) return 'image/gif'
+  if (asciiAt(bytes, 0, 'RIFF') && asciiAt(bytes, 8, 'WEBP')) return 'image/webp'
+  if (isAvif(bytes)) return 'image/avif'
+  return ''
+}
+
 export const MAX_FILE_SIZE = 10 * 1024 * 1024
 export const MAX_UPLOAD_REQUEST_SIZE = MAX_FILE_SIZE * 10
 

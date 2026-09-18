@@ -14,10 +14,14 @@ import {
   normalizeExtension,
   normalizeUploadContentType,
   PUBLIC_RASTER_WARNING_SIZE,
+  sniffUploadImageType,
   validateUploadFiles,
 } from '../../runtime/server/utils/upload'
 
-const defineUserMutation = vi.hoisted(() => vi.fn((options: unknown) => ({ options })))
+const defineUserMutation = vi.hoisted(() =>
+  vi.fn((options: unknown, handler: unknown) => ({ handler, options })),
+)
+const uploadToR2 = vi.hoisted(() => vi.fn())
 const getHeader = vi.hoisted(() => vi.fn())
 const readMultipartFormData = vi.hoisted(() => vi.fn())
 
@@ -51,7 +55,7 @@ vi.mock('#layer/server/utils/logger', () => ({
 }))
 
 vi.mock('@narduk-enterprises/narduk-uploads/runtime/server/utils/r2', () => ({
-  uploadToR2: vi.fn(),
+  uploadToR2,
 }))
 
 function makeFile(type: string, sizeBytes = 1024): { data: Uint8Array; type: string } {
@@ -442,5 +446,138 @@ describe('upload endpoint streamed body cap', () => {
     req.emit('data', { byteLength: MAX_UPLOAD_REQUEST_SIZE + 1 })
     expect(req.destroy).toHaveBeenCalledTimes(1)
     expect(req.destroy.mock.calls[0]?.[0]).toMatchObject({ statusCode: 413 })
+  })
+})
+
+// DR-DATA-7: the multipart `part.type` is a client header. The stored type
+// has to come from the bytes, or an HTML/SVG payload labelled image/png is
+// stored as a PNG.
+// ALLOWED_TYPES order: jpeg, png, webp, gif, avif.
+const [JPEG, PNG, WEBP, GIF, AVIF] = [...ALLOWED_TYPES] as [string, string, string, string, string]
+const MAGIC: Record<string, number[]> = {
+  [PNG]: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  [JPEG]: [0xff, 0xd8, 0xff, 0xe0],
+  [GIF]: [...'GIF89a'].map((c) => c.charCodeAt(0)),
+  [WEBP]: [...'RIFF']
+    .map((c) => c.charCodeAt(0))
+    .concat(
+      [0, 0, 0, 0],
+      [...'WEBPVP8 '].map((c) => c.charCodeAt(0)),
+    ),
+  [AVIF]: [0, 0, 0, 0x1c].concat(
+    [...'ftypavif'].map((c) => c.charCodeAt(0)),
+    [0, 0, 0, 0],
+    [...'avifmif1miaf'].map((c) => c.charCodeAt(0)),
+  ),
+}
+
+function bytesOf(type: string, extra = 32): Uint8Array {
+  const head = MAGIC[type]!
+  const out = new Uint8Array(head.length + extra)
+  out.set(head)
+  return out
+}
+
+function ascii(text: string): Uint8Array {
+  return new TextEncoder().encode(text)
+}
+
+describe('sniffUploadImageType (DR-DATA-7)', () => {
+  it.each(Object.keys(MAGIC))('recognises %s from its magic bytes', (type) => {
+    expect(sniffUploadImageType(bytesOf(type))).toBe(type)
+  })
+
+  it('recognises AVIF when avif is only a compatible brand', () => {
+    const bytes = new Uint8Array([
+      0,
+      0,
+      0,
+      0x18,
+      ...ascii('ftypmif1'),
+      0,
+      0,
+      0,
+      0,
+      ...ascii('miafavif'),
+      0,
+      0,
+      0,
+      0,
+    ])
+    expect(sniffUploadImageType(bytes)).toBe(AVIF)
+  })
+
+  it('answers empty for HTML, SVG, script, a non-AVIF ftyp and truncated input', () => {
+    expect(sniffUploadImageType(ascii('<!doctype html><script>alert(1)</script>'))).toBe('')
+    expect(sniffUploadImageType(ascii('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe('')
+    expect(sniffUploadImageType(ascii('alert(document.cookie)'))).toBe('')
+    expect(
+      sniffUploadImageType(
+        new Uint8Array([0, 0, 0, 0x14, ...ascii('ftypmp42'), 0, 0, 0, 0, ...ascii('isom')]),
+      ),
+    ).toBe('')
+    expect(sniffUploadImageType(new Uint8Array([0x89, 0x50]))).toBe('')
+    expect(sniffUploadImageType(new Uint8Array(0))).toBe('')
+  })
+})
+
+describe('upload handler stores the sniffed type (DR-DATA-7)', () => {
+  async function loadHandler() {
+    vi.resetModules()
+    uploadToR2.mockReset()
+    const route = await import('../../runtime/server/api/upload.post')
+    return (route.default as unknown as { handler: (ctx: unknown) => Promise<unknown> }).handler
+  }
+
+  it('rejects HTML bytes labelled image/png before anything reaches R2', async () => {
+    const handler = await loadHandler()
+    const html = ascii('<!doctype html><html><script>alert(1)</script></html>')
+    await expect(
+      handler({ event: {}, body: [{ data: html, filename: 'x.png', type: PNG }] }),
+    ).rejects.toMatchObject({ statusCode: 415 })
+    expect(uploadToR2).not.toHaveBeenCalled()
+  })
+
+  it('rejects SVG bytes labelled image/jpeg', async () => {
+    const handler = await loadHandler()
+    const svg = ascii('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>')
+    await expect(
+      handler({ event: {}, body: [{ data: svg, filename: 'x.jpg', type: JPEG }] }),
+    ).rejects.toMatchObject({ statusCode: 415 })
+    expect(uploadToR2).not.toHaveBeenCalled()
+  })
+
+  it('rejects the whole request when any one file fails the sniff', async () => {
+    const handler = await loadHandler()
+    await expect(
+      handler({
+        event: {},
+        body: [
+          { data: bytesOf(PNG), filename: 'ok.png', type: PNG },
+          { data: ascii('<html>'), filename: 'bad.png', type: PNG },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 415 })
+    expect(uploadToR2).not.toHaveBeenCalled()
+  })
+
+  it('stores the sniffed type and extension, not the client label', async () => {
+    const handler = await loadHandler()
+    const result = (await handler({
+      event: {},
+      body: [{ data: bytesOf(PNG), filename: 'photo.jpg', type: JPEG }],
+    })) as { key: string }
+    expect(uploadToR2).toHaveBeenCalledTimes(1)
+    expect(uploadToR2.mock.calls[0]![3]).toBe(PNG)
+    expect(result.key).toMatch(/^uploads\/[0-9a-f-]+\.png$/u)
+  })
+
+  it('stores a correctly labelled image unchanged', async () => {
+    const handler = await loadHandler()
+    await handler({
+      event: {},
+      body: [{ data: bytesOf(WEBP), filename: 'a.webp', type: WEBP }],
+    })
+    expect(uploadToR2.mock.calls[0]![3]).toBe(WEBP)
   })
 })
