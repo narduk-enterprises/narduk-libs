@@ -468,18 +468,49 @@ nothing for a Workers Builds preview. So an app that sets
 `nonProductionBranchBuilds: true` while its wrangler config binds production D1,
 KV or R2 would read and write production data from every pull request branch.
 The check refuses that combination unless `previewBindings` names a replacement
-for each of those bindings. Entries may be a bare binding name or an object
-carrying the preview resource's own ids.
+for each of those bindings.
 
-**`previewBindings` is a declaration, and 12.4 no longer reports PASS for it.**
-Nothing in this release consumes the field: `narduk-app deploy` generates only
-`.wrangler.deploy.production.json`, and a non-production branch build uploads
-with that same config, so a listed binding still resolves to the production
-resource. An app that lists every binding name gets the identical runtime to one
-that lists none. Full coverage therefore reports **`unknown`** -- "declared, not
-enforced", exit 2 -- rather than a green check standing for an isolation that
-does not exist. The two `pass` states left are the ones a checkout really
-decides: `nonProductionBranchBuilds: false`, or no D1/KV/R2 binding at all.
+**Naming the preview resource is what isolates a preview** (narduk-libs#473,
+design §3.3 option A). The design and its limits are in
+[docs/preview-isolation.md](docs/preview-isolation.md). Give each entry the
+preview resource's id, using wrangler's own field names:
+
+```jsonc
+"previewBindings": {
+  "d1": [{ "binding": "DB", "database_id": "<preview uuid>", "database_name": "app-preview" }],
+  "kv": [{ "binding": "KV", "id": "<preview namespace id>" }],
+  "r2": [{ "binding": "UPLOADS", "bucket_name": "app-uploads-preview" }]
+}
+```
+
+`narduk-app deploy versions-upload` then checks `WORKERS_CI_BRANCH`. On any
+branch other than `productionBranch`, it writes `.wrangler.deploy.preview.json`,
+with every D1, KV and R2 binding rebound, and uploads with that file. The
+production branch, `deploy`, a run outside Workers Builds, an explicit `--env`
+target and an app without a valid `narduk-v1` block keep
+`.wrangler.deploy.production.json`, as before.
+
+The rebinding is all or nothing. If any binding lacks its preview resource, or
+names a production one, the build keeps the production config and prints a
+`WARNING` naming the binding. A half-rebound preview would read preview data and
+write production caches under the same keys.
+
+12.4 runs the same planner against the app's own config, so its verdict
+describes the config a branch build would upload:
+
+| `previewBindings` against the wrangler config                                        | 12.4                                 |
+| ------------------------------------------------------------------------------------ | ------------------------------------ |
+| every binding rebound to a resource that is not a production one                     | `pass`                               |
+| a production binding with no entry                                                   | `fail`                               |
+| an entry naming no binding of its kind (a typo or a removed binding)                 | `fail`                               |
+| a preview id, name or bucket that is a production one, in any scope                  | `fail`                               |
+| an entry that is a bare name, or a D1 entry missing its id or name                   | `unknown` ("declared, not enforced") |
+| bindings in a TOML config, or in a second Worker's config the build does not rewrite | `unknown`                            |
+
+The artefact's `previewConfig` records the plan, and the printed summary shows
+it on its `preview` line. A repository read still cannot prove the preview
+resources exist on Cloudflare, or that the Workers Builds non-production command
+really runs `narduk-app deploy versions-upload`. Those are the tier-2 live read.
 
 **Every wrangler config counts, not just the app's own.** A repo with a second
 Worker under `services/*` or beside the app is the exact shape the two committed

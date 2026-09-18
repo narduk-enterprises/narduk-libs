@@ -78,8 +78,10 @@ const appPath = z
 const bindingName = z.string().trim().min(1).max(200)
 
 /** A preview replacement for one production binding: the binding name alone, or
- * an object naming it alongside whatever ids the generated preview wrangler
- * config will need. */
+ * an object naming it alongside the preview resource, in wrangler's own field
+ * names (KV `id`, D1 `database_id` + `database_name`, R2 `bucket_name`). Only
+ * the object form isolates anything: `narduk-app deploy versions-upload` can
+ * rebind a binding only to a resource it is told (`./preview-config.ts`). */
 const previewBindingEntry = z.union([bindingName, z.looseObject({ binding: bindingName })])
 
 export type PreviewBindingEntry = z.infer<typeof previewBindingEntry>
@@ -89,10 +91,31 @@ export function previewBindingName(entry: PreviewBindingEntry): string {
   return typeof entry === 'string' ? entry.trim() : entry.binding.trim()
 }
 
+/** One entry per binding. A second entry for the same binding would be silently
+ * shadowed by the first, so a contradictory declaration is refused instead. */
+const previewBindingList = z
+  .array(previewBindingEntry)
+  .max(100)
+  .default([])
+  .superRefine((entries, ctx) => {
+    const seen = new Set<string>()
+    for (const [index, entry] of entries.entries()) {
+      const name = previewBindingName(entry)
+      if (seen.has(name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index],
+          message: `${name} appears more than once; give each binding exactly one preview entry`,
+        })
+      }
+      seen.add(name)
+    }
+  })
+
 export const previewBindingsSchema = z.strictObject({
-  d1: z.array(previewBindingEntry).max(100).default([]),
-  kv: z.array(previewBindingEntry).max(100).default([]),
-  r2: z.array(previewBindingEntry).max(100).default([]),
+  d1: previewBindingList,
+  kv: previewBindingList,
+  r2: previewBindingList,
 })
 
 /** The two §5.2 gates between "proved on staging" and "live in production". */

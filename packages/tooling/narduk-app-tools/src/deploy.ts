@@ -4,6 +4,13 @@ import { dirname, join, resolve } from 'node:path'
 
 import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
 
+import { readDeploymentBlock } from './deployment-config.js'
+import {
+  describePreviewPlan,
+  planPreviewConfig,
+  PREVIEW_CONFIG_FILENAME,
+} from './preview-config.js'
+
 export type DeployAction = 'deploy' | 'versions-upload'
 export type DeployEnv = Record<string, string | undefined>
 
@@ -139,6 +146,107 @@ export function flattenWranglerDeployConfig(
   return result
 }
 
+/** The redirect file Wrangler reads when it is run without `--config`. */
+function deployRedirectPath(appDir: string): string {
+  return join(appDir, '.wrangler', 'deploy', 'config.json')
+}
+
+/**
+ * `Config/cloudflare-app.json`, found from the app directory upward. A Workers
+ * Build may run from `apps/web` while the declaration lives at the repository
+ * root, so the walk climbs until it finds the file or reaches the repository
+ * root (a directory holding `.git`), and gives up after a few levels rather than
+ * reading some unrelated checkout's declaration.
+ */
+export function findCloudflareAppConfig(appDir: string): string | null {
+  let dir = resolve(appDir)
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = join(dir, 'Config', 'cloudflare-app.json')
+    if (existsSync(candidate)) return candidate
+    if (existsSync(join(dir, '.git'))) return null
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+  return null
+}
+
+/**
+ * Which config `versions-upload` hands Wrangler (narduk-libs#473, design §3.3
+ * option A).
+ *
+ * A Workers Build on a branch other than `deployment.productionBranch` uploads
+ * a version that serves a preview URL. Uploaded with the production config,
+ * that version binds production D1, KV and R2. So when the app's deployment
+ * block names a preview resource for every one of those bindings, this writes
+ * `.wrangler.deploy.preview.json` with each rebound and returns it.
+ *
+ * Everything else keeps the production config, unchanged from earlier
+ * releases: the production branch, a run outside Workers Builds (no
+ * `WORKERS_CI_BRANCH`), an app with no valid `narduk-v1` block, and an explicit
+ * `--env` target. A preview that cannot be fully rebound also keeps it, and
+ * says so on stderr, because a half-rebound preview mixes preview and
+ * production state under the same keys. `deploy` always keeps it: it serves
+ * production traffic and must bind production.
+ */
+export function selectDeployConfig(options: {
+  action: DeployAction
+  appDir: string
+  sourceConfigPath: string
+  productionConfigPath: string
+  passthroughArgs: readonly string[]
+  env?: DeployEnv
+  log?: (line: string) => void
+}): string {
+  const env = options.env ?? process.env
+  const log = options.log ?? ((line: string) => console.error(line))
+  const production = options.productionConfigPath
+  if (options.action !== 'versions-upload') return production
+  const branch = env.WORKERS_CI_BRANCH?.trim()
+  if (!branch) return production
+  const appFile = findCloudflareAppConfig(options.appDir)
+  if (!appFile) return production
+  let outcome: ReturnType<typeof readDeploymentBlock>
+  try {
+    outcome = readDeploymentBlock(readJsonc<unknown>(appFile))
+  } catch (error) {
+    log(
+      `narduk-app deploy: WARNING -- could not read ${appFile} ` +
+        `(${error instanceof Error ? error.message : String(error)}), so branch ${branch} ` +
+        'uploads with the production config.',
+    )
+    return production
+  }
+  if (outcome.kind !== 'valid') return production
+  const { productionBranch, previewBindings } = outcome.block
+  if (branch === productionBranch) return production
+  const warn = (why: string): string => {
+    log(
+      `narduk-app deploy: WARNING -- non-production branch ${branch} uploads with the ` +
+        `PRODUCTION bindings, because ${why}. This preview reads and writes production data. ` +
+        'Name a preview resource for every D1/KV/R2 binding under deployment.previewBindings ' +
+        '(narduk-libs#473).',
+    )
+    return production
+  }
+  if (hasExplicitWranglerEnvTarget([...options.passthroughArgs])) {
+    return warn('an explicit --env target was passed and the preview config is top-level only')
+  }
+  const plan = planPreviewConfig(readJsonc<Record<string, unknown>>(production), previewBindings, [
+    readJsonc<unknown>(options.sourceConfigPath),
+  ])
+  if (plan.status === 'no-bindings') return production
+  if (plan.status !== 'ready' || !plan.config) return warn(describePreviewPlan(plan))
+  const previewPath = join(options.appDir, PREVIEW_CONFIG_FILENAME)
+  writeJson(previewPath, plan.config)
+  writeJson(deployRedirectPath(options.appDir), { configPath: `../../${PREVIEW_CONFIG_FILENAME}` })
+  log(
+    `narduk-app deploy: non-production branch ${branch} -- uploading with ` +
+      `${PREVIEW_CONFIG_FILENAME}; ${plan.rebound.join(', ')}`,
+  )
+  return previewPath
+}
+
 export function writeFlattenedWranglerDeployConfig(
   configPath: string,
   options: { preserveNamedEnvironments?: boolean } = {},
@@ -146,7 +254,7 @@ export function writeFlattenedWranglerDeployConfig(
   if (!existsSync(configPath)) throw new Error(`Wrangler config not found at ${configPath}`)
   const appDir = dirname(configPath)
   const outputPath = join(appDir, '.wrangler.deploy.production.json')
-  const redirectPath = join(appDir, '.wrangler', 'deploy', 'config.json')
+  const redirectPath = deployRedirectPath(appDir)
   const config = flattenWranglerDeployConfig(readJsonc<WranglerConfig>(configPath), options)
   config.main = '.output/server/index.mjs'
   config.assets = { ...(config.assets ?? {}), directory: '.output/public' }
@@ -229,12 +337,23 @@ export function runDeploy(
   }
   const configPath = resolveWranglerConfigPath(appDir)
   const outputEntrypoint = join(appDir, '.output', 'server', 'index.mjs')
-  const sourceConfigPath =
+  const productionConfigPath =
     configPath && existsSync(outputEntrypoint)
       ? writeFlattenedWranglerDeployConfig(configPath, {
           preserveNamedEnvironments: hasExplicitWranglerEnvTarget(passthroughArgs),
         })
       : null
+  const sourceConfigPath =
+    configPath && productionConfigPath
+      ? selectDeployConfig({
+          action,
+          appDir,
+          sourceConfigPath: configPath,
+          productionConfigPath,
+          passthroughArgs,
+          env,
+        })
+      : productionConfigPath
   const commandArgs = buildWranglerCommandArgs({
     action,
     appDir,

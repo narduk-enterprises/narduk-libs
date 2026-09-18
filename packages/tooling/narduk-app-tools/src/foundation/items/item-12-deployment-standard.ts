@@ -33,17 +33,20 @@
  * production D1/KV/R2 writes to production data from every PR branch. That is
  * not advice; the gate refuses it.
  *
- * **What 12.4 does NOT do** (narduk-libs#451 defect 4): declaring a binding
- * under `previewBindings` does not isolate anything, because nothing in this
- * release consumes that field -- `narduk-app deploy` generates only
- * `.wrangler.deploy.production.json` and a branch build uploads with it. So the
- * covered path reports UNKNOWN ("declared, not enforced"), not PASS. A green
- * sub-check must never stand for an isolation that does not exist, and an app
- * that lists every binding name gets exactly the runtime of one that lists
- * none. PASS is reserved for the two states the repository really decides:
- * branch builds off, or no D1/KV/R2 binding at all.
+ * **How 12.4 reaches PASS with branch builds on** (narduk-libs#473). A
+ * `previewBindings` entry that names its preview resource (KV `id`, D1
+ * `database_id` + `database_name`, R2 `bucket_name`) is consumed: `narduk-app
+ * deploy versions-upload` on a non-production branch uploads with
+ * `.wrangler.deploy.preview.json`, every binding rebound. 12.4 runs the same
+ * planner (`planPreviewConfig`) against the app's own config, so its PASS
+ * describes the config the build would upload, not the declaration. A bare
+ * binding name is still only a declaration (narduk-libs#451 defect 4): the
+ * build cannot rebind it and uploads production bindings, so that path stays
+ * UNKNOWN ("declared, not enforced"). A green sub-check must never stand for an
+ * isolation that does not exist.
  */
 
+import { flattenWranglerDeployConfig } from '../../deploy.js'
 import {
   DEPLOYMENT_STANDARD,
   PREVIEW_BINDING_KINDS,
@@ -51,9 +54,16 @@ import {
   BUILD_VERSION_HEADER,
   previewBindingName,
   readDeploymentBlock,
+  type DeploymentBlock,
   type DeploymentBlockOutcome,
   type PreviewBindingKind,
 } from '../../deployment-config.js'
+import {
+  describePreviewPlan,
+  planPreviewConfig,
+  PREVIEW_CONFIG_FILENAME,
+  type PreviewConfigPlan,
+} from '../../preview-config.js'
 import { check } from '../schema.js'
 import {
   findWranglerConfig,
@@ -87,11 +97,12 @@ export const TIER_ONE_LIMITATIONS: readonly string[] = [
     'account serves the same hostname.',
   'A dashboard-edited deploy command is invisible here and is the exact failure that would ' +
     'silently undo the standard. Catching it needs the live read (design §2.2 tier 2).',
-  'deployment.previewBindings is a declaration no released tool consumes: narduk-app deploy ' +
-    'generates only .wrangler.deploy.production.json, and a non-production branch build uploads ' +
-    'with that same config. Listing a binding there therefore isolates nothing at runtime, which ' +
-    'is why 12.4 reports UNKNOWN rather than PASS when it is the only thing covering a ' +
-    'production binding (narduk-libs#451).',
+  'deployment.previewBindings isolates a preview only when every entry names its preview ' +
+    'resource: narduk-app deploy versions-upload then uploads a non-production branch with ' +
+    `${PREVIEW_CONFIG_FILENAME}, and 12.4 checks that exact config. A bare binding name is a ` +
+    'declaration the build cannot act on, so the preview keeps production bindings and 12.4 ' +
+    'reports UNKNOWN (narduk-libs#451, #473). A repository read cannot prove the preview ' +
+    'resources exist on Cloudflare.',
 ]
 
 /** The wrangler keys that declare each preview-sensitive binding kind. */
@@ -312,6 +323,12 @@ export interface DeploymentScan {
   /** Production bindings `previewBindings` does not replace. Empty unless the
    * block is valid AND non-production branch builds are on. */
   uncovered: BindingsByKind
+  /** `previewBindings` entries that name no production binding of their kind
+   * -- a typo, or a binding since removed. Same condition as `uncovered`. */
+  stale: BindingsByKind
+  /** What a non-production branch build would upload. Null unless the block is
+   * valid AND non-production branch builds are on. */
+  preview: PreviewScan | null
   /** Every `account_id` declaration in the checkout, with its file. */
   accounts: DeclaredAccount[]
   /** The distinct account ids among them. */
@@ -320,6 +337,52 @@ export interface DeploymentScan {
   exposureFlags: DeclaredFlag[]
   /** `worker.workersDev` / `worker.previewUrls` from Config/cloudflare-app.json. */
   declaredExposure: Partial<Record<ExposureFlag, boolean>>
+}
+
+export interface PreviewScan {
+  /** Why the build's generator cannot cover this checkout's bindings. When any
+   * exist, `plan` is null: a partial answer would read as a whole one. */
+  blockers: string[]
+  plan: PreviewConfigPlan | null
+}
+
+/**
+ * Plans the preview config exactly as `narduk-app deploy versions-upload` does:
+ * the app's own JSON/JSONC config, flattened the way the build flattens it, with
+ * every scope of that config counted as production for the reuse check.
+ */
+export function scanPreview(
+  repo: AppRepo,
+  wranglerRel: string | null,
+  wranglerRels: readonly string[],
+  previewBindings: DeploymentBlock['previewBindings'],
+): PreviewScan {
+  const blockers: string[] = []
+  if (!wranglerRel) {
+    blockers.push('the app has no wrangler config of its own for narduk-app deploy to rewrite')
+  } else if (wranglerRel.endsWith('.toml')) {
+    blockers.push(
+      `${wranglerRel} is TOML, and narduk-app deploy reads wrangler.json or wrangler.jsonc only`,
+    )
+  }
+  for (const rel of wranglerRels) {
+    if (rel === wranglerRel) continue
+    const bound = productionBindings(repo, rel)
+    const names = PREVIEW_BINDING_KINDS.flatMap((kind) => bound[kind].map((b) => `${kind}:${b}`))
+    if (names.length > 0) {
+      blockers.push(
+        `${rel} binds ${names.join(', ')}, and the preview generator rewrites only the app's own ` +
+          `config${wranglerRel ? ` (${wranglerRel})` : ''}`,
+      )
+    }
+  }
+  if (blockers.length > 0 || !wranglerRel) return { blockers, plan: null }
+  const raw = parseJson(repo.read(wranglerRel))
+  if (!isRecord(raw)) {
+    return { blockers: [`${wranglerRel} could not be parsed`], plan: null }
+  }
+  const deployConfig = flattenWranglerDeployConfig(raw) as Record<string, unknown>
+  return { blockers, plan: planPreviewConfig(deployConfig, previewBindings, [raw]) }
 }
 
 export function scanDeployment(repo: AppRepo): DeploymentScan {
@@ -334,11 +397,17 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
   }
   for (const kind of PREVIEW_BINDING_KINDS) production[kind] = sortedUnique(production[kind])
   const uncovered = emptyBindings()
+  const stale = emptyBindings()
+  let preview: PreviewScan | null = null
   if (outcome.kind === 'valid' && outcome.block.nonProductionBranchBuilds) {
     for (const kind of PREVIEW_BINDING_KINDS) {
-      const covered = new Set(outcome.block.previewBindings[kind].map(previewBindingName))
+      const declared = outcome.block.previewBindings[kind].map(previewBindingName)
+      const covered = new Set(declared)
+      const bound = new Set(production[kind])
       uncovered[kind] = production[kind].filter((name) => !covered.has(name))
+      stale[kind] = sortedUnique(declared.filter((name) => !bound.has(name)))
     }
+    preview = scanPreview(repo, wranglerRel, wranglerRels, outcome.block.previewBindings)
   }
   const accounts = declaredAccounts(repo, wranglerRels)
   return {
@@ -348,6 +417,8 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     outcome,
     production,
     uncovered,
+    stale,
+    preview,
     accounts,
     accountIds: sortedUnique(accounts.map((entry) => entry.accountId)),
     exposureFlags: declaredExposureFlags(repo, wranglerRel),
@@ -586,16 +657,30 @@ function evaluate124(scan: DeploymentScan): FoundationSubCheck {
           `configuration but not the state behind it, and preview_database_id / preview_id / ` +
           `preview_bucket_name apply to "wrangler dev" only -- they do nothing for a Workers ` +
           `Builds preview. As declared, every PR branch of this app would read and write ` +
-          `production data. Create a preview resource per binding, list it under ` +
-          `deployment.previewBindings, or set nonProductionBranchBuilds to false.`,
+          `production data. Create a preview resource per binding and name it under ` +
+          `deployment.previewBindings (KV "id", D1 "database_id" and "database_name", R2 ` +
+          `"bucket_name"), or set nonProductionBranchBuilds to false.`,
         scan.wranglerRel ?? undefined,
+      )
+    }
+    const stale = PREVIEW_BINDING_KINDS.flatMap((kind) =>
+      scan.stale[kind].map((binding) => `${kind}:${binding}`),
+    )
+    if (stale.length > 0) {
+      return check(
+        '12.4',
+        name,
+        STATUS_FAIL,
+        `deployment.previewBindings names ${stale.join(', ')}, which no wrangler config in ` +
+          `${scanned} binds under that kind. A preview entry must carry the exact name of the ` +
+          `production binding it replaces; a name that matches nothing replaces nothing, and ` +
+          `usually means a typo or a binding since removed.`,
+        scan.configFile,
       )
     }
     const covered = PREVIEW_BINDING_KINDS.flatMap((kind) => scan.production[kind])
     if (covered.length === 0) {
-      // Nothing to isolate. This is the only PASS this sub-check can honestly
-      // give an app with branch builds on, because it is the only one that
-      // rests on the wrangler configs rather than on the declaration.
+      // Nothing to isolate: the verdict rests on the wrangler configs alone.
       return check(
         '12.4',
         name,
@@ -605,28 +690,68 @@ function evaluate124(scan: DeploymentScan): FoundationSubCheck {
         scan.wranglerRel ?? undefined,
       )
     }
-    // narduk-libs#451 defect 4. `previewBindings` is a DECLARATION, and this
-    // release consumes it nowhere: `narduk-app deploy` writes one config,
-    // `.wrangler.deploy.production.json`, and a branch build uploads with that
-    // same file, so a listed binding still points at the production resource.
-    // Reporting PASS here asserted a preview isolation that does not exist --
-    // an app that lists every binding name and one that lists none get the
-    // identical runtime. UNKNOWN is the vocabulary for a verdict the check
-    // cannot reach, and it is what an adopter should see until a preview
-    // config generator exists (design §3.3 option A).
+    const preview = scan.preview
+    if (!preview || preview.blockers.length > 0 || !preview.plan) {
+      return check(
+        '12.4',
+        name,
+        STATUS_UNKNOWN,
+        `nonProductionBranchBuilds is true and deployment.previewBindings covers every ` +
+          `production D1/KV/R2 binding by name, but narduk-app deploy cannot generate a preview ` +
+          `config for all of them: ${(preview?.blockers ?? ['no preview scan']).join('; ')}. ` +
+          `Those bindings are declared, not enforced: a branch build still reaches the ` +
+          `production resource.`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
+    const { plan } = preview
+    if (plan.status === 'unsafe' || plan.status === 'uncovered') {
+      return check(
+        '12.4',
+        name,
+        STATUS_FAIL,
+        `nonProductionBranchBuilds is true and ${describePreviewPlan(plan)}. A preview bound ` +
+          `to that resource reads and writes production data, so narduk-app deploy refuses to ` +
+          `rebind it and uploads the production config instead. Point each entry at a resource ` +
+          `created for previews.`,
+        scan.configFile,
+      )
+    }
+    if (plan.status === 'declared-only') {
+      // narduk-libs#451 defect 4: a bare name is a declaration the build cannot
+      // act on, so the runtime is identical to declaring nothing.
+      return check(
+        '12.4',
+        name,
+        STATUS_UNKNOWN,
+        `nonProductionBranchBuilds is true and ${describePreviewPlan(plan)}, so narduk-app ` +
+          `deploy cannot build ${PREVIEW_CONFIG_FILENAME} and a branch build uploads with ` +
+          `.wrangler.deploy.production.json -- every binding still resolves to the production ` +
+          `resource. This sub-check therefore reports "declared, not enforced": it is ` +
+          `unproven, not safe. Add each preview resource to its entry, or set ` +
+          `nonProductionBranchBuilds to false.`,
+        scan.configFile,
+      )
+    }
+    if (plan.status === 'no-bindings') {
+      return check(
+        '12.4',
+        name,
+        STATUS_PASS,
+        `nonProductionBranchBuilds is true and the config a branch build uploads (` +
+          `${scan.wranglerRel ?? 'the app config'}, flattened) binds no D1, KV or R2 binding`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
     return check(
       '12.4',
       name,
-      STATUS_UNKNOWN,
-      `nonProductionBranchBuilds is true and deployment.previewBindings names a replacement for ` +
-        `each of the ${covered.length} production D1/KV/R2 binding(s) across ${scanned} -- but ` +
-        `that is a declaration this release consumes nowhere. narduk-app deploy generates only ` +
-        `.wrangler.deploy.production.json and a non-production branch build uploads with that ` +
-        `same config, so every listed binding still resolves to the production resource. This ` +
-        `sub-check therefore reports "declared, not enforced": it is unproven, not safe. Set ` +
-        `nonProductionBranchBuilds to false for a decidable verdict, or accept the exposure ` +
-        `explicitly where exemptions are recorded.`,
-      scan.wranglerRel ?? undefined,
+      STATUS_PASS,
+      `nonProductionBranchBuilds is true and narduk-app deploy versions-upload uploads a ` +
+        `non-production branch with ${PREVIEW_CONFIG_FILENAME}, which rebinds all ` +
+        `${plan.rebound.length} D1/KV/R2 binding(s) to resources that are not production ones: ` +
+        `${plan.rebound.join(', ')}`,
+      scan.configFile,
     )
   })
 }
