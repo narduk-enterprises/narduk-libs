@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   cursor-review:
-    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@9f6d43f751e202ab73c0ef1ad3475e2feb88eca3 # v2 (workflows#119)
+    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@852e0f0ce79860dc5fce0b998bf90712ba6a6bf4 # workflows#120; the moving v2 tag predates this callable, keep the SHA
     permissions:
       contents: read
       pull-requests: write
