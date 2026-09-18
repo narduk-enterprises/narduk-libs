@@ -1264,6 +1264,20 @@ Apple's own message. Drive the component through `load()` -- as production does
 `handle.mapkit`. 2.1.0's fake returned one object for both, which is how 62
 green end-to-end tests shipped a blank map.
 
+**`init()` is a page singleton (K-7).** A second `mapkit.init()` after a
+_failed_ token exchange runs a new exchange, which is how `<AppMapKit>`'s
+`retry()` is tested. Any other second call -- while the first exchange is
+pending, or after it succeeded -- is an idempotent no-op: no new token is
+requested, the first call's options stand, and the call is logged as `init` with
+detail `ignored`. A page that mounts several maps therefore needs no double-init
+shim (narduk-libs#522).
+
+**The rect camera (K-5).** `map.visibleMapRect`,
+`map.setVisibleMapRectAnimated()`, `mapkit.MapRect` / `MapPoint` / `MapSize` and
+`mapkit.Map.MapTypes` are modelled alongside the region camera. The rect is the
+Web-Mercator unit rect of the region the fake projects pins with, so a
+coordinate lands on the same pixel whichever camera a page drives.
+
 ### In vitest (happy-dom or jsdom)
 
 ```ts

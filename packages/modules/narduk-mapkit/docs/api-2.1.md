@@ -567,7 +567,8 @@ Must model: `mapkit.load(libraries)` returning a scoped namespace;
 `configuration-change` with `status: 'Initialized' | 'Refreshed'`; `error`
 carrying `MapKitConfigurationErrorEvent { status, message }`; the
 origin-mismatch message suffix; annotation add/remove/coordinate-write
-recording; the rect camera; a second `init()` after a failed exchange.
+recording; the rect camera; a second `init()` after a failed exchange, and an
+idempotent no-op for any other second `init()` (narduk-libs#522).
 
 Real Apple is a **reported post-deploy smoke, never a required gate**.
 narduk-testkit gets only a thin Playwright fixture that routes

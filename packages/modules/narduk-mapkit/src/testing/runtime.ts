@@ -201,8 +201,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
    * run a second token exchange, but 2.1.0's fake threw on the second
    * `mapkit.init()` -- so the kit's own documented recovery path could not be
    * tested against it, and buoys pinned that as a negative assertion. A second
-   * init after a FAILED exchange is allowed; one after a successful exchange
-   * still throws, because what real MapKit does there was never measured.
+   * init after a FAILED exchange runs a new exchange; one while an exchange is
+   * pending or after it succeeded is an idempotent no-op (narduk-libs#522): the
+   * namespace is a page singleton, and a page that mounts several maps must not
+   * crash on the second one's init.
    */
   let initFailed = false
   /**
@@ -1181,9 +1183,8 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     accessKeyExpiresAt = clock + accessKeyTtlMs
     const status: FakeMapKitConfigurationChangeStatus = initialized ? 'Refreshed' : 'Initialized'
     initialized = true
-    // A successful exchange closes the K-7 window again: what real MapKit does
-    // on a second `init()` after a GOOD one was never measured, so the fake
-    // keeps throwing there rather than guessing.
+    // A successful exchange closes the K-7 window again: a later `init()` is an
+    // idempotent no-op rather than a second exchange.
     initFailed = false
     configurationChanges.push(status)
     log('configuration-change', [], status)
@@ -1472,15 +1473,21 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
      * exactly what `initializeMapKit`'s `retry()` does -- it clears its
      * singleton on every `error` and calls `load()` + `init()` again, and 2.1.0's
      * fake threw there, so the kit's own documented recovery path had no test.
-     * A second `init()` after a SUCCESSFUL exchange still throws: what real
-     * MapKit does there was never measured, and inventing an answer is how a
-     * fake produces a green test for code that would fail against Apple.
+     *
+     * Any other second `init()` -- while the first exchange is pending, or after
+     * it succeeded -- is an idempotent no-op (narduk-libs#522): no new token is
+     * requested, and the first call's callback, language and libraries stand.
+     * The namespace is a page singleton, so a page that mounts several maps
+     * reaches `init()` more than once; 2.1.x threw there, and buoys shimmed it.
+     * The no-op is logged as `init` with detail `ignored`, so a test can still
+     * see that the extra call happened.
      */
     init(options: FakeMapKitInitializationOptions): void {
-      log('init')
       if (initCalled && !initFailed) {
-        notImplemented('mapkit.init (called twice without a failed token exchange in between)')
+        log('init', [], 'ignored')
+        return
       }
+      log('init')
       initCalled = true
       initFailed = false
       if (options.language) language = options.language

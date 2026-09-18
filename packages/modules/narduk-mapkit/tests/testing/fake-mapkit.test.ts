@@ -154,12 +154,72 @@ describe('authorization', () => {
     expect(fake.inspect.errors[0]?.status).toBe('Unauthorized')
   })
 
-  it('refuses a second init() after a SUCCESSFUL exchange', () => {
+  it('treats a second init() after a SUCCESSFUL exchange as an idempotent no-op (#522)', () => {
     const fake = createFakeMapKit()
-    initialize(fake)
-    expect(() => initialize(fake)).toThrow(
-      'FakeMapKitNotImplemented: mapkit.init (called twice without a failed token exchange in between)',
-    )
+    initialize(fake, 'first-token')
+
+    // A page that mounts several maps reaches init() once per map; 2.1.x threw
+    // here and buoys shimmed it.
+    expect(() => initialize(fake, 'second-token')).not.toThrow()
+    expect(fake.inspect.tokens).toEqual(['first-token'])
+    expect(fake.inspect.tokenCalls).toBe(1)
+    expect(fake.inspect.configurationChanges).toEqual(['Initialized'])
+    expect(
+      fake.inspect.operations.filter((op) => op.name === 'init').map((op) => op.detail),
+    ).toEqual(['', 'ignored'])
+  })
+
+  it('ignores a second init() while the first exchange is still pending', () => {
+    const fake = createFakeMapKit()
+    let finish: ((token: string) => void) | undefined
+    fake.mapkit.init({
+      authorizationCallback: (done) => {
+        finish = done
+      },
+    })
+
+    initialize(fake, 'second-token')
+    finish?.('first-token')
+
+    expect(fake.inspect.tokenCalls).toBe(1)
+    expect(fake.inspect.tokens).toEqual(['first-token'])
+    expect(fake.inspect.configurationChanges).toEqual(['Initialized'])
+  })
+
+  it('keeps the first init() options when a later one is ignored', () => {
+    const fake = createFakeMapKit()
+    fake.mapkit.init({
+      authorizationCallback: (done) => {
+        done('first-token')
+      },
+      language: 'fr',
+    })
+    fake.mapkit.init({
+      authorizationCallback: (done) => {
+        done('second-token')
+      },
+      language: 'de',
+    })
+
+    expect(fake.mapkit.language).toBe('fr')
+    // The access-key refresh still goes through the FIRST callback.
+    fake.inspect.advanceClock(1_800_001)
+    expect(fake.inspect.tokens).toEqual(['first-token', 'first-token'])
+  })
+
+  it('works through the scoped namespace too: one init per runtime, not per namespace', async () => {
+    const fake = createFakeMapKit()
+    initialize(fake, 'global-token')
+    const scoped = await fake.load({ libraries: ['map'] })
+
+    expect(() => {
+      scoped.init({
+        authorizationCallback: (done) => {
+          done('scoped-token')
+        },
+      })
+    }).not.toThrow()
+    expect(fake.inspect.tokens).toEqual(['global-token'])
   })
 
   it('allows a second init() after a failed one, so retry() is testable (K-7)', () => {
@@ -649,6 +709,73 @@ describe('the rect camera and its degenerate inputs (K-5)', () => {
     expect(fake.inspect.degenerateCameraInputs.map((input) => input.member)).toEqual(['padding'])
     expect(fake.inspect.count('camera-degenerate')).toBe(1)
     expect(map.padding.top).toBe(400)
+  })
+})
+
+describe('the rect camera members buoys shimmed (K-5, #522)', () => {
+  /** buoys' shim's own Web-Mercator unit-square projection, verbatim in maths. */
+  const toWorld = (lat: number, lon: number): { x: number; y: number } => {
+    const sin = Math.sin((lat * Math.PI) / 180)
+    return { x: (lon + 180) / 360, y: 0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI) }
+  }
+
+  it('constructs MapPoint, MapSize and MapRect from the namespace', () => {
+    const fake = createFakeMapKit()
+
+    const point = new fake.mapkit.MapPoint(0.25, 0.5)
+    const size = new fake.mapkit.MapSize(0.1, 0.2)
+    const rect = new fake.mapkit.MapRect(0.25, 0.5, 0.1, 0.2)
+
+    expect([point.x, point.y]).toEqual([0.25, 0.5])
+    expect([size.width, size.height]).toEqual([0.1, 0.2])
+    expect([rect.origin.x, rect.origin.y, rect.size.width, rect.size.height]).toEqual([
+      0.25, 0.5, 0.1, 0.2,
+    ])
+  })
+
+  it('answers visibleMapRect as the unit rect of the current region, off the equator', () => {
+    const { fake, map } = readyMap()
+    map.region = new fake.mapkit.CoordinateRegion(
+      { latitude: 36, longitude: -122 },
+      { latitudeDelta: 4, longitudeDelta: 6 },
+    )
+
+    const rect = map.visibleMapRect
+    const northWest = toWorld(38, -125)
+    const south = toWorld(34, 0).y
+
+    expect(rect.origin.x).toBeCloseTo(northWest.x, 10)
+    expect(rect.origin.y).toBeCloseTo(northWest.y, 10)
+    expect(rect.size.width).toBeCloseTo(6 / 360, 10)
+    expect(rect.size.height).toBeCloseTo(south - northWest.y, 10)
+  })
+
+  it('round-trips a rect written through setVisibleMapRectAnimated back to the region', () => {
+    const { fake, map } = readyMap()
+    const northWest = toWorld(38, -125)
+    const south = toWorld(34, 0).y
+
+    map.setVisibleMapRectAnimated(
+      new fake.mapkit.MapRect(northWest.x, northWest.y, 6 / 360, south - northWest.y),
+      true,
+    )
+
+    expect(map.region.center.longitude).toBeCloseTo(-122, 6)
+    expect(map.region.span.longitudeDelta).toBeCloseTo(6, 6)
+    expect(map.region.center.latitude + map.region.span.latitudeDelta / 2).toBeCloseTo(38, 6)
+    expect(map.region.center.latitude - map.region.span.latitudeDelta / 2).toBeCloseTo(34, 6)
+  })
+
+  it('accepts the basemap and control writes a page makes, and reads them back', () => {
+    const { fake, map } = readyMap()
+
+    map.mapType = fake.mapkit.Map.MapTypes.Satellite
+    map.showsZoomControl = false
+    map.showsScale = fake.mapkit.FeatureVisibility.Hidden
+
+    expect(map.mapType).toBe('satellite')
+    expect(map.showsZoomControl).toBe(false)
+    expect(map.showsScale).toBe('hidden')
   })
 })
 

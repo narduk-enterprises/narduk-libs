@@ -106,6 +106,31 @@ describe('fakeMapKitInitScript', () => {
     expect(runtime.mapkit.language).toBe('fr')
   })
 
+  it('ships the rect camera and an idempotent init(), so a page needs no shim (#522)', () => {
+    const runtime = runtimeOf(evaluateInitScript({ auth: { mode: 'accept' } }))
+    const init = (token: string): void => {
+      runtime.mapkit.init({ authorizationCallback: (done) => done(token) })
+    }
+    init('first.token')
+    // A second map on the same page reaches init() again (K-7).
+    expect(() => init('second.token')).not.toThrow()
+    expect(runtime.inspect.tokens).toEqual(['first.token'])
+
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const map = new runtime.mapkit.Map(host, { mapType: runtime.mapkit.Map.MapTypes.Standard })
+    // K-5: the rect camera, from the serialized source.
+    const rect = map.visibleMapRect
+    map.setVisibleMapRectAnimated(
+      new runtime.mapkit.MapRect(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height),
+      true,
+    )
+    expect(new runtime.mapkit.MapPoint(1, 2).y).toBe(2)
+    expect(new runtime.mapkit.MapSize(3, 4).height).toBe(4)
+    expect(runtime.inspect.count('setVisibleMapRectAnimated')).toBe(1)
+    expect(map.mapType).toBe('standard')
+  })
+
   it('produces an independent fake per evaluation', () => {
     const first = runtimeOf(evaluateInitScript())
     const second = runtimeOf(evaluateInitScript())
