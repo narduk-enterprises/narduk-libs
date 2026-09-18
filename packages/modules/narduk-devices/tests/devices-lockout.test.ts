@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { lockoutSubjectFor } from '../server/utils/devices-lockout'
+import {
+  createLockoutGate,
+  type LockoutSubject,
+  lockoutSubjectFor,
+} from '../server/utils/devices-lockout'
 import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import {
@@ -8,6 +12,7 @@ import {
   claimDevice,
   createDeviceKey,
   createTestHarness,
+  createTestIdGenerator,
   FINGERPRINT,
   ORG,
   signedOpen,
@@ -272,5 +277,127 @@ describe('claim-session enumeration is counted, not free', () => {
     )
     // ...and no further row is written for a refusal the gate already answered.
     expect(attempts()).toBe(perAccountOrIp.failures)
+  })
+})
+
+/**
+ * narduk-libs#238: the exported gate's `record` used to publish a crossing only
+ * for a rule that escalates, so a consumer building a non-escalating limiter on
+ * it — `perTokenOrDevice`, the most ordinary rule the library ships — was never
+ * told which attempt locked the caller out. Every rule now publishes its
+ * crossing; `escalates` says which kind it was, and the library's own audit
+ * trail still records only the escalating ones.
+ */
+describe('the exported lockout gate publishes every crossing', () => {
+  const gateFor = (harness: ReturnType<typeof createTestHarness>) =>
+    createLockoutGate(harness.db, harness.clock.now, createTestIdGenerator('attempt'))
+
+  it('reports a non-escalating crossing on the attempt that locks, flagged as such', async () => {
+    const harness = createTestHarness()
+    const gate = gateFor(harness)
+    const handoff: LockoutSubject = { kind: 'token', subject: 'claim-handoff-session:s-1' }
+    const device: LockoutSubject = { kind: 'device', subject: 'device-1' }
+
+    const crossedAt: Array<[number, unknown]> = []
+    for (let attempt = 1; attempt <= perTokenOrDevice.failures * 2; attempt += 1) {
+      const crossed = await gate.record([handoff, device], 'failure')
+      if (crossed.length > 0) crossedAt.push([attempt, crossed])
+      harness.clock.advance(1000)
+    }
+    // Exactly the fifth and tenth failures cross, once each per subject.
+    expect(crossedAt).toEqual([
+      [
+        perTokenOrDevice.failures,
+        [
+          { subject: handoff, failures: 5, cooldownSeconds: 900, escalates: false },
+          { subject: device, failures: 5, cooldownSeconds: 900, escalates: false },
+        ],
+      ],
+      [
+        perTokenOrDevice.failures * 2,
+        [
+          { subject: handoff, failures: 10, cooldownSeconds: 900, escalates: false },
+          { subject: device, failures: 10, cooldownSeconds: 900, escalates: false },
+        ],
+      ],
+    ])
+    // The crossing is the same verdict `check` reaches, not a re-derivation.
+    expect(await gate.check([handoff])).toMatchObject({ subject: handoff })
+    // A success is never a crossing.
+    expect(await gate.record([handoff, device], 'success')).toEqual([])
+  })
+
+  it('still flags an escalating crossing, with its escalated cooldown', async () => {
+    const harness = createTestHarness()
+    const gate = gateFor(harness)
+    const ip: LockoutSubject = { kind: 'ip', subject: lockoutSubjectFor('claim', '203.0.113.9') }
+    const token: LockoutSubject = { kind: 'token', subject: 'token-digest' }
+
+    const crossings = []
+    for (let attempt = 1; attempt <= perAccountOrIp.failures * 2; attempt += 1) {
+      // The token subject rides along for the first five attempts only.
+      crossings.push(
+        ...(await gate.record(
+          attempt <= perTokenOrDevice.failures ? [ip, token] : [ip],
+          'failure',
+        )),
+      )
+    }
+    expect(crossings).toEqual([
+      { subject: token, failures: 5, cooldownSeconds: 900, escalates: false },
+      { subject: ip, failures: 20, cooldownSeconds: 900, escalates: true },
+      { subject: ip, failures: 40, cooldownSeconds: 1800, escalates: true },
+    ])
+  })
+
+  it("keeps the library's own audit trail to escalating crossings", async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+    // Lock a claim token (five failed completions) and a device (five failed
+    // session opens): both cross the non-escalating rule.
+    const pending = await startPendingClaim(harness)
+    for (let attempt = 1; attempt <= perTokenOrDevice.failures; attempt += 1) {
+      await devices.completeClaim({
+        claimSessionId: pending.claimSessionId,
+        orgId: ORG,
+        resource: VESSEL,
+        installationId: 'inst-1',
+        hardwareFingerprint: FINGERPRINT,
+        userApprovalToken: 'guess',
+        approvedByUserId: 'owner-1',
+        idempotencyKey: `complete-${attempt}`,
+      })
+      clock.advance(1000)
+    }
+    const claimed = await claimDevice(harness)
+    for (let attempt = 1; attempt <= perTokenOrDevice.failures; attempt += 1) {
+      const { input } = await signedOpen(harness, claimed, 'command')
+      expect(await codeOf(devices.openSession({ ...input, signature: 'A'.repeat(86) }))).toBe(
+        'unauthorized',
+      )
+      clock.advance(1000)
+    }
+    expect(
+      (
+        await devices.completeClaim({
+          claimSessionId: pending.claimSessionId,
+          orgId: ORG,
+          resource: VESSEL,
+          installationId: 'inst-1',
+          hardwareFingerprint: FINGERPRINT,
+          userApprovalToken: 'guess',
+          approvedByUserId: 'owner-1',
+          idempotencyKey: 'complete-locked',
+        })
+      ).status,
+    ).toBe('rate_limited')
+    expect(
+      await codeOf(devices.openSession((await signedOpen(harness, claimed, 'command')).input)),
+    ).toBe('rate_limited')
+
+    const lockouts = (await devices.listAuditEvents()).filter(
+      (event) => event.action === 'security.lockout',
+    )
+    expect(lockouts).toEqual([])
   })
 })

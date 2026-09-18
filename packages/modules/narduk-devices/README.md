@@ -263,6 +263,20 @@ instead of free and untraced. Uniformity was considered and rejected — always
 `rate_limited` breaks the `not_found` contract consumers branch on, always
 `not_found` hands the oracle straight back (third review LOW-5).
 
+**The exported gate reports every crossing.**
+`createLockoutGate(db, now, nextId)` (`server/utils/devices-lockout`) is the
+counter the library itself uses, for a consumer building its own limiter.
+`record(subjects, outcome)` returns one `LockoutThreshold` per subject whose
+failure this attempt crossed a threshold —
+`{ subject, failures, cooldownSeconds, escalates }`, in subject order, empty for
+a success — for the flat token/device rule as well as the escalating account/IP
+one. That return is the signal to audit the attempt that locked a subject out:
+one row per lockout, without re-deriving the rule in the app. Before
+narduk-libs#238 only escalating crossings were returned, so a limiter built on
+the flat rule never heard about its own lockouts; filter on `escalates` to keep
+the old set. The library's own `security.lockout` rows are unchanged: written
+for the escalating crossings only.
+
 **Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
 caller (a queue consumer, a test) can omit it. Without it the presented token's
 own window still applies — guessing one token is bounded — but nothing bounds

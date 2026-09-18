@@ -758,7 +758,12 @@ export function createDevices(
       .run()
   }
 
-  /** Records an attempt and writes the security audit row for any escalating threshold crossed. */
+  /**
+   * Records an attempt and writes the security audit row for any escalating
+   * threshold crossed. The gate reports flat (token/device) crossings too; the
+   * library's own trail records only the escalating account/IP kind, as it
+   * always has.
+   */
   async function recordAttempt(
     subjects: readonly LockoutSubject[],
     outcome: 'success' | 'failure',
@@ -766,6 +771,7 @@ export function createDevices(
   ): Promise<void> {
     const crossed = await lockouts.record(subjects, outcome)
     for (const threshold of crossed) {
+      if (!threshold.escalates) continue
       // eslint-disable-next-line no-await-in-loop -- one audit row per crossed threshold, in order; the list is at most two long
       await audit({
         orgId: context.orgId,
