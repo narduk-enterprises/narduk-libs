@@ -988,6 +988,7 @@ and no `Cache-Tag`, when any of these hold:
 | `set-cookie`        | a `Set-Cookie` is already on the response                      |
 | `vary-wildcard`     | `Vary: *`, which Cloudflare treats as uncacheable anyway       |
 | `preview-safe-mode` | `previewSafeMode` — a preview must not populate a shared cache |
+| `nonce-csp-html`    | an SSR page render on an app serving the nonce CSP             |
 
 None of these are overridable by configuration. The returned
 `CacheProfileResult` carries `suppressedBy` so a caller or a test can see which
@@ -1016,6 +1017,17 @@ shared-cache headers and are never touched.
 This is a safe precondition for edge-caching error-adjacent routes: do not
 enable Workers Cache in a consuming app until it is running a narduk-core
 release that includes this plugin.
+
+### Nonce-CSP HTML is never edge-cached
+
+On an app with `nardukCore.security.headers` on (`enforce`, and `report-only`,
+which stamps the same nonce), SSR HTML always ships `private, no-store` with the
+shared-cache headers stripped: nuxt-security mints the nonce per request into
+both the HTML and the CSP header, so a stored page would replay one visitor's
+nonce to everyone. `setCacheProfile` refuses it (`nonce-csp-html`) and the
+`nonce-csp-cache` plugin backstops the final `text/html` response. Use
+nonce-free JSON endpoints for edge caching — they keep their profile. Rationale:
+narduk-libs#435.
 
 ### Tuning without touching a route
 
