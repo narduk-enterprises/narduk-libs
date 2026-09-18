@@ -207,6 +207,23 @@ export { default } from '@narduk-enterprises/narduk-core/app/error-page'
 </script>
 ```
 
+The `./app/error-page` export carries a `types` condition (narduk-libs#521): the
+page is typed as a component taking `error: NuxtError`, so an app that imports
+it into its own `app/error.vue` needs no `@ts-expect-error`:
+
+```vue
+<script setup lang="ts">
+import EstateErrorPage from '@narduk-enterprises/narduk-core/app/error-page'
+import type { NuxtError } from '#app'
+
+defineProps<{ error: NuxtError }>()
+</script>
+
+<template>
+  <EstateErrorPage :error="error" />
+</template>
+```
+
 ### Exception capture
 
 One seam, `narduk:exception`, carried on the runtime's own hook bus. Three
@@ -336,6 +353,13 @@ that sets neither still gets D1, but it has not declared it, and
 [`/api/health`](#health-endpoint) treats a missing D1 binding as `degraded`
 rather than as an error. An unknown option value fails the build; an unknown
 `NUXT_DATABASE_BACKEND` value is ignored with a warning.
+
+On D1, `useDatabase(event)` and `createAppDatabase` accessors count every call
+into the binding on narduk-logging's request counter (narduk-libs#511): one
+round trip per `first` / `all` / `run` / `raw` on a prepared statement, and one
+round trip carrying every statement for a `batch`. The counts reach the
+`Server-Timing` header (when phases are exposed) and the "Request completed" log
+record. Counting never fails a query.
 
 With `'none'`:
 
@@ -1124,6 +1148,22 @@ Nitro plugin covers the reverse order — anything written _after_ the profile,
 including a returned web `Response` carrying its own `Cache-Control: public` —
 so the order of operations does not matter. `none`, `private` profiles, and
 error responses (a 429 keeps its `Retry-After` and quota) are never touched.
+
+### A response with no posture is private by default
+
+A route that never picks a profile used to leave with no `Cache-Control` at all,
+which lets a shared cache apply its own default. A narduk-core Nitro plugin
+(`default-private-cache`, narduk-libs#435 step 1) writes
+`Cache-Control: private` on any response that leaves with no cache posture — SSR
+pages, API JSON, a returned `Response` without its own header.
+
+Any explicit posture wins and is left exactly as set: `Cache-Control`,
+`CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`, `Surrogate-Control` or
+`Expires`, whether it came from `setCacheProfile`, `setResponseHeader`, Nitro
+`routeRules` headers or cached handlers, or the returned `Response` itself.
+Build assets under `app.buildAssetsDir` (`/_nuxt/`) are left alone, and thrown
+errors keep the `private, no-store` below. A route that should be edge-cacheable
+says so with `setCacheProfile`.
 
 ### Thrown errors are no-store by default
 

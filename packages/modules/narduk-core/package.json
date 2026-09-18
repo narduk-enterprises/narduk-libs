@@ -30,6 +30,7 @@
       "import": "./runtime/app/composables/*.ts"
     },
     "./app/error-page": {
+      "types": "./runtime/app/error-page-component.d.ts",
       "import": "./runtime/app/error.vue"
     },
     "./app/stores/*": {
