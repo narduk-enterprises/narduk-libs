@@ -1,5 +1,50 @@
 # @narduk-enterprises/narduk-core
 
+## 2.3.0
+
+### Minor Changes
+
+- 8da7e33: Rate limiting and CSRF hardening.
+
+  - Rate-limit counters key an IPv6 caller by its `/64` instead of the full
+    address, in `defineRateLimitedHandler` (window and Cloudflare binding) and
+    in `enforceRateLimit` / `enforceRateLimitPolicy`. IPv4 keys are unchanged;
+    `getClientIp` still returns the full address (#430).
+  - An `'ip-path'` route counts `/path/`, `/path?x=1` and a percent-encoded
+    spelling in the same bucket as `/path` (#433).
+  - New `shared/rate-limit-namespace` helper (`rateLimitNamespaceId`,
+    `rateLimitNamespacePrefix`, `RATE_LIMIT_SCAFFOLD_NAMESPACE_IDS`) and README
+    guidance: Cloudflare `namespace_id` is account-unique, so the pasteable
+    `1001` example is gone (#433).
+  - New `nardukCore.csrf.exemptPaths` option lets an app declare credential-free
+    device routes CSRF-exempt (exact paths or `/prefix/*`); over-broad or
+    ambiguous entries fail the build and are ignored at runtime (#239).
+  - The CSP report route exemption also accepts the trailing-slash and query
+    spellings the router dispatches to it (#415).
+
+- 05b3ef9: Keep per-request headers off shared-cacheable responses
+  (narduk-libs#412, narduk-libs#418). `setCacheProfile` now strips the
+  `RateLimit-*` family (`RateLimit`, `RateLimit-Policy`, `RateLimit-Limit`,
+  `RateLimit-Remaining`, `RateLimit-Reset`), `Retry-After`, `x-request-id` and
+  `Server-Timing` whenever it emits a public profile (`live`, `slow`, `static`,
+  or a non-private inline profile), so a route no longer has to pass
+  `headers: 'none'` to `defineRateLimitedHandler` to be safe. A new
+  `shared-cache-headers` Nitro plugin strips the same headers in
+  `beforeResponse` from any non-error response that is shared-cacheable by then
+  — including a returned web `Response` — so the order of limiter, logger and
+  profile no longer matters. `none`, `private` profiles and error responses are
+  untouched; a 429 keeps its `Retry-After`.
+
+  The README's Workers Cache section now documents the full enablement contract
+  (narduk-libs#435): the verified `"cache": { "enabled": true }` mechanism, that
+  a response with no `Cache-Control` is still stored (a 200 for 2 hours), the
+  narduk-core >= 2.2.4 precondition, and how to prove a HIT.
+
+### Patch Changes
+
+- Updated dependencies [a82dc2d]
+  - @narduk-enterprises/narduk-logging@0.3.0
+
 ## 2.2.4
 
 ### Patch Changes
