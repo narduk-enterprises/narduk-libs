@@ -215,7 +215,10 @@ export function buildRollupQuery(
     // fit: the adapter reports `truncated` on the extra row and drops it.
     params: [
       query.vesselId,
-      query.seriesIds,
+      // One comma-joined text parameter, never a bare array: an unprepared
+      // (Hyperdrive, prepare: false) connection sends a JS array as untyped
+      // text and Postgres answers 22P02 (narduk-libs#311, #304).
+      query.seriesIds.join(','),
       resolvedPlan.range.start,
       resolvedPlan.range.end,
       maxRows + 1,
@@ -231,7 +234,7 @@ export function buildRollupQuery(
       `       last_value AS last`,
       `  FROM ${table}`,
       ` WHERE vessel_id = $1::uuid`,
-      `   AND series_id = ANY($2::bigint[])`,
+      `   AND series_id = ANY(string_to_array($2::text, ',')::bigint[])`,
       `   AND bucket >= $3::timestamptz`,
       `   AND bucket <  $4::timestamptz`,
       ` ORDER BY bucket ASC, series_id ASC`,

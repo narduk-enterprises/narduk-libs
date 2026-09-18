@@ -158,13 +158,13 @@ describe('rollup query', () => {
              last_value AS last
         FROM telemetry_numeric_1h
        WHERE vessel_id = $1::uuid
-         AND series_id = ANY($2::bigint[])
+         AND series_id = ANY(string_to_array($2::text, ',')::bigint[])
          AND bucket >= $3::timestamptz
          AND bucket <  $4::timestamptz
        ORDER BY bucket ASC, series_id ASC
        LIMIT $5"
     `)
-    expect(built.params).toEqual([VESSEL, [1, 2, 3], RANGE.start, RANGE.end, 1001])
+    expect(built.params).toEqual([VESSEL, '1,2,3', RANGE.start, RANGE.end, 1001])
   })
 
   it('selects the table from a frozen map and fails closed', () => {
@@ -293,7 +293,7 @@ describe('retention plan', () => {
     expect(statements.some((statement) => statement.rollup === '1d')).toBe(false)
     // The Free raw sweep exists only because round 20 chose both a 7-day global
     // raw window (1A) and a 24-hour Free raw window (2B).
-    expect(statements[5]!.params).toEqual([[VESSEL], new Date('2026-09-11T03:15:00.000Z')])
+    expect(statements[5]!.params).toEqual([VESSEL, new Date('2026-09-11T03:15:00.000Z')])
   })
 
   it('builds the explicit backfill refresh a late batch needs', () => {

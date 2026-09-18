@@ -194,7 +194,16 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     const result = await store.applyRetention({
       globalRawWindowMs: 7 * 86_400_000,
       globalRollupWindowMs: { '1m': 30 * 86_400_000 },
-      tiers: {},
+      // A tier with a vessel, so the per-vessel DELETEs -- the statements that
+      // bind a vessel list (narduk-libs#311) -- actually reach the server.
+      tiers: {
+        free: {
+          rawWindowMs: 86_400_000,
+          rollupWindowMs: { '1m': 7 * 86_400_000 },
+          trackWindowMs: 7 * 86_400_000,
+          vesselIds: [vesselId, randomUUID()],
+        },
+      },
     })
 
     expect(result.coalesced).toBe(false)

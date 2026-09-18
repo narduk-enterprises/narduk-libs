@@ -164,7 +164,8 @@ describe('parameter ceilings', () => {
     expect(deletes).toHaveLength(3)
     for (const statement of deletes) {
       expect(statement.target).toBe('telemetry_numeric')
-      expect((statement.params[0] as string[]).length).toBeLessThanOrEqual(100)
+      // One comma-joined text parameter per batch (narduk-libs#311).
+      expect((statement.params[0] as string).split(',').length).toBeLessThanOrEqual(100)
     }
   })
 
