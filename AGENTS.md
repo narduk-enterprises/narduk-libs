@@ -40,6 +40,22 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 - Do not let one app quietly fork shared behavior unless the app has a genuine
   product-specific requirement that does not belong in the reusable package.
 
+## Issue labels
+
+Label every issue at creation time with one type, one priority and one area,
+using only labels that already exist (estate standard:
+`narduk-enterprises/agent-infrastructure` `docs/ISSUE-LABEL-CONVENTIONS.md`).
+Check the live set with `gh label list --repo narduk-enterprises/narduk-libs`.
+
+- Type: `bug`, `enhancement`, `documentation`, `question`, `tracker` (umbrella
+  issues).
+- Priority: `P0-critical`, `P1-high`, `P2-medium`, `P3-low`.
+- Area: `area:auth`, `area:core`, `area:devices`, `area:eslint-config`,
+  `area:foundation`, `area:journeys`, `area:logging`, `area:mapkit`,
+  `area:postgres`, `area:release`, `area:seo`, `area:shell`, `area:testkit`.
+  `area:mapkit`, `area:testkit`, `area:logging` and `area:seo` were added on
+  2026-09-18 at Logan's direction.
+
 ## Validation
 
 - `pnpm install`
