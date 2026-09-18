@@ -993,6 +993,30 @@ None of these are overridable by configuration. The returned
 `CacheProfileResult` carries `suppressedBy` so a caller or a test can see which
 guard fired rather than discovering a missing header later.
 
+### Thrown errors are no-store by default
+
+The `error-status` guard above only fires when a route _calls_ `setCacheProfile`
+after the response status is already >= 400. A route that
+`throw createError({ statusCode: 404 })` — or a 429 from
+`defineRateLimitedHandler` — never calls `setCacheProfile` at all, so Nitro's
+own error page ships its default `Cache-Control: no-cache` instead, which
+Cloudflare Workers Cache **stores and revalidates** once an app turns on
+`"cache": { "enabled": true }` (narduk-libs#429).
+
+A narduk-core Nitro plugin (`error-cache`) closes that gap: every response whose
+status is >= 400 is forced to `private, no-store` with the same shared-cache
+headers stripped as the `error-status` guard removes, even when the route
+already called `setCacheProfile(event, 'live')` before throwing — the plugin
+re-checks the final status after the throw, not the status at the time
+`setCacheProfile` ran. `defineRateLimitedHandler` also sets the posture itself
+immediately before its 429 throw, as a belt-and-suspenders — the plugin is the
+backstop either way. `Retry-After` and the `RateLimit-*` family are not
+shared-cache headers and are never touched.
+
+This is a safe precondition for edge-caching error-adjacent routes: do not
+enable Workers Cache in a consuming app until it is running a narduk-core
+release that includes this plugin.
+
 ### Tuning without touching a route
 
 `runtimeConfig.cache.profiles` overrides the seconds of any named profile. Each
