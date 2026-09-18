@@ -471,8 +471,9 @@ The check refuses that combination unless `previewBindings` names a replacement
 for each of those bindings.
 
 **Naming the preview resource is what isolates a preview** (narduk-libs#473,
-design §3.3 option A). Give each entry the preview resource's id, using
-wrangler's own field names:
+design §3.3 option A). The design and its limits are in
+[docs/preview-isolation.md](docs/preview-isolation.md). Give each entry the
+preview resource's id, using wrangler's own field names:
 
 ```jsonc
 "previewBindings": {
