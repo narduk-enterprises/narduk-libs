@@ -10,9 +10,34 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-VERSION = "6.3.3"
-ARCHIVE = f"swift-{VERSION}-RELEASE-ubuntu24.04"
-URL = f"https://download.swift.org/swift-{VERSION}-release/ubuntu2404/swift-{VERSION}-RELEASE/{ARCHIVE}.tar.gz"
+# One signed swift.org archive per supported Ubuntu release. A distro archive
+# only runs on the release it was built for: the 24.04 build's lld links
+# libxml2.so.2, which Ubuntu 26.04 no longer ships (it has libxml2.so.16), and
+# swift.org publishes no 26.04 build of 6.3.3. 6.4.0 is the first release with
+# an official ubuntu26.04 archive.
+TOOLCHAINS = {
+    "24.04": ("6.3.3", "ubuntu24.04"),
+    "26.04": ("6.4.0", "ubuntu26.04"),
+}
+
+
+def toolchain(os_release: dict[str, str]) -> tuple[str, str, str]:
+    """Return (version, archive name, URL) for this Ubuntu release."""
+    version_id = os_release.get("VERSION_ID", "")
+    if os_release.get("ID") != "ubuntu" or version_id not in TOOLCHAINS:
+        supported = ", ".join(f"Ubuntu {release}" for release in TOOLCHAINS)
+        found = f"{os_release.get('ID', 'unknown')} {version_id}".strip()
+        raise RuntimeError(
+            f"No pinned signed Swift archive for {found}; supported: {supported}"
+        )
+    version, platform_name = TOOLCHAINS[version_id]
+    archive = f"swift-{version}-RELEASE-{platform_name}"
+    directory = platform_name.replace(".", "")
+    url = (
+        f"https://download.swift.org/swift-{version}-release/"
+        f"{directory}/swift-{version}-RELEASE/{archive}.tar.gz"
+    )
+    return version, archive, url
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> str:
@@ -25,11 +50,11 @@ def run(*args: str, env: dict[str, str] | None = None) -> str:
         raise
 
 
-def verify(binary: Path) -> bool:
+def verify(binary: Path, version: str) -> bool:
     if not binary.is_file():
         return False
     try:
-        if f"Swift version {VERSION}" not in run(str(binary), "--version"):
+        if f"Swift version {version.removesuffix('.0')}" not in run(str(binary), "--version"):
             return False
         with tempfile.TemporaryDirectory(prefix="narduk-swift-smoke-") as directory:
             root = Path(directory)
@@ -62,22 +87,20 @@ def download(url: str, target: Path) -> None:
 def main() -> None:
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise RuntimeError("This installer requires an x86_64 Linux CI runner")
-    fleet = Path(f"/opt/narduk/swift/{VERSION}/usr/bin")
-    if verify(fleet / "swiftc"):
+    version, archive_name, url = toolchain(platform.freedesktop_os_release())
+    fleet = Path(f"/opt/narduk/swift/{version}/usr/bin")
+    if verify(fleet / "swiftc", version):
         binary_directory = fleet
-        print(f"Verified fleet Swift {VERSION}")
+        print(f"Verified fleet Swift {version}")
     else:
-        release = platform.freedesktop_os_release()
-        if release.get("ID") != "ubuntu" or release.get("VERSION_ID") != "24.04":
-            raise RuntimeError("The pinned Swift archive requires Ubuntu 24.04")
         root = Path(os.environ["RUNNER_TEMP"]) / "narduk-logging-swift"
         root.mkdir(exist_ok=False)
         archive = root / "swift.tar.gz"
         signature = root / "swift.tar.gz.sig"
         keys = root / "keys.asc"
-        print(f"Installing signed Swift {VERSION} in job-local storage", flush=True)
-        download(URL, archive)
-        download(URL + ".sig", signature)
+        print(f"Installing signed Swift {version} ({archive_name}) in job-local storage", flush=True)
+        download(url, archive)
+        download(url + ".sig", signature)
         download("https://www.swift.org/keys/all-keys.asc", keys)
         # Runner work paths can exceed GPG's Unix socket length limit. Keep
         # this isolated public keyring short even when RUNNER_TEMP is long.
@@ -90,12 +113,12 @@ def main() -> None:
         with tarfile.open(archive) as package:
             package.extractall(root, filter="data")
         archive.unlink()
-        binary_directory = root / ARCHIVE / "usr/bin"
-        if not verify(binary_directory / "swiftc"):
+        binary_directory = root / archive_name / "usr/bin"
+        if not verify(binary_directory / "swiftc", version):
             raise RuntimeError(
                 "The signed Swift toolchain failed its compile/link smoke check"
             )
-        print(f"Verified signed Swift {VERSION}")
+        print(f"Verified signed Swift {version}")
     with Path(os.environ["GITHUB_PATH"]).open("a") as output:
         output.write(str(binary_directory) + "\n")
 
