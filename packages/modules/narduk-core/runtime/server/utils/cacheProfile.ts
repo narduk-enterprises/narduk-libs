@@ -1,6 +1,7 @@
 import { getResponseHeader, getResponseStatus, removeResponseHeader, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { isNonceCspHtml, markNonceCspCacheRequested } from '../../shared/utils/nonce-csp'
 import { isPreferencesInfluenced } from '../../shared/utils/preferences'
 
 import { resolveRuntimePublicOverlay } from './runtime-public'
@@ -105,7 +106,12 @@ export const CACHE_PROFILES = {
 
 /** Why a requested profile was downgraded to `none`. */
 export type CacheSuppressionReason =
-  'error-status' | 'preferences-cookie' | 'preview-safe-mode' | 'set-cookie' | 'vary-wildcard'
+  | 'error-status'
+  | 'nonce-csp-html'
+  | 'preferences-cookie'
+  | 'preview-safe-mode'
+  | 'set-cookie'
+  | 'vary-wildcard'
 
 export interface SetCacheProfileOptions {
   /**
@@ -254,6 +260,12 @@ function formatCdnCacheControl(profile: CacheProfile): string | undefined {
  * reader. The flag is set only by `usePreferences()` and `readPreferences()`,
  * so a route that never touched preferences keeps exactly the profile it asked
  * for and no existing app's cache posture changes.
+ *
+ * `nonce-csp-html` (narduk-libs#435): SSR HTML rendered under a nonce CSP
+ * carries a nonce minted for exactly one request, in both the body and the CSP
+ * header. A shared cache would replay it to every visitor. The flag is set by
+ * the `nonce-csp-cache` Nitro plugin in `render:before`, so only SSR renders
+ * are refused; JSON API routes under the same app keep their profile.
  */
 function findSuppression(
   event: H3Event,
@@ -263,6 +275,7 @@ function findSuppression(
   if (readResponseHeader(event, 'Set-Cookie').length > 0) return 'set-cookie'
   if (vary === '*') return 'vary-wildcard'
   if (isPreferencesInfluenced(event)) return 'preferences-cookie'
+  if (isNonceCspHtml(event)) return 'nonce-csp-html'
   if (resolveRuntimePublicOverlay(event).previewSafeMode) return 'preview-safe-mode'
   return undefined
 }
@@ -293,6 +306,11 @@ export function setCacheProfile(
   const vary = normalizeVary(readResponseHeader(event, 'Vary'), requestedVary)
   const suppressedBy = findSuppression(event, vary)
   const profile = suppressedBy ? { ...CACHE_PROFILES.none } : resolveCacheProfile(event, input)
+  // Recorded so the `nonce-csp-cache` plugin can tell an app author, in
+  // development, why the HTML they asked to edge-cache ships `no-store`.
+  if (suppressedBy === 'nonce-csp-html' && !resolveCacheProfile(event, input).noStore) {
+    markNonceCspCacheRequested(event)
+  }
 
   const cacheControl = formatCacheControl(profile)
   const cdnCacheControl = formatCdnCacheControl(profile)
