@@ -5,6 +5,7 @@ import {
   applyNoStoreHeaders,
   applyNoStoreToEvent,
   applyNoStoreToWebResponse,
+  isWebResponseLike,
 } from '../../shared/utils/shared-cache'
 
 import type { H3Event } from 'h3'
@@ -78,9 +79,10 @@ export default defineNitroPlugin((nitro) => {
     // status first and fall back to the event, which is already correct for
     // every *thrown* error: h3's `onError` calls `setResponseStatus(event,
     // error.statusCode, ...)` before it calls `onBeforeResponse`.
+    // Only a web `Response` carries its HTTP status on the body; a plain
+    // payload's own `status` field is data and must not decide caching.
     const body = (response as { body?: unknown } | undefined)?.body
-    const bodyStatus = (body as { status?: unknown } | undefined)?.status
-    const status = typeof bodyStatus === 'number' ? bodyStatus : getResponseStatus(event)
+    const status = isWebResponseLike(body) ? body.status : getResponseStatus(event)
     if (status < 400) return
 
     applyNoStoreToEvent(event)

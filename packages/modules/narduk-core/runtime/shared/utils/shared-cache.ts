@@ -150,7 +150,7 @@ export function applyNoStoreToEvent(
 /** Statuses the Fetch spec forbids a body on, so a rebuilt response must pass `null`. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
 
-function isWebResponseLike(value: unknown): value is Response {
+export function isWebResponseLike(value: unknown): value is Response {
   if (!value || typeof value !== 'object') return false
   const headers = (value as { headers?: unknown }).headers
   if (!headers || typeof headers !== 'object') return false

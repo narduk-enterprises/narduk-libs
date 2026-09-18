@@ -150,6 +150,19 @@ describe('error-cache Nitro plugin — API routes (beforeResponse)', () => {
     expect(headers.get(CACHE_CONTROL)).toBeNull()
   })
 
+  it('keeps a 200 JSON body whose own data has a numeric status field cacheable', async () => {
+    // Only a returned web `Response` carries its HTTP status on the body; a
+    // plain payload's `status` field is data (e.g. an upstream's last code).
+    const { status, headers } = await apiRespond((event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+      return { station: '42035', status: 503 }
+    })
+
+    expect(status).toBe(200)
+    expect(headers.get(CACHE_CONTROL)).toBe(CACHEABLE)
+    expect(headers.get(CDN_CACHE_CONTROL)).toBe(LIVE_CDN)
+  })
+
   it('strips shared-cache headers a returned error Response object carries', async () => {
     const { status, headers } = await apiRespond(() => {
       return new Response(JSON.stringify({ error: true }), {
