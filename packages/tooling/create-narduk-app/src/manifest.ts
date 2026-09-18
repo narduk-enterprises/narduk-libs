@@ -21,15 +21,15 @@ export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.2.0',
+  '@narduk-enterprises/narduk-mapkit': '2.3.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.10.0',
   '@narduk-enterprises/eslint-config': '2.0.3',
-  '@narduk-enterprises/narduk-ai': '0.3.5',
-  '@narduk-enterprises/narduk-analytics': '1.21.5',
-  '@narduk-enterprises/narduk-auth': '1.28.5',
+  '@narduk-enterprises/narduk-ai': '0.3.6',
+  '@narduk-enterprises/narduk-analytics': '1.21.6',
+  '@narduk-enterprises/narduk-auth': '1.28.6',
   '@narduk-enterprises/narduk-charts': '2.5.3',
-  '@narduk-enterprises/narduk-core': '2.3.0',
+  '@narduk-enterprises/narduk-core': '2.4.0',
   '@narduk-enterprises/narduk-logging': '0.3.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
@@ -37,7 +37,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.1.0',
-  '@narduk-enterprises/narduk-seo': '2.4.5',
+  '@narduk-enterprises/narduk-seo': '2.4.6',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
@@ -53,7 +53,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.3.2',
-  '@narduk-enterprises/narduk-testkit': '1.5.0',
+  '@narduk-enterprises/narduk-testkit': '1.6.0',
   '@narduk-enterprises/narduk-uploads': '1.21.2',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
