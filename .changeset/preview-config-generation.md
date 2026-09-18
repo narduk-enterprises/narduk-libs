@@ -31,5 +31,8 @@ against the app's own wrangler config.
 
 The artefact gains `previewConfig`, and the summary prints a `preview` line.
 
+A binding listed twice in one `previewBindings` kind now makes the block
+invalid. Before this change, the second entry was silently shadowed by the first.
+
 `create-narduk-app` adds `.wrangler.deploy.preview.json` to the generated
 `.gitignore` and `.prettierignore`.

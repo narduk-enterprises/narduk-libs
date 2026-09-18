@@ -91,10 +91,31 @@ export function previewBindingName(entry: PreviewBindingEntry): string {
   return typeof entry === 'string' ? entry.trim() : entry.binding.trim()
 }
 
+/** One entry per binding. A second entry for the same binding would be silently
+ * shadowed by the first, so a contradictory declaration is refused instead. */
+const previewBindingList = z
+  .array(previewBindingEntry)
+  .max(100)
+  .default([])
+  .superRefine((entries, ctx) => {
+    const seen = new Set<string>()
+    for (const [index, entry] of entries.entries()) {
+      const name = previewBindingName(entry)
+      if (seen.has(name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index],
+          message: `${name} appears more than once; give each binding exactly one preview entry`,
+        })
+      }
+      seen.add(name)
+    }
+  })
+
 export const previewBindingsSchema = z.strictObject({
-  d1: z.array(previewBindingEntry).max(100).default([]),
-  kv: z.array(previewBindingEntry).max(100).default([]),
-  r2: z.array(previewBindingEntry).max(100).default([]),
+  d1: previewBindingList,
+  kv: previewBindingList,
+  r2: previewBindingList,
 })
 
 /** The two §5.2 gates between "proved on staging" and "live in production". */

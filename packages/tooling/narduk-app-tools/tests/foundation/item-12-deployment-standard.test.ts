@@ -118,6 +118,25 @@ describe('the deployment block schema', () => {
     expect(outcome.block.previewBindings).toEqual({ d1: [], kv: [], r2: [] })
   })
 
+  it('refuses a binding with two preview entries rather than shadowing one', () => {
+    const outcome = readDeploymentBlock({
+      deployment: block({
+        previewBindings: {
+          d1: [],
+          kv: [
+            { binding: 'KV', id: 'a'.repeat(32) },
+            { binding: 'KV', id: 'b'.repeat(32) },
+          ],
+          r2: [],
+        },
+      }),
+    })
+    if (outcome.kind !== 'invalid') throw new Error(`expected invalid, got ${outcome.kind}`)
+    expect(outcome.issues.map((issue) => issue.message).join('\n')).toContain(
+      'KV appears more than once',
+    )
+  })
+
   it('reports an absent block rather than inventing one', () => {
     expect(readDeploymentBlock({ product: {} }).kind).toBe('absent')
     expect(readDeploymentBlock(null).kind).toBe('absent')
