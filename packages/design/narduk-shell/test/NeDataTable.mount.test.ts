@@ -7,20 +7,13 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { Component } from 'vue'
 
 import NeDataTable from '../src/runtime/components/NeDataTable.vue'
 
-import type { NeDataColumn, NeDataColumnGroup } from '../src/index'
+import type { NeDataColumn, NeDataColumnGroup, NeDataTableProps } from '../src/index'
 
-interface Reading {
-  day: string
-  gust: number | null
-  pressure: number | null
-  time: string
-  visibility: number | null
-  wind: number | null
-}
+import ReadingDataTableHost from './ReadingDataTableHost.vue'
+import type { Reading } from './ReadingDataTableHost.vue'
 
 const groups: NeDataColumnGroup[] = [
   { id: 'wind', label: 'Wind', unit: 'kt' },
@@ -55,12 +48,29 @@ const rows: Reading[] = [
   { day: 'Thu, Sep 17', gust: null, pressure: 30.1, time: '6:50 PM', visibility: null, wind: null },
 ]
 
-function render(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
-  return mount(NeDataTable as Component, {
-    props: { columns, groups, rows, rowKey: (row: Reading) => row.time, ...props },
-    slots,
-  })
+function render(
+  extra: Partial<NeDataTableProps<Reading>> = {},
+  slots: Record<string, string> = {},
+) {
+  const bound: NeDataTableProps<Reading> = {
+    columns,
+    groups,
+    rowKey: (row) => row.time,
+    rows,
+    ...extra,
+  }
+  return mount(ReadingDataTableHost, { props: bound, slots })
 }
+
+it('mounts NeDataTable directly when columns do not pin T', () => {
+  const wrapper = mount(NeDataTable, {
+    props: {
+      columns: [{ key: 'time', label: 'Time' }],
+      rows: [{ time: '1:50 PM' }],
+    },
+  })
+  expect(wrapper.find('[data-ne-data-table]').exists()).toBe(true)
+})
 
 const bodyRows = (wrapper: ReturnType<typeof render>) => wrapper.findAll('tbody tr')
 const cellTexts = (row: { findAll: (s: string) => { text: () => string }[] }) =>

@@ -15,8 +15,6 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h, type Component } from 'vue'
 
-import USelect from '@nuxt/ui/components/Select.vue'
-
 import NePager from '../src/runtime/components/NePager.vue'
 
 import type { NeCollectionState } from '../src/runtime/composables/use-collection'
@@ -231,7 +229,7 @@ describe('NePager: page size and "Show more" (narduk-libs#528)', () => {
 
   it('renders the select with "N per page" options and the current limit', () => {
     const wrapper = render({ pageSizes: [25, 50, 100], state: firstPage() })
-    const select = wrapper.getComponent(USelect)
+    const select = wrapper.findComponent({ name: 'Select' })
     expect(select.props('modelValue')).toBe(25)
     expect(select.props('items')).toEqual([
       { label: '25 per page', value: 25 },
@@ -242,7 +240,7 @@ describe('NePager: page size and "Show more" (narduk-libs#528)', () => {
 
   it('emits update:limit for a new size, and never writes the limit through state', async () => {
     const wrapper = render({ pageSizes: [25, 50, 100], state: firstPage() })
-    const select = wrapper.getComponent(USelect)
+    const select = wrapper.findComponent({ name: 'Select' })
     select.vm.$emit('update:modelValue', 50)
     select.vm.$emit('update:modelValue', 25)
     await wrapper.vm.$nextTick()

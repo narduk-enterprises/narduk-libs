@@ -16,18 +16,17 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, h } from 'vue'
-import type { Component } from 'vue'
 
 import NeDataTable from '../src/runtime/components/NeDataTable.vue'
 
-import type { NeDataColumn, NeDataColumnGroup } from '../src/runtime/components/ne-data-table-types'
+import type {
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableProps,
+} from '../src/runtime/components/ne-data-table-types'
 
-interface Reading {
-  day: string
-  gust: number | null
-  time: string
-  wind: number | null
-}
+import ReadingDataTableHost from './ReadingDataTableHost.vue'
+import type { Reading } from './ReadingDataTableHost.vue'
 
 const groups: NeDataColumnGroup[] = [
   { id: 'wind', label: 'Wind', unit: 'kt' },
@@ -59,19 +58,28 @@ it('runs in an environment with no DOM, which is the whole point of this file', 
   expect(typeof window).toBe('undefined')
 })
 
-function render(props: Record<string, unknown> = {}): Promise<string> {
-  return renderToString(
+it('server-renders NeDataTable directly when columns do not pin T', async () => {
+  const html = await renderToString(
     createSSRApp({
-      render: () =>
-        h(NeDataTable as Component, {
-          columns,
-          groups,
-          rowKey: (row: Reading) => row.time,
-          rows,
-          ...props,
+      setup: () => () =>
+        h(NeDataTable, {
+          columns: [{ key: 'time', label: 'Time' }],
+          rows: [{ time: '1:50 PM' }],
         }),
     }),
   )
+  expect(html).toContain('data-ne-data-table')
+})
+
+function render(extra: Partial<NeDataTableProps<Reading>> = {}): Promise<string> {
+  const bound: NeDataTableProps<Reading> = {
+    columns,
+    groups,
+    rowKey: (row) => row.time,
+    rows,
+    ...extra,
+  }
+  return renderToString(createSSRApp({ setup: () => () => h(ReadingDataTableHost, bound) }))
 }
 
 describe('NeDataTable server-rendered without a DOM', () => {

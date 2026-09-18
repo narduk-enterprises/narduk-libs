@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<NeCsvDownloadProps<TRow>>(), {
 const emit = defineEmits<{ download: [csv: string, filename: string] }>()
 
 function download(): void {
-  if (typeof document === 'undefined') return
+  if (!import.meta.client) return
   const csv = toCsv(props.columns, props.rows, props.preamble)
   const filename = props.filename.toLowerCase().endsWith('.csv')
     ? props.filename

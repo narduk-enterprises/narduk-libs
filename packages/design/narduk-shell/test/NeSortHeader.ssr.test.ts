@@ -14,20 +14,20 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, h } from 'vue'
-import type { Component } from 'vue'
 
 import NeSortHeader from '../src/runtime/components/NeSortHeader.vue'
+
+import type { NeSortHeaderProps } from '../src/runtime/components/ne-data-table-types'
 
 it('runs in an environment with no DOM, which is the whole point of this file', () => {
   expect(typeof document).toBe('undefined')
   expect(typeof window).toBe('undefined')
 })
 
-function render(props: Record<string, unknown>): Promise<string> {
+function render(props: NeSortHeaderProps): Promise<string> {
   return renderToString(
     createSSRApp({
-      render: () =>
-        h('table', [h('thead', [h('tr', [h('th', [h(NeSortHeader as Component, props)])])])]),
+      render: () => h('table', [h('thead', [h('tr', [h('th', [h(NeSortHeader, props)])])])]),
     }),
   )
 }

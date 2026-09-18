@@ -23,6 +23,7 @@
     "src/**/*.d.ts",
     "src/**/*.vue",
     "test/**/*.ts",
+    "test/**/*.vue",
     "types/**/*.d.ts",
     "vitest.config.ts"
   ]

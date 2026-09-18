@@ -1,4 +1,4 @@
-<script setup lang="ts" generic="TRow">
+<script setup lang="ts" generic="T">
 /**
  * NeDataTable — the estate's data-table preset on Nuxt UI's `UTable`
  * (narduk-libs#528; components-library-plan.md §7, "Wrap Nuxt UI UTable").
@@ -42,7 +42,7 @@ import NeSortHeader from './NeSortHeader.vue'
 
 import type { NeDataColumn, NeDataColumnGroup, NeDataTableProps } from './ne-data-table-types'
 
-const props = withDefaults(defineProps<NeDataTableProps<TRow>>(), {
+const props = withDefaults(defineProps<NeDataTableProps<T>>(), {
   caption: undefined,
   columnSet: undefined,
   dropEmptyColumns: false,
@@ -68,12 +68,12 @@ const emit = defineEmits<{
 const slots = useSlots()
 
 type Entry =
-  | { id: string; index: number; kind: 'row'; row: TRow }
-  | { id: string; key: string; kind: 'group'; rows: TRow[] }
+  | { id: string; index: number; kind: 'row'; row: T }
+  | { id: string; key: string; kind: 'group'; rows: T[] }
   | { count: number; id: string; kind: 'break' }
 
 /** Columns the table draws: never `csvOnly`, and optionally never all-empty. */
-const shownColumns = computed<NeDataColumn<TRow>[]>(() =>
+const shownColumns = computed<NeDataColumn<T>[]>(() =>
   props.columns.filter((column) => {
     if (column.csvOnly) return false
     if (!props.dropEmptyColumns || column.sticky || props.rows.length === 0) return true
@@ -114,7 +114,7 @@ const activeSet = computed<string | undefined>({
   },
 })
 
-function phoneHidden(column: NeDataColumn<TRow>): boolean {
+function phoneHidden(column: NeDataColumn<T>): boolean {
   return (
     phoneSets.value &&
     !column.sticky &&
@@ -174,7 +174,7 @@ function unitNode(unit: string | undefined): VNodeChild {
   return unit ? h('span', { 'data-ne-unit': '', class: 'font-normal text-dimmed' }, unit) : null
 }
 
-function headerNode(column: NeDataColumn<TRow>): VNodeChild {
+function headerNode(column: NeDataColumn<T>): VNodeChild {
   if (column.sortKey) {
     return h(NeSortHeader, {
       align: column.numeric ? 'end' : 'start',
@@ -196,7 +196,7 @@ function breakText(count: number): string {
   return `${rows} no ${label} value · sorted last`
 }
 
-function cellNode(column: NeDataColumn<TRow>, entry: Entry, leaf: number): VNodeChild {
+function cellNode(column: NeDataColumn<T>, entry: Entry, leaf: number): VNodeChild {
   if (entry.kind === 'group') {
     if (leaf !== 0) return null
     const content =
@@ -217,7 +217,7 @@ function cellNode(column: NeDataColumn<TRow>, entry: Entry, leaf: number): VNode
   return column.format ? column.format(value, entry.row) : String(value)
 }
 
-function thClass(column: NeDataColumn<TRow>): string {
+function thClass(column: NeDataColumn<T>): string {
   return [
     column.numeric ? 'text-end' : '',
     sortedColumn.value === column ? 'bg-elevated/50' : '',
@@ -225,7 +225,7 @@ function thClass(column: NeDataColumn<TRow>): string {
   ].join(' ')
 }
 
-function tdClass(column: NeDataColumn<TRow>, entry: Entry, leaf: number): string {
+function tdClass(column: NeDataColumn<T>, entry: Entry, leaf: number): string {
   if (entry.kind !== 'row') {
     if (leaf !== 0) return 'hidden'
     return entry.kind === 'group'
@@ -247,7 +247,7 @@ interface CellContext {
 /** Leaf column definitions, with TanStack's contiguous column groups on top. */
 const tableColumns = computed(() => {
   const leafCount = shownColumns.value.length
-  const leaf = (column: NeDataColumn<TRow>, index: number) => ({
+  const leaf = (column: NeDataColumn<T>, index: number) => ({
     accessorFn: (entry: Entry) =>
       entry.kind === 'row' ? readColumnValue(column, entry.row) : undefined,
     cell: ({ row }: CellContext) => cellNode(column, row.original, index),

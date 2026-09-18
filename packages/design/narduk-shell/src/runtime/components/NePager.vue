@@ -100,10 +100,18 @@ const summary = computed(() => {
 /** `UPagination` cannot page an uncounted collection; the fallback can. */
 const counted = computed(() => state.value.total !== null)
 
-/** Captured once: "Show 25 more" keeps saying 25 after the page has grown to 50. */
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- snapshot of the first limit, not a live read
-const initialLimit = state.value.limit
-const step = computed(() => Math.max(1, props.moreStep ?? initialLimit))
+/**
+ * "Show 25 more" keeps saying 25 after the page has grown to 50. The first
+ * evaluation of `step` snapshots the limit; later growth does not change the
+ * label. Reading `state` inside the computed (not at setup) is the live read
+ * the snapshot is taken from — not a lost `.value` in this scope.
+ */
+let capturedLimit: number | undefined
+const step = computed(() => {
+  if (props.moreStep !== undefined) return Math.max(1, props.moreStep)
+  capturedLimit ??= state.value.limit
+  return Math.max(1, capturedLimit)
+})
 
 const canGrow = computed(
   () =>

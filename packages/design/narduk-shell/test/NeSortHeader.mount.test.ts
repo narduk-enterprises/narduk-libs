@@ -7,19 +7,20 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
-import type { Component } from 'vue'
 
 import NeSortHeader from '../src/runtime/components/NeSortHeader.vue'
 
-function inHeaderCell(props: Record<string, unknown>) {
-  const sort = ref<string | null>((props.sort as string | null | undefined) ?? null)
+import type { NeSortHeaderProps } from '../src/runtime/components/ne-data-table-types'
+
+function inHeaderCell(props: NeSortHeaderProps) {
+  const sort = ref<string | null>(props.sort ?? null)
   const Host = defineComponent({
     setup: () => () =>
       h('table', [
         h('thead', [
           h('tr', [
             h('th', [
-              h(NeSortHeader as Component, {
+              h(NeSortHeader, {
                 ...props,
                 sort: sort.value,
                 'onUpdate:sort': (next: string) => {
