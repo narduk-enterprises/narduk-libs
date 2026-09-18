@@ -79,8 +79,17 @@ export interface MapKitCircle {
     opacity?: number;
     radius: number;
 }
-/** v6 exposes these as top-level enums; `mapkit.Map.MapTypes` is gone. */
-export type MapKitMapType = 'hybrid' | 'muted' | 'satellite' | 'standard';
+/**
+ * The basemap the map draws.
+ *
+ * `'muted'` is this library's own spelling and is translated for MapKit by
+ * `runtime/basemap.ts`; MapKit JS 6's own value is `'mutedStandard'`, which
+ * 2.1.1 accepts as well so an app may name Apple's value directly (K-3). The
+ * other three are Apple's values verbatim. v6 exposes these as the top-level
+ * `mapkit.MapType` enum; `mapkit.Map.MapTypes` still exists but Apple
+ * deprecates it in favour of `mapkit.MapType`.
+ */
+export type MapKitMapType = 'hybrid' | 'muted' | 'mutedStandard' | 'satellite' | 'standard';
 export type MapKitColorScheme = 'auto' | 'dark' | 'light';
 /**
  * A colour-mode source `<AppMapKit>` reads when `colorScheme` is `'auto'`.

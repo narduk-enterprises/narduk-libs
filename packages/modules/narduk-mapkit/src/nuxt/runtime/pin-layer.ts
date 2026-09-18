@@ -73,9 +73,24 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   createPinElement?: (item: T, isSelected: boolean) => MapKitPinElement
   /** Injected so a plain-TS test can run against any document. */
   document?: Document
+  /**
+   * Whether the library-owned host is an interactive control. Default `true`.
+   *
+   * 2.1.0 had no way to say otherwise (2.1.1, K-8): every host carried
+   * `role="button"` and `tabindex="0"`, so a decorative map marked
+   * `aria-hidden="true"` was full of focusable descendants -- axe's
+   * `aria-hidden-focus` -- and the only way out was `inert` on the consumer's
+   * side. `false` builds a plain host: no role, no tabindex, no `aria-pressed`,
+   * no click or key listener, and no required `itemLabel`.
+   */
+  focusable?: boolean
   /** Stable identity per item. Must be non-blank and unique. */
   itemKey: (item: T, index: number) => string
-  /** Accessible name of the library-owned host. Required whenever `items` is non-empty. */
+  /**
+   * Accessible name of the library-owned host. Required whenever `items` is
+   * non-empty AND the host is focusable; a non-interactive host has no
+   * accessible name to carry.
+   */
   itemLabel?: (item: T) => string
   map: MapKitMapLike
   mapkit: MapKitNamespaceLike
@@ -193,6 +208,9 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
    */
   setItems(items: readonly T[]): MapKitDiff {
     if (this.#destroyed) return emptyDiff()
+    // K-9: raised before anything is reconciled, so a missing `itemLabel`
+    // cannot leave the registry and `#entries` disagreeing about what exists.
+    this.#assertLabelling(items)
 
     const diff = emptyDiff()
     const keyFor = this.#options.itemKey
@@ -294,26 +312,44 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       entry.cleanup = rendered.cleanup
       entry.host.append(rendered.element)
     }
-    entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false')
+    if (this.#focusable) entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false')
     if (entry.selected) entry.host.setAttribute('data-mapkit-selected', '')
     else entry.host.removeAttribute('data-mapkit-selected')
   }
 
+  /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
+  get #focusable(): boolean {
+    return this.#options.focusable ?? true
+  }
+
+  #assertLabelling(items: readonly T[]): void {
+    if (items.length === 0 || !this.#focusable || this.#options.itemLabel) return
+    throw new Error(
+      '<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
+        'accessible name of the pin, and a pin without one is unreachable by screen reader. ' +
+        'Pass itemLabel, or build the layer with focusable: false for pins that are not ' +
+        'interactive controls.',
+    )
+  }
+
   #buildHost(key: string, item: T): HTMLElement {
     const host = this.#document.createElement('div')
-    host.setAttribute('role', 'button')
-    host.setAttribute('tabindex', '0')
     host.setAttribute('data-map-pin', '')
     host.setAttribute('data-mapkit-pin', key)
-    host.style.cursor = 'pointer'
-    const label = this.#options.itemLabel?.(item)
-    if (label === undefined) {
-      throw new Error(
-        '<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
-          'accessible name of the pin, and a pin without one is unreachable by screen reader.',
-      )
+
+    if (!this.#focusable) {
+      // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
+      // roleless element is what axe reports as `aria-allowed-attr`. The label
+      // is dropped with the role: `aria-label` on an element with no role names
+      // nothing, and assistive technology ignores it.
+      return host
     }
-    host.setAttribute('aria-label', label)
+
+    host.setAttribute('role', 'button')
+    host.setAttribute('tabindex', '0')
+    host.style.cursor = 'pointer'
+    // `#assertLabelling` has already refused a focusable layer without one.
+    host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '')
 
     const activate = (): void => {
       this.#options.onSelect?.(this.#selectedId === key ? null : key)
@@ -406,7 +442,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     // glyph is re-rendered -- in place, inside the same host.
     if (previous !== item) {
       const label = this.#options.itemLabel?.(item)
-      if (label !== undefined) entry.host.setAttribute('aria-label', label)
+      if (label !== undefined && this.#focusable) entry.host.setAttribute('aria-label', label)
       this.#renderGlyph(entry)
       if (!diff.restyled.includes(key)) diff.restyled.push(key)
     }

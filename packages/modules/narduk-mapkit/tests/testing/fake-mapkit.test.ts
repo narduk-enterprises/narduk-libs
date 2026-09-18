@@ -30,12 +30,28 @@ function readyMap(options: Parameters<typeof createFakeMapKit>[0] = {}): {
 }
 
 describe('loading and libraries', () => {
-  it('returns the namespace from a load(options)-compatible entry', async () => {
+  it('resolves load() to a SCOPED namespace, not the global one (K-10)', async () => {
     const fake = createFakeMapKit()
-    await expect(fake.load({ libraries: ['map', 'annotations'], version: '6' })).resolves.toBe(
-      fake.mapkit,
-    )
+
+    const scoped = await fake.load({ libraries: ['map', 'annotations'], version: '6' })
+
+    // 2.1.0 asserted `.toBe(fake.mapkit)` here, which is exactly the shape that
+    // let 62 green end-to-end tests ship a blank map: under the fake both
+    // namespaces were one object, and under MapKit JS 6 they are not.
+    expect(scoped).not.toBe(fake.mapkit)
+    expect(scoped.loadedLibraries).toEqual(['map', 'annotations'])
     expect(fake.mapkit.loadedLibraries).toEqual(['map', 'annotations'])
+  })
+
+  it('resolves every load() to the same scoped namespace', async () => {
+    const fake = createFakeMapKit()
+
+    const first = await fake.load({ libraries: ['map'] })
+    const second = await fake.load({ libraries: ['map'] })
+    const viaNamespace = await fake.mapkit.load('map')
+
+    expect(second).toBe(first)
+    expect(viaNamespace).toBe(first)
   })
 
   it('has no mapkit.Map without the map library, as in real v6', () => {
@@ -138,12 +154,25 @@ describe('authorization', () => {
     expect(fake.inspect.errors[0]?.status).toBe('Unauthorized')
   })
 
-  it('refuses a second init() rather than quietly re-running the exchange', () => {
+  it('refuses a second init() after a SUCCESSFUL exchange', () => {
     const fake = createFakeMapKit()
     initialize(fake)
     expect(() => initialize(fake)).toThrow(
-      'FakeMapKitNotImplemented: mapkit.init (called twice on one namespace)',
+      'FakeMapKitNotImplemented: mapkit.init (called twice without a failed token exchange in between)',
     )
+  })
+
+  it('allows a second init() after a failed one, so retry() is testable (K-7)', () => {
+    const fake = createFakeMapKit({ auth: { mode: 'error' } })
+    initialize(fake, 'rejected-token')
+    expect(fake.inspect.errors).toHaveLength(1)
+
+    // `initializeMapKit` clears its singleton on EVERY error, so `<AppMapKit>`'s
+    // retry() calls load() + init() again. 2.1.0's fake threw here, which is why
+    // buoys pinned the throw as a negative assertion instead of testing recovery.
+    expect(() => initialize(fake, 'second-token')).not.toThrow()
+    expect(fake.inspect.tokens).toEqual(['rejected-token', 'second-token'])
+    expect(fake.inspect.tokenCalls).toBe(2)
   })
 })
 
@@ -482,5 +511,178 @@ describe('the operation log', () => {
       name: 'addAnnotation',
     })
     expect(fake.inspect.now).toBe(500)
+  })
+})
+
+describe('the scoped namespace (K-10)', () => {
+  /** The shape `<AppMapKit>` has in production: a map built from `load()`'s namespace. */
+  async function scopedMap(): Promise<{
+    fake: FakeMapKitHandle
+    map: FakeMapKitMap
+    scoped: FakeMapKitHandle['mapkit']
+  }> {
+    const fake = createFakeMapKit()
+    initialize(fake)
+    const scoped = await fake.load({ libraries: ['map', 'annotations'] })
+    const host = document.createElement('div')
+    document.body.append(host)
+    return { fake, map: new scoped.Map(host), scoped }
+  }
+
+  it('rejects an annotation built from globalThis.mapkit, in Apple’s words', async () => {
+    const { fake, map } = await scopedMap()
+    const foreign = new fake.mapkit.MarkerAnnotation(
+      { latitude: 30, longitude: -88 },
+      {
+        id: 'foreign',
+      },
+    )
+
+    expect(() => map.addAnnotations([foreign])).toThrow(
+      'Map.addAnnotations expected an annotation at index 0, but got',
+    )
+    expect(() => map.addAnnotation(foreign)).toThrow(TypeError)
+    expect(map.annotations).toEqual([])
+  })
+
+  it('accepts an annotation built from the namespace that made the map', async () => {
+    const { map, scoped } = await scopedMap()
+    const own = new scoped.MarkerAnnotation({ latitude: 30, longitude: -88 }, { id: 'own' })
+
+    expect(map.addAnnotations([own])).toEqual([own])
+    expect(map.annotations).toEqual([own])
+  })
+
+  it('leaves globalThis.mapkit.maps empty while a scoped map is on screen', async () => {
+    const { fake, map, scoped } = await scopedMap()
+
+    // The live measurement that found the defect, reproduced offline.
+    expect(fake.mapkit.maps).toEqual([])
+    expect(scoped.maps).toEqual([map])
+
+    map.destroy()
+    expect(scoped.maps).toEqual([])
+  })
+
+  it('rejects a region or rect built from a foreign namespace', async () => {
+    const { fake, map } = await scopedMap()
+
+    expect(() => {
+      map.region = new fake.mapkit.CoordinateRegion(
+        { latitude: 30, longitude: -88 },
+        { latitudeDelta: 1, longitudeDelta: 1 },
+      )
+    }).toThrow('Map.region expected a value from the namespace that created this map')
+    expect(() => map.setVisibleMapRectAnimated(new fake.mapkit.MapRect(0, 0, 0.1, 0.1))).toThrow(
+      'Map.setVisibleMapRectAnimated expected a value from the namespace that created this map',
+    )
+  })
+
+  it('shares one auth state machine across both namespaces', async () => {
+    const fake = createFakeMapKit()
+    const scoped = await fake.load({ libraries: ['map'] })
+    const seen: string[] = []
+    fake.mapkit.addEventListener('configuration-change', () => seen.push('global'))
+    scoped.addEventListener('configuration-change', () => seen.push('scoped'))
+
+    scoped.init({
+      authorizationCallback: (done) => {
+        done('token')
+      },
+    })
+
+    expect(seen).toEqual(['global', 'scoped'])
+    expect(fake.inspect.configurationChanges).toEqual(['Initialized'])
+  })
+})
+
+describe('the rect camera and its degenerate inputs (K-5)', () => {
+  it('derives visibleMapRect from the same projection the pins use', () => {
+    const { fake, map } = readyMap()
+    map.region = new fake.mapkit.CoordinateRegion(
+      { latitude: 0, longitude: 0 },
+      { latitudeDelta: 2, longitudeDelta: 4 },
+    )
+
+    const rect = map.visibleMapRect
+
+    // The world is a unit square: 4 degrees of longitude is 4/360 of it, and
+    // the equator is its horizontal midline.
+    expect(rect.size.width).toBeCloseTo(4 / 360, 10)
+    expect(rect.midY()).toBeCloseTo(0.5, 10)
+    expect(rect.minX()).toBeCloseTo(178 / 360, 10)
+    expect(rect.toCoordinateRegion().span.longitudeDelta).toBeCloseTo(4, 10)
+  })
+
+  it('moves the camera through setVisibleMapRectAnimated and re-places pins', () => {
+    const { fake, map } = readyMap({ viewport: { height: 600, width: 800 } })
+    const pin = new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 }, { id: 'origin' })
+    map.addAnnotation(pin)
+
+    const rect = map.visibleMapRect
+    map.setVisibleMapRectAnimated(
+      new fake.mapkit.MapRect(rect.minX(), rect.minY(), rect.size.width, rect.size.height),
+    )
+
+    expect(map.region.center.latitude).toBeCloseTo(0, 6)
+    expect(pin.element.style.left).toBe('400px')
+    expect(fake.inspect.count('setVisibleMapRectAnimated')).toBe(1)
+  })
+
+  it('records a MapRect with no positive extent instead of guessing', () => {
+    const { fake, map } = readyMap()
+
+    map.visibleMapRect = new fake.mapkit.MapRect(0.5, 0.5, 0, 0)
+
+    expect(fake.inspect.degenerateCameraInputs).toEqual([
+      { detail: 'MapRect size 0x0 has no positive extent', member: 'visibleMapRect' },
+    ])
+    // Applied, not normalised: the absurd region is there to be asserted on.
+    expect(map.region.span.longitudeDelta).toBe(0)
+  })
+
+  it('records padding with no room left in the container', () => {
+    const { fake, map } = readyMap({ viewport: { height: 600, width: 800 } })
+
+    map.padding = new fake.mapkit.Padding({ bottom: 400, left: 0, right: 0, top: 400 })
+
+    expect(fake.inspect.degenerateCameraInputs.map((input) => input.member)).toEqual(['padding'])
+    expect(fake.inspect.count('camera-degenerate')).toBe(1)
+    expect(map.padding.top).toBe(400)
+  })
+})
+
+describe('the basemap enums (K-3)', () => {
+  it('publishes mapkit.MapType and the deprecated Map.MapTypes alias', () => {
+    const fake = createFakeMapKit()
+
+    expect(fake.mapkit.MapType.MutedStandard).toBe('mutedStandard')
+    expect(fake.mapkit.Map.MapTypes.MutedStandard).toBe('mutedStandard')
+    expect(fake.mapkit.ColorScheme.Dark).toBe('dark')
+    expect(fake.mapkit.Map.ColorSchemes.Dark).toBe('dark')
+    expect(fake.mapkit.FeatureVisibility.Hidden).toBe('hidden')
+  })
+})
+
+describe('the projection viewport', () => {
+  it('measures the container the map was attached to when it has a size', () => {
+    const fake = createFakeMapKit({ viewport: { height: 600, width: 800 } })
+    initialize(fake)
+    const host = document.createElement('div')
+    document.body.append(host)
+    // happy-dom reports 0 for both, which is what keeps every other test on the
+    // configured viewport; a measured container is the browser's case.
+    Object.defineProperty(host, 'clientWidth', { configurable: true, value: 390 })
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 844 })
+    const map = new fake.mapkit.Map(host)
+    const pin = new fake.mapkit.MarkerAnnotation({ latitude: 0, longitude: 0 }, { id: 'centre' })
+    map.region = new fake.mapkit.CoordinateRegion(
+      { latitude: 0, longitude: 0 },
+      { latitudeDelta: 2, longitudeDelta: 2 },
+    )
+    map.addAnnotation(pin)
+
+    expect(pin.element.style.left).toBe('195px')
+    expect(pin.element.style.top).toBe('422px')
   })
 })

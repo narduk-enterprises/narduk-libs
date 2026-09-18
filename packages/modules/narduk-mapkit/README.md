@@ -137,6 +137,16 @@ ever carries a value. Missing signing material returns `503` with
 
 ### `<AppMapKit>`
 
+> **`window.mapkit` is NOT the namespace your map belongs to.** MapKit JS 6
+> resolves `mapkit.load(libraries)` to a scoped namespace object that is not
+> `window.mapkit`, and an `Annotation`, `Coordinate`, `CoordinateRegion`,
+> `MapRect` or `MapType` built from the global one is refused by your own map:
+> `Map.addAnnotations expected an annotation at index 0, but got [object EventTarget]`.
+> Build every MapKit value from the namespace the component hands you --
+> `@map-ready`'s second argument, the template ref's `getMapKit()`, or
+> `useMapKit().mapkit` -- and never from `globalThis.mapkit`. Measured live
+> against MapKit JS 6.0.128 on 2026-09-17; the fake models the split from 2.1.1.
+
 The component fills its parent, so the parent must establish an explicit height.
 
 ```vue
@@ -179,10 +189,42 @@ const selectedId = ref<string | null>(null)
   callout can only hold DOM handed to it as an element, which is why a
   `NuxtLink` inside one never routes.
 - **`retry()`** is on the exposed API, alongside `closeCallout`,
-  `getDiagnostics`, `getMap`, `openCallout`, `scrollIntoView`, `select`,
-  `setRegion`, and `zoomToFit`. A MapKit failure clears the cached
+  `getDiagnostics`, `getMap`, `getMapKit`, `openCallout`, `scrollIntoView`,
+  `select`, `setRegion`, and `zoomToFit`. A MapKit failure clears the cached
   initialization, so recovery is the caller's call — `#error` receives
   `{ failure, retry }`.
+- **`getMapKit()`** (2.1.1) returns the scoped namespace above, or `undefined`
+  before the map is ready. `@map-ready` hands over the same object as its second
+  argument; the argument was added rather than replacing the payload, so every
+  existing handler keeps working.
+- **`pinsFocusable`** (2.1.1) defaults to `true`. Set it `false` for a map whose
+  pins are a data layer the app selects from a list beside it: the hosts become
+  decorative — no `role`, `tabindex`, `aria-label`, `aria-pressed`, or listeners
+  — and `itemLabel` stops being required. A screen reader should not announce N
+  buttons that do nothing.
+- **`mapType`** accepts Apple's `'mutedStandard'` as well as this library's
+  `'muted'` from 2.1.1, and both it and `colorScheme` are now written to a live
+  map when the prop changes, not only in the constructor.
+
+#### Styling
+
+2.1.1 ships the host chrome the component's DOM contract always implied. The
+module writes one stylesheet and **unshifts** it onto `nuxt.options.css`, so it
+loads before the app's own:
+
+| Selector             | What it establishes                                          |
+| -------------------- | ------------------------------------------------------------ |
+| `.mapkit-wrapper`    | `position: relative`, `overflow: hidden`, `block-size: 100%` |
+| `.mapkit-canvas`     | fills the wrapper — MapKit needs a sized element             |
+| `.mapkit-status`     | overlays the canvas, centred, `pointer-events: none`         |
+| `.mapkit-status > *` | takes pointer events back, so a retry button is clickable    |
+| `.mapkit-fallback`   | fills the wrapper and scrolls — the `#fallback` slot's host  |
+
+It is **layout only** — no colour, font, radius, or shadow — and every selector
+is a single class with no `!important`, so any rule of your own wins on source
+order without needing a prefix. Set `component: false` and no stylesheet is
+registered. The string is also exported as `MAPKIT_COMPONENT_CSS` from `/nuxt`
+for an app that would rather inject it itself.
 
 Three defaults flip in 2.1.0, each measured across the existing consumers:
 `preserveRegion` and `suppressSelectionZoom` are now `true`, and
@@ -1175,6 +1217,21 @@ fake that silently no-ops is how a test goes green for code that would fail
 against Apple, so the fake is loud by construction. If you hit that error and
 the member matters, model it here rather than working around it in the app.
 
+The same rule covers a member the fake **does** model but nothing has set:
+reading `map.mapType` on a map built without one throws, because Apple documents
+no default and a guess is how a fake teaches a test the wrong thing. Where real
+MapKit's behaviour is genuinely unknown the fake records instead of inventing --
+see `degenerateCameraInputs` below.
+
+**The scoped namespace (2.1.1).** `handle.mapkit` is the namespace `install()`
+publishes as `globalThis.mapkit`; `handle.load()` resolves to a **different**
+one, exactly as MapKit JS 6 does. Each namespace's `maps` lists only its own,
+and a map refuses an annotation, region or `MapRect` built from the other with
+Apple's own message. Drive the component through `load()` -- as production does
+-- and build the values you hand it from what `load()` resolved, not from
+`handle.mapkit`. 2.1.0's fake returned one object for both, which is how 62
+green end-to-end tests shipped a blank map.
+
 ### In vitest (happy-dom or jsdom)
 
 ```ts
@@ -1182,14 +1239,16 @@ the member matters, model it here rather than working around it in the app.
 import { installFakeMapKit } from '@narduk-enterprises/narduk-mapkit/testing'
 
 // Publishes `globalThis.mapkit`, so code under test sees the real global name.
-// Prefer `fake.mapkit` in the test body itself: it is fully typed.
 const fake = installFakeMapKit({ auth: { mode: 'accept' } })
 fake.mapkit.init({ authorizationCallback: (done) => done('test.token') })
 
+// The namespace a real app gets back. NOT `fake.mapkit` -- see above.
+const mapkit = await fake.load({ libraries: ['map', 'annotations'] })
+
 const host = document.body.appendChild(document.createElement('div'))
-const map = new fake.mapkit.Map(host)
+const map = new mapkit.Map(host)
 map.addAnnotation(
-  new fake.mapkit.MarkerAnnotation(new fake.mapkit.Coordinate(30.2, -88.1), {
+  new mapkit.MarkerAnnotation(new mapkit.Coordinate(30.2, -88.1), {
     title: 'Buoy',
   }),
 )
@@ -1197,6 +1256,10 @@ map.addAnnotation(
 expect(fake.inspect.annotationsAdded).toBe(1)
 fake.uninstall()
 ```
+
+Handing that map a `new fake.mapkit.MarkerAnnotation(...)` instead throws
+`Map.addAnnotations expected an annotation at index 0, but got [object EventTarget]`
+-- the real message, from the real defect.
 
 ### In Playwright
 
@@ -1239,11 +1302,21 @@ production code can reach for it by accident.
 | `bootstrapAttempts`                | Every bootstrap attempt, with the token index it used                        |
 | `configurationChanges` / `errors`  | Statuses dispatched, oldest first                                            |
 | `advanceClock(ms)` / `now`         | The fake access-key clock. No real timer is ever involved                    |
+| `degenerateCameraInputs`           | Rect/padding camera writes with no positive extent or no room left           |
 
 The per-annotation counts are the point. They let a test assert a budget rather
 than an outcome -- "updating 1 of 600 pins touched 1 annotation, not 600" is a
 regression test for the reconciliation defect the annotation registry exists to
 prevent, and it is not expressible against a fake that only reports final state.
+
+`degenerateCameraInputs` (2.1.1) exists for the same reason in the other
+direction. A `MapRect` with a non-positive `width`/`height`, or `padding` whose
+insets leave no room in the container, is an input Apple documents no behaviour
+for. Buoys saw a real map zoom out to a continent on the phone when its
+selection maths produced one, but one observation of one input is not a rule --
+so the fake **applies the write and records it** rather than clamping, throwing,
+or pretending to know. `expect(fake.inspect.degenerateCameraInputs).toEqual([])`
+is the assertion that would have caught it.
 
 ### Scriptable authorization
 
@@ -1287,6 +1360,11 @@ tiles, and real animation timing. Every one of them throws
 `FakeMapKitNotImplemented` on touch. The fake covers what this library's own
 registries and the Narduk map component need; the admission bar for adding to it
 is two live applications or a defect fix.
+
+It also does not model per-namespace class identity. Foreign values are refused
+by a brand check, so a cross-namespace `instanceof` still passes in the fake
+where real MapKit's would fail. Nothing in this library branches on
+`instanceof`; a consumer that does is outside what the fake covers.
 
 ## Examples
 

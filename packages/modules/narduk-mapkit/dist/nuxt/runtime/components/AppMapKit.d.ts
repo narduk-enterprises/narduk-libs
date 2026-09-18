@@ -137,6 +137,20 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem) => MapKitPinGeometry>;
     };
+    /**
+     * Whether a pin is an interactive control (2.1.1, K-8).
+     *
+     * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
+     * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
+     * handlers. `false` is for a decorative map: the host carries no role, no
+     * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
+     * longer contains focusable descendants (axe `aria-hidden-focus`) and
+     * `itemLabel` stops being required.
+     */
+    readonly pinsFocusable: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
     /** 7 of 7 consumers set this, so 2.1.0 flips the default. */
     readonly preserveRegion: {
         readonly default: true;
@@ -176,7 +190,14 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     }) => boolean;
     'feature-select': (feature: GeoJSONFeature) => boolean;
     'map-click': (coordinate: MapKitLatLng) => boolean;
-    'map-ready': (map: unknown) => boolean;
+    /**
+     * The map, and the namespace that built it (2.1.1, K-10).
+     *
+     * The second argument is `useMapKit().mapkit`, NOT `globalThis.mapkit`:
+     * MapKit JS 6 resolves `mapkit.load(libraries)` to a scoped namespace, and a
+     * value built from the global one fails this map's own instanceof checks.
+     */
+    'map-ready': (map: unknown, mapkit: unknown) => boolean;
     'mapkit-error': (failure: MapKitFailure) => boolean;
     'region-change': (region: {
         centerLat: number;
@@ -306,6 +327,20 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem) => MapKitPinGeometry>;
     };
+    /**
+     * Whether a pin is an interactive control (2.1.1, K-8).
+     *
+     * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
+     * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
+     * handlers. `false` is for a decorative map: the host carries no role, no
+     * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
+     * longer contains focusable descendants (axe `aria-hidden-focus`) and
+     * `itemLabel` stops being required.
+     */
+    readonly pinsFocusable: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
     /** 7 of 7 consumers set this, so 2.1.0 flips the default. */
     readonly preserveRegion: {
         readonly default: true;
@@ -343,7 +378,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         item: MapKitItem;
     }) => any;
     "onFeature-select"?: (feature: GeoJSONFeature) => any;
-    "onMap-ready"?: (map: unknown) => any;
+    "onMap-ready"?: (map: unknown, mapkit: unknown) => any;
     "onMapkit-error"?: (failure: MapKitFailure) => any;
     "onRegion-change"?: (region: {
         centerLat: number;
@@ -357,8 +392,8 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly geojson: GeoJSONFeatureCollection | null;
     readonly minSpanDelta: number;
     readonly libraries: readonly string[];
-    readonly overlayStyleFn: (properties: GeoJSONFeatureProperties) => OverlayStyle;
     readonly nonce: string;
+    readonly overlayStyleFn: (properties: GeoJSONFeatureProperties) => OverlayStyle;
     readonly ariaLabel: string;
     readonly boundingPadding: number;
     readonly calloutFollowSelection: boolean;
@@ -383,6 +418,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly maxCircleRadius: number;
     readonly minCircleRadius: number;
     readonly pinGeometry: (item: MapKitItem) => MapKitPinGeometry;
+    readonly pinsFocusable: boolean;
     readonly preserveRegion: boolean;
     readonly selectedId: string | null;
     readonly showsPointsOfInterest: boolean;
@@ -398,17 +434,44 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     fallback?: () => VNode[];
     loading?: () => VNode[];
 }>, {}, {}, string, import("vue").ComponentProvideOptions, true, {}, any>;
+type AppMapKitBaseInstance = InstanceType<typeof AppMapKitImpl>;
+/**
+ * Every prop whose type is a function of the app's own item type.
+ *
+ * Named as one interface rather than spelled out twice because the `Omit` below
+ * takes its keys from here: adding an item-typed prop to the component then
+ * cannot leave the generic surface behind, which is exactly how 2.1.0 shipped
+ * with only `items` re-typed (narduk-libs 2.1.1, K-1).
+ */
+export interface AppMapKitItemProps<T extends MapKitPinItem> {
+    createPinElement?: ((item: T, isSelected: boolean) => MapKitPinElement) | undefined;
+    itemKey?: ((item: T, index: number) => string) | undefined;
+    itemLabel?: ((item: T) => string) | undefined;
+    items?: readonly T[] | undefined;
+    pinGeometry?: ((item: T) => MapKitPinGeometry) | undefined;
+}
+/** `<AppMapKit>`'s props for an app item type `T`. */
+export type AppMapKitProps<T extends MapKitPinItem> = Omit<AppMapKitBaseInstance['$props'], keyof AppMapKitItemProps<MapKitPinItem>> & AppMapKitItemProps<T>;
+/** `<AppMapKit>`'s slots for an app item type `T`; only `#callout` is item-typed. */
+export type AppMapKitSlots<T extends MapKitPinItem> = Omit<AppMapKitBaseInstance['$slots'], 'callout'> & {
+    callout?: (scope: MapKitCalloutSlotScope<T>) => VNode[];
+};
 /**
  * Exported with a generic construct signature so an app's own item type flows
- * through `items`, `itemKey`, `createPinElement`, `pinGeometry` and the
- * `#callout` slot. The runtime props above cannot carry a type parameter, so the
- * generic surface is applied here, once.
+ * through `items`, `itemKey`, `itemLabel`, `createPinElement`, `pinGeometry` and
+ * the `#callout` slot scope. The runtime props above cannot carry a type
+ * parameter, so the generic surface is applied here, once.
+ *
+ * 2.1.0 re-typed `items` alone, which under `strictFunctionTypes` left every
+ * callback rejecting the app's item type -- parameters are contravariant, so
+ * `(item: Station) => string` is not assignable to `(item: MapKitPinItem) =>
+ * string`. `tests/nuxt/app-map-kit-generic.test.ts` is the compile-time gate; a
+ * runtime test cannot see this at all.
  */
 declare const _default: typeof AppMapKitImpl & {
-    new <T extends MapKitPinItem>(): {
-        $props: Omit<InstanceType<typeof AppMapKitImpl>["$props"], "items"> & {
-            items?: readonly T[];
-        };
+    new <T extends MapKitPinItem>(): Omit<AppMapKitBaseInstance, "$props" | "$slots"> & {
+        $props: AppMapKitProps<T>;
+        $slots: AppMapKitSlots<T>;
     };
 };
 export default _default;

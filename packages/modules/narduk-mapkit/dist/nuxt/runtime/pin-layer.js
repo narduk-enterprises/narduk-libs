@@ -125,6 +125,9 @@ export class MapKitPinLayer {
     setItems(items) {
         if (this.#destroyed)
             return emptyDiff();
+        // K-9: raised before anything is reconciled, so a missing `itemLabel`
+        // cannot leave the registry and `#entries` disagreeing about what exists.
+        this.#assertLabelling(items);
         const diff = emptyDiff();
         const keyFor = this.#options.itemKey;
         const descriptors = items.map((item, index) => {
@@ -224,25 +227,41 @@ export class MapKitPinLayer {
             entry.cleanup = rendered.cleanup;
             entry.host.append(rendered.element);
         }
-        entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false');
+        if (this.#focusable)
+            entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false');
         if (entry.selected)
             entry.host.setAttribute('data-mapkit-selected', '');
         else
             entry.host.removeAttribute('data-mapkit-selected');
     }
+    /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
+    get #focusable() {
+        return this.#options.focusable ?? true;
+    }
+    #assertLabelling(items) {
+        if (items.length === 0 || !this.#focusable || this.#options.itemLabel)
+            return;
+        throw new Error('<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
+            'accessible name of the pin, and a pin without one is unreachable by screen reader. ' +
+            'Pass itemLabel, or build the layer with focusable: false for pins that are not ' +
+            'interactive controls.');
+    }
     #buildHost(key, item) {
         const host = this.#document.createElement('div');
-        host.setAttribute('role', 'button');
-        host.setAttribute('tabindex', '0');
         host.setAttribute('data-map-pin', '');
         host.setAttribute('data-mapkit-pin', key);
-        host.style.cursor = 'pointer';
-        const label = this.#options.itemLabel?.(item);
-        if (label === undefined) {
-            throw new Error('<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
-                'accessible name of the pin, and a pin without one is unreachable by screen reader.');
+        if (!this.#focusable) {
+            // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
+            // roleless element is what axe reports as `aria-allowed-attr`. The label
+            // is dropped with the role: `aria-label` on an element with no role names
+            // nothing, and assistive technology ignores it.
+            return host;
         }
-        host.setAttribute('aria-label', label);
+        host.setAttribute('role', 'button');
+        host.setAttribute('tabindex', '0');
+        host.style.cursor = 'pointer';
+        // `#assertLabelling` has already refused a focusable layer without one.
+        host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '');
         const activate = () => {
             this.#options.onSelect?.(this.#selectedId === key ? null : key);
         };
@@ -315,7 +334,7 @@ export class MapKitPinLayer {
         // glyph is re-rendered -- in place, inside the same host.
         if (previous !== item) {
             const label = this.#options.itemLabel?.(item);
-            if (label !== undefined)
+            if (label !== undefined && this.#focusable)
                 entry.host.setAttribute('aria-label', label);
             this.#renderGlyph(entry);
             if (!diff.restyled.includes(key))

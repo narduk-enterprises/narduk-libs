@@ -95,12 +95,47 @@ describe('runtime/mapkit-surface.ts (§c)', () => {
 
     let threw = false
     try {
-      // `mapType` is deliberately absent from MapKitMapLike: the component
-      // passes it as a constructor option and never reads it back.
-      void (map as unknown as { mapType: unknown }).mapType
+      // `cameraDistance` is a real MapKit member this library never touches, so
+      // it is the fidelity rule's own case: unmodelled, and loudly so.
+      void (map as unknown as { cameraDistance: unknown }).cameraDistance
     } catch (error) {
       threw = isFakeMapKitNotImplemented(error)
     }
     expect(threw).toBe(true)
+  })
+
+  it('models mapType and colorScheme, which 2.1.0 refused to (K-4)', async () => {
+    // The inverse of the case above, and the reason MapKitMapLike grew two
+    // members in 2.1.1: the component has to WRITE both on a live map when a
+    // prop changes, and against 2.1.0's fake every one of those writes threw.
+    const { createFakeMapKit } = await import('../../src/testing/index.js')
+    const fake = createFakeMapKit()
+    const map = new fake.mapkit.Map(document.createElement('div'), {
+      colorScheme: 'light',
+      mapType: 'standard',
+    })
+
+    map.mapType = 'mutedStandard'
+    map.colorScheme = 'dark'
+
+    expect(map.mapType).toBe('mutedStandard')
+    expect(map.colorScheme).toBe('dark')
+  })
+
+  it('refuses to invent a default for a basemap member nothing set', async () => {
+    const { createFakeMapKit, isFakeMapKitNotImplemented } =
+      await import('../../src/testing/index.js')
+    const fake = createFakeMapKit()
+    const map = new fake.mapkit.Map(document.createElement('div'))
+
+    // Apple documents no default for `mapType`, so the fake answers no guess.
+    let error: unknown
+    try {
+      void map.mapType
+    } catch (thrown) {
+      error = thrown
+    }
+    expect(isFakeMapKitNotImplemented(error)).toBe(true)
+    expect((error as Error).message).toContain('Apple documents no default')
   })
 })

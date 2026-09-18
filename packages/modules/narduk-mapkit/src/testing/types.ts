@@ -122,11 +122,14 @@ export type FakeMapKitOperationName =
   | 'bootstrap'
   | 'callout-remove'
   | 'callout-render'
+  | 'camera-degenerate'
+  | 'colorScheme='
   | 'configuration-change'
   | 'deselect'
   | 'error'
   | 'init'
   | 'load'
+  | 'mapType='
   | 'region='
   | 'removeAnnotation'
   | 'removeAnnotations'
@@ -134,7 +137,9 @@ export type FakeMapKitOperationName =
   | 'selectedAnnotation='
   | 'setCenterAnimated'
   | 'setRegionAnimated'
+  | 'setVisibleMapRectAnimated'
   | 'showItems'
+  | 'visibleMapRect='
 
 export interface FakeMapKitOperation {
   /** Annotation ids this operation touched; empty when it touched none. */
@@ -189,8 +194,15 @@ export interface FakeMapKitInspector {
   readonly tokenCalls: number
   /** Tokens passed to `done()`, oldest first. Test values only -- never a credential. */
   readonly tokens: readonly string[]
-  /** Live, undestroyed maps. */
+  /** Live, undestroyed maps, from EVERY namespace (see `FakeMapKitNamespace.maps`). */
   readonly maps: readonly FakeMapKitMap[]
+  /**
+   * Camera inputs the fake applied but refuses to claim an answer for (K-5):
+   * a `MapRect` with no positive extent, or padding with no room left in the
+   * container. Apple documents neither clamping nor refusal for either, so the
+   * fake records them here instead of inventing a behaviour.
+   */
+  readonly degenerateCameraInputs: readonly FakeMapKitDegenerateCameraInput[]
 
   /**
    * Move the fake clock forward. Crossing the access-key expiry runs whatever
@@ -205,7 +217,10 @@ export interface FakeMapKitInspector {
   count(name: FakeMapKitOperationName): number
   /** Simulate a user dismissing the selection: fires `deselect` on the map. */
   deselectAnnotation(map: FakeMapKitMap): void
-  /** Clear the operation log and every counter. Leaves maps, clock and auth state alone. */
+  /**
+   * Clear the operation log, every counter and the degenerate-camera record.
+   * Leaves maps, clock and auth state alone.
+   */
   reset(): void
   /**
    * Simulate a user selecting `annotation`: deselects whatever was selected,
@@ -253,6 +268,94 @@ export interface FakePadding extends FakePaddingData {
 export interface FakeSize {
   height: number
   width: number
+}
+
+/**
+ * A point in MapKit's own map-unit space: a unit square whose (0,0) is the
+ * north-west corner of the Web-Mercator world and whose (1,1) is the south-east
+ * one. `MapPointData` is Apple's plain-object alternative, accepted wherever a
+ * `MapPoint` is.
+ */
+export interface FakeMapPointData {
+  x: number
+  y: number
+}
+
+export interface FakeMapPoint extends FakeMapPointData {
+  copy(): FakeMapPoint
+  equals(other: FakeMapPoint): boolean
+  toCoordinate(): FakeCoordinate
+  toString(): string
+}
+
+export interface FakeMapSizeData {
+  height: number
+  width: number
+}
+
+export interface FakeMapSize extends FakeMapSizeData {
+  copy(): FakeMapSize
+  equals(other: FakeMapSize): boolean
+  toString(): string
+}
+
+export interface FakeMapRectData {
+  origin: FakeMapPointData
+  size: FakeMapSizeData
+}
+
+/**
+ * The rect camera (K-5).
+ *
+ * 2.1.0's fake modelled `region` only, so an app whose selection maths drives
+ * `visibleMapRect` + `padding` -- which is what buoys does on a phone -- had no
+ * test that could see the camera it produced. The fake derives the rect from
+ * the same projection its pins use, so nothing here is a second geometry.
+ */
+export interface FakeMapRect {
+  origin: FakeMapPoint
+  size: FakeMapSize
+  copy(): FakeMapRect
+  equals(other: FakeMapRect): boolean
+  maxX(): number
+  maxY(): number
+  midX(): number
+  midY(): number
+  minX(): number
+  minY(): number
+  /** Apple has it; nothing in this library calls it, so the fake throws. */
+  scale(scaleFactor: number, scaleCenter?: FakeMapPointData): FakeMapRect
+  toCoordinateRegion(): FakeCoordinateRegion
+  toString(): string
+}
+
+/** A camera input the fake applied but will not claim Apple's answer for. */
+export interface FakeMapKitDegenerateCameraInput {
+  /** What the fake was handed, in words. */
+  readonly detail: string
+  readonly member: 'padding' | 'visibleMapRect'
+}
+
+/** `mapkit.MapType`, verbatim from `@types/apple-mapkit`. */
+export interface FakeMapKitMapTypeEnum {
+  readonly Hybrid: 'hybrid'
+  readonly MutedStandard: 'mutedStandard'
+  readonly Satellite: 'satellite'
+  readonly Standard: 'standard'
+}
+
+/** `mapkit.ColorScheme`, verbatim. */
+export interface FakeMapKitColorSchemeEnum {
+  readonly Adaptive: 'adaptive'
+  readonly Dark: 'dark'
+  readonly Light: 'light'
+}
+
+/** `mapkit.FeatureVisibility`, verbatim. */
+export interface FakeMapKitFeatureVisibilityEnum {
+  readonly Adaptive: 'adaptive'
+  readonly Hidden: 'hidden'
+  readonly Visible: 'visible'
 }
 
 /** The slice of Apple's `AnnotationCalloutDelegate` the fake calls. */
@@ -334,26 +437,53 @@ export interface FakeMapKitShowItemsOptions {
 
 export interface FakeMapKitMapOptions {
   center?: { latitude: number; longitude: number }
+  /** `mapkit.ColorScheme`'s values. Left unset, READING `map.colorScheme` throws. */
+  colorScheme?: string
   /** Apple's constructor default is `true`. */
   isRotationEnabled?: boolean
+  /** `mapkit.MapType`'s values. Left unset, READING `map.mapType` throws. */
+  mapType?: string
+  padding?: FakePaddingData
   region?: {
     center: { latitude: number; longitude: number }
     span: { latitudeDelta: number; longitudeDelta: number }
   }
+  /** `mapkit.FeatureVisibility`'s values. */
+  showsScale?: string
+  showsZoomControl?: boolean
+  visibleMapRect?: FakeMapRectData
 }
 
+/**
+ * The map.
+ *
+ * Every member here is one the fake models; reading any other throws
+ * `FakeMapKitNotImplemented`. The basemap, control and camera members joined in
+ * 2.1.1 (K-4, K-5). None of them has a default the fake invents: a map built
+ * without `mapType` throws on a READ of `map.mapType` rather than answering a
+ * guess, because Apple documents no default for it.
+ */
 export interface FakeMapKitMap extends EventTarget {
   annotations: FakeMapKitAnnotation[]
+  colorScheme: string
   readonly element: HTMLElement | null
   isRotationEnabled: boolean
+  mapType: string
+  get padding(): FakePadding
+  set padding(value: FakePaddingData)
   region: FakeCoordinateRegion
   selectedAnnotation: FakeMapKitAnnotation | null
+  showsScale: string
+  showsZoomControl: boolean
+  get visibleMapRect(): FakeMapRect
+  set visibleMapRect(value: FakeMapRectData)
   addAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation | null
   addAnnotations(annotations: FakeMapKitAnnotation[]): FakeMapKitAnnotation[]
   destroy(): void
   removeAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation
   removeAnnotations(annotations: FakeMapKitAnnotation[]): FakeMapKitAnnotation[]
   setRegionAnimated(region: FakeCoordinateRegion, animated?: boolean): FakeMapKitMap
+  setVisibleMapRectAnimated(mapRect: FakeMapRectData, animated?: boolean): FakeMapKitMap
   showItems(
     items: FakeMapKitAnnotation[],
     options?: FakeMapKitShowItemsOptions,
@@ -366,11 +496,35 @@ export interface FakeMapKitInitializationOptions {
   libraries?: string[]
 }
 
-/** The Apple-shaped namespace. Reading any member the fake does not model throws. */
+/**
+ * The `mapkit.Map` constructor, with the two deprecated enum aliases Apple still
+ * ships on it. `mapkit.MapType` and `mapkit.ColorScheme` are the canonical
+ * spellings; `Map.MapTypes`/`Map.ColorSchemes` are modelled so a consumer that
+ * reads either works against the fake.
+ */
+export interface FakeMapKitMapConstructor {
+  new (parent?: string | HTMLElement | null, options?: FakeMapKitMapOptions): FakeMapKitMap
+  /** @deprecated Apple deprecates it in favour of `mapkit.ColorScheme`. */
+  readonly ColorSchemes: FakeMapKitColorSchemeEnum
+  /** @deprecated Apple deprecates it in favour of `mapkit.MapType`. */
+  readonly MapTypes: FakeMapKitMapTypeEnum
+}
+
+/**
+ * The Apple-shaped namespace. Reading any member the fake does not model throws.
+ *
+ * There is more than one of these per runtime (K-10). MapKit JS 6 resolves
+ * `mapkit.load(libraries)` to a SCOPED namespace that is not `window.mapkit`,
+ * and every value a map accepts must come from the namespace that built it --
+ * so the fake's `load()` resolves to a namespace object distinct from the one
+ * `install()` publishes as `globalThis.mapkit`, and `maps` lists only the maps
+ * of the namespace it is read from.
+ */
 export interface FakeMapKitNamespace extends EventTarget {
   readonly build: string
   language: string
   readonly loadedLibraries: string[] | undefined
+  /** Live maps THIS namespace built. A foreign namespace's maps are not here. */
   readonly maps: FakeMapKitMap[]
   readonly version: string
 
@@ -388,14 +542,17 @@ export interface FakeMapKitNamespace extends EventTarget {
     latitudeDelta?: number,
     longitudeDelta?: number,
   ) => FakeCoordinateSpan
+  readonly ColorScheme: FakeMapKitColorSchemeEnum
+  readonly FeatureVisibility: FakeMapKitFeatureVisibilityEnum
   readonly ImageAnnotation: new (
     location: { latitude: number; longitude: number },
     options: FakeMapKitImageAnnotationOptions,
   ) => FakeMapKitImageAnnotation
-  readonly Map: new (
-    parent?: string | HTMLElement | null,
-    options?: FakeMapKitMapOptions,
-  ) => FakeMapKitMap
+  readonly Map: FakeMapKitMapConstructor
+  readonly MapPoint: new (x?: number, y?: number) => FakeMapPoint
+  readonly MapRect: new (x?: number, y?: number, width?: number, height?: number) => FakeMapRect
+  readonly MapSize: new (width?: number, height?: number) => FakeMapSize
+  readonly MapType: FakeMapKitMapTypeEnum
   readonly MarkerAnnotation: new (
     location: { latitude: number; longitude: number },
     options?: FakeMapKitMarkerAnnotationOptions,
@@ -409,8 +566,14 @@ export interface FakeMapKitNamespace extends EventTarget {
 /** What the self-contained browser runtime returns. */
 export interface FakeMapKitRuntime {
   readonly inspect: FakeMapKitInspector
+  /** The namespace `install()` publishes as `globalThis.mapkit`. NOT what `load()` resolves to. */
   readonly mapkit: FakeMapKitNamespace
-  /** `load(options)`-compatible entry, shaped like `@apple/mapkit-loader`'s `load`. */
+  /**
+   * `load(options)`-compatible entry, shaped like `@apple/mapkit-loader`'s
+   * `load`. It resolves to the SCOPED namespace (K-10), which is a different
+   * object from `mapkit` above -- the same split real MapKit JS 6 has, and the
+   * one 2.1.0's fake collapsed.
+   */
   load(options?: FakeMapKitLoadOptions): Promise<FakeMapKitNamespace>
 }
 

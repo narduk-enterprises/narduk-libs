@@ -15,22 +15,33 @@ import {
   addComponent,
   addImports,
   addServerHandler,
+  addTemplate,
   addTypeTemplate,
   createResolver,
   defineNuxtModule,
 } from '@nuxt/kit'
 
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js'
+import { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
 
 import type { MapKitPublicRuntimeOptions } from './runtime/options.js'
 import type { ModuleOptions } from './types.js'
 import type { NuxtModule } from '@nuxt/schema'
 
 export type * from './types.js'
+export type { MapKitBasemap } from './runtime/basemap.js'
 export type { MapKitCalloutEntry, MapKitCalloutPlacement } from './runtime/callout-host.js'
 export type { MapKitPinAnchor, MapKitPinGeometry } from './runtime/pin-geometry.js'
 export type { MapKitDiff, MapKitPinElement, MapKitPinItem } from './runtime/pin-layer.js'
+export type {
+  AppMapKitItemProps,
+  AppMapKitProps,
+  AppMapKitSlots,
+  MapKitCalloutSlotScope,
+} from './runtime/components/AppMapKit.js'
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js'
+export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js'
+export { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
 
 interface MutableRuntimeConfig {
   appleKeyId?: string
@@ -154,6 +165,16 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
         filePath: resolver.resolve('./runtime/components/AppMapKit'),
         name: 'AppMapKit',
       })
+      // K-6. The host chrome the component cannot work without, written out of
+      // a TS string because `tsc` -- this package's whole build -- emits no
+      // `.css`. `unshift`, not `push`: the stylesheet has to come FIRST so an
+      // app's own single-class rule for the same property wins on order.
+      const stylesheet = addTemplate({
+        filename: 'narduk-mapkit.css',
+        getContents: () => MAPKIT_COMPONENT_CSS,
+        write: true,
+      })
+      nuxt.options.css.unshift(stylesheet.dst)
     }
     if (options.composables) {
       addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }])

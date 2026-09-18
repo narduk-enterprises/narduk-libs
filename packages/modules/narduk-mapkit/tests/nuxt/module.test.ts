@@ -19,6 +19,7 @@ interface NuxtStub {
   options: {
     build: { templates: unknown[]; transpile: string[] }
     buildDir: string
+    css: string[]
     imports: { autoImport: boolean }
     runtimeConfig: Record<string, unknown> & { public: Record<string, unknown> }
     serverHandlers: Array<{ handler: string; method?: string; route: string }>
@@ -41,6 +42,7 @@ function nuxtStub(runtimeConfig: Record<string, unknown> = {}): NuxtStub {
     options: {
       build: { templates: [], transpile: [] },
       buildDir: '/tmp/narduk-mapkit-test/.nuxt',
+      css: [],
       imports: { autoImport: true },
       runtimeConfig: { public: {}, ...runtimeConfig } as NuxtStub['options']['runtimeConfig'],
       serverHandlers: [],
@@ -206,5 +208,67 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
     const nuxt = await setup()
 
     expect(nuxt.options.build.transpile.some((entry) => entry.endsWith('/runtime'))).toBe(true)
+  })
+})
+
+describe('the shipped stylesheet (K-6)', () => {
+  function stylesheet(nuxt: NuxtStub): { dst: string; getContents: () => string } {
+    const template = nuxt.options.build.templates.find(
+      (candidate) => (candidate as { filename?: string }).filename === 'narduk-mapkit.css',
+    )
+    expect(template).toBeDefined()
+    return template as { dst: string; getContents: () => string }
+  }
+
+  it('registers one stylesheet and puts it FIRST in nuxt.options.css', async () => {
+    const nuxt = await setup()
+
+    // 2.1.0 shipped no CSS at all, so every adopting app wrote the same host
+    // chrome by hand and a consumer that did not got a zero-height map.
+    expect(nuxt.options.css).toHaveLength(1)
+    expect(nuxt.options.css[0]).toMatch(/narduk-mapkit\.css$/)
+    expect(nuxt.options.css[0]).toBe(stylesheet(nuxt).dst)
+  })
+
+  it('stays ahead of an app stylesheet that was already configured', async () => {
+    const nuxt = nuxtStub()
+    nuxt.options.css.push('~/assets/css/app.css')
+    await runModule(nuxt, {})
+
+    expect(nuxt.options.css).toStrictEqual([nuxt.options.css[0], '~/assets/css/app.css'])
+    expect(nuxt.options.css[0]).toMatch(/narduk-mapkit\.css$/)
+  })
+
+  it('carries the host chrome the component cannot work without', async () => {
+    const css = stylesheet(await setup()).getContents()
+
+    expect(css).toContain('.mapkit-wrapper')
+    expect(css).toContain('.mapkit-canvas')
+    expect(css).toContain('.mapkit-status')
+    // Layout only: no colour, font, radius or shadow, because this is not a theme.
+    expect(css).not.toMatch(/\b(color|background|font-family|border-radius|box-shadow)\s*:/)
+    expect(css).not.toContain('!important')
+  })
+
+  it('keeps every selector to a single class, so an app rule wins on order', async () => {
+    const css = stylesheet(await setup()).getContents()
+
+    const selectors = css
+      .replaceAll(/\/\*.*?\*\//gs, '')
+      .split('}')
+      .map((rule) => rule.split('{')[0]?.trim() ?? '')
+      .filter(Boolean)
+    expect(selectors.length).toBeGreaterThan(3)
+    for (const selector of selectors) {
+      // One class, optionally with the universal child selector (which adds no
+      // specificity). Anything else would out-rank an app's own `.mapkit-canvas`.
+      expect(selector).toMatch(/^\.[a-z-]+(?: > \*)?$/)
+    }
+  })
+
+  it('registers no stylesheet when the component is not registered', async () => {
+    const nuxt = await setup({ component: false })
+
+    expect(nuxt.options.css).toStrictEqual([])
   })
 })

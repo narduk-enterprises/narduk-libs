@@ -11,9 +11,12 @@
  * the `event.context.nardukMapKit.rateLimit` hook as a documented seam. The
  * callout need is met by the `#callout` slot instead.
  */
-import { addComponent, addImports, addServerHandler, addTypeTemplate, createResolver, defineNuxtModule, } from '@nuxt/kit';
+import { addComponent, addImports, addServerHandler, addTemplate, addTypeTemplate, createResolver, defineNuxtModule, } from '@nuxt/kit';
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js';
+import { MAPKIT_COMPONENT_CSS } from './runtime/styles.js';
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
+export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js';
+export { MAPKIT_COMPONENT_CSS } from './runtime/styles.js';
 /** WHATWG URL parsing removes every ASCII tab, LF and CR from the input. */
 const URL_IGNORED_CHARACTERS = /[\t\n\r]/g;
 function normalizeRoutePath(path) {
@@ -112,6 +115,16 @@ const module = defineNuxtModule({
                 filePath: resolver.resolve('./runtime/components/AppMapKit'),
                 name: 'AppMapKit',
             });
+            // K-6. The host chrome the component cannot work without, written out of
+            // a TS string because `tsc` -- this package's whole build -- emits no
+            // `.css`. `unshift`, not `push`: the stylesheet has to come FIRST so an
+            // app's own single-class rule for the same property wins on order.
+            const stylesheet = addTemplate({
+                filename: 'narduk-mapkit.css',
+                getContents: () => MAPKIT_COMPONENT_CSS,
+                write: true,
+            });
+            nuxt.options.css.unshift(stylesheet.dst);
         }
         if (options.composables) {
             addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }]);
