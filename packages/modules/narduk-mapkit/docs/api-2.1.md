@@ -297,6 +297,9 @@ non-refreshable path. `load()` adopts the existing tag (it dedupes on
 `[data-callback="initMapKitLoaderV2"]`). Nothing renders a map during SSR; the
 container is SSR'd empty with its `role="region"` and label.
 
+The component initialises once both MapKit JS is ready and its container is
+mounted.
+
 **Test hooks**: `data-mapkit-state="loading|ready|error"`,
 `data-mapkit-pin="<id>"`, `data-mapkit-selected`, `data-mapkit-callout="<id>"`.
 
