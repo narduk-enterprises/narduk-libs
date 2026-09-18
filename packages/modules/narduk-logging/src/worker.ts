@@ -1,5 +1,5 @@
 import { createLogger } from './logger.js'
-import { RequestTiming } from './timing.js'
+import { queryCountFields, RequestTiming } from './timing.js'
 import { isSharedCacheable, mergeServerTiming } from './response-headers.js'
 import type { Logger, LoggerOptions } from './types.js'
 
@@ -64,7 +64,7 @@ export async function logRequest(
   const slowRoute = (status: number): void => {
     const durationMs = Math.round(timing.totalMs())
     if (options.slowRouteThresholdMs !== undefined && durationMs > options.slowRouteThresholdMs) {
-      log.warn('Slow route', { status, durationMs })
+      log.warn('Slow route', { status, durationMs, ...queryCountFields(timing) })
     }
   }
   try {
@@ -83,6 +83,7 @@ export async function logRequest(
     log[response.status >= 500 ? 'error' : 'info']('Request completed', {
       status: response.status,
       durationMs: Math.round(timing.totalMs()),
+      ...queryCountFields(timing),
     })
     slowRoute(response.status)
     return outgoing
@@ -90,6 +91,7 @@ export async function logRequest(
     log.error('Request failed', {
       status: 500,
       durationMs: Math.round(timing.totalMs()),
+      ...queryCountFields(timing),
       error,
     })
     slowRoute(500)
@@ -107,5 +109,5 @@ export function logJob<T>(
   return logger.withContext({ source: 'job' }).operation(name, handler, fields)
 }
 
-export type { RequestTiming, RequestTimingOptions } from './timing.js'
+export type { QueryCounter, QueryCounts, RequestTiming, RequestTimingOptions } from './timing.js'
 export type { Logger, LoggerOptions } from './types.js'

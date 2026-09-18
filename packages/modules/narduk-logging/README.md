@@ -29,9 +29,11 @@ call) and a `Server-Timing` response header. The inbound header is validated,
 not trusted — any client can choose the ID its own request arrives with, so it
 correlates requests, it never identifies a caller. The header is `total`-only by
 default; opt in per route to expose named phases, and set a threshold to get a
-"Slow route" warn log for requests over budget. A response a shared cache may
-replay (`public`, `s-maxage`, `immutable`) is left unstamped, because a cached
-correlation ID would be served to every later client. See
+"Slow route" warn log for requests over budget. A driver-agnostic `QueryCounter`
+(`useRequestCounter(event).recordRoundTrip(n)`) adds per-phase statement and
+round-trip counts to the header and the completion record. A response a shared
+cache may replay (`public`, `s-maxage`, `immutable`) is left unstamped, because
+a cached correlation ID would be served to every later client. See
 [`docs/api.md`](docs/api.md#server-timing-and-slow-route-logging).
 
 **Timing inside a Worker:** `Date.now()` and `performance.now()` only advance
