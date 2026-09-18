@@ -92,6 +92,23 @@ jobs:
     if: needs.affected.outputs.logging-languages == 'true'
     uses: ./.github/workflows/logging-languages.yml
 
+  # Pull-request reviewer (agent-infrastructure#1564): one Cursor Cloud agent
+  # on grok-4.6 xhigh reviews the head with the repo plus the estate manual and
+  # decisions attached, and posts a real GitHub review from this run. A
+  # blocking finding is REQUEST_CHANGES, which the branch rules honour. Never
+  # part of `ci / Required`; skips exit green, reviewer errors show red here.
+  cursor-review:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@7cf053b5b2136eaa38e9e00ee2aa3a5979cddb34 # v2 (workflows#117)
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      enabled: true
+      runner: '"ubuntu-latest"'
+    secrets:
+      CURSOR_CLOUD_AGENTS_API_KEY: ${{ secrets.CURSOR_CLOUD_AGENTS_API_KEY }}
+
   ci:
     needs: [affected]
     uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@d1026b280db8e3a2959a852961d5828f8ea294a9 # public hosted CI and no registry auth
