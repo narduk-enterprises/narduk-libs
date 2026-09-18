@@ -27,6 +27,8 @@
     "runtime/app/composables/useSsrNow.ts",
     "runtime/app/utils/ssrNowClock.ts",
     "runtime/app/utils/preferencesState.ts",
+    "runtime/app/utils/lightboxRails.ts",
+    "runtime/app/utils/snapStripReadout.ts",
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",
     "runtime/server/middleware/00-canonical-host.ts",

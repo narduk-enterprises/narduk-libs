@@ -1886,6 +1886,70 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Shared media components
+
+Auto-registered from `runtime/app/components/shared/` (`addComponentsDir` with
+`pathPrefix: false`), so an app that enables the module's `app` option gets
+`AppLightbox`, `AppImage`, and `AppSnapStrip` without importing them.
+
+### `AppLightbox`
+
+Fullscreen image/video viewer. Escape closes it; without rails, ArrowLeft /
+ArrowRight and the chevrons step the gallery. `v-model` is open/closed.
+
+Optional `rails` (0–2 labelled thumbnail rows under the picture) each own a
+keyboard axis: the first rail uses ArrowLeft / ArrowRight, the second uses
+ArrowUp / ArrowDown. Choosing a thumb updates the main picture and emits
+`select` with `{ railIndex, itemIndex }`. Rails are focusable, use the rail
+label as `aria-label`, and mark the current thumb with `aria-current`. Omit
+`rails` and existing keyboard / swipe behaviour is unchanged.
+
+The named `side` slot receives `{ item, index }` for the current picture. It
+renders beside the picture from the `md` breakpoint up, and below it on narrow
+screens.
+
+```vue
+<AppLightbox
+  v-model="open"
+  :items="pictures"
+  :rails="rails"
+  @select="onRailSelect"
+>
+  <template #side="{ item, index }">
+    <p>{{ item.caption }} · {{ index + 1 }}</p>
+  </template>
+</AppLightbox>
+```
+
+### `AppImage`
+
+Wraps a remote `<img>`. A `USkeleton` covers the frame while it loads; a failed
+load shows a hatched blank (`repeating-linear-gradient`) plus `failedText`
+(default "Image unavailable"). Forwards `src`, `alt`, `width`, `height`,
+`loading`, and `decoding`; emits `load` / `error`. Setup never reads `window`.
+The skeleton shimmer is CSS and silent under `prefers-reduced-motion`.
+
+```vue
+<AppImage src="/stations/41002.jpg" alt="Buoy cam" failed-text="Cam offline" />
+```
+
+### `AppSnapStrip`
+
+Horizontal CSS scroll-snap strip. Each default-slot child is one snap point.
+`itemsPerView` defaults to 2 (the phone reading). The position readout uses an
+en dash (`1–2 of 6`) from the children currently intersecting the scroller.
+IntersectionObserver runs on the client only; SSR prints the first-page estimate
+(`1 of N` or `1–2 of N`) without crashing. Previous / Next buttons page by the
+visible width.
+
+```vue
+<AppSnapStrip :items-per-view="2">
+  <figure v-for="picture in pictures" :key="picture.id">
+    <AppImage :src="picture.src" :alt="picture.alt" />
+  </figure>
+</AppSnapStrip>
+```
+
 ## Deprecated components
 
 ### `AppEmptyState` — deprecated, removed in the next major
