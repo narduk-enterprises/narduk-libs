@@ -10,6 +10,10 @@ import {
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
 } from '../src/ci-workflow.js'
+import {
+  CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+  CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
+} from '../src/ci-test-env.js'
 import { buildGeneratedFiles } from '../src/generate.js'
 import { createRootPackageManifest } from '../src/manifest.js'
 
@@ -50,6 +54,27 @@ describe('generated CI boundaries', () => {
     )
     expect(workflow).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
     expect(workflow).not.toContain('secrets.NUXT_SESSION_PASSWORD')
+  })
+
+  it('keeps the literal build:ci prefix in manifest.ts equal to ci-test-env.ts', () => {
+    // manifest.ts is loaded by repo scripts through Node's type stripping, so
+    // it carries the placeholders as literals instead of importing them.
+    const manifest = JSON.parse(createRootPackageManifest('pinned-prefix', [], 'private')) as {
+      scripts: Record<string, string>
+    }
+    expect(manifest.scripts['build:ci']).toBe(
+      `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
+        `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD} ` +
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+    )
+  })
+
+  it('manifest.ts has no runtime import, so Node type stripping can load it alone', async () => {
+    const source = await readFile(new URL('../src/manifest.ts', import.meta.url), 'utf8')
+    const runtimeImports = source
+      .split('\n')
+      .filter((line) => /^import\s/u.test(line) && !/^import\s+type\s/u.test(line))
+    expect(runtimeImports).toEqual([])
   })
 
   it('public build jobs carry committed test-only Nuxt env, not repository secrets', () => {

@@ -6,10 +6,3 @@
  */
 export const CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET = 'narduk-test-only-og-image-secret-000000'
 export const CI_TEST_ONLY_NUXT_SESSION_PASSWORD = 'narduk-test-only-session-password-000000'
-
-export function ciTestOnlyNuxtEnvPrefix(): string {
-  return (
-    `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
-    `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`
-  )
-}

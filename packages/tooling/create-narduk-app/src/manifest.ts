@@ -1,4 +1,3 @@
-import { ciTestOnlyNuxtEnvPrefix } from './ci-test-env.js'
 import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
 /**
@@ -252,9 +251,14 @@ export function createRootPackageManifest(
       // inherit caller job env, and narduk-seo throws on a non-dev build
       // when NUXT_OG_IMAGE_SECRET is empty. Public CI also sets these on
       // the quality/browser jobs; they stay here so both variants work.
+      // Literal, not imported from ci-test-env.ts: repo scripts load this
+      // file with Node's own type stripping (consumer-smoke-fixture.mjs), so
+      // it must have no runtime imports. ci-workflow.test.ts pins the two
+      // copies together.
       'build:ci':
-        ciTestOnlyNuxtEnvPrefix() +
-        ' NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
+        'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
       // authenticate and install before `narduk-app` / `nuxt` exist. The
       // helper writes a temp userconfig (never a tracked file) and runs a
