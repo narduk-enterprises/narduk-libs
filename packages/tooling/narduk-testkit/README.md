@@ -415,6 +415,78 @@ narduk-testkit ui analyze output/playwright/visual-audit
 Playwright and Vitest are peer dependencies so each app controls its test runner
 version. The analyzer uses `sharp` as a package runtime dependency.
 
+## D1 query harness
+
+`@narduk-enterprises/narduk-testkit/d1` runs code under test against a real
+Miniflare D1 database (the workerd SQLite the platform runs) created from your
+own migration files, and records every statement it prepares. It is a Vitest
+helper; it installs no matchers and fails by throwing.
+
+It proves query **shape**: how many statements a route emits, whether that count
+holds as data grows, which index SQLite picks, and how many bytes the response
+carries. It does **not** prove latency. Miniflare runs on the test machine with
+no network hop, no replica and no production load, so its timings mean nothing,
+and none of these helpers measures one.
+
+`miniflare` is an optional peer dependency: add it to the app's
+`devDependencies`. It is loaded only when a harness is created, so importing the
+subpath never requires it.
+
+```ts
+import { drizzle } from 'drizzle-orm/d1'
+import {
+  createD1QueryHarness,
+  expectQueryPlan,
+  expectStatementBudget,
+  scaleMatrix,
+} from '@narduk-enterprises/narduk-testkit/d1'
+
+const d1 = await createD1QueryHarness({ migrations: 'drizzle' })
+// afterAll(() => d1.dispose())
+
+const db = drizzle(d1.db) // recorded: hand this to the code under test
+await d1.raw.prepare('INSERT INTO users (id) VALUES (?)').bind('u1').run() // unrecorded: seeding
+
+// At most one page query plus one count query.
+const { result, statements } = await expectStatementBudget(
+  d1,
+  () => listUsers(db),
+  { max: 2 },
+)
+
+// Fails on `SCAN api_keys`; passes on `SEARCH api_keys USING INDEX …`.
+await expectQueryPlan(d1, 'SELECT * FROM api_keys WHERE user_id = ?', ['u1'], {
+  forbidFullScanOf: ['api_keys'],
+})
+
+// Same statement count in every cell, or it throws with the per-cell counts.
+const cells = await scaleMatrix(d1, {
+  axes: { history: [0, 1_000], live: [1, 50] },
+  seed: async ({ history, live }) => seedRows(d1.raw, { history, live }),
+  run: () => loadLiveView(db),
+})
+expect(cells.find((c) => c.history === 1_000 && c.live === 50)?.result).toEqual(
+  cells.find((c) => c.history === 0 && c.live === 50)?.result,
+)
+expect(Math.max(...cells.map((c) => c.bytes))).toBeLessThan(64_000)
+```
+
+| Export                                                        | Does                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createD1QueryHarness({ migrations, compatibilityDate? })`    | Applies `migrations` (a list of `.sql` paths, or one directory whose numbered files are applied in lexical order, skipping utility SQL such as `seed.sql` — the discovery `narduk-app db migrate` uses). Returns `{ db, raw, statements, reset(), clearData(), dispose() }`.                   |
+| `expectStatementBudget(harness, fn, { max })`                 | Resets the recorder, runs `fn`, throws if it prepared more than `max` statements. Returns `{ result, statements }` so a test can also pin the exact count.                                                                                                                                     |
+| `expectQueryPlan(harness, sql, params, { forbidFullScanOf })` | Runs `EXPLAIN QUERY PLAN` and throws on a `SCAN <table>` step for any named table (including `SCAN … USING COVERING INDEX`, which still reads every entry). Returns the plan lines. Tables match the name the plan prints, which is the alias when the query aliases one.                      |
+| `scaleMatrix(harness, { axes, seed, run })`                   | For each `history` × `live` cell: `clearData()`, `seed(cell)`, then `run()` recorded. Throws unless every cell prepared the same number of statements. Returns `{ history, live, statements, bytes, result }[]`; `bytes` is the UTF-8 size of a string/bytes result, or of its JSON otherwise. |
+| `splitSqlStatements(sql)`                                     | Strips `--` and `/* */` comments and splits on `;`. It does not parse SQL: a `;` inside a string literal or a trigger body is not supported.                                                                                                                                                   |
+
+`statements` is emptied in place by `reset()`, so a held reference stays live.
+`clearData()` deletes every row of every migrated table in one batch with
+foreign keys deferred, and keeps the schema.
+
+Inside narduk-libs, packages import the harness from source
+(`../../../tooling/narduk-testkit/src/d1`) so their tests need no testkit build;
+narduk-auth, narduk-ai, narduk-devices and narduk-core's D1 tests use it.
+
 ## Handler test harness
 
 `server/handlers` is for unit-testing a Nitro route handler — an H3 event
