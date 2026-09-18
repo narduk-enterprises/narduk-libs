@@ -146,6 +146,7 @@
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
     "hookable": "5.5.3",
+    "miniflare": "4.20260701.0",
     "nitropack": "2.13.4",
     "nuxt": "^4.5.2",
     "nuxt-security": "^2.6.0",

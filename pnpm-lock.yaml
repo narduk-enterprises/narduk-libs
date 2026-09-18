@@ -744,6 +744,9 @@ importers:
       hookable:
         specifier: 5.5.3
         version: 5.5.3
+      miniflare:
+        specifier: 4.20260701.0
+        version: 4.20260701.0(@types/node@22.19.19)
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(71f43f7b245bb2c0c99a8e117e48e706)
@@ -1500,6 +1503,9 @@ importers:
       h3:
         specifier: ^1.15.11
         version: 1.15.11
+      miniflare:
+        specifier: 4.20260701.0
+        version: 4.20260701.0(@types/node@22.19.19)
       prettier:
         specifier: 3.9.4
         version: 3.9.4

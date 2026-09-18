@@ -4,7 +4,7 @@
  * Column names match the SQLite schema so migrations and queries stay aligned.
  * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#narduk-core/schema` resolves here.
  */
-import { boolean, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -21,16 +21,20 @@ export const users = pgTable('users', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
-export const sessions = pgTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  expiresAt: integer('expires_at').notNull(),
-  createdAt: text('created_at')
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-})
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [index('sessions_user_id_idx').on(table.userId)],
+)
 
 export const todos = pgTable('todos', {
   id: serial('id').primaryKey(),
@@ -50,21 +54,25 @@ export const kvCache = pgTable('kv_cache', {
   expiresAt: integer('expires_at').notNull(),
 })
 
-export const apiKeys = pgTable('api_keys', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  keyHash: text('key_hash').notNull(),
-  keyPrefix: text('key_prefix').notNull(),
-  scopesJson: text('scopes_json').notNull().default('[]'),
-  lastUsedAt: text('last_used_at'),
-  expiresAt: integer('expires_at'),
-  createdAt: text('created_at')
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-})
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    keyHash: text('key_hash').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    scopesJson: text('scopes_json').notNull().default('[]'),
+    lastUsedAt: text('last_used_at'),
+    expiresAt: integer('expires_at'),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [index('api_keys_user_id_idx').on(table.userId)],
+)
 
 export const notifications = pgTable('notifications', {
   id: text('id').primaryKey(),

@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/d1'
-import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { createD1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
 import { createDevices } from '../server/utils/devices'
 import { DEVICES_INTERNAL_NONCE_PREFIX } from '../shared/types/devices'
 
@@ -9,31 +9,28 @@ import {
   ALGORITHM,
   createDeviceKey,
   FINGERPRINT,
-  MIGRATION_STATEMENTS,
+  MIGRATION_DIR,
   ORG,
   VESSEL,
 } from './support/database'
 
+import type { D1Binding, D1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
+
 let nonceCounter = 0
 
 describe('D1 integration', () => {
-  const runtime = new Miniflare({
-    modules: true,
-    script: 'export default { fetch() { return new Response("devices test"); } }',
-    compatibilityDate: '2026-07-01',
-    d1Databases: ['DB'],
-  })
-  let binding: Awaited<ReturnType<Miniflare['getD1Database']>>
+  let d1: D1QueryHarness
+  let binding: D1Binding
 
   beforeAll(async () => {
-    binding = await runtime.getD1Database('DB')
-    // Every shipped migration, not just 0001: a new table or index has to
-    // survive the D1 driver, not only better-sqlite3.
-    await binding.batch(MIGRATION_STATEMENTS.map((statement) => binding.prepare(statement)))
+    // Every shipped migration, discovered from the directory, not just 0001: a
+    // new table or index has to survive the D1 driver, not only better-sqlite3.
+    d1 = await createD1QueryHarness({ migrations: MIGRATION_DIR })
+    binding = d1.raw
   })
 
   afterAll(async () => {
-    await runtime.dispose()
+    await d1.dispose()
   })
 
   it('claims a device atomically and opens a signed session on the real D1 driver', async () => {

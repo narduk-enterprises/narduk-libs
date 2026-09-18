@@ -24,6 +24,8 @@
     "runtime/app/error-page.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/composables/usePreferences.ts",
+    "runtime/app/composables/useSsrNow.ts",
+    "runtime/app/utils/ssrNowClock.ts",
     "runtime/app/utils/preferencesState.ts",
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",
@@ -72,7 +74,9 @@
     "runtime/server/utils/worker-env.ts",
     "runtime/shared/**/*.ts",
     "src/**/*.ts",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    // The D1 query harness, imported from source by the D1 driver tests.
+    "../../tooling/narduk-testkit/src/d1.ts"
   ],
   "exclude": [
     // A standalone Nuxt app driven by `scripts/prove-nonce.mjs`, not layer

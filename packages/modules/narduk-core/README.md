@@ -1471,6 +1471,59 @@ reader. This module is the preference layer: unit conversion plus the store that
 decides which units. An app can use either or both; nothing here duplicates a
 `narduk-shell` export, and this package does not depend on `narduk-shell`.
 
+## Render-safe clock: `useSsrNow`
+
+`Date.now()` read during render is a hydration bug. The server and the browser
+read it at different instants, so a relative age ("33 min ago") can straddle a
+minute boundary and Vue reports a hydration mismatch. `useSsrNow` gives a
+component one "now" that both renders agree on:
+
+```ts
+// Auto-imported in apps that enable narduk-core's app features.
+const now = useSsrNow('station-page', { tickMs: 60_000 })
+const age = computed(() => formatAge(now.value - observedAt))
+```
+
+- **Server:** reads `Date.now()` once into `useState('narduk:now:<key>')`.
+- **Hydration:** the client renders from that same payload value, so the markup
+  matches.
+- **After mount:** switches to the browser clock (one update on mount, which
+  also refreshes a value carried over from an earlier page on client-side
+  navigation), then re-reads it every `tickMs` if given. The interval is cleared
+  on unmount.
+
+It returns a readonly `Ref<number>`. Call it from component `setup()`; it
+registers `onMounted`/`onBeforeUnmount`. Components that pass the same `key`
+share one value. Omit `tickMs` (or pass a non-positive value) for a single
+update on mount.
+
+`tests/use-ssr-now.test.ts` proves the contract with `renderToString` and a real
+`createSSRApp().mount()` hydrate across a minute boundary, and includes a
+control that reproduces the mismatch when the client reads its own clock. The
+`narduk/no-render-clock` lint rule points at this composable.
+
+## Core D1 migrations
+
+The numbered files in `runtime/drizzle/` are applied by `narduk-app db migrate`
+(see narduk-app-tools' "Migration config"), which lists this directory as the
+`@narduk-enterprises/narduk-core` source and records each file in its ledger.
+Upgrading narduk-core and running the app's migrate script (locally and in its
+deploy path) applies any new file; nothing is applied at runtime.
+
+| File                       | Adds                                                          |
+| -------------------------- | ------------------------------------------------------------- |
+| `0006_user_id_indexes.sql` | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
+
+`0006` indexes the `user_id` foreign-key columns. `api_keys.user_id` is the only
+predicate of narduk-auth's `GET /api/auth/api-keys`, which scanned the whole
+table before it. `sessions.user_id` is not a query predicate, but it is the
+child column of `users ON DELETE CASCADE`, so each user delete scanned
+`sessions`. `CREATE INDEX` holds D1 writes while it builds; both tables are
+small in current apps. `tests/user-id-indexes-d1.test.ts` applies every core
+migration on Miniflare D1 and checks both lookups with `EXPLAIN QUERY PLAN`. The
+Postgres schema (`pg-schema.ts`) declares the same indexes; core ships no
+Postgres migrations, so a Postgres app adds them with its own DDL.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`

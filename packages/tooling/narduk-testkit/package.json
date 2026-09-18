@@ -19,6 +19,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./d1": {
+      "types": "./dist/d1.d.ts",
+      "import": "./dist/d1.js"
+    },
     "./e2e/fixtures": {
       "types": "./dist/e2e/fixtures.d.ts",
       "import": "./dist/e2e/fixtures.js"
@@ -126,6 +130,9 @@
     },
     "h3": {
       "optional": true
+    },
+    "miniflare": {
+      "optional": true
     }
   },
   "peerDependencies": {
@@ -133,6 +140,7 @@
     "@cloudflare/workers-types": ">=4.20260511.1",
     "@playwright/test": ">=1.50.0",
     "h3": "^1.15.11",
+    "miniflare": ">=4.20260701.0",
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
@@ -144,6 +152,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
+    "miniflare": "4.20260701.0",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "4.1.11"
