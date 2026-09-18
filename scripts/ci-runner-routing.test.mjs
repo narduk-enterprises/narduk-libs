@@ -27,8 +27,12 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.doesNotMatch(ci, /git fetch/u)
 })
 
+// The mirror-notify job is the only place release.yml may name a secret; the
+// verify and publish jobs run on the job-scoped GITHUB_TOKEN alone.
+const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
+
 test('only the verified main release receives a job-scoped package write token', () => {
-  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 2)
+  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 3)
   assert.match(release, /github\.ref == 'refs\/heads\/main'/u)
   assert.match(release, /environment: npm-release/u)
   assert.match(release, /packages: write/u)
@@ -38,11 +42,39 @@ test('only the verified main release receives a job-scoped package write token',
   assert.match(release, /HOME: \$\{\{ runner\.temp \}\}\/changesets-home/u)
   assert.doesNotMatch(release, /git fetch/u)
   assert.doesNotMatch(
-    release,
+    releasePublish,
     /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted|secrets\./u,
+  )
+  assert.doesNotMatch(
+    release,
+    /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted/u,
   )
   assert.match(release, /verify-release-ci\.mjs/u)
   assert.match(release, /git merge-base --is-ancestor "\$\{VERIFIED_SHA\}" origin\/main/u)
+  // PR-branch CI completions must not queue Release runs at all.
+  assert.match(
+    release,
+    /  workflow_run:\n(?:    #.*\n)*    workflows:\n      - CI\n    types:\n      - completed\n    branches:\n      - main\n/u,
+  )
+  assert.match(release, /github\.event\.workflow_run\.head_branch == 'main'/u)
+})
+
+test('the mirror notify is credential-isolated, downscoped and never fails the release', () => {
+  assert.ok(releaseNotify, 'release.yml has a notify-mirror job')
+  assert.match(releasePublish, /published: \$\{\{ steps\.changesets\.outputs\.published \}\}/u)
+  assert.match(releaseNotify, /if: needs\.release\.outputs\.published == 'true'/u)
+  assert.match(releaseNotify, /continue-on-error: true/u)
+  assert.match(releaseNotify, /permissions: \{\}/u)
+  assert.doesNotMatch(releaseNotify, /actions\/checkout|pnpm|npm install/u)
+  assert.deepEqual(
+    [...new Set([...releaseNotify.matchAll(/secrets\.([A-Z_]+)/gu)].map((match) => match[1]))],
+    ['LANE_AUTOMATION_APP_KEY'],
+  )
+  assert.match(releaseNotify, /repositories: package-delivery\n\s+permission-contents: write\n/u)
+  assert.match(releaseNotify, /"narduk-enterprises\/package-delivery "/u)
+  assert.match(releaseNotify, /event_type=narduk-libs-release/u)
+  assert.match(releaseNotify, /::notice title=Mirror dispatch skipped::/u)
+  assert.match(releaseNotify, /if: failure\(\)\n\s+run: echo "::warning/u)
 })
 
 test('hosted package jobs fan out by library and only main seeds the consumer store', () => {
