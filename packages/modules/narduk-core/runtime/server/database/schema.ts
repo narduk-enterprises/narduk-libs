@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 // ─── Users ──────────────────────────────────────────────────
 export const users = sqliteTable('users', {
@@ -17,16 +17,20 @@ export const users = sqliteTable('users', {
 })
 
 // ─── Sessions ───────────────────────────────────────────────
-export const sessions = sqliteTable('sessions', {
-  id: text('id').primaryKey(), // session token
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  expiresAt: integer('expires_at').notNull(), // Unix timestamp
-  createdAt: text('created_at')
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-})
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(), // session token
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: integer('expires_at').notNull(), // Unix timestamp
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [index('sessions_user_id_idx').on(table.userId)],
+)
 
 // ─── Todos (Demo) ───────────────────────────────────────────
 export const todos = sqliteTable('todos', {
@@ -49,21 +53,25 @@ export const kvCache = sqliteTable('kv_cache', {
 })
 
 // ─── API Keys ───────────────────────────────────────────────
-export const apiKeys = sqliteTable('api_keys', {
-  id: text('id').primaryKey(), // UUID
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(), // Human label, e.g. "validate-fleet CLI"
-  keyHash: text('key_hash').notNull(), // SHA-256 of raw key
-  keyPrefix: text('key_prefix').notNull(), // First 8 chars for display: "nk_a1b2…"
-  scopesJson: text('scopes_json').notNull().default('[]'),
-  lastUsedAt: text('last_used_at'),
-  expiresAt: integer('expires_at'), // Nullable unix timestamp
-  createdAt: text('created_at')
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-})
+export const apiKeys = sqliteTable(
+  'api_keys',
+  {
+    id: text('id').primaryKey(), // UUID
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(), // Human label, e.g. "validate-fleet CLI"
+    keyHash: text('key_hash').notNull(), // SHA-256 of raw key
+    keyPrefix: text('key_prefix').notNull(), // First 8 chars for display: "nk_a1b2…"
+    scopesJson: text('scopes_json').notNull().default('[]'),
+    lastUsedAt: text('last_used_at'),
+    expiresAt: integer('expires_at'), // Nullable unix timestamp
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [index('api_keys_user_id_idx').on(table.userId)],
+)
 
 // ─── Notifications ──────────────────────────────────────────
 export const notifications = sqliteTable('notifications', {
