@@ -233,7 +233,10 @@ Three defaults flip in 2.1.0, each measured across the existing consumers:
 The SSR preload is emitted **by the component** through `useHead`, not by the
 module into the app head, so a page that renders no map makes no request to
 `cdn.apple-mapkit.com` at all. It carries no token: a token in the tag is
-MapKit's static, non-refreshable path.
+MapKit's static, non-refreshable path. It is emitted during the server render
+only: on the client, Apple's loader adopts the server's tag, or injects the one
+tag on a client-side navigation, so a page has exactly one `mapkit.core.js`
+(2.1.3, narduk-libs#469).
 
 `@narduk-enterprises/narduk-mapkit-nuxt` stays at 2.0.x and is not part of this
 release; it remains the adapter for apps that have not moved to the `./nuxt`

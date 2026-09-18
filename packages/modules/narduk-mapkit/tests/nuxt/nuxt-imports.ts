@@ -23,6 +23,25 @@ export interface NuxtRuntimeConfigStub {
 /** Every `useHead()` call the runtime made, oldest first. */
 export const headEntries: NuxtHeadInput[] = []
 
+/** The one method of a real `unhead` instance the stub forwards to. */
+export interface TestHead {
+  push: (input: NuxtHeadInput) => unknown
+}
+
+let liveHead: TestHead | null = null
+
+/**
+ * Route `useHead()` into a real `unhead` head as well as `headEntries`.
+ *
+ * narduk-libs#469: the second `mapkit.core.js` came from unhead's client DOM
+ * renderer, not from Apple's loader, so a test about "how many script tags
+ * end up in the document" has to run the real renderer. Nuxt's head IS an
+ * unhead instance; this is the seam that lets a test install one.
+ */
+export function installTestHead(head: TestHead | null): void {
+  liveHead = head
+}
+
 let runtimeConfig: NuxtRuntimeConfigStub = { public: {} }
 
 export function setTestRuntimeConfig(config: NuxtRuntimeConfigStub): void {
@@ -31,11 +50,13 @@ export function setTestRuntimeConfig(config: NuxtRuntimeConfigStub): void {
 
 export function resetNuxtImportsStub(): void {
   headEntries.length = 0
+  liveHead = null
   runtimeConfig = { public: {} }
 }
 
 export function useHead(input: NuxtHeadInput): void {
   headEntries.push(input)
+  liveHead?.push(input)
 }
 
 export function useRuntimeConfig(): NuxtRuntimeConfigStub {

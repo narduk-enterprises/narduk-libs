@@ -196,35 +196,15 @@ describe('libraries is real configuration (§b, §c.1)', () => {
   })
 })
 
-describe('the SSR preload tag (§c.7, §f)', () => {
-  it('emits Apple renderHTMLAttributes WITHOUT a token', async () => {
-    setTestRuntimeConfig({ public: { nardukMapKit: { libraries: ['map', 'annotations'] } } })
-
-    await mountMap()
-
-    expect(headEntries).toHaveLength(1)
-    const script = headEntries[0]?.script?.[0]
-    expect(script).toBeDefined()
-    // A token in the tag is MapKit's static, non-refreshable path, and a portal
-    // token that works on a preview host has no origin restriction at all.
-    expect(Object.keys(script!)).not.toContain('token')
-    expect(JSON.stringify(script)).not.toContain('token')
-    expect(String(script!['data-libraries'])).toContain('annotations')
-  })
-
-  it('emits nothing at all when the module turned the preload off', async () => {
-    setTestRuntimeConfig({ public: { nardukMapKit: { ssrPreload: false } } })
-
-    await mountMap()
-
-    expect(headEntries).toStrictEqual([])
-  })
-
-  it('carries the CSP nonce onto the tag and the map container', async () => {
+// The SSR preload tag (§c.7, §f) is asserted where it is emitted, on the
+// server: tests/nuxt/preload-ssr.test.ts. On the client `<AppMapKit>` asks the
+// head for nothing (narduk-libs#469, tests/nuxt/preload-hydration.test.ts).
+describe('the CSP nonce on the client (§c.7)', () => {
+  it('carries the nonce onto the map container, and emits no head tag', async () => {
     const wrapper = await mountMap({ nonce: 'nonce-123' })
 
-    expect(headEntries[0]?.script?.[0]?.['nonce']).toBe('nonce-123')
     expect(wrapper.get('.mapkit-canvas').attributes('nonce')).toBe('nonce-123')
+    expect(headEntries).toStrictEqual([])
   })
 })
 

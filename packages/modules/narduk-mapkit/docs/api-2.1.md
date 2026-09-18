@@ -294,8 +294,12 @@ misconfigured preview (S1 §5.4).
 `useHead({ script: [...] })` so `mapkit.core.js` downloads before hydration.
 Emitted **without `token`** — a token there re-introduces the static,
 non-refreshable path. `load()` adopts the existing tag (it dedupes on
-`[data-callback="initMapKitLoaderV2"]`). Nothing renders a map during SSR; the
-container is SSR'd empty with its `role="region"` and label.
+`[data-callback="initMapKitLoaderV2"]`). The `useHead` call runs on the server
+only: on the client a second owner of the same tag (unhead's renderer) cannot
+recognise the server's element once the browser hides its CSP nonce, and
+appended a second `mapkit.core.js` through 2.1.2 (narduk-libs#469). Nothing
+renders a map during SSR; the container is SSR'd empty with its `role="region"`
+and label.
 
 The component initialises once both MapKit JS is ready and its container is
 mounted.
