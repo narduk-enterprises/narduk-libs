@@ -323,6 +323,33 @@ export default {
 }
 ```
 
+`mapKitTokenResponseFromEnv` applies **no rate limit of its own**; the 2.1 Nuxt
+module's default ceiling (`rateLimit`, 30 requests / 60 s) covers only the
+module's route. A Worker caller passes §e.4's limiter from the same entry point
+(narduk-libs#485):
+
+```ts
+import {
+  createMapKitFixedWindowRateLimit,
+  mapKitTokenResponseFromEnv,
+} from '@narduk-enterprises/narduk-mapkit/worker'
+
+// One limiter per isolate, built once -- not per request.
+const rateLimit = createMapKitFixedWindowRateLimit({
+  // Default key is the routed origin, which makes the ceiling site-wide.
+  key: ({ request, self }) => request.headers.get('cf-connecting-ip') ?? self,
+  limit: 30,
+  windowSeconds: 60,
+})
+
+mapKitTokenResponseFromEnv(request, env, {}, { rateLimit })
+```
+
+The limiter is in-process: each warm isolate keeps its own windows, so it bounds
+one isolate's signing work rather than a deployment's. Put a Cloudflare rate
+limiting rule or narduk-core's limiter in front of it when real abuse exposure
+matters.
+
 Narduk projects should source these values through Doppler, for example:
 
 ```sh
@@ -1433,7 +1460,8 @@ the source of truth for that origin. `allowedOrigins` and
 route logs their presence as deprecated. Token issuance is GET-only. Apps own
 provider-specific rate limiting and pass a `rateLimit` hook to the handler — the
 hook is part of the handler, not a path-matched middleware, so no URL spelling
-can route around it.
+can route around it. `createMapKitFixedWindowRateLimit` (exported from `/server`
+and `/worker`) is the in-process limiter the Nuxt module applies by default.
 
 Report vulnerabilities through the process in `SECURITY.md`, not public issues.
 
