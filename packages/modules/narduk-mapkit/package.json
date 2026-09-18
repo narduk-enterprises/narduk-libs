@@ -83,7 +83,7 @@
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:unit": "vitest run",

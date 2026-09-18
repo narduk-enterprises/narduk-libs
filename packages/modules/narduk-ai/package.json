@@ -83,7 +83,7 @@
     "pretypecheck": "pnpm run nuxt:prepare",
     "prelint": "pnpm run nuxt:prepare",
     "typecheck": "nuxt typecheck",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",

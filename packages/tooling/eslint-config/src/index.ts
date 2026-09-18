@@ -16,7 +16,7 @@
  * | Tier         | Holds |
  * | ------------ | ----- |
  * | `general/`   | the thirteen DESIGN.md "Ported (KEEP)" rules, carried over intact |
- * | `hydration/` | the four rebuilt SSR/hydration rules |
+ * | `hydration/` | the four rebuilt SSR/hydration rules, plus `no-render-clock` |
  * | `vue/`       | rebuilt Vue/Pinia composition and store rules |
  * | `nuxt/`      | rebuilt Nuxt data-fetch and app-structure rules |
  * | `server/`    | the rebuilt Nitro mutation-route security tier |
@@ -52,6 +52,7 @@ import preferShallowWatch from './rules/general/prefer-shallow-watch'
 
 // ── hydration ───────────────────────────────────────────────────────────────
 import noLocaleDateFormatInSsrText from './rules/hydration/no-locale-date-format-in-ssr-text'
+import noRenderClock from './rules/hydration/no-render-clock'
 import noSsrDomAccess from './rules/hydration/no-ssr-dom-access'
 import requireClientOnlyHydrationSensitive from './rules/hydration/require-client-only-hydration-sensitive'
 import requireClientOnlySwitch from './rules/hydration/require-client-only-switch'
@@ -73,6 +74,7 @@ import noFetchInOnmounted from './rules/nuxt/no-fetch-in-onmounted'
 import noFetchInWatch from './rules/nuxt/no-fetch-in-watch'
 import noRawFetch from './rules/nuxt/no-raw-fetch'
 import noRawFetchInStores from './rules/nuxt/no-raw-fetch-in-stores'
+import noSecretInPublicRuntimeConfig from './rules/nuxt/no-secret-in-public-runtime-config'
 import noSequentialAwaitedIoInEventHandler from './rules/nuxt/no-sequential-awaited-io-in-event-handler'
 import requireUsePrefixForComposables from './rules/nuxt/require-use-prefix-for-composables'
 
@@ -80,8 +82,10 @@ import requireUsePrefixForComposables from './rules/nuxt/require-use-prefix-for-
 import noCsrfExemptRouteMisuse from './rules/server/no-csrf-exempt-route-misuse'
 import noRawDefineEventHandlerInMutationRoutes from './rules/server/no-raw-define-event-handler-in-mutation-routes'
 import noRawSqlWithVariableInput from './rules/server/no-raw-sql-with-variable-input'
+import preferDbBatch from './rules/server/prefer-db-batch'
 import requireCsrfHeaderOnMutations from './rules/server/require-csrf-header-on-mutations'
 import requireEnforceRateLimitOnMutations from './rules/server/require-enforce-rate-limit-on-mutations'
+import requireFetchTimeout from './rules/server/require-fetch-timeout'
 import requireImmediateMutationBodyValidation from './rules/server/require-immediate-mutation-body-validation'
 import requireLimitOnDrizzleListQueries from './rules/server/require-limit-on-drizzle-list-queries'
 import requireValidatedQuery from './rules/server/require-validated-query'
@@ -127,6 +131,7 @@ const plugin = {
 
     // hydration
     'no-locale-date-format-in-ssr-text': noLocaleDateFormatInSsrText,
+    'no-render-clock': noRenderClock,
     'no-ssr-dom-access': noSsrDomAccess,
     'require-client-only-hydration-sensitive': requireClientOnlyHydrationSensitive,
     'require-client-only-switch': requireClientOnlySwitch,
@@ -148,6 +153,7 @@ const plugin = {
     'no-fetch-in-watch': noFetchInWatch,
     'no-raw-fetch': noRawFetch,
     'no-raw-fetch-in-stores': noRawFetchInStores,
+    'no-secret-in-public-runtime-config': noSecretInPublicRuntimeConfig,
     'no-sequential-awaited-io-in-event-handler': noSequentialAwaitedIoInEventHandler,
     'require-use-prefix-for-composables': requireUsePrefixForComposables,
 
@@ -155,8 +161,10 @@ const plugin = {
     'no-csrf-exempt-route-misuse': noCsrfExemptRouteMisuse,
     'no-raw-define-event-handler-in-mutation-routes': noRawDefineEventHandlerInMutationRoutes,
     'no-raw-sql-with-variable-input': noRawSqlWithVariableInput,
+    'prefer-db-batch': preferDbBatch,
     'require-csrf-header-on-mutations': requireCsrfHeaderOnMutations,
     'require-enforce-rate-limit-on-mutations': requireEnforceRateLimitOnMutations,
+    'require-fetch-timeout': requireFetchTimeout,
     'require-immediate-mutation-body-validation': requireImmediateMutationBodyValidation,
     'require-limit-on-drizzle-list-queries': requireLimitOnDrizzleListQueries,
     'require-validated-query': requireValidatedQuery,

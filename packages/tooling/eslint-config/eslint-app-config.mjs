@@ -191,8 +191,21 @@ const sharedTailConfigs = [
   {
     name: 'narduk/console-hygiene',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
+    ignores: ['**/server/**'],
     rules: {
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+  {
+    // Server code logs through the structured logger (`useLogger(event)`), so
+    // every console method warns there, `warn`/`error` included (2026-09-18).
+    // It lives in this tail rather than the `server` pack because this tail is
+    // composed after every pack: a pack-level entry would be overridden by
+    // `narduk/console-hygiene` above for the same files.
+    name: 'narduk/console-hygiene-server',
+    files: ['**/server/**/*.{ts,mts,js,mjs}'],
+    rules: {
+      'no-console': 'warn',
     },
   },
   {
@@ -318,7 +331,10 @@ const sharedTailConfigs = [
   },
 
   {
+    // Unused disable directives are reported (warn, budgeted by narduk-lint)
+    // and every disable must say why (`-- reason`).
     name: 'narduk/eslint-directive-hygiene',
+    linterOptions: { reportUnusedDisableDirectives: 'warn' },
     plugins: { '@eslint-community/eslint-comments': eslintComments },
     rules: {
       '@eslint-community/eslint-comments/no-unused-disable': 'error',
@@ -691,8 +707,14 @@ export function inferAppRootDirFromStack(stack = new Error().stack) {
   return undefined
 }
 
+/** Pack entries that carry type-aware parser wiring for createAppLintConfig to patch. */
+const PROJECT_SERVICE_CONFIG_NAMES = new Set([
+  'narduk/correctness-type-aware',
+  'narduk/server-type-aware',
+])
+
 function patchCorrectnessProjectServiceConfig(config, appRootDir) {
-  if (!appRootDir || config?.name !== 'narduk/correctness-type-aware') {
+  if (!appRootDir || !PROJECT_SERVICE_CONFIG_NAMES.has(config?.name)) {
     return config
   }
 
@@ -936,7 +958,7 @@ export function createAppLintConfig({
     appTypeOverrides = buildContentPresetOverrides({ trustedHtmlFiles })
   }
 
-  return withNuxt(
+  const composed = withNuxt(
     ...sanitizedSharedConfigs,
     ...buildContentRelaxedOverrides(contentRelaxedFiles),
     // v1's additionalNuxtUiComponents fed narduk/no-unknown-nuxt-ui-component;
@@ -951,6 +973,19 @@ export function createAppLintConfig({
     ...appTypeOverrides,
     ...extraOverrides,
   )
+
+  // Type-aware rules read the TypeScript program the parser built, so the
+  // rule implementations must come from the same typescript-eslint install as
+  // `tseslint.parser` above. withNuxt() registers @nuxt/eslint-config's own
+  // copy of the plugin, which can be bound to a different `typescript`: in
+  // narduk-libs, TS 5.9's `TypeFlags` were read against a TS 6 program and
+  // no-misused-promises crashed (`tsutils.unionConstituents is not a
+  // function or its return value is not iterable`). Swap in the plugin that
+  // pairs with the parser. The composer API is optional so a plain-array
+  // withNuxt (tests, older wrappers) still works.
+  return typeof composed?.replacePlugin === 'function'
+    ? composed.replacePlugin('@typescript-eslint', tseslint.plugin)
+    : composed
 }
 
 export const createAppEslintConfig = createAppLintConfig

@@ -28,6 +28,20 @@ const coreConfigs = [
       'narduk/no-ssr-dom-access': 'error',
       'narduk/no-locale-date-format-in-ssr-text': 'warn',
       'narduk/no-attrs-on-fragment': 'error',
+      // Error from day one (2026-09-18): buoys PR #202 shipped a hydration
+      // mismatch from exactly this. The rule reports only render paths.
+      'narduk/no-render-clock': 'error',
+    },
+  },
+
+  {
+    // Only `nuxt.config.*` publishes runtimeConfig; the rule re-checks the
+    // filename, the glob just keeps it off every other file.
+    name: 'narduk/core-config-secrets',
+    files: ['**/nuxt.config.{js,cjs,mjs,ts,cts,mts}'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-secret-in-public-runtime-config': 'error',
     },
   },
 

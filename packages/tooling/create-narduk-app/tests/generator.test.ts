@@ -1274,6 +1274,26 @@ describe('generated app typecheck and lint surfaces', () => {
     }
   })
 
+  // Logan 2026-09-18: warnings are held to a checked-in budget instead of
+  // `--max-warnings 0`. The web app lints through narduk-lint, and a new app
+  // starts with an empty budget, so any warning it later accepts is recorded
+  // by a local `pnpm lint` and reviewed in the diff.
+  it('lints the web app through narduk-lint with an empty warning budget', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+
+      expect(webManifest.scripts.lint, label).toBe('nuxt prepare && narduk-lint')
+      expect(webManifest.scripts.lint, label).not.toContain('--max-warnings')
+      expect(files.get('apps/web/lint-budget.json'), label).toBe('{\n  "rules": {}\n}\n')
+      expect(JSON.parse(files.get('apps/web/lint-budget.json') ?? ''), label).toEqual({
+        rules: {},
+      })
+    }
+  })
+
   // components-library-plan.md #2 item 4: narduk-shell ships to every
   // generated app by default -- not behind a capability flag, the same way
   // narduk-core always ships -- with an exact pin.

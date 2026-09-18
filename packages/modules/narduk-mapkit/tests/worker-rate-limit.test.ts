@@ -100,7 +100,7 @@ describe('the §e.4 limiter on the Worker entry point (narduk-libs#485)', () => 
       request: request(clientIp),
       self: 'https://maps.example.test',
     })
-    limit(context('198.51.100.1'))
+    void limit(context('198.51.100.1'))
     expect(limit(context('198.51.100.2'))).toMatchObject({ allowed: false })
     now = 60_000
     expect(limit(context('198.51.100.2'))).toStrictEqual({ allowed: true })

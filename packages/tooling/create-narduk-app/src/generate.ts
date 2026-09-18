@@ -1126,6 +1126,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // narduk-lint's warning budget (see @narduk-enterprises/eslint-config's
+      // README, "Warning budgets"). A new app starts with no warnings, so the
+      // budget starts empty; `pnpm lint` records any it later accepts.
+      path: 'apps/web/lint-budget.json',
+      contents: text('{', '  "rules": {}', '}'),
+    },
+    {
       path: 'eslint.config.mjs',
       contents: text(
         "import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'",

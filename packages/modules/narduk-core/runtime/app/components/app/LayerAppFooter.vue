@@ -16,6 +16,11 @@ const props = withDefaults(
   },
 )
 
+// Read the clock once on the server and hydrate with the same value: a
+// `new Date()` in the template renders twice, and the two reads disagree
+// across a year boundary (narduk/no-render-clock).
+const copyrightNow = useSsrNow('layer-app-footer')
+
 const resolvedAppName = computed(() => {
   if (props.appName) return props.appName
   const config = useRuntimeConfig()
@@ -30,7 +35,7 @@ const resolvedAppName = computed(() => {
       <slot>
         <div class="flex flex-col md:flex-row items-center justify-between gap-4">
           <p v-if="showCopyright" class="text-sm text-muted text-center md:text-left">
-            &copy; <NuxtTime :datetime="new Date()" year="numeric" /> {{ resolvedAppName }}. All
+            &copy; <NuxtTime :datetime="copyrightNow" year="numeric" /> {{ resolvedAppName }}. All
             rights reserved.
           </p>
           <div class="flex items-center gap-4 text-sm text-muted">

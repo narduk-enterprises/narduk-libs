@@ -50,7 +50,7 @@
     "check:dist": "node scripts/check-dist-clean.mjs",
     "check:package": "node scripts/check-dist-clean.mjs && publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "lint:strict": "eslint src tests --max-warnings 0",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts",

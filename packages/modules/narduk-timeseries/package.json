@@ -51,7 +51,7 @@
     "pretypecheck": "pnpm run deps:build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "prelint": "pnpm run deps:build",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "lint:strict": "eslint src tests --max-warnings 0",
     "pretest:unit": "pnpm run deps:build",
     "test:unit": "vitest run --coverage --config vitest.config.ts",

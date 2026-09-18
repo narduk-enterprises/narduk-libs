@@ -40,7 +40,7 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
