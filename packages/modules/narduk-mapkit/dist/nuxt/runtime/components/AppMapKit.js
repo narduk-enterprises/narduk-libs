@@ -412,8 +412,16 @@ const AppMapKitImpl = defineComponent({
                 return componentProps.colorScheme;
             return colorMode?.value === 'dark' ? 'dark' : 'light';
         }
-        watch(() => ready.value, (value) => {
-            if (value) {
+        /**
+         * K-11. Watching only `ready` with `immediate: true` runs the first
+         * callback inside `setup()`, before the canvas ref is assigned. When
+         * MapKit JS is already loaded (every `<AppMapKit>` after the first on a
+         * page session) that call finds no container and `ready` never edges
+         * again, so the host stays `loading` with no map. Watch both so init
+         * runs when the later of the two arrives.
+         */
+        watch([() => ready.value, containerRef], ([isReady, container]) => {
+            if (isReady && container) {
                 try {
                     initMap();
                 }

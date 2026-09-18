@@ -17,7 +17,10 @@ import { resetMapKitClientStateForTests } from '../../src/client/index.js'
 import AppMapKit from '../../src/nuxt/runtime/components/AppMapKit.js'
 import { mapKitColorModeInjectionKey } from '../../src/nuxt/runtime/injection-keys.js'
 
-import { resetMapKitComposableStateForTests } from '../../src/nuxt/runtime/composables/useMapKit.js'
+import {
+  resetMapKitComposableStateForTests,
+  useMapKit,
+} from '../../src/nuxt/runtime/composables/useMapKit.js'
 import { createFakeMapKit } from '../../src/testing/index.js'
 
 import { headEntries, resetNuxtImportsStub, setTestRuntimeConfig } from './nuxt-imports.js'
@@ -135,6 +138,21 @@ describe('<AppMapKit> lifecycle (§c.7)', () => {
       expect(wrapper.emitted('map-ready')).toHaveLength(1)
     })
     expect(wrapper.get('.mapkit-wrapper').attributes('data-mapkit-state')).toBe('ready')
+  })
+
+  it('builds the map when it mounts after MapKit JS is already ready (K-11)', async () => {
+    const { ready } = useMapKit()
+    await vi.waitFor(() => {
+      expect(ready.value).toBe(true)
+    })
+
+    const wrapper = mount(AppMapKit, { attachTo: document.body, props: BASE_PROPS })
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+    expect(fake.inspect.maps).toHaveLength(1)
+    expect(wrapper.emitted('map-ready')).toHaveLength(1)
   })
 
   it('is a labelled landmark', async () => {
