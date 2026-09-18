@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-realtime
 
+## 0.3.1
+
+### Patch Changes
+
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
 ## 0.3.0
 
 ### Minor Changes

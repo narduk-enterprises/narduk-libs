@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.0
+
+### Minor Changes
+
+- 92835a1: Generated apps lint through `narduk-lint`: `apps/web`'s lint script
+  is `nuxt prepare && narduk-lint` (no more `--max-warnings 0`), and the
+  generator emits an empty `apps/web/lint-budget.json` (`{ "rules": {} }`).
+
 ## 0.9.9
 
 ### Patch Changes

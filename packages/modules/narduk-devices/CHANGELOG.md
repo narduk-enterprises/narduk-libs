@@ -1,5 +1,47 @@
 # @narduk-enterprises/narduk-devices
 
+## 0.4.0
+
+### Minor Changes
+
+- 0e99614: `revokeDevice` and `rotateCredential` are all-or-nothing
+  (narduk-libs#231). Each now writes its rows, the audit row included, in one D1
+  batch / better-sqlite3 transaction. Written one statement at a time, a failure
+  part-way left a revoked device whose credentials still resolved through
+  `getCredentialBySecret` (a permanent bearer, since completion-issued
+  credentials never expire), or a rotation that had revoked the old secret,
+  issued the new one and left the generation unbumped. The device write, the new
+  credential and the audit row are gated on the device still being `claimed`: a
+  revocation that loses a race writes nothing, and a rotation racing a
+  revocation issues nothing and throws `revoked`. Audit `details_json` is
+  byte-for-byte what it was.
+
+  Both now require the batch-capable database the claim path already requires,
+  and refuse an adapter without one with `DevicesError('invalid')` before
+  writing anything.
+
+- 0e99614: `createLockoutGate(...).record` returns every threshold an attempt
+  crossed, not only escalating ones (narduk-libs#238). A limiter built on the
+  flat token/device rule was never told which attempt locked its subject out, so
+  it could not audit the lockout without re-deriving the rule.
+  `LockoutThreshold` gains `escalates: boolean`; filter on it to keep the
+  previous set. The library's own `security.lockout` audit rows are unchanged:
+  still written for escalating crossings only.
+
+### Patch Changes
+
+- 0e99614: `issueApprovalToken` checks the caller's org and resource before it
+  reports anything about the claim session (narduk-libs#243). A caller naming
+  another org or resource now gets `forbidden` whatever state the session is in;
+  before, any authenticated caller holding a claim session id heard whether
+  another tenant's session was claimed (`conflict`), revoked or expired. The
+  owning org's answers are unchanged, and an id that does not exist is still
+  `not_found`.
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
 ## 0.3.1
 
 ### Patch Changes

@@ -1,5 +1,22 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.28.7
+
+### Patch Changes
+
+- 92835a1: Fixes for the new error-severity lint rules. `LayerAppFooter`
+  (narduk-core, narduk-seo) no longer reads `new Date()` during render for the
+  copyright year; it reads one SSR-hydrated timestamp (`useSsrNow` in
+  narduk-core, `useState` in narduk-seo), so server and client agree.
+  `GET /api/auth/api-keys` (narduk-auth) is ordered newest first in SQL and
+  limited to 100 keys, since nothing caps how many keys a user may create.
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [92835a1]
+  - @narduk-enterprises/narduk-core@2.5.0
+  - @narduk-enterprises/narduk-app@1.20.1
+
 ## 1.28.6
 
 ### Patch Changes
