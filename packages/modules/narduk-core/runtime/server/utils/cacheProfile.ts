@@ -3,6 +3,7 @@ import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { isNonceCspHtml, markNonceCspCacheRequested } from '../../shared/utils/nonce-csp'
 import { isPreferencesInfluenced } from '../../shared/utils/preferences'
+import { stripPerRequestHeadersFromEvent } from '../../shared/utils/shared-cache'
 
 import { resolveRuntimePublicOverlay } from './runtime-public'
 
@@ -333,6 +334,12 @@ export function setCacheProfile(
     removeResponseHeader(event, 'Cache-Tag')
   }
   if (vary) setResponseHeader(event, 'Vary', vary)
+  // A shared cache stores one caller's response for everyone, so the headers
+  // that describe that one caller come off (narduk-libs#412, #418): their
+  // RateLimit-* quota, Retry-After, x-request-id and Server-Timing. The
+  // limiter and the request logger write before the handler picks a profile;
+  // the `shared-cache-headers` plugin covers anything written after.
+  if (cdnCacheControl) stripPerRequestHeadersFromEvent(event)
 
   return { cacheControl, cacheTag, cdnCacheControl, profile, suppressedBy, vary }
 }

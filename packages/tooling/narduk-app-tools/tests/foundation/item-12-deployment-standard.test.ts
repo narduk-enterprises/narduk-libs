@@ -887,3 +887,85 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
     expect(detailOf(root, '12.4')).toContain('declared, not enforced')
   })
 })
+
+/**
+ * narduk-libs#435: `"cache": { "enabled": true }` makes Cloudflare store Worker
+ * responses. That is safe only on a narduk-core that already keeps thrown
+ * errors (#429), preference-shaped responses (#427) and nonce-CSP HTML out of
+ * the cache, so 12.7 refuses the switch against an older core -- in rollout
+ * mode too, because the failure is live cross-visitor data, not a missing
+ * declaration.
+ */
+describe('12.7 -- Workers Cache only on a narduk-core with the no-store guards', () => {
+  const CORE = '@narduk-enterprises/narduk-core'
+
+  function app(options: {
+    cache?: unknown
+    core?: string | null
+    deployment?: Record<string, unknown> | null
+    toml?: string
+  }): string {
+    const root = baseline({ deployment: options.deployment })
+    const deps = options.core === null ? {} : { [CORE]: options.core ?? '2.2.4' }
+    writeJson(root, 'package.json', { name: 'fixture-app', dependencies: deps })
+    if (options.toml !== undefined) {
+      rmSync(`${root}/wrangler.json`)
+      writeFile(root, 'wrangler.toml', options.toml)
+    } else {
+      writeJson(root, 'wrangler.json', {
+        name: 'fixture',
+        workers_dev: false,
+        ...(options.cache === undefined ? {} : { cache: options.cache }),
+      })
+    }
+    return root
+  }
+
+  it('is not-applicable while Workers Cache is off', () => {
+    expect(statusOf(app({}), '12.7')).toBe('not-applicable')
+    expect(statusOf(app({ cache: { enabled: false } }), '12.7')).toBe('not-applicable')
+    expect(detailOf(app({}), '12.7')).toContain('inert')
+  })
+
+  it('passes Workers Cache on an exact-pinned core that has the guards', () => {
+    const root = app({ cache: { enabled: true }, core: '2.2.4' })
+    expect(statusOf(root, '12.7')).toBe('pass')
+    expect(detailOf(root, '12.7')).toContain('verify --live')
+  })
+
+  it.each(['2.2.3', '^2.2.3', '2.1.0', '1.25.0'])(
+    'fails Workers Cache on narduk-core %s, which stores thrown errors',
+    (core) => {
+      const root = app({ cache: { enabled: true }, core })
+      expect(statusOf(root, '12.7')).toBe('fail')
+      expect(detailOf(root, '12.7')).toContain('2.2.4')
+    },
+  )
+
+  it('fails even in rollout mode on an app that has not adopted the block', () => {
+    const root = app({ cache: { enabled: true }, core: '2.2.3', deployment: null })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('reads an env-scoped switch too', () => {
+    const root = app({ cache: { enabled: false }, core: '2.2.3' })
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      workers_dev: false,
+      env: { production: { cache: { enabled: true } } },
+    })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(detailOf(root, '12.7')).toContain('env.production')
+  })
+
+  it('reads a TOML [cache] table', () => {
+    const root = app({ core: '2.2.3', toml: 'name = "fixture"\n\n[cache]\nenabled = true\n' })
+    expect(statusOf(root, '12.7')).toBe('fail')
+  })
+
+  it('is unknown when the resolved narduk-core cannot be read', () => {
+    expect(statusOf(app({ cache: { enabled: true }, core: null }), '12.7')).toBe('unknown')
+    expect(statusOf(app({ cache: { enabled: true }, core: 'workspace:*' }), '12.7')).toBe('unknown')
+  })
+})

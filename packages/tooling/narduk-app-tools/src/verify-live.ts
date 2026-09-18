@@ -71,9 +71,15 @@ export const VERIFY_EXIT = {
   smokeFailed: 5,
   /** The request was answered by a different origin than the one under proof. */
   offOrigin: 6,
+  /**
+   * An `--edge-cache-path` never HIT the Workers Cache, or an
+   * `--edge-uncached-path` did (narduk-libs#435).
+   */
+  edgeCacheFailed: 7,
 } as const
 
-export type VerifyAssertionId = 'origin' | 'build-version' | 'health' | 'smoke'
+export type VerifyAssertionId =
+  'origin' | 'build-version' | 'health' | 'smoke' | 'edge-cache' | 'edge-uncached'
 export type VerifyAssertionStatus = 'pass' | 'fail' | 'unknown' | 'skipped'
 
 export interface VerifyAssertion {
@@ -116,6 +122,10 @@ export interface VerifyFlags {
   allowDegraded: boolean
   /** Add a per-run query parameter so no cache key can be shared with a browser's. */
   cacheBust: boolean
+  /** Routes whose second GET must be an edge cache HIT (a `live`/`slow` profile). */
+  edgeCachePaths: string[]
+  /** Routes that must never HIT (`none`, a thrown error, a preference-shaped response). */
+  edgeUncachedPaths: string[]
   json: boolean
   jsonPath: string | null
 }
@@ -174,6 +184,8 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     timeoutMs: DEFAULT_VERIFY_FLAGS.timeoutMs,
     allowDegraded: false,
     cacheBust: true,
+    edgeCachePaths: [],
+    edgeUncachedPaths: [],
     json: false,
     jsonPath: null,
   }
@@ -224,6 +236,10 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
       )
     else if (arg === '--allow-degraded') flags.allowDegraded = true
     else if (arg === '--no-cache-bust') flags.cacheBust = false
+    else if (arg === '--edge-cache-path')
+      flags.edgeCachePaths.push(requireValue(args, (index += 1), '--edge-cache-path'))
+    else if (arg === '--edge-uncached-path')
+      flags.edgeUncachedPaths.push(requireValue(args, (index += 1), '--edge-uncached-path'))
     else if (arg === '--json') {
       const next = args[index + 1]
       if (next && !next.startsWith('--')) {
@@ -240,7 +256,13 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   if (flags.expectSha && !SHA_PATTERN.test(flags.expectSha)) {
     throw new Error(`--expect-sha must be a hex commit SHA, got ${JSON.stringify(flags.expectSha)}`)
   }
-  if (flags.healthPath === null && flags.smokePath === null && !flags.expectSha) {
+  if (
+    flags.healthPath === null &&
+    flags.smokePath === null &&
+    !flags.expectSha &&
+    flags.edgeCachePaths.length === 0 &&
+    flags.edgeUncachedPaths.length === 0
+  ) {
     throw new Error('verify --live needs at least one assertion; nothing was enabled')
   }
   return { ...flags, baseUrl }
@@ -449,6 +471,132 @@ export function assessSmoke(response: LiveResponse, expectContentType: string): 
 }
 
 /**
+ * `Cf-Cache-Status` values that mean the response came out of the cache rather
+ * than from the Worker. `HIT` is the ordinary one; `STALE`, `UPDATING` and
+ * `REVALIDATED` are stored responses served under `stale-while-revalidate` or a
+ * conditional revalidation, which are just as much proof that the edge stores
+ * the route. Everything else (`MISS`, `EXPIRED`, `BYPASS`, `DYNAMIC`, absent)
+ * means the Worker answered.
+ *
+ * @see https://developers.cloudflare.com/workers/cache/debugging/
+ */
+export const STORED_CACHE_STATUSES = new Set(['HIT', 'STALE', 'UPDATING', 'REVALIDATED'])
+
+function cacheStatusOf(response: LiveResponse): string | undefined {
+  return response.headers?.['cf-cache-status']?.trim().toUpperCase()
+}
+
+function unreadable(
+  id: 'edge-cache' | 'edge-uncached',
+  response: LiveResponse,
+): VerifyAssertion | null {
+  if (response.error === undefined && response.status !== undefined) return null
+  return {
+    id,
+    status: 'unknown',
+    detail: `Could not read ${response.url}: ${response.error ?? 'no response'}`,
+    exitCode: VERIFY_EXIT.unreachable,
+  }
+}
+
+/**
+ * Two GETs of one URL, the second of which must come from the Workers Cache.
+ *
+ * A `private`/`no-store` answer is `unknown`, not `fail`: that is what a
+ * preview-safe hostname (`*.workers.dev`, where narduk-core forces every
+ * profile to `none`) or a suppression guard legitimately serves, and it means
+ * the proof has to run against the production hostname instead.
+ */
+export function assessEdgeCache(first: LiveResponse, second: LiveResponse): VerifyAssertion {
+  const base = { id: 'edge-cache' as const, exitCode: VERIFY_EXIT.edgeCacheFailed }
+  const failed = unreadable('edge-cache', first) ?? unreadable('edge-cache', second)
+  if (failed) return failed
+  const statuses = [cacheStatusOf(first), cacheStatusOf(second)]
+  const cacheControl = second.headers?.['cache-control'] ?? ''
+  const evidence = {
+    httpStatus: second.status,
+    cfCacheStatus: statuses.map((status) => status ?? null),
+    cacheControl: cacheControl || null,
+    cdnCacheControl: second.headers?.['cdn-cache-control'] ?? null,
+  }
+  if (second.status === undefined || second.status < 200 || second.status > 299) {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `${second.url} answered ${String(second.status)}; only a 2xx can prove a HIT`,
+      evidence,
+    }
+  }
+  if (/\b(?:private|no-store)\b/iu.test(cacheControl)) {
+    return {
+      ...base,
+      status: 'unknown',
+      detail:
+        `${second.url} is Cache-Control: ${cacheControl}, so this origin cannot prove a HIT here ` +
+        '-- preview-safe mode (a *.workers.dev or preview hostname) or a setCacheProfile guard ' +
+        'forced it private. Run the edge proof against the production hostname.',
+      evidence,
+    }
+  }
+  if (statuses[1] && STORED_CACHE_STATUSES.has(statuses[1])) {
+    return {
+      ...base,
+      status: 'pass',
+      detail: `${second.url} second GET served from the edge cache (Cf-Cache-Status: ${statuses[1]})`,
+      evidence,
+    }
+  }
+  if (!statuses[0] && !statuses[1]) {
+    return {
+      ...base,
+      status: 'fail',
+      detail:
+        `${second.url} carries no Cf-Cache-Status, so the Worker ran both times: Workers Cache is ` +
+        'not on. Add "cache": { "enabled": true } to the wrangler config (Wrangler >= 4.69.0).',
+      evidence,
+    }
+  }
+  return {
+    ...base,
+    status: 'fail',
+    detail:
+      `${second.url} second GET was Cf-Cache-Status: ${statuses[1] ?? '(absent)'}, not a HIT. ` +
+      'Workers Cache is answering but did not store this response.',
+    evidence,
+  }
+}
+
+/** Two GETs of one URL, neither of which may come from the cache. */
+export function assessEdgeUncached(first: LiveResponse, second: LiveResponse): VerifyAssertion {
+  const base = { id: 'edge-uncached' as const, exitCode: VERIFY_EXIT.edgeCacheFailed }
+  const failed = unreadable('edge-uncached', first) ?? unreadable('edge-uncached', second)
+  if (failed) return failed
+  const statuses = [cacheStatusOf(first), cacheStatusOf(second)]
+  const evidence = {
+    httpStatus: second.status,
+    cfCacheStatus: statuses.map((status) => status ?? null),
+    cacheControl: second.headers?.['cache-control'] ?? null,
+  }
+  const stored = statuses.find((status) => status && STORED_CACHE_STATUSES.has(status))
+  if (stored) {
+    return {
+      ...base,
+      status: 'fail',
+      detail:
+        `${second.url} was served from the edge cache (Cf-Cache-Status: ${stored}); this route ` +
+        'must never be stored -- one visitor’s response is being replayed to others.',
+      evidence,
+    }
+  }
+  return {
+    ...base,
+    status: 'pass',
+    detail: `${second.url} not served from cache (Cf-Cache-Status: ${statuses[1] ?? '(absent)'})`,
+    evidence,
+  }
+}
+
+/**
  * Did the request stay on the origin we were asked about?
  *
  * Redirects are followed -- an apex that 308s to `www`, or `/` to `/en`, is
@@ -495,7 +643,13 @@ export function assessOrigin(response: LiveResponse, baseUrl: string): VerifyAss
 export function resolveExitCode(assertions: readonly VerifyAssertion[]): number {
   const offOrigin = assertions.find((entry) => entry.id === 'origin' && entry.status === 'fail')
   if (offOrigin) return VERIFY_EXIT.offOrigin
-  const order: VerifyAssertionId[] = ['build-version', 'health', 'smoke']
+  const order: VerifyAssertionId[] = [
+    'build-version',
+    'health',
+    'smoke',
+    'edge-cache',
+    'edge-uncached',
+  ]
   const unreachable = assertions.find((assertion) => assertion.exitCode === VERIFY_EXIT.unreachable)
   if (unreachable && unreachable.status !== 'pass') return VERIFY_EXIT.unreachable
   for (const id of order) {
@@ -562,6 +716,28 @@ async function runOnce(
     const origin = assessOrigin(response, flags.baseUrl)
     if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
     assertions.push(assessHealth(response, { allowDegraded: flags.allowDegraded }))
+  }
+  // The edge proof must look like a visitor: no no-cache request headers, and
+  // the same URL twice. With the cache buster on, that URL is fresh for this
+  // attempt, so the first GET cannot already be warm and a HIT on the second
+  // is this run's own store, not a previous release's.
+  const twice = async (path: string): Promise<[LiveResponse, LiveResponse]> => {
+    const url = bust(new URL(path, base).toString())
+    const first = await probe(url, { noCache: false, timeoutMs: flags.timeoutMs })
+    const second = await probe(url, { noCache: false, timeoutMs: flags.timeoutMs })
+    return [first, second]
+  }
+  for (const path of flags.edgeCachePaths) {
+    const [first, second] = await twice(path)
+    const origin = assessOrigin(second, flags.baseUrl)
+    if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
+    assertions.push(assessEdgeCache(first, second))
+  }
+  for (const path of flags.edgeUncachedPaths) {
+    const [first, second] = await twice(path)
+    const origin = assessOrigin(second, flags.baseUrl)
+    if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
+    assertions.push(assessEdgeUncached(first, second))
   }
   return assertions
 }

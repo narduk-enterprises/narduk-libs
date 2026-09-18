@@ -200,3 +200,111 @@ export function applyNoStoreToWebResponse(
     })
   }
 }
+
+/**
+ * Headers that belong to exactly one request or one caller, and so must not
+ * ride on a response a shared cache may store and replay to everyone else
+ * (narduk-libs#412, #418): the `RateLimit-*` quota family — both the draft-11
+ * pair and the widely deployed triad — the request's correlation id, and its
+ * timing. `Retry-After` joins them on a success; on a denial it is the
+ * response's meaning, and a denial is `no-store` anyway.
+ */
+export const PER_REQUEST_HEADER_NAMES = [
+  'ratelimit',
+  'ratelimit-policy',
+  'ratelimit-limit',
+  'ratelimit-remaining',
+  'ratelimit-reset',
+  'x-request-id',
+  'server-timing',
+] as const
+
+const RETRY_AFTER = 'retry-after'
+
+const PRIVATE_OR_NO_STORE = /(?:^|,)\s*(?:private|no-store)\b/i
+const SHARED_DIRECTIVE = /(?:^|,)\s*(?:public|s-maxage=\d+|immutable|max-age=0*[1-9]\d*)\b/i
+
+/**
+ * True when a shared cache (Cloudflare's edge, a CDN, a proxy) may store this
+ * response as its headers stand. `read` returns one response header by its
+ * lower-case name.
+ *
+ * `private` / `no-store` in `Cache-Control` rule it out whatever else says —
+ * `setCacheProfile` never pairs them with an edge directive. Otherwise an edge
+ * directive (`CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`) that is not
+ * itself `no-store`/`private` makes it shared-cacheable, and so does a
+ * `Cache-Control` that is `public`, `immutable`, or carries a positive
+ * `max-age` / `s-maxage` (RFC 9111 lets a shared cache store those).
+ */
+export function isSharedCacheable(read: (name: string) => string | undefined): boolean {
+  const cacheControl = read('cache-control')
+  if (cacheControl && PRIVATE_OR_NO_STORE.test(cacheControl)) return false
+  for (const name of ['cdn-cache-control', 'cloudflare-cdn-cache-control']) {
+    const value = read(name)
+    if (value && !PRIVATE_OR_NO_STORE.test(value)) return true
+  }
+  return Boolean(cacheControl && SHARED_DIRECTIVE.test(cacheControl))
+}
+
+/** Read a header off an event's Node response, joined, lower-case name. */
+function nodeHeader(res: NodeResponseLike, name: string): string | undefined {
+  const value = res.getHeaders?.()[name]
+  return headerValue(value as string | number | Array<string | number> | undefined)
+}
+
+/**
+ * Remove the {@link PER_REQUEST_HEADER_NAMES} (and `Retry-After`) from an
+ * event's Node response. Unconditional: callers decide shared-cacheability.
+ * No-op once headers are sent, for the reason {@link applyNoStoreToEvent}
+ * gives.
+ */
+export function stripPerRequestHeadersFromEvent(event: CacheAwareEvent | null | undefined): void {
+  if (!event) return
+  const res = nodeResponseOf(event)
+  if (!res?.removeHeader) return
+  if (res.headersSent === true || res.writableEnded === true) return
+  for (const name of PER_REQUEST_HEADER_NAMES) res.removeHeader(name)
+  res.removeHeader(RETRY_AFTER)
+}
+
+/**
+ * Strip per-request headers from an event whose response is shared-cacheable
+ * and not an error. Returns whether it stripped.
+ */
+export function stripPerRequestHeadersIfShared(
+  event: CacheAwareEvent | null | undefined,
+  status: number,
+): boolean {
+  if (!event || status >= 400) return false
+  const res = nodeResponseOf(event)
+  if (!res?.getHeaders) return false
+  if (!isSharedCacheable((name) => nodeHeader(res, name))) return false
+  stripPerRequestHeadersFromEvent(event)
+  return true
+}
+
+/**
+ * The same strip for a web `Response` a handler returned, which h3 copies onto
+ * the event only *after* `beforeResponse` (see
+ * {@link applyNoStoreToWebResponse}). Returns the response to send — the same
+ * object, or a rebuilt one when its headers were immutable — or undefined when
+ * `response` is not a web `Response` or needed nothing.
+ */
+export function stripPerRequestHeadersFromWebResponse(response: unknown): Response | undefined {
+  if (!isWebResponseLike(response)) return undefined
+  if (response.status >= 400) return undefined
+  if (!isSharedCacheable((name) => response.headers.get(name) ?? undefined)) return undefined
+  const names = [...PER_REQUEST_HEADER_NAMES, RETRY_AFTER]
+  try {
+    for (const name of names) response.headers.delete(name)
+    return response
+  } catch {
+    const headers = new Headers(response.headers)
+    for (const name of names) headers.delete(name)
+    return new Response(NULL_BODY_STATUSES.has(response.status) ? null : response.body, {
+      headers,
+      status: response.status,
+      statusText: response.statusText,
+    })
+  }
+}

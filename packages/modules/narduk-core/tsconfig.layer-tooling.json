@@ -60,6 +60,7 @@
     "runtime/server/plugins/error-logger.ts",
     "runtime/server/plugins/nonce-csp-cache.ts",
     "runtime/server/plugins/preferences-cache.ts",
+    "runtime/server/plugins/shared-cache-headers.ts",
     "runtime/server/utils/preferences.ts",
     "runtime/server/middleware/requestLogger.ts",
     "runtime/server/utils/runtime-env.ts",
