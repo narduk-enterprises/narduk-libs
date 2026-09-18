@@ -1,3 +1,4 @@
+import { ciTestOnlyNuxtEnvPrefix } from './ci-test-env.js'
 import type { Capability, GeneratedDatabaseBackend, ProductSpec } from './types.js'
 
 /**
@@ -247,8 +248,19 @@ export function createRootPackageManifest(
       // deployable Worker shape. CI's ci.yml `build-script: build:ci` and
       // the public browser job's `pnpm run build:ci` both call this --
       // matches the reference app's root script exactly.
-      'build:ci': 'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
-      'cf:build': 'pnpm --filter web run cf:build',
+      // Test-only NUXT_* values: the private reusable workflow does not
+      // inherit caller job env, and narduk-seo throws on a non-dev build
+      // when NUXT_OG_IMAGE_SECRET is empty. Public CI also sets these on
+      // the quality/browser jobs; they stay here so both variants work.
+      'build:ci':
+        ciTestOnlyNuxtEnvPrefix() +
+        ' NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+      // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
+      // authenticate and install before `narduk-app` / `nuxt` exist. The
+      // helper writes a temp userconfig (never a tracked file) and runs a
+      // frozen install; the web package's `cf:build` is the Nuxt compile.
+      'cf:build':
+        'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
       ...(databaseBackend === 'none'

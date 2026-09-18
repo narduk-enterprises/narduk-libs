@@ -195,6 +195,29 @@ describe('create-narduk-app generation contract', () => {
     ).toBe(true)
   })
 
+  it.each(['private', 'public'] as const)(
+    'ignores Wrangler .dev.vars secrets in the generated %s .gitignore',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'gitignore-secrets',
+          capabilities: [],
+          noGit: true,
+          targetDir: '/tmp/gitignore-secrets',
+          visibility,
+        }),
+      )
+      const gitignore = files.get('.gitignore') ?? ''
+      expect(gitignore).toContain('.env\n')
+      expect(gitignore).toContain('.env.*\n')
+      expect(gitignore).toContain('!.env.example\n')
+      expect(gitignore).toContain('.dev.vars\n')
+      expect(gitignore).toContain('**/.dev.vars\n')
+      expect(gitignore).toContain('.dev.vars.*\n')
+      expect(gitignore).toContain('!.dev.vars.example\n')
+    },
+  )
+
   it('selects capabilities, keeps core implicit, and pins every manifest version', () => {
     const files = asFileMap(
       buildGeneratedFiles({
@@ -594,6 +617,16 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toContain(
         '| Build command                 | `pnpm run cf:build`                                   |',
       )
+      expect(runbook, label).toContain(
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
+      )
+      expect(runbook, label).toContain('`NUXT_OG_IMAGE_SECRET`')
+      expect(runbook, label).toContain(
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)      |',
+      )
+      expect(runbook, label).toContain('`NUXT_SESSION_PASSWORD`')
+      expect(runbook, label).toContain('scripts/gh-packages-run.mjs')
+      expect(runbook, label).toContain('frozen workspace lockfile')
       expect(runbook, label).toContain('TODO(onboarding):')
 
       // The deployment standard: a build uploads a version and deploys
@@ -722,7 +755,7 @@ describe('create-narduk-app generation contract', () => {
         devDependencies: Record<string, string>
       }
       expect(rootManifest.scripts['build:ci'], label).toBe(
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       )
       expect(rootManifest.scripts['foundation:check'], label).toBe(
         'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',
@@ -871,7 +904,9 @@ describe('create-narduk-app generation contract', () => {
     expect(rootPackage.scripts['quality:static']).toContain('pnpm run knip')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
-    expect(rootPackage.scripts['cf:build']).toBe('pnpm --filter web run cf:build')
+    expect(rootPackage.scripts['cf:build']).toBe(
+      'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+    )
     expect(rootPackage.scripts['cf:deploy']).toBe('pnpm --filter web run cf:deploy')
     expect(rootPackage.scripts.deploy).toBe('pnpm --filter web run deploy')
     const knipConfig = JSON.parse(await readFile(join(targetDir, 'knip.json'), 'utf8')) as {
@@ -1121,6 +1156,31 @@ describe('generated app typecheck and lint surfaces', () => {
         '{\n  "extends": "../.nuxt/tsconfig.server.json"\n}\n',
       )
     }
+  })
+
+  it('puts test-only Nuxt build env in public CI jobs and on private build:ci', () => {
+    const publicFiles = generate(['seo'])
+    // generate() defaults to private; rebuild public explicitly.
+    const publicCi = asFileMap(
+      buildGeneratedFiles({
+        appName: 'surface-check',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/surface-check',
+        visibility: 'public',
+      }),
+    ).get('.github/workflows/ci.yml')!
+    expect(publicCi).toContain('NUXT_OG_IMAGE_SECRET: narduk-test-only-og-image-secret-000000')
+    expect(publicCi).toContain('NUXT_SESSION_PASSWORD: narduk-test-only-session-password-000000')
+    expect(publicCi).toContain('- run: pnpm run quality:static')
+    expect(publicCi).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
+
+    const privateRoot = JSON.parse(publicFiles.get('package.json') ?? '{}') as {
+      scripts: Record<string, string>
+    }
+    expect(privateRoot.scripts['build:ci']).toContain(
+      'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000',
+    )
   })
 
   it('keeps registry auth out of the committed .npmrc for every capability set', () => {
