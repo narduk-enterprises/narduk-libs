@@ -545,6 +545,53 @@ substring can rely on `"status":"ok"`: `status`, `timestamp` and `database` are
 the first fields of `data`, well inside the first 4096 bytes, and no check
 detail can contain a `status` or `database` key.
 
+## CSRF protection
+
+The server middleware refuses a `POST`/`PUT`/`PATCH`/`DELETE` that carries no
+`X-Requested-With` header with a 403. Browsers do not let a cross-site page set
+a custom header, so this stops form-based CSRF; the layer's client fetch plugin,
+`useAppFetch()` and `useCsrfFetch()` add the header for the app's own calls. It
+is skipped for `/api/webhooks/`, `/api/cron/`, `/api/callbacks/`, `/api/_auth/`,
+`/__nuxt_content/`, `/api/owner-tag`, `Authorization: Bearer nk_…` API keys, and
+the `security.headers` CSP report route (browsers deliver reports without the
+header).
+
+### Declaring a credential-free route
+
+A route that carries **no ambient credential** — a device that calls before it
+has any account, session or cookie — gains nothing from the check and cannot
+satisfy it. Declare it in the module options rather than faking the header in an
+app middleware:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: {
+    csrf: {
+      exemptPaths: [
+        '/api/edge/v1/claim/start', // exact path
+        '/api/edge/v1/claim/handoff',
+        '/api/devices/*', // prefix
+      ],
+    },
+  },
+})
+```
+
+An entry is an exact path or a prefix ending in `/*`. The query string is
+ignored and one trailing slash is tolerated; a request spelled with a percent
+escape, an empty segment or a dot segment is never exempt. An entry covering the
+whole site or the whole `/api` tree, a prefix with fewer than two segments, or
+one containing a query, fragment, escape or wildcard elsewhere **fails the
+build**. The runtime key is `runtimeConfig.nardukCsrf.exemptPaths`, and the
+middleware re-checks it on every request, so an env override cannot widen the
+exemption past that grammar.
+
+> [!WARNING] Exempting a route a signed-in browser also calls re-opens CSRF on
+> it. Keep the session-bearing leg out of the list — in the example,
+> `/api/edge/v1/claim/complete` rides the user's session and stays protected. An
+> exempt route that reads a body must authenticate its caller another way.
+
 ## Per-route rate limits: `defineRateLimitedHandler`
 
 Wrap a route handler and it is rate limited. The app declares the allowance; it
@@ -597,17 +644,35 @@ since 2025-09-19; needs Wrangler >= 4.36.0) and name it `RL_<limit>` to match
 the convention this package already uses, or pass `binding` explicitly:
 
 ```jsonc
-// wrangler.json
+// wrangler.json — Worker "riverstatus"
 {
   "ratelimits": [
     {
       "name": "RL_120",
-      "namespace_id": "1001",
+      // rateLimitNamespaceId('riverstatus', 120): prefix 32195 + limit 120
+      "namespace_id": "32195120",
       "simple": { "limit": 120, "period": 60 },
     },
   ],
 }
 ```
+
+**`namespace_id` is unique per Cloudflare account, not per Worker.** Two
+bindings with the same id share counters across every Worker on the account, so
+never paste an id from an example or another app — the scaffold copies `1001`,
+`50110`, `50121` and `50300` are already in use. Derive it from the Worker
+`name` instead:
+
+1. FNV-1a 32-bit over the UTF-8 Worker name, reduced to a five-digit prefix in
+   `10000`–`49999`;
+2. the binding's per-minute `limit`, padded to three digits, appended with no
+   separator (so `RL_60` → `…060` and `RL_600` → `…600` cannot collide).
+
+`rateLimitNamespaceId(workerName, limit)` from
+`@narduk-enterprises/narduk-core/shared/rate-limit-namespace` computes it, and
+`RATE_LIMIT_SCAFFOLD_NAMESPACE_IDS` lists the ids a check should refuse. Write
+the prefix beside the bindings so the next binding the app adds follows it. An
+app already on its own unique scheme (Buoys' `2869300` / `2869120`) keeps it.
 
 Cloudflare's `period` accepts only `10` or `60` seconds, so a route with any
 other `windowSeconds` is enforced by the in-isolate window alone and looks for
@@ -642,6 +707,23 @@ record, and exactly one structured `warn` through
 `@narduk-enterprises/narduk-logging` carrying `rateLimitKey`, `limit`,
 `windowSeconds`, `scope`, `enforcedBy` and the **matched route template** — not
 the raw path, which carries caller-chosen identifiers and query values.
+
+### What a caller is counted as
+
+The `'ip'` and `'ip-path'` scopes key on the `cf-connecting-ip` address, with
+one change: **an IPv6 caller is counted by its `/64`**. An IPv6 host is normally
+handed a whole `/64`, and privacy extensions rotate the low half on their own,
+so a full-address key would give one client a fresh window per address. IPv4 is
+counted by the full address. Only the counter collapses — `getClientIp` still
+returns the full address for audit rows and approximate location.
+`enforceRateLimit` / `enforceRateLimitPolicy` count IPv6 the same way.
+
+The limiter runs inside the handler, so no spelling the router dispatches to the
+route escapes it: `/path/`, `/path?x=1` and a percent-encoded `/pa%74h` all
+count in the bucket of `/path`, in the `'ip-path'` scope too. Do not put a
+path-equality middleware in front of a route and call it a limiter — h3 keeps
+the trailing slash on `event.path`, so `/path/` skips the middleware and still
+reaches the route. Wrap the handler.
 
 ### Exemptions
 

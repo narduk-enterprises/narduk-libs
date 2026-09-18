@@ -6,9 +6,15 @@
  * works but is no longer the documented shape):
  *
  * ```jsonc
- * { "ratelimits": [{ "name": "RL_120", "namespace_id": "1001",
+ * { "ratelimits": [{ "name": "RL_120", "namespace_id": "32195120",
  *                    "simple": { "limit": 120, "period": 60 } }] }
  * ```
+ *
+ * `namespace_id` is unique per Cloudflare **account**, not per Worker: two
+ * bindings with the same id share counters across every Worker on the
+ * account. Never paste an example id; derive it from the Worker name with
+ * `rateLimitNamespaceId` in `../../shared/rate-limit-namespace.ts` (the id
+ * above is `rateLimitNamespaceId('riverstatus', 120)`).
  *
  * Counters are coordinated per Cloudflare location, not globally, and
  * Cloudflare describes them as "permissive, eventually consistent, and

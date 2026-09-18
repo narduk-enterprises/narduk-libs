@@ -1,6 +1,8 @@
 import { createError, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { rateLimitClientBucket } from '../rate-limit/client-bucket'
+
 import { getClientIp } from './client-ip'
 import { readWorkerRuntimeEnv } from './worker-env'
 
@@ -182,10 +184,11 @@ export function resolveRateLimitPolicy(event: H3Event, policy: RateLimitPolicy):
 
 /**
  * The layer's shared resolver, with `x-forwarded-for` trusted as this file always has; the
- * placeholder keeps a request with no address at all in one bucket rather than unlimited.
+ * placeholder keeps a request with no address at all in one bucket rather than unlimited. An
+ * IPv6 caller is counted by its /64 (narduk-libs#430), exactly as `defineRateLimitedHandler` does.
  */
 function rateLimitClientIp(event: H3Event): string {
-  return getClientIp(event, { trustForwardedFor: true }) ?? '127.0.0.1'
+  return rateLimitClientBucket(getClientIp(event, { trustForwardedFor: true }) ?? '127.0.0.1')
 }
 
 /**

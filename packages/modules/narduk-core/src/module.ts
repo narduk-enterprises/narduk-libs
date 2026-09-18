@@ -16,6 +16,7 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
+import { assertCsrfExemptPaths } from '../runtime/shared/csrf-exempt-paths'
 import {
   type DatabaseBackend,
   findDatabaseBackendConflict,
@@ -92,6 +93,16 @@ interface MutableNuxtOptionsRecord {
 export interface NardukCoreModuleOptions {
   app?: boolean
   coreModules?: boolean
+  /**
+   * CSRF middleware options. `exemptPaths` declares credential-free routes —
+   * a device leg that calls before it has any account, session or cookie —
+   * that need no `X-Requested-With`. Exact paths, or a prefix ending in `/*`;
+   * see `../runtime/shared/csrf-exempt-paths.ts` for the grammar. An invalid
+   * or over-broad entry fails the build.
+   */
+  csrf?: {
+    exemptPaths?: string[]
+  }
   /**
    * The app's SQL backend. `'none'` declares an app without a database, so
    * `/api/health` reports `database: 'not_applicable'`. Omitted, the build
@@ -754,6 +765,17 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           allowGeolocation,
         },
       })
+
+      // CSRF exemptions are assigned, never merged with defu: defu concatenates
+      // arrays, which would silently keep an entry the app meant to replace.
+      const existingCsrf = nuxtOptions.runtimeConfig.nardukCsrf as
+        { exemptPaths?: unknown } | undefined
+      nuxtOptions.runtimeConfig.nardukCsrf = {
+        ...existingCsrf,
+        exemptPaths: assertCsrfExemptPaths(
+          options.csrf?.exemptPaths ?? existingCsrf?.exemptPaths ?? [],
+        ),
+      }
 
       // The resolved selection overwrites any earlier value so the schema alias,
       // the server runtime and /api/health all agree on one backend.

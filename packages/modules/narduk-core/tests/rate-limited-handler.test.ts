@@ -375,3 +375,110 @@ describe('defineRateLimitedHandler with the Cloudflare binding', () => {
     expect(limit).not.toHaveBeenCalled()
   })
 })
+
+/** Drive a handler over a real socket with a caller-chosen client address per request. */
+async function requestAs(
+  handler: EventHandler,
+  calls: Array<{ ip: string; path: string }>,
+  decorate?: (event: H3Event) => void,
+): Promise<number[]> {
+  const app = createApp().use(
+    '/',
+    defineEventHandler(async (event) => {
+      decorate?.(event)
+      return handler(event)
+    }),
+    { match: () => true },
+  )
+  const server = createServer(toNodeListener(app))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
+  try {
+    const statuses: number[] = []
+    for (const call of calls) {
+      const response = await fetch(`http://127.0.0.1:${address.port}${call.path}`, {
+        headers: { 'cf-connecting-ip': call.ip },
+      })
+      await response.text()
+      statuses.push(response.status)
+    }
+    return statuses
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+}
+
+describe('defineRateLimitedHandler — IPv6 /64 buckets (narduk-libs#430)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  it('counts two addresses in one /64 against one allowance', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1 }), [
+      { ip: '2001:db8:1:2::1', path: ROUTE },
+      { ip: '2001:db8:1:2::2', path: ROUTE },
+    ])
+
+    expect(statuses).toEqual([200, 429])
+  })
+
+  it('gives a different /64 its own allowance', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1 }), [
+      { ip: '2001:db8:1:2::1', path: ROUTE },
+      { ip: '2001:db8:1:3::1', path: ROUTE },
+    ])
+
+    expect(statuses).toEqual([200, 200])
+  })
+
+  it('keys the Cloudflare binding on the /64 too', async () => {
+    const limit = vi.fn().mockResolvedValue({ success: true })
+    await requestAs(
+      limited({ key: 'test', limit: 5, windowSeconds: 60 }),
+      [{ ip: '2001:db8:1:2::abcd', path: ROUTE }],
+      (event) => {
+        ;(event.context as Record<string, unknown>).cloudflare = { env: { RL_5: { limit } } }
+      },
+    )
+
+    expect(limit).toHaveBeenCalledWith({ key: 'test:2001:db8:1:2::/64' })
+  })
+})
+
+describe('defineRateLimitedHandler — path variants share a bucket (narduk-libs#433)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  const variants = [
+    '/api/mapkit-token/',
+    '/api/mapkit-token?x=1',
+    '/api/mapkit-token/?x=1',
+    '/api/mapkit-%74oken',
+  ]
+
+  it.each(['ip', 'ip-path'] as const)(
+    'a %s-scoped route answers 429 on every variant once the bare path is spent',
+    async (scope) => {
+      const handler = limited({ key: 'test', limit: 1, scope })
+      const statuses = await requestAs(handler, [
+        { ip: CLIENT_IP, path: '/api/mapkit-token' },
+        ...variants.map((path) => ({ ip: CLIENT_IP, path })),
+      ])
+
+      expect(statuses).toEqual([200, 429, 429, 429, 429])
+    },
+  )
+
+  it('still enforces the in-isolate window when no RL_* binding is declared', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1, windowSeconds: 60 }), [
+      { ip: CLIENT_IP, path: ROUTE },
+      { ip: CLIENT_IP, path: `${ROUTE}/` },
+    ])
+
+    expect(statuses).toEqual([200, 429])
+  })
+})

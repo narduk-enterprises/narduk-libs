@@ -65,8 +65,10 @@ const BITS_PER_HEXTET = 16
  * prefix matching cannot see the embedded IPv4. Invalid input, including more
  * than one `::`, a non-final IPv4 tail, or a hextet wider than 16 bits,
  * returns `null` so the caller can fail closed.
+ *
+ * @internal Also used by `rate-limit/client-bucket.ts` to key IPv6 callers by /64.
  */
-function parseIPv6Hextets(address: string): number[] | null {
+export function parseIPv6Hextets(address: string): number[] | null {
   let input = stripIPv6Brackets(address.trim())
   const zone = input.indexOf('%')
   if (zone !== -1) {
