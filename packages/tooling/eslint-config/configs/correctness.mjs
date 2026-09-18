@@ -5,6 +5,8 @@
  * Two slices:
  *
  * - `narduk/correctness-hygiene` — non-typed rules, always on for TS/Vue.
+ * - `narduk/correctness-type-aware-rules` / `-promises` — the type-aware rules
+ *   (warn; see below).
  * - `narduk/correctness-type-aware` — parser wiring only. It exists so an app
  *   can switch type-aware rules on locally without re-deriving the project
  *   service setup, and so `createAppLintConfig()` can point `projectService` at
@@ -77,8 +79,50 @@ const correctnessTypeAware = {
   rules: {},
 }
 
+/**
+ * Type-aware checks, warn-only, budgeted by `narduk-lint` (2026-09-18).
+ *
+ * The two promise rules skip `server/**`: the `server` pack enforces them there
+ * at `error`, and excluding them here keeps that true whatever order the app
+ * lists its packs in. The files and ignores match `narduk/correctness-type-aware`
+ * exactly, so every file these rules see has a project service.
+ */
+const correctnessTypeAwareRules = {
+  name: 'narduk/correctness-type-aware-rules',
+  files: correctnessTypeAware.files,
+  ignores: correctnessTypeAware.ignores,
+  plugins: {
+    '@typescript-eslint': tseslint.plugin,
+  },
+  rules: {
+    '@typescript-eslint/await-thenable': 'warn',
+    '@typescript-eslint/switch-exhaustiveness-check': 'warn',
+  },
+}
+
+const correctnessTypeAwareClientPromises = {
+  name: 'narduk/correctness-type-aware-promises',
+  files: correctnessTypeAware.files,
+  ignores: [...correctnessTypeAware.ignores, '**/server/**'],
+  plugins: {
+    '@typescript-eslint': tseslint.plugin,
+  },
+  rules: {
+    '@typescript-eslint/no-floating-promises': 'warn',
+    '@typescript-eslint/no-misused-promises': 'warn',
+  },
+}
+
+/** Files the type-aware entries skip; reused by the `server` pack. */
+export const TYPE_AWARE_IGNORES = correctnessTypeAware.ignores
+
 /** @type {import('eslint').Linter.Config[]} */
-const correctnessConfigs = [correctnessHygiene, correctnessTypeAware]
+const correctnessConfigs = [
+  correctnessHygiene,
+  correctnessTypeAware,
+  correctnessTypeAwareRules,
+  correctnessTypeAwareClientPromises,
+]
 
 export { correctnessConfigs }
 export default correctnessConfigs

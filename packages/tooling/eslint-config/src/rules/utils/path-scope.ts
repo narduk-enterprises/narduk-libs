@@ -197,3 +197,13 @@ export function inTestOrFixtureDirectory(filename: string): boolean {
         TEST_DIRECTORY_SEGMENTS.has(segment.toLowerCase()) || TEST_FILE_INFIX.test(segment),
     )
 }
+
+/**
+ * Any Nitro `server/` source — handlers, utils, plugins, middleware — at any
+ * nesting depth, relative or absolute. Wider than the route-only
+ * `analyzeServerRoutePath()`; used by rules about server code in general.
+ */
+export function isServerSourcePath(filename: string): boolean {
+  const normalized = toPosixPath(filename)
+  return normalized.startsWith('server/') || normalized.includes('/server/')
+}

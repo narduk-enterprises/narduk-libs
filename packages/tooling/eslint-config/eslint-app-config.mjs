@@ -191,8 +191,21 @@ const sharedTailConfigs = [
   {
     name: 'narduk/console-hygiene',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
+    ignores: ['**/server/**'],
     rules: {
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+  {
+    // Server code logs through the structured logger (`useLogger(event)`), so
+    // every console method warns there, `warn`/`error` included (2026-09-18).
+    // It lives in this tail rather than the `server` pack because this tail is
+    // composed after every pack: a pack-level entry would be overridden by
+    // `narduk/console-hygiene` above for the same files.
+    name: 'narduk/console-hygiene-server',
+    files: ['**/server/**/*.{ts,mts,js,mjs}'],
+    rules: {
+      'no-console': 'warn',
     },
   },
   {
@@ -318,7 +331,10 @@ const sharedTailConfigs = [
   },
 
   {
+    // Unused disable directives are reported (warn, budgeted by narduk-lint)
+    // and every disable must say why (`-- reason`).
     name: 'narduk/eslint-directive-hygiene',
+    linterOptions: { reportUnusedDisableDirectives: 'warn' },
     plugins: { '@eslint-community/eslint-comments': eslintComments },
     rules: {
       '@eslint-community/eslint-comments/no-unused-disable': 'error',
@@ -691,8 +707,14 @@ export function inferAppRootDirFromStack(stack = new Error().stack) {
   return undefined
 }
 
+/** Pack entries that carry type-aware parser wiring for createAppLintConfig to patch. */
+const PROJECT_SERVICE_CONFIG_NAMES = new Set([
+  'narduk/correctness-type-aware',
+  'narduk/server-type-aware',
+])
+
 function patchCorrectnessProjectServiceConfig(config, appRootDir) {
-  if (!appRootDir || config?.name !== 'narduk/correctness-type-aware') {
+  if (!appRootDir || !PROJECT_SERVICE_CONFIG_NAMES.has(config?.name)) {
     return config
   }
 

@@ -34,13 +34,20 @@
  * what any rule actually reports on.
  */
 
+import sonarjs from 'eslint-plugin-sonarjs'
+import tseslint from 'typescript-eslint'
+
 import narduk from '../dist/index.js'
 
 import cloudflareConfigs from './cloudflare.mjs'
+import { TYPE_AWARE_IGNORES } from './correctness.mjs'
 import { RESTRICTED_IMPORTS_RULE, TEST_TREE_IGNORES } from './restricted-imports.mjs'
 
 /** Nitro server sources, at any nesting depth. */
 export const SERVER_FILE_GLOBS = ['**/server/**/*.{js,cjs,mjs,jsx,ts,cts,mts,tsx}']
+
+/** TypeScript server sources — the ones a project service can type. */
+export const SERVER_TS_FILE_GLOBS = ['**/server/**/*.{ts,cts,mts,tsx}']
 
 export {
   LAYER_SOURCE_IMPORT_PATTERNS,
@@ -70,6 +77,44 @@ const serverConfigs = [
       'narduk/require-limit-on-drizzle-list-queries': 'error',
       'narduk/no-sequential-awaited-io-in-event-handler': 'error',
       'narduk/no-blocking-io-in-server-plugin': 'error',
+      // Warn, budgeted by narduk-lint (2026-09-18).
+      'narduk/require-fetch-timeout': 'warn',
+      'narduk/prefer-db-batch': 'warn',
+    },
+  },
+
+  {
+    // SonarJS S2077: dynamically formatted SQL. Complements
+    // no-raw-sql-with-variable-input (drizzle `sql.raw`) by catching string-built
+    // queries handed to any driver. Warn, budgeted.
+    name: 'narduk/server-sql',
+    files: [...SERVER_FILE_GLOBS],
+    ignores: [...TEST_TREE_IGNORES],
+    plugins: { sonarjs },
+    rules: {
+      'sonarjs/sql-queries': 'warn',
+    },
+  },
+
+  {
+    // A floating promise in a Nitro handler is work the response does not wait
+    // for — on Workers it is cancelled when the response returns, and its
+    // rejection is unhandled. Error from day one (2026-09-18). Type-aware, so
+    // this entry carries its own project-service wiring and does not depend on
+    // the `correctness` pack being selected; createAppLintConfig() points it at
+    // the app's generated tsconfig exactly as it does correctness's entry.
+    name: 'narduk/server-type-aware',
+    files: [...SERVER_TS_FILE_GLOBS],
+    ignores: [...TYPE_AWARE_IGNORES, ...TEST_TREE_IGNORES],
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
     },
   },
 

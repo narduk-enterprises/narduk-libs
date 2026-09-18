@@ -26,6 +26,9 @@
     "pinia"
   ],
   "types": "./dist/index.d.ts",
+  "bin": {
+    "narduk-lint": "./bin/narduk-lint.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -80,20 +83,25 @@
     "./config/monorepo": {
       "import": "./configs/monorepo.mjs"
     },
+    "./lint-budget": {
+      "import": "./lint-budget.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
+    "bin/",
     "configs/",
     "dist/",
     "eslint-app-config.mjs",
     "eslint-nuxt-flat-fragments.mjs",
+    "lint-budget.mjs",
     "README.md"
   ],
   "scripts": {
     "build": "tsup",
     "prepack": "pnpm run build",
     "check:package": "publint --strict && pnpm pack --dry-run",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node ./bin/narduk-lint.mjs",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "test:watch": "vitest",
