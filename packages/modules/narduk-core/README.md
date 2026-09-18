@@ -993,6 +993,38 @@ type StationQuery = z.input<typeof contract.query>
 That needs nothing from this package. Generating a typed `$fetch` client across
 the whole API surface is a larger piece of work and is deliberately not here.
 
+## Published-data routes: `definePublishedDataHandler`
+
+A public read whose success is cacheable and whose failure is not
+(narduk-libs#514). It replaces `defineEventHandler` at the route:
+
+```ts
+// server/api/stations/index.get.ts
+export default definePublishedDataHandler(
+  async (event) => listStations(getQuery(event)),
+  {
+    profile: 'live',
+    tags: ['published-data'],
+    fallbackMessage: 'Station data is temporarily unavailable.',
+  },
+)
+```
+
+- **The cache profile is applied after success only.** A route that calls
+  `setCacheProfile` first advertises a 400 or 404 as publicly cacheable for the
+  profile's TTL. Here an error never gets a cacheable posture, and the
+  `error-cache` plugin makes it `private, no-store`. `setCacheProfile`'s own
+  guards still apply to the success path.
+- **An internal failure is a sanitized 503.** Anything thrown without a
+  `statusCode` (a failed fetch, a schema error whose message dumps every field)
+  is logged through the request logger and answered with `fallbackMessage`. A
+  deliberate `createError({ statusCode: 404 })` passes through unchanged.
+- **Rate limiting is opt-in.** Pass `rateLimit` (the
+  [`defineRateLimitedHandler`](#per-route-rate-limits-defineratelimitedhandler)
+  options) to put a limit in front of the read; without it none is applied. On a
+  shared-cacheable route pass `headers: 'none'` with it, because the
+  `RateLimit-*` family is per caller.
+
 ## Edge cache: setCacheProfile
 
 `setCacheProfile` owns every `Cache-Control` string a route would otherwise
