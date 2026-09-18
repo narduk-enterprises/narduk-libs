@@ -7,11 +7,18 @@ on:
         description: Exact CI-verified commit retained in main history
         required: true
         type: string
+  # Only main-branch CI completions can release. Without this filter every
+  # pull_request CI completion queued a Release run that the job-level `if:`
+  # then skipped, and those skipped runs read as failed publishes. The
+  # job-level `if:` below stays as defense in depth (a PR head branch can
+  # itself be named `main`).
   workflow_run:
     workflows:
       - CI
     types:
       - completed
+    branches:
+      - main
 
 concurrency:
   group: narduk-libs-release
@@ -62,6 +69,8 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
     env:
       VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -171,6 +180,7 @@ jobs:
           install -m 0600 /dev/null "${RUNNER_TEMP}/changesets-home/.netrc"
 
       - name: Prepare or publish the independently verified package versions
+        id: changesets
         if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
@@ -191,3 +201,90 @@ jobs:
         run: |
           rm -f "${NPM_CONFIG_USERCONFIG}"
           rm -f "${RUNNER_TEMP}/changesets-home/.netrc"
+
+  # npm.nard.uk mirrors GitHub Packages through package-delivery's "Sync to R2"
+  # workflow. Its schedule is the correctness mechanism; this dispatch only
+  # shortens the delay between a publish and the mirror serving it
+  # (agent-infrastructure docs/npm-registry-delivery.md, "optional dispatch,
+  # for immediacy"). GitHub fires that schedule irregularly -- on 2026-09-18
+  # versions published at 16:05Z waited for a manual dispatch at 16:14Z
+  # (package-delivery#4). A missed dispatch costs one sweep interval, never a
+  # version, so this job can never fail the release.
+  #
+  # CREDENTIAL. `POST /repos/{owner}/{repo}/dispatches` needs `contents: write`
+  # on package-delivery, which this repository's GITHUB_TOKEN cannot carry.
+  # The job mints a per-run token from the estate write ceiling,
+  # `narduk-lane-automation` (company-hq docs/GITHUB-APPS.md, D-GHAPP-1),
+  # downscoped to exactly package-delivery and `contents: write`, and reads it
+  # back before use -- the same shape as company-hq's
+  # operator-portal-read-model-dispatch.yml. Until LANE_AUTOMATION_APP_KEY
+  # (environment npm-release, gated to main) and LANE_AUTOMATION_APP_ID
+  # (repository variable) are delivered, the job records a notice and
+  # dispatches nothing. It checks out no code and installs nothing, so the key
+  # never shares a job with dependency install scripts.
+  notify-mirror:
+    needs: [verify-ci, release]
+    if: needs.release.outputs.published == 'true'
+    environment: npm-release
+    permissions: {}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Check for the mirror dispatch credential
+        id: credential
+        env:
+          LANE_AUTOMATION_APP_KEY: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          LANE_AUTOMATION_APP_ID: ${{ vars.LANE_AUTOMATION_APP_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_APP_ID:-}" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Mirror dispatch skipped::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_APP_ID (repository variable) is absent, so package-delivery was not notified. npm.nard.uk picks up this release on its next scheduled sync."
+          fi
+
+      - name: Mint a dispatch token scoped to package-delivery
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.LANE_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          owner: narduk-enterprises
+          repositories: package-delivery
+          permission-contents: write
+
+      - name: Verify the token sees exactly package-delivery
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          seen="$(gh api /installation/repositories --paginate --jq '.repositories[].full_name' | sort | tr '\n' ' ')"
+          if [ "${seen}" != "narduk-enterprises/package-delivery " ]; then
+            echo "::error title=Unscoped mint::the minted token sees [${seen}] rather than exactly narduk-enterprises/package-delivery; refusing to dispatch with it."
+            exit 1
+          fi
+
+      - name: Dispatch the npm.nard.uk mirror sync
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+          VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Provenance only: the sync reads GitHub Packages, never this payload.
+          gh api repos/narduk-enterprises/package-delivery/dispatches \
+            --method POST \
+            -f event_type=narduk-libs-release \
+            -f "client_payload[sha]=${VERIFIED_SHA}" \
+            -f "client_payload[run_id]=${GITHUB_RUN_ID}"
+          echo "dispatched narduk-libs-release to narduk-enterprises/package-delivery"
+
+      - name: Report a failed mirror dispatch without failing the release
+        if: failure()
+        run: echo "::warning title=Mirror dispatch failed::package-delivery was not notified; npm.nard.uk picks up this release on its next scheduled sync. The packages themselves published and verified."
