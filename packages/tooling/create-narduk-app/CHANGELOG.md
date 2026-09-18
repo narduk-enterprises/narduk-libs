@@ -1,5 +1,31 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.9.7
+
+### Patch Changes
+
+- ad7a156: Give generated CI a committed test-only `NUXT_OG_IMAGE_SECRET` so
+  `nuxt build` does not fail closed.
+
+  narduk-seo now throws on a non-dev build when runtime OG is enabled and the
+  secret is empty. Public `quality` / `browser` jobs set the Playwright
+  placeholders as plain `env:` values (not repository secrets). The private
+  reusable workflow cannot inherit caller env, so the same placeholders prefix
+  `build:ci`. The Workers Builds runbook requires `NUXT_OG_IMAGE_SECRET` and
+  `NUXT_SESSION_PASSWORD` as Build variables — Worker secrets are runtime-only.
+
+- ad7a156: Ignore generated Wrangler `.dev.vars` secrets, and make `cf:build`
+  authenticate before it installs.
+
+  The scaffolded `.gitignore` now lists `.dev.vars` / `**/.dev.vars` /
+  `.dev.vars.*` with a `!.dev.vars.example` carve-out, matching the existing
+  `.env` pattern. Root `cf:build` runs a committed `scripts/gh-packages-run.mjs`
+  (process-scoped temp userconfig from `GH_PACKAGES_READ`, then
+  `pnpm install --frozen-lockfile`) so a Workers Builds dashboard that sets
+  `SKIP_DEPENDENCY_INSTALL=1` actually has `node_modules` and registry auth
+  before `nuxt build`. `narduk-app gh-packages-run` is the same helper for
+  post-install callers.
+
 ## 0.9.6
 
 ### Patch Changes
