@@ -1,5 +1,41 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.10.0
+
+### Minor Changes
+
+- 05b3ef9: Prove and gate Workers Cache (narduk-libs#435).
+
+  - `narduk-app verify --live` gains repeatable `--edge-cache-path <p>` and
+    `--edge-uncached-path <p>`. Each route is fetched twice from the same fresh
+    URL without no-cache request headers; an edge-cache path needs
+    `Cf-Cache-Status: HIT` (or `STALE` / `UPDATING` / `REVALIDATED`) on the
+    second GET, an uncached path must never be served from cache. A
+    `private, no-store` answer (a preview-safe hostname) reports "cannot prove a
+    HIT here". New exit code 7.
+  - `foundation:check:deployment` gains sub-check 12.7: a wrangler config (any
+    scope, JSON or TOML) that sets `"cache": { "enabled": true }` fails against
+    a `@narduk-enterprises/narduk-core` older than 2.2.4 — the first core that
+    keeps thrown errors, preference-shaped responses and nonce-CSP HTML out of
+    the cache. It fails in rollout mode too; with the switch off it is
+    not-applicable.
+
+### Patch Changes
+
+- c16bdfd: `foundation:check` now reads the registry for sub-check 2.3 from the
+  project's own `@narduk-enterprises` scope route (narduk-libs#498). The reader
+  takes the last `@narduk-enterprises:registry=` line in the checkout's
+  `.npmrc`, the same rule as the shared CI workflows. A repo that routes the
+  scope to the `https://npm.nard.uk` mirror, or to any other registry that is
+  not GitHub Packages, is read anonymously. The reader sends no `Authorization`
+  header there, so it needs no `NODE_AUTH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`.
+  Repos with no route line, or a route to `npm.pkg.github.com`, keep the
+  existing GitHub Packages Bearer read and its scope-probe 404 corroboration.
+  Other scopes such as `@narduk-geo` stay on GitHub Packages.
+
+  `create-narduk-app` takes a patch so generated apps pin the fixed
+  `narduk-app-tools`.
+
 ## 0.9.1
 
 ### Patch Changes
