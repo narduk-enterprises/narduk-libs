@@ -548,6 +548,17 @@ warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
 company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
 for the weekly fleet rollup.
 
+**Registry reads follow the project's scope route.** Sub-check 2.3 needs the
+highest published `narduk-core` major. The reader takes the last
+`@narduk-enterprises:registry=` line in the checkout's own `.npmrc` (the same
+rule as the shared CI workflows). A route to any registry other than GitHub
+Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
+`Authorization` header and no token needed. With no such line, or a route to
+`npm.pkg.github.com`, the reader uses GitHub Packages with `NODE_AUTH_TOKEN`
+(then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
+corroborates an ambiguous 404 with a scope probe. Other scopes, such as
+`@narduk-geo`, always stay on GitHub Packages.
+
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
 product names do not require `narduk-ui` or `status-runtime`. Existing
