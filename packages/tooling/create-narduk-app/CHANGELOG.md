@@ -1,5 +1,43 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.9.6
+
+### Patch Changes
+
+- fe58c5f: SSR HTML is never shared-cache storable on an app that serves the
+  nonce CSP (`nardukCore.security.headers` in `enforce` or `report-only` mode),
+  because nuxt-security writes one per-request nonce into both the HTML and the
+  CSP header and an edge cache would replay it to every visitor
+  (narduk-libs#435). `setCacheProfile` refuses a cacheable profile on a page
+  render with the new `nonce-csp-html` suppression reason, and a new
+  `nonce-csp-cache` Nitro plugin pins `Cache-Control: private, no-store` on the
+  final `text/html` response and strips `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`, `Expires`
+  and `Age` however they got there. JSON API routes and Nuxt `_payload.json`
+  responses keep their profile and stay edge-cacheable. In development, a page
+  that asked for a cacheable profile logs one warning per path.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-core` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule) — no
+  generator behavior changes.
+
+- cf8e05e: `<AppMapKit>` no longer loads `mapkit.core.js` twice
+  (narduk-libs#469). The SSR preload's `useHead()` now runs during the server
+  render only. Through 2.1.2 it also ran on the client, where unhead's DOM
+  renderer had to recognise the server's `<script>` by hashing every attribute
+  on it. Under a nonce CSP (narduk-core `security.headers`) the browser hides
+  the tag's nonce as `nonce=""`, the hash never matched, and unhead appended a
+  second copy, which MapKit reports as `Mapkit namespace already exists`. On the
+  client, Apple's `@apple/mapkit-loader` is now the tag's only owner: it adopts
+  the server's tag on an SSR page load and injects the single tag on a
+  client-side navigation.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-mapkit` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule). The
+  generator's behavior does not change.
+
 ## 0.9.5
 
 ### Patch Changes
