@@ -51,6 +51,18 @@
 
 import { z } from 'zod'
 
+import {
+  appendVaryTokens,
+  applyNoStoreHeaders,
+  applyNoStoreToEvent,
+  applyNoStoreToWebResponse,
+  SHARED_CACHE_HEADER_NAMES,
+} from './shared-cache'
+
+import type { CacheAwareEvent } from './shared-cache'
+
+export { appendVaryTokens, SHARED_CACHE_HEADER_NAMES }
+
 /** The two unit systems the estate supports. */
 export type NeUnitSystem = 'imperial' | 'metric'
 
@@ -313,39 +325,8 @@ export function detectClientTimeZone(): string | undefined {
  */
 export const NE_PREFERENCES_INFLUENCED_CONTEXT_KEY = 'nardukPreferencesInfluenced'
 
-/** The minimal shape of an H3 event this module touches, so it imports no h3. */
-interface PreferenceAwareEvent {
-  context?: Record<string, unknown>
-}
-
-/**
- * Shared-cache headers a preference-shaped response must not leave in place.
- * Cloudflare honours `CDN-Cache-Control` / `Cloudflare-CDN-Cache-Control`
- * over `Cache-Control`, so rewriting only the latter still stores the body.
- */
-const SHARED_CACHE_HEADER_NAMES = [
-  'cache-control',
-  'cdn-cache-control',
-  'cloudflare-cdn-cache-control',
-  'surrogate-control',
-  'cache-tag',
-  'expires',
-  'age',
-] as const
-
-const SHARED_CACHE_HEADER_NAME_SET = new Set<string>(SHARED_CACHE_HEADER_NAMES)
-
 /** Header names a preference-shaped body varies on. */
 const PREFERENCE_VARY_TOKENS = ['Cookie', 'Accept-Language'] as const
-
-/** The Node response surface this module duck-types, so it imports no h3. */
-interface NodeResponseLike {
-  getHeaders?: () => Record<string, unknown>
-  headersSent?: boolean
-  removeHeader?: (name: string) => void
-  setHeader?: (name: string, value: number | string | readonly string[]) => void
-  writableEnded?: boolean
-}
 
 /**
  * Record that this response varies by preference cookie and Accept-Language.
@@ -360,7 +341,7 @@ interface NodeResponseLike {
  * response including API routes). Nothing downgrades a response that never
  * touched preferences, so an app's existing cache profiles are unaffected.
  */
-export function markPreferencesInfluenced(event: PreferenceAwareEvent | null | undefined): void {
+export function markPreferencesInfluenced(event: CacheAwareEvent | null | undefined): void {
   if (!event || typeof event !== 'object') return
   if (!event.context) return
   event.context[NE_PREFERENCES_INFLUENCED_CONTEXT_KEY] = true
@@ -368,31 +349,8 @@ export function markPreferencesInfluenced(event: PreferenceAwareEvent | null | u
 }
 
 /** Whether {@link markPreferencesInfluenced} ran for this event. */
-export function isPreferencesInfluenced(event: PreferenceAwareEvent | null | undefined): boolean {
+export function isPreferencesInfluenced(event: CacheAwareEvent | null | undefined): boolean {
   return event?.context?.[NE_PREFERENCES_INFLUENCED_CONTEXT_KEY] === true
-}
-
-/**
- * Append `tokens` onto an existing `Vary` value, case-insensitively and
- * without duplicating them. `*` is left alone: it already varies on everything.
- */
-export function appendVaryTokens(
-  existing: string | null | undefined,
-  tokens: readonly string[],
-): string {
-  const names = (existing ?? '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
-  if (names.includes('*')) return '*'
-  const seen = new Set(names.map((name) => name.toLowerCase()))
-  const out = [...names]
-  for (const token of tokens) {
-    if (seen.has(token.toLowerCase())) continue
-    seen.add(token.toLowerCase())
-    out.push(token)
-  }
-  return out.join(', ')
 }
 
 /**
@@ -411,42 +369,19 @@ export function varyWithPreferences(existing: string | null | undefined): string
   return appendVaryTokens(existing, PREFERENCE_VARY_TOKENS)
 }
 
-function headerValue(
-  value: string | number | Array<string | number> | undefined,
-): string | undefined {
-  if (value === undefined) return undefined
-  return Array.isArray(value) ? value.map(String).join(', ') : String(value)
-}
-
 /**
  * Rewrite a header map so a preference-shaped body cannot be stored in a
  * shared cache: `private, no-store`, no CDN/surrogate/tag headers, and
  * `Vary` includes Cookie and Accept-Language.
+ *
+ * A thin, preference-flavoured call onto {@link applyNoStoreHeaders} — see
+ * `./shared-cache` for the header-strip list this shares with the
+ * `error-cache` Nitro plugin (narduk-libs#429).
  */
 export function applyPreferencesCacheHeaders(
   headers: Record<string, string | number | Array<string | number> | undefined>,
 ): Record<string, string> {
-  const kept: Record<string, string> = {}
-  let vary: string | undefined
-
-  for (const [name, value] of Object.entries(headers)) {
-    const lowered = name.toLowerCase()
-    if (SHARED_CACHE_HEADER_NAME_SET.has(lowered)) continue
-    if (lowered === 'vary') {
-      const text = headerValue(value) ?? ''
-      vary = vary === undefined ? text : `${vary}, ${text}`
-      continue
-    }
-    const text = headerValue(value)
-    if (text !== undefined) kept[name] = text
-  }
-
-  return { ...kept, 'cache-control': 'private, no-store', vary: varyWithPreferences(vary) }
-}
-
-function nodeResponseOf(event: PreferenceAwareEvent): NodeResponseLike | undefined {
-  const node = (event as { node?: { res?: NodeResponseLike } }).node
-  return node?.res
+  return applyNoStoreHeaders(headers, PREFERENCE_VARY_TOKENS)
 }
 
 /**
@@ -459,40 +394,8 @@ function nodeResponseOf(event: PreferenceAwareEvent): NodeResponseLike | undefin
  * down. It is already too late to protect that response; the marker stays set
  * so `setCacheProfile` and the hooks still see it.
  */
-export function applyPreferencesCacheToEvent(event: PreferenceAwareEvent | null | undefined): void {
-  if (!event) return
-  const res = nodeResponseOf(event)
-  if (!res?.setHeader || !res.removeHeader) return
-  if (res.headersSent === true || res.writableEnded === true) return
-
-  const current = res.getHeaders?.() ?? {}
-  const flattened: Record<string, string> = {}
-  for (const [name, value] of Object.entries(current)) {
-    const text = headerValue(value as string | number | Array<string | number> | undefined)
-    if (text !== undefined) flattened[name] = text
-  }
-  const next = applyPreferencesCacheHeaders(flattened)
-  for (const name of SHARED_CACHE_HEADER_NAMES) {
-    res.removeHeader(name)
-  }
-  res.setHeader('Cache-Control', next['cache-control'] ?? 'private, no-store')
-  if (next.vary) res.setHeader('Vary', next.vary)
-}
-
-/** Statuses the Fetch spec forbids a body on, so a rebuilt response must pass `null`. */
-const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
-
-function isWebResponseLike(value: unknown): value is Response {
-  if (!value || typeof value !== 'object') return false
-  const headers = (value as { headers?: unknown }).headers
-  if (!headers || typeof headers !== 'object') return false
-  const candidate = headers as { delete?: unknown; get?: unknown; set?: unknown }
-  return (
-    typeof candidate.get === 'function' &&
-    typeof candidate.set === 'function' &&
-    typeof candidate.delete === 'function' &&
-    typeof (value as { status?: unknown }).status === 'number'
-  )
+export function applyPreferencesCacheToEvent(event: CacheAwareEvent | null | undefined): void {
+  applyNoStoreToEvent(event, PREFERENCE_VARY_TOKENS)
 }
 
 /**
@@ -503,28 +406,7 @@ function isWebResponseLike(value: unknown): value is Response {
  * this module does. Without this the documented shape — read preferences, then
  * `return new Response(body, { headers })` — ships `CDN-Cache-Control` intact
  * and Cloudflare stores one reader's units for the next one.
- *
- * Headers from a `fetch()` response are immutable, so an in-place edit that
- * throws falls back to rebuilding the response around the same body.
  */
 export function applyPreferencesCacheToWebResponse(response: unknown): Response | undefined {
-  if (!isWebResponseLike(response)) return undefined
-  const vary = varyWithPreferences(response.headers.get('vary'))
-
-  try {
-    for (const name of SHARED_CACHE_HEADER_NAMES) response.headers.delete(name)
-    response.headers.set('Cache-Control', 'private, no-store')
-    response.headers.set('Vary', vary)
-    return response
-  } catch {
-    const headers = new Headers(response.headers)
-    for (const name of SHARED_CACHE_HEADER_NAMES) headers.delete(name)
-    headers.set('Cache-Control', 'private, no-store')
-    headers.set('Vary', vary)
-    return new Response(NULL_BODY_STATUSES.has(response.status) ? null : response.body, {
-      headers,
-      status: response.status,
-      statusText: response.statusText,
-    })
-  }
+  return applyNoStoreToWebResponse(response, PREFERENCE_VARY_TOKENS)
 }
