@@ -459,3 +459,148 @@ describe('S4 -- --allow-degraded never excuses a broken database', () => {
     expect(assessHealth(degradedWithDatabase('ok'), { allowDegraded: false }).status).toBe('fail')
   })
 })
+
+/**
+ * narduk-libs#435: `setCacheProfile` edge headers are inert unless Workers
+ * Cache is on, so the live proof can be asked to show a real HIT on a
+ * `live`/`slow` route, and a real non-HIT on a route that must never be stored.
+ */
+describe('verify --live edge-cache proof', () => {
+  const API = '/api/stations'
+  const PAGE = '/'
+  const PUBLIC_HEADERS = {
+    'content-type': 'application/json',
+    'cache-control': 'public, max-age=60, stale-while-revalidate=900',
+    'cdn-cache-control': 'public, max-age=300, stale-while-revalidate=900',
+  }
+  const response = (headers: Record<string, string>): LiveResponse => ({
+    url: '',
+    status: 200,
+    headers,
+  })
+  const miss = response({ ...PUBLIC_HEADERS, 'cf-cache-status': 'MISS' })
+  const hit = response({ ...PUBLIC_HEADERS, 'cf-cache-status': 'HIT' })
+  const noStatus = response(PUBLIC_HEADERS)
+  const previewSafe = response({
+    'content-type': 'application/json',
+    'cache-control': 'private, no-store',
+  })
+  const bypass = response({
+    'content-type': 'text/html',
+    'cache-control': 'private, no-store',
+    'cf-cache-status': 'BYPASS',
+  })
+
+  function edgeFlags(extra: string[]): ReturnType<typeof parseVerifyArgs> {
+    return parseVerifyArgs([
+      '--live',
+      'https://buoystat.us',
+      '--no-health',
+      '--no-smoke',
+      '--attempts',
+      '1',
+      ...extra,
+    ])
+  }
+
+  it('parses repeatable --edge-cache-path and --edge-uncached-path', () => {
+    const parsed = edgeFlags([
+      '--edge-cache-path',
+      API,
+      '--edge-cache-path',
+      '/api/x',
+      '--edge-uncached-path',
+      PAGE,
+    ])
+    expect(parsed.edgeCachePaths).toEqual([API, '/api/x'])
+    expect(parsed.edgeUncachedPaths).toEqual([PAGE])
+    expect(parseVerifyArgs(['--live', 'https://a.test']).edgeCachePaths).toEqual([])
+  })
+
+  it('counts an edge-cache path as an assertion on its own', () => {
+    expect(() =>
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--no-health',
+        '--no-smoke',
+        '--edge-cache-path',
+        API,
+      ]),
+    ).not.toThrow()
+  })
+
+  it('passes when the second GET of a cacheable route is a HIT', async () => {
+    const { probe, requests } = scriptedProbe({ [API]: [miss, hit] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+      cacheBustToken: () => 'tok',
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.pass)
+    expect(report.assertions).toMatchObject([{ id: 'edge-cache', status: 'pass' }])
+    // Both GETs use the same fresh URL, so the first cannot already be warm.
+    expect(requests).toEqual([
+      'https://buoystat.us/api/stations?_nardukProof=tok',
+      'https://buoystat.us/api/stations?_nardukProof=tok',
+    ])
+  })
+
+  it('fails when the second GET is still a MISS', async () => {
+    const { probe } = scriptedProbe({ [API]: [miss, miss] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0]).toMatchObject({ id: 'edge-cache', status: 'fail' })
+  })
+
+  it('names Workers Cache when there is no Cf-Cache-Status at all', async () => {
+    const { probe } = scriptedProbe({ [API]: [noStatus, noStatus] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0].detail).toContain('"cache": { "enabled": true }')
+  })
+
+  it('reports "cannot prove a HIT here" on a private/no-store answer (preview-safe mode)', async () => {
+    const { probe } = scriptedProbe({ [API]: [previewSafe, previewSafe] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0]).toMatchObject({ id: 'edge-cache', status: 'unknown' })
+    expect(report.assertions[0].detail).toContain('cannot prove a HIT here')
+  })
+
+  it('passes an uncached route that never HITs, and fails one that does', async () => {
+    const good = scriptedProbe({ [PAGE]: [bypass, bypass] })
+    const passReport = await runVerifyLive(edgeFlags(['--edge-uncached-path', PAGE]), {
+      probe: good.probe,
+      sleep: noSleep,
+    })
+    expect(passReport.assertions).toMatchObject([{ id: 'edge-uncached', status: 'pass' }])
+
+    const bad = scriptedProbe({ [PAGE]: [miss, hit] })
+    const failReport = await runVerifyLive(edgeFlags(['--edge-uncached-path', PAGE]), {
+      probe: bad.probe,
+      sleep: noSleep,
+    })
+    expect(failReport.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(failReport.assertions[0]).toMatchObject({ id: 'edge-uncached', status: 'fail' })
+  })
+
+  it('reads the edge proof without the no-cache request headers', async () => {
+    const seen: Array<boolean | undefined> = []
+    const probe: LiveProbe = async (url, options) => {
+      seen.push(options?.noCache)
+      return { ...(seen.length === 1 ? miss : hit), url }
+    }
+    await runVerifyLive(edgeFlags(['--edge-cache-path', API]), { probe, sleep: noSleep })
+    expect(seen).toEqual([false, false])
+  })
+})

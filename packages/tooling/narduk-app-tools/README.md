@@ -374,6 +374,33 @@ Cloudflare's configuration matches what the repository declares (that is
 | 4    | `/api/health` not healthy                          |
 | 5    | smoke route wrong status or content type           |
 | 6    | a redirect left the origin under proof             |
+| 7    | an edge-cache assertion failed (see below)         |
+
+#### Edge cache proof (`--edge-cache-path`, `--edge-uncached-path`)
+
+`setCacheProfile` headers are inert until Workers Cache is on, and a repository
+read (12.7) cannot tell whether Cloudflare actually stores a route
+(narduk-libs#435). Both flags repeat, and each named route is fetched **twice**
+from the same URL, without the no-cache request headers the other assertions
+send, so the requests look like a visitor's. With the cache buster on (the
+default) that URL is new for each attempt, so the first GET cannot already be
+warm and a HIT on the second is this run's own store, not a previous release's.
+
+- `--edge-cache-path <p>` (a `live` / `slow` / `static` route): the second
+  response's `Cf-Cache-Status` must be `HIT` (or `STALE`, `UPDATING`,
+  `REVALIDATED`, which are stored responses too). No `Cf-Cache-Status` at all
+  means Workers Cache is not on. A `private` / `no-store` answer is `unknown`
+  ("cannot prove a HIT here"): that is what a preview-safe `*.workers.dev` or
+  preview hostname serves, so run the edge proof against the production
+  hostname.
+- `--edge-uncached-path <p>` (a `none` route, an SSR page on a nonce-CSP app, a
+  preference-shaped response, a route that 404s): neither response may come from
+  the cache.
+
+```sh
+narduk-app verify --live https://buoystat.us --no-health --no-smoke \
+  --edge-cache-path /api/stations --edge-uncached-path /
+```
 
 ## The deployment standard block
 
@@ -527,6 +554,19 @@ every environment scope -- **including by silence**, since Cloudflare defaults
 both to `true`. An app that records `workersDev: false` and never says so in
 wrangler ships a live `*.workers.dev` hostname it believes it does not have.
 Wrangler reads the config, not the declaration.
+
+**Workers Cache only on a core that keeps errors out of it.** Check 12.7
+(narduk-libs#435) looks for `"cache": { "enabled": true }` in every wrangler
+config and scope (JSON, JSONC, TOML `[cache]` / `[env.<name>.cache]`). With the
+switch off it is `not-applicable`: `setCacheProfile`'s edge headers are inert.
+With it on, the app's `@narduk-enterprises/narduk-core` must be at least
+**2.2.4**, the first release that pins thrown 4xx/5xx/429 (narduk-libs#429),
+preference-shaped responses (#427) and nonce-CSP SSR HTML (#435) to
+`private, no-store`. An older core is a `fail` **even in rollout mode and even
+without a `deployment` block** -- the failure is one visitor's response being
+replayed to others, not a missing declaration. A spec that names no version
+(`workspace:*`, a git URL) is `unknown`. 12.7 cannot see whether the running
+Worker actually HITs; `verify --live --edge-cache-path` does.
 
 **What a green verdict does not mean.** This is a repository read with no
 credential. It cannot see the deploy commands actually configured on the Workers

@@ -944,7 +944,11 @@ when you are debugging a response.
 
 Workers run _before_ the cache, so a response a Worker generates is not stored
 by the zone cache at all. These headers bind only once the app opts into Workers
-Cache in its Wrangler config (Wrangler >= 4.69.0):
+Cache in its Wrangler config (Wrangler >= 4.69.0). This is the narduk-app
+standard mechanism, verified against
+[Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/)
+on 2026-09-18 (narduk-libs#435); a zone Cache Rule is not used because the
+Worker-owned switch is versioned with the code and needs no dashboard state:
 
 ```jsonc
 {
@@ -953,13 +957,39 @@ Cache in its Wrangler config (Wrangler >= 4.69.0):
 ```
 
 Until an app adds that, `setCacheProfile` still produces a correct browser
-`Cache-Control` and the edge headers are inert. Adding it is a one-line change
-and the profiles are already correct when you do.
+`Cache-Control` and the edge headers are inert.
+
+**It is not a one-line change.** With the switch on, Cloudflare checks the cache
+_before_ invoking the Worker and stores what the Worker returns according to its
+headers — and a response with **no** `Cache-Control` (and no `Expires`) is still
+stored by RFC 9111 heuristic freshness: a 200 for 2 hours, a 404 for 3 minutes
+([Cache-Control semantics](https://developers.cloudflare.com/workers/cache/configuration/#cache-control-semantics)).
+Before turning it on, every route needs an explicit posture — a profile, or
+`setCacheProfile(event, 'none')` for anything per-user. The cache bypasses
+itself only for a response with `Set-Cookie`, or a request with `Authorization`
+unless the response says `public`.
+
+Preconditions, checked by `narduk-app foundation:check:deployment` sub-check
+12.7:
+
+- narduk-core **>= 2.2.4**: thrown 4xx/5xx/429 are `private, no-store`
+  (narduk-libs#429), preference-shaped responses are (#427), and SSR HTML under
+  a nonce CSP is (#435). An older core with the switch on fails 12.7.
+- The per-request header strip below (#412, #418) becomes load-bearing the same
+  day: a stored response would otherwise carry one caller's quota and
+  correlation id to everyone.
+
+Proving it: a HIT is `Cf-Cache-Status: HIT` on the second GET of a `live` /
+`slow` route.
+`narduk-app verify --live <production-url> --edge-cache-path /api/<route> --edge-uncached-path /`
+makes both requests and also proves a route that must never be stored does not
+HIT. A preview-safe hostname (`*.workers.dev`, a version preview) forces every
+profile to `none`, so a HIT can only be proven against the production hostname.
 
 By default Workers Cache partitions its cache by Worker version, so **a
 deployment already starts from a cold cache** — a release is visible immediately
 with nothing to purge. That default only changes if an app sets
-`cache.cross_version_cache: true`.
+`cache.cross_version_cache: true`, which narduk apps leave off.
 
 ### Cache-Tag
 
@@ -993,6 +1023,25 @@ and no `Cache-Tag`, when any of these hold:
 None of these are overridable by configuration. The returned
 `CacheProfileResult` carries `suppressedBy` so a caller or a test can see which
 guard fired rather than discovering a missing header later.
+
+### Per-request headers never ride on a shared-cacheable response
+
+A shared cache stores one caller's response and replays it to everyone. So when
+`setCacheProfile` emits a shared-cacheable profile (`live`, `slow`, `static`, or
+any inline profile that is not `private` / `noStore`) it removes the headers
+that describe that one caller (narduk-libs#412, #418):
+
+- the `RateLimit-*` quota — `RateLimit`, `RateLimit-Policy`, `RateLimit-Limit`,
+  `RateLimit-Remaining`, `RateLimit-Reset` — and `Retry-After`;
+- `x-request-id` and `Server-Timing`.
+
+`defineRateLimitedHandler` and the request logger write those before the handler
+picks its profile, so the default order is covered by `setCacheProfile` itself;
+a route no longer needs `headers: 'none'` to be safe. The `shared-cache-headers`
+Nitro plugin covers the reverse order — anything written _after_ the profile,
+including a returned web `Response` carrying its own `Cache-Control: public` —
+so the order of operations does not matter. `none`, `private` profiles, and
+error responses (a 429 keeps its `Retry-After` and quota) are never touched.
 
 ### Thrown errors are no-store by default
 

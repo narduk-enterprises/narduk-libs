@@ -66,6 +66,8 @@ import {
 } from '../../preview-config.js'
 import { check } from '../schema.js'
 import {
+  allDeps,
+  collectPackages,
   findWranglerConfig,
   findWranglerConfigs,
   isRecord,
@@ -309,6 +311,96 @@ export function declaredExposure(cloudflareApp: unknown): Partial<Record<Exposur
   return out
 }
 
+/* -------------------------------------------------------------------------- */
+/* Workers Cache (12.7, narduk-libs#435)                                        */
+/* -------------------------------------------------------------------------- */
+
+export const NARDUK_CORE_PACKAGE = '@narduk-enterprises/narduk-core'
+
+/**
+ * The first narduk-core that keeps every response Workers Cache must not store
+ * out of it: thrown 4xx/5xx/429 are `private, no-store` (#429, 2.2.3),
+ * preference-shaped responses are (#427/#386), and SSR HTML under a nonce CSP
+ * is (#435, 2.2.4). Below this, `"cache": { "enabled": true }` stores Nitro's
+ * `no-cache` error pages and replays one visitor's CSP nonce to everyone.
+ */
+export const EDGE_CACHE_MIN_NARDUK_CORE = '2.2.4'
+
+/** One scope of one wrangler config that turns Workers Cache on. */
+export interface EdgeCacheSwitch {
+  rel: string
+  scope: string
+}
+
+export function edgeCacheScopesFromJson(config: unknown): string[] {
+  const out: string[] = []
+  for (const [prefix, scope] of wranglerScopes(config)) {
+    const cache = scope.cache
+    if (isRecord(cache) && cache.enabled === true) {
+      out.push(prefix === '' ? '(top level)' : prefix)
+    }
+  }
+  return out
+}
+
+/** `[cache]` / `[env.<name>.cache]` tables with `enabled = true`. */
+export function edgeCacheScopesFromToml(text: string): string[] {
+  const out: string[] = []
+  let table = ''
+  for (const line of text.split(/\r?\n/u)) {
+    const header = /^\s*\[\[?([^\]]+)\]\]?\s*$/u.exec(line)
+    if (header) {
+      table = header[1].trim()
+      continue
+    }
+    if (!/^\s*enabled\s*=\s*true\b/u.test(line)) continue
+    if (table === 'cache') out.push('(top level)')
+    else if (/^env\.[^.]+\.cache$/u.test(table)) out.push(table.slice(0, -'.cache'.length))
+  }
+  return out
+}
+
+export function edgeCacheSwitches(repo: AppRepo, rels: readonly string[]): EdgeCacheSwitch[] {
+  const out: EdgeCacheSwitch[] = []
+  for (const rel of rels) {
+    const text = repo.read(rel)
+    if (text === null) continue
+    const scopes = rel.endsWith('.toml')
+      ? edgeCacheScopesFromToml(text)
+      : edgeCacheScopesFromJson(parseJson(text))
+    for (const scope of scopes) out.push({ rel, scope })
+  }
+  return out
+}
+
+/** Where narduk-core is declared, and with what spec. First package.json wins. */
+export function declaredNardukCore(repo: AppRepo): { rel: string; spec: string } | null {
+  for (const { rel, pkg } of collectPackages(repo)) {
+    const spec = allDeps(pkg)[NARDUK_CORE_PACKAGE]
+    if (spec) return { rel, spec }
+  }
+  return null
+}
+
+/**
+ * The lowest version a dependency spec can resolve to, or null when the spec
+ * does not name one (`workspace:*`, a git URL, a tag). Item 2.2 already holds
+ * estate packages to exact pins, so in practice this is the pin itself.
+ */
+export function specFloor(spec: string): [number, number, number] | null {
+  const match = /^\s*(?:[=^~]|>=)?v?(\d+)\.(\d+)\.(\d+)/u.exec(spec)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function atLeast(version: [number, number, number], minimum: string): boolean {
+  const floor = minimum.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if (version[index] !== floor[index]) return version[index] > floor[index]
+  }
+  return true
+}
+
 export interface DeploymentScan {
   configFile: typeof CLOUDFLARE_APP_FILE
   /** The app's own wrangler config -- the one everything descriptive names. */
@@ -337,6 +429,10 @@ export interface DeploymentScan {
   exposureFlags: DeclaredFlag[]
   /** `worker.workersDev` / `worker.previewUrls` from Config/cloudflare-app.json. */
   declaredExposure: Partial<Record<ExposureFlag, boolean>>
+  /** Every wrangler scope that sets `cache.enabled: true` (12.7). */
+  edgeCache: EdgeCacheSwitch[]
+  /** The app's narduk-core dependency, if it declares one (12.7). */
+  nardukCore: { rel: string; spec: string } | null
 }
 
 export interface PreviewScan {
@@ -423,6 +519,8 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     accountIds: sortedUnique(accounts.map((entry) => entry.accountId)),
     exposureFlags: declaredExposureFlags(repo, wranglerRel),
     declaredExposure: declaredExposure(cloudflareApp),
+    edgeCache: edgeCacheSwitches(repo, wranglerRels),
+    nardukCore: declaredNardukCore(repo),
   }
 }
 
@@ -922,6 +1020,77 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
   })
 }
 
+/**
+ * 12.7 -- Workers Cache is on only against a narduk-core that keeps
+ * uncacheable responses out of it (narduk-libs#435).
+ *
+ * Not gated on a valid `deployment` block, and not softened by rollout mode:
+ * like 12.4, the failure is live data crossing between visitors -- a stored
+ * `no-cache` error page, or one visitor's CSP nonce replayed to everyone --
+ * not a missing declaration. What it cannot see: whether the running Worker
+ * actually HITs. That is `narduk-app verify --live --edge-cache-path`.
+ */
+function evaluate127(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'Workers Cache enabled only on a narduk-core with the no-store guards'
+  if (scan.edgeCache.length === 0) {
+    return check(
+      '12.7',
+      name,
+      STATUS_NA,
+      'no wrangler config sets "cache": { "enabled": true }, so Cloudflare runs the Worker on ' +
+        'every request and setCacheProfile edge headers (CDN-Cache-Control, Cache-Tag) are inert',
+      scan.wranglerRel ?? undefined,
+    )
+  }
+  const where = scan.edgeCache.map((entry) => `${entry.rel} ${entry.scope}`).join(', ')
+  const core = scan.nardukCore
+  if (!core) {
+    return check(
+      '12.7',
+      name,
+      STATUS_UNKNOWN,
+      `Workers Cache is on (${where}) but no package.json declares ${NARDUK_CORE_PACKAGE}, so ` +
+        `nothing proves thrown errors and nonce-CSP HTML ship private, no-store`,
+      scan.edgeCache[0].rel,
+    )
+  }
+  const floor = specFloor(core.spec)
+  if (!floor) {
+    return check(
+      '12.7',
+      name,
+      STATUS_UNKNOWN,
+      `Workers Cache is on (${where}) and ${core.rel} declares ${NARDUK_CORE_PACKAGE} as ` +
+        `${JSON.stringify(core.spec)}, which names no version to compare with ` +
+        `${EDGE_CACHE_MIN_NARDUK_CORE}`,
+      core.rel,
+    )
+  }
+  if (!atLeast(floor, EDGE_CACHE_MIN_NARDUK_CORE)) {
+    return check(
+      '12.7',
+      name,
+      STATUS_FAIL,
+      `Workers Cache is on (${where}) but ${core.rel} resolves ${NARDUK_CORE_PACKAGE} ` +
+        `${core.spec}, older than ${EDGE_CACHE_MIN_NARDUK_CORE}. That core lets Cloudflare store ` +
+        `thrown 4xx/5xx/429 (Nitro's no-cache, narduk-libs#429) and nonce-CSP SSR HTML ` +
+        `(narduk-libs#435). Upgrade narduk-core or turn the cache block off.`,
+      core.rel,
+    )
+  }
+  return check(
+    '12.7',
+    name,
+    STATUS_PASS,
+    `Workers Cache is on (${where}) with ${NARDUK_CORE_PACKAGE} ${core.spec} >= ` +
+      `${EDGE_CACHE_MIN_NARDUK_CORE}. A route that sets no Cache-Control at all is still stored ` +
+      `(a 200 for 2 hours, by Cloudflare's heuristic), so every route needs a profile. This is ` +
+      `a repository read: prove a real HIT with ` +
+      `narduk-app verify --live <production-url> --edge-cache-path <live-route>`,
+    scan.edgeCache[0].rel,
+  )
+}
+
 export function evaluateItem12(scan: DeploymentScan, strict = false): FoundationSubCheck[] {
   return [
     evaluate120(scan, strict),
@@ -931,5 +1100,6 @@ export function evaluateItem12(scan: DeploymentScan, strict = false): Foundation
     evaluate124(scan),
     evaluate125(scan),
     evaluate126(scan),
+    evaluate127(scan),
   ]
 }
