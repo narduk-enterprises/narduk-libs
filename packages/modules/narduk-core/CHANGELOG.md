@@ -1,5 +1,38 @@
 # @narduk-enterprises/narduk-core
 
+## 2.5.0
+
+### Minor Changes
+
+- 8d35cb8: `useDatabase(event)` and `createAppDatabase` accessors now count D1
+  round trips on narduk-logging's request counter (narduk-libs#511): one per
+  `first` / `all` / `run` / `raw` on a prepared statement, and one carrying
+  every statement for a `batch`. The counts reach `Server-Timing` and the
+  "Request completed" record. Counting never fails a query.
+- 8d35cb8: A response that leaves the app with no cache posture now ships
+  `Cache-Control: private` (narduk-libs#435, step 1). SSR pages, API JSON, and a
+  returned `Response` without its own header all get it. Any explicit posture
+  wins unchanged: `Cache-Control`, `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control` or `Expires` from
+  `setCacheProfile`, `setResponseHeader`, route rules, cached handlers, or the
+  returned `Response`. Build assets under `app.buildAssetsDir` are left alone,
+  and thrown errors stay `private, no-store`. A route that relied on having no
+  `Cache-Control` to be stored by a shared cache must now say so with
+  `setCacheProfile`.
+
+### Patch Changes
+
+- 8d35cb8: The `./app/error-page` export now has a `types` condition
+  (narduk-libs#521). The page is typed as a component taking `error: NuxtError`,
+  so an app importing it into its own `app/error.vue` no longer needs
+  `@ts-expect-error`.
+- 92835a1: Fixes for the new error-severity lint rules. `LayerAppFooter`
+  (narduk-core, narduk-seo) no longer reads `new Date()` during render for the
+  copyright year; it reads one SSR-hydrated timestamp (`useSsrNow` in
+  narduk-core, `useState` in narduk-seo), so server and client agree.
+  `GET /api/auth/api-keys` (narduk-auth) is ordered newest first in SQL and
+  limited to 100 keys, since nothing caps how many keys a user may create.
+
 ## 2.4.0
 
 ### Minor Changes
