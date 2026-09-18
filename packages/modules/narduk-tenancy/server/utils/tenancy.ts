@@ -1,6 +1,6 @@
-import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 
-import { narrowerRole, roleRank, type TenancyRole } from '../../shared/utils/roles'
+import { narrowerRole, roleAtLeast, roleRank, type TenancyRole } from '../../shared/utils/roles'
 import {
   tenancyAuditEvents,
   tenancyInvites,
@@ -106,6 +106,58 @@ function defaultTokenGenerator(): string {
   return toHex(globalThis.crypto.getRandomValues(new Uint8Array(32)))
 }
 
+/** An identified caller, with the org role the rank rule judges them by. */
+interface TenancyActor {
+  role: TenancyRole
+  userId: string
+}
+
+/**
+ * The rank rule (narduk-libs#213). An identified actor may grant a role, or
+ * act on a member who holds one, only at or below their own org role. Nothing
+ * outranks an owner, so only an owner can make, demote, remove or narrow an
+ * owner, and nobody can raise their own role.
+ *
+ * It is a floor, not a hierarchy. Whether an admin may manage another admin is
+ * the consumer's policy, and consumers answer it differently, so a route that
+ * wants "strictly below" says so itself. What no consumer may allow, a missing
+ * route check included, is a change above the actor's own standing.
+ *
+ * A system call names no actor, so there is nothing to rank.
+ */
+function requireRank(actor: TenancyActor | undefined, role: TenancyRole): void {
+  if (!actor || roleAtLeast(actor.role, role)) return
+  throw new TenancyError(
+    'forbidden',
+    `User ${actor.userId} (${actor.role}) may not grant, or act on a member who holds, ${role}.`,
+  )
+}
+
+/**
+ * The rank check's inputs, asserted again inside the membership write, the
+ * same way the last-owner rule is: the member still holds the role the check
+ * read, and an identified actor still holds theirs. Otherwise a promotion or
+ * demotion landing between the check and the write would let an out-of-rank
+ * change through, such as an admin demoting somebody who had just been made an
+ * owner.
+ */
+function stillInRank(
+  membership: TenancyMembership,
+  actor: TenancyActor | undefined,
+): SQL | undefined {
+  return and(
+    eq(tenancyMemberships.role, membership.role),
+    actor
+      ? sql`EXISTS (
+          SELECT 1 FROM tenancy_memberships AS acting
+          WHERE acting.org_id = ${membership.orgId}
+            AND acting.user_id = ${actor.userId}
+            AND acting.role = ${actor.role}
+        )`
+      : undefined,
+  )
+}
+
 export interface CreateOrgInput {
   createdByUserId: string
   name: string
@@ -113,6 +165,12 @@ export interface CreateOrgInput {
 }
 
 export interface MemberInput {
+  /**
+   * The caller. When present, the change is ranked against their org role
+   * (narduk-libs#213) and refused `forbidden` if it reaches above it, or if
+   * they are not a member at all. Omit it only for a system call, such as
+   * seeding or platform tooling, which is never ranked.
+   */
   actorUserId?: string | null
   orgId: string
   userId: string
@@ -141,6 +199,7 @@ export interface CreateInviteInput {
   email: string
   /** Absolute millisecond epoch expiry. Takes precedence over `ttlMs`. */
   expiresAt?: number
+  /** Always ranked: an inviter may invite at or below their own org role. */
   invitedByUserId: string
   orgId: string
   resource?: TenancyResourceRef
@@ -282,6 +341,55 @@ export function createTenancy(
     return membership
   }
 
+  /**
+   * An identified actor and their org role. The rank rule judges an actor by
+   * their standing in the org, never by a role a resource override narrowed,
+   * so somebody who is not a member holds no rank at all. They are refused
+   * before anything about the org's members is read, so the answer tells a
+   * stranger nothing about who belongs to it.
+   */
+  async function requireActor(orgId: string, userId: string): Promise<TenancyActor> {
+    const membership = await findMembership(orgId, userId)
+    if (!membership) {
+      throw new TenancyError('forbidden', `User ${userId} is not a member of org ${orgId}.`)
+    }
+    return { userId, role: membership.role }
+  }
+
+  /** As `requireActor`, but a system call that names no actor gets `undefined`. */
+  async function optionalActor(
+    orgId: string,
+    actorUserId: string | null | undefined,
+  ): Promise<TenancyActor | undefined> {
+    if (actorUserId === undefined || actorUserId === null) return undefined
+    return requireActor(orgId, actorUserId)
+  }
+
+  /**
+   * Why a membership write guarded by `stillInRank` matched no row. The
+   * member left (`not_found`). A role the rank check read moved before the
+   * write (`conflict`), so the caller retries and the check runs against the
+   * new state. Or the write would have left the org without an owner.
+   */
+  async function membershipWriteRefusal(
+    membership: TenancyMembership,
+    actor: TenancyActor | undefined,
+  ): Promise<TenancyError> {
+    const { orgId, userId } = membership
+    const current = await findMembership(orgId, userId)
+    if (!current) {
+      return new TenancyError('not_found', `User ${userId} is not a member of org ${orgId}.`)
+    }
+    const acting = actor ? await findMembership(orgId, actor.userId) : undefined
+    if (current.role !== membership.role || (actor && acting?.role !== actor.role)) {
+      return new TenancyError(
+        'conflict',
+        `A role in org ${orgId} changed while this change was being made.`,
+      )
+    }
+    return new TenancyError('last_owner', `Org ${orgId} must keep at least one owner.`)
+  }
+
   async function insertMembership(input: AddMemberInput): Promise<TenancyMembership> {
     const timestamp = now()
     const membership: TenancyMembership = {
@@ -307,7 +415,7 @@ export function createTenancy(
   async function updateMembershipRole(
     membership: TenancyMembership,
     role: TenancyRole,
-    actorUserId?: string | null,
+    actor: TenancyActor | undefined,
   ): Promise<TenancyMembership> {
     const updated = first(
       await db
@@ -316,19 +424,17 @@ export function createTenancy(
         .where(
           and(
             eq(tenancyMemberships.id, membership.id),
+            stillInRank(membership, actor),
             role === 'owner' ? undefined : preservesAnOwner(membership.orgId, membership.userId),
           ),
         )
         .returning()
         .all(),
     )
-    if (!updated) {
-      await requireMembership(membership.orgId, membership.userId)
-      throw new TenancyError('last_owner', `Org ${membership.orgId} must keep at least one owner.`)
-    }
+    if (!updated) throw await membershipWriteRefusal(membership, actor)
     await audit({
       orgId: membership.orgId,
-      actorUserId,
+      actorUserId: actor?.userId,
       action: 'membership.change',
       subjectKind: 'membership',
       subjectId: membership.id,
@@ -575,6 +681,7 @@ export function createTenancy(
     },
 
     async addMember(input) {
+      requireRank(await optionalActor(input.orgId, input.actorUserId), input.role)
       await requireOrg(input.orgId)
       const existing = await findMembership(input.orgId, input.userId)
       if (existing) {
@@ -587,13 +694,21 @@ export function createTenancy(
     },
 
     async setMemberRole(input) {
+      const actor = await optionalActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
+      // The member as they stand and the role they would get, both in rank:
+      // otherwise an admin could demote an owner, or make one. Checked before
+      // the no-op, so an out-of-rank caller learns nothing from the answer.
+      requireRank(actor, membership.role)
+      requireRank(actor, input.role)
       if (membership.role === input.role) return membership
-      return updateMembershipRole(membership, input.role, input.actorUserId)
+      return updateMembershipRole(membership, input.role, actor)
     },
 
     async removeMember(input) {
+      const actor = await optionalActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
+      requireRank(actor, membership.role)
 
       // A membership is the only thing an override can narrow, so the two are
       // removed together rather than leaving orphan override rows behind.
@@ -613,16 +728,14 @@ export function createTenancy(
           .where(
             and(
               eq(tenancyMemberships.id, membership.id),
+              stillInRank(membership, actor),
               preservesAnOwner(input.orgId, input.userId),
             ),
           )
           .returning()
           .all(),
       )
-      if (!removed) {
-        await requireMembership(input.orgId, input.userId)
-        throw new TenancyError('last_owner', `Org ${input.orgId} must keep at least one owner.`)
-      }
+      if (!removed) throw await membershipWriteRefusal(membership, actor)
       await db
         .delete(tenancyResourceRoleOverrides)
         .where(
@@ -647,17 +760,30 @@ export function createTenancy(
     },
 
     async setResourceRoleOverride(input) {
+      const actor = await optionalActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
+      // Narrowing cannot raise anybody, but it reduces whoever it names, and
+      // an admin reducing an owner on a resource is the same trespass as
+      // demoting them. The override itself is capped by the member's org role.
+      requireRank(actor, membership.role)
       return upsertOverride(input, membership)
     },
 
     async clearResourceRoleOverride(input) {
+      const actor = await optionalActor(input.orgId, input.actorUserId)
       const override = await findOverride(input.orgId, input.userId, input.resource)
       if (!override) {
         throw new TenancyError(
           'not_found',
           `No override for ${input.resource.kind}:${input.resource.id} and user ${input.userId}.`,
         )
+      }
+      if (actor) {
+        // Lifting a narrowing hands the member their org role back on the
+        // resource, so it answers to the same rank as narrowing them did. An
+        // override whose membership is gone grants nothing and ranks nothing.
+        const membership = await findMembership(input.orgId, input.userId)
+        if (membership) requireRank(actor, membership.role)
       }
       await db
         .delete(tenancyResourceRoleOverrides)
@@ -698,6 +824,9 @@ export function createTenancy(
     },
 
     async createInvite(input) {
+      const invitedByUserId = requireText(input.invitedByUserId, 'invitedByUserId')
+      // Accepting grants the invite's role, so issuing it is granting it.
+      requireRank(await requireActor(input.orgId, invitedByUserId), input.role)
       await requireOrg(input.orgId)
       const email = requireText(input.email, 'email').toLowerCase()
       if (!isEmailAddress(email)) {
@@ -718,7 +847,7 @@ export function createTenancy(
         resourceKind: input.resource?.kind ?? null,
         resourceId: input.resource?.id ?? null,
         tokenHash: await sha256Hex(token),
-        invitedByUserId: requireText(input.invitedByUserId, 'invitedByUserId'),
+        invitedByUserId,
         expiresAt,
         acceptedAt: null,
         acceptedByUserId: null,
