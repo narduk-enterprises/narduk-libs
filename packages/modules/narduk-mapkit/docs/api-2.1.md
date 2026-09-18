@@ -96,17 +96,17 @@ Module ID `@narduk-enterprises/narduk-mapkit/nuxt`, `configKey: 'nardukMapKit'`,
 arrives **transitively as a runtime dependency of the loader** (S1 §3) — it is
 not a devDependency choice and cannot drift from the loader.
 
-| Option            | Type                                       | Default                              | Notes                                                                |
-| ----------------- | ------------------------------------------ | ------------------------------------ | -------------------------------------------------------------------- |
-| `component`       | `boolean`                                  | `true`                               | registers `AppMapKit`                                                |
-| `composables`     | `boolean`                                  | `true`                               | registers `useMapKit`                                                |
-| `tokenRoute`      | `boolean`                                  | `true`                               | registers the token route                                            |
-| `tokenRoutePath`  | `string`                                   | `'/api/mapkit-token'`                | must start with `/`; same-host only                                  |
-| `libraries`       | `MapKitLibrary[]`                          | `['map', 'annotations', 'overlays']` | app-wide default for the required `libraries` prop                   |
-| `language`        | `string \| undefined`                      | `undefined`                          | passed to `load()`                                                   |
-| `ssrPreload`      | `boolean`                                  | `true`                               | emit `renderHTMLAttributes()` during SSR, **without** a token (§d.4) |
-| `tokenTtlSeconds` | `number`                                   | `1800`                               | clamped to `[60, 1800]`                                              |
-| `rateLimit`       | `{ limit: number; windowSeconds: number }` | `{ limit: 30, windowSeconds: 60 }`   | via narduk-core's rate-limited handler                               |
+| Option            | Type                                       | Default                               | Notes                                                                |
+| ----------------- | ------------------------------------------ | ------------------------------------- | -------------------------------------------------------------------- |
+| `component`       | `boolean`                                  | `true`                                | registers `AppMapKit`                                                |
+| `composables`     | `boolean`                                  | `true`                                | registers `useMapKit`                                                |
+| `tokenRoute`      | `boolean`                                  | `true`                                | registers the token route                                            |
+| `tokenRoutePath`  | `string`                                   | `'/api/mapkit-token'`                 | must start with `/`; same-host only                                  |
+| `libraries`       | `MapKitLibrary[]`                          | `['map', 'annotations', 'overlays']`  | app-wide default for the required `libraries` prop                   |
+| `language`        | `string \| undefined`                      | `undefined`                           | passed to `load()`                                                   |
+| `ssrPreload`      | `boolean`                                  | `true`                                | emit `renderHTMLAttributes()` during SSR, **without** a token (§d.4) |
+| `tokenTtlSeconds` | `number`                                   | `1800`                                | clamped to `[60, 1800]`                                              |
+| `rateLimit`       | `{ limit: number; windowSeconds: number }` | unset: **no limit** (narduk-libs#485) | opt-in fixed-window ceiling per routed origin                        |
 
 `ModuleOptions` carries no token, key, or origin-list value — nothing secret is
 ever a module option.
@@ -446,8 +446,10 @@ today.
 
 ### e.4 Rate limit, cache, logging
 
-- narduk-core's rate-limited handler, per client IP, default **30 requests / 60
-  s**, overridable through narduk-core route policies.
+- **No rate limit by default** (narduk-libs#485, superseding the 30 requests /
+  60 s default #436 shipped). An app opts in with the module's `rateLimit`
+  option or by mounting its own limiter on
+  `event.context.nardukMapKit.rateLimit`, which wins.
 - In-isolate signed-token cache keyed by `self`, reused until 5 minutes before
   expiry, **capped at 32 entries** (today the key is caller-supplied, so the
   cache is unbounded).

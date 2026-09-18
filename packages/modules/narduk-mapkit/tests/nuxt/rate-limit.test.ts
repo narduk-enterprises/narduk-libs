@@ -1,10 +1,10 @@
 /**
- * The token route's default ceiling (§e.4).
+ * The token route's opt-in ceiling (§e.4).
  *
- * The 2.0.x `rateLimit` seam had zero consumers because it required the app to
- * build the limiter itself, which left a JWT-signing route unlimited by default.
- * An app that mounts narduk-core's limiter still wins; this only means the
- * unconfigured case is not the unlimited case.
+ * The Nuxt route applies this limiter only when the app sets the module's
+ * `rateLimit` option (narduk-libs#485); the route-level default and opt-in are
+ * pinned in tests/nuxt/token-route.test.ts. This file pins the limiter's own
+ * arithmetic.
  */
 import { describe, expect, it } from 'vitest'
 

@@ -7,10 +7,10 @@
  * the whole configuration, so the route's origin claim is the library's
  * correctness, not the app's.
  */
-import { createApp, toNodeListener } from 'h3'
+import { createApp, defineEventHandler, toNodeListener } from 'h3'
 import { connect } from 'node:net'
 import { createServer } from 'node:http'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { clearMapKitTokenCacheForTests } from '../../src/server/index.js'
 import { decodeJwt } from '../../src/token/index.js'
@@ -18,6 +18,7 @@ import { createTestPrivateKeyPem } from '../test-keys.js'
 
 import { resetNuxtImportsStub, setTestRuntimeConfig } from './nuxt-imports.js'
 
+import type { MapKitRateLimitHook } from '../../src/server/handler.js'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 
@@ -36,9 +37,7 @@ beforeAll(async () => {
     appleKeyId: 'KEY1234567',
     applePrivateKey: privateKey,
     appleTeamId: 'TEAM123456',
-    // A high ceiling: the limiter's own arithmetic is pinned in
-    // tests/nuxt/rate-limit.test.ts, and it is process-wide per instance.
-    nardukMapKit: { rateLimit: { limit: 1000, windowSeconds: 60 } },
+    // No `nardukMapKit` block: the route's default is no rate limit at all.
     public: {},
   })
 
@@ -246,41 +245,108 @@ describe('the module-registered token route (§e)', () => {
   })
 })
 
-describe('the route ceiling', () => {
-  it('refuses with 429 and a retry-after once the configured limit is spent', async () => {
-    // The fallback limiter is memoized per server instance, so a test that
-    // lowers the ceiling has to drop the one the tests above already built.
-    const { default: handler, resetMapKitRateLimitForTests } =
-      await import('../../src/nuxt/runtime/server/mapkit-token.get.js')
+/**
+ * Serve the route alone under `nardukMapKit` runtime config, optionally behind a
+ * middleware that mounts an app-owned limiter on the event context.
+ */
+async function withRoute(
+  nardukMapKit: Record<string, unknown> | undefined,
+  run: (url: string) => Promise<void>,
+  mounted?: MapKitRateLimitHook,
+): Promise<void> {
+  // The fallback limiter is memoized per server instance, so a test that
+  // changes the ceiling has to drop the one the tests above already built.
+  const { default: handler, resetMapKitRateLimitForTests } =
+    await import('../../src/nuxt/runtime/server/mapkit-token.get.js')
+  resetMapKitRateLimitForTests()
+  setTestRuntimeConfig({
+    appleKeyId: 'KEY1234567',
+    applePrivateKey: await createTestPrivateKeyPem(),
+    appleTeamId: 'TEAM123456',
+    ...(nardukMapKit === undefined ? {} : { nardukMapKit }),
+    public: {},
+  })
+
+  const app = createApp()
+  if (mounted) {
+    app.use(
+      defineEventHandler((event) => {
+        ;(event.context as { nardukMapKit?: unknown }).nardukMapKit = { rateLimit: mounted }
+      }),
+    )
+  }
+  app.use('/api/mapkit-token', handler)
+  const only = createServer(toNodeListener(app))
+  await new Promise<void>((resolve) => {
+    only.listen(0, '127.0.0.1', resolve)
+  })
+  try {
+    await run(`http://127.0.0.1:${String((only.address() as AddressInfo).port)}/api/mapkit-token`)
+  } finally {
     resetMapKitRateLimitForTests()
-    setTestRuntimeConfig({
-      appleKeyId: 'KEY1234567',
-      applePrivateKey: await createTestPrivateKeyPem(),
-      appleTeamId: 'TEAM123456',
-      nardukMapKit: { rateLimit: { limit: 1, windowSeconds: 60 } },
-      public: {},
-    })
-
-    const app = createApp()
-    app.use('/api/mapkit-token', handler)
-    const limited = createServer(toNodeListener(app))
     await new Promise<void>((resolve) => {
-      limited.listen(0, '127.0.0.1', resolve)
+      only.close(() => {
+        resolve()
+      })
     })
-    const url = `http://127.0.0.1:${String((limited.address() as AddressInfo).port)}/api/mapkit-token`
+  }
+}
 
-    try {
+async function statuses(url: string, count: number): Promise<number[]> {
+  const seen: number[] = []
+  for (let index = 0; index < count; index += 1) {
+    seen.push((await fetch(url, { headers: SAME_ORIGIN })).status)
+  }
+  return seen
+}
+
+describe('the route ceiling (opt-in, narduk-libs#485)', () => {
+  it('applies no limit at all when the app sets no rateLimit', async () => {
+    // Past the old 30 / 60 s default: an unconfigured route must never 429.
+    await withRoute(undefined, async (url) => {
+      expect(new Set(await statuses(url, 40))).toStrictEqual(new Set([200]))
+    })
+  })
+
+  it('applies no limit when the module published an empty nardukMapKit block', async () => {
+    // What the module now writes when `rateLimit` is omitted.
+    await withRoute({}, async (url) => {
+      expect(new Set(await statuses(url, 40))).toStrictEqual(new Set([200]))
+    })
+  })
+
+  it('refuses with 429 and a retry-after once an opted-in limit is spent', async () => {
+    await withRoute({ rateLimit: { limit: 1, windowSeconds: 60 } }, async (url) => {
       expect((await fetch(url, { headers: SAME_ORIGIN })).status).toBe(200)
       const second = await fetch(url, { headers: SAME_ORIGIN })
       expect(second.status).toBe(429)
       expect(Number(second.headers.get('retry-after'))).toBeGreaterThan(0)
-    } finally {
-      resetMapKitRateLimitForTests()
-      await new Promise<void>((resolve) => {
-        limited.close(() => {
-          resolve()
-        })
-      })
-    }
+    })
+  })
+
+  it('still honours a limiter the app mounts on event.context with no rateLimit set', async () => {
+    const mounted = vi.fn<MapKitRateLimitHook>(() => ({ allowed: false, retryAfterSeconds: 7 }))
+    await withRoute(
+      undefined,
+      async (url) => {
+        const refused = await fetch(url, { headers: SAME_ORIGIN })
+        expect(refused.status).toBe(429)
+        expect(refused.headers.get('retry-after')).toBe('7')
+      },
+      mounted,
+    )
+    expect(mounted).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets a mounted limiter win over an opted-in rateLimit', async () => {
+    const mounted = vi.fn<MapKitRateLimitHook>(() => true)
+    await withRoute(
+      { rateLimit: { limit: 1, windowSeconds: 60 } },
+      async (url) => {
+        expect(await statuses(url, 3)).toStrictEqual([200, 200, 200])
+      },
+      mounted,
+    )
+    expect(mounted).toHaveBeenCalledTimes(3)
   })
 })
