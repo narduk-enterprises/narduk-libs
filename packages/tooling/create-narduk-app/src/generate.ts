@@ -5,6 +5,7 @@ import {
   createCiRegistryAuthScript,
   createCiWorkflow,
   createCopilotSetupWorkflow,
+  createGhPackagesRunScript,
 } from './ci-workflow.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
@@ -418,6 +419,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '.env',
         '.env.*',
         '!.env.example',
+        // Wrangler local secrets. `.dev.vars` matches any directory; the
+        // `**/` form and `.dev.vars.*` cover nested copies and suffixed
+        // variants the same way `.env.*` does. `!.dev.vars.example` keeps a
+        // committed template commitable, matching `!.env.example`.
+        '.dev.vars',
+        '**/.dev.vars',
+        '.dev.vars.*',
+        '!.dev.vars.example',
       ),
     },
     {
@@ -544,6 +553,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '        patterns:',
         "          - '*'",
       ),
+    },
+    {
+      // Pre-install GitHub Packages auth for Workers Builds (`cf:build`)
+      // and any other caller that must run before `narduk-app` is on PATH.
+      // Private CI still uses `scripts/package-registry-auth.mjs` below.
+      path: 'scripts/gh-packages-run.mjs',
+      contents: createGhPackagesRunScript(),
     },
     ...(visibility === 'private'
       ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
@@ -785,8 +801,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           '`                                             |',
         '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
         '| Build secret                  | `GH_PACKAGES_READ` (read-only private package access) |',
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)      |',
+        '| `NUXT_SESSION_PASSWORD`       | Build variable (Worker secrets are runtime-only)      |',
         '',
-        "The build command authenticates before installing the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
+        "The build command runs `scripts/gh-packages-run.mjs` to write a process-scoped GitHub Packages userconfig from `GH_PACKAGES_READ`, installs the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
+        '',
+        'Worker secrets are injected at runtime only and are not visible to `nuxt build`. Apps that enable runtime OG image generation (the `seo` capability default) must set `NUXT_OG_IMAGE_SECRET` as a Workers Builds _Build variable_ or the build throws. Set `NUXT_SESSION_PASSWORD` the same way. CI uses committed test-only placeholders; production must use the real Vault-issued values, never those placeholders.',
         '',
         'Both deploy commands are the same command on purpose. `cf:deploy:preview` runs `narduk-app deploy versions-upload`, which uploads a version and changes no traffic; the name is historical. Setting the _production_ deploy command to anything that deploys would put a `main` push straight into production and defeat the standard. The separate `cf:deploy` script stays for authorized recovery only.',
         '',

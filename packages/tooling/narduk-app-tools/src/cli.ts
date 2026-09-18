@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs'
 
+import { parseGhPackagesRunArgs, runGhPackagesCommand } from './gh-packages-run.js'
 import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
@@ -79,6 +80,8 @@ function usage(): string {
     '                                       refuses to build when the artifact is missing.',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  registry-auth                       Write scoped GitHub Packages auth',
+    '  gh-packages-run -- <command...>     Run a command with process-scoped',
+    '                                       GitHub Packages auth (temp userconfig)',
     '  doctor                              Check app-local prerequisites',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
@@ -205,6 +208,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (command === 'registry-auth') {
       console.log(`[registry-auth] configured ${configureRegistryAuth()}`)
       return 0
+    }
+    if (command === 'gh-packages-run') {
+      return runGhPackagesCommand(parseGhPackagesRunArgs(rest))
     }
     if (command === 'doctor') {
       const json = rest.includes('--json')

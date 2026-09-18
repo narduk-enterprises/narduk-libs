@@ -1,3 +1,7 @@
+import {
+  CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+  CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
+} from './ci-test-env.js'
 import { NODE_SOURCE_FILE } from './ownership.js'
 
 import type { AppVisibility } from './types.js'
@@ -81,6 +85,67 @@ export function createCiRegistryAuthScript(): string {
     '  mode: 0o600,',
     "  flag: 'wx',",
     '})',
+    '',
+  ].join('\n')
+}
+
+// Standalone pre-install bootstrap. Workers Builds runs `pnpm run cf:build`
+// with SKIP_DEPENDENCY_INSTALL=1, so `narduk-app` is not on PATH yet. This
+// file is a committed copy of `narduk-app gh-packages-run`: temp userconfig
+// with wx / umask 077, never a tracked file, then the caller's command.
+export function createGhPackagesRunScript(): string {
+  return [
+    "import { spawnSync } from 'node:child_process'",
+    "import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'",
+    "import { tmpdir } from 'node:os'",
+    "import { join } from 'node:path'",
+    '',
+    '// Process-scoped GitHub Packages auth for pre-install callers.',
+    '// Mirrors `narduk-app gh-packages-run`: temp userconfig (wx, mode 0600,',
+    '// umask 077), never a tracked file. narduk-app is not on PATH until after',
+    '// the frozen install this script is asked to run.',
+    '',
+    'const token = process.env.GH_PACKAGES_READ?.trim()',
+    'if (!token || /[\\r\\n]/u.test(token)) {',
+    "  throw new Error('Missing or invalid GH_PACKAGES_READ')",
+    '}',
+    '',
+    'const argv = process.argv.slice(2)',
+    "const command = argv[0] === '--' ? argv.slice(1) : argv",
+    'if (command.length === 0) {',
+    "  throw new Error('Usage: node scripts/gh-packages-run.mjs -- <command...>')",
+    '}',
+    '',
+    'const existingUserconfig = process.env.NPM_CONFIG_USERCONFIG?.trim()',
+    'if (existingUserconfig) {',
+    "  const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit' })",
+    '  if (result.error) throw result.error',
+    '  process.exit(result.status ?? 1)',
+    '}',
+    '',
+    'const previousUmask = process.umask(0o077)',
+    'const tempRoot = process.env.RUNNER_TEMP?.trim() || tmpdir()',
+    "const directory = mkdtempSync(join(tempRoot, 'npmrc-auth.'))",
+    "const authFile = join(directory, 'userconfig')",
+    'try {',
+    "  writeFileSync(authFile, '//npm.pkg.github.com/:_authToken=${GH_PACKAGES_READ}\\n', {",
+    '    mode: 0o600,',
+    "    flag: 'wx',",
+    '  })',
+    '  const result = spawnSync(command[0], command.slice(1), {',
+    "    stdio: 'inherit',",
+    '    env: {',
+    '      ...process.env,',
+    '      NPM_CONFIG_USERCONFIG: authFile,',
+    "      NPM_CONFIG_GLOBALCONFIG: '/dev/null',",
+    '    },',
+    '  })',
+    '  if (result.error) throw result.error',
+    '  process.exitCode = result.status ?? 1',
+    '} finally {',
+    '  process.umask(previousUmask)',
+    '  rmSync(directory, { recursive: true, force: true })',
+    '}',
     '',
   ].join('\n')
 }
@@ -187,6 +252,10 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       // CI validates the actual deployable Worker shape instead of the dev
       // preset (matches the reference app's build-script input exactly).
       '      build-script: build:ci',
+      // Reusable workflows do not inherit caller `env:`. The test-only
+      // NUXT_OG_IMAGE_SECRET / NUXT_SESSION_PASSWORD values live on the
+      // generated `build:ci` script (ci-test-env.ts) so this Build lane
+      // still has them without a repository secret.
       // The public path runs `quality:static`, which already chains
       // `foundation:shared-ui-pinned` and `manifests:validate`. The private
       // path calls the shared workflow instead, so each check has to be
@@ -227,6 +296,11 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '    timeout-minutes: 30',
     '    env:',
     '      NODE_OPTIONS: --max-old-space-size=3072',
+    // Plain values, not secrets.*: narduk-seo fails a non-dev nuxt build
+    // when NUXT_OG_IMAGE_SECRET is empty, and a fresh repo has no Actions
+    // secret. These match Playwright's committed test-only placeholders.
+    `      NUXT_OG_IMAGE_SECRET: ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}`,
+    `      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`,
     '    steps:',
     ...setupSteps(),
     '      - run: pnpm run quality:static',
@@ -247,6 +321,8 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '    env:',
     '      NODE_OPTIONS: --max-old-space-size=3072',
     '      PLAYWRIGHT_HTML_OPEN: never',
+    `      NUXT_OG_IMAGE_SECRET: ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}`,
+    `      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`,
     '    steps:',
     ...setupSteps(),
     '      - name: Install Chromium on the hosted runner',
