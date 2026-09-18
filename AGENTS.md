@@ -68,3 +68,13 @@ Check the live set with `gh label list --repo narduk-enterprises/narduk-libs`.
   `pnpm pack --dry-run` before publication.
 - New package releases must be installable from their packed artifact by a
   consumer fixture outside the workspace.
+- A Changeset that moves the version of any package the generator pins
+  (`PACKAGE_VERSIONS` in `packages/tooling/create-narduk-app/src/manifest.ts`),
+  directly or through an internal-dependency bump, must also list
+  `'@narduk-enterprises/create-narduk-app': patch`.
+  `pnpm run release-plan:check` enforces it in `contracts`, and on a pull
+  request that failure cancels every package job, so the whole run reads red
+  (#198). Run it locally with `main` at `origin/main` first; a stale local
+  `main` reports unrelated packages (#492).
+- Release mechanics, the `chore: release packages` PR's run approvals and the
+  post-merge publication proof are in `docs/package-releases.md`.
