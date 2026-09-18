@@ -958,7 +958,7 @@ export function createAppLintConfig({
     appTypeOverrides = buildContentPresetOverrides({ trustedHtmlFiles })
   }
 
-  return withNuxt(
+  const composed = withNuxt(
     ...sanitizedSharedConfigs,
     ...buildContentRelaxedOverrides(contentRelaxedFiles),
     // v1's additionalNuxtUiComponents fed narduk/no-unknown-nuxt-ui-component;
@@ -973,6 +973,19 @@ export function createAppLintConfig({
     ...appTypeOverrides,
     ...extraOverrides,
   )
+
+  // Type-aware rules read the TypeScript program the parser built, so the
+  // rule implementations must come from the same typescript-eslint install as
+  // `tseslint.parser` above. withNuxt() registers @nuxt/eslint-config's own
+  // copy of the plugin, which can be bound to a different `typescript`: in
+  // narduk-libs, TS 5.9's `TypeFlags` were read against a TS 6 program and
+  // no-misused-promises crashed (`tsutils.unionConstituents is not a
+  // function or its return value is not iterable`). Swap in the plugin that
+  // pairs with the parser. The composer API is optional so a plain-array
+  // withNuxt (tests, older wrappers) still works.
+  return typeof composed?.replacePlugin === 'function'
+    ? composed.replacePlugin('@typescript-eslint', tseslint.plugin)
+    : composed
 }
 
 export const createAppEslintConfig = createAppLintConfig

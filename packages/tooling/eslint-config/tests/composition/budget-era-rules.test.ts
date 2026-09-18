@@ -13,6 +13,7 @@
  */
 
 import { ESLint } from 'eslint'
+import tseslint from 'typescript-eslint'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 // Resolved configs are deeply dynamic; the assertions below read known paths.
@@ -73,6 +74,26 @@ describe('server promise rules', () => {
       '/app/.nuxt/tsconfig.json',
     )
     expect(entry?.languageOptions.parserOptions.tsconfigRootDir).toBe('/app')
+  })
+
+  // withNuxt() registers @nuxt/eslint-config's copy of the plugin, which can
+  // be bound to a different `typescript` than tseslint.parser; type-aware
+  // rules then read one TS version's TypeFlags against another's program.
+  it('createAppLintConfig pairs the @typescript-eslint plugin with its parser', () => {
+    const replaced: Array<[string, unknown]> = []
+    const composer = {
+      replacePlugin(name: string, plugin: unknown) {
+        replaced.push([name, plugin])
+        return this
+      },
+    }
+    const result = appConfig.createAppLintConfig({
+      withNuxt: () => composer,
+      capabilityPacks: ['server'],
+      appRootDir: '/app',
+    })
+    expect(result).toBe(composer)
+    expect(replaced).toEqual([['@typescript-eslint', tseslint.plugin]])
   })
 })
 

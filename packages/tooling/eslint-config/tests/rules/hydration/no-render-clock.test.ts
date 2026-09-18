@@ -122,6 +122,51 @@ vue.run('no-render-clock', rule, {
       code: 'export const now = Date.now()',
     },
     {
+      name: 'mounted flag set in onMounted guards a computed (NsFreshnessChip shape)',
+      filename: FILE,
+      code: setup(
+        [
+          'const canReadClock = ref(false)',
+          'onMounted(() => { canReadClock.value = true })',
+          'const clock = computed(() => {',
+          '  if (props.now) return props.now',
+          '  if (canReadClock.value) return new Date()',
+          '  return null',
+          '})',
+        ].join('\n'),
+      ),
+    },
+    {
+      name: 'useMounted() flag in a ternary',
+      filename: FILE,
+      code: setup(
+        'const mounted = useMounted()\nconst t = computed(() => (mounted.value ? Date.now() : 0))',
+      ),
+    },
+    {
+      name: 'early return on a mounted flag',
+      filename: FILE,
+      code: setup(
+        [
+          'const mounted = useMounted()',
+          'const age = computed(() => {',
+          '  if (!mounted.value) return null',
+          '  return Date.now() - at.value',
+          '})',
+        ].join('\n'),
+      ),
+    },
+    {
+      name: 'mounted flag in a template ternary (refs unwrapped)',
+      filename: FILE,
+      code: setup('const mounted = useMounted()', '<span>{{ mounted ? Date.now() : "" }}</span>'),
+    },
+    {
+      name: 'the else branch of a runtime flag still runs on one side only',
+      filename: FILE,
+      code: setup('const t = import.meta.server ? 0 : Date.now()'),
+    },
+    {
       name: 'named helper function (invocation is out of scope)',
       filename: FILE,
       code: setup('function age(at: number) { return Date.now() - at }'),
@@ -183,6 +228,38 @@ vue.run('no-render-clock', rule, {
       filename: FILE,
       code: setup('', '<time :datetime="new Date().toISOString()" />'),
       errors: [error('new Date()')],
+    },
+    {
+      name: 'the false side of a mounted flag is the SSR render',
+      filename: FILE,
+      code: setup(
+        'const mounted = useMounted()\nconst t = computed(() => (mounted.value ? 0 : Date.now()))',
+      ),
+      errors: [error('Date.now()')],
+    },
+    {
+      name: 'a ref set to false in onMounted is not a mounted flag',
+      filename: FILE,
+      code: setup(
+        'const loading = ref(true)\nonMounted(() => { loading.value = false })\nconst t = computed(() => (loading.value ? Date.now() : 0))',
+      ),
+      errors: [error('Date.now()')],
+    },
+    {
+      name: 'an early return on the wrong polarity does not guard',
+      filename: FILE,
+      code: setup(
+        'const mounted = useMounted()\nconst age = computed(() => {\n  if (mounted.value) return null\n  return Date.now()\n})',
+      ),
+      errors: [error('Date.now()')],
+    },
+    {
+      name: 'mounted || clock does not guard',
+      filename: FILE,
+      code: setup(
+        'const mounted = useMounted()\nconst t = computed(() => mounted.value || Date.now())',
+      ),
+      errors: [error('Date.now()')],
     },
     {
       name: 'buoys #202 shape: page-level age label',
