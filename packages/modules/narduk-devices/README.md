@@ -206,6 +206,12 @@ could not be honoured
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
+- `issueApprovalToken` authorises before it describes: a caller naming another
+  org or resource gets `forbidden` whatever state the claim session is in, and
+  only the owning org hears `conflict`, `revoked` or `expired`. Reporting the
+  state first told any authenticated caller that holds a claim session id
+  whether another tenant's session was claimed, revoked or expired
+  (narduk-libs#243). An id that does not exist is still `not_found`.
 - `revokeClaimToken` revokes the token and any pending session on it.
 
 ### Lockouts

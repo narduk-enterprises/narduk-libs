@@ -1760,15 +1760,12 @@ export function createDevices(
       if (!session) {
         throw new DevicesError('not_found', `Claim session ${input.claimSessionId} does not exist.`)
       }
-      if (session.status === 'claimed') {
-        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
-      }
-      if (session.status === 'revoked') {
-        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
-      }
-      if (session.status === 'expired' || session.expiresAt <= now()) {
-        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
-      }
+      // Authorise before describing: whether this caller may hear anything
+      // about the session is settled before its state is reported. Checked
+      // after the state, a foreign org's admin holding a session id (it
+      // travels to the appliance and the org console renders it) learned
+      // `conflict` / `revoked` / `expired` for a session that is not theirs —
+      // claim state leaking across the tenant boundary (narduk-libs#243).
       const token = await findClaimToken(session.claimTokenId)
       if (!token)
         throw new DevicesError('not_found', 'The claim token behind this session is gone.')
@@ -1780,6 +1777,15 @@ export function createDevices(
           'forbidden',
           'An approval must name the org and resource the claim token was minted for.',
         )
+      }
+      if (session.status === 'claimed') {
+        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
+      }
+      if (session.status === 'revoked') {
+        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
+      }
+      if (session.status === 'expired' || session.expiresAt <= now()) {
+        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
       }
       if (session.hardwareFingerprint !== input.hardwareFingerprint) {
         throw new DevicesError(
