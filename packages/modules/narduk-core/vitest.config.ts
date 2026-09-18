@@ -1,6 +1,7 @@
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import ts from 'typescript'
 import { compileScript, parse } from 'vue/compiler-sfc'
 import { defineConfig, type Plugin } from 'vitest/config'
 
@@ -9,7 +10,7 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 /**
  * Minimal SFC compile for this package's component tests. narduk-core does
  * not declare `@vitejs/plugin-vue` (no new dependencies, narduk-libs#529);
- * `vue/compiler-sfc` already ships with `vue`.
+ * `vue/compiler-sfc` and `typescript` are already in this package.
  */
 function vueSfcPlugin(): Plugin {
   return {
@@ -36,7 +37,16 @@ function vueSfcPlugin(): Plugin {
         output += `\nif (typeof document !== 'undefined') {\n  const styleId = ${JSON.stringify(styleId)}\n  if (!document.getElementById(styleId)) {\n    const el = document.createElement('style')\n    el.id = styleId\n    el.textContent = ${JSON.stringify(css)}\n    document.head.appendChild(el)\n  }\n}\n`
       }
 
-      return { code: output, map: script.map }
+      const transpiled = ts.transpileModule(output, {
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          sourceMap: true,
+          target: ts.ScriptTarget.ES2022,
+        },
+        fileName: filename.replace(/\.vue$/, '.ts'),
+      })
+
+      return { code: transpiled.outputText, map: null }
     },
   }
 }

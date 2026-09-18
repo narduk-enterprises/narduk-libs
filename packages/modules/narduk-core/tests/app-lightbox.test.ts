@@ -47,10 +47,21 @@ function render(props: Record<string, unknown> = {}, slots: Record<string, unkno
       ...props,
     },
     slots,
-    global: { components: nuxtUiStubs },
+    global: {
+      components: nuxtUiStubs,
+      stubs: { Transition: false, transition: false },
+    },
   })
   mounted.push(wrapper)
   return wrapper
+}
+
+function qs(selector: string): HTMLElement {
+  const element = document.body.querySelector<HTMLElement>(selector)
+  if (!element) {
+    throw new Error(`missing ${selector}`)
+  }
+  return element
 }
 
 function press(key: string) {
@@ -70,50 +81,48 @@ describe('AppLightbox rails keyboard axes', () => {
   it('keeps left/right on the gallery when rails are omitted', async () => {
     const wrapper = render()
 
-    expect(wrapper.find('[data-testid="app-lightbox-rails"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="app-lightbox-image"]').attributes('src')).toBe('/dawn.jpg')
+    expect(document.body.querySelector('[data-testid="app-lightbox-rails"]')).toBeNull()
+    expect(qs('[data-testid="app-lightbox-image"]').getAttribute('src')).toBe('/dawn.jpg')
 
     press('ArrowRight')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="app-lightbox-image"]').attributes('src')).toBe('/noon.jpg')
+    expect(qs('[data-testid="app-lightbox-image"]').getAttribute('src')).toBe('/noon.jpg')
     expect(wrapper.emitted('select')).toBeUndefined()
   })
 
   it('moves rail 1 with ArrowLeft/ArrowRight and updates the main picture', async () => {
     const wrapper = render({ rails: RAILS })
 
-    const rail = wrapper.get('[data-testid="app-lightbox-rail-0"]')
-    expect(rail.attributes('aria-label')).toBe('Time of day')
-    expect(rail.attributes('tabindex')).toBe('0')
-    expect(
-      wrapper.get('[data-testid="app-lightbox-rail-0-item-0"]').attributes('aria-current'),
-    ).toBe('true')
+    const rail = qs('[data-testid="app-lightbox-rail-0"]')
+    expect(rail.getAttribute('aria-label')).toBe('Time of day')
+    expect(rail.getAttribute('tabindex')).toBe('0')
+    expect(qs('[data-testid="app-lightbox-rail-0-item-0"]').getAttribute('aria-current')).toBe(
+      'true',
+    )
 
     press('ArrowRight')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="app-lightbox-image"]').attributes('src')).toBe('/noon.jpg')
-    expect(
-      wrapper.get('[data-testid="app-lightbox-rail-0-item-1"]').attributes('aria-current'),
-    ).toBe('true')
+    expect(qs('[data-testid="app-lightbox-image"]').getAttribute('src')).toBe('/noon.jpg')
+    expect(qs('[data-testid="app-lightbox-rail-0-item-1"]').getAttribute('aria-current')).toBe(
+      'true',
+    )
     expect(wrapper.emitted('select')).toEqual([[{ railIndex: 0, itemIndex: 1 }]])
   })
 
   it('moves rail 2 with ArrowUp/ArrowDown and updates the main picture', async () => {
     const wrapper = render({ rails: RAILS })
 
-    expect(wrapper.get('[data-testid="app-lightbox-rail-1"]').attributes('aria-label')).toBe(
-      'Cameras',
-    )
+    expect(qs('[data-testid="app-lightbox-rail-1"]').getAttribute('aria-label')).toBe('Cameras')
 
     press('ArrowDown')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="app-lightbox-image"]').attributes('src')).toBe('/dusk.jpg')
-    expect(
-      wrapper.get('[data-testid="app-lightbox-rail-1-item-1"]').attributes('aria-current'),
-    ).toBe('true')
+    expect(qs('[data-testid="app-lightbox-image"]').getAttribute('src')).toBe('/dusk.jpg')
+    expect(qs('[data-testid="app-lightbox-rail-1-item-1"]').getAttribute('aria-current')).toBe(
+      'true',
+    )
     expect(wrapper.emitted('select')).toEqual([[{ railIndex: 1, itemIndex: 1 }]])
   })
 })
@@ -128,14 +137,14 @@ describe('AppLightbox side slot', () => {
       },
     )
 
-    const side = wrapper.get('[data-testid="app-lightbox-side"]')
-    expect(side.text()).toBe('Dawn #0')
-    expect(wrapper.get('[data-testid="app-lightbox-stage"]').classes()).toContain('md:flex-row')
-    expect(wrapper.get('[data-testid="app-lightbox-stage"]').classes()).toContain('flex-col')
+    const side = qs('[data-testid="app-lightbox-side"]')
+    expect(side.textContent).toBe('Dawn #0')
+    expect(qs('[data-testid="app-lightbox-stage"]').className).toContain('md:flex-row')
+    expect(qs('[data-testid="app-lightbox-stage"]').className).toContain('flex-col')
 
     press('ArrowRight')
     await wrapper.vm.$nextTick()
 
-    expect(side.text()).toBe('Noon #1')
+    expect(side.textContent).toBe('Noon #1')
   })
 })
