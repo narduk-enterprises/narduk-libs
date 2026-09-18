@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, setResponseHeader } from 'h3'
 
+import { applyNoStoreToEvent } from '../../shared/utils/shared-cache'
 import { buildRateLimitHeaders } from '../rate-limit/headers'
 import {
   isRateLimitExemptPath,
@@ -263,6 +264,14 @@ export function defineRateLimitedHandler<
     // throttle is only actionable if its id matches the server's record.
     ensureRequestId(event)
     logDenial(event, policy, verdict, enforcedBy)
+
+    // A 429 must never be storable at a shared cache (narduk-libs#429): the
+    // `error-cache` Nitro plugin covers every thrown error as a backstop, but
+    // this route already knows it is about to throw, so it sets the posture
+    // itself rather than relying only on the backstop. `Retry-After` and the
+    // `RateLimit-*` family set above are not in the shared-cache strip list,
+    // so they survive.
+    applyNoStoreToEvent(event)
 
     throw createError({
       statusCode: 429,

@@ -4,6 +4,7 @@ import { createApp, defineEventHandler, toNodeListener } from 'h3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createRateLimitWindowStore } from '../runtime/server/rate-limit/window'
+import { setCacheProfile } from '../runtime/server/utils/cacheProfile'
 import { defineRateLimitedHandler } from '../runtime/server/utils/rateLimitedHandler'
 
 import type { RateLimitRuntimeConfig } from '../runtime/server/rate-limit/policy'
@@ -18,6 +19,12 @@ const { runtime } = vi.hoisted(() => ({
   runtime: { value: {} as Record<string, unknown> },
 }))
 vi.mock('nitropack/runtime', () => ({ useRuntimeConfig: () => runtime.value }))
+// setCacheProfile (used below to prove the 429 wins over an earlier 'live'
+// call) reads this for its preview-safe-mode guard; it is unrelated to rate
+// limiting, so it is stubbed the same way tests/cache-profile.test.ts does.
+vi.mock('../runtime/server/utils/runtime-public', () => ({
+  resolveRuntimePublicOverlay: () => ({ previewSafeMode: false }),
+}))
 
 const ROUTE = '/api/x'
 const CLIENT_IP = '203.0.113.9'
@@ -138,6 +145,51 @@ describe('defineRateLimitedHandler', () => {
     const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE])
 
     expect(denied!.headers.get('x-request-id')).toMatch(/\S/)
+  })
+
+  /**
+   * narduk-libs#429: a 429 must never be storable at a shared cache. Asserted
+   * against exact header values, never `not.toContain('public')` — that
+   * assertion also passes for `no-cache`, which Cloudflare stores.
+   */
+  it('answers the 429 with exactly private, no-store and nothing cacheable', async () => {
+    const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE])
+
+    expect(denied!.status).toBe(429)
+    expect(denied!.headers.get('cache-control')).toBe('private, no-store')
+    expect(denied!.headers.get('cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('cloudflare-cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('surrogate-control')).toBeNull()
+    expect(denied!.headers.get('cache-tag')).toBeNull()
+    // Retry-After and the RateLimit-* family are not shared-cache headers and
+    // must survive the strip.
+    expect(denied!.headers.get(RETRY_AFTER_HEADER)).toBe('60')
+  })
+
+  it('overrides a live cache profile the route already set before the deny', async () => {
+    const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE], (event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+    })
+
+    expect(denied!.status).toBe(429)
+    expect(denied!.headers.get('cache-control')).toBe('private, no-store')
+    expect(denied!.headers.get('cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('cache-tag')).toBeNull()
+  })
+
+  it('does not touch the cache posture of a successful, unthrottled response', async () => {
+    const [first] = await request(limited(), [ROUTE], (event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+    })
+
+    expect(first!.status).toBe(200)
+    expect(first!.headers.get('cache-control')).toBe(
+      'public, max-age=60, stale-while-revalidate=900',
+    )
+    expect(first!.headers.get('cdn-cache-control')).toBe(
+      'public, max-age=300, stale-while-revalidate=900',
+    )
+    expect(first!.headers.get('cache-tag')).toBe('stations')
   })
 
   it('does not send Retry-After while the caller still has quota', async () => {
