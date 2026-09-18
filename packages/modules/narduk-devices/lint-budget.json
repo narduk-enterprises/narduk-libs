@@ -1,5 +1,5 @@
 {
   "rules": {
-    "narduk/prefer-db-batch": 4
+    "narduk/prefer-db-batch": 2
   }
 }

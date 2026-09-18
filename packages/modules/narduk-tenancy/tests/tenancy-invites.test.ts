@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 
 import { tenancyInvites } from '../server/database/tenancy-schema'
+import { TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
@@ -74,7 +75,11 @@ describe('invites', () => {
       invitedByUserId: 'user-1',
     })
     await tenancy.acceptInvite({ token, userId: 'user-9' })
-    await tenancy.removeMember({ orgId: org.id, userId: 'user-9' })
+    await tenancy.removeMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-9',
+    })
     expect(await codeOf(tenancy.acceptInvite({ token, userId: 'user-9' }))).toBe('not_found')
     expect((await tenancy.resolveRole({ orgId: org.id, userId: 'user-9' })).role).toBeNull()
   })
@@ -173,8 +178,13 @@ describe('invites', () => {
     )
 
     // Revoking twice is idempotent; revoking an accepted invite is a conflict.
-    expect((await tenancy.revokeInvite({ inviteId: invite.id })).revokedAt).toBe(revoked.revokedAt)
-    expect(await codeOf(tenancy.revokeInvite({ inviteId: 'ghost' }))).toBe('not_found')
+    expect(
+      (await tenancy.revokeInvite({ actorUserId: TENANCY_SYSTEM_ACTOR, inviteId: invite.id }))
+        .revokedAt,
+    ).toBe(revoked.revokedAt)
+    expect(
+      await codeOf(tenancy.revokeInvite({ actorUserId: TENANCY_SYSTEM_ACTOR, inviteId: 'ghost' })),
+    ).toBe('not_found')
   })
 
   it('refuses a malformed email, a past expiry and an unknown org', async () => {
@@ -211,13 +221,20 @@ describe('invites', () => {
           invitedByUserId: 'user-1',
         }),
       ),
-    ).toBe('not_found')
+      // The inviter is ranked first, and nobody is a member of an org that
+      // does not exist, so the answer reveals nothing about which orgs do.
+    ).toBe('forbidden')
   })
 
   it('creates a narrowing override for a resource-scoped invite', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-9', role: 'admin' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-9',
+      role: 'admin',
+    })
     await tenancy.createInvite({
       orgId: org.id,
       email: CREW_EMAIL,
@@ -238,7 +255,12 @@ describe('invites', () => {
   it('promotes an existing member when the invite role is higher', async () => {
     const { tenancy } = createTestHarness({ tokens: ['t1'] })
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-9', role: 'viewer' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-9',
+      role: 'viewer',
+    })
     await tenancy.createInvite({
       orgId: org.id,
       email: CREW_EMAIL,

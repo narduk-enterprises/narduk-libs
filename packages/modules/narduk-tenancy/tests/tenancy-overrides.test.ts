@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
+
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
 
@@ -10,8 +12,14 @@ describe('resource role overrides', () => {
   it('narrows the org role on one resource only', async () => {
     const { tenancy } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'admin',
+    })
     await tenancy.setResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
@@ -37,11 +45,17 @@ describe('resource role overrides', () => {
   it('refuses an override more privileged than the org role', async () => {
     const { tenancy } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'crew',
+    })
 
     expect(
       await codeOf(
         tenancy.setResourceRoleOverride({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
           orgId: org.id,
           userId: 'user-2',
           resource: VESSEL,
@@ -52,6 +66,7 @@ describe('resource role overrides', () => {
 
     // An equal role is not a raise, so it is allowed and records the intent.
     const same = await tenancy.setResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
@@ -66,6 +81,7 @@ describe('resource role overrides', () => {
     expect(
       await codeOf(
         tenancy.setResourceRoleOverride({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
           orgId: org.id,
           userId: 'ghost',
           resource: VESSEL,
@@ -78,15 +94,22 @@ describe('resource role overrides', () => {
   it('updates an existing override in place and clears it', async () => {
     const { tenancy } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'admin',
+    })
 
     const first = await tenancy.setResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
       role: 'operator',
     })
     const second = await tenancy.setResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
@@ -95,14 +118,24 @@ describe('resource role overrides', () => {
     expect(second.id).toBe(first.id)
     expect(second.role).toBe('viewer')
 
-    await tenancy.clearResourceRoleOverride({ orgId: org.id, userId: 'user-2', resource: VESSEL })
+    await tenancy.clearResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      resource: VESSEL,
+    })
     expect(
       await tenancy.resolveRole({ orgId: org.id, userId: 'user-2', resource: VESSEL }),
     ).toMatchObject({ role: 'admin', source: 'membership' })
 
     expect(
       await codeOf(
-        tenancy.clearResourceRoleOverride({ orgId: org.id, userId: 'user-2', resource: VESSEL }),
+        tenancy.clearResourceRoleOverride({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'user-2',
+          resource: VESSEL,
+        }),
       ),
     ).toBe('not_found')
   })

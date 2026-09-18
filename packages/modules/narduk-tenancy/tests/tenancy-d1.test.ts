@@ -4,9 +4,12 @@ import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { createTenancy } from '../server/utils/tenancy'
+import { tenancyMemberships } from '../server/database/tenancy-schema'
+import { createTenancy, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { MIGRATION_PATH } from './support/database'
+import { codeOf } from './support/expect'
+import { interleaveBeforeWrite } from './support/interleave'
 
 describe('D1 transaction integration', () => {
   const runtime = new Miniflare({
@@ -35,17 +38,30 @@ describe('D1 transaction integration', () => {
   it('admits one presenter and preserves the last owner on the actual D1 driver', async () => {
     const tenancy = createTenancy(drizzle(binding))
     const org = await tenancy.createOrg({ slug: 'd1', name: 'D1', createdByUserId: 'owner-a' })
-    await tenancy.addMember({ orgId: org.id, userId: 'owner-b', role: 'owner' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'owner-b',
+      role: 'owner',
+    })
     const owners = await Promise.allSettled(
       ['owner-a', 'owner-b'].map((userId) =>
-        tenancy.setMemberRole({ orgId: org.id, userId, role: 'viewer' }),
+        tenancy.setMemberRole({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId,
+          role: 'viewer',
+        }),
       ),
     )
     expect(owners.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
 
+    // The owner whose demotion was refused invites: the other is a viewer now,
+    // and a viewer may not issue an operator invitation (narduk-libs#213).
+    const survivor = owners[0]?.status === 'rejected' ? 'owner-a' : 'owner-b'
     const { token } = await tenancy.createInvite({
       orgId: org.id,
-      invitedByUserId: 'owner-a',
+      invitedByUserId: survivor,
       email: 'a@example.com',
       role: 'operator',
     })
@@ -63,6 +79,66 @@ describe('D1 transaction integration', () => {
       ['viewer-a', 'viewer-b'].map((userId) => tenancy.resolveRole({ orgId: org.id, userId })),
     )
     expect(members.filter(({ role }) => role === 'operator')).toHaveLength(1)
+  })
+
+  it('enforces actor rank, re-checked inside the write, on the actual D1 driver', async () => {
+    const tenancy = createTenancy(drizzle(binding))
+    const org = await tenancy.createOrg({
+      slug: 'd1-rank',
+      name: 'D1 rank',
+      createdByUserId: 'owner',
+    })
+    for (const [userId, role] of [
+      ['admin', 'admin'],
+      ['crew-a', 'crew'],
+      ['crew-b', 'crew'],
+    ] as const) {
+      await tenancy.addMember({ actorUserId: TENANCY_SYSTEM_ACTOR, orgId: org.id, userId, role })
+    }
+    const roleOf = async (userId: string) =>
+      (await tenancy.resolveRole({ orgId: org.id, userId })).role
+
+    expect(
+      await codeOf(
+        tenancy.setMemberRole({
+          orgId: org.id,
+          userId: 'admin',
+          role: 'owner',
+          actorUserId: 'admin',
+        }),
+      ),
+    ).toBe('forbidden')
+    expect(
+      await codeOf(tenancy.removeMember({ orgId: org.id, userId: 'owner', actorUserId: 'admin' })),
+    ).toBe('forbidden')
+
+    // In rank, the statements carrying the re-check land on D1...
+    await tenancy.setMemberRole({
+      orgId: org.id,
+      userId: 'crew-a',
+      role: 'viewer',
+      actorUserId: 'admin',
+    })
+    expect(await roleOf('crew-a')).toBe('viewer')
+
+    // ...and a member promoted to owner between the check and the write stays.
+    const racing = createTenancy(
+      interleaveBeforeWrite(drizzle(binding), 'delete', tenancyMemberships, () =>
+        binding
+          .prepare(
+            "UPDATE tenancy_memberships SET role = 'owner' WHERE org_id = ? AND user_id = 'crew-b'",
+          )
+          .bind(org.id)
+          .run(),
+      ),
+    )
+    expect(
+      await codeOf(racing.removeMember({ orgId: org.id, userId: 'crew-b', actorUserId: 'admin' })),
+    ).toBe('conflict')
+    expect(await roleOf('crew-b')).toBe('owner')
+
+    await tenancy.removeMember({ orgId: org.id, userId: 'crew-a', actorUserId: 'admin' })
+    expect(await roleOf('crew-a')).toBeNull()
   })
 
   it('rolls back every statement when a D1 membership write fails', async () => {

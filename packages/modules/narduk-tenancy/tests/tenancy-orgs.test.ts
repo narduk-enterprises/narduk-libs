@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createTenancy, type TenancyDatabase } from '../server/utils/tenancy'
+import { createTenancy, TENANCY_SYSTEM_ACTOR, type TenancyDatabase } from '../server/utils/tenancy'
 
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
@@ -146,20 +146,44 @@ describe('orgs and memberships', () => {
   it('refuses to add an unknown org or a duplicate member', async () => {
     const { tenancy } = createTestHarness()
     expect(
-      await codeOf(tenancy.addMember({ orgId: 'missing', userId: 'user-2', role: 'crew' })),
+      await codeOf(
+        tenancy.addMember({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: 'missing',
+          userId: 'user-2',
+          role: 'crew',
+        }),
+      ),
     ).toBe('not_found')
 
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'crew',
+    })
     expect(
-      await codeOf(tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'admin' })),
+      await codeOf(
+        tenancy.addMember({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'user-2',
+          role: 'admin',
+        }),
+      ),
     ).toBe('conflict')
   })
 
   it('changes a member role and refuses an unknown member', async () => {
     const { tenancy, clock } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
-    const membership = await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
+    const membership = await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'crew',
+    })
 
     clock.advance(1000)
     const updated = await tenancy.setMemberRole({
@@ -173,13 +197,21 @@ describe('orgs and memberships', () => {
 
     // Setting the same role is a no-op that still returns the membership.
     const unchanged = await tenancy.setMemberRole({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       role: 'operator',
     })
     expect(unchanged.role).toBe('operator')
     expect(
-      await codeOf(tenancy.setMemberRole({ orgId: org.id, userId: 'ghost', role: 'crew' })),
+      await codeOf(
+        tenancy.setMemberRole({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'ghost',
+          role: 'crew',
+        }),
+      ),
     ).toBe('not_found')
   })
 
@@ -188,15 +220,38 @@ describe('orgs and memberships', () => {
     const org = await tenancy.createOrg(ACME)
 
     expect(
-      await codeOf(tenancy.setMemberRole({ orgId: org.id, userId: 'user-1', role: 'admin' })),
+      await codeOf(
+        tenancy.setMemberRole({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'user-1',
+          role: 'admin',
+        }),
+      ),
     ).toBe('last_owner')
-    expect(await codeOf(tenancy.removeMember({ orgId: org.id, userId: 'user-1' }))).toBe(
-      'last_owner',
-    )
+    expect(
+      await codeOf(
+        tenancy.removeMember({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'user-1',
+        }),
+      ),
+    ).toBe('last_owner')
 
     // A second owner lifts the protection for the first.
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'owner' })
-    await tenancy.setMemberRole({ orgId: org.id, userId: 'user-1', role: 'admin' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'owner',
+    })
+    await tenancy.setMemberRole({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-1',
+      role: 'admin',
+    })
     expect(await tenancy.resolveRole({ orgId: org.id, userId: 'user-1' })).toMatchObject({
       role: 'admin',
     })
@@ -205,8 +260,14 @@ describe('orgs and memberships', () => {
   it('removes a member and clears that member overrides', async () => {
     const { tenancy } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'operator' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'operator',
+    })
     await tenancy.setResourceRoleOverride({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
@@ -222,8 +283,14 @@ describe('orgs and memberships', () => {
     const events = await tenancy.listAuditEvents({ orgId: org.id })
     const removal = events.find((event) => event.action === 'membership.remove')
     expect(JSON.parse(removal?.detailsJson ?? '{}')).toMatchObject({ clearedOverrides: 1 })
-    expect(await codeOf(tenancy.removeMember({ orgId: org.id, userId: 'user-2' }))).toBe(
-      'not_found',
-    )
+    expect(
+      await codeOf(
+        tenancy.removeMember({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId: 'user-2',
+        }),
+      ),
+    ).toBe('not_found')
   })
 })
