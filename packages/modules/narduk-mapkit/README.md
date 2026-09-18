@@ -110,16 +110,16 @@ export default defineNuxtConfig({
 })
 ```
 
-| Option           | Default                              | What it does                                                      |
-| ---------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `component`      | `true`                               | Register `<AppMapKit>`.                                           |
-| `composables`    | `true`                               | Register `useMapKit()`.                                           |
-| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.  |
-| `language`       | _unset_                              | Passed to Apple's loader.                                         |
-| `rateLimit`      | `{ limit: 30, windowSeconds: 60 }`   | Fixed-window ceiling on the token route, per routed origin.       |
-| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.   |
-| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.    |
-| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup. |
+| Option           | Default                              | What it does                                                       |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `component`      | `true`                               | Register `<AppMapKit>`.                                            |
+| `composables`    | `true`                               | Register `useMapKit()`.                                            |
+| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.   |
+| `language`       | _unset_                              | Passed to Apple's loader.                                          |
+| `rateLimit`      | _unset_ (no limit)                   | Opt-in fixed-window ceiling on the token route, per routed origin. |
+| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.    |
+| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.     |
+| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup.  |
 
 `libraries` is **configurable, not hard-coded**. MapKit JS 6 ships
 `mapkit.core.js` as a stub, so an app that only draws annotations can drop
@@ -323,10 +323,12 @@ export default {
 }
 ```
 
-`mapKitTokenResponseFromEnv` applies **no rate limit of its own**; the 2.1 Nuxt
-module's default ceiling (`rateLimit`, 30 requests / 60 s) covers only the
-module's route. A Worker caller passes §e.4's limiter from the same entry point
-(narduk-libs#485):
+Neither `mapKitTokenResponseFromEnv` nor the Nuxt module's route applies a rate
+limit by default (narduk-libs#485): MapKit tokens are same-origin and
+short-lived, and a default ceiling kept refusing real users. An app that wants
+one opts in -- the Nuxt module through its `rateLimit` option (or a limiter
+mounted on `event.context.nardukMapKit.rateLimit`, which wins), a Worker caller
+by passing §e.4's limiter from the same entry point:
 
 ```ts
 import {
@@ -1262,6 +1264,20 @@ Apple's own message. Drive the component through `load()` -- as production does
 `handle.mapkit`. 2.1.0's fake returned one object for both, which is how 62
 green end-to-end tests shipped a blank map.
 
+**`init()` is a page singleton (K-7).** A second `mapkit.init()` after a
+_failed_ token exchange runs a new exchange, which is how `<AppMapKit>`'s
+`retry()` is tested. Any other second call -- while the first exchange is
+pending, or after it succeeded -- is an idempotent no-op: no new token is
+requested, the first call's options stand, and the call is logged as `init` with
+detail `ignored`. A page that mounts several maps therefore needs no double-init
+shim (narduk-libs#522).
+
+**The rect camera (K-5).** `map.visibleMapRect`,
+`map.setVisibleMapRectAnimated()`, `mapkit.MapRect` / `MapPoint` / `MapSize` and
+`mapkit.Map.MapTypes` are modelled alongside the region camera. The rect is the
+Web-Mercator unit rect of the region the fake projects pins with, so a
+coordinate lands on the same pixel whichever camera a page drives.
+
 ### In vitest (happy-dom or jsdom)
 
 ```ts
@@ -1461,7 +1477,8 @@ route logs their presence as deprecated. Token issuance is GET-only. Apps own
 provider-specific rate limiting and pass a `rateLimit` hook to the handler — the
 hook is part of the handler, not a path-matched middleware, so no URL spelling
 can route around it. `createMapKitFixedWindowRateLimit` (exported from `/server`
-and `/worker`) is the in-process limiter the Nuxt module applies by default.
+and `/worker`) is the in-process limiter the Nuxt module applies when an app
+sets its `rateLimit` option; with the option unset the route has no limit.
 
 Report vulnerabilities through the process in `SECURITY.md`, not public issues.
 

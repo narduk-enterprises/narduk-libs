@@ -7,9 +7,10 @@
  *
  * What the module does NOT carry over from that adapter, all of it with zero
  * consumers: the `callouts*` props, `<AppMapKitCallout>`, `useMapKitCallouts`,
- * `useMapkitToken`, `fullscreenControl` / `fullscreenMode`, `centerLabel`, and
- * the `event.context.nardukMapKit.rateLimit` hook as a documented seam. The
- * callout need is met by the `#callout` slot instead.
+ * `useMapkitToken`, `fullscreenControl` / `fullscreenMode` and `centerLabel`.
+ * The callout need is met by the `#callout` slot instead. The token route
+ * still honours a limiter an app mounts on `event.context.nardukMapKit.rateLimit`,
+ * and applies none of its own unless the app sets `rateLimit`.
  */
 import {
   addComponent,
@@ -119,7 +120,8 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
     // `libraries` is deliberately absent: `defu` concatenates arrays, so a
     // default here would append to whatever the app configured. It is resolved
     // in `setup` instead.
-    rateLimit: { limit: 30, windowSeconds: 60 },
+    // `rateLimit` is deliberately absent: the token route is unlimited unless
+    // the app opts in (narduk-libs#485).
     ssrPreload: true,
     tokenRoute: true,
     tokenRoutePath: DEFAULT_MAPKIT_TOKEN_ROUTE,
@@ -141,8 +143,9 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
     runtimeConfig.appleSecretKey ??= ''
     runtimeConfig.appleTeamId ??= ''
     runtimeConfig.public.mapkitTokenEndpoint ??= tokenRoutePath
-    // Server-side and non-secret: a ceiling, not a credential.
-    runtimeConfig['nardukMapKit'] = { rateLimit: options.rateLimit }
+    // Server-side and non-secret: a ceiling, not a credential. Empty unless the
+    // app opted in, so the route's default is no limit at all.
+    runtimeConfig['nardukMapKit'] = options.rateLimit ? { rateLimit: { ...options.rateLimit } } : {}
     warnRetiredKeys(runtimeConfig)
 
     // The client runtime's own non-secret configuration. Deliberately one key,
@@ -204,7 +207,7 @@ declare module '@nuxt/schema' {
     applePrivateKey: string
     appleSecretKey: string
     appleTeamId: string
-    nardukMapKit: { rateLimit: { limit: number; windowSeconds: number } }
+    nardukMapKit: { rateLimit?: { limit: number; windowSeconds: number } }
   }
   interface PublicRuntimeConfig {
     mapkitTokenEndpoint: string

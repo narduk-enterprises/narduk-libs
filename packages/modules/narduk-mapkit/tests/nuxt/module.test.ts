@@ -163,9 +163,16 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
     expect(nuxt.options.runtimeConfig['appleKeyId']).toBe('')
     expect(nuxt.options.runtimeConfig['applePrivateKey']).toBe('')
     expect(nuxt.options.runtimeConfig['appleTeamId']).toBe('')
+    // No ceiling by default: the token route is unlimited unless the app opts in.
+    expect(nuxt.options.runtimeConfig['nardukMapKit']).toStrictEqual({})
+  })
+
+  it('publishes a rateLimit ceiling only when the app opts in', async () => {
+    const nuxt = await setup({ rateLimit: { limit: 5, windowSeconds: 10 } })
+
     // Non-secret, and server-side: a ceiling, not a credential.
     expect(nuxt.options.runtimeConfig['nardukMapKit']).toStrictEqual({
-      rateLimit: { limit: 30, windowSeconds: 60 },
+      rateLimit: { limit: 5, windowSeconds: 10 },
     })
   })
 
