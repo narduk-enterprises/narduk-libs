@@ -2,8 +2,8 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import ts from 'typescript'
-import { compileScript, parse } from 'vue/compiler-sfc'
 import { defineConfig, type Plugin } from 'vitest/config'
+import { compileScript, parse } from 'vue/compiler-sfc'
 
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 
@@ -33,7 +33,7 @@ function vueSfcPlugin(): Plugin {
       let output = script.content
       const css = descriptor.styles.map((style) => style.content).join('\n')
       if (css.length > 0) {
-        const styleId = `vue-sfc-style-${filename.replaceAll(/[^a-zA-Z0-9_-]/g, '_')}`
+        const styleId = `vue-sfc-style-${filename.replaceAll(/[^\w-]/g, '_')}`
         output += `\nif (typeof document !== 'undefined') {\n  const styleId = ${JSON.stringify(styleId)}\n  if (!document.getElementById(styleId)) {\n    const el = document.createElement('style')\n    el.id = styleId\n    el.textContent = ${JSON.stringify(css)}\n    document.head.appendChild(el)\n  }\n}\n`
       }
 

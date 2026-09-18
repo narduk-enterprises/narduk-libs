@@ -6,13 +6,14 @@ import { renderToString } from 'vue/server-renderer'
 
 import AppSnapStrip from '../runtime/app/components/shared/AppSnapStrip.vue'
 import {
-  SNAP_STRIP_EN_DASH,
   formatSnapStripReadout,
   initialSnapStripRange,
+  SNAP_STRIP_EN_DASH,
 } from '../runtime/app/utils/snapStripReadout'
+
 import { nuxtUiStubs } from './fixtures/nuxt-ui-stubs'
 
-type ObserverRecord = {
+interface ObserverRecord {
   callback: IntersectionObserverCallback
   observed: Set<Element>
 }
@@ -71,7 +72,7 @@ function reveal(wrapper: ReturnType<typeof render>, indexes: number[]) {
   const root = wrapper.get('[data-testid="app-snap-strip-scroller"]').element
   const observer = observers.at(-1)
   if (!observer) throw new Error('expected an IntersectionObserver')
-  const entries = [...root.children].map((target, index) => ({
+  const entries = Array.from(root.children).map((target, index) => ({
     boundingClientRect: target.getBoundingClientRect(),
     intersectionRatio: indexes.includes(index) ? 1 : 0,
     intersectionRect: target.getBoundingClientRect(),

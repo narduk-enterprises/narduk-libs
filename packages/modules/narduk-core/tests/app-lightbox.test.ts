@@ -5,6 +5,7 @@ import { h } from 'vue'
 
 import AppLightbox from '../runtime/app/components/shared/AppLightbox.vue'
 import { railIndexForKey } from '../runtime/app/utils/lightboxRails'
+
 import { nuxtUiStubs } from './fixtures/nuxt-ui-stubs'
 
 import type { LightboxItem, LightboxRail } from '../runtime/app/components/shared/AppLightbox.vue'
@@ -132,7 +133,7 @@ describe('AppLightbox side slot', () => {
     const wrapper = render(
       {},
       {
-        side: ({ item, index }: { item: LightboxItem; index: number }) =>
+        side: ({ item, index }: { index: number; item: LightboxItem }) =>
           h('p', { class: 'side-copy' }, `${item.alt} #${index}`),
       },
     )

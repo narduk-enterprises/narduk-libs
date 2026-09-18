@@ -5,7 +5,10 @@ import { createSSRApp } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
 import AppImage from '../runtime/app/components/shared/AppImage.vue'
+
 import { nuxtUiStubs } from './fixtures/nuxt-ui-stubs'
+
+const IMAGE_TEST_ID = '[data-testid="app-image-img"]'
 
 function render(props: Record<string, unknown> = {}) {
   return mount(AppImage, {
@@ -20,12 +23,12 @@ describe('AppImage', () => {
 
     expect(wrapper.find('[data-testid="app-image-skeleton"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="app-image-failed"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="app-image-img"]').classes()).toContain('sr-only')
+    expect(wrapper.get(IMAGE_TEST_ID).classes()).toContain('sr-only')
 
-    await wrapper.get('[data-testid="app-image-img"]').trigger('load')
+    await wrapper.get(IMAGE_TEST_ID).trigger('load')
 
     expect(wrapper.find('[data-testid="app-image-skeleton"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="app-image-img"]').classes()).not.toContain('sr-only')
+    expect(wrapper.get(IMAGE_TEST_ID).classes()).not.toContain('sr-only')
     expect(wrapper.emitted('load')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -35,7 +38,7 @@ describe('AppImage', () => {
 
     expect(wrapper.find('[data-testid="app-image-skeleton"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="app-image-img"]').trigger('error')
+    await wrapper.get(IMAGE_TEST_ID).trigger('error')
 
     const failed = wrapper.get('[data-testid="app-image-failed"]')
     expect(wrapper.find('[data-testid="app-image-skeleton"]').exists()).toBe(false)
@@ -47,7 +50,7 @@ describe('AppImage', () => {
 
   it('defaults the failed copy to "Image unavailable"', async () => {
     const wrapper = render()
-    await wrapper.get('[data-testid="app-image-img"]').trigger('error')
+    await wrapper.get(IMAGE_TEST_ID).trigger('error')
     expect(wrapper.get('[data-testid="app-image-failed"]').text()).toBe('Image unavailable')
     wrapper.unmount()
   })

@@ -14,13 +14,13 @@
  */
 import {
   Comment,
-  Fragment,
-  Text,
   computed,
+  Fragment,
   nextTick,
   onMounted,
   onUnmounted,
   ref,
+  Text,
   useSlots,
   watch,
 } from 'vue'
@@ -31,13 +31,13 @@ import type { VNode } from 'vue'
 
 const props = withDefaults(
   defineProps<{
-    /** Accessible name for the strip region. */
-    label?: string
     /**
      * How many children fit in the viewport. Defaults to 2, the phone
      * reading from the BuoyCams handoff.
      */
     itemsPerView?: number
+    /** Accessible name for the strip region. */
+    label?: string
   }>(),
   {
     label: 'Gallery',
@@ -93,7 +93,8 @@ function publishVisibleRange() {
   const root = scrollerRef.value
   if (!root) return
   const indexes: number[] = []
-  for (const [index, child] of [...root.children].entries()) {
+  const children = Array.from(root.children)
+  for (const [index, child] of children.entries()) {
     if (visibleChildren.has(child)) indexes.push(index)
   }
   if (indexes.length === 0) return
@@ -120,7 +121,7 @@ function bindObserver() {
     { root, threshold: 0.5 },
   )
 
-  for (const child of root.children) {
+  for (const child of Array.from(root.children)) {
     observer.observe(child)
   }
 }

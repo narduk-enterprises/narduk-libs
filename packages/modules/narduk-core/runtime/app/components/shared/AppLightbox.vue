@@ -28,11 +28,11 @@
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 
 import {
+  type LightboxRailSelectPayload,
   nextRailItemIndex,
   railIndexForKey,
   railStepForKey,
   visibleLightboxRails,
-  type LightboxRailSelectPayload,
 } from '../../utils/lightboxRails'
 
 export interface LightboxItem {
@@ -308,13 +308,16 @@ onUnmounted(() => {
               >
                 <p class="mb-1.5 text-xs text-white/60">{{ rail.label }}</p>
                 <div class="flex gap-2 overflow-x-auto">
-                  <button
+                  <UButton
                     v-for="(thumb, itemIndex) in rail.items"
                     :key="itemIndex"
                     type="button"
+                    color="neutral"
+                    variant="ghost"
                     role="option"
+                    :aria-selected="isRailCurrent(railIndex, itemIndex)"
                     :aria-current="isRailCurrent(railIndex, itemIndex) ? 'true' : undefined"
-                    class="size-14 shrink-0 overflow-hidden rounded-md ring-2 ring-transparent"
+                    class="size-14 shrink-0 overflow-hidden rounded-md p-0 ring-2 ring-transparent"
                     :class="
                       isRailCurrent(railIndex, itemIndex)
                         ? 'ring-white'
@@ -324,7 +327,7 @@ onUnmounted(() => {
                     @click.stop="selectRailItem(railIndex, itemIndex)"
                   >
                     <img :src="thumb.src" :alt="thumb.alt || ''" class="size-full object-cover" />
-                  </button>
+                  </UButton>
                 </div>
               </div>
             </div>

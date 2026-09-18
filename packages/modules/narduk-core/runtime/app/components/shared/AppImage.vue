@@ -15,9 +15,6 @@ import { onMounted, ref, watch } from 'vue'
 
 export type AppImageStatus = 'failed' | 'loaded' | 'loading'
 
-const FAILED_HATCH =
-  'repeating-linear-gradient(-45deg, var(--ui-color-neutral-200, #e5e5e5) 0 8px, var(--ui-color-neutral-300, #d4d4d4) 8px 16px)'
-
 const props = withDefaults(
   defineProps<{
     alt: string
@@ -42,6 +39,9 @@ const emit = defineEmits<{
   error: [event: Event]
   load: [event: Event]
 }>()
+
+const FAILED_HATCH =
+  'repeating-linear-gradient(-45deg, var(--ui-color-neutral-200, #e5e5e5) 0 8px, var(--ui-color-neutral-300, #d4d4d4) 8px 16px)'
 
 defineOptions({ inheritAttrs: false })
 

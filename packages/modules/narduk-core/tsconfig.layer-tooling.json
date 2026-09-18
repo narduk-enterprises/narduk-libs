@@ -86,6 +86,11 @@
     // A standalone Nuxt app driven by `scripts/prove-nonce.mjs`, not layer
     // source. Its `defineNuxtConfig` comes from its own Nuxt context, which
     // this project never generates.
-    "tests/fixtures/**"
+    "tests/fixtures/**",
+    // Mount tests import SFCs. vue-tsc typechecks those components through
+    // `.nuxt/tsconfig.app.json`; this project is TypeScript-only.
+    "tests/app-image.test.ts",
+    "tests/app-lightbox.test.ts",
+    "tests/app-snap-strip.test.ts"
   ]
 }
