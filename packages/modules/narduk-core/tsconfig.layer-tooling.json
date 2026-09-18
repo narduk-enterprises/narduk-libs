@@ -56,6 +56,7 @@
     "runtime/server/utils/logger.ts",
     "runtime/server/utils/logSanitizer.ts",
     "runtime/server/utils/narduk-data.ts",
+    "runtime/server/plugins/error-cache.ts",
     "runtime/server/plugins/error-logger.ts",
     "runtime/server/plugins/preferences-cache.ts",
     "runtime/server/utils/preferences.ts",
