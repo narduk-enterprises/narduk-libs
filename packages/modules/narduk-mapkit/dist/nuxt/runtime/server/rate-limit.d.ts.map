@@ -1,1 +1,1 @@
-{"version":3,"file":"rate-limit.d.ts","sourceRoot":"","sources":["../../../../src/nuxt/runtime/server/rate-limit.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AACH,OAAO,EACL,gCAAgC,EAChC,KAAK,wBAAwB,GAC9B,MAAM,+BAA+B,CAAA"}
+{"version":3,"file":"rate-limit.d.ts","sourceRoot":"","sources":["../../../../src/nuxt/runtime/server/rate-limit.ts"],"names":[],"mappings":"AAAA;;;;;;;;;GASG;AACH,OAAO,EACL,gCAAgC,EAChC,KAAK,wBAAwB,GAC9B,MAAM,+BAA+B,CAAA"}

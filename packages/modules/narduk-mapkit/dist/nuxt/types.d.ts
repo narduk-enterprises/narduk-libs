@@ -30,11 +30,13 @@ export interface ModuleOptions {
     /** Passed to Apple's loader. */
     language?: string;
     /**
-     * Fixed-window ceiling applied to the token route per routed origin. An app
-     * that mounts narduk-core's own rate limiter on
+     * Opt-in fixed-window ceiling on the token route, per routed origin. Omitted
+     * (the default), the route applies NO rate limit: MapKit tokens are cheap,
+     * same-origin and short-lived, and a default ceiling kept tripping real users
+     * (narduk-libs#485). An app that mounts its own limiter on
      * `event.context.nardukMapKit.rateLimit` takes precedence over this.
      */
-    rateLimit: MapKitRateLimitOptions;
+    rateLimit?: MapKitRateLimitOptions;
     /**
      * Emit `renderHTMLAttributes()` during SSR so `mapkit.core.js` downloads
      * before hydration. Emitted WITHOUT a token: a token in the tag is MapKit's

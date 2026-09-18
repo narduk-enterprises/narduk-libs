@@ -73,9 +73,10 @@ function routedOrigin(event) {
     });
 }
 /**
- * One limiter per server instance, built on first use from the module's option.
- * An app that mounts narduk-core's own limiter on the event context wins over
- * it; this only stops an unconfigured route from signing without a ceiling.
+ * One limiter per server instance, built on first use from the module's
+ * `rateLimit` option -- and only when the app set one: unconfigured, the route
+ * applies no limit (narduk-libs#485). A limiter the app mounts on
+ * `event.context.nardukMapKit.rateLimit` wins over it.
  */
 let fallbackRateLimit = null;
 /**
