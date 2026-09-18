@@ -5,5 +5,5 @@
 ---
 
 Lint through `narduk-lint` with a checked-in `lint-budget.json` recording the
-package's current warning counts. No runtime change; the release gate requires
-a changeset for any changed package file.
+package's current warning counts. No runtime change; the release gate requires a
+changeset for any changed package file.
