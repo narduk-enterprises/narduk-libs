@@ -13,6 +13,15 @@
  */
 
 export {
+  READING_BUCKETS,
+  bucketReadings,
+  type BucketReadingsOptions,
+  type BucketReadingsResult,
+  type BucketStats,
+  type ReadingBucket,
+  type ReadingBucketRow,
+} from './bucket.js'
+export {
   NardukTimeseriesError,
   TIMESERIES_ERROR_CODES,
   isNardukTimeseriesError,

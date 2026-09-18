@@ -33,4 +33,24 @@ export interface NePagerProps {
    * Omit it for a pager inside a view that pages without navigating.
    */
   to?: (page: number) => RouteLocationRaw
+  /**
+   * Page sizes offered in a "25 per page" select. Omit for no select. The
+   * pager cannot change the limit itself (its model applies the page only):
+   * the select emits `update:limit`, which you hand to `useCollection().setLimit`.
+   */
+  pageSizes?: readonly number[]
+  /**
+   * `'pages'` (default): numbered pages. `'more'`: a "Show 25 more" button for
+   * a phone, which grows the page by emitting `update:limit` so the list keeps
+   * its scroll. `'auto'`: numbered pages from the `sm` breakpoint up, "Show
+   * more" below it — pure CSS, so the server renders both.
+   */
+  mode?: 'pages' | 'more' | 'auto'
+  /** How many rows "Show more" adds. Defaults to the limit the pager first saw. */
+  moreStep?: number
+  /**
+   * The route's page-size ceiling. Once the page has grown to it, "Show more"
+   * gives way to numbered pages rather than offering a click that cannot work.
+   */
+  maxLimit?: number
 }

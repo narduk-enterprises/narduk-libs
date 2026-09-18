@@ -72,6 +72,22 @@ export type {
 
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
+/**
+ * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure
+ * functions with no Vue or DOM import, so a server route can write the same
+ * CSV `NeCsvDownload` does, and a page can read a wire sort without a regex.
+ */
+export { parseSort, toCsv } from './runtime/utils/data-table'
+export type {
+  NeCsvDownloadProps,
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableProps,
+  NeSortableColumn,
+  NeSortDirection,
+  NeSortHeaderProps,
+} from './runtime/components/ne-data-table-types'
+
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added
 // `./module`, but only for the Nuxt module definition, not for app-facing
