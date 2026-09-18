@@ -27,7 +27,7 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{mjs,mts,json,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },

@@ -75,7 +75,7 @@
     "typecheck": "nuxt typecheck",
     "prelint": "pnpm run nuxt:prepare",
     "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "quality": "pnpm run test:unit",

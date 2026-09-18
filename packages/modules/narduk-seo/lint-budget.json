@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "narduk/require-fetch-timeout": 2,
+    "no-console": 2
+  }
+}

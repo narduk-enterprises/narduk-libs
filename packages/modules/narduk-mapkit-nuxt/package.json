@@ -37,7 +37,7 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "prebuild": "nuxt-module-build prepare",
     "prelint": "pnpm run dev:prepare",
     "prepack": "nuxt-module-build prepare && nuxt-module-build build",

@@ -38,7 +38,7 @@
     "build": "tsc --project tsconfig.build.json",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts"

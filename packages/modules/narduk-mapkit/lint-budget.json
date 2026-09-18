@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "@typescript-eslint/await-thenable": 2,
+    "@typescript-eslint/no-floating-promises": 3
+  }
+}

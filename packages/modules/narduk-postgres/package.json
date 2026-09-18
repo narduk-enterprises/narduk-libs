@@ -54,7 +54,7 @@
     "build": "tsc --project tsconfig.build.json",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "lint:strict": "eslint src tests --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "test:live": "NARDUK_POSTGRES_REQUIRE_LIVE=1 vitest run tests/health.live.test.ts --config vitest.config.ts",

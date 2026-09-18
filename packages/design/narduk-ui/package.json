@@ -33,7 +33,7 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0 --ignore-pattern vitest.config.ts",
+    "lint": "narduk-lint --ignore-pattern vitest.config.ts",
     "//lint": "vitest.config.ts is ignored because @vitejs/plugin-vue → vite@7 trips eslint-plugin-import-x@4.17.1 import-x/no-cycle (\"node with invalid interface loaded as resolver\"). narduk-charts gets a root-eslint files override for the same crash; this lane cannot touch eslint.config.mjs.",
     "test:unit": "vitest run",
     "typecheck": "vue-tsc --noEmit --project tsconfig.json"
