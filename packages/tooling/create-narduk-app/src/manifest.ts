@@ -23,7 +23,7 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.108',
   '@narduk-enterprises/narduk-mapkit': '2.1.3',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.9.0',
+  '@narduk-enterprises/narduk-app-tools': '0.9.1',
   '@narduk-enterprises/eslint-config': '2.0.3',
   '@narduk-enterprises/narduk-ai': '0.3.4',
   '@narduk-enterprises/narduk-analytics': '1.21.4',
@@ -54,7 +54,7 @@ export const PACKAGE_VERSIONS = {
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.3.2',
   '@narduk-enterprises/narduk-testkit': '1.5.0',
-  '@narduk-enterprises/narduk-uploads': '1.21.1',
+  '@narduk-enterprises/narduk-uploads': '1.21.2',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
   // deep in the setup chain to finish registering the icon client-bundle
