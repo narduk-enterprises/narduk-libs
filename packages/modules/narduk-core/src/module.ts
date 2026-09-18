@@ -33,6 +33,8 @@ import {
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
 
+import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
+
 import type { NuxtModule } from '@nuxt/schema'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-core'
@@ -73,6 +75,9 @@ interface MutableNuxtOptionsRecord {
   alias: Record<string, string>
   app: Record<string, unknown>
   appConfig?: Record<string, unknown>
+  auth?: {
+    loadStrategy?: unknown
+  }
   build: {
     transpile: string[]
   }
@@ -82,6 +87,7 @@ interface MutableNuxtOptionsRecord {
   devServer?: Record<string, unknown>
   future?: Record<string, unknown>
   icon?: unknown
+  modules?: unknown[]
   nitro?: Record<string, unknown>
   runtimeConfig: Record<string, unknown>
   ui?: unknown
@@ -635,7 +641,18 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           await installModule('@nuxt/image')
         }
         await installModule('@nuxt/eslint')
-        await installModule('nuxt-auth-utils')
+        // Session fetch is opt-in: `loadStrategy: 'none'` skips the
+        // nuxt-auth-utils session plugin so a no-auth app never calls
+        // `/api/_auth/session` during SSR (narduk-libs#540).
+        await installModule(
+          'nuxt-auth-utils',
+          resolveNuxtAuthUtilsInstallOptions({
+            configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
+            env: process.env,
+            modules: nuxtOptions.modules,
+            runtimeConfig: existingRuntimeConfig,
+          }),
+        )
         dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
       }
 

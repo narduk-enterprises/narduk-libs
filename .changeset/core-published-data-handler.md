@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 New server util
@@ -11,4 +12,5 @@ a sanitized 503, and a deliberate `createError` passes through unchanged. Rate
 limiting goes through `defineRateLimitedHandler` and is applied only when
 `rateLimit` is passed. It is auto-imported, so an app with its own
 `definePublishedDataHandler` in `server/utils` (Buoys) should replace its local
-copy when it adopts this release.
+copy when it adopts this release. `create-narduk-app` is a companion patch so
+the generator pin moves with this core minor.

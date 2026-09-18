@@ -36,6 +36,23 @@ app that wants light-only sets
 `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
 still override `classSuffix`.
 
+## Session module (`nuxt-auth-utils`)
+
+`coreModules` still installs
+[`nuxt-auth-utils`](https://github.com/atinux/nuxt-auth-utils) so dashboard
+chrome can keep `useUserSession`. Its session plugin fetches
+`/api/_auth/session` during every SSR, and with no `NUXT_SESSION_PASSWORD` that
+request throws (narduk-libs#540). The install now reuses the module's own
+`auth.loadStrategy` option:
+
+- **`'none'`** when the app has not configured auth, so SSR makes no session
+  call and logs no error. A published-data app (Buoys) is this case.
+- **The default (`'server-first'`)** when an existing signal says the app uses
+  auth: `NUXT_SESSION_PASSWORD` or `SESSION_PASSWORD` is non-empty at build
+  time, `runtimeConfig.session.password` is already set, or the app lists
+  `@narduk-enterprises/narduk-auth` or `nuxt-auth-utils` in `modules`.
+- **Unchanged** when the app already set `auth.loadStrategy`.
+
 ## Security headers (`security.headers`)
 
 narduk-core has always set security headers.
