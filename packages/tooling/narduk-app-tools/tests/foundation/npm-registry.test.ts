@@ -1,8 +1,15 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   FilesystemRegistryReality,
   SCOPE_PROBE_PACKAGE,
+  encodePackumentName,
+  parseScopeRoute,
+  readScopeRoute,
 } from '../../src/foundation/npm-registry.js'
 
 const TARGET = '@narduk-enterprises/narduk-shell'
@@ -253,3 +260,204 @@ describe('FilesystemRegistryReality registry-read resilience (narduk-libs#341)',
     expect(instance.fetchTimeoutMs).toBe(20_000)
   })
 })
+
+// narduk-libs#498: the packument base follows the project's own
+// `@narduk-enterprises` route -- the last `@narduk-enterprises:registry=` line
+// in `.npmrc`, the same rule as narduk-enterprises/workflows#108.
+describe('parseScopeRoute (narduk-libs#498)', () => {
+  const mirror = { kind: 'anonymous', base: 'https://npm.nard.uk' }
+  const github = { kind: 'github-packages' }
+
+  it.each([
+    ['no file', undefined, github],
+    ['empty file', '', github],
+    ['no route line', 'auto-install-peers=false\n', github],
+    ['GitHub Packages', '@narduk-enterprises:registry=https://npm.pkg.github.com\n', github],
+    [
+      'GitHub Packages, trailing slash',
+      '@narduk-enterprises:registry=https://npm.pkg.github.com/\n',
+      github,
+    ],
+    ['the mirror', '@narduk-enterprises:registry=https://npm.nard.uk/\n', mirror],
+    ['the mirror, no slash', '@narduk-enterprises:registry=https://npm.nard.uk\n', mirror],
+    ['quoted, spaced', '  @narduk-enterprises:registry = "https://npm.nard.uk"  \n', mirror],
+    ['CRLF line ending', '@narduk-enterprises:registry=https://npm.nard.uk/\r\n', mirror],
+    ['commented out (#)', '# @narduk-enterprises:registry=https://npm.nard.uk/\n', github],
+    ['commented out (;)', '; @narduk-enterprises:registry=https://npm.nard.uk/\n', github],
+    ['another scope only', '@narduk-geo:registry=https://npm.nard.uk/\n', github],
+    ['empty value', '@narduk-enterprises:registry=\n', github],
+    ['not a URL', '@narduk-enterprises:registry=npm.nard.uk\n', github],
+    ['non-http scheme', '@narduk-enterprises:registry=file:///tmp/registry\n', github],
+  ])('%s', (_case, npmrc, expected) => {
+    expect(parseScopeRoute(npmrc)).toEqual(expected)
+  })
+
+  it('the last route line wins: mirror then GitHub Packages is GitHub Packages (break-glass)', () => {
+    expect(
+      parseScopeRoute(
+        '@narduk-enterprises:registry=https://npm.nard.uk/\n' +
+          '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
+      ),
+    ).toEqual(github)
+  })
+
+  it('the last route line wins: GitHub Packages then mirror is the mirror', () => {
+    expect(
+      parseScopeRoute(
+        '@narduk-enterprises:registry=https://npm.pkg.github.com\n' +
+          'auto-install-peers=false\n' +
+          '@narduk-enterprises:registry=https://npm.nard.uk/\n',
+      ),
+    ).toEqual(mirror)
+  })
+
+  it('a commented-out later line does not override an earlier live one', () => {
+    expect(
+      parseScopeRoute(
+        '@narduk-enterprises:registry=https://npm.nard.uk/\n' +
+          '# @narduk-enterprises:registry=https://npm.pkg.github.com\n',
+      ),
+    ).toEqual(mirror)
+  })
+
+  it('treats a lookalike host generically (anonymous), never as GitHub Packages', () => {
+    expect(
+      parseScopeRoute('@narduk-enterprises:registry=https://npm.nard.uk.example.com/\n'),
+    ).toEqual({ kind: 'anonymous', base: 'https://npm.nard.uk.example.com' })
+  })
+
+  describe('readScopeRoute', () => {
+    let dir: string
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'scope-route-'))
+    })
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('defaults to GitHub Packages when the project has no .npmrc', () => {
+      expect(readScopeRoute(dir)).toEqual(github)
+    })
+
+    it('reads the project .npmrc', () => {
+      writeFileSync(join(dir, '.npmrc'), '@narduk-enterprises:registry=https://npm.nard.uk/\n')
+      expect(readScopeRoute(dir)).toEqual(mirror)
+    })
+  })
+})
+
+describe('FilesystemRegistryReality on the project route (narduk-libs#498)', () => {
+  type Seen = { url: string; headers: Record<string, string> }
+
+  function stubAny(status: number, body: unknown = {}): Seen[] {
+    const seen: Seen[] = []
+    vi.stubGlobal('fetch', (url: string, init?: { headers?: Record<string, string> }) => {
+      seen.push({ url: String(url), headers: { ...(init?.headers ?? {}) } })
+      return Promise.resolve({
+        status,
+        ok: status >= 200 && status < 300,
+        json: () => Promise.resolve(body),
+      })
+    })
+    return seen
+  }
+
+  function repoWithNpmrc(npmrc: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'route-repo-'))
+    writeFileSync(join(dir, '.npmrc'), npmrc)
+    return dir
+  }
+
+  it('encodes a scoped name the way the mirror expects', () => {
+    expect(encodePackumentName('@narduk-enterprises/narduk-core')).toBe(
+      '@narduk-enterprises%2fnarduk-core',
+    )
+  })
+
+  it('reads the mirror from the project .npmrc with no Authorization header, even with a token set', async () => {
+    const dir = repoWithNpmrc('@narduk-enterprises:registry=https://npm.nard.uk/\n')
+    try {
+      const seen = stubAny(200, { 'dist-tags': { latest: '1.23.2' } })
+      const result = await new FilesystemRegistryReality(dir).publicationOf(SCOPE_PROBE_PACKAGE)
+      expect(result).toEqual({ status: 'published', latest: '1.23.2', major: 1 })
+      expect(seen.map((entry) => entry.url)).toEqual([
+        'https://npm.nard.uk/@narduk-enterprises%2fnarduk-core',
+      ])
+      expect(seen[0]?.headers).not.toHaveProperty('Authorization')
+      expect(seen[0]?.headers.Accept).toBe('application/vnd.npm.install-v1+json, application/json')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reads the mirror with no credential at all (the #498 done-when shape)', async () => {
+    vi.stubEnv('NODE_AUTH_TOKEN', '')
+    const seen = stubAny(200, { 'dist-tags': { latest: '2.0.0' } })
+    const result = await reader({
+      scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+    }).latestPublishedMajor(TARGET)
+    expect(result).toBe(2)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('never sends the token to a lookalike route', async () => {
+    const seen = stubAny(200, { 'dist-tags': { latest: '1.0.0' } })
+    await reader({
+      scopeRoute: parseScopeRoute('@narduk-enterprises:registry=https://npm.nard.uk.example.com/'),
+    }).publicationOf(TARGET)
+    expect(seen[0]?.url).toBe('https://npm.nard.uk.example.com/@narduk-enterprises%2fnarduk-shell')
+    expect(seen[0]?.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('does not scope-probe on the mirror: a 404 is a decided unpublished, one request', async () => {
+    const seen = stubAny(404)
+    const result = await reader({
+      scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+    }).publicationOf(TARGET)
+    expect(result).toEqual({ status: 'unpublished' })
+    expect(seen.map((entry) => entry.url)).toEqual([
+      'https://npm.nard.uk/@narduk-enterprises%2fnarduk-shell',
+    ])
+  })
+
+  it.each([401, 403])('is unreadable on a mirror HTTP %i', async (status) => {
+    stubAny(status)
+    const result = await reader({
+      scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+    }).publicationOf(TARGET)
+    expect(result).toEqual({ status: 'unreadable' })
+  })
+
+  it('keeps the GitHub Packages route unchanged: fixed base, Bearer token, unencoded name', async () => {
+    const seen = stubAny(200, { 'dist-tags': { latest: '1.0.0' } })
+    await reader({ scopeRoute: { kind: 'github-packages' } }).publicationOf(TARGET)
+    expect(seen[0]?.url).toBe('https://npm.pkg.github.com/@narduk-enterprises/narduk-shell')
+    expect(seen[0]?.headers.Authorization).toBe('Bearer a-token')
+  })
+
+  it('keeps other scopes on GitHub Packages even when @narduk-enterprises is mirrored', async () => {
+    const seen = stubAny(200, { 'dist-tags': { latest: '1.0.0' } })
+    await reader({
+      scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+    }).publicationOf('@narduk-geo/grid')
+    expect(seen[0]?.url).toBe('https://npm.pkg.github.com/@narduk-geo/grid')
+    expect(seen[0]?.headers.Authorization).toBe('Bearer a-token')
+  })
+})
+
+// Live, opt-in: NARDUK_LIVE_REGISTRY_TEST=1. Proves the mirror answers the
+// encoded packument path anonymously; skipped by default so unit runs never
+// touch the network.
+describe.skipIf(process.env.NARDUK_LIVE_REGISTRY_TEST !== '1')(
+  'live npm.nard.uk anonymous read (opt-in)',
+  () => {
+    it('reads narduk-core from the mirror with no credential', async () => {
+      vi.stubEnv('NODE_AUTH_TOKEN', '')
+      const result = await reader({
+        scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+      }).publicationOf(SCOPE_PROBE_PACKAGE)
+      expect(result.status).toBe('published')
+    }, 60_000)
+  },
+)
