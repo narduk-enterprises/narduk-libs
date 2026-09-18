@@ -34,9 +34,20 @@
  *
  * Window and total counts go through `formatNumber` (fixed `en-US`), never
  * `new Intl.NumberFormat()` — the same SSR-stability rule as `NeKpiTile`.
+ *
+ * ## Page size and "Show more" (narduk-libs#528)
+ *
+ * The page-size select and the phone "Show 25 more" button both change the
+ * LIMIT, which this pager's model deliberately cannot write. They emit
+ * `update:limit` instead, for `useCollection().setLimit` — which resets to page
+ * one by its own rule, so a grown page is rows 1–50 in one request and the list
+ * keeps its scroll. "Show more" only offers itself on page one with more to
+ * come and headroom under `maxLimit`; anywhere else the numbered pages show,
+ * because a button that cannot do what it says is worse than a page link.
  */
 import UButton from '@nuxt/ui/components/Button.vue'
 import UPagination from '@nuxt/ui/components/Pagination.vue'
+import USelect from '@nuxt/ui/components/Select.vue'
 import { computed } from 'vue'
 
 import { formatNumber } from '../../format'
@@ -46,7 +57,11 @@ import type { NePagerProps } from './ne-pager-types'
 
 const props = withDefaults(defineProps<NePagerProps>(), {
   density: 'default',
+  maxLimit: undefined,
+  mode: 'pages',
+  moreStep: undefined,
   noun: 'results',
+  pageSizes: undefined,
   siblingCount: 2,
   showControls: true,
   showSummary: true,
@@ -58,6 +73,8 @@ const props = withDefaults(defineProps<NePagerProps>(), {
  * ignores every other field on purpose. See the composable's `state` doc.
  */
 const state = defineModel<NeCollectionState<unknown>>('state', { required: true })
+
+const emit = defineEmits<{ 'update:limit': [limit: number] }>()
 
 const dense = computed(() => props.density === 'dense')
 
@@ -83,6 +100,43 @@ const summary = computed(() => {
 /** `UPagination` cannot page an uncounted collection; the fallback can. */
 const counted = computed(() => state.value.total !== null)
 
+/** Captured once: "Show 25 more" keeps saying 25 after the page has grown to 50. */
+const initialLimit = state.value.limit
+const step = computed(() => Math.max(1, props.moreStep ?? initialLimit))
+
+const canGrow = computed(
+  () =>
+    state.value.page === 1 &&
+    state.value.hasNext &&
+    (props.maxLimit === undefined || state.value.limit < props.maxLimit),
+)
+const showMore = computed(() => props.mode !== 'pages' && canGrow.value)
+/** In `'more'` mode the numbered pages give way entirely while "Show more" can work. */
+const showPages = computed(() => !(showMore.value && props.mode === 'more'))
+const pagesClass = computed(() => (showMore.value && props.mode === 'auto' ? 'max-sm:hidden' : ''))
+
+const moreLabel = computed(() => {
+  const { items, offset, total } = state.value
+  const remaining = total === null ? step.value : total - offset - items.length
+  return `Show ${formatNumber(Math.max(1, Math.min(step.value, remaining)))} more`
+})
+
+function more(): void {
+  const next = state.value.limit + step.value
+  emit('update:limit', props.maxLimit === undefined ? next : Math.min(next, props.maxLimit))
+}
+
+const pageSizeItems = computed(() =>
+  props.pageSizes?.map((size) => ({ label: `${formatNumber(size)} per page`, value: size })),
+)
+
+function pickLimit(value: unknown): void {
+  const limit = Number(value)
+  if (Number.isInteger(limit) && limit > 0 && limit !== state.value.limit) {
+    emit('update:limit', limit)
+  }
+}
+
 function goTo(page: number): void {
   if (page === state.value.page) return
   state.value = { ...state.value, page }
@@ -93,58 +147,88 @@ function goTo(page: number): void {
   <div
     data-ne-pager
     :data-ne-pager-density="density"
+    :data-ne-pager-mode="mode"
     class="flex flex-wrap items-center justify-between"
     :class="dense ? 'gap-2 text-xs' : 'gap-3 text-sm'"
   >
-    <p
-      v-if="showSummary"
-      data-ne-pager-summary
-      aria-live="polite"
-      :aria-busy="state.pending ? 'true' : undefined"
-      class="text-muted tabular-nums"
-    >
-      <slot name="summary" :state="state" :summary="summary">{{ summary }}</slot>
-    </p>
-
-    <UPagination
-      v-if="counted"
-      aria-label="Pagination"
-      class="ms-auto"
-      :items-per-page="state.limit"
-      :page="state.page"
-      :show-controls="showControls"
-      :sibling-count="siblingCount"
+    <UButton
+      v-if="showMore"
+      data-ne-pager-more
+      color="neutral"
+      variant="outline"
+      block
+      class="basis-full"
+      :class="mode === 'auto' ? 'sm:hidden' : ''"
+      :label="moreLabel"
       :size="dense ? 'xs' : 'sm'"
-      :to="to"
-      :total="state.total ?? 0"
-      @update:page="goTo"
+      @click="more"
     />
-    <nav
-      v-else
-      aria-label="Pagination"
-      class="ms-auto flex items-center"
-      :class="dense ? 'gap-1' : 'gap-2'"
-    >
-      <UButton
-        data-ne-pager-previous
+
+    <div v-if="showSummary || pageSizeItems" class="flex flex-wrap items-center gap-3">
+      <p
+        v-if="showSummary"
+        data-ne-pager-summary
+        aria-live="polite"
+        :aria-busy="state.pending ? 'true' : undefined"
+        class="text-muted tabular-nums"
+      >
+        <slot name="summary" :state="state" :summary="summary">{{ summary }}</slot>
+      </p>
+      <USelect
+        v-if="pageSizeItems"
+        data-ne-pager-size
+        aria-label="Rows per page"
         color="neutral"
         variant="outline"
-        :disabled="!state.hasPrevious"
-        label="Previous"
+        :items="pageSizeItems"
+        :model-value="state.limit"
         :size="dense ? 'xs' : 'sm'"
-        :to="state.hasPrevious ? to?.(state.page - 1) : undefined"
-        @click="goTo(state.page - 1)"
+        @update:model-value="pickLimit"
       />
-      <UButton
-        data-ne-pager-next
-        color="neutral"
-        variant="outline"
-        :disabled="!state.hasNext"
-        label="Next"
+    </div>
+
+    <template v-if="showPages">
+      <UPagination
+        v-if="counted"
+        aria-label="Pagination"
+        class="ms-auto"
+        :class="pagesClass"
+        :items-per-page="state.limit"
+        :page="state.page"
+        :show-controls="showControls"
+        :sibling-count="siblingCount"
         :size="dense ? 'xs' : 'sm'"
-        :to="state.hasNext ? to?.(state.page + 1) : undefined"
-        @click="goTo(state.page + 1)"
+        :to="to"
+        :total="state.total ?? 0"
+        @update:page="goTo"
       />
-    </nav>
+      <nav
+        v-else
+        aria-label="Pagination"
+        class="ms-auto flex items-center"
+        :class="[dense ? 'gap-1' : 'gap-2', pagesClass]"
+      >
+        <UButton
+          data-ne-pager-previous
+          color="neutral"
+          variant="outline"
+          :disabled="!state.hasPrevious"
+          label="Previous"
+          :size="dense ? 'xs' : 'sm'"
+          :to="state.hasPrevious ? to?.(state.page - 1) : undefined"
+          @click="goTo(state.page - 1)"
+        />
+        <UButton
+          data-ne-pager-next
+          color="neutral"
+          variant="outline"
+          :disabled="!state.hasNext"
+          label="Next"
+          :size="dense ? 'xs' : 'sm'"
+          :to="state.hasNext ? to?.(state.page + 1) : undefined"
+          @click="goTo(state.page + 1)"
+        />
+      </nav>
+    </template>
   </div>
 </template>

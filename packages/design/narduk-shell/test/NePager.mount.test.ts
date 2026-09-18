@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h, type Component } from 'vue'
 
+import USelect from '@nuxt/ui/components/Select.vue'
+
 import NePager from '../src/runtime/components/NePager.vue'
 
 import type { NeCollectionState } from '../src/runtime/composables/use-collection'
@@ -216,5 +218,84 @@ describe('NePager: density', () => {
       render({ density: 'dense' }).get('[data-ne-pager]').attributes('data-ne-pager-density'),
     ).toBe('dense')
     expect(render().get('[data-ne-pager]').attributes('data-ne-pager-density')).toBe('default')
+  })
+})
+
+describe('NePager: page size and "Show more" (narduk-libs#528)', () => {
+  const firstPage = (over: Partial<NeCollectionState<unknown>> = {}) =>
+    state({ hasPrevious: false, offset: 0, page: 1, pageCount: 11, total: 264, ...over })
+
+  it('offers no page-size select unless page sizes are given', () => {
+    expect(render().find('[data-ne-pager-size]').exists()).toBe(false)
+  })
+
+  it('renders the select with "N per page" options and the current limit', () => {
+    const wrapper = render({ pageSizes: [25, 50, 100], state: firstPage() })
+    const select = wrapper.getComponent(USelect)
+    expect(select.props('modelValue')).toBe(25)
+    expect(select.props('items')).toEqual([
+      { label: '25 per page', value: 25 },
+      { label: '50 per page', value: 50 },
+      { label: '100 per page', value: 100 },
+    ])
+  })
+
+  it('emits update:limit for a new size, and never writes the limit through state', async () => {
+    const wrapper = render({ pageSizes: [25, 50, 100], state: firstPage() })
+    const select = wrapper.getComponent(USelect)
+    select.vm.$emit('update:modelValue', 50)
+    select.vm.$emit('update:modelValue', 25)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('update:limit')).toEqual([[50]])
+    expect(wrapper.emitted('update:state')).toBeUndefined()
+  })
+
+  it('"more" mode replaces the pages with a Show-more button on page one', async () => {
+    const wrapper = render({ mode: 'more', noun: 'stations', state: firstPage() })
+
+    expect(wrapper.find('[aria-label="Pagination"]').exists()).toBe(false)
+    const more = wrapper.get('[data-ne-pager-more]')
+    expect(more.text()).toBe('Show 25 more')
+    await more.trigger('click')
+    expect(wrapper.emitted('update:limit')).toEqual([[50]])
+    expect(wrapper.get('[data-ne-pager-summary]').text()).toBe('1–25 of 264 stations')
+  })
+
+  it('keeps saying the first step after the page has grown, and counts down at the end', async () => {
+    const wrapper = render({ mode: 'more', state: firstPage() })
+    await wrapper.setProps({
+      state: firstPage({ items: Array.from({ length: 250 }, (_, id) => ({ id })), limit: 250 }),
+    })
+    expect(wrapper.get('[data-ne-pager-more]').text()).toBe('Show 14 more')
+  })
+
+  it('gives way to numbered pages at maxLimit, off page one, or with nothing more', () => {
+    const atCeiling = render({
+      maxLimit: 100,
+      mode: 'more',
+      state: firstPage({ limit: 100, pageCount: 3 }),
+    })
+    expect(atCeiling.find('[data-ne-pager-more]').exists()).toBe(false)
+    expect(atCeiling.find('[aria-label="Pagination"]').exists()).toBe(true)
+
+    expect(render({ mode: 'more' }).find('[data-ne-pager-more]').exists()).toBe(false)
+    expect(
+      render({ mode: 'more', state: firstPage({ hasNext: false }) })
+        .find('[data-ne-pager-more]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('clamps a grown limit to maxLimit', async () => {
+    const wrapper = render({ maxLimit: 60, mode: 'more', state: firstPage({ limit: 50 }) })
+    await wrapper.get('[data-ne-pager-more]').trigger('click')
+    expect(wrapper.emitted('update:limit')).toEqual([[60]])
+  })
+
+  it('"auto" renders both, split by breakpoint classes, so the server needs no viewport', () => {
+    const wrapper = render({ mode: 'auto', state: firstPage() })
+    expect(wrapper.get('[data-ne-pager-more]').classes()).toContain('sm:hidden')
+    expect(wrapper.get('[aria-label="Pagination"]').classes()).toContain('max-sm:hidden')
   })
 })
