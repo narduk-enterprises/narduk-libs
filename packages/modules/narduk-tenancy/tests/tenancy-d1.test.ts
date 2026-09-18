@@ -5,7 +5,7 @@ import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { tenancyMemberships } from '../server/database/tenancy-schema'
-import { createTenancy } from '../server/utils/tenancy'
+import { createTenancy, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { MIGRATION_PATH } from './support/database'
 import { codeOf } from './support/expect'
@@ -38,10 +38,20 @@ describe('D1 transaction integration', () => {
   it('admits one presenter and preserves the last owner on the actual D1 driver', async () => {
     const tenancy = createTenancy(drizzle(binding))
     const org = await tenancy.createOrg({ slug: 'd1', name: 'D1', createdByUserId: 'owner-a' })
-    await tenancy.addMember({ orgId: org.id, userId: 'owner-b', role: 'owner' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'owner-b',
+      role: 'owner',
+    })
     const owners = await Promise.allSettled(
       ['owner-a', 'owner-b'].map((userId) =>
-        tenancy.setMemberRole({ orgId: org.id, userId, role: 'viewer' }),
+        tenancy.setMemberRole({
+          actorUserId: TENANCY_SYSTEM_ACTOR,
+          orgId: org.id,
+          userId,
+          role: 'viewer',
+        }),
       ),
     )
     expect(owners.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
@@ -83,7 +93,7 @@ describe('D1 transaction integration', () => {
       ['crew-a', 'crew'],
       ['crew-b', 'crew'],
     ] as const) {
-      await tenancy.addMember({ orgId: org.id, userId, role })
+      await tenancy.addMember({ actorUserId: TENANCY_SYSTEM_ACTOR, orgId: org.id, userId, role })
     }
     const roleOf = async (userId: string) =>
       (await tenancy.resolveRole({ orgId: org.id, userId })).role

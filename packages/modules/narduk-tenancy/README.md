@@ -101,6 +101,38 @@ any role more privileged than the member's org role, so an override can only
 reduce access on one resource. An override equal to the org role is allowed: it
 is not a raise, and it is what a resource-scoped invite records.
 
+**The rank floor.** An identified actor may grant a role, or act on a member who
+holds one, only at or below their own org role (`roleAtLeast`), or the call is
+refused `forbidden`. It applies to `addMember`, `setMemberRole` (both the
+member's current role and the new one), `removeMember`,
+`setResourceRoleOverride`, `clearResourceRoleOverride` and `createInvite`, and
+again when an invite is accepted. So an admin cannot make itself or anybody else
+an owner, cannot demote, remove, narrow or un-narrow an owner, and nobody can
+raise their own role. Anybody may still lower their own role or leave, subject
+to the last-owner rule. An actor is ranked by their org membership, never by a
+role an override narrowed, and an actor who is not a member is refused before
+anything about the target is read.
+
+The floor is the least the package enforces, not a hierarchy. Whether an admin
+may manage another admin, or whether managing anybody needs at least admin, is
+route policy: consumers answer it differently, so a route that wants "strictly
+below" or an admin floor checks it itself before calling the service
+(narduk-libs#213).
+
+What is checked where:
+
+- `setMemberRole` and `removeMember` assert the rank inputs again inside the
+  UPDATE/DELETE. If the member's or the actor's role moved between the check and
+  the write, the call answers `conflict` and writes nothing.
+- `acceptInvite` re-checks that the inviter is still a member holding the
+  invite's role or above, both before the claim and inside it, so an invite does
+  not outlive its inviter's demotion or departure. It answers `forbidden` (or
+  `conflict` if the demotion races the claim).
+- `addMember`, `setResourceRoleOverride`, `clearResourceRoleOverride` and
+  `createInvite` rank from a read made just before the write, not inside it. A
+  change to the actor's or the member's role that lands in that window lets one
+  change through against the roles as they were read.
+
 ## Service
 
 ```ts
@@ -117,7 +149,7 @@ await tenancy.addMember({
   orgId: org.id,
   userId: mateId,
   role: 'crew',
-  actorUserId: userId,
+  actorUserId: userId, // required: the acting user, ranked (see Roles)
 })
 
 const { role, source, supportGrant } = await tenancy.resolveRole({
@@ -126,6 +158,33 @@ const { role, source, supportGrant } = await tenancy.resolveRole({
   resource: { kind: 'vessel', id: vesselId },
 })
 ```
+
+**`actorUserId` is required** on every mutation that takes it: `addMember`,
+`setMemberRole`, `removeMember`, `setResourceRoleOverride`,
+`clearResourceRoleOverride`, `revokeInvite` and `revokeSupportGrant`. Pass the
+acting user's id, or `TENANCY_SYSTEM_ACTOR` for a call no user makes, such as
+seeding, a migration or platform tooling:
+
+```ts
+import {
+  createTenancy,
+  TENANCY_SYSTEM_ACTOR,
+} from '@narduk-enterprises/narduk-tenancy/server/utils/tenancy'
+
+await tenancy.addMember({
+  orgId,
+  userId,
+  role: 'owner',
+  actorUserId: TENANCY_SYSTEM_ACTOR,
+})
+```
+
+A system call is not ranked and is audited with a null actor. A missing, `null`,
+empty or blank `actorUserId` is refused `invalid` before anything is read, so
+leaving the field out never silently becomes a system call. The marker is a
+symbol, so no request input can equal it. `createOrg`, `createInvite` and
+`createSupportGrant` already name their actor (`createdByUserId`,
+`invitedByUserId`, `grantedByUserId`) and have no system path.
 
 `createTenancy(db, options)` accepts `{ now, idGenerator, tokenGenerator }` so
 tests own time, ids, and tokens. Operations:

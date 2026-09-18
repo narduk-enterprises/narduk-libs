@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SUPPORT_GRANT_MAX_TTL_SECONDS } from '../server/utils/tenancy'
+import { SUPPORT_GRANT_MAX_TTL_SECONDS, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { createTestHarness } from './support/database'
 import { codeOf } from './support/expect'
@@ -126,10 +126,15 @@ describe('support grants', () => {
     const revoked = await tenancy.revokeSupportGrant({ grantId: grant.id, actorUserId: 'user-1' })
     expect(revoked.revokedAt).toBe(clock.now())
     expect(await tenancy.listActiveSupportGrants({ orgId: org.id })).toEqual([])
-    expect((await tenancy.revokeSupportGrant({ grantId: grant.id })).revokedAt).toBe(
-      revoked.revokedAt,
-    )
-    expect(await codeOf(tenancy.revokeSupportGrant({ grantId: 'ghost' }))).toBe('not_found')
+    expect(
+      (await tenancy.revokeSupportGrant({ actorUserId: TENANCY_SYSTEM_ACTOR, grantId: grant.id }))
+        .revokedAt,
+    ).toBe(revoked.revokedAt)
+    expect(
+      await codeOf(
+        tenancy.revokeSupportGrant({ actorUserId: TENANCY_SYSTEM_ACTOR, grantId: 'ghost' }),
+      ),
+    ).toBe('not_found')
   })
 
   it('keeps a member role untouched while a grant is attached', async () => {

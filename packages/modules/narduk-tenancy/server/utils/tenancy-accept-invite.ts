@@ -39,6 +39,16 @@ export async function claimInviteMembership(
   const promotes = sql`${sqlRoleRank(tenancyInvites.role)} > ${sqlRoleRank(tenancyMemberships.role)}`
   const incomingPromotes = sql`${sqlRoleRank(sql`excluded.role`)} > ${sqlRoleRank(tenancyMemberships.role)}`
 
+  // The inviter still holds the invite's role or above, asserted in the
+  // claim itself so a demotion or removal racing the acceptance cannot slip
+  // between the service's check and this write (narduk-libs#213).
+  const inviterStillInRank = sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS inviter
+    WHERE inviter.org_id = ${tenancyInvites.orgId}
+      AND inviter.user_id = ${tenancyInvites.invitedByUserId}
+      AND ${sqlRoleRank(sql`inviter.role`)} >= ${sqlRoleRank(tenancyInvites.role)}
+  )`
+
   const claim = db
     .insert(tenancyAuditEvents)
     .select(
@@ -63,6 +73,7 @@ export async function claimInviteMembership(
             isNull(tenancyInvites.acceptedAt),
             isNull(tenancyInvites.revokedAt),
             gt(tenancyInvites.expiresAt, acceptedAt),
+            inviterStillInRank,
           ),
         ),
     )

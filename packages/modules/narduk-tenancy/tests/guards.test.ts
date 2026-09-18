@@ -7,6 +7,7 @@ import {
   TENANCY_UNAUTHENTICATED_ERROR_CODE,
   type TenancyRoleResolver,
 } from '../server/utils/guards'
+import { TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { createTestHarness } from './support/database'
 
@@ -34,8 +35,14 @@ async function thrown(promise: Promise<unknown>): Promise<ThrownH3Error> {
 async function seed() {
   const harness = createTestHarness()
   const org = await harness.tenancy.createOrg(ACME)
-  await harness.tenancy.addMember({ orgId: org.id, userId: 'crew-1', role: 'crew' })
+  await harness.tenancy.addMember({
+    actorUserId: TENANCY_SYSTEM_ACTOR,
+    orgId: org.id,
+    userId: 'crew-1',
+    role: 'crew',
+  })
   await harness.tenancy.setResourceRoleOverride({
+    actorUserId: TENANCY_SYSTEM_ACTOR,
     orgId: org.id,
     userId: 'crew-1',
     resource: VESSEL,

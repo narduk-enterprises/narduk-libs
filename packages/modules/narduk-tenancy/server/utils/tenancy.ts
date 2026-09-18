@@ -106,6 +106,39 @@ function defaultTokenGenerator(): string {
   return toHex(globalThis.crypto.getRandomValues(new Uint8Array(32)))
 }
 
+/**
+ * The explicit actor for a mutation no user made, such as seeding, a
+ * migration or platform tooling. Every mutation that takes `actorUserId`
+ * requires either a user id or this marker, so a system call is always a
+ * deliberate choice in the code and never the accident of a missing field
+ * (narduk-libs#213). A system call is not ranked and is audited with a null
+ * actor.
+ *
+ * It is a symbol, so no request body, query string or user id can ever equal
+ * it. `Symbol.for` keeps it the same value if a bundle carries two copies of
+ * this module.
+ */
+export const TENANCY_SYSTEM_ACTOR: unique symbol = Symbol.for(
+  '@narduk-enterprises/narduk-tenancy/system-actor',
+)
+
+/** Who is making a mutation: a user id, or `TENANCY_SYSTEM_ACTOR`. */
+export type TenancyActorId = string | typeof TENANCY_SYSTEM_ACTOR
+
+/**
+ * The acting user's id, or `undefined` for `TENANCY_SYSTEM_ACTOR`. Anything
+ * else, a missing field or `null` included, is refused `invalid` rather than
+ * read as a system call.
+ */
+function actingUserId(actorUserId: unknown): string | undefined {
+  if (actorUserId === TENANCY_SYSTEM_ACTOR) return undefined
+  if (typeof actorUserId === 'string' && actorUserId.trim().length > 0) return actorUserId
+  throw new TenancyError(
+    'invalid',
+    'actorUserId is required: pass the acting user id, or TENANCY_SYSTEM_ACTOR for a system call.',
+  )
+}
+
 /** An identified caller, with the org role the rank rule judges them by. */
 interface TenancyActor {
   role: TenancyRole
@@ -166,12 +199,12 @@ export interface CreateOrgInput {
 
 export interface MemberInput {
   /**
-   * The caller. When present, the change is ranked against their org role
-   * (narduk-libs#213) and refused `forbidden` if it reaches above it, or if
-   * they are not a member at all. Omit it only for a system call, such as
-   * seeding or platform tooling, which is never ranked.
+   * The caller, required. A user id is ranked against that user's org role
+   * (narduk-libs#213): the change is refused `forbidden` if it reaches above
+   * it, or if they are not a member at all. `TENANCY_SYSTEM_ACTOR` marks a
+   * system call, such as seeding or platform tooling, which is never ranked.
    */
-  actorUserId?: string | null
+  actorUserId: TenancyActorId
   orgId: string
   userId: string
 }
@@ -258,9 +291,9 @@ export interface TenancyService {
   listOrgsForUser: (userId: string) => Promise<TenancyOrg[]>
   removeMember: (input: MemberInput) => Promise<void>
   resolveRole: (input: ResolveRoleInput) => Promise<TenancyRoleResolution>
-  revokeInvite: (input: { actorUserId?: string | null; inviteId: string }) => Promise<TenancyInvite>
+  revokeInvite: (input: { actorUserId: TenancyActorId; inviteId: string }) => Promise<TenancyInvite>
   revokeSupportGrant: (input: {
-    actorUserId?: string | null
+    actorUserId: TenancyActorId
     grantId: string
   }) => Promise<TenancySupportGrant>
   setMemberRole: (input: AddMemberInput) => Promise<TenancyMembership>
@@ -356,13 +389,16 @@ export function createTenancy(
     return { userId, role: membership.role }
   }
 
-  /** As `requireActor`, but a system call that names no actor gets `undefined`. */
-  async function optionalActor(
+  /**
+   * As `requireActor`, but `TENANCY_SYSTEM_ACTOR` gets `undefined`. A missing
+   * actor is refused, never taken for a system call.
+   */
+  async function resolveActor(
     orgId: string,
-    actorUserId: string | null | undefined,
+    actorUserId: TenancyActorId,
   ): Promise<TenancyActor | undefined> {
-    if (actorUserId === undefined || actorUserId === null) return undefined
-    return requireActor(orgId, actorUserId)
+    const userId = actingUserId(actorUserId)
+    return userId === undefined ? undefined : requireActor(orgId, userId)
   }
 
   /**
@@ -390,7 +426,10 @@ export function createTenancy(
     return new TenancyError('last_owner', `Org ${orgId} must keep at least one owner.`)
   }
 
-  async function insertMembership(input: AddMemberInput): Promise<TenancyMembership> {
+  async function insertMembership(
+    input: AddMemberInput,
+    actor: TenancyActor | undefined,
+  ): Promise<TenancyMembership> {
     const timestamp = now()
     const membership: TenancyMembership = {
       id: nextId(),
@@ -403,7 +442,7 @@ export function createTenancy(
     await db.insert(tenancyMemberships).values(membership).run()
     await audit({
       orgId: input.orgId,
-      actorUserId: input.actorUserId,
+      actorUserId: actor?.userId,
       action: 'membership.add',
       subjectKind: 'membership',
       subjectId: membership.id,
@@ -468,6 +507,7 @@ export function createTenancy(
   async function upsertOverride(
     input: ResourceRoleOverrideInput,
     membership: TenancyMembership,
+    actor: TenancyActor | undefined,
   ): Promise<TenancyResourceRoleOverride> {
     // Narrow-only: an override may lower a member's role on one resource and
     // may repeat it, but it may never be an escalation path.
@@ -505,7 +545,7 @@ export function createTenancy(
 
     await audit({
       orgId: input.orgId,
-      actorUserId: input.actorUserId,
+      actorUserId: actor?.userId,
       action: 'override.set',
       subjectKind: 'resource_role_override',
       subjectId: override.id,
@@ -681,7 +721,8 @@ export function createTenancy(
     },
 
     async addMember(input) {
-      requireRank(await optionalActor(input.orgId, input.actorUserId), input.role)
+      const actor = await resolveActor(input.orgId, input.actorUserId)
+      requireRank(actor, input.role)
       await requireOrg(input.orgId)
       const existing = await findMembership(input.orgId, input.userId)
       if (existing) {
@@ -690,11 +731,11 @@ export function createTenancy(
           `User ${input.userId} is already a member of org ${input.orgId}.`,
         )
       }
-      return insertMembership(input)
+      return insertMembership(input, actor)
     },
 
     async setMemberRole(input) {
-      const actor = await optionalActor(input.orgId, input.actorUserId)
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
       // The member as they stand and the role they would get, both in rank:
       // otherwise an admin could demote an owner, or make one. Checked before
@@ -706,7 +747,7 @@ export function createTenancy(
     },
 
     async removeMember(input) {
-      const actor = await optionalActor(input.orgId, input.actorUserId)
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
       requireRank(actor, membership.role)
 
@@ -747,7 +788,7 @@ export function createTenancy(
         .run()
       await audit({
         orgId: input.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId: actor?.userId,
         action: 'membership.remove',
         subjectKind: 'membership',
         subjectId: membership.id,
@@ -760,17 +801,17 @@ export function createTenancy(
     },
 
     async setResourceRoleOverride(input) {
-      const actor = await optionalActor(input.orgId, input.actorUserId)
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
       // Narrowing cannot raise anybody, but it reduces whoever it names, and
       // an admin reducing an owner on a resource is the same trespass as
       // demoting them. The override itself is capped by the member's org role.
       requireRank(actor, membership.role)
-      return upsertOverride(input, membership)
+      return upsertOverride(input, membership, actor)
     },
 
     async clearResourceRoleOverride(input) {
-      const actor = await optionalActor(input.orgId, input.actorUserId)
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const override = await findOverride(input.orgId, input.userId, input.resource)
       if (!override) {
         throw new TenancyError(
@@ -791,7 +832,7 @@ export function createTenancy(
         .run()
       await audit({
         orgId: input.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId: actor?.userId,
         action: 'override.clear',
         subjectKind: 'resource_role_override',
         subjectId: override.id,
@@ -897,6 +938,18 @@ export function createTenancy(
         throw new TenancyError('expired', `Invite ${invite.id} expired.`)
       }
 
+      // Accepting grants the invite's role, and the inviter is who granted it,
+      // so the inviter must still stand at or above it. An invite does not
+      // outlive its inviter's demotion or departure (narduk-libs#213). The
+      // claim asserts the same again inside its write.
+      const inviter = await findMembership(invite.orgId, invite.invitedByUserId)
+      if (!inviter || !roleAtLeast(inviter.role, invite.role)) {
+        throw new TenancyError(
+          'forbidden',
+          `Invite ${invite.id} was issued by a user who no longer holds ${invite.role} or above in org ${invite.orgId}.`,
+        )
+      }
+
       const claimed = await claimInviteMembership(db, invite, userId, acceptedAt, nextId)
       const accepted = await findInviteByToken(input.token)
       if (!accepted || accepted.acceptedByUserId !== userId) {
@@ -906,6 +959,7 @@ export function createTenancy(
     },
 
     async revokeInvite(input) {
+      const actorUserId = actingUserId(input.actorUserId)
       const invite = first(
         await db
           .select()
@@ -946,7 +1000,7 @@ export function createTenancy(
       }
       await audit({
         orgId: invite.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId,
         action: 'invite.revoke',
         subjectKind: 'invite',
         subjectId: invite.id,
@@ -1009,6 +1063,7 @@ export function createTenancy(
     },
 
     async revokeSupportGrant(input) {
+      const actorUserId = actingUserId(input.actorUserId)
       const grant = first(
         await db
           .select()
@@ -1030,7 +1085,7 @@ export function createTenancy(
         .run()
       await audit({
         orgId: grant.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId,
         action: 'support_grant.revoke',
         subjectKind: 'support_grant',
         subjectId: grant.id,

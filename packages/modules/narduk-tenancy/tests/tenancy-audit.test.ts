@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { AUDIT_EVENTS_MAX_LIMIT } from '../server/utils/tenancy'
+import { AUDIT_EVENTS_MAX_LIMIT, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 import { TENANCY_AUDIT_ACTIONS } from '../shared/types/tenancy'
 
 import { createTestHarness } from './support/database'
@@ -18,14 +18,14 @@ describe('audit trail', () => {
       orgId: org.id,
       userId: 'user-2',
       role: 'admin',
-      actorUserId: 'user-1',
+      actorUserId: 'owner-1',
     })
     clock.advance(1)
     await tenancy.setMemberRole({
       orgId: org.id,
       userId: 'user-2',
       role: 'operator',
-      actorUserId: 'user-1',
+      actorUserId: 'owner-1',
     })
     clock.advance(1)
     await tenancy.setResourceRoleOverride({
@@ -33,30 +33,30 @@ describe('audit trail', () => {
       userId: 'user-2',
       resource: VESSEL,
       role: 'viewer',
-      actorUserId: 'user-1',
+      actorUserId: 'owner-1',
     })
     clock.advance(1)
     await tenancy.clearResourceRoleOverride({
       orgId: org.id,
       userId: 'user-2',
       resource: VESSEL,
-      actorUserId: 'user-1',
+      actorUserId: 'owner-1',
     })
     clock.advance(1)
     const { invite } = await tenancy.createInvite({
       orgId: org.id,
       email: 'a@example.com',
       role: 'crew',
-      invitedByUserId: 'user-1',
+      invitedByUserId: 'owner-1',
     })
     clock.advance(1)
-    await tenancy.revokeInvite({ inviteId: invite.id, actorUserId: 'user-1' })
+    await tenancy.revokeInvite({ inviteId: invite.id, actorUserId: 'owner-1' })
     clock.advance(1)
     await tenancy.createInvite({
       orgId: org.id,
       email: 'b@example.com',
       role: 'crew',
-      invitedByUserId: 'user-1',
+      invitedByUserId: 'owner-1',
     })
     clock.advance(1)
     await tenancy.acceptInvite({ token: 't2', userId: 'user-3' })
@@ -64,14 +64,14 @@ describe('audit trail', () => {
     const grant = await tenancy.createSupportGrant({
       orgId: org.id,
       granteeUserId: 'support-1',
-      grantedByUserId: 'user-1',
+      grantedByUserId: 'owner-1',
       reason: 'Ticket 42',
       ttlSeconds: 600,
     })
     clock.advance(1)
-    await tenancy.revokeSupportGrant({ grantId: grant.id, actorUserId: 'user-1' })
+    await tenancy.revokeSupportGrant({ grantId: grant.id, actorUserId: 'owner-1' })
     clock.advance(1)
-    await tenancy.removeMember({ orgId: org.id, userId: 'user-2', actorUserId: 'user-1' })
+    await tenancy.removeMember({ orgId: org.id, userId: 'user-2', actorUserId: 'owner-1' })
 
     const events = await tenancy.listAuditEvents({ orgId: org.id, limit: AUDIT_EVENTS_MAX_LIMIT })
     const actions = new Set(events.map((event) => event.action))
@@ -91,7 +91,7 @@ describe('audit trail', () => {
       orgId: org.id,
       email: 'a@example.com',
       role: 'crew',
-      invitedByUserId: 'user-1',
+      invitedByUserId: 'owner-1',
     })
 
     const events = await tenancy.listAuditEvents({ orgId: org.id })
@@ -102,7 +102,12 @@ describe('audit trail', () => {
     const { tenancy, clock } = createTestHarness()
     const org = await tenancy.createOrg(ACME)
     clock.advance(10)
-    await tenancy.addMember({ orgId: org.id, userId: 'user-2', role: 'crew' })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'user-2',
+      role: 'crew',
+    })
 
     const newestFirst = await tenancy.listAuditEvents({ orgId: org.id })
     expect(newestFirst[0]?.action).toBe('membership.add')
