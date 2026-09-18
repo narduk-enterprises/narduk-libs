@@ -24,7 +24,11 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
   body the runtime already materialised is measured and refused the same way. A
   live Node request stream is hard-stopped by destroying it. A lying
   `Content-Length` therefore cannot buffer past the cap on any of the three
-  paths.
+  paths. The part's declared type is a client header, so each file is also
+  identified from its magic bytes (`sniffUploadImageType`). A file that is not
+  one of the five allow-listed rasters is refused with 415 and nothing in the
+  request is stored. The stored content type and key extension come from the
+  bytes, never from the label.
 - `GET /images/uploads/*` streams those objects from R2 when the stored content
   type is on the same allow-list (parameters stripped, lowercased). Other types
   — including missing metadata, SVG, HTML, and JavaScript — return 415.
