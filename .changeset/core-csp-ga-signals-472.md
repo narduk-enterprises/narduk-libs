@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Fix the estate CSP baseline refusing GA4's Google-signals beacon
@@ -13,3 +14,6 @@ enforcing middleware (`runtime/server/middleware/securityHeaders.ts`
 the legacy middleware's `img-src` already carries an `https:` wildcard that
 covers the same host, so it needed no change. A property that runs with
 Google signals off never sends this beacon and does not need the host.
+
+create-narduk-app re-releases so its generated package pins follow the
+narduk-core patch and its dependents.
