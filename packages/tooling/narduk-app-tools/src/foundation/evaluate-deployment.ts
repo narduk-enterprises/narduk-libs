@@ -28,6 +28,7 @@ import { rollUp } from './schema.js'
 import { resolveAppInfo } from './evaluate.js'
 import { AppRepo } from './source.js'
 import { DEPLOYMENT_STANDARD, PREVIEW_BINDING_KINDS } from '../deployment-config.js'
+import { PREVIEW_CONFIG_FILENAME, type PreviewPlanStatus } from '../preview-config.js'
 import type { FoundationAppInfo, FoundationItemResult, FoundationResult } from './types.js'
 
 export const DEPLOYMENT_TOOL_NAME = '@narduk-enterprises/narduk-app-tools/deployment-standard'
@@ -63,6 +64,15 @@ export interface DeploymentArtefact {
   productionBindings: BindingsByKind
   /** Production bindings a branch preview would reach with no replacement. */
   uncoveredPreviewBindings: BindingsByKind
+  /** What a non-production branch build uploads (narduk-libs#473). Null unless
+   * the block is valid and non-production branch builds are on. `file` is the
+   * preview config the build writes, or null when it keeps the production one. */
+  previewConfig: {
+    status: PreviewPlanStatus | 'blocked'
+    file: string | null
+    rebound: string[]
+    blockers: string[]
+  } | null
   /** What a repository read structurally cannot decide. Always populated. */
   limitations: readonly string[]
   item: FoundationItemResult
@@ -135,6 +145,14 @@ export function runDeploymentCheck(options: RunDeploymentCheckOptions): Deployme
     },
     productionBindings: scan.production,
     uncoveredPreviewBindings: scan.uncovered,
+    previewConfig: scan.preview
+      ? {
+          status: scan.preview.plan ? scan.preview.plan.status : 'blocked',
+          file: scan.preview.plan?.status === 'ready' ? PREVIEW_CONFIG_FILENAME : null,
+          rebound: scan.preview.plan?.rebound ?? [],
+          blockers: scan.preview.blockers,
+        }
+      : null,
     limitations: TIER_ONE_LIMITATIONS,
     item,
     result,
@@ -162,6 +180,13 @@ export function formatDeploymentSummary(artefact: DeploymentArtefact): string {
     `  wrangler   ${artefact.declaration.wranglerConfig ?? '(none found)'}; production D1/KV/R2 ` +
       `bindings: ${bindingSummary(artefact.productionBindings)}`,
   )
+  if (artefact.previewConfig) {
+    const { status, file, rebound } = artefact.previewConfig
+    lines.push(
+      `  preview    ${status}` +
+        (file ? `; branch builds upload ${file}: ${rebound.join(', ')}` : ''),
+    )
+  }
   if (artefact.adoption === 'not-adopted') {
     lines.push('')
     lines.push(

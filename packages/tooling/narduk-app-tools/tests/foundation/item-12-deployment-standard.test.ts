@@ -322,10 +322,10 @@ describe('item 12.4 -- the preview-binding refusal', () => {
     expect(detailOf(root, '12.4')).not.toContain('d1:DB')
   })
 
-  // narduk-libs#451 defect 4: full `previewBindings` coverage used to report
-  // PASS, which read as preview isolation. Nothing consumes the field, so the
+  // narduk-libs#451 defect 4: bare-name coverage used to report PASS, which
+  // read as preview isolation. The build cannot rebind a bare name, so the
   // runtime is identical to declaring nothing -- the honest verdict is UNKNOWN.
-  it('does not claim isolation from a declaration nothing consumes', () => {
+  it('does not claim isolation from a declaration the build cannot act on', () => {
     const root = withD1(
       block({
         nonProductionBranchBuilds: true,
@@ -339,7 +339,158 @@ describe('item 12.4 -- the preview-binding refusal', () => {
     const artefact = run(root)
     expect(artefact.result).toBe('UNKNOWN')
     expect(artefact.exitCode).toBe(2)
-    expect(artefact.limitations.join(' ')).toContain('previewBindings is a declaration')
+    expect(artefact.limitations.join(' ')).toContain('A bare binding name is a declaration')
+    expect(artefact.previewConfig).toEqual({
+      status: 'declared-only',
+      file: null,
+      rebound: [],
+      blockers: [],
+    })
+  })
+
+  // narduk-libs#473: with the preview resource named, the build uploads a
+  // rebound config, and 12.4 checks that config rather than the declaration.
+  describe('with the preview config generated (narduk-libs#473)', () => {
+    const PREVIEW_DB = {
+      binding: 'DB',
+      database_id: 'preview',
+      database_name: 'fixture-db-preview',
+    }
+    const PREVIEW_CACHE = { binding: 'CACHE', id: 'preview-kv' }
+
+    it('passes when every binding is rebound to a preview resource', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: [PREVIEW_CACHE], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('pass')
+      expect(detailOf(root, '12.4')).toContain('.wrangler.deploy.preview.json')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE -> preview-kv')
+      const artefact = run(root)
+      expect(artefact.exitCode).toBe(0)
+      expect(artefact.previewConfig).toEqual({
+        status: 'ready',
+        file: '.wrangler.deploy.preview.json',
+        rebound: ['d1:DB -> preview', 'kv:CACHE -> preview-kv'],
+        blockers: [],
+      })
+      expect(formatDeploymentSummary(artefact)).toContain(
+        'preview    ready; branch builds upload .wrangler.deploy.preview.json',
+      )
+    })
+
+    it('passes a Buoys-shaped app: two KV bindings in apps/web/wrangler.json', () => {
+      const root = baseline({
+        deployment: block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [],
+            kv: [
+              { binding: 'KV', id: '1'.repeat(32) },
+              { binding: 'OG_IMAGE_CACHE', id: '2'.repeat(32) },
+            ],
+            r2: [],
+          },
+        }),
+      })
+      rmSync(`${root}/wrangler.json`)
+      writeJson(root, 'apps/web/wrangler.json', {
+        name: 'buoys',
+        kv_namespaces: [
+          { binding: 'KV', id: 'b591b4b6ea1a4684900df2e24b19f551' },
+          { binding: 'OG_IMAGE_CACHE', id: '03f10f45af19485286d57a095729932c' },
+        ],
+      })
+      expect(statusOf(root, '12.4')).toBe('pass')
+      expect(run(root).exitCode).toBe(0)
+    })
+
+    it('fails when a preview id is a production id', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: [{ binding: 'CACHE', id: 'prod-kv' }], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE id=prod-kv')
+      expect(run(root).exitCode).toBe(1)
+    })
+
+    it('fails when a preview entry names a binding no config declares', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [PREVIEW_DB],
+            kv: [PREVIEW_CACHE, { binding: 'CAHCE', id: 'preview-kv-2' }],
+            r2: [],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('kv:CAHCE')
+    })
+
+    it('fails when a preview entry names the binding under the wrong kind', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [PREVIEW_DB],
+            kv: [PREVIEW_CACHE],
+            r2: [{ binding: 'DB', bucket_name: 'b' }],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('r2:DB')
+    })
+
+    it('stays undecided when one entry is still a bare name', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: ['CACHE'], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE')
+    })
+
+    it('stays undecided when a D1 entry carries its id but not its name', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [{ binding: 'DB', database_id: 'preview' }],
+            kv: [PREVIEW_CACHE],
+            r2: [],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+    })
+
+    it('stays undecided for a TOML app config the build cannot rewrite', () => {
+      const root = baseline({
+        deployment: block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [], kv: [PREVIEW_CACHE], r2: [] },
+        }),
+      })
+      rmSync(`${root}/wrangler.json`)
+      writeFile(
+        root,
+        'wrangler.toml',
+        ['name = "fixture"', '[[kv_namespaces]]', 'binding = "CACHE"', 'id = "prod-kv"'].join('\n'),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+      expect(detailOf(root, '12.4')).toContain('TOML')
+      expect(run(root).previewConfig?.status).toBe('blocked')
+    })
   })
 
   it('allows branch builds for an app with no D1, KV or R2 at all', () => {
