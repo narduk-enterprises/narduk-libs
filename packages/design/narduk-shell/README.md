@@ -47,10 +47,14 @@ last of the three reserved subpaths to stop being a placeholder; item 19
 ships `NeForm`, `NeFormSection` and `NeSettingsPage`, and deprecates
 narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`; item 15
 ([narduk-libs#262](https://github.com/narduk-enterprises/narduk-libs/issues/262))
-ships `NeKpiTile` and `NeKpiBand`. Components read Nuxt UI semantic tokens and
-`UBadge` colour/variant props, and do not hardcode a colour, radius, shadow or
-font. Each later item adds its own component, README section, tests and NE Base
-card.
+ships `NeKpiTile` and `NeKpiBand`;
+[narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)
+ships `NeDataTable`, `NeSortHeader` and `NeCsvDownload` — the `UTable` preset
+with column groups, the promoted sort header, and CSV of the rows in view —
+and extends `NePager` with a page-size select and a “Show more” mode.
+Components read Nuxt UI semantic tokens and `UBadge` colour/variant props, and
+do not hardcode a colour, radius, shadow or font. Each later item adds its own
+component, README section, tests and NE Base card.
 
 ## Install
 
@@ -940,8 +944,10 @@ The foot of a paged list, and the state machine behind it. Backlog item 11
 
 `useCollection()` is the component here; `NePager` is the small part you can
 see. The composable owns the concurrency rules that every list in the estate got
-wrong separately, and the pager is deliberately incapable of breaking them — it
-can write back a page number and nothing else.
+wrong separately, and the pager is deliberately incapable of breaking them —
+assigning `v-model:state` applies `page` and nothing else. Page-size and “Show
+more” emit `update:limit` for `useCollection().setLimit`, which resets to page 1
+by its own rule.
 
 The wire shape is not this package's to invent: the query and response are
 `@narduk-enterprises/narduk-platform/list-query`, served by `parseListQuery` +
@@ -987,7 +993,9 @@ const c = useCollection<Runner>({
   <NePager
     v-model:state="c.state"
     noun="runners"
+    :page-sizes="[25, 50, 100]"
     :to="(page) => ({ query: { ...$route.query, page } })"
+    @update:limit="c.setLimit"
   />
 </template>
 ```
@@ -1040,6 +1048,10 @@ outside a router; that is why `vue-router` is a declared peer.
 | `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                                                                      |
 | `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                                                                   |
 | `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                                                                    |
+| `pageSizes`    | `readonly number[]`                  | —           | Options for a “25 per page” select. Omit for no select. Changing the size emits `update:limit`.                |
+| `mode`         | `'pages' \| 'more' \| 'auto'`        | `'pages'`   | `'more'` is a “Show 25 more” button that grows the limit. `'auto'` is numbered pages from `sm` up, both below. |
+| `moreStep`     | `number`                             | first limit | How many rows “Show more” adds. Defaults to the limit the pager first saw.                                     |
+| `maxLimit`     | `number`                             | —           | The route’s page-size ceiling. At the ceiling, “Show more” gives way to numbered pages.                        |
 
 #### NePager slots and events
 
@@ -1047,9 +1059,10 @@ outside a router; that is why `vue-router` is a declared peer.
 | --------- | -------------------- | ----------------------------------------------- |
 | `summary` | `{ state, summary }` | Replaces the sentence, keeping the live region. |
 
-| Event          | Payload                | Notes                                                                             |
-| -------------- | ---------------------- | --------------------------------------------------------------------------------- |
-| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes. |
+| Event          | Payload                | Notes                                                                                                                       |
+| -------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                           |
+| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the pager never writes `limit` through `state`.            |
 
 #### Two shapes, because `total` is optional
 
@@ -1071,6 +1084,21 @@ Nothing is disabled while a request is in flight: disabling a link takes
 middle-click and "open in new tab" away from a reader for 200 ms. The summary
 carries `aria-busy` instead.
 
+#### Page size and “Show more”
+
+[narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528).
+Both the “25 per page” select and the phone “Show 25 more” button change the
+**limit**, which this pager’s model deliberately cannot write. They emit
+`update:limit` for `useCollection().setLimit` — which resets to page 1 by its
+own rule, so a grown page is rows 1–50 in one request and the list keeps its
+scroll.
+
+`'more'` only offers itself on page one with more to come and headroom under
+`maxLimit`; anywhere else the numbered pages show, because a button that cannot
+do what it says is worse than a page link. `'auto'` renders both, split by
+breakpoint classes (`sm:hidden` / `max-sm:hidden`), so the server needs no
+viewport.
+
 #### Offset mode only, deliberately
 
 The contract also has a cursor form. `useCollection` implements the offset form
@@ -1090,6 +1118,276 @@ import type {
   NeCollectionState,
   NePagerProps,
 } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeDataTable
+
+The estate’s data-table preset on Nuxt UI’s `UTable`
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
+The eslint pack already forces `UTable`; this is the reading every history and
+list table in the estate re-derived by hand: a sticky header, column groups
+with their unit drawn once, right-aligned tabular numerals, one missing-value
+style, day (group) rows, a sticky first column, a phone column-set switch, the
+“no value, sorted last” break row, and a loading reading that keeps the rows
+on screen.
+
+**It never reorders rows.** Sorting belongs to whoever owns the set — the
+server, through `useCollection().setSort`. The table draws the arrow,
+`aria-sort` and the column tint for `sort`, emits `update:sort` on a header
+click, and renders `rows` in the order they arrived. A table that sorted the
+25 rows it holds is exactly the “Wind ↓ sorts one page” bug the buoys
+round-2 board opens with.
+
+Group and break rows are extra entries in the data handed to `UTable`: their
+first cell spans every column and the remaining cells are `hidden`, so the
+markup stays one `<tr>` per line and TanStack still owns the body.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const columns = [
+  { key: 'time', label: 'Time', sticky: true },
+  {
+    key: 'wind',
+    label: 'avg',
+    group: 'wind',
+    numeric: true,
+    emphasis: true,
+    sortKey: 'wind',
+    firstDirection: 'desc',
+  },
+  { key: 'gust', label: 'gust', group: 'wind', numeric: true },
+  { key: 'pressure', label: 'sea level', group: 'pressure', numeric: true },
+]
+const groups = [
+  { id: 'wind', label: 'Wind', unit: 'kt' },
+  { id: 'pressure', label: 'Pressure', unit: 'inHg' },
+]
+</script>
+
+<template>
+  <NeDataTable
+    :columns="columns"
+    :groups="groups"
+    :rows="c.items"
+    :group-by="(row) => row.day"
+    :sort="c.sort"
+    :loading="c.pending"
+    v-model:column-set="columnSet"
+    @update:sort="c.setSort"
+  />
+</template>
+```
+
+#### Props
+
+| Prop               | Type                          | Default     | Notes                                                                                                                      |
+| ------------------ | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `columns`          | `NeDataColumn<T>[]`           | —           | Required. See the column contract below.                                                                                   |
+| `rows`             | `T[]`                         | —           | Required. Drawn in this order.                                                                                             |
+| `groups`           | `NeDataColumnGroup[]`         | `[]`        | Header row above grouped columns. Each group’s `unit` is drawn once.                                                       |
+| `rowKey`           | `(row, index) => string`      | index       | Stable row identity.                                                                                                       |
+| `groupBy`          | `(row) => string \| null`     | —           | Opens a group (day) row whenever the key changes. Rows must already be in order.                                           |
+| `groupLabel`       | `(key, rows) => string`       | the key     | The group row’s text. The `group` slot overrides it.                                                                       |
+| `sort`             | `string \| null`              | `null`      | Wire form (`'wind:desc'`). Drives the arrow, `aria-sort` and the column tint.                                              |
+| `missingLast`      | `boolean`                     | `true`      | Draws a break row before the first row with no value in the sorted column.                                                 |
+| `missingCount`     | `number \| null`              | page count  | The whole set’s count of rows with no value, for the break row’s text.                                                     |
+| `missingLabel`     | `string`                      | —           | Replaces the break row’s text entirely.                                                                                    |
+| `loading`          | `boolean`                     | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                              |
+| `dropEmptyColumns` | `boolean`                     | `false`     | Drops a non-sticky column whose every row is missing.                                                                      |
+| `columnSet`        | `string \| null`              | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                               |
+| `phoneColumnSets`  | `boolean`                     | 2+ groups   | The phone column-set switch. Defaults to on when there are two or more groups.                                             |
+| `stickyHeader`     | `boolean \| 'page'`           | `true`      | `true`: sticks inside the table’s scroll box. `'page'`: sticks under the site header. `false`: no sticky header.           |
+| `empty`            | `string`                      | `'No rows'` | Text for a table with no rows.                                                                                             |
+| `caption`          | `string`                      | —           | Screen-reader caption.                                                                                                     |
+
+#### Column contract (`NeDataColumn`)
+
+| Field            | Type                         | Notes                                                                                          |
+| ---------------- | ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `key`            | `string`                     | Column id, and the property read when `value` is not given.                                    |
+| `label`          | `string`                     | Header text.                                                                                   |
+| `unit`           | `string`                     | Drawn in the header under the label; cells then carry numbers only.                            |
+| `group`          | `string`                     | A `NeDataColumnGroup.id`. Ungrouped columns sit outside every group.                           |
+| `numeric`        | `boolean`                    | Right-aligned, tabular, monospaced numerals (`font-mono tabular-nums`).                        |
+| `emphasis`       | `boolean`                    | The group’s headline value, drawn at `font-medium`.                                            |
+| `sticky`         | `boolean`                    | Pinned to the left edge, and never hidden by the phone column-set switch.                      |
+| `value`          | `(row) => unknown`           | How to read the cell. Defaults to `row[key]`.                                                  |
+| `format`         | `(value, row) => string`     | How to print a present value. Missing values never reach it.                                   |
+| `sortKey`        | `string`                     | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself.     |
+| `firstDirection` | `'asc' \| 'desc'`            | First-click direction for `sortKey`. Defaults to `'asc'`.                                      |
+| `csv`            | `false \| (row) => unknown`  | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.      |
+| `csvLabel`       | `string`                     | CSV header text. Defaults to `label (unit)`.                                                   |
+| `csvOnly`        | `boolean`                    | In the CSV only — e.g. the SI twin of a displayed column.                                      |
+
+`0` and `false` are values. `null`, `undefined`, `''` and a non-finite number
+are missing: an em dash in `text-dimmed` with “No value” for a screen reader,
+never `0`.
+
+#### Slots and events
+
+| Slot          | Props                              | Notes                                              |
+| ------------- | ---------------------------------- | -------------------------------------------------- |
+| `group`       | `{ key, rows }`                    | Replaces the group row’s label.                    |
+| `break`       | `{ column, count }`                | Replaces the break row’s text.                     |
+| `<key>-cell`  | `{ column, row, value }`           | Custom cell for that column.                       |
+
+| Event              | Payload  | Notes                                                        |
+| ------------------ | -------- | ------------------------------------------------------------ |
+| `update:sort`      | `string` | Next wire sort (`'wind:desc'`). Hand it to `c.setSort`.      |
+| `update:columnSet` | `string` | The phone switch picked a different group.                   |
+
+#### Phone column sets
+
+On a narrow viewport the table cannot show every group beside the sticky
+columns. With two or more groups a `UTabs` switch (`data-ne-column-sets`) picks
+which group shows; sticky and ungrouped columns stay. The hidden groups carry
+`max-sm:hidden`, so the server renders every column and CSS hides the rest —
+no viewport is consulted. `stickyHeader="page"` pairs with this: the box no
+longer scrolls sideways.
+
+#### Loading
+
+`loading` keeps the current rows, dims the body (`opacity-50`) and draws a 2 px
+bar on the header (`after:h-0.5`). The wrapper carries `aria-busy="true"`.
+Nothing is replaced with a skeleton, so the table does not jump.
+
+#### Types
+
+```ts
+import type {
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeSortHeader
+
+A sortable column header
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)),
+promoted from stonx’s `SortableTableHeader.vue`. First click picks the useful
+way — readings strongest first (`firstDirection="desc"`), names A–Z (`'asc'`).
+The second click flips it. There is no third, “unsorted” click; a Reset
+control outside the table does that.
+
+Two call shapes:
+
+- **Server mode.** `sortKey` + `sort` (wire form, `'wind:desc'`) emit
+  `update:sort`, which is what `useCollection().setSort` takes. The header
+  never reorders rows; the server does. This is what `NeDataTable` uses.
+- **Client mode.** A TanStack `column` from a plain `UTable` `#<id>-header`
+  slot, exactly the stonx call shape, so those sites move over unchanged.
+
+`aria-sort` belongs on the `<th>`, not on the button inside it. `UTable` gives
+a header slot no way to set attributes on its cell, so the header writes
+`aria-sort` onto its closest `<th>` after mount and removes it when the column
+stops being sorted. At rest a column carries no `aria-sort` at all. The column
+tint is the table’s business: `NeDataTable` draws `bg-elevated/50` down the
+sorted column.
+
+#### Example
+
+```vue
+<NeSortHeader
+  label="Wind"
+  unit="kt"
+  sort-key="wind"
+  first-direction="desc"
+  align="end"
+  :sort="c.sort"
+  @update:sort="c.setSort"
+/>
+```
+
+#### Props
+
+| Prop             | Type                    | Default   | Notes                                                                                         |
+| ---------------- | ----------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| `label`          | `string`                | —         | Required. The header text.                                                                    |
+| `unit`           | `string`                | —         | Shown once, muted, beside the label: `kt`, `°F`.                                              |
+| `firstDirection` | `'asc' \| 'desc'`       | `'asc'`   | Which way the first click sorts.                                                              |
+| `align`          | `'start' \| 'end'`      | `'start'` | `'end'` for a numeric column, so the arrow sits against the numbers.                          |
+| `sortKey`        | `string`                | —         | Server mode: the key this header sorts by.                                                    |
+| `sort`           | `string \| null`        | `null`    | Server mode: the current sort in wire form (`useCollection().sort`).                          |
+| `column`         | `NeSortableColumn`      | —         | Client mode: a TanStack column from a `UTable` header slot.                                   |
+
+#### Events
+
+| Event         | Payload  | Notes                                                                      |
+| ------------- | -------- | -------------------------------------------------------------------------- |
+| `update:sort` | `string` | Server mode only. `'<sortKey>:<asc\|desc>'`. Client mode calls `column.toggleSorting` instead. |
+
+`parseSort` is a package-root export: `'wind:desc'` → `{ key, direction }`,
+anything else → `null`. Use it when a page reads a wire sort without a regex.
+
+#### Types
+
+```ts
+import { parseSort } from '@narduk-enterprises/narduk-shell'
+import type { NeSortDirection, NeSortHeaderProps, NeSortableColumn } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCsvDownload
+
+“CSV” for exactly the rows in view
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
+Hand it the same `columns` and `rows` the `NeDataTable` beside it draws and it
+writes those rows, in that order — not the whole history, not the next page.
+Columns with `csv: false` stay out; `csvOnly` columns (an SI twin of a
+displayed column, say) go in. Values are written raw through each column’s
+`csv` accessor or `value`, never through `format`, so a spreadsheet gets
+numbers rather than “12 kt”. Missing values are empty cells, never `0`.
+
+`preamble` lines go above the header — the place for an attribution line. The
+text itself is `toCsv()`, exported from the package root, so a server route
+can produce the identical file. The button is inert on the server: it only
+builds the file when it is clicked, in the browser.
+
+#### Example
+
+```vue
+<NeCsvDownload
+  :columns="columns"
+  :rows="c.items"
+  :preamble="['Source: NOAA NDBC']"
+  filename="history"
+/>
+```
+
+```ts
+import { toCsv } from '@narduk-enterprises/narduk-shell'
+
+const csv = toCsv(columns, rows, ['Source: NOAA NDBC'])
+```
+
+#### Props
+
+| Prop       | Type                  | Default        | Notes                                                     |
+| ---------- | --------------------- | -------------- | --------------------------------------------------------- |
+| `columns`  | `NeDataColumn<T>[]`   | —              | Required. Same contract as `NeDataTable`.                 |
+| `rows`     | `T[]`                 | —              | Required. Exactly these rows, in this order.              |
+| `filename` | `string`              | `'export.csv'` | `.csv` is appended when missing.                          |
+| `preamble` | `readonly string[]`   | `[]`           | Lines written above the header.                           |
+| `label`    | `string`              | `'CSV'`        | The button’s text.                                        |
+| `size`     | `'xs' \| 'sm' \| 'md'`| `'sm'`         | Nuxt UI button size.                                      |
+
+#### Events
+
+| Event      | Payload                      | Notes                                              |
+| ---------- | ---------------------------- | -------------------------------------------------- |
+| `download` | `[csv: string, filename]`    | Fired with the same text the file contains.        |
+
+Formula-leading text (`=`, `+`, `-`, `@`) is prefixed so a spreadsheet does
+not run it; numeric cells are written as numbers, so a negative reading is
+never prefixed.
+
+#### Types
+
+```ts
+import { toCsv } from '@narduk-enterprises/narduk-shell'
+import type { NeCsvDownloadProps } from '@narduk-enterprises/narduk-shell'
 ```
 
 ### NeForm
