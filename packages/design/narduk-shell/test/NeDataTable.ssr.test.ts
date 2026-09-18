@@ -16,6 +16,7 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, h } from 'vue'
+import type { Component } from 'vue'
 
 import NeDataTable from '../src/runtime/components/NeDataTable.vue'
 
@@ -62,7 +63,7 @@ function render(props: Record<string, unknown> = {}): Promise<string> {
   return renderToString(
     createSSRApp({
       render: () =>
-        h(NeDataTable, {
+        h(NeDataTable as Component, {
           columns,
           groups,
           rowKey: (row: Reading) => row.time,

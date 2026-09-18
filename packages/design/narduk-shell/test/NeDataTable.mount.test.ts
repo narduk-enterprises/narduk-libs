@@ -7,6 +7,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import type { Component } from 'vue'
 
 import NeDataTable from '../src/runtime/components/NeDataTable.vue'
 
@@ -28,7 +29,15 @@ const groups: NeDataColumnGroup[] = [
 
 const columns: NeDataColumn<Reading>[] = [
   { key: 'time', label: 'Time', sticky: true },
-  { key: 'wind', label: 'avg', group: 'wind', numeric: true, emphasis: true, sortKey: 'wind', firstDirection: 'desc' },
+  {
+    key: 'wind',
+    label: 'avg',
+    group: 'wind',
+    numeric: true,
+    emphasis: true,
+    sortKey: 'wind',
+    firstDirection: 'desc',
+  },
   { key: 'gust', label: 'gust', group: 'wind', numeric: true },
   {
     key: 'pressure',
@@ -47,7 +56,7 @@ const rows: Reading[] = [
 ]
 
 function render(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
-  return mount(NeDataTable, {
+  return mount(NeDataTable as Component, {
     props: { columns, groups, rows, rowKey: (row: Reading) => row.time, ...props },
     slots,
   })
@@ -133,7 +142,8 @@ describe('NeDataTable: group and break rows', () => {
   it('opens a day row whenever the group key changes, spanning every column', () => {
     const wrapper = render({
       groupBy: (row: Reading) => row.day,
-      groupLabel: (key: string, members: readonly Reading[]) => `${key} · ${members.length} readings`,
+      groupLabel: (key: string, members: readonly Reading[]) =>
+        `${key} · ${members.length} readings`,
     })
     const labels = wrapper.findAll('[data-ne-group-row]').map((cell) => cell.text())
     expect(labels).toEqual(['Fri, Sep 18 · 2 readings', 'Thu, Sep 17 · 1 readings'])
@@ -167,7 +177,9 @@ describe('NeDataTable: group and break rows', () => {
       '1 row has no avg value · sorted last',
     )
     expect(
-      render({ missingLabel: 'No wind reading', sort: 'wind:asc' }).get('[data-ne-break-row]').text(),
+      render({ missingLabel: 'No wind reading', sort: 'wind:asc' })
+        .get('[data-ne-break-row]')
+        .text(),
     ).toBe('No wind reading')
   })
 

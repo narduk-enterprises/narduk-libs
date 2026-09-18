@@ -57,7 +57,13 @@ describe('toCsv', () => {
   const columns: NeDataColumn<Row>[] = [
     { key: 'time', label: 'Time' },
     { key: 'wind', label: 'Wind', unit: 'kt', format: () => 'never used' },
-    { key: 'windMs', label: 'Wind', unit: 'm/s', csvOnly: true, csv: (r) => (r.wind ? r.wind / 2 : null) },
+    {
+      key: 'windMs',
+      label: 'Wind',
+      unit: 'm/s',
+      csvOnly: true,
+      csv: (r) => (r.wind ? r.wind / 2 : null),
+    },
     { key: 'note', label: 'Note' },
     { key: 'hidden', label: 'Hidden', csv: false },
   ]

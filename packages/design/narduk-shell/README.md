@@ -50,10 +50,10 @@ narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`; item 15
 ships `NeKpiTile` and `NeKpiBand`;
 [narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)
 ships `NeDataTable`, `NeSortHeader` and `NeCsvDownload` — the `UTable` preset
-with column groups, the promoted sort header, and CSV of the rows in view —
-and extends `NePager` with a page-size select and a “Show more” mode.
-Components read Nuxt UI semantic tokens and `UBadge` colour/variant props, and
-do not hardcode a colour, radius, shadow or font. Each later item adds its own
+with column groups, the promoted sort header, and CSV of the rows in view — and
+extends `NePager` with a page-size select and a “Show more” mode. Components
+read Nuxt UI semantic tokens and `UBadge` colour/variant props, and do not
+hardcode a colour, radius, shadow or font. Each later item adds its own
 component, README section, tests and NE Base card.
 
 ## Install
@@ -1059,10 +1059,10 @@ outside a router; that is why `vue-router` is a declared peer.
 | --------- | -------------------- | ----------------------------------------------- |
 | `summary` | `{ state, summary }` | Replaces the sentence, keeping the live region. |
 
-| Event          | Payload                | Notes                                                                                                                       |
-| -------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                           |
-| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the pager never writes `limit` through `state`.            |
+| Event          | Payload                | Notes                                                                                                            |
+| -------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                |
+| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the pager never writes `limit` through `state`. |
 
 #### Two shapes, because `total` is optional
 
@@ -1125,18 +1125,18 @@ import type {
 The estate’s data-table preset on Nuxt UI’s `UTable`
 ([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
 The eslint pack already forces `UTable`; this is the reading every history and
-list table in the estate re-derived by hand: a sticky header, column groups
-with their unit drawn once, right-aligned tabular numerals, one missing-value
-style, day (group) rows, a sticky first column, a phone column-set switch, the
-“no value, sorted last” break row, and a loading reading that keeps the rows
-on screen.
+list table in the estate re-derived by hand: a sticky header, column groups with
+their unit drawn once, right-aligned tabular numerals, one missing-value style,
+day (group) rows, a sticky first column, a phone column-set switch, the “no
+value, sorted last” break row, and a loading reading that keeps the rows on
+screen.
 
 **It never reorders rows.** Sorting belongs to whoever owns the set — the
 server, through `useCollection().setSort`. The table draws the arrow,
 `aria-sort` and the column tint for `sort`, emits `update:sort` on a header
-click, and renders `rows` in the order they arrived. A table that sorted the
-25 rows it holds is exactly the “Wind ↓ sorts one page” bug the buoys
-round-2 board opens with.
+click, and renders `rows` in the order they arrived. A table that sorted the 25
+rows it holds is exactly the “Wind ↓ sorts one page” bug the buoys round-2 board
+opens with.
 
 Group and break rows are extra entries in the data handed to `UTable`: their
 first cell spans every column and the remaining cells are `hidden`, so the
@@ -1182,44 +1182,44 @@ const groups = [
 
 #### Props
 
-| Prop               | Type                          | Default     | Notes                                                                                                                      |
-| ------------------ | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `columns`          | `NeDataColumn<T>[]`           | —           | Required. See the column contract below.                                                                                   |
-| `rows`             | `T[]`                         | —           | Required. Drawn in this order.                                                                                             |
-| `groups`           | `NeDataColumnGroup[]`         | `[]`        | Header row above grouped columns. Each group’s `unit` is drawn once.                                                       |
-| `rowKey`           | `(row, index) => string`      | index       | Stable row identity.                                                                                                       |
-| `groupBy`          | `(row) => string \| null`     | —           | Opens a group (day) row whenever the key changes. Rows must already be in order.                                           |
-| `groupLabel`       | `(key, rows) => string`       | the key     | The group row’s text. The `group` slot overrides it.                                                                       |
-| `sort`             | `string \| null`              | `null`      | Wire form (`'wind:desc'`). Drives the arrow, `aria-sort` and the column tint.                                              |
-| `missingLast`      | `boolean`                     | `true`      | Draws a break row before the first row with no value in the sorted column.                                                 |
-| `missingCount`     | `number \| null`              | page count  | The whole set’s count of rows with no value, for the break row’s text.                                                     |
-| `missingLabel`     | `string`                      | —           | Replaces the break row’s text entirely.                                                                                    |
-| `loading`          | `boolean`                     | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                              |
-| `dropEmptyColumns` | `boolean`                     | `false`     | Drops a non-sticky column whose every row is missing.                                                                      |
-| `columnSet`        | `string \| null`              | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                               |
-| `phoneColumnSets`  | `boolean`                     | 2+ groups   | The phone column-set switch. Defaults to on when there are two or more groups.                                             |
-| `stickyHeader`     | `boolean \| 'page'`           | `true`      | `true`: sticks inside the table’s scroll box. `'page'`: sticks under the site header. `false`: no sticky header.           |
-| `empty`            | `string`                      | `'No rows'` | Text for a table with no rows.                                                                                             |
-| `caption`          | `string`                      | —           | Screen-reader caption.                                                                                                     |
+| Prop               | Type                      | Default     | Notes                                                                                                            |
+| ------------------ | ------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| `columns`          | `NeDataColumn<T>[]`       | —           | Required. See the column contract below.                                                                         |
+| `rows`             | `T[]`                     | —           | Required. Drawn in this order.                                                                                   |
+| `groups`           | `NeDataColumnGroup[]`     | `[]`        | Header row above grouped columns. Each group’s `unit` is drawn once.                                             |
+| `rowKey`           | `(row, index) => string`  | index       | Stable row identity.                                                                                             |
+| `groupBy`          | `(row) => string \| null` | —           | Opens a group (day) row whenever the key changes. Rows must already be in order.                                 |
+| `groupLabel`       | `(key, rows) => string`   | the key     | The group row’s text. The `group` slot overrides it.                                                             |
+| `sort`             | `string \| null`          | `null`      | Wire form (`'wind:desc'`). Drives the arrow, `aria-sort` and the column tint.                                    |
+| `missingLast`      | `boolean`                 | `true`      | Draws a break row before the first row with no value in the sorted column.                                       |
+| `missingCount`     | `number \| null`          | page count  | The whole set’s count of rows with no value, for the break row’s text.                                           |
+| `missingLabel`     | `string`                  | —           | Replaces the break row’s text entirely.                                                                          |
+| `loading`          | `boolean`                 | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                    |
+| `dropEmptyColumns` | `boolean`                 | `false`     | Drops a non-sticky column whose every row is missing.                                                            |
+| `columnSet`        | `string \| null`          | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                     |
+| `phoneColumnSets`  | `boolean`                 | 2+ groups   | The phone column-set switch. Defaults to on when there are two or more groups.                                   |
+| `stickyHeader`     | `boolean \| 'page'`       | `true`      | `true`: sticks inside the table’s scroll box. `'page'`: sticks under the site header. `false`: no sticky header. |
+| `empty`            | `string`                  | `'No rows'` | Text for a table with no rows.                                                                                   |
+| `caption`          | `string`                  | —           | Screen-reader caption.                                                                                           |
 
 #### Column contract (`NeDataColumn`)
 
-| Field            | Type                         | Notes                                                                                          |
-| ---------------- | ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `key`            | `string`                     | Column id, and the property read when `value` is not given.                                    |
-| `label`          | `string`                     | Header text.                                                                                   |
-| `unit`           | `string`                     | Drawn in the header under the label; cells then carry numbers only.                            |
-| `group`          | `string`                     | A `NeDataColumnGroup.id`. Ungrouped columns sit outside every group.                           |
-| `numeric`        | `boolean`                    | Right-aligned, tabular, monospaced numerals (`font-mono tabular-nums`).                        |
-| `emphasis`       | `boolean`                    | The group’s headline value, drawn at `font-medium`.                                            |
-| `sticky`         | `boolean`                    | Pinned to the left edge, and never hidden by the phone column-set switch.                      |
-| `value`          | `(row) => unknown`           | How to read the cell. Defaults to `row[key]`.                                                  |
-| `format`         | `(value, row) => string`     | How to print a present value. Missing values never reach it.                                   |
-| `sortKey`        | `string`                     | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself.     |
-| `firstDirection` | `'asc' \| 'desc'`            | First-click direction for `sortKey`. Defaults to `'asc'`.                                      |
-| `csv`            | `false \| (row) => unknown`  | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.      |
-| `csvLabel`       | `string`                     | CSV header text. Defaults to `label (unit)`.                                                   |
-| `csvOnly`        | `boolean`                    | In the CSV only — e.g. the SI twin of a displayed column.                                      |
+| Field            | Type                        | Notes                                                                                      |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| `key`            | `string`                    | Column id, and the property read when `value` is not given.                                |
+| `label`          | `string`                    | Header text.                                                                               |
+| `unit`           | `string`                    | Drawn in the header under the label; cells then carry numbers only.                        |
+| `group`          | `string`                    | A `NeDataColumnGroup.id`. Ungrouped columns sit outside every group.                       |
+| `numeric`        | `boolean`                   | Right-aligned, tabular, monospaced numerals (`font-mono tabular-nums`).                    |
+| `emphasis`       | `boolean`                   | The group’s headline value, drawn at `font-medium`.                                        |
+| `sticky`         | `boolean`                   | Pinned to the left edge, and never hidden by the phone column-set switch.                  |
+| `value`          | `(row) => unknown`          | How to read the cell. Defaults to `row[key]`.                                              |
+| `format`         | `(value, row) => string`    | How to print a present value. Missing values never reach it.                               |
+| `sortKey`        | `string`                    | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself. |
+| `firstDirection` | `'asc' \| 'desc'`           | First-click direction for `sortKey`. Defaults to `'asc'`.                                  |
+| `csv`            | `false \| (row) => unknown` | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.  |
+| `csvLabel`       | `string`                    | CSV header text. Defaults to `label (unit)`.                                               |
+| `csvOnly`        | `boolean`                   | In the CSV only — e.g. the SI twin of a displayed column.                                  |
 
 `0` and `false` are values. `null`, `undefined`, `''` and a non-finite number
 are missing: an em dash in `text-dimmed` with “No value” for a screen reader,
@@ -1227,25 +1227,25 @@ never `0`.
 
 #### Slots and events
 
-| Slot          | Props                              | Notes                                              |
-| ------------- | ---------------------------------- | -------------------------------------------------- |
-| `group`       | `{ key, rows }`                    | Replaces the group row’s label.                    |
-| `break`       | `{ column, count }`                | Replaces the break row’s text.                     |
-| `<key>-cell`  | `{ column, row, value }`           | Custom cell for that column.                       |
+| Slot         | Props                    | Notes                           |
+| ------------ | ------------------------ | ------------------------------- |
+| `group`      | `{ key, rows }`          | Replaces the group row’s label. |
+| `break`      | `{ column, count }`      | Replaces the break row’s text.  |
+| `<key>-cell` | `{ column, row, value }` | Custom cell for that column.    |
 
-| Event              | Payload  | Notes                                                        |
-| ------------------ | -------- | ------------------------------------------------------------ |
-| `update:sort`      | `string` | Next wire sort (`'wind:desc'`). Hand it to `c.setSort`.      |
-| `update:columnSet` | `string` | The phone switch picked a different group.                   |
+| Event              | Payload  | Notes                                                   |
+| ------------------ | -------- | ------------------------------------------------------- |
+| `update:sort`      | `string` | Next wire sort (`'wind:desc'`). Hand it to `c.setSort`. |
+| `update:columnSet` | `string` | The phone switch picked a different group.              |
 
 #### Phone column sets
 
 On a narrow viewport the table cannot show every group beside the sticky
 columns. With two or more groups a `UTabs` switch (`data-ne-column-sets`) picks
 which group shows; sticky and ungrouped columns stay. The hidden groups carry
-`max-sm:hidden`, so the server renders every column and CSS hides the rest —
-no viewport is consulted. `stickyHeader="page"` pairs with this: the box no
-longer scrolls sideways.
+`max-sm:hidden`, so the server renders every column and CSS hides the rest — no
+viewport is consulted. `stickyHeader="page"` pairs with this: the box no longer
+scrolls sideways.
 
 #### Loading
 
@@ -1269,19 +1269,19 @@ A sortable column header
 ([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)),
 promoted from stonx’s `SortableTableHeader.vue`. First click picks the useful
 way — readings strongest first (`firstDirection="desc"`), names A–Z (`'asc'`).
-The second click flips it. There is no third, “unsorted” click; a Reset
-control outside the table does that.
+The second click flips it. There is no third, “unsorted” click; a Reset control
+outside the table does that.
 
 Two call shapes:
 
 - **Server mode.** `sortKey` + `sort` (wire form, `'wind:desc'`) emit
-  `update:sort`, which is what `useCollection().setSort` takes. The header
-  never reorders rows; the server does. This is what `NeDataTable` uses.
+  `update:sort`, which is what `useCollection().setSort` takes. The header never
+  reorders rows; the server does. This is what `NeDataTable` uses.
 - **Client mode.** A TanStack `column` from a plain `UTable` `#<id>-header`
   slot, exactly the stonx call shape, so those sites move over unchanged.
 
-`aria-sort` belongs on the `<th>`, not on the button inside it. `UTable` gives
-a header slot no way to set attributes on its cell, so the header writes
+`aria-sort` belongs on the `<th>`, not on the button inside it. `UTable` gives a
+header slot no way to set attributes on its cell, so the header writes
 `aria-sort` onto its closest `<th>` after mount and removes it when the column
 stops being sorted. At rest a column carries no `aria-sort` at all. The column
 tint is the table’s business: `NeDataTable` draws `bg-elevated/50` down the
@@ -1303,20 +1303,20 @@ sorted column.
 
 #### Props
 
-| Prop             | Type                    | Default   | Notes                                                                                         |
-| ---------------- | ----------------------- | --------- | --------------------------------------------------------------------------------------------- |
-| `label`          | `string`                | —         | Required. The header text.                                                                    |
-| `unit`           | `string`                | —         | Shown once, muted, beside the label: `kt`, `°F`.                                              |
-| `firstDirection` | `'asc' \| 'desc'`       | `'asc'`   | Which way the first click sorts.                                                              |
-| `align`          | `'start' \| 'end'`      | `'start'` | `'end'` for a numeric column, so the arrow sits against the numbers.                          |
-| `sortKey`        | `string`                | —         | Server mode: the key this header sorts by.                                                    |
-| `sort`           | `string \| null`        | `null`    | Server mode: the current sort in wire form (`useCollection().sort`).                          |
-| `column`         | `NeSortableColumn`      | —         | Client mode: a TanStack column from a `UTable` header slot.                                   |
+| Prop             | Type               | Default   | Notes                                                                |
+| ---------------- | ------------------ | --------- | -------------------------------------------------------------------- |
+| `label`          | `string`           | —         | Required. The header text.                                           |
+| `unit`           | `string`           | —         | Shown once, muted, beside the label: `kt`, `°F`.                     |
+| `firstDirection` | `'asc' \| 'desc'`  | `'asc'`   | Which way the first click sorts.                                     |
+| `align`          | `'start' \| 'end'` | `'start'` | `'end'` for a numeric column, so the arrow sits against the numbers. |
+| `sortKey`        | `string`           | —         | Server mode: the key this header sorts by.                           |
+| `sort`           | `string \| null`   | `null`    | Server mode: the current sort in wire form (`useCollection().sort`). |
+| `column`         | `NeSortableColumn` | —         | Client mode: a TanStack column from a `UTable` header slot.          |
 
 #### Events
 
-| Event         | Payload  | Notes                                                                      |
-| ------------- | -------- | -------------------------------------------------------------------------- |
+| Event         | Payload  | Notes                                                                                          |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------- |
 | `update:sort` | `string` | Server mode only. `'<sortKey>:<asc\|desc>'`. Client mode calls `column.toggleSorting` instead. |
 
 `parseSort` is a package-root export: `'wind:desc'` → `{ key, direction }`,
@@ -1326,7 +1326,11 @@ anything else → `null`. Use it when a page reads a wire sort without a regex.
 
 ```ts
 import { parseSort } from '@narduk-enterprises/narduk-shell'
-import type { NeSortDirection, NeSortHeaderProps, NeSortableColumn } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeSortDirection,
+  NeSortHeaderProps,
+  NeSortableColumn,
+} from '@narduk-enterprises/narduk-shell'
 ```
 
 ### NeCsvDownload
@@ -1335,15 +1339,15 @@ import type { NeSortDirection, NeSortHeaderProps, NeSortableColumn } from '@nard
 ([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
 Hand it the same `columns` and `rows` the `NeDataTable` beside it draws and it
 writes those rows, in that order — not the whole history, not the next page.
-Columns with `csv: false` stay out; `csvOnly` columns (an SI twin of a
-displayed column, say) go in. Values are written raw through each column’s
-`csv` accessor or `value`, never through `format`, so a spreadsheet gets
-numbers rather than “12 kt”. Missing values are empty cells, never `0`.
+Columns with `csv: false` stay out; `csvOnly` columns (an SI twin of a displayed
+column, say) go in. Values are written raw through each column’s `csv` accessor
+or `value`, never through `format`, so a spreadsheet gets numbers rather than
+“12 kt”. Missing values are empty cells, never `0`.
 
 `preamble` lines go above the header — the place for an attribution line. The
-text itself is `toCsv()`, exported from the package root, so a server route
-can produce the identical file. The button is inert on the server: it only
-builds the file when it is clicked, in the browser.
+text itself is `toCsv()`, exported from the package root, so a server route can
+produce the identical file. The button is inert on the server: it only builds
+the file when it is clicked, in the browser.
 
 #### Example
 
@@ -1364,24 +1368,24 @@ const csv = toCsv(columns, rows, ['Source: NOAA NDBC'])
 
 #### Props
 
-| Prop       | Type                  | Default        | Notes                                                     |
-| ---------- | --------------------- | -------------- | --------------------------------------------------------- |
-| `columns`  | `NeDataColumn<T>[]`   | —              | Required. Same contract as `NeDataTable`.                 |
-| `rows`     | `T[]`                 | —              | Required. Exactly these rows, in this order.              |
-| `filename` | `string`              | `'export.csv'` | `.csv` is appended when missing.                          |
-| `preamble` | `readonly string[]`   | `[]`           | Lines written above the header.                           |
-| `label`    | `string`              | `'CSV'`        | The button’s text.                                        |
-| `size`     | `'xs' \| 'sm' \| 'md'`| `'sm'`         | Nuxt UI button size.                                      |
+| Prop       | Type                   | Default        | Notes                                        |
+| ---------- | ---------------------- | -------------- | -------------------------------------------- |
+| `columns`  | `NeDataColumn<T>[]`    | —              | Required. Same contract as `NeDataTable`.    |
+| `rows`     | `T[]`                  | —              | Required. Exactly these rows, in this order. |
+| `filename` | `string`               | `'export.csv'` | `.csv` is appended when missing.             |
+| `preamble` | `readonly string[]`    | `[]`           | Lines written above the header.              |
+| `label`    | `string`               | `'CSV'`        | The button’s text.                           |
+| `size`     | `'xs' \| 'sm' \| 'md'` | `'sm'`         | Nuxt UI button size.                         |
 
 #### Events
 
-| Event      | Payload                      | Notes                                              |
-| ---------- | ---------------------------- | -------------------------------------------------- |
-| `download` | `[csv: string, filename]`    | Fired with the same text the file contains.        |
+| Event      | Payload                   | Notes                                       |
+| ---------- | ------------------------- | ------------------------------------------- |
+| `download` | `[csv: string, filename]` | Fired with the same text the file contains. |
 
-Formula-leading text (`=`, `+`, `-`, `@`) is prefixed so a spreadsheet does
-not run it; numeric cells are written as numbers, so a negative reading is
-never prefixed.
+Formula-leading text (`=`, `+`, `-`, `@`) is prefixed so a spreadsheet does not
+run it; numeric cells are written as numbers, so a negative reading is never
+prefixed.
 
 #### Types
 

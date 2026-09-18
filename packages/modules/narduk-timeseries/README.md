@@ -16,12 +16,12 @@ pnpm add @narduk-enterprises/narduk-timeseries
 
 ## Exports
 
-| Subpath          | What it holds                                                   |
-| ---------------- | --------------------------------------------------------------- |
+| Subpath          | What it holds                                                                     |
+| ---------------- | --------------------------------------------------------------------------------- |
 | `.`              | `TelemetryHistoryStore`, its types, retention policy validation, `bucketReadings` |
-| `./timescale`    | The adapter, every SQL builder, the migration set               |
-| `./influx`       | The read-only dual-run parity adapter                           |
-| `./migrations/*` | The `.sql` files themselves, for a deploy job                   |
+| `./timescale`    | The adapter, every SQL builder, the migration set                                 |
+| `./influx`       | The read-only dual-run parity adapter                                             |
+| `./migrations/*` | The `.sql` files themselves, for a deploy job                                     |
 
 The root entry carries **no SQL**, so a route handler, a test double or a second
 backend can import the interface without pulling in the adapter.
@@ -49,8 +49,8 @@ assert the shape of its own data path rather than trusting this README.
 ## Client bucketing: `bucketReadings`
 
 `queryRollup` summarizes in the database over a fixed UTC ladder. A page that
-already holds a history and wants a table **every hour, every three hours or
-one line per day** — cut on the reader's calendar, not UTC midnight — uses
+already holds a history and wants a table **every hour, every three hours or one
+line per day** — cut on the reader's calendar, not UTC midnight — uses
 `bucketReadings` from the root entry instead. It carries no SQL, so a browser
 bundle can import it.
 

@@ -7,6 +7,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
+import type { Component } from 'vue'
 
 import NeSortHeader from '../src/runtime/components/NeSortHeader.vue'
 
@@ -18,7 +19,7 @@ function inHeaderCell(props: Record<string, unknown>) {
         h('thead', [
           h('tr', [
             h('th', [
-              h(NeSortHeader, {
+              h(NeSortHeader as Component, {
                 ...props,
                 sort: sort.value,
                 'onUpdate:sort': (next: string) => {
@@ -35,7 +36,11 @@ function inHeaderCell(props: Record<string, unknown>) {
 
 describe('NeSortHeader: server mode', () => {
   it('first click sorts the useful way, the second flips it, and never back to unsorted', async () => {
-    const { sort, wrapper } = inHeaderCell({ firstDirection: 'desc', label: 'Wind', sortKey: 'wind' })
+    const { sort, wrapper } = inHeaderCell({
+      firstDirection: 'desc',
+      label: 'Wind',
+      sortKey: 'wind',
+    })
     const button = () => wrapper.get('button')
 
     await button().trigger('click')
@@ -88,7 +93,9 @@ describe('NeSortHeader: client mode (stonx call shape)', () => {
         sorted = desc ? 'desc' : 'asc'
       }),
     }
-    const wrapper = mount(NeSortHeader, { props: { column, firstDirection: 'desc', label: 'Rank' } })
+    const wrapper = mount(NeSortHeader, {
+      props: { column, firstDirection: 'desc', label: 'Rank' },
+    })
 
     await wrapper.get('button').trigger('click')
     expect(column.toggleSorting).toHaveBeenLastCalledWith(true)

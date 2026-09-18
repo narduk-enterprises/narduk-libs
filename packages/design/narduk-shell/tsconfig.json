@@ -10,7 +10,8 @@
     "paths": {
       "@nuxt/ui/components/Badge.vue": ["./types/nuxt-ui-sfc.d.ts"],
       "@nuxt/ui/components/Breadcrumb.vue": ["./types/nuxt-ui-sfc.d.ts"],
-      "@nuxt/ui/components/PageHeader.vue": ["./types/nuxt-ui-sfc.d.ts"]
+      "@nuxt/ui/components/PageHeader.vue": ["./types/nuxt-ui-sfc.d.ts"],
+      "@nuxt/ui/components/Select.vue": ["./types/nuxt-ui-sfc.d.ts"]
     },
     "skipLibCheck": true,
     "strict": true,

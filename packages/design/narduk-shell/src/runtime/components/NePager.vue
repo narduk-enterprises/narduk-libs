@@ -101,6 +101,7 @@ const summary = computed(() => {
 const counted = computed(() => state.value.total !== null)
 
 /** Captured once: "Show 25 more" keeps saying 25 after the page has grown to 50. */
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- snapshot of the first limit, not a live read
 const initialLimit = state.value.limit
 const step = computed(() => Math.max(1, props.moreStep ?? initialLimit))
 

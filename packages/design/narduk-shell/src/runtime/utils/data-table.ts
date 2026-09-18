@@ -87,7 +87,9 @@ export function toCsv<TRow>(
     lines.push(
       included
         .map((column) =>
-          csvCell(typeof column.csv === 'function' ? column.csv(row) : readColumnValue(column, row)),
+          csvCell(
+            typeof column.csv === 'function' ? column.csv(row) : readColumnValue(column, row),
+          ),
         )
         .join(','),
     )

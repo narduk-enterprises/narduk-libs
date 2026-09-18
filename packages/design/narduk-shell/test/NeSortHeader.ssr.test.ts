@@ -14,6 +14,7 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, h } from 'vue'
+import type { Component } from 'vue'
 
 import NeSortHeader from '../src/runtime/components/NeSortHeader.vue'
 
@@ -26,9 +27,7 @@ function render(props: Record<string, unknown>): Promise<string> {
   return renderToString(
     createSSRApp({
       render: () =>
-        h('table', [
-          h('thead', [h('tr', [h('th', [h(NeSortHeader, props)])])]),
-        ]),
+        h('table', [h('thead', [h('tr', [h('th', [h(NeSortHeader as Component, props)])])])]),
     }),
   )
 }
@@ -74,9 +73,9 @@ describe('NeSortHeader server-rendered without a DOM', () => {
     await expect(render({ label: 'Wind', sortKey: 'wind' })).resolves.toContain(
       'data-ne-sort-header',
     )
-    await expect(
-      render({ label: 'Wind', sort: 'wind:asc', sortKey: 'wind' }),
-    ).resolves.toContain('data-ne-sort-direction="asc"')
+    await expect(render({ label: 'Wind', sort: 'wind:asc', sortKey: 'wind' })).resolves.toContain(
+      'data-ne-sort-direction="asc"',
+    )
     expect(typeof document).toBe('undefined')
     expect(typeof window).toBe('undefined')
   })
