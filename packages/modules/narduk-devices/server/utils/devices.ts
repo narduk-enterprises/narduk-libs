@@ -30,6 +30,7 @@ import {
   type LockoutSubject,
   lockoutSubjectFor,
 } from './devices-lockout'
+import { revokeDeviceAtomically, rotateCredentialAtomically } from './devices-revocation'
 import {
   canonicalBytes,
   type CanonicalValue,
@@ -758,7 +759,12 @@ export function createDevices(
       .run()
   }
 
-  /** Records an attempt and writes the security audit row for any escalating threshold crossed. */
+  /**
+   * Records an attempt and writes the security audit row for any escalating
+   * threshold crossed. The gate reports flat (token/device) crossings too; the
+   * library's own trail records only the escalating account/IP kind, as it
+   * always has.
+   */
   async function recordAttempt(
     subjects: readonly LockoutSubject[],
     outcome: 'success' | 'failure',
@@ -766,6 +772,7 @@ export function createDevices(
   ): Promise<void> {
     const crossed = await lockouts.record(subjects, outcome)
     for (const threshold of crossed) {
+      if (!threshold.escalates) continue
       // eslint-disable-next-line no-await-in-loop -- one audit row per crossed threshold, in order; the list is at most two long
       await audit({
         orgId: context.orgId,
@@ -1760,15 +1767,12 @@ export function createDevices(
       if (!session) {
         throw new DevicesError('not_found', `Claim session ${input.claimSessionId} does not exist.`)
       }
-      if (session.status === 'claimed') {
-        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
-      }
-      if (session.status === 'revoked') {
-        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
-      }
-      if (session.status === 'expired' || session.expiresAt <= now()) {
-        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
-      }
+      // Authorise before describing: whether this caller may hear anything
+      // about the session is settled before its state is reported. Checked
+      // after the state, a foreign org's admin holding a session id (it
+      // travels to the appliance and the org console renders it) learned
+      // `conflict` / `revoked` / `expired` for a session that is not theirs —
+      // claim state leaking across the tenant boundary (narduk-libs#243).
       const token = await findClaimToken(session.claimTokenId)
       if (!token)
         throw new DevicesError('not_found', 'The claim token behind this session is gone.')
@@ -1780,6 +1784,15 @@ export function createDevices(
           'forbidden',
           'An approval must name the org and resource the claim token was minted for.',
         )
+      }
+      if (session.status === 'claimed') {
+        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
+      }
+      if (session.status === 'revoked') {
+        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
+      }
+      if (session.status === 'expired' || session.expiresAt <= now()) {
+        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
       }
       if (session.hardwareFingerprint !== input.hardwareFingerprint) {
         throw new DevicesError(
@@ -2306,33 +2319,22 @@ export function createDevices(
     async revokeDevice(input) {
       const device = await requireDevice(input.deviceId)
       if (device.status === 'revoked') return device
-      const revokedAt = now()
-      const revocationGeneration = device.revocationGeneration + 1
-      await db
-        .update(devicesDevices)
-        .set({ status: 'revoked', revokedAt, revocationGeneration })
-        .where(eq(devicesDevices.id, device.id))
-        .run()
-      await db
-        .update(devicesCredentials)
-        .set({ revokedAt })
-        .where(
-          and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)),
-        )
-        .run()
-      const revokedSessions = await revokeSessionsWhere(
-        eq(devicesSessions.deviceId, device.id),
-        revokedAt,
+      // Device, credentials, sessions and audit row in one transaction: a
+      // failure part-way can no longer leave a revoked device whose
+      // credentials still resolve (narduk-libs#231).
+      const revoked = await revokeDeviceAtomically(
+        db,
+        {
+          device,
+          actorUserId: input.actorUserId ?? null,
+          reason: input.reason ?? null,
+          revokedAt: now(),
+        },
+        nextId,
       )
-      await audit({
-        orgId: device.orgId,
-        actorUserId: input.actorUserId,
-        action: 'device.revoke',
-        subjectKind: 'device',
-        subjectId: device.id,
-        details: { reason: input.reason ?? null, revocationGeneration, revokedSessions },
-      })
-      return { ...device, status: 'revoked', revokedAt, revocationGeneration }
+      // Null: a concurrent revocation committed first and wrote everything
+      // this one would have. Report the device as it left it.
+      return revoked ?? requireDevice(device.id)
     },
 
     async rotateCredential(input) {
@@ -2356,65 +2358,26 @@ export function createDevices(
         .all()
       const version = (first(current)?.version ?? 0) + 1
       const rotatedAt = now()
-      const revocationGeneration = device.revocationGeneration + 1
       const { issued, prepared } = await prepareCredential(
         input.credentialClass,
         version,
         expiresAt,
       )
-
-      await db
-        .update(devicesCredentials)
-        .set({ revokedAt: rotatedAt })
-        .where(
-          and(
-            eq(devicesCredentials.deviceId, device.id),
-            eq(devicesCredentials.credentialClass, input.credentialClass),
-            isNull(devicesCredentials.revokedAt),
-          ),
-        )
-        .run()
-      await db
-        .insert(devicesCredentials)
-        .values({
-          id: prepared.id,
-          deviceId: device.id,
-          credentialClass: prepared.credentialClass,
-          secretHash: prepared.secretHash,
-          fingerprint: prepared.fingerprint,
-          version: prepared.version,
-          issuedAt: rotatedAt,
-          expiresAt: prepared.expiresAt,
-          revokedAt: null,
-        })
-        .run()
-      await db
-        .update(devicesDevices)
-        .set({ revocationGeneration })
-        .where(eq(devicesDevices.id, device.id))
-        .run()
-      const revokedSessions = await revokeSessionsWhere(
-        and(
-          eq(devicesSessions.deviceId, device.id),
-          eq(devicesSessions.credentialClass, input.credentialClass),
-        ),
-        rotatedAt,
-      )
-      await audit({
-        orgId: device.orgId,
-        actorUserId: input.actorUserId,
-        action: 'credential.rotate',
-        subjectKind: 'credential',
-        subjectId: prepared.id,
-        details: {
-          deviceId: device.id,
-          credentialClass: input.credentialClass,
-          version,
-          revocationGeneration,
-          revokedSessions,
+      // Supersede, issue, bump and audit in one transaction, the replacement
+      // gated on the device still being claimed (narduk-libs#231).
+      const rotated = await rotateCredentialAtomically(
+        db,
+        {
+          device,
+          credential: prepared,
+          actorUserId: input.actorUserId ?? null,
           reason: input.reason ?? null,
+          rotatedAt,
         },
-      })
+        nextId,
+      )
+      // Revoked between the read above and the batch: nothing was issued.
+      if (!rotated) throw new DevicesError('revoked', `Device ${device.id} is revoked.`)
       // The new secret is returned exactly once.
       return issued
     },

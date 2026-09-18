@@ -206,6 +206,12 @@ could not be honoured
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
+- `issueApprovalToken` authorises before it describes: a caller naming another
+  org or resource gets `forbidden` whatever state the claim session is in, and
+  only the owning org hears `conflict`, `revoked` or `expired`. Reporting the
+  state first told any authenticated caller that holds a claim session id
+  whether another tenant's session was claimed, revoked or expired
+  (narduk-libs#243). An id that does not exist is still `not_found`.
 - `revokeClaimToken` revokes the token and any pending session on it.
 
 ### Lockouts
@@ -256,6 +262,20 @@ one; what changed is that they are counted, audited and eventually refused
 instead of free and untraced. Uniformity was considered and rejected — always
 `rate_limited` breaks the `not_found` contract consumers branch on, always
 `not_found` hands the oracle straight back (third review LOW-5).
+
+**The exported gate reports every crossing.**
+`createLockoutGate(db, now, nextId)` (`server/utils/devices-lockout`) is the
+counter the library itself uses, for a consumer building its own limiter.
+`record(subjects, outcome)` returns one `LockoutThreshold` per subject whose
+failure this attempt crossed a threshold —
+`{ subject, failures, cooldownSeconds, escalates }`, in subject order, empty for
+a success — for the flat token/device rule as well as the escalating account/IP
+one. That return is the signal to audit the attempt that locked a subject out:
+one row per lockout, without re-deriving the rule in the app. Before
+narduk-libs#238 only escalating crossings were returned, so a limiter built on
+the flat rule never heard about its own lockouts; filter on `escalates` to keep
+the old set. The library's own `security.lockout` rows are unchanged: written
+for the escalating crossings only.
 
 **Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
 caller (a queue consumer, a test) can omit it. Without it the presented token's
@@ -609,18 +629,28 @@ does not authenticate anything.
   credential and session) and `rotateCredential({ deviceId, credentialClass })`
   (new version, bumps the generation, ends that class's sessions, returns the
   new secret once) are idempotent where a repeat is harmless.
+- `revokeDevice` and `rotateCredential` are all-or-nothing: every row they
+  write, audit row included, goes in one D1 batch / better-sqlite3 transaction.
+  Written one statement at a time, a failure part-way left a revoked device
+  whose credentials still resolved through `getCredentialBySecret` — which reads
+  the credential row, not the device — or a rotation that had killed the old
+  secret with that class's sessions still open (narduk-libs#231). The device
+  write, the new credential and the audit row are gated on the device still
+  being `claimed`, so a revocation that lost a race writes nothing and a
+  rotation racing one issues nothing (`revoked`).
 - `verifyCredentialSecret({ credentialId, secret })` is the bearer check for
   routes that take the `ingest` secret directly.
 
 ### Database typing
 
 The service accepts the D1-shaped drizzle database (`LayerDatabase` in
-narduk-core). Atomic claim redemption (`startClaim`) and completion
-(`completeClaim`) use Drizzle's D1 `batch()`; direct better-sqlite3 consumers
-use their driver's synchronous transaction. Pass the real database object,
-including its batch/client capability, rather than a wrapper exposing only
-query-builder methods; unsupported adapters fail with `invalid` before touching
-the claim. The lockout counter prefers the same transaction and degrades to two
+narduk-core). Atomic claim redemption (`startClaim`), completion
+(`completeClaim`), `revokeDevice` and `rotateCredential` use Drizzle's D1
+`batch()`; direct better-sqlite3 consumers use their driver's synchronous
+transaction. Pass the real database object, including its batch/client
+capability, rather than a wrapper exposing only query-builder methods;
+unsupported adapters fail with `invalid` before touching the claim or the
+device. The lockout counter prefers the same transaction and degrades to two
 sequential statements on an adapter without one, so authentication never fails
 for want of a batch. Tests run the shipped migration against real in-memory
 SQLite and against Miniflare's D1.

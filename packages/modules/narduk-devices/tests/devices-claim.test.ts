@@ -530,4 +530,99 @@ describe('claim completion', () => {
       ),
     ).toBe('revoked')
   })
+
+  /**
+   * narduk-libs#243: whether the caller may be told anything about a session
+   * is decided before anything about the session is told. A foreign org — or
+   * the owning org naming another resource — used to hear `conflict`,
+   * `revoked` or `expired` for a session that is not theirs, and `forbidden`
+   * only for a pending one, so the state leaked across the tenant boundary.
+   */
+  it('answers a foreign org or resource forbidden whatever state the session is in', async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+
+    // Expired twice over: lazily (still pending, past its expiry) and
+    // persisted (completion already stamped `expired`).
+    const lazilyExpired = await startPendingClaim(harness)
+    const persistedExpired = await approved(harness)
+    clock.advance(CLAIM_TOKEN_DEFAULT_TTL_SECONDS * 1000)
+    expect(await devices.completeClaim(persistedExpired.complete)).toMatchObject({
+      status: 'expired',
+    })
+    const pending = await startPendingClaim(harness)
+    const claimed = await claimDevice(harness)
+    const revoked = await startPendingClaim(harness)
+    await devices.revokeClaimToken({ claimTokenId: revoked.minted.tokenId })
+
+    const sessions = {
+      pending: pending.claimSessionId,
+      claimed: claimed.claimSessionId,
+      revoked: revoked.claimSessionId,
+      lazilyExpired: lazilyExpired.claimSessionId,
+      persistedExpired: persistedExpired.complete.claimSessionId,
+    }
+    interface Caller {
+      orgId: string
+      resourceId: string
+    }
+    const approve = (claimSessionId: string, caller: Caller) =>
+      devices.issueApprovalToken({
+        claimSessionId,
+        orgId: caller.orgId,
+        resource: { kind: VESSEL.kind, id: caller.resourceId },
+        hardwareFingerprint: FINGERPRINT,
+        approvedByUserId: 'approver-2',
+      })
+    const refusals = async (ids: Record<string, string>, caller: Caller) => {
+      const answered: Record<string, string> = {}
+      for (const [state, id] of Object.entries(ids)) {
+        answered[state] = await codeOf(approve(id, caller))
+      }
+      return answered
+    }
+    const everyStateForbidden = {
+      pending: 'forbidden',
+      claimed: 'forbidden',
+      revoked: 'forbidden',
+      lazilyExpired: 'forbidden',
+      persistedExpired: 'forbidden',
+    }
+
+    expect(await refusals(sessions, { orgId: 'org-2', resourceId: VESSEL.id })).toEqual(
+      everyStateForbidden,
+    )
+    expect(await refusals(sessions, { orgId: ORG, resourceId: 'vessel-2' })).toEqual(
+      everyStateForbidden,
+    )
+    // A session that does not exist is still `not_found`: nothing to authorise against.
+    expect(await codeOf(approve('missing', { orgId: 'org-2', resourceId: VESSEL.id }))).toBe(
+      'not_found',
+    )
+
+    // No refused caller wrote an approval, or an audit row, on any session.
+    const approvedBy = () =>
+      harness.sqlite
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM devices_claim_sessions WHERE approval_user_id = 'approver-2') AS sessions,
+             (SELECT COUNT(*) FROM devices_audit_events
+                WHERE action = 'claim.approve' AND actor_user_id = 'approver-2') AS audits`,
+        )
+        .get()
+    expect(approvedBy()).toEqual({ sessions: 0, audits: 0 })
+
+    // The owning org, naming the right resource, still hears the real state.
+    const { pending: pendingId, ...settled } = sessions
+    expect(await refusals(settled, { orgId: ORG, resourceId: VESSEL.id })).toEqual({
+      claimed: 'conflict',
+      revoked: 'revoked',
+      lazilyExpired: 'expired',
+      persistedExpired: 'expired',
+    })
+    await expect(approve(pendingId, { orgId: ORG, resourceId: VESSEL.id })).resolves.toMatchObject({
+      token: expect.any(String),
+    })
+    expect(approvedBy()).toEqual({ sessions: 1, audits: 1 })
+  })
 })
