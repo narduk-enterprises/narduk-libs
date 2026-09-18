@@ -125,9 +125,15 @@ test('the Cursor reviewer workflow stays on the public hosted route with exactly
   const review = source('cursor-review.yml')
   assert.doesNotMatch(review, /self-hosted|BLACKSMITH_|GH_PACKAGES_READ|linux-ci/u)
   assert.match(review, /runner: '"ubuntu-latest"'/u)
-  assert.match(review, /uses: narduk-enterprises\/workflows\/\.github\/workflows\/cursor-review\.yml@[0-9a-f]{40}/u)
-  assert.doesNotMatch(review, /cursor-review\.yml@(?:main|v\d)/u)
-  assert.deepEqual([...review.matchAll(/secrets\.([A-Z_]+)/gu)].map((m) => m[1]), ['CURSOR_CLOUD_AGENTS_API_KEY'])
+  assert.match(
+    review,
+    /uses: narduk-enterprises\/workflows\/\.github\/workflows\/cursor-review\.yml@[0-9a-f]{40}/u,
+  )
+  assert.doesNotMatch(review, /cursor-review\.yml@(?:main|v\d)|pull_request_target/u)
+  assert.deepEqual(
+    [...review.matchAll(/secrets\.([A-Z_]+)/gu)].map((m) => m[1]),
+    ['CURSOR_CLOUD_AGENTS_API_KEY'],
+  )
   assert.match(review, /pull-requests: write/u)
   assert.doesNotMatch(ci, /cursor-review/u)
 })
