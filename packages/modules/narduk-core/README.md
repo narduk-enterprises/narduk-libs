@@ -1711,11 +1711,25 @@ the Nitro auto-import inside an app that has the layer installed.
 
 ### What it does
 
-- **The manifest names the artifact** — the artifact URL is always built from
-  `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed artifact
-  keeps working. `product.artifactPath` is an optional assertion: set it and a
-  manifest naming anything else is refused. A path that is not a single safe
-  segment is refused before any request.
+- **The manifest names the artifact** — unless `entryPath` is set, the artifact
+  URL is built from `manifest.artifact.path` inside `releases/<releaseId>/`, so
+  a renamed artifact keeps working. `product.artifactPath` is an optional
+  assertion: set it and a manifest naming anything else is refused. A path that
+  is not a single safe segment is refused before any request.
+- **Secondary entries** — a release can also list artifacts beside the primary
+  one in `manifest.artifacts[]`, such as per-lake history at
+  `consumer/lakes/texas/canyon-lake/history-1y.json`. Set `product.entryPath` to
+  read one of them: the artifact URL is then built from that path, with each
+  segment encoded, instead of from `manifest.artifact.path`. It gets the same
+  timeout, retry, single-flight, memo, stale-if-error and freshness handling as
+  the primary artifact, and is checked against **its own** listed SHA-256. The
+  path may have several segments, and each one must be a plain name, so `..`, a
+  leading `/` and empty segments are refused before any request. A release that
+  lists no such entry fails with `reason: 'missing'`. It is never answered with
+  the primary artifact, so a consumer can return "not published" (404), which is
+  not an outage. A custom `manifestSchema` must keep `artifacts[]` in its parsed
+  output, since entries are looked up there. Each `entryPath` is its own cache
+  entry, so size `maxEntries` to the working set you expect to serve.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
   (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
   read only; it is never given to the shared upstream read, so one client
@@ -1768,9 +1782,10 @@ the Nitro auto-import inside an app that has the layer installed.
   id.
 
 Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
-`http` | `network` | `rejected` | `schema` | `timeout` | `too-large`), `status`
-and `url`. A schema failure is an error state, not a silent pass-through, and an
-empty-but-valid artifact stays distinct from a missing or stale one.
+`http` | `missing` | `network` | `rejected` | `schema` | `timeout` |
+`too-large`), `status` and `url`. A schema failure is an error state, not a
+silent pass-through, and an empty-but-valid artifact stays distinct from a
+missing or stale one.
 
 `schema` and `manifestSchema` are any validator with a zod-shaped `safeParse`,
 so an app's existing zod schemas plug in and this package adds no validator
