@@ -309,7 +309,8 @@ the rollback itself.
 ```sh
 narduk-app verify --live <url> [--expect-sha <sha>] [--health-path <p>] \
   [--smoke-path <p>] [--expect-content-type <t>] [--attempts <n>] \
-  [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] [--json [path]]
+  [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] \
+  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] [--json [path]]
 ```
 
 Three assertions against a running deployment, so the preview gate, the promote
@@ -337,6 +338,25 @@ narduk-core reports a missing D1 binding as `required: false` on an app that
 never declared `databaseBackend`, so a release whose `DB` binding was dropped
 summarises to `degraded`. A `database` of `not_available`, `schema_error` or
 `error` fails the proof whatever the flag says.
+
+#### Behind Cloudflare Access
+
+A host whose every path, `/api/health` included, sits behind Cloudflare Access
+answers 401 before the Worker runs, so the proof would never see the build. Name
+the environment variables that hold an Access service token and every probe
+carries `CF-Access-Client-Id` / `CF-Access-Client-Secret`:
+
+```sh
+CF_ACCESS_CLIENT_ID=... CF_ACCESS_CLIENT_SECRET=... \
+  narduk-app verify --live https://ops.example.com --expect-sha "$VERIFIED_SHA" \
+  --access-client-id-env CF_ACCESS_CLIENT_ID --access-client-secret-env CF_ACCESS_CLIENT_SECRET
+```
+
+The flags take variable NAMES, never values, so a secret stays off argv; both
+halves are required together; an unset or empty variable fails the run before
+any request, naming the variable and not its value. Neither value appears in the
+report or the JSON. This proves the right build is live to a holder of the
+token; that anonymous visitors are still refused is a separate proof.
 
 #### What this proves, and what it does not
 
