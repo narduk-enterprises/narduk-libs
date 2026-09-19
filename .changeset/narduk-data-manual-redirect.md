@@ -1,4 +1,5 @@
 ---
+'@narduk-enterprises/create-narduk-app': patch
 '@narduk-enterprises/narduk-core': patch
 ---
 
