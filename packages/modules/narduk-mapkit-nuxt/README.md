@@ -2,7 +2,8 @@
 
 Nuxt integration for `@narduk-enterprises/narduk-mapkit`. It adds the
 `AppMapKit` and `AppMapKitCallout` components, `useMapKit`, `useMapKitCallouts`,
-`useMapkitToken`, and a Worker-compatible `GET /api/mapkit-token` route.
+`useMapKitVectorTiles`, `useMapkitToken`, and a Worker-compatible
+`GET /api/mapkit-token` route.
 
 ## Install
 
@@ -237,6 +238,60 @@ that surface with custom properties on the map or any ancestor:
   --mapkit-callout-max-width: 22rem;
 }
 ```
+
+## Vector tiles
+
+`useMapKitVectorTiles()` wires a PMTiles archive to an async tile overlay and
+ties the decoder worker's life to the Vue scope. Everything it does is available
+directly from `@narduk-enterprises/narduk-mapkit/client` -- see that package's
+**Vector Tiles** section for what the overlay source itself does -- this is the
+seam that keeps an app from repeating it in every component.
+
+```vue
+<script setup lang="ts">
+import { PMTiles } from 'pmtiles'
+
+const tiles = useMapKitVectorTiles({
+  reader: (source) => new PMTiles(source),
+  style: (properties, zoom) =>
+    Number(properties.so) < 5 && zoom < 8
+      ? null
+      : { color: '#2563eb', width: Number(properties.so) > 5 ? 2 : 1 },
+  url: '/tiles/rivers.pmtiles',
+  worker: () =>
+    new Worker(new URL('~/workers/river-tiles.ts', import.meta.url), {
+      type: 'module',
+    }),
+})
+
+function onTap(
+  coordinate: { latitude: number; longitude: number },
+  zoom: number,
+) {
+  const hit = tiles.hitTest({ coordinate, zoom })
+  selected.value = hit ? String(hit.properties.name ?? '') : null
+}
+</script>
+```
+
+Three things the composable is for:
+
+- **The worker is built by the app, disposed by the scope.** A published worker
+  chunk is the one thing Vite, webpack and Nuxt do not agree on, so the `worker`
+  factory stays the app's; terminating it on `onScopeDispose` does not. Pass
+  `decode` instead to run the parser on the main thread -- one or the other,
+  never both, because a protobuf parse on the main thread is a choice an app
+  should make on purpose.
+- **`url` is reactive and the cache follows it.** Swapping the archive rebuilds
+  the source and drops the decoded tiles; a `style` change repaints from the
+  same decoded tiles rather than refetching, which is the whole point of caching
+  them decoded.
+- **`reader` keeps `pmtiles` in the app.** The module has no opinion about the
+  archive reader and no dependency on the package that provides it.
+
+`hitTest` is synchronous and answers from cached tiles, so it can run inside a
+tap handler; `cacheBytes` reports what the cache retains, for sizing `cacheSize`
+against a real budget.
 
 ## Token route
 

@@ -110,7 +110,13 @@ export function createWorkerDecoder(options) {
                     z: tile.z,
                 };
                 try {
-                    worker.postMessage(request, transfer ? [buffer] : undefined);
+                    // Two calls rather than one with `undefined`: a real `Worker` reads
+                    // a second argument as its transfer list or as an options object,
+                    // and which one it picks for `undefined` is not worth relying on.
+                    if (transfer)
+                        worker.postMessage(request, [buffer]);
+                    else
+                        worker.postMessage(request);
                 }
                 catch (reason) {
                     settle(id)?.reject(reason instanceof Error ? reason : new Error(String(reason)));

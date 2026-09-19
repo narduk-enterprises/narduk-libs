@@ -10,6 +10,9 @@
  * fixture geometry without building a tile. Decoded tiles are cached, so
  * changing the style repaints from memory and never refetches.
  */
+import { hitTestNeighbours, hitTestTile, projectToTilePoint } from './hit-test.js';
+/** A fingertip, not a pixel. */
+const DEFAULT_HIT_TOLERANCE_PX = 8;
 /** Int16 range, the bound {@link buildDecodedVectorTile} clamps coordinates to. */
 const COORDINATE_MIN = -32_768;
 const COORDINATE_MAX = 32_767;
@@ -249,6 +252,31 @@ export function createVectorTileOverlaySource(options) {
             cache.clear();
             generation += 1;
             inFlight.clear();
+        },
+        hitTest({ coordinate, tolerancePx = DEFAULT_HIT_TOLERANCE_PX, zoom }) {
+            // Everything is computed in tile fractions and converted per tile, so a
+            // source whose tiles use different extents still compares like for like.
+            const point = projectToTilePoint(coordinate, zoom, 1);
+            const tolerance = tolerancePx / tileSize;
+            let best = null;
+            for (const candidate of hitTestNeighbours(point, zoom, 1, tolerance)) {
+                const tile = cache.get(`${zoom}/${candidate.offsetX}/${candidate.offsetY}`);
+                if (!tile)
+                    continue;
+                const hit = hitTestTile(tile, candidate.x * tile.extent, candidate.y * tile.extent, tolerance * tile.extent);
+                if (!hit)
+                    continue;
+                const distancePx = (hit.distance / tile.extent) * tileSize;
+                if (best && best.distancePx <= distancePx)
+                    continue;
+                best = {
+                    distancePx,
+                    feature: hit.feature,
+                    properties: tile.properties[hit.feature] ?? {},
+                    tile: { x: candidate.offsetX, y: candidate.offsetY, z: zoom },
+                };
+            }
+            return best;
         },
         async imageForTile(x, y, z, scale) {
             try {

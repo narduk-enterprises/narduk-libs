@@ -11,6 +11,13 @@
  * changing the style repaints from memory and never refetches.
  */
 
+import { hitTestNeighbours, hitTestTile, projectToTilePoint } from './hit-test.js'
+
+import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js'
+
+/** A fingertip, not a pixel. */
+const DEFAULT_HIT_TOLERANCE_PX = 8
+
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>
 
@@ -165,7 +172,12 @@ export interface VectorTileCanvasContext {
   lineCap: string
   lineJoin: string
   lineWidth: number
-  strokeStyle: string
+  /**
+   * The painter only ever writes a CSS color string. The union is what makes
+   * a DOM `CanvasRenderingContext2D` — whose own `strokeStyle` also accepts a
+   * gradient or a pattern — assignable to this interface.
+   */
+  strokeStyle: string | object
   globalAlpha: number
   beginPath: () => void
   clearRect: (x: number, y: number, width: number, height: number) => void
@@ -187,11 +199,30 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
   tileSize?: number
 }
 
+export interface VectorTileHitTestOptions {
+  coordinate: VectorTileCoordinate
+  /**
+   * Screen-pixel radius around the probe. The default is a fingertip rather
+   * than a pixel: a one-pixel-wide river is unhittable by touch otherwise.
+   */
+  tolerancePx?: number
+  /** The zoom the map is displaying, which decides which tiles are consulted. */
+  zoom: number
+}
+
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
   /** Retained bytes, exact for geometry and estimated for properties. */
   readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
   clearCache: () => void
+  /**
+   * The nearest feature to a coordinate, or `null`.
+   *
+   * Synchronous and cache-only: a tap must be answered during the gesture, and
+   * a tile the user can see has already been decoded to be drawn. It never
+   * fetches, so a probe over a tile that has not loaded yet is a miss.
+   */
+  hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null
   /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
   imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>
   /** Decoded tiles held right now. */
@@ -395,6 +426,35 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
       cache.clear()
       generation += 1
       inFlight.clear()
+    },
+    hitTest({ coordinate, tolerancePx = DEFAULT_HIT_TOLERANCE_PX, zoom }) {
+      // Everything is computed in tile fractions and converted per tile, so a
+      // source whose tiles use different extents still compares like for like.
+      const point = projectToTilePoint(coordinate, zoom, 1)
+      const tolerance = tolerancePx / tileSize
+      let best: VectorTileHit | null = null
+
+      for (const candidate of hitTestNeighbours(point, zoom, 1, tolerance)) {
+        const tile = cache.get(`${zoom}/${candidate.offsetX}/${candidate.offsetY}`)
+        if (!tile) continue
+        const hit = hitTestTile(
+          tile,
+          candidate.x * tile.extent,
+          candidate.y * tile.extent,
+          tolerance * tile.extent,
+        )
+        if (!hit) continue
+        const distancePx = (hit.distance / tile.extent) * tileSize
+        if (best && best.distancePx <= distancePx) continue
+        best = {
+          distancePx,
+          feature: hit.feature,
+          properties: tile.properties[hit.feature] ?? {},
+          tile: { x: candidate.offsetX, y: candidate.offsetY, z: zoom },
+        }
+      }
+
+      return best
     },
     async imageForTile(x, y, z, scale) {
       try {

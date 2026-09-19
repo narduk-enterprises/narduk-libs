@@ -10,6 +10,7 @@
  * fixture geometry without building a tile. Decoded tiles are cached, so
  * changing the style repaints from memory and never refetches.
  */
+import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js';
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>;
 /**
@@ -104,7 +105,12 @@ export interface VectorTileCanvasContext {
     lineCap: string;
     lineJoin: string;
     lineWidth: number;
-    strokeStyle: string;
+    /**
+     * The painter only ever writes a CSS color string. The union is what makes
+     * a DOM `CanvasRenderingContext2D` — whose own `strokeStyle` also accepts a
+     * gradient or a pattern — assignable to this interface.
+     */
+    strokeStyle: string | object;
     globalAlpha: number;
     beginPath: () => void;
     clearRect: (x: number, y: number, width: number, height: number) => void;
@@ -124,11 +130,29 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     /** Logical tile size before `scale`. MapKit asks for 256 or 512. */
     tileSize?: number;
 }
+export interface VectorTileHitTestOptions {
+    coordinate: VectorTileCoordinate;
+    /**
+     * Screen-pixel radius around the probe. The default is a fingertip rather
+     * than a pixel: a one-pixel-wide river is unhittable by touch otherwise.
+     */
+    tolerancePx?: number;
+    /** The zoom the map is displaying, which decides which tiles are consulted. */
+    zoom: number;
+}
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
     /** Retained bytes, exact for geometry and estimated for properties. */
     readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
     clearCache: () => void;
+    /**
+     * The nearest feature to a coordinate, or `null`.
+     *
+     * Synchronous and cache-only: a tap must be answered during the gesture, and
+     * a tile the user can see has already been decoded to be drawn. It never
+     * fetches, so a probe over a tile that has not loaded yet is a miss.
+     */
+    hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null;
     /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
     imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>;
     /** Decoded tiles held right now. */

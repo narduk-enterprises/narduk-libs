@@ -637,6 +637,42 @@ reply deadline (`timeoutMs`, default 15s) fails that one tile instead of leaving
 it pending for the life of the map. `dispose()` fails everything in flight and
 stops listening.
 
+### Hit testing
+
+A painted tile is pixels, so MapKit cannot say which river a tap landed on.
+`source.hitTest()` answers that from the decoded tiles the cache already holds:
+it projects the coordinate into tile space, walks the geometry, and returns the
+nearest feature within the tolerance, with the properties that came out of the
+archive.
+
+```ts
+map.addEventListener('single-tap', (event) => {
+  const point = map.convertPointOnPageToCoordinate(event.pointOnPage)
+  const hit = network.hitTest({
+    coordinate: { latitude: point.latitude, longitude: point.longitude },
+    zoom: Math.round(zoomForRegion(map.region)),
+  })
+  if (hit) selectReach(hit.properties.ri, hit.distancePx)
+})
+```
+
+It is synchronous and never fetches. A tap has to be answered in the gesture,
+and the only tiles that can be searched in that time are the ones already
+decoded -- which, for a tap on a river the user can see, is exactly the tile
+under their finger. A tap on an undrawn tile misses.
+
+`tolerancePx` is a screen radius, not a tile distance: the default of 8px is
+about a fingertip, and the returned `distancePx` is in the same units, so a
+caller can prefer a closer feature across two sources. Distance is measured to
+the nearest point on a segment rather than to a vertex, so a tap in the middle
+of a long straight reach hits it.
+
+The probe also reaches into neighbouring tiles when it falls within the
+tolerance of an edge, wrapping at the antimeridian and stopping at the poles.
+Without that, a river drawn a pixel inside the next tile would be untappable
+along every tile boundary on the map -- a grid of dead lines the user cannot
+see.
+
 ### What a decoded tile costs
 
 A decoded tile is columnar: one `Int16Array` of interleaved `x, y` pairs, plus
@@ -1650,6 +1686,7 @@ The `examples/` directory contains copyable integration patterns:
 - `fullscreen.ts`
 - `pin-scaling.ts`
 - `annotation-callouts.ts`
+- `vector-tile-network.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
