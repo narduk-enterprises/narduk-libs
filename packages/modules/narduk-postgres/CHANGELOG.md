@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+### Patch Changes
+
+- 1f7feee: The ./worker example spreads postgres.js `RowList` into a plain
+  `Row[]` so `SqlExecutor` does not leak the driver type.
+
 ## 0.2.2
 
 ### Patch Changes

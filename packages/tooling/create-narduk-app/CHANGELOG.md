@@ -1,5 +1,44 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.1
+
+### Patch Changes
+
+- 4599aa7: `createNardukDataClient` can now read a release's secondary
+  artifacts, the ones the manifest lists in `artifacts[]` beside the primary
+  `artifact`. Set the new `NardukDataProduct.entryPath` option to a
+  release-relative path, for example
+  `consumer/lakes/texas/canyon-lake/history-1y.json`.
+
+  - The path may have several segments, each of which must be a plain name.
+  - The entry is checked against its own listed SHA-256, with the usual timeout,
+    retry, single-flight, memo, stale-if-error and freshness handling.
+  - A release that does not list the entry fails with the new `NardukDataError`
+    reason `'missing'`, so consumers can answer "not published" rather than
+    reporting an outage. It never falls back to the primary artifact.
+
+  Reads without `entryPath` are unchanged (#552).
+
+- 4ba5d02: AppLightbox gains optional thumbnail rails (0–2 labelled rails, each
+  with its own keyboard axis) and a `side` slot for per-picture details.
+  `AppImage` wraps remote pictures with loading and failed states.
+  `AppSnapStrip` is a horizontal scroll-snap strip with an en-dash position
+  readout (narduk-libs#529). `create-narduk-app` is a companion patch so the
+  generator pin moves with the core minor.
+- c1c8b42: Add the narduk-shell data-table family — `NeDataTable` (UTable preset
+  with column groups, units, tabular numerals, the missing dash, day/group rows,
+  a pinned first column, the phone column-set switch, the break row, and
+  loading), `NeSortHeader`, `NeCsvDownload`, plus `toCsv` / `parseSort` from the
+  package root — and extend `NePager` with `pageSizes`, `mode` (`pages` | `more`
+  | `auto`), `moreStep`, `maxLimit` and `update:limit`. narduk-timeseries gains
+  `bucketReadings` (1h / 3h / 1d min/avg/max; missing is `null`, not `0`).
+  create-narduk-app is patched because it pins narduk-shell (narduk-libs#528).
+- dd1a7d9: `createConsoleTracker` accepts URL-scoped ignore rules
+  (`{ text: RegExp; url?: RegExp }`) and records 4xx/5xx response URLs so an
+  object rule's optional `url` matches the request that actually failed. Bare
+  `RegExp[]` call sites stay unchanged (narduk-libs#134). `create-narduk-app` is
+  a companion patch so the generator pin moves with the testkit release.
+
 ## 0.10.0
 
 ### Minor Changes
