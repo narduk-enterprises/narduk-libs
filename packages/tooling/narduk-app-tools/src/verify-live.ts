@@ -199,7 +199,8 @@ export function resolveAccessHeaders(
     [flags.accessClientIdEnv, id],
     [flags.accessClientSecretEnv, secret],
   ] as const) {
-    if (!value?.trim()) throw new Error(`verify --live: environment variable ${name} is unset or empty`)
+    if (!value?.trim())
+      throw new Error(`verify --live: environment variable ${name} is unset or empty`)
   }
   return { 'cf-access-client-id': id!, 'cf-access-client-secret': secret! }
 }
