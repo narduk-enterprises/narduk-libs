@@ -1,9 +1,16 @@
-import { createVectorTileOverlaySource, paintVectorTile } from '../src/client/index.js'
+import {
+  buildDecodedVectorTile,
+  createVectorTileOverlaySource,
+  decodedVectorTileBytes,
+  paintVectorTile,
+  vectorTileFeatureCount,
+} from '../src/client/index.js'
 
 import type {
   DecodedVectorTile,
   VectorTileCanvas,
   VectorTileCanvasContext,
+  VectorTileFeatureInput,
 } from '../src/client/index.js'
 
 type PaintCall =
@@ -38,13 +45,13 @@ function createFakeCanvas(width: number, height: number): FakeCanvas {
   return { calls, height, width, getContext: () => context }
 }
 
-function tile(features: DecodedVectorTile['features']): DecodedVectorTile {
-  return { extent: 4096, features }
+function tile(features: readonly VectorTileFeatureInput[]): DecodedVectorTile {
+  return buildDecodedVectorTile(4096, features)
 }
 
 const twoReaches = tile([
   {
-    geometry: [
+    lines: [
       [
         { x: 0, y: 0 },
         { x: 4096, y: 4096 },
@@ -53,7 +60,7 @@ const twoReaches = tile([
     properties: { ri: 1, so: 5 },
   },
   {
-    geometry: [
+    lines: [
       [
         { x: 0, y: 4096 },
         { x: 4096, y: 0 },
@@ -203,5 +210,102 @@ describe('createVectorTileOverlaySource', () => {
 
     expect(source.size).toBe(1)
     expect(fetched).toEqual(['7/0/0', '7/0/0'])
+  })
+})
+
+describe('buildDecodedVectorTile', () => {
+  it('packs features into flat arrays a cache can afford to hold', () => {
+    const packed = tile([
+      {
+        lines: [
+          [
+            { x: 0, y: 0 },
+            { x: 10, y: 10 },
+          ],
+          [
+            { x: 20, y: 20 },
+            { x: 30, y: 30 },
+            { x: 40, y: 40 },
+          ],
+        ],
+        properties: { ri: 1 },
+      },
+      {
+        lines: [
+          [
+            { x: 5, y: 5 },
+            { x: 6, y: 6 },
+          ],
+        ],
+        properties: { ri: 2 },
+      },
+    ])
+
+    expect(vectorTileFeatureCount(packed)).toBe(2)
+    expect(packed.featureLines).toEqual(new Uint32Array([0, 2, 3]))
+    expect(packed.lineStarts).toEqual(new Uint32Array([0, 2, 5, 7]))
+    expect([...packed.coordinates]).toEqual([0, 0, 10, 10, 20, 20, 30, 30, 40, 40, 5, 5, 6, 6])
+    // 7 points at 4 bytes each; the object-per-point shape this replaced cost
+    // roughly ten times that, which is what made a 256-tile cache unaffordable.
+    expect(packed.coordinates.byteLength).toBe(28)
+  })
+
+  it('drops a line that cannot be stroked instead of leaving an empty range', () => {
+    const packed = tile([
+      {
+        lines: [
+          [{ x: 1, y: 1 }],
+          [
+            { x: 2, y: 2 },
+            { x: 3, y: 3 },
+          ],
+        ],
+        properties: { ri: 1 },
+      },
+    ])
+
+    expect(packed.lineStarts).toEqual(new Uint32Array([0, 2]))
+    expect([...packed.coordinates]).toEqual([2, 2, 3, 3])
+  })
+
+  it('clamps a wildly out-of-range point rather than wrapping it back across the tile', () => {
+    const packed = tile([
+      {
+        lines: [
+          [
+            { x: 0, y: 0 },
+            { x: 900_000, y: -900_000 },
+          ],
+        ],
+        properties: { ri: 1 },
+      },
+    ])
+
+    // Eight tile widths past the edge either way: off-canvas before and after.
+    expect([...packed.coordinates]).toEqual([0, 0, 32_767, -32_768])
+  })
+})
+
+describe('the decoded-tile memory budget', () => {
+  it('reports the bytes a cache is holding, and releases them on eviction', async () => {
+    const source = createVectorTileOverlaySource<FakeCanvas>({
+      cacheSize: 2,
+      createCanvas: createFakeCanvas,
+      decode: () => Promise.resolve(twoReaches),
+      style: () => ({ color: '#0e7490', width: 1 }),
+      tileBytes: () => Promise.resolve(new Uint8Array([1])),
+    })
+
+    await source.imageForTile(0, 0, 7, 1)
+    const oneTile = source.cacheBytes
+    await source.imageForTile(1, 0, 7, 1)
+    await source.imageForTile(2, 0, 7, 1)
+
+    expect(oneTile).toBe(decodedVectorTileBytes(twoReaches))
+    expect(source.size).toBe(2)
+    expect(source.cacheBytes).toBe(oneTile * 2)
+
+    source.clearCache()
+    expect(source.cacheBytes).toBe(0)
   })
 })

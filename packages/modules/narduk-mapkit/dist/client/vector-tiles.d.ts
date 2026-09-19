@@ -12,20 +12,67 @@
  */
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>;
-/** A ring or line, in tile-local coordinates (0..extent). */
-export type VectorTileGeometry = ReadonlyArray<ReadonlyArray<{
-    x: number;
-    y: number;
-}>>;
-export interface VectorTileFeature {
-    geometry: VectorTileGeometry;
-    properties: VectorTileProperties;
-}
+/**
+ * A decoded tile, stored columnar rather than as objects.
+ *
+ * A tile of flowlines carries on the order of 10^5 points. One `{ x, y }`
+ * object per point costs roughly 40 bytes once V8 has its header and pointer,
+ * so the default 256-tile cache would retain about a gigabyte -- past what
+ * mobile Safari gives a tab before it discards it. The same points in an
+ * `Int16Array` cost 4 bytes, which is the difference between a cache that
+ * survives a pan across the country and one that doesn't.
+ *
+ * Build one with {@link buildDecodedVectorTile} rather than by hand.
+ */
 export interface DecodedVectorTile {
+    /**
+     * Interleaved `x, y` pairs for every line in the tile, in tile-local
+     * coordinates. `Int16Array` because a tile's own space is `0..extent` (4096
+     * in every tile this library has seen) and a clip buffer adds a fraction of
+     * that; see {@link buildDecodedVectorTile} for what happens further out.
+     */
+    coordinates: Int16Array;
     /** Tile-local coordinate space, 4096 in every tile this library has seen. */
     extent: number;
-    features: readonly VectorTileFeature[];
+    /**
+     * Where each feature's lines begin, as an index into `lineStarts`. Feature
+     * `f` owns lines `featureLines[f]` up to `featureLines[f + 1]`, so the length
+     * is one more than the feature count.
+     */
+    featureLines: Uint32Array;
+    /**
+     * Where each line begins, as a *point* index into `coordinates`. Line `l`
+     * runs from point `lineStarts[l]` up to `lineStarts[l + 1]`, so the length is
+     * one more than the line count.
+     */
+    lineStarts: Uint32Array;
+    /** One entry per feature, in the order `featureLines` indexes them. */
+    properties: readonly VectorTileProperties[];
 }
+/** A feature as a caller describes it, before it is packed into flat arrays. */
+export interface VectorTileFeatureInput {
+    /** One entry per line; each is a run of tile-local points. */
+    lines: ReadonlyArray<ReadonlyArray<{
+        x: number;
+        y: number;
+    }>>;
+    properties: VectorTileProperties;
+}
+/**
+ * Pack features into the columnar layout {@link DecodedVectorTile} holds.
+ *
+ * Coordinates are clamped into the `Int16Array` range. In a tile whose extent
+ * is 4096 that bound is eight tile widths away from the tile, so a clamped
+ * point is far outside the canvas either way and the clamp cannot change a
+ * pixel -- it only stops a wildly out-of-range producer from wrapping a line
+ * back across the tile.
+ *
+ * A line of fewer than two points is dropped: it can't be stroked, and keeping
+ * it would put empty ranges in `lineStarts` for the painter to skip.
+ */
+export declare function buildDecodedVectorTile(extent: number, features: readonly VectorTileFeatureInput[]): DecodedVectorTile;
+/** Features in a decoded tile, which is one less than `featureLines.length`. */
+export declare function vectorTileFeatureCount(tile: DecodedVectorTile): number;
 /** How a feature is painted, or `null` to skip it at this zoom. */
 export interface VectorTileStyle {
     color: string;
@@ -34,6 +81,14 @@ export interface VectorTileStyle {
     opacity?: number;
 }
 export type VectorTileStyleFunction = (properties: VectorTileProperties, zoom: number) => VectorTileStyle | null;
+/**
+ * Turn tile bytes into geometry.
+ *
+ * Return `null` for a tile that holds nothing to draw -- the same class of
+ * answer as an archive with no tile at that address, and not a failure, so it
+ * is not reported to `onError`. A tile that is present but malformed should
+ * throw instead; that is what a caller wants counted.
+ */
 export type VectorTileDecoder = (bytes: Uint8Array, tile: {
     x: number;
     y: number;
@@ -70,6 +125,8 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     tileSize?: number;
 }
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
+    /** Retained coordinate, index and property bytes, for a memory budget. */
+    readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
     clearCache: () => void;
     /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
@@ -82,6 +139,8 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
      */
     setStyle: (style: VectorTileStyleFunction) => void;
 }
+/** Bytes a decoded tile retains, counting its arrays rather than its properties. */
+export declare function decodedVectorTileBytes(tile: DecodedVectorTile): number;
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.

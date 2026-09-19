@@ -566,6 +566,93 @@ default 256 tiles); `clearCache()` drops it when the archive itself changes.
 reader, taking the `fetch` it uses so a test needs no network. The `pmtiles`
 package is the caller's dependency, not this package's.
 
+### Decoding a tile
+
+The decoder itself lives in a separate entry, `./vector-tiles`, because it is
+the only part of this package that depends on protobuf. `./client` -- which
+every map consumer imports -- never reaches it, so an app that has no vector
+layer never bundles a parser. A test walks the import graph and fails if that
+line is ever crossed.
+
+```ts
+import { createMvtDecoder } from '@narduk-enterprises/narduk-mapkit/vector-tiles'
+
+const decode = createMvtDecoder({
+  layers: ['reaches'],
+  properties: ['ri', 'so'], // drop `name` from the cached tiles; fetch it on click
+})
+```
+
+`layers` and `properties` are worth setting on a dense archive. Geometry is
+already flat buffers; properties are not, so a string on each of a few thousand
+features per tile is what actually grows the cache.
+
+Empty bytes, a tile whose layers the filter excludes, and a layer with no
+features all decode to `null` -- nothing to draw, and not reported. A body that
+is not a vector tile at all (an HTML error page served with a 200, a truncated
+read) throws, so it reaches `onError` and gets counted rather than quietly
+painting blank country over the basemap.
+
+### Decoding off the main thread
+
+Decoding is protobuf parsing plus a zigzag-delta walk over every point: tens of
+milliseconds per tile on a national network, and MapKit asks for a screenful at
+once. `serveVectorTileDecoder` hosts the decoder in a worker and
+`createWorkerDecoder` talks to it, correlating replies by id so one worker
+serves every tile in flight.
+
+The worker script is the app's, not this package's -- that is the only
+arrangement Vite, webpack and Nuxt all agree on:
+
+```ts
+// app/workers/river-network.ts
+import {
+  createMvtDecoder,
+  serveVectorTileDecoder,
+} from '@narduk-enterprises/narduk-mapkit/vector-tiles'
+
+serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'] }))
+```
+
+```ts
+// on the main thread
+import { createWorkerDecoder } from '@narduk-enterprises/narduk-mapkit/client'
+
+const decoder = createWorkerDecoder({
+  worker: new Worker(new URL('./workers/river-network.ts', import.meta.url), {
+    type: 'module',
+  }),
+})
+
+const network = createVectorTileOverlaySource({
+  decode: decoder.decode,
+  ...rest,
+})
+```
+
+Tile bytes are transferred to the worker and the decoded buffers transferred
+back, so nothing is copied either way; pass `transfer: false` if the caller
+needs to keep its own array. A worker that dies mid-decode never answers, so a
+reply deadline (`timeoutMs`, default 15s) fails that one tile instead of leaving
+it pending for the life of the map. `dispose()` fails everything in flight and
+stops listening.
+
+### What a decoded tile costs
+
+A decoded tile is columnar: one `Int16Array` of interleaved `x, y` pairs, plus
+two `Uint32Array` indexes describing where each feature and line begins.
+
+That is not a micro-optimisation. A tile of flowlines carries on the order of
+10^5 points; one `{ x, y }` object per point costs roughly 40 bytes once V8 has
+its header and pointer, so the default 256-tile cache would retain about a
+gigabyte -- past what mobile Safari gives a tab before discarding it. The same
+points cost 4 bytes each here.
+
+`source.cacheBytes` reports what the cache is holding, so an app can set
+`cacheSize` against a real budget rather than a guess. Build a tile by hand with
+`buildDecodedVectorTile`, read one back with `vectorTileFeatureCount` and the
+index arrays, and measure one with `decodedVectorTileBytes`.
+
 ## Layer Registry
 
 Use the layer registry when a map needs multiple raster layers live at the same

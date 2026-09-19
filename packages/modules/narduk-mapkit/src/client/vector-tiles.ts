@@ -14,18 +14,118 @@
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>
 
-/** A ring or line, in tile-local coordinates (0..extent). */
-export type VectorTileGeometry = ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>
+/**
+ * A decoded tile, stored columnar rather than as objects.
+ *
+ * A tile of flowlines carries on the order of 10^5 points. One `{ x, y }`
+ * object per point costs roughly 40 bytes once V8 has its header and pointer,
+ * so the default 256-tile cache would retain about a gigabyte -- past what
+ * mobile Safari gives a tab before it discards it. The same points in an
+ * `Int16Array` cost 4 bytes, which is the difference between a cache that
+ * survives a pan across the country and one that doesn't.
+ *
+ * Build one with {@link buildDecodedVectorTile} rather than by hand.
+ */
+export interface DecodedVectorTile {
+  /**
+   * Interleaved `x, y` pairs for every line in the tile, in tile-local
+   * coordinates. `Int16Array` because a tile's own space is `0..extent` (4096
+   * in every tile this library has seen) and a clip buffer adds a fraction of
+   * that; see {@link buildDecodedVectorTile} for what happens further out.
+   */
+  coordinates: Int16Array
+  /** Tile-local coordinate space, 4096 in every tile this library has seen. */
+  extent: number
+  /**
+   * Where each feature's lines begin, as an index into `lineStarts`. Feature
+   * `f` owns lines `featureLines[f]` up to `featureLines[f + 1]`, so the length
+   * is one more than the feature count.
+   */
+  featureLines: Uint32Array
+  /**
+   * Where each line begins, as a *point* index into `coordinates`. Line `l`
+   * runs from point `lineStarts[l]` up to `lineStarts[l + 1]`, so the length is
+   * one more than the line count.
+   */
+  lineStarts: Uint32Array
+  /** One entry per feature, in the order `featureLines` indexes them. */
+  properties: readonly VectorTileProperties[]
+}
 
-export interface VectorTileFeature {
-  geometry: VectorTileGeometry
+/** A feature as a caller describes it, before it is packed into flat arrays. */
+export interface VectorTileFeatureInput {
+  /** One entry per line; each is a run of tile-local points. */
+  lines: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>
   properties: VectorTileProperties
 }
 
-export interface DecodedVectorTile {
-  /** Tile-local coordinate space, 4096 in every tile this library has seen. */
-  extent: number
-  features: readonly VectorTileFeature[]
+/** Int16 range, the bound {@link buildDecodedVectorTile} clamps coordinates to. */
+const COORDINATE_MIN = -32_768
+const COORDINATE_MAX = 32_767
+
+/**
+ * Pack features into the columnar layout {@link DecodedVectorTile} holds.
+ *
+ * Coordinates are clamped into the `Int16Array` range. In a tile whose extent
+ * is 4096 that bound is eight tile widths away from the tile, so a clamped
+ * point is far outside the canvas either way and the clamp cannot change a
+ * pixel -- it only stops a wildly out-of-range producer from wrapping a line
+ * back across the tile.
+ *
+ * A line of fewer than two points is dropped: it can't be stroked, and keeping
+ * it would put empty ranges in `lineStarts` for the painter to skip.
+ */
+export function buildDecodedVectorTile(
+  extent: number,
+  features: readonly VectorTileFeatureInput[],
+): DecodedVectorTile {
+  let pointCount = 0
+  let lineCount = 0
+  for (const feature of features) {
+    for (const line of feature.lines) {
+      if (line.length < 2) continue
+      lineCount += 1
+      pointCount += line.length
+    }
+  }
+
+  const coordinates = new Int16Array(pointCount * 2)
+  const lineStarts = new Uint32Array(lineCount + 1)
+  const featureLines = new Uint32Array(features.length + 1)
+  const properties: VectorTileProperties[] = []
+
+  let pointIndex = 0
+  let lineIndex = 0
+  let featureIndex = 0
+  for (const feature of features) {
+    featureLines[featureIndex] = lineIndex
+    for (const line of feature.lines) {
+      if (line.length < 2) continue
+      lineStarts[lineIndex] = pointIndex
+      lineIndex += 1
+      for (const point of line) {
+        coordinates[pointIndex * 2] = clampCoordinate(point.x)
+        coordinates[pointIndex * 2 + 1] = clampCoordinate(point.y)
+        pointIndex += 1
+      }
+    }
+    properties.push(feature.properties)
+    featureIndex += 1
+  }
+  lineStarts[lineIndex] = pointIndex
+  featureLines[featureIndex] = lineIndex
+
+  return { coordinates, extent, featureLines, lineStarts, properties }
+}
+
+function clampCoordinate(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(COORDINATE_MAX, Math.max(COORDINATE_MIN, Math.round(value)))
+}
+
+/** Features in a decoded tile, which is one less than `featureLines.length`. */
+export function vectorTileFeatureCount(tile: DecodedVectorTile): number {
+  return Math.max(0, tile.featureLines.length - 1)
 }
 
 /** How a feature is painted, or `null` to skip it at this zoom. */
@@ -41,6 +141,14 @@ export type VectorTileStyleFunction = (
   zoom: number,
 ) => VectorTileStyle | null
 
+/**
+ * Turn tile bytes into geometry.
+ *
+ * Return `null` for a tile that holds nothing to draw -- the same class of
+ * answer as an archive with no tile at that address, and not a failure, so it
+ * is not reported to `onError`. A tile that is present but malformed should
+ * throw instead; that is what a caller wants counted.
+ */
 export type VectorTileDecoder = (
   bytes: Uint8Array,
   tile: { x: number; y: number; z: number },
@@ -80,6 +188,8 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
 }
 
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
+  /** Retained coordinate, index and property bytes, for a memory budget. */
+  readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
   clearCache: () => void
   /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
@@ -93,13 +203,23 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
   setStyle: (style: VectorTileStyleFunction) => void
 }
 
+/** Bytes a decoded tile retains, counting its arrays rather than its properties. */
+export function decodedVectorTileBytes(tile: DecodedVectorTile): number {
+  return tile.coordinates.byteLength + tile.lineStarts.byteLength + tile.featureLines.byteLength
+}
+
 /** Smallest LRU that does the job: Map preserves insertion order. */
 class TileCache {
   readonly #limit: number
   readonly #tiles = new Map<string, DecodedVectorTile>()
+  #bytes = 0
 
   constructor(limit: number) {
     this.#limit = Math.max(1, limit)
+  }
+
+  get bytes() {
+    return this.#bytes
   }
 
   get size() {
@@ -108,6 +228,7 @@ class TileCache {
 
   clear() {
     this.#tiles.clear()
+    this.#bytes = 0
   }
 
   get(key: string) {
@@ -119,13 +240,21 @@ class TileCache {
   }
 
   set(key: string, tile: DecodedVectorTile) {
-    if (this.#tiles.has(key)) this.#tiles.delete(key)
+    this.#drop(key)
     this.#tiles.set(key, tile)
+    this.#bytes += decodedVectorTileBytes(tile)
     while (this.#tiles.size > this.#limit) {
       const oldest = this.#tiles.keys().next().value
       if (oldest === undefined) break
-      this.#tiles.delete(oldest)
+      this.#drop(oldest)
     }
+  }
+
+  #drop(key: string) {
+    const existing = this.#tiles.get(key)
+    if (!existing) return
+    this.#bytes -= decodedVectorTileBytes(existing)
+    this.#tiles.delete(key)
   }
 }
 
@@ -146,26 +275,31 @@ export function paintVectorTile(
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
+  const { coordinates, featureLines, lineStarts } = tile
   let painted = false
-  for (const feature of tile.features) {
-    const paint = style(feature.properties, zoom)
+  for (let feature = 0; feature < featureLines.length - 1; feature += 1) {
+    const properties = tile.properties[feature]
+    if (!properties) continue
+    const paint = style(properties, zoom)
     if (!paint) continue
     context.strokeStyle = paint.color
     context.lineWidth = Math.max(paint.width * pixelRatio, pixelRatio * 0.5)
     context.globalAlpha = paint.opacity ?? 1
-    for (const line of feature.geometry) {
-      if (line.length < 2) continue
+    const lastLine = featureLines[feature + 1] ?? 0
+    for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
+      const start = lineStarts[line] ?? 0
+      const end = lineStarts[line + 1] ?? start
+      if (end - start < 2) continue
       context.beginPath()
-      let first = true
-      for (const point of line) {
-        const x = point.x * scale
-        const y = point.y * scale
-        if (first) {
-          context.moveTo(x, y)
-          first = false
-        } else {
-          context.lineTo(x, y)
-        }
+      context.moveTo(
+        (coordinates[start * 2] ?? 0) * scale,
+        (coordinates[start * 2 + 1] ?? 0) * scale,
+      )
+      for (let point = start + 1; point < end; point += 1) {
+        context.lineTo(
+          (coordinates[point * 2] ?? 0) * scale,
+          (coordinates[point * 2 + 1] ?? 0) * scale,
+        )
       }
       context.stroke()
       painted = true
@@ -201,13 +335,16 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
   }
 
   return {
+    get cacheBytes() {
+      return cache.bytes
+    },
     clearCache() {
       cache.clear()
     },
     async imageForTile(x, y, z, scale) {
       try {
         const tile = await decodedTile(z, x, y)
-        if (!tile || tile.features.length === 0) return null
+        if (!tile || vectorTileFeatureCount(tile) === 0) return null
         const pixelRatio = scale > 0 ? scale : 1
         const size = Math.round(tileSize * pixelRatio)
         const canvas = createCanvas(size, size)
