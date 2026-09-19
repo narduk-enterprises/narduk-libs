@@ -1096,6 +1096,21 @@ describe('narduk-data client secondary entries', () => {
     })
   })
 
+  it('never answers an unusable entry path from the memoised primary artifact', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+    const product = productOf()
+
+    await client.read(product)
+    const callsAfterPrimary = upstream.calls.length
+
+    await expect(client.read({ ...product, entryPath: '' })).rejects.toMatchObject({
+      reason: 'rejected',
+    })
+    expect(upstream.calls).toHaveLength(callsAfterPrimary)
+  })
+
   it.each(['../escape.json', 'a/../b.json', '/rooted.json', 'a//b.json', 'a/%2e%2e/b.json', ''])(
     'refuses the unsafe entry path %j before any request',
     async (entryPath) => {

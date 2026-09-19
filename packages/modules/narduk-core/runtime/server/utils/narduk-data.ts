@@ -924,9 +924,8 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     product: NardukDataProduct<TArtifact, TManifest>,
     context: NardukDataRequestContext | undefined,
     manifestUrl: string,
+    segments: string[] | null,
   ): Promise<CacheEntry> {
-    const segments =
-      product.entryPath === undefined ? null : entrySegments(product.entryPath, manifestUrl)
     // The shared read carries the first caller's correlation and fetcher, but
     // never a caller's signal: cancellation is raced per caller instead.
     const policy: NardukDataRequestPolicy = {
@@ -1026,13 +1025,17 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       product: NardukDataProduct<TArtifact, TManifest>,
       context?: NardukDataRequestContext,
     ): Promise<NardukDataResult<TArtifact, TManifest>> {
-      const key = cacheKey(product, context)
       const manifestUrl = joinUrl(
         origin,
         encodeURIComponent(product.productId),
         'current',
         'manifest.json',
       )
+      // Checked before the memo is consulted, so an unusable path can never be
+      // answered from another entry's cached value.
+      const segments =
+        product.entryPath === undefined ? null : entrySegments(product.entryPath, manifestUrl)
+      const key = cacheKey(product, context)
       const present = (entry: CacheEntry, source: NardukDataSource) => ({
         artifactUrl: entry.artifactUrl,
         data: entry.data as TArtifact,
@@ -1064,7 +1067,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
 
       let flight = inFlight.get(key)
       if (!flight) {
-        flight = load(product, context, manifestUrl)
+        flight = load(product, context, manifestUrl, segments)
           .then((entry) => {
             remember(key, entry)
             return entry
