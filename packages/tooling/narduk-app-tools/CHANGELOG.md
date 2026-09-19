@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.11.0
+
+### Minor Changes
+
+- 80dde89: `narduk-app verify --live` can prove a host behind Cloudflare Access:
+  `--access-client-id-env` / `--access-client-secret-env` name the environment
+  variables holding a service token, sent as `CF-Access-Client-Id` /
+  `CF-Access-Client-Secret` on every probe and never printed (#569).
+
 ## 0.10.1
 
 ### Patch Changes
