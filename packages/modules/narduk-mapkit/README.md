@@ -506,6 +506,66 @@ void crossfadeMapKitOverlayOpacity({
 }).finished
 ```
 
+## Vector Tiles
+
+MapKit JS draws raster tiles only, so a dense vector network -- millions of line
+features -- has to be painted before MapKit sees it.
+`createVectorTileOverlaySource` turns an archive of vector tiles into the
+`imageForTile` function the async overlay and the layer registry already accept.
+
+The decode step is injected, for three reasons: this entry stays free of
+protobuf dependencies, an app can run the decoder in a worker so the main thread
+never parses a tile, and a test can paint fixture geometry without building one.
+
+```ts
+import {
+  createMapKitAsyncTileOverlay,
+  createPmTilesFetchSource,
+  createPmTilesTileSource,
+  createVectorTileOverlaySource,
+} from '@narduk-enterprises/narduk-mapkit/client'
+import { PMTiles } from 'pmtiles'
+
+const archive = new PMTiles(
+  createPmTilesFetchSource({
+    url: 'https://data.example/river-network.pmtiles',
+  }),
+)
+const tiles = createPmTilesTileSource({ reader: archive })
+
+const network = createVectorTileOverlaySource({
+  createCanvas: (width, height) => new OffscreenCanvas(width, height),
+  decode: (bytes, tile) => decodeInWorker(bytes, tile),
+  style: (properties, zoom) => {
+    if (Number(properties.so) < 5 && zoom < 8) return null
+    return { color: palette[status[Number(properties.ri)]], width: 1.2 }
+  },
+  tileBytes: (z, x, y) => tiles.getTile(z, x, y),
+})
+
+map.addTileOverlay(
+  createMapKitAsyncTileOverlay(window.mapkit, network.imageForTile),
+)
+```
+
+A missing tile, an empty tile, a declined style and a failed decode all resolve
+to `null`, so the overlay draws nothing there rather than covering the basemap
+with an empty square. Failures reach `onError` instead of rejecting.
+
+Decoded tiles are cached, so `setStyle()` repaints from memory:
+
+```ts
+network.setStyle(nextLensStyle)
+overlay.reload() // MapKit re-requests the visible tiles; no refetch, no re-decode
+```
+
+That is what makes a lens change cheap. The cache is an LRU (`cacheSize`,
+default 256 tiles); `clearCache()` drops it when the archive itself changes.
+
+`createPmTilesFetchSource` is the range-request `Source` for the `pmtiles`
+reader, taking the `fetch` it uses so a test needs no network. The `pmtiles`
+package is the caller's dependency, not this package's.
+
 ## Layer Registry
 
 Use the layer registry when a map needs multiple raster layers live at the same
