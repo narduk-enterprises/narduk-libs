@@ -1009,3 +1009,107 @@ describe('narduk-data client', () => {
     await expect(client.read(productOf())).rejects.toMatchObject({ reason: 'network' })
   })
 })
+
+describe('narduk-data client secondary entries', () => {
+  const ENTRY_PATH = 'consumer/lakes/texas/canyon-lake/history-1y.json'
+  const entryUrl = `${ORIGIN}/${PRODUCT_ID}/releases/${RELEASE_ID}/${ENTRY_PATH}`
+
+  /** A release whose manifest also lists one nested secondary artifact. */
+  async function releaseWithEntry(entryText: string, entrySha256?: string) {
+    const release = await publishedRelease()
+    const manifest = {
+      ...release.manifest,
+      artifacts: [
+        release.manifest.artifact,
+        { path: ENTRY_PATH, sha256: entrySha256 ?? (await sha256Hex(entryText)) },
+      ],
+    }
+    return { manifestText: JSON.stringify(manifest) }
+  }
+
+  it('reads a listed nested entry and verifies it against its own checksum', async () => {
+    const entryText = JSON.stringify({ stations: ['canyon'] })
+    const { manifestText } = await releaseWithEntry(entryText)
+    const upstream = fakeFetch({
+      [entryUrl]: [async () => json(entryText)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    const result = await client.read(productOf({ entryPath: ENTRY_PATH }))
+
+    expect(result.data).toEqual({ stations: ['canyon'] })
+    expect(result.artifactUrl).toBe(entryUrl)
+    expect(result.freshness.releaseId).toBe(RELEASE_ID)
+    expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl, entryUrl])
+  })
+
+  it('keeps the primary artifact and each entry as separate cache entries', async () => {
+    const entryText = JSON.stringify({ stations: ['canyon'] })
+    const release = await publishedRelease()
+    const { manifestText } = await releaseWithEntry(entryText)
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [entryUrl]: [async () => json(entryText)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    const primary = await client.read(productOf())
+    const entry = await client.read(productOf({ entryPath: ENTRY_PATH }))
+
+    expect(primary.data).toEqual({ stations: ['41008'] })
+    expect(entry.data).toEqual({ stations: ['canyon'] })
+  })
+
+  it('reports an unlisted entry as missing without fetching or falling back', async () => {
+    const release = await publishedRelease()
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(release.manifestText)] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(productOf({ entryPath: ENTRY_PATH }))).rejects.toMatchObject({
+      reason: 'missing',
+    })
+    expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl])
+  })
+
+  it('rejects an entry whose bytes do not match its listed checksum', async () => {
+    const { manifestText } = await releaseWithEntry('{}', 'a'.repeat(64))
+    const upstream = fakeFetch({
+      [entryUrl]: [async () => json(JSON.stringify({ stations: [] }))],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(productOf({ entryPath: ENTRY_PATH }))).rejects.toMatchObject({
+      reason: 'checksum',
+    })
+  })
+
+  it('rejects a listed entry that carries no usable checksum', async () => {
+    const { manifestText } = await releaseWithEntry('{}', 'not-a-digest')
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(manifestText)] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(productOf({ entryPath: ENTRY_PATH }))).rejects.toMatchObject({
+      reason: 'rejected',
+    })
+  })
+
+  it.each(['../escape.json', 'a/../b.json', '/rooted.json', 'a//b.json', 'a/%2e%2e/b.json', ''])(
+    'refuses the unsafe entry path %j before any request',
+    async (entryPath) => {
+      const upstream = fakeFetch({})
+      const client = createNardukDataClient({
+        fetch: upstream.fetch,
+        now: () => NOW,
+        origin: ORIGIN,
+      })
+
+      await expect(client.read(productOf({ entryPath }))).rejects.toMatchObject({
+        reason: 'rejected',
+      })
+      expect(upstream.calls).toEqual([])
+    },
+  )
+})
