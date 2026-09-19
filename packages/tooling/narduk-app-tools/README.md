@@ -924,3 +924,9 @@ The `--json` artefact carries a first-class `sites` block — every declaration
 site with its file, line, value, role (`source` / `derives` / `mirror`) and
 verdict — so the estate roster reads the table as data rather than parsing
 sub-check prose, and a `fixes` block recording what `--fix` rewrote.
+
+For existing D1 schemas, use the
+[reviewed baseline and frozen cutover proof](docs/migration-baselines.md):
+`narduk-app db baseline capture|sql|check|register|prove`. Registration is a
+one-time reviewed metadata operation, separate from automatic deployment
+migrations.

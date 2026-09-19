@@ -832,6 +832,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '',
               'Merge `docs/deployment/promote-d1.steps.yml` into the app-owned promote job before versions-promote. Merge `ci-d1-bundle.job.yml` into CI and activate `preview-d1.yml` after preview onboarding. These are inert, one-shot onboarding templates: generating them does not install credentials or activate remote writes. Read the narduk-app-tools D1 deployment migrations runbook before enabling them.',
               '',
+              'For existing D1 schemas, use the shared narduk-app-tools [reviewed baseline process](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/migration-baselines.md). Capture a frozen schema/ledger artifact, review and prove it, then register untracked schema metadata explicitly before enabling automatic promotion. Never reconstruct a historical fixture by replaying all currently installed migrations.',
+              '',
               'Automatic production order: exact successful CI SHA → eligible uploaded version → migrate with D1-only credential → read-only drift check → promote with separate credential → live proof. Any migration error blocks promotion. Only a completed promotion followed by failed live proof can trigger Worker rollback. Worker rollback never restores a database.',
               '',
               'Migration SQL must keep the currently serving Worker and supported rollback versions working: expand first, backfill compatibly, switch code, then contract in a later separately reviewed change after the rollback window closes. Filenames and applied SQL are immutable. The drift gate checks history/checksums; it cannot prove application compatibility.',
