@@ -903,6 +903,45 @@ property (`--mk-ink`, `--mk-ink-2`, `--mk-ink-3`, `--mk-void`, `--mk-surface`,
 `--mk-focus`, `--mk-font-sans`, `--mk-font-mono`, `--mk-leader`) with a neutral
 fallback, so a host themes marks by setting those on any ancestor of the map.
 
+### `useMapKitView()` in Nuxt
+
+`useMapKitView()` is the Vue side of the marks: it owns the map behind a
+map-first page's `<AppMapKit>` (camera, frame, zoom tier, padding, basemap, the
+mark layer and fullscreen). It is auto-imported with `useMapKit()` under the
+module's `composables` option, and was lifted from buoys along with `./marks`.
+
+```vue
+<script setup lang="ts">
+const surface = useTemplateRef<HTMLElement>('surface')
+const view = useMapKitView({
+  basemap: () => 'MutedStandard',
+  insets: () => ({ top: 24, right: 416, bottom: 24, left: 24 }), // chrome over the map
+  padding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), // where Apple's logo sits
+  specs: () => markSpecs.value, // MarkSpec[] built with createPinMark()
+  surface: () => surface.value,
+})
+</script>
+
+<template>
+  <div ref="surface">
+    <AppMapKit :items="[]" @map-ready="view.onMapReady" />
+  </div>
+</template>
+```
+
+- **`items` stays empty.** The view draws through `createMarkLayer()`, so the
+  component's own pin layer has nothing to diff.
+- **The runtime comes from `map-ready`'s second argument**, the scoped namespace
+  (K-10), never `window.mapkit`.
+- **`mapReady` waits for a laid-out host.** MapKit can fire `map-ready` before
+  its element has a size; the view retries across frames, then re-applies the
+  region so custom annotations line up with the canvas.
+- **Built-in controls are off.** The page draws its own zoom, layers and scale.
+- **Camera moves are whole-frame.** `fitBox()`, `reveal()` and `zoomBy()` keep
+  targets clear of `insets`, and changing `padding` holds the camera still.
+- `useMapKitFullscreen({ surface, onLayout })` is the same fullscreen toggle as
+  a standalone composable.
+
 ## Pointer Probe
 
 `attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One

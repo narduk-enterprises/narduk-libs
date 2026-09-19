@@ -6,6 +6,8 @@ export type { MapKitCalloutEntry, MapKitCalloutPlacement } from './runtime/callo
 export type { MapKitPinAnchor, MapKitPinGeometry } from './runtime/pin-geometry.js';
 export type { MapKitDiff, MapKitPinElement, MapKitPinItem } from './runtime/pin-layer.js';
 export type { AppMapKitItemProps, AppMapKitProps, AppMapKitSlots, MapKitCalloutSlotScope, } from './runtime/components/AppMapKit.js';
+export type { UseMapKitFullscreenOptions, UseMapKitFullscreenResult, } from './runtime/composables/useMapKitFullscreen.js';
+export type { UseMapKitViewOptions, UseMapKitViewResult, } from './runtime/composables/useMapKitView.js';
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
 export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js';
 export { MAPKIT_COMPONENT_CSS } from './runtime/styles.js';

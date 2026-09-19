@@ -598,6 +598,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         mapTypeValue;
         colorSchemeValue;
         showsZoomControlValue;
+        showsMapTypeControlValue;
         showsScaleValue;
         paddingValue;
         constructor(namespaceId, parent, options = {}) {
@@ -630,6 +631,9 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 this.colorSchemeValue = options.colorScheme;
             if (options.showsZoomControl !== undefined) {
                 this.showsZoomControlValue = options.showsZoomControl;
+            }
+            if (options.showsMapTypeControl !== undefined) {
+                this.showsMapTypeControlValue = options.showsMapTypeControl;
             }
             if (options.showsScale !== undefined)
                 this.showsScaleValue = options.showsScale;
@@ -703,6 +707,12 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         }
         set showsZoomControl(next) {
             this.showsZoomControlValue = next;
+        }
+        get showsMapTypeControl() {
+            return this.showsMapTypeControlValue ?? this.unset('showsMapTypeControl');
+        }
+        set showsMapTypeControl(next) {
+            this.showsMapTypeControlValue = next;
         }
         get showsScale() {
             return this.showsScaleValue ?? this.unset('showsScale');

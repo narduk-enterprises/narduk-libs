@@ -41,6 +41,14 @@ export type {
   AppMapKitSlots,
   MapKitCalloutSlotScope,
 } from './runtime/components/AppMapKit.js'
+export type {
+  UseMapKitFullscreenOptions,
+  UseMapKitFullscreenResult,
+} from './runtime/composables/useMapKitFullscreen.js'
+export type {
+  UseMapKitViewOptions,
+  UseMapKitViewResult,
+} from './runtime/composables/useMapKitView.js'
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js'
 export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js'
 export { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
@@ -192,7 +200,14 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
       nuxt.options.css.splice(options.component ? 1 : 0, 0, marksStylesheet.dst)
     }
     if (options.composables) {
-      addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }])
+      addImports([
+        { from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' },
+        { from: resolver.resolve('./runtime/composables/useMapKitView'), name: 'useMapKitView' },
+        {
+          from: resolver.resolve('./runtime/composables/useMapKitFullscreen'),
+          name: 'useMapKitFullscreen',
+        },
+      ])
     }
     if (options.tokenRoute) {
       addServerHandler({
