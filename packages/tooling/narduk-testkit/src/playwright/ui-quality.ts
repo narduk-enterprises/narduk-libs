@@ -361,7 +361,7 @@ export type ConsoleIgnorePattern = RegExp | ConsoleIssueIgnore
 function matchesIgnoredPattern(
   text: string,
   pattern: ConsoleIgnorePattern,
-  failedResponseUrls: readonly string[],
+  failedResponseUrls: string[],
 ) {
   if (pattern instanceof RegExp) {
     return pattern.test(text)
@@ -376,7 +376,13 @@ function matchesIgnoredPattern(
     return true
   }
 
-  return failedResponseUrls.some((url) => urlPattern.test(url))
+  const index = failedResponseUrls.findIndex((url) => urlPattern.test(url))
+  if (index === -1) {
+    return false
+  }
+
+  failedResponseUrls.splice(index, 1)
+  return true
 }
 
 export interface ConsoleTrackerOptions {
@@ -390,7 +396,9 @@ export interface ConsoleTrackerOptions {
    * ignores by text. An object rule with `url` ignores only when that text is also
    * correlated with a recorded 4xx/5xx response URL — Chromium often attributes the
    * console line to the document, so the failed request URL is the one that matters.
-   * Passing a bare `RegExp[]` as the second argument is the same thing and stays supported.
+   * Each match consumes one failed URL, so a later first-party failure with the same
+   * console text is still reported. Passing a bare `RegExp[]` as the second argument
+   * is the same thing and stays supported.
    */
   ignoredPatterns?: ConsoleIgnorePattern[]
   /**

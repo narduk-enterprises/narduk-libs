@@ -367,6 +367,30 @@ describe('createConsoleTracker', () => {
     ])
   })
 
+  it('still reports a later first-party failure after consuming a matching failed URL', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, [
+      { text: /Failed to load resource/, url: /\/api\/mapkit-token(?:\?|$)/ },
+    ])
+
+    stub.emitResponse(403, 'https://lakestat.us/api/mapkit-token?issuer=x')
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 403',
+      'https://lakestat.us/',
+    )
+    stub.emitResponse(500, 'https://lakestat.us/api/stations')
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 500',
+      'https://lakestat.us/',
+    )
+
+    expect(tracker.getIssues()).toEqual([
+      '[console:error] Failed to load resource: the server responded with a status of 500',
+    ])
+  })
+
   it('treats a text-only object rule like a bare RegExp', () => {
     const stub = stubPage()
     const tracker = createConsoleTracker(stub.page, [{ text: /^\[build\]/ }])
