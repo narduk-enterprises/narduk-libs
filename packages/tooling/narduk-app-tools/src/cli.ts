@@ -37,6 +37,7 @@ import {
 } from './commands/security-headers-check.js'
 import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
 import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/deployment-check.js'
+import { runBaselineCommand } from './commands/baseline.js'
 import { runOgCommand } from './commands/og.js'
 import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
 
@@ -52,6 +53,7 @@ function usage(): string {
     '  db migrate --config <file> --database <name> --local|--remote [--reset] [--wrangler-config <file>]',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
+    '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
     '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
@@ -180,6 +182,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return await runOgCommand(command, rest)
     if (command === 'db') {
       const [subcommand, ...migrateArgs] = rest
+      if (subcommand === 'baseline') {
+        console.log(JSON.stringify(runBaselineCommand(migrateArgs), null, 2))
+        return 0
+      }
       if (subcommand === 'bundle') {
         if (
           migrateArgs.length !== 2 ||

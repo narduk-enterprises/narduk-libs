@@ -208,11 +208,13 @@ require explicit reviewed adoption mappings and schema evidence; the runner does
 not infer a baseline or replay SQL just because its own ledger is absent.
 Read-model rebuilds or inline schema initializers with no ledger are
 **unverified**, not current. The runner refuses existing application tables with
-empty or absent migration histories, even when the manifest contains no SQL.
-Review and establish the baseline through the owning schema process first; an
-empty manifest is not an exemption. Provider-internal `_cf_*` and SQLite tables
-do not count as application schema. Applied SQL is immutable; append a
-correction instead of editing it.
+empty or absent migration histories, even when the manifest contains no SQL. Use
+the shared [reviewed baseline process](migration-baselines.md) to capture,
+review, prove and register the schema without replaying historical SQL. The app
+owns the review and schema; the shared commands supply the procedure. An empty
+manifest is not an exemption. Provider-internal `_cf_*` and SQLite tables do not
+count as application schema. Applied SQL is immutable; append a correction
+instead of editing it.
 
 Provider references:
 [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) and

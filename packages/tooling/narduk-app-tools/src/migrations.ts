@@ -13,6 +13,16 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
 import { spawnWranglerSync } from './package-manager.js'
+import {
+  BASELINE_RECEIPTS_TABLE,
+  assertBaselineState,
+  createMigrationBaseline,
+  isMigrationMetadata,
+  migrationBaselineSql,
+  parseMigrationBaseline,
+  type MigrationBaseline,
+  type MigrationBaselineObject,
+} from './migration-baseline.js'
 
 export const MIGRATION_LEDGER_TABLE = '_narduk_migrations'
 export const MIGRATION_LOCK_TABLE = '_narduk_migration_lock'
@@ -112,6 +122,8 @@ export interface MigrationRunOptions {
   database: string
   location: MigrationLocation
   recoveryDir?: string
+  /** Explicit local D1 state; never used for remote operations. */
+  persistTo?: string
   target?: { accountId: string; databaseId: string }
   reset?: boolean
   /** Explicit target, bypassing Wrangler's build-output config redirect. */
@@ -531,11 +543,6 @@ export function planMigrations(input: MigrationPlanningInput): MigrationPlan {
     if (target.checksum !== adoption.checksum) {
       throw new Error(`Adoption checksum does not match ${adoption.source}:${adoption.filename}`)
     }
-    if (target.sourceVersion !== adoption.sourceVersion) {
-      throw new Error(
-        `Adoption source version does not match ${adoption.source}:${adoption.filename}`,
-      )
-    }
   }
 
   for (const row of ambiguousRows) {
@@ -544,7 +551,17 @@ export function planMigrations(input: MigrationPlanningInput): MigrationPlan {
     if (!adoption) {
       throw new Error(`Ambiguous legacy migration row refused: ${key}`)
     }
-    assertSchemaEvidence(adoption, input.schemaEvidence)
+    const target = migrationById.get(`${adoption.source}\0${adoption.filename}`)!
+    // The stable checksum receipt supersedes historical schema probes. A later
+    // reviewed migration may remove a cutover table or arrive in a new package.
+    if (!stableRows.has(`${adoption.source}\0${adoption.filename}`)) {
+      if (target.sourceVersion !== adoption.sourceVersion) {
+        throw new Error(
+          `Adoption source version does not match ${adoption.source}:${adoption.filename}`,
+        )
+      }
+      assertSchemaEvidence(adoption, input.schemaEvidence)
+    }
   }
 
   const adoptedIds = new Set(
@@ -670,16 +687,24 @@ interface MigrationDatabase {
 }
 
 function migrationDatabase(
-  options: MigrationRunOptions,
+  options: Omit<MigrationRunOptions, 'configFile'>,
   executor: MigrationExecutor,
 ): MigrationDatabase {
   const cwd = resolve(options.cwd ?? process.cwd())
-  const run = (args: string[], json: boolean) =>
-    executor(
-      options.wranglerConfig ? [...args, '--config', resolve(cwd, options.wranglerConfig)] : args,
+  if (options.persistTo && options.location !== '--local')
+    throw new Error('Local state cannot select a remote migration target')
+  const run = (args: string[], json: boolean) => {
+    const targetArgs = options.wranglerConfig
+      ? [...args, '--config', resolve(cwd, options.wranglerConfig)]
+      : args
+    return executor(
+      options.persistTo
+        ? [...targetArgs, '--persist-to', resolve(cwd, options.persistTo)]
+        : targetArgs,
       cwd,
       json,
     )
+  }
   const args = (sql: string, json: boolean) =>
     buildWranglerD1ExecuteArgs({
       database: options.database,
@@ -852,17 +877,7 @@ function inspectDatabase(options: MigrationRunOptions, db: MigrationDatabase): M
     stableRows = db.rows<MigrationLedgerRow>(migrationLedgerRowsSql())
   }
   const legacyRows = readLegacyRows(db, tables)
-  const applicationTables = [...tables].filter(
-    (name) =>
-      !name.startsWith('sqlite_') &&
-      !name.startsWith('_cf_') &&
-      ![
-        MIGRATION_LEDGER_TABLE,
-        MIGRATION_LOCK_TABLE,
-        '_applied_migrations',
-        'd1_migrations',
-      ].includes(name),
-  )
+  const applicationTables = [...tables].filter((name) => !isMigrationMetadata(name))
   if (
     (options.strict ?? true) &&
     stableRows.length === 0 &&
@@ -929,27 +944,18 @@ export function runMigrations(
   const resetLocal = validateMigrationReset(options.location, options.reset)
   const cwd = resolve(options.cwd ?? process.cwd())
   if (resetLocal)
-    rmSync(join(cwd, '.wrangler', 'state', 'v3', 'd1'), { force: true, recursive: true })
+    rmSync(
+      join(
+        options.persistTo ? resolve(cwd, options.persistTo) : join(cwd, '.wrangler', 'state'),
+        'v3',
+        'd1',
+      ),
+      { force: true, recursive: true },
+    )
   const db = migrationDatabase(options, executor)
   // Fail on history conflicts and bad manifests before taking any remote mutation path.
   inspectDatabase(options, db)
-  const owner = randomUUID()
-  db.execute(
-    `CREATE TABLE IF NOT EXISTS ${MIGRATION_LOCK_TABLE} (id INTEGER PRIMARY KEY CHECK (id = 1), owner TEXT NOT NULL, acquired_at TEXT NOT NULL);`,
-  )
-  try {
-    db.execute(
-      `INSERT INTO ${MIGRATION_LOCK_TABLE} (id, owner, acquired_at) VALUES (1, ${quoteSql(owner)}, datetime('now'));`,
-    )
-  } catch {
-    // INSERT may have succeeded despite a lost response. Never release an
-    // uncertain acquisition, and never disclose raw provider output here.
-    throw new Error(
-      `Could not acquire D1 migration lock for ${options.database}; attempted owner ${owner}. Inspect ${MIGRATION_LOCK_TABLE} and the prior run before recovery.`,
-    )
-  }
-  let complete = false
-  try {
+  return withMigrationLock(options, db, (owner) => {
     const plan = inspectDatabase(options, db)
     const recoveryPath =
       options.location === '--remote' && plan.apply + plan.adopt > 0
@@ -969,8 +975,35 @@ export function runMigrations(
     const after = inspectDatabase(options, db)
     if (after.apply + after.adopt !== 0)
       throw new Error('D1 migrations remain pending after application')
-    complete = true
     return { ...plan, ...(recoveryPath ? { recoveryPath } : {}) }
+  })
+}
+
+function withMigrationLock<T>(
+  options: MigrationRunOptions,
+  db: MigrationDatabase,
+  operation: (owner: string) => T,
+): T {
+  const owner = randomUUID()
+  db.execute(
+    `CREATE TABLE IF NOT EXISTS ${MIGRATION_LOCK_TABLE} (id INTEGER PRIMARY KEY CHECK (id = 1), owner TEXT NOT NULL, acquired_at TEXT NOT NULL);`,
+  )
+  try {
+    db.execute(
+      `INSERT INTO ${MIGRATION_LOCK_TABLE} (id, owner, acquired_at) VALUES (1, ${quoteSql(owner)}, datetime('now'));`,
+    )
+  } catch {
+    // INSERT may have succeeded despite a lost response. Never release an
+    // uncertain acquisition, and never disclose raw provider output here.
+    throw new Error(
+      `Could not acquire D1 migration lock for ${options.database}; attempted owner ${owner}. Inspect ${MIGRATION_LOCK_TABLE} and the prior run before recovery.`,
+    )
+  }
+  let complete = false
+  try {
+    const result = operation(owner)
+    complete = true
+    return result
   } catch (error) {
     throw new Error(
       `D1 migration failed for ${options.database}; ${options.location === '--remote' ? `lock owner ${owner} retained. Inspect remote state and recovery artifacts before retrying.` : 'local run stopped.'} Cause: ${error instanceof Error ? error.message : String(error)}`,
@@ -980,5 +1013,243 @@ export function runMigrations(
     if (complete || options.location === '--local') {
       db.execute(`DELETE FROM ${MIGRATION_LOCK_TABLE} WHERE id = 1 AND owner = ${quoteSql(owner)};`)
     }
+  }
+}
+
+export interface MigrationBaselineCaptureOptions extends Omit<MigrationRunOptions, 'configFile'> {
+  revision: string
+  target: { accountId: string; databaseId: string }
+}
+
+function assertDatabaseUnlocked(db: MigrationDatabase, database: string): void {
+  const tables = db.rows<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${MIGRATION_LOCK_TABLE}';`,
+  )
+  if (tables.length && db.rows(`SELECT owner FROM ${MIGRATION_LOCK_TABLE} LIMIT 1;`).length) {
+    throw new Error(`D1 migration is locked for ${database}; cutover evidence is not stable`)
+  }
+}
+
+function readBaselineState(
+  options: MigrationBaselineCaptureOptions,
+  db: MigrationDatabase,
+): MigrationBaseline {
+  const tables = new Set(
+    db
+      .rows<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table';")
+      .map((row) => row.name),
+  )
+  if (tables.has(MIGRATION_LEDGER_TABLE)) validateLedgerSchema(db.rows(migrationLedgerInfoSql()))
+  return createMigrationBaseline({
+    schemaVersion: 1,
+    kind: 'narduk-d1-cutover',
+    capturedAt: new Date().toISOString(),
+    revision: options.revision,
+    origin: options.target,
+    objects: db.rows<MigrationBaselineObject>(
+      "SELECT type, name, tbl_name AS 'table', sql FROM sqlite_master WHERE type IN ('table', 'index', 'view', 'trigger') AND sql IS NOT NULL;",
+    ),
+    migrations: tables.has(MIGRATION_LEDGER_TABLE)
+      ? db.rows<{ source: string; filename: string; checksum: string; sourceVersion: string }>(
+          `SELECT source, filename, checksum, source_version AS sourceVersion FROM ${MIGRATION_LEDGER_TABLE};`,
+        )
+      : [],
+    legacy: readLegacyRows(db, tables).map((row) => ({
+      filename: row.filename,
+      source: row.source === 'wrangler' ? 'wrangler' : null,
+    })),
+  })
+}
+
+/** Schema and ledger metadata only. No writes, package replay, or application rows. */
+export function captureMigrationBaseline(
+  options: MigrationBaselineCaptureOptions,
+  executor: MigrationExecutor = runWrangler,
+): MigrationBaseline {
+  if (options.reset) throw new Error('Baseline capture cannot reset a database')
+  const db = migrationDatabase(options, executor)
+  assertDatabaseUnlocked(db, options.database)
+  const artifact = readBaselineState(options, db)
+  assertBaselineState(artifact, readBaselineState(options, db))
+  assertDatabaseUnlocked(db, options.database)
+  return artifact
+}
+
+export interface MigrationBaselineRegistrationOptions extends MigrationRunOptions {
+  target: { accountId: string; databaseId: string }
+  source: string
+  filename: string
+  expectedDigest: string
+  reviewRef: string
+}
+
+function baselineAction(
+  options: Pick<MigrationBaselineRegistrationOptions, 'configFile' | 'cwd' | 'source' | 'filename'>,
+  artifact: MigrationBaseline,
+): MigrationAction {
+  if (artifact.migrations.length || artifact.legacy.length) {
+    throw new Error(
+      'Baseline registration is only for untracked schemas; preserve and adopt existing histories',
+    )
+  }
+  const loaded = loadMigrationConfig(resolve(options.cwd ?? process.cwd(), options.configFile))
+  const config = resolveMigrationConfigVersions(loaded.config, loaded.baseDir)
+  // A new app-owned schema snapshot is not an attestation that a package's
+  // historical INSERT/UPDATE/DELETE statements ran. Never invent those receipts.
+  if (
+    config.sources.length !== 1 ||
+    config.adoptions.length ||
+    options.source.startsWith('@') ||
+    options.source.startsWith('package:')
+  ) {
+    throw new Error(
+      'An untracked database needs one dedicated app-owned baseline source, not inferred package history',
+    )
+  }
+  const first = discoverMigrations(config, loaded.baseDir)[0]
+  if (!first || first.source !== options.source || first.filename !== options.filename) {
+    throw new Error('The reviewed schema baseline must be the first migration in its source')
+  }
+  if (first.checksum !== checksumMigrationSql(migrationBaselineSql(artifact))) {
+    throw new Error('Baseline migration must exactly match the artifact schema SQL')
+  }
+  return { ...first, kind: 'adopt' }
+}
+
+/** One-time, reviewed metadata registration. Never executes captured schema on the target. */
+export function registerMigrationBaseline(
+  options: MigrationBaselineRegistrationOptions,
+  input: MigrationBaseline,
+  executor: MigrationExecutor = runWrangler,
+): { baseline: string; recoveryPath?: string } {
+  const artifact = parseMigrationBaseline(input)
+  if (options.reset) throw new Error('Baseline registration cannot reset a database')
+  if (options.expectedDigest !== artifact.digest)
+    throw new Error('Explicit reviewed baseline digest does not match')
+  if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:#.*)?$/u.test(options.reviewRef)) {
+    throw new Error('Baseline registration requires the review PR URL as --review-ref')
+  }
+  baselineAction(options, artifact)
+  const db = migrationDatabase(options, executor)
+  const stateOptions = { ...options, revision: artifact.revision }
+  assertDatabaseUnlocked(db, options.database)
+  assertBaselineState(artifact, readBaselineState(stateOptions, db))
+  return withMigrationLock(options, db, (owner) => {
+    assertBaselineState(artifact, readBaselineState(stateOptions, db))
+    const action = baselineAction(options, artifact)
+    const recoveryPath =
+      options.location === '--remote'
+        ? captureRemoteRecoveryState(
+            db,
+            options.database,
+            resolve(
+              options.recoveryDir ??
+                join(options.cwd ?? process.cwd(), '.narduk', 'recovery', 'd1'),
+            ),
+            owner,
+            options.target,
+          )
+        : undefined
+    const directory = mkdtempSync(join(tmpdir(), 'narduk-baseline-registration-'))
+    try {
+      const file = join(directory, 'register.sql')
+      writeFileSync(
+        file,
+        [
+          migrationLedgerCreateSql(),
+          `CREATE TABLE IF NOT EXISTS ${BASELINE_RECEIPTS_TABLE} (digest TEXT PRIMARY KEY, source TEXT NOT NULL, filename TEXT NOT NULL, review_ref TEXT NOT NULL, account_id TEXT NOT NULL, database_id TEXT NOT NULL, registered_at TEXT NOT NULL);`,
+          recordMigrationSql(action),
+          `INSERT INTO ${BASELINE_RECEIPTS_TABLE} VALUES (${quoteSql(artifact.digest)}, ${quoteSql(action.source)}, ${quoteSql(action.filename)}, ${quoteSql(options.reviewRef)}, ${quoteSql(options.target.accountId)}, ${quoteSql(options.target.databaseId)}, datetime('now'));`,
+        ].join('\n'),
+        { mode: 0o600 },
+      )
+      db.file(file)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+    const after = readBaselineState(stateOptions, db)
+    if (
+      JSON.stringify(after.objects) !== JSON.stringify(artifact.objects) ||
+      after.migrations.length !== 1 ||
+      after.migrations[0]?.checksum !== action.checksum
+    ) {
+      throw new Error(
+        'Baseline registration postcondition failed; inspect target and recovery evidence',
+      )
+    }
+    return { baseline: artifact.digest, ...(recoveryPath ? { recoveryPath } : {}) }
+  })
+}
+
+export interface MigrationBaselineProofOptions {
+  cwd?: string
+  configFile: string
+  source?: string
+  filename?: string
+}
+
+/** Rebuild the cutover shape, then run today's migrations. Only disposable local D1 is written. */
+export function proveMigrationBaseline(
+  input: MigrationBaseline,
+  options: MigrationBaselineProofOptions,
+  executor: MigrationExecutor = runWrangler,
+): MigrationPlan {
+  const artifact = parseMigrationBaseline(input)
+  const cwd = resolve(options.cwd ?? process.cwd())
+  const directory = mkdtempSync(join(tmpdir(), 'narduk-baseline-proof-'))
+  const wranglerConfig = join(directory, 'wrangler.json')
+  const local: MigrationRunOptions = {
+    cwd,
+    configFile: resolve(cwd, options.configFile),
+    database: 'BASELINE_PROOF',
+    location: '--local',
+    wranglerConfig,
+  }
+  const isolated: MigrationExecutor = (args, _cwd, json) => {
+    if (!args.includes('--local') || args.includes('--remote'))
+      throw new Error('Baseline proof is local-only')
+    return executor([...args, '--persist-to', join(directory, 'state')], cwd, json)
+  }
+  try {
+    writeFileSync(
+      wranglerConfig,
+      JSON.stringify({
+        name: 'narduk-baseline-proof',
+        compatibility_date: '2026-09-01',
+        d1_databases: [
+          { binding: local.database, database_name: 'baseline-proof', database_id: randomUUID() },
+        ],
+      }),
+    )
+    const db = migrationDatabase(local, isolated)
+    const seed = [migrationBaselineSql(artifact)]
+    if (artifact.migrations.length) {
+      seed.push(migrationLedgerCreateSql())
+      for (const row of artifact.migrations)
+        seed.push(recordMigrationSql({ ...row, kind: 'skip', path: '' }))
+    }
+    for (const source of [null, 'wrangler'] as const) {
+      const rows = artifact.legacy.filter((row) => row.source === source)
+      if (!rows.length) continue
+      const table = source === null ? '_applied_migrations' : 'd1_migrations'
+      const column = source === null ? 'filename' : 'name'
+      seed.push(`CREATE TABLE ${table} (${column} TEXT PRIMARY KEY);`)
+      for (const row of rows) seed.push(`INSERT INTO ${table} VALUES (${quoteSql(row.filename)});`)
+    }
+    if (!artifact.migrations.length && !artifact.legacy.length) {
+      if (!options.source || !options.filename)
+        throw new Error('Untracked cutover proof requires the new baseline --source and --filename')
+      const action = baselineAction(
+        { ...local, source: options.source, filename: options.filename },
+        artifact,
+      )
+      seed.push(migrationLedgerCreateSql(), recordMigrationSql(action))
+    }
+    const file = join(directory, 'cutover.sql')
+    writeFileSync(file, seed.join('\n'), { mode: 0o600 })
+    db.file(file)
+    return runMigrations(local, isolated)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 }

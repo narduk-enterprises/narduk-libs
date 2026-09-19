@@ -44,3 +44,5 @@ export * from './foundation/evaluate-deployment.js'
 export * from './foundation/items/item-12-deployment-standard.js'
 export * from './foundation/npm-registry.js'
 export * from './foundation/wave1-file-list.js'
+
+export * from './migration-baseline.js'
