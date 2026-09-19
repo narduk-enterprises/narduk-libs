@@ -14,6 +14,7 @@
  */
 import { addComponent, addImports, addServerHandler, addTemplate, addTypeTemplate, createResolver, defineNuxtModule, } from '@nuxt/kit';
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js';
+import { MAPKIT_MARKS_CSS } from '../marks/styles.js';
 import { MAPKIT_COMPONENT_CSS } from './runtime/styles.js';
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js';
 export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js';
@@ -73,6 +74,7 @@ const module = defineNuxtModule({
     defaults: {
         component: true,
         composables: true,
+        marks: false,
         // `libraries` is deliberately absent: `defu` concatenates arrays, so a
         // default here would append to whatever the app configured. It is resolved
         // in `setup` instead.
@@ -128,6 +130,16 @@ const module = defineNuxtModule({
                 write: true,
             });
             nuxt.options.css.unshift(stylesheet.dst);
+        }
+        if (options.marks) {
+            // After the host chrome, and still before the app's own stylesheets, so
+            // an app rule for a mark wins on order.
+            const marksStylesheet = addTemplate({
+                filename: 'narduk-mapkit-marks.css',
+                getContents: () => MAPKIT_MARKS_CSS,
+                write: true,
+            });
+            nuxt.options.css.splice(options.component ? 1 : 0, 0, marksStylesheet.dst);
         }
         if (options.composables) {
             addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }]);

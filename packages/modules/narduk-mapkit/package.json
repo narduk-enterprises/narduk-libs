@@ -48,6 +48,10 @@
       "types": "./dist/geometry/index.d.ts",
       "import": "./dist/geometry/index.js"
     },
+    "./marks": {
+      "types": "./dist/marks/index.d.ts",
+      "import": "./dist/marks/index.js"
+    },
     "./playback": {
       "types": "./dist/playback.d.ts",
       "import": "./dist/playback.js"

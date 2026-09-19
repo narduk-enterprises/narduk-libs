@@ -114,6 +114,7 @@ export default defineNuxtConfig({
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------ |
 | `component`      | `true`                               | Register `<AppMapKit>`.                                            |
 | `composables`    | `true`                               | Register `useMapKit()`.                                            |
+| `marks`          | `false`                              | Add the `./marks` stylesheet (`MAPKIT_MARKS_CSS`).                 |
 | `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.   |
 | `language`       | _unset_                              | Passed to Apple's loader.                                          |
 | `rateLimit`      | _unset_ (no limit)                   | Opt-in fixed-window ceiling on the token route, per routed origin. |
@@ -877,6 +878,31 @@ Behavior worth knowing before wiring a UI to it:
   controller throws rather than letting the registry reject the swap
   mid-animation.
 
+## Point-Map Marks
+
+`@narduk-enterprises/narduk-mapkit/marks` is the kit a map-first app draws its
+points with. It was lifted unchanged from buoys (narduk-libs#517), which is the
+reference consumer. Nothing in it knows about Vue, Nuxt, or any domain: the
+caller supplies projected pixel positions, radii, colours, and every word of
+copy, and reads back layout.
+
+| Module      | What it does                                                                                                                                                                                                                                                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `declutter` | `declutter()` places same-layer circles largest-first on a uniform spatial grid and folds anything a placed circle overlaps into its `absorbed` list; a primary layer absorbs an overlapping secondary layer; background context marks are thinned clear. Deterministic: exact ties break by ascending id. `pickPeaks()` and `majority()` pick what a crowded cell shows. |
+| `labels`    | `placeLabels()` places name pills beside placed discs without collisions.                                                                                                                                                                                                                                                                                                 |
+| `layer`     | `createMarkLayer(map, runtime)` reconciles a keyed list of `MarkSpec`s onto MapKit annotations through `MapKitAnnotationRegistry`.                                                                                                                                                                                                                                        |
+| `marks`     | `createPinMark()`, `createSelectedMark()`, `createBackgroundMark()` build the annotation DOM: a zero-size anchor with a sized disc, optional glyph, stack rim, and name pill.                                                                                                                                                                                             |
+| `camera`    | `projectToFrame()`, `frameToCoordinate()`, `padRect()`/`unpadRect()`, `rectForBox()`, `rectRevealing()`, `zoomRect()`, and `tierForSpan()` for map-rect math against the visible frame.                                                                                                                                                                                   |
+| `overflow`  | `overflowEdges()` reports which frame edges hidden marks lie beyond.                                                                                                                                                                                                                                                                                                      |
+| `overview`  | `mapOverviewCamera()` frames the interquartile core of a point set and falls back to `NORTH_AMERICA_OVERVIEW` when the core spans more than a third of the planet.                                                                                                                                                                                                        |
+| `runtime`   | Structural `Mk*` types plus `asMkMap()` and `asMkRuntime()` to narrow what `<AppMapKit>` hands over. Pass the scoped namespace from `useMapKit().mapkit.value`, never `window.mapkit` (K-10).                                                                                                                                                                             |
+
+Style the marks with the module's `marks: true` option in Nuxt, or put
+`MAPKIT_MARKS_CSS` on the page yourself. Every rule reads a `--mk-*` custom
+property (`--mk-ink`, `--mk-ink-2`, `--mk-ink-3`, `--mk-void`, `--mk-surface`,
+`--mk-focus`, `--mk-font-sans`, `--mk-font-mono`, `--mk-leader`) with a neutral
+fallback, so a host themes marks by setting those on any ancestor of the map.
+
 ## Pointer Probe
 
 `attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One
@@ -1442,6 +1468,7 @@ in the app.
 | `@narduk-enterprises/narduk-mapkit/node`       | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                          |
 | `@narduk-enterprises/narduk-mapkit/client`     | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
 | `@narduk-enterprises/narduk-mapkit/geometry`   | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/marks`      | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                   |
 | `@narduk-enterprises/narduk-mapkit/playback`   | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
 | `@narduk-enterprises/narduk-mapkit/testing`    | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                               |
 | `@narduk-enterprises/narduk-mapkit/token`      | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
