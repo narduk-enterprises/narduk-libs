@@ -61,6 +61,11 @@ export interface LiveProbeOptions {
    * deployment's answer.
    */
   noCache?: boolean
+  /**
+   * Extra request headers, e.g. a Cloudflare Access service token. Sent as
+   * given and never echoed into a LiveResponse or a report.
+   */
+  headers?: Record<string, string>
 }
 
 export type LiveProbe = (url: string, options?: LiveProbeOptions) => Promise<LiveResponse>
@@ -84,6 +89,7 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       headersSent['cache-control'] = 'no-cache, no-store, max-age=0'
       headersSent.pragma = 'no-cache'
     }
+    Object.assign(headersSent, defaults.headers, options.headers)
     try {
       const response = await fetch(url, {
         method: 'GET',

@@ -128,6 +128,13 @@ export interface VerifyFlags {
   edgeUncachedPaths: string[]
   json: boolean
   jsonPath: string | null
+  /**
+   * Environment variable NAMES holding a Cloudflare Access service token, for
+   * a host whose every path (health included) sits behind Access. Names, not
+   * values: a secret on argv lands in process listings and CI logs.
+   */
+  accessClientIdEnv: string | null
+  accessClientSecretEnv: string | null
 }
 
 export const DEFAULT_VERIFY_FLAGS = {
@@ -165,6 +172,36 @@ function assertHttpUrl(value: string, flag: string): void {
   }
 }
 
+const ENV_NAME_PATTERN = /^[A-Z_][A-Z\d_]*$/u
+
+function requireEnvName(value: string, flag: string): string {
+  if (!ENV_NAME_PATTERN.test(value)) {
+    throw new Error(`${flag} takes an environment variable NAME (e.g. CF_ACCESS_CLIENT_ID), not a value`)
+  }
+  return value
+}
+
+/**
+ * The Cloudflare Access service-token headers, read from the environment
+ * variables the flags name. Fails closed on an unset or empty variable, and
+ * the error names the variable, never its value.
+ */
+export function resolveAccessHeaders(
+  flags: Pick<VerifyFlags, 'accessClientIdEnv' | 'accessClientSecretEnv'>,
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string> | undefined {
+  if (flags.accessClientIdEnv === null || flags.accessClientSecretEnv === null) return undefined
+  const id = env[flags.accessClientIdEnv]
+  const secret = env[flags.accessClientSecretEnv]
+  for (const [name, value] of [
+    [flags.accessClientIdEnv, id],
+    [flags.accessClientSecretEnv, secret],
+  ] as const) {
+    if (!value) throw new Error(`verify --live: environment variable ${name} is unset or empty`)
+  }
+  return { 'cf-access-client-id': id!, 'cf-access-client-secret': secret! }
+}
+
 /**
  * Accepts both spellings the design and the brief use: `verify --live <url>`
  * and `verify --live --base-url <url>`. `--live` is the mode, not the value,
@@ -188,6 +225,8 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     edgeUncachedPaths: [],
     json: false,
     jsonPath: null,
+    accessClientIdEnv: null,
+    accessClientSecretEnv: null,
   }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -240,6 +279,16 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
       flags.edgeCachePaths.push(requireValue(args, (index += 1), '--edge-cache-path'))
     else if (arg === '--edge-uncached-path')
       flags.edgeUncachedPaths.push(requireValue(args, (index += 1), '--edge-uncached-path'))
+    else if (arg === '--access-client-id-env')
+      flags.accessClientIdEnv = requireEnvName(
+        requireValue(args, (index += 1), '--access-client-id-env'),
+        '--access-client-id-env',
+      )
+    else if (arg === '--access-client-secret-env')
+      flags.accessClientSecretEnv = requireEnvName(
+        requireValue(args, (index += 1), '--access-client-secret-env'),
+        '--access-client-secret-env',
+      )
     else if (arg === '--json') {
       const next = args[index + 1]
       if (next && !next.startsWith('--')) {
@@ -253,6 +302,11 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   if (!live) throw new Error('Usage: narduk-app verify --live <url> [options]')
   if (!baseUrl) throw new Error('verify --live needs a base URL: --live <url> or --base-url <url>')
   assertHttpUrl(baseUrl, '--base-url')
+  if ((flags.accessClientIdEnv === null) !== (flags.accessClientSecretEnv === null)) {
+    throw new Error(
+      '--access-client-id-env and --access-client-secret-env go together; a service token is both halves',
+    )
+  }
   if (flags.expectSha && !SHA_PATTERN.test(flags.expectSha)) {
     throw new Error(`--expect-sha must be a hex commit SHA, got ${JSON.stringify(flags.expectSha)}`)
   }
@@ -669,6 +723,8 @@ export interface VerifyContext {
   onAttempt?: (attempt: VerifyAttempt) => void
   /** Injected in tests so the cache-busting URL is deterministic. */
   cacheBustToken?: (attempt: number) => string
+  /** Where the Access service-token variables are read from; process.env by default. */
+  env?: Record<string, string | undefined>
 }
 
 /** The query parameter name the cache buster uses. */
@@ -689,9 +745,13 @@ export function cacheBustedUrl(url: string, token: string, enabled: boolean): st
 
 async function runOnce(
   flags: VerifyFlags,
-  probe: LiveProbe,
+  rawProbe: LiveProbe,
   token: string,
+  headers: Record<string, string> | undefined,
 ): Promise<VerifyAssertion[]> {
+  const probe: LiveProbe = headers
+    ? (url, options = {}) => rawProbe(url, { ...options, headers })
+    : rawProbe
   const assertions: VerifyAssertion[] = []
   const base = new URL(flags.baseUrl)
   const bust = (url: string): string => cacheBustedUrl(url, token, flags.cacheBust)
@@ -747,6 +807,7 @@ export async function runVerifyLive(
   context: VerifyContext = {},
 ): Promise<VerifyReport> {
   const probe = context.probe ?? createLiveProbe({ timeoutMs: flags.timeoutMs })
+  const accessHeaders = resolveAccessHeaders(flags, context.env)
   const sleep = context.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
   let assertions: VerifyAssertion[] = []
   let attempt = 0
@@ -757,7 +818,7 @@ export async function runVerifyLive(
       `${Date.now().toString(36)}-${String(n)}-${Math.random().toString(36).slice(2, 8)}`)
   while (attempt < flags.attempts) {
     attempt += 1
-    assertions = await runOnce(flags, probe, token(attempt))
+    assertions = await runOnce(flags, probe, token(attempt), accessHeaders)
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
     if (exitCode === VERIFY_EXIT.pass) break
