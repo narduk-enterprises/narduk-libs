@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 `createNardukDataClient` no longer re-downloads an unchanged release when its

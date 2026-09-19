@@ -258,6 +258,37 @@ describe('narduk-data client', () => {
     expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl, artifactUrl, manifestUrl])
   })
 
+  it('still runs validate against the manifest a revalidation reads', async () => {
+    const { release } = await successRoutes()
+    const refused = JSON.stringify({
+      ...release.manifest,
+      staleness: { ...release.manifest.staleness, state: 'withdrawn' },
+    })
+    let clock = NOW
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [manifestUrl]: [async () => json(release.manifestText), async () => json(refused)],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => clock,
+      origin: ORIGIN,
+      retries: 0,
+    })
+    const product = productOf({
+      ttlMs: 60_000,
+      validate: (_data, manifest) => {
+        if (manifest.staleness?.state === 'withdrawn') throw new Error('withdrawn')
+      },
+    })
+
+    await client.read(product)
+    clock = NOW + 2 * 60_000
+
+    await expect(client.read(product)).rejects.toMatchObject({ reason: 'rejected' })
+    expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(1)
+  })
+
   it('downloads the new release once the current pointer moves', async () => {
     const { release } = await successRoutes()
     const nextReleaseId = 'buoy-status-v1-20260917T130000Z-0123456789ab'

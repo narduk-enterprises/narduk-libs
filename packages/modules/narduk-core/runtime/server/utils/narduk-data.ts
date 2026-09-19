@@ -992,6 +992,15 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     // checksum already held, revalidation costs the manifest only. The parsed
     // value keeps its identity, so a caller can memoize work derived from it.
     if (previous && previous.artifactUrl === artifactUrl && previous.artifactSha256 === sha256) {
+      // The pairing is new even though the bytes are not: `validate` still
+      // cross-checks the kept value against the manifest just read.
+      if (product.validate) {
+        const validate = product.validate
+        const kept = previous.data as TArtifact
+        runHook(artifactUrl, 'validate', () => {
+          validate(kept, manifest)
+        })
+      }
       return { ...previous, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
     }
     const bytes = await requestBytes(
