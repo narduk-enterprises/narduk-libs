@@ -55,6 +55,13 @@ export function isMigrationMetadata(name: string): boolean {
   )
 }
 
+function normalizeSchemaSql(value: string): string {
+  const sql = value.trim()
+  let end = sql.length
+  while (end > 0 && sql[end - 1] === ';') end--
+  return sql.slice(0, end)
+}
+
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
@@ -65,7 +72,7 @@ export function normalizeBaselineObjects(
 ): MigrationBaselineObject[] {
   const objects = rows
     .filter((row) => !isMigrationMetadata(row.name) && !isMigrationMetadata(row.table))
-    .map((row) => ({ ...row, sql: row.sql.trim().replace(/;+$/u, '') }))
+    .map((row) => ({ ...row, sql: normalizeSchemaSql(row.sql) }))
     .sort((a, b) => `${a.type}\0${a.name}`.localeCompare(`${b.type}\0${b.name}`, 'en'))
   for (const object of objects) {
     if (!/^CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW|TRIGGER)\b/iu.test(object.sql)) {
