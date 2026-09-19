@@ -189,6 +189,39 @@ export interface IssuedCredential {
 }
 
 /**
+ * Field set the first consumer's `IssuedCredentialSchema` accepts on the wire:
+ * `credentialClass`, `credentialId`, `fingerprint`, `secret`, optional
+ * `expiresAt`. `version` stays on {@link IssuedCredential} — it is part of the
+ * signed session request and makes a rotation observable — and is stripped
+ * here once so each response call site does not have to.
+ */
+export interface WireCredential {
+  credentialClass: CredentialClass
+  credentialId: string
+  expiresAt?: number
+  fingerprint: string
+  secret: string
+}
+
+/**
+ * Project an issued credential onto the consumer wire field set. Call this
+ * over `completeClaim` / `rotateCredential` output before putting it on a
+ * response body; those methods still return {@link IssuedCredential}.
+ */
+export function toWireCredential(issued: IssuedCredential): WireCredential {
+  const wire: WireCredential = {
+    credentialClass: issued.credentialClass,
+    credentialId: issued.credentialId,
+    fingerprint: issued.fingerprint,
+    secret: issued.secret,
+  }
+  if (issued.expiresAt !== undefined) {
+    wire.expiresAt = issued.expiresAt
+  }
+  return wire
+}
+
+/**
  * Every mutation this package performs writes exactly one audit row with one
  * of these actions, plus `security.lockout` when an account or IP crosses the
  * escalating threshold. No SQL CHECK on the column: migrations are additive.

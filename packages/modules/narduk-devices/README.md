@@ -737,11 +737,17 @@ read on its own. Never log the bearer.
 | `ClaimStartStatus` / `ClaimCompleteStatus`                 | `CLAIM_START_STATUSES` / `CLAIM_COMPLETE_STATUSES`, member for member                                          |
 | `ClaimCompleteRequest.vesselId`                            | `resource: { kind: 'vessel', id: vesselId }`; `approvedByUserId` is the authenticated user                     |
 | `ClaimCompleteResponse.edgeDeviceId`                       | `deviceId`                                                                                                     |
-| `IssuedCredential`                                         | `credentials[]` (`credentialClass`, `credentialId`, `fingerprint`, `secret`, `expiresAt?`; `version` is extra) |
+| `IssuedCredential`                                         | `toWireCredential(issued)` over `credentials[]` (`credentialClass`, `credentialId`, `fingerprint`, `secret`, `expiresAt?`) |
 | `CLAIM_LOCKOUT_POLICY`                                     | `DEVICES_LOCKOUT_POLICY`                                                                                       |
 | `CredentialClass`                                          | `CREDENTIAL_CLASSES`                                                                                           |
 | `SessionRevokeMessage.revocationGeneration`                | `Device.revocationGeneration`, snapshotted into each session                                                   |
 | `edgeCredential` security scheme (`Authorization: Bearer`) | `requireDeviceSession(event, { devices, credentialClass })`; the bearer is `openSession`'s `sessionToken`      |
+
+`toWireCredential` is exported beside `IssuedCredential` from
+`@narduk-enterprises/narduk-devices/shared/types/devices`. `version` stays on
+the library type — it is part of the signed session request and makes a
+rotation observable — and the mapper is the one place that strips it for the
+wire.
 
 The `userApprovalToken` the contract carries is minted by `issueApprovalToken`
 from the owner/admin's fresh session, after the consumer has checked the role
