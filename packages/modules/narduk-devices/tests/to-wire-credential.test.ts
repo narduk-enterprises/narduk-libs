@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { toWireCredential, type IssuedCredential } from '../shared/types/devices'
+import { type IssuedCredential, toWireCredential } from '../shared/types/devices'
 
 function issued(overrides: Partial<IssuedCredential> = {}): IssuedCredential {
   return {
