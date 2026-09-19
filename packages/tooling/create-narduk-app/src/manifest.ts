@@ -21,7 +21,7 @@ export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.6.0',
+  '@narduk-enterprises/narduk-mapkit': '2.7.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.12.0',
   '@narduk-enterprises/eslint-config': '2.1.0',
@@ -37,7 +37,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.1.0',
-  '@narduk-enterprises/narduk-seo': '2.4.10',
+  '@narduk-enterprises/narduk-seo': '2.4.11',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the

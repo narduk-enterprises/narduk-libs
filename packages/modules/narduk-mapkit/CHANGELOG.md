@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.7.0
+
+### Minor Changes
+
+- 176cbaf: Decode vector tiles, off the main thread, behind a new
+  `./vector-tiles` entry.
+
+  `createMvtDecoder` reads Mapbox Vector Tiles with `@mapbox/vector-tile` and
+  `pbf`, and `serveVectorTileDecoder` hosts it in a worker that
+  `createWorkerDecoder` (in `./client`) talks to, correlating replies by id and
+  transferring buffers both ways so nothing is copied. The protobuf dependencies
+  are reachable only from `./vector-tiles`, so a consumer of `./client` never
+  bundles a parser; a test walks the import graph and fails if that changes.
+
+  A decoded tile is now columnar -- an `Int16Array` of coordinates plus two
+  `Uint32Array` indexes -- rather than an object per point, which is the
+  difference between a 256-tile cache retaining about a gigabyte and retaining
+  about a hundred megabytes. `buildDecodedVectorTile` packs one,
+  `decodedVectorTileBytes` and the new `cacheBytes` measure what is retained,
+  and `vectorTileFeatureCount` reads the feature count back.
+
+  Tile bytes are posted as a tight buffer, so a `Uint8Array` that views part of
+  a larger allocation decodes correctly and its parent buffer is not detached.
+  Requests for an address already in flight join that read instead of starting a
+  second one, and `cacheBytes` now counts an estimate of the property payload
+  rather than geometry alone.
+
+- 1c64619: Answer a tap on a painted vector tile, and wire the overlay to a Vue
+  scope.
+
+  `source.hitTest({ coordinate, zoom, tolerancePx })` returns the nearest
+  feature within a screen-pixel radius, with the properties the archive carried.
+  It reads only tiles the cache already holds, so it is synchronous and can
+  answer inside a gesture; a tap on an undrawn tile misses rather than fetching.
+  Distance is measured to the nearest point on a segment, not to a vertex, and
+  the probe reaches into neighbouring tiles when it lands within the tolerance
+  of an edge -- wrapping at the antimeridian, stopping at the poles -- so a
+  river drawn a pixel inside the next tile is still tappable.
+  `projectToTilePoint`, `hitTestTile` and `hitTestNeighbours` are exported for
+  callers that hold their own tiles.
+
+  `useMapKitVectorTiles()` in the Nuxt module -- which this changeset cannot
+  name, because the adapter is frozen at 2.0.x (narduk-libs#405, #421) -- builds
+  the PMTiles reader and the overlay source, rebuilds them when the archive url
+  changes, repaints a style change from the decoded tiles rather than
+  refetching, and terminates the decoder worker with the Vue scope. The worker
+  factory and the `pmtiles` reader stay the app's, because a published worker
+  chunk is the one thing Vite, webpack and Nuxt do not agree on.
+
+  Two client interfaces were also corrected against the browser types they stand
+  in for: `VectorTileCanvasContext.strokeStyle` was too narrow for a real
+  `CanvasRenderingContext2D`, and `VectorTileWorkerPort.postMessage` was
+  declared so that a real `Worker` could not satisfy it. Both are now proven
+  assignable by typecheck-time tests.
+
 ## 2.6.0
 
 ### Minor Changes
