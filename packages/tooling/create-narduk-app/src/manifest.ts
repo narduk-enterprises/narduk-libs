@@ -21,7 +21,7 @@ export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.4.0',
+  '@narduk-enterprises/narduk-mapkit': '2.5.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.11.0',
   '@narduk-enterprises/eslint-config': '2.1.0',
