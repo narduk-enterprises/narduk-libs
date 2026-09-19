@@ -155,6 +155,18 @@ The command never writes secret files. Registry auth writes the requested
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
 
+## Automatic D1 migration gate
+
+The narduk-v1 production and shared-preview workflow integration, D1-only
+persona, read-only drift checks, database locks, expand/contract review and
+recovery steps are in [D1 deployment migrations](docs/deployment-migrations.md).
+
+`db migrate-deployment --target production --sha <verified-sha>` migrates before
+promotion; `--check` is read-only and fails on pending or divergent history.
+`db bundle --output <file>` packages SQL/data for trusted preview tooling
+without giving D1 credentials to PR code. Existing apps must adopt the workflow
+steps; installing the package alone does not activate migration writes.
+
 ## Promotion, rollback and live proof
 
 The Narduk deployment standard is **Cloudflare builds, GitHub promotes**:

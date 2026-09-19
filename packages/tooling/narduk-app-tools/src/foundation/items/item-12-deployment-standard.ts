@@ -433,6 +433,7 @@ export interface DeploymentScan {
   edgeCache: EdgeCacheSwitch[]
   /** The app's narduk-core dependency, if it declares one (12.7). */
   nardukCore: { rel: string; spec: string } | null
+  migrationSources?: Array<{ binding: string; path: string; exists: boolean }>
 }
 
 export interface PreviewScan {
@@ -521,6 +522,14 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     declaredExposure: declaredExposure(cloudflareApp),
     edgeCache: edgeCacheSwitches(repo, wranglerRels),
     nardukCore: declaredNardukCore(repo),
+    migrationSources:
+      outcome.kind === 'valid'
+        ? (outcome.block.migrations?.databases ?? []).map((entry) => ({
+            binding: entry.binding,
+            path: entry.sources,
+            exists: repo.read(entry.sources) !== null,
+          }))
+        : [],
   }
 }
 
@@ -1091,6 +1100,59 @@ function evaluate127(scan: DeploymentScan): FoundationSubCheck {
   )
 }
 
+function evaluate128(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'D1 deployment migration ownership is declared'
+  return onlyWhenValid('12.8', name, scan, () => {
+    if (scan.production.d1.length === 0)
+      return check('12.8', name, STATUS_NA, 'No D1 bindings declared')
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    const { migrations, promotion } = scan.outcome.block
+    if (!migrations)
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        'D1 requires deployment.migrations: expand-contract compatibility, a separate D1-only credential, and one source manifest per binding',
+        scan.configFile,
+      )
+    if (
+      !migrations.credential.startsWith('cloudflare/') ||
+      migrations.credential === promotion.credential
+    ) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        'Migration and promotion must name different Cloudflare credential selectors',
+        scan.configFile,
+      )
+    }
+    const sources = scan.migrationSources ?? []
+    const names = sources.map((source) => source.binding)
+    if (
+      new Set(names).size !== names.length ||
+      names.length !== scan.production.d1.length ||
+      scan.production.d1.some((binding) => !names.includes(binding)) ||
+      sources.some((source) => !source.exists)
+    ) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        'Every D1 binding requires exactly one existing migration source manifest',
+        scan.configFile,
+      )
+    }
+    return check(
+      '12.8',
+      name,
+      STATUS_PASS,
+      'D1 migration ownership declared. Remote parity is NOT proven here: run db migrate-deployment --target production --check before promotion; preview readiness requires its own target check.',
+      scan.configFile,
+    )
+  })
+}
+
 export function evaluateItem12(scan: DeploymentScan, strict = false): FoundationSubCheck[] {
   return [
     evaluate120(scan, strict),
@@ -1101,5 +1163,6 @@ export function evaluateItem12(scan: DeploymentScan, strict = false): Foundation
     evaluate125(scan),
     evaluate126(scan),
     evaluate127(scan),
+    evaluate128(scan),
   ]
 }

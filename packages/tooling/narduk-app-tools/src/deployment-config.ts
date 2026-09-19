@@ -223,6 +223,20 @@ export const stagingSchema = z
 
 export type StagingBlock = z.infer<typeof stagingSchema>
 
+export const deploymentMigrationsSchema = z.strictObject({
+  compatibility: z.literal('expand-contract'),
+  credential: z.string().trim().min(1).max(300),
+  databases: z
+    .array(
+      z.strictObject({
+        binding: bindingName,
+        sources: z.string().trim().min(1).max(2000),
+      }),
+    )
+    .min(1)
+    .max(100),
+})
+
 export const deploymentBlockSchema = z.strictObject({
   standard: z.literal(DEPLOYMENT_STANDARD),
   builder: z.literal(DEPLOYMENT_BUILDER),
@@ -256,6 +270,8 @@ export const deploymentBlockSchema = z.strictObject({
   staging: stagingSchema.default({ enabled: false }),
   previewBindings: previewBindingsSchema.default({ d1: [], kv: [], r2: [] }),
   previewChecks: z.array(z.enum(PREVIEW_CHECK_MEMBERS)).max(10).optional(),
+  /** Explicit adoption; existing database-free applications need no migration step. */
+  migrations: deploymentMigrationsSchema.optional(),
 })
 
 export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>
