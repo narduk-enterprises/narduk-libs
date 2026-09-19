@@ -304,6 +304,13 @@ export interface RefreshRollupsInput {
  * `splitRangeIntoWindows` bounds an Influx read, so a ten-year backfill is a
  * long list of bounded statements rather than one statement that never returns.
  *
+ * **Each window is bucket-aligned.** A ten-minute store-and-forward batch is
+ * narrower than a 15m, 1h or 1d bucket. TimescaleDB has historically refused
+ * a refresh window that does not cover a bucket ("refresh window too small").
+ * Every split is snapped outward onto `ROLLUP_BUCKET_MS[level]`, and a leftover
+ * narrower than one bucket is folded into the previous window so the CALL
+ * still covers a legal range (narduk-libs#293).
+ *
  * `refresh_continuous_aggregate` is a procedure, so each is a `CALL`, and it
  * cannot run inside a transaction block -- run them one at a time, not inside
  * `executor.transaction()`.
@@ -315,11 +322,23 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
   // unknown level fails before any statement is built rather than half way
   // through the list.
   for (const bucket of buckets) rollupTable(bucket)
-  if (input.maxWindowMs !== undefined && !Number.isFinite(input.maxWindowMs)) {
+  // maxWindowMs used to be checked inside the per-bucket loop, so
+  // `buckets: []` returned [] without ever seeing a non-positive value.
+  if (
+    input.maxWindowMs !== undefined &&
+    (!Number.isFinite(input.maxWindowMs) || input.maxWindowMs <= 0)
+  ) {
     throw new NardukTimeseriesError(
       'RANGE_INVALID',
       'maxWindowMs must be a positive number of milliseconds.',
       { maxWindowMs: input.maxWindowMs },
+    )
+  }
+  if (buckets.length === 0) {
+    throw new NardukTimeseriesError(
+      'RANGE_INVALID',
+      'buckets must name at least one rollup level.',
+      { buckets },
     )
   }
 
@@ -330,13 +349,6 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
   for (const bucket of ROLLUP_BUCKETS.filter((level) => buckets.includes(level))) {
     const ceiling = REFRESH_MAX_WINDOW_MS[bucket]
     const requested = input.maxWindowMs ?? ceiling
-    if (requested <= 0) {
-      throw new NardukTimeseriesError(
-        'RANGE_INVALID',
-        'maxWindowMs must be a positive number of milliseconds.',
-        { maxWindowMs: requested },
-      )
-    }
     if (requested > ceiling) {
       throw new NardukTimeseriesError(
         'REFRESH_WINDOW_TOO_WIDE',
@@ -346,12 +358,7 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
     }
 
     const view = rollupTable(bucket)
-    const endMs = input.range.end.getTime()
-    for (let cursor = input.range.start.getTime(); cursor < endMs; cursor += requested) {
-      const window: TimeRange = {
-        end: new Date(Math.min(cursor + requested, endMs)),
-        start: new Date(cursor),
-      }
+    for (const window of splitRefreshWindows(input.range, ROLLUP_BUCKET_MS[bucket], requested)) {
       statements.push({
         bucket,
         params: [window.start, window.end],
@@ -361,6 +368,47 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
     }
   }
   return statements
+}
+
+function alignDown(ms: number, bucketMs: number): number {
+  return Math.floor(ms / bucketMs) * bucketMs
+}
+
+function alignUp(ms: number, bucketMs: number): number {
+  return Math.ceil(ms / bucketMs) * bucketMs
+}
+
+/**
+ * Split `range` into bounded windows, then snap each one outward onto
+ * `bucketMs` so a CALL never covers less than one complete bucket.
+ *
+ * A leftover narrower than one bucket is folded into the previous window
+ * *before* the snap: snapping a 30-second tail on its own would still be a
+ * legal one-bucket refresh, but folding keeps the last CALL contiguous with
+ * the window that produced it and avoids a second statement for a sliver.
+ */
+function splitRefreshWindows(
+  range: TimeRange,
+  bucketMs: number,
+  maxWindowMs: number,
+): TimeRange[] {
+  const rangeStart = range.start.getTime()
+  const rangeEnd = range.end.getTime()
+  const raw: Array<{ end: number; start: number }> = []
+  for (let cursor = rangeStart; cursor < rangeEnd; cursor += maxWindowMs) {
+    raw.push({ end: Math.min(cursor + maxWindowMs, rangeEnd), start: cursor })
+  }
+  if (raw.length >= 2) {
+    const last = raw[raw.length - 1]!
+    if (last.end - last.start < bucketMs) {
+      raw[raw.length - 2]!.end = last.end
+      raw.pop()
+    }
+  }
+  return raw.map((window) => ({
+    end: new Date(alignUp(window.end, bucketMs)),
+    start: new Date(alignDown(window.start, bucketMs)),
+  }))
 }
 
 export interface TrackPlan {

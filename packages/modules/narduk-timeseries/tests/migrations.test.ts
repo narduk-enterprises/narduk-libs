@@ -274,9 +274,15 @@ describe('0003_history_roles.sql', () => {
       { path: 'navigation.speedOverGround', unit: 'm/s', valueKind: 'numeric', vesselId: VESSEL },
     ])
     const writerGrants = executableLines.filter((line) => line.includes('"ingest_writer"'))
-    if (/DO UPDATE/u.test(resolve.text)) {
-      expect(writerGrants).toContain('GRANT UPDATE ON "public"."series" TO "ingest_writer";')
-    }
+    const resolveUsesDoUpdate = /DO UPDATE/u.test(resolve.text)
+    const writerHasSeriesUpdate = writerGrants.includes(
+      'GRANT UPDATE ON "public"."series" TO "ingest_writer";',
+    )
+    // Biconditional with no branch: a DO NOTHING rewrite of the upsert must
+    // not leave this green while 0003 still grants UPDATE, and dropping the
+    // grant must not stay green while the upsert still parses DO UPDATE.
+    expect(resolveUsesDoUpdate).toBe(writerHasSeriesUpdate)
+    expect(writerHasSeriesUpdate).toBe(true)
     // ...and no more than that: no DELETE, no TRUNCATE, no UPDATE on either
     // hypertable. A writer that can rewrite a unit string still cannot erase
     // a reading.

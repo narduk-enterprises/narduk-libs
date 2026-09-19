@@ -16,7 +16,9 @@ import {
 } from '../src/timescale/query.js'
 import { buildRetentionStatements } from '../src/timescale/retention.js'
 import { buildSeriesResolveStatement } from '../src/timescale/series.js'
+import { ROLLUP_BUCKET_MS } from '../src/timescale/tables.js'
 import { buildNumericWriteStatements, buildTrackWriteStatements } from '../src/timescale/write.js'
+import { ROLLUP_BUCKETS } from '../src/types.js'
 
 const VESSEL = '11111111-1111-4111-8111-111111111111'
 const OTHER_VESSEL = '22222222-2222-4222-8222-222222222222'
@@ -349,5 +351,73 @@ describe('retention plan', () => {
         range: RANGE,
       }),
     ).toThrow(/REFRESH_WINDOW_TOO_WIDE/u)
+  })
+
+  it('snaps each refresh window outward onto the level bucket', () => {
+    // A ten-minute store-and-forward batch is narrower than a 15m, 1h or 1d
+    // bucket. Splitting at the caller's offsets would emit those levels a
+    // window Timescale has historically refused ("refresh window too small").
+    const range = {
+      end: new Date('2026-09-12T12:17:33.000Z'),
+      start: new Date('2026-09-12T12:07:33.000Z'),
+    }
+    const statements = refreshRollupsStatements({ range })
+    expect(statements.map((statement) => statement.bucket)).toEqual([...ROLLUP_BUCKETS])
+    expect(statements.map((statement) => statement.range)).toEqual([
+      {
+        end: new Date('2026-09-12T12:18:00.000Z'),
+        start: new Date('2026-09-12T12:07:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-12T12:30:00.000Z'),
+        start: new Date('2026-09-12T12:00:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-12T13:00:00.000Z'),
+        start: new Date('2026-09-12T12:00:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-13T00:00:00.000Z'),
+        start: new Date('2026-09-12T00:00:00.000Z'),
+      },
+    ])
+    for (const statement of statements) {
+      const bucketMs = ROLLUP_BUCKET_MS[statement.bucket]
+      const startMs = statement.range.start.getTime()
+      const endMs = statement.range.end.getTime()
+      expect(startMs % bucketMs).toBe(0)
+      expect(endMs % bucketMs).toBe(0)
+      expect(endMs - startMs).toBeGreaterThanOrEqual(bucketMs)
+      expect(startMs).toBeLessThanOrEqual(range.start.getTime())
+      expect(endMs).toBeGreaterThanOrEqual(range.end.getTime())
+    }
+  })
+
+  it('folds a sub-bucket remainder into the previous refresh window', () => {
+    const start = new Date('2026-01-01T00:00:00.000Z')
+    const range = {
+      end: new Date(start.getTime() + REFRESH_MAX_WINDOW_MS['1m'] + 30_000),
+      start,
+    }
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      maxWindowMs: REFRESH_MAX_WINDOW_MS['1m'],
+      range,
+    })
+    expect(statements).toHaveLength(1)
+    expect(statements[0]!.range.start).toEqual(start)
+    expect(statements[0]!.range.end).toEqual(new Date('2026-01-08T00:01:00.000Z'))
+  })
+
+  it('rejects an empty buckets list and a non-positive maxWindowMs before the loop', () => {
+    expect(() => refreshRollupsStatements({ buckets: [], range: RANGE })).toThrow(
+      /buckets must name at least one rollup level/u,
+    )
+    expect(() =>
+      refreshRollupsStatements({ buckets: [], maxWindowMs: -1, range: RANGE }),
+    ).toThrow(/maxWindowMs must be a positive number of milliseconds/u)
+    expect(() => refreshRollupsStatements({ buckets: ['1m'], maxWindowMs: 0, range: RANGE })).toThrow(
+      /maxWindowMs must be a positive number of milliseconds/u,
+    )
   })
 })

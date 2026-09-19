@@ -389,7 +389,10 @@ it — refresh 1d first and it summarizes buckets that do not exist yet, and
 nothing reports the hole. **Bounds**: a refresh materializes every bucket in its
 range inside one statement, so the range is split per level — 7 days at 1m, 30
 days at 15m, 90 days at 1h, a year at 1d — and a wider `maxWindowMs` is refused
-with `REFRESH_WINDOW_TOO_WIDE` rather than accepted and regretted.
+with `REFRESH_WINDOW_TOO_WIDE` rather than accepted and regretted. Each window
+is snapped outward onto that level's bucket, and a leftover narrower than one
+bucket is folded into the previous window, so a ten-minute backfill still
+produces a legal refresh at 1d.
 
 ### Two deliberate deviations from docs/04
 
