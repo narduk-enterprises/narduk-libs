@@ -760,6 +760,14 @@ function entrySha256(
   manifestUrl: string,
 ): string {
   const listed: unknown = manifest.artifacts
+  // A list that is present but not a list is a producer defect, not "not published".
+  if (listed !== undefined && !Array.isArray(listed)) {
+    throw new NardukDataError(
+      `narduk-data manifest at ${manifestUrl} has an unusable artifacts list.`,
+      'rejected',
+      manifestUrl,
+    )
+  }
   const entry = Array.isArray(listed)
     ? listed.find((candidate) => isRecord(candidate) && candidate.path === entryPath)
     : undefined

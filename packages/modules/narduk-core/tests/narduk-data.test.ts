@@ -1073,6 +1073,20 @@ describe('narduk-data client secondary entries', () => {
     expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl])
   })
 
+  it('rejects a manifest whose artifacts list is not a list', async () => {
+    const release = await publishedRelease()
+    const manifestText = JSON.stringify({
+      ...release.manifest,
+      artifacts: { path: ENTRY_PATH, sha256: 'a'.repeat(64) },
+    })
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(manifestText)] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(productOf({ entryPath: ENTRY_PATH }))).rejects.toMatchObject({
+      reason: 'rejected',
+    })
+  })
+
   it('rejects an entry whose bytes do not match its listed checksum', async () => {
     const { manifestText } = await releaseWithEntry('{}', 'a'.repeat(64))
     const upstream = fakeFetch({
