@@ -281,6 +281,18 @@ const consoleTracker = createConsoleTracker(page, {
 await consoleTracker.expectClean()
 ```
 
+An object rule scopes that ignore to a failed HTTP response. The tracker records
+4xx/5xx URLs from `page.on('response')` and matches `url` against those, not
+against the console line's `location().url` — Chromium often attributes a failed
+resource load to the document. Each ignore consumes one matching failed URL, so
+a later first-party failure with the same console text is still reported:
+
+```ts
+const consoleTracker = createConsoleTracker(page, [
+  { text: /Failed to load resource/, url: /\/api\/mapkit-token/ },
+])
+```
+
 `telemetry: 'stub'` is for the suite that has to pass on a machine whose network
 is not the internet's:
 
