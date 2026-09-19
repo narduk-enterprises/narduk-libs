@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.5.0
+
+### Minor Changes
+
+- 20d72a9: `narduk-mapkit/nuxt` auto-imports `useMapKitView()` and
+  `useMapKitFullscreen()`, lifted from buoys. `useMapKitView()` owns the map
+  behind a map-first page's `<AppMapKit>` -- camera, frame, zoom tier, padding,
+  basemap, the `./marks` layer and fullscreen -- and takes the scoped runtime
+  from `map-ready` (K-10). A map-first app no longer copies buoys'
+  `utils/mapkit/*` and view composables to draw marks. The `./testing` fake map
+  now models `showsMapTypeControl`.
+
+### Patch Changes
+
+- e34b2da: `<AppMapKit>` now infers the app's item type in an SFC template
+  (narduk-libs#573, K-1). The exported type keeps only the generic construct
+  signature, so `create-pin-element`, `item-key`, `item-label`, `pin-geometry`
+  and the `#callout` scope accept callbacks narrowed to the app's own item type
+  without a cast. A vue-tsc template fixture in `tests/nuxt/template/` gates it.
+
 ## 2.4.0
 
 ### Minor Changes
