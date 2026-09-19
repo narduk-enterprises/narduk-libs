@@ -10,3 +10,7 @@ checked against that entry's own SHA-256. An undeclared or unsafe path is
 refused before any artifact request, and each path is its own bounded cache
 entry (narduk-libs#551). `create-narduk-app` gets a companion patch so the
 generator pin moves with the core minor.
+
+Revalidation no longer re-downloads an unchanged release. When the TTL lapses
+and the manifest still names the same release and checksum, the client keeps the
+cached value (and its object identity) and fetches only the manifest.

@@ -738,6 +738,8 @@ function describeFreshness(
 }
 
 interface CacheEntry {
+  /** The manifest-declared SHA-256 the cached bytes were verified against. */
+  artifactSha256: string
   artifactUrl: string
   /** Serve this entry without re-attempting upstream until this instant. */
   cooldownUntilMs: number
@@ -933,6 +935,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     product: NardukDataProduct<TArtifact, TManifest>,
     context: NardukDataRequestContext | undefined,
     manifestUrl: string,
+    previous: CacheEntry | undefined,
   ): Promise<CacheEntry> {
     // The shared read carries the first caller's correlation and fetcher, but
     // never a caller's signal: cancellation is raced per caller instead.
@@ -965,13 +968,20 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       encodeURIComponent(manifest.releaseId),
       ...artifact.path.split('/').map((segment) => encodeURIComponent(segment)),
     )
+    const sha256 = artifact.sha256.toLowerCase()
+    // A release is immutable: when the pointer still names the release and
+    // checksum already held, revalidation costs the manifest only. The parsed
+    // value keeps its identity, so a caller can memoize work derived from it.
+    if (previous && previous.artifactUrl === artifactUrl && previous.artifactSha256 === sha256) {
+      return { ...previous, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
+    }
     const bytes = await requestBytes(
       artifactUrl,
       { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
       'GET',
     )
     const observed = await sha256Hex(bytes)
-    if (observed !== artifact.sha256.toLowerCase()) {
+    if (observed !== sha256) {
       throw new NardukDataError(
         `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
         'checksum',
@@ -988,6 +998,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     }
 
     return {
+      artifactSha256: sha256,
       artifactUrl,
       cooldownUntilMs: 0,
       data,
@@ -1052,7 +1063,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
 
       let flight = inFlight.get(key)
       if (!flight) {
-        flight = load(product, context, manifestUrl)
+        flight = load(product, context, manifestUrl, memo)
           .then((entry) => {
             remember(key, entry)
             return entry

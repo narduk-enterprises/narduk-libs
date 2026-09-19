@@ -1739,6 +1739,12 @@ the Nitro auto-import inside an app that has the layer installed.
   already in flight instead of each issuing their own. The cache key includes
   every ceiling, validator and hook that decides whether a value is valid, so a
   stricter caller is never answered from a permissive caller's entry.
+- **Revalidation downloads only what moved** — once `ttlMs` (default 60000)
+  lapses the manifest is re-read. When it still names the same release and the
+  artifact checksum already held, the cached value is kept, including its object
+  identity, and only its age resets. A caller can therefore memoize work derived
+  from `result.data`, such as an index, for as long as the release lasts. A new
+  release or a different checksum downloads the artifact again.
 - **Stale-if-error, with a cooldown** — opt in with `maxStaleMs` (default 0,
   fail closed). Inside the window an upstream failure is answered from the last
   good value with `source: 'stale-if-error'`; outside it the failure is raised.
