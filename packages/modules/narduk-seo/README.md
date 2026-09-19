@@ -90,6 +90,30 @@ intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.
 
+## Canonical URLs: pass a path, never an absolute
+
+`useSeo` resolves the canonical and `og:url` itself, from `canonicalUrl` when
+you give one and from `route.path` when you do not. **Give it a relative path.**
+
+```ts
+useSeo({ title, description }) // canonical = this route
+useSeo({ title, description, canonicalUrl: `/lakes/${state}/${lake}` })
+```
+
+Do not build an absolute URL in the app. An absolute is accepted only when its
+origin equals the site origin, and an app that composes one from
+`runtimeConfig.public.siteUrl` gets `http://localhost:3000/...` in any
+deployment where `SITE_URL` is unset — a cross-origin value, refused. The page
+then falls back to its own route, which is almost certainly what you meant, and
+development logs a warning naming both sides. Earlier releases fell back to the
+site root instead, which meant one unset variable made every page on a site
+declare the root as its own canonical: valid, plausible, and wrong everywhere at
+once (narduk-libs#590).
+
+Protocol-relative values, backslash smuggling, and userinfo are refused the same
+way, and the site root is still the last resort when neither the given value nor
+the route is usable.
+
 ## security.txt (RFC 9116)
 
 `/.well-known/security.txt` is off until the app sets a contact. The package
