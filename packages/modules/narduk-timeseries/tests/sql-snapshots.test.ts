@@ -413,11 +413,11 @@ describe('retention plan', () => {
     expect(() => refreshRollupsStatements({ buckets: [], range: RANGE })).toThrow(
       /buckets must name at least one rollup level/u,
     )
-    expect(() =>
-      refreshRollupsStatements({ buckets: [], maxWindowMs: -1, range: RANGE }),
-    ).toThrow(/maxWindowMs must be a positive number of milliseconds/u)
-    expect(() => refreshRollupsStatements({ buckets: ['1m'], maxWindowMs: 0, range: RANGE })).toThrow(
+    expect(() => refreshRollupsStatements({ buckets: [], maxWindowMs: -1, range: RANGE })).toThrow(
       /maxWindowMs must be a positive number of milliseconds/u,
     )
+    expect(() =>
+      refreshRollupsStatements({ buckets: ['1m'], maxWindowMs: 0, range: RANGE }),
+    ).toThrow(/maxWindowMs must be a positive number of milliseconds/u)
   })
 })

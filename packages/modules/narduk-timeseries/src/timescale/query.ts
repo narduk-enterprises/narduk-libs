@@ -387,11 +387,7 @@ function alignUp(ms: number, bucketMs: number): number {
  * legal one-bucket refresh, but folding keeps the last CALL contiguous with
  * the window that produced it and avoids a second statement for a sliver.
  */
-function splitRefreshWindows(
-  range: TimeRange,
-  bucketMs: number,
-  maxWindowMs: number,
-): TimeRange[] {
+function splitRefreshWindows(range: TimeRange, bucketMs: number, maxWindowMs: number): TimeRange[] {
   const rangeStart = range.start.getTime()
   const rangeEnd = range.end.getTime()
   const raw: Array<{ end: number; start: number }> = []
