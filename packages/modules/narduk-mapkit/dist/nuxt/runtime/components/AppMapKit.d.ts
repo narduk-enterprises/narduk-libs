@@ -467,9 +467,17 @@ export type AppMapKitSlots<T extends MapKitPinItem> = Omit<AppMapKitBaseInstance
  * `(item: Station) => string` is not assignable to `(item: MapKitPinItem) =>
  * string`. `tests/nuxt/app-map-kit-generic.test.ts` is the compile-time gate; a
  * runtime test cannot see this at all.
+ *
+ * The generic construct signature is the ONLY one (narduk-libs#573): keeping
+ * `typeof AppMapKitImpl`'s own non-generic signature beside it made vue-tsc
+ * intersect both props types in an SFC template, so a callback narrowed to the
+ * app's item type failed TS2322 there even though `AppMapKit<Station>` checked.
+ * The `props` parameter is what a template instantiates `T` from; the `Omit`
+ * keeps the component's static members and drops its construct signature.
+ * `tests/nuxt/template/` is the vue-tsc gate for the template path.
  */
-declare const _default: typeof AppMapKitImpl & {
-    new <T extends MapKitPinItem>(): Omit<AppMapKitBaseInstance, "$props" | "$slots"> & {
+declare const _default: Omit<typeof AppMapKitImpl, never> & {
+    new <T extends MapKitPinItem>(props: AppMapKitProps<T>): Omit<AppMapKitBaseInstance, "$props" | "$slots"> & {
         $props: AppMapKitProps<T>;
         $slots: AppMapKitSlots<T>;
     };

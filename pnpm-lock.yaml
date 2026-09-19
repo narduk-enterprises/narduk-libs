@@ -921,6 +921,9 @@ importers:
       vue:
         specifier: ^3.5.39
         version: 3.5.42(typescript@5.9.3)
+      vue-tsc:
+        specifier: ^3.3.6
+        version: 3.3.6(typescript@5.9.3)
 
   packages/modules/narduk-mapkit-nuxt:
     dependencies:
@@ -17148,7 +17151,7 @@ snapshots:
       '@parcel/watcher-wasm': 2.5.6
       citty: 0.2.2
       consola: 3.4.2
-      crossws: 0.4.9(srvx@0.12.8)
+      crossws: 0.4.9(srvx@0.11.22)
       defu: 6.1.7
       get-port-please: 3.2.0
       h3: 1.15.11
