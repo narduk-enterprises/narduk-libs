@@ -148,6 +148,21 @@ describe('social preview inventory and default images', () => {
         routes: [{ source: 'items/[id].vue', kind: 'dynamic', paths: ['/items/red'] }],
       }),
     ).toThrow(/two examples/u)
+    // One sample is allowed only with a stated reason: a route family that
+    // genuinely has a single instance today cannot invent a second real path.
+    expect(
+      socialPreviewSchema.parse({
+        ...config,
+        routes: [
+          {
+            source: 'items/[id].vue',
+            kind: 'dynamic',
+            paths: ['/items/red'],
+            reason: 'Only one item is published in the current release.',
+          },
+        ],
+      }).routes,
+    ).toHaveLength(1)
     expect(() =>
       socialPreviewSchema.parse({ ...config, routes: [{ source: 'index.vue', kind: 'private' }] }),
     ).toThrow()

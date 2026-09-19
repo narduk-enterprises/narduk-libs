@@ -152,7 +152,11 @@ Store `Config/social-previews.json` relative to the web app root:
 `source` is relative to `pagesDir`. Every `.vue` file needs exactly one row; new
 unclassified pages, stale sources, duplicate samples, missing images, and
 invalid configuration fail. Private rows need a reason and are never fetched.
-Parameterized dynamic routes need at least two distinct real examples. A
+Parameterized dynamic routes need at least two distinct real examples, because
+two samples are what prove the preview varies with the parameter. A route family
+that genuinely has one instance today — one published state, one live tenant —
+gives one sample plus a `reason` saying so; invented paths prove nothing, and
+the row is expected to gain its second sample when the data does. A
 parameterized generic shell needs a reason for `kind: "default"`. Single fixed
 routes can use one dynamic example; the image still must differ from the
 default.
