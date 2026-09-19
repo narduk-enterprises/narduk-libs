@@ -396,17 +396,40 @@ describe('retention plan', () => {
   it('folds a sub-bucket remainder into the previous refresh window', () => {
     const start = new Date('2026-01-01T00:00:00.000Z')
     const range = {
-      end: new Date(start.getTime() + REFRESH_MAX_WINDOW_MS['1m'] + 30_000),
+      end: new Date(start.getTime() + 70_000),
       start,
     }
     const statements = refreshRollupsStatements({
       buckets: ['1m'],
-      maxWindowMs: REFRESH_MAX_WINDOW_MS['1m'],
+      maxWindowMs: 90_000,
       range,
     })
     expect(statements).toHaveLength(1)
     expect(statements[0]!.range.start).toEqual(start)
-    expect(statements[0]!.range.end).toEqual(new Date('2026-01-08T00:01:00.000Z'))
+    expect(statements[0]!.range.end).toEqual(new Date('2026-01-01T00:02:00.000Z'))
+  })
+
+  it('keeps an unaligned 14-day 1m backfill inside the ceiling and abutting', () => {
+    const range = {
+      end: new Date('2026-01-15T12:07:33.000Z'),
+      start: new Date('2026-01-01T12:07:33.000Z'),
+    }
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      range,
+    })
+    expect(statements[0]!.range.start).toEqual(new Date('2026-01-01T12:07:00.000Z'))
+    expect(statements.at(-1)!.range.end).toEqual(new Date('2026-01-15T12:08:00.000Z'))
+    for (const statement of statements) {
+      const width = statement.range.end.getTime() - statement.range.start.getTime()
+      expect(width).toBeLessThanOrEqual(REFRESH_MAX_WINDOW_MS['1m'])
+      expect(width).toBeGreaterThanOrEqual(ROLLUP_BUCKET_MS['1m'])
+      expect(statement.range.start.getTime() % ROLLUP_BUCKET_MS['1m']).toBe(0)
+      expect(statement.range.end.getTime() % ROLLUP_BUCKET_MS['1m']).toBe(0)
+    }
+    for (let index = 1; index < statements.length; index += 1) {
+      expect(statements[index]!.range.start).toEqual(statements[index - 1]!.range.end)
+    }
   })
 
   it('rejects an empty buckets list and a non-positive maxWindowMs before the loop', () => {

@@ -307,9 +307,10 @@ export interface RefreshRollupsInput {
  * **Each window is bucket-aligned.** A ten-minute store-and-forward batch is
  * narrower than a 15m, 1h or 1d bucket. TimescaleDB has historically refused
  * a refresh window that does not cover a bucket ("refresh window too small").
- * Every split is snapped outward onto `ROLLUP_BUCKET_MS[level]`, and a leftover
- * narrower than one bucket is folded into the previous window so the CALL
- * still covers a legal range (narduk-libs#293).
+ * The requested range is snapped outward onto `ROLLUP_BUCKET_MS[level]` first,
+ * then walked in `maxWindowMs` steps from that aligned start so neighbours
+ * abut and no CALL exceeds the level ceiling. A leftover narrower than one
+ * bucket is folded into the previous window (narduk-libs#293).
  *
  * `refresh_continuous_aggregate` is a procedure, so each is a `CALL`, and it
  * cannot run inside a transaction block -- run them one at a time, not inside
@@ -379,17 +380,17 @@ function alignUp(ms: number, bucketMs: number): number {
 }
 
 /**
- * Split `range` into bounded windows, then snap each one outward onto
- * `bucketMs` so a CALL never covers less than one complete bucket.
+ * Snap `range` outward onto `bucketMs`, then walk `maxWindowMs` steps from
+ * that aligned start. Snapping each raw slice on its own would overlap
+ * neighbours by up to one bucket and push a full-size window over the
+ * ceiling (narduk-libs#293 / PR 550).
  *
- * A leftover narrower than one bucket is folded into the previous window
- * *before* the snap: snapping a 30-second tail on its own would still be a
- * legal one-bucket refresh, but folding keeps the last CALL contiguous with
- * the window that produced it and avoids a second statement for a sliver.
+ * A leftover narrower than one bucket is folded into the previous window so
+ * the last CALL is never a sliver Timescale can refuse.
  */
 function splitRefreshWindows(range: TimeRange, bucketMs: number, maxWindowMs: number): TimeRange[] {
-  const rangeStart = range.start.getTime()
-  const rangeEnd = range.end.getTime()
+  const rangeStart = alignDown(range.start.getTime(), bucketMs)
+  const rangeEnd = alignUp(range.end.getTime(), bucketMs)
   const raw: Array<{ end: number; start: number }> = []
   for (let cursor = rangeStart; cursor < rangeEnd; cursor += maxWindowMs) {
     raw.push({ end: Math.min(cursor + maxWindowMs, rangeEnd), start: cursor })
@@ -402,8 +403,8 @@ function splitRefreshWindows(range: TimeRange, bucketMs: number, maxWindowMs: nu
     }
   }
   return raw.map((window) => ({
-    end: new Date(alignUp(window.end, bucketMs)),
-    start: new Date(alignDown(window.start, bucketMs)),
+    end: new Date(window.end),
+    start: new Date(window.start),
   }))
 }
 
