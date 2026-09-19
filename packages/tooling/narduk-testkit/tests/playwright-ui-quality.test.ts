@@ -17,7 +17,7 @@ import {
 } from '../src/playwright/ui-quality'
 import { analyzeUiQualityRoot } from '../src/playwright/ui-quality-analyzer'
 
-import type { ConsoleMessage, Page, Route } from '@playwright/test'
+import type { ConsoleMessage, Page, Response, Route } from '@playwright/test'
 
 const tempDirs: string[] = []
 
@@ -182,15 +182,24 @@ interface StubRoute {
  * network events a real browser would and watch what the tracker does with them. Stubbing the
  * tracker's OUTPUT instead would leave the part that decides anything — the origin test — untested.
  */
+function httpResponse(status: number, url: string) {
+  return {
+    status: () => status,
+    url: () => url,
+  } as unknown as Response
+}
+
 function stubPage() {
   const consoleListeners: Array<(message: ConsoleMessage) => void> = []
   const pageErrorListeners: Array<(error: Error) => void> = []
+  const responseListeners: Array<(response: Response) => void> = []
   const routes: StubRoute[] = []
 
   const page = {
     on(event: string, listener: unknown) {
       if (event === 'console') consoleListeners.push(listener as (message: ConsoleMessage) => void)
       if (event === 'pageerror') pageErrorListeners.push(listener as (error: Error) => void)
+      if (event === 'response') responseListeners.push(listener as (response: Response) => void)
       return page
     },
     route(matcher: unknown, handler: unknown) {
@@ -208,6 +217,9 @@ function stubPage() {
     },
     emitPageError(error: Error) {
       for (const listener of pageErrorListeners) listener(error)
+    },
+    emitResponse(status: number, url: string) {
+      for (const listener of responseListeners) listener(httpResponse(status, url))
     },
     page: page as unknown as Page,
     /**
@@ -294,13 +306,90 @@ describe('createConsoleTracker', () => {
   })
 
   it('still accepts a bare pattern list as the second argument', () => {
+    const ignoredPatterns: RegExp[] = [/^\[build\]/]
     const stub = stubPage()
-    const tracker = createConsoleTracker(stub.page, [/^\[build\]/])
+    const tracker = createConsoleTracker(stub.page, ignoredPatterns)
 
     stub.emitConsole('error', '[build] noisy', 'https://buoystat.us/_nuxt/entry.js')
     stub.emitConsole('error', 'real failure', 'https://buoystat.us/_nuxt/entry.js')
 
     expect(tracker.getIssues()).toEqual(['[console:error] real failure'])
+  })
+
+  it('keeps a bare RegExp[] assignable through ConsoleTrackerOptions', () => {
+    const ignoredPatterns: RegExp[] = [/^\[build\]/]
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, { ignoredPatterns })
+
+    stub.emitConsole('error', '[build] noisy')
+    stub.emitConsole('error', 'real failure')
+
+    expect(tracker.getIssues()).toEqual(['[console:error] real failure'])
+  })
+
+  it('ignores an object rule with url only when a failed response URL also matches', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, [
+      { text: /Failed to load resource/, url: /\/api\/mapkit-token(?:\?|$)/ },
+    ])
+
+    stub.emitResponse(403, 'https://lakestat.us/api/mapkit-token?issuer=x')
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 403',
+      'https://lakestat.us/',
+    )
+
+    expect(tracker.getIssues()).toEqual([])
+  })
+
+  it('still reports matching text when no failed response URL matches the object rule', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, {
+      ignoredPatterns: [{ text: /Failed to load resource/, url: /\/api\/mapkit-token(?:\?|$)/ }],
+    })
+
+    stub.emitResponse(500, 'https://lakestat.us/api/stations')
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 500',
+      'https://lakestat.us/',
+    )
+    stub.emitConsole(
+      'error',
+      'Failed to load resource: the server responded with a status of 403',
+      'https://lakestat.us/',
+    )
+
+    expect(tracker.getIssues()).toEqual([
+      '[console:error] Failed to load resource: the server responded with a status of 500',
+      '[console:error] Failed to load resource: the server responded with a status of 403',
+    ])
+  })
+
+  it('treats a text-only object rule like a bare RegExp', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, [{ text: /^\[build\]/ }])
+
+    stub.emitConsole('error', '[build] noisy')
+    stub.emitConsole('error', 'real failure')
+
+    expect(tracker.getIssues()).toEqual(['[console:error] real failure'])
+  })
+
+  it('does not treat a 2xx or 3xx response as the failed request an object rule needs', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, [
+      { text: /Failed to load resource/, url: /\/api\/mapkit-token/ },
+    ])
+
+    stub.emitResponse(200, 'https://lakestat.us/api/mapkit-token')
+    stub.emitResponse(304, 'https://lakestat.us/api/mapkit-token')
+    stub.emitConsole('error', 'Failed to load resource: the server responded with a status of 403')
+
+    expect(tracker.getIssues()).toEqual([
+      '[console:error] Failed to load resource: the server responded with a status of 403',
+    ])
   })
 
   it('blocks optional telemetry and drops only those origins’ entries when stubbed', async () => {
