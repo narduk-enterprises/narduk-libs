@@ -176,7 +176,9 @@ const ENV_NAME_PATTERN = /^[A-Z_][A-Z\d_]*$/u
 
 function requireEnvName(value: string, flag: string): string {
   if (!ENV_NAME_PATTERN.test(value)) {
-    throw new Error(`${flag} takes an environment variable NAME (e.g. CF_ACCESS_CLIENT_ID), not a value`)
+    throw new Error(
+      `${flag} takes an environment variable NAME (e.g. CF_ACCESS_CLIENT_ID), not a value`,
+    )
   }
   return value
 }

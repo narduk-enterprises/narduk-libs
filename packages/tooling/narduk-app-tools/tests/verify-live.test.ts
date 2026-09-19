@@ -607,21 +607,30 @@ describe('verify --live edge-cache proof', () => {
 })
 
 describe('verify --live behind Cloudflare Access', () => {
-  const ACCESS = ['--access-client-id-env', 'CF_ACCESS_ID', '--access-client-secret-env', 'CF_ACCESS_SECRET']
+  const ACCESS = [
+    '--access-client-id-env',
+    'CF_ACCESS_ID',
+    '--access-client-secret-env',
+    'CF_ACCESS_SECRET',
+  ]
 
   it('takes variable names, both halves or neither', () => {
     expect(flags(ACCESS).accessClientIdEnv).toBe('CF_ACCESS_ID')
     expect(flags().accessClientIdEnv).toBeNull()
     expect(() => flags(['--access-client-id-env', 'CF_ACCESS_ID'])).toThrow(/go together/)
-    expect(() => flags(['--access-client-id-env', 'abc.123-value', '--access-client-secret-env', 'S'])).toThrow(
-      /variable NAME/,
-    )
+    expect(() =>
+      flags(['--access-client-id-env', 'abc.123-value', '--access-client-secret-env', 'S']),
+    ).toThrow(/variable NAME/)
   })
 
   it('sends the service token on every probe, read from the environment', async () => {
     const seen: Array<Record<string, string> | undefined> = []
     const { probe: scripted } = scriptedProbe({
-      '/': { url: '', status: 200, headers: { 'x-build-version': SHORT, 'content-type': 'text/html' } },
+      '/': {
+        url: '',
+        status: 200,
+        headers: { 'x-build-version': SHORT, 'content-type': 'text/html' },
+      },
       '/api/health': {
         url: '',
         status: 200,
@@ -641,7 +650,10 @@ describe('verify --live behind Cloudflare Access', () => {
     expect(report.result).toBe('PASS')
     expect(seen).toHaveLength(2)
     for (const headers of seen) {
-      expect(headers).toEqual({ 'cf-access-client-id': 'id.access', 'cf-access-client-secret': 'not-printed' })
+      expect(headers).toEqual({
+        'cf-access-client-id': 'id.access',
+        'cf-access-client-secret': 'not-printed',
+      })
     }
     expect(JSON.stringify(report)).not.toContain('not-printed')
     expect(formatVerifyReport(report)).not.toContain('not-printed')

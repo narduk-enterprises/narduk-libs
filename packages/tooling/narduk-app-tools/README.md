@@ -354,8 +354,8 @@ CF_ACCESS_CLIENT_ID=... CF_ACCESS_CLIENT_SECRET=... \
 
 The flags take variable NAMES, never values, so a secret stays off argv; both
 halves are required together; an unset or empty variable fails the run before
-any request, naming the variable and not its value. Neither value appears in
-the report or the JSON. This proves the right build is live to a holder of the
+any request, naming the variable and not its value. Neither value appears in the
+report or the JSON. This proves the right build is live to a holder of the
 token; that anonymous visitors are still refused is a separate proof.
 
 #### What this proves, and what it does not
