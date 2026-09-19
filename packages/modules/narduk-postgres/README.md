@@ -45,9 +45,15 @@ export default {
           const sql = postgres(connectionString, options)
           return {
             end: () => sql.end(),
-            query: async (text, params) => {
+            async query<Row = Record<string, unknown>>(
+              text: string,
+              params?: readonly unknown[],
+            ) {
               const rows = await sql.unsafe(text, params as never[])
-              return { rowCount: rows.count ?? rows.length, rows }
+              return {
+                rowCount: rows.count ?? rows.length,
+                rows: [...rows] as unknown as Row[],
+              }
             },
           }
         },
@@ -59,6 +65,9 @@ export default {
   },
 }
 ```
+
+Spread `rows` into a plain array so `SqlExecutor` does not leak the driver's
+`RowList`.
 
 Four rules the helpers enforce rather than document:
 
