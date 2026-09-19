@@ -1727,8 +1727,9 @@ the Nitro auto-import inside an app that has the layer installed.
   leading `/` and empty segments are refused before any request. A release that
   lists no such entry fails with `reason: 'missing'`. It is never answered with
   the primary artifact, so a consumer can return "not published" (404), which is
-  not an outage. Each `entryPath` is its own cache entry, so size `maxEntries`
-  to the working set you expect to serve.
+  not an outage. A custom `manifestSchema` must keep `artifacts[]` in its parsed
+  output, since entries are looked up there. Each `entryPath` is its own cache
+  entry, so size `maxEntries` to the working set you expect to serve.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
   (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
   read only; it is never given to the shared upstream read, so one client
