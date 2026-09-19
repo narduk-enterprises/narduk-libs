@@ -1,5 +1,33 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.6
+
+### Patch Changes
+
+- 3a10f40: Gate narduk-v1 promotion and shared previews on compatible D1
+  migrations. Add explicit deployment target selection, read-only
+  checksum/history status, a per-database migration lock with conservative
+  failure recovery, SQL-only preview bundles, foundation coverage checks, and
+  one-shot workflow onboarding templates.
+- 8cd6999: Refuse an existing D1 application schema with no recorded migration
+  history, even when a source manifest contains no SQL. Require reviewed
+  baseline evidence instead of reporting an untracked read model current or
+  replaying its schema.
+- d077c85: Add a vector-tile canvas overlay source to `./client`.
+
+  `createVectorTileOverlaySource` paints decoded vector tiles to a canvas and
+  returns the `imageForTile` function the async tile overlay and the layer
+  registry already take, so a dense network stays off MapKit's overlay list.
+  Decoded tiles are cached, so `setStyle()` repaints from memory without a
+  refetch or a re-decode. The decode step is injected, which keeps this entry
+  free of protobuf dependencies and lets an app decode in a worker.
+
+  `createPmTilesTileSource` and `createPmTilesFetchSource` read a PMTiles
+  archive over HTTP range requests, taking the reader and the `fetch` they use
+  so tests need no network. A missing tile, an empty tile and a failed read all
+  resolve to `null` and report through `onError`, instead of throwing into the
+  map.
+
 ## 0.10.5
 
 ### Patch Changes

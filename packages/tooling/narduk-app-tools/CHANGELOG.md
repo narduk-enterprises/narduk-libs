@@ -1,5 +1,27 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.12.0
+
+### Minor Changes
+
+- 3a10f40: Gate narduk-v1 promotion and shared previews on compatible D1
+  migrations. Add explicit deployment target selection, read-only
+  checksum/history status, a per-database migration lock with conservative
+  failure recovery, SQL-only preview bundles, foundation coverage checks, and
+  one-shot workflow onboarding templates.
+- 33ce0e7: Accept a parameterized social-preview route with one sample when it
+  states a `reason`. Two samples are what prove a dynamic preview varies with
+  its parameter, but a route family that genuinely has one instance today — one
+  published state, one live tenant — cannot supply a second real path, and an
+  invented one proves nothing. Routes with no reason still require two.
+
+### Patch Changes
+
+- 8cd6999: Refuse an existing D1 application schema with no recorded migration
+  history, even when a source manifest contains no SQL. Require reviewed
+  baseline evidence instead of reporting an untracked read model current or
+  replaying its schema.
+
 ## 0.11.0
 
 ### Minor Changes
