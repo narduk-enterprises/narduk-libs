@@ -188,7 +188,7 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
 }
 
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
-  /** Retained coordinate, index and property bytes, for a memory budget. */
+  /** Retained bytes, exact for geometry and estimated for properties. */
   readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
   clearCache: () => void
@@ -203,9 +203,40 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
   setStyle: (style: VectorTileStyleFunction) => void
 }
 
-/** Bytes a decoded tile retains, counting its arrays rather than its properties. */
+/**
+ * Bytes a decoded tile retains.
+ *
+ * Geometry and indexes are exact. Properties are estimated, because they are
+ * ordinary objects and only the engine knows their real footprint -- but
+ * leaving them out would understate a dense archive badly, since a `name`
+ * string on each of a few thousand features per tile is what actually grows
+ * the cache. The estimate charges two bytes per character of every key and
+ * string value, eight for a number, and a flat per-entry overhead; it is
+ * meant for sizing `cacheSize` against a budget, not for exact accounting.
+ */
 export function decodedVectorTileBytes(tile: DecodedVectorTile): number {
-  return tile.coordinates.byteLength + tile.lineStarts.byteLength + tile.featureLines.byteLength
+  return (
+    tile.coordinates.byteLength +
+    tile.lineStarts.byteLength +
+    tile.featureLines.byteLength +
+    estimatePropertyBytes(tile.properties)
+  )
+}
+
+/** Per property entry: a key slot, a value slot and the map overhead around them. */
+const PROPERTY_ENTRY_OVERHEAD = 32
+
+function estimatePropertyBytes(properties: readonly VectorTileProperties[]): number {
+  let bytes = 0
+  for (const entry of properties) {
+    for (const key in entry) {
+      const value = entry[key]
+      bytes += PROPERTY_ENTRY_OVERHEAD + key.length * 2
+      if (typeof value === 'string') bytes += value.length * 2
+      else if (typeof value === 'number') bytes += 8
+    }
+  }
+  return bytes
 }
 
 /** Smallest LRU that does the job: Map preserves insertion order. */
@@ -320,18 +351,40 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
 ): VectorTileOverlaySource<TCanvas> {
   const { cacheSize = 256, createCanvas, decode, onError, tileBytes, tileSize = 256 } = options
   const cache = new TileCache(cacheSize)
+  // MapKit asks for a screenful at once and re-asks on every render pass, so
+  // the same address is commonly requested again while its first read is
+  // still in flight. Without this the archive is fetched twice and the tile
+  // decoded twice, for one tile drawn.
+  const inFlight = new Map<string, Promise<DecodedVectorTile | null>>()
+  // Bumped by clearCache. A read started against the previous archive must
+  // not land in the cache afterwards, and it cannot be cancelled, so it is
+  // stamped with the generation it belongs to and discarded if that moved.
+  let generation = 0
   let style = options.style
 
-  async function decodedTile(z: number, x: number, y: number) {
-    const key = `${z}/${x}/${y}`
-    const cached = cache.get(key)
-    if (cached) return cached
+  async function readTile(key: string, z: number, x: number, y: number, startedAt: number) {
     const bytes = await tileBytes(z, x, y)
     if (!bytes) return null
     const tile = await decode(bytes, { x, y, z })
     if (!tile) return null
-    cache.set(key, tile)
+    if (startedAt === generation) cache.set(key, tile)
     return tile
+  }
+
+  function decodedTile(z: number, x: number, y: number) {
+    const key = `${z}/${x}/${y}`
+    const cached = cache.get(key)
+    if (cached) return Promise.resolve(cached)
+    const existing = inFlight.get(key)
+    if (existing) return existing
+    const startedAt = generation
+    const started = readTile(key, z, x, y, startedAt).finally(() => {
+      // Only if it is still this read: clearCache may have dropped the entry
+      // and a newer read may already own the key.
+      if (inFlight.get(key) === started) inFlight.delete(key)
+    })
+    inFlight.set(key, started)
+    return started
   }
 
   return {
@@ -340,6 +393,8 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     },
     clearCache() {
       cache.clear()
+      generation += 1
+      inFlight.clear()
     },
     async imageForTile(x, y, z, scale) {
       try {

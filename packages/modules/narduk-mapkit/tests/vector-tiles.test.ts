@@ -201,6 +201,69 @@ describe('createVectorTileOverlaySource', () => {
     expect(failures).toEqual([reason])
   })
 
+  it('reads an address once when it is requested again mid-flight', async () => {
+    // MapKit asks for a screenful at once and re-asks on every render pass,
+    // so this is the ordinary case, not a race a test had to contrive.
+    const fetched: string[] = []
+    const decoded: string[] = []
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const source = createVectorTileOverlaySource<FakeCanvas>({
+      createCanvas: createFakeCanvas,
+      decode: (_bytes, { x, y, z }) => {
+        decoded.push(`${z}/${x}/${y}`)
+        return Promise.resolve(twoReaches)
+      },
+      style: () => ({ color: '#0e7490', width: 1 }),
+      tileBytes: async (z, x, y) => {
+        fetched.push(`${z}/${x}/${y}`)
+        await gate
+        return new Uint8Array([1])
+      },
+    })
+
+    const both = Promise.all([source.imageForTile(31, 48, 7, 1), source.imageForTile(31, 48, 7, 1)])
+    release?.()
+    const [first, second] = await both
+
+    expect(fetched).toEqual(['7/31/48'])
+    expect(decoded).toEqual(['7/31/48'])
+    expect(first?.calls.some((call) => call.op === 'stroke')).toBe(true)
+    expect(second?.calls.some((call) => call.op === 'stroke')).toBe(true)
+    expect(source.size).toBe(1)
+  })
+
+  it('keeps a read started before clearCache out of the cleared cache', async () => {
+    const fetched: string[] = []
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const source = createVectorTileOverlaySource<FakeCanvas>({
+      createCanvas: createFakeCanvas,
+      decode: () => Promise.resolve(twoReaches),
+      style: () => ({ color: '#0e7490', width: 1 }),
+      tileBytes: async (z, x, y) => {
+        fetched.push(`${z}/${x}/${y}`)
+        await gate
+        return new Uint8Array([1])
+      },
+    })
+
+    const pending = source.imageForTile(31, 48, 7, 1)
+    // The archive is replaced while the read is in the air. It cannot be
+    // cancelled, so its result must not land under the old key.
+    source.clearCache()
+    release?.()
+    await pending
+
+    expect(source.size).toBe(0)
+    await source.imageForTile(31, 48, 7, 1)
+    expect(fetched).toEqual(['7/31/48', '7/31/48'])
+  })
+
   it('clears the cache on demand', async () => {
     const { fetched, source } = createSource()
 
@@ -307,5 +370,37 @@ describe('the decoded-tile memory budget', () => {
 
     source.clearCache()
     expect(source.cacheBytes).toBe(0)
+  })
+
+  it('counts the properties, which are what a dense archive actually grows', () => {
+    const geometryOnly = buildDecodedVectorTile(4096, [
+      {
+        lines: [
+          [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        ],
+        properties: {},
+      },
+    ])
+    const named = buildDecodedVectorTile(4096, [
+      {
+        lines: [
+          [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        ],
+        properties: { name: 'Brazos River' },
+      },
+    ])
+
+    // Two points at 4 bytes, plus the two index arrays: nothing estimated.
+    expect(decodedVectorTileBytes(geometryOnly)).toBe(8 + 8 + 8)
+    // `name` adds the entry overhead plus two bytes per character, key and
+    // value alike -- 32 + 8 + 24 -- which is the part a geometry-only count
+    // would have hidden.
+    expect(decodedVectorTileBytes(named)).toBe(24 + 32 + 8 + 24)
   })
 })

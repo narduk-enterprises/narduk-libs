@@ -176,4 +176,62 @@ describe('the worker decode protocol', () => {
 
     expect(transferred).toEqual([])
   })
+
+  it('sends only the view it was given, not the buffer behind it', async () => {
+    const { workerPort, workerScope } = createChannel()
+    const seen: number[][] = []
+    serveVectorTileDecoder(workerScope, (bytes) => {
+      seen.push([...bytes])
+      return Promise.resolve(null)
+    })
+    const decoder = createWorkerDecoder({ worker: workerPort })
+
+    // What a decompressor, a `subarray`, or a pooled read hands back: a view
+    // that starts partway into a larger buffer. Posting the whole buffer
+    // would decode the wrong bytes and detach an array the caller still owns.
+    const pool = new Uint8Array([9, 9, 1, 2, 3, 9, 9])
+    const view = pool.subarray(2, 5)
+    await decoder.decode(view, address)
+
+    expect(seen).toEqual([[1, 2, 3]])
+    expect([...pool]).toEqual([9, 9, 1, 2, 3, 9, 9])
+  })
+
+  it('matches replies to requests by id even when they come back out of order', async () => {
+    const { workerPort, workerScope } = createChannel()
+    const queued: Array<() => void> = []
+    // A scope that holds each reply until the test releases it, so the
+    // answers can be delivered in the opposite order to the requests.
+    const deferred = {
+      ...workerScope,
+      postMessage: (message: unknown, transfer?: Transferable[]) => {
+        queued.push(() => workerScope.postMessage(message, transfer))
+      },
+    }
+    serveVectorTileDecoder(deferred, (bytes) =>
+      Promise.resolve(
+        buildDecodedVectorTile(4096, [
+          {
+            lines: [
+              [
+                { x: 0, y: 0 },
+                { x: 1, y: 1 },
+              ],
+            ],
+            properties: { size: bytes.length },
+          },
+        ]),
+      ),
+    )
+    const decoder = createWorkerDecoder({ worker: workerPort })
+
+    const first = decoder.decode(new Uint8Array(3), address)
+    const second = decoder.decode(new Uint8Array(5), address)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(queued).toHaveLength(2)
+    for (const send of [...queued].reverse()) send()
+
+    expect((await first)?.properties[0]?.size).toBe(3)
+    expect((await second)?.properties[0]?.size).toBe(5)
+  })
 })

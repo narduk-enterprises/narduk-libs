@@ -63,9 +63,11 @@ export interface WorkerDecoderOptions {
    */
   timeoutMs?: number
   /**
-   * Transfer the tile bytes to the worker instead of copying them. The caller
-   * must not reuse the array afterwards; it is detached. Default `true`,
-   * because the bytes come straight from a tile read and are used once.
+   * Transfer the tile bytes to the worker instead of copying them. A caller
+   * must not reuse an array that was transferred; it is detached. Default
+   * `true`, because the bytes come straight from a tile read and are used
+   * once. A view that does not span its whole buffer is copied either way
+   * (see {@link tightBuffer}), so only that array survives a transfer.
    */
   transfer?: boolean
   worker: VectorTileWorkerPort
@@ -93,6 +95,21 @@ function isDecodeResponse(data: unknown): data is VectorTileDecodeResponse {
   return message.channel === VECTOR_TILE_DECODE_CHANNEL && typeof message.id === 'number'
 }
 
+/**
+ * The bytes of `view` as a buffer that holds nothing else.
+ *
+ * `view.buffer` is the whole allocation, which for a view produced by
+ * `subarray`, a decompressor, or a pooled read is larger than the view and
+ * starts before it. Posting that buffer would hand the worker the wrong bytes,
+ * and transferring it would detach a buffer the caller still owns. A view that
+ * already spans its buffer is passed through, so the common case stays free.
+ */
+export function tightBuffer(view: ArrayBufferView): ArrayBuffer {
+  const buffer = view.buffer as ArrayBuffer
+  if (view.byteOffset === 0 && view.byteLength === buffer.byteLength) return buffer
+  return buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)
+}
+
 /** Rebuild the typed-array views over the buffers the worker transferred. */
 export function receiveVectorTile(transfer: VectorTileTransfer): DecodedVectorTile {
   return {
@@ -104,16 +121,23 @@ export function receiveVectorTile(transfer: VectorTileTransfer): DecodedVectorTi
   }
 }
 
-/** Views onto the buffers to hand `postMessage`, so nothing is copied. */
+/**
+ * The buffers to hand `postMessage`, alongside the transfer list.
+ *
+ * Nothing is copied for a tile built by `buildDecodedVectorTile`, whose arrays
+ * each own their buffer. Only a pooled view pays for a copy.
+ */
 export function sendVectorTile(tile: DecodedVectorTile): {
   message: VectorTileTransfer
   transfer: Transferable[]
 } {
+  // Tight for the same reason the request bytes are: a decoder that builds
+  // its arrays as views into a pool would otherwise ship the whole pool.
   const message: VectorTileTransfer = {
-    coordinates: tile.coordinates.buffer as ArrayBuffer,
+    coordinates: tightBuffer(tile.coordinates),
     extent: tile.extent,
-    featureLines: tile.featureLines.buffer as ArrayBuffer,
-    lineStarts: tile.lineStarts.buffer as ArrayBuffer,
+    featureLines: tightBuffer(tile.featureLines),
+    lineStarts: tightBuffer(tile.lineStarts),
     properties: tile.properties,
   }
   return { message, transfer: [message.coordinates, message.featureLines, message.lineStarts] }
@@ -176,7 +200,7 @@ export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVector
           entry?.reject(new Error(`vector tile decode timed out after ${timeoutMs}ms`))
         }, timeoutMs)
         waiting.set(id, { cancelTimeout, reject, resolve })
-        const buffer = bytes.buffer as ArrayBuffer
+        const buffer = tightBuffer(bytes)
         const request: VectorTileDecodeRequest = {
           bytes: buffer,
           channel: VECTOR_TILE_DECODE_CHANNEL,

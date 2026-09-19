@@ -649,9 +649,19 @@ gigabyte -- past what mobile Safari gives a tab before discarding it. The same
 points cost 4 bytes each here.
 
 `source.cacheBytes` reports what the cache is holding, so an app can set
-`cacheSize` against a real budget rather than a guess. Build a tile by hand with
-`buildDecodedVectorTile`, read one back with `vectorTileFeatureCount` and the
-index arrays, and measure one with `decodedVectorTileBytes`.
+`cacheSize` against a real budget rather than a guess. Geometry and indexes are
+exact; properties are estimated, since only the engine knows an object's real
+footprint -- but they are counted, because a `name` string on each of a few
+thousand features per tile is the part that actually grows a dense archive.
+Build a tile by hand with `buildDecodedVectorTile`, read one back with
+`vectorTileFeatureCount` and the index arrays, and measure one with
+`decodedVectorTileBytes`.
+
+Requests for an address already in flight join that read rather than starting a
+second one -- MapKit re-asks for the same tile on every render pass, so without
+that the archive is fetched twice and the tile decoded twice for one tile drawn.
+`clearCache()` also discards whatever is in the air, so a read started against
+the archive being replaced cannot land in the cleared cache.
 
 ## Layer Registry
 

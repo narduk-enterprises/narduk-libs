@@ -61,9 +61,11 @@ export interface WorkerDecoderOptions {
      */
     timeoutMs?: number;
     /**
-     * Transfer the tile bytes to the worker instead of copying them. The caller
-     * must not reuse the array afterwards; it is detached. Default `true`,
-     * because the bytes come straight from a tile read and are used once.
+     * Transfer the tile bytes to the worker instead of copying them. A caller
+     * must not reuse an array that was transferred; it is detached. Default
+     * `true`, because the bytes come straight from a tile read and are used
+     * once. A view that does not span its whole buffer is copied either way
+     * (see {@link tightBuffer}), so only that array survives a transfer.
      */
     transfer?: boolean;
     worker: VectorTileWorkerPort;
@@ -76,9 +78,24 @@ export interface WorkerVectorTileDecoder {
     /** Decodes waiting on the worker right now. */
     readonly pending: number;
 }
+/**
+ * The bytes of `view` as a buffer that holds nothing else.
+ *
+ * `view.buffer` is the whole allocation, which for a view produced by
+ * `subarray`, a decompressor, or a pooled read is larger than the view and
+ * starts before it. Posting that buffer would hand the worker the wrong bytes,
+ * and transferring it would detach a buffer the caller still owns. A view that
+ * already spans its buffer is passed through, so the common case stays free.
+ */
+export declare function tightBuffer(view: ArrayBufferView): ArrayBuffer;
 /** Rebuild the typed-array views over the buffers the worker transferred. */
 export declare function receiveVectorTile(transfer: VectorTileTransfer): DecodedVectorTile;
-/** Views onto the buffers to hand `postMessage`, so nothing is copied. */
+/**
+ * The buffers to hand `postMessage`, alongside the transfer list.
+ *
+ * Nothing is copied for a tile built by `buildDecodedVectorTile`, whose arrays
+ * each own their buffer. Only a pooled view pays for a copy.
+ */
 export declare function sendVectorTile(tile: DecodedVectorTile): {
     message: VectorTileTransfer;
     transfer: Transferable[];

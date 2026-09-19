@@ -125,7 +125,7 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     tileSize?: number;
 }
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
-    /** Retained coordinate, index and property bytes, for a memory budget. */
+    /** Retained bytes, exact for geometry and estimated for properties. */
     readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
     clearCache: () => void;
@@ -139,7 +139,17 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
      */
     setStyle: (style: VectorTileStyleFunction) => void;
 }
-/** Bytes a decoded tile retains, counting its arrays rather than its properties. */
+/**
+ * Bytes a decoded tile retains.
+ *
+ * Geometry and indexes are exact. Properties are estimated, because they are
+ * ordinary objects and only the engine knows their real footprint -- but
+ * leaving them out would understate a dense archive badly, since a `name`
+ * string on each of a few thousand features per tile is what actually grows
+ * the cache. The estimate charges two bytes per character of every key and
+ * string value, eight for a number, and a flat per-entry overhead; it is
+ * meant for sizing `cacheSize` against a budget, not for exact accounting.
+ */
 export declare function decodedVectorTileBytes(tile: DecodedVectorTile): number;
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need

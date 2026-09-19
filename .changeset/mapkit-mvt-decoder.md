@@ -18,3 +18,9 @@ difference between a 256-tile cache retaining about a gigabyte and retaining
 about a hundred megabytes. `buildDecodedVectorTile` packs one,
 `decodedVectorTileBytes` and the new `cacheBytes` measure what is retained, and
 `vectorTileFeatureCount` reads the feature count back.
+
+Tile bytes are posted as a tight buffer, so a `Uint8Array` that views part of a
+larger allocation decodes correctly and its parent buffer is not detached.
+Requests for an address already in flight join that read instead of starting a
+second one, and `cacheBytes` now counts an estimate of the property payload
+rather than geometry alone.

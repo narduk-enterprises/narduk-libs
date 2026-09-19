@@ -27,10 +27,12 @@ const PROTOBUF = ['@mapbox/vector-tile', 'pbf']
 
 const STATIC_IMPORT = /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]/g
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+/** `import './pull-mvt.js'` -- no bindings, so the `from` patterns miss it. */
+const SIDE_EFFECT_IMPORT = /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g
 
 function specifiersIn(source: string): string[] {
   const found: string[] = []
-  for (const pattern of [STATIC_IMPORT, DYNAMIC_IMPORT]) {
+  for (const pattern of [STATIC_IMPORT, DYNAMIC_IMPORT, SIDE_EFFECT_IMPORT]) {
     pattern.lastIndex = 0
     let match = pattern.exec(source)
     while (match !== null) {
