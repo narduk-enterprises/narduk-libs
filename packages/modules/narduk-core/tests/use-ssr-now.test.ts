@@ -173,6 +173,51 @@ describe('useSsrNow', () => {
     clearSpy.mockRestore()
   })
 
+  it('re-reads the clock when a ticking page becomes visible, until unmount', () => {
+    store.state = new Map()
+    vi.setSystemTime(CLIENT_NOW)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const visibility = vi.spyOn(document, 'visibilityState', 'get')
+
+    const app = createSSRApp(ageComponent(60_000))
+    app.mount(container)
+    const now = store.state.get(STATE_KEY) as Ref<number>
+
+    // Hidden: a visibilitychange to hidden leaves the reading alone.
+    vi.setSystemTime(CLIENT_NOW + 30_000)
+    visibility.mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(now.value).toBe(CLIENT_NOW)
+
+    // Back after 40 min of throttled timers: read at once, not on the next tick.
+    vi.setSystemTime(CLIENT_NOW + 40 * 60_000)
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(now.value).toBe(CLIENT_NOW + 40 * 60_000)
+
+    app.unmount()
+    vi.setSystemTime(CLIENT_NOW + 50 * 60_000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(now.value).toBe(CLIENT_NOW + 40 * 60_000)
+    visibility.mockRestore()
+  })
+
+  it('ignores visibility without a positive tickMs', () => {
+    store.state = new Map()
+    vi.setSystemTime(CLIENT_NOW)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const app = createSSRApp(ageComponent())
+    app.mount(container)
+    const now = store.state.get(STATE_KEY) as Ref<number>
+    vi.setSystemTime(CLIENT_NOW + 60_000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(now.value).toBe(CLIENT_NOW)
+    app.unmount()
+  })
+
   it('updates once on mount and schedules nothing without a positive tickMs', async () => {
     for (const tickMs of [undefined, 0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
       store.state = new Map([[STATE_KEY, ref(SERVER_NOW)]])

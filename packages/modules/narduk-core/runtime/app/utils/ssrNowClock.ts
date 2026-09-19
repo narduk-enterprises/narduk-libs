@@ -5,8 +5,11 @@ import type { Ref } from 'vue'
 
 export interface SsrNowClockOptions {
   /**
-   * After mount, re-read the browser clock every `tickMs` milliseconds. Omit
-   * (or pass a non-positive / non-finite value) for a single update on mount.
+   * After mount, re-read the browser clock every `tickMs` milliseconds, and
+   * again whenever the page becomes visible (a background tab's timers are
+   * throttled, so a returning viewer would otherwise read a stale age until
+   * the next tick). Omit (or pass a non-positive / non-finite value) for a
+   * single update on mount.
    */
   tickMs?: number
 }
@@ -25,20 +28,27 @@ export function createSsrNowClock(
   options: SsrNowClockOptions = {},
 ): Readonly<Ref<number>> {
   let timer: ReturnType<typeof setInterval> | undefined
+  const read = () => {
+    state.value = Date.now()
+  }
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') read()
+  }
 
   onMounted(() => {
-    state.value = Date.now()
+    read()
     const { tickMs } = options
     if (tickMs !== undefined && Number.isFinite(tickMs) && tickMs > 0) {
-      timer = setInterval(() => {
-        state.value = Date.now()
-      }, tickMs)
+      timer = setInterval(read, tickMs)
+      document.addEventListener('visibilitychange', onVisibility)
     }
   })
 
   onBeforeUnmount(() => {
-    if (timer !== undefined) clearInterval(timer)
+    if (timer === undefined) return
+    clearInterval(timer)
     timer = undefined
+    document.removeEventListener('visibilitychange', onVisibility)
   })
 
   return readonly(state)
