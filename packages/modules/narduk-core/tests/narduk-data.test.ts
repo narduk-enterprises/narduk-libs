@@ -235,6 +235,117 @@ describe('narduk-data client', () => {
     expect(upstream.calls).toHaveLength(2)
   })
 
+  it('revalidates an unchanged release with the manifest alone and keeps the value', async () => {
+    const { release } = await successRoutes()
+    let clock = NOW
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText), async () => json('', 500)],
+      [manifestUrl]: [async () => json(release.manifestText)],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => clock,
+      origin: ORIGIN,
+    })
+    const product = productOf({ ttlMs: 60_000 })
+
+    const first = await client.read(product)
+    clock = NOW + 2 * 60_000
+    const second = await client.read(product)
+
+    expect(second.data).toBe(first.data)
+    expect(second.freshness).toMatchObject({ ageMs: 0, source: 'upstream' })
+    expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl, artifactUrl, manifestUrl])
+  })
+
+  it('still runs validate against the manifest a revalidation reads', async () => {
+    const { release } = await successRoutes()
+    const refused = JSON.stringify({
+      ...release.manifest,
+      staleness: { ...release.manifest.staleness, state: 'withdrawn' },
+    })
+    let clock = NOW
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [manifestUrl]: [async () => json(release.manifestText), async () => json(refused)],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => clock,
+      origin: ORIGIN,
+      retries: 0,
+    })
+    const product = productOf({
+      ttlMs: 60_000,
+      validate: (_data, manifest) => {
+        if (manifest.staleness?.state === 'withdrawn') throw new Error('withdrawn')
+      },
+    })
+
+    await client.read(product)
+    clock = NOW + 2 * 60_000
+
+    await expect(client.read(product)).rejects.toMatchObject({ reason: 'rejected' })
+    expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(1)
+  })
+
+  it('downloads the new release once the current pointer moves', async () => {
+    const { release } = await successRoutes()
+    const nextReleaseId = 'buoy-status-v1-20260917T130000Z-0123456789ab'
+    const next = await publishedRelease({ stations: ['41009'] })
+    const nextManifest = JSON.stringify({ ...next.manifest, releaseId: nextReleaseId })
+    const nextArtifactUrl = `${ORIGIN}/${PRODUCT_ID}/releases/${nextReleaseId}/${ARTIFACT_PATH}`
+    let clock = NOW
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [manifestUrl]: [async () => json(release.manifestText), async () => json(nextManifest)],
+      [nextArtifactUrl]: [async () => json(next.artifactText)],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => clock,
+      origin: ORIGIN,
+    })
+    const product = productOf({ ttlMs: 60_000 })
+
+    await client.read(product)
+    clock = NOW + 2 * 60_000
+    const moved = await client.read(product)
+
+    expect(moved.data.stations).toEqual(['41009'])
+    expect(moved.manifest.releaseId).toBe(nextReleaseId)
+    expect(upstream.calls.at(-1)?.url).toBe(nextArtifactUrl)
+  })
+
+  it('re-downloads when a manifest names a different checksum for the same release', async () => {
+    const { release } = await successRoutes()
+    const changed = await publishedRelease({ stations: ['41009'] })
+    let clock = NOW
+    const upstream = fakeFetch({
+      [artifactUrl]: [
+        async () => json(release.artifactText),
+        async () => json(changed.artifactText),
+      ],
+      [manifestUrl]: [
+        async () => json(release.manifestText),
+        async () => json(changed.manifestText),
+      ],
+    })
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      now: () => clock,
+      origin: ORIGIN,
+    })
+    const product = productOf({ ttlMs: 60_000 })
+
+    await client.read(product)
+    clock = NOW + 2 * 60_000
+    const reread = await client.read(product)
+
+    expect(reread.data.stations).toEqual(['41009'])
+    expect(upstream.calls.filter((call) => call.url === artifactUrl)).toHaveLength(2)
+  })
+
   it('coalesces concurrent readers of the same product onto one upstream read', async () => {
     const { release } = await successRoutes()
     let releaseArtifact = () => {}
