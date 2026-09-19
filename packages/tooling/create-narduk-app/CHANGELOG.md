@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.3
+
+### Patch Changes
+
+- 81051b0: Narduk Data client: send `redirect: 'manual'` instead of `'error'`,
+  which the Cloudflare Workers runtime rejects before any response arrives. A
+  redirect is still an `http` failure and is never followed (#563).
+
 ## 0.10.2
 
 ### Patch Changes
