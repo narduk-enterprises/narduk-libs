@@ -302,7 +302,19 @@ describe('item 12 standard conformance', () => {
 
 describe('item 12.4 -- the preview-binding refusal', () => {
   function withD1(deployment: Record<string, unknown>): string {
-    const root = baseline({ deployment })
+    const root = baseline({
+      deployment: {
+        ...deployment,
+        migrations: {
+          compatibility: 'expand-contract',
+          credential: 'cloudflare/prd/fixture-migrate',
+          databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+        },
+      },
+    })
+    writeJson(root, 'migrations.sources.json', {
+      sources: [{ source: 'app', path: 'sql', sourceVersion: '1' }],
+    })
     writeJson(root, 'wrangler.json', {
       name: 'fixture',
       d1_databases: [{ binding: 'DB', database_name: 'fixture-db', database_id: 'prod' }],
@@ -967,5 +979,32 @@ describe('12.7 -- Workers Cache only on a narduk-core with the no-store guards',
   it('is unknown when the resolved narduk-core cannot be read', () => {
     expect(statusOf(app({ cache: { enabled: true }, core: null }), '12.7')).toBe('unknown')
     expect(statusOf(app({ cache: { enabled: true }, core: 'workspace:*' }), '12.7')).toBe('unknown')
+  })
+})
+
+describe('12.8 D1 migration declaration', () => {
+  it('requires source coverage and a separate persona for an adopted D1 app', () => {
+    const root = baseline()
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      d1_databases: [{ binding: 'DB', database_id: 'd1-id', database_name: 'fixture-db' }],
+    })
+    expect(statusOf(root, '12.8')).toBe('fail')
+    const manifest = JSON.parse(readFileSync(`${root}/${CLOUDFLARE_APP_FILE}`, 'utf8'))
+    manifest.deployment.migrations = {
+      compatibility: 'expand-contract',
+      credential: 'cloudflare/prd/fixture-migrate',
+      databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+    }
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    expect(statusOf(root, '12.8')).toBe('fail')
+    writeJson(root, 'migrations.sources.json', { sources: [{ source: 'app', path: 'drizzle' }] })
+    expect(statusOf(root, '12.8')).toBe('pass')
+    manifest.deployment.migrations.credential = manifest.deployment.promotion.credential
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    expect(statusOf(root, '12.8')).toBe('fail')
+  })
+  it('does not impose migration infrastructure on an app with no D1', () => {
+    expect(statusOf(baseline(), '12.8')).toBe('not-applicable')
   })
 })

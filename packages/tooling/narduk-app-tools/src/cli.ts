@@ -17,7 +17,12 @@ import {
   runVersionsPromote,
 } from './promote.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
-import { runMigrations, type MigrationLocation } from './migrations.js'
+import { inspectMigrations, runMigrations, type MigrationLocation } from './migrations.js'
+import {
+  parseDeploymentMigrationArgs,
+  runDeploymentMigrations,
+  writeDeploymentMigrationBundle,
+} from './deployment-migrations.js'
 import {
   formatPerformanceBudgetReport,
   parsePerformanceBudgetArgs,
@@ -44,7 +49,10 @@ function usage(): string {
     '      [--config <name>] [--dry-run] -- <command...>',
     '                                       Run local development directly, or under the',
     '                                       registered nvault credential route',
-    '  db migrate --config <file> --database <name> --local|--remote [--reset]',
+    '  db migrate --config <file> --database <name> --local|--remote [--reset] [--wrangler-config <file>]',
+    '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
+    '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
+    '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
     '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
     '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
@@ -116,17 +124,23 @@ export function parseMigrationArgs(args: string[]): {
   location: MigrationLocation
   reset: boolean
   workersBuildOnly: boolean
+  wranglerConfig?: string
 } {
   let configFile = ''
   let database = ''
   let location: MigrationLocation | undefined
   let reset = false
   let workersBuildOnly = false
+  let wranglerConfig: string | undefined
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === '--config') configFile = args[++index] ?? ''
     else if (arg === '--database') database = args[++index] ?? ''
-    else if (arg === '--local') {
+    else if (arg === '--wrangler-config') {
+      wranglerConfig = args[++index]
+      if (!wranglerConfig || wranglerConfig.startsWith('--'))
+        throw new Error('--wrangler-config requires a file')
+    } else if (arg === '--local') {
       if (location) throw new Error('Choose exactly one of --local or --remote')
       location = '--local'
     } else if (arg === '--remote') {
@@ -143,7 +157,14 @@ export function parseMigrationArgs(args: string[]): {
   if (workersBuildOnly && location !== '--remote') {
     throw new Error('--workers-build-only is valid only with --remote')
   }
-  return { configFile, database, location, reset, workersBuildOnly }
+  return {
+    configFile,
+    database,
+    location,
+    reset,
+    workersBuildOnly,
+    ...(wranglerConfig ? { wranglerConfig } : {}),
+  }
 }
 
 export async function main(args = process.argv.slice(2)): Promise<number> {
@@ -159,8 +180,37 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return await runOgCommand(command, rest)
     if (command === 'db') {
       const [subcommand, ...migrateArgs] = rest
-      if (subcommand !== 'migrate') throw new Error('Usage: narduk-app db migrate ...')
+      if (subcommand === 'bundle') {
+        if (
+          migrateArgs.length !== 2 ||
+          migrateArgs[0] !== '--output' ||
+          !migrateArgs[1] ||
+          migrateArgs[1].startsWith('--')
+        )
+          throw new Error('Usage: narduk-app db bundle --output <file>')
+        writeDeploymentMigrationBundle(migrateArgs[1])
+        return 0
+      }
+      if (subcommand === 'migrate-deployment') {
+        const options = parseDeploymentMigrationArgs(migrateArgs)
+        const plans = runDeploymentMigrations(options)
+        console.log(
+          JSON.stringify(
+            { target: options.target, check: options.check, databases: plans },
+            null,
+            2,
+          ),
+        )
+        return options.check && plans.some((plan) => plan.apply + plan.adopt > 0) ? 2 : 0
+      }
+      if (subcommand !== 'migrate' && subcommand !== 'status')
+        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment ...')
       const options = parseMigrationArgs(migrateArgs)
+      if (subcommand === 'status') {
+        const plan = inspectMigrations(options)
+        console.log(JSON.stringify(plan, null, 2))
+        return plan.apply + plan.adopt > 0 ? 2 : 0
+      }
       if (options.workersBuildOnly && !isWorkersBuildDeployAllowed()) {
         throw new Error('Remote migration requires an attested Cloudflare Workers Build')
       }

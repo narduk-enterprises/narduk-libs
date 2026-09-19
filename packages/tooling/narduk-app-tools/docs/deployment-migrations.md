@@ -1,0 +1,215 @@
+# D1 deployment migrations
+
+`narduk-v1` applies reviewed, backward-compatible migrations automatically after
+successful CI and before production promotion. Workers Builds uploads versions;
+it does not migrate databases. The app owns its workflows and source manifests.
+The generator supplies one-shot onboarding templates under `docs/deployment/`.
+Installing a package alone does not activate these workflows in existing apps.
+
+This closes the missing integration between the existing checksum/adoption
+migration runner and `versions-promote` (narduk-libs#578). The legacy
+`cf:deploy` script's migration step never ran on the standard `versions-upload`
+path.
+
+## Declare every database
+
+Add this to `Config/cloudflare-app.json`'s existing `deployment` block:
+
+```json
+{
+  "migrations": {
+    "compatibility": "expand-contract",
+    "credential": "cloudflare/prd/example-migrate",
+    "databases": [
+      { "binding": "DB", "sources": "apps/web/migrations.sources.json" }
+    ]
+  }
+}
+```
+
+`worker.wranglerConfig` identifies the production Wrangler JSON/JSONC file and
+`product.repository` identifies the repository. An explicit account ID must be
+present in that config or `deployment.accountId`; conflicting IDs are refused.
+Each D1 binding needs exactly one source manifest, including separate auth and
+read-model databases. Use immutable numbered SQL files and stable source names.
+Dependencies supply their migrations before app migrations. A managed/rebuilt
+read model needs its own schema ownership and migration/adoption plan; do not
+point its binding at the auth database's manifest merely to satisfy coverage.
+
+For preview and optional staging, the command uses the **same binding planner**
+as `versions-upload`. Declare concrete, separate IDs and names for every D1, KV
+and R2 binding in `deployment.previewBindings` or `deployment.staging.bindings`.
+Production resources, missing replacements and placeholders are refused.
+`preview_database_id` is a local-development setting, not a deployed preview. No
+per-PR database creation or cleanup is performed.
+
+The command writes a temporary minimal Wrangler config with just the account and
+D1 bindings and passes `--config` on every operation. Build-output redirects,
+ambient environment selection and Worker configuration cannot select a different
+D1. An explicit scoped `CLOUDFLARE_API_TOKEN` is required; no ambient OAuth
+fallback.
+
+## Production ordering and credentials
+
+The app's promote workflow must follow these steps in one serialized job:
+
+1. Require a successful same-repository CI `workflow_run` for the production
+   branch. Check out **`workflow_run.head_sha`** and install its frozen
+   toolchain.
+2. With the existing promote credential, run
+   `narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --dry-run --json`.
+   A missing upload or stale version fails before changing the database.
+3. Inject the **separate D1-only migrate persona** for this step only, then run:
+   ```sh
+   narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"
+   narduk-app db migrate-deployment --target production --check
+   ```
+4. Only on success, restore the separate promote credential, promote that exact
+   SHA, then perform live proof. Keep the app's existing alert and Worker
+   rollback handling. Rollback requires a completed promotion followed by failed
+   live proof; a migration failure must not trigger a Worker rollback.
+5. Upload `.narduk/recovery/d1` with `if: always()`, hidden files included and
+   restricted artifact access. It contains schema/ledger metadata and a Time
+   Travel bookmark, not application records or credentials. Missing evidence on
+   a no-op run is normal; a pending migration requires successful capture.
+
+`create-narduk-app` emits `promote-d1.steps.yml` for this insertion. Keep
+workflow concurrency `cancel-in-progress: false`. Repository concurrency reduces
+overlap; the database lock below supplies cross-repository serialization.
+Multiple configured databases migrate sequentially after all have passed
+preflight. They are **not** one transaction: failure on database B can leave A
+advanced.
+
+Register one per-app, per-purpose migrate persona through the workstation's
+canonical provisioner and nVault route, and issue its consumer a config-scoped
+service token. A pre-materialized `D1_MIGRATE_API_TOKEN` environment secret may
+carry that persona into the supplied templates; an existing app's nVault adapter
+may inject the same process-scoped variable instead. Runners consume
+credentials; they never receive provisioners or mint tokens. The persona needs
+D1 Read/Write on the target account only, with no Worker Scripts, DNS, R2 or
+account-admin grants. Do not widen the promote persona. Mint/rotate only
+same-or-narrower grants under D-MINT-1; any genuinely broader request remains a
+separate scope decision.
+
+Cloudflare D1 permissions are **account-scoped**, not database-scoped.
+Per-purpose naming does not reduce that provider blast radius. Trusted tooling,
+exact target validation, protected production branches and step-scoped injection
+are therefore part of the boundary. Use a D1 Read-only persona for independent
+drift audits.
+
+## Shared PR preview databases
+
+The chosen first version uses the existing declared preview databases:
+
+1. Add the generated `ci-d1-bundle.job.yml` job to ordinary CI and include it in
+   the required result. It checks out the same-repository PR head and emits
+   `d1-migrations.json` using `narduk-app db bundle --output <file>`. It
+   receives package-read access only, **never D1 or deployment credentials**.
+   Forks do not enter the credentialed migration path. The bundle artifact is
+   attempt-specific.
+2. Activate the generated `preview-d1.yml` workflow. After successful CI, it
+   checks out the trusted default branch, installs that frozen toolchain, and
+   downloads the artifact from the exact triggering run ID and attempt.
+3. With the D1-only persona injected for one step, trusted tooling parses the
+   strict SQL/data schema, verifies repository/SHA/checksums, materializes its
+   own safe paths, and applies to the **trusted default branch's preview IDs**:
+   ```sh
+   narduk-app db migrate-deployment --target preview --sha "$VERIFIED_SHA" --bundle "$SQL_BUNDLE"
+   narduk-app db migrate-deployment --target preview --sha "$VERIFIED_SHA" --bundle "$SQL_BUNDLE" --check
+   ```
+4. Run preview health/smoke checks only after success. A version URL uploaded by
+   Workers Builds is not a schema-readiness signal. The template does not hide
+   an already uploaded version URL; the app's preview acceptance gate must
+   depend on this job's successful result.
+
+Never execute PR scripts, install PR dependencies, or resolve Wrangler from a PR
+checkout in the credentialed job. Bundles contain SQL and adoption metadata
+only; no executable file or path supplied by an artifact is used. SQL cannot
+change the selected account/database. References to the runner's ledger/lock are
+refused. A digest verifies integrity, not provenance; the exact-run artifact
+download and trusted workflow are the provenance boundary.
+
+Shared previews must remain compatible with other active previews. A branch
+whose applied history is absent, changed or out of order fails. Rebase onto the
+shared migration history or repair the preview through its owner; never erase
+ledger rows or reset a shared database to make a conflicting PR pass. Empty SQL
+sources are supported. Preview topology/source ownership changes must land in
+the trusted default branch before a PR can use them.
+
+## Drift gate and compatibility
+
+`narduk-app db status --config migrations.sources.json --database DB --remote --wrangler-config wrangler.jsonc`
+is the lower-level read-only equivalent. The standard commands use the target
+manifest automatically:
+
+```sh
+narduk-app db migrate-deployment --target production --check
+narduk-app db migrate-deployment --target preview --check
+```
+
+Status exits 0 for exact current history, 2 for pending SQL or adoption, and
+nonzero for errors, unknown/changed remote rows, missing sources, out-of-order
+history, malformed provider responses or an active/retained lock. It performs
+only SELECT/PRAGMA reads: it creates no ledger, lock or recovery snapshot. A
+successful result is a point-in-time history/checksum observation. It does not
+prove absence of manual schema/data edits that bypassed the ledger.
+
+Foundation item **12.8** requires every declared D1 binding to have a source
+manifest and a distinct migrate credential declaration. No-D1 apps are
+not-applicable. It reads the repository only and says explicitly that remote
+parity needs the command above. It cannot prove token scope or that an app has
+actually activated its workflow; keep those onboarding proof items open.
+
+Automatic migrations must work with the Worker **currently serving traffic** and
+all versions still eligible for rollback. Review expand/contract explicitly: add
+nullable/defaulted structures, backfill compatibly, deploy code that tolerates
+both shapes, then remove old structures only in a later reviewed change once old
+readers/writers and the rollback window are retired. SQL checksums cannot prove
+this property. The `expand-contract` declaration is a review contract, not a
+static proof of SQL or application compatibility.
+
+## Lock, failure and recovery
+
+`_narduk_migration_lock` contains a singleton row with a unique owner and
+timestamp. An atomic insert admits one cooperating runner per actual database,
+independent of repository, runner host or binding alias. A successful run
+releases only its own row. It checks history again under the lock before
+writing. Retire old scripts/direct Wrangler writers before claiming all writers
+serialize; this library cannot stop unrelated credentials executing arbitrary
+SQL.
+
+Remote errors, client timeout or cancellation **retain the lock**. There is no
+TTL/automatic lock stealing: a disconnected client does not prove that the
+provider stopped the import. Promotion fails. The currently serving Worker
+continues against whatever compatible schema steps completed. Each SQL file and
+its checksum ledger insert are submitted together through D1's file import;
+there is no transaction spanning the complete migration sequence or all
+databases. A Worker rollback never reverses any schema/data change.
+
+Recovery is an operator action, not an automatic retry:
+
+1. Identify the database ID, account, retained owner and previous job. Confirm
+   the old runner and any remote import have ended. Preserve logs and the
+   pre-migration recovery artifact before doing anything else.
+2. Read schema and ledgers with the read persona. Reconcile the actual result,
+   especially after a lost response. Do not replay from an assumption of
+   failure.
+3. Prefer a reviewed forward correction that remains compatible. A database
+   restore is a separate incident decision: it can discard later writes, affects
+   every consumer of that database, and is not part of Worker rollback.
+4. After investigation, clear **only the verified owner** using an explicitly
+   selected account/database and D1 credential:
+   `DELETE FROM _narduk_migration_lock WHERE id = 1 AND owner = '<verified owner>';`
+   Never blindly clear another run's row. Then rerun status and the gated
+   workflow.
+
+Existing native `d1_migrations` and legacy `_applied_migrations` histories
+require explicit reviewed adoption mappings and schema evidence; the runner does
+not infer a baseline or replay SQL just because its own ledger is absent.
+Read-model rebuilds or inline schema initializers with no ledger are
+**unverified**, not current. Applied SQL is immutable; append a correction
+instead of editing it.
+
+Provider references:
+[D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) and
+[D1 SQL import](https://developers.cloudflare.com/d1/best-practices/import-export-data/).

@@ -9,6 +9,7 @@ import {
 } from './ci-workflow.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
+import { createMigrationWorkflowFiles } from './migration-workflows.js'
 
 import {
   createMigrationSourcesManifest,
@@ -460,6 +461,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'test-results',
       ),
     },
+    ...(databaseBackend === 'd1' ? createMigrationWorkflowFiles(visibility) : []),
     {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
@@ -820,6 +822,24 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',
         '',
+        ...(databaseBackend === 'd1'
+          ? [
+              '## D1 migrations are a promotion gate',
+              '',
+              'Declare `deployment.migrations` before adopting narduk-v1: compatibility `expand-contract`, a separate `cloudflare/prd/' +
+                appName +
+                '-migrate` credential, and `databases: [{ binding: "DB", sources: "apps/web/migrations.sources.json" }]`. Use the actual Wrangler binding name. Every D1 binding needs exactly one source manifest; add preview database IDs under `previewBindings.d1` before enabling branch builds.',
+              '',
+              'Merge `docs/deployment/promote-d1.steps.yml` into the app-owned promote job before versions-promote. Merge `ci-d1-bundle.job.yml` into CI and activate `preview-d1.yml` after preview onboarding. These are inert, one-shot onboarding templates: generating them does not install credentials or activate remote writes. Read the narduk-app-tools D1 deployment migrations runbook before enabling them.',
+              '',
+              'Automatic production order: exact successful CI SHA → eligible uploaded version → migrate with D1-only credential → read-only drift check → promote with separate credential → live proof. Any migration error blocks promotion. Only a completed promotion followed by failed live proof can trigger Worker rollback. Worker rollback never restores a database.',
+              '',
+              'Migration SQL must keep the currently serving Worker and supported rollback versions working: expand first, backfill compatibly, switch code, then contract in a later separately reviewed change after the rollback window closes. Filenames and applied SQL are immutable. The drift gate checks history/checksums; it cannot prove application compatibility.',
+              '',
+              'A singleton lock in each database serializes cooperating runners across repositories and binding aliases. Remote failure or uncertain completion retains the lock for investigation. Retire legacy writers before claiming serialization. Preview bundles contain SQL/data only, run with trusted default-branch tooling, and target the declared preview databases. PR jobs never receive D1 credentials. Conflicting shared-preview histories are refused.',
+              '',
+            ]
+          : []),
         '## Promotion, live proof and rollback',
         '',
         'The promote job runs on `workflow_run` after the gate check goes green, resolves the version Workers Builds uploaded for **the commit that run verified**, deploys it at 100%, and then proves it:',
@@ -829,9 +849,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'env:',
         '  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}',
         'steps:',
-        '  - run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --json',
-        '  - run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
-        '  - if: failure()',
+        '  - id: promote',
+        '    run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --json',
+        '  - id: live-proof',
+        '    run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
+        '  # Roll back only after a completed promotion followed by failed live proof.',
+        "  - if: failure() && steps.promote.outcome == 'success' && steps.live-proof.outcome == 'failure'",
         '    run: narduk-app deploy rollback --to "<previousVersionId>"',
         '```',
         '',

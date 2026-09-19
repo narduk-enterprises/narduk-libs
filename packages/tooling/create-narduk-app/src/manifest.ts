@@ -272,6 +272,8 @@ export function createRootPackageManifest(
         : {
             'db:migrate:local': 'pnpm --filter web run db:migrate:local',
             'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+            'db:status:production': 'pnpm --filter web run db:status:production',
+            'db:status:preview': 'pnpm --filter web run db:status:preview',
           }),
       deploy: 'pnpm --filter web run deploy',
       'deploy:dry-run': 'pnpm --filter web run deploy:dry-run',
@@ -522,6 +524,8 @@ export function createWebPackageManifest(
       ...(databaseBackend === 'none'
         ? {}
         : {
+            'db:status:production': 'narduk-app db migrate-deployment --target production --check',
+            'db:status:preview': 'narduk-app db migrate-deployment --target preview --check',
             'db:migrate:local':
               'narduk-app db migrate --config migrations.sources.json --database ' +
               appName +
