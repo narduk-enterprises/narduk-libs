@@ -1711,11 +1711,21 @@ the Nitro auto-import inside an app that has the layer installed.
 
 ### What it does
 
-- **The manifest names the artifact** — the artifact URL is always built from
-  `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed artifact
-  keeps working. `product.artifactPath` is an optional assertion: set it and a
-  manifest naming anything else is refused. A path that is not a single safe
-  segment is refused before any request.
+- **The manifest names the artifact** — by default the artifact URL is built
+  from `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed
+  artifact keeps working. A `declaredArtifactPath` read (below) builds it from
+  that declared entry instead. `product.artifactPath` is an optional assertion:
+  set it and a manifest naming anything else is refused. A path that is not a
+  single safe segment is refused before any request.
+- **Declared artifacts** — a sharded product publishes a primary index plus
+  sub-artifacts listed in the manifest's `artifacts[]`, for example one
+  `states/tx.json` per state. `product.declaredArtifactPath` reads one of these:
+  - The path must be declared in `artifacts[]` and have at most four safe
+    segments. Anything else is refused before any artifact request.
+  - The bytes are checked against that entry's own SHA-256.
+  - Each path is its own bounded cache entry, so a Worker holds only the shards
+    it serves.
+  - It cannot be combined with `artifactPath`.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
   (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
   read only; it is never given to the shared upstream read, so one client

@@ -58,6 +58,21 @@ const FORBIDDEN_FORWARD_HEADERS = new Set(['authorization', 'cookie', 'proxy-aut
 /** An artifact file name: one path segment, so a manifest cannot escape its release prefix. */
 const ARTIFACT_PATH_PATTERN = /^[A-Za-z0-9][\w.-]*$/u
 
+/** Deepest declared artifact path, e.g. `states/tx.json` is two segments. */
+const DECLARED_ARTIFACT_MAX_SEGMENTS = 4
+
+/**
+ * A declared artifact path: one to four segments, each an artifact file name, so
+ * no segment can be empty, `.` or `..` and the path cannot leave its release.
+ */
+function isDeclaredArtifactPath(path: string): boolean {
+  const segments = path.split('/')
+  return (
+    segments.length <= DECLARED_ARTIFACT_MAX_SEGMENTS &&
+    segments.every((segment) => ARTIFACT_PATH_PATTERN.test(segment))
+  )
+}
+
 /**
  * Why a narduk-data read failed.
  *
@@ -172,6 +187,11 @@ export interface NardukDataFetchOptions<T> extends NardukDataRequestPolicy {
  */
 export interface NardukDataReleaseManifest {
   artifact: { path: string; sha256: string }
+  /**
+   * Every artifact the release publishes, the primary included. Only a product
+   * that names a `declaredArtifactPath` reads it.
+   */
+  artifacts?: Array<{ path: string; sha256: string }> | null
   releaseId: string
   staleness?: {
     age_minutes?: number | null
@@ -249,6 +269,15 @@ export interface NardukDataProduct<
    * different artifact is refused rather than silently followed.
    */
   artifactPath?: string
+  /**
+   * Read this artifact instead of the primary one. It must be declared in the
+   * manifest's `artifacts[]`, and its bytes are checked against that entry's
+   * own SHA-256. The path may be nested (`states/tx.json`, at most four
+   * segments). A path the manifest does not declare is refused before any
+   * artifact request is made. Each path is its own cache entry. It cannot be
+   * combined with `artifactPath`, which describes the primary artifact.
+   */
+  declaredArtifactPath?: string
   /** Thresholds for the derived state; defaults to the manifest's own. */
   freshness?: NardukDataFreshnessThresholds
   /** Hard ceiling on the manifest body. Defaults to 256 KiB. */
@@ -719,6 +748,11 @@ interface CacheEntry {
   retainedBytes: number
 }
 
+/** A cache-key part that keeps an omitted option distinct from any string value. */
+function optionalKeyPart(value: string | undefined): string {
+  return value === undefined ? '-' : `=${value}`
+}
+
 function joinUrl(origin: string, ...segments: string[]): string {
   return [origin.replace(/\/+$/u, ''), ...segments].join('/')
 }
@@ -751,6 +785,51 @@ async function withCallerSignal<T>(
   } finally {
     signal.removeEventListener('abort', onAbort)
   }
+}
+
+/**
+ * The artifact a product read targets: the manifest's primary artifact, or the
+ * `declaredArtifactPath` entry from its `artifacts[]`, with the SHA-256 that
+ * artifact must match.
+ */
+function resolveArtifact<TArtifact, TManifest extends NardukDataReleaseManifest>(
+  product: NardukDataProduct<TArtifact, TManifest>,
+  manifest: TManifest,
+  manifestUrl: string,
+): { path: string; sha256: string } {
+  const refuse = (message: string): never => {
+    throw new NardukDataError(
+      `narduk-data manifest at ${manifestUrl} ${message}`,
+      'rejected',
+      manifestUrl,
+    )
+  }
+  const declared = product.declaredArtifactPath
+  if (declared === undefined) {
+    const artifactName = manifest.artifact.path
+    if (!ARTIFACT_PATH_PATTERN.test(artifactName)) refuse('names an unusable artifact path.')
+    if (product.artifactPath !== undefined && product.artifactPath !== artifactName) {
+      refuse(`names artifact '${artifactName}', not the expected '${product.artifactPath}'.`)
+    }
+    return manifest.artifact
+  }
+  if (product.artifactPath !== undefined) {
+    refuse('cannot be read with both artifactPath and declaredArtifactPath.')
+  }
+  if (!isDeclaredArtifactPath(declared)) {
+    refuse(`cannot serve the unusable artifact path '${declared}'.`)
+  }
+  const entry = Array.isArray(manifest.artifacts)
+    ? manifest.artifacts.find((candidate) => isRecord(candidate) && candidate.path === declared)
+    : undefined
+  if (
+    entry === undefined ||
+    typeof entry.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/iu.test(entry.sha256)
+  ) {
+    return refuse(`does not declare artifact '${declared}' with a SHA-256.`)
+  }
+  return { path: declared, sha256: entry.sha256 }
 }
 
 /**
@@ -810,7 +889,10 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
   ): string {
     return [
       product.productId,
-      product.artifactPath ?? '',
+      // `undefined` and `''` must key apart: an empty path is refused, so it
+      // may never be answered from the primary artifact's memo.
+      optionalKeyPart(product.artifactPath),
+      optionalKeyPart(product.declaredArtifactPath),
       product.maxBytes ?? DEFAULT_MAX_BYTES,
       product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
       identityOf(product.schema),
@@ -875,28 +957,13 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       })
     }
 
-    const artifactName = manifest.artifact.path
-    if (!ARTIFACT_PATH_PATTERN.test(artifactName)) {
-      throw new NardukDataError(
-        `narduk-data manifest at ${manifestUrl} names an unusable artifact path.`,
-        'rejected',
-        manifestUrl,
-      )
-    }
-    if (product.artifactPath !== undefined && product.artifactPath !== artifactName) {
-      throw new NardukDataError(
-        `narduk-data manifest at ${manifestUrl} names artifact '${artifactName}', not the expected '${product.artifactPath}'.`,
-        'rejected',
-        manifestUrl,
-      )
-    }
-
+    const artifact = resolveArtifact(product, manifest, manifestUrl)
     const artifactUrl = joinUrl(
       origin,
       encodeURIComponent(product.productId),
       'releases',
       encodeURIComponent(manifest.releaseId),
-      encodeURIComponent(artifactName),
+      ...artifact.path.split('/').map((segment) => encodeURIComponent(segment)),
     )
     const bytes = await requestBytes(
       artifactUrl,
@@ -904,7 +971,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       'GET',
     )
     const observed = await sha256Hex(bytes)
-    if (observed !== manifest.artifact.sha256.toLowerCase()) {
+    if (observed !== artifact.sha256.toLowerCase()) {
       throw new NardukDataError(
         `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
         'checksum',

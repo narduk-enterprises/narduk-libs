@@ -1009,3 +1009,128 @@ describe('narduk-data client', () => {
     await expect(client.read(productOf())).rejects.toMatchObject({ reason: 'network' })
   })
 })
+
+describe('narduk-data client: declared artifacts', () => {
+  const SHARD_PATH = 'states/tx.json'
+  const shardUrl = `${ORIGIN}/${PRODUCT_ID}/releases/${RELEASE_ID}/states/tx.json`
+
+  /** A release whose manifest declares a nested shard beside its primary artifact. */
+  async function shardedRelease(shard: Payload = { stations: ['tx-1'] }) {
+    const release = await publishedRelease()
+    const shardText = JSON.stringify(shard)
+    const manifest = {
+      ...release.manifest,
+      artifacts: [
+        release.manifest.artifact,
+        { path: SHARD_PATH, sha256: await sha256Hex(shardText) },
+      ],
+    }
+    return { ...release, manifest, manifestText: JSON.stringify(manifest), shardText }
+  }
+
+  function shardOf(overrides: Partial<NardukDataProduct<Payload>> = {}) {
+    return productOf({ artifactPath: undefined, declaredArtifactPath: SHARD_PATH, ...overrides })
+  }
+
+  it('reads a nested artifact the manifest declares, against its own checksum', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({
+      [manifestUrl]: [async () => json(release.manifestText)],
+      [shardUrl]: [async () => json(release.shardText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    const result = await client.read(shardOf())
+
+    expect(result.data.stations).toEqual(['tx-1'])
+    expect(result.artifactUrl).toBe(shardUrl)
+    expect(result.freshness.releaseId).toBe(RELEASE_ID)
+  })
+
+  it('refuses a path the manifest does not declare before requesting it', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(release.manifestText)] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(
+      client.read(shardOf({ declaredArtifactPath: 'states/zz.json' })),
+    ).rejects.toMatchObject({ reason: 'rejected' })
+    expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl])
+  })
+
+  it('refuses a declared path that could leave the release prefix', async () => {
+    const release = await shardedRelease()
+    const escaping = '../other-product/secret.json'
+    const manifest = {
+      ...release.manifest,
+      artifacts: [{ path: escaping, sha256: 'a'.repeat(64) }],
+    }
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(JSON.stringify(manifest))] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    for (const path of [escaping, 'states//tx.json', 'a/b/c/d/e.json', '/states/tx.json']) {
+      await expect(client.read(shardOf({ declaredArtifactPath: path }))).rejects.toMatchObject({
+        reason: 'rejected',
+      })
+    }
+    expect(upstream.calls.every((call) => call.url === manifestUrl)).toBe(true)
+  })
+
+  it('checks a declared artifact against its own entry, not the primary checksum', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({
+      [manifestUrl]: [async () => json(release.manifestText)],
+      [shardUrl]: [async () => json(JSON.stringify({ stations: ['tampered'] }))],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(shardOf())).rejects.toMatchObject({ reason: 'checksum' })
+  })
+
+  it('refuses a product that sets both artifactPath and declaredArtifactPath', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({ [manifestUrl]: [async () => json(release.manifestText)] })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(shardOf({ artifactPath: ARTIFACT_PATH }))).rejects.toMatchObject({
+      reason: 'rejected',
+    })
+  })
+
+  it('never answers an empty declared path from the primary artifact memo', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [manifestUrl]: [async () => json(release.manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await client.read(productOf({ artifactPath: undefined }))
+
+    await expect(
+      client.read(productOf({ artifactPath: undefined, declaredArtifactPath: '' })),
+    ).rejects.toMatchObject({ reason: 'rejected' })
+    await expect(client.read(productOf({ artifactPath: '' }))).rejects.toMatchObject({
+      reason: 'rejected',
+    })
+  })
+
+  it('caches the primary artifact and each declared artifact as separate entries', async () => {
+    const release = await shardedRelease()
+    const upstream = fakeFetch({
+      [artifactUrl]: [async () => json(release.artifactText)],
+      [manifestUrl]: [async () => json(release.manifestText)],
+      [shardUrl]: [async () => json(release.shardText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    const primary = await client.read(productOf())
+    const shard = await client.read(shardOf())
+    const again = await client.read(shardOf())
+
+    expect(primary.data.stations).toEqual(['41008'])
+    expect(shard.data.stations).toEqual(['tx-1'])
+    expect(again.freshness.source).toBe('memo')
+    expect(upstream.calls.filter((call) => call.url === shardUrl)).toHaveLength(1)
+  })
+})
