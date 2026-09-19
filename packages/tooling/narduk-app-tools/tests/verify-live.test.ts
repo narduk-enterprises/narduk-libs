@@ -666,6 +666,12 @@ describe('verify --live behind Cloudflare Access', () => {
     expect(resolveAccessHeaders(flags(), {})).toBeUndefined()
   })
 
+  it('treats a whitespace-only variable as empty', () => {
+    expect(() =>
+      resolveAccessHeaders(flags(ACCESS), { CF_ACCESS_ID: 'id.access', CF_ACCESS_SECRET: ' \t\n' }),
+    ).toThrow('environment variable CF_ACCESS_SECRET is unset or empty')
+  })
+
   it('adds the headers to the real probe request', async () => {
     const { createServer } = await import('node:http')
     let received: Record<string, unknown> = {}

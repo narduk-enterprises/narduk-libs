@@ -185,8 +185,8 @@ function requireEnvName(value: string, flag: string): string {
 
 /**
  * The Cloudflare Access service-token headers, read from the environment
- * variables the flags name. Fails closed on an unset or empty variable, and
- * the error names the variable, never its value.
+ * variables the flags name. Fails closed on an unset, empty or whitespace-only
+ * variable, and the error names the variable, never its value.
  */
 export function resolveAccessHeaders(
   flags: Pick<VerifyFlags, 'accessClientIdEnv' | 'accessClientSecretEnv'>,
@@ -199,7 +199,7 @@ export function resolveAccessHeaders(
     [flags.accessClientIdEnv, id],
     [flags.accessClientSecretEnv, secret],
   ] as const) {
-    if (!value) throw new Error(`verify --live: environment variable ${name} is unset or empty`)
+    if (!value?.trim()) throw new Error(`verify --live: environment variable ${name} is unset or empty`)
   }
   return { 'cf-access-client-id': id!, 'cf-access-client-secret': secret! }
 }
