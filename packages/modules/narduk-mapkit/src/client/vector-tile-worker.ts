@@ -46,7 +46,12 @@ export interface VectorTileDecodeResponse {
 /** The part of a `Worker` this module uses, so a test can supply a fake. */
 export interface VectorTileWorkerPort {
   addEventListener: (type: 'message', listener: (event: { data: unknown }) => void) => void
-  postMessage: (message: unknown, transfer?: Transferable[]) => void
+  /**
+   * Method syntax on purpose: a real `Worker`'s `postMessage` requires its
+   * transfer list, and only bivariant parameter checking lets one satisfy a
+   * port that can also be called without one.
+   */
+  postMessage(message: unknown, transfer?: Transferable[]): void
   removeEventListener?: (type: 'message', listener: (event: { data: unknown }) => void) => void
 }
 
@@ -210,7 +215,11 @@ export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVector
           z: tile.z,
         }
         try {
-          worker.postMessage(request, transfer ? [buffer] : undefined)
+          // Two calls rather than one with `undefined`: a real `Worker` reads
+          // a second argument as its transfer list or as an options object,
+          // and which one it picks for `undefined` is not worth relying on.
+          if (transfer) worker.postMessage(request, [buffer])
+          else worker.postMessage(request)
         } catch (reason) {
           settle(id)?.reject(reason instanceof Error ? reason : new Error(String(reason)))
         }

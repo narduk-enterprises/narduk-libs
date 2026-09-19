@@ -39,7 +39,8 @@ function createFakeCanvas(width: number, height: number): FakeCanvas {
         op: 'stroke',
         globalAlpha: context.globalAlpha,
         lineWidth: context.lineWidth,
-        strokeStyle: context.strokeStyle,
+        // Widened for DOM compatibility; the painter only ever writes a color.
+        strokeStyle: String(context.strokeStyle),
       }),
   }
   return { calls, height, width, getContext: () => context }

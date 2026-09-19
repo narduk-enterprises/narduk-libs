@@ -43,7 +43,12 @@ export interface VectorTileWorkerPort {
     addEventListener: (type: 'message', listener: (event: {
         data: unknown;
     }) => void) => void;
-    postMessage: (message: unknown, transfer?: Transferable[]) => void;
+    /**
+     * Method syntax on purpose: a real `Worker`'s `postMessage` requires its
+     * transfer list, and only bivariant parameter checking lets one satisfy a
+     * port that can also be called without one.
+     */
+    postMessage(message: unknown, transfer?: Transferable[]): void;
     removeEventListener?: (type: 'message', listener: (event: {
         data: unknown;
     }) => void) => void;
