@@ -394,6 +394,7 @@ export interface FakeMapKitMapOptions {
         };
     };
     /** `mapkit.FeatureVisibility`'s values. */
+    showsMapTypeControl?: boolean;
     showsScale?: string;
     showsZoomControl?: boolean;
     visibleMapRect?: FakeMapRectData;
@@ -417,6 +418,7 @@ export interface FakeMapKitMap extends EventTarget {
     set padding(value: FakePaddingData);
     region: FakeCoordinateRegion;
     selectedAnnotation: FakeMapKitAnnotation | null;
+    showsMapTypeControl: boolean;
     showsScale: string;
     showsZoomControl: boolean;
     get visibleMapRect(): FakeMapRect;

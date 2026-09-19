@@ -14,7 +14,7 @@ export interface MapKitRateLimitOptions {
 export interface ModuleOptions {
     /** Register `<AppMapKit>`. */
     component: boolean;
-    /** Register `useMapKit()`. */
+    /** Register `useMapKit()`, `useMapKitView()` and `useMapKitFullscreen()`. */
     composables: boolean;
     /**
      * Add the stylesheet for the `./marks` DOM marks (`MAPKIT_MARKS_CSS`) to the

@@ -725,6 +725,7 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     mapTypeValue: string | undefined
     colorSchemeValue: string | undefined
     showsZoomControlValue: boolean | undefined
+    showsMapTypeControlValue: boolean | undefined
     showsScaleValue: string | undefined
     paddingValue: FakePadding | undefined
 
@@ -761,6 +762,9 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       if (options.colorScheme !== undefined) this.colorSchemeValue = options.colorScheme
       if (options.showsZoomControl !== undefined) {
         this.showsZoomControlValue = options.showsZoomControl
+      }
+      if (options.showsMapTypeControl !== undefined) {
+        this.showsMapTypeControlValue = options.showsMapTypeControl
       }
       if (options.showsScale !== undefined) this.showsScaleValue = options.showsScale
       if (options.padding !== undefined) this.paddingValue = new Padding(options.padding)
@@ -847,6 +851,14 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
     set showsZoomControl(next: boolean) {
       this.showsZoomControlValue = next
+    }
+
+    get showsMapTypeControl(): boolean {
+      return this.showsMapTypeControlValue ?? this.unset('showsMapTypeControl')
+    }
+
+    set showsMapTypeControl(next: boolean) {
+      this.showsMapTypeControlValue = next
     }
 
     get showsScale(): string {
