@@ -208,6 +208,25 @@ describe('reviewed D1 baseline process', () => {
       ),
     ).toThrow('only for untracked')
   })
+  it('refuses an ambiguous source name before a registration can write a ledger', () => {
+    const f = untracked()
+    writeFileSync(
+      f.options.configFile,
+      JSON.stringify({ sources: [{ source: 'read-model', path: 'sql', sourceVersion: '1' }] }),
+    )
+    const before = f.calls.length
+    expect(() =>
+      registerMigrationBaseline(
+        { ...f.registration, source: 'read-model' },
+        f.artifact,
+        f.executor,
+      ),
+    ).toThrow('app-owned baseline source')
+    expect(f.calls.length).toBe(before)
+    expect(
+      f.db.prepare("SELECT name FROM sqlite_master WHERE name='_narduk_migrations'").all(),
+    ).toEqual([])
+  })
   it('rechecks schema under the shared lock and retains the remote lock on a registration failure', () => {
     const f = untracked()
     const executor: MigrationExecutor = (args, cwd, json) => {

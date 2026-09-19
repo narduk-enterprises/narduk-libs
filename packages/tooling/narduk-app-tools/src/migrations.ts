@@ -1096,12 +1096,7 @@ function baselineAction(
   const config = resolveMigrationConfigVersions(loaded.config, loaded.baseDir)
   // A new app-owned schema snapshot is not an attestation that a package's
   // historical INSERT/UPDATE/DELETE statements ran. Never invent those receipts.
-  if (
-    config.sources.length !== 1 ||
-    config.adoptions.length ||
-    options.source.startsWith('@') ||
-    options.source.startsWith('package:')
-  ) {
+  if (config.sources.length !== 1 || config.adoptions.length || !isAppSource(options.source)) {
     throw new Error(
       'An untracked database needs one dedicated app-owned baseline source, not inferred package history',
     )
