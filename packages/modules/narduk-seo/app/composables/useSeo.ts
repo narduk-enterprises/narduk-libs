@@ -60,7 +60,14 @@ export function useSeo(options: SeoOptions) {
     typeof siteConfig.url === 'string' && siteConfig.url ? siteConfig.url : fallbackSiteUrl
   const siteName =
     typeof siteConfig.name === 'string' && siteConfig.name ? siteConfig.name : fallbackSiteName
-  const resolvedCanonicalUrl = resolveSafeCanonicalUrl(canonicalUrl ?? route.path, siteUrl)
+  // `route.path` is both the default and the fallback: when an explicit
+  // `canonicalUrl` is refused, the page's own route is a better answer than the
+  // site root, which would be wrong on every page at once.
+  const resolvedCanonicalUrl = resolveSafeCanonicalUrl(
+    canonicalUrl ?? route.path,
+    siteUrl,
+    route.path,
+  )
   const resolveTitle = () => toValue(title)
   const resolveDescription = () => toValue(description)
   // noindex is not a privacy classification: public unlisted pages can explicitly

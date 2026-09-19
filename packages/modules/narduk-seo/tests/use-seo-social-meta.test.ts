@@ -125,15 +125,46 @@ describe('useSeo canonical resolution', () => {
     expect(canonicalHref).toBe(SAFE_ROOT)
   })
 
-  it.each(poisoned)('falls back to the site root when canonicalUrl is %s', async (canonicalUrl) => {
+  it.each(poisoned)('falls back to the route when canonicalUrl is %s', async (canonicalUrl) => {
     const { canonicalHref, meta } = await runUseSeo({
       ...BASE,
       ogImage: false,
       canonicalUrl,
     })
 
-    expect(meta.ogUrl).toBe(SAFE_ROOT)
-    expect(canonicalHref).toBe(SAFE_ROOT)
+    expect(meta.ogUrl).toBe(`${SITE}/pages/example`)
+    expect(canonicalHref).toBe(`${SITE}/pages/example`)
+  })
+
+  it.each(poisoned)(
+    'falls back to the site root when canonicalUrl is %s and the route is poisoned too',
+    async (canonicalUrl) => {
+      const { canonicalHref, meta } = await runUseSeo(
+        { ...BASE, ogImage: false, canonicalUrl },
+        { path: '//attacker.example' },
+      )
+
+      expect(meta.ogUrl).toBe(SAFE_ROOT)
+      expect(canonicalHref).toBe(SAFE_ROOT)
+    },
+  )
+
+  /**
+   * The lakestat.us regression (lakestat-us#110, narduk-libs#590). An app built
+   * its canonical from `runtimeConfig.public.siteUrl`, which is unset in the
+   * deployed Worker, so every page handed `useSeo` a `http://localhost:3000/...`
+   * absolute. Refusing it is correct; answering the site root made every page on
+   * the site declare the root as its own canonical and `og:url` — valid,
+   * plausible, and wrong everywhere at once. The page's own route is the answer.
+   */
+  it('keeps the page identity when an app hands over a localhost absolute', async () => {
+    const { canonicalHref, meta } = await runUseSeo(
+      { ...BASE, ogImage: false, canonicalUrl: 'http://localhost:3000/lakes/texas' },
+      { path: '/lakes/texas' },
+    )
+
+    expect(meta.ogUrl).toBe(`${SITE}/lakes/texas`)
+    expect(canonicalHref).toBe(`${SITE}/lakes/texas`)
   })
 
   it('keeps a normal path and query from the route', async () => {
