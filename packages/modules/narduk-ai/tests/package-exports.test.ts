@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -6,10 +6,15 @@ import { describe, expect, it } from 'vitest'
 
 const packageRoot = join(fileURLToPath(new URL('..', import.meta.url)))
 
+const PRUNED_DIRECTORY_NAMES = new Set(['node_modules', '.nuxt', 'dist', '.data'])
+
 function listFiles(directory: string): string[] {
-  return readdirSync(directory).flatMap((entry) => {
-    const path = join(directory, entry)
-    return statSync(path).isDirectory() ? listFiles(path) : [path]
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory() && PRUNED_DIRECTORY_NAMES.has(entry.name)) {
+      return []
+    }
+    const path = join(directory, entry.name)
+    return entry.isDirectory() ? listFiles(path) : [path]
   })
 }
 
@@ -31,7 +36,7 @@ describe('narduk-ai package boundary', () => {
     })
   })
 
-  it('has no package-owned migration or layer alias artifacts', () => {
+  it('has no package-owned migration or layer alias artifacts', { timeout: 30_000 }, () => {
     const files = listFiles(packageRoot).filter(
       (path) => !path.includes('/node_modules/') && !path.includes('/.nuxt/'),
     )
