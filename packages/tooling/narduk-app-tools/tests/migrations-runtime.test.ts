@@ -68,6 +68,29 @@ describe('D1 migration database protocol', () => {
     expect(f.db.prepare('SELECT name FROM sqlite_master').all()).toEqual([])
     expect(f.calls.every((args) => args.includes('--json') && args.includes('--config'))).toBe(true)
   })
+  it.each([false, true])(
+    'refuses untracked existing schema even with an empty manifest: %s',
+    (empty) => {
+      const f = fixture()
+      f.db.exec('CREATE TABLE untracked (id TEXT);')
+      if (empty) rmSync(join(f.root, 'sql', '0001.sql'))
+      expect(() => inspectMigrations(f.options, f.executor)).toThrow(
+        'explicit reviewed baseline evidence',
+      )
+      expect(() => runMigrations(f.options, f.executor)).toThrow(
+        'explicit reviewed baseline evidence',
+      )
+      expect(f.calls.every((args) => args.includes('--json'))).toBe(true)
+      expect(
+        f.db.prepare(`SELECT name FROM sqlite_master WHERE name='${MIGRATION_LOCK_TABLE}'`).all(),
+      ).toEqual([])
+    },
+  )
+  it('allows a fresh database that only contains D1 internal tables', () => {
+    const f = fixture()
+    f.db.exec('CREATE TABLE _cf_KV (key TEXT);')
+    expect(inspectMigrations(f.options, f.executor).apply).toBe(1)
+  })
   it('applies once, records checksum, captures recovery before SQL, and releases the lock', () => {
     const f = fixture()
     const result = runMigrations(f.options, f.executor)

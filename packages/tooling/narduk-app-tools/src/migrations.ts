@@ -851,10 +851,32 @@ function inspectDatabase(options: MigrationRunOptions, db: MigrationDatabase): M
     validateLedgerSchema(db.rows(migrationLedgerInfoSql()))
     stableRows = db.rows<MigrationLedgerRow>(migrationLedgerRowsSql())
   }
+  const legacyRows = readLegacyRows(db, tables)
+  const applicationTables = [...tables].filter(
+    (name) =>
+      !name.startsWith('sqlite_') &&
+      !name.startsWith('_cf_') &&
+      ![
+        MIGRATION_LEDGER_TABLE,
+        MIGRATION_LOCK_TABLE,
+        '_applied_migrations',
+        'd1_migrations',
+      ].includes(name),
+  )
+  if (
+    (options.strict ?? true) &&
+    stableRows.length === 0 &&
+    legacyRows.length === 0 &&
+    applicationTables.length > 0
+  ) {
+    throw new Error(
+      'Existing application schema has no migration history; explicit reviewed baseline evidence is required before migration or a current-status claim',
+    )
+  }
   return planMigrations({
     adoptions: config.adoptions,
     migrations,
-    ledgerRows: [...stableRows, ...readLegacyRows(db, tables)],
+    ledgerRows: [...stableRows, ...legacyRows],
     schemaEvidence: readSchemaEvidence(config, db),
     strict: options.strict ?? true,
   })

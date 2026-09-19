@@ -207,8 +207,12 @@ Existing native `d1_migrations` and legacy `_applied_migrations` histories
 require explicit reviewed adoption mappings and schema evidence; the runner does
 not infer a baseline or replay SQL just because its own ledger is absent.
 Read-model rebuilds or inline schema initializers with no ledger are
-**unverified**, not current. Applied SQL is immutable; append a correction
-instead of editing it.
+**unverified**, not current. The runner refuses existing application tables with
+empty or absent migration histories, even when the manifest contains no SQL.
+Review and establish the baseline through the owning schema process first; an
+empty manifest is not an exemption. Provider-internal `_cf_*` and SQLite tables
+do not count as application schema. Applied SQL is immutable; append a
+correction instead of editing it.
 
 Provider references:
 [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) and
