@@ -199,10 +199,11 @@ describe('reviewed D1 baseline process', () => {
     tracked.db.exec(
       "CREATE TABLE _applied_migrations (filename TEXT); INSERT INTO _applied_migrations VALUES ('old.sql')",
     )
+    const trackedArtifact = tracked.capture()
     expect(() =>
       registerMigrationBaseline(
-        { ...tracked.registration, expectedDigest: tracked.capture().digest },
-        tracked.capture(),
+        { ...tracked.registration, expectedDigest: trackedArtifact.digest },
+        trackedArtifact,
         tracked.executor,
       ),
     ).toThrow('only for untracked')
