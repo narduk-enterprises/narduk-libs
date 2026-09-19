@@ -1,5 +1,21 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.2
+
+### Patch Changes
+
+- 448e86f: `createNardukDataClient` no longer re-downloads an unchanged release
+  when its TTL lapses. If the manifest still names the same release and artifact
+  checksum, the client keeps the cached value (and its object identity) and
+  fetches only the manifest.
+- 7142305: `useSsrNow(key, { tickMs })` also re-reads the browser clock when the
+  page becomes visible again, so a viewer returning to a background tab sees
+  current relative ages at once instead of after the next (throttled) tick. The
+  listener is registered only for a ticking clock and removed on unmount. This
+  closes the last gap between `useSsrNow` and the Buoys map clock it
+  generalises. `create-narduk-app` is a companion patch so the generator pin
+  moves with the core patch.
+
 ## 0.10.1
 
 ### Patch Changes
