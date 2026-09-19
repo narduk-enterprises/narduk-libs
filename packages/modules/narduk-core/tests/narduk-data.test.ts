@@ -403,6 +403,22 @@ describe('narduk-data client', () => {
     expect(upstream.calls).toHaveLength(3)
   })
 
+  it('answers a redirect as an HTTP failure without following it', async () => {
+    const seen: Array<RequestRedirect | undefined> = []
+    const upstream = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(init?.redirect)
+      return new Response(null, {
+        headers: { location: 'https://elsewhere.example/' },
+        status: 302,
+      })
+    }) as unknown as typeof fetch
+    const client = createNardukDataClient({ fetch: upstream, now: () => NOW, origin: ORIGIN })
+
+    await expect(client.read(productOf())).rejects.toMatchObject({ reason: 'http', status: 302 })
+    // `manual`: the Workers runtime refuses `redirect: 'error'` (narduk-libs#563).
+    expect(seen).toEqual(['manual'])
+  })
+
   it('never retries a 4xx', async () => {
     const upstream = fakeFetch({ [manifestUrl]: [async () => json('', 404)] })
     const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })

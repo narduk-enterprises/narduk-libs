@@ -1783,9 +1783,10 @@ the Nitro auto-import inside an app that has the layer installed.
   plugs in without this module generating ids. `accept`, `user-agent` and
   `x-request-id` are managed and cannot be overridden; `authorization`, `cookie`
   and `proxy-authorization` are dropped rather than forwarded; every URL is
-  pinned to the configured origin and a redirect is an error. Single-flight
-  means the joined callers are answered by a request carrying the first caller's
-  id.
+  pinned to the configured origin and a redirect is an error (sent as
+  `redirect: 'manual'`, which the Workers runtime accepts; a 3xx is never
+  followed). Single-flight means the joined callers are answered by a request
+  carrying the first caller's id.
 
 Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
 `http` | `missing` | `network` | `rejected` | `schema` | `timeout` |

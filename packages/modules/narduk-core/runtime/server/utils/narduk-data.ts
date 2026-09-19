@@ -531,7 +531,9 @@ async function attemptRequest(
       method,
       // A published artifact never redirects; following one off-origin would
       // defeat the origin pin, so a redirect is an error rather than a hop.
-      redirect: 'error',
+      // `manual`, not `error`: the Workers runtime rejects `redirect: 'error'`
+      // outright, and a 3xx (or an opaque redirect) is still not `ok` below.
+      redirect: 'manual',
       signal: timeoutSignal,
     })
     if (!response.ok) {
