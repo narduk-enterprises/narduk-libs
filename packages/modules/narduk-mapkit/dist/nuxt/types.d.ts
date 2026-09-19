@@ -17,6 +17,11 @@ export interface ModuleOptions {
     /** Register `useMapKit()`. */
     composables: boolean;
     /**
+     * Add the stylesheet for the `./marks` DOM marks (`MAPKIT_MARKS_CSS`) to the
+     * app. Off by default: only an app that draws marks with `./marks` needs it.
+     */
+    marks: boolean;
+    /**
      * App-wide default for the `libraries` prop. MapKit JS 6's `mapkit.core.js`
      * is a stub, so without `'map'` there is no `mapkit.Map` at all -- which is
      * why an EMPTY list is a configuration error rather than a silent fallback.

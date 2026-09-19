@@ -279,3 +279,51 @@ describe('the shipped stylesheet (K-6)', () => {
     expect(nuxt.options.css).toStrictEqual([])
   })
 })
+
+describe('the opt-in marks stylesheet (narduk-libs#517)', () => {
+  it('adds nothing unless the app opts in', async () => {
+    const nuxt = await setup()
+
+    expect(nuxt.options.css.some((path) => /narduk-mapkit-marks\.css$/.test(path))).toBe(false)
+  })
+
+  it('goes after the host chrome and ahead of the app stylesheets', async () => {
+    const nuxt = nuxtStub()
+    nuxt.options.css.push('~/assets/css/app.css')
+    await runModule(nuxt, { marks: true })
+
+    expect(nuxt.options.css).toHaveLength(3)
+    expect(nuxt.options.css[0]).toMatch(/narduk-mapkit\.css$/)
+    expect(nuxt.options.css[1]).toMatch(/narduk-mapkit-marks\.css$/)
+    expect(nuxt.options.css[2]).toBe('~/assets/css/app.css')
+  })
+
+  it('goes first when the component, and so the host chrome, is off', async () => {
+    const nuxt = await setup({ component: false, marks: true })
+
+    expect(nuxt.options.css).toHaveLength(1)
+    expect(nuxt.options.css[0]).toMatch(/narduk-mapkit-marks\.css$/)
+  })
+
+  it('carries every mark class and a fallback for every custom property', async () => {
+    const nuxt = await setup({ marks: true })
+    const template = nuxt.options.build.templates.find(
+      (candidate) => (candidate as { filename?: string }).filename === 'narduk-mapkit-marks.css',
+    ) as { getContents: () => string }
+    const css = template.getContents()
+
+    for (const name of [
+      '.mk-mark',
+      '.mk-pin',
+      '.mk-pin-disc',
+      '.mk-hit',
+      '.mk-name',
+      '.mk-pip',
+      '.mk-void',
+    ]) {
+      expect(css).toContain(name)
+    }
+    // A host themes marks without a wrapper class, so no var() may go bare.
+    expect(css).not.toMatch(/var\(--mk-[a-z0-9-]+\)/)
+  })
+})
