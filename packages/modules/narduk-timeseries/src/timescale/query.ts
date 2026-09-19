@@ -308,9 +308,10 @@ export interface RefreshRollupsInput {
  * narrower than a 15m, 1h or 1d bucket. TimescaleDB has historically refused
  * a refresh window that does not cover a bucket ("refresh window too small").
  * The requested range is snapped outward onto `ROLLUP_BUCKET_MS[level]` first,
- * then walked in `maxWindowMs` steps from that aligned start so neighbours
- * abut and no CALL exceeds the level ceiling. A leftover narrower than one
- * bucket is folded into the previous window (narduk-libs#293).
+ * then walked in whole-bucket steps no wider than `maxWindowMs` so neighbours
+ * abut, every overlapping bucket is covered, and no CALL exceeds the level
+ * ceiling. A leftover narrower than one bucket is folded into the previous
+ * window (narduk-libs#293).
  *
  * `refresh_continuous_aggregate` is a procedure, so each is a `CALL`, and it
  * cannot run inside a transaction block -- run them one at a time, not inside
@@ -380,10 +381,10 @@ function alignUp(ms: number, bucketMs: number): number {
 }
 
 /**
- * Snap `range` outward onto `bucketMs`, then walk `maxWindowMs` steps from
- * that aligned start. Snapping each raw slice on its own would overlap
- * neighbours by up to one bucket and push a full-size window over the
- * ceiling (narduk-libs#293 / PR 550).
+ * Snap `range` outward onto `bucketMs`, then walk whole-bucket steps no
+ * wider than `maxWindowMs`. A raw step that is not a multiple of the bucket
+ * would hand Timescale windows whose inscribed complete-bucket range skips
+ * a bucket between neighbours (narduk-libs#293 / PR 550).
  *
  * A leftover narrower than one bucket is folded into the previous window so
  * the last CALL is never a sliver Timescale can refuse.
@@ -391,9 +392,10 @@ function alignUp(ms: number, bucketMs: number): number {
 function splitRefreshWindows(range: TimeRange, bucketMs: number, maxWindowMs: number): TimeRange[] {
   const rangeStart = alignDown(range.start.getTime(), bucketMs)
   const rangeEnd = alignUp(range.end.getTime(), bucketMs)
+  const stepMs = Math.max(bucketMs, Math.floor(maxWindowMs / bucketMs) * bucketMs)
   const raw: Array<{ end: number; start: number }> = []
-  for (let cursor = rangeStart; cursor < rangeEnd; cursor += maxWindowMs) {
-    raw.push({ end: Math.min(cursor + maxWindowMs, rangeEnd), start: cursor })
+  for (let cursor = rangeStart; cursor < rangeEnd; cursor += stepMs) {
+    raw.push({ end: Math.min(cursor + stepMs, rangeEnd), start: cursor })
   }
   if (raw.length >= 2) {
     const last = raw[raw.length - 1]!

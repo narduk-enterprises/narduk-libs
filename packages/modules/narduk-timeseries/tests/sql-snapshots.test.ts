@@ -404,9 +404,33 @@ describe('retention plan', () => {
       maxWindowMs: 90_000,
       range,
     })
-    expect(statements).toHaveLength(1)
-    expect(statements[0]!.range.start).toEqual(start)
-    expect(statements[0]!.range.end).toEqual(new Date('2026-01-01T00:02:00.000Z'))
+    // 90s is not a 1m multiple, so the walk floors to 1m. The 70s request
+    // snaps to two minutes; both windows are aligned and cover every minute.
+    expect(statements.map((statement) => statement.range)).toEqual([
+      { end: new Date('2026-01-01T00:01:00.000Z'), start },
+      {
+        end: new Date('2026-01-01T00:02:00.000Z'),
+        start: new Date('2026-01-01T00:01:00.000Z'),
+      },
+    ])
+  })
+
+  it('covers every 1m bucket when maxWindowMs is not a bucket multiple', () => {
+    const start = new Date('2026-01-01T00:00:00.000Z')
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      maxWindowMs: 90_000,
+      range: { end: new Date('2026-01-01T00:05:00.000Z'), start },
+    })
+    expect(statements).toHaveLength(5)
+    for (const [index, statement] of statements.entries()) {
+      expect(statement.range.start).toEqual(
+        new Date(start.getTime() + index * ROLLUP_BUCKET_MS['1m']),
+      )
+      expect(statement.range.end).toEqual(
+        new Date(start.getTime() + (index + 1) * ROLLUP_BUCKET_MS['1m']),
+      )
+    }
   })
 
   it('keeps an unaligned 14-day 1m backfill inside the ceiling and abutting', () => {
