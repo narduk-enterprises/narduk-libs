@@ -1,6 +1,5 @@
 ---
 '@narduk-enterprises/narduk-mapkit': minor
-'@narduk-enterprises/narduk-mapkit-nuxt': minor
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
@@ -16,12 +15,13 @@ wrapping at the antimeridian, stopping at the poles -- so a river drawn a pixel
 inside the next tile is still tappable. `projectToTilePoint`, `hitTestTile` and
 `hitTestNeighbours` are exported for callers that hold their own tiles.
 
-`useMapKitVectorTiles()` in the Nuxt module builds the PMTiles reader and the
-overlay source, rebuilds them when the archive url changes, repaints a style
-change from the decoded tiles rather than refetching, and terminates the decoder
-worker with the Vue scope. The worker factory and the `pmtiles` reader stay the
-app's, because a published worker chunk is the one thing Vite, webpack and Nuxt
-do not agree on.
+`useMapKitVectorTiles()` in the Nuxt module -- which this changeset cannot name,
+because the adapter is frozen at 2.0.x (narduk-libs#405, #421) -- builds the
+PMTiles reader and the overlay source, rebuilds them when the archive url
+changes, repaints a style change from the decoded tiles rather than refetching,
+and terminates the decoder worker with the Vue scope. The worker factory and the
+`pmtiles` reader stay the app's, because a published worker chunk is the one
+thing Vite, webpack and Nuxt do not agree on.
 
 Two client interfaces were also corrected against the browser types they stand
 in for: `VectorTileCanvasContext.strokeStyle` was too narrow for a real
