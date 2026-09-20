@@ -1,5 +1,28 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.11
+
+### Patch Changes
+
+- 9f6038a: Stop the `playwright-dev-port` suite asserting a hash property the
+  dev-port derivation never had. Four worktree paths into a 1000-port span
+  collide at the birthday rate (0.599%), which is the rate the old single-sample
+  test failed at — it blocked the narduk-core 2.6.3 release on 2026-09-19. The
+  suite now asserts what the implementation actually promises: derived ports
+  spread widely enough that lanes are practically unable to collide, and a
+  residual collision stays loud rather than silently attaching to another lane's
+  dev server. Test-only; `resolveLocalDevPort` behaviour is unchanged.
+  `create-narduk-app` moves only because it pins the testkit version it
+  generates against.
+- 159e762: Re-release so the generator's `@narduk-enterprises/narduk-shell` pin
+  moves with that package's `NeFilterBar` release (0.4.0 → 0.5.0).
+
+  The pin literal in `src/manifest.ts` is deliberately not hand-edited here:
+  `versions:check` requires it to equal narduk-shell's **live** `package.json`
+  version rather than a preview of its next one, so `versions:sync` re-pins it
+  when `release:version` actually runs. This changeset is what makes that
+  release happen in the same wave, which is what `release-plan:check` asks for.
+
 ## 0.10.10
 
 ### Patch Changes
