@@ -669,6 +669,23 @@ Repeat `--path` to probe several routes; each gets its own `10.N.M` sub-checks,
 and a single route keeps the plain `10.M` ids. Probes are sequential against one
 origin, because a burst looks like an attack to a WAF.
 
+**With no `--path`, the probe reads `--base-url` exactly as given** -- a
+`--base-url https://app.example/login` probes `/login`, not `/`. It used to
+resolve `/` against the base URL, which silently discarded the path the caller
+asked for; on an authenticated app that root is the one route that refuses the
+request, so the check reported the headers of a route nobody asked about
+([#632](https://github.com/narduk-enterprises/narduk-libs/issues/632)). An
+explicit `--path` still resolves against the origin, so `/map` means the same
+route whatever path the base URL carried.
+
+`doctor --adoption --live` reaches the same evaluator, and defaults its probe to
+the app's declared `deployment.liveProof.smokePath` rather than to `/`, for the
+same reason. It reads `liveProof.healthPath` and `liveProof.buildVersionHeader`
+too -- the fields `foundation:check:deployment` item 12.3 already requires -- so
+requirements 5, 8 and 12 are decided against the routes the app says it serves.
+The hard-coded `/`, `/api/health` and `x-build-version` remain the fallback for
+an app that declares no `liveProof` block.
+
 What it decides, per route:
 
 | Sub-check                                            | Proven when                                                                                                                                                                                                        |

@@ -6,6 +6,7 @@ import {
   ADOPTION_REQUIREMENT_COUNT,
   formatAdoptionSummary,
   matchesCommit,
+  resolveLiveProofContract,
   runAdoptionCheck,
   type AdoptionArtefact,
   type AdoptionLiveReality,
@@ -367,6 +368,156 @@ describe('the live half', () => {
     // Even a healthy route only decides that the route answered. Whether the
     // counts it reports match the data served is the app's own contract tests.
     expect(req(healthy, 'R12').enforcement).toBe('partially-enforced')
+  })
+})
+
+describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () => {
+  const STAMP = '48ba389bdb1b'
+
+  /**
+   * The case the hard-coded paths get wrong: an authenticated app.
+   *
+   * `operator-portal` is the real one. Its boundary is narduk-auth, so `/`
+   * and `/api/health` correctly refuse an anonymous caller, and it declares
+   * the two routes that do answer. Probing the hard-coded pair reported a
+   * working app as having a broken delivery path (R5) and a broken health
+   * contract (R12) -- and rewarded an app that left its health route open to
+   * anonymous callers over one that did not.
+   */
+  function writeAuthenticatedBaseline(root: string): void {
+    writeAdoptionBaseline(root)
+    const block = defaultDeploymentBlock({ appSlug: 'fixture' })
+    writeJson(root, 'Config/cloudflare-app.json', {
+      access: { exposureClass: 'authenticated-public' },
+      bindings: { r2: [] },
+      deployment: {
+        ...block,
+        // Spelled out rather than spread: `defaultDeploymentBlock` is typed
+        // `Record<string, unknown>`, so `block.liveProof` is not spreadable.
+        liveProof: {
+          attempts: 6,
+          buildVersionHeader: 'x-build-version',
+          healthPath: '/healthz',
+          intervalSeconds: 10,
+          smokePath: '/login',
+        },
+      },
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      schemaVersion: 1,
+      worker: { nitroPreset: 'cloudflare_module' },
+    })
+  }
+
+  /** Only the two declared routes answer; everything else is behind the
+   * boundary, which is the whole point of the fixture. */
+  function fakeAuthenticatedLive(): AdoptionLiveReality {
+    const stamped: Record<string, string> = { 'x-build-version': STAMP }
+    const bare: Record<string, string> = {}
+    return {
+      async read(url) {
+        const { pathname } = new URL(url)
+        if (pathname === '/login') return { headers: stamped, status: 200 }
+        if (pathname === '/healthz') return { headers: bare, status: 200 }
+        return { headers: bare, status: 401 }
+      },
+    }
+  }
+
+  /** A header probe that records where it was pointed. */
+  function recordingProbe(into: string[]): HeaderProbe {
+    return async (url) => {
+      into.push(url)
+      return { headers: CONFORMANT_HEADERS, status: 200, url }
+    }
+  }
+
+  it('reads the build stamp from the declared smoke path, not the root', async () => {
+    const artefact = await run(writeAuthenticatedBaseline, {
+      expectSha: SHA,
+      headerProbe: fakeHeaderProbe,
+      liveReality: fakeAuthenticatedLive(),
+      liveUrl: 'https://ops.example',
+    })
+
+    // Against the root this was `unknown` -- "the live origin served no
+    // x-build-version header" -- and a required unknown blocks declaration.
+    expect(req(artefact, 'R5').verdict).toBe('pass')
+    expect(req(artefact, 'R5').detail).toContain('/login')
+    expect(artefact.live?.buildVersion).toBe(STAMP)
+    expect(artefact.live?.smokeUrl).toBe('https://ops.example/login')
+  })
+
+  it('reads the declared health path, not a hardcoded /api/health', async () => {
+    const artefact = await run(writeAuthenticatedBaseline, {
+      headerProbe: fakeHeaderProbe,
+      liveReality: fakeAuthenticatedLive(),
+      liveUrl: 'https://ops.example',
+    })
+
+    // Against `/api/health` this was a FAIL on a 401 the app is right to send.
+    expect(req(artefact, 'R12').verdict).toBe('pass')
+    expect(req(artefact, 'R12').evidence).toContain('https://ops.example/healthz')
+    expect(artefact.live?.healthUrl).toBe('https://ops.example/healthz')
+  })
+
+  it('points requirement 8 at the declared smoke path', async () => {
+    const probed: string[] = []
+    await run(writeAuthenticatedBaseline, {
+      headerProbe: recordingProbe(probed),
+      liveReality: fakeAuthenticatedLive(),
+      liveUrl: 'https://ops.example',
+    })
+
+    expect(probed).toEqual(['https://ops.example/login'])
+  })
+
+  it('still lets an explicit --path override the declaration', async () => {
+    const probed: string[] = []
+    await run(writeAuthenticatedBaseline, {
+      headerPaths: ['/map'],
+      headerProbe: recordingProbe(probed),
+      liveReality: fakeAuthenticatedLive(),
+      liveUrl: 'https://ops.example',
+    })
+
+    expect(probed).toEqual(['https://ops.example/map'])
+  })
+
+  it('falls back to the standard defaults only when nothing is declared', () => {
+    expect(resolveLiveProofContract(null)).toEqual({
+      buildVersionHeader: 'x-build-version',
+      healthPath: '/api/health',
+      smokePath: '/',
+    })
+    // A declaration wins outright, and the header is matched case-insensitively.
+    expect(
+      resolveLiveProofContract({
+        buildVersionHeader: 'X-Build-Version',
+        healthPath: '/healthz',
+        smokePath: '/login',
+      }),
+    ).toEqual({
+      buildVersionHeader: 'x-build-version',
+      healthPath: '/healthz',
+      smokePath: '/login',
+    })
+  })
+
+  it('probes the root when the app declares the default paths', async () => {
+    // The unchanged half: an app that declares `/` and `/api/health` must
+    // behave exactly as it did before, or this fix is a breaking change to
+    // every public app already reporting green.
+    const probed: string[] = []
+    const artefact = await run(writeAdoptionBaseline, {
+      headerProbe: recordingProbe(probed),
+      liveReality: fakeLive({ 'x-build-version': STAMP }),
+      liveUrl: 'https://buoystat.us',
+    })
+
+    expect(probed).toEqual(['https://buoystat.us/'])
+    expect(artefact.live?.smokeUrl).toBe('https://buoystat.us/')
+    expect(artefact.live?.healthUrl).toBe('https://buoystat.us/api/health')
+    expect(req(artefact, 'R12').verdict).toBe('pass')
   })
 })
 
