@@ -18,7 +18,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { runConsumerCommand } from './consumer-smoke-command.mjs'
-import { consumerSmokePhases, consumerSmokeTestEnv, mapPackages } from './consumer-smoke-phases.mjs'
+import {
+  consumerSmokePhases,
+  consumerSmokeTestEnv,
+  isGeneratedBuildPhase,
+  mapPackages,
+} from './consumer-smoke-phases.mjs'
 import {
   assertConsumerDependencyScope,
   consumerSmokeGeneratorArgs,
@@ -1084,6 +1089,7 @@ async function proveGeneratedConsumer({
   } else {
     // The release boundary needs compatibility proof, not a second full
     // scaffold-quality run. The generated app's own quality command is intact.
+    let provedFontFixture = false
     for (const phase of consumerSmokePhases(
       readJson(join(generatedDirectory, 'package.json')).scripts,
     )) {
@@ -1093,15 +1099,27 @@ async function proveGeneratedConsumer({
           cwd: generatedDirectory,
           label: `generated app ${phase}`,
         })
+        // Bound to whichever phase actually runs `nuxt build`, not to one
+        // script name: the generated `quality:static` called `build` until
+        // narduk-libs#617 moved it to `build:ci` (the script CI builds with),
+        // and a `phase === 'build'` literal here would have silently stopped
+        // asserting anything at that moment -- the fixture could break and
+        // this gate would not notice.
         if (
-          phase === 'build' &&
-          !output.includes('[consumer-smoke] Unused Fontshare provider disabled')
+          isGeneratedBuildPhase(phase) &&
+          !output.includes('[consumer-smoke] Unused font catalog providers disabled:')
         ) {
-          throw new Error('The generated build did not activate its font provider fixture.')
+          throw new Error(`The generated ${phase} did not activate its font provider fixture.`)
         }
+        if (isGeneratedBuildPhase(phase)) provedFontFixture = true
       } finally {
         if (process.env.GITHUB_ACTIONS) writeLine('::endgroup::')
       }
+    }
+    if (!provedFontFixture) {
+      throw new Error(
+        'No generated smoke phase ran a build, so the font provider fixture went unproven.',
+      )
     }
     assertNoRetiredBuiltReferences(generatedDirectory)
 

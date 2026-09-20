@@ -31,6 +31,20 @@ export function qualityPhases(scripts, name = 'quality', ancestors = []) {
   return calls.flatMap((call) => qualityPhases(scripts, call[1], [...ancestors, name]))
 }
 
+// The smoke phase that actually runs `nuxt build`: `build`, or a variant such
+// as `build:ci`. release-packages.mjs asserts the generated build activated
+// its font provider fixture, and that assertion used to be bound to the
+// literal `'build'`. The generated `quality:static` moved to `build:ci` in
+// narduk-libs#617, which would have silently retired the assertion -- the
+// fixture could then break with nothing noticing. Bind to the shape instead,
+// and keep it here so `node --test` can cover it; release-packages.mjs is an
+// executable script with top-level side effects and cannot be imported.
+// `build:analyze` and other further-segmented scripts are different commands,
+// not the app's build, so they must not match.
+export function isGeneratedBuildPhase(phase) {
+  return /^build(?::ci)?$/u.test(phase)
+}
+
 // Release smoke proves packed-package compatibility. Scaffold style, dead-code
 // and starter-unit checks stay in the generated app's normal quality command;
 // repeating them here cost 33.4s in CI run 35144180293. Keep unknown future
