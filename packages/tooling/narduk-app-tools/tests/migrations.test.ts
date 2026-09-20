@@ -12,11 +12,13 @@ import {
   checksumMigrationSql,
   discoverMigrations,
   migrationLedgerCreateSql,
+  migrationSqlTouchesRunnerLedger,
   orderMigrationSources,
   parseMigrationConfig,
   parseTimeTravelBookmark,
   planMigrations,
   resolveMigrationConfigVersions,
+  stripSqlComments,
   validateMigrationReset,
   type MigrationConfig,
   type MigrationFile,
@@ -262,5 +264,56 @@ describe('migration config and planning', () => {
     expect(sql).toContain('CREATE TABLE example')
     expect(sql).toContain('INSERT INTO _narduk_migrations')
     expect(sql).toContain("'app', '0001.sql'")
+  })
+
+  describe('the runner-ledger guard', () => {
+    const build = (body: string) =>
+      buildMigrationBatchSql({ ...migration('app', '0001.sql', body), kind: 'apply' }, body)
+
+    it('lets a migration document the ledger it deliberately leaves alone', () => {
+      // riverstatus 0010_drop_unread_ingestion_tables.sql explains, in a
+      // comment, which bookkeeping tables it is NOT dropping. That comment
+      // blocked every deploy of that app (riverstatus#182).
+      const body = [
+        '-- Tables kept on purpose:',
+        '--   * _applied_migrations and _narduk_migrations are migration bookkeeping.',
+        '/* _narduk_migration_lock is the runner lock; never touched here. */',
+        'DROP TABLE IF EXISTS observations;',
+      ].join('\n')
+      expect(() => build(body)).not.toThrow()
+      expect(build(body)).toContain('DROP TABLE IF EXISTS observations')
+    })
+
+    it('still refuses a statement that alters the ledger', () => {
+      expect(() => build('DELETE FROM _narduk_migrations;')).toThrow(
+        'may not alter the runner ledger or lock',
+      )
+    })
+
+    it('still refuses the ledger named through a quoted identifier', () => {
+      // Quoted text is preserved, so this cannot be smuggled past the guard.
+      expect(() => build('DELETE FROM "_narduk_migrations";')).toThrow(
+        'may not alter the runner ledger or lock',
+      )
+      expect(() => build('DELETE FROM `_narduk_migrations`;')).toThrow(
+        'may not alter the runner ledger or lock',
+      )
+    })
+
+    it('does not treat a double dash inside a string literal as a comment', () => {
+      // A naive stripper would blank the rest of the line and miss the DELETE.
+      expect(() =>
+        build("INSERT INTO notes (body) VALUES ('a -- b'); DELETE FROM _narduk_migrations;"),
+      ).toThrow('may not alter the runner ledger or lock')
+    })
+
+    it('strips comments without disturbing the SQL it returns', () => {
+      expect(stripSqlComments('SELECT 1; -- _narduk_migrations\nSELECT 2;')).toBe(
+        'SELECT 1; \nSELECT 2;',
+      )
+      expect(stripSqlComments("SELECT '-- not a comment';")).toBe("SELECT '-- not a comment';")
+      expect(migrationSqlTouchesRunnerLedger('-- _narduk_migrations')).toBe(false)
+      expect(migrationSqlTouchesRunnerLedger('DROP TABLE _narduk_migration_lock;')).toBe(true)
+    })
   })
 })

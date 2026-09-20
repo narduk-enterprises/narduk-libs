@@ -798,12 +798,65 @@ function recordMigrationSql(action: MigrationAction): string {
   return `INSERT INTO ${MIGRATION_LEDGER_TABLE} (source, filename, checksum, source_version, applied_at) VALUES (${quoteSql(action.source)}, ${quoteSql(action.filename)}, ${quoteSql(action.checksum)}, ${quoteSql(action.sourceVersion)}, datetime('now'));`
 }
 
+/**
+ * Blank out `--` and block comments so the ledger guard reads statements only.
+ * Quoted text is preserved verbatim: `DELETE FROM "_narduk_migrations"` names
+ * the ledger through a quoted identifier and must stay visible to the guard.
+ * A comment cannot alter anything, and a migration that explains why it leaves
+ * the bookkeeping tables alone should not read as one that touches them.
+ */
+export function stripSqlComments(sql: string): string {
+  let out = ''
+  let index = 0
+  while (index < sql.length) {
+    const char = sql[index]
+    const next = sql[index + 1]
+    if (char === '-' && next === '-') {
+      while (index < sql.length && sql[index] !== '\n') index += 1
+      continue
+    }
+    if (char === '/' && next === '*') {
+      index += 2
+      while (index < sql.length && !(sql[index] === '*' && sql[index + 1] === '/')) index += 1
+      index += 2
+      continue
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      const quote = char
+      out += char
+      index += 1
+      while (index < sql.length) {
+        out += sql[index]
+        if (sql[index] === quote) {
+          index += 1
+          // A doubled quote escapes itself; the literal has not ended.
+          if (sql[index] === quote) {
+            out += sql[index]
+            index += 1
+            continue
+          }
+          break
+        }
+        index += 1
+      }
+      continue
+    }
+    out += char
+    index += 1
+  }
+  return out
+}
+
+export function migrationSqlTouchesRunnerLedger(sql: string): boolean {
+  return /_narduk_migration/iu.test(stripSqlComments(sql))
+}
+
 export function buildMigrationBatchSql(action: MigrationAction, migrationSql: string): string {
   // The source can have changed since discovery (including a symlink target).
   if (checksumMigrationSql(migrationSql) !== action.checksum) {
     throw new Error(`Migration changed after planning: ${action.source}:${action.filename}`)
   }
-  if (/_narduk_migration/iu.test(migrationSql))
+  if (migrationSqlTouchesRunnerLedger(migrationSql))
     throw new Error('Migration SQL may not alter the runner ledger or lock')
   return `${migrationSql.trimEnd()}\n${recordMigrationSql(action)}\n`
 }
