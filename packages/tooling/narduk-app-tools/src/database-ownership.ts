@@ -435,13 +435,12 @@ export function ownershipCoverageIssues(input: OwnershipCoverageInput): string[]
     }
   }
   for (const binding of seenMigrated) {
+    // A binding that is both migrated and contract-owned was already reported
+    // above as a double ownership; it gets no second line here.
     if (!bindings.includes(binding)) {
       issues.push(
         `${binding} has a deployment.migrations entry but this app binds no such D1 database`,
       )
-    } else if (contract.has(binding)) {
-      // Already reported above as a double ownership; no second line.
-      continue
     }
   }
   return issues
