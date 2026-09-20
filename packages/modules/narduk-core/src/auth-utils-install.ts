@@ -79,7 +79,12 @@ export function sessionPasswordConfigured(
 export function resolveNuxtAuthUtilsInstallOptions(
   signals: NuxtAuthUtilsInstallSignals = {},
 ): NuxtAuthUtilsInstallOptions {
-  if (isAuthLoadStrategy(signals.configuredLoadStrategy)) return {}
+  // Any app-set value is preserved, not only the three strategies this package
+  // recognises. A typo, or a strategy from a newer `nuxt-auth-utils`, is the
+  // app's to own and that module's to reject; replacing it here would disable
+  // the session plugin silently instead of surfacing the bad config
+  // (narduk-libs#542).
+  if (signals.configuredLoadStrategy !== undefined) return {}
   if (
     sessionPasswordConfigured(signals.env, signals.runtimeConfig) ||
     moduleDeclaresAuth(signals.modules)

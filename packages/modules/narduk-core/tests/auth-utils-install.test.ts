@@ -91,6 +91,52 @@ describe('resolveNuxtAuthUtilsInstallOptions (narduk-libs#540)', () => {
       }),
     ).toEqual({})
   })
+
+  // The README promises the value is "Unchanged when the app already set
+  // `auth.loadStrategy`" without qualifying it to the three strategies this
+  // package happens to know. A typo, a value from a newer `nuxt-auth-utils`,
+  // or anything else the app wrote is the app's to own: overriding it here
+  // would silently disable the session plugin rather than let the module that
+  // defines the option reject a value it does not accept (narduk-libs#542).
+  it('leaves a loadStrategy it does not recognise untouched', () => {
+    expect(
+      resolveNuxtAuthUtilsInstallOptions({
+        configuredLoadStrategy: 'eager',
+        env: {},
+        modules: [],
+        runtimeConfig: {},
+      }),
+    ).toEqual({})
+    expect(
+      resolveNuxtAuthUtilsInstallOptions({
+        configuredLoadStrategy: 'server_first',
+        env: {},
+        modules: [],
+        runtimeConfig: {},
+      }),
+    ).toEqual({})
+    expect(
+      resolveNuxtAuthUtilsInstallOptions({
+        configuredLoadStrategy: null,
+        env: {},
+        modules: [],
+        runtimeConfig: {},
+      }),
+    ).toEqual({})
+  })
+
+  // The other half of the same boundary: not writing the key at all is still
+  // "the app has not configured auth", so the no-auth default must survive.
+  it('still disables the session plugin when loadStrategy is absent', () => {
+    expect(
+      resolveNuxtAuthUtilsInstallOptions({
+        configuredLoadStrategy: undefined,
+        env: {},
+        modules: [],
+        runtimeConfig: {},
+      }),
+    ).toEqual({ loadStrategy: 'none' })
+  })
 })
 
 describe('auth-utils install signals', () => {
