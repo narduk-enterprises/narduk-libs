@@ -1120,6 +1120,111 @@ import type {
 } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeFilterBar
+
+The filter row above a collection. Backlog item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261)),
+promoted from operator-portal's `FilterBar.vue`, where nine pages had each
+hand-assembled the row with its own pressed logic, its own count and its own
+disabled treatment. The pressed-chip count inversion was carried nine times and
+fixed nine times.
+
+`NeSearchInput`, the other half of item 14, ships separately: a search is a text
+control **beside** the row, not a member of it, and the two have no shared
+state.
+
+#### Three kinds, one DOM shape
+
+A wrapping row of buttons in the order you pass them — nothing sorted, nothing
+hidden. They differ in what they mean, and the ARIA follows the meaning:
+
+| `kind`   | Row role  | Control state                | For                                             |
+| -------- | --------- | ---------------------------- | ----------------------------------------------- |
+| `chips`  | `group`   | `aria-pressed`               | Toggling a filter on and off.                   |
+| `facets` | `group`   | `aria-pressed`               | Choosing a scope. Same mechanics, quieter fill. |
+| `tabs`   | `tablist` | `aria-selected` + `tabindex` | Switching views. Full APG keyboard model.       |
+
+`tabs` is a real tablist: arrows move and wrap, `Home` and `End` jump to the
+ends, and exactly **one** tab sits in the page's tab order at a time (the
+selected one, or the first when nothing is selected). Your panels name the tab
+that controls them through `idPrefix` — `<prefix>-tab-<key>` and
+`<prefix>-panel-<key>`.
+
+#### A filter with no producer stays in the row
+
+`item.disabled` renders `aria-disabled` and keeps the control **visible**. This
+is the component's one real opinion, and it is why the disabled state is part of
+the API rather than something a caller does with a `v-if`:
+
+> Dropping a filter whose rows do not exist yet makes the product look finished
+> and be silently narrower than it claims. The control stays, the row's `note`
+> says when it lands, and nobody has to work out whether a filter is missing or
+> merely unbuilt.
+
+It is `aria-disabled`, never the `disabled` attribute. A disabled button leaves
+the tab order, and a keyboard user then cannot reach it to read the reason in
+its `title`.
+
+#### A count is your figure, rendered
+
+`item.count` is displayed and never derived — the component cannot know what a
+control filters, and a count computed here would eventually disagree with the
+group heading computed where the rows are.
+
+**Omit the count rather than passing `0` for "not counted".** `0` is a
+measurement; an absent count is not. A control rendering `0` for "we did not
+count" is the same lie a hatched bar exists to avoid, and the row renders no
+count element at all when you leave it out.
+
+#### Props
+
+| Prop         | Type                            | Default    | Notes                                                           |
+| ------------ | ------------------------------- | ---------- | --------------------------------------------------------------- |
+| `items`      | `NeFilterBarItem[]`             | —          | Rendered in the order given.                                    |
+| `label`      | `string`                        | —          | Required. The row's accessible name.                            |
+| `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                 |
+| `modelValue` | `string \| null`                | `null`     | The selected key. `null` is "nothing selected".                 |
+| `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.         |
+| `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row. |
+| `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.         |
+
+`NeFilterBarItem`: `key`, `label`, and optional `count`, `disabled`, `title`,
+`testid`, `attrs`. An `undefined` value in `attrs` is dropped rather than
+rendered as the string `"undefined"`.
+
+#### Events and slots
+
+`update:modelValue` emits the chosen `key`. The component never moves the
+selection itself — the caller owns it, which is what makes `v-model` and a
+URL-synced selection the same code path. Slot `after` appends to the row.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const state = ref<string | null>('open')
+</script>
+
+<template>
+  <NeFilterBar
+    v-model="state"
+    label="State"
+    :items="[
+      { key: 'all', label: 'All', count: 24 },
+      { key: 'open', label: 'Open', count: 7 },
+      { key: 'draft', label: 'Draft' },
+      {
+        key: 'owner',
+        label: 'By owner',
+        disabled: true,
+        title: 'Lands with the owner ledger',
+      },
+    ]"
+    note="By owner lands with the owner ledger"
+  />
+</template>
+```
+
 ### NeDataTable
 
 The estate’s data-table preset on Nuxt UI’s `UTable`
