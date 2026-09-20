@@ -291,7 +291,14 @@ export function createRootPackageManifest(
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       knip: 'knip',
-      lint: 'pnpm --filter web run lint',
+      // eslint AND prettier. `lint` is the command a contributor or agent
+      // reaches for, and CI fails a prettier-only diff through the separate
+      // root `format:check` (the first entry in the reusable workflow's
+      // `extra-scripts`), so an eslint-only `lint` is a false green that
+      // costs a whole CI cycle for whitespace -- narduk-libs#628. The root
+      // check is the one composed here, not apps/web's: only it reaches
+      // `.changeset/`, root Markdown and `.github/`.
+      lint: 'pnpm --filter web run lint && pnpm run format:check',
       // Reads only apps/web/wrangler.jsonc and, once onboarding creates it,
       // ../../Config/cloudflare-app.json -- no install-time resolution or
       // registry credential, so it belongs in the static half of quality

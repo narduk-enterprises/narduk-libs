@@ -7,7 +7,7 @@
     "postinstall": "pnpm --filter @narduk-enterprises/eslint-config run build",
     "build": "turbo run build --filter='./packages/*/*' --concurrency=1",
     "typecheck": "turbo run typecheck --filter='./packages/*/*' --concurrency=1",
-    "lint": "turbo run lint --filter='./packages/*/*' --concurrency=1",
+    "lint": "turbo run lint --filter='./packages/*/*' --concurrency=1 && pnpm run format:check",
     "format": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "test": "pnpm --workspace-concurrency=2 -r --filter './packages/*/*' --if-present test:unit",
