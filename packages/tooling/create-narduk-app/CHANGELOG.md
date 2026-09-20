@@ -1,5 +1,16 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.8
+
+### Patch Changes
+
+- 52ab505: Add a reviewed D1 baseline process: immutable schema/ledger capture,
+  full-schema comparison, explicit metadata-only registration for untracked
+  schemas, and a shared disposable-local cutover proof. Preserve historical
+  fixtures across package upgrades and stop rechecking superseded legacy schema
+  probes after stable checksum adoption. Document app-owned review, data-proof
+  limits and migration-before-promotion onboarding.
+
 ## 0.10.7
 
 ### Patch Changes
