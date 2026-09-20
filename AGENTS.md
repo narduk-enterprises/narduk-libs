@@ -56,6 +56,21 @@ Check the live set with `gh label list --repo narduk-enterprises/narduk-libs`.
   `area:mapkit`, `area:testkit`, `area:logging` and `area:seo` were added on
   2026-09-18 at Logan's direction.
 
+## Backlog clear-out freeze
+
+Milestone `backlog-clearout` holds the 190 issues that were open at 2026-09-20
+22:56Z, frozen as the campaign's scope
+([plan](docs/plans/backlog-clearout-plan.md)). Filing stays unrestricted, and
+this changes nothing about how you label a new issue.
+
+A new issue does **not** go in that milestone. The only exceptions are a P0, a
+security defect, or a release blocker, and those are admitted by the campaign
+orchestrator, who says so on the issue — a filing agent leaves the milestone
+unset and lets the orchestrator decide. Search before filing: three separate
+issues (#544, #561, #631) turned out to be one toolchain defect.
+
+<!-- enforcement: none yet -->
+
 ## Validation
 
 - `pnpm install`

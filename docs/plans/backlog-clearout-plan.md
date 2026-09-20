@@ -41,12 +41,21 @@ Two conclusions follow, and they set the plan's priorities:
 - CI redesign: _"Drop it; keep only scoped consumer + preflight"_.
 - Scope: _"Freeze the milestone, keep filing freely"_.
 
-## Phase 0 — freeze the scope
+## Phase 0 — freeze the scope — **DONE 2026-09-20 22:56Z**
 
 One milestone, `backlog-clearout`, carrying exactly the 190 issues open on
 2026-09-20. Filing stays unrestricted; new issues simply land **outside** the
 milestone unless they are P0, a security defect, or release-blocking, in which
 case the orchestrator admits them explicitly.
+
+Executed: milestone
+[#1](https://github.com/narduk-enterprises/narduk-libs/milestone/1) created at
+2026-09-20 22:56Z and stamped onto all 190 issues open at that instant. Verified
+server-side afterwards: milestone `open_issues=190 closed_issues=0`, the
+milestone's member set diffs empty against the freeze snapshot, and no open
+issue in the repository lacks a milestone. The admission rule is recorded in the
+milestone description and in `AGENTS.md` § Backlog clear-out freeze, so a filing
+agent sees it without reading this plan.
 
 The campaign is done when that milestone reaches zero. Raw open-issue count is
 not the measure — with filing left open it will not fall, and that is expected.
