@@ -1083,6 +1083,25 @@ export function createDevices(
       token: ClaimToken,
     ) => ApprovalOutcome | Promise<ApprovalOutcome>
     /**
+     * Is this caller inside the tenancy the claim token was minted for?
+     *
+     * Decided before anything about the session is told and before the
+     * owner's counter is touched, because everything downstream — the replay
+     * branch, `completionBlocker`, the lockout subject list — speaks about a
+     * session this caller may not be entitled to hear about at all. Folded
+     * into `authorize` instead, as it was through 0.5.0, a foreign org heard
+     * `already_completed` / `revoked` / `expired` / `hardware_mismatch` and
+     * its refusals were counted against the owner's claim token
+     * (narduk-libs#533). This is #243's authorise-before-describe rule,
+     * applied to the completion path.
+     *
+     * `completeClaimWithRecordedApproval` has no caller tenancy to compare —
+     * a device presents no org, and `approvalMatchesToken` is what binds its
+     * recorded approval to the token — so it answers `true` and reaches
+     * exactly the checks it always did.
+     */
+    callerScopeMatches: (token: ClaimToken) => boolean
+    /**
      * May this caller be served a replay of the completion it already made?
      *
      * Exactly `authorize` minus its approval-expiry clause, and never less:
@@ -1498,8 +1517,15 @@ export function createDevices(
     if (!token) throw new DevicesError('not_found', 'The claim token behind this session is gone.')
 
     const account = run.accountSubject(session)
-    const subjects: LockoutSubject[] = [
-      { kind: 'token', subject: token.tokenHash },
+    /**
+     * The subjects that identify *this caller*: the account it named and the
+     * IP it came from. The owner's claim token is deliberately not among them
+     * yet — unlike `startClaim`, a completion never presents the claim token,
+     * it names a session id and the library looks the token up, so counting an
+     * unauthorised caller against that token is charging a stranger's failure
+     * to the tenant who owns it (narduk-libs#533).
+     */
+    const callerSubjects: LockoutSubject[] = [
       // Namespaced exactly like a `remote` account key: the approving account
       // is the same kind of subject, so it must not share a counter with the
       // credential lookup either (narduk-libs#228 third review HIGH-4).
@@ -1509,6 +1535,35 @@ export function createDevices(
       ...remoteSubjects(run.remote, 'claim').filter(
         (subject) => account === null || subject.kind !== 'account',
       ),
+    ]
+
+    if (!run.callerScopeMatches(token)) {
+      // Refused on the caller's own counters and told nothing: every session
+      // state answers `unauthorized_user`, so a foreign org cannot tell a
+      // claimed session from a revoked, expired or fingerprint-mismatched
+      // one, and five of these no longer lock the owner out of their own
+      // ceremony (narduk-libs#533). The attempt is still counted — a
+      // cross-org probe is bounded, just not by the tenant it targets — and
+      // `orgId: null` keeps the stranger's lockout out of the owner's audit
+      // trail, exactly as the unknown-session branch above does.
+      const foreign = await lockouts.check(callerSubjects)
+      if (foreign) {
+        return {
+          status: 'rate_limited',
+          credentials: [],
+          retryAfterSeconds: foreign.retryAfterSeconds,
+        }
+      }
+      await recordAttempt(callerSubjects, 'failure', {
+        orgId: null,
+        reason: 'unauthorized_user',
+      })
+      return { status: 'unauthorized_user', credentials: [] }
+    }
+
+    const subjects: LockoutSubject[] = [
+      { kind: 'token', subject: token.tokenHash },
+      ...callerSubjects,
     ]
     const locked = await lockouts.check(subjects)
     if (locked) {
@@ -1952,6 +2007,7 @@ export function createDevices(
         // LOW-4). It is not a single-use signed proof, so there is no nonce for
         // the batch to burn.
         carriesProof: true,
+        callerScopeMatches: orgAndResourceMatch,
         completionProofNonce: () => null,
         canReissue: async (session, token) =>
           session.hardwareFingerprint === input.hardwareFingerprint &&
@@ -2047,6 +2103,9 @@ export function createDevices(
         // does not learn `deviceId` when it loses the race (third review
         // LOW-4).
         carriesProof: proof !== undefined,
+        // A device names no org: `approvalMatchesToken` below is what ties the
+        // recorded approval to this token's tenancy.
+        callerScopeMatches: () => true,
         completionProofNonce: (session) =>
           proof === undefined ? null : completionProofNonceRef(session, proof),
         canReissue: async (session, token) =>

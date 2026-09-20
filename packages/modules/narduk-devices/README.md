@@ -212,6 +212,15 @@ could not be honoured
   state first told any authenticated caller that holds a claim session id
   whether another tenant's session was claimed, revoked or expired
   (narduk-libs#243). An id that does not exist is still `not_found`.
+- `completeClaim` authorises before it describes too, and before it counts. A
+  caller naming another org or resource gets `unauthorized_user` whatever state
+  the claim session is in — `already_completed`, `revoked`, `expired` and
+  `hardware_mismatch` are answers only the owning org hears — and its refusals
+  are counted against its own account and IP, never against the owner's claim
+  token. Settled inside the approval check, as it was through 0.5.0, the state
+  leaked exactly as it did on `issueApprovalToken`, and five refusals from a
+  foreign org locked the owner out of their own ceremony for the cooldown
+  (narduk-libs#533). An id that does not exist is still `not_found`.
 - `revokeClaimToken` revokes the token and any pending session on it.
 
 ### Lockouts
@@ -230,9 +239,13 @@ pins the numbers:
 A lockout starts at the failure that crosses a threshold and a `rate_limited`
 refusal is not itself a failure. Subjects: `startClaim` counts the **presented**
 token's digest plus `remote.accountKey` / `remote.ip`; `completeClaim` counts
-the token, `approvedByUserId` as the account, and `remote.ip`; `openSession`
-counts the device plus `remote.*`. The attempt row is written and the window
-counted in one transaction, so no concurrent failure goes uncounted.
+`approvedByUserId` as the account and `remote.ip` always, and the claim token
+**only once the caller's org and resource match the token's** — a completion
+names a session id rather than presenting the token, so charging an
+out-of-tenancy caller to that token let one tenant lock out another
+(narduk-libs#533); `openSession` counts the device plus `remote.*`. The attempt
+row is written and the window counted in one transaction, so no concurrent
+failure goes uncounted.
 
 **Account and IP subjects are namespaced by operation.** The stored subject is
 `<purpose>:<accountKey|ip>` — `claim:` for `startClaim` and both completion
