@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.9
+
+### Patch Changes
+
+- 2e5959d: Pin generated apps to `@narduk-enterprises/narduk-app-tools` 0.13.1,
+  whose runner-ledger guard no longer refuses a migration for mentioning the
+  bookkeeping tables in a comment.
+
 ## 0.10.8
 
 ### Patch Changes
