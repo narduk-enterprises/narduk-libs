@@ -97,8 +97,14 @@ published package version, and lands in one terminal state:
 | `active`           | survives the probe; keeps its lane assignment                      |
 
 Probing is Sonnet work, split into four disjoint slices of 51 / 41 / 49 / 49
-issues (`~/.agents/programs/narduk-libs-backlog/slices/`, verified disjoint and
-complete against the full list).
+issues, verified disjoint and complete against the full list. The slice files
+live on the orchestrator's own machine
+(`~/.agents/programs/narduk-libs-backlog/slices/`) and are a scheduling
+convenience, not a record anything later depends on: the reproducible source of
+truth is the milestone itself (`gh issue list --milestone backlog-clearout`)
+plus the `sweep:` evidence comment each probed issue carries. A lane on another
+machine, or a cloud agent, reconstructs its work from those two and needs no
+access to the orchestrator's filesystem.
 
 A sweep lane closes `fixed` and `superseded` itself — a closure is reversible
 and each one carries an evidence comment naming the exact probe command and its
@@ -285,12 +291,15 @@ right to keep:
 
 ## Definition of done
 
-The `backlog-clearout` milestone reaches zero, with every one of its 190 issues
-in a terminal state and every `deferred` one carrying a named replacement
-tracker. P0/P1 correctness, security, release, scaffold and adoption work has
-shipped. The Components, MapKit and Journeys programs have shipped or been
-explicitly transferred to their consumer repository. The final all-package
-consumer proof and the release publication proof are green.
+The `backlog-clearout` milestone reaches zero: every issue in it is in a
+terminal state and every `deferred` one carries a named replacement tracker.
+That is the baseline 190 **plus** everything admitted at a wave boundary since
+the freeze, which is why the two counters above are kept apart — the milestone's
+own open count is the measure, not the number 190. P0/P1 correctness, security,
+release, scaffold and adoption work has shipped. The Components, MapKit and
+Journeys programs have shipped or been explicitly transferred to their consumer
+repository. The final all-package consumer proof and the release publication
+proof are green.
 
 Raw open-issue count is deliberately **not** a success measure.
 
