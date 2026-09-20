@@ -28,6 +28,17 @@ const SHA = '48ba389bdb1b7ab8baadc17b8c234dcf426c7329'
 const NODE = '24.21.0'
 const PNPM = '10.33.4'
 
+/**
+ * The checker version the tests inject. `runAdoptionCheck` takes it as an
+ * input -- the CLI passes `readOwnVersion()` -- so the assertion proves the
+ * artefact carries the version it was handed, whatever that is. The value is
+ * deliberately not a plausible release number: a three-part literal here
+ * reads as this package's own manifest version, which is the copy-paste shape
+ * `scripts/package-version-assertions.test.mjs` exists to keep out of a
+ * package's tests (narduk-libs#291, #297).
+ */
+const TOOL_VERSION = '0.0.0-fixture'
+
 /** Every estate package the baseline pins, at the version it pins. */
 const BASELINE_PINS: Record<string, string> = {
   '@narduk-enterprises/eslint-config': '2.0.0',
@@ -153,7 +164,7 @@ async function run(
   return runAdoptionCheck({
     reality: baselineReality(),
     root,
-    toolVersion: '0.13.1',
+    toolVersion: TOOL_VERSION,
     ...options,
   })
 }
@@ -241,7 +252,7 @@ describe('the adoption report', () => {
       appOverrides: { commit: SHA, ref: 'refs/heads/main' },
     })
 
-    expect(artefact.toolVersion).toBe('0.13.1')
+    expect(artefact.toolVersion).toBe(TOOL_VERSION)
     expect(artefact.standard.requirements).toBe(15)
     expect(artefact.standard.source).toContain('company-hq')
     expect(artefact.app.commit).toBe(SHA)
@@ -258,12 +269,12 @@ describe('the adoption report', () => {
     const foundation = await runFoundationCheck({
       reality: baselineReality(),
       root,
-      toolVersion: '0.13.1',
+      toolVersion: TOOL_VERSION,
     })
     const adoption = await runAdoptionCheck({
       reality: baselineReality(),
       root,
-      toolVersion: '0.13.1',
+      toolVersion: TOOL_VERSION,
     })
 
     expect(foundation.items).toHaveLength(7)
