@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "@typescript-eslint/array-type": 11,
+    "@typescript-eslint/consistent-type-definitions": 1,
+    "perfectionist/sort-imports": 1,
+    "perfectionist/sort-interfaces": 1,
+    "perfectionist/sort-object-types": 1,
+    "unicorn/no-for-each": 2,
+    "unicorn/no-useless-undefined": 2,
+    "vue/define-macros-order": 1
+  }
+}
