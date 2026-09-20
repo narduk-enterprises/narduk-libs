@@ -1158,6 +1158,12 @@ and the next `Tab` would exit the list from a control the tablist does not
 consider current. A row whose tabs are all disabled keeps focus and selection
 where they are.
 
+The `tablist` role sits on the **control row**, not on the outer wrapper: a
+tablist's required owned elements are tabs, and `note` is a caption while the
+`after` slot is an action. Both render as siblings of the tablist. If you are
+asserting the role in a test, the selector is `[data-ne-filter-controls]`;
+`[data-ne-filter-bar]` is the outer row and carries `data-ne-filter-kind`.
+
 #### A filter with no producer stays in the row
 
 `item.disabled` renders `aria-disabled` and keeps the control **visible**. This
@@ -1172,6 +1178,13 @@ the API rather than something a caller does with a `v-if`:
 It is `aria-disabled`, never the `disabled` attribute. A disabled button leaves
 the tab order, and a keyboard user then cannot reach it to read the reason in
 its `title`.
+
+That reachability holds for `chips` and `facets`. Under `tabs` it does **not**:
+APG skips disabled tabs in the roving model, as above, so no arrow key ever
+lands on one and `title` is mouse-only there. A disabled tab is therefore given
+`aria-describedby` pointing at the row's `note`, which a screen reader reads in
+browse mode whether or not focus can arrive — so **write a `note` on a tabs row
+that has disabled tabs**, or their reason reaches nobody.
 
 #### A count is your figure, rendered
 

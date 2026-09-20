@@ -29,6 +29,15 @@
  * button leaves the tab order, so a keyboard user cannot reach it to read the
  * reason in its `title`. The click handler refuses instead.
  *
+ * THAT REACHABILITY CLAIM HOLDS FOR `chips` AND `facets` ONLY. APG omits
+ * disabled tabs from a tablist's roving model and `nextEnabled` duly skips
+ * them, so under `kind: 'tabs'` no arrow key ever lands on one and `title` is
+ * mouse-only there — the paragraph above would otherwise be quietly false for
+ * a third of this component's surface. A disabled tab is pointed at the row's
+ * own `note` with `aria-describedby` instead, which a screen reader announces
+ * in browse mode whether or not focus can arrive. A tabs row with no `note`
+ * gives a disabled tab no reason at all, so write one.
+ *
  * ## A count is the caller's figure
  *
  * `item.count` is rendered, never derived. The component cannot know what the
@@ -128,6 +137,14 @@ function panelId(item: NeFilterBarItem): string {
 }
 
 /**
+ * The row note, named so a disabled tab can point at it. Shares `idPrefix`
+ * with the tab and panel ids for the same reason they share it: two bars on
+ * one page collide unless the caller distinguishes them, and the README says
+ * so once rather than this file saying it three times.
+ */
+const noteId = computed(() => `${props.idPrefix}-note`)
+
+/**
  * One tab in the page's tab order at a time: the selected one, or the first
  * when nothing is selected. Arrow keys move within the row from there.
  */
@@ -195,42 +212,56 @@ function onTabKey(event: KeyboardEvent, index: number): void {
     :data-ne-filter-kind="kind"
     class="flex flex-wrap items-center gap-2"
     :class="flush ? undefined : 'mt-2'"
-    :role="isTabs ? 'tablist' : 'group'"
-    :aria-label="label"
   >
-    <UButton
-      v-for="(item, index) in items"
-      :id="isTabs ? tabId(item) : undefined"
-      :key="item.key"
-      :ref="setControl(index)"
-      type="button"
-      size="xs"
-      :color="colorOf(item)"
-      :variant="variantOf(item)"
-      :class="item.disabled ? 'opacity-50' : undefined"
-      data-ne-filter-control
-      :data-ne-filter-key="item.key"
-      :role="isTabs ? 'tab' : undefined"
-      :aria-pressed="isTabs || (item.disabled && !selected(item)) ? undefined : selected(item)"
-      :aria-selected="isTabs ? selected(item) : undefined"
-      :aria-controls="isTabs ? panelId(item) : undefined"
-      :aria-disabled="item.disabled ? 'true' : undefined"
-      :tabindex="tabIndexOf(item, index)"
-      :title="item.title"
-      :data-testid="item.testid"
-      v-bind="attrsOf(item)"
-      @click="choose(item)"
-      @keydown="onTabKey($event, index)"
+    <!--
+      THE ROLE SITS ON THE CONTROL ROW, NOT ON THE OUTER WRAPPER. A tablist's
+      required owned elements are tabs; `note` is a caption and the `after`
+      slot is an action — this component's own header says a refresh is not a
+      member of the row — so neither may be owned by the tablist. Both are
+      siblings of it. `group` moves with it so one selector, one assertion and
+      one mental model cover all three kinds.
+    -->
+    <div
+      data-ne-filter-controls
+      class="flex flex-wrap items-center gap-2"
+      :role="isTabs ? 'tablist' : 'group'"
+      :aria-label="label"
     >
-      <span>{{ item.label }}</span>
-      <span
-        v-if="item.count !== undefined"
-        data-ne-filter-count
-        class="text-xs font-medium opacity-70"
-        >{{ item.count }}</span
+      <UButton
+        v-for="(item, index) in items"
+        :id="isTabs ? tabId(item) : undefined"
+        :key="item.key"
+        :ref="setControl(index)"
+        type="button"
+        size="xs"
+        :color="colorOf(item)"
+        :variant="variantOf(item)"
+        :class="item.disabled ? 'opacity-50' : undefined"
+        data-ne-filter-control
+        :data-ne-filter-key="item.key"
+        :role="isTabs ? 'tab' : undefined"
+        :aria-pressed="isTabs || (item.disabled && !selected(item)) ? undefined : selected(item)"
+        :aria-selected="isTabs ? selected(item) : undefined"
+        :aria-controls="isTabs ? panelId(item) : undefined"
+        :aria-disabled="item.disabled ? 'true' : undefined"
+        :aria-describedby="item.disabled && note ? noteId : undefined"
+        :tabindex="tabIndexOf(item, index)"
+        :title="item.title"
+        :data-testid="item.testid"
+        v-bind="attrsOf(item)"
+        @click="choose(item)"
+        @keydown="onTabKey($event, index)"
       >
-    </UButton>
-    <span v-if="note" data-ne-filter-note class="text-xs text-muted">{{ note }}</span>
+        <span>{{ item.label }}</span>
+        <span
+          v-if="item.count !== undefined"
+          data-ne-filter-count
+          class="text-xs font-medium opacity-70"
+          >{{ item.count }}</span
+        >
+      </UButton>
+    </div>
+    <span v-if="note" :id="noteId" data-ne-filter-note class="text-xs text-muted">{{ note }}</span>
     <slot name="after" />
   </div>
 </template>

@@ -34,7 +34,7 @@ const controls = (wrapper: ReturnType<typeof render>) => wrapper.findAll('[data-
 describe('NeFilterBar: chips', () => {
   it('is a named group whose selection is carried by aria-pressed', () => {
     const wrapper = render({ modelValue: 'open' })
-    const row = wrapper.get('[data-ne-filter-bar]')
+    const row = wrapper.get('[data-ne-filter-controls]')
     expect(row.attributes('role')).toBe('group')
     expect(row.attributes('aria-label')).toBe('State')
 
@@ -112,7 +112,7 @@ describe('NeFilterBar: facets', () => {
     const wrapper = render({ kind: 'facets' })
     const row = wrapper.get('[data-ne-filter-bar]')
     expect(row.attributes('data-ne-filter-kind')).toBe('facets')
-    expect(row.attributes('role')).toBe('group')
+    expect(wrapper.get('[data-ne-filter-controls]').attributes('role')).toBe('group')
     wrapper.unmount()
   })
 })
@@ -123,7 +123,7 @@ describe('NeFilterBar: tabs (the APG tablist model)', () => {
 
   it('is a tablist whose tabs name the panels they control', () => {
     const wrapper = tabs()
-    expect(wrapper.get('[data-ne-filter-bar]').attributes('role')).toBe('tablist')
+    expect(wrapper.get('[data-ne-filter-controls]').attributes('role')).toBe('tablist')
 
     const first = controls(wrapper)[0]!
     expect(first.attributes('role')).toBe('tab')
@@ -285,6 +285,65 @@ describe('NeFilterBar: a disabled chip that is the current selection', () => {
       props: { items, label: 'State', modelValue: 'all' },
     })
     expect(controls(wrapper)[1]!.attributes('aria-pressed')).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
+describe('NeFilterBar: what the tablist owns, and what it must not', () => {
+  const items: NeFilterBarItem[] = [
+    { key: 'all', label: 'All' },
+    { key: 'spend', label: 'Spend', disabled: true },
+  ]
+
+  /**
+   * WAI-ARIA's tablist owns tabs. A caption and an action are neither, and
+   * this row carries both — `note` and the `after` slot. They used to sit
+   * inside the element holding `role="tablist"`, which no test drove because
+   * the tabs suite never passed either one.
+   */
+  it('keeps the note and the after slot outside the tablist', () => {
+    const wrapper = mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { items, kind: 'tabs', label: 'State', note: 'Spend lands with the ledger' },
+      slots: { after: '<button data-probe>Refresh</button>' },
+    })
+
+    const tablist = wrapper.get('[role="tablist"]')
+    expect(tablist.attributes('data-ne-filter-controls')).toBeDefined()
+    expect(tablist.find('[data-ne-filter-note]').exists()).toBe(false)
+    expect(tablist.find('[data-probe]').exists()).toBe(false)
+    // Still in the row itself — moved out of the tablist, not off the page.
+    expect(wrapper.find('[data-ne-filter-note]').exists()).toBe(true)
+    expect(wrapper.find('[data-probe]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  /**
+   * The SFC says `aria-disabled` is used so a keyboard user can land on the
+   * control and read its `title`. Under `tabs` that is false — APG skips
+   * disabled tabs and `nextEnabled` implements it — so the reason has to reach
+   * a screen reader some other way, or the component is claiming a courtesy it
+   * does not extend.
+   */
+  it('points a disabled tab at the row note, since no arrow key can reach it', () => {
+    const wrapper = mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { idPrefix: 'state', items, kind: 'tabs', label: 'State', note: 'Spend lands with the ledger' },
+    })
+
+    expect(controls(wrapper)[1]!.attributes('aria-describedby')).toBe('state-note')
+    expect(wrapper.get('[data-ne-filter-note]').attributes('id')).toBe('state-note')
+    // An enabled tab is reachable and needs no such pointer.
+    expect(controls(wrapper)[0]!.attributes('aria-describedby')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('describes nothing when the row states no note', () => {
+    const wrapper = mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { items, kind: 'tabs', label: 'State' },
+    })
+    expect(controls(wrapper)[1]!.attributes('aria-describedby')).toBeUndefined()
     wrapper.unmount()
   })
 })
