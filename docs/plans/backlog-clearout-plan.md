@@ -161,6 +161,34 @@ genuinely mechanical, and err toward the higher tier when in doubt. Each lane is
 file-disjoint, owns its whole lifecycle (implement → PR → gate → merge), and
 reports rather than streams.
 
+### Lane tiers and naming (Logan, 2026-09-20)
+
+Verbatim: _"You created 4 sonnet lanes and if you are going to reuse them you
+need to create opus lanes too....and rename them accordingly since they will be
+working different taskks.."_ and _"or you can rename them as you go along?"_.
+
+The Phase 1 sweep lanes are **Sonnet** — triage and read-only probing, which is
+what Sonnet is for. Every lane that writes code or durable text is **Opus 5
+(high)**, and it is a **fresh session**, not a renamed sweep:
+
+- A sweep session carries roughly fifty issues of probe output. Reusing it pays
+  for that context on every later call (`AGENTS.md` § **Token & context
+  discipline**), and the wave work shares almost none of it.
+- The S1–S4 slices partition the backlog **by area, for reading**. A wave lane
+  has to be **file-disjoint for writing**. They are different cuts, so the
+  sessions should not be the same sessions.
+
+So a sweep lane ends properly — retro written, worktree pruned, session archived
+— and the wave lane opens beside it under its own name.
+
+**The one exception**, taken case by case and recorded on the board: when a
+single sweep slice maps cleanly onto a single wave item and that session is
+still cheap on context, rename it and switch its model rather than respinning.
+
+Naming: Phase 1 `S<n> <area> sweep` · Phase 2 `P2 CI <item>` · Wave A
+`A<n> <area>` · Wave B `B<n> <area>`. The title says the task, so the sidebar
+never shows a lane doing something its name denies.
+
 ### Wave A — stabilization and safety
 
 | slot | lane                                 | issues                                                                                                   | tier        |
