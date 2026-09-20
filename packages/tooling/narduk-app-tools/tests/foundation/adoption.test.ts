@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   ADOPTION_REQUIREMENT_COUNT,
+  formatAdoptionSummary,
   matchesCommit,
   runAdoptionCheck,
   type AdoptionArtefact,
@@ -366,6 +367,89 @@ describe('the live half', () => {
     // Even a healthy route only decides that the route answered. Whether the
     // counts it reports match the data served is the app's own contract tests.
     expect(req(healthy, 'R12').enforcement).toBe('partially-enforced')
+  })
+})
+
+describe('the deployment standard a repository declares', () => {
+  /** The same conformant app, with the `deployment` block removed entirely. */
+  function withoutDeployment(root: string): void {
+    writeAdoptionBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      schemaVersion: 1,
+      worker: { nitroPreset: 'cloudflare_module' },
+    })
+  }
+
+  /** The same app, declaring some other deployment standard on purpose. */
+  function exemptDeployment(root: string): void {
+    writeAdoptionBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+      deployment: { standard: 'in-house-terraform-v3' },
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      schemaVersion: 1,
+      worker: { nitroPreset: 'cloudflare_module' },
+    })
+  }
+
+  const DEPLOYMENT_BACKED = ['R1', 'R5', 'R6', 'R7'] as const
+
+  it('reports no deployment block as unknown, never as N/A or a pass', async () => {
+    // Item 12's own rollout gate answers `not-applicable` here, and for a
+    // rollout gate that is right: an app that has not adopted the standard
+    // yet is not failing it. For a declaration it is wrong -- nobody wrote the
+    // delivery path down, so the question was never answered.
+    const artefact = await run(withoutDeployment, {
+      expectSha: SHA,
+      headerProbe: fakeHeaderProbe,
+      liveReality: fakeLive({ 'x-build-version': '48ba389bdb1b' }),
+      liveUrl: 'https://buoystat.us',
+    })
+
+    for (const id of DEPLOYMENT_BACKED) {
+      expect(req(artefact, id).verdict, id).toBe('unknown')
+      expect(artefact.manualReview, id).toContain(id)
+    }
+    expect(artefact.result).toBe('UNKNOWN')
+    expect(artefact.exitCode).toBe(2)
+  })
+
+  it('reports a declared other standard as a deviation with its own exit code', async () => {
+    const artefact = await run(exemptDeployment, {
+      expectSha: SHA,
+      headerProbe: fakeHeaderProbe,
+      liveReality: fakeLive({ 'x-build-version': '48ba389bdb1b' }),
+      liveUrl: 'https://buoystat.us',
+    })
+
+    for (const id of DEPLOYMENT_BACKED) {
+      expect(req(artefact, id).verdict, id).toBe('deviation')
+    }
+    // Not a failure -- the app may have declared the departure deliberately --
+    // and not a PASS either, because an automation reading exit 0 as "adopted
+    // narduk-v1" would be reading a declared departure as adoption.
+    expect(artefact.result).toBe('DEVIATION')
+    expect(artefact.exitCode).toBe(3)
+    expect(artefact.score.deviation).toBe(DEPLOYMENT_BACKED.length)
+  })
+
+  it('shows the deviation count in the summary an operator reads', async () => {
+    const artefact = await run(exemptDeployment, {
+      expectSha: SHA,
+      headerProbe: fakeHeaderProbe,
+      liveReality: fakeLive({ 'x-build-version': '48ba389bdb1b' }),
+      liveUrl: 'https://buoystat.us',
+    })
+    const summary = formatAdoptionSummary(artefact)
+
+    expect(summary).toContain(`${DEPLOYMENT_BACKED.length}DEV`)
+    expect(summary).toContain('RESULT: DEVIATION')
+    // A conformant app's score line stays free of it.
+    expect(formatAdoptionSummary(await run())).not.toContain('DEV')
   })
 })
 

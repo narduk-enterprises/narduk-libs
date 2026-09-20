@@ -13,12 +13,17 @@
  * silently changed shape under an existing flag would break the consumers the
  * seven-item artefact was frozen to protect.
  *
- * Exit codes, the same convention as every `foundation:check:*`:
- *   0  PASS     every machine-decidable requirement passes or is N/A.
- *   1  FAIL     at least one is failing.
- *   2  UNKNOWN  none failing, but at least one could not be decided -- which
- *               includes every run given no `--live`, since three requirements
- *               are questions only a deployed origin can answer.
+ * Exit codes, the same convention as every `foundation:check:*`, plus one of
+ * this report's own:
+ *   0  PASS       every machine-decidable requirement passes or is N/A.
+ *   1  FAIL       at least one is failing.
+ *   2  UNKNOWN    none failing, but at least one could not be decided -- which
+ *                 includes every run given no `--live`, since three
+ *                 requirements are questions only a deployed origin can
+ *                 answer.
+ *   3  DEVIATION  nothing failing or undecided, but the app declares a
+ *                 departure from the standard. Not a failure; not adoption
+ *                 either, so it does not exit 0 and get read as adopted.
  *
  * A PASS here is not a declaration. Requirements the command cannot decide are
  * reported as `manual` and listed under `manualReview`; a sign-off carries

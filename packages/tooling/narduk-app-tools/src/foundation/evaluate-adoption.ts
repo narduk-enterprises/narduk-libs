@@ -121,8 +121,8 @@ export interface AdoptionArtefact {
   /** Requirement ids this command cannot decide. A declaration must carry
    * separate evidence for each one. */
   manualReview: string[]
-  result: 'PASS' | 'FAIL' | 'UNKNOWN'
-  exitCode: 0 | 1 | 2
+  result: 'PASS' | 'FAIL' | 'UNKNOWN' | 'DEVIATION'
+  exitCode: 0 | 1 | 2 | 3
 }
 
 /** Seam for the tests: real runs fetch. */
@@ -202,6 +202,18 @@ async function readLive(
   }
 
   return { ...base, health, healthOk }
+}
+
+/**
+ * The process exit for each outcome. `0`, `1` and `2` are the convention every
+ * `foundation:check:*` already uses; `3` is this report's own, for an app that
+ * declares a departure from the standard rather than failing it.
+ */
+const EXIT_CODE: Record<AdoptionArtefact['result'], AdoptionArtefact['exitCode']> = {
+  DEVIATION: 3,
+  FAIL: 1,
+  PASS: 0,
+  UNKNOWN: 2,
 }
 
 export interface RunAdoptionCheckOptions {
@@ -289,16 +301,31 @@ export async function runAdoptionCheck(
   // `result` is the verdict over what this command actually decided. A
   // requirement it cannot decide is in `manualReview`, never folded into a
   // pass -- see the header note.
+  //
+  // `deviation` gets its own outcome rather than collapsing into either
+  // neighbour. It is not a failure: an app may declare a different deployment
+  // standard deliberately, and the vocabulary exists to say so. But it is not
+  // a PASS either -- PASS means "conformant to the standard as written", and
+  // an automation keying on exit 0 to mean "adopted narduk-v1" would read a
+  // declared departure as adoption. That is the false capability claim the
+  // standard forbids, so a deviating app exits 3 and an operator decides
+  // whether the departure is accepted.
+  //
+  // UNKNOWN outranks DEVIATION: an undecided requirement means the report
+  // could not establish the facts, which has to be resolved before anyone can
+  // weigh the departure.
   const decidable = requirements.filter((r) => r.enforcement !== 'manual')
   const result: AdoptionArtefact['result'] = decidable.some((r) => r.verdict === 'fail')
     ? 'FAIL'
     : decidable.some((r) => r.verdict === 'unknown')
       ? 'UNKNOWN'
-      : 'PASS'
+      : decidable.some((r) => r.verdict === 'deviation')
+        ? 'DEVIATION'
+        : 'PASS'
 
   return {
     app,
-    exitCode: result === 'PASS' ? 0 : result === 'FAIL' ? 1 : 2,
+    exitCode: EXIT_CODE[result],
     generated,
     live,
     manualReview,
@@ -767,7 +794,8 @@ export function formatAdoptionSummary(artefact: AdoptionArtefact): string {
     )
   }
   lines.push(
-    `  score      ${artefact.score.pass}P ${artefact.score.fail}F ${artefact.score.unknown}U ${artefact.score.notApplicable}N/A`,
+    `  score      ${artefact.score.pass}P ${artefact.score.fail}F ${artefact.score.unknown}U ${artefact.score.notApplicable}N/A` +
+      (artefact.score.deviation > 0 ? ` ${artefact.score.deviation}DEV` : ''),
     '',
   )
   for (const requirement of artefact.requirements) {

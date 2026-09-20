@@ -53,6 +53,9 @@ delivery path down), while an app declaring a different standard is the
 document its consumers already parse, bare `doctor` keeps its output and exit
 code, and this is a separate artefact with its own tool name and schema.
 
-Exit codes follow the existing convention: `0` PASS, `1` FAIL, `2` UNKNOWN —
-including every run given no `--live`, since three requirements are questions
-only a deployed origin can answer.
+Exit codes follow the existing convention — `0` PASS, `1` FAIL, `2` UNKNOWN,
+the last including every run given no `--live`, since three requirements are
+questions only a deployed origin can answer — and add `3` DEVIATION. An app
+declaring a different deployment standard is not failing the standard, but it
+has not adopted it either; exiting `0` would let an automation reading the exit
+code as "adopted narduk-v1" read a declared departure as adoption.
