@@ -69,9 +69,25 @@ export function createFetchProbe(timeoutMs = DEFAULT_TIMEOUT_MS): HeaderProbe {
   }
 }
 
+/**
+ * The routes to probe for `baseUrl`.
+ *
+ * With explicit `paths`, each one resolves against the origin, so `/login`
+ * means the same route whatever path `baseUrl` carried.
+ *
+ * With none, the probe reads `baseUrl` ITSELF rather than resolving `'/'`
+ * against it. The old default discarded any path the caller gave -- a
+ * `--base-url https://app.example/login` probed `https://app.example/`,
+ * reporting the headers of a route nobody asked about, and on an
+ * authenticated app that root is the one route that refuses the request
+ * (narduk-libs#632, absorbing #638). A bare origin still probes its root,
+ * because `new URL('https://app.example').toString()` is already
+ * `https://app.example/`.
+ */
 export function resolveProbeUrls(baseUrl: string, paths: readonly string[]): string[] {
   const base = new URL(baseUrl)
-  return (paths.length > 0 ? paths : ['/']).map((path) => new URL(path, base).toString())
+  if (paths.length === 0) return [base.toString()]
+  return paths.map((path) => new URL(path, base).toString())
 }
 
 export interface RunSecurityHeadersCheckOptions {

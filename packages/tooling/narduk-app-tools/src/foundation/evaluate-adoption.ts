@@ -42,7 +42,11 @@ import {
   type SecurityHeadersArtefact,
 } from './evaluate-security-headers.js'
 import { runToolchainCheck, type ToolchainArtefact } from './evaluate-toolchain.js'
-import { runDeploymentCheck, type DeploymentArtefact } from './evaluate-deployment.js'
+import {
+  runDeploymentCheck,
+  type DeclaredLiveProof,
+  type DeploymentArtefact,
+} from './evaluate-deployment.js'
 import {
   runPackageCurrencyCheck,
   type PackageCurrencyReport,
@@ -84,15 +88,24 @@ export interface AdoptionRequirement {
 }
 
 export interface AdoptionLiveReading {
+  /** The origin the caller named with `--live`. */
   url: string
+  /** The route the build stamp was actually read from: the declared smoke
+   * path resolved against `url`. */
+  smokeUrl: string
+  /** The route the health reading was actually taken from: the declared
+   * health path resolved against `url`. */
+  healthUrl: string
+  /** The header the app declares carries its build stamp. */
+  buildVersionHeader: string
   reachable: boolean
-  /** The `x-build-version` header, or null when absent/unreachable. */
+  /** The declared build-version header, or null when absent/unreachable. */
   buildVersion: string | null
   /** The commit the caller said should be live, or null when not supplied. */
   expectSha: string | null
   /** null when `expectSha` was not supplied. */
   matched: boolean | null
-  /** `/api/health` status string, or null. */
+  /** The health route's status string, or null. */
   health: string | null
   healthOk: boolean | null
 }
@@ -139,6 +152,68 @@ export function createFetchLiveReality(probe: LiveProbe = createLiveProbe()): Ad
   }
 }
 
+/**
+ * What to probe when the app declares nothing.
+ *
+ * These are only a fallback. An app that declares `deployment.liveProof`
+ * -- which `foundation:check:deployment` item 12.3 already REQUIRES of an
+ * adopted app -- has its own paths honoured instead. Probing these
+ * regardless was narduk-libs#632: an authenticated app whose root correctly
+ * refuses an anonymous request was reported as having a broken delivery path
+ * and health contract, and the check rewarded the app that left its health
+ * route open to anonymous callers over the one that did not.
+ */
+export const FALLBACK_BUILD_VERSION_HEADER = 'x-build-version'
+export const FALLBACK_HEALTH_PATH = '/api/health'
+export const FALLBACK_SMOKE_PATH = '/'
+
+/** The resolved probe contract: always populated, declaration first. */
+export interface LiveProofContract {
+  buildVersionHeader: string
+  healthPath: string
+  smokePath: string
+}
+
+/**
+ * The app's declared live-proof contract, falling back to the standard's
+ * defaults only where it declares nothing.
+ *
+ * The header name is lower-cased because that is how a response header set is
+ * keyed here; `readLive` compares case-insensitively regardless.
+ */
+export function resolveLiveProofContract(
+  declared: DeclaredLiveProof | null | undefined,
+): LiveProofContract {
+  return {
+    buildVersionHeader: (
+      declared?.buildVersionHeader ?? FALLBACK_BUILD_VERSION_HEADER
+    ).toLowerCase(),
+    healthPath: declared?.healthPath ?? FALLBACK_HEALTH_PATH,
+    smokePath: declared?.smokePath ?? FALLBACK_SMOKE_PATH,
+  }
+}
+
+/** Header sets arrive lower-cased in practice, but a probe that did not
+ * normalise would silently read every stamp as absent. */
+function headerValue(headers: Record<string, string>, name: string): string | null {
+  const wanted = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === wanted) return value
+  }
+  return null
+}
+
+/** A declared path resolved against the live origin. A path the app declared
+ * cannot normally fail to resolve -- the schema constrains it -- so a throw
+ * here falls back to the origin rather than taking down the whole report. */
+function resolveAgainst(liveUrl: string, path: string): string {
+  try {
+    return new URL(path, liveUrl).toString()
+  } catch {
+    return liveUrl
+  }
+}
+
 function statusToVerdict(status: FoundationStatus): AdoptionVerdict {
   if (status === 'pass') return 'pass'
   if (status === 'fail') return 'fail'
@@ -174,22 +249,28 @@ async function readLive(
   liveUrl: string,
   expectSha: string | null,
   reality: AdoptionLiveReality,
+  contract: LiveProofContract,
 ): Promise<AdoptionLiveReading> {
-  const root = await reality.read(liveUrl)
-  const buildVersion = root.headers['x-build-version'] ?? null
+  const smokeUrl = resolveAgainst(liveUrl, contract.smokePath)
+  const healthUrl = resolveAgainst(liveUrl, contract.healthPath)
+
+  const smoke = await reality.read(smokeUrl)
+  const buildVersion = headerValue(smoke.headers, contract.buildVersionHeader)
   const base = {
     buildVersion,
+    buildVersionHeader: contract.buildVersionHeader,
     expectSha,
+    healthUrl,
     matched:
       expectSha === null || buildVersion === null ? null : matchesCommit(expectSha, buildVersion),
-    reachable: root.status !== null && root.status < 500,
+    reachable: smoke.status !== null && smoke.status < 500,
+    smokeUrl,
     url: liveUrl,
   }
 
   let health: string | null = null
   let healthOk: boolean | null = null
   try {
-    const healthUrl = new URL('/api/health', liveUrl).toString()
     const response = await reality.read(healthUrl)
     if (response.status !== null) {
       healthOk = response.status === 200
@@ -225,7 +306,9 @@ export interface RunAdoptionCheckOptions {
   liveReality?: AdoptionLiveReality
   appOverrides?: Partial<FoundationAppInfo>
   generated?: string
-  /** Extra routes for requirement 8's probe, beyond `/`. */
+  /** Routes for requirement 8's probe. Defaults to the app's declared
+   * `deployment.liveProof.smokePath` -- probing `/` on an authenticated app
+   * reads the one route that refuses the request (narduk-libs#632). */
   headerPaths?: readonly string[]
   /** Item 10's probe. Injectable for the same reason `liveReality` is: without
    * it a test that passes `liveUrl` reaches the real origin, and a green
@@ -251,11 +334,16 @@ export async function runAdoptionCheck(
   const currency = await runPackageCurrencyCheck({ reality, root })
   const mapkit = runMapKitProvenanceCheck(root)
 
+  // The app's own declaration decides what gets probed. `deployment` is
+  // already resolved above, so this costs no extra read.
+  const liveProof = resolveLiveProofContract(deployment.declaration.liveProof)
+
   const live = options.liveUrl
     ? await readLive(
         options.liveUrl,
         options.expectSha ?? null,
         options.liveReality ?? createFetchLiveReality(),
+        liveProof,
       )
     : null
 
@@ -263,7 +351,7 @@ export async function runAdoptionCheck(
     ? await runSecurityHeadersCheck({
         ...shared,
         baseUrl: options.liveUrl,
-        paths: options.headerPaths,
+        paths: options.headerPaths ?? [liveProof.smokePath],
         probe: options.headerProbe,
       })
     : null
@@ -280,7 +368,7 @@ export async function runAdoptionCheck(
     requirement9(mapkit),
     requirement10(coverage, foundation),
     requirement11(),
-    requirement12(live),
+    requirement12(live, liveProof),
     requirement13(),
     requirement14(),
     requirement15(),
@@ -508,7 +596,9 @@ function requirement5(
   const repoHalf = ['12.1', '12.2', '12.3'].map((id) => subCheck(deployment.item, id))
   const evidence = [
     'narduk-app foundation:check:deployment (12.1, 12.2, 12.3)',
-    ...(live ? [`${live.url} x-build-version: ${live.buildVersion ?? '(absent)'}`] : []),
+    ...(live
+      ? [`${live.smokeUrl} ${live.buildVersionHeader}: ${live.buildVersion ?? '(absent)'}`]
+      : []),
   ]
   const base = { enforcement: 'enforced' as const, evidence, id: 'R5', owner: OWNER_APP, title }
 
@@ -543,7 +633,7 @@ function requirement5(
       ...base,
       detail: live.buildVersion
         ? `live serves ${live.buildVersion}; no --expect-sha given to compare it against`
-        : 'the live origin served no x-build-version header',
+        : `${live.smokeUrl} served no ${live.buildVersionHeader} header`,
       enforcement: 'partially-enforced',
       verdict: 'unknown',
     }
@@ -551,8 +641,8 @@ function requirement5(
   return {
     ...base,
     detail: live.matched
-      ? `live ${live.url} serves ${live.buildVersion}, which is the expected commit`
-      : `live ${live.url} serves ${live.buildVersion}, which is NOT the expected commit`,
+      ? `live ${live.smokeUrl} serves ${live.buildVersion}, which is the expected commit`
+      : `live ${live.smokeUrl} serves ${live.buildVersion}, which is NOT the expected commit`,
     enforcement: 'partially-enforced',
     verdict: live.matched ? 'pass' : 'fail',
   }
@@ -706,12 +796,15 @@ function requirement11(): AdoptionRequirement {
   }
 }
 
-function requirement12(live: AdoptionLiveReading | null): AdoptionRequirement {
+function requirement12(
+  live: AdoptionLiveReading | null,
+  contract: LiveProofContract,
+): AdoptionRequirement {
   if (live === null || live.healthOk === null) {
     return {
       detail: 'no live health reading; counts, filters and freshness are checked by the app',
       enforcement: 'manual',
-      evidence: ['GET /api/health', "the app's own capability contract tests"],
+      evidence: [`GET ${contract.healthPath}`, "the app's own capability contract tests"],
       id: 'R12',
       owner: OWNER_APP,
       title: 'Honest capabilities and health',
@@ -720,13 +813,13 @@ function requirement12(live: AdoptionLiveReading | null): AdoptionRequirement {
   }
   return {
     detail: live.healthOk
-      ? `GET /api/health answered ${live.health}; agreement between advertised and served data is the app's own contract tests`
-      : `GET /api/health answered ${live.health}`,
+      ? `GET ${live.healthUrl} answered ${live.health}; agreement between advertised and served data is the app's own contract tests`
+      : `GET ${live.healthUrl} answered ${live.health}`,
     // The health route answering is decided here; whether its counts and
     // freshness agree with the data actually served is the app's contract
     // tests, which this command does not run.
     enforcement: 'partially-enforced',
-    evidence: [`${live.url}/api/health`, "the app's own capability contract tests"],
+    evidence: [live.healthUrl, "the app's own capability contract tests"],
     id: 'R12',
     owner: OWNER_APP,
     title: 'Honest capabilities and health',
@@ -790,7 +883,7 @@ export function formatAdoptionSummary(artefact: AdoptionArtefact): string {
   ]
   if (artefact.live) {
     lines.push(
-      `  live       ${artefact.live.url} -> ${artefact.live.buildVersion ?? '(no header)'}`,
+      `  live       ${artefact.live.smokeUrl} -> ${artefact.live.buildVersion ?? '(no header)'}`,
     )
   }
   lines.push(

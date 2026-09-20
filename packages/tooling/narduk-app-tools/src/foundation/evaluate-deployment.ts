@@ -42,6 +42,24 @@ export type DeploymentCheckMode = 'rollout' | 'strict'
 /** What the repository says about its relationship to the standard. */
 export type DeploymentAdoption = 'adopted' | 'not-adopted' | 'exempt' | 'invalid'
 
+/**
+ * The live-proof contract the app declares, carried out of the scan so a
+ * caller that probes the origin reads the app's own paths rather than
+ * assuming them (narduk-libs#632).
+ *
+ * Null whenever the block is absent, exempt or invalid: there is then no
+ * declaration to honour, and a consumer falls back to the standard's
+ * defaults rather than inventing one.
+ */
+export interface DeclaredLiveProof {
+  /** The response header that carries the deployed build stamp. */
+  buildVersionHeader: string
+  /** The path a health probe must read. */
+  healthPath: string
+  /** The path a delivery-path probe must read. */
+  smokePath: string
+}
+
 /** A one-item artefact, deliberately NOT shaped like `FoundationCheckArtefact`
  * (no `items` array, no claim of the ratified 7-item contract). */
 export interface DeploymentArtefact {
@@ -59,6 +77,9 @@ export interface DeploymentArtefact {
     standard: string | null
     nonProductionBranchBuilds: boolean | null
     stagingEnabled: boolean | null
+    /** What the block declares about proving a deployment live. Null unless
+     * the block is valid -- see `DeclaredLiveProof`. */
+    liveProof: DeclaredLiveProof | null
   }
   /** D1/KV/R2 bindings the committed wrangler config declares. */
   productionBindings: BindingsByKind
@@ -142,6 +163,13 @@ export function runDeploymentCheck(options: RunDeploymentCheckOptions): Deployme
             : null,
       nonProductionBranchBuilds: block ? block.nonProductionBranchBuilds : null,
       stagingEnabled: block ? block.staging.enabled : null,
+      liveProof: block
+        ? {
+            buildVersionHeader: block.liveProof.buildVersionHeader,
+            healthPath: block.liveProof.healthPath,
+            smokePath: block.liveProof.smokePath,
+          }
+        : null,
     },
     productionBindings: scan.production,
     uncoveredPreviewBindings: scan.uncovered,
