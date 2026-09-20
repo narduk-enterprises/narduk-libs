@@ -94,7 +94,7 @@ const description = computed(() =>
   bottom: 0;
   left: 0;
   background: linear-gradient(0deg, var(--ns-accent-deep), var(--ns-accent));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5);
+  box-shadow: inset 0 1px 0 rgb(var(--ns-surface-rgb) / 0.5);
 }
 
 .ns-well__median {
@@ -102,7 +102,7 @@ const description = computed(() =>
   right: 0;
   left: 0;
   height: 0;
-  border-top: 1px dashed rgb(14 20 24 / 0.38);
+  border-top: 1px dashed rgb(var(--ns-ink-rgb) / 0.38);
 }
 
 .ns-well__median-label {
@@ -122,7 +122,7 @@ const description = computed(() =>
   width: 5px;
   background-image: repeating-linear-gradient(
     to bottom,
-    rgb(14 20 24 / 0.18) 0 1px,
+    rgb(var(--ns-ink-rgb) / 0.18) 0 1px,
     transparent 1px 10%
   );
 }

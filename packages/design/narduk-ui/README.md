@@ -35,6 +35,16 @@ workspace protocol dependency.
    contract is that restyling goes _through_ the token layer, not that the
    values are fixed.
 
+   Two obligations come with an ink or surface override. Set the channel
+   triplet beside the hex — `--ns-ink-rgb` with `--ns-ink`, `--ns-surface-rgb`
+   with `--ns-surface` — because the machined chrome (well ticks, the dashed
+   median, band and tile hairlines, the hatch, every shadow) is composited from
+   the channels; changing only the hex restyles the text and leaves the chrome
+   at the default ink. And clear the same contrast floor the defaults do, the
+   one written on the ink block in `tokens.css`. The app that changes them owns
+   that proof — `narduk-shell` requires the same of `--ne-*` overrides, and
+   `operator-portal#238` is what happens when nobody does.
+
 ## Design rules these components encode
 
 From the design system, in priority order:

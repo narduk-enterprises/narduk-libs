@@ -68,7 +68,7 @@ const deltaText = computed(() => {
 .ns-tile--missing {
   background-color: var(--ns-sunk);
   background-image: var(--ns-hatch-soft);
-  box-shadow: inset 0 0 0 1px rgb(14 20 24 / 0.07);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
 }
 
 .ns-tile__label {

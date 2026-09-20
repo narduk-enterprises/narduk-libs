@@ -13,6 +13,9 @@
  * Rules, in order of importance:
  *   1. Every token here is a shared DEFAULT. An app may override any of them
  *      for its own design; doing so is a design decision, not a violation.
+ *      Ink and surface overrides still owe the contrast floor stated on the
+ *      ink block below; the app that changes them owns that proof. Retiring
+ *      the cage does not retire AA (narduk-shell README, operator-portal#238).
  *   2. The accent triplet at the bottom is the smallest useful override: set
  *      it alone and the app reads as one family with the rest of the estate.
  *   3. Every measured number is mono and tabular.
@@ -41,6 +44,17 @@
   --ns-surface: #ffffff;
   --ns-sunk: #eef1f3; /* wells, inputs, missing */
   --ns-paper: #f4f6f7; /* page ground */
+
+  /* Channel triplets for --ns-ink and --ns-surface. Every alpha composite in
+   * this file and in the instruments is built from these, so an ink or surface
+   * override moves the hairlines, wells, hatches and shadows with it instead
+   * of leaving them pinned to the default. Override these in the same rule you
+   * override --ns-ink / --ns-surface: they are two halves of one value, and
+   * setting only the hex leaves the machined chrome behind. Space-separated
+   * channels, no commas -- they are spliced into rgb(... / alpha).
+   */
+  --ns-ink-rgb: 14 20 24;
+  --ns-surface-rgb: 255 255 255;
 
   /* Neutral base for shared previews and consumers without a product scope. */
   --ns-accent: var(--ns-ink-3);
@@ -72,13 +86,17 @@
 
   --ns-void: #5e6870;
   --ns-void-bg: #eceff1;
-  --ns-void-ring: rgb(14 20 24 / 0.1);
+  --ns-void-ring: rgb(var(--ns-ink-rgb) / 0.1);
 
   /* The missing-data material. 45 degree hatch at 6px on a sunk surface. */
-  --ns-hatch: repeating-linear-gradient(135deg, rgb(14 20 24 / 0.07) 0 3px, transparent 3px 6px);
+  --ns-hatch: repeating-linear-gradient(
+    135deg,
+    rgb(var(--ns-ink-rgb) / 0.07) 0 3px,
+    transparent 3px 6px
+  );
   --ns-hatch-soft: repeating-linear-gradient(
     135deg,
-    rgb(14 20 24 / 0.035) 0 3px,
+    rgb(var(--ns-ink-rgb) / 0.035) 0 3px,
     transparent 3px 6px
   );
 
@@ -127,17 +145,21 @@
    * the recessed well and the dark bezel.
    */
   --ns-e0: inset 0 0 0 1px var(--ns-line);
-  --ns-e1: inset 0 0 0 1px var(--ns-line), inset 0 1px 0 #fff, 0 1px 2px rgb(14 20 24 / 0.05);
+  --ns-e1:
+    inset 0 0 0 1px var(--ns-line), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 1px 2px rgb(var(--ns-ink-rgb) / 0.05);
   --ns-e2:
-    inset 0 0 0 1px #d5dce1, inset 0 1px 0 #fff, 0 1px 2px rgb(14 20 24 / 0.05),
-    0 10px 20px -12px rgb(14 20 24 / 0.22);
+    inset 0 0 0 1px #d5dce1, inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 1px 2px rgb(var(--ns-ink-rgb) / 0.05), 0 10px 20px -12px rgb(var(--ns-ink-rgb) / 0.22);
   --ns-e3:
-    inset 0 0 0 1px #cfd7dd, inset 0 1px 0 #fff, 0 2px 6px rgb(14 20 24 / 0.08),
-    0 28px 56px -28px rgb(14 20 24 / 0.34);
-  --ns-well: inset 0 1px 3px rgb(14 20 24 / 0.13), inset 0 0 0 1px rgb(14 20 24 / 0.07);
+    inset 0 0 0 1px #cfd7dd, inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 2px 6px rgb(var(--ns-ink-rgb) / 0.08), 0 28px 56px -28px rgb(var(--ns-ink-rgb) / 0.34);
+  --ns-well:
+    inset 0 1px 3px rgb(var(--ns-ink-rgb) / 0.13), inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   --ns-bezel:
-    inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 12px 26px -16px rgb(14 20 24 / 0.7);
+    inset 0 1px 0 rgb(var(--ns-surface-rgb) / 0.14),
+    inset 0 0 0 1px rgb(var(--ns-surface-rgb) / 0.08),
+    0 12px 26px -16px rgb(var(--ns-ink-rgb) / 0.7);
   --ns-bezel-fill: linear-gradient(180deg, #253039, #0e1418);
 
   /* ---- geometry ---------------------------------------------------------
@@ -300,12 +322,12 @@
 .ns-missing {
   background-color: var(--ns-sunk);
   background-image: var(--ns-hatch);
-  box-shadow: inset 0 0 0 1px rgb(14 20 24 / 0.07);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   color: var(--ns-void);
 }
 .ns-missing-soft {
   background-color: var(--ns-sunk);
   background-image: var(--ns-hatch-soft);
-  box-shadow: inset 0 0 0 1px rgb(14 20 24 / 0.07);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   color: var(--ns-void);
 }
