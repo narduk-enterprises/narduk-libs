@@ -161,33 +161,47 @@ genuinely mechanical, and err toward the higher tier when in doubt. Each lane is
 file-disjoint, owns its whole lifecycle (implement → PR → gate → merge), and
 reports rather than streams.
 
-### Lane tiers and naming (Logan, 2026-09-20)
+### The worker pool (Logan, 2026-09-20)
 
-Verbatim: _"You created 4 sonnet lanes and if you are going to reuse them you
-need to create opus lanes too....and rename them accordingly since they will be
-working different taskks.."_ and _"or you can rename them as you go along?"_.
+Verbatim, and this supersedes the fresh-session-per-wave shape written earlier
+the same day: _"The sessions we have open are the 4 sonnet session you will
+reuse.....for opus session we should open 4 of them too so you can use them and
+reuse them, and a single fable session for work that requires extra
+intelligence"_.
 
-The Phase 1 sweep lanes are **Sonnet** — triage and read-only probing, which is
-what Sonnet is for. Every lane that writes code or durable text is **Opus 5
-(high)**, and it is a **fresh session**, not a renamed sweep:
+So the campaign runs a **standing pool of nine sessions**, not a session per
+item. A session is a worker, not a task; the master assigns it work, renames it
+to match, and reuses it:
 
-- A sweep session carries roughly fifty issues of probe output. Reusing it pays
-  for that context on every later call (`AGENTS.md` § **Token & context
-  discipline**), and the wave work shares almost none of it.
-- The S1–S4 slices partition the backlog **by area, for reading**. A wave lane
-  has to be **file-disjoint for writing**. They are different cuts, so the
-  sessions should not be the same sessions.
+| Pool      | Count | Tier          | What it takes                                    |
+| --------- | ----- | ------------- | ------------------------------------------------ |
+| `S1`–`S4` | 4     | Sonnet        | triage, probing, read-only verification          |
+| `O1`–`O4` | 4     | Opus 5 (high) | every change to code, tests, workflows, docs     |
+| `F1`      | 1     | Fable 5.1     | the one item at a time that needs more than Opus |
 
-So a sweep lane ends properly — retro written, worktree pruned, session archived
-— and the wave lane opens beside it under its own name.
+Four items are in flight at once — the four Opus workers — which is the cap
+Logan set. The Sonnet workers run alongside them on triage, and `F1` is
+deliberately idle unless something is genuinely hard: a subtle correctness or
+security question, a design call with wide blast radius, a review another lane
+could not settle. A Fable lane grinding ordinary backlog items is the failure
+mode to avoid.
 
-**The one exception**, taken case by case and recorded on the board: when a
-single sweep slice maps cleanly onto a single wave item and that session is
-still cheap on context, rename it and switch its model rather than respinning.
+**Renaming is how a worker changes jobs.** `S2 release-security sweep` becomes
+`S2 · <next assignment>` when its slice closes; `O1 opus worker` becomes
+`O1 · A2 tenancy isolation` when it picks that item up. The title always says
+what the session is doing now, so the sidebar never shows a lane doing something
+its name denies. A worker does not archive itself at the end of an item — it
+reports idle and waits.
 
-Naming: Phase 1 `S<n> <area> sweep` · Phase 2 `P2 CI <item>` · Wave A
-`A<n> <area>` · Wave B `B<n> <area>`. The title says the task, so the sidebar
-never shows a lane doing something its name denies.
+The pool briefs are `~/.agents/programs/narduk-libs-backlog/briefs/pool-opus.md`
+and `pool-fable.md`; they carry the whole standing contract, so an assignment is
+a short message rather than a new brief.
+
+The earlier argument against reuse — that a sweep session carries fifty issues
+of probe context — is real but smaller than the cost it was weighed against.
+Reuse is what keeps nine addressable workers alive instead of respinning a
+session per item, and a worker whose context has genuinely filled up gets
+replaced at that point rather than on a schedule.
 
 ### Wave A — stabilization and safety
 
