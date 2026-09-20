@@ -316,9 +316,17 @@ export function resolveSecurityHeaders(
   // Browsers ignore upgrade-insecure-requests in a report-only policy and
   // Chromium logs a console error on every page. Keep it on the enforcing
   // header only.
-  if (mode === 'enforce') {
-    csp['upgrade-insecure-requests'] = true
-  }
+  //
+  // This must be an explicit `false`, not an absent key. nuxt-security merges
+  // our options OVER its own defaults (`defuReplaceArray(userOptions,
+  // defaultSecurityConfig(...))` in `dist/module.mjs`), and its default CSP
+  // sets `'upgrade-insecure-requests': true`. defu fills in any key we leave
+  // undefined, so omitting the directive reinstates it at full strength --
+  // which is how LakeStat shipped a report-only policy carrying it and logged
+  // a console error on every document load. `false` survives the merge, and
+  // nuxt-security's serializer drops a false directive
+  // (`.filter(([, value]) => value !== false)` in `dist/utils/headers.mjs`).
+  csp['upgrade-insecure-requests'] = mode === 'enforce'
   for (const key of Object.keys(DIRECTIVE_OF) as Array<keyof SecurityHeadersAllowlist>) {
     csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic)
   }
