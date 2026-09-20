@@ -17,6 +17,7 @@
     "scripts:test": "node --test scripts/*.test.mjs",
     "changeset": "changeset",
     "pack:check": "node scripts/release-packages.mjs --dry-run",
+    "preflight": "node scripts/preflight.mjs",
     "release:dry-run": "node scripts/release-packages.mjs --dry-run",
     "release:consumer-smoke": "node scripts/release-packages.mjs --dry-run --consumer-smoke",
     "release:version": "pnpm run release-plan:check && changeset version && pnpm run versions:sync",
