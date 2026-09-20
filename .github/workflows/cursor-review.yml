@@ -11,16 +11,19 @@
 # ruleset also requires review-thread resolution. Never part of `ci / Required`.
 name: Cursor review
 
+# No `synchronize`: a push does not re-review. A lane that wants the new head
+# reviewed adds the `review-now` label, which the callable clears again so the
+# next add is a fresh event. Every other label addition skips.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, labeled]
 
 permissions:
   contents: read
 
 jobs:
   cursor-review:
-    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@852e0f0ce79860dc5fce0b998bf90712ba6a6bf4 # workflows#120; the moving v2 tag predates this callable, keep the SHA
+    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@246013d4284ba0c15040c333e169b90a66334d1f # workflows#125; the moving v2 tag predates this callable, keep the SHA
     permissions:
       contents: read
       pull-requests: write
