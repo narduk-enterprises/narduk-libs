@@ -1,20 +1,29 @@
 /*
  * Narduk Status Design System v1.0 — token layer
  *
- * Source of truth: this coded library (company-hq D-WEBFOUND-2 Q3).
- * The design-system-build gallery renders these tokens and Vue components
- * one way into NE Base previews. Canvas exports are downstream references.
+ * Source of truth for the SHARED system: this coded library (company-hq
+ * D-WEBFOUND-2 Q3). The design-system-build gallery renders these tokens and
+ * Vue components one way into NE Base previews.
  *
- * Rules carried over from the handoff, in order of importance:
- *   1. Ink, surface, signal, type, depth and geometry are SHARED. Never override per app.
- *   2. The only per-app override is the accent triplet at the bottom of this file.
+ * Apps are designed independently (Logan, 2026-09-19). An app with its own
+ * design canvas -- LakeStat's "Waterline", for instance -- is designed from
+ * that canvas, and this file is the shared default it starts from, not a cage.
+ * Override whatever that design calls for.
+ *
+ * Rules, in order of importance:
+ *   1. Every token here is a shared DEFAULT. An app may override any of them
+ *      for its own design; doing so is a design decision, not a violation.
+ *   2. The accent triplet at the bottom is the smallest useful override: set
+ *      it alone and the app reads as one family with the rest of the estate.
  *   3. Every measured number is mono and tabular.
  *   4. Missing data gets --ns-hatch plus a reason line. Never zero-filled, never interpolated.
  *   5. Accent is for interaction, data ink and the brand mark. Never for status.
+ *      This one is not governance: an accent that also encodes staleness makes
+ *      brand and meaning unreadable against each other. It survives a re-skin.
  */
 
 :root {
-  /* ---- ink & surface — shared, never overridden per app -------------------
+  /* ---- ink & surface — shared defaults, overridable per app ---------------
    * Contrast floor: every ink below clears WCAG AA (4.5:1) on paper, surface
    * and sunk. --ns-text-mute is the lightest ink permitted on text of any
    * size (5.19:1 on surface, 4.58:1 on sunk). Anything lighter is decorative.
@@ -38,7 +47,12 @@
   --ns-accent-deep: var(--ns-ink-2);
   --ns-accent-soft: var(--ns-sunk);
 
-  /* ---- signal — shared across all five, never restyled per app ------------
+  /* ---- signal — the shared four; an app's own design may restyle them ------
+   * Restyling these is a real decision, not a free one: the four states mean
+   * the same thing in every product, so a reader moving between them relearns
+   * the palette. Worth it when an app's own design calls for it, and the
+   * semantics below must survive the change.
+   *
    * Live   observation inside the source's own publishing interval
    * Aging  past interval but inside 3x; still shown, flagged
    * Stale  beyond 3x interval; value shown with the age, never hidden
@@ -172,9 +186,13 @@
   }
 }
 
-/* ---- the only per-app override — three values ---------------------------
- * Every accent sits at oklch L~0.47 C~0.075. Only hue changes, so the five
- * products read as one family. Set data-app on <html> or the app root.
+/* ---- the family accents — three values per app --------------------------
+ * Every accent sits at oklch L~0.47 C~0.075. Only hue changes, so products
+ * that take the shared defaults read as one family. Set data-app on <html>
+ * or the app root.
+ *
+ * This is the smallest override that still looks deliberate, not the only one
+ * allowed: an app designed from its own canvas sets whatever its design needs.
  */
 [data-app="lakestat"] {
   --ns-accent: #2f6b8f;

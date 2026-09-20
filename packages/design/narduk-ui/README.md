@@ -28,7 +28,12 @@ workspace protocol dependency.
    package; it is cheaper than juggling several, but it is a real cost.
 3. **Tokens are the only styling contract.** Components read `--ns-*` and never
    hardcode a colour, radius, shadow or font. An app restyles a component by
-   setting its accent triplet, not by overriding component CSS.
+   setting tokens — its accent triplet at minimum, or any `--ns-*` its own
+   design calls for — never by overriding component CSS. Apps are designed
+   independently (Logan, 2026-09-19); the tokens are shared defaults, and an
+   app designed from its own canvas overrides what that design needs. The
+   contract is that restyling goes _through_ the token layer, not that the
+   values are fixed.
 
 ## Design rules these components encode
 
@@ -45,7 +50,10 @@ From the design system, in priority order:
 4. **Numbers are mono.** Tabular IBM Plex Mono for every measurement, so columns
    align and digits never dance.
 5. **Accent is never status.** Accent carries interaction, data ink and the brand
-   mark. Freshness and severity use the four shared signal tokens.
+   mark. Freshness and severity use the four signal tokens. This rule holds even
+   for an app that restyles those tokens: an accent that also encodes staleness
+   makes brand and meaning unreadable against each other, which is a design
+   argument rather than a governance one, so it survives a re-skin.
 
 ## Instruments
 
