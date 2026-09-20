@@ -1,5 +1,58 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.11.1
+
+### Patch Changes
+
+- 693f7d3: security.headers: let a first-party-only app opt out of the estate
+  CSP baseline
+
+  `security.headers.baseline` selects which third-party origins an app inherits
+  before its own `allow` is applied. It defaults to `'estate'`, so no existing
+  app's policy changes.
+
+  `baseline: 'self'` inherits none of them: every directive is `'self'` plus
+  whatever the app names in `allow`. It exists because `allow` can only add,
+  which left an app reaching no third party unable to enforce the strict nonce
+  policy without widening its CSP — trading `script-src 'unsafe-inline'` for the
+  eleven `BASELINE_ALLOWLIST` origins, eight of them on `connect-src`.
+
+  The nonce, `'strict-dynamic'`, HSTS, `frame-ancestors`, `form-action`,
+  `object-src`, the report route and style-src's `'unsafe-inline'` are
+  unchanged, and the resulting policy is a strict subset of the `'estate'` one.
+
+  Closes #560.
+
+- eb07a18: Declare who owns each D1 schema: `deployment.databaseOwnership`
+
+  `deployment.migrations` had to cover **every** D1 binding exactly once, which
+  is right for a database whose schema is its migration history and wrong for
+  one whose schema is owned by a contract and applied by a refresh job. The only
+  way such an app could declare migrations for the rest of its estate was to
+  manufacture a migration baseline for a database nobody migrates -- a false
+  claim that the ledger describes that schema.
+
+  `Config/cloudflare-app.json`'s deployment block now accepts an optional
+  `databaseOwnership` array giving every binding exactly one owner: `migrations`
+  (resolving to an entry in `deployment.migrations.databases`) or `contract`
+  (naming the schema contract file and the package script that proves it).
+  Absent, nothing changes -- an app that migrates everything keeps working with
+  no config edit.
+
+  The load-bearing part is at the runner, not the validator:
+  `migrationDatabase()` is the single function every migration path uses to
+  reach D1, and it refuses a contract-owned binding before any provider call.
+  `db migrate --database READ_MODEL`, `db status`, `db migrate-deployment`,
+  baseline capture and baseline registration are all refused, as is a wrangler
+  config pointing another binding name at the contract-owned database id. The
+  contract-owned database is also absent from the minimal wrangler config the
+  deployment runner is handed.
+
+  `foundation:check:deployment` sub-check 12.8 now applies the same coverage
+  rule from the same implementation -- a contract-owned binding passes without a
+  source manifest, while an uncovered or doubly-owned binding still fails -- and
+  `doctor --adoption` requirement 6 reads that sub-check.
+
 ## 0.11.0
 
 ### Minor Changes
