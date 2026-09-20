@@ -60,6 +60,25 @@ agent sees it without reading this plan.
 The campaign is done when that milestone reaches zero. Raw open-issue count is
 not the measure — with filing left open it will not fall, and that is expected.
 
+### Amendment — findings fold in, waves recalibrate (Logan, 2026-09-20)
+
+Verbatim: _"And as new issues are found along the way they should be folded into
+the work if they are easy or a new issue filed if they are larger, and we should
+recalibrate the waves to include the new issues as we owrk the backlog"_.
+
+So the freeze bounds the **measurement**, not the work:
+
+- A small defect a lane finds inside the area it is already changing is fixed in
+  the same PR, named in the body, and never filed.
+- A larger or out-of-scope finding is filed, labeled, milestone unset, and the
+  lane keeps moving.
+- At **every wave boundary** the master reviews everything filed since the
+  freeze, admits what belongs into the milestone (saying so on the issue), and
+  rewrites the lane queues. Phase 1's close is the first such boundary.
+- Two counters are kept apart: the baseline 190 drained, and the count admitted
+  since the freeze. Without that split, a campaign that absorbs its own
+  discovery has no definable end.
+
 ## Phase 1 — mechanical re-verify sweep (first, before any implementation)
 
 The single largest wall-clock win, and it needs no CI, no merge order, and no
