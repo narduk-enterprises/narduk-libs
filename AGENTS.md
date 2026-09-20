@@ -56,6 +56,37 @@ Check the live set with `gh label list --repo narduk-enterprises/narduk-libs`.
   `area:mapkit`, `area:testkit`, `area:logging` and `area:seo` were added on
   2026-09-18 at Logan's direction.
 
+## Backlog clear-out freeze
+
+Milestone `backlog-clearout` holds the 190 issues that were open at 2026-09-20
+22:56Z, frozen as the campaign's scope
+([plan](docs/plans/backlog-clearout-plan.md)). Filing stays unrestricted, and
+this changes nothing about how you label a new issue.
+
+A new issue does **not** go in that milestone by itself — a filing agent leaves
+the milestone unset. Search before filing: three separate issues (#544, #561,
+#631) turned out to be one toolchain defect.
+
+What happens to something you find mid-item (Logan, 2026-09-20: _"as new issues
+are found along the way they should be folded into the work if they are easy or
+a new issue filed if they are larger, and we should recalibrate the waves to
+include the new issues as we work the backlog"_):
+
+- **Easy, and in the area you are already changing** — fix it in the same PR and
+  say so in the body. Do not file an issue for something you just fixed.
+- **Larger, or outside your item's scope** — file it, labeled, milestone unset,
+  and keep going. A P0, a security defect or a release blocker also gets a line
+  to the campaign orchestrator immediately.
+- **The orchestrator recalibrates at every wave boundary**: it reviews the
+  issues filed since the freeze, admits the ones that belong into the milestone,
+  and rewrites the lane queues. Nothing gets admitted silently — admission is
+  said on the issue.
+
+Two numbers are tracked separately, so "cleared" stays a definable state: the
+baseline 190 drained, and the count admitted since the freeze.
+
+<!-- enforcement: none yet -->
+
 ## Validation
 
 - `pnpm install`
