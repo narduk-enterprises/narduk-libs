@@ -191,6 +191,25 @@ describe("baseline: 'self' (issue #560)", () => {
     }
   })
 
+  it('drops the scheme sources too, which is the part an adopter trips over', () => {
+    // BASELINE_ALLOWLIST is not purely third-party hosts: img carries `data:`
+    // (the Nuxt image pipeline) and worker carries `blob:` (map and chart
+    // libraries). 'self' inherits nothing, so these go with the hosts. Pinned
+    // because an app that flips `enforce` without noticing loses working
+    // images or workers at runtime, not at build time.
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    expect(resolved.csp['img-src']).not.toContain('data:')
+    expect(resolved.csp['worker-src']).not.toContain('blob:')
+
+    const named = resolveSecurityHeaders({
+      enabled: true,
+      baseline: 'self',
+      allow: { img: ['data:'], worker: ['blob:'] },
+    })
+    expect(named.csp['img-src']).toEqual(["'self'", 'data:'])
+    expect(named.csp['worker-src']).toEqual(["'self'", 'blob:'])
+  })
+
   it("reduces each directive to 'self' plus the app's own allow", () => {
     const resolved = resolveSecurityHeaders({
       enabled: true,
