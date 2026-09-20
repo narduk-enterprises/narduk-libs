@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.10.10
+
+### Patch Changes
+
+- ecc731b: Pin generated apps to `@narduk-enterprises/narduk-core` 2.6.3, whose
+  report-only security-headers preset no longer emits
+  `upgrade-insecure-requests` — a directive browsers ignore in a report-only
+  policy and Chromium logs a console error for on every document load.
+
 ## 0.10.9
 
 ### Patch Changes
