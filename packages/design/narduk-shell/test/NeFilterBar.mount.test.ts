@@ -328,7 +328,13 @@ describe('NeFilterBar: what the tablist owns, and what it must not', () => {
   it('points a disabled tab at the row note, since no arrow key can reach it', () => {
     const wrapper = mount(NeFilterBar, {
       attachTo: document.body,
-      props: { idPrefix: 'state', items, kind: 'tabs', label: 'State', note: 'Spend lands with the ledger' },
+      props: {
+        idPrefix: 'state',
+        items,
+        kind: 'tabs',
+        label: 'State',
+        note: 'Spend lands with the ledger',
+      },
     })
 
     expect(controls(wrapper)[1]!.attributes('aria-describedby')).toBe('state-note')
