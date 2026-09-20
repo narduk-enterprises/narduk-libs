@@ -61,13 +61,18 @@ describe('strict policy', () => {
     expect(csp['form-action']).toEqual(["'self'"])
   })
 
-  it('omits upgrade-insecure-requests from report-only and keeps it when enforcing', () => {
+  it('disables upgrade-insecure-requests in report-only and keeps it when enforcing', () => {
     const reportOnly = resolveSecurityHeaders({ enabled: true })
     const reportOnlyHeaders = buildNuxtSecurityConfig(reportOnly).headers
       .contentSecurityPolicy as Record<string, unknown>
     expect(reportOnly.mode).toBe('report-only')
-    expect(reportOnly.csp['upgrade-insecure-requests']).toBeUndefined()
-    expect(reportOnlyHeaders).not.toHaveProperty('upgrade-insecure-requests')
+    // Explicitly `false`, never absent: nuxt-security's default CSP turns this
+    // directive on, and defu only overrides keys we actually declare. The
+    // report-only merge in `nuxt-security-contract.test.ts` is what proves the
+    // distinction end to end -- this assertion alone cannot see the default.
+    expect(Object.hasOwn(reportOnly.csp, 'upgrade-insecure-requests')).toBe(true)
+    expect(reportOnly.csp['upgrade-insecure-requests']).toBe(false)
+    expect(reportOnlyHeaders['upgrade-insecure-requests']).toBe(false)
 
     const enforced = resolveSecurityHeaders({ enabled: true, enforce: true })
     const enforcedHeaders = buildNuxtSecurityConfig(enforced).headers
