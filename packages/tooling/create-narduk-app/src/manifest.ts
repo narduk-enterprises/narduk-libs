@@ -311,8 +311,16 @@ export function createRootPackageManifest(
       // ambient token. narduk-libs' own `packed-consumer-smoke` job expands
       // this chain via `scripts/consumer-smoke-phases.mjs`, so the check also
       // runs against a really-installed generated app on every narduk-libs PR.
+      // `build:ci`, not `build`: CI builds with `build:ci` on both paths (the
+      // private caller's `build-script:` input, the public browser job's own
+      // step), and `build` alone throws on any `seo` app because narduk-seo
+      // refuses a non-dev build with an empty NUXT_OG_IMAGE_SECRET. The local
+      // gate therefore went red where CI was green, and the only way to run
+      // it was to know the two test-only placeholders out of band
+      // (narduk-libs#617). `build` stays the real-secret path for `cf:build`
+      // and operator recovery.
       'quality:static':
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit',
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build:ci && pnpm run test:unit',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',

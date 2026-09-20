@@ -87,7 +87,7 @@ describe('generated apps run foundation:check:shared-ui-pinned', () => {
   it('runs before the expensive phases so a bad pin fails fast', () => {
     const segments = manifests(['seo']).root.scripts['quality:static'].split(' && ')
     expect(segments.indexOf('pnpm run foundation:shared-ui-pinned')).toBeLessThan(
-      segments.indexOf('pnpm run build'),
+      segments.indexOf('pnpm run build:ci'),
     )
   })
 })

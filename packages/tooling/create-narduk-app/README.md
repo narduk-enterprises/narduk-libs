@@ -73,7 +73,12 @@ visibilities. Private apps call the pinned shared workflow with `linux-ci` and
 public required aggregate accepts only successful static checks, all browser
 shards and merged evidence. Failure screenshots, retry traces and retained
 failure videos are attached to the reports. `quality:static` includes format,
-lint, knip, typecheck, build and unit tests; `quality` adds browser tests.
+lint, knip, manifest cross-check, shared-UI pin, typecheck, `build:ci` and unit
+tests; `quality` adds browser tests. It builds with `build:ci`, the script CI
+builds with, so the local gate is not red where CI is green: plain `build`
+throws on any `seo` app with an empty `NUXT_OG_IMAGE_SECRET`, which used to make
+the documented local gate unrunnable without knowing two placeholder values out
+of band.
 
 ## Keeping an app current: `create-narduk-app upgrade`
 
@@ -229,9 +234,11 @@ Scaffolds match the reference app shape Buoys is being brought to
 - Root `package.json` carries `build:ci`, `foundation:check`, and
   `manifests:validate` scripts, plus the `@narduk-enterprises/narduk-app-tools`
   devDependency that backs them. `apps/web/scripts/validate-manifests.mjs` runs
-  pre-deploy: it no-ops before `Config/cloudflare-app.json` exists
-  (pre-onboarding) and otherwise fails the build when `apps/web/wrangler.jsonc`
-  bindings disagree with the declared Cloudflare app config.
+  pre-deploy and fails the build when `apps/web/wrangler.jsonc` bindings
+  disagree with `Config/cloudflare-app.json`. Both files are generated together
+  and agree from the first commit, so this is a real cross-check immediately; it
+  still no-ops rather than throwing when the declaration is absent, for apps
+  scaffolded before the generator wrote one.
 - `CONTRACT.md` and `docs/workers-builds.md` are generated alongside
   `README.md`/`AGENTS.md`, documenting the app's own health contract and its
   Cloudflare Workers Builds connection settings.
@@ -250,12 +257,29 @@ Scaffolds match the reference app shape Buoys is being brought to
   replicate Buoys' own app-specific routes, selectors, or its
   wrapper-script/analyzer CLI infrastructure — those stay app-owned.
 
-A freshly generated app is pre-onboarding: it has no
-`Config/cloudflare-app.json` yet, so `pnpm run foundation:check` fails items 1.1
-(nitro preset) and 1.2 (bindings mirrored) until onboarding populates that file.
-This is expected and not a generator defect — `pnpm run build`,
-`pnpm run build:ci`, and every other foundation:check item still pass or resolve
-`N/A`/`UNKNOWN` cleanly.
+A freshly generated app is web-foundation conformant:
+`pnpm run foundation:check` reports `PASS` on an untouched scaffold, before or
+after its first build. That is what makes a green first CI run reachable at all
+— generated CI calls the shared workflow with `foundation-check: true`, which
+fails the build on a `FAIL` **or** an `UNKNOWN` result.
+
+Earlier versions were not. The generator left `Config/cloudflare-app.json` to
+onboarding, so item 1.2 was a decided FAIL (`apps/web/wrangler.jsonc` exists but
+the declaration does not), 1.4/3.1/3.2 were `UNKNOWN` for want of
+`access.exposureClass`, and 1.1 failed as soon as a build had run
+(narduk-libs#350). This README previously called that "expected and not a
+generator defect"; it was one, and nothing inside a new app could fix it. The
+generator now writes the half of that file a checkout can know — product
+identity, the Worker shape, the exposure class and the bindings mirror — and
+leaves the live Cloudflare facts (`product.repository`, the account id,
+`domains`, the `deployment` block) to onboarding, absent rather than fabricated.
+`packages/tooling/narduk-app-tools/tests/foundation/generated-app-conformance.test.ts`
+runs the real checker over real generator output and is what keeps this true.
+
+One check is deliberately outside the local chain. `foundation:check` reads the
+package registry, and without a credential it reports `UNKNOWN` and exits 2 — so
+chaining it into `quality:static` would put a red on a laptop that CI does not
+have. The generated README says which of the three gates is which.
 
 ## Workers Builds and previews
 

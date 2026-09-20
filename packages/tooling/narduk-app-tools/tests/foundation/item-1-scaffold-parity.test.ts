@@ -65,6 +65,36 @@ describe('item 1 -- scaffold parity', () => {
     expect(subCheckStatus(await run(root), '1.1')).toBe('unknown')
   })
 
+  it('1.1 accepts the hyphenated spelling a completed build writes (narduk-libs#350)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/Config/cloudflare-app.json`, { force: true })
+    // What Nitro itself writes after `nuxt build --preset=cloudflare_module`:
+    // the canonical name is hyphenated, and `.output/nitro.json` is the
+    // strongest of the three live-build signals, so it decides 1.1.
+    writeJson(root, 'apps/web/.output/nitro.json', { preset: 'cloudflare-module' })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('pass')
+
+    // The separator is the only thing normalized -- a genuinely different
+    // preset in the same file still fails.
+    writeJson(root, 'apps/web/.output/nitro.json', { preset: 'cloudflare-pages' })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('fail')
+  })
+
+  it('1.1 accepts either spelling declared in Config/cloudflare-app.json', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'cloudflare-module' },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+    })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('pass')
+  })
+
   it('1.2 fails when a declared binding is not mirrored, and passes once it is', async () => {
     const root = makeTempRepo()
     tempDirs.push(root)
