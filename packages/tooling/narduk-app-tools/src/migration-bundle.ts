@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   checksumMigrationSql,
   discoverMigrations,
+  migrationSqlTouchesRunnerLedger,
   loadMigrationConfig,
   parseMigrationConfig,
   resolveMigrationConfigVersions,
@@ -97,7 +98,7 @@ export function readMigrationBundle(
         throw new Error('Migration bundle SQL checksum differs')
       // D1 SQL cannot select another database. Reserve the coordination tables
       // nevertheless: SQL data must not disable the runner's lock or ledger.
-      if (/_narduk_migration/iu.test(migration.sql))
+      if (migrationSqlTouchesRunnerLedger(migration.sql))
         throw new Error('Migration SQL may not alter the runner ledger or lock')
     }
   }
