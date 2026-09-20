@@ -6,6 +6,7 @@ import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { runDoctor, formatDoctorReport } from './doctor.js'
+import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
 import {
   formatPromoteResult,
@@ -98,6 +99,9 @@ function usage(): string {
     '  gh-packages-run -- <command...>     Run a command with process-scoped',
     '                                       GitHub Packages auth (temp userconfig)',
     '  doctor                              Check app-local prerequisites',
+    '  doctor --adoption [--checkout <dir>] [--live <url>] [--expect-sha <sha>]',
+    '                    [--path <p>]... [--json [path]]',
+    '                                      Report the 15 narduk-app adoption requirements',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
     '  og:generate [--if-missing|--force]    Render the app-owned default share image',
@@ -274,6 +278,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return runGhPackagesCommand(parseGhPackagesRunArgs(rest))
     }
     if (command === 'doctor') {
+      // `--adoption` replaces the report rather than extending it: bare
+      // `doctor` keeps its exact output and exit code for its existing callers.
+      if (rest.includes('--adoption')) {
+        const { exitCode } = await runAdoptionReportCommand(parseAdoptionReportArgs(rest))
+        return exitCode
+      }
       const json = rest.includes('--json')
       const report = runDoctor()
       console.log(json ? JSON.stringify(report, null, 2) : formatDoctorReport(report))
