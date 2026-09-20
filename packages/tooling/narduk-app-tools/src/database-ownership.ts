@@ -50,9 +50,6 @@ import { z } from 'zod'
 /** The manifest that marks the root of an app checkout. */
 export const CLOUDFLARE_APP_MANIFEST = 'Config/cloudflare-app.json'
 
-export const DATABASE_OWNERS = ['migrations', 'contract'] as const
-export type DatabaseOwner = (typeof DATABASE_OWNERS)[number]
-
 const bindingName = z.string().trim().min(1).max(200)
 
 /** A checkout-relative path. Absolute paths and `..` segments are refused here
@@ -139,12 +136,6 @@ export function contractOwnedBindings(entries: readonly DatabaseOwnershipEntry[]
   return new Set(contractOwnedEntries(entries).map((entry) => entry.binding.trim()))
 }
 
-export function migrationOwnedBindings(entries: readonly DatabaseOwnershipEntry[]): Set<string> {
-  return new Set(
-    entries.filter((entry) => entry.owner === 'migrations').map((entry) => entry.binding.trim()),
-  )
-}
-
 /** The script a verification command names, or null if it is not one. */
 export function parseVerifyCommand(command: string): { manager: string; script: string } | null {
   const match = VERIFY_COMMAND_PATTERN.exec(command.trim())
@@ -152,7 +143,7 @@ export function parseVerifyCommand(command: string): { manager: string; script: 
 }
 
 /** The script names a `package.json` text declares, or an empty set. */
-export function declaredScripts(packageJsonText: string | null): Set<string> {
+function declaredScripts(packageJsonText: string | null): Set<string> {
   if (packageJsonText === null) return new Set()
   let pkg: unknown
   try {
