@@ -77,6 +77,16 @@ function attrsOf(item: NeFilterBarItem): Record<string, string> {
 /**
  * Selection is a colour change, never a size change: a row whose controls
  * resize as you click them reflows the ones beside it.
+ *
+ * A DISABLED ITEM CAN STILL BE THE SELECTED ONE. A URL-synced page can arrive
+ * with `modelValue` on a key whose producer is missing, and the chip then
+ * paints as selected while being unpressable. That is honest — it is the
+ * current filter — so `aria-pressed` is kept for exactly that case in the
+ * template rather than suppressed with the rest of the disabled set; otherwise
+ * a sighted user would see a selected chip and a screen reader would hear a
+ * disabled button with no pressed state, which is two different answers to
+ * "what is this list filtered by". An unselected disabled chip still carries
+ * no `aria-pressed`: it is a filter nothing can answer, not an untoggled one.
  */
 function colorOf(item: NeFilterBarItem) {
   return selected(item) ? 'primary' : 'neutral'
@@ -127,17 +137,50 @@ function tabIndexOf(item: NeFilterBarItem, index: number): number | undefined {
   return (selectedIndex === -1 ? index === 0 : selected(item)) ? 0 : -1
 }
 
+/**
+ * The next enabled tab in `step` direction, wrapping, or `null` when the row
+ * holds none. APG omits disabled tabs from the roving model entirely: an arrow
+ * key that lands on one would move focus without moving selection, because
+ * `choose` refuses a disabled item — so `aria-selected` would stay behind on
+ * the tab the user left, and the next Tab key would exit the list from a
+ * control the tablist does not consider current.
+ *
+ * `count` bounds the walk at one lap, which is what makes an all-disabled row
+ * terminate rather than spin.
+ */
+function nextEnabled(from: number, step: number): number | null {
+  const count = props.items.length
+  for (let moved = 1; moved <= count; moved += 1) {
+    const candidate = (((from + step * moved) % count) + count) % count
+    if (!props.items[candidate]?.disabled) return candidate
+  }
+  return null
+}
+
+/**
+ * The first enabled tab at or after `from`, walking in `step` direction. The
+ * end itself is the answer whenever it is enabled — `disabled` is optional, so
+ * the test is its falsiness, never `=== false`, which would read every item
+ * that simply omits the key as disabled.
+ */
+function firstEnabled(from: number, step: number): number | null {
+  const item = props.items[from]
+  return item && !item.disabled ? from : nextEnabled(from, step)
+}
+
 function onTabKey(event: KeyboardEvent, index: number): void {
   if (!isTabs.value) return
   const last = props.items.length - 1
   let next: number | null = null
-  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = index === last ? 0 : index + 1
-  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp')
-    next = index === 0 ? last : index - 1
-  else if (event.key === 'Home') next = 0
-  else if (event.key === 'End') next = last
-  if (next === null) return
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = nextEnabled(index, 1)
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = nextEnabled(index, -1)
+  else if (event.key === 'Home') next = firstEnabled(0, 1)
+  else if (event.key === 'End') next = firstEnabled(last, -1)
+  else return
+  // The key is one this tablist owns, so the page must not also scroll on it —
+  // including when every tab is disabled and selection stays where it is.
   event.preventDefault()
+  if (next === null) return
   const item = props.items[next]
   if (!item) return
   choose(item)
@@ -168,7 +211,7 @@ function onTabKey(event: KeyboardEvent, index: number): void {
       data-ne-filter-control
       :data-ne-filter-key="item.key"
       :role="isTabs ? 'tab' : undefined"
-      :aria-pressed="isTabs || item.disabled ? undefined : selected(item)"
+      :aria-pressed="isTabs || (item.disabled && !selected(item)) ? undefined : selected(item)"
       :aria-selected="isTabs ? selected(item) : undefined"
       :aria-controls="isTabs ? panelId(item) : undefined"
       :aria-disabled="item.disabled ? 'true' : undefined"

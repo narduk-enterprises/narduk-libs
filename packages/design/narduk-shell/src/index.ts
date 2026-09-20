@@ -73,6 +73,20 @@ export type {
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
 /**
+ * The filter bar's caller-built shapes (narduk-libs#261). `ne-filter-bar-types`
+ * exists so a page can type its items array without importing the SFC, which
+ * only works if the barrel carries the types: the exports map exposes `.`,
+ * `./module`, `./format` and `./theme.css`, so a deep path is not a legal
+ * subpath and `from '@narduk-enterprises/narduk-shell'` is the only import a
+ * consumer can write.
+ */
+export type {
+  NeFilterBarItem,
+  NeFilterBarKind,
+  NeFilterBarProps,
+} from './runtime/components/ne-filter-bar-types'
+
+/**
  * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure
  * functions with no Vue or DOM import, so a server route can write the same
  * CSV `NeCsvDownload` does, and a page can read a wire sort without a regex.

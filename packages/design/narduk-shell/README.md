@@ -1150,6 +1150,14 @@ selected one, or the first when nothing is selected). Your panels name the tab
 that controls them through `idPrefix` — `<prefix>-tab-<key>` and
 `<prefix>-panel-<key>`.
 
+A **disabled tab is not a destination**: arrows, `Home` and `End` all walk past
+it to the next enabled one. APG omits disabled tabs from the roving model, and
+the reason is mechanical here — selection never moves onto a disabled item, so
+focusing one would leave `aria-selected` behind on the tab the user came from,
+and the next `Tab` would exit the list from a control the tablist does not
+consider current. A row whose tabs are all disabled keeps focus and selection
+where they are.
+
 #### A filter with no producer stays in the row
 
 `item.disabled` renders `aria-disabled` and keeps the control **visible**. This
@@ -1197,6 +1205,16 @@ rendered as the string `"undefined"`.
 `update:modelValue` emits the chosen `key`. The component never moves the
 selection itself — the caller owns it, which is what makes `v-model` and a
 URL-synced selection the same code path. Slot `after` appends to the row.
+
+#### Types
+
+```ts
+import type {
+  NeFilterBarItem,
+  NeFilterBarKind,
+  NeFilterBarProps,
+} from '@narduk-enterprises/narduk-shell'
+```
 
 #### Example
 

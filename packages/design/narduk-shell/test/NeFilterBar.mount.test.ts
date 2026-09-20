@@ -9,10 +9,12 @@ import { describe, expect, it } from 'vitest'
 
 import NeFilterBar from '../src/runtime/components/NeFilterBar.vue'
 
-import type {
-  NeFilterBarItem,
-  NeFilterBarProps,
-} from '../src/runtime/components/ne-filter-bar-types'
+// From the package root, not the module file: these are caller-built shapes, so
+// a consumer types its items array with them, and the exports map admits no
+// deep subpath. Importing them here the way a pilot must is what makes the
+// barrel's re-export a checked fact rather than an intention (the sibling
+// pattern in NeDataTable.mount.test.ts).
+import type { NeFilterBarItem, NeFilterBarProps } from '../src/index'
 
 const ITEMS: NeFilterBarItem[] = [
   { key: 'all', label: 'All', count: 12 },
@@ -179,6 +181,110 @@ describe('NeFilterBar: tabs (the APG tablist model)', () => {
     const wrapper = render({ kind: 'chips', modelValue: 'all' })
     await controls(wrapper)[0]!.trigger('keydown', { key: 'ArrowRight' })
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
+/*
+ * The roving model and the disabled set (review of narduk-libs#604).
+ *
+ * Both of these are the same defect seen from two sides: `choose` refuses a
+ * disabled item, so anything that treats a disabled control as an ordinary
+ * destination ends up with the visual state and the ARIA state answering
+ * differently. The suite above only ever drove enabled controls, which is why
+ * neither path was proven.
+ */
+describe('NeFilterBar: tabs whose destinations are disabled', () => {
+  const GAPPED: NeFilterBarItem[] = [
+    { key: 'all', label: 'All' },
+    { key: 'open', label: 'Open', disabled: true },
+    { key: 'done', label: 'Done' },
+  ]
+
+  const gapped = (modelValue: string | null = 'all', items = GAPPED) =>
+    mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { items, kind: 'tabs' as const, label: 'State', modelValue, idPrefix: 'work' },
+    })
+
+  it('walks past a disabled tab rather than landing on it', async () => {
+    const wrapper = gapped('all')
+    await controls(wrapper)[0]!.trigger('keydown', { key: 'ArrowRight' })
+    // 'open' is disabled, so the destination is 'done' — not a focus move that
+    // leaves aria-selected behind on 'all'.
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['done'])
+    wrapper.unmount()
+  })
+
+  it('walks past it in the other direction too', async () => {
+    // Driven from the LAST tab, where the naive index and the correct one
+    // differ: stepping back from 'done' lands on disabled 'open', whose
+    // refusal would emit nothing at all.
+    const wrapper = gapped('done')
+    await controls(wrapper)[2]!.trigger('keydown', { key: 'ArrowLeft' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['all'])
+    wrapper.unmount()
+  })
+
+  it('wraps past a disabled tab at the end of the row', async () => {
+    // 'done' is last; ArrowRight wraps to 'all' rather than stopping.
+    const wrapper = gapped('done')
+    await controls(wrapper)[2]!.trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['all'])
+    wrapper.unmount()
+  })
+
+  it('takes Home and End to the enabled ends, not the literal ones', async () => {
+    const edges: NeFilterBarItem[] = [
+      { key: 'first', label: 'First', disabled: true },
+      { key: 'middle', label: 'Middle' },
+      { key: 'last', label: 'Last', disabled: true },
+    ]
+    const wrapper = gapped('middle', edges)
+    await controls(wrapper)[1]!.trigger('keydown', { key: 'Home' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['middle'])
+    await controls(wrapper)[1]!.trigger('keydown', { key: 'End' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['middle'])
+    wrapper.unmount()
+  })
+
+  it('leaves selection alone when every tab is disabled', async () => {
+    const wrapper = gapped('all', [
+      { key: 'all', label: 'All', disabled: true },
+      { key: 'open', label: 'Open', disabled: true },
+    ])
+    await controls(wrapper)[0]!.trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
+describe('NeFilterBar: a disabled chip that is the current selection', () => {
+  const items: NeFilterBarItem[] = [
+    { key: 'all', label: 'All' },
+    { key: 'spend', label: 'Spend', disabled: true },
+  ]
+
+  it('still says it is pressed, so the two readings of the row agree', () => {
+    // A URL-synced page can arrive on a key whose producer is missing. The chip
+    // paints selected; without aria-pressed a screen reader would hear only a
+    // disabled button, and the row would answer "filtered by what?" two ways.
+    const wrapper = mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { items, label: 'State', modelValue: 'spend' },
+    })
+    expect(controls(wrapper)[1]!.attributes('aria-pressed')).toBe('true')
+    expect(controls(wrapper)[1]!.attributes('aria-disabled')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('stays unpressed when it is disabled and not the selection', () => {
+    // Unchanged: a filter nothing can answer is not an untoggled one.
+    const wrapper = mount(NeFilterBar, {
+      attachTo: document.body,
+      props: { items, label: 'State', modelValue: 'all' },
+    })
+    expect(controls(wrapper)[1]!.attributes('aria-pressed')).toBeUndefined()
     wrapper.unmount()
   })
 })
