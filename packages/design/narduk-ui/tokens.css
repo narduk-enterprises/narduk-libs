@@ -143,16 +143,25 @@
   /* ---- depth ------------------------------------------------------------
    * Five surfaces used strictly by role, plus two machined materials:
    * the recessed well and the dark bezel.
+   *
+   * The three colours the composites below need and the ink/line ramps above
+   * do not supply. They are declared here rather than inlined so that an app
+   * restyling depth has something to set: a hex buried inside a shadow list
+   * is not overridable at all.
    */
+  --ns-edge-raised: #d5dce1; /* e2's top hairline */
+  --ns-edge-float: #cfd7dd; /* e3's top hairline */
+  --ns-bezel-top: #253039; /* bezel gradient's light stop; --ns-ink is the dark one */
+
   --ns-e0: inset 0 0 0 1px var(--ns-line);
   --ns-e1:
     inset 0 0 0 1px var(--ns-line), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
     0 1px 2px rgb(var(--ns-ink-rgb) / 0.05);
   --ns-e2:
-    inset 0 0 0 1px #d5dce1, inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    inset 0 0 0 1px var(--ns-edge-raised), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
     0 1px 2px rgb(var(--ns-ink-rgb) / 0.05), 0 10px 20px -12px rgb(var(--ns-ink-rgb) / 0.22);
   --ns-e3:
-    inset 0 0 0 1px #cfd7dd, inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    inset 0 0 0 1px var(--ns-edge-float), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
     0 2px 6px rgb(var(--ns-ink-rgb) / 0.08), 0 28px 56px -28px rgb(var(--ns-ink-rgb) / 0.34);
   --ns-well:
     inset 0 1px 3px rgb(var(--ns-ink-rgb) / 0.13), inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
@@ -160,7 +169,7 @@
     inset 0 1px 0 rgb(var(--ns-surface-rgb) / 0.14),
     inset 0 0 0 1px rgb(var(--ns-surface-rgb) / 0.08),
     0 12px 26px -16px rgb(var(--ns-ink-rgb) / 0.7);
-  --ns-bezel-fill: linear-gradient(180deg, #253039, #0e1418);
+  --ns-bezel-fill: linear-gradient(180deg, var(--ns-bezel-top), var(--ns-ink));
 
   /* ---- geometry ---------------------------------------------------------
    * Tighter than the previous estate. Chips and pills stay 999; everything

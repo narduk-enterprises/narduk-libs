@@ -20,7 +20,17 @@ the new permission untrue: an app overriding `--ns-ink` would have restyled its
 text and left the well ticks, dashed median, band and tile hairlines, hatch and
 every shadow painted in the old ink. All nineteen now composite through two new
 public tokens, `--ns-ink-rgb` and `--ns-surface-rgb`, with no rendered value
-changed. `tests/tokens.test.ts` fails if a literal comes back.
+changed.
+
+Three more colours were baked inside composites where nothing could reach them:
+`--ns-e2` and `--ns-e3`'s top hairlines, and `--ns-bezel-fill`'s dark stop,
+which was the default ink hex even though `--ns-ink` is documented as the "bezel
+base". They are now `--ns-edge-raised`, `--ns-edge-float` and `--ns-bezel-top`,
+with the bezel's dark stop pointing at `--ns-ink` itself.
+
+`tests/tokens.test.ts` pins both shapes: no hand-written ink or surface
+composite, and no colour literal anywhere except as the whole value of a
+`--ns-*` declaration, which is the only place an app can override one.
 
 Overriding ink or surface therefore means setting the channel triplet beside the
 hex, and still clearing the contrast floor stated on the ink block --

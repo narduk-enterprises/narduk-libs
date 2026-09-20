@@ -58,11 +58,31 @@ describe("token layer is the only styling contract", () => {
     },
   );
 
+  /**
+   * The rgb() scan above misses a hex. `--ns-bezel-fill` was
+   * `linear-gradient(180deg, #253039, #0e1418)` and passed it, while
+   * `--ns-ink` is documented two hundred lines earlier as the "bezel base" --
+   * so an app setting `--ns-ink` and `--ns-ink-rgb` restyled its text, hatch,
+   * ticks, hairlines and every shadow and still got a bezel in the old ink.
+   * `--ns-e2` and `--ns-e3` baked their top hairlines the same way.
+   *
+   * A colour may therefore only appear as the whole value of a `--ns-*`
+   * declaration, where an app can override it. Inside a gradient, a shadow
+   * list or a component rule it is unreachable, and that is the bug.
+   */
   it.each(sources.map((s) => [s.name, s.text] as const))(
-    "%s spells opaque white as the surface channel, not #fff",
+    "%s declares colours as tokens, never inline in a composite",
     (name, text) => {
-      const stripped = name === "tokens.css" ? text.replaceAll("--ns-surface: #ffffff;", "") : text;
-      expect(stripped.match(/#ffff(?:ff)?\b/g) ?? [], `${name} hardcodes white`).toEqual([]);
+      const withoutComments = text.replaceAll(/\/\*[\s\S]*?\*\//g, "");
+      const offenders = withoutComments
+        .split("\n")
+        .map((line) => line.trim())
+        // A whole-value declaration is the one legal place for a literal.
+        .filter((line) => !/^--ns-[a-z0-9-]+:\s*#[0-9a-f]{3,8};$/i.test(line))
+        .flatMap((line) => line.match(/#[0-9a-f]{3,8}\b/gi) ?? []);
+      expect(offenders, `${name} bakes a colour into a composite: ${offenders.join(", ")}`).toEqual(
+        [],
+      );
     },
   );
 });
