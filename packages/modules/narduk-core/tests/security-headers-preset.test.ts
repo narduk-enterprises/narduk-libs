@@ -156,6 +156,85 @@ describe('allowlist surface', () => {
   })
 })
 
+describe("baseline: 'self' (issue #560)", () => {
+  // An app that reaches no third party could not previously enforce the strict
+  // nonce policy without WIDENING its CSP, because `allow` only adds to the
+  // estate baseline. operator-portal is the consumer: taking 'unsafe-inline'
+  // off script-src would have cost it eight third-party origins on
+  // connect-src, which is the directive that governs exfiltration.
+
+  it("defaults to the estate baseline, so an upgrade narrows nobody's policy", () => {
+    expect(resolveSecurityHeaders({ enabled: true }).baseline).toBe('estate')
+    expect(resolveSecurityHeaders(true).baseline).toBe('estate')
+    expect(directive('connect-src')).toEqual(
+      expect.arrayContaining([...BASELINE_ALLOWLIST.connect]),
+    )
+  })
+
+  it("admits no third-party origin on any directive when set to 'self'", () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    expect(resolved.baseline).toBe('self')
+    for (const [key, directiveName] of [
+      ['connect', 'connect-src'],
+      ['font', 'font-src'],
+      ['frame', 'frame-src'],
+      ['img', 'img-src'],
+      ['media', 'media-src'],
+      ['script', 'script-src'],
+      ['style', 'style-src'],
+      ['worker', 'worker-src'],
+    ] as const) {
+      const sources = resolved.csp[directiveName] as string[]
+      for (const origin of BASELINE_ALLOWLIST[key]) {
+        expect(sources, `${directiveName} must not inherit ${origin}`).not.toContain(origin)
+      }
+    }
+  })
+
+  it("reduces each directive to 'self' plus the app's own allow", () => {
+    const resolved = resolveSecurityHeaders({
+      enabled: true,
+      baseline: 'self',
+      allow: { connect: ['https://api.nard.uk'] },
+    })
+    expect(resolved.csp['connect-src']).toEqual(["'self'", 'https://api.nard.uk'])
+    expect(resolved.csp['img-src']).toEqual(["'self'"])
+    expect(resolved.csp['font-src']).toEqual(["'self'"])
+  })
+
+  it('keeps every concession the nonce policy depends on', () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    const script = resolved.csp['script-src'] as string[]
+    expect(script).toEqual(["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"])
+    // style-src's unsafe-inline is Vue's scoped-style runtime, not a baseline
+    // origin, so dropping the baseline must not drop it.
+    expect(resolved.csp['style-src']).toEqual(["'self'", "'unsafe-inline'"])
+    expect(resolved.csp['object-src']).toEqual(["'none'"])
+    expect(resolved.csp['frame-ancestors']).toEqual(["'none'"])
+    expect(resolved.csp['form-action']).toEqual(["'self'"])
+  })
+
+  it("still honours an app's legacy CSP_*_SRC values, which are its own, not the estate's", () => {
+    const resolved = resolveSecurityHeaders(
+      { enabled: true, baseline: 'self' },
+      { cspConnectSrc: 'https://legacy.example' },
+    )
+    expect(resolved.csp['connect-src']).toEqual(["'self'", 'https://legacy.example'])
+  })
+
+  it('is the strictly narrower policy: every self source is also an estate source', () => {
+    const estate = resolveSecurityHeaders({ enabled: true })
+    const self = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    for (const name of Object.keys(self.csp)) {
+      const selfSources = self.csp[name]
+      if (!Array.isArray(selfSources)) continue
+      expect(estate.csp[name], `${name} must be a superset`).toEqual(
+        expect.arrayContaining(selfSources),
+      )
+    }
+  })
+})
+
 describe('GA4 Google-signals beacon (issue #472)', () => {
   // Pins the exact GA host set so a later edit to either directive shows up
   // in review, per the issue's own request.

@@ -74,9 +74,32 @@ export interface SecurityHeadersHstsOptions {
   preload?: boolean
 }
 
+/**
+ * Which third-party origins an app inherits before its own `allow` is applied.
+ *
+ * `'estate'` (the default) merges `BASELINE_ALLOWLIST`, so an app that installs
+ * narduk-analytics or narduk-mapkit does not restate their hosts. `'self'`
+ * merges nothing: the policy is seeded from `'self'` and whatever the app names
+ * in `allow`.
+ *
+ * `'self'` exists because the estate baseline is a floor, not a ceiling, and a
+ * floor is the wrong shape for an app that reaches no third party at all. Such
+ * an app could not previously enforce the strict nonce policy without WIDENING
+ * its CSP -- `allow` only adds. operator-portal is the case that surfaced it
+ * (narduk-libs#560): a `'self'`-only authenticated console, where taking
+ * `'unsafe-inline'` off `script-src` would have cost eight third-party origins
+ * on `connect-src`, which is the directive that governs exfiltration.
+ */
+export type SecurityHeadersBaseline = 'estate' | 'self'
+
 export interface SecurityHeadersOptions {
-  /** Extra origins per directive, merged onto the estate baseline. */
+  /** Extra origins per directive, merged onto whichever baseline is selected. */
   allow?: SecurityHeadersAllowlist
+  /**
+   * Which third-party origins to inherit. Default `'estate'`, so an upgrade
+   * never narrows an existing app's policy without it asking.
+   */
+  baseline?: SecurityHeadersBaseline
   /** Serve the strict nonce policy. Off by default: an upgrade must not change
    * an app's headers without the app asking for it. */
   enabled?: boolean
@@ -110,6 +133,7 @@ export interface SecurityHeadersOptions {
 }
 
 export interface ResolvedSecurityHeaders {
+  baseline: SecurityHeadersBaseline
   csp: Record<string, string[] | string | boolean>
   frameAncestors: string[]
   hsts: Required<SecurityHeadersHstsOptions> | false
@@ -223,10 +247,11 @@ function sourcesFor(
   key: keyof SecurityHeadersAllowlist,
   allow: SecurityHeadersAllowlist | undefined,
   strictDynamic: boolean,
+  baseline: SecurityHeadersBaseline,
 ): string[] {
   return dedupe([
     ...directiveSeed(key, strictDynamic),
-    ...BASELINE_ALLOWLIST[key],
+    ...(baseline === 'self' ? [] : BASELINE_ALLOWLIST[key]),
     ...(allow?.[key] ?? []),
   ])
 }
@@ -300,6 +325,7 @@ export function resolveSecurityHeaders(
   const allow = mergeLegacyAllowlist(settings.allow, legacy)
   const frameAncestors = dedupe([...(settings.frameAncestors ?? ["'none'"])])
   const strictDynamic = settings.strictDynamic ?? true
+  const baseline: SecurityHeadersBaseline = settings.baseline ?? 'estate'
   const reportRoute =
     settings.reportRoute === false ? false : (settings.reportRoute ?? DEFAULT_REPORT_ROUTE)
 
@@ -328,7 +354,7 @@ export function resolveSecurityHeaders(
   // (`.filter(([, value]) => value !== false)` in `dist/utils/headers.mjs`).
   csp['upgrade-insecure-requests'] = mode === 'enforce'
   for (const key of Object.keys(DIRECTIVE_OF) as Array<keyof SecurityHeadersAllowlist>) {
-    csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic)
+    csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic, baseline)
   }
   if (reportRoute) {
     // `report-uri` is deprecated but is the only form Safari implements, and
@@ -338,6 +364,7 @@ export function resolveSecurityHeaders(
   }
 
   return {
+    baseline,
     mode,
     csp,
     frameAncestors,
