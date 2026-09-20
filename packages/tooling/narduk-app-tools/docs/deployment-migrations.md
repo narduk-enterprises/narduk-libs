@@ -36,6 +36,80 @@ Dependencies supply their migrations before app migrations. A managed/rebuilt
 read model needs its own schema ownership and migration/adoption plan; do not
 point its binding at the auth database's manifest merely to satisfy coverage.
 
+## Declare who owns each schema (`databaseOwnership`)
+
+Coverage demands that every D1 binding have exactly one schema owner. For a
+database whose schema _is_ its migration history, that owner is
+`deployment.migrations`. For a database whose schema is owned by something else
+-- a JSON contract applied by a refresh job, say -- there is nothing honest to
+put in `deployment.migrations`, and manufacturing a baseline for it is the worst
+available answer: it claims the migration ledger describes a schema it does not
+describe, and the next reader believes it.
+
+So an app with a mixed estate declares ownership explicitly:
+
+```json
+{
+  "migrations": {
+    "compatibility": "expand-contract",
+    "credential": "cloudflare/prd/example-migrate",
+    "databases": [
+      { "binding": "DB", "sources": "apps/web/migrations.sources.json" }
+    ]
+  },
+  "databaseOwnership": [
+    { "binding": "DB", "owner": "migrations" },
+    {
+      "binding": "READ_MODEL",
+      "owner": "contract",
+      "contract": "apps/web/read-model/contract.json",
+      "verify": "pnpm run read-model:check"
+    }
+  ]
+}
+```
+
+- **Optional, and absent means what it always meant.** An app that migrates
+  every binding declares no `databaseOwnership` and changes nothing.
+- **Once declared it is the complete statement.** Every D1 binding the app binds
+  gets exactly one entry; a binding named here that the app does not bind, or a
+  bound binding named nowhere, is refused.
+- **`owner: "migrations"`** resolves to an entry in
+  `deployment.migrations.databases`; it does not repeat the sources path.
+- **`owner: "contract"`** names the schema contract file and the command that
+  proves the live database matches it. Both must exist -- the contract as a file
+  in the checkout, the command as a script in the app's or the workspace root's
+  `package.json` -- because a declaration pointing at neither reads in review as
+  proof of a check that would never have run. That is why `verify` must be a
+  package-script invocation (`pnpm run <script>`): a free-form shell string
+  cannot be checked by a repository read.
+
+### The migration runner refuses a contract-owned database
+
+This is enforced at the runner, not only at the schema. `migrationDatabase()` is
+the one function every migration path uses to reach D1, and it refuses a
+contract-owned binding before any provider call:
+
+```
+$ narduk-app db migrate --database READ_MODEL --config ... --remote
+Refusing to run migrations against READ_MODEL: deployment.databaseOwnership
+declares it contract-owned by apps/web/read-model/contract.json. Prove it with
+`pnpm run read-model:check` instead; the migration runner must never write to a
+contract-owned database.
+```
+
+`db migrate`, `db status`, `db migrate-deployment`, baseline capture and
+baseline registration are all covered, and so is a wrangler config that points a
+different binding name at the contract-owned database id. A contract-owned
+database is additionally absent from the minimal wrangler config
+`db migrate-deployment` hands the runner, so no binding name in that config can
+select it. An ownership declaration that cannot be parsed is a refusal rather
+than an assumed absence: a runner must not guess who owns a schema.
+
+`foundation:check:deployment` sub-check 12.8 applies the same coverage rule, and
+`doctor --adoption` requirement 6 reads that sub-check, so the gate and the
+runner cannot disagree.
+
 For preview and optional staging, the command uses the **same binding planner**
 as `versions-upload`. Declare concrete, separate IDs and names for every D1, KV
 and R2 binding in `deployment.previewBindings` or `deployment.staging.bindings`.

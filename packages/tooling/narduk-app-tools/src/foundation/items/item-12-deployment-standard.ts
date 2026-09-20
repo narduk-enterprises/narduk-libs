@@ -64,6 +64,12 @@ import {
   PREVIEW_CONFIG_FILENAME,
   type PreviewConfigPlan,
 } from '../../preview-config.js'
+import {
+  contractEvidenceIssues,
+  contractOwnedBindings,
+  ownershipCoverageIssues,
+  type DatabaseOwnershipEntry,
+} from '../../database-ownership.js'
 import { check } from '../schema.js'
 import {
   allDeps,
@@ -434,6 +440,10 @@ export interface DeploymentScan {
   /** The app's narduk-core dependency, if it declares one (12.7). */
   nardukCore: { rel: string; spec: string } | null
   migrationSources?: Array<{ binding: string; path: string; exists: boolean }>
+  /** `deployment.databaseOwnership`, when the block is valid and declares it. */
+  databaseOwnership?: DatabaseOwnershipEntry[] | null
+  /** Contract-owned entries naming a file or verify script that is not there. */
+  ownershipEvidence?: string[]
 }
 
 export interface PreviewScan {
@@ -529,6 +539,15 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
             path: entry.sources,
             exists: repo.read(entry.sources) !== null,
           }))
+        : [],
+    databaseOwnership: outcome.kind === 'valid' ? (outcome.block.databaseOwnership ?? null) : null,
+    ownershipEvidence:
+      outcome.kind === 'valid' && outcome.block.databaseOwnership
+        ? contractEvidenceIssues({
+            entries: outcome.block.databaseOwnership,
+            read: (rel) => repo.read(rel),
+            packageJsonRels: collectPackages(repo).map((found) => found.rel),
+          })
         : [],
   }
 }
@@ -1106,18 +1125,43 @@ function evaluate128(scan: DeploymentScan): FoundationSubCheck {
     if (scan.production.d1.length === 0)
       return check('12.8', name, STATUS_NA, 'No D1 bindings declared')
     if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
-    const { migrations, promotion } = scan.outcome.block
-    if (!migrations)
+    const { migrations, promotion, databaseOwnership } = scan.outcome.block
+    const ownership = databaseOwnership ?? null
+    const sources = scan.migrationSources ?? []
+    // The same rule `planDeploymentMigrations` refuses on, so a green 12.8 and
+    // a runnable migration plan can never disagree about who owns a schema.
+    const coverage = ownershipCoverageIssues({
+      bindings: scan.production.d1,
+      ownership,
+      migrated: sources.map((source) => source.binding),
+      hasMigrationsBlock: Boolean(migrations),
+    })
+    if (coverage.length > 0) {
       return check(
         '12.8',
         name,
         STATUS_FAIL,
-        'D1 requires deployment.migrations: expand-contract compatibility, a separate D1-only credential, and one source manifest per binding',
+        `Every D1 binding needs exactly one schema owner: a deployment.migrations entry with ` +
+          `expand-contract compatibility and a source manifest, or a deployment.databaseOwnership ` +
+          `entry declaring it contract-owned. ${coverage.join('; ')}`,
         scan.configFile,
       )
+    }
+    const evidence = scan.ownershipEvidence ?? []
+    if (evidence.length > 0) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        `A contract-owned database is only declared if its contract and its verification ` +
+          `command exist: ${evidence.join('; ')}`,
+        scan.configFile,
+      )
+    }
     if (
-      !migrations.credential.startsWith('cloudflare/') ||
-      migrations.credential === promotion.credential
+      migrations &&
+      (!migrations.credential.startsWith('cloudflare/') ||
+        migrations.credential === promotion.credential)
     ) {
       return check(
         '12.8',
@@ -1127,27 +1171,33 @@ function evaluate128(scan: DeploymentScan): FoundationSubCheck {
         scan.configFile,
       )
     }
-    const sources = scan.migrationSources ?? []
-    const names = sources.map((source) => source.binding)
-    if (
-      new Set(names).size !== names.length ||
-      names.length !== scan.production.d1.length ||
-      scan.production.d1.some((binding) => !names.includes(binding)) ||
-      sources.some((source) => !source.exists)
-    ) {
+    if (sources.some((source) => !source.exists)) {
       return check(
         '12.8',
         name,
         STATUS_FAIL,
-        'Every D1 binding requires exactly one existing migration source manifest',
+        `Every migration-owned D1 binding requires an existing source manifest; missing: ` +
+          `${sources
+            .filter((source) => !source.exists)
+            .map((source) => `${source.binding} -> ${source.path}`)
+            .join(', ')}`,
         scan.configFile,
       )
     }
+    const contract = ownership ? [...contractOwnedBindings(ownership)] : []
+    const contractNote =
+      contract.length > 0
+        ? ` ${contract.join(', ')} is contract-owned and is never migrated: the migration runner ` +
+          `refuses it even when asked directly, and its schema is proved by the declared ` +
+          `verification command, not by this ledger.`
+        : ''
     return check(
       '12.8',
       name,
       STATUS_PASS,
-      'D1 migration ownership declared. Remote parity is NOT proven here: run db migrate-deployment --target production --check before promotion; preview readiness requires its own target check.',
+      `D1 schema ownership declared for every binding.${contractNote} Remote parity is NOT ` +
+        `proven here: run db migrate-deployment --target production --check before promotion; ` +
+        `preview readiness requires its own target check.`,
       scan.configFile,
     )
   })

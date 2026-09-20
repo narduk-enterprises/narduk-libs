@@ -1,0 +1,41 @@
+{
+  "product": {
+    "repository": "narduk-enterprises/example-brochure"
+  },
+  "worker": {
+    "wranglerConfig": "apps/web/wrangler.json"
+  },
+  "deployment": {
+    "standard": "narduk-v1",
+    "builder": "workers-builds",
+    "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "productionBranch": "main",
+    "productionDeployCommand": "narduk-app deploy versions-upload",
+    "nonProductionDeployCommand": "narduk-app deploy versions-upload",
+    "nonProductionBranchBuilds": false,
+    "promotion": {
+      "mode": "auto-on-green",
+      "gateCheck": "ci / Required",
+      "credential": "cloudflare/prd/narduk-enterprises-example-brochure-promote"
+    },
+    "liveProof": {
+      "buildVersionHeader": "x-build-version",
+      "healthPath": "/api/health",
+      "smokePath": "/",
+      "attempts": 6,
+      "intervalSeconds": 10
+    },
+    "rollback": {
+      "mode": "auto",
+      "alert": "resend"
+    },
+    "staging": {
+      "enabled": false
+    },
+    "previewBindings": {
+      "d1": [],
+      "kv": [],
+      "r2": []
+    }
+  }
+}

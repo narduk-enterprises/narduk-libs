@@ -4,6 +4,12 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
+import {
+  contractEvidenceIssuesOnDisk,
+  contractOwnedEntries,
+  findAppManifestRoot,
+  ownershipCoverageIssues,
+} from './database-ownership.js'
 import { readJsonc } from './deploy.js'
 import { readDeploymentBlock } from './deployment-config.js'
 import { describePreviewPlan, planPreviewConfig } from './preview-config.js'
@@ -40,6 +46,9 @@ export interface DeploymentMigrationPlan {
   credential: string | null
   appDir: string
   config: Record<string, unknown>
+  /** Bindings the migration runner is forbidden to touch: their schema is
+   * owned by a contract file and proved by a command, not by this ledger. */
+  contractOwned: Array<{ binding: string; contract: string; verify: string }>
   databases: Array<{ binding: string; databaseId: string; sources: string }>
 }
 
@@ -53,13 +62,26 @@ function checkoutPath(root: string, path: string): string {
 }
 
 export function findMigrationCheckout(cwd: string): string {
-  let root = resolve(cwd)
-  while (!existsSync(join(root, 'Config', 'cloudflare-app.json'))) {
-    const parent = dirname(root)
-    if (parent === root) throw new Error('Could not find Config/cloudflare-app.json')
-    root = parent
-  }
+  const root = findAppManifestRoot(cwd)
+  if (root === null) throw new Error('Could not find Config/cloudflare-app.json')
   return root
+}
+
+/** `checkoutPath`, but with a readable error when the file simply is not there
+ * -- `realpathSync` on a missing path raises ENOENT, which reads as a bug. */
+function checkoutPathExists(root: string, path: string, label: string): string {
+  if (!existsSync(resolve(root, path)))
+    throw new Error(`The declared ${label} ${path} does not exist in this checkout`)
+  return checkoutPath(root, path)
+}
+
+/** Where a verification command's script may live: the app's own package.json
+ * and the checkout root's, which is where a monorepo usually keeps it. */
+function packageJsonCandidates(root: string, appDir: string): string[] {
+  const appRel = relative(root, appDir)
+  const candidates = ['package.json']
+  if (appRel !== '' && !appRel.startsWith('..')) candidates.push(join(appRel, 'package.json'))
+  return [...new Set(candidates)]
 }
 
 /** Same preview planner as versions-upload: a migration cannot guess its target. */
@@ -99,10 +121,36 @@ export function planDeploymentMigrations(
   }
   const bindings = z.array(bindingSchema).parse(config.d1_databases ?? [])
   const configured = deployment.migrations?.databases ?? []
-  if (bindings.length > 0 && !deployment.migrations) {
+  const names = new Set(bindings.map((entry) => entry.binding))
+  const ids = new Set(bindings.map((entry) => entry.database_id))
+  if (names.size !== bindings.length || ids.size !== bindings.length)
+    throw new Error('Duplicate D1 bindings or database IDs require one canonical migration owner')
+  const appDir = dirname(checkoutPath(root, manifest.worker.wranglerConfig))
+  const ownership = deployment.databaseOwnership ?? null
+  const contractEntries = ownership ? contractOwnedEntries(ownership) : []
+  // One coverage rule, shared with foundation sub-check 12.8 so the gate and
+  // the runner can never disagree about who owns a schema.
+  const coverage = ownershipCoverageIssues({
+    bindings: [...names],
+    ownership,
+    migrated: configured.map((entry) => entry.binding),
+    hasMigrationsBlock: Boolean(deployment.migrations),
+  })
+  if (coverage.length > 0) {
     throw new Error(
-      'D1 bindings require deployment.migrations with expand-contract compatibility and source manifests',
+      `deployment.migrations must cover every D1 binding exactly once: ${coverage.join('; ')}`,
     )
+  }
+  if (ownership) {
+    // A contract-owned entry that names a file or a command that does not exist
+    // reads in review as proof and would never have run.
+    for (const entry of contractEntries) checkoutPathExists(root, entry.contract, 'schema contract')
+    const issues = contractEvidenceIssuesOnDisk(
+      root,
+      packageJsonCandidates(root, appDir),
+      ownership,
+    )
+    if (issues.length > 0) throw new Error(`Contract-owned database declaration: ${issues[0]}`)
   }
   if (
     deployment.migrations &&
@@ -113,29 +161,28 @@ export function planDeploymentMigrations(
       'Migrations require a separate Cloudflare D1-only persona, not the promote persona',
     )
   }
-  const names = new Set(bindings.map((entry) => entry.binding))
-  const ids = new Set(bindings.map((entry) => entry.database_id))
-  if (names.size !== bindings.length || ids.size !== bindings.length)
-    throw new Error('Duplicate D1 bindings or database IDs require one canonical migration owner')
-  if (
-    configured.length !== bindings.length ||
-    new Set(configured.map((entry) => entry.binding)).size !== configured.length ||
-    configured.some((entry) => !names.has(entry.binding))
-  ) {
-    throw new Error('deployment.migrations must cover every D1 binding exactly once')
-  }
+  // A contract-owned database is not a migration target and never reaches the
+  // runner: it is absent from the plan AND from the wrangler config the runner
+  // is handed, so no binding name in that config can select it.
+  const contractBindings = new Set(contractEntries.map((entry) => entry.binding.trim()))
+  const migrated = bindings.filter((entry) => !contractBindings.has(entry.binding))
   // Minimal explicit config: no Worker secrets, build redirects, environments,
   // routes or unrelated resources can influence the database selected by D1.
-  const migrationConfig = { account_id: accountId, d1_databases: bindings }
+  const migrationConfig = { account_id: accountId, d1_databases: migrated }
   return {
     target,
     accountId,
     repository: manifest.product.repository,
-    appDir: dirname(checkoutPath(root, manifest.worker.wranglerConfig)),
+    appDir,
     productionBranch: deployment.productionBranch,
     credential: deployment.migrations?.credential ?? null,
     config: migrationConfig,
-    databases: bindings.map((entry) => ({
+    contractOwned: contractEntries.map((entry) => ({
+      binding: entry.binding.trim(),
+      contract: entry.contract,
+      verify: entry.verify,
+    })),
+    databases: migrated.map((entry) => ({
       binding: entry.binding,
       databaseId: entry.database_id,
       sources: checkoutPath(

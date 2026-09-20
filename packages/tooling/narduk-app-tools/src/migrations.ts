@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
+import { assertMigrationRunnerOwnership } from './database-ownership.js'
 import { spawnWranglerSync } from './package-manager.js'
 import {
   BASELINE_RECEIPTS_TABLE,
@@ -691,6 +692,15 @@ function migrationDatabase(
   executor: MigrationExecutor,
 ): MigrationDatabase {
   const cwd = resolve(options.cwd ?? process.cwd())
+  // The one choke point. `db migrate`, `db status`, `db migrate-deployment`,
+  // baseline capture and baseline registration all reach D1 through here, so a
+  // contract-owned database is refused whichever entry point asked -- including
+  // an operator hand-passing `--database READ_MODEL` (./database-ownership.ts).
+  assertMigrationRunnerOwnership({
+    database: options.database,
+    cwd,
+    databaseId: options.target?.databaseId,
+  })
   if (options.persistTo && options.location !== '--local')
     throw new Error('Local state cannot select a remote migration target')
   const run = (args: string[], json: boolean) => {
