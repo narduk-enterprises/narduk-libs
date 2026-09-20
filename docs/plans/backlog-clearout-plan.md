@@ -44,9 +44,9 @@ Two conclusions follow, and they set the plan's priorities:
 ## Phase 0 — freeze the scope — **DONE 2026-09-20 22:56Z**
 
 One milestone, `backlog-clearout`, carrying exactly the 190 issues open on
-2026-09-20. Filing stays unrestricted; new issues simply land **outside** the
-milestone unless they are P0, a security defect, or release-blocking, in which
-case the orchestrator admits them explicitly.
+2026-09-20. Filing stays unrestricted; a new issue lands **outside** the
+milestone, and the orchestrator admits what belongs at each wave boundary (see
+the amendment below, which supersedes the original P0-only admission rule).
 
 Executed: milestone
 [#1](https://github.com/narduk-enterprises/narduk-libs/milestone/1) created at
@@ -96,9 +96,18 @@ published package version, and lands in one terminal state:
 | `deferred`         | real but out of campaign scope; a named replacement tracker        |
 | `active`           | survives the probe; keeps its lane assignment                      |
 
-Probing is Sonnet work. **Closure decisions stay with the orchestrator** — a
-probe produces evidence, not a verdict. Known starting points, all verified as
-still open today:
+Probing is Sonnet work, split into four disjoint slices of 51 / 41 / 49 / 49
+issues (`~/.agents/programs/narduk-libs-backlog/slices/`, verified disjoint and
+complete against the full list).
+
+A sweep lane closes `fixed` and `superseded` itself — a closure is reversible
+and each one carries an evidence comment naming the exact probe command and its
+decisive output. **Reserved for the orchestrator**: closing or re-scoping a
+tracker, transferring an `externally-owned` issue, deferring one, anything
+labelled `P0-critical`, and every change to milestone membership. An ambiguous
+probe resolves to `active`, never to a closure.
+
+Known starting points, all verified as still open today:
 
 - **#577 closes now.** Its premise was "always-red, Cursor quota exhausted". The
   last 20 `cursor-review` runs are 14 success / 2 cancelled / 4
