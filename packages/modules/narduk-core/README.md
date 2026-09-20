@@ -118,21 +118,50 @@ unknown.
 
 ### Options
 
-| Option              | Default                                                                        | Notes                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`           | `false`                                                                        | Serve the strict policy at all.                                                                                                                            |
-| `enforce`           | `false`                                                                        | Promote it from report-only to enforcing.                                                                                                                  |
-| `allow`             | baseline only                                                                  | Extra origins per directive: `script`, `connect`, `img`, `font`, `style`, `frame`, `worker`, `media`. Merged onto the estate baseline, never replacing it. |
-| `strictDynamic`     | `true`                                                                         | Keep `'strict-dynamic'` in `script-src`. See the warning below.                                                                                            |
-| `hsts`              | 180 days, `includeSubdomains`, no preload                                      | `false` disables it. `preload` is never defaulted on, because submitting to the preload list is irreversible in practice.                                  |
-| `frameAncestors`    | `["'none'"]`                                                                   | Also drives the `X-Frame-Options` fallback, which can only express `DENY` and `SAMEORIGIN`.                                                                |
-| `referrerPolicy`    | `strict-origin-when-cross-origin`                                              |                                                                                                                                                            |
-| `permissionsPolicy` | camera, microphone, geolocation, payment, usb and `interest-cohort` all denied | Merged onto the baseline, so granting one does not restate the rest.                                                                                       |
-| `reportRoute`       | `/api/_security/csp-report`                                                    | `false` serves no route and emits no `report-uri`.                                                                                                         |
+| Option              | Default                                                                        | Notes                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`           | `false`                                                                        | Serve the strict policy at all.                                                                                                                                               |
+| `enforce`           | `false`                                                                        | Promote it from report-only to enforcing.                                                                                                                                     |
+| `allow`             | baseline only                                                                  | Extra origins per directive: `script`, `connect`, `img`, `font`, `style`, `frame`, `worker`, `media`. Merged onto the selected baseline, never replacing it.                  |
+| `baseline`          | `'estate'`                                                                     | `'self'` skips the whole estate allowlist — third-party hosts **and** `data:` on `img-src`, `blob:` on `worker-src`. Each directive becomes `'self'` plus this app's `allow`. |
+| `strictDynamic`     | `true`                                                                         | Keep `'strict-dynamic'` in `script-src`. See the warning below.                                                                                                               |
+| `hsts`              | 180 days, `includeSubdomains`, no preload                                      | `false` disables it. `preload` is never defaulted on, because submitting to the preload list is irreversible in practice.                                                     |
+| `frameAncestors`    | `["'none'"]`                                                                   | Also drives the `X-Frame-Options` fallback, which can only express `DENY` and `SAMEORIGIN`.                                                                                   |
+| `referrerPolicy`    | `strict-origin-when-cross-origin`                                              |                                                                                                                                                                               |
+| `permissionsPolicy` | camera, microphone, geolocation, payment, usb and `interest-cohort` all denied | Merged onto the baseline, so granting one does not restate the rest.                                                                                                          |
+| `reportRoute`       | `/api/_security/csp-report`                                                    | `false` serves no route and emits no `report-uri`.                                                                                                                            |
 
 An app that already sets `CSP_SCRIPT_SRC`, `CSP_CONNECT_SRC`, `CSP_FRAME_SRC`,
 `CSP_WORKER_SRC` or `CSP_MEDIA_SRC` keeps those origins: they are folded into
 the preset's allowlist, so turning the preset on does not quietly drop them.
+They are the app's own origins, so `baseline: 'self'` keeps them too.
+
+#### `baseline: 'self'`
+
+The estate baseline is a floor, and a floor is the wrong shape for an app that
+reaches no third party. Because `allow` can only add, such an app could not
+enforce the strict nonce policy without **widening** its CSP: it would trade
+`script-src 'unsafe-inline'` for the eleven origins in `BASELINE_ALLOWLIST`,
+eight of them on `connect-src` — the directive that governs where a page may
+send data.
+
+```ts
+nardukCore: {
+  security: {
+    headers: { enabled: true, enforce: true, baseline: 'self' },
+  },
+}
+```
+
+Everything else is unchanged: the nonce, `'strict-dynamic'`, HSTS,
+`frame-ancestors`, `form-action`, `object-src 'none'`, the report route, and
+style-src's `'unsafe-inline'` (which is Vue's scoped-style runtime, not a
+baseline origin). The resulting policy is a strict subset of the `'estate'` one
+— a test pins that.
+
+Reach for it only when the app genuinely contacts nothing third-party. An app
+that installs narduk-analytics or narduk-mapkit wants the default, or it will be
+restating those modules' hosts in `allow` by hand.
 
 > [!WARNING] `'strict-dynamic'` makes a conforming browser **ignore every host**
 > in `script-src`, `'self'` included, and trust only scripts created by already-
