@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { tenancyMemberships } from '../server/database/tenancy-schema'
+import { tenancyInvites, tenancyMemberships } from '../server/database/tenancy-schema'
 import { createTenancy, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
 import { MIGRATION_PATH } from './support/database'
@@ -139,6 +139,88 @@ describe('D1 transaction integration', () => {
 
     await tenancy.removeMember({ orgId: org.id, userId: 'crew-a', actorUserId: 'admin' })
     expect(await roleOf('crew-a')).toBeNull()
+  })
+
+  /**
+   * narduk-libs#537 moved the rank re-check for `addMember`,
+   * `setResourceRoleOverride`, `clearResourceRoleOverride` and `createInvite`
+   * into the write, which for the two inserts means an `INSERT … SELECT …
+   * WHERE`. That statement shape is the one most likely to behave differently
+   * on the real D1 driver than on better-sqlite3, so both halves are proven
+   * here: it writes when the rank holds, and writes nothing when a demotion
+   * lands between the check and the write.
+   */
+  it('carries the in-write rank re-check into INSERT statements on the actual D1 driver', async () => {
+    const tenancy = createTenancy(drizzle(binding))
+    const org = await tenancy.createOrg({
+      slug: 'd1-insert-rank',
+      name: 'D1 insert rank',
+      createdByUserId: 'owner',
+    })
+    await tenancy.addMember({
+      actorUserId: TENANCY_SYSTEM_ACTOR,
+      orgId: org.id,
+      userId: 'admin',
+      role: 'admin',
+    })
+    const demoteAdmin = () =>
+      binding
+        .prepare(
+          "UPDATE tenancy_memberships SET role = 'viewer' WHERE org_id = ? AND user_id = 'admin'",
+        )
+        .bind(org.id)
+        .run()
+    const countOf = async (table: string, column: string, value: string) =>
+      (
+        await binding
+          .prepare(`SELECT COUNT(*) AS counted FROM ${table} WHERE org_id = ? AND ${column} = ?`)
+          .bind(org.id, value)
+          .first<{ counted: number }>()
+      )?.counted
+
+    // In rank, the INSERT … SELECT lands on D1.
+    await tenancy.addMember({
+      actorUserId: 'admin',
+      orgId: org.id,
+      userId: 'crew-a',
+      role: 'crew',
+    })
+    expect((await tenancy.resolveRole({ orgId: org.id, userId: 'crew-a' })).role).toBe('crew')
+    await tenancy.createInvite({
+      orgId: org.id,
+      invitedByUserId: 'admin',
+      email: 'in-rank@example.com',
+      role: 'crew',
+    })
+    expect(await countOf('tenancy_invites', 'email', 'in-rank@example.com')).toBe(1)
+
+    // Demoted at the write, neither insert writes anything.
+    expect(
+      await codeOf(
+        createTenancy(
+          interleaveBeforeWrite(drizzle(binding), 'insert', tenancyMemberships, demoteAdmin),
+        ).addMember({ actorUserId: 'admin', orgId: org.id, userId: 'crew-b', role: 'crew' }),
+      ),
+    ).toBe('conflict')
+    expect(await countOf('tenancy_memberships', 'user_id', 'crew-b')).toBe(0)
+
+    await binding
+      .prepare("UPDATE tenancy_memberships SET role = 'admin' WHERE org_id = ? AND user_id = ?")
+      .bind(org.id, 'admin')
+      .run()
+    expect(
+      await codeOf(
+        createTenancy(
+          interleaveBeforeWrite(drizzle(binding), 'insert', tenancyInvites, demoteAdmin),
+        ).createInvite({
+          orgId: org.id,
+          invitedByUserId: 'admin',
+          email: 'raced@example.com',
+          role: 'crew',
+        }),
+      ),
+    ).toBe('conflict')
+    expect(await countOf('tenancy_invites', 'email', 'raced@example.com')).toBe(0)
   })
 
   it('rolls back every statement when a D1 membership write fails', async () => {

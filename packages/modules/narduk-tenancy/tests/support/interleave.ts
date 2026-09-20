@@ -5,15 +5,16 @@ type Callable = (...args: unknown[]) => unknown
 const TERMINALS = new Set<PropertyKey>(['all', 'get', 'run'])
 
 /**
- * `db`, except that the first `write` against `table` runs `sneak` just before
- * it executes: after the service has read everything it checks, and before its
- * own write lands. That is the interleaving a concurrent request produces, made
- * deterministic, and it works the same on better-sqlite3 and on D1 because it
- * sits on the drizzle builder rather than on either driver.
+ * `db`, except that the first `write` — `delete`, `insert` or `update` —
+ * against `table` runs `sneak` just before it executes: after the service has
+ * read everything it checks, and before its own write lands. That is the
+ * interleaving a concurrent request produces, made deterministic, and it works
+ * the same on better-sqlite3 and on D1 because it sits on the drizzle builder
+ * rather than on either driver.
  */
 export function interleaveBeforeWrite(
   db: TenancyDatabase,
-  write: 'delete' | 'update',
+  write: 'delete' | 'insert' | 'update',
   table: object,
   sneak: () => unknown,
 ): TenancyDatabase {

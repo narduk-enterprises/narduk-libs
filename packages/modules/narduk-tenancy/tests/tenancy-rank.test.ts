@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { tenancyMemberships } from '../server/database/tenancy-schema'
+import {
+  tenancyInvites,
+  tenancyMemberships,
+  tenancyResourceRoleOverrides,
+} from '../server/database/tenancy-schema'
 import { createTenancy, TENANCY_SYSTEM_ACTOR, type TenancyService } from '../server/utils/tenancy'
 import { claimInviteMembership } from '../server/utils/tenancy-accept-invite'
 import { roleAtLeast, TENANCY_ROLES, type TenancyRole } from '../shared/utils/roles'
@@ -506,6 +510,210 @@ describe('actor rank (narduk-libs#213)', () => {
         expect(await org.roleOf('crew-2')).toBe('crew')
       },
     )
+
+    /**
+     * narduk-libs#537. `addMember`, `setResourceRoleOverride`,
+     * `clearResourceRoleOverride` and `createInvite` ranked from a read made
+     * just before the write rather than inside it, so a demotion or promotion
+     * landing in that window let one change through against the roles as they
+     * were read. Each case below sneaks exactly that change in at the write,
+     * deterministically, and asserts the call writes nothing.
+     */
+    function racing(
+      org: RankedOrg,
+      write: 'delete' | 'insert' | 'update',
+      table: object,
+      sneak: string,
+    ) {
+      return createTenancy(
+        interleaveBeforeWrite(org.db, write, table, () => org.sqlite.prepare(sneak).run()),
+      )
+    }
+    const DEMOTE_ADMIN = "UPDATE tenancy_memberships SET role = 'viewer' WHERE user_id = 'admin-1'"
+    const PROMOTE_CREW = "UPDATE tenancy_memberships SET role = 'owner' WHERE user_id = 'crew-2'"
+    const countOf = (org: RankedOrg, sql: string, ...bind: string[]) =>
+      (org.sqlite.prepare(sql).get(...bind) as { counted: number }).counted
+
+    it('an admin demoted after the rank check read them adds nobody', async () => {
+      const org = await rankedOrg()
+      expect(
+        await codeOf(
+          racing(org, 'insert', tenancyMemberships, DEMOTE_ADMIN).addMember({
+            orgId: org.orgId,
+            userId: 'newcomer',
+            role: 'crew',
+            actorUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      expect(await org.roleOf('newcomer')).toBeNull()
+      expect(await org.roleOf('admin-1')).toBe('viewer')
+    })
+
+    it('addMember writes nothing when the user is added concurrently', async () => {
+      const org = await rankedOrg()
+      expect(
+        await codeOf(
+          racing(
+            org,
+            'insert',
+            tenancyMemberships,
+            `INSERT INTO tenancy_memberships (id, org_id, user_id, role, created_at, updated_at)
+               VALUES ('sneaked', '${org.orgId}', 'newcomer', 'owner', 1, 1)`,
+          ).addMember({
+            orgId: org.orgId,
+            userId: 'newcomer',
+            role: 'crew',
+            actorUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      // The concurrent row stands untouched, and no second one was written
+      // behind it — the UNIQUE index is not what refused this.
+      expect(await org.roleOf('newcomer')).toBe('owner')
+      expect(
+        countOf(
+          org,
+          'SELECT COUNT(*) AS counted FROM tenancy_memberships WHERE user_id = ?',
+          'newcomer',
+        ),
+      ).toBe(1)
+    })
+
+    it.each([
+      ['a member promoted to owner', PROMOTE_CREW],
+      ['the acting admin demoted', DEMOTE_ADMIN],
+    ])('narrows nobody with %s at the write', async (_case, sneak) => {
+      const org = await rankedOrg()
+      expect(
+        await codeOf(
+          racing(org, 'insert', tenancyResourceRoleOverrides, sneak).setResourceRoleOverride({
+            orgId: org.orgId,
+            userId: 'crew-2',
+            resource: VESSEL,
+            role: 'viewer',
+            actorUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      expect(countOf(org, 'SELECT COUNT(*) AS counted FROM tenancy_resource_role_overrides')).toBe(
+        0,
+      )
+    })
+
+    it('does not re-narrow an existing override when the member is promoted at the write', async () => {
+      const org = await rankedOrg()
+      await org.tenancy.setResourceRoleOverride({
+        orgId: org.orgId,
+        userId: 'crew-2',
+        resource: VESSEL,
+        role: 'viewer',
+        actorUserId: 'admin-1',
+      })
+      expect(
+        await codeOf(
+          racing(org, 'update', tenancyResourceRoleOverrides, PROMOTE_CREW).setResourceRoleOverride(
+            {
+              orgId: org.orgId,
+              userId: 'crew-2',
+              resource: VESSEL,
+              role: 'crew',
+              actorUserId: 'admin-1',
+            },
+          ),
+        ),
+      ).toBe('conflict')
+      const stored = org.sqlite
+        .prepare('SELECT role FROM tenancy_resource_role_overrides WHERE user_id = ?')
+        .get('crew-2') as { role: string }
+      expect(stored.role).toBe('viewer')
+    })
+
+    it('does not lift a narrowing off a member promoted at the write', async () => {
+      const org = await rankedOrg()
+      await org.tenancy.setResourceRoleOverride({
+        orgId: org.orgId,
+        userId: 'crew-2',
+        resource: VESSEL,
+        role: 'viewer',
+        actorUserId: 'admin-1',
+      })
+      expect(
+        await codeOf(
+          racing(
+            org,
+            'delete',
+            tenancyResourceRoleOverrides,
+            PROMOTE_CREW,
+          ).clearResourceRoleOverride({
+            orgId: org.orgId,
+            userId: 'crew-2',
+            resource: VESSEL,
+            actorUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      expect(countOf(org, 'SELECT COUNT(*) AS counted FROM tenancy_resource_role_overrides')).toBe(
+        1,
+      )
+    })
+
+    /**
+     * The branch the pre-write check cannot rank at all: an override whose
+     * member is gone narrows nobody, so nothing is ranked — and a membership
+     * arriving in that window would be handed its full org role on the
+     * resource by a clear that ranked it against nobody. The override row is
+     * written directly because the service will not make one for a
+     * non-member.
+     */
+    it('does not lift a narrowing off a membership created at the write', async () => {
+      const org = await rankedOrg()
+      org.sqlite
+        .prepare(
+          `INSERT INTO tenancy_resource_role_overrides
+             (id, org_id, resource_kind, resource_id, user_id, role, created_at, updated_at)
+           VALUES ('orphan', ?, ?, ?, 'stranger', 'viewer', 1, 1)`,
+        )
+        .run(org.orgId, VESSEL.kind, VESSEL.id)
+      expect(
+        await codeOf(
+          racing(
+            org,
+            'delete',
+            tenancyResourceRoleOverrides,
+            `INSERT INTO tenancy_memberships (id, org_id, user_id, role, created_at, updated_at)
+               VALUES ('sneaked', '${org.orgId}', 'stranger', 'owner', 1, 1)`,
+          ).clearResourceRoleOverride({
+            orgId: org.orgId,
+            userId: 'stranger',
+            resource: VESSEL,
+            actorUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      expect(
+        countOf(
+          org,
+          'SELECT COUNT(*) AS counted FROM tenancy_resource_role_overrides WHERE user_id = ?',
+          'stranger',
+        ),
+      ).toBe(1)
+    })
+
+    it('an inviter demoted after the rank check read them issues nothing', async () => {
+      const org = await rankedOrg()
+      expect(
+        await codeOf(
+          racing(org, 'insert', tenancyInvites, DEMOTE_ADMIN).createInvite({
+            orgId: org.orgId,
+            email: NEW_EMAIL,
+            role: 'crew',
+            invitedByUserId: 'admin-1',
+          }),
+        ),
+      ).toBe('conflict')
+      expect(countOf(org, 'SELECT COUNT(*) AS counted FROM tenancy_invites')).toBe(0)
+    })
   })
 
   describe('actorUserId is mandatory', () => {

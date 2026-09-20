@@ -119,19 +119,30 @@ route policy: consumers answer it differently, so a route that wants "strictly
 below" or an admin floor checks it itself before calling the service
 (narduk-libs#213).
 
-What is checked where:
+Every mutation asserts its rank inputs again **inside** the write, so a role
+that moves between the check and the write cannot let one change through against
+the roles as they were read (narduk-libs#213, narduk-libs#537):
 
-- `setMemberRole` and `removeMember` assert the rank inputs again inside the
-  UPDATE/DELETE. If the member's or the actor's role moved between the check and
-  the write, the call answers `conflict` and writes nothing.
+- `setMemberRole` and `removeMember` carry them into the UPDATE/DELETE;
+  `addMember` and `createInvite` into an `INSERT … SELECT … WHERE`;
+  `setResourceRoleOverride` into whichever of its UPDATE or INSERT it makes; and
+  `clearResourceRoleOverride` into its DELETE.
+- What each one asserts: the actor still holds exactly the org role the check
+  read, and the member still stands exactly as it read them — at that role, or
+  still not a member at all, since a membership _appearing_ in the window would
+  be handed a role the check ranked against nobody.
+- If any of that moved, the call answers `conflict` and writes nothing. The
+  caller retries, and the check then runs against the new state. `not_found`,
+  `forbidden` and `last_owner` still answer for a state that was already true
+  when the service read it; `conflict` means only that it changed underneath.
 - `acceptInvite` re-checks that the inviter is still a member holding the
   invite's role or above, both before the claim and inside it, so an invite does
   not outlive its inviter's demotion or departure. It answers `forbidden` (or
   `conflict` if the demotion races the claim).
-- `addMember`, `setResourceRoleOverride`, `clearResourceRoleOverride` and
-  `createInvite` rank from a read made just before the write, not inside it. A
-  change to the actor's or the member's role that lands in that window lets one
-  change through against the roles as they were read.
+
+The re-checks are pinned by deterministic interleaves
+(`tests/support/interleave.ts` runs a concurrent change at the moment of the
+write) on both the better-sqlite3 and the Miniflare D1 driver.
 
 ## Service
 
