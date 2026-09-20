@@ -804,6 +804,11 @@ function recordMigrationSql(action: MigrationAction): string {
  * the ledger through a quoted identifier and must stay visible to the guard.
  * A comment cannot alter anything, and a migration that explains why it leaves
  * the bookkeeping tables alone should not read as one that touches them.
+ *
+ * All four of SQLite's quote contexts are tracked, including `[bracketed]`
+ * identifiers: SQLite ends that token at the first `]` and reads no comment
+ * inside it, so a stripper that missed it would blank away a real statement
+ * sharing the line.
  */
 export function stripSqlComments(sql: string): string {
   let out = ''
@@ -819,6 +824,20 @@ export function stripSqlComments(sql: string): string {
       index += 2
       while (index < sql.length && !(sql[index] === '*' && sql[index + 1] === '/')) index += 1
       index += 2
+      continue
+    }
+    if (char === '[') {
+      // SQLite's bracket identifier has no `]]` escape: it ends at the first `]`.
+      out += char
+      index += 1
+      while (index < sql.length) {
+        out += sql[index]
+        if (sql[index] === ']') {
+          index += 1
+          break
+        }
+        index += 1
+      }
       continue
     }
     if (char === "'" || char === '"' || char === '`') {

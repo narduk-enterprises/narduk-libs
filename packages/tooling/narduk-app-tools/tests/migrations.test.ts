@@ -307,11 +307,24 @@ describe('migration config and planning', () => {
       ).toThrow('may not alter the runner ledger or lock')
     })
 
+    it('does not treat a double dash inside a bracket identifier as a comment', () => {
+      // SQLite reads `[body -- x]` as one identifier and runs the DELETE;
+      // verified in sqlite3, ledger count 0. A stripper that stopped at the
+      // `--` would blank the DELETE away and let the migration through.
+      expect(() =>
+        build('CREATE TABLE notes ([body -- x] TEXT); DELETE FROM _narduk_migrations;'),
+      ).toThrow('may not alter the runner ledger or lock')
+      expect(() =>
+        build('CREATE TABLE notes ([body /* x] TEXT); DELETE FROM _narduk_migrations;'),
+      ).toThrow('may not alter the runner ledger or lock')
+    })
+
     it('strips comments without disturbing the SQL it returns', () => {
       expect(stripSqlComments('SELECT 1; -- _narduk_migrations\nSELECT 2;')).toBe(
         'SELECT 1; \nSELECT 2;',
       )
       expect(stripSqlComments("SELECT '-- not a comment';")).toBe("SELECT '-- not a comment';")
+      expect(stripSqlComments('SELECT [-- not a comment];')).toBe('SELECT [-- not a comment];')
       expect(migrationSqlTouchesRunnerLedger('-- _narduk_migrations')).toBe(false)
       expect(migrationSqlTouchesRunnerLedger('DROP TABLE _narduk_migration_lock;')).toBe(true)
     })
