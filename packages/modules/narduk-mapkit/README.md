@@ -1135,6 +1135,23 @@ const view = useMapKitView({
 - `useMapKitFullscreen({ surface, onLayout })` is the same fullscreen toggle as
   a standalone composable.
 
+Both are also exported from `@narduk-enterprises/narduk-mapkit/nuxt/composables`
+for callers auto-import never reaches -- a unit test under plain vitest, an app
+with `imports.autoImport` off, or any module that wants the function rather than
+the ambient name:
+
+```ts
+import {
+  useMapKitFullscreen,
+  useMapKitView,
+} from '@narduk-enterprises/narduk-mapkit/nuxt/composables'
+```
+
+`useMapKit()` is not on that subpath. It reads the module's runtime options
+through `#imports`, which only resolves inside a Nuxt build; these two need only
+Vue, because the view takes its MapKit namespace from `map-ready` (K-10) rather
+than from the kit handle.
+
 ## Pointer Probe
 
 `attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One
@@ -1693,19 +1710,20 @@ in the app.
 
 ## API Surface
 
-| Export                                         | Purpose                                                                                                                                                                                                                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/server`     | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                      |
-| `@narduk-enterprises/narduk-mapkit/worker`     | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                           |
-| `@narduk-enterprises/narduk-mapkit/node`       | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/client`     | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
-| `@narduk-enterprises/narduk-mapkit/geometry`   | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/marks`      | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                   |
-| `@narduk-enterprises/narduk-mapkit/playback`   | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
-| `@narduk-enterprises/narduk-mapkit/testing`    | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                               |
-| `@narduk-enterprises/narduk-mapkit/token`      | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
-| `@narduk-enterprises/narduk-mapkit-nuxt`       | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                        |
+| Export                                               | Purpose                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                      |
+| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                           |
+| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
+| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                   |
+| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
+| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                               |
+| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
+| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                        |
+| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                           |
 
 ## Maintainer Migration Notes
 

@@ -83,6 +83,10 @@
     "./nuxt": {
       "types": "./dist/nuxt/index.d.ts",
       "import": "./dist/nuxt/index.js"
+    },
+    "./nuxt/composables": {
+      "types": "./dist/nuxt/runtime/composables/index.d.ts",
+      "import": "./dist/nuxt/runtime/composables/index.js"
     }
   },
   "scripts": {
