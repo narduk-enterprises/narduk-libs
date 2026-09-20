@@ -38,6 +38,8 @@
 
 import { z } from 'zod'
 
+import { databaseOwnershipSchema } from './database-ownership.js'
+
 /** The conformance key. Any other value means the app is deliberately exempt
  * from the standard and must justify that elsewhere -- it is not a failure
  * here, because an exempt app is not claiming conformance. */
@@ -272,6 +274,20 @@ export const deploymentBlockSchema = z.strictObject({
   previewChecks: z.array(z.enum(PREVIEW_CHECK_MEMBERS)).max(10).optional(),
   /** Explicit adoption; existing database-free applications need no migration step. */
   migrations: deploymentMigrationsSchema.optional(),
+  /**
+   * Who owns each D1 binding's schema (`./database-ownership.ts`).
+   *
+   * Optional, and absent means what it has always meant: every D1 binding is
+   * migration-owned and `deployment.migrations` must cover all of them. An app
+   * declares this only when at least one database's schema is owned by a
+   * contract rather than by a migration history -- which is the only way to
+   * declare `deployment.migrations` for the rest without manufacturing a
+   * migration baseline for a database nobody migrates.
+   *
+   * When present it is the **complete** statement: every migrated binding must
+   * appear here too, so the manifest never leaves a binding's owner implied.
+   */
+  databaseOwnership: databaseOwnershipSchema.optional(),
 })
 
 export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>

@@ -167,6 +167,13 @@ promotion; `--check` is read-only and fails on pending or divergent history.
 without giving D1 credentials to PR code. Existing apps must adopt the workflow
 steps; installing the package alone does not activate migration writes.
 
+An app whose D1 estate is mixed -- some databases migrated, one whose schema is
+owned by a contract and a refresh job -- declares `deployment.databaseOwnership`
+instead of manufacturing a migration baseline for the database nobody migrates.
+Every binding gets exactly one owner, and the migration runner refuses a
+contract-owned database even when an operator names it directly. See
+[Declare who owns each schema](docs/deployment-migrations.md#declare-who-owns-each-schema-databaseownership).
+
 ## Promotion, rollback and live proof
 
 The Narduk deployment standard is **Cloudflare builds, GitHub promotes**:
