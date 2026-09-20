@@ -61,6 +61,18 @@ function resolveNitroPresetForReal(repo: AppRepo): { preset: string | null; evid
   }
 }
 
+/** Nitro treats `-` and `_` as the same separator in a preset name, and the
+ * two spellings reach this check from different places: `nuxt.config`'s
+ * literal and `Config/cloudflare-app.json` say `cloudflare_module`, while a
+ * completed build writes the canonical `cloudflare-module` into
+ * `.output/nitro.json`. Comparing the raw string therefore failed item 1.1 on
+ * every app whose preset was resolved from its own build output -- exactly
+ * the not-yet-onboarded case the live-build fallback exists to serve
+ * (narduk-libs#350). */
+function samePreset(preset: string, expected: string): boolean {
+  return preset.replaceAll('-', '_') === expected.replaceAll('-', '_')
+}
+
 function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
   let preset: string | null = null
   let evidence = 'Config/cloudflare-app.json'
@@ -73,14 +85,14 @@ function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
     evidence = resolved.evidence
     resolvedForReal = true
   }
-  if (preset === 'cloudflare_module') {
+  if (preset !== null && samePreset(preset, 'cloudflare_module')) {
     return check(
       '1.1',
       'nitro preset is cloudflare_module',
       STATUS_PASS,
       resolvedForReal
-        ? `resolved for real from ${evidence} (no Config/cloudflare-app.json)`
-        : 'Config/cloudflare-app.json worker.nitroPreset == cloudflare_module',
+        ? `resolved for real from ${evidence} as ${JSON.stringify(preset)} (no Config/cloudflare-app.json)`
+        : `Config/cloudflare-app.json worker.nitroPreset == ${JSON.stringify(preset)}`,
       evidence,
     )
   }
@@ -89,7 +101,8 @@ function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
       '1.1',
       'nitro preset is cloudflare_module',
       STATUS_FAIL,
-      `resolved preset is ${JSON.stringify(preset)}, not "cloudflare_module" (from ${evidence})`,
+      `resolved preset is ${JSON.stringify(preset)}, not "cloudflare_module" (from ${evidence}); ` +
+        'the comparison already treats "-" and "_" as the same separator',
       evidence,
     )
   }

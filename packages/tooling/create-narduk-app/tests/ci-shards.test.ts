@@ -71,9 +71,18 @@ describe('generated CI execution boundary', () => {
       }
       const manifest = JSON.parse(files.get('package.json')!) as { scripts: Record<string, string> }
       expect(manifest.scripts.quality).toBe('pnpm run quality:static && pnpm run test:e2e')
-      for (const script of ['format:check', 'lint', 'knip', 'typecheck', 'build', 'test:unit']) {
-        expect(manifest.scripts['quality:static']).toContain(`pnpm run ${script}`)
+      // Split on ` && ` and compare whole segments. A `toContain` substring
+      // check passes for `pnpm run build:ci` when it asks for `pnpm run build`,
+      // so it could not have failed on a revert of the gate to plain `build` --
+      // the very regression narduk-libs#617 fixed (Cursor review, PR #622).
+      const staticSegments = manifest.scripts['quality:static'].split(' && ')
+      for (const script of ['format:check', 'lint', 'knip', 'typecheck', 'build:ci', 'test:unit']) {
+        expect(staticSegments).toContain(`pnpm run ${script}`)
       }
+      // `build` stays a real script for cf:build and operator recovery, but the
+      // gate must not be the one that calls it.
+      expect(staticSegments).not.toContain('pnpm run build')
+      expect(manifest.scripts.build).toBeTruthy()
       expect(manifest.scripts['test:unit']).toBe('pnpm --filter web run test:unit')
       expect(manifest.scripts['test:e2e']).toBe('playwright test')
       expect(workflow.jobs.quality.steps.at(-1)?.run).toBe('pnpm run quality:static')

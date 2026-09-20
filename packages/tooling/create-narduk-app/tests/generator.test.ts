@@ -662,13 +662,37 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
-      // The generator emits the block to paste, never the file itself:
-      // Config/cloudflare-app.json records live Cloudflare facts a checkout
-      // cannot know, and onboarding owns it.
-      expect(
-        files.some((file) => file.path === 'Config/cloudflare-app.json'),
-        label,
-      ).toBe(false)
+      // The generator writes the app's own half of Config/cloudflare-app.json
+      // and still emits the `deployment` block for onboarding to paste in.
+      // Without the file, foundation:check item 1.2 is a decided FAIL on
+      // every brand-new app and CI's `foundation-check: true` input fails the
+      // build, so the first CI run was red by construction (narduk-libs#617).
+      const cloudflareApp = byPath.get('Config/cloudflare-app.json')
+      expect(cloudflareApp, label).toBeDefined()
+      const declared = JSON.parse(cloudflareApp ?? '{}') as Record<string, never>
+      expect(declared, label).toMatchObject({
+        schemaVersion: 1,
+        worker: {
+          nitroPreset: 'cloudflare_module',
+          wranglerConfig: 'apps/web/wrangler.jsonc',
+          // The same pair wrangler.jsonc sets: closed for an authenticated
+          // app, open for a public one. Item 1.4 reads the wrangler flags and
+          // this class together, so they must not disagree.
+          workersDev: !hasAuth,
+          previewUrls: !hasAuth,
+        },
+        // `auth` defaults the exposure to authenticated (generate.ts), and
+        // authenticated maps to the contract's `authenticated-public`.
+        access: { exposureClass: hasAuth ? 'authenticated-public' : 'public' },
+        bindings: { d1: hasDatabase ? [{ binding: 'DB' }] : [], kv: [], queues: [], cron: [] },
+      })
+      // Live Cloudflare facts stay ABSENT rather than fabricated -- the same
+      // rule wrangler.jsonc's missing `account_id` follows. Onboarding adds
+      // these, and the deployment check reports NOT ADOPTED (exit 0) until it
+      // does.
+      expect(declared.deployment, label).toBeUndefined()
+      expect(declared.domains, label).toBeUndefined()
+      expect((declared.product as Record<string, unknown>).repository, label).toBeUndefined()
 
       // docs/e2e-testing.md + apps/web/tests/e2e/visual-audit.spec.ts: the
       // shared narduk-testkit UI-quality toolkit, scoped to the one route
@@ -1661,5 +1685,200 @@ describe('CLI argument parsing', () => {
     const code = await runCli({ argv: ['--help'], stdout: output })
     expect(code).toBe(0)
     expect(chunks.join('')).toContain('create-narduk-app')
+  })
+})
+
+/**
+ * narduk-libs#617: a fresh scaffold could not pass its own gate, and its
+ * first CI run was red by construction. Each case below pins one of the
+ * defects that made that true, in the direction that proves the fix rather
+ * than the direction that happened to be green on a short fixture.
+ */
+describe('a fresh scaffold passes its own gate', () => {
+  // The exact description from the narduk-libs#617 reproduction. Long free
+  // text is what crossed printWidth; a short one masks the whole class.
+  const LONG_DESCRIPTION =
+    'Youth running club site for Austin Rising Runners: season schedule, meets, results, ' +
+    'roster and club information for member families.'
+  const LONG_DISPLAY_NAME = 'Austin Rising Runners Youth Track and Cross Country Club'
+
+  const PRETTIER_OPTIONS = {
+    endOfLine: 'lf',
+    printWidth: 100,
+    semi: false,
+    singleQuote: true,
+    trailingComma: 'all',
+  } as const
+
+  it('stays Prettier-canonical when the caller free text is long', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'long-text',
+      capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+      description: LONG_DESCRIPTION,
+      displayName: LONG_DISPLAY_NAME,
+      siteUrl: 'https://austin-rising-runners-youth-track-and-cross-country.example.nard.uk',
+      noGit: true,
+      targetDir: '/tmp/long-text',
+    })
+    const supported = /\.(?:css|json|jsonc|md|mjs|ts|vue|ya?ml)$/u
+
+    for (const file of files.filter((candidate) => supported.test(candidate.path))) {
+      expect(
+        await prettier.check(file.contents, { ...PRETTIER_OPTIONS, filepath: file.path }),
+        file.path,
+      ).toBe(true)
+    }
+  })
+
+  it('breaks a long const after the "=" exactly where Prettier does', () => {
+    const files = new Map(
+      buildGeneratedFiles({
+        appName: 'long-const',
+        capabilities: ['seo'],
+        description: LONG_DESCRIPTION,
+        noGit: true,
+        targetDir: '/tmp/long-const',
+      }).map((file) => [file.path, file.contents]),
+    )
+    // Both emitters that interpolate the description, both broken.
+    expect(files.get('apps/web/app/pages/index.vue')).toContain(
+      `const description =\n  '${LONG_DESCRIPTION}'`,
+    )
+    expect(files.get('apps/web/nuxt.config.ts')).toContain(
+      `const appDescription =\n  '${LONG_DESCRIPTION}'`,
+    )
+    // A short one still fits on the declaration line, which is also what
+    // Prettier produces -- the helper must not break unconditionally.
+    const short = new Map(
+      buildGeneratedFiles({
+        appName: 'short-const',
+        capabilities: ['seo'],
+        description: 'A short description.',
+        noGit: true,
+        targetDir: '/tmp/short-const',
+      }).map((file) => [file.path, file.contents]),
+    )
+    expect(short.get('apps/web/nuxt.config.ts')).toContain(
+      "const appDescription = 'A short description.'\n",
+    )
+  })
+
+  it('does not report its own deliberate pins as unused dependencies', () => {
+    const files = new Map(
+      buildGeneratedFiles({
+        appName: 'knip-fixture',
+        capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+        noGit: true,
+        targetDir: '/tmp/knip-fixture',
+      }).map((file) => [file.path, file.contents]),
+    )
+    const knip = JSON.parse(files.get('knip.json') ?? '{}') as { ignoreDependencies: string[] }
+    const web = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    // Both are really in the generated manifest -- an ignore entry for a
+    // dependency the app does not declare would be dead config, and knip
+    // reports those too.
+    expect(web.dependencies['@narduk-enterprises/narduk-logging']).toBeDefined()
+    expect(web.devDependencies.eslint).toBeDefined()
+    // Neither is reachable by a named import: narduk-logging is wired through
+    // runtimeConfig.nardukLogging, eslint through the narduk-lint binary.
+    expect(knip.ignoreDependencies).toContain('@narduk-enterprises/narduk-logging')
+    expect(knip.ignoreDependencies).toContain('eslint')
+  })
+
+  it('never emits narduk-ai runtimeConfig into an app without the ai capability', () => {
+    for (const capabilities of [
+      ['auth', 'seo', 'analytics', 'uploads'],
+      [],
+      ['ai'],
+    ] as Capability[][]) {
+      const config =
+        buildGeneratedFiles({
+          appName: 'xai-fixture',
+          capabilities,
+          noGit: true,
+          targetDir: '/tmp/xai-fixture',
+        }).find((file) => file.path === 'apps/web/nuxt.config.ts')?.contents ?? ''
+      // @narduk-enterprises/narduk-ai declares xaiApiKey itself, with a
+      // validator, through defu. An app-side `process.env.XAI_API_KEY || ''`
+      // both leaked the key into capability sets that never asked for it and
+      // WON that merge for the apps that did, replacing the validated value
+      // with an empty string.
+      expect(config, JSON.stringify(capabilities)).not.toContain('xaiApiKey:')
+    }
+  })
+
+  it('builds the local gate with the same script CI builds with', () => {
+    const root = JSON.parse(
+      buildGeneratedFiles({
+        appName: 'gate-fixture',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/gate-fixture',
+      }).find((file) => file.path === 'package.json')?.contents ?? '{}',
+    ) as { scripts: Record<string, string> }
+    const segments = root.scripts['quality:static'].split(' && ')
+
+    // `build` alone throws in any seo app with an empty NUXT_OG_IMAGE_SECRET,
+    // so the documented local gate was red where CI was green.
+    expect(segments).toContain('pnpm run build:ci')
+    expect(segments).not.toContain('pnpm run build')
+    // `build` survives as the real-secret path.
+    expect(root.scripts.build).toBe('pnpm --filter web run build')
+    expect(root.scripts['build:ci']).toContain('pnpm run build')
+  })
+
+  it('warns that a repo missing from the runner groups queues its first run forever', () => {
+    const readme = (visibility: 'private' | 'public') =>
+      buildGeneratedFiles({
+        appName: 'runner-fixture',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/runner-fixture',
+        visibility,
+      }).find((file) => file.path === 'README.md')?.contents ?? ''
+
+    // Self-hosted CI gives no error, no timeout and no log when no runner can
+    // pick a job up -- the run just sits in `queued`. The route names in the
+    // generated workflow do not grant membership, so this has to be said
+    // where the person about to push will read it.
+    expect(readme('private')).toContain('sits in `queued` indefinitely')
+    expect(readme('private')).toContain('fleet runner groups')
+    // Public apps run on GitHub-hosted runners and never hit this.
+    expect(readme('public')).not.toContain('fleet runner groups')
+  })
+
+  it('declares its own half of Config/cloudflare-app.json, agreeing with wrangler.jsonc', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'declaration-fixture',
+      capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+      noGit: true,
+      targetDir: '/tmp/declaration-fixture',
+    })
+    const byPath = new Map(files.map((file) => [file.path, file.contents]))
+    const root = await makeTempDirectory()
+    const webDir = join(root, 'apps', 'web')
+    await mkdir(join(webDir, 'scripts'), { recursive: true })
+    await mkdir(join(root, 'Config'), { recursive: true })
+    for (const path of [
+      'apps/web/scripts/validate-manifests.mjs',
+      'apps/web/wrangler.jsonc',
+      'Config/cloudflare-app.json',
+    ]) {
+      await writeFile(join(root, path), byPath.get(path)!)
+    }
+
+    // The generated pair must agree on the generator's own output -- this is
+    // the check that runs pre-deploy on every build, and before this change
+    // it could only ever no-op.
+    const result = spawnSync(process.execPath, ['scripts/validate-manifests.mjs'], {
+      cwd: webDir,
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('agree')
+    expect(result.stdout).not.toContain('does not exist yet')
   })
 })

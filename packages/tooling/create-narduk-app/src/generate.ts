@@ -201,6 +201,33 @@ function tsString(value: string): string {
   return `'${jsonValue.slice(1, -1).replaceAll('\\"', '"').replaceAll("'", "\\'")}'`
 }
 
+/** The `printWidth` the generated `prettier.config.mjs` sets, named once so
+ * the emitters that have to mirror Prettier's own wrapping decisions cannot
+ * drift from the config this generator ships beside them. */
+const PRETTIER_PRINT_WIDTH = 100
+
+/**
+ * `const <name> = <literal>`, wrapped the way Prettier wraps it.
+ *
+ * Prettier keeps a string-literal right-hand side on the declaration line
+ * while the whole line fits inside `printWidth`, and otherwise breaks after
+ * the `=` and indents the literal by two. It never splits the literal itself,
+ * so the broken form can still be wider than `printWidth` -- that is still
+ * Prettier's output, and `format:check` compares against exactly it.
+ *
+ * Emitting the single-line form unconditionally meant any caller free text
+ * long enough to cross the width shipped pre-broken: `format:check` is the
+ * FIRST step of the generated `quality:static`, so a long `--description`,
+ * `--display-name` or `--site-url` made a brand-new app fail its own gate on
+ * generator-owned files before anything else ran (narduk-libs#617). The
+ * failure was a function of caller input length, not of the template, which
+ * is why short fixtures never caught it.
+ */
+function constDeclaration(name: string, literal: string): string {
+  const singleLine = `const ${name} = ${literal}`
+  return singleLine.length <= PRETTIER_PRINT_WIDTH ? singleLine : `const ${name} =\n  ${literal}`
+}
+
 function markdownProductSpec(spec: ProductSpec | undefined): string {
   const fields: Array<[string, string | undefined]> = [
     ['Problem', spec?.problem],
@@ -283,7 +310,7 @@ function moduleList(capabilities: readonly Capability[]): string {
 function knipIgnoreDependenciesLine(dependencies: readonly string[]): string {
   const items = dependencies.map((dependency) => JSON.stringify(dependency))
   const inline = `  "ignoreDependencies": [${items.join(', ')}]`
-  if (inline.length <= 100) return inline
+  if (inline.length <= PRETTIER_PRINT_WIDTH) return inline
   return [
     '  "ignoreDependencies": [',
     ...items.map((item, index) => `    ${item}${index < items.length - 1 ? ',' : ''}`),
@@ -388,6 +415,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // scaffold references it yet and knip would otherwise flag it unused,
     // the same reasoning as the mapkit peer package above.
     ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
+    // Reached through `runtimeConfig.nardukLogging` in nuxt.config.ts and
+    // narduk-core's compatibility bridge (see the generated docs/logging.md),
+    // never through a named import -- so knip cannot trace it and reported
+    // the deliberate pin as an unused dependency (narduk-libs#617).
+    '@narduk-enterprises/narduk-logging',
+    // Backs the `narduk-lint` binary and apps/web/eslint.config.mjs, which
+    // extends @narduk-enterprises/eslint-config rather than importing eslint
+    // itself. Removing it breaks `pnpm run lint`.
+    'eslint',
     'vue-tsc',
   ]
 
@@ -661,6 +697,22 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run og:generate (first setup; commit apps/web/public/og.png)',
         '- pnpm run og:check:live (after deployment)',
         '',
+        '### Which gate is which',
+        '',
+        'CI judges a commit with three things. Run all three before calling a branch ready; none of them needs a value you have to know out of band.',
+        '',
+        '- `pnpm run quality:static` -- format, lint, knip, manifest cross-check, shared-UI pin, typecheck, `build:ci`, unit tests. Credential-free and offline. Public CI runs this script directly; private CI names the same checks individually.',
+        '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry, and without a credential it reports `UNKNOWN` and exits 2, which would be a local red CI does not have.',
+        '- `pnpm run quality` -- `quality:static` plus the Playwright browser tests, which both CI paths run as separate jobs.',
+        '',
+        'The build step is `build:ci`, the same script CI builds with: it injects test-only `NUXT_OG_IMAGE_SECRET` / `NUXT_SESSION_PASSWORD` placeholders and targets the deployable Worker shape. Plain `pnpm run build` is the real-secret path, used by `cf:build` and operator recovery; it throws on an empty OG secret by design.',
+        '',
+        ...(visibility === 'private'
+          ? [
+              '> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. A repository that has not been added to the selected-repository runner groups has no runner to pick its jobs up, so the first workflow run sits in `queued` indefinitely -- no error, no timeout, no log. The route names in `.github/workflows/ci.yml` do not grant membership. Onboard this repository into both fleet runner groups, and grant it access to the shared workflows, before pushing. If a run is already stuck queued, that is the cause: cancel it and re-run after onboarding.',
+              '',
+            ]
+          : []),
         '`pnpm run dev` starts Nuxt directly and reads no secret store. When a capability needs registered credentials locally, run that command under the registered local credential route instead: `narduk-app dev --credentials nvault --project <project> --environment <environment> --config <config> -- nuxt dev --host 127.0.0.1`. Values stay process-local for that run and are never written to a file; do not commit real values to `.env` or `.dev.vars`.',
         '',
         'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
@@ -814,7 +866,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '## The deployment standard',
         '',
-        'This app declares its half of the standard in `Config/cloudflare-app.json`. That file is created during onboarding -- this generator does not write it, because the rest of it records live Cloudflare facts a checkout cannot know. Add this block to it verbatim, then run `pnpm run foundation:deployment`:',
+        'This app declares its half of the standard in `Config/cloudflare-app.json`. The generator writes the part a checkout can know -- product identity, the Worker shape, the exposure class, and the bindings mirror. Onboarding adds the live facts it deliberately left out: `product.repository`, the Cloudflare account id, `domains`, and the `deployment` block below. Add that block to the existing file verbatim, then run `pnpm run foundation:deployment`:',
         '',
         '```jsonc',
         ...deploymentBlockLines(appName),
@@ -1045,8 +1097,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: capabilities.includes('seo')
         ? text(
             '<script setup lang="ts">',
-            'const displayName = ' + tsString(displayName),
-            'const description = ' + tsString(description),
+            constDeclaration('displayName', tsString(displayName)),
+            constDeclaration('description', tsString(description)),
             '',
             'useSeo({',
             '  title: displayName,',
@@ -1074,8 +1126,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           )
         : text(
             '<script setup lang="ts">',
-            'const displayName = ' + tsString(displayName),
-            'const description = ' + tsString(description),
+            constDeclaration('displayName', tsString(displayName)),
+            constDeclaration('description', tsString(description)),
             '</script>',
             '',
             '<template>',
@@ -1181,9 +1233,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "import { fileURLToPath } from 'node:url'",
         '',
         'const localPort = ' + localPort,
-        'const siteUrl = ' + tsString(siteUrl),
-        'const appName = ' + tsString(displayName),
-        'const appDescription = ' + tsString(description),
+        constDeclaration('siteUrl', tsString(siteUrl)),
+        constDeclaration('appName', tsString(displayName)),
+        constDeclaration('appDescription', tsString(description)),
         'const buildBranch = process.env.WORKERS_CI_BRANCH',
         "const isBranchPreview = Boolean(buildBranch && buildBranch !== 'main')",
         'const deploymentTarget =',
@@ -1265,7 +1317,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      format: process.env.NODE_ENV === 'development' ? 'pretty' : 'json',",
         '      requestLogging: true,',
         '    },',
-        "    xaiApiKey: process.env.XAI_API_KEY || '',",
+        // No `xaiApiKey` here. It is @narduk-enterprises/narduk-ai's own
+        // runtimeConfig key, declared by that module with `defu` and a
+        // validator -- so emitting it in the app leaked an AI-specific key
+        // into every scaffold (capabilities [auth, seo, analytics, uploads]
+        // got one too), and for an app that DOES select `ai` the app-side
+        // `|| ''` won the defu merge and silently replaced the module's
+        // validated value with an empty string.
         '    public: {',
         '      appDescription,',
         '      deploymentTarget,',
@@ -1413,16 +1471,76 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // The app's own half of the deployment standard, in the shape every
+      // onboarded estate app already uses. Only facts a checkout can know
+      // are written: the product identity, the Worker shape this generator
+      // just emitted into wrangler.jsonc, the exposure class chosen at
+      // generation time, and the bindings mirror.
+      //
+      // Onboarding still owns everything live -- `product.repository`, the
+      // Cloudflare account id, `domains`, and the `deployment` block -- and
+      // those are deliberately ABSENT rather than fabricated, which is the
+      // same rule wrangler.jsonc's missing `account_id` follows.
+      //
+      // Why the generator writes this file at all (narduk-libs#617): CI runs
+      // the shared workflow with `foundation-check: true`, which fails the
+      // build on a FAIL or UNKNOWN result. Without this file item 1.2 is a
+      // decided FAIL ("wrangler.jsonc exists but Config/cloudflare-app.json
+      // does not") and 1.4/3.1/3.2 are UNKNOWN, so the FIRST CI run of every
+      // new app was red by construction and nothing inside the app could fix
+      // it. Recording the app's own half here is what makes a fresh scaffold
+      // reachable-green; it also turns `manifests:validate` into a real
+      // cross-check from the first commit instead of a no-op.
+      path: 'Config/cloudflare-app.json',
+      contents: text(
+        '{',
+        '  "schemaVersion": 1,',
+        '  "product": {',
+        '    "name": ' + JSON.stringify(displayName) + ',',
+        '    "target": "workers",',
+        '    "framework": "nuxt",',
+        '    "visibility": ' + JSON.stringify(visibility),
+        '  },',
+        '  "worker": {',
+        '    "name": ' + JSON.stringify(appName) + ',',
+        '    "wranglerConfig": "apps/web/wrangler.jsonc",',
+        '    "compatibilityDate": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
+        '    "compatibilityFlags": ["nodejs_compat"],',
+        // The spelling nuxt.config declares. foundation:check normalizes `-`
+        // and `_` (narduk-libs#350), so a build writing "cloudflare-module"
+        // into .output/nitro.json agrees with this line.
+        '    "nitroPreset": "cloudflare_module",',
+        '    "workersDev": ' + (exposure === 'public') + ',',
+        '    "previewUrls": ' + (exposure === 'public'),
+        '  },',
+        '  "access": {',
+        '    "exposureClass": ' +
+          JSON.stringify(exposure === 'public' ? 'public' : 'authenticated-public'),
+        '  },',
+        // Mirrors apps/web/wrangler.jsonc exactly -- the same pairing
+        // apps/web/scripts/validate-manifests.mjs enforces on every build,
+        // and the mirror foundation:check item 1.2 reads.
+        '  "bindings": {',
+        '    "d1": ' + (hasDatabase ? '[{ "binding": "DB" }]' : '[]') + ',',
+        '    "kv": [],',
+        '    "r2": ' +
+          (capabilities.includes('uploads') ? '[{ "binding": "UPLOADS" }]' : '[]') +
+          ',',
+        '    "queues": [],',
+        '    "cron": []',
+        '  }',
+        '}',
+      ),
+    },
+    {
       path: 'apps/web/scripts/validate-manifests.mjs',
-      // foundation:check item 1.3 requires only that a `manifests:validate`
-      // script exist and succeed; it says nothing about the live cross-check
-      // already agreeing on a checkout this generator itself just produced.
-      // ../../Config/cloudflare-app.json is populated by onboarding, AFTER
-      // this generator runs (see README's Config/ charter) -- a checkout
-      // fresh from `create-narduk-app` has no such file yet, so unlike the
-      // reference app's own script (which assumes the file exists) this one
-      // no-ops with an explanatory message when it is absent, and only runs
-      // the real binding cross-check once onboarding creates it.
+      // The generator now writes ../../Config/cloudflare-app.json with a
+      // bindings mirror that matches the wrangler.jsonc beside it, so this
+      // cross-check does real work from the first commit. The ENOENT branch
+      // stays for an app generated before that change, and for one whose
+      // file has been removed: this script is a build gate, not the place to
+      // discover a missing declaration -- foundation:check item 1.2 reports
+      // that, with the remediation attached.
       contents: text(
         "import { readFile } from 'node:fs/promises'",
         '',
@@ -1489,11 +1607,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         "import { expect, test } from './fixtures'",
         '',
+        // The display name is bound to a const rather than interpolated into
+        // the assertion: a long one pushed the call past printWidth, and
+        // Prettier's own layout for THAT is a broken `expect(` argument list
+        // -- a shape this generator would have to re-implement to stay
+        // format:check-clean. A const is stable at any length, and
+        // constDeclaration already mirrors the one break Prettier makes.
+        constDeclaration('heading', tsString(displayName)),
+        '',
         "test('home page renders', async ({ page }) => {",
         "  await page.goto('/')",
-        "  await expect(page.getByRole('heading', { name: " +
-          tsString(displayName) +
-          ' })).toBeVisible()',
+        "  await expect(page.getByRole('heading', { name: heading })).toBeVisible()",
         '})',
       ),
     },
@@ -1854,7 +1978,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  semi: false,',
         '  singleQuote: true,',
         "  trailingComma: 'all',",
-        '  printWidth: 100,',
+        '  printWidth: ' + PRETTIER_PRINT_WIDTH + ',',
         "  endOfLine: 'lf',",
         '}',
       ),
