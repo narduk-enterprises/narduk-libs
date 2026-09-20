@@ -41,6 +41,7 @@ jobs:
       browser-packages: ${{ steps.plan.outputs.browser-packages }}
       packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
       generated-consumer: ${{ steps.plan.outputs.generated-consumer }}
+      consumer-scope: ${{ steps.plan.outputs.consumer-scope }}
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
       logging-languages: ${{ steps.plan.outputs.logging-languages }}
@@ -80,9 +81,21 @@ jobs:
             [[ "${PUSH_MESSAGE}" == 'chore: release packages'* ]]; then
             args=(--all)
           fi
+          # Only a pull request narrows the packed-consumer proof to the
+          # changed package's workspace dependency closure. A push to main
+          # keeps the full all-package pack, because verify-release-ci.mjs
+          # accepts the exact release SHA's push-event main `verify` aggregate
+          # as publication proof -- a scoped run behind it would make that
+          # proof partial without saying so. Keeping main full also means
+          # every merge exercises every package.
+          scope_mode=full
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            scope_mode=scoped
+          fi
           node scripts/compute-affected-packages.mjs \
             "${args[@]}" \
             --batch-count 8 \
+            --consumer-scope-mode "${scope_mode}" \
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
@@ -335,19 +348,32 @@ jobs:
 
       - name: Build coordinated release set
         # Public ubuntu-latest has 4 CPUs / 16 GiB; keep each Node heap at 2 GiB.
-        run: node scripts/prepare-packed-consumer.mjs --build-concurrency=4
+        # The build and the pack below must be given the same scope, so that
+        # this builds exactly what that packs.
+        env:
+          CONSUMER_SCOPE: ${{ needs.affected.outputs.consumer-scope }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CONSUMER_SCOPE}" ]; then
+            echo "::error::Planner selected the packed-consumer job with an empty scope"
+            exit 1
+          fi
+          node scripts/prepare-packed-consumer.mjs \
+            --build-concurrency=4 \
+            --packages "${CONSUMER_SCOPE}"
 
       - name: Prove packed artifacts and applicable generated app integration
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GENERATED_CONSUMER: ${{ needs.affected.outputs.generated-consumer }}
+          CONSUMER_SCOPE: ${{ needs.affected.outputs.consumer-scope }}
         # Browser setup overlaps packing/installation; the proof awaits it
         # before checking the installed browser toolchain or running tests.
         run: |
           set -euo pipefail
           case "${GENERATED_CONSUMER}" in
-            true) pnpm run release:consumer-smoke --install-browser ;;
-            false) pnpm run release:consumer-smoke --artifacts-only ;;
+            true) pnpm run release:consumer-smoke --install-browser --packages "${CONSUMER_SCOPE}" ;;
+            false) pnpm run release:consumer-smoke --artifacts-only --packages "${CONSUMER_SCOPE}" ;;
             *) echo "::error::Planner did not report generated consumer applicability"; exit 1 ;;
           esac
 

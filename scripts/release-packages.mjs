@@ -29,6 +29,13 @@ import {
   consumerSmokeGeneratorArgs,
 } from './consumer-smoke-fixture.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
+import {
+  consumerSmokeGeneratorPackage,
+  generatedConsumerProofAvailable,
+  generatedConsumerRequiredPackages,
+  parsePackagesArgument,
+  selectScopedPackages,
+} from './packed-consumer-scope.mjs'
 import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-subpaths.mjs'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
@@ -48,6 +55,12 @@ const dryRun = args.has('--dry-run')
 const consumerSmoke = args.has('--consumer-smoke')
 const installBrowser = args.has('--install-browser')
 const artifactsOnly = args.has('--artifacts-only')
+// Absent, every publishable package is packed: that is what a release and
+// every push to main run. Present, it must be the planner's `consumerScope`
+// for the same diff, and prepare-packed-consumer.mjs must have been given the
+// identical list so this packs exactly what was built.
+const consumerScope = parsePackagesArgument(process.argv.slice(2))
+if (consumerScope && !consumerSmoke) throw new Error('--packages requires --consumer-smoke.')
 if (artifactsOnly && !consumerSmoke) throw new Error('--artifacts-only requires --consumer-smoke.')
 const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 // Single source of truth for the generated packed-consumer's Playwright pin:
@@ -443,20 +456,14 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
 }
 
 function assertExactGeneratedPackagePins(generatedDirectory, packagesByName) {
-  const requiredPackages = new Set([
-    '@narduk-enterprises/narduk-ai',
-    '@narduk-enterprises/narduk-analytics',
-    '@narduk-enterprises/narduk-app-tools',
-    '@narduk-enterprises/narduk-auth',
-    '@narduk-enterprises/narduk-core',
-    '@narduk-enterprises/narduk-seo',
-    // Ships by default (components-library-plan.md item 4, narduk-libs#251),
-    // so it is pinned exactly like every other required package here even
-    // though it is not one of the `--capabilities` passed below.
-    '@narduk-enterprises/narduk-shell',
-    '@narduk-enterprises/narduk-testkit',
-    '@narduk-enterprises/narduk-uploads',
-  ])
+  // The list itself lives in packed-consumer-scope.mjs so a scoped run can ask
+  // whether it could satisfy this assertion before it packs anything; this
+  // file has top-level side effects and cannot be imported by `node --test`.
+  // narduk-shell ships by default (components-library-plan.md item 4,
+  // narduk-libs#251), so it is pinned exactly like every other required
+  // package here even though it is not one of the `--capabilities` passed
+  // below.
+  const requiredPackages = new Set(generatedConsumerRequiredPackages)
   const seenPackages = new Set()
 
   for (const manifestPath of [
@@ -1189,14 +1196,39 @@ async function proveGeneratedConsumer({
   )
 }
 
-const packages = loadWorkspace(root)
+const publishablePackages = loadWorkspace(root)
   .packages.map(({ directory, manifest }) => ({ directory, manifest }))
   .filter(({ manifest }) => manifest.private !== true)
   .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name))
 
-if (packages.length === 0) {
+if (publishablePackages.length === 0) {
   writeError('No publishable packages found under packages/.')
   process.exit(1)
+}
+
+const packages = consumerScope
+  ? selectScopedPackages(publishablePackages, consumerScope)
+  : publishablePackages
+// A scope naming every publishable package is not a narrowing, and must behave
+// exactly like no scope at all -- CI passes the planner's scope on every run,
+// including the full-set runs, and those must keep every fail-closed assertion
+// below. Only a genuinely smaller set relaxes one.
+const scopedRelease = packages.length < publishablePackages.length
+// Whether this packed set can carry the generated-app half at all. Unscoped it
+// always can, and a missing pin stays the hard failure it has always been.
+const generatedProofAvailable = generatedConsumerProofAvailable(
+  packages.map(({ manifest }) => manifest.name),
+)
+if (!scopedRelease && !generatedProofAvailable) {
+  writeError(
+    `The full release set is missing packages the generated app proof requires: ${generatedConsumerRequiredPackages.join(', ')}.`,
+  )
+  process.exit(1)
+}
+if (scopedRelease) {
+  writeLine(
+    `Packed-consumer scope: ${packages.length} of ${publishablePackages.length} publishable package(s) -- ${packages.map(({ manifest }) => manifest.name).join(', ')}`,
+  )
 }
 
 for (const { directory, manifest } of packages) {
@@ -1366,8 +1398,11 @@ try {
   // imports it. See scripts/packed-consumer-subpaths.mjs for why the existence
   // half is not redundant and why evaluation is NOT generalised here.
   const subpathPlans = subpathResolutionPlans(packages)
-  if (subpathPlans.length === 0) {
+  if (subpathPlans.length === 0 && !scopedRelease) {
     throw new Error('No packed package declares an exports map; the subpath tier would be vacuous.')
+  }
+  if (subpathPlans.length === 0) {
+    writeLine('[consumer-smoke] No package in this scope declares an exports map.')
   }
   for (const plan of subpathPlans) {
     if (plan.skipped.length > 0) {
@@ -1396,8 +1431,10 @@ try {
   const testkitManifest = packages.find(
     ({ manifest }) => manifest.name === '@narduk-enterprises/narduk-testkit',
   )?.manifest
-  if (!testkitManifest) throw new Error('The release set is missing narduk-testkit.')
-  const testkitExportSpecifiers = Object.keys(testkitManifest.exports || {}).map((subpath) =>
+  if (!testkitManifest && !scopedRelease) {
+    throw new Error('The release set is missing narduk-testkit.')
+  }
+  const testkitExportSpecifiers = Object.keys(testkitManifest?.exports || {}).map((subpath) =>
     subpath === '.' ? testkitManifest.name : `${testkitManifest.name}${subpath.slice(1)}`,
   )
   const testkitExportGroups = [
@@ -1428,6 +1465,38 @@ try {
     )
   }
 
+  // Tier 3 -- the packed testkit CLI through built JavaScript. Like tier 2 it
+  // is a narduk-testkit proof, so a scope that does not pack narduk-testkit
+  // has nothing to run here; an unscoped run already failed above if it were
+  // missing.
+  if (testkitManifest) await proveTestkitCli(consumerDirectory)
+
+  if (!generatedProofAvailable) {
+    const packedNames = new Set(packages.map(({ manifest }) => manifest.name))
+    const absent = [consumerSmokeGeneratorPackage, ...generatedConsumerRequiredPackages].filter(
+      (name) => !packedNames.has(name),
+    )
+    writeLine(
+      `[consumer-smoke] Generated-app proof not run: this scope does not pack ${absent.join(', ')}. The generator pins only those packages, so a diff that reaches none of them cannot make one of their pins stale.`,
+    )
+  } else {
+    await proveGeneratedConsumer({ consumerDirectory, packages, tarballs, browserInstallation })
+  }
+} finally {
+  // No installer may outlive cleanup, and no reusable proof is written unless
+  // its result was checked at the browser/toolchain barrier above.
+  await browserInstallation
+  for (const { label, seconds } of timings)
+    writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `\n### Consumer phase timings\n\n| Phase | Seconds |\n| --- | ---: |\n${timings.map(({ label, seconds }) => `| ${label} | ${seconds.toFixed(1)} |`).join('\n')}\n`,
+    )
+  rmSync(consumerDirectory, { recursive: true, force: true })
+}
+
+async function proveTestkitCli(consumerDirectory) {
   const testkitCliFixture = join(consumerDirectory, 'testkit-cli-fixture')
   mkdirSync(testkitCliFixture, { recursive: true })
   writeFileSync(
@@ -1445,18 +1514,4 @@ try {
     cwd: consumerDirectory,
     label: 'execute the packed testkit CLI through built JavaScript',
   })
-
-  await proveGeneratedConsumer({ consumerDirectory, packages, tarballs, browserInstallation })
-} finally {
-  // No installer may outlive cleanup, and no reusable proof is written unless
-  // its result was checked at the browser/toolchain barrier above.
-  await browserInstallation
-  for (const { label, seconds } of timings)
-    writeLine(`[consumer-smoke] Timing: ${label}: ${seconds.toFixed(1)}s`)
-  if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      `\n### Consumer phase timings\n\n| Phase | Seconds |\n| --- | ---: |\n${timings.map(({ label, seconds }) => `| ${label} | ${seconds.toFixed(1)} |`).join('\n')}\n`,
-    )
-  rmSync(consumerDirectory, { recursive: true, force: true })
 }
