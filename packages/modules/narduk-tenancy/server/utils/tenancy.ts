@@ -180,15 +180,75 @@ function stillInRank(
 ): SQL | undefined {
   return and(
     eq(tenancyMemberships.role, membership.role),
-    actor
-      ? sql`EXISTS (
-          SELECT 1 FROM tenancy_memberships AS acting
-          WHERE acting.org_id = ${membership.orgId}
-            AND acting.user_id = ${actor.userId}
-            AND acting.role = ${actor.role}
-        )`
-      : undefined,
+    actorStillInRank(membership.orgId, actor),
   )
+}
+
+/**
+ * An identified actor still holds exactly the role the rank check read.
+ *
+ * The same assertion `stillInRank` makes, addressed by org and user rather
+ * than by the membership row being written, so a write to the overrides or
+ * invites table can carry it too (narduk-libs#537). A system call names no
+ * actor and adds no predicate.
+ */
+function actorStillInRank(orgId: string, actor: TenancyActor | undefined): SQL | undefined {
+  if (!actor) return undefined
+  return sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS acting
+    WHERE acting.org_id = ${orgId}
+      AND acting.user_id = ${actor.userId}
+      AND acting.role = ${actor.role}
+  )`
+}
+
+/**
+ * The member the rank check read still stands exactly as it read them: at that
+ * role, or — for `addMember`, and for an override whose member was already
+ * gone — still not a member at all. A membership appearing in the window is as
+ * much a change as one moving, because the check that ranked nothing ranked it
+ * against nobody.
+ */
+function memberStillAsRead(orgId: string, userId: string, role: TenancyRole | null): SQL {
+  if (role === null) {
+    return sql`NOT EXISTS (
+      SELECT 1 FROM tenancy_memberships AS target
+      WHERE target.org_id = ${orgId}
+        AND target.user_id = ${userId}
+    )`
+  }
+  return sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS target
+    WHERE target.org_id = ${orgId}
+      AND target.user_id = ${userId}
+      AND target.role = ${role}
+  )`
+}
+
+/**
+ * Why a write guarded by the in-write rank predicate matched no row.
+ *
+ * Always `conflict`. Everything the guard asserts was already true when the
+ * service read it — a missing org, a missing member and an out-of-rank actor
+ * each have their own answer from that read — so the only way the predicate
+ * fails is that one of them moved inside the window, which is a race the
+ * caller retries rather than a state it can be told about (narduk-libs#537).
+ */
+function rankWriteConflict(orgId: string): TenancyError {
+  return new TenancyError(
+    'conflict',
+    `A role in org ${orgId} changed while this change was being made.`,
+  )
+}
+
+/** A literal column for an `INSERT … SELECT`, aliased to the column it fills. */
+function sqlText(value: string, column: string) {
+  return sql<string>`${value}`.as(column)
+}
+
+/** As `sqlText`, for the millisecond-epoch integer columns. */
+function sqlNumber(value: number, column: string) {
+  return sql<number>`${value}`.as(column)
 }
 
 export interface CreateOrgInput {
@@ -439,7 +499,37 @@ export function createTenancy(
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-    await db.insert(tenancyMemberships).values(membership).run()
+    // The rank inputs asserted inside the INSERT, the way `setMemberRole`
+    // asserts them inside its UPDATE (narduk-libs#537). The org still exists,
+    // the actor still holds the role the check read, and the user is still not
+    // a member. A demotion, or a concurrent add, landing in that window writes
+    // nothing rather than admitting one change against roles as they were.
+    const inserted = first(
+      await db
+        .insert(tenancyMemberships)
+        .select(
+          db
+            .select({
+              id: sqlText(membership.id, 'id'),
+              orgId: sqlText(membership.orgId, 'org_id'),
+              userId: sqlText(membership.userId, 'user_id'),
+              role: sqlText(membership.role, 'role'),
+              createdAt: sqlNumber(timestamp, 'created_at'),
+              updatedAt: sqlNumber(timestamp, 'updated_at'),
+            })
+            .from(tenancyOrgs)
+            .where(
+              and(
+                eq(tenancyOrgs.id, input.orgId),
+                actorStillInRank(input.orgId, actor),
+                memberStillAsRead(input.orgId, input.userId, null),
+              ),
+            ),
+        )
+        .returning({ id: tenancyMemberships.id })
+        .all(),
+    )
+    if (!inserted) throw rankWriteConflict(input.orgId)
     await audit({
       orgId: input.orgId,
       actorUserId: actor?.userId,
@@ -533,15 +623,45 @@ export function createTenancy(
           updatedAt: timestamp,
         }
 
-    if (existing) {
-      await db
-        .update(tenancyResourceRoleOverrides)
-        .set({ role: input.role, updatedAt: timestamp })
-        .where(eq(tenancyResourceRoleOverrides.id, existing.id))
-        .run()
-    } else {
-      await db.insert(tenancyResourceRoleOverrides).values(override).run()
-    }
+    // Both branches carry the rank inputs into the write itself: the actor
+    // still holds the role the check read, and the member still holds the org
+    // role the override is capped by (narduk-libs#537). An admin whose target
+    // is promoted to owner in that window narrows nobody.
+    const guard = and(
+      actorStillInRank(input.orgId, actor),
+      memberStillAsRead(input.orgId, input.userId, membership.role),
+    )
+    const written = existing
+      ? first(
+          await db
+            .update(tenancyResourceRoleOverrides)
+            .set({ role: input.role, updatedAt: timestamp })
+            .where(and(eq(tenancyResourceRoleOverrides.id, existing.id), guard))
+            .returning({ id: tenancyResourceRoleOverrides.id })
+            .all(),
+        )
+      : first(
+          await db
+            .insert(tenancyResourceRoleOverrides)
+            .select(
+              db
+                .select({
+                  id: sqlText(override.id, 'id'),
+                  orgId: sqlText(override.orgId, 'org_id'),
+                  resourceKind: sqlText(override.resourceKind, 'resource_kind'),
+                  resourceId: sqlText(override.resourceId, 'resource_id'),
+                  userId: sqlText(override.userId, 'user_id'),
+                  role: sqlText(override.role, 'role'),
+                  createdAt: sqlNumber(timestamp, 'created_at'),
+                  updatedAt: sqlNumber(timestamp, 'updated_at'),
+                })
+                .from(tenancyOrgs)
+                .where(and(eq(tenancyOrgs.id, input.orgId), guard)),
+            )
+            .returning({ id: tenancyResourceRoleOverrides.id })
+            .all(),
+        )
+    if (!written) throw rankWriteConflict(input.orgId)
 
     await audit({
       orgId: input.orgId,
@@ -819,17 +939,32 @@ export function createTenancy(
           `No override for ${input.resource.kind}:${input.resource.id} and user ${input.userId}.`,
         )
       }
-      if (actor) {
-        // Lifting a narrowing hands the member their org role back on the
-        // resource, so it answers to the same rank as narrowing them did. An
-        // override whose membership is gone grants nothing and ranks nothing.
-        const membership = await findMembership(input.orgId, input.userId)
-        if (membership) requireRank(actor, membership.role)
-      }
-      await db
-        .delete(tenancyResourceRoleOverrides)
-        .where(eq(tenancyResourceRoleOverrides.id, override.id))
-        .run()
+      // Lifting a narrowing hands the member their org role back on the
+      // resource, so it answers to the same rank as narrowing them did. An
+      // override whose membership is gone grants nothing and ranks nothing —
+      // but a membership *appearing* in the window would be handed a role this
+      // check never ranked, so the DELETE asserts the member stands exactly as
+      // it was read, present or absent (narduk-libs#537). A system call ranks
+      // nobody, so it asserts nothing about the member and cannot conflict on
+      // one moving.
+      const membership = actor ? await findMembership(input.orgId, input.userId) : undefined
+      if (actor && membership) requireRank(actor, membership.role)
+      const cleared = first(
+        await db
+          .delete(tenancyResourceRoleOverrides)
+          .where(
+            and(
+              eq(tenancyResourceRoleOverrides.id, override.id),
+              actorStillInRank(input.orgId, actor),
+              actor
+                ? memberStillAsRead(input.orgId, input.userId, membership?.role ?? null)
+                : undefined,
+            ),
+          )
+          .returning({ id: tenancyResourceRoleOverrides.id })
+          .all(),
+      )
+      if (!cleared) throw rankWriteConflict(input.orgId)
       await audit({
         orgId: input.orgId,
         actorUserId: actor?.userId,
@@ -867,7 +1002,8 @@ export function createTenancy(
     async createInvite(input) {
       const invitedByUserId = requireText(input.invitedByUserId, 'invitedByUserId')
       // Accepting grants the invite's role, so issuing it is granting it.
-      requireRank(await requireActor(input.orgId, invitedByUserId), input.role)
+      const inviter = await requireActor(input.orgId, invitedByUserId)
+      requireRank(inviter, input.role)
       await requireOrg(input.orgId)
       const email = requireText(input.email, 'email').toLowerCase()
       if (!isEmailAddress(email)) {
@@ -895,7 +1031,42 @@ export function createTenancy(
         revokedAt: null,
         createdAt: issuedAt,
       }
-      await db.insert(tenancyInvites).values(invite).run()
+      // Issuing an invitation is granting its role, so the inviter's rank is
+      // asserted inside the INSERT as well as before it (narduk-libs#537). An
+      // inviter demoted or removed in that window issues nothing — the same
+      // rule `acceptInvite` already applies to the claim.
+      const issued = first(
+        await db
+          .insert(tenancyInvites)
+          .select(
+            db
+              .select({
+                id: sqlText(invite.id, 'id'),
+                orgId: sqlText(invite.orgId, 'org_id'),
+                email: sqlText(invite.email, 'email'),
+                role: sqlText(invite.role, 'role'),
+                resourceKind: sql<string | null>`${invite.resourceKind}`.as('resource_kind'),
+                resourceId: sql<string | null>`${invite.resourceId}`.as('resource_id'),
+                tokenHash: sqlText(invite.tokenHash, 'token_hash'),
+                invitedByUserId: sqlText(invite.invitedByUserId, 'invited_by_user_id'),
+                expiresAt: sqlNumber(expiresAt, 'expires_at'),
+                acceptedAt: sql<number | null>`NULL`.as('accepted_at'),
+                acceptedByUserId: sql<string | null>`NULL`.as('accepted_by_user_id'),
+                revokedAt: sql<number | null>`NULL`.as('revoked_at'),
+                createdAt: sqlNumber(issuedAt, 'created_at'),
+              })
+              .from(tenancyOrgs)
+              .where(
+                and(
+                  eq(tenancyOrgs.id, input.orgId),
+                  actorStillInRank(input.orgId, { role: inviter.role, userId: invitedByUserId }),
+                ),
+              ),
+          )
+          .returning({ id: tenancyInvites.id })
+          .all(),
+      )
+      if (!issued) throw rankWriteConflict(input.orgId)
       await audit({
         orgId: input.orgId,
         actorUserId: invite.invitedByUserId,
