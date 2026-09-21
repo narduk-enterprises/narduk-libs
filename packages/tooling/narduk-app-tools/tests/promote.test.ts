@@ -274,6 +274,25 @@ describe('deployment reading', () => {
       'returned no JSON',
     )
   })
+
+  it(
+    'anchors to the last line that starts a JSON document at column 0, not the first bracket ' +
+      'anywhere in a noisy stream (#470)',
+    () => {
+      // A pnpm/engines warning printed to stdout before wrangler's own output can contain a
+      // bracket mid-line (here, inside the warning's own JSON-ish detail). The old heuristic
+      // took the first '[' or '{' anywhere in the stream and so parsed only
+      // `{"node":"24.21.0"}`, throwing on the trailing text -- exactly narduk-libs#470's
+      // reproduction. The real document is the last line that starts with a bracket.
+      const stdout =
+        '../..                    |  WARN  Unsupported engine: wanted: {"node":"24.21.0"} ' +
+        '(current: {"node":"24.18.0"})\n' +
+        '[{"id":"d1"}]\n'
+      expect(parseWranglerVersionsJson<Array<{ id: string }>>(stdout, 'deployments list')).toEqual([
+        { id: 'd1' },
+      ])
+    },
+  )
 })
 
 describe('rollback', () => {
