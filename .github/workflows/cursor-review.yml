@@ -1,3 +1,9 @@
+# On-demand PR reviews: review-now uses Composer 2.5 standard, without daily
+# or per-PR round caps. Explicit requests bypass the automatic diff floors.
+# review-deep explicitly requests Grok 4.6 xhigh; both request labels are
+# consumed before launch so deep mode cannot leak into later normal requests.
+# Blocking findings still post REQUEST_CHANGES; this is not a required CI job.
+# enforcement: named; mechanism: workflows#139 review_request and reviewer tests; runs at: review invocation and shared CI; rejects: explicit requests gated by quota or stale deep labels upgrading ordinary requests
 # Pull-request reviewer (agent-infrastructure#1564). Lives in its own workflow,
 # not ci.yml, on purpose: this repository is PUBLIC and ci.yml's contract test
 # (scripts/ci-runner-routing.test.mjs) forbids any `secrets.` reference there so
@@ -35,12 +41,17 @@ permissions:
 
 jobs:
   cursor-review:
-    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@a3557de722b89be5ffef5e45baa4a7eaf6be7269 # workflows#128; the moving v2 tag predates this callable, keep the SHA
+    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@2de521b1460baf390af7288122700fe7fa86112d # workflows#139; on-demand reviews
     permissions:
       contents: read
       pull-requests: write
     with:
       enabled: true
+      model: composer-2.5
+      effort: ''
+      fast: false
+      max-rounds: 0
+      daily-cap: 0
       runner: '"ubuntu-latest"'
     secrets:
       CURSOR_CLOUD_AGENTS_API_KEY: ${{ secrets.CURSOR_CLOUD_AGENTS_API_KEY }}
