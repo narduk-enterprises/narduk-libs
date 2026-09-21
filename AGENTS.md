@@ -91,12 +91,15 @@ baseline 190 drained, and the count admitted since the freeze.
 
 - `pnpm run preflight` — the whole pull-request fast path in one command, and
   the quickest way to find out what CI will say. It plans the diff against
-  `origin/main` (fetching it first, because a stale base is what makes
-  `release-plan:check` report packages you never touched), prints the affected
-  packages and which consumer proof applies, runs the `contracts` checks in that
-  job's own order, then runs the affected packages' gates through the same
-  `runPackageGates` CI uses, and finishes with the artifact-only packed proof.
-  It never writes: the package gates run with `CI=true` so `narduk-lint` cannot
+  `origin/main` (fetching that ref first — whatever `--base` names, so long as
+  it names a remote — because a stale base is what makes `release-plan:check`
+  report packages you never touched), prints the affected packages and which
+  consumer proof applies, runs the `contracts` checks in that job's own order
+  through `pnpm audit --audit-level high`, then runs the affected packages'
+  gates through the same `runPackageGates` CI uses, and finishes by building the
+  packed scope and proving it artifacts-only — the same build-then-pack pairing,
+  with the same scope on both, that the `packed-consumer-smoke` job runs. It
+  never writes: the package gates run with `CI=true` so `narduk-lint` cannot
   rewrite `lint-budget.json` (#623), and the tracked tree is compared before and
   after every phase, so any other writer fails the run and is named. Flags:
   `--base <ref>`, `--no-fetch`, `--no-consumer`. A diff that touches a global

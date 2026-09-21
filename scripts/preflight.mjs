@@ -130,6 +130,32 @@ function parsePreflightArgs(argv) {
 
 export { parsePreflightArgs }
 
+/**
+ * `--base` names the ref this run compares against, so it is the ref worth
+ * refreshing -- fetching `origin/main` while comparing against something else
+ * is the stale-base failure (#492) with an extra network call in front of it.
+ * `origin/main` splits into remote `origin` and ref `main`; a bare branch
+ * name, a SHA, or `HEAD~3` names no remote and is left alone rather than
+ * guessed at, since a wrong guess fetches the wrong thing silently.
+ */
+export function fetchTargetForBase(base, remotes) {
+  const separator = base.indexOf('/')
+  if (separator <= 0) return undefined
+  const remote = base.slice(0, separator)
+  const ref = base.slice(separator + 1)
+  if (!ref || !remotes.includes(remote)) return undefined
+  return { remote, ref }
+}
+
+function gitRemotes(repositoryRoot, execute = spawnSync) {
+  const result = execute('git', ['remote'], { cwd: repositoryRoot, encoding: 'utf8' })
+  if (result.status !== 0 || typeof result.stdout !== 'string') return []
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main()
 }
@@ -143,9 +169,16 @@ async function main() {
   // it, and against a stale one it reports packages the branch never touched.
   // The contracts job materializes the base branch for the same reason.
   if (options.fetch) {
-    const fetched = run('git', ['fetch', '--quiet', 'origin', 'main'])
-    if (fetched.status !== 0) {
-      console.warn(`preflight: could not fetch origin/main; ${options.base} may be stale.`)
+    const target = fetchTargetForBase(options.base, gitRemotes(root))
+    if (!target) {
+      console.log(`preflight: ${options.base} names no remote, so nothing was fetched.`)
+    } else {
+      const fetched = run('git', ['fetch', '--quiet', target.remote, target.ref])
+      if (fetched.status !== 0) {
+        console.warn(
+          `preflight: could not fetch ${target.remote}/${target.ref}; ${options.base} may be stale.`,
+        )
+      }
     }
   }
 
@@ -199,6 +232,13 @@ async function main() {
   // --- Contracts, in the contracts job's own order ------------------------
   phase('versions:check', 'pnpm', ['run', 'versions:check'])
   phase('scripts:test', 'pnpm', ['run', 'scripts:test'])
+  // Deliberately not `pnpm run release-plan:check`. That script resolves the
+  // Changesets base branch through `changesetsBaseBranch()`, which CI can rely
+  // on because its "Materialize Changesets base branch" step creates a local
+  // `main` at the remote's tip first. A working checkout's local `main` is
+  // whatever it was last pulled to, and comparing against a stale one reports
+  // packages the branch never touched (#492). Pass the ref the author asked
+  // for instead -- do not "fix" this back to the pnpm script.
   phase('release-plan:check', 'node', [
     'scripts/check-generator-release-plan.mjs',
     '--base',
@@ -206,6 +246,10 @@ async function main() {
   ])
   phase('format:check', 'pnpm', ['run', 'format:check'])
   phase('surface:check', 'pnpm', ['run', 'surface:check'])
+  // The estate security bar, and the last step of the contracts job. It can go
+  // red without a change to this branch, when an advisory is newly published
+  // against an already-pinned version -- which is exactly what CI would say.
+  phase('audit', 'pnpm', ['audit', '--audit-level', 'high'])
 
   // --- The affected packages' own gates -----------------------------------
   const gateable = plan.affectedNames.filter((name) => {
@@ -244,14 +288,22 @@ async function main() {
 
   // --- The packed-artifact proof, artifacts only --------------------------
   if (options.consumer && plan.packedConsumer) {
-    const args = [
+    // CI builds the scope before it packs the scope, with the same `--packages`
+    // on both, and `release-packages.mjs` asserts the compiled `dist/` is there.
+    // Skipping the build only appears to work on a full-set run, where the
+    // serial package `build` gates above happen to have populated every
+    // package; a scoped run's gates cover the affected packages, not the
+    // dependency closure the scope adds, so the pack would fail on a missing
+    // `dist/` for a package this branch never touched.
+    const scopeArgs = plan.consumerScope?.length ? ['--packages', plan.consumerScope.join(',')] : []
+    phase('packed-consumer build', 'node', ['scripts/prepare-packed-consumer.mjs', ...scopeArgs])
+    phase('packed-consumer (artifacts only)', 'node', [
       'scripts/release-packages.mjs',
       '--dry-run',
       '--consumer-smoke',
       '--artifacts-only',
-    ]
-    if (plan.consumerScope?.length) args.push('--packages', plan.consumerScope.join(','))
-    phase('packed-consumer (artifacts only)', 'node', args)
+      ...scopeArgs,
+    ])
   } else if (plan.packedConsumer) {
     console.log('\npreflight: skipping the packed-consumer proof (--no-consumer).')
   }

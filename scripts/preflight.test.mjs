@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
+  fetchTargetForBase,
   newlyDirtyPaths,
   nonWritingExecute,
   parsePreflightArgs,
@@ -133,6 +134,52 @@ test('preflight arguments parse, and an unknown one is refused', () => {
   assert.equal(parsePreflightArgs(['--base=upstream/main']).base, 'upstream/main')
   assert.equal(parsePreflightArgs(['--no-consumer']).consumer, false)
   assert.throws(() => parsePreflightArgs(['--write']), /Unknown preflight argument/u)
+})
+
+test('--base decides which ref is fetched, and a base naming no remote is left alone', () => {
+  const remotes = ['origin', 'upstream']
+  assert.deepEqual(fetchTargetForBase('origin/main', remotes), { remote: 'origin', ref: 'main' })
+  // A ref with its own slashes belongs to the ref, not to the remote name.
+  assert.deepEqual(fetchTargetForBase('upstream/release/4.x', remotes), {
+    remote: 'upstream',
+    ref: 'release/4.x',
+  })
+  // Fetching the wrong thing silently is worse than not fetching: a bare
+  // branch, a SHA and a revision expression all name no remote.
+  for (const base of ['main', 'HEAD~3', '7fa6c0ad', 'fork/main', 'origin/', '/main']) {
+    assert.equal(fetchTargetForBase(base, remotes), undefined, base)
+  }
+})
+
+test('the packed proof builds its scope before it packs it, with the same scope', () => {
+  // release-packages.mjs asserts a compiled dist/ is present, and a scoped run
+  // packs the dependency closure -- packages whose own `build` gate never ran.
+  // Skipping the build only looks fine on a full-set run.
+  const source = readFileSync(new URL('./preflight.mjs', import.meta.url), 'utf8')
+  const build = source.indexOf('prepare-packed-consumer.mjs')
+  const pack = source.indexOf("'scripts/release-packages.mjs'")
+  assert.ok(build > 0, 'preflight must build the packed scope')
+  assert.ok(pack > build, 'the build must come before the pack')
+  // One scope value, spread into both, so the two cannot drift apart.
+  assert.equal(source.match(/\.\.\.scopeArgs/gu)?.length, 2)
+})
+
+test('the contracts phases run the whole contracts job, audit included', () => {
+  const source = readFileSync(new URL('./preflight.mjs', import.meta.url), 'utf8')
+  const order = [
+    'versions:check',
+    'scripts:test',
+    'release-plan:check',
+    'format:check',
+    'surface:check',
+    'audit',
+  ]
+  let cursor = 0
+  for (const name of order) {
+    const at = source.indexOf(`phase('${name}'`, cursor)
+    assert.ok(at > 0, `preflight must run ${name}`)
+    cursor = at
+  }
 })
 
 test('the preflight itself invokes no writing command', () => {
