@@ -32,6 +32,7 @@
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",
     "runtime/server/middleware/00-canonical-host.ts",
+    "runtime/server/middleware/01-head-as-get.ts",
     "runtime/server/middleware/securityHeaders.ts",
     "runtime/server/middleware/csrf.ts",
     "runtime/server/handlers/canonicalRedirect.ts",

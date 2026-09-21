@@ -1,6 +1,7 @@
 {
   "rules": {
     "@typescript-eslint/switch-exhaustiveness-check": 2,
-    "no-console": 5
+    "no-console": 5,
+    "sonarjs/no-duplicate-string": 1
   }
 }

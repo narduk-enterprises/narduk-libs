@@ -523,6 +523,7 @@ accepted.
 | The client presents                | Resolve with                                       |
 | ---------------------------------- | -------------------------------------------------- |
 | a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
+| …and you also need the tenant      | `getSessionByTokenWithDevice(sessionToken)`        |
 | a raw credential secret, no id     | `getCredentialBySecret(secret, options)`           |
 | a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
 
@@ -731,6 +732,9 @@ export default defineEventHandler(async (event) => {
     credentialClass: 'ingest',
   })
   // session.deviceId, session.credentialId, session.revocationGeneration …
+  // …and the tenant, from the same read:
+  // session.device.orgId, session.device.resourceKind / resourceId,
+  // session.device.installationId
 })
 ```
 
@@ -740,6 +744,28 @@ by digest, throws 401 `{ errorCode: 'unauthorized' }` when there is no active
 session and 403 `{ errorCode: 'entitlement_denied' }` when the session's class
 is not the one the route requires. `readBearerSessionToken(event)` is the header
 read on its own. Never log the bearer.
+
+**One statement, tenant included.** A session row says which device opened it,
+but not which org, resource or installation that device belongs to — those are
+device columns. A consumer that had to answer "which tenant is this request
+for?" therefore resolved the bearer and then re-read the device: two D1 round
+trips on the hottest authenticated path this package has (narduk-libs#225). The
+guard now resolves both in one joined query and returns
+`DeviceSessionWithDevice`, so `session.device` is already there. The session's
+own fields are unchanged and the device is nested rather than merged, because
+both rows carry `id`, `createdAt`, `revokedAt` and `revocationGeneration`.
+
+`tests/devices-guard-statements.test.ts` pins this on the real D1 driver: one
+statement for the guard end to end, exactly two for the read-then-re-read shape
+it replaces, and `n` statements for `n` requests rather than `2n`. It also
+asserts the join reaches both rows by index, so the single statement stays a
+single indexed seek however many devices and sessions the deployment holds.
+
+The join is inner: a session whose device row is gone resolves to `null` rather
+than to a session with no tenant. Device status and revocation generation are
+not re-tested there, because `revokeDevice` and `rotateCredential` revoke the
+device's sessions in the same batch that bumps the generation — a live session
+already implies a device that was not revoked out from under it.
 
 ## Wire mapping to the mybo-at-v2 contracts
 

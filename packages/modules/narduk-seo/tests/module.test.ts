@@ -136,7 +136,14 @@ describe('narduk-seo module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
     expect(extendPages).toHaveBeenCalledTimes(1)
-    expect(extendRouteRules).toHaveBeenCalledWith('/_og/**', { prerender: false })
+    // narduk-libs#170: `/_og/**` must stay prerenderable. `nuxt-og-image` emits
+    // an unsigned `/_og/s/...` URL while a page is prerendered and relies on the
+    // crawler to bake that image to a file; pinning `prerender: false` here left
+    // the unsigned URL to 403 at runtime under a signing secret. This assertion
+    // is inverted from the original on purpose -- the pin it replaced carried no
+    // rationale, which is how the contradiction survived from the initial import
+    // to a production 403.
+    expect(extendRouteRules).not.toHaveBeenCalledWith('/_og/**', { prerender: false })
   })
 
   it('suppresses every automatic twitter:* meta tag (narduk-libs#349)', async () => {
