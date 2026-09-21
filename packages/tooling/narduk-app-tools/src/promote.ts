@@ -382,16 +382,30 @@ function runWrangler(
 
 /**
  * Wrangler prints a banner before JSON on some commands, so take the document
- * from the first `[` or `{` rather than trusting the whole stream to parse.
+ * from a `[` or `{` rather than trusting the whole stream to parse.
+ *
+ * Anchored to the LAST line that starts with a bracket at column 0, not the
+ * first bracket anywhere in the stream: `deployments list`/`versions list`
+ * run with `capture: true`, so anything earlier in the `pnpm exec` chain that
+ * writes to stdout shares the buffer. A `pnpm`/`engines` warning can itself
+ * contain a bracket mid-line (e.g. `WARN Unsupported engine: wanted:
+ * {"node":"24.21.0"}`), and the first-bracket-anywhere heuristic parsed that
+ * fragment instead of wrangler's real, later document -- narduk-libs#470.
+ * Requiring column 0 means a bracket embedded inside noise never matches, and
+ * taking the last such line still finds wrangler's document if more than one
+ * line happens to start with one.
  */
 export function parseWranglerVersionsJson<T>(stdout: string, what: string): T {
-  const start = stdout.search(/[[{]/u)
+  const starts = [...stdout.matchAll(/^[[{]/gmu)]
+  const start = starts.length > 0 ? (starts[starts.length - 1].index ?? -1) : -1
   if (start < 0) throw new Error(`wrangler ${what} returned no JSON`)
   try {
     return JSON.parse(stdout.slice(start)) as T
   } catch (error) {
+    const preview = JSON.stringify(stdout.slice(0, 200))
     throw new Error(
-      `Could not parse wrangler ${what} JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not parse wrangler ${what} JSON: ${error instanceof Error ? error.message : String(error)}. ` +
+        `First 200 chars of captured stdout: ${preview}`,
     )
   }
 }
