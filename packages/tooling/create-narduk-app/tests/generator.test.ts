@@ -1117,6 +1117,13 @@ describe('create-narduk-app generation contract', () => {
     const rootPackage = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
+    expect(rootPackage.scripts['deploy:hotfix']).toBe(
+      'pnpm --filter web exec narduk-app deploy-hotfix',
+    )
+    expect(rootPackage.scripts['hotfix:check']).toContain('pnpm run test:unit')
+    expect(rootPackage.scripts['hotfix:check']).not.toContain('build:ci')
+    expect(rootPackage.scripts['hotfix:build']).toContain('pnpm --filter web run cf:build')
+    expect(rootPackage.scripts['hotfix:build']).not.toContain('narduk-test-only')
     expect(rootPackage.scripts['quality:static']).toContain('pnpm run format:check')
     expect(rootPackage.scripts['quality:static']).toContain('pnpm run knip')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
