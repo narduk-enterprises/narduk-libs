@@ -69,11 +69,20 @@ export async function logRequest(
   }
   try {
     const response = await handler(log, timing)
+    // A 101 -- or anything carrying `webSocket`, the Cloudflare Workers upgrade
+    // extension to `ResponseInit` (not in this package's DOM lib, hence the
+    // duck-typed read) -- cannot be re-wrapped: `new Response(body, init)` only
+    // accepts a status in 200-599, and re-wrapping would drop `webSocket`
+    // anyway, which is the whole payload of an upgrade in workerd. Hand it back
+    // untouched; a protocol switch has no body to stream and no Server-Timing
+    // worth attaching (narduk-libs#404).
+    const isUpgrade =
+      response.status === 101 || Boolean((response as unknown as { webSocket?: unknown }).webSocket)
     // Clone immutable upstream headers without consuming or buffering the response body.
-    const outgoing = new Response(response.body, response)
+    const outgoing = isUpgrade ? response : new Response(response.body, response)
     // A response a shared cache may replay must not carry one request's identity: the edge would
     // serve the cache-missing request's ID to every later client. See `isSharedCacheable`.
-    if (!isSharedCacheable(outgoing.headers.get('cache-control'))) {
+    if (!isUpgrade && !isSharedCacheable(outgoing.headers.get('cache-control'))) {
       outgoing.headers.set(REQUEST_ID_HEADER, id)
       outgoing.headers.set(
         'server-timing',
