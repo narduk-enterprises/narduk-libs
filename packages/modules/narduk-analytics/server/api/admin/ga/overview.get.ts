@@ -3,6 +3,8 @@ import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { readRuntimeString } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { z } from 'zod'
 
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
+
 const querySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -35,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const log = useLogger(event).child('Analytics')
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const propertyId = readRuntimeString(event, 'GA_PROPERTY_ID', {
     config,
     fallback: config.gaPropertyId,

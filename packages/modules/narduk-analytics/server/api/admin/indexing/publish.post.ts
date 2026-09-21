@@ -7,6 +7,7 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { assertAnalyticsWriteAllowed } from '#narduk-analytics-server/utils/siteConfig'
 
 const bodySchema = z.object({
@@ -38,7 +39,7 @@ export default defineAdminMutation(
   },
   async ({ event, body }) => {
     const input = requireMutationBody(body)
-    assertAnalyticsWriteAllowed(useRuntimeConfig(event), event)
+    assertAnalyticsWriteAllowed(analyticsRuntimeConfig(event), event)
     const log = useLogger(event).child('Indexing')
     const { url, type } = input
 

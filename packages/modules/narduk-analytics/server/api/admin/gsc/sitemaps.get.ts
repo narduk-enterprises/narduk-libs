@@ -1,11 +1,12 @@
 import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
 
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { resolveGscSiteUrl } from '#narduk-analytics-server/utils/siteConfig'
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const siteUrl = resolveGscSiteUrl(config, event)
 
   if (!siteUrl) {

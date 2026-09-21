@@ -38,6 +38,7 @@ import {
   applyOwnerTagCookies,
   timingSafeEqual,
 } from '#narduk-analytics-server/utils/owner-tag-proof'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const ownerTagSchema = z.object({
   secret: z.string(),
@@ -51,7 +52,7 @@ export default definePublicMutation(
   },
   async ({ event, body }) => {
     const input = requireMutationBody(body)
-    const config = useRuntimeConfig(event)
+    const config = analyticsRuntimeConfig(event)
     const ownerSecret = config.ownerTagSecret
 
     if (!ownerSecret) {

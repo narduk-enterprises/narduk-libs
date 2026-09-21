@@ -9,6 +9,7 @@ import {
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { resolveIndexNowKeyFromRuntimeConfig } from '#narduk-analytics-server/utils/indexNow'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const bodySchema = z.object({
   urls: z.array(z.string().url()).optional().default([]),
@@ -40,7 +41,7 @@ export default definePublicMutation(
   async ({ event, body }) => {
     const input = requireMutationBody(body)
     const log = useLogger(event).child('IndexNow')
-    const config = useRuntimeConfig(event)
+    const config = analyticsRuntimeConfig(event)
     const key = resolveIndexNowKeyFromRuntimeConfig(config, event)
     const siteUrl = readRuntimeString(event, 'SITE_URL', {
       config,

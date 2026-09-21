@@ -15,11 +15,12 @@
  */
 import { enforceRateLimitPolicy, RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { loadOwnerPosthogBootstrap } from '#narduk-analytics-server/utils/owner-tag-proof'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 export default defineEventHandler(async (event) => {
   await enforceRateLimitPolicy(event, RATE_LIMIT_POLICIES.ownerTag)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   return loadOwnerPosthogBootstrap(event, {
     ownerTagSecret: config.ownerTagSecret,
     posthogOwnerDistinctId: config.posthogOwnerDistinctId,

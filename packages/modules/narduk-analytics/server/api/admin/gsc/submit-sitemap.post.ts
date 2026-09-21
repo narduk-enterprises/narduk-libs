@@ -6,6 +6,7 @@ import {
   withOptionalValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import {
   assertAnalyticsWriteAllowed,
   resolveAnalyticsAppUrl,
@@ -23,7 +24,7 @@ export default defineAdminMutation(
   },
   async ({ event, body }) => {
     const input = requireMutationBody(body)
-    const config = useRuntimeConfig(event)
+    const config = analyticsRuntimeConfig(event)
     assertAnalyticsWriteAllowed(config, event)
     const siteUrl = resolveGscSiteUrl(config, event)
 

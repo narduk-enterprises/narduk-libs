@@ -5,6 +5,8 @@ import {
   trimRuntimeString,
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 
+import { analyticsRuntimeConfig, type AnalyticsServerRuntimeConfig } from './runtimeConfig'
+
 /**
  * IndexNow Programmatic Ping Utility.
  *
@@ -39,7 +41,7 @@ const MAX_URLS_PER_BATCH = 10_000
  * verification or submission when another configured key exists.
  */
 export function resolveIndexNowKeyFromRuntimeConfig(
-  config: ReturnType<typeof useRuntimeConfig>,
+  config: AnalyticsServerRuntimeConfig,
   event?: H3Event,
 ): string {
   const fallback =
@@ -85,7 +87,7 @@ export async function notifyIndexNow(
   urls: string[],
   siteHost?: string,
 ): Promise<IndexNowResult> {
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const key = resolveIndexNowKeyFromRuntimeConfig(config, event)
 
   if (!key) {

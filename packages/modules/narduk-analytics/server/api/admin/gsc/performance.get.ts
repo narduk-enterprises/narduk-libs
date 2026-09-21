@@ -2,6 +2,7 @@ import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
 import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { z } from 'zod'
 
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { resolveGscSiteUrl } from '#narduk-analytics-server/utils/siteConfig'
 
 const DIMENSIONS = ['query', 'page', 'device', 'country', 'searchAppearance'] as const
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
   const log = useLogger(event).child('Analytics')
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const gscSiteUrl = resolveGscSiteUrl(config, event)
   if (!gscSiteUrl) {
     throw createError({ statusCode: 500, statusMessage: 'GSC_SITE_URL or SITE_URL not configured' })
