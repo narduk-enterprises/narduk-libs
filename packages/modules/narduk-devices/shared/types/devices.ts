@@ -151,6 +151,24 @@ export interface DeviceSession {
   tokenHash: string
 }
 
+/**
+ * A session together with the device it belongs to, resolved in one query.
+ *
+ * `DeviceSession` carries the session's own facts — which credential opened
+ * it, when it expires, which revocation generation it snapshotted — but not
+ * the tenant ones. `orgId`, `resourceKind`/`resourceId` and `installationId`
+ * live on the device row, so a consumer answering "which tenant is this
+ * request for?" used to re-read the device on every authenticated request
+ * (narduk-libs#225).
+ *
+ * The session's fields stay exactly where they were; the device is nested
+ * rather than merged, because both rows carry `id`, `createdAt`,
+ * `revokedAt` and `revocationGeneration` and those must not collide.
+ */
+export interface DeviceSessionWithDevice extends DeviceSession {
+  device: Device
+}
+
 export interface DeviceChallenge {
   createdAt: number
   deviceId: string
