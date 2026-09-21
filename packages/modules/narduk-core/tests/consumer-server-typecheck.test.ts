@@ -13,23 +13,47 @@ const require = createRequire(import.meta.url)
 /** Building the whole server program from scratch runs well past vitest's 5s default. */
 const TYPECHECK_TIMEOUT_MS = 180_000
 
+/**
+ * Vitest's timer cannot interrupt `execFileSync`, which blocks the worker.
+ * The child gets its own deadline, short of the test deadline, so a stuck
+ * compiler is killed and the test still has time to report that.
+ */
+const COMPILER_TIMEOUT_MS = TYPECHECK_TIMEOUT_MS - 30_000
+
 const PROBE_FILE = 'tests/fixtures/__consumer-probe.generated.ts'
 const probePath = join(packageRoot, PROBE_FILE)
 
 interface Diagnostic {
   code: string
-  file: string
+  /** Null for a diagnostic tsc prints without a file position, such as TS2688. */
+  file: string | null
   message: string
-  position: string
+  position: string | null
 }
 
 interface TypecheckResult {
   diagnostics: Diagnostic[]
   files: string[]
+  status: number
 }
 
-const DIAGNOSTIC_PATTERN =
+interface CapturedProcess {
+  output: string
+  status: number
+}
+
+interface ProcessFailure extends Error {
+  code?: string
+  signal?: string | null
+  status?: number | null
+  stderr?: string
+  stdout?: string
+}
+
+const FILE_DIAGNOSTIC_PATTERN =
   /^(?<file>[^(]+)\((?<position>\d+,\d+)\): error (?<code>TS\d+): (?<message>.*)$/u
+
+const GLOBAL_DIAGNOSTIC_PATTERN = /^error (?<code>TS\d+): (?<message>.*)$/u
 
 function shippedServerSources(): string[] {
   const root = join(packageRoot, 'runtime', 'server')
@@ -50,51 +74,115 @@ function shippedServerSources(): string[] {
   return files
 }
 
-function runConsumerTypecheck(): TypecheckResult {
-  const tsc = join(dirname(require.resolve('typescript/package.json')), 'bin/tsc')
-
-  let output: string
-  try {
-    output = execFileSync(
-      process.execPath,
-      [tsc, '-p', 'tsconfig.consumer-server.json', '--listFiles', '--pretty', 'false'],
-      {
-        cwd: packageRoot,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-  } catch (error) {
-    // tsc exits non-zero when it reports diagnostics; the diagnostics are the
-    // result we want, so a non-zero exit is expected rather than a failure.
-    const failure = error as { stderr?: string; stdout?: string }
-    output = `${failure.stdout ?? ''}${failure.stderr ?? ''}`
-  }
-
+/**
+ * Split `tsc --listFiles --pretty false` output into diagnostics and the file
+ * list. A global diagnostic (`error TS2688: ...`) has no `file(line,col)`
+ * prefix, and tsc then prints its explanation indented. Treating either as a
+ * filename drops the error out of the assertion.
+ */
+function parseTscListFilesOutput(output: string): Pick<TypecheckResult, 'diagnostics' | 'files'> {
   const diagnostics: Diagnostic[] = []
   const files: string[] = []
+
   for (const line of output.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const groups = DIAGNOSTIC_PATTERN.exec(trimmed)?.groups
-    if (groups) {
+    if (!line.trim()) continue
+
+    if (/^\s/.test(line)) {
+      const current = diagnostics.at(-1)
+      if (current) {
+        current.message = `${current.message}\n${line.trim()}`
+        continue
+      }
       diagnostics.push({
-        code: groups.code,
-        file: groups.file,
-        message: groups.message,
-        position: groups.position,
+        code: 'unparsed',
+        file: null,
+        message: line.trim(),
+        position: null,
       })
       continue
     }
+
+    const trimmed = line.trim()
+    const fileDiagnostic = FILE_DIAGNOSTIC_PATTERN.exec(trimmed)?.groups
+    if (fileDiagnostic) {
+      diagnostics.push({
+        code: fileDiagnostic.code,
+        file: fileDiagnostic.file,
+        message: fileDiagnostic.message,
+        position: fileDiagnostic.position,
+      })
+      continue
+    }
+
+    const globalDiagnostic = GLOBAL_DIAGNOSTIC_PATTERN.exec(trimmed)?.groups
+    if (globalDiagnostic) {
+      diagnostics.push({
+        code: globalDiagnostic.code,
+        file: null,
+        message: globalDiagnostic.message,
+        position: null,
+      })
+      continue
+    }
+
+    if (trimmed.includes('error TS')) {
+      diagnostics.push({ code: 'unparsed', file: null, message: trimmed, position: null })
+      continue
+    }
+
     files.push(trimmed)
   }
 
   return { diagnostics, files }
 }
 
+function runCaptured(file: string, args: string[], timeoutMs: number): CapturedProcess {
+  try {
+    return {
+      status: 0,
+      output: execFileSync(file, args, {
+        cwd: packageRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: timeoutMs,
+        killSignal: 'SIGTERM',
+      }),
+    }
+  } catch (error) {
+    const failure = error as ProcessFailure
+    // A non-zero exit is tsc reporting diagnostics. No exit status means the
+    // process never finished: a timeout, a signal, or a failure to spawn.
+    if (failure.code === 'ETIMEDOUT' || failure.signal || failure.status == null) {
+      throw new Error(
+        `${file} did not finish (code ${failure.code ?? 'none'}, signal ${failure.signal ?? 'none'}, status ${failure.status ?? 'null'})`,
+        { cause: error },
+      )
+    }
+    return {
+      status: failure.status,
+      output: `${failure.stdout ?? ''}${failure.stderr ?? ''}`,
+    }
+  }
+}
+
+function runConsumerTypecheck(): TypecheckResult {
+  const tsc = join(dirname(require.resolve('typescript/package.json')), 'bin/tsc')
+  const captured = runCaptured(
+    process.execPath,
+    [tsc, '-p', 'tsconfig.consumer-server.json', '--listFiles', '--pretty', 'false'],
+    COMPILER_TIMEOUT_MS,
+  )
+  return { status: captured.status, ...parseTscListFilesOutput(captured.output) }
+}
+
 function isOwnSource(file: string): boolean {
   const normalized = file.replaceAll('\\', '/')
   return !normalized.startsWith('..') && !normalized.includes('/node_modules/')
+}
+
+function formatDiagnostic(diagnostic: Diagnostic): string {
+  const where = diagnostic.file ? `${diagnostic.file}(${diagnostic.position})` : 'global'
+  return `${where}: ${diagnostic.code}: ${diagnostic.message}`
 }
 
 /**
@@ -110,13 +198,47 @@ function isOwnSource(file: string): boolean {
  * straight from `hyperdrive.ts` fails this test.
  */
 describe('published server sources typecheck in an unaugmented consumer context', () => {
+  it('kills a compiler that outlives its own deadline and reports that as the failure', () => {
+    expect(() =>
+      runCaptured(process.execPath, ['-e', 'setTimeout(() => {}, 30_000)'], 200),
+    ).toThrow(/ETIMEDOUT/)
+  })
+
+  it('keeps a diagnostic that has no file position out of the file list', () => {
+    const parsed = parseTscListFilesOutput(
+      [
+        "error TS2688: Cannot find type definition file for 'missing'.",
+        '  The file is in the program because:',
+        "    Entry point of type library 'missing' specified in compilerOptions",
+        "src/file.ts(12,14): error TS2538: Type '{}' cannot be used as an index type.",
+        '/tmp/listed.ts',
+        '',
+      ].join('\n'),
+    )
+
+    expect(parsed.files).toEqual(['/tmp/listed.ts'])
+    expect(parsed.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['TS2688', 'TS2538'])
+    expect(parsed.diagnostics[0]).toMatchObject({
+      file: null,
+      message: [
+        "Cannot find type definition file for 'missing'.",
+        'The file is in the program because:',
+        "Entry point of type library 'missing' specified in compilerOptions",
+      ].join('\n'),
+    })
+  })
+
   it(
     'compiles every shipped server source, and reports no diagnostics for them',
     () => {
       rmSync(probePath, { force: true })
-      const { diagnostics, files } = runConsumerTypecheck()
+      const result = runConsumerTypecheck()
       const missing = shippedServerSources().filter(
-        (source) => !files.some((listed) => listed.endsWith(relative(packageRoot, source))),
+        (source) => !result.files.some((listed) => listed.endsWith(relative(packageRoot, source))),
+      )
+      const global = result.diagnostics.filter((diagnostic) => diagnostic.file === null)
+      const ours = result.diagnostics.filter(
+        (diagnostic) => diagnostic.file !== null && isOwnSource(diagnostic.file),
       )
 
       expect(
@@ -124,14 +246,13 @@ describe('published server sources typecheck in an unaugmented consumer context'
         'the consumer project must typecheck every shipped server file, or it can go green by compiling nothing',
       ).toEqual([])
 
-      const ours = diagnostics.filter((diagnostic) => isOwnSource(diagnostic.file))
-      expect(
-        ours.map(
-          (diagnostic) =>
-            `${diagnostic.file}(${diagnostic.position}): ${diagnostic.code}: ${diagnostic.message}`,
-        ),
-        'shipped server sources must not depend on a consumer-side runtime-config augmentation',
-      ).toEqual([])
+      // `status` is what makes a diagnostic the parser did not recognize fail
+      // this test anyway. `global` is where TS2688 is reported, with its text.
+      expect({
+        status: result.status,
+        global: global.map(formatDiagnostic),
+        own: ours.map(formatDiagnostic),
+      }).toEqual({ status: 0, global: [], own: [] })
     },
     TYPECHECK_TIMEOUT_MS,
   )
@@ -163,11 +284,17 @@ describe('published server sources typecheck in an unaugmented consumer context'
       )
 
       try {
-        const diagnostics = runConsumerTypecheck().diagnostics.filter((diagnostic) =>
-          diagnostic.file.endsWith(PROBE_FILE),
+        const result = runConsumerTypecheck()
+        const probe = result.diagnostics.filter((diagnostic) =>
+          diagnostic.file?.endsWith(PROBE_FILE),
         )
+        const global = result.diagnostics.filter((diagnostic) => diagnostic.file === null)
 
-        expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['TS2538'])
+        expect({
+          status: result.status,
+          global: global.map(formatDiagnostic),
+          probe: probe.map((diagnostic) => diagnostic.code),
+        }).toEqual({ status: 2, global: [], probe: ['TS2538'] })
       } finally {
         rmSync(probePath, { force: true })
       }
