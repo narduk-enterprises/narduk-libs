@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 
 import { devicesClaimSessions, devicesClaimTokens } from '../server/database/devices-schema'
-import { createDevices, type DevicesDatabase } from '../server/utils/devices'
+import { createDevices, type DevicesDatabase, type DevicesService } from '../server/utils/devices'
 
 import {
   ALGORITHM,
@@ -15,9 +15,11 @@ import {
   ORG,
   signedOpen,
   startPendingClaim,
+  type TestHarness,
   VESSEL,
 } from './support/database'
 import { codeOf } from './support/expect'
+import { DEVICE_CREATE_WRITE, interleaveAtWrite } from './support/interleave'
 
 /**
  * A database whose early reads are stale, exactly as a read that raced another
@@ -62,6 +64,38 @@ function withStaleReads(
   return wrapper as DevicesDatabase
 }
 
+/**
+ * Two first-time completions of one claim, genuinely contending.
+ *
+ * The losing caller runs against a database that holds its device-creating
+ * write open until the winner -- the harness's own service on the same SQLite
+ * file, as a second process would be -- has finished. Both therefore read a
+ * claim session that is still `pending_user_approval` and contend for the one
+ * completion it has. `Promise.all` produced that only when the scheduler
+ * happened to interleave the two calls; when they serialised, the second was
+ * an ordinary replay and answered without the winner's `deviceId`
+ * (narduk-libs#445).
+ */
+async function contendedCompletion<T>(
+  harness: TestHarness,
+  call: (service: DevicesService, idempotencyKey: string) => Promise<T>,
+  keys: { loser: string; winner: string },
+): Promise<{ loser: T; winner: T }> {
+  let winner: T | undefined
+  const contended = createDevices(
+    interleaveAtWrite(harness.db, {
+      whenWriting: DEVICE_CREATE_WRITE,
+      sneak: async () => {
+        winner = await call(harness.devices, keys.winner)
+      },
+    }),
+    { now: harness.clock.now, idGenerator: createTestIdGenerator('race') },
+  )
+  const loser = await call(contended, keys.loser)
+  if (winner === undefined) throw new Error('the gated write never ran, so nothing contended')
+  return { loser, winner }
+}
+
 describe('concurrent completion', () => {
   it('lets exactly one of two concurrent completions issue credentials', async () => {
     const harness = createTestHarness()
@@ -74,8 +108,8 @@ describe('concurrent completion', () => {
       hardwareFingerprint: FINGERPRINT,
       approvedByUserId: 'owner-1',
     })
-    const complete = (idempotencyKey: string) =>
-      devices.completeClaim({
+    const complete = (service: DevicesService, idempotencyKey: string) =>
+      service.completeClaim({
         claimSessionId: pending.claimSessionId,
         orgId: ORG,
         resource: VESSEL,
@@ -86,13 +120,15 @@ describe('concurrent completion', () => {
         idempotencyKey,
       })
 
-    const results = await Promise.all([complete('a'), complete('b')])
-    const statuses = results.map((result) => result.status).sort()
-    expect(statuses).toEqual(['already_completed', 'completed'])
-    const winner = results.find((result) => result.status === 'completed')
-    const loser = results.find((result) => result.status === 'already_completed')
-    expect(loser?.deviceId).toBe(winner?.deviceId)
-    expect(loser?.credentials).toEqual([])
+    const { loser, winner } = await contendedCompletion(harness, complete, {
+      loser: 'b',
+      winner: 'a',
+    })
+    // Which caller wins is now decided, not observed, so each is named.
+    expect(winner.status).toBe('completed')
+    expect(loser.status).toBe('already_completed')
+    expect(loser.deviceId).toBe(winner.deviceId)
+    expect(loser.credentials).toEqual([])
 
     const devicesRows = harness.sqlite.prepare('SELECT id FROM devices_devices').all()
     expect(devicesRows).toHaveLength(1)
@@ -164,27 +200,26 @@ describe('concurrent completion', () => {
       hardwareFingerprint: FINGERPRINT,
       approvedByUserId: 'owner-1',
     })
-    const complete = (idempotencyKey: string) => {
+    const complete = (service: DevicesService, idempotencyKey: string) => {
       const { input } = completionRequest(harness, {
         claimSessionId: pending.claimSessionId,
         idempotencyKey,
         key: pending.key,
       })
-      return devices.completeClaimWithRecordedApproval({
+      return service.completeClaimWithRecordedApproval({
         ...input,
         reissueOnIdempotentReplay: false,
       })
     }
 
-    const results = await Promise.all([complete('proved-a'), complete('proved-b')])
-    expect(results.map((result) => result.status).sort()).toEqual([
-      'already_completed',
-      'completed',
-    ])
-    const winner = results.find((result) => result.status === 'completed')
-    const loser = results.find((result) => result.status === 'already_completed')
-    expect(loser?.credentials).toEqual([])
-    expect(loser?.deviceId).toBe(winner?.deviceId)
+    const { loser, winner } = await contendedCompletion(harness, complete, {
+      loser: 'proved-b',
+      winner: 'proved-a',
+    })
+    expect(winner.status).toBe('completed')
+    expect(loser.status).toBe('already_completed')
+    expect(loser.credentials).toEqual([])
+    expect(loser.deviceId).toBe(winner.deviceId)
   })
 
   it('lets exactly one of two concurrent starts redeem a claim token', async () => {
