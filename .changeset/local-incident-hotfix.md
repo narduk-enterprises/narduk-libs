@@ -8,3 +8,6 @@ offline frozen install, required app checks, isolated build credentials,
 confirmed production target, version promotion, live proof and a durable failure
 receipt. Ship the operator runbook and generator scripts. Existing deployment
 commands remain compatible.
+
+Prevent the shared live probe from forwarding caller-provided request headers,
+including Cloudflare Access credentials, through cross-origin redirects.

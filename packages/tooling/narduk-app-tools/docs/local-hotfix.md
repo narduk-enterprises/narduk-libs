@@ -168,7 +168,8 @@ migration flags. `--yes` confirms execution; it is not proof of human approval.
    service token and add
    `--access-client-id-env CF_ACCESS_CLIENT_ID --access-client-secret-env CF_ACCESS_CLIENT_SECRET`.
    Flags carry variable names, never secret values; both must be present before
-   work begins.
+   work begins. Authenticated probes follow only same-origin redirects, so
+   Access credentials cannot be forwarded to a different origin.
 
    The command clones local Git objects, checks out the exact SHA, installs from
    the frozen lockfile/cache, captures the existing deployment/version, runs

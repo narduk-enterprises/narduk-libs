@@ -14,7 +14,8 @@
  *     headers -- only run for a rendered response.
  *   - redirect: follow. `verify --live` reports `redirected` and the final URL,
  *     and refuses the proof when the final origin is not the one it was asked
- *     about.
+ *     about. With caller-supplied headers, follow only same-origin redirects:
+ *     native fetch can forward custom credentials such as Access tokens.
  *   - A transport failure is returned as `{ error }`, not thrown: "we could not
  *     read it" is a verdict the callers render, not an exception they catch.
  *
@@ -63,7 +64,8 @@ export interface LiveProbeOptions {
   noCache?: boolean
   /**
    * Extra request headers, e.g. a Cloudflare Access service token. Sent as
-   * given and never echoed into a LiveResponse or a report.
+   * given and never echoed into a LiveResponse or a report. Redirects cannot
+   * carry these headers beyond the originally requested origin.
    */
   headers?: Record<string, string>
 }
@@ -91,24 +93,40 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
     }
     Object.assign(headersSent, defaults.headers, options.headers)
     try {
-      const response = await fetch(url, {
+      const originBound = Object.keys({ ...defaults.headers, ...options.headers }).length > 0
+      const request: RequestInit = {
         method: 'GET',
-        redirect: 'follow',
+        redirect: originBound ? 'manual' : 'follow',
         cache: noCache ? 'no-store' : 'default',
         headers: headersSent,
         signal: controller.signal,
-      })
+      }
+      let response = await fetch(url, request)
+      let requestUrl = url
+      let redirects = 0
+      while (
+        originBound &&
+        [301, 302, 303, 307, 308].includes(response.status) &&
+        response.headers.has('location')
+      ) {
+        await response.body?.cancel()
+        if (redirects >= 20) throw new Error('Live probe exceeded the redirect limit')
+        const next = new URL(response.headers.get('location')!, requestUrl)
+        if (next.origin !== new URL(url).origin)
+          throw new Error('Live probe refused a cross-origin redirect with request headers')
+        requestUrl = next.href
+        redirects += 1
+        response = await fetch(requestUrl, request)
+      }
       const headers: Record<string, string> = {}
       response.headers.forEach((value, name) => {
         headers[name.toLowerCase()] = value
       })
       const buffer = await response.arrayBuffer().catch(() => new ArrayBuffer(0))
       const result: LiveResponse = { url, status: response.status, headers }
-      // `response.redirected` is the authority; `response.url` alone is not,
-      // because fetch normalises (`https://x.test` -> `https://x.test/`) and a
-      // normalisation is not a redirect.
+      // Manual hops count too; URL normalisation alone is not a redirect.
       if (response.url) result.finalUrl = response.url
-      if (response.redirected) result.redirected = true
+      if (response.redirected || redirects > 0) result.redirected = true
       if (readBody) {
         const bytes = new Uint8Array(buffer)
         const truncated = bytes.byteLength > maxBodyBytes
