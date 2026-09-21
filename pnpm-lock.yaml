@@ -410,9 +410,6 @@ importers:
 
   packages/modules/narduk-analytics:
     dependencies:
-      '@narduk-enterprises/narduk-core':
-        specifier: workspace:*
-        version: link:../narduk-core
       '@nuxt/kit':
         specifier: ^4.0.0
         version: 4.5.2(magic-string@1.4.1)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.9)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.9)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
@@ -441,6 +438,9 @@ importers:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../../tooling/eslint-config
+      '@narduk-enterprises/narduk-core':
+        specifier: workspace:*
+        version: link:../narduk-core
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@5.9.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.9)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
@@ -1049,9 +1049,6 @@ importers:
 
   packages/modules/narduk-seo:
     dependencies:
-      '@narduk-enterprises/narduk-core':
-        specifier: workspace:*
-        version: link:../narduk-core
       '@nuxt/kit':
         specifier: ^4.0.0
         version: 4.5.2(magic-string@1.4.1)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.9)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.9)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)))
@@ -1101,6 +1098,9 @@ importers:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../../tooling/eslint-config
+      '@narduk-enterprises/narduk-core':
+        specifier: workspace:*
+        version: link:../narduk-core
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@5.9.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.9)(rollup@4.62.2)(typescript@5.9.3)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
@@ -17181,7 +17181,7 @@ snapshots:
       '@parcel/watcher-wasm': 2.5.6
       citty: 0.2.2
       consola: 3.4.2
-      crossws: 0.4.9(srvx@0.11.22)
+      crossws: 0.4.9(srvx@0.12.8)
       defu: 6.1.7
       get-port-please: 3.2.0
       h3: 1.15.11

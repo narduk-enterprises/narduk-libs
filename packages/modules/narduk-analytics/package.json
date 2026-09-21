@@ -80,7 +80,6 @@
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
   },
   "dependencies": {
-    "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/kit": "^4.0.0",
     "defu": "^6.1.7",
     "h3": "^1.15.11",
@@ -92,6 +91,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
+    "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",
@@ -110,6 +110,7 @@
     "wrangler": "^4.90.1"
   },
   "peerDependencies": {
+    "@narduk-enterprises/narduk-core": ">=2.6.3 <3.0.0",
     "nuxt": ">=4.0.0",
     "wrangler": ">=4.90.1"
   },
