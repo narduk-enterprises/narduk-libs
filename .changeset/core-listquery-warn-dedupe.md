@@ -13,9 +13,12 @@ the per-request hot-path cost that comes with it — just by appending one
 throwaway query parameter to every request (e.g.
 `GET /api/notifications?limit=20&x=1`).
 
-The warning now logs once per distinct unknown-key set per process, capped at
-256 remembered sets with clear-on-overflow (the same shape `format.ts`'s
-`MAX_CACHE_ENTRIES` cache uses in `@narduk-enterprises/narduk-shell`) so a
-caller varying the throwaway key every request pays a rebuild instead of growing
-the set without bound. Only the key _names_ were ever logged, never values, so
-this was a log-volume issue, not an injection or leakage one.
+The warning now logs once per distinct unknown-key set per process, remembering
+at most 256 sets. Past that cap it emits exactly one final
+`list_query_unknown_keys_suppressed` notice and stops — it does not clear and
+resume — so a caller varying the throwaway key every request cannot reproduce
+one-log-line-per-request by pushing the memorized set past its limit. Memory
+stays bounded at 256 remembered sets, and total log lines are now at most 257
+per isolate, regardless of request volume. Only the key _names_ were ever
+logged, never values, so this was a log-volume issue, not an injection or
+leakage one.

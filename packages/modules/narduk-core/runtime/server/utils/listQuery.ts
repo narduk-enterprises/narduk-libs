@@ -40,6 +40,7 @@ import type { H3Event } from 'h3'
 import type { z } from 'zod'
 
 export { LIST_QUERY_STATEMENT_CEILING } from '@narduk-enterprises/narduk-platform/list-query'
+export { MAX_WARNED_UNKNOWN_KEY_SETS }
 
 /** Stable `data` payload carried by every list-query 400. */
 export interface ListQueryErrorPayload {
@@ -140,12 +141,14 @@ export function parseListQuery(
 
 /**
  * How many distinct unknown-key sets {@link warnUnknownListQueryKeys}
- * remembers before it clears wholesale and starts warning again -- the same
- * cap-and-clear shape `format.ts`'s `MAX_CACHE_ENTRIES` cache uses in
- * narduk-shell (narduk-libs#287). Real routes have a small, code-defined
- * number of ways to misspell a query key; this exists so an adversarial
- * caller varying the throwaway key every request pays a rebuild instead of
- * growing the set without bound.
+ * remembers before it stops warning altogether -- unlike `format.ts`'s
+ * `MAX_CACHE_ENTRIES` cache in narduk-shell (narduk-libs#287), which clears
+ * and resumes, this cap latches: a caller varying the unknown-key set every
+ * request must not be able to reproduce one-log-line-per-request forever by
+ * pushing the memorized set past its limit (master review of PR #687,
+ * 2026-09-21). Real routes have a small, code-defined number of ways to
+ * misspell a query key, so the first {@link MAX_WARNED_UNKNOWN_KEY_SETS}
+ * distinct sets any isolate sees still catch every real mistake.
  */
 const MAX_WARNED_UNKNOWN_KEY_SETS = 256
 
@@ -155,6 +158,17 @@ const MAX_WARNED_UNKNOWN_KEY_SETS = 256
  * request (narduk-libs#285).
  */
 const warnedUnknownKeySets = new Set<string>()
+
+/**
+ * Set once this process has emitted the one-time
+ * `list_query_unknown_keys_suppressed` notice below. Clearing
+ * `warnedUnknownKeySets` at the cap (instead of latching suppression) would
+ * let a caller that varies the unknown-key set every request pay a rebuild
+ * and resume logging once per request forever -- the same per-request
+ * amplification narduk-libs#285 already fixed for the constant-key case,
+ * reproduced one request-shape later (master review of PR #687, 2026-09-21).
+ */
+let unknownKeySetCapReached = false
 
 /** Order-independent identity for a set of unknown keys. */
 function unknownKeySetId(unknownKeys: readonly string[]): string {
@@ -168,13 +182,37 @@ function unknownKeySetId(unknownKeys: readonly string[]): string {
  * tolerated them — the `strict` option was not set — since `strict: true`
  * rejects them with a 400 before `parseListQuery` gets here. See
  * `.changeset/list-query-tolerate-unknown-keys.md`.
+ *
+ * Once this process has warned about {@link MAX_WARNED_UNKNOWN_KEY_SETS}
+ * distinct sets, it emits exactly one final `list_query_unknown_keys_suppressed`
+ * warning and stops -- it never clears and resumes -- so total log volume per
+ * isolate is bounded at `MAX_WARNED_UNKNOWN_KEY_SETS + 1` regardless of
+ * request volume or how many distinct (mis)spellings a caller sends.
  */
 function warnUnknownListQueryKeys(event: H3Event, unknownKeys: readonly string[]): void {
   if (unknownKeys.length === 0) return
 
   const keySetId = unknownKeySetId(unknownKeys)
   if (warnedUnknownKeySets.has(keySetId)) return
-  if (warnedUnknownKeySets.size >= MAX_WARNED_UNKNOWN_KEY_SETS) warnedUnknownKeySets.clear()
+  if (warnedUnknownKeySets.size >= MAX_WARNED_UNKNOWN_KEY_SETS) {
+    if (unknownKeySetCapReached) return
+    unknownKeySetCapReached = true
+    try {
+      useLogger(event)
+        .child('ListQuery')
+        .warn(
+          `Reached ${MAX_WARNED_UNKNOWN_KEY_SETS} distinct unknown list-query key sets in this ` +
+            `process; suppressing further per-set warnings to bound log volume. Unknown keys ` +
+            `are still tolerated (or rejected under strict mode) exactly as before -- only this ` +
+            `warning is suppressed.`,
+          { code: 'list_query_unknown_keys_suppressed' },
+        )
+    } catch {
+      /* best-effort, same as the per-set warning below */
+    }
+    return
+  }
+
   warnedUnknownKeySets.add(keySetId)
 
   // Tolerating an unknown key must never depend on logging succeeding: a
@@ -192,6 +230,12 @@ function warnUnknownListQueryKeys(event: H3Event, unknownKeys: readonly string[]
   } catch {
     /* See comment above — a warning is best-effort. */
   }
+}
+
+/** Test-only: clears memorized unknown-key sets and the suppression latch. */
+export function resetListQueryUnknownKeyWarningsForTests(): void {
+  warnedUnknownKeySets.clear()
+  unknownKeySetCapReached = false
 }
 
 export interface OffsetListResponseOptions<TFilters, TKey extends string> {
