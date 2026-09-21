@@ -370,6 +370,22 @@ describe('crawler-visible delivery', () => {
     expect(report.errors.join(' ')).toContain(error)
   })
 
+  it('names both URLs and hints NUXT_PUBLIC_SITE_URL when a local dev server renders its own origin (#587)', async () => {
+    // The exact symptom #587 reports: a local `nuxt dev` renders `og:url` on
+    // its own origin (the `--base-url` target) instead of the canonical
+    // `siteUrl`, and the old fixed-string error gave no hint why.
+    await serve((path) =>
+      path.endsWith('.png') ? undefined : { body: html(path).replace(config.siteUrl, origin) },
+    )
+    const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
+    expect(report.ok).toBe(false)
+    const message = report.errors.join(' ')
+    expect(message).toContain(`og:url is ${origin}/`)
+    expect(message).toContain(`expected ${config.siteUrl}/`)
+    expect(message).toContain('(siteUrl)')
+    expect(message).toContain(`NUXT_PUBLIC_SITE_URL=${config.siteUrl}`)
+  })
+
   it('rejects identical pixels behind different dynamic URLs', async () => {
     await serve((path) =>
       path.startsWith('/items/') && path.endsWith('.png') ? { body: redPng } : undefined,

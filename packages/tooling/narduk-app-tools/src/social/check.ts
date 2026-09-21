@@ -186,7 +186,20 @@ async function probePage(
     canonical.origin !== context.site.origin ||
     canonical.pathname !== new URL(path, context.site).pathname
   ) {
-    throw new Error('og:url does not identify the sampled page on the canonical origin')
+    const expected = new URL(path, context.site).href
+    // Named so a local `--base-url` run doesn't read as "eighteen identical
+    // lines with no hint" (narduk-libs#587): the target (where pages are
+    // fetched) and the canonical origin (siteUrl) are deliberately different
+    // things, and a local dev server renders whatever `useSiteConfig()`
+    // resolves to -- which is not automatically the configured `siteUrl`
+    // unless something forces it. `NUXT_PUBLIC_SITE_URL` is nuxt-site-config's
+    // own env override (see its `envSiteConfig`, which reads `NUXT_SITE_*` /
+    // `NUXT_PUBLIC_SITE_*` prefixes only); a bare `SITE_URL` is a different,
+    // narduk-core-only convention and does not affect this.
+    const hint = context.local
+      ? ` A local dev server must render the canonical origin: NUXT_PUBLIC_SITE_URL=${context.site.origin} <dev command>.`
+      : ''
+    throw new Error(`og:url is ${canonical.href}; expected ${expected} (siteUrl).${hint}`)
   }
   if (oneMeta(meta, 'og:image:width') !== '1200' || oneMeta(meta, 'og:image:height') !== '630') {
     throw new Error('Expected declared image dimensions 1200x630')
