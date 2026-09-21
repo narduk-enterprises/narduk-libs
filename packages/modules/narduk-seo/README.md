@@ -31,24 +31,31 @@ Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
 signing and leaves `/_og/` an unauthenticated renderer.
 
-**Runtime OG images and a prerendered page are mutually exclusive today**
-(narduk-libs#170). `nuxt-og-image` decides how to address an image while the
-page renders: during a prerender it takes the static branch, emits an _unsigned_
-`/_og/s/...` URL, and expects the prerender crawler to write that image out as a
-file. This layer pins `/_og/**` to `prerender: false`, so the file is never
-produced, and the runtime handler then rejects the unsigned URL as soon as a
-signing secret is configured -- which every deployed estate build requires:
+**A prerendered page bakes its OG card at build time** (narduk-libs#170).
+`nuxt-og-image` picks how to address an image while the page renders: during a
+prerender it emits an _unsigned_ `/_og/s/...` URL and relies on the prerender
+crawler to write that image out as a file. This layer therefore leaves `/_og/**`
+prerenderable. It used to pin `{ prerender: false }`, which stopped the file
+being produced and left the unsigned URL to be served at runtime, where the
+handler rejects it as soon as a signing secret is configured:
 
 ```
 GET /_og/s/o_esbm28.png
 -> 403 [Nuxt OG Image] Missing URL signature.
 ```
 
-An SSR page is unaffected: it takes the signed `/_og/d/...` branch, which
-verifies at request time. Until the two are reconciled, a **prerendered** route
-should ship a static card instead -- set `ogImage: false` on the page (or
-`ogImage.zeroRuntime: true` app-wide) and let `nardukSeo.defaultOgImage` supply
-the image.
+SSR pages are unaffected either way -- they take the signed `/_og/d/...` branch,
+which verifies at request time.
+
+Three consequences of baking, worth knowing before you prerender a large route
+set. **Output**: one image file per prerendered page that renders a card, added
+to the app's static assets, where it counts against the Workers per-file size
+and total file-count ceilings like any other asset. **Build time**: it grows
+with the number of prerendered pages that render a card, because each one is
+rendered during the build rather than on first request -- the honest trade for
+not rendering them at runtime. **Freshness**: unchanged. A baked card is exactly
+as stale as the page it was built from, so a route whose card must track data
+that moves between deploys should not be prerendered in the first place.
 
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to

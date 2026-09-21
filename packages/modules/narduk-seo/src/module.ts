@@ -507,17 +507,18 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       },
     })
 
-    // narduk-libs#170: this pin and `nuxt-og-image`'s own prerender branch
-    // contradict each other. While a page is prerendered the module emits an
-    // unsigned `/_og/s/...` URL and expects the crawler to write the image out
-    // as a static file; `prerender: false` stops that file being produced, and
-    // the runtime handler then 403s the unsigned URL whenever a signing secret
-    // is set -- which every deployed estate build requires. SSR pages are
-    // unaffected: they take the signed `/_og/d/...` branch. The pin predates
-    // this monorepo (d82f1eb2) with no recorded rationale, so it is documented
-    // rather than removed here; tests/og-image-prerender-signing.test.ts pins
-    // the upstream mechanism so either reconciliation can be proven.
-    extendRouteRules('/_og/**', { prerender: false })
+    // narduk-libs#170: `/_og/**` is deliberately left prerenderable. This layer
+    // used to pin `{ prerender: false }` here -- carried unexplained from the
+    // initial import (d82f1eb2) -- which contradicted `nuxt-og-image`'s own
+    // behaviour: while a page is prerendered the module emits an *unsigned*
+    // `/_og/s/...` URL and expects the crawler to write that image out as a
+    // static file. Blocking the prerender left the unsigned URL to be served at
+    // runtime, where the handler 403s it as soon as a signing secret is
+    // configured -- which every deployed estate build requires. Removing the
+    // pin lets the file actually be produced. Do not restore the rule without
+    // recording why; its missing rationale is how the contradiction survived to
+    // a production 403. tests/og-image-prerender-signing.test.ts pins the
+    // upstream mechanism this depends on.
     extendRouteRules('/apple-touch-icon-precomposed.png', {
       redirect: '/apple-touch-icon.png',
     })

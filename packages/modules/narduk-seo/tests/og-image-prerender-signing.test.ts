@@ -54,6 +54,12 @@ const options = {
   _path: '/stations/41002',
 }
 
+// These pin the upstream behaviour the fix for #170 depends on: because a
+// prerendered page emits an *unsigned* `/_og/s/...` URL, the only way that URL
+// can ever resolve is for the prerender crawler to bake the image to a file --
+// which is why `src/module.ts` no longer pins `/_og/**` to `prerender: false`.
+// A dependency bump that changed any of this would silently reintroduce the
+// 403 the issue reported, so it fails here instead.
 describe('narduk-libs#170: prerendered pages and /_og/** URL signing', () => {
   it('emits an unsigned static URL when a prerendered page has a secret but no strict mode', async () => {
     const { buildOgImageUrl } = await loadOgImageUrlEncoding()
