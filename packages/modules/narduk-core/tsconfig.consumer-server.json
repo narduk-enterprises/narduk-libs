@@ -1,0 +1,38 @@
+{
+  // A deliberately *unaugmented* typecheck of the server sources this package
+  // publishes, standing in for a consumer's Nitro type program.
+  //
+  // A consumer compiles our shipped `.ts` without the runtime-config
+  // augmentation in `runtime/shared/types/runtime-config.d.ts` taking effect,
+  // while this package's own `nuxt typecheck` compiles the same files with it.
+  // That is how narduk-libs#656 (`useHyperdriveConnectionString` indexing
+  // `hyperdriveBinding`) stayed green here and failed in every consumer.
+  // `tests/consumer-server-typecheck.test.ts` runs this project.
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "#layer/*": ["./runtime/*"],
+      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"],
+      "#narduk-core/schema": ["./runtime/server/database/schema.ts"],
+      "nitropack/runtime": ["./tests/fixtures/consumer-nitropack-runtime.ts"]
+    }
+  },
+  "include": [
+    "runtime/server/**/*.ts",
+    "runtime/server/**/*.d.ts",
+    "tests/fixtures/consumer-server-globals.d.ts",
+    "tests/fixtures/consumer-nitropack-runtime.ts",
+    // Written and removed by `tests/consumer-server-typecheck.test.ts` while it
+    // proves this project still rejects the narduk-libs#656 pattern. Absent the
+    // rest of the time; tsc ignores an include entry that matches no file.
+    "tests/fixtures/__consumer-probe.generated.ts"
+  ]
+}
