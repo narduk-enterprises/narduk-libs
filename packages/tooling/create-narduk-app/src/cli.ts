@@ -35,6 +35,8 @@ function usage(): string {
       '  --database <value>          d1 (default) or none for an app with no database',
       '  --no-database               Shorthand for --database none',
       '  --local-dev-port <port>     Local Nuxt port (default: 3000)',
+      '  --security-contact <uri>    security.txt contact (mailto:/https:/tel:); needs seo.',
+      '                              No default -- omit it and no security.txt is served.',
       '  --problem <text>            Product spec problem',
       '  --audience <text>           Product spec audience',
       '  --value-proposition <text>  Product spec value proposition',
@@ -190,6 +192,7 @@ export function parseCliArguments(
   let exposure: 'public' | 'authenticated' | undefined
   let databaseBackend: GeneratedDatabaseBackend | undefined
   let localPort: number | undefined
+  let securityContact: string | undefined
   let noGit = false
   let force = false
   let jsonOutput = false
@@ -276,6 +279,11 @@ export function parseCliArguments(
         localPort = parsedPort
         break
       }
+      // Validated in normalizeOptions, not here: the same check has to hold
+      // for a programmatic caller that never touches the CLI.
+      case '--security-contact':
+        securityContact = parsed.value
+        break
       case '--problem':
         productSpec.problem = parsed.value
         break
@@ -318,6 +326,7 @@ export function parseCliArguments(
       localPort,
       noGit,
       productSpec,
+      securityContact,
       siteUrl,
       targetDir: resolve(currentCwd, targetDir ?? appName),
       visibility,

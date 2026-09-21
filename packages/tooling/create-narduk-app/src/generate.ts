@@ -157,6 +157,47 @@ function normalizeDatabaseBackend(
   return value
 }
 
+/**
+ * The security contact the generated `nardukSeo.securityTxt` publishes.
+ *
+ * There is no default and no fallback address, which is Logan's decision
+ * (2026-09-20) and matches narduk-seo's own rule that the module never invents
+ * a reporting address. An app that passes nothing gets no `security.txt`
+ * rather than one naming a mailbox nobody agreed to answer.
+ *
+ * The accepted shapes mirror narduk-seo's `normalizeContact`, which is the
+ * real validator. They are checked again here so a bad value fails at
+ * `create-narduk-app` time rather than on the new app's first build, where the
+ * error arrives detached from the flag that caused it. If narduk-seo widens
+ * what it accepts, this rejects something valid -- the failure direction that
+ * tells someone, rather than the one that publishes a malformed contact.
+ */
+function normalizeSecurityContact(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const contact = value.trim()
+  if (!contact) {
+    throw new CreateNardukAppError(
+      'securityContact cannot be empty. Omit it to scaffold an app with no security.txt.',
+    )
+  }
+  // RFC 9116 fields are one per line, so a break would let the value inject a
+  // second field into the published body.
+  if (/[\r\n]/u.test(contact)) {
+    throw new CreateNardukAppError('securityContact must not contain line breaks.')
+  }
+  const isUri = /^(?:mailto|https|tel):/iu.test(contact)
+  const isBareAddress = contact.includes('@') && !contact.includes('://')
+  if (!isUri && !isBareAddress) {
+    throw new CreateNardukAppError(
+      'securityContact must be a mailto:, https: or tel: URI, or a bare email address. ' +
+        'Received ' +
+        JSON.stringify(contact) +
+        '.',
+    )
+  }
+  return contact
+}
+
 function normalizePort(value: number | undefined): number {
   const port = value ?? 3000
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -327,6 +368,7 @@ interface NormalizedCreateOptions {
   displayName: string
   localPort: number
   productSpec?: ProductSpec
+  securityContact?: string
   siteUrl: string
   visibility: AppVisibility
 }
@@ -355,6 +397,18 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
   const displayName = options.displayName?.trim() || titleCase(appName)
   const description = options.description?.trim() || DEFAULT_DESCRIPTION
   const productSpec = normalizeProductSpec(options)
+  const securityContact = normalizeSecurityContact(options.securityContact)
+  // `nardukSeo` only exists as a config key when @nuxtjs/seo is installed, and
+  // that is the `seo` capability. Emitting the block without it fails the new
+  // app's `nuxt typecheck` with TS2353 -- the same trap `site` fell into
+  // (narduk-libs#172) -- so this is refused here, where the flag is still in
+  // view, rather than in a generated app that has no idea where it came from.
+  if (securityContact && !capabilities.includes('seo')) {
+    throw new CreateNardukAppError(
+      'securityContact needs the seo capability: nardukSeo is not a config key without it. ' +
+        'Add seo to --capabilities, or drop --security-contact.',
+    )
+  }
 
   if (!displayName) throw new CreateNardukAppError('displayName cannot be empty.')
   if (!description) throw new CreateNardukAppError('description cannot be empty.')
@@ -368,6 +422,7 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
     exposure,
     localPort,
     productSpec,
+    securityContact,
     siteUrl,
     visibility,
   }
@@ -383,6 +438,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     exposure,
     localPort,
     productSpec,
+    securityContact,
     siteUrl,
     visibility,
   } = options
@@ -750,6 +806,23 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'The branded error page and client/server exception capture come from narduk-core. This app owns no error.vue and no error listeners: pinning narduk-core is the whole of the adoption.',
         '',
         'See [docs/error-page.md](docs/error-page.md) for what the page shows, where exceptions are reported, and how to override the page if this app ever needs its own.',
+        // Only for the seo capability: without it there is no `nardukSeo` key
+        // to point at, and the section would describe config this app cannot
+        // write (narduk-libs#384).
+        ...(capabilities.includes('seo')
+          ? [
+              '',
+              '## Security contact and crawler policy',
+              '',
+              "Both live in `nardukSeo` in `apps/web/nuxt.config.ts`, served by narduk-seo. `aiCrawlers` decides which AI crawlers may read this app: `'allow'` (the default this app was scaffolded with) writes no robots.txt groups, `'disallow'` refuses every crawler narduk-seo tracks, and `{ allow, disallow }` names them individually.",
+              '',
+              securityContact
+                ? 'This app publishes `/.well-known/security.txt` from `nardukSeo.securityTxt.contact`, scaffolded as `' +
+                  securityContact +
+                  '`. Change it there; nothing else in this repository holds a copy. narduk-seo computes the published `Expires` field at **build** time as today plus `securityTxt.expiresDays` (default 365, and 365 is also the maximum), so a deployment that is not rebuilt within a year serves a security.txt that researchers are entitled to read as stale — a redeploy refreshes it. Prefer a role address over a person, for the same reason: the contact wants to outlive whoever set it up.'
+                : "This app serves **no** `security.txt`: it was scaffolded without `--security-contact`, and neither narduk-seo nor the generator invents a reporting address. To publish one, add `securityTxt: { contact: 'mailto:…' }` to `nardukSeo`. Prefer a role address over a person — a contact nobody answers is worse than none, which is why there is no default.",
+            ]
+          : []),
       ),
     },
     {
@@ -1268,6 +1341,27 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           ? [
               '  nardukSeo: {',
               "    defaultOgImage: { url: '/og.png', alt: appName + ' — ' + appDescription },",
+              // Which AI crawlers may read this app (narduk-libs#384). 'allow'
+              // is narduk-seo's own default and emits no robots.txt groups;
+              // it is written out anyway so the knob is visible in the app
+              // that owns the policy, rather than a default nobody knows is
+              // being taken. 'disallow' refuses every crawler in
+              // narduk-seo's AI_CRAWLERS list, and { allow, disallow } names
+              // them individually.
+              "    aiCrawlers: 'allow',",
+              // security.txt is published only when a contact exists. The
+              // generator has no default address and never invents one
+              // (--security-contact), which is why this block is absent
+              // rather than empty in an app that passed nothing: narduk-seo
+              // treats a securityTxt with no usable contact as a build error,
+              // and an invented address is worse than no file.
+              ...(securityContact
+                ? [
+                    '    securityTxt: {',
+                    '      contact: ' + tsString(securityContact) + ',',
+                    '    },',
+                  ]
+                : []),
               '  },',
             ]
           : [
