@@ -33,10 +33,9 @@ const INDEXNOW_KEY_PATTERN = /^[a-z0-9-]{8,128}$/i
 function resolveConfiguredKey(event: H3Event): string {
   const config = analyticsRuntimeConfig(event)
   const fallback =
-    [
-      trimRuntimeString(config.indexNowKey),
-      trimRuntimeString(config.public.indexNowKey),
-    ].find((key) => key.length > 0) ?? ''
+    [trimRuntimeString(config.indexNowKey), trimRuntimeString(config.public.indexNowKey)].find(
+      (key) => key.length > 0,
+    ) ?? ''
 
   if (
     hasRuntimeEnvBinding(event, 'INDEXNOW_KEY') ||
