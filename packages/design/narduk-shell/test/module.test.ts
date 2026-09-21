@@ -39,7 +39,9 @@ function importCall(addImports: ReturnType<typeof vi.fn>, name: string) {
  */
 function serverImportCall(addServerImports: ReturnType<typeof vi.fn>, name: string) {
   const match = addServerImports.mock.calls
-    .flatMap(([call]) => (Array.isArray(call) ? call : [call]) as { name: string; from: string }[])
+    .flatMap(
+      ([call]) => (Array.isArray(call) ? call : [call]) as Array<{ name: string; from: string }>,
+    )
     .find((call) => call.name === name)
   expect(match, `addServerImports was not called for ${name}`).toBeDefined()
   return match as { name: string; from: string }
@@ -286,8 +288,10 @@ describe('narduk-shell module', () => {
     // app that writes its own table markup is exactly the app that still
     // wants them.
     for (const name of ['parseSort', 'toCsv']) {
-      importCall(addImports, name)
-      serverImportCall(addServerImports, name)
+      expect(importCall(addImports, name).from).toContain('/src/runtime/utils/data-table')
+      expect(serverImportCall(addServerImports, name).from).toContain(
+        '/src/runtime/utils/data-table',
+      )
     }
   })
 
