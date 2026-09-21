@@ -220,8 +220,15 @@ async function main() {
   console.log(
     `Affected packages (${plan.affectedNames.length}): ${plan.affectedNames.join(', ') || 'none'}`,
   )
+  // A stray untracked file with no classification makes the run global, and
+  // without this the author sees "27 packages" with no explanation.
+  if (plan.fullRun) {
+    console.log(`Full run: ${plan.reasons?.join('; ') || 'a global trigger'}`)
+  }
   console.log(`Packed-consumer proof: ${plan.packedConsumer}`)
-  console.log(`Generated-app proof:   ${plan.generatedConsumer}`)
+  // Says what CI would run, not what this command runs -- the generated-app
+  // half needs a browser and stays CI's, and the notice at the end says so.
+  console.log(`Generated-app proof:   ${plan.generatedConsumer} (CI)`)
   if (plan.consumerScope?.length) {
     console.log(
       `Packed-consumer scope (${plan.consumerScope.length}): ${plan.consumerScope.join(', ')}`,
@@ -306,6 +313,23 @@ async function main() {
     ])
   } else if (plan.packedConsumer) {
     console.log('\npreflight: skipping the packed-consumer proof (--no-consumer).')
+  }
+
+  // CI runs `release:consumer-smoke --install-browser` when the planner selects
+  // the generated-app proof, and `--artifacts-only` only when it does not. This
+  // command always takes the artifacts-only path, because the other one
+  // downloads a browser. Saying so is the point: `Generated-app proof: true`
+  // above would otherwise read as something that already passed.
+  //
+  // Deliberately a notice and not a failure. A local gate that goes red for
+  // declining to download a browser is a gate people learn to ignore, and an
+  // ignored gate catches nothing.
+  if (options.consumer && plan.generatedConsumer) {
+    const scope = plan.consumerScope?.length ? ` --packages ${plan.consumerScope.join(',')}` : ''
+    console.log(
+      '\npreflight: the generated-app proof was NOT run here -- CI runs it and this does not.\n' +
+        `  pnpm run release:consumer-smoke --install-browser${scope}`,
+    )
   }
 
   console.log('')

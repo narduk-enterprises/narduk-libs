@@ -89,8 +89,8 @@ baseline 190 drained, and the count admitted since the freeze.
 
 ## Validation
 
-- `pnpm run preflight` — the whole pull-request fast path in one command, and
-  the quickest way to find out what CI will say. It plans the diff against
+- `pnpm run preflight` — the cheap half of the pull-request path in one command:
+  everything CI checks that needs no browser. It plans the diff against
   `origin/main` (fetching that ref first — whatever `--base` names, so long as
   it names a remote — because a stale base is what makes `release-plan:check`
   report packages you never touched), prints the affected packages and which
@@ -98,13 +98,19 @@ baseline 190 drained, and the count admitted since the freeze.
   through `pnpm audit --audit-level high`, then runs the affected packages'
   gates through the same `runPackageGates` CI uses, and finishes by building the
   packed scope and proving it artifacts-only — the same build-then-pack pairing,
-  with the same scope on both, that the `packed-consumer-smoke` job runs. It
-  never writes: the package gates run with `CI=true` so `narduk-lint` cannot
-  rewrite `lint-budget.json` (#623), and the tracked tree is compared before and
-  after every phase, so any other writer fails the run and is named. Flags:
-  `--base <ref>`, `--no-fetch`, `--no-consumer`. A diff that touches a global
-  trigger such as the root `package.json` or the lockfile selects every package,
-  and the command says so before spending the time.
+  with the same scope on both, that the `packed-consumer-smoke` job runs on its
+  artifacts-only path. It does **not** run the CI jobs that need a browser or
+  another toolchain: the generated-app half of `packed-consumer-smoke`
+  (`release:consumer-smoke --install-browser`, which the command names for you
+  when the planner selects it), the per-package browser `test:e2e` jobs, and
+  `logging-languages`. A green preflight is not a green CI; it is the part of CI
+  you can have in one command. It never writes: the package gates run with
+  `CI=true` so `narduk-lint` cannot rewrite `lint-budget.json` (#623), and the
+  tracked tree is compared before and after every phase, so any other writer
+  fails the run and is named. Flags: `--base <ref>`, `--no-fetch`,
+  `--no-consumer`. A diff that touches a global trigger such as the root
+  `package.json` or the lockfile selects every package, and the command says so
+  before spending the time.
 - `pnpm install`
 - `pnpm run quality`
 - `pnpm run surface:check` (inside `quality:artifacts`): every component

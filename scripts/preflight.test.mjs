@@ -182,6 +182,27 @@ test('the contracts phases run the whole contracts job, audit included', () => {
   }
 })
 
+test('a plan that selects the generated-app proof says that proof did not run here', () => {
+  // CI runs `release:consumer-smoke --install-browser` when the planner selects
+  // the generated-app proof; this command always takes the artifacts-only path.
+  // `Generated-app proof: true` in the plan would otherwise read as something
+  // that already passed.
+  const source = readFileSync(new URL('./preflight.mjs', import.meta.url), 'utf8')
+  assert.match(source, /plan\.generatedConsumer\}? \(CI\)|\(CI\)/u)
+  assert.ok(source.includes('was NOT run here'), 'the notice must name what did not run')
+  assert.ok(
+    source.includes('--install-browser'),
+    'the notice must give the command that does run it',
+  )
+  // A notice, not a failure: a gate that goes red for declining to download a
+  // browser is one people learn to ignore.
+  const notice = source.slice(source.indexOf('was NOT run here') - 600)
+  assert.ok(
+    !/failures\.push\([^)]*generated/iu.test(notice),
+    'the generated-app notice must not fail the run',
+  )
+})
+
 test('the preflight itself invokes no writing command', () => {
   // A guard that only ran after the fact would still leave the author with a
   // dirty tree to clean up. Every command this file names must be a checking
