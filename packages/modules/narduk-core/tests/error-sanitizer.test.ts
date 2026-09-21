@@ -98,6 +98,99 @@ describe('production error sanitizer policy', () => {
     expect(error.requestId).toBe('req-1234')
   })
 
+  it('scrubs statusText when it is a getter, instead of throwing and losing the status', () => {
+    // The reported shape (#640): `'statusText' in error` is true for an
+    // accessor with no setter, so the `in` check never protected the write.
+    // The assignment throws in strict mode, the throw escapes into Nitro's
+    // error handling, and a correct status becomes a 500 with the real error
+    // discarded.
+    class GetterStatusTextError extends Error {
+      get statusText(): string {
+        return 'SQLITE_ERROR: no such table: users'
+      }
+    }
+    const error = Object.assign(new GetterStatusTextError('D1_ERROR: no such table: users'), {
+      statusCode: 500,
+      data: { binding: 'DB' },
+    }) as unknown as SanitizableServerError
+
+    expect(() => sanitizeProductionError(error, 'req-1234')).not.toThrow()
+    // Not merely "did not throw". Catching the TypeError and moving on would
+    // stop the 500 and leave the leaky value in place; the point of
+    // sanitizing is that the value is gone.
+    expect(error.statusText).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(error.data).toBeUndefined()
+  })
+
+  it('scrubs message and statusMessage when they are getters', () => {
+    // Worse than statusText: these carry the leak itself, so failing to
+    // overwrite them is a disclosure, not a cosmetic miss.
+    const error = new Error('placeholder') as unknown as SanitizableServerError
+    for (const key of ['message', 'statusMessage'] as const) {
+      Object.defineProperty(error, key, {
+        get: () => 'D1_ERROR: no such table: users',
+        configurable: true,
+      })
+    }
+    error.statusCode = 500
+
+    expect(() => sanitizeProductionError(error)).not.toThrow()
+    expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(error.statusMessage).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+  })
+
+  it('drops data and cause when they cannot be deleted', () => {
+    // `delete` throws on a non-configurable own property, which would be a 500
+    // *and* the payload still attached to the serialized error. Writable, so
+    // overwriting it with undefined is still open -- the key survives, the
+    // value does not, which is what matters.
+    const error = leakyError()
+    Object.defineProperty(error, 'data', {
+      value: { binding: 'DB', sql: 'SELECT * FROM users' },
+      configurable: false,
+      writable: true,
+      enumerable: true,
+    })
+
+    expect(() => sanitizeProductionError(error)).not.toThrow()
+    expect(error.data).toBeUndefined()
+    expect(error.cause).toBeUndefined()
+  })
+
+  it('does not throw on a field that is neither writable nor configurable, and leaves it', () => {
+    // The known limit, pinned rather than left for a reader to assume away: a
+    // non-configurable, non-writable own property defeats assignment and
+    // defineProperty alike, so the payload survives sanitizing. Not throwing
+    // is still the right call -- throwing would lose the status as well as
+    // leak the payload. No error shape in this estate is built this way; the
+    // reported one (#640) was a prototype accessor, which is scrubbed above.
+    const error = leakyError()
+    Object.defineProperty(error, 'data', {
+      value: { binding: 'DB' },
+      configurable: false,
+      writable: false,
+      enumerable: true,
+    })
+
+    expect(() => sanitizeProductionError(error)).not.toThrow()
+    expect(error.data).toEqual({ binding: 'DB' })
+    // Everything that *can* be scrubbed still is: one locked field does not
+    // abort the rest of the pass.
+    expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(error.cause).toBeUndefined()
+  })
+
+  it('does not throw on an error nothing can be written to', () => {
+    // A frozen error defeats assignment and defineProperty alike. Nothing more
+    // can be done to it in place -- but throwing here would still replace the
+    // response with a 500, which is strictly worse than returning with the
+    // error unchanged.
+    const error = Object.freeze(leakyError()) as SanitizableServerError
+
+    expect(() => sanitizeProductionError(error, 'req-1234')).not.toThrow()
+  })
+
   it('prefers the exception-capture request id on the event context', () => {
     const error = leakyError({ data: { requestId: 'from-data' }, requestId: 'from-error' })
     const event: ProductionErrorSanitizerEvent = { context: { _requestId: 'req-from-event' } }

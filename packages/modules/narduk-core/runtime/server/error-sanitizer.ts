@@ -111,21 +111,72 @@ export function prependNitroErrorHandler(
   return [handlerPath, ...existing.filter((entry) => entry !== handlerPath)]
 }
 
+/**
+ * Overwrite one field, whatever shape the error is. A plain assignment throws
+ * in strict mode (all ESM) when the property resolves to a getter with no
+ * setter, or to a non-writable own value -- and the throw escapes into Nitro's
+ * error handling, which turns the response into a 500 and discards the real
+ * error (narduk-libs#640).
+ *
+ * `Reflect.set` reports that failure as `false` instead of throwing, so this
+ * cannot throw by construction rather than by catching. Reporting it is not
+ * enough on its own: the field would still hold its original, leaky value,
+ * which is the whole point of sanitizing. `Reflect.defineProperty` then
+ * defines an own data property that shadows an inherited accessor, so the
+ * scrub actually happens.
+ *
+ * Both fail on an own property that is neither writable nor configurable, and
+ * on a frozen error. Nothing can be done to those in place; returning `false`
+ * is still better than throwing, which would lose the status as well.
+ */
+function scrubField(
+  error: SanitizableServerError,
+  key: keyof SanitizableServerError,
+  value: unknown,
+): boolean {
+  // A setter that silently ignores its argument reports success, so read back.
+  if (Reflect.set(error, key, value) && error[key] === value) return true
+  return Reflect.defineProperty(error, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+}
+
+/**
+ * Remove one field. `delete` throws on a non-configurable own property -- the
+ * same failure class as the assignment above, with the worse outcome of a 500
+ * *and* the payload still attached. `Reflect.deleteProperty` reports it
+ * instead, and setting the field to `undefined` is the degraded form: the key
+ * survives, the value does not.
+ */
+function dropField(error: SanitizableServerError, key: keyof SanitizableServerError): boolean {
+  if (Reflect.deleteProperty(error, key)) return true
+  return scrubField(error, key, undefined)
+}
+
+/**
+ * Mutates the error in place, and cannot throw. That is the contract, not a
+ * side effect: this runs inside Nitro's error handler, so a throw here replaces
+ * a correct status with a 500 and loses the original error entirely.
+ */
 export function sanitizeProductionError(error: SanitizableServerError, requestId?: string): void {
-  error.message = GENERIC_SERVER_ERROR_MESSAGE
-  error.statusMessage = GENERIC_SERVER_ERROR_MESSAGE
+  scrubField(error, 'message', GENERIC_SERVER_ERROR_MESSAGE)
+  scrubField(error, 'statusMessage', GENERIC_SERVER_ERROR_MESSAGE)
+  // Only when the error actually carries one -- defining `statusText` on an
+  // error shape that never had it would add a field to the serialized payload.
   if ('statusText' in error) {
-    error.statusText = GENERIC_SERVER_ERROR_MESSAGE
+    scrubField(error, 'statusText', GENERIC_SERVER_ERROR_MESSAGE)
   }
-  delete error.data
-  delete error.cause
-  try {
-    error.stack = ''
-  } catch {
-    // Error.stack is not writable in some engines; message/data are the leak.
-  }
+  dropField(error, 'data')
+  dropField(error, 'cause')
+  // Empty rather than removed: `stack` is an own accessor on an Error in V8 and
+  // some engines refuse both paths, which is survivable -- message and data are
+  // the leak.
+  scrubField(error, 'stack', '')
   if (requestId) {
-    error.requestId = requestId
+    scrubField(error, 'requestId', requestId)
   }
 }
 
