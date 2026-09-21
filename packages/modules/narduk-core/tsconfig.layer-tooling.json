@@ -48,6 +48,7 @@
     "runtime/server/utils/freshness-checks.ts",
     "runtime/server/utils/health-checks.ts",
     "runtime/server/utils/hyperdrive.ts",
+    "runtime/server/utils/runtime-config.ts",
     "runtime/server/utils/approximateLocation.ts",
     "runtime/server/utils/authApiKeyD1.ts",
     "runtime/server/utils/authApiKeyText.ts",

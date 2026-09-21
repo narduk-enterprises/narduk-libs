@@ -52,9 +52,16 @@ export type CoreServerRuntimeConfig = Record<string, unknown> & {
  * Read runtime config for this package's server code.
  *
  * Callers use this instead of `useRuntimeConfig` directly so the type is the
- * same in this workspace and in a consumer's Nitro program. The single cast
- * lives here.
+ * same in this workspace and in a consumer's Nitro program. The cast lives
+ * here.
  */
 export function coreRuntimeConfig(event?: H3Event): CoreServerRuntimeConfig {
-  return (event ? useRuntimeConfig(event) : useRuntimeConfig()) as CoreServerRuntimeConfig
+  // Through `unknown` because `tsconfig.layer-tooling.json` typechecks this
+  // file against nitropack's own `NitroRuntimeConfig`, which is an empty
+  // interface until Nuxt's augmentation fills it in. A direct cast is TS2352
+  // there. Nuxt's server program and a consumer see different returns (the
+  // augmented config, and `Record<string, unknown>`), and `unknown` is the
+  // one spelling that is legal in all three. The runtime value is unchanged.
+  const config = event ? useRuntimeConfig(event) : useRuntimeConfig()
+  return config as unknown as CoreServerRuntimeConfig
 }
