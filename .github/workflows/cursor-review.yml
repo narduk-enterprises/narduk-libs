@@ -48,7 +48,7 @@ jobs:
     with:
       enabled: true
       model: composer-2.5
-      effort: ''
+      effort: ""
       fast: false
       max-rounds: 0
       daily-cap: 0
