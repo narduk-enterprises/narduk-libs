@@ -6,7 +6,9 @@ import { z } from 'zod'
 import {
   LIST_QUERY_STATEMENT_CEILING,
   listResponse,
+  MAX_WARNED_UNKNOWN_KEY_SETS,
   parseListQuery,
+  resetListQueryUnknownKeyWarningsForTests,
 } from '../runtime/server/utils/listQuery'
 
 import type { EventHandlerRequest, H3Event } from 'h3'
@@ -30,6 +32,10 @@ const sortable = ['createdAt', 'name'] as const
 
 beforeEach(() => {
   runtimeConfig.current = {}
+  // The unknown-key-set memory in listQuery.ts is module-level state, not
+  // per-request: without this, a later test reusing a key set an earlier
+  // test already warned on would silently see zero warnings (#687 review).
+  resetListQueryUnknownKeyWarningsForTests()
 })
 
 /** One request through a real h3 app, answering what the route replied. */
@@ -96,6 +102,53 @@ describe('parseListQuery — unknown keys (tolerate-and-warn default)', () => {
     await call('/?limit=10&status=open', offsetRoute)
 
     expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(0)
+  })
+
+  it('dedupes repeat requests carrying the same unknown key set (#285)', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    // Five requests, same throwaway key every time -- the shape of an
+    // ordinary authenticated session hammering one buggy client integration,
+    // not five distinct mistakes.
+    for (let index = 0; index < 5; index++) {
+      await call('/?limit=10&dedupeProbe285=1', offsetRoute)
+    }
+
+    expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(1)
+  })
+
+  it('still warns again for a genuinely different unknown key set (#285)', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    await call('/?limit=10&distinctProbeA285=1', offsetRoute)
+    await call('/?limit=10&distinctProbeB285=1', offsetRoute)
+
+    // Dedupe is per key-set, not a single global latch: a second, different
+    // mistake in the code must still surface.
+    expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(2)
+  })
+
+  it('bounds log volume at MAX_WARNED_UNKNOWN_KEY_SETS + 1 even for a caller that varies the key set every request (#285, #687 review)', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    // A caller rotating a distinct throwaway key every request must not
+    // reproduce the original per-request amplification once the process has
+    // already seen `MAX_WARNED_UNKNOWN_KEY_SETS` distinct sets: clearing the
+    // memorized set and resuming normal warning would pay one log line per
+    // request again, indefinitely.
+    const requestCount = MAX_WARNED_UNKNOWN_KEY_SETS + 44
+    for (let index = 0; index < requestCount; index++) {
+      await call(`/?limit=10&capProbe285_${index}=1`, offsetRoute)
+    }
+
+    const warnings = sink.records.filter((record) => record.level === 'warn')
+    expect(warnings.length).toBeLessThanOrEqual(MAX_WARNED_UNKNOWN_KEY_SETS + 1)
+    expect(
+      warnings.some((record) => record.data?.code === 'list_query_unknown_keys_suppressed'),
+    ).toBe(true)
   })
 })
 
