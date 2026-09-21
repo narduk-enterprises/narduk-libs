@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-
 import { drizzle } from 'drizzle-orm/d1'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -7,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { tenancyInvites, tenancyMemberships } from '../server/database/tenancy-schema'
 import { createTenancy, TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
 
-import { MIGRATION_PATH } from './support/database'
+import { MIGRATION_SQL } from './support/database'
 import { codeOf } from './support/expect'
 import { interleaveBeforeWrite } from './support/interleave'
 
@@ -22,8 +20,7 @@ describe('D1 transaction integration', () => {
 
   beforeAll(async () => {
     binding = await runtime.getD1Database('DB')
-    const statements = readFileSync(MIGRATION_PATH, 'utf8')
-      .replaceAll(/--[^\n]*/g, '')
+    const statements = MIGRATION_SQL.replaceAll(/--[^\n]*/g, '')
       .split(';')
       .map((value) => value.trim())
       .filter(Boolean)

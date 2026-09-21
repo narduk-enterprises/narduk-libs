@@ -38,7 +38,7 @@ instead.
 
 ## Migrations
 
-The package ships its own additive D1 migration. Register the directory in the
+The package ships its own additive D1 migrations. Register the directory in the
 app's `migrations.sources.json`:
 
 ```json
@@ -58,9 +58,44 @@ app's `migrations.sources.json`:
 }
 ```
 
-`drizzle/0001_tenancy.sql` is `CREATE TABLE IF NOT EXISTS` throughout with no
-down-migration, so a Worker rolled back to a version without tenancy simply
-ignores the tables.
+`drizzle/0001_tenancy.sql` is `CREATE TABLE IF NOT EXISTS` throughout and
+`drizzle/0002_org_list_indexes.sql` is `CREATE INDEX IF NOT EXISTS` throughout,
+neither with a down-migration, so a Worker rolled back to a version without
+tenancy simply ignores the tables.
+
+### Indexes for an org console (0002)
+
+`0002` adds three indexes for reads a _consuming app_ issues -- this package
+ships no paged member or invite list, but it owns the schema, so it owns the
+schema's indexes rather than leaving every app to carry them (narduk-libs#229):
+
+| Index                                    | Serves                                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| `tenancy_memberships_org_created_at_idx` | `WHERE org_id = ? ORDER BY created_at, ... LIMIT ?`                                  |
+| `tenancy_invites_org_created_at_idx`     | the same shape over invitations                                                      |
+| `tenancy_invites_org_pending_idx`        | `WHERE org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?` |
+
+Neither read was ever a full table scan -- `0001`'s `(org_id, user_id)` and
+`(org_id, email)` indexes already narrow to one org. What `0002` changes is the
+work done _inside_ the org, which `tests/tenancy-org-list-indexes.test.ts`
+measures by counting the rows each query visits:
+
+| Read                         | Axis                                   | Before `0002`     | After `0002`  |
+| ---------------------------- | -------------------------------------- | ----------------- | ------------- |
+| one 200-member page          | org grows 200 -> 1 000 -> 5 000        | 200, 1 000, 5 000 | 200, 201, 201 |
+| one 200-invite page          | org grows 200 -> 1 000 -> 5 000        | 200, 1 000, 5 000 | 200, 201, 201 |
+| live invitations (5 of them) | accepted invites 0 -> 50 -> 500        | 5, 55, 505        | 5, 5, 5       |
+| live invitations             | live invites 1 -> 5 -> 25, 50 accepted | 51, 55, 75        | 1, 5, 25      |
+
+So a member or invite page costs the page rather than the org, and the
+live-invite list and its `count(*)` cost the invitations that are still live
+rather than every invitation the org has ever issued. The last row is the
+control that the index is not simply hiding work: a larger live set is still
+larger, because those rows are the answer.
+
+An app already carrying these verbatim in its own migration finds them present
+rather than duplicated: package sources are ordered before app sources, and
+every statement is `IF NOT EXISTS`.
 
 ## Schema
 
