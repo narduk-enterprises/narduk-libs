@@ -213,6 +213,7 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
 /** Private workspace packages deliberately left out of the catalog. */
 export const CATALOG_EXCLUDED_PRIVATE_PACKAGES: readonly string[] = [
   '@narduk-enterprises/design-system-build',
+  '@narduk-enterprises/libs-explorer',
 ]
 
 const BY_PACKAGE = new Map(

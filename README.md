@@ -40,6 +40,9 @@ every package still releases independently through Changesets.
 
 - `@narduk-enterprises/narduk-ui`
 - `@narduk-enterprises/status-runtime`
+- `@narduk-enterprises/libs-explorer` (private) -- the Libs Explorer site:
+  components, foundations and the package catalog. `pnpm run explorer:dev`; see
+  its [README](packages/design/libs-explorer/README.md).
 
 ### `packages/contracts/` -- shared contracts
 
