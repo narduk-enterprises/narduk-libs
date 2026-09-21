@@ -1,17 +1,19 @@
 /**
- * The workspace package inventory, read from `pnpm-workspace.yaml`.
+ * The workspace package inventory.
  *
- * `pnpm-workspace.yaml` is the single source of truth for where a package
- * lives (AGENTS.md § Scope), so the Explorer derives its catalog from it
- * instead of keeping a list: a new `packages/<family>/<name>` appears here with
- * no edit, and `check.mts` then fails until it has a curated catalog entry.
- *
- * The parser reads only the `packages:` list this repository uses — quoted or
- * bare entries ending in a single `/*` — and throws on anything else rather
- * than silently skipping it.
+ * Discovery is the repository's own: `loadWorkspace` from
+ * `scripts/compute-affected-packages.mjs`, the same function CI uses to pick
+ * affected packages. It reads `pnpm-workspace.yaml`, rejects negated and
+ * unsupported glob patterns, fails when a declared root is missing, and fails
+ * when a directory under a root has no `package.json`. Sharing it means the
+ * Explorer's catalog and CI's package set cannot disagree about what the
+ * workspace contains, and a new `packages/<family>/<name>` appears here with
+ * no edit (`check.mts` then fails until it has a curated catalog entry).
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { loadWorkspace } from '../../../../scripts/compute-affected-packages.mjs'
 
 export interface WorkspacePackage {
   /** `@narduk-enterprises/narduk-shell`. */
@@ -27,34 +29,15 @@ export interface WorkspacePackage {
   private: boolean
   /** Subpath keys of `exports`, in manifest order. */
   exports: string[]
+  /** Command names from `bin`. */
+  bin: string[]
+  /** `scripts` names: how a private workspace tool is run. */
+  scripts: string[]
   peerDependencies: string[]
   /** Other workspace packages this one depends on, in any dependency section. */
   workspaceDependencies: string[]
-  /** Level-two README headings: the package's own table of contents. */
+  /** Level-two README headings outside fenced code: the package's own table of contents. */
   readmeSections: string[]
-}
-
-export function readWorkspacePatterns(yaml: string): string[] {
-  const patterns: string[] = []
-  let inPackages = false
-  for (const rawLine of yaml.split('\n')) {
-    const line = rawLine.replace(/\s+#.*$/, '').trimEnd()
-    if (/^\S/.test(line)) {
-      inPackages = line === 'packages:'
-      continue
-    }
-    if (!inPackages || line.trim() === '' || line.trim().startsWith('#')) continue
-    const match = /^\s*-\s*["']?([^"']+?)["']?$/.exec(line)
-    if (!match?.[1]) throw new Error(`pnpm-workspace.yaml: cannot read packages entry "${rawLine}"`)
-    if (!match[1].endsWith('/*') || match[1].slice(0, -2).includes('*')) {
-      throw new Error(
-        `pnpm-workspace.yaml: only "<dir>/*" entries are supported, got "${match[1]}"`,
-      )
-    }
-    patterns.push(match[1])
-  }
-  if (patterns.length === 0) throw new Error('pnpm-workspace.yaml lists no packages')
-  return patterns
 }
 
 const DEPENDENCY_SECTIONS = [
@@ -65,41 +48,45 @@ const DEPENDENCY_SECTIONS = [
 ] as const
 
 interface Manifest {
-  name?: string
+  name: string
   version?: string
   description?: string
   private?: boolean
   exports?: Record<string, unknown> | string
+  bin?: Record<string, string> | string
+  scripts?: Record<string, string>
   peerDependencies?: Record<string, string>
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
 }
 
-export function readWorkspacePackages(repoRoot: string): WorkspacePackage[] {
-  const patterns = readWorkspacePatterns(
-    readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8'),
-  )
-  const found: { directory: string; family: string; manifest: Manifest }[] = []
-  for (const pattern of patterns) {
-    const parent = pattern.slice(0, -2)
-    const absoluteParent = join(repoRoot, parent)
-    if (!existsSync(absoluteParent)) continue
-    for (const entry of readdirSync(absoluteParent).sort()) {
-      const absolute = join(absoluteParent, entry)
-      if (!statSync(absolute).isDirectory() || !existsSync(join(absolute, 'package.json'))) continue
-      found.push({
-        directory: `${parent}/${entry}`,
-        family: basename(parent),
-        manifest: JSON.parse(readFileSync(join(absolute, 'package.json'), 'utf8')) as Manifest,
-      })
+/** `## ` headings, skipping any inside a fenced code block. */
+export function readmeSections(markdown: string): string[] {
+  const sections: string[] = []
+  let fence: string | null = null
+  for (const line of markdown.split(/\r?\n/)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (marker) {
+      if (fence === null) fence = marker
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null
+      continue
     }
+    if (fence !== null) continue
+    const heading = /^## (.+?)\s*#*\s*$/.exec(line)?.[1]
+    if (heading) sections.push(heading.trim())
   }
+  return sections
+}
 
-  const names = new Set(found.map(({ manifest }) => manifest.name))
-  return found
-    .map(({ directory, family, manifest }) => {
-      if (!manifest.name) throw new Error(`${directory}/package.json has no name`)
+export function readWorkspacePackages(repoRoot: string): WorkspacePackage[] {
+  const workspace = loadWorkspace(repoRoot) as {
+    packages: { relativeDirectory: string; manifest: Manifest; name: string }[]
+  }
+  const names = new Set(workspace.packages.map(({ name }) => name))
+  return workspace.packages
+    .map(({ relativeDirectory: directory, manifest }) => {
+      const segments = directory.split('/')
       const workspaceDependencies = new Set<string>()
       for (const section of DEPENDENCY_SECTIONS) {
         for (const dependency of Object.keys(manifest[section] ?? {})) {
@@ -109,15 +96,10 @@ export function readWorkspacePackages(repoRoot: string): WorkspacePackage[] {
         }
       }
       const readmePath = join(repoRoot, directory, 'README.md')
-      const readmeSections = existsSync(readmePath)
-        ? [...readFileSync(readmePath, 'utf8').matchAll(/^## (.+)$/gm)].map((match) =>
-            (match[1] ?? '').trim(),
-          )
-        : []
       return {
         name: manifest.name,
-        slug: basename(directory),
-        family,
+        slug: segments.at(-1) ?? directory,
+        family: segments.at(-2) ?? '',
         directory,
         version: manifest.version ?? '0.0.0',
         description: manifest.description ?? '',
@@ -128,9 +110,16 @@ export function readWorkspacePackages(repoRoot: string): WorkspacePackage[] {
             : manifest.exports
               ? ['.']
               : [],
+        bin:
+          typeof manifest.bin === 'string'
+            ? [segments.at(-1) ?? manifest.name]
+            : Object.keys(manifest.bin ?? {}),
+        scripts: Object.keys(manifest.scripts ?? {}),
         peerDependencies: Object.keys(manifest.peerDependencies ?? {}),
         workspaceDependencies: [...workspaceDependencies].sort(),
-        readmeSections,
+        readmeSections: existsSync(readmePath)
+          ? readmeSections(readFileSync(readmePath, 'utf8'))
+          : [],
       }
     })
     .sort((left, right) => left.name.localeCompare(right.name))

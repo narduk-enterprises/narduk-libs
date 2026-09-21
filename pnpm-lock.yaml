@@ -165,6 +165,9 @@ importers:
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(71f43f7b245bb2c0c99a8e117e48e706)
+      postcss:
+        specifier: 8.5.28
+        version: 8.5.28
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

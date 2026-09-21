@@ -11,6 +11,16 @@ const cards = import.meta.glob<{ default: Component }>(
   '../../../narduk-shell/src/design-cards/*.card.vue',
 )
 const interactive = import.meta.glob<{ default: Component }>('../examples/*.vue')
+const usage = import.meta.glob<{ default: Component }>('../usage/*.usage.vue')
+/*
+ * The usage examples are real SFCs (typechecked with the app) and are shown
+ * as source, byte for byte, next to the same file rendered live.
+ */
+const usageSources = import.meta.glob<string>('../usage/*.usage.vue', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
 
 function byBasename(
   modules: Record<string, () => Promise<{ default: Component }>>,
@@ -26,4 +36,13 @@ export function cardComponent(card: string): Component | null {
 
 export function interactiveComponent(id: string): Component | null {
   return byBasename(interactive, `${id}.vue`)
+}
+
+export function usageComponent(id: string): Component | null {
+  return byBasename(usage, `${id}.usage.vue`)
+}
+
+export function usageSource(id: string): string | null {
+  const entry = Object.entries(usageSources).find(([path]) => path.endsWith(`/${id}.usage.vue`))
+  return entry ? entry[1] : null
 }

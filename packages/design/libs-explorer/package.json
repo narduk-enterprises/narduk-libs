@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Narduk Libs Explorer: a browsable showcase of the workspace's components, foundations and package catalog.",
+  "nardukWorkspaceInputs": [
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "prepare": "nuxt prepare",
     "dev": "nuxt dev",
     "build": "nuxt generate",
-    "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions --types node inventory/*.mts scripts/*.mts",
+    "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions --allowJs --types node inventory/*.mts demo/*.mts scripts/*.mts",
     "lint": "narduk-lint",
-    "test:unit": "node --test inventory/*.test.mts",
+    "test:unit": "node --test inventory/*.test.mts demo/*.test.mts scripts/*.test.mts",
     "test:e2e": "nuxt generate && playwright test",
     "preview": "node scripts/serve.mts",
     "check:package": "node scripts/check-package.mts"
@@ -22,6 +26,7 @@
     "@nuxt/ui": "4.8.1",
     "@types/node": "^22.19.19",
     "nuxt": "^4.5.2",
+    "postcss": "8.5.28",
     "typescript": "^5.9.3",
     "vue": "3.5.39",
     "vue-tsc": "^3.2.5"

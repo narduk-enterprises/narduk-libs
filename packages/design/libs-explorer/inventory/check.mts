@@ -20,6 +20,13 @@ export interface CoverageFacts {
   cards: readonly string[]
   /** `app/examples/<id>.vue` basenames present on disk. */
   interactiveFiles: readonly string[]
+  /**
+   * `app/usage/*.vue` basenames present on disk, without `.vue`. A usage file
+   * is `<id>.usage.vue`: were it `<id>.vue`, `<NePager>` inside `ne-pager.vue`
+   * would resolve to the file itself (an SFC may refer to itself by file name)
+   * and the typecheck would never see the real component's props.
+   */
+  usageFiles: readonly string[]
 }
 
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -74,9 +81,33 @@ export function checkCoverage(facts: CoverageFacts): string[] {
     }
   }
 
+  const byId = new Map(facts.examples.map((example) => [example.id, example]))
   for (const file of facts.interactiveFiles) {
-    if (!exampleIds.has(file)) {
+    const example = byId.get(file)
+    if (!example) {
       problems.push(`app/examples/${file}.vue has no entry in inventory/examples.mts.`)
+    } else if (!example.interactive) {
+      problems.push(
+        `app/examples/${file}.vue exists but example "${file}" is not marked interactive, so the demo would never render: set interactive: true in inventory/examples.mts, or delete the file.`,
+      )
+    }
+  }
+
+  for (const example of facts.examples) {
+    if (!facts.usageFiles.includes(`${example.id}.usage`)) {
+      problems.push(
+        `Example "${example.id}" has no usage source: add app/usage/${example.id}.usage.vue, a complete example that typechecks against the real API.`,
+      )
+    }
+  }
+  for (const file of facts.usageFiles) {
+    const id = file.endsWith('.usage') ? file.slice(0, -'.usage'.length) : null
+    if (id === null) {
+      problems.push(
+        `app/usage/${file}.vue is not named <id>.usage.vue: rename it, so the typecheck resolves the real component rather than the file itself.`,
+      )
+    } else if (!byId.has(id)) {
+      problems.push(`app/usage/${file}.vue has no entry in inventory/examples.mts.`)
     }
   }
 
@@ -99,6 +130,19 @@ export function checkCoverage(facts: CoverageFacts): string[] {
     for (const demo of entry.demos ?? []) {
       if (!exampleIds.has(demo)) {
         problems.push(`${name} links the demo "${demo}", which is not in inventory/examples.mts.`)
+      }
+    }
+    const workspacePackage = facts.packages.find((candidate) => candidate.name === name)
+    for (const [field, specifier] of [
+      ['nuxtModule', entry.setup?.nuxtModule],
+      ['stylesheet', entry.setup?.stylesheet],
+    ] as const) {
+      if (!specifier || !workspacePackage) continue
+      const subpath = specifier === name ? '.' : `.${specifier.slice(name.length)}`
+      if (!specifier.startsWith(name) || !workspacePackage.exports.includes(subpath)) {
+        problems.push(
+          `${name} setup.${field} "${specifier}" is not the package or one of its exports: update inventory/catalog.mts.`,
+        )
       }
     }
   }

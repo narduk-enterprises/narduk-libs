@@ -13,7 +13,7 @@ import { NE_SHELL_COMPONENTS } from '../../narduk-shell/src/registry.ts'
 import { CATALOG, type CatalogEntry } from './catalog.mts'
 import { checkCoverage } from './check.mts'
 import { EXAMPLES, type ExampleMeta } from './examples.mts'
-import { parseTokens, type DesignToken } from './tokens.mts'
+import { classifyTokens, parseTokens, type DesignToken } from './tokens.mts'
 import { readWorkspacePackages, type WorkspacePackage } from './workspace.mts'
 
 export type CatalogPackage = WorkspacePackage & CatalogEntry
@@ -61,6 +61,7 @@ export function loadInventory(repoRoot: string, explorerRoot: string) {
     shellComponents: NE_SHELL_COMPONENTS.map(({ name }) => name),
     cards: basenames(join(repoRoot, SHELL_CARDS_DIRECTORY), '.card.vue'),
     interactiveFiles: basenames(join(explorerRoot, 'app/examples'), '.vue'),
+    usageFiles: basenames(join(explorerRoot, 'app/usage'), '.vue'),
   })
 
   const inventory: ExplorerInventory = {
@@ -71,8 +72,13 @@ export function loadInventory(repoRoot: string, explorerRoot: string) {
         ...(CATALOG[workspacePackage.name] as CatalogEntry),
       })),
     examples: [...EXAMPLES],
-    tokens: TOKEN_SOURCES.flatMap((path) =>
-      parseTokens(readFileSync(join(repoRoot, path), 'utf8'), path.replace('packages/design/', '')),
+    tokens: classifyTokens(
+      TOKEN_SOURCES.flatMap((path) =>
+        parseTokens(
+          readFileSync(join(repoRoot, path), 'utf8'),
+          path.replace('packages/design/', ''),
+        ),
+      ),
     ),
     source: { commit: sourceCommit(repoRoot), repository: REPOSITORY_URL },
   }

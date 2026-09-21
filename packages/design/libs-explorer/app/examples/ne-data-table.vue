@@ -1,40 +1,68 @@
 <script setup lang="ts">
 /*
- * Interactive NeDataTable. Every control is a URL query parameter, so a state
- * can be shared as a link. The table never sorts rows itself (it emits
- * `update:sort`); this wrapper plays the part of the page and sorts the
- * fixture client-side, missing values last, the way a list endpoint would.
+ * Interactive NeDataTable, rendered inside the preview frame.
+ *
+ * The frame hands this demo its state as a query (`query`). The demo answers
+ * each query with its canonical form (`canonical`) and each control change
+ * with the next canonical query (`state`); the Explorer page owns the URL. Parsing, the fixture and the row order live
+ * in demo/table.mts, which the unit tests cover, so what the table draws, what
+ * the CSV exports and what the tests assert are one order.
+ *
+ * The table never sorts rows itself (it emits `update:sort`): this demo plays
+ * the page and orders the fixture the way a list endpoint would.
  */
 import type { NeDataColumn, NeDataColumnGroup } from '@narduk-enterprises/narduk-shell'
 
-const emit = defineEmits<{ event: [name: string, detail: unknown] }>()
-const route = useRoute()
-const router = useRouter()
+import {
+  COLUMN_SETS,
+  DAY_LABELS,
+  missingCount,
+  orderReadings,
+  parseTableQuery,
+  READINGS,
+  sortWire,
+  tableQuery,
+  type Reading,
+  type TableState,
+} from '../../demo/table.mts'
 
-interface Reading {
-  station: string
-  day: string
-  wind: number | null
-  gust: number | null
-  waves: number | null
-  pressure: number | null
+// Named, because an SFC can refer to itself by its file name: without this,
+// <NeDataTable> in the template would resolve to this demo for vue-tsc.
+defineOptions({ name: 'ExplorerDataTableDemo' })
+
+const props = defineProps<{ query: Record<string, string> }>()
+const emit = defineEmits<{
+  event: [name: string, detail: unknown]
+  state: [query: Record<string, string>]
+  canonical: [query: Record<string, string>]
+}>()
+
+const state = computed<TableState>(() => parseTableQuery(props.query))
+// Every query the frame hands over is answered with its canonical form, so a
+// malformed or partial link is corrected in the page's URL.
+watch(
+  () => props.query,
+  () => emit('canonical', tableQuery(state.value)),
+  { immediate: true },
+)
+const rows = computed(() => orderReadings(READINGS, state.value))
+const divider = computed(() => missingCount(rows.value, state.value))
+const sort = computed(() => sortWire(state.value))
+
+function change(next: Partial<TableState>, name: string, detail: unknown) {
+  emit('event', name, detail)
+  emit('state', tableQuery({ ...state.value, ...next }))
 }
 
-const READINGS: Reading[] = [
-  { station: 'Port Aransas', day: 'Fri, Sep 18', wind: 14, gust: 16, waves: 3.0, pressure: 30.08 },
-  { station: 'Port Isabel', day: 'Fri, Sep 18', wind: 10, gust: 12, waves: 3.0, pressure: 30.11 },
-  {
-    station: 'Aransas Bay',
-    day: 'Fri, Sep 18',
-    wind: null,
-    gust: null,
-    waves: 2.1,
-    pressure: 30.1,
-  },
-  { station: 'Bob Hall Pier', day: 'Thu, Sep 17', wind: 16, gust: 19, waves: 3.9, pressure: 30.09 },
-  { station: 'Galveston', day: 'Thu, Sep 17', wind: 8, gust: null, waves: null, pressure: 30.02 },
-  { station: 'Sabine Pass', day: 'Thu, Sep 17', wind: 21, gust: 27, waves: 4.6, pressure: 29.94 },
-]
+function onSort(wire: string) {
+  const parsed = parseTableQuery({ sort: wire }).sort
+  change({ sort: parsed }, 'update:sort', wire)
+}
+
+function onColumnSet(id: string) {
+  const parsed = parseTableQuery({ set: id }).set
+  change({ set: parsed }, 'update:columnSet', id)
+}
 
 const groups: NeDataColumnGroup[] = [
   { id: 'wind', label: 'Wind', unit: 'kt' },
@@ -44,12 +72,15 @@ const groups: NeDataColumnGroup[] = [
 
 const columns: NeDataColumn<Reading>[] = [
   { key: 'station', label: 'Station', sticky: true, sortKey: 'station' },
+  // In the export only: a grouped CSV keeps its days.
+  { key: 'date', label: 'Date', csvOnly: true },
   {
     key: 'wind',
     label: 'avg',
     group: 'wind',
     numeric: true,
     emphasis: true,
+    csvLabel: 'Wind avg (kt)',
     sortKey: 'wind',
     firstDirection: 'desc',
   },
@@ -58,6 +89,7 @@ const columns: NeDataColumn<Reading>[] = [
     label: 'gust',
     group: 'wind',
     numeric: true,
+    csvLabel: 'Wind gust (kt)',
     sortKey: 'gust',
     firstDirection: 'desc',
   },
@@ -67,6 +99,7 @@ const columns: NeDataColumn<Reading>[] = [
     group: 'waves',
     numeric: true,
     emphasis: true,
+    csvLabel: 'Wave height (ft)',
     sortKey: 'waves',
     firstDirection: 'desc',
   },
@@ -75,57 +108,11 @@ const columns: NeDataColumn<Reading>[] = [
     label: 'sea level',
     group: 'pressure',
     numeric: true,
+    csvLabel: 'Pressure (inHg)',
     sortKey: 'pressure',
     format: (value) => (typeof value === 'number' ? value.toFixed(2) : String(value)),
   },
 ]
-
-function queryFlag(name: string): boolean {
-  return route.query[name] === '1'
-}
-function setQuery(name: string, value: string | undefined) {
-  router.replace({ query: { ...route.query, [name]: value } })
-  emit('event', 'control', { [name]: value ?? null })
-}
-
-const sort = computed(() => (typeof route.query.sort === 'string' ? route.query.sort : null))
-const grouped = computed(() => queryFlag('grouped'))
-const loading = computed(() => queryFlag('loading'))
-const empty = computed(() => queryFlag('empty'))
-
-const rows = computed<Reading[]>(() => {
-  if (empty.value) return []
-  const [key, direction] = (sort.value ?? '').split(':') as [keyof Reading | '', string | undefined]
-  const sorted = [...READINGS]
-  if (key) {
-    const sign = direction === 'desc' ? -1 : 1
-    sorted.sort((left, right) => {
-      const a = left[key]
-      const b = right[key]
-      if (a === null) return b === null ? 0 : 1
-      if (b === null) return -1
-      return (
-        (typeof a === 'number' && typeof b === 'number'
-          ? a - b
-          : String(a).localeCompare(String(b))) * sign
-      )
-    })
-  }
-  // A group row opens whenever the day changes, so grouped rows must stay
-  // contiguous: order by day, keeping the sort inside each day (stable sort).
-  if (grouped.value) sorted.sort((left, right) => right.day.localeCompare(left.day))
-  return sorted
-})
-
-const missingCount = computed(() => {
-  const key = (sort.value ?? '').split(':')[0] as keyof Reading | ''
-  return key ? rows.value.filter((row) => row[key] === null).length : null
-})
-
-function onSort(next: string) {
-  emit('event', 'update:sort', next)
-  router.replace({ query: { ...route.query, sort: next } })
-}
 </script>
 
 <template>
@@ -135,19 +122,22 @@ function onSort(next: string) {
       data-testid="demo-controls"
     >
       <USwitch
-        :model-value="grouped"
+        :model-value="state.grouped"
         label="Group by day"
-        @update:model-value="(on: boolean) => setQuery('grouped', on ? '1' : undefined)"
+        data-testid="control-grouped"
+        @update:model-value="(on: boolean) => change({ grouped: on }, 'control', { grouped: on })"
       />
       <USwitch
-        :model-value="loading"
+        :model-value="state.loading"
         label="Loading"
-        @update:model-value="(on: boolean) => setQuery('loading', on ? '1' : undefined)"
+        data-testid="control-loading"
+        @update:model-value="(on: boolean) => change({ loading: on }, 'control', { loading: on })"
       />
       <USwitch
-        :model-value="empty"
+        :model-value="state.empty"
         label="No rows"
-        @update:model-value="(on: boolean) => setQuery('empty', on ? '1' : undefined)"
+        data-testid="control-empty"
+        @update:model-value="(on: boolean) => change({ empty: on }, 'control', { empty: on })"
       />
       <span class="font-mono text-xs text-muted" data-testid="demo-sort"
         >sort: {{ sort ?? 'none' }}</span
@@ -161,19 +151,32 @@ function onSort(next: string) {
         @click="emit('event', 'csv', { rows: rows.length })"
       />
     </div>
+    <p
+      v-if="state.grouped && state.sort"
+      class="text-sm text-muted"
+      data-testid="demo-grouped-note"
+    >
+      Grouped by day, newest first. Rows with no value are last within each day.
+    </p>
+    <!-- Always controlled: an absent column set means the default one, never
+         the table's own last choice, or Back could not undo a switch. -->
     <NeDataTable
       :columns="columns"
       :groups="groups"
       :rows="rows"
       :sort="sort"
-      :missing-count="missingCount"
-      :loading="loading"
-      :group-by="grouped ? (row: Reading) => row.day : undefined"
+      :missing-last="!state.grouped"
+      :missing-count="divider"
+      :loading="state.loading"
+      :column-set="state.set ?? COLUMN_SETS[0]"
+      :group-by="state.grouped ? (row: Reading) => row.date : undefined"
+      :group-label="(key: string) => DAY_LABELS[key] ?? key"
       :sticky-header="false"
       empty="No readings in this window"
       caption="Coastal station readings (fixture data)"
+      data-testid="demo-table"
       @update:sort="onSort"
-      @update:column-set="(id: string) => emit('event', 'update:columnSet', id)"
+      @update:column-set="onColumnSet"
     />
   </div>
 </template>

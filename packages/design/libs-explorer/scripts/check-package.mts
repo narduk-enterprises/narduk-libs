@@ -4,8 +4,8 @@
  * `build`).
  *
  * - The manifest stays private and has no publish surface.
- * - Every catalog, demo and landing route has a prerendered page, so a route
- *   the crawler never reached cannot pass silently.
+ * - Every catalog, demo, preview-frame and landing route has a prerendered
+ *   page, so a route the crawler never reached cannot pass silently.
  * - No shipped file carries a private key, a registry auth token or an
  *   absolute build-machine path.
  */
@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { frameRoutes } from '../demo/frame.mts'
 import { loadInventory } from '../inventory/index.mts'
 
 const explorerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -37,6 +38,7 @@ const routes = [
   '/packages',
   ...inventory.packages.map(({ slug }) => `/packages/${slug}`),
   ...inventory.examples.map(({ id, category }) => `/${category}/${id}`),
+  ...frameRoutes(inventory.examples),
 ]
 const missing = routes.filter((route) => !existsSync(join(publicRoot, route, 'index.html')))
 assert.deepEqual(missing, [], 'Routes with no prerendered page')
@@ -46,6 +48,10 @@ const FORBIDDEN: [RegExp, string][] = [
   [/_authToken\s*=/, 'a registry auth token'],
   [/\b(?:ghp|gho|ghs|github_pat)_[A-Za-z0-9_]{20,}/, 'a GitHub token'],
   [/\/(?:Users|home\/runner)\/[^\s"'<>]+/, 'an absolute build-machine path'],
+  // A self-hosted runner's checkout lives under <runner>/_work/<repo>/<repo>.
+  [/\/_work\/[^\s"'<>/]+\/[^\s"'<>/]+\//, 'a runner work-directory path'],
+  // Whatever machine built it: this checkout's own path.
+  [new RegExp(repoRoot.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'this checkout’s path'],
 ]
 const leaks: string[] = []
 for (const entry of readdirSync(publicRoot, { recursive: true, withFileTypes: true })) {
