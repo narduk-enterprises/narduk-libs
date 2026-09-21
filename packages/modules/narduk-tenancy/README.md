@@ -83,14 +83,15 @@ measures by counting the rows each query visits:
 | Read                         | Axis                                   | Before `0002`     | After `0002`  |
 | ---------------------------- | -------------------------------------- | ----------------- | ------------- |
 | one 200-member page          | org grows 200 -> 1 000 -> 5 000        | 200, 1 000, 5 000 | 200, 201, 201 |
+| one 200-invite page          | org grows 200 -> 1 000 -> 5 000        | 200, 1 000, 5 000 | 200, 201, 201 |
 | live invitations (5 of them) | accepted invites 0 -> 50 -> 500        | 5, 55, 505        | 5, 5, 5       |
 | live invitations             | live invites 1 -> 5 -> 25, 50 accepted | 51, 55, 75        | 1, 5, 25      |
 
-So a member page costs the page rather than the org, and the live-invite list
-and its `count(*)` cost the invitations that are still live rather than every
-invitation the org has ever issued. The last row is the control that the index
-is not simply hiding work: a larger live set is still larger, because those rows
-are the answer.
+So a member or invite page costs the page rather than the org, and the
+live-invite list and its `count(*)` cost the invitations that are still live
+rather than every invitation the org has ever issued. The last row is the
+control that the index is not simply hiding work: a larger live set is still
+larger, because those rows are the answer.
 
 An app already carrying these verbatim in its own migration finds them present
 rather than duplicated: package sources are ordered before app sources, and

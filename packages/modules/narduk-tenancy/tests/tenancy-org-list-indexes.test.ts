@@ -42,6 +42,10 @@ const BEFORE_0002 = MIGRATION_PATHS.filter((path) => !path.endsWith('0002_org_li
 const MEMBER_PAGE = `SELECT id, user_id, role, created_at FROM tenancy_memberships
   WHERE org_id = ? ORDER BY created_at, user_id LIMIT 200`
 
+/** One page of the org's invitations, the same ordered, paged shape. */
+const INVITE_PAGE = `SELECT id, email, role, created_at FROM tenancy_invites
+  WHERE org_id = ? ORDER BY created_at, id LIMIT 200`
+
 /** The org's live invitations: not accepted, not revoked, not expired. */
 const PENDING_INVITES = `SELECT id, email, role, created_at FROM tenancy_invites
   WHERE org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`
@@ -65,6 +69,7 @@ const NOW = 1_700_000_000_000
  */
 const PROBE = ' AND visit(id) = 1'
 const probed = {
+  invitePage: INVITE_PAGE.replace('WHERE org_id = ?', `WHERE org_id = ?${PROBE}`),
   memberPage: MEMBER_PAGE.replace('WHERE org_id = ?', `WHERE org_id = ?${PROBE}`),
   pendingInvites: PENDING_INVITES.replace('WHERE org_id = ?', `WHERE org_id = ?${PROBE}`),
   pendingInviteCount: PENDING_INVITE_COUNT.replace('WHERE org_id = ?', `WHERE org_id = ?${PROBE}`),
@@ -224,6 +229,19 @@ describe('0002_org_list_indexes', () => {
       expect(detail).toContain('USE TEMP B-TREE FOR LAST TERM OF ORDER BY')
     })
 
+    it('reads an invite page in `created_at` order from the index', async () => {
+      const plan = await current.raw
+        .prepare(`EXPLAIN QUERY PLAN ${INVITE_PAGE}`)
+        .bind('org-a')
+        .all<{ detail: string }>()
+      const detail = plan.results.map((row) => row.detail).join('\n')
+
+      expect(detail).toMatch(
+        /SEARCH tenancy_invites USING INDEX tenancy_invites_org_created_at_idx \(org_id=\?\)/u,
+      )
+      expect(detail).toContain('USE TEMP B-TREE FOR LAST TERM OF ORDER BY')
+    })
+
     it('narrows the pending-invite predicate inside the index, not row by row', async () => {
       for (const sql of [PENDING_INVITES, PENDING_INVITE_COUNT]) {
         const plan = await current.raw
@@ -247,6 +265,16 @@ describe('0002_org_list_indexes', () => {
       expect(memberDetail).toContain('USE TEMP B-TREE FOR ORDER BY')
       expect(memberDetail).not.toContain('LAST TERM OF ORDER BY')
 
+      const invitePage = await previous.raw
+        .prepare(`EXPLAIN QUERY PLAN ${INVITE_PAGE}`)
+        .bind('org-a')
+        .all<{ detail: string }>()
+      const invitePageDetail = invitePage.results.map((row) => row.detail).join('\n')
+      // Same as the member page: the org's whole invite history is sorted to
+      // return one page of it.
+      expect(invitePageDetail).toContain('USE TEMP B-TREE FOR ORDER BY')
+      expect(invitePageDetail).not.toContain('LAST TERM OF ORDER BY')
+
       const invites = await previous.raw
         .prepare(`EXPLAIN QUERY PLAN ${PENDING_INVITES}`)
         .bind('org-a', NOW)
@@ -265,6 +293,7 @@ describe('0002_org_list_indexes', () => {
       try {
         const pairs = [
           [MEMBER_PAGE, probed.memberPage, ['org-a']],
+          [INVITE_PAGE, probed.invitePage, ['org-a']],
           [PENDING_INVITES, probed.pendingInvites, ['org-a', NOW]],
           [PENDING_INVITE_COUNT, probed.pendingInviteCount, ['org-a', NOW]],
         ] as const
@@ -303,6 +332,28 @@ describe('0002_org_list_indexes', () => {
       expect(visits.before).toEqual([200, 1000, 5000])
       // After: the page, plus the one row that proves the 200th `created_at`
       // had no tie. Flat as the org grows 25x.
+      expect(visits.after).toEqual([200, 201, 201])
+    })
+
+    it('holds an invite page to the page, not to the org (axis: org size)', () => {
+      const visits = { after: [] as number[], before: [] as number[] }
+      for (const live of [200, 1000, 5000]) {
+        for (const [key, migrations] of [
+          ['before', BEFORE_0002],
+          ['after', MIGRATION_PATHS],
+        ] as const) {
+          const db = seeded(migrations, { live })
+          try {
+            const measured = db.measure(probed.invitePage, ['org-a'])
+            expect(measured.rows).toHaveLength(200)
+            visits[key].push(measured.visits)
+          } finally {
+            db.close()
+          }
+        }
+      }
+
+      expect(visits.before).toEqual([200, 1000, 5000])
       expect(visits.after).toEqual([200, 201, 201])
     })
 
