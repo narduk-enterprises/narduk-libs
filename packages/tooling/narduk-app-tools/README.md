@@ -52,8 +52,11 @@ selector. Doppler `ne/*` root provisioners remain a separately approved
 provider-root exception and are **not** an application development credential
 source.
 
-`narduk-app deploy-local` is a different command and still reads Doppler
-`narduk/tokens` for its recovery deploy; it is unchanged here.
+For incident patches from a workstation, use `narduk-app deploy-hotfix` and the
+[local break-glass runbook](docs/local-hotfix.md). It uses injected recovery
+credentials, a clean commit snapshot, required local checks, version promotion
+and live proof. Legacy `deploy-local` retains its historical Doppler/migration
+behavior for compatibility; it is not the new hotfix procedure.
 
 ## Prebuilt-Worker e2e (`narduk-app e2e-serve`)
 

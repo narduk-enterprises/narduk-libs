@@ -328,6 +328,11 @@ export function createRootPackageManifest(
       // and operator recovery.
       'quality:static':
         'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build:ci && pnpm run test:unit',
+      'hotfix:check':
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run test:unit',
+      'deploy:hotfix': 'pnpm --filter web exec narduk-app deploy-hotfix',
+      'hotfix:build':
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm --filter web run cf:build',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
