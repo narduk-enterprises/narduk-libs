@@ -27,6 +27,11 @@ import type { ExceptionHookHost, NardukExceptionReport } from '../runtime/shared
 const NUXT_ERROR_HANDLER = '/node_modules/@nuxt/nitro-server/dist/runtime/handlers/error'
 const SANITIZER_RUNTIME_PATH = '/runtime/server/error-sanitizer'
 
+// Shared across leakyError() fixtures and their assertions below -- extracted so the
+// literal isn't repeated past sonarjs/no-duplicate-string's budget (narduk-libs#678 review).
+const D1_LEAKY_MESSAGE = 'D1_ERROR: no such table: users'
+const D1_LEAKY_SQL = 'SELECT * FROM users'
+
 const config = vi.hoisted(() => ({
   current: { public: { previewSafeMode: false } } as {
     public?: { previewSafeMode?: boolean }
@@ -39,10 +44,10 @@ vi.mock('nitropack/runtime', () => ({
 }))
 
 function leakyError(overrides: Partial<SanitizableServerError> = {}): SanitizableServerError {
-  return Object.assign(new Error('D1_ERROR: no such table: users'), {
+  return Object.assign(new Error(D1_LEAKY_MESSAGE), {
     statusCode: 500,
     statusMessage: 'SQLITE_ERROR: no such table: users',
-    data: { binding: 'DB', sql: 'SELECT * FROM users' },
+    data: { binding: 'DB', sql: D1_LEAKY_SQL },
     cause: new Error('inner D1'),
     ...overrides,
   })
@@ -109,7 +114,7 @@ describe('production error sanitizer policy', () => {
         return 'SQLITE_ERROR: no such table: users'
       }
     }
-    const error = Object.assign(new GetterStatusTextError('D1_ERROR: no such table: users'), {
+    const error = Object.assign(new GetterStatusTextError(D1_LEAKY_MESSAGE), {
       statusCode: 500,
       data: { binding: 'DB' },
     }) as unknown as SanitizableServerError
@@ -129,7 +134,7 @@ describe('production error sanitizer policy', () => {
     const error = new Error('placeholder') as unknown as SanitizableServerError
     for (const key of ['message', 'statusMessage'] as const) {
       Object.defineProperty(error, key, {
-        get: () => 'D1_ERROR: no such table: users',
+        get: () => D1_LEAKY_MESSAGE,
         configurable: true,
       })
     }
@@ -147,7 +152,7 @@ describe('production error sanitizer policy', () => {
     // value does not, which is what matters.
     const error = leakyError()
     Object.defineProperty(error, 'data', {
-      value: { binding: 'DB', sql: 'SELECT * FROM users' },
+      value: { binding: 'DB', sql: D1_LEAKY_SQL },
       configurable: false,
       writable: true,
       enumerable: true,
@@ -244,13 +249,13 @@ describe('Nitro error handler', () => {
     const notFound = leakyError({ statusCode: 404, message: 'Station not found' })
     applyProductionErrorSanitizer(notFound, { context: {} }, false)
     expect(notFound.message).toBe('Station not found')
-    expect(notFound.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
+    expect(notFound.data).toEqual({ binding: 'DB', sql: D1_LEAKY_SQL })
 
     config.current = { public: { previewSafeMode: true } }
     const preview = leakyError()
     applyProductionErrorSanitizer(preview, { context: {} }, false)
-    expect(preview.message).toBe('D1_ERROR: no such table: users')
-    expect(preview.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
+    expect(preview.message).toBe(D1_LEAKY_MESSAGE)
+    expect(preview.data).toEqual({ binding: 'DB', sql: D1_LEAKY_SQL })
   })
 
   it('keeps 4xx data when statusCode is the string 404', () => {
@@ -267,8 +272,8 @@ describe('Nitro error handler', () => {
   it('leaves a leaky 500 intact in nuxt dev', () => {
     const error = leakyError()
     applyProductionErrorSanitizer(error, { context: {} }, true)
-    expect(error.message).toBe('D1_ERROR: no such table: users')
-    expect(error.data).toEqual({ binding: 'DB', sql: 'SELECT * FROM users' })
+    expect(error.message).toBe(D1_LEAKY_MESSAGE)
+    expect(error.data).toEqual({ binding: 'DB', sql: D1_LEAKY_SQL })
   })
 })
 
@@ -299,7 +304,7 @@ describe('narduk:exception still receives the original error', () => {
     applyProductionErrorSanitizer(error, event, false)
 
     expect(reports).toHaveLength(1)
-    expect(reports[0]?.message).toBe('D1_ERROR: no such table: users')
+    expect(reports[0]?.message).toBe(D1_LEAKY_MESSAGE)
     expect(reports[0]?.requestId).toBe('req-1234')
     expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
     expect(error.data).toBeUndefined()
