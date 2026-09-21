@@ -1452,6 +1452,30 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
         '  "observability": { "enabled": true },',
+        // Workers Cache, on by default (narduk-libs#435). Without it Cloudflare
+        // invokes the Worker on every request and `setCacheProfile`'s
+        // CDN-Cache-Control / Cache-Tag are inert -- an app advertising an edge
+        // TTL it does not have, which is what Buoys shipped.
+        //
+        // Safe to default on only because the narduk-core this generator pins
+        // keeps uncacheable responses out of a shared cache: thrown 4xx/5xx/429
+        // are `private, no-store` (narduk-libs#429), nonce-CSP SSR HTML is too,
+        // and a response that picks no profile at all gets `private` rather than
+        // Cloudflare's heuristic 2-hour store. `foundation:check` item 12.7 fails
+        // this block against a narduk-core older than that, so an app that
+        // downgrades core is told rather than silently storing error pages.
+        //
+        // Requires Wrangler >= 4.69.0; PACKAGE_VERSIONS pins 4.110.0.
+        // `cross_version_cache` is deliberately absent: a deployment partitions
+        // the cache by Worker version by default, and sharing across versions
+        // wants an app-specific reason.
+        '  // Workers Cache: without this the Worker runs on every request and',
+        "  // narduk-core's CDN-Cache-Control / Cache-Tag never bind. A route",
+        '  // still needs setCacheProfile to be stored; one that sets nothing is',
+        '  // private by default. This file cannot prove the edge actually',
+        '  // stores anything -- for that, run (narduk-libs#435):',
+        '  //   narduk-app verify --live <production-url> --edge-cache-path <route>',
+        '  "cache": { "enabled": true },',
         '  "workers_dev": ' + (exposure === 'public') + ',',
         '  "preview_urls": ' + (exposure === 'public') + ',',
         ...(hasDatabase

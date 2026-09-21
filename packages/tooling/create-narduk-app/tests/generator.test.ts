@@ -28,6 +28,16 @@ const CANONICAL_DEPLOYMENT_BLOCK = new URL(
   import.meta.url,
 )
 
+/** True when `spec` (an exact pin) is at or above `minimum`. */
+function atLeast(spec: string, minimum: string): boolean {
+  const left = spec.split('.').map(Number)
+  const right = minimum.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index]
+  }
+  return true
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -862,6 +872,76 @@ describe('create-narduk-app generation contract', () => {
     const disagreeing = run()
     expect(disagreeing.status).not.toBe(0)
     expect(disagreeing.stderr).toContain('wrangler bindings disagree')
+  })
+
+  // narduk-libs#435. `setCacheProfile` has always emitted CDN-Cache-Control
+  // and Cache-Tag; without `"cache": { "enabled": true }` Cloudflare invokes
+  // the Worker on every request and those headers bind to nothing, which is
+  // how Buoys came to advertise edge TTLs it did not have.
+  //
+  // What these assert is not the literal string -- `foundation:check` item
+  // 12.7 is what reads this block, and it reads it as parsed JSON plus the
+  // narduk-core spec it finds. So the facts pinned here are exactly the ones
+  // 12.7 resolves, because getting any of them wrong turns a fresh scaffold's
+  // first CI run from `not-applicable` into `unknown` or `fail`, and
+  // foundation:check fails the build on either (narduk-libs#617/#622).
+  describe('Workers Cache is on, and on a core that keeps errors out of it', () => {
+    function wranglerOf(options: Parameters<typeof buildGeneratedFiles>[0]) {
+      const files = asFileMap(buildGeneratedFiles(options))
+      const parsed = ts.parseConfigFileTextToJson(
+        'wrangler.jsonc',
+        files.get('apps/web/wrangler.jsonc') ?? '',
+      )
+      expect(parsed.error, 'the emitted wrangler.jsonc parses as JSONC').toBeUndefined()
+      return { files, wrangler: parsed.config as Record<string, unknown> }
+    }
+
+    it('enables the Worker cache in every capability shape', () => {
+      for (const capabilities of [[], ['auth'], ['seo', 'analytics']] as const) {
+        const { wrangler } = wranglerOf({
+          appName: 'cache-on',
+          capabilities: [...capabilities],
+          targetDir: '/tmp/cache-on',
+        })
+        expect(wrangler.cache, JSON.stringify(capabilities)).toEqual({ enabled: true })
+      }
+    })
+
+    // A deployment partitions the cache by Worker version by default. Sharing
+    // across versions means a rollback serves the previous version's bodies,
+    // which wants an app-specific reason rather than a generator default.
+    it('leaves cross_version_cache unset', () => {
+      const { wrangler } = wranglerOf({ appName: 'cache-scope', targetDir: '/tmp/cache-scope' })
+      expect(Object.keys(wrangler.cache as object)).toEqual(['enabled'])
+    })
+
+    // 12.7 takes the FIRST package.json in its candidate order that declares
+    // narduk-core, and the root is ahead of apps/web in that order. A root
+    // that declared core too would decide the verdict from the wrong file.
+    it('declares narduk-core where 12.7 looks for it, at a version above the floor', () => {
+      const { files } = wranglerOf({ appName: 'cache-core', targetDir: '/tmp/cache-core' })
+      const deps = (relative: string): Record<string, string> => {
+        const parsed = JSON.parse(files.get(relative) ?? '{}') as {
+          dependencies?: Record<string, string>
+          devDependencies?: Record<string, string>
+        }
+        return { ...parsed.dependencies, ...parsed.devDependencies }
+      }
+
+      expect(deps('package.json')['@narduk-enterprises/narduk-core']).toBeUndefined()
+
+      // The floor 12.7 compares against: the first narduk-core whose thrown
+      // 4xx/5xx/429 and nonce-CSP HTML are private, no-store.
+      const core = deps('apps/web/package.json')['@narduk-enterprises/narduk-core']
+      expect(core).toMatch(/^\d+\.\d+\.\d+$/u)
+      expect(atLeast(core, '2.2.4'), `narduk-core ${core} >= 2.2.4`).toBe(true)
+
+      // `cache` is only read by Wrangler >= 4.69.0; below it the key is
+      // ignored and the block is silently inert again.
+      const wranglerSpec = deps('apps/web/package.json').wrangler
+      expect(wranglerSpec).toMatch(/^\d+\.\d+\.\d+$/u)
+      expect(atLeast(wranglerSpec, '4.69.0'), `wrangler ${wranglerSpec} >= 4.69.0`).toBe(true)
+    })
   })
 
   it('emits files already canonical under the generated Prettier contract', async () => {
