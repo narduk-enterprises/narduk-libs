@@ -12,7 +12,8 @@
     "lint": "narduk-lint",
     "test:unit": "node --test inventory/*.test.mts",
     "test:e2e": "nuxt generate && playwright test",
-    "preview": "node scripts/serve.mts"
+    "preview": "node scripts/serve.mts",
+    "check:package": "node scripts/check-package.mts"
   },
   "devDependencies": {
     "@narduk-enterprises/narduk-shell": "workspace:*",

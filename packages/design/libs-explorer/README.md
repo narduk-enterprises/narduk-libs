@@ -72,5 +72,8 @@ CSV export of the rows in view.
 - Charts, the map lab, composed examples and the Workers deployment are
   increments 2 to 4 of the plan.
 
-Validation: `typecheck`, `lint`, `test:unit` and `build` (the package gates CI
-runs), plus `test:e2e`.
+Validation: `lint`, `typecheck`, `build`, `test:unit` and `check:package` (the
+package gates CI runs), plus `test:e2e`. The package publishes nothing, so
+`check:package` checks the built site instead: every catalog and demo route has
+a prerendered page, and no shipped file carries a private key, a registry or
+GitHub token, or an absolute build-machine path.
