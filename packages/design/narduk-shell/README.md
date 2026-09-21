@@ -1882,6 +1882,7 @@ surface check a bundler.
 | Date style       | `'medium'` (`Mar 8, 2026`); time style `'short'` (`3:30 AM`)           |
 | Unit display     | `'narrow'` for durations (`1h 30m`), `'short'` for quantities (`5 ft`) |
 | `Intl` instances | memoised per kind, keyed by locale plus the full sorted option set     |
+| Unit support     | feature-tested once per distinct `unit` string, then memoised          |
 
 The memo cache is capped at 256 entries per kind and clears wholesale on
 overflow. The cap is there because an option set can be derived from data
@@ -1889,6 +1890,10 @@ overflow. The cap is there because an option set can be derived from data
 the cache could grow with the working set rather than with the code; real call
 sites re-populate a handful of entries immediately, and an adversarial one pays
 a rebuild instead of growing without bound.
+
+The unit-support cache carries the same cap and clear-on-overflow behaviour, for
+the same reason: `formatQuantity`'s `unit` values come off live feeds such as
+USGS (`cfs`, `ft3/s`), not a fixed code-defined set (narduk-libs#287).
 
 ### `formatDate`
 

@@ -347,6 +347,15 @@ function fractionDigits(
  * Whether `Intl` recognises `unit` as one of its sanctioned unit identifiers.
  * Feature-tested once per string, because constructing-and-catching per call
  * is the opposite of the point of the cache above.
+ *
+ * Bounded the same way as `caches` above (narduk-libs#287): `unit` comes off
+ * live feeds such as USGS (`cfs`, `ft3/s`), not a fixed code-defined set (see
+ * `formatQuantity`'s doc below and the README), so this is the same "derived
+ * from data" shape the cap on `caches` exists for. Capped at
+ * `MAX_CACHE_ENTRIES` and cleared wholesale on overflow, for the same reason:
+ * real call sites re-populate a handful of entries immediately, and a feed
+ * emitting many distinct or malformed unit strings pays a rebuild instead of
+ * growing this map without bound.
  */
 const unitSupport = new Map<string, boolean>()
 function isIntlUnit(unit: string): boolean {
@@ -360,6 +369,7 @@ function isIntlUnit(unit: string): boolean {
   } catch {
     supported = false
   }
+  if (unitSupport.size >= MAX_CACHE_ENTRIES) unitSupport.clear()
   unitSupport.set(unit, supported)
   return supported
 }
