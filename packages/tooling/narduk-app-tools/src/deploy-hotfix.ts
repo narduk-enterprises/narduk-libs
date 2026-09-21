@@ -272,11 +272,9 @@ export async function runHotfix(flags: HotfixFlags, context: HotfixContext = {})
     save('uploading')
     const upload = context.upload ?? runDeploy
     if (
-      upload(
-        ['versions-upload', '--tag', plan.sha, '--message', message, '--keep-vars'],
-        appDir,
-        deployEnv,
-      ) !== 0
+      upload(['versions-upload', '--tag', plan.sha, '--message', message], appDir, deployEnv, {
+        keepVars: true,
+      }) !== 0
     )
       throw new Error('Hotfix upload failed; no promotion requested')
     const listing = await client.listVersions(100)

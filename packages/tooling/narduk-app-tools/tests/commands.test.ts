@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,7 @@ import {
   readWranglerScriptName,
   resolveAppDir,
   resolveWranglerConfigPath,
+  runDeploy,
   writeFlattenedWranglerDeployConfig,
 } from '../src/deploy.js'
 import {
@@ -177,6 +178,31 @@ describe('app-local command planning', () => {
       skipMigrate: true,
       yes: true,
     })
+  })
+
+  it('preserves hotfix runtime vars in generated configuration without changing source', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-config-'))
+    tempDirs.push(root)
+    const path = join(root, 'wrangler.jsonc')
+    const source = JSON.stringify({ name: 'example', keep_vars: false, vars: { MODE: 'prod' } })
+    writeFileSync(path, source)
+    const ordinary = writeFlattenedWranglerDeployConfig(path)
+    expect(JSON.parse(readFileSync(ordinary, 'utf8')).keep_vars).toBe(false)
+    const hotfix = writeFlattenedWranglerDeployConfig(path, { keepVars: true })
+    expect(JSON.parse(readFileSync(hotfix, 'utf8'))).toMatchObject({
+      keep_vars: true,
+      vars: { MODE: 'prod' },
+      main: '.output/server/index.mjs',
+    })
+    expect(readFileSync(path, 'utf8')).toBe(source)
+  })
+
+  it('refuses to silently ignore the keep-vars contract without a source config', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-no-config-'))
+    tempDirs.push(root)
+    expect(() => runDeploy(['versions-upload', '--dry-run'], root, {}, { keepVars: true })).toThrow(
+      'requires a source Wrangler config and built output',
+    )
   })
 
   it('rejects local deploy probe targets', () => {

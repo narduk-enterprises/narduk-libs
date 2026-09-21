@@ -151,18 +151,34 @@ migration flags. `--yes` confirms execution; it is not proof of human approval.
    performs no credential reads, provider calls, installs, builds, receipt
    writes, or production changes.
 
-4. Execute under the **registered selector returned in preparation**. Values
-   below are placeholders, not a new credential naming convention:
+4. Execute under the **registered selector returned in preparation**. The
+   resolver returns the credential ID and its key names as well as the selector.
+   Registered personas often use purpose-prefixed keys, not
+   `CLOUDFLARE_API_TOKEN`. Use the installed persona wrapper to verify that
+   credential and map its named keys into the CLI's process environment. Never
+   put a token value in an `env` argument or copy it into a dotfile. Values
+   below are metadata placeholders, not a new credential naming convention:
 
    ```sh
    nvault run -p APP_PROJECT -e APP_ENV -c REGISTERED_BUILD_CONFIG -- \
      nvault run -p PROJECT -e ENVIRONMENT -c REGISTERED_CONFIG -- \
+     ~/.local/share/agent-infrastructure/skills/provision-cloudflare-api-tokens/scripts/with-cloudflare-token.sh \
+       --persona-id REGISTERED_CREDENTIAL_ID \
+       --persona-token-var TOKEN_KEY_FROM_ROUTE \
+       --persona-account-var ACCOUNT_KEY_FROM_ROUTE \
+       --permission-group 'Workers Scripts Write' -- \
      pnpm run deploy:hotfix \
        --incident INC-123 --reason 'Workers Builds unavailable during checkout outage' \
        --operator 'Incident operator' --sha "$HOTFIX_SHA" \
        --confirm-worker example --base-url https://example.com \
        --automation-paused --yes
    ```
+
+   In persona mode the permission flag states the operation's required contract;
+   it does not mint or widen the registered token. Use the operation resolver
+   and the credential's verification record to establish its actual permissions.
+   If the registered selector already supplies `CLOUDFLARE_API_TOKEN` and
+   `CLOUDFLARE_ACCOUNT_ID`, direct scoped `nvault run` injection is also valid.
 
    For a Cloudflare Access protected origin, inject its separately registered
    service token and add
