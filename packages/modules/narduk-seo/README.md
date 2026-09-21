@@ -31,6 +31,32 @@ Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
 signing and leaves `/_og/` an unauthenticated renderer.
 
+**A prerendered page bakes its OG card at build time** (narduk-libs#170).
+`nuxt-og-image` picks how to address an image while the page renders: during a
+prerender it emits an _unsigned_ `/_og/s/...` URL and relies on the prerender
+crawler to write that image out as a file. This layer therefore leaves `/_og/**`
+prerenderable. It used to pin `{ prerender: false }`, which stopped the file
+being produced and left the unsigned URL to be served at runtime, where the
+handler rejects it as soon as a signing secret is configured:
+
+```
+GET /_og/s/o_esbm28.png
+-> 403 [Nuxt OG Image] Missing URL signature.
+```
+
+SSR pages are unaffected either way -- they take the signed `/_og/d/...` branch,
+which verifies at request time.
+
+Three consequences of baking, worth knowing before you prerender a large route
+set. **Output**: one image file per prerendered page that renders a card, added
+to the app's static assets, where it counts against the Workers per-file size
+and total file-count ceilings like any other asset. **Build time**: it grows
+with the number of prerendered pages that render a card, because each one is
+rendered during the build rather than on first request -- the honest trade for
+not rendering them at runtime. **Freshness**: unchanged. A baked card is exactly
+as stale as the page it was built from, so a route whose card must track data
+that moves between deploys should not be prerendered in the first place.
+
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
 emit it site-wide, including pages that never call `useSeo`. Page-specific
