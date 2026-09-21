@@ -507,6 +507,16 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       },
     })
 
+    // narduk-libs#170: this pin and `nuxt-og-image`'s own prerender branch
+    // contradict each other. While a page is prerendered the module emits an
+    // unsigned `/_og/s/...` URL and expects the crawler to write the image out
+    // as a static file; `prerender: false` stops that file being produced, and
+    // the runtime handler then 403s the unsigned URL whenever a signing secret
+    // is set -- which every deployed estate build requires. SSR pages are
+    // unaffected: they take the signed `/_og/d/...` branch. The pin predates
+    // this monorepo (d82f1eb2) with no recorded rationale, so it is documented
+    // rather than removed here; tests/og-image-prerender-signing.test.ts pins
+    // the upstream mechanism so either reconciliation can be proven.
     extendRouteRules('/_og/**', { prerender: false })
     extendRouteRules('/apple-touch-icon-precomposed.png', {
       redirect: '/apple-touch-icon.png',

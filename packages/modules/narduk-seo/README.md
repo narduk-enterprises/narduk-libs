@@ -31,6 +31,25 @@ Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
 signing and leaves `/_og/` an unauthenticated renderer.
 
+**Runtime OG images and a prerendered page are mutually exclusive today**
+(narduk-libs#170). `nuxt-og-image` decides how to address an image while the
+page renders: during a prerender it takes the static branch, emits an _unsigned_
+`/_og/s/...` URL, and expects the prerender crawler to write that image out as a
+file. This layer pins `/_og/**` to `prerender: false`, so the file is never
+produced, and the runtime handler then rejects the unsigned URL as soon as a
+signing secret is configured -- which every deployed estate build requires:
+
+```
+GET /_og/s/o_esbm28.png
+-> 403 [Nuxt OG Image] Missing URL signature.
+```
+
+An SSR page is unaffected: it takes the signed `/_og/d/...` branch, which
+verifies at request time. Until the two are reconciled, a **prerendered** route
+should ship a static card instead -- set `ogImage: false` on the page (or
+`ogImage.zeroRuntime: true` app-wide) and let `nardukSeo.defaultOgImage` supply
+the image.
+
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
 emit it site-wide, including pages that never call `useSeo`. Page-specific

@@ -13,7 +13,7 @@ interface OgImageUrlEncoding {
     isStatic?: boolean,
     defaults?: Record<string, unknown>,
     secret?: string,
-  ) => { url: string; hash?: string }
+  ) => { hash?: string; url: string }
   verifyOgImageSignature: (encoded: string, signature: string, secret: string) => boolean
 }
 
