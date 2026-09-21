@@ -1,5 +1,63 @@
 # @narduk-enterprises/narduk-tenancy
 
+## 0.5.0
+
+### Minor Changes
+
+- 55d4006: Index the org-scoped membership ordering and the pending-invite
+  predicate.
+
+  A new `drizzle/0002_org_list_indexes.sql` adds three
+  `CREATE INDEX IF NOT EXISTS` statements for the two list reads a consuming
+  app's org console issues. Neither read was a full table scan before -- `0001`
+  already narrows to one org -- but both paid for everything the org had
+  accumulated rather than for what they returned: a 200-member page read and
+  sorted every membership in the org, and the live-invite list and its
+  `count(*)` read every invitation the org had ever issued, accepted and revoked
+  rows included.
+
+  Measured by rows visited, a member page now costs 201 reads whether the org
+  has 200 members or 5 000 (was 200, 1 000 and 5 000), and five live invitations
+  cost five reads whether 0, 50 or 500 accepted invitations sit behind them (was
+  5, 55 and 505).
+
+  Additive and `IF NOT EXISTS` throughout, with no down-migration, so an app
+  already carrying these indexes in its own migration finds them present rather
+  than duplicated.
+
+### Patch Changes
+
+- 3afc622: Prove cross-org isolation with a suite built on deliberately
+  colliding data: two orgs in one database sharing an identity, a resource id,
+  an email, an actor, and a clock, so a passing assertion can only come from org
+  scoping rather than from the fixtures happening to differ. It covers per-org
+  role resolution for one identity, resource-role overrides not bleeding across
+  orgs, `listOrgsForUser` returning only real memberships, the audit trail and
+  support grants each confined to their own org, an invitation landing only in
+  the issuing org, `removeMember` leaving the other org's membership and
+  identically keyed override intact, and a stranger being refused identically
+  whether the org exists or not, so the refusal is no existence oracle.
+  Mutation-tested four ways to prove the suite can fail.
+
+  Test-only: no runtime behaviour, no exported surface, and no published file
+  changes — `tests/` is outside the package's `files` list, so this release
+  ships an identical tarball.
+
+- c494a66: Re-check rank inside the write for every remaining tenancy mutation
+
+  `addMember`, `setResourceRoleOverride`, `clearResourceRoleOverride` and
+  `createInvite` ranked from a read made just before the write, not inside it. A
+  role change landing in that window let one change through against the roles as
+  they were read: a demoted admin could still add a member, set or clear a
+  resource override, or mint an invite.
+
+  Each now carries the rank inputs into the statement itself — an
+  `INSERT … SELECT … WHERE` for the two inserts, and a guarded `UPDATE`/`DELETE`
+  for the overrides — asserting that the actor still holds exactly the role the
+  check read and that the member still stands exactly as it read them. If either
+  moved, the call answers `conflict` and writes nothing, matching
+  `setMemberRole` and `removeMember`. In-rank callers are unaffected.
+
 ## 0.4.0
 
 ### Minor Changes

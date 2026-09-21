@@ -1,5 +1,51 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.22.0
+
+### Minor Changes
+
+- c7a6b59: Declare `narduk-core` as a peer range instead of an exact-pinned
+  dependency.
+
+  Both packages carried `@narduk-enterprises/narduk-core` as `workspace:*` in
+  `dependencies`, which publishes as an exact pin. An app upgrading narduk-core
+  therefore kept a second, older copy alive underneath these two — and
+  narduk-core is a Nuxt module that appends global CSS to `nuxt.options.css`, so
+  which copy's stylesheet wins comes down to module resolution order rather than
+  anything the app declares.
+
+  `narduk-core` now sits in `peerDependencies` at `>=2.6.3 <3.0.0` with a
+  `workspace:*` `devDependencies` entry for these packages' own builds and
+  tests, matching `narduk-uploads`. The consuming app owns the single resolved
+  version.
+
+  Released as a minor rather than a patch because it changes the published
+  manifest shape: an app that reached narduk-core only transitively through
+  these packages must now resolve it itself. Every generated app already
+  declares narduk-core directly — it is the first entry in the generator's Nuxt
+  `modules` list — and pnpm and npm both auto-install a missing peer, so no
+  estate app is expected to need a change.
+
+### Patch Changes
+
+- 07bde95: Stop the published server sources from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-analytics` ships raw `.ts`, so a consumer compiles `server/**` inside
+  its own Nitro type program — where the runtime-config augmentation this module
+  registers does not take effect. Every `runtimeConfig` key is `unknown` there,
+  and a truthiness guard narrows `unknown` to `{}`, so `config.ownerTagSecret`
+  flowing into a `string` failed in every consumer while this package's own
+  `nuxt typecheck` stayed green.
+
+  Server code now reads config through a package-owned
+  `analyticsRuntimeConfig(event)` accessor whose `AnalyticsServerRuntimeConfig`
+  type promises only what `src/module.ts` actually defaults, so the same types
+  hold in this workspace and in a consumer. A new
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `server/**` against a deliberately unaugmented ambient
+  context so the gap cannot reopen silently.
+
 ## 1.21.13
 
 ### Patch Changes

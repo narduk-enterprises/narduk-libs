@@ -1,5 +1,67 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.5.0
+
+### Minor Changes
+
+- c7a6b59: Declare `narduk-core` as a peer range instead of an exact-pinned
+  dependency.
+
+  Both packages carried `@narduk-enterprises/narduk-core` as `workspace:*` in
+  `dependencies`, which publishes as an exact pin. An app upgrading narduk-core
+  therefore kept a second, older copy alive underneath these two — and
+  narduk-core is a Nuxt module that appends global CSS to `nuxt.options.css`, so
+  which copy's stylesheet wins comes down to module resolution order rather than
+  anything the app declares.
+
+  `narduk-core` now sits in `peerDependencies` at `>=2.6.3 <3.0.0` with a
+  `workspace:*` `devDependencies` entry for these packages' own builds and
+  tests, matching `narduk-uploads`. The consuming app owns the single resolved
+  version.
+
+  Released as a minor rather than a patch because it changes the published
+  manifest shape: an app that reached narduk-core only transitively through
+  these packages must now resolve it itself. Every generated app already
+  declares narduk-core directly — it is the first entry in the generator's Nuxt
+  `modules` list — and pnpm and npm both auto-install a missing peer, so no
+  estate app is expected to need a change.
+
+- 1dbf07f: Add `useDatasetSchema` for schema.org `Dataset` JSON-LD.
+
+  Pages that publish a data series — a buoy station, a gauge, a catalog of
+  readings — had no way to describe it as a dataset, so Google Dataset Search
+  and the AI-discovery surfaces that read the same markup saw only a `WebPage`.
+
+  `useDatasetSchema({ name, variableMeasured, temporalCoverage, distribution, license, creator, ... })`
+  emits a `Dataset` node in the established shape of the other schema helpers in
+  this package: auto-imported, `MaybeRefOrGetter` input, and every optional
+  field omitted rather than emitted empty.
+
+  `variableMeasured` takes either a bare string or
+  `{ name, unitText, unitCode, minValue, maxValue, description }` and becomes
+  `PropertyValue` nodes; `distribution` becomes `DataDownload` nodes and drops
+  entries with no `contentUrl`; `creator` defaults to an `Organization` and
+  accepts `Person`; and `includedInDataCatalogUrl` becomes a `DataCatalog` node.
+
+- 0f43a24: Stop pinning `/_og/**` to `prerender: false`, so OG images for
+  prerendered pages are actually generated (narduk-libs#170).
+
+  `nuxt-og-image` emits an _unsigned_ `/_og/s/...` URL while a page is
+  prerendered and relies on the prerender crawler to bake that image to a file.
+  The pin stopped the file being produced, so the unsigned URL fell through to
+  the runtime handler, which rejects it with `403 Missing URL signature` as soon
+  as a signing secret is configured -- which every deployed build requires. SSR
+  pages were never affected; they take the signed `/_og/d/...` branch.
+
+  **This changes your build output.** Each prerendered page that renders a card
+  now writes one image file into the app's static assets, counting against the
+  Workers per-file size and total file-count ceilings, and build time grows with
+  the number of such pages. A baked card is exactly as stale as the page it was
+  built from, so a card that must track data moving between deploys does not
+  belong on a prerendered route. Apps that ship only a static `defaultOgImage`
+  are unaffected; set `ogImage.zeroRuntime: true` or `ogImage.enabled: false` as
+  before.
+
 ## 2.4.14
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-mapkit",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "type": "module",
   "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
   "repository": {
