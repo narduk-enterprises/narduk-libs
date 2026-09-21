@@ -64,6 +64,7 @@ import type {
   DevicesAuditAction,
   DevicesAuditEvent,
   DeviceSession,
+  DeviceSessionWithDevice,
   DevicesResourceRef,
   IssuedCredential,
 } from '../../shared/types/devices'
@@ -723,6 +724,17 @@ export interface DevicesService {
   getSession: (sessionId: string) => Promise<DeviceSession | null>
   /** The active session a bearer token names, resolved by digest, or null. */
   getSessionByToken: (sessionToken: string) => Promise<DeviceSession | null>
+  /**
+   * The same resolution, with the session's device, in **one** query.
+   *
+   * The tenant facts a route needs to authorize anything — `orgId`,
+   * `resourceKind`/`resourceId`, `installationId` — live on the device, not
+   * the session, so a consumer that resolved a bearer and then re-read the
+   * device paid two D1 round trips on its hottest authenticated path
+   * (narduk-libs#225). This is an inner join: a session whose device row is
+   * gone resolves to null rather than to a session with no tenant.
+   */
+  getSessionByTokenWithDevice: (sessionToken: string) => Promise<DeviceSessionWithDevice | null>
   heartbeat: (input: SessionSelector) => Promise<HeartbeatResult>
   issueApprovalToken: (input: IssueApprovalTokenInput) => Promise<IssueApprovalTokenResult>
   issueChallenge: (input: IssueChallengeInput) => Promise<IssueChallengeResult>
@@ -923,6 +935,27 @@ export function createDevices(
         .limit(1)
         .all(),
     )
+  }
+
+  /**
+   * The same lookup joined to the device, so a caller that needs the tenant
+   * does not pay a second round trip for it (narduk-libs#225). Inner join:
+   * a session whose device row is gone is not a session anyone may act on.
+   */
+  async function findSessionWithDeviceByTokenHash(
+    tokenHash: string,
+  ): Promise<DeviceSessionWithDevice | undefined> {
+    const row = first(
+      await db
+        .select()
+        .from(devicesSessions)
+        .innerJoin(devicesDevices, eq(devicesDevices.id, devicesSessions.deviceId))
+        .where(eq(devicesSessions.tokenHash, tokenHash))
+        .limit(1)
+        .all(),
+    )
+    if (!row) return undefined
+    return { ...row.devices_sessions, device: row.devices_devices }
   }
 
   /**
@@ -2426,6 +2459,18 @@ export function createDevices(
 
     async getSessionByToken(sessionToken) {
       const session = await findSessionByTokenHash(await sha256Hex(sessionToken))
+      if (!session || session.revokedAt !== null || session.expiresAt <= now()) return null
+      return session
+    },
+
+    async getSessionByTokenWithDevice(sessionToken) {
+      const session = await findSessionWithDeviceByTokenHash(await sha256Hex(sessionToken))
+      // Exactly `getSessionByToken`'s liveness rule, applied to the same row.
+      // Device status and revocation generation are deliberately not re-tested
+      // here: `revokeDeviceAtomically` and `rotateCredentialAtomically` revoke
+      // the device's sessions in the same batch that bumps the generation, so
+      // a live session already implies a device that has not been revoked out
+      // from under it.
       if (!session || session.revokedAt !== null || session.expiresAt <= now()) return null
       return session
     },
