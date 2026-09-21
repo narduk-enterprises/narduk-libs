@@ -5,6 +5,7 @@ import {
   posthogRecordingsFetch,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 interface RawRecording {
   active_seconds?: number
@@ -51,7 +52,7 @@ interface PosthogRecordingsResponse extends PosthogRecordingsPayload {
 export default defineEventHandler(async (event): Promise<PosthogRecordingsResponse> => {
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const project = resolvePosthogProjectConfig(config, event)
   const query = await getValidatedQuery(event, querySchema.parse)
   const cacheKey = `posthog:recordings:${project.projectId}:${query.limit}`

@@ -4,7 +4,8 @@ import {
   trimRuntimeString,
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { createError, setResponseHeader } from 'h3'
-import { useRuntimeConfig } from 'nitropack/runtime'
+
+import { analyticsRuntimeConfig } from './runtimeConfig'
 
 import type { H3Event } from 'h3'
 
@@ -30,12 +31,11 @@ const INDEXNOW_KEY_PATTERN = /^[a-z0-9-]{8,128}$/i
  * client.
  */
 function resolveConfiguredKey(event: H3Event): string {
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const fallback =
-    [
-      trimRuntimeString((config as Record<string, unknown>).indexNowKey),
-      trimRuntimeString((config.public as Record<string, unknown>).indexNowKey),
-    ].find((key) => key.length > 0) ?? ''
+    [trimRuntimeString(config.indexNowKey), trimRuntimeString(config.public.indexNowKey)].find(
+      (key) => key.length > 0,
+    ) ?? ''
 
   if (
     hasRuntimeEnvBinding(event, 'INDEXNOW_KEY') ||

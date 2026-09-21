@@ -7,6 +7,7 @@ import {
   posthogQueryFetch,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const querySchema = z.object({
   startDate: z.string().optional(),
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event): Promise<PosthogInsightsResponse
   const log = useLogger(event).child('Analytics')
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const project = resolvePosthogProjectConfig(config, event)
   const query = await getValidatedQuery(event, querySchema.parse)
   const dateFrom = query.startDate ?? `-${POSTHOG_DEFAULT_PERIOD}`

@@ -6,6 +6,7 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { resolveGscSiteUrl } from '#narduk-analytics-server/utils/siteConfig'
 
 const bodySchema = z.object({
@@ -19,7 +20,7 @@ export default defineAdminMutation(
   },
   async ({ event, body }) => {
     const input = requireMutationBody(body)
-    const config = useRuntimeConfig(event)
+    const config = analyticsRuntimeConfig(event)
     const siteUrl = resolveGscSiteUrl(config, event)
 
     if (!siteUrl) {

@@ -9,6 +9,7 @@ import {
   resolvePosthogPeriod,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const querySchema = z.object({
   period: z.string().optional().default(POSTHOG_DEFAULT_PERIOD),
@@ -34,7 +35,7 @@ interface PosthogEntryExitResponse extends PosthogEntryExitPayload {
 export default defineEventHandler(async (event): Promise<PosthogEntryExitResponse> => {
   await requireAdmin(event)
 
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const project = resolvePosthogProjectConfig(config, event)
   const query = await getValidatedQuery(event, querySchema.parse)
   const period = resolvePosthogPeriod(query.period)

@@ -1,6 +1,8 @@
 import { readRuntimeString } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { importPKCS8, SignJWT } from 'jose'
 
+import { analyticsRuntimeConfig } from './runtimeConfig'
+
 import type { H3Event } from 'h3'
 
 export const GA_SCOPES = ['https://www.googleapis.com/auth/analytics.readonly']
@@ -46,7 +48,7 @@ export async function getAccessToken(scopes: string[], event?: H3Event): Promise
     return cached.token
   }
 
-  const config = event ? useRuntimeConfig(event) : useRuntimeConfig()
+  const config = analyticsRuntimeConfig(event)
   const saKeyJson = event
     ? readRuntimeString(event, 'GSC_SERVICE_ACCOUNT_JSON', {
         config,

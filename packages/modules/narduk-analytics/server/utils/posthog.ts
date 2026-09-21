@@ -3,6 +3,7 @@ import { createError } from 'h3'
 
 import { resolvePosthogApiHost, resolvePosthogDomain } from './siteConfig'
 
+import type { AnalyticsServerRuntimeConfig } from './runtimeConfig'
 import type { H3Event } from 'h3'
 
 export const POSTHOG_DEFAULT_PERIOD = '30d'
@@ -35,10 +36,7 @@ function escapeHogLiteral(value: string) {
   return value.replaceAll("'", "''")
 }
 
-export function resolvePosthogProjectConfig(
-  config: ReturnType<typeof useRuntimeConfig>,
-  event?: H3Event,
-) {
+export function resolvePosthogProjectConfig(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const apiKey = event
     ? readRuntimeString(event, 'POSTHOG_PERSONAL_API_KEY', {
         config,

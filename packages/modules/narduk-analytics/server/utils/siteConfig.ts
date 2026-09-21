@@ -4,15 +4,14 @@ import {
   readRuntimeString,
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 
+import type { AnalyticsServerRuntimeConfig } from './runtimeConfig'
 import type { H3Event } from 'h3'
-
-type AnalyticsRuntimeConfig = ReturnType<typeof useRuntimeConfig>
 
 function trimValue(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function resolveAnalyticsAppUrl(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function resolveAnalyticsAppUrl(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   if (event) {
     return readRuntimeString(event, 'SITE_URL', { config, fallback: config.public.appUrl })
   }
@@ -20,7 +19,7 @@ export function resolveAnalyticsAppUrl(config: AnalyticsRuntimeConfig, event?: H
   return trimValue(config.public.appUrl)
 }
 
-export function resolveDeploymentTarget(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function resolveDeploymentTarget(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const configured = event
     ? readRuntimeString(event, 'NARDUK_DEPLOY_TARGET', {
         config,
@@ -30,7 +29,7 @@ export function resolveDeploymentTarget(config: AnalyticsRuntimeConfig, event?: 
   return configured === 'staging' || configured === 'preview' ? configured : 'production'
 }
 
-export function isPreviewSafeMode(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function isPreviewSafeMode(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const previewSafeMode = event
     ? readRuntimeBoolean(event, 'NARDUK_PREVIEW_SAFE_MODE', {
         config,
@@ -41,7 +40,7 @@ export function isPreviewSafeMode(config: AnalyticsRuntimeConfig, event?: H3Even
   return previewSafeMode || resolveDeploymentTarget(config, event) === 'preview'
 }
 
-export function assertAnalyticsWriteAllowed(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function assertAnalyticsWriteAllowed(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   if (!isPreviewSafeMode(config, event)) return
 
   throw createError({
@@ -50,7 +49,7 @@ export function assertAnalyticsWriteAllowed(config: AnalyticsRuntimeConfig, even
   })
 }
 
-export function resolveGscSiteUrl(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function resolveGscSiteUrl(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const configured = event
     ? readRuntimeString(event, 'GSC_SITE_URL', { config, fallback: config.gscSiteUrl })
     : trimValue(config.gscSiteUrl)
@@ -67,7 +66,7 @@ export function resolveGscSiteUrl(config: AnalyticsRuntimeConfig, event?: H3Even
   return hostname ? `sc-domain:${hostname}` : appUrl
 }
 
-export function resolvePosthogApiHost(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function resolvePosthogApiHost(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   return (
     (event
       ? readRuntimeString(event, 'POSTHOG_API_HOST', { config, fallback: config.posthogApiHost })
@@ -75,7 +74,7 @@ export function resolvePosthogApiHost(config: AnalyticsRuntimeConfig, event?: H3
   )
 }
 
-export function resolvePosthogDomain(config: AnalyticsRuntimeConfig, event?: H3Event) {
+export function resolvePosthogDomain(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const configured = event
     ? readRuntimeString(event, 'POSTHOG_DOMAIN', { config, fallback: config.posthogDomain })
     : trimValue(config.posthogDomain)
