@@ -944,6 +944,96 @@ describe('create-narduk-app generation contract', () => {
     })
   })
 
+  // narduk-libs#384. narduk-seo@2.4.14 already ships the generator for both
+  // (narduk-libs#397); what was missing is a new app ever declaring them, so a
+  // scaffold shipped no security contact and took an AI-crawler default it
+  // never saw.
+  //
+  // The rule these all turn on: **the generator never invents a reporting
+  // address.** narduk-seo refuses to, and a generator that supplied one would
+  // publish a mailbox nobody had agreed to answer -- worse than no file, since
+  // a security.txt is a promise that someone reads it.
+  describe('security.txt and the AI-crawler policy (narduk-libs#384)', () => {
+    function seoConfig(options: Partial<Parameters<typeof buildGeneratedFiles>[0]> = {}) {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'seo-fixture',
+          capabilities: ['seo'],
+          targetDir: '/tmp/seo-fixture',
+          ...options,
+        }),
+      )
+      return { files, config: files.get('apps/web/nuxt.config.ts') ?? '' }
+    }
+
+    it('declares the AI-crawler policy even when it is the default', () => {
+      const { config } = seoConfig()
+      expect(config).toContain("aiCrawlers: 'allow',")
+    })
+
+    it('publishes security.txt only when a contact was given', () => {
+      expect(seoConfig().config).not.toContain('securityTxt')
+
+      const { config } = seoConfig({ securityContact: 'mailto:security@example.test' })
+      expect(config).toContain('securityTxt: {')
+      expect(config).toContain("contact: 'mailto:security@example.test',")
+    })
+
+    // The README is where someone looks to find out why there is no
+    // security.txt, so the absent case has to say so rather than be silent.
+    it('tells the app which of the two it got', () => {
+      expect(seoConfig().files.get('README.md')).toContain('serves **no** `security.txt`')
+
+      const withContact = seoConfig({ securityContact: 'security@example.test' })
+      expect(withContact.files.get('README.md')).toContain('security@example.test')
+    })
+
+    // `nardukSeo` is only a config key when @nuxtjs/seo is installed. Emitting
+    // it without the capability fails the new app's `nuxt typecheck` with
+    // TS2353 -- the trap `site` fell into (narduk-libs#172) -- so the flag is
+    // refused while it is still in view.
+    it('refuses a contact without the seo capability', () => {
+      expect(() =>
+        buildGeneratedFiles({
+          appName: 'no-seo',
+          capabilities: [],
+          securityContact: 'mailto:security@example.test',
+          targetDir: '/tmp/no-seo',
+        }),
+      ).toThrow(/seo capability/u)
+
+      expect(
+        asFileMap(buildGeneratedFiles({ appName: 'no-seo', targetDir: '/tmp/no-seo' })).get(
+          'apps/web/nuxt.config.ts',
+        ),
+      ).not.toContain('nardukSeo')
+    })
+
+    // Rejected here rather than on the new app's first build, where the error
+    // arrives detached from the flag that caused it. The line-break case is
+    // not cosmetic: RFC 9116 fields are one per line, so a break would inject
+    // a second field into the published body.
+    it.each([
+      ['not a uri', /mailto:, https: or tel:/u],
+      ['   ', /cannot be empty/u],
+      ['mailto:a@b.test\nContact: mailto:attacker@evil.test', /line breaks/u],
+    ])('rejects %j', (contact, message) => {
+      expect(() =>
+        buildGeneratedFiles({
+          appName: 'bad-contact',
+          capabilities: ['seo'],
+          securityContact: contact,
+          targetDir: '/tmp/bad-contact',
+        }),
+      ).toThrow(message)
+    })
+
+    it('accepts a bare address, which narduk-seo reads as mailto:', () => {
+      const { config } = seoConfig({ securityContact: 'security@example.test' })
+      expect(config).toContain("contact: 'security@example.test',")
+    })
+  })
+
   it('emits files already canonical under the generated Prettier contract', async () => {
     const files = buildGeneratedFiles({
       appName: 'format-check',
@@ -1636,6 +1726,23 @@ describe('CLI argument parsing', () => {
     expect(wrangler.workers_dev).toBe(true)
     expect(wrangler.preview_urls).toBe(true)
     expect(parsed.options.visibility).toBe('private')
+  })
+
+  // The flag carries no default on purpose (narduk-libs#384): parsing it is
+  // pass-through, and every rule about the value lives in normalizeOptions so
+  // it holds for a programmatic caller that never touches the CLI.
+  it('passes --security-contact through and defaults it to absent', async () => {
+    const { parseCliArguments } = await import('../src/cli.js')
+    expect(
+      parseCliArguments([
+        'contactful',
+        '--capabilities',
+        'seo',
+        '--security-contact',
+        'mailto:a@b.test',
+      ]).options.securityContact,
+    ).toBe('mailto:a@b.test')
+    expect(parseCliArguments(['contactless']).options.securityContact).toBeUndefined()
   })
 
   it.each([

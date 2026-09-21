@@ -70,6 +70,35 @@ describe('upgrade ownership contract', () => {
     expect(report.changes.every((change) => change.diff === '')).toBe(true)
   })
 
+  // narduk-libs#384. The generator scaffolds `nardukSeo.aiCrawlers` and,
+  // with a contact, `nardukSeo.securityTxt` -- but the AI-crawler policy and
+  // the security contact are exactly the kind of thing an app changes after
+  // generation, and re-imposing either would be the continuing sync
+  // relationship this generator refuses. `apps/web/nuxt.config.ts` is not a
+  // managed target, so this is asserting an existing boundary still holds now
+  // that the generator writes policy into that file.
+  it('never re-imposes a scaffolded crawler policy or security contact', async () => {
+    const targetDir = await scaffold()
+    const generated = await read(targetDir, 'apps/web/nuxt.config.ts')
+    expect(generated, 'the fixture scaffolds the policy this test protects').toContain(
+      "aiCrawlers: 'allow',",
+    )
+
+    await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) =>
+      contents.replace(
+        "aiCrawlers: 'allow',",
+        "aiCrawlers: 'disallow',\n    securityTxt: { contact: 'mailto:app-owned@example.test' },",
+      ),
+    )
+    const edited = await read(targetDir, 'apps/web/nuxt.config.ts')
+
+    const report = await upgradeNardukApp({ targetDir })
+
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(edited)
+    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('missing-from-report')
+    expect(report.driftCount).toBe(0)
+  })
+
   it('refreshes managed units and leaves app-owned content untouched', async () => {
     const targetDir = await scaffold()
     const pristine = {
