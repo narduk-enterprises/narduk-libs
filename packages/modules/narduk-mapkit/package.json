@@ -8,9 +8,9 @@
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
     "directory": "packages/modules/narduk-mapkit"
   },
-  "homepage": "https://github.com/narduk-enterprises/narduk-mapkit#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-mapkit#readme",
   "bugs": {
-    "url": "https://github.com/narduk-enterprises/narduk-mapkit/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
   },
   "license": "MIT",
   "keywords": [

@@ -36,6 +36,23 @@ app that wants light-only sets
 `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
 still override `classSuffix`.
 
+## Session module (`nuxt-auth-utils`)
+
+`coreModules` still installs
+[`nuxt-auth-utils`](https://github.com/atinux/nuxt-auth-utils) so dashboard
+chrome can keep `useUserSession`. Its session plugin fetches
+`/api/_auth/session` during every SSR, and with no `NUXT_SESSION_PASSWORD` that
+request throws (narduk-libs#540). The install now reuses the module's own
+`auth.loadStrategy` option:
+
+- **`'none'`** when the app has not configured auth, so SSR makes no session
+  call and logs no error. A published-data app (Buoys) is this case.
+- **The default (`'server-first'`)** when an existing signal says the app uses
+  auth: `NUXT_SESSION_PASSWORD` or `SESSION_PASSWORD` is non-empty at build
+  time, `runtimeConfig.session.password` is already set, or the app lists
+  `@narduk-enterprises/narduk-auth` or `nuxt-auth-utils` in `modules`.
+- **Unchanged** when the app already set `auth.loadStrategy`.
+
 ## Security headers (`security.headers`)
 
 narduk-core has always set security headers.
@@ -1021,6 +1038,38 @@ type StationQuery = z.input<typeof contract.query>
 
 That needs nothing from this package. Generating a typed `$fetch` client across
 the whole API surface is a larger piece of work and is deliberately not here.
+
+## Published-data routes: `definePublishedDataHandler`
+
+A public read whose success is cacheable and whose failure is not
+(narduk-libs#514). It replaces `defineEventHandler` at the route:
+
+```ts
+// server/api/stations/index.get.ts
+export default definePublishedDataHandler(
+  async (event) => listStations(getQuery(event)),
+  {
+    profile: 'live',
+    tags: ['published-data'],
+    fallbackMessage: 'Station data is temporarily unavailable.',
+  },
+)
+```
+
+- **The cache profile is applied after success only.** A route that calls
+  `setCacheProfile` first advertises a 400 or 404 as publicly cacheable for the
+  profile's TTL. Here an error never gets a cacheable posture, and the
+  `error-cache` plugin makes it `private, no-store`. `setCacheProfile`'s own
+  guards still apply to the success path.
+- **An internal failure is a sanitized 503.** Anything thrown without a
+  `statusCode` (a failed fetch, a schema error whose message dumps every field)
+  is logged through the request logger and answered with `fallbackMessage`. A
+  deliberate `createError({ statusCode: 404 })` passes through unchanged.
+- **Rate limiting is opt-in.** Pass `rateLimit` (the
+  [`defineRateLimitedHandler`](#per-route-rate-limits-defineratelimitedhandler)
+  options) to put a limit in front of the read; without it none is applied. On a
+  shared-cacheable route pass `headers: 'none'` with it, because the
+  `RateLimit-*` family is per caller.
 
 ## Edge cache: setCacheProfile
 
