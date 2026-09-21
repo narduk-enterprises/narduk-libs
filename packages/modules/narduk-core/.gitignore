@@ -1,0 +1,4 @@
+# Written and removed by tests/consumer-server-typecheck.test.ts while it proves
+# tsconfig.consumer-server.json still rejects the narduk-libs#656 pattern. Only
+# present mid-run; ignored so an interrupted run cannot leave it staged.
+tests/fixtures/__consumer-probe.generated.ts

@@ -25,8 +25,8 @@
  *                  miserable to debug and buys nothing.
  */
 import { defineEventHandler, setResponseHeaders } from 'h3'
-import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { coreRuntimeConfig } from '../utils/runtime-config'
 import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
 
 import type { SecurityHeadersMode } from '../../shared/security-headers'
@@ -101,7 +101,7 @@ function resolvePresetMode(config: object): SecurityHeadersMode {
 }
 
 export default defineEventHandler((event) => {
-  const config = useRuntimeConfig(event)
+  const config = coreRuntimeConfig(event)
   const isDev = import.meta.dev
   const presetMode = resolvePresetMode(config)
   const appVersion = config.public.appVersion
