@@ -139,14 +139,43 @@ export function parseListQuery(
 }
 
 /**
- * Logs one structured warning per request naming every list-query key this
- * route does not declare. `unknownKeys` is non-empty only when the schema
+ * How many distinct unknown-key sets {@link warnUnknownListQueryKeys}
+ * remembers before it clears wholesale and starts warning again -- the same
+ * cap-and-clear shape `format.ts`'s `MAX_CACHE_ENTRIES` cache uses in
+ * narduk-shell (narduk-libs#287). Real routes have a small, code-defined
+ * number of ways to misspell a query key; this exists so an adversarial
+ * caller varying the throwaway key every request pays a rebuild instead of
+ * growing the set without bound.
+ */
+const MAX_WARNED_UNKNOWN_KEY_SETS = 256
+
+/**
+ * Distinct unknown-key sets this process has already warned about, so a
+ * client repeating the same mistake logs once per set rather than once per
+ * request (narduk-libs#285).
+ */
+const warnedUnknownKeySets = new Set<string>()
+
+/** Order-independent identity for a set of unknown keys. */
+function unknownKeySetId(unknownKeys: readonly string[]): string {
+  return [...unknownKeys].sort().join('\u0000')
+}
+
+/**
+ * Logs one structured warning per distinct unknown-key set naming every
+ * list-query key this route does not declare, not once per request carrying
+ * that set (narduk-libs#285). `unknownKeys` is non-empty only when the schema
  * tolerated them — the `strict` option was not set — since `strict: true`
  * rejects them with a 400 before `parseListQuery` gets here. See
  * `.changeset/list-query-tolerate-unknown-keys.md`.
  */
 function warnUnknownListQueryKeys(event: H3Event, unknownKeys: readonly string[]): void {
   if (unknownKeys.length === 0) return
+
+  const keySetId = unknownKeySetId(unknownKeys)
+  if (warnedUnknownKeySets.has(keySetId)) return
+  if (warnedUnknownKeySets.size >= MAX_WARNED_UNKNOWN_KEY_SETS) warnedUnknownKeySets.clear()
+  warnedUnknownKeySets.add(keySetId)
 
   // Tolerating an unknown key must never depend on logging succeeding: a
   // logger failure (of any kind, in any consumer) reports nothing rather

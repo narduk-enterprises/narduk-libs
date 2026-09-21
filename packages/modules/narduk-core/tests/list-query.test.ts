@@ -97,6 +97,32 @@ describe('parseListQuery — unknown keys (tolerate-and-warn default)', () => {
 
     expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(0)
   })
+
+  it('dedupes repeat requests carrying the same unknown key set (#285)', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    // Five requests, same throwaway key every time -- the shape of an
+    // ordinary authenticated session hammering one buggy client integration,
+    // not five distinct mistakes.
+    for (let index = 0; index < 5; index++) {
+      await call('/?limit=10&dedupeProbe285=1', offsetRoute)
+    }
+
+    expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(1)
+  })
+
+  it('still warns again for a genuinely different unknown key set (#285)', async () => {
+    const sink = createMemorySink()
+    runtimeConfig.current = { nardukLogging: { sinks: [sink] } }
+
+    await call('/?limit=10&distinctProbeA285=1', offsetRoute)
+    await call('/?limit=10&distinctProbeB285=1', offsetRoute)
+
+    // Dedupe is per key-set, not a single global latch: a second, different
+    // mistake in the code must still surface.
+    expect(sink.records.filter((record) => record.level === 'warn')).toHaveLength(2)
+  })
 })
 
 describe('parseListQuery — strict opt-in', () => {
