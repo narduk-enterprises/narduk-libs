@@ -80,13 +80,14 @@ function innerRequestHeaders(event: H3Event): Record<string, string> {
   // So carry the socket address across, and only the socket address: `getRequestIP` without
   // `xForwardedFor` reads `event.context.clientAddress` and the socket, neither of which the client
   // chooses. Forwarding a client-chosen address instead would let a HEAD spend a victim's
-  // allowance. Nothing is synthesised when the request already carries an identity header, so a
-  // real `cf-connecting-ip` is never overridden and an `x-forwarded-for` deployment resolves the
-  // inner request exactly the way it resolved the outer one.
-  const carriesIdentityHeader =
-    Boolean(getRequestHeader(event, CF_CONNECTING_IP_HEADER)?.trim()) ||
-    Boolean(getRequestHeader(event, 'x-forwarded-for')?.trim())
-  if (!carriesIdentityHeader) {
+  // allowance. Nothing is synthesised when the request already carries `cf-connecting-ip`, so a
+  // real one is never overridden. `x-forwarded-for` alone does not count as already resolved:
+  // `getClientIp` (`client-ip.ts`) only reads it when a caller opts in with `trustForwardedFor`,
+  // which defaults off, so by default an `x-forwarded-for`-only request resolves through the
+  // socket on both the outer request and this synthesised inner one -- exactly like a direct GET
+  // -- rather than falling to `'unknown'` because the inner event has no socket of its own.
+  const carriesCfConnectingIp = Boolean(getRequestHeader(event, CF_CONNECTING_IP_HEADER)?.trim())
+  if (!carriesCfConnectingIp) {
     const socketAddress = getRequestIP(event)
     if (socketAddress) headers[CF_CONNECTING_IP_HEADER] = socketAddress
   }

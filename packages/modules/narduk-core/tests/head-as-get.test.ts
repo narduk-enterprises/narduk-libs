@@ -200,13 +200,18 @@ describe('head-as-get middleware', () => {
     expect(head.headers.get('x-seen-cf-connecting-ip')).toBe('203.0.113.7')
   })
 
-  it('never turns a client-chosen forwarded address into the trusted identity header', async () => {
+  it('never turns a client-chosen forwarded address into the trusted identity header, and still carries the socket inward', async () => {
     // `cf-connecting-ip` is read first and unconditionally by `getClientIp`. Synthesising it from
-    // `x-forwarded-for` would let a HEAD spend a victim's rate-limit allowance.
+    // `x-forwarded-for` would let a HEAD spend a victim's rate-limit allowance, so the forwarded
+    // value must never land there. But `getClientIp` only reads `x-forwarded-for` at all when a
+    // caller opts in with `trustForwardedFor` (off by default), so by default this request resolves
+    // through the socket on the outer GET too -- the inner request needs the same socket address,
+    // not `null`, or it falls to the shared `'unknown'` bucket while a direct GET on the same
+    // connection would not (narduk-libs#681 review).
     const head = await probe('/api/echo', {
       headers: { 'x-forwarded-for': '198.51.100.9' },
     })
-    expect(head.headers.get('x-seen-cf-connecting-ip')).toBeNull()
+    expect(head.headers.get('x-seen-cf-connecting-ip')).toBe('127.0.0.1')
     expect(head.headers.get('x-seen-forwarded-for')).toBe('198.51.100.9')
   })
 
