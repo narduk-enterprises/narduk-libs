@@ -1,5 +1,54 @@
 # @narduk-enterprises/narduk-devices
 
+## 0.6.0
+
+### Minor Changes
+
+- 4248b20: Resolve a device session and its tenant in one query.
+
+  `DeviceSession` carries the session's own facts but not the tenant's: `orgId`,
+  `resourceKind`/`resourceId` and `installationId` live on the device row. A
+  consumer answering "which tenant is this request for?" had to resolve the
+  bearer and then re-read the device — two D1 round trips on the hottest
+  authenticated path the package has.
+
+  `getSessionByTokenWithDevice(sessionToken)` is the joined resolution, and
+  `requireDeviceSession` now uses it and returns `DeviceSessionWithDevice`, so
+  `session.device` is already populated. Proven on the real D1 driver: one
+  statement for the guard end to end, exactly two for the shape it replaces, and
+  `n` statements for `n` requests rather than `2n`.
+
+  The session's own fields are unchanged, and the device is nested rather than
+  merged because both rows carry `id`, `createdAt`, `revokedAt` and
+  `revocationGeneration`.
+
+  Adjust if you supply your own resolver: `DeviceSessionResolver` is now
+  `Pick<DevicesService, 'getSessionByTokenWithDevice'>`. Passing the real
+  service needs no change; a hand-rolled stub that only implements
+  `getSessionByToken` must implement the joined method instead.
+  `getSessionByToken` itself is unchanged and still exported.
+
+### Patch Changes
+
+- 45cd906: `completeClaim` checks the caller's org and resource before it
+  reports anything about the claim session, and before it counts the attempt
+  (narduk-libs#533). This is the fix #243 made to `issueApprovalToken`, applied
+  to the completion path it was left off.
+
+  A caller naming another org or resource now gets `unauthorized_user` whatever
+  state the session is in. Before, only a pending session answered that way: a
+  completed one answered `already_completed`, a revoked one `revoked`, an
+  expired one `expired` and a wrong fingerprint `hardware_mismatch`, so any
+  caller holding a claim session id could read another tenant's claim state.
+
+  Those refusals are also no longer counted against the owner's claim token. The
+  subject list was built before the org was ever compared, so five refused
+  cross-org attempts crossed the per-token threshold and locked the owning
+  tenant out of its own ceremony for the cooldown. A cross-org attempt is still
+  counted — against the caller's own account and IP — and the owning org's
+  answers, `completeClaimWithRecordedApproval`, and `not_found` for a session id
+  that does not exist are all unchanged.
+
 ## 0.5.0
 
 ### Minor Changes

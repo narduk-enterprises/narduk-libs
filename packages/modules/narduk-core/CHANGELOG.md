@@ -1,5 +1,123 @@
 # @narduk-enterprises/narduk-core
 
+## 2.8.0
+
+### Minor Changes
+
+- 62b7b79: New server util
+  `definePublishedDataHandler(handler, { profile, tags?, vary?, fallbackMessage?, rateLimit? })`
+  for public published-data reads (narduk-libs#514). It applies the cache
+  profile only after the handler succeeds, so an error never advertises a
+  cacheable posture. An internal failure without a `statusCode` is logged and
+  answered with a sanitized 503, and a deliberate `createError` passes through
+  unchanged. Rate limiting goes through `defineRateLimitedHandler` and is
+  applied only when `rateLimit` is passed. It is auto-imported, so an app with
+  its own `definePublishedDataHandler` in `server/utils` (Buoys) should replace
+  its local copy when it adopts this release. `create-narduk-app` is a companion
+  patch so the generator pin moves with this core minor.
+- c574403: core: answer `HEAD` on file-based API routes
+
+  h3's router matches the request method exactly, so a `*.get.ts` file route
+  registers `handlers.get` and nothing else and every `HEAD` to an API path fell
+  through to a 404 — including `/api/health`, the path apps enrol for uptime
+  monitoring. A monitor probing with `HEAD`, the conventional choice for a
+  liveness check, saw the app as down. RFC 9110 §9.3.2 requires `HEAD` to be
+  identical to `GET` minus the body.
+
+  A new server middleware answers `HEAD` on `/api` paths by re-entering the app
+  with `GET` and returning that response's status and headers with no body, so
+  the two cannot drift and a failing health check still surfaces as its real
+  status rather than as a cheap `200`. Pages are untouched: the Nuxt renderer is
+  bound to no method and already answers `HEAD`.
+
+  The re-entering request carries the caller's identity. Headers already
+  forwarded survive the hop untouched; a caller identified only by its socket
+  has that address carried inward explicitly, because the inner request has no
+  socket and would otherwise join every other `HEAD` in the single `'unknown'`
+  rate-limit bucket. A client-chosen forwarded address is never promoted to the
+  trusted identity header.
+
+### Patch Changes
+
+- cecc72a: Dedupe `parseListQuery`'s unknown-query-key warning per distinct key
+  set instead of logging once per request.
+
+  The tolerate-and-warn path (#257, shipped in #283) logged one structured
+  `warn` line every time a request carried an unknown list-query key, with no
+  dedupe, counter, or cache. Two of the three routes it covers have no rate
+  limit ahead of it, so an ordinary authenticated session could force unbounded
+  log volume — and the per-request hot-path cost that comes with it — just by
+  appending one throwaway query parameter to every request (e.g.
+  `GET /api/notifications?limit=20&x=1`).
+
+  The warning now logs once per distinct unknown-key set per process,
+  remembering at most 256 sets. Past that cap it emits exactly one final
+  `list_query_unknown_keys_suppressed` notice and stops — it does not clear and
+  resume — so a caller varying the throwaway key every request cannot reproduce
+  one-log-line-per-request by pushing the memorized set past its limit. Memory
+  stays bounded at 256 remembered sets, and total log lines are now at most 257
+  per isolate, regardless of request volume. Only the key _names_ were ever
+  logged, never values, so this was a log-volume issue, not an injection or
+  leakage one.
+
+- 62b7b79: Stop the unhandled `/api/_auth/session` SSR error in apps that have
+  not configured auth (narduk-libs#540). `coreModules` still installs
+  `nuxt-auth-utils` (dashboard chrome uses `useUserSession`), but passes the
+  module's existing `auth.loadStrategy: 'none'` unless the app already set a
+  strategy, has a session password (`NUXT_SESSION_PASSWORD`, `SESSION_PASSWORD`,
+  or `runtimeConfig.session.password`), or lists `narduk-auth` /
+  `nuxt-auth-utils` in `modules`. A no-auth fixture SSRs without that fetch and
+  without an error log. `create-narduk-app` is a companion patch so the
+  generator pin moves with core.
+- 2671ccd: The production error sanitizer can no longer throw.
+  `sanitizeProductionError` assigned `statusText` unguarded, and
+  `'statusText' in error` is true for a getter with no setter, so the write
+  threw in strict mode, escaped into Nitro's error handling, and turned a
+  correct status into a 500 with the original error discarded. `message`,
+  `statusMessage` and the `delete` of `data` and `cause` could fail the same
+  way, with worse consequences.
+
+  Every field is now scrubbed defensively, falling back to
+  `Object.defineProperty` so an inherited accessor is shadowed by an own data
+  property and the value is actually removed rather than merely not throwing.
+  One field that resists both paths no longer aborts the rest of the pass.
+
+- b672613: Declare `vue-router` as a peer dependency of narduk-core.
+
+  `runtime/app/components/app/LayerAppHeader.vue` imports the type
+  `RouteLocationRaw` from `vue-router`, and `runtime/` is in narduk-core's
+  published `files`, so that bare specifier ships to every consumer. narduk-core
+  declared `vue-router` nowhere — not in `dependencies`, not in
+  `peerDependencies` — so it resolved only because `vue-router` is a dependency
+  of `nuxt` (`^5.2.0` per `nuxt@4.5.2`'s own `package.json`), which every
+  consumer has today. A pnpm install with a restricted `hoist-pattern`, or a
+  `node-linker` setting that suppresses that hoist, would get
+  `TS2307: Cannot find module 'vue-router'`.
+
+  Same shape as the `@nuxt/schema` phantom dependency closed in #382 — it was
+  found by that PR's published-surface scan and deliberately left out to keep
+  that PR scoped (narduk-libs#383). The range mirrors what `nuxt@4.5.2` itself
+  declares, so any Nuxt app already has a satisfying copy and this declaration
+  adds no install.
+
+  `@narduk-enterprises/create-narduk-app` moves in lockstep because it pins
+  narduk-core's version in `PACKAGE_VERSIONS`.
+
+  **Consumer impact.** `patch`, not `minor`: this declares a dependency that was
+  already required at runtime for every consumer today (any app using
+  narduk-core already brings in `nuxt`, which already brings in `vue-router` —
+  narduk-core's own type import has always needed it to resolve), it does not
+  add a new runtime requirement. A consumer already on `vue-router >=5.2.0` —
+  which is every consumer today, since that is what `nuxt@4.5.2` itself pulls in
+  — sees no change: no new install, no version bump forced on their lockfile, no
+  new peer warning. A consumer on an older, unsupported `nuxt` that resolved a
+  pre-5.2.0 `vue-router` would newly see a peer range warning on their next
+  install, surfacing a version this package already silently depended on rather
+  than creating a new one.
+
+- Updated dependencies [7bfcf46]
+  - @narduk-enterprises/narduk-logging@0.3.1
+
 ## 2.7.0
 
 ### Minor Changes

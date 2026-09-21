@@ -1,5 +1,105 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.16.0
+
+### Minor Changes
+
+- 7b99efb: `doctor --adoption --live` and `foundation:check:security-headers`
+  now probe the paths the app declares in `deployment.liveProof`, instead of a
+  hard-coded `/`, `/api/health` and `x-build-version`.
+
+  Requirement 5 reads the build stamp from `liveProof.smokePath` under the
+  header `liveProof.buildVersionHeader`, requirement 12 reads
+  `liveProof.healthPath`, and requirement 8 points its header probe at the
+  declared smoke path. With no `--path`, `resolveProbeUrls` now reads the base
+  URL exactly as given rather than resolving `/` against it, so a
+  `--base-url https://app.example/login` probes `/login`.
+
+  `foundation:check:deployment` item 12.3 already requires those fields, so the
+  declaration always existed and the tools simply did not read it. On an
+  authenticated app -- one whose root correctly refuses an anonymous request --
+  that reported a working delivery path as undecided (R5) and a working health
+  contract as failing (R12), and rewarded an app that left its health route open
+  to anonymous callers over one that did not. A required `unknown` blocks
+  declaration, so this was not a cosmetic verdict.
+
+  The old values remain the fallback for an app that declares no `liveProof`
+  block, so an app declaring the defaults is unaffected. `DeploymentArtefact`
+  gains `declaration.liveProof`, and `AdoptionLiveReading` gains `smokeUrl`,
+  `healthUrl` and `buildVersionHeader` so a report names the routes it actually
+  read.
+
+- de5abe4: Add an explicit local incident hotfix command with a clean commit
+  snapshot, offline frozen install, required app checks, isolated build
+  credentials, confirmed production target, version promotion, live proof and a
+  durable failure receipt. Ship the operator runbook and generator scripts.
+  Existing deployment commands remain compatible.
+
+  Prevent the shared live probe from forwarding caller-provided request headers,
+  including Cloudflare Access credentials, through cross-origin redirects.
+
+### Patch Changes
+
+- c7a2aaf: Read `GH_PACKAGES_READ` as a registry credential, so
+  `foundation:check` is decided on the sanctioned local route.
+
+  Item 2.3 needs a live packument read to place `narduk-core` in its N-1 window.
+  `NpmRegistryReality` takes its token from the environment and deliberately
+  from nowhere else — it reads no `.npmrc` and no `_authToken` line, so that a
+  project routing the scope elsewhere gets an anonymous read rather than a
+  credential. It looked for `NODE_AUTH_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN`.
+
+  `gh-packages-run` — the only sanctioned local route, and the one the estate
+  READMEs name — supplies the value as `GH_PACKAGES_READ` and writes a 0600
+  process-scoped userconfig referencing it by name, which is what `pnpm install`
+  needs and which this reader cannot see by design. So the credential was
+  present in the environment during `gh-packages-run pnpm run foundation:check`
+  and invisible to the component that needed it: item 2.3 collapsed to
+  `unknown`, and `UNKNOWN` is a blocking exit. There was no documented local
+  invocation that produced a decided result (narduk-farm#148).
+
+  `GH_PACKAGES_READ` is now last in that chain. Last rather than first keeps the
+  CI path byte-identical: `nuxt-cloudflare.yml` already aliases the two names to
+  the same value, and its own comment named this change as the fix — _"Export
+  both names, same value, until narduk-app-tools reads GH_PACKAGES_READ
+  instead."_ That alias exists because workflows#79 renamed the exported
+  credential and silently broke package-token-mode `foundation-check` for every
+  v1 adopter past `afbaa6051e` (buoys#39). It can retire once callers are past
+  this release.
+
+  No new destination for the token: it is still sent only to
+  `npm.pkg.github.com`, and a mirrored or lookalike scope route still gets an
+  anonymous read.
+
+- 3e38fc5: `og:check`'s canonical-origin mismatch error now names both the
+  actual and expected `og:url`, and hints `NUXT_PUBLIC_SITE_URL` for a local
+  `--base-url` run instead of leaving "og:url does not identify the sampled page
+  on the canonical origin" with no clue why (#587). Also documents when a page
+  keeps the static `defaultOgImage` fallback versus getting its own generated
+  image — the rule follows whether `useSeo` is called (and how), not whether the
+  page is indexed.
+
+  Pure diagnostics/docs fix, no public API change.
+
+- 88f8ae7: `parseWranglerVersionsJson` (used by `promote`'s
+  `deployments list`/`versions list` reads) now anchors to the LAST line that
+  starts with `[` or `{` at column 0, instead of the first bracket anywhere in
+  the captured stdout. A warning printed earlier in the same `pnpm exec` chain
+  (for example, an `engines` mismatch:
+  `WARN Unsupported engine: wanted: {"node":"24.21.0"}`) could contain a bracket
+  mid-line; the old heuristic parsed that fragment instead of wrangler's real,
+  later JSON document and reported a confusing "wrangler-failed" outcome that
+  named nothing real (#470). The parse-failure message also now includes the
+  first 200 characters of the captured stdout, so contamination like this names
+  itself instead of being invisible.
+- 9452204: Document verified persona injection for local hotfix credentials
+  whose registered nVault key names differ from Wrangler's environment variable
+  names.
+
+  Preserve runtime variables through generated Wrangler configuration so local
+  hotfix uploads support Wrangler 4.90.1, whose versions-upload command does not
+  yet accept the equivalent CLI flag.
+
 ## 0.15.0
 
 ### Minor Changes

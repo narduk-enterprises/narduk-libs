@@ -21,23 +21,23 @@ export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260714.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.8.0',
+  '@narduk-enterprises/narduk-mapkit': '2.8.1',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.15.0',
+  '@narduk-enterprises/narduk-app-tools': '0.16.0',
   '@narduk-enterprises/eslint-config': '2.1.0',
-  '@narduk-enterprises/narduk-ai': '0.3.13',
-  '@narduk-enterprises/narduk-analytics': '1.21.13',
-  '@narduk-enterprises/narduk-auth': '1.28.13',
+  '@narduk-enterprises/narduk-ai': '0.3.14',
+  '@narduk-enterprises/narduk-analytics': '1.22.0',
+  '@narduk-enterprises/narduk-auth': '1.28.14',
   '@narduk-enterprises/narduk-charts': '2.5.4',
-  '@narduk-enterprises/narduk-core': '2.7.0',
-  '@narduk-enterprises/narduk-logging': '0.3.0',
+  '@narduk-enterprises/narduk-core': '2.8.0',
+  '@narduk-enterprises/narduk-logging': '0.3.1',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.1.0',
-  '@narduk-enterprises/narduk-seo': '2.4.14',
+  '@narduk-enterprises/narduk-seo': '2.5.0',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
@@ -52,7 +52,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.5.0',
+  '@narduk-enterprises/narduk-shell': '0.5.1',
   '@narduk-enterprises/narduk-testkit': '1.6.2',
   '@narduk-enterprises/narduk-uploads': '1.21.2',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
