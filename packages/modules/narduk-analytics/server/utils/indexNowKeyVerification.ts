@@ -34,8 +34,8 @@ function resolveConfiguredKey(event: H3Event): string {
   const config = analyticsRuntimeConfig(event)
   const fallback =
     [
-      trimRuntimeString((config as Record<string, unknown>).indexNowKey),
-      trimRuntimeString((config.public as Record<string, unknown>).indexNowKey),
+      trimRuntimeString(config.indexNowKey),
+      trimRuntimeString(config.public.indexNowKey),
     ].find((key) => key.length > 0) ?? ''
 
   if (
