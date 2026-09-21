@@ -40,7 +40,6 @@ import type { H3Event } from 'h3'
 import type { z } from 'zod'
 
 export { LIST_QUERY_STATEMENT_CEILING } from '@narduk-enterprises/narduk-platform/list-query'
-export { MAX_WARNED_UNKNOWN_KEY_SETS }
 
 /** Stable `data` payload carried by every list-query 400. */
 export interface ListQueryErrorPayload {
@@ -150,7 +149,7 @@ export function parseListQuery(
  * misspell a query key, so the first {@link MAX_WARNED_UNKNOWN_KEY_SETS}
  * distinct sets any isolate sees still catch every real mistake.
  */
-const MAX_WARNED_UNKNOWN_KEY_SETS = 256
+export const MAX_WARNED_UNKNOWN_KEY_SETS = 256
 
 /**
  * Distinct unknown-key sets this process has already warned about, so a
