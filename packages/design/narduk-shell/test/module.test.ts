@@ -15,6 +15,7 @@ interface NuxtKitMocks {
   addComponent: ReturnType<typeof vi.fn>
   addComponentsDir: ReturnType<typeof vi.fn>
   addImports: ReturnType<typeof vi.fn>
+  addServerImports: ReturnType<typeof vi.fn>
 }
 
 /**
@@ -30,6 +31,20 @@ function importCall(addImports: ReturnType<typeof vi.fn>, name: string) {
   return match as { name: string; from: string }
 }
 
+/**
+ * The `addServerImports` registration for `name`. `addServerImports` takes an
+ * ARRAY of presets per call, so this flattens every call's array before
+ * looking the name up -- a later item grouping its own two names in one call
+ * must not hide an earlier one.
+ */
+function serverImportCall(addServerImports: ReturnType<typeof vi.fn>, name: string) {
+  const match = addServerImports.mock.calls
+    .flatMap(([call]) => (Array.isArray(call) ? call : [call]) as { name: string; from: string }[])
+    .find((call) => call.name === name)
+  expect(match, `addServerImports was not called for ${name}`).toBeDefined()
+  return match as { name: string; from: string }
+}
+
 function mockNuxtKit(): NuxtKitMocks {
   const addComponent = vi.fn()
   // Registered so the test can prove the module never reaches for it. A bare
@@ -37,18 +52,20 @@ function mockNuxtKit(): NuxtKitMocks {
   // reads as a different failure than the one that matters.
   const addComponentsDir = vi.fn()
   const addImports = vi.fn()
+  const addServerImports = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
     addComponentsDir,
     addImports,
+    addServerImports,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
   }))
 
-  return { addComponent, addComponentsDir, addImports }
+  return { addComponent, addComponentsDir, addImports, addServerImports }
 }
 
 function mockRegistry(components: readonly NeComponentRegistration[]) {
@@ -209,6 +226,81 @@ describe('narduk-shell module', () => {
     const call = importCall(addImports, 'useConfirm')
     expect(call.from.startsWith('/')).toBe(true)
     expect(call.from).toContain('/src/runtime/composables/use-confirm')
+  })
+
+  /**
+   * Nuxt reserves the specifier a module was registered
+   * under: `@nuxt/kit` records an `entryPath` per installed module and the
+   * import-protection plugin refuses app code that imports it. That entry
+   * path is the `./module` subpath only while the resolved file sits under a
+   * `node_modules/` segment -- that is how `mlly`'s
+   * `lookupNodeModuleSubpath` maps it back through the `exports` map. Resolve
+   * this package through a checkout instead (a workspace link, or an app's
+   * `link:`/`file:` dependency on a clone) and the lookup finds no package
+   * name, so Nuxt falls back to the raw
+   * `modules: ['@narduk-enterprises/narduk-shell']` string and every value
+   * import of the package ROOT is refused with "Importing directly from
+   * module entry-points is not allowed" -- reproduced on Nuxt 4.5.2
+   * (rolldown) with both a page and a server route.
+   *
+   * An auto-import is immune because the generated import names the runtime
+   * FILE, never the package. These two tests are that guarantee: they fail if
+   * a later edit drops either registration, or repoints one at the package
+   * specifier the protection pattern matches.
+   */
+  it('auto-imports parseSort and toCsv from the runtime utils file, not the package root', async () => {
+    const { addImports } = mockNuxtKit()
+
+    const module_ = await loadModule()
+    await module_.setup({ components: true }, makeNuxt())
+
+    for (const name of ['parseSort', 'toCsv']) {
+      const call = importCall(addImports, name)
+      expect(call.from.startsWith('/')).toBe(true)
+      expect(call.from).toContain('/src/runtime/utils/data-table')
+      expect(call.from.endsWith('@narduk-enterprises/narduk-shell')).toBe(false)
+    }
+  })
+
+  it('auto-imports parseSort and toCsv on the server too, so a server route needs no specifier', async () => {
+    const { addServerImports } = mockNuxtKit()
+
+    const module_ = await loadModule()
+    await module_.setup({ components: true }, makeNuxt())
+
+    for (const name of ['parseSort', 'toCsv']) {
+      const call = serverImportCall(addServerImports, name)
+      expect(call.from.startsWith('/')).toBe(true)
+      expect(call.from).toContain('/src/runtime/utils/data-table')
+    }
+  })
+
+  it('keeps both data-table auto-imports when components are disabled', async () => {
+    const { addImports, addServerImports } = mockNuxtKit()
+
+    const module_ = await loadModule()
+    await module_.setup({ components: false }, makeNuxt())
+
+    // `components: false` opts out of the suite's global COMPONENT names.
+    // `parseSort` and `toCsv` are plain functions with no Vue import, and an
+    // app that writes its own table markup is exactly the app that still
+    // wants them.
+    for (const name of ['parseSort', 'toCsv']) {
+      importCall(addImports, name)
+      serverImportCall(addServerImports, name)
+    }
+  })
+
+  it('auto-imports the same functions the package root exports, not a divergent copy', async () => {
+    // The auto-import and the documented root import must be the same code.
+    // Loaded for real (no '@nuxt/kit' mock): src/index.ts re-exports both from
+    // the very file the registrations above name.
+    const [barrel, runtime] = await Promise.all([
+      import('../src/index'),
+      import('../src/runtime/utils/data-table'),
+    ])
+    expect(barrel.parseSort).toBe(runtime.parseSort)
+    expect(barrel.toCsv).toBe(runtime.toCsv)
   })
 
   it('defaults component registration on, and transpiles the package exactly once', async () => {

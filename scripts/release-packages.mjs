@@ -615,6 +615,23 @@ function addPackedCoreUiRuntimeSmoke(generatedDirectory) {
 // page is ever served. The Playwright assertion is the second half of the
 // proof: it shows the values did not just survive the build, they executed
 // and produced the right output.
+//
+// The auto-import fixtures below cover the other half of the same surface,
+// added after this repository's own libs-explorer (narduk-libs#689) hit the
+// refusal from a workspace link. Nuxt reserves the
+// specifier a module was REGISTERED under -- the generated app's own
+// `modules: ['@narduk-enterprises/narduk-shell']` -- and refuses app code that
+// imports it. A packed install escapes that (`mlly` maps the resolved file
+// back to the `./module` subpath, which is what the page above proves still
+// holds), but a consumer whose copy comes from a CHECKOUT does not: there the
+// lookup finds no package name, Nuxt falls back to the raw `modules:` string,
+// and every root value import is refused in the app and in Nitro alike. The
+// module's answer is to auto-import `parseSort` and `toCsv` on both sides, so
+// this fixture also uses them with NO import specifier at all -- in the page,
+// and in a server route, which is the documented "a server route can write the
+// same CSV" claim. That route is also the standing proof that Nitro really
+// transpiles this package's raw TypeScript in a Narduk app
+// (narduk-core's `allowNitroEsbuildForNardukPackages`).
 function addPackedShellRootValueImportSmoke(generatedDirectory) {
   const pagePath = join(
     generatedDirectory,
@@ -642,14 +659,52 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
       '',
       "const descriptor = rootImportStatus('ok')",
       'const primaryColorAlias = NARDUK_SHELL_APP_CONFIG.ui.colors.primary',
+      '',
+      '// No import specifier at all (narduk-libs#689). The module auto-imports',
+      '// both, which is what keeps them reachable in a consumer whose copy of',
+      '// the package resolves through a checkout rather than node_modules.',
+      "const sort = parseSort('wind:desc')",
+      "const csv = toCsv([{ key: 'wind', label: 'Wind' }], [{ wind: 12 }])",
       '</script>',
       '',
       '<template>',
       '  <div>',
       '    <h1>{{ descriptor.label }}</h1>',
       '    <p data-testid="root-config-alias">{{ primaryColorAlias }}</p>',
+      '    <p data-testid="auto-import-sort">{{ sort?.key }}:{{ sort?.direction }}</p>',
+      // CRLF is the format's own line end, so it is asserted rather than
+      // normalised away by the DOM: `|` makes the two line breaks visible to
+      // a text assertion.
+      "    <p data-testid=\"auto-import-csv\">{{ csv.split('\\r\\n').join('|') }}</p>",
       '  </div>',
       '</template>',
+      '',
+    ].join('\n'),
+  )
+
+  // The server half of the same claim: a Nitro route reaching the packed
+  // package's `toCsv` with no import specifier. It proves two things at once
+  // -- the server auto-import is registered, and Nitro really transpiles this
+  // package's raw TypeScript in a Narduk app.
+  const routePath = join(
+    generatedDirectory,
+    'apps',
+    'web',
+    'server',
+    'api',
+    'narduk-shell-auto-import.get.ts',
+  )
+  mkdirSync(dirname(routePath), { recursive: true })
+  writeFileSync(
+    routePath,
+    [
+      '// Auto-import gate -- see addPackedShellRootValueImportSmoke in',
+      '// scripts/release-packages.mjs. `parseSort` and `toCsv` are auto-imported',
+      '// by the packed narduk-shell module; this route names neither specifier.',
+      'export default defineEventHandler(() => ({',
+      "  csv: toCsv([{ key: 'wind', label: 'Wind' }], [{ wind: 12 }]).split('\\r\\n').join('|'),",
+      "  sort: parseSort('wind:desc'),",
+      '}))',
       '',
     ].join('\n'),
   )
@@ -674,6 +729,23 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
       "    page.getByRole('heading', { name: 'narduk-shell root value import OK' }),",
       '  ).toBeVisible()',
       "  await expect(page.getByTestId('root-config-alias')).toHaveText('sky')",
+      '})',
+      '',
+      "test('narduk-shell auto-imports execute in the app', async ({ page }) => {",
+      "  await page.goto('/narduk-shell-root-value-import')",
+      "  await expect(page.getByTestId('auto-import-sort')).toHaveText('wind:desc')",
+      "  await expect(page.getByTestId('auto-import-csv')).toHaveText('Wind|12|')",
+      '})',
+      '',
+      "test('narduk-shell auto-imports execute in a server route', async ({",
+      '  request,',
+      '}) => {',
+      "  const response = await request.get('/api/narduk-shell-auto-import')",
+      '  expect(response.ok()).toBe(true)',
+      '  expect(await response.json()).toEqual({',
+      "    csv: 'Wind|12|',",
+      "    sort: { key: 'wind', direction: 'desc' },",
+      '  })',
       '})',
       '',
     ].join('\n'),

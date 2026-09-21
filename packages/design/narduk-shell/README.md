@@ -234,6 +234,46 @@ production `nuxt build` (narduk-libs#295). `src/index.ts` is `.` now and never
 imports `@nuxt/kit`; `test/module.test.ts`'s "root barrel reachability" check
 walks its value-import graph and fails the moment that changes again.
 
+### When the bare specifier is refused
+
+There is one shape where a value import of the package root does **not** build,
+whatever `.` points at, and it is worth knowing before you debug it (first hit
+building `packages/design/libs-explorer`,
+[narduk-libs#689](https://github.com/narduk-enterprises/narduk-libs/pull/689)):
+
+```
+RolldownError: Importing directly from module entry-points is not allowed.
+[importing @narduk-enterprises/narduk-shell from app/usage/ne-sort-header.vue]
+```
+
+Nuxt reserves the specifier a module was **registered** under. `@nuxt/kit`
+records an `entryPath` for every installed module and the import-protection
+plugin refuses app code that imports it. That entry path is normally
+`@narduk-enterprises/narduk-shell/module`, because `mlly` maps the resolved file
+back through this package's `exports` map — which is why
+`modules: ['@narduk-enterprises/narduk-shell']` and a root value import coexist
+happily in an ordinary install, as the packed-consumer smoke proves on every
+release.
+
+That mapping needs a `node_modules/` segment in the resolved path. Resolve this
+package through a **checkout** instead — the workspace link a sibling package in
+this repository gets, or an app whose dependency is `link:`/`file:` to a clone —
+and the lookup finds no package name, so Nuxt falls back to the raw
+`modules: [...]` string. The bare specifier is then the protected one, and
+**every** value import of the package root is refused, in the Vue app and in the
+Nitro server alike. Type-only imports are unaffected: they are erased before a
+bundler sees them.
+
+So the rule for code that must build in both shapes:
+
+| You want                                         | Write                                                                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `parseSort`, `toCsv`                             | nothing — both are auto-imported, in the app and in a server route                                                   |
+| `defineStatusMap`, `useCollection`, `useConfirm` | nothing — auto-imported in the app                                                                                   |
+| the formatters                                   | `@narduk-enterprises/narduk-shell/format`                                                                            |
+| any type                                         | `import type { … } from '@narduk-enterprises/narduk-shell'`                                                          |
+| `NARDUK_SHELL_APP_CONFIG`                        | the package root — it has no auto-import; in a checkout install read the merged preset with `useAppConfig()` instead |
+
 ## Styling contract
 
 `narduk-ui`'s third guardrail, extended to this suite: **components read tokens
@@ -1455,13 +1495,17 @@ sorted column.
 | ------------- | -------- | ---------------------------------------------------------------------------------------------- |
 | `update:sort` | `string` | Server mode only. `'<sortKey>:<asc\|desc>'`. Client mode calls `column.toggleSorting` instead. |
 
-`parseSort` is a package-root export: `'wind:desc'` → `{ key, direction }`,
-anything else → `null`. Use it when a page reads a wire sort without a regex.
+`parseSort` is auto-imported: `'wind:desc'` → `{ key, direction }`, anything
+else → `null`. Use it when a page reads a wire sort without a regex. It is also
+a named export of the package root, but write it without an import — see
+[Reserved subpaths](#reserved-subpaths) for why the bare specifier can be
+refused.
 
 #### Types
 
 ```ts
-import { parseSort } from '@narduk-enterprises/narduk-shell'
+// parseSort needs no import: the module auto-imports it in the app and on the
+// server.
 import type {
   NeSortDirection,
   NeSortHeaderProps,
@@ -1481,9 +1525,13 @@ or `value`, never through `format`, so a spreadsheet gets numbers rather than
 “12 kt”. Missing values are empty cells, never `0`.
 
 `preamble` lines go above the header — the place for an attribution line. The
-text itself is `toCsv()`, exported from the package root, so a server route can
-produce the identical file. The button is inert on the server: it only builds
-the file when it is clicked, in the browser.
+text itself is `toCsv()`, auto-imported in the app **and** in a Nitro server
+route, so a route can produce the identical file without an import specifier.
+(Server-side use needs an app whose Nitro transpiles the estate's packages;
+`@narduk-enterprises/narduk-core` sets that for every Narduk app, and the
+release pipeline's generated consumer proves the route end to end.) The button
+is inert on the server: it only builds the file when it is clicked, in the
+browser.
 
 #### Example
 
@@ -1497,8 +1545,7 @@ the file when it is clicked, in the browser.
 ```
 
 ```ts
-import { toCsv } from '@narduk-enterprises/narduk-shell'
-
+// No import: `toCsv` is auto-imported, in a page and in a server route alike.
 const csv = toCsv(columns, rows, ['Source: NOAA NDBC'])
 ```
 
@@ -1526,7 +1573,8 @@ prefixed.
 #### Types
 
 ```ts
-import { toCsv } from '@narduk-enterprises/narduk-shell'
+// toCsv needs no import: the module auto-imports it in the app and on the
+// server.
 import type { NeCsvDownloadProps } from '@narduk-enterprises/narduk-shell'
 ```
 

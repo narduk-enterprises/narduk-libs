@@ -482,6 +482,10 @@ describe('useConfirm() reachability', () => {
       addComponent: vi.fn(),
       addComponentsDir: vi.fn(),
       addImports,
+      // Registered because the module calls it for the data-table utilities
+      // on the server; a missing key makes the whole setup throw here
+      // rather than fail the assertion this test is about.
+      addServerImports: vi.fn(),
       createResolver: (url: string) => ({
         resolve: (path: string) => new URL(path, url).pathname,
       }),

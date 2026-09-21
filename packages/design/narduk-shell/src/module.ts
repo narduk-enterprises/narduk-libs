@@ -1,4 +1,10 @@
-import { addComponent, addImports, createResolver, defineNuxtModule } from '@nuxt/kit'
+import {
+  addComponent,
+  addImports,
+  addServerImports,
+  createResolver,
+  defineNuxtModule,
+} from '@nuxt/kit'
 import { defu } from 'defu'
 
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
@@ -120,9 +126,37 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // and `components: false` cannot leave it mounting an unregistered
     // component. `test/use-confirm.test.ts` mounts it with no `Ne*`
     // registration at all, which is that claim's standing proof.
+    //
+    // `parseSort` and `toCsv` joined them for the reason below, which is
+    // worth writing down because it is not "one more convenience". Nuxt
+    // reserves the specifier a module was REGISTERED under: `@nuxt/kit`
+    // records an `entryPath` per installed module and Nuxt's
+    // import-protection plugin refuses app code that imports it
+    // ("Importing directly from module entry-points is not allowed"). That
+    // entry path is normally the `./module` subpath -- `mlly`'s
+    // `lookupNodeModuleSubpath` maps the resolved file back through the
+    // `exports` map -- so a value import of the bare package name is fine.
+    // It can only do that when the resolved path contains a `node_modules/`
+    // segment. When this package resolves through a checkout instead (the
+    // workspace link a sibling package gets, or an app's `link:`/`file:`
+    // dependency on a clone), the lookup finds no package name, Nuxt falls
+    // back to the raw `modules: ['@narduk-enterprises/narduk-shell']` string,
+    // and EVERY value import of the package root -- `parseSort`, `toCsv`,
+    // `defineStatusMap`, `NARDUK_SHELL_APP_CONFIG` -- is refused in both the
+    // Vue app and the Nitro server. Reproduced on Nuxt 4.5.2 (rolldown) and
+    // documented in README.md's "Reserved subpaths". Auto-imports are
+    // immune: the generated import names the runtime file, never the package.
     addImports({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
+    })
+    addImports({
+      name: 'parseSort',
+      from: resolver.resolve('./runtime/utils/data-table'),
+    })
+    addImports({
+      name: 'toCsv',
+      from: resolver.resolve('./runtime/utils/data-table'),
     })
     addImports({
       name: 'useCollection',
@@ -132,6 +166,31 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useConfirm',
       from: resolver.resolve('./runtime/composables/use-confirm'),
     })
+
+    // The same two names on the server. `toCsv` is documented for a server
+    // route -- "a server route can write the same CSV NeCsvDownload does" --
+    // and that route reaches for the package root exactly like a page does,
+    // so it hits the same refusal for the same reason. Nitro keeps its own
+    // auto-import registry, so `addImports` alone would leave the documented
+    // half of `toCsv` broken. Both functions are plain TypeScript with no
+    // Vue, Nuxt or DOM import, which is what makes them safe to expose there
+    // (narduk-logging's `useLogger` is the estate's precedent for a package
+    // exposing its own runtime through `addServerImports`).
+    //
+    // One inherited condition, which is not new and is not this module's to
+    // fix: this package ships raw TypeScript, and Nitro's esbuild step skips
+    // node_modules by default, so ANY server-side use of this package's code
+    // -- this auto-import, or the `import { toCsv } from
+    // '@narduk-enterprises/narduk-shell'` the README used to show -- needs an
+    // app whose Nitro transpiles the estate's packages.
+    // `@narduk-enterprises/narduk-core` sets exactly that for every Narduk app
+    // (`allowNitroEsbuildForNardukPackages`), which is why the packed-consumer
+    // smoke's generated app exercises this route. Registering the names is
+    // free either way: an auto-import emits nothing until something uses it.
+    addServerImports([
+      { name: 'parseSort', from: resolver.resolve('./runtime/utils/data-table') },
+      { name: 'toCsv', from: resolver.resolve('./runtime/utils/data-table') },
+    ])
 
     if (options.components === false) return
 
