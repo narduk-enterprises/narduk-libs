@@ -256,6 +256,9 @@ Available as auto-imported helpers in app `<script setup>`:
 - `useLocalBusinessSchema(...)` — LocalBusiness JSON-LD.
 - `useProductSchema(...)` — Product JSON-LD.
 - `useItemListSchema(items, options?)` — ItemList JSON-LD for catalog pages.
+- `useDatasetSchema(input)` — Dataset JSON-LD for pages that publish a data
+  series: `variableMeasured`, `temporalCoverage`, `distribution`, `license` and
+  `creator`. Feeds Google Dataset Search and AI-discovery surfaces.
 - `useSoftwareApplicationSchema(input)` — SoftwareApplication JSON-LD with
   optional `isPartOf` linkback to the catalog hub.
 - `useWebSiteSchema(input?)` — WebSite JSON-LD with optional `SearchAction`
