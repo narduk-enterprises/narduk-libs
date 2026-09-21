@@ -210,6 +210,34 @@ export class FilesystemRegistryReality implements RegistryReality {
    * reader, however many packages 404. */
   private scopeReadable: Promise<boolean> | undefined
 
+  /**
+   * Credential names this reader will use, in order. All four carry the same
+   * GitHub Packages read token in practice; they differ only in who exported it.
+   *
+   * `GH_PACKAGES_READ` is the estate's own name for it and is last because the
+   * other three are what CI already sets -- appending rather than prepending
+   * keeps a working CI path byte-identical. It is here because it is the ONLY
+   * name the sanctioned local route uses: `gh-packages-run` puts the value in
+   * the child environment as `GH_PACKAGES_READ` and writes a 0600 process-scoped
+   * userconfig that references it BY NAME, which is what `pnpm install` needs
+   * and which this reader deliberately cannot see -- it reads no `.npmrc` and no
+   * `_authToken` line, so that a custom scope route gets an anonymous read
+   * rather than a credential. The token was therefore present in the environment
+   * during `gh-packages-run pnpm run foundation:check` and invisible to the one
+   * component that needed it, and item 2.3 collapsed to `unknown` -> a blocking
+   * `UNKNOWN` exit (narduk-farm#148).
+   *
+   * This has already cost one incident. workflows#79 renamed that step's
+   * exported credential from `NODE_AUTH_TOKEN` to `GH_PACKAGES_READ` and
+   * silently broke package-token-mode `foundation-check` for every v1 adopter
+   * refreshing past afbaa6051e, reproduced deterministically in buoys#39.
+   * workflows#85 restored CI with an alias and named the real fix in its own
+   * comment: "Export both names, same value, until narduk-app-tools reads
+   * GH_PACKAGES_READ instead." This is that. The alias can retire once every
+   * caller is past this release; it is harmless until then because both names
+   * hold the same value.
+   */
+
   constructor(
     repoRoot: string,
     options: {
@@ -233,7 +261,11 @@ export class FilesystemRegistryReality implements RegistryReality {
     this.scopeProbePackage = options.scopeProbePackage ?? SCOPE_PROBE_PACKAGE
     this.scopeRoute = options.scopeRoute ?? readScopeRoute(repoRoot)
     this.authToken =
-      process.env.NODE_AUTH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? undefined
+      process.env.NODE_AUTH_TOKEN ??
+      process.env.GH_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      process.env.GH_PACKAGES_READ ??
+      undefined
   }
 
   resolveInstalled(pkgName: string, pinnedSpec: string | undefined): ResolvedVersion | null {

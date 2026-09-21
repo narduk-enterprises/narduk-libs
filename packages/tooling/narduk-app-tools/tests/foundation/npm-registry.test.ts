@@ -48,6 +48,14 @@ beforeEach(() => {
   vi.stubEnv('NODE_AUTH_TOKEN', 'a-token')
   vi.stubEnv('GH_TOKEN', '')
   vi.stubEnv('GITHUB_TOKEN', '')
+  // Pinned for the same reason as the three above, and the reason is sharper
+  // now that the reader consults a fourth name: every "no credential" case
+  // below asserts on the absence of an Authorization header, and an
+  // unstubbed name is one the developer's own shell can fill in. A suite that
+  // reads the machine it runs on is green on a bare CI runner and red on a
+  // workstation, which is a test reporting on the environment rather than on
+  // the code (agent-infrastructure#1644).
+  vi.stubEnv('GH_PACKAGES_READ', '')
 })
 
 afterEach(() => {
@@ -443,6 +451,85 @@ describe('FilesystemRegistryReality on the project route (narduk-libs#498)', () 
     }).publicationOf('@narduk-geo/grid')
     expect(seen[0]?.url).toBe('https://npm.pkg.github.com/@narduk-geo/grid')
     expect(seen[0]?.headers.Authorization).toBe('Bearer a-token')
+  })
+})
+
+describe('credential name resolution (narduk-farm#148)', () => {
+  /** Local to this block: the `stubAny` above is scoped to the route describe.
+   * Records the headers actually sent, which is the only place the resolved
+   * credential is observable from outside. */
+  function stubRequests(status: number, body: unknown = {}): { headers: Record<string, string> }[] {
+    const seen: { headers: Record<string, string> }[] = []
+    vi.stubGlobal('fetch', (_url: string, init?: { headers?: Record<string, string> }) => {
+      seen.push({ headers: { ...(init?.headers ?? {}) } })
+      return Promise.resolve({
+        status,
+        ok: status >= 200 && status < 300,
+        json: () => Promise.resolve(body),
+      })
+    })
+    return seen
+  }
+
+  /** Absent, not empty. `??` treats an exported-but-empty variable as a
+   * value and stops there, so a test that "clears" a name with '' is
+   * asserting something different from a name the shell never set. The
+   * sanctioned local route leaves these three unset, which is the case
+   * these tests are about. */
+  const clearPrecedingNames = () => {
+    vi.stubEnv('NODE_AUTH_TOKEN', undefined)
+    vi.stubEnv('GH_TOKEN', undefined)
+    vi.stubEnv('GITHUB_TOKEN', undefined)
+  }
+
+  it('authenticates from GH_PACKAGES_READ when no other name is set', async () => {
+    clearPrecedingNames()
+    vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+    const seen = stubRequests(200, { 'dist-tags': { latest: '2.7.0' } })
+    expect(await reader().latestPublishedMajor(TARGET)).toBe(2)
+    expect(seen[0]?.headers.Authorization).toBe('Bearer packages-read-token')
+  })
+
+  it('is unreadable when GH_PACKAGES_READ is the only name and it is empty', async () => {
+    clearPrecedingNames()
+    const { requested } = stubRegistry({})
+    expect(await reader().publicationOf(TARGET)).toEqual({ status: 'unreadable' })
+    expect(requested).toEqual([])
+  })
+
+  it('prefers NODE_AUTH_TOKEN over GH_PACKAGES_READ when both are set', async () => {
+    vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+    const seen = stubRequests(200, { 'dist-tags': { latest: '2.7.0' } })
+    await reader().publicationOf(TARGET)
+    // `a-token` is the suite-wide NODE_AUTH_TOKEN. In CI both names carry the
+    // same value (workflows#85 aliases one to the other), so this ordering is
+    // what makes the new name purely additive rather than a change to a
+    // working path.
+    expect(seen[0]?.headers.Authorization).toBe('Bearer a-token')
+  })
+
+  it('sends no credential to a mirrored scope route, GH_PACKAGES_READ included', async () => {
+    clearPrecedingNames()
+    vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+    const seen = stubRequests(200, { 'dist-tags': { latest: '2.7.0' } })
+    await reader({
+      scopeRoute: { kind: 'anonymous', base: 'https://npm.nard.uk' },
+    }).publicationOf(TARGET)
+    expect(seen[0]?.headers).not.toHaveProperty('Authorization')
+  })
+
+  it('documents that an exported-but-empty earlier name shadows the fallback', async () => {
+    // Not the behaviour anyone wants, but it is what `??` means and it is
+    // better pinned than rediscovered. No caller produces this today: the
+    // shared workflow exports NODE_AUTH_TOKEN only after resolving a
+    // non-empty credential, and `gh-packages-run` sets neither. Collapsing
+    // empty to absent would be a real improvement and a behaviour change for
+    // every consumer, so it belongs in its own change, not this one.
+    vi.stubEnv('NODE_AUTH_TOKEN', '')
+    vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+    const { requested } = stubRegistry({})
+    expect(await reader().publicationOf(TARGET)).toEqual({ status: 'unreadable' })
+    expect(requested).toEqual([])
   })
 })
 

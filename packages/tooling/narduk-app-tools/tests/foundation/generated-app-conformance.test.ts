@@ -24,7 +24,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createNardukApp, PACKAGE_VERSIONS } from '../../../create-narduk-app/src/index.js'
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
@@ -34,6 +34,7 @@ import { fakeReality, subCheckStatus } from './helpers.js'
 const tempDirs: string[] = []
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { force: true, recursive: true })
+  vi.unstubAllEnvs()
 })
 
 /** A registry that agrees with the generator's own pins: every package the
@@ -135,6 +136,15 @@ describe('an app straight out of create-narduk-app', () => {
     expect(subCheckStatus(artefact, '3.2')).toBe('pass')
   })
 
+  /** Every name `FilesystemRegistryReality` will accept, absent rather than
+   * empty: `??` treats an exported empty string as a value and stops there,
+   * so clearing with '' would pin a different thing than an unset shell. */
+  const clearRegistryCredentials = () => {
+    for (const name of ['NODE_AUTH_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN', 'GH_PACKAGES_READ']) {
+      vi.stubEnv(name, undefined)
+    }
+  }
+
   it('reports only the registry read as undecided when the registry is unreadable', async () => {
     // Why `foundation:check` is deliberately NOT chained into the generated
     // `quality:static`: offline, or without a package-read credential, item
@@ -142,6 +152,17 @@ describe('an app straight out of create-narduk-app', () => {
     // a red on a laptop that CI does not have -- the exact local/CI
     // divergence narduk-libs#617 is about, pointed the other way. The
     // generated README states this; this test is what keeps it true.
+    // "Without a credential" has to be something this test ESTABLISHES, not
+    // something it inherits. Passing `undefined` here builds the real reader,
+    // which resolves its token from the environment, so the assertion below
+    // was really asserting that the machine running it had no package-read
+    // credential exported. It held until `gh-packages-run` -- the sanctioned
+    // local route, which exports GH_PACKAGES_READ -- became a name the reader
+    // consults: `pnpm run ci:affected` runs under it, the reader found a
+    // token, made a live read, and this went PASS. Green on a bare runner and
+    // red on a workstation is the same local/CI divergence the comment above
+    // is about, pointed the other way once more (agent-infrastructure#1644).
+    clearRegistryCredentials()
     const artefact = await check(await scaffold({ built: true }), undefined)
 
     expect(artefact.failingItems).toEqual([])
