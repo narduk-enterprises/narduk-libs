@@ -249,7 +249,7 @@ export function selectDeployConfig(options: {
 
 export function writeFlattenedWranglerDeployConfig(
   configPath: string,
-  options: { preserveNamedEnvironments?: boolean } = {},
+  options: { preserveNamedEnvironments?: boolean; keepVars?: boolean } = {},
 ): string {
   if (!existsSync(configPath)) throw new Error(`Wrangler config not found at ${configPath}`)
   const appDir = dirname(configPath)
@@ -258,6 +258,9 @@ export function writeFlattenedWranglerDeployConfig(
   const config = flattenWranglerDeployConfig(readJsonc<WranglerConfig>(configPath), options)
   config.main = '.output/server/index.mjs'
   config.assets = { ...(config.assets ?? {}), directory: '.output/public' }
+  // Wrangler 4.90.1 versions upload supports this config key; the equivalent
+  // CLI flag was only added in 4.92.0. Never mutate committed source for it.
+  if (options.keepVars) config.keep_vars = true
   writeJson(outputPath, config)
   writeJson(redirectPath, { configPath: '../../.wrangler.deploy.production.json' })
   return outputPath
@@ -325,6 +328,7 @@ export function runDeploy(
   args: string[],
   appDir = process.cwd(),
   env: DeployEnv = process.env,
+  options: { keepVars?: boolean } = {},
 ): number {
   const { action, passthroughArgs } = parseDeployArgs(args)
   if (
@@ -341,8 +345,11 @@ export function runDeploy(
     configPath && existsSync(outputEntrypoint)
       ? writeFlattenedWranglerDeployConfig(configPath, {
           preserveNamedEnvironments: hasExplicitWranglerEnvTarget(passthroughArgs),
+          keepVars: options.keepVars,
         })
       : null
+  if (options.keepVars && !productionConfigPath)
+    throw new Error('Preserving hotfix vars requires a source Wrangler config and built output')
   const sourceConfigPath =
     configPath && productionConfigPath
       ? selectDeployConfig({

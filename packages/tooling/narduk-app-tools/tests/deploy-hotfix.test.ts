@@ -161,11 +161,12 @@ function harness(nested = true) {
       writeFileSync(join(app, '.output/server/index.mjs'), 'export default {}')
     }
   })
-  const upload = vi.fn<NonNullable<HotfixContext['upload']>>((args, _cwd, childEnv) => {
+  const upload = vi.fn<NonNullable<HotfixContext['upload']>>((args, _cwd, childEnv, options) => {
     calls.push('upload')
     expect(childEnv?.CLOUDFLARE_API_TOKEN).toBe(TOKEN)
     expect(childEnv?.WORKERS_CI_BRANCH).toBeUndefined()
-    expect(args).toContain('--keep-vars')
+    expect(args).not.toContain('--keep-vars')
+    expect(options?.keepVars).toBe(true)
     versions = [
       {
         id: NEW,
