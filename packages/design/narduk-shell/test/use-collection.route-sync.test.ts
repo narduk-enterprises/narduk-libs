@@ -199,4 +199,22 @@ describe('syncQuery', () => {
     expect('sort' in calls[0]!.query).toBe(false)
     unmount()
   })
+
+  it('clamps a route-driven page to a pageCount already known from a landed response (#288)', async () => {
+    const { calls, fetch } = deferredFetch()
+    const { collection, router, unmount } = await mountWithRouter({ fetch, limit: 10 })
+    calls[0]!.resolve(page({ items: rows(10), limit: 10, total: 500 }))
+    await settle()
+
+    // pageCount is now known: ceil(500 / 10) = 50. A stale or hand-edited
+    // URL beyond it -- a Back into an older history entry, say -- should
+    // clamp the same way setPage() already does, not send the raw offset
+    // the client already knows is out of range.
+    await router.push('/runners?page=999')
+    await settle()
+
+    expect(collection.page).toBe(50)
+    expect(calls.at(-1)!.query).toEqual({ limit: 10, offset: 490 })
+    unmount()
+  })
 })
