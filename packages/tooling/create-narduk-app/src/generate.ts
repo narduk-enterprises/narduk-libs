@@ -498,13 +498,21 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'node_modules',
         '.nuxt',
         '.output',
-        '.narduk/recovery',
+        // Unanchored (no embedded slash before the trailing one), so it matches at any
+        // depth -- including `apps/web/.narduk/recovery/`, where `narduk-app` actually
+        // writes recovery artifacts. A pattern with an embedded slash like the prior
+        // `.narduk/recovery` anchors to the repo root and never matches there
+        // (narduk-libs#624).
+        '.narduk/',
         '.npmrc.auth',
         '.wrangler',
         '.wrangler.deploy.production.json',
         '.wrangler.deploy.preview.json',
         '.data',
         'coverage',
+        // Where `@narduk-enterprises/narduk-testkit` writes visual-audit artifacts
+        // (narduk-libs#630); distinct from `.output` (Nitro's build output) above.
+        'output',
         'playwright-report',
         'blob-report',
         'all-blob-reports',

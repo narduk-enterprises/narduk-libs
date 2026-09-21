@@ -272,8 +272,13 @@ describe('decodeTemporalChunk', () => {
 
   /* eslint-disable @typescript-eslint/no-explicit-any -- each mutator reaches into a
      structuredClone of the descriptor fixture through a different dynamic property path
-     to exercise one rejection branch; narrowing this to a real descriptor union is
-     tracked in narduk-libs#144 rather than fixed here. */
+     to exercise one rejection branch. A discriminated mutator type was considered and
+     rejected (narduk-libs#144): the seven paths touch six different nested shapes, so a
+     real union would mean duplicating slices of the production descriptor type per
+     mutation, or a cast at the call site exactly as loose as this `any` -- test-only
+     churn for no runtime benefit, since the fixture and the mutators live and change
+     together in this one block. Kept as a scoped, permanent exception; not tracked as
+     open work. */
   it.each([
     [
       'method',

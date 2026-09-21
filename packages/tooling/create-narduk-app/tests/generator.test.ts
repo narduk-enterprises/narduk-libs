@@ -228,6 +228,29 @@ describe('create-narduk-app generation contract', () => {
     },
   )
 
+  it.each(['private', 'public'] as const)(
+    'ignores .narduk/recovery and output/ at any depth in the generated %s .gitignore',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'gitignore-narduk-output',
+          capabilities: [],
+          noGit: true,
+          targetDir: '/tmp/gitignore-narduk-output',
+          visibility,
+        }),
+      )
+      const gitignore = files.get('.gitignore') ?? ''
+      // Unanchored: no embedded slash before the trailing one, so it matches
+      // `apps/web/.narduk/recovery/` -- where narduk-app actually writes recovery
+      // artifacts -- not just a root-level `.narduk` (narduk-libs#624).
+      expect(gitignore).toContain('.narduk/\n')
+      expect(gitignore).not.toContain('.narduk/recovery\n')
+      // Where narduk-testkit writes visual-audit artifacts (narduk-libs#630).
+      expect(gitignore).toContain('output\n')
+    },
+  )
+
   it('selects capabilities, keeps core implicit, and pins every manifest version', () => {
     const files = asFileMap(
       buildGeneratedFiles({
