@@ -316,6 +316,33 @@ describe('Workers and Node', () => {
     expect(sink.records[0]?.path).toBe('/items/:id')
   })
 
+  it('returns a 101 WebSocket upgrade response untouched instead of throwing (#404)', async () => {
+    const sink = createMemorySink()
+    const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
+    // A real `Response` with `status: 101` cannot be constructed under Node or
+    // workerd -- the Fetch spec allows only 200-599 -- so the upgrade response
+    // a Durable Object would actually return is faked structurally, the same
+    // way narduk-realtime's upgrade-router.test.ts does for the same reason.
+    // `body: null` keeps this a plain duck-typed dictionary rather than a real
+    // `Response` instance, matching how `new Response(body, init)` accepts any
+    // object shaped like one.
+    const clientSocket = {}
+    const upgrade = { body: null, status: 101, webSocket: clientSocket } as unknown as Response
+
+    const response = await logRequest(
+      new Request('https://example.invalid/live'),
+      logger,
+      () => upgrade,
+      { route: '/live' },
+    )
+
+    // Identity, not just a status match: re-wrapping (`new Response(body, response)`)
+    // would both throw on construction and drop `webSocket`, which is the whole
+    // payload of an upgrade in workerd.
+    expect(response).toBe(upgrade)
+    expect((response as unknown as { webSocket: unknown }).webSocket).toBe(clientSocket)
+  })
+
   it('falls back to cf-ray for the correlation ID and always emits a total-only header', async () => {
     const sink = createMemorySink()
     const logger = createLogger({ service: 'fixture', environment: 'test', sinks: [sink] })
