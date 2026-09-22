@@ -277,6 +277,7 @@ export function createRootPackageManifest(
           }),
       deploy: 'pnpm --filter web run deploy',
       'deploy:dry-run': 'pnpm --filter web run deploy:dry-run',
+      'deploy:dev': 'pnpm --filter web run deploy:dev',
       'deploy:version': 'pnpm --filter web run deploy:version',
       dev: 'pnpm --filter web run dev',
       doctor: 'pnpm --filter web run doctor',
@@ -557,6 +558,9 @@ export function createWebPackageManifest(
           }),
       deploy: 'narduk-app deploy deploy',
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
+      // Development mode (company-hq#781): refuses unless this workstation holds
+      // an activation record from `narduk-app development enter`.
+      'deploy:dev': 'narduk-app development deploy',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
       // Nuxt DevTools explicitly skips TEST processes. The browser fixture

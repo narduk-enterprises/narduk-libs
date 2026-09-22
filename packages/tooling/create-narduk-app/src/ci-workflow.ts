@@ -23,6 +23,12 @@ import type { AppVisibility } from './types.js'
 // Deliberately NOT main's tip: #99 and #100 are separate decisions.
 const workflowSha = '6f56678ad7562234e465284e48f27008e0f32db7'
 
+// workflows#141 (merged as 67968e3): the first commit whose callable accepts an
+// explicit exact-candidate request pushed to `narduk-validation/<sha>/<id>`. Only
+// the development-mode validation caller uses it; ordinary CI keeps the pin above
+// so this generator does not also adopt every change between the two commits.
+const validationWorkflowSha = '67968e304ba64e7733dc36d23d80eefda8d72e33'
+
 // Resolved from fleet's organization routes. Creating files does not grant
 // selected-repository membership; onboarding remains an explicit fleet action.
 const linuxRoute =
@@ -202,6 +208,58 @@ export function createCopilotSetupWorkflow(): string {
   ].join('\n')
 }
 
+/**
+ * The shared-workflow inputs and secrets of the private CI caller. The explicit
+ * validation caller reuses them verbatim so a release is validated by exactly the
+ * suite ordinary CI runs, plus the exact-candidate guard.
+ */
+function privateCallerInputs(): string[] {
+  return [
+    `      runner: '${linuxRoute}'`,
+    // `node-version-file` (workflows#97) instead of a literal: the shared
+    // workflow passes it straight through to actions/setup-node, so the
+    // caller reads the app's declared Node source rather than carrying a
+    // second copy of it. Generated apps build from the repository root, so
+    // the path resolves the same whichever base setup-node joins it to.
+    `      node-version-file: '${NODE_SOURCE_FILE}'`,
+    '      package-manager: pnpm',
+    '      require-scripts: true',
+    '      typecheck-worker-script: typecheck',
+    "      typecheck-web-script: ''",
+    // `build:ci` sets NARDUK_CLOUDFLARE_BUILD=1 (drops the local-only
+    // nitro-cloudflare-dev module) and NITRO_PRESET=cloudflare_module, so
+    // CI validates the actual deployable Worker shape instead of the dev
+    // preset (matches the reference app's build-script input exactly).
+    '      build-script: build:ci',
+    // Reusable workflows do not inherit caller `env:`. The test-only
+    // NUXT_OG_IMAGE_SECRET / NUXT_SESSION_PASSWORD values live on the
+    // generated `build:ci` script (ci-test-env.ts) so this Build lane
+    // still has them without a repository secret.
+    // The public path runs `quality:static`, which already chains
+    // `foundation:shared-ui-pinned` and `manifests:validate`. The private
+    // path calls the shared workflow instead, so each check has to be
+    // named here or CI never runs it. They read manifests only, so they
+    // need no registry credential and are safe outside the token-scoped
+    // install step (narduk-libs#282 review).
+    "      extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
+    '      run-tests: true',
+    '      test-script: test:unit',
+    // Fails the build job on a FAIL/UNKNOWN web-foundation conformance
+    // result and uploads the JSON artefact either way (parity with the
+    // reference app's ci.yml).
+    '      foundation-check: true',
+    '      run-e2e: true',
+    '      e2e-script: test:e2e',
+    `      e2e-runner: '${browserRoute}'`,
+    '      e2e-shards: 3',
+    "      e2e-args: '--project=chromium --workers=1'",
+    '      e2e-install-browsers: false',
+    '      # The guest exports its immutable browser path; no caller override.',
+    '    secrets:',
+    '      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+  ]
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -236,48 +294,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '      contents: read',
       '      packages: read',
       '    with:',
-      `      runner: '${linuxRoute}'`,
-      // `node-version-file` (workflows#97) instead of a literal: the shared
-      // workflow passes it straight through to actions/setup-node, so the
-      // caller reads the app's declared Node source rather than carrying a
-      // second copy of it. Generated apps build from the repository root, so
-      // the path resolves the same whichever base setup-node joins it to.
-      `      node-version-file: '${NODE_SOURCE_FILE}'`,
-      '      package-manager: pnpm',
-      '      require-scripts: true',
-      '      typecheck-worker-script: typecheck',
-      "      typecheck-web-script: ''",
-      // `build:ci` sets NARDUK_CLOUDFLARE_BUILD=1 (drops the local-only
-      // nitro-cloudflare-dev module) and NITRO_PRESET=cloudflare_module, so
-      // CI validates the actual deployable Worker shape instead of the dev
-      // preset (matches the reference app's build-script input exactly).
-      '      build-script: build:ci',
-      // Reusable workflows do not inherit caller `env:`. The test-only
-      // NUXT_OG_IMAGE_SECRET / NUXT_SESSION_PASSWORD values live on the
-      // generated `build:ci` script (ci-test-env.ts) so this Build lane
-      // still has them without a repository secret.
-      // The public path runs `quality:static`, which already chains
-      // `foundation:shared-ui-pinned` and `manifests:validate`. The private
-      // path calls the shared workflow instead, so each check has to be
-      // named here or CI never runs it. They read manifests only, so they
-      // need no registry credential and are safe outside the token-scoped
-      // install step (narduk-libs#282 review).
-      "      extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
-      '      run-tests: true',
-      '      test-script: test:unit',
-      // Fails the build job on a FAIL/UNKNOWN web-foundation conformance
-      // result and uploads the JSON artefact either way (parity with the
-      // reference app's ci.yml).
-      '      foundation-check: true',
-      '      run-e2e: true',
-      '      e2e-script: test:e2e',
-      `      e2e-runner: '${browserRoute}'`,
-      '      e2e-shards: 3',
-      "      e2e-args: '--project=chromium --workers=1'",
-      '      e2e-install-browsers: false',
-      '      # The guest exports its immutable browser path; no caller override.',
-      '    secrets:',
-      '      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+      ...privateCallerInputs(),
       '',
     ].join('\n')
   }
@@ -392,6 +409,48 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '          test "$QUALITY_RESULT" = success',
     '          test "$BROWSER_RESULT" = success',
     '          test "$REPORT_RESULT" = success',
+    '',
+  ].join('\n')
+}
+
+/**
+ * Explicit full validation for development mode (company-hq#781). Ordinary
+ * pushes stay quiet while automation is held; `narduk-app development validate`
+ * pushes the exact commit to a reserved `narduk-validation/<sha>/<id>` ref, which
+ * is the only trigger here. A push event on the candidate commit is what lets
+ * the result satisfy the existing required `ci / Required` check -- a
+ * `workflow_dispatch` run never can. It validates only; it never deploys.
+ *
+ * Public repositories cannot call the private shared workflow, so they get no
+ * validation caller and cannot enter development mode until one exists.
+ */
+export function createValidationWorkflow(visibility: AppVisibility): string | null {
+  if (visibility !== 'private') return null
+  return [
+    'name: Explicit full validation',
+    '',
+    'on:',
+    '  push:',
+    "    branches: ['narduk-validation/**']",
+    '',
+    'concurrency:',
+    '  group: explicit-validation-${{ github.ref }}',
+    '  cancel-in-progress: false',
+    '',
+    'permissions:',
+    '  contents: read',
+    '',
+    'jobs:',
+    '  ci:',
+    `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${validationWorkflowSha}`,
+    '    permissions:',
+    '      contents: read',
+    '      packages: read',
+    '      actions: read',
+    '      pull-requests: write',
+    '    with:',
+    '      expected-candidate-sha: ${{ github.sha }}',
+    ...privateCallerInputs(),
     '',
   ].join('\n')
 }
