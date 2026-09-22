@@ -1779,7 +1779,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       // A thin re-export, not a copy: narduk-testkit is the single source of
-      // truth for these fixtures (waitForBaseUrlReady, waitForHydration,
+      // truth for these fixtures (waitForBaseUrlReady, waitForVueHydrated,
       // warmUpApp), and importing from './fixtures' rather than the package
       // directly everywhere means a future fixture addition only has to
       // touch this one file. Matches the reference app's own fixtures.ts.
@@ -1789,7 +1789,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  expect,',
         '  test,',
         '  waitForBaseUrlReady,',
-        '  waitForHydration,',
+        '  waitForVueHydrated,',
         '  warmUpApp,',
         "} from '@narduk-enterprises/narduk-testkit/e2e/fixtures'",
       ),
@@ -1869,7 +1869,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  writeUiQualityManifest,',
         "} from '@narduk-enterprises/narduk-testkit/playwright/ui-quality'",
         '',
-        "import { expect, test, waitForBaseUrlReady, waitForHydration, warmUpApp } from './fixtures'",
+        "import { expect, test, waitForBaseUrlReady, waitForVueHydrated, warmUpApp } from './fixtures'",
         '',
         "const SCREENSHOT_ROOT = path.resolve(process.cwd(), 'output/playwright/visual-audit')",
         'const SCREENSHOT_SCOPE = ' + tsString(appName + '-visual-audit') + '',
@@ -1919,7 +1919,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      for (const route of routes) {',
         "        const response = await page.goto(route.path, { waitUntil: 'domcontentloaded' })",
         '        expect(response?.ok(), `Expected ${route.path} to return an OK response`).toBeTruthy()',
-        '        await waitForHydration(page)',
+        '        await waitForVueHydrated(page)',
         "        await expect(page.locator('main')).toBeVisible()",
         '        captures.push(',
         '          await captureFullPageAudit(',

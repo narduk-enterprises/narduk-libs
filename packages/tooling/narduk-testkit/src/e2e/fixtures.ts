@@ -28,9 +28,63 @@ export const test = base.extend<{ page: Page }>({
   },
 })
 
-export async function waitForHydration(page: Page) {
+/**
+ * True once the page's Vue app has mounted and, for a Nuxt app, finished
+ * hydrating. Runs in the browser through `page.waitForFunction`, so it closes
+ * over nothing.
+ *
+ * - `__vue_app__` is set on the mount container by Vue's `app.mount()` after
+ *   `hydrate()` returns, in production builds too (@vue/runtime-core 3.5).
+ * - `__vue_app__.$nuxt.isHydrating` starts `true` on the client and turns
+ *   `false` when Nuxt's root suspense resolves (`deferHydration`, nuxt 4.5
+ *   `dist/app/nuxt.js`), for server-rendered and client-only pages alike.
+ *
+ * `window.__NUXT__` is deliberately not used: it is undefined in a production
+ * build, so a check written against it never fires. Neither is `networkidle`,
+ * which is neither necessary nor sufficient for Vue owning the DOM (#697).
+ */
+export function isVueAppHydrated(): boolean {
+  type Root = { __vue_app__?: { $nuxt?: { isHydrating?: boolean } } }
+  const candidates = [
+    document.getElementById('__nuxt'),
+    ...Array.from(document.body?.children ?? []),
+  ]
+  for (const element of candidates) {
+    const app = (element as unknown as Root | null)?.__vue_app__
+    if (!app) continue
+    // A plain Vue app is hydrated once mount() has returned; a Nuxt app is not
+    // done until its suspense boundary resolves.
+    return app.$nuxt === undefined || app.$nuxt.isHydrating === false
+  }
+  return false
+}
+
+/**
+ * Wait until Vue has taken over the server-rendered DOM (#697). Use this before
+ * any assertion about post-hydration state -- a head tag the client rewrites,
+ * a client-only component, an `onMounted` side effect.
+ */
+export async function waitForVueHydrated(page: Page, options: { timeout?: number } = {}) {
+  await page.waitForFunction(isVueAppHydrated, undefined, { timeout: options.timeout })
+}
+
+/**
+ * Wait for the document's `load` event. This is a document-lifecycle barrier
+ * only: on a Nuxt page `load` fires before the client bundle has hydrated.
+ */
+export async function waitForPageLoad(page: Page) {
   await page.waitForLoadState('domcontentloaded')
   await page.waitForLoadState('load')
+}
+
+/**
+ * @deprecated Despite the name, this waits only for the document `load` event,
+ * not for Vue hydration (#697). Use `waitForVueHydrated` for a real hydration
+ * barrier, or `waitForPageLoad` for what this has always done. Kept with
+ * unchanged behaviour so existing suites do not change at once.
+ */
+export async function waitForHydration(page: Page) {
+  await waitForPageLoad(page)
 }
 
 function isBaseUrlReadyResponse(res: Response): boolean {

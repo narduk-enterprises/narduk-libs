@@ -32,6 +32,18 @@ defineSharedAuthContract({ appName: 'my-app' })
 void test
 ```
 
+### Waiting for hydration
+
+`waitForVueHydrated(page)` resolves once the Vue app has mounted and Nuxt has
+finished hydrating (`__vue_app__.$nuxt.isHydrating === false`). Use it before
+asserting on anything the client changes after the server render. The shared
+contract suites use it.
+
+`waitForHydration(page)` is deprecated. It waits only for the document `load`
+event, which on a Nuxt page fires **before** hydration (#697). It keeps that
+behaviour so existing suites do not all change at once. `waitForPageLoad(page)`
+is the same wait under an accurate name.
+
 Apps whose users endpoint is not the default `/api/admin/users` can configure
 the reusable API spec without copying it:
 
