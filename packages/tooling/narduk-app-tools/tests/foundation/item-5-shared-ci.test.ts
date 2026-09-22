@@ -3,6 +3,8 @@ import { rmSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
+import { evaluateDependabotStackingShape } from '../../src/foundation/items/item-5-shared-ci.js'
+import { AppRepo } from '../../src/foundation/source.js'
 import {
   CONFORMANT_REALITY,
   makeTempRepo,
@@ -188,5 +190,88 @@ describe('item 5 -- shared CI', () => {
       ].join('\n'),
     )
     expect(subCheckStatus(await run(root), '5.2')).toBe('pass')
+  })
+})
+
+// Advisory-only stacking-shape check (narduk-libs#U2, gonogo#104). Not a
+// FoundationSubCheck -- see evaluateDependabotStackingShape's doc comment --
+// so it is exercised directly rather than through subCheckStatus/run().
+describe('dependabot stacking-shape advisory (not a foundation sub-check)', () => {
+  it('is null for the two-lane safe/majors shape', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    open-pull-requests-limit: 2',
+        '    groups:',
+        '      safe:',
+        '        patterns: ["*"]',
+        '        update-types: ["minor", "patch"]',
+        '      majors:',
+        '        patterns: ["*"]',
+        '        update-types: ["major"]',
+      ].join('\n'),
+    )
+    expect(evaluateDependabotStackingShape(new AppRepo(root))).toBeNull()
+  })
+
+  it('flags an open-pull-requests-limit above 2 on the npm update', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    open-pull-requests-limit: 10',
+        '    groups:',
+        '      safe:',
+        '        patterns: ["*"]',
+        '        update-types: ["minor", "patch"]',
+        '      majors:',
+        '        patterns: ["*"]',
+        '        update-types: ["major"]',
+      ].join('\n'),
+    )
+    expect(evaluateDependabotStackingShape(new AppRepo(root))).toContain(
+      'open-pull-requests-limit is 10',
+    )
+  })
+
+  it('flags a single all-in group with no update-types split', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    open-pull-requests-limit: 1',
+        '    groups:',
+        '      dependencies:',
+        '        patterns: ["*"]',
+      ].join('\n'),
+    )
+    expect(evaluateDependabotStackingShape(new AppRepo(root))).toContain(
+      'no pair of groups split by update-types',
+    )
+  })
+
+  it('is null with no .github/dependabot.yml at all (nothing to flag)', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    expect(evaluateDependabotStackingShape(new AppRepo(root))).toBeNull()
   })
 })

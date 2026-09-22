@@ -113,6 +113,7 @@ every run so a wrong reading is visible before `--write`.
 | `.github/workflows/ci.yml`                  | app, with one generator-owned pin       | Only the `narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@<sha>` reference. The caller's inputs — shard count, e2e arguments, build artefact path — are the app's own policy and are never read.                                                                                                                                  |
 | `.github/workflows/copilot-setup-steps.yml` | generator                               | The whole file. It is sandbox-prep infrastructure and carries no app-specific content by construction.                                                                                                                                                                                                                                               |
 | `.github/dependabot.yml`                    | generator                               | The whole file. See the opt-out below before adopting this one in an app that has added its own `ignore` rules.                                                                                                                                                                                                                                      |
+| `.github/workflows/dependabot-merge.yml`    | generator                               | The whole file. It merges the `safe` (minor + patch) Dependabot lane once CI is green on its exact head; see "Dependabot: two lanes" below.                                                                                                                                                                                                          |
 | `AGENTS.md`                                 | app, with one generator-owned region    | Only the text between `<!-- narduk:router:start -->` and `<!-- narduk:router:end -->`. The heading, the app's prose and every app-added section are never read.                                                                                                                                                                                      |
 | `docs/e2e-testing.md`                       | app, with one generator-owned region    | Only the text between `<!-- narduk:e2e-policy:start -->` and `<!-- narduk:e2e-policy:end -->` — the flake policy and quarantine convention, which have one right answer for every app. The rest of the document describes the app's own specs and is never read.                                                                                     |
 | `package.json` (root)                       | app, with generator-owned script bodies | Only the `scripts` entries `build:ci`, `foundation:check`, `manifests:validate`, and `db:migrate:local` / `db:migrate:remote` on an app with a database. Each is a contract with `narduk-app-tools` or with the Worker build shape. Every other key, every dependency, every version and the manifest's own key order are left exactly as they were. |
@@ -161,6 +162,48 @@ The region targets work the other way round: an existing app has no
 `narduk:router` or `narduk:e2e-policy` markers, so those blocks are reported
 `unmanaged` until someone adds the two marker lines around the paragraph or
 section they should own. Apps generated from this version carry them already.
+
+### Dependabot: two lanes
+
+The generated `.github/dependabot.yml` npm update splits into two groups by
+`update-types`, over the same packages: `safe` (minor + patch) and `majors`
+(major). `.github/workflows/dependabot-merge.yml` merges `safe` on its own once
+CI is green on its exact PR head — nobody has to touch it. `majors` always waits
+for a person or an agent: a major bump usually needs a code change, and a
+workflow-file edit (the `github-actions` ecosystem lane) can never be merged by
+a workflow's own `GITHUB_TOKEN` at all, so that lane stays manual regardless.
+
+This replaced a single all-in `dependencies` group. Apps that had adopted the
+older canonical shape (`open-pull-requests-limit: 10`, ~10 groups) stacked
+roughly ten open PRs, every one editing `pnpm-lock.yaml`, so merging any one
+conflicted the rest and Dependabot rebased — and re-ran CI for — the whole
+stack. Collapsing to one combined group was not the fix either: a single
+breaking major held every harmless patch bump red behind it (typescript 5→6 and
+vitest 4→5 landing in the same PR as ~24 otherwise-safe updates). Two lanes
+split by update type is the shape `gonogo` adopted first (gonogo#104, merged as
+`0c464d8`) and this generator now matches.
+
+An existing app adopts both files the same way as any other managed unit:
+
+```bash
+pnpm dlx @narduk-enterprises/create-narduk-app upgrade . \
+  --only .github/dependabot.yml --write
+pnpm dlx @narduk-enterprises/create-narduk-app upgrade . \
+  --only .github/workflows/dependabot-merge.yml --write
+```
+
+**npm.nard.uk caveat.** The generated `.github/dependabot.yml` carries a
+`registries:` block that reads GitHub Packages (`https://npm.pkg.github.com`)
+with the org-level Dependabot secret `NARDUK_PLATFORM_GH_PACKAGES_READ`. An app
+whose `.npmrc` routes the `@narduk-enterprises` scope to the
+`https://npm.nard.uk` mirror instead (lakestat-us, for example) is read there
+**anonymously** — no token, no `registries:` entry needed for it — so it must
+not get the GitHub Packages `registries:` block back. Adopting
+`.github/dependabot.yml` whole-file, unmodified, on such an app would silently
+re-point Dependabot's registry read at credentials and a registry the app does
+not use; disown the file (see "Opting a file out" above) or delete the
+`registries:` block and the npm update's `registries:` reference before adopting
+the rest.
 
 ### How a narduk-app stays current
 
