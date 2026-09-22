@@ -39,6 +39,7 @@
     "runtime/server/handlers/canonicalRedirect.ts",
     "runtime/server/handlers/cspReport.post.ts",
     "runtime/server/error-sanitizer.ts",
+    "runtime/server/json-error-no-store.ts",
     "runtime/server/api/health.get.ts",
     "runtime/server/database/d1RoundTrips.ts",
     "runtime/server/database/pg-schema.ts",

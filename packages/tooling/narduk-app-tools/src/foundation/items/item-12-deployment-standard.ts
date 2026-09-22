@@ -338,11 +338,13 @@ export const NARDUK_CORE_PACKAGE = '@narduk-enterprises/narduk-core'
 /**
  * The first narduk-core that keeps every response Workers Cache must not store
  * out of it: thrown 4xx/5xx/429 are `private, no-store` (#429, 2.2.3),
- * preference-shaped responses are (#427/#386), and SSR HTML under a nonce CSP
- * is (#435, 2.2.4). Below this, `"cache": { "enabled": true }` stores Nitro's
- * `no-cache` error pages and replays one visitor's CSP nonce to everyone.
+ * preference-shaped responses are (#427/#386), SSR HTML under a nonce CSP is
+ * (#435, 2.2.4), a route with no posture is private (2.5.0), and a thrown error
+ * answered as JSON is too (#493, 2.10.0). Below this, `"cache": { "enabled":
+ * true }` stores Nitro's `no-cache` API errors, and older still replays one
+ * visitor's CSP nonce to everyone.
  */
-export const EDGE_CACHE_MIN_NARDUK_CORE = '2.2.4'
+export const EDGE_CACHE_MIN_NARDUK_CORE = '2.10.0'
 
 /** One scope of one wrangler config that turns Workers Cache on. */
 export interface EdgeCacheSwitch {
@@ -1203,8 +1205,8 @@ function evaluate127(scan: DeploymentScan): FoundationSubCheck {
       STATUS_FAIL,
       `Workers Cache is on (${where}) but ${core.rel} resolves ${NARDUK_CORE_PACKAGE} ` +
         `${core.spec}, older than ${EDGE_CACHE_MIN_NARDUK_CORE}. That core lets Cloudflare store ` +
-        `thrown 4xx/5xx/429 (Nitro's no-cache, narduk-libs#429) and nonce-CSP SSR HTML ` +
-        `(narduk-libs#435). Upgrade narduk-core or turn the cache block off.`,
+        `thrown 4xx/5xx/429 (Nitro's no-cache, narduk-libs#429, and on JSON routes #493) and ` +
+        `nonce-CSP SSR HTML (narduk-libs#435). Upgrade narduk-core or turn the cache block off.`,
       core.rel,
     )
   }
@@ -1213,9 +1215,10 @@ function evaluate127(scan: DeploymentScan): FoundationSubCheck {
     name,
     STATUS_PASS,
     `Workers Cache is on (${where}) with ${NARDUK_CORE_PACKAGE} ${core.spec} >= ` +
-      `${EDGE_CACHE_MIN_NARDUK_CORE}. A route that sets no Cache-Control at all is still stored ` +
-      `(a 200 for 2 hours, by Cloudflare's heuristic), so every route needs a profile. This is ` +
-      `a repository read: prove a real HIT with ` +
+      `${EDGE_CACHE_MIN_NARDUK_CORE}. A route of the app's own that writes a response without ` +
+      `Cache-Control is still stored (a 200 for 2 hours, by Cloudflare's heuristic), so every ` +
+      `route needs a posture (docs/workers-cache.md). This is a repository read: prove a real ` +
+      `HIT with ` +
       `narduk-app verify --live <production-url> --edge-cache-path <live-route>`,
     scan.edgeCache[0].rel,
   )
