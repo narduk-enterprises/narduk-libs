@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 
 import { runDeploy } from './deploy.js'
+import { acquireTargetLocks, developmentStateDirectory } from './development-state.js'
 import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
 import {
   assertHotfixSnapshot,
@@ -164,8 +165,20 @@ export async function runHotfix(flags: HotfixFlags, context: HotfixContext = {})
   mkdirSync(plan.evidenceDir, { recursive: true, mode: 0o700 })
   const receiptPath = join(plan.evidenceDir, `${id}.json`)
   const lockPath = join(plan.evidenceDir, `${plan.accountId}-${plan.workerName}.lock`)
-  // The shared git directory serializes all worktrees of this clone, not other machines/clones or CI.
-  const lock = openSync(lockPath, 'wx', 0o600)
+  const targetLock = acquireTargetLocks(
+    [plan],
+    'hotfix',
+    receiptPath,
+    developmentStateDirectory(env),
+  )
+  // Retain the old clone lock during upgrades; all upgraded writers also share the host target lock.
+  let lock: number
+  try {
+    lock = openSync(lockPath, 'wx', 0o600)
+  } catch (error) {
+    targetLock.release()
+    throw error
+  }
   const receipt: HotfixReceipt = {
     schemaVersion: 1,
     id,
@@ -332,8 +345,12 @@ export async function runHotfix(flags: HotfixFlags, context: HotfixContext = {})
     // External error bodies are deliberately not persisted in an incident receipt.
     throw error
   } finally {
-    closeSync(lock)
-    rmSync(lockPath)
+    try {
+      closeSync(lock)
+      rmSync(lockPath)
+    } finally {
+      targetLock.release()
+    }
     if (scratch) rmSync(scratch, { recursive: true, force: true })
   }
 }

@@ -39,6 +39,7 @@
 import { z } from 'zod'
 
 import { databaseOwnershipSchema } from './database-ownership.js'
+import { developmentSchema } from './development-config.js'
 
 /** The conformance key. Any other value means the app is deliberately exempt
  * from the standard and must justify that elsewhere -- it is not a failure
@@ -288,6 +289,8 @@ export const deploymentBlockSchema = z.strictObject({
    * appear here too, so the manifest never leaves a binding's owner implied.
    */
   databaseOwnership: databaseOwnershipSchema.optional(),
+  /** Optional capability. Enrollment and publisher custody live outside source control. */
+  development: developmentSchema.optional(),
 })
 
 export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>

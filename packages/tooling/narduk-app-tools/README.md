@@ -58,6 +58,13 @@ credentials, a clean commit snapshot, required local checks, version promotion
 and live proof. Legacy `deploy-local` retains its historical Doppler/migration
 behavior for compatibility; it is not the new hotfix procedure.
 
+For an app still being built, an owner can enroll it in **development mode**:
+one approved workstation deploys its checkout, uncommitted edits included, with
+`narduk-app development deploy` (`pnpm run deploy:dev`), while push/merge
+automation and Workers Builds triggers are held and later restored exactly. Full
+validation runs on request and on exit. Nothing enrolls automatically. See the
+[development mode runbook](docs/development-mode.md).
+
 ## Prebuilt-Worker e2e (`narduk-app e2e-serve`)
 
 ```sh

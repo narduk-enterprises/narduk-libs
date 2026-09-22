@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import {
   createCiRegistryAuthScript,
   createCiWorkflow,
+  createValidationWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
 } from './ci-workflow.js'
@@ -566,6 +567,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
+    ...(visibility === 'private'
+      ? [
+          {
+            path: '.github/workflows/validate.yml',
+            contents: createValidationWorkflow(visibility)!,
+          },
+        ]
+      : []),
     {
       // Both visibilities: even a public app's Worker depends on private
       // @narduk-enterprises/* packages, so Copilot's sandbox needs registry
@@ -789,6 +798,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Enable Workers Builds on protected `main`. Enable non-production branch builds and GitHub PR comments for trusted branches of public apps; the generated scripts alone do not create that connection. Version previews share Worker bindings, so private data and mutation-capable apps need isolated preview bindings before enabling them. Authenticated apps keep direct Worker and preview URLs disabled until equivalent protection is configured.',
         '',
+        ...(visibility === 'private'
+          ? [
+              'Development mode (`pnpm run deploy:dev`) is an owner-enrolled alternative for apps still being built; it is off until enrolled. See the Development mode section of [docs/workers-builds.md](docs/workers-builds.md).',
+              '',
+            ]
+          : []),
         'Cloudflare Workers Builds uses `pnpm run cf:build` as its build command, `pnpm run cf:deploy` for the production deploy command, and `pnpm run cf:deploy:preview` for non-production branches. Local `pnpm run deploy` remains recovery-only; `pnpm run deploy:dry-run` is credential-free.',
         '',
         'The app is configured for local Nuxt development on port ' +
@@ -954,6 +969,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '```',
         '',
         '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',
+        '',
+        '## Development mode',
+        '',
+        ...(visibility === 'private'
+          ? [
+              "While an app is being built, one approved workstation can own its enrolled Cloudflare target and deploy straight from its checkout -- uncommitted edits included -- with `pnpm run deploy:dev`. Entering holds the automation that would otherwise overwrite that target (this repository's push/merge workflows and the Workers Builds triggers) and records exactly what it held; exiting restores it, after `.github/workflows/validate.yml` has validated the exact release commit. Ordinary pushes run no CI while the app is in development mode. Full validation happens only when you ask for it with `narduk-app development validate`, and on exit.",
+              '',
+              'Development mode is off until an owner enrolls the app. Enrollment needs live facts this generator does not have -- the account id, the approved hostname, deployment and build-control credential selectors, and every workflow classified -- so the `deployment.development` capability is added to `Config/cloudflare-app.json` during enrollment, not here. `pnpm run deploy:dev` refuses on a workstation without an activation record. Read the [development mode runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/development-mode.md) before enrolling, and use the normal promotion path above whenever the app is not enrolled.',
+            ]
+          : [
+              'Development mode needs a private explicit-validation caller, which a public repository cannot call, so this app always uses the normal promotion path above. `pnpm run deploy:dev` refuses without an activation record.',
+            ]),
         '',
         ...(databaseBackend === 'd1'
           ? [

@@ -539,6 +539,18 @@ describe('create-narduk-app generation contract', () => {
     // One credential, two names: the org secret maps into the single process
     // env name the committed .npmrc reads. No second alias, and no setup-node
     // registry-url writing a competing userconfig .npmrc (company-hq#488).
+    // Development mode's explicit validation caller: a reserved-ref push is its
+    // only trigger, so held automation stays quiet and the run still satisfies
+    // the required check on the exact candidate (company-hq#781).
+    const validation = YAML.parse(
+      files.find((file) => file.path === '.github/workflows/validate.yml')?.contents ?? '',
+    )
+    expect(validation.on).toEqual({ push: { branches: ['narduk-validation/**'] } })
+    expect(validation.jobs.ci.uses).toBe(
+      'narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@67968e304ba64e7733dc36d23d80eefda8d72e33',
+    )
+    expect(validation.jobs.ci.with['expected-candidate-sha']).toBe('${{ github.sha }}')
+    expect(validation.jobs.ci.secrets.NARDUK_PLATFORM_GH_PACKAGES_READ).toBeDefined()
     const generatedCi =
       files.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
     expect(generatedCi).not.toContain('NODE_AUTH_TOKEN')
@@ -1166,6 +1178,7 @@ describe('create-narduk-app generation contract', () => {
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
     expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
     expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
+    expect(webPackage.scripts['deploy:dev']).toBe('narduk-app development deploy')
     expect(webPackage.scripts['performance-budget']).toContain('--font-total-budget-kb 140')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
@@ -1356,7 +1369,7 @@ describe('generated app typecheck and lint surfaces', () => {
         ...rootPackage.scripts,
         ...webPackage.scripts,
       })) {
-        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev/u)
+        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev\b/u)
       }
       expect(generatedText, label).not.toMatch(/narduk-app dev --project/u)
       expect(generatedText, label).not.toMatch(/doppler/iu)
@@ -2065,6 +2078,35 @@ describe('a fresh scaffold passes its own gate', () => {
     expect(readme('private')).toContain('fleet runner groups')
     // Public apps run on GitHub-hosted runners and never hit this.
     expect(readme('public')).not.toContain('fleet runner groups')
+  })
+
+  it('offers development mode only where a validation caller can exist, and enrolls nothing', () => {
+    const files = (visibility: 'private' | 'public') =>
+      new Map(
+        buildGeneratedFiles({
+          appName: 'development-fixture',
+          capabilities: ['seo'],
+          noGit: true,
+          targetDir: '/tmp/development-fixture',
+          visibility,
+        }).map((file) => [file.path, file.contents]),
+      )
+    const privateFiles = files('private')
+    const publicFiles = files('public')
+    expect(privateFiles.has('.github/workflows/validate.yml')).toBe(true)
+    expect(publicFiles.has('.github/workflows/validate.yml')).toBe(false)
+    expect(privateFiles.get('docs/workers-builds.md')).toContain('## Development mode')
+    expect(privateFiles.get('docs/workers-builds.md')).toContain('docs/development-mode.md')
+    expect(publicFiles.get('docs/workers-builds.md')).toContain(
+      'always uses the normal promotion path',
+    )
+    // The capability needs live facts (account, hostname, credential selectors,
+    // workflow classification), so generation never declares it.
+    for (const map of [privateFiles, publicFiles])
+      expect(map.get('Config/cloudflare-app.json')).not.toContain('"development"')
+    expect(JSON.parse(privateFiles.get('package.json') ?? '{}').scripts['deploy:dev']).toBe(
+      'pnpm --filter web run deploy:dev',
+    )
   })
 
   it('declares its own half of Config/cloudflare-app.json, agreeing with wrangler.jsonc', async () => {

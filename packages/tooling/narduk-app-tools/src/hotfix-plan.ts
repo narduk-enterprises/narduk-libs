@@ -134,6 +134,15 @@ export function hotfixBuildEnv(env: NodeJS.ProcessEnv, flags: HotfixFlags): Node
 }
 
 /** The two app-owned build secrets required by the production Nuxt modules. */
+export function assertProductionBuildSecret(key: string, value: string): void {
+  if (
+    ['NUXT_OG_IMAGE_SECRET', 'NUXT_SESSION_PASSWORD'].includes(key) &&
+    (value.trim().length < 32 || value.startsWith('narduk-test-only-'))
+  ) {
+    throw new Error(`${key} must be a real production build secret, never a test placeholder`)
+  }
+}
+
 export function hotfixProductionEnv(env: NodeJS.ProcessEnv, flags: HotfixFlags): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {
     ...hotfixBuildEnv(env, flags),
@@ -142,9 +151,7 @@ export function hotfixProductionEnv(env: NodeJS.ProcessEnv, flags: HotfixFlags):
   for (const key of ['NUXT_OG_IMAGE_SECRET', 'NUXT_SESSION_PASSWORD']) {
     const value = env[key]
     if (value !== undefined) {
-      if (value.trim().length < 32 || value.startsWith('narduk-test-only-')) {
-        throw new Error(`${key} must be a real production build secret, never a test placeholder`)
-      }
+      assertProductionBuildSecret(key, value)
       result[key] = value
     }
   }
