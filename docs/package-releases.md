@@ -287,13 +287,23 @@ Prevention:
 The `changeset-release/main` PR is pushed by the Release workflow's
 `github-actions[bot]` token, so each push's `pull_request` CI run can wait in
 `action_required` until someone approves it, and `verify-pr-gate.py` then sees
-no result on the current head. Approve it deterministically:
+no result on the current head. Approve only the runs for the release PR's
+current head:
 
 ```bash
+head=$(gh pr view changeset-release/main --repo narduk-enterprises/narduk-libs \
+  --json headRefOid --jq .headRefOid)
 gh run list --repo narduk-enterprises/narduk-libs --branch changeset-release/main \
-  --status action_required --json databaseId --jq '.[].databaseId' |
+  --status action_required --json databaseId,headSha \
+  --jq ".[] | select(.headSha == \"$head\") | .databaseId" |
   xargs -I{} gh api -X POST repos/narduk-enterprises/narduk-libs/actions/runs/{}/approve
 ```
+
+Do not approve every held run on the branch. Each regenerated release PR leaves
+its superseded heads' runs in `action_required`, and they share the PR's CI
+concurrency group. On 2026-09-22 an unfiltered approve released 20 runs, 19 of
+them stale. They took the group and cancelled the current head's run, which then
+had to be re-run.
 
 Removing the approval step entirely (authoring the release PR with a GitHub App
 token instead of `GITHUB_TOKEN`) widens that App's grant on this repository, so
