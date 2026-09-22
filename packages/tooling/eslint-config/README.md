@@ -303,6 +303,27 @@ export default [
 `better-tailwindcss/no-restricted-classes` (the raw-palette ban) needs no theme
 and is on regardless.
 
+**Classes the app defines itself are not unknown.** The plugin resolves classes
+against the compiled theme and `@layer components`. It cannot see a class
+defined as a bare selector in the app's CSS, as `narduk-ui/tokens.css` defines
+`.ns-title-m`, or in a Vue SFC `<style>` block. The first consumer to enable the
+rule got 103 errors, and 101 were those two cases (#55). So
+`createAppLintConfig` collects them when it composes the config:
+
+- class selectors in the entry stylesheet and every `.css` file it `@import`s,
+  following relative paths and package paths that resolve to a `.css` file;
+- class selectors in the `<style>` blocks of every `.vue` file under
+  `appRootDir`, skipping dot-directories, `node_modules`, `dist` and `coverage`.
+
+They reach `no-unknown-classes` as one exact-match `ignore` pattern. Anything
+else is still reported, including a variant on an app class (`hover:ns-label`),
+because Tailwind generates no variant for a class it did not define. The SFC set
+is app-wide: a class in one component's scoped style is accepted in every
+component. Classes built by a preprocessor (SCSS `&__element`) are not
+collected. An app that sets its own `no-unknown-classes` options in an override
+replaces the collected `ignore`, because flat config does not merge rule
+options. There is no per-app workaround to copy: do not turn the rule off.
+
 ### 4. Legacy presets are gone; pack names are not
 
 All v1 presets — `recommended`, `nuxt`, `vue`, `vue-strict`, `app`, `all`,
