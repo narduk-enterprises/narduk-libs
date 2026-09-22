@@ -25,6 +25,7 @@
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/composables/usePreferences.ts",
     "runtime/app/composables/useSsrNow.ts",
+    "runtime/app/composables/useCurrentLocation.ts",
     "runtime/app/utils/ssrNowClock.ts",
     "runtime/app/utils/preferencesState.ts",
     "runtime/app/utils/lightboxRails.ts",

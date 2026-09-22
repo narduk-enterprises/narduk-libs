@@ -271,6 +271,13 @@ export function parseLegacyCspSources(value: unknown): string[] {
 }
 
 export interface LegacyCspEnvironment {
+  /**
+   * `NUXT_PUBLIC_ALLOW_GEOLOCATION`. Before narduk-libs#385 only the legacy
+   * middleware read it, so an app with the preset on set it, saw
+   * `allowGeolocation: true` in its public config, and still sent
+   * `geolocation=()`. An explicit `permissionsPolicy.geolocation` wins over it.
+   */
+  allowGeolocation?: boolean
   cspConnectSrc?: unknown
   cspFrameSrc?: unknown
   cspMediaSrc?: unknown
@@ -369,7 +376,11 @@ export function resolveSecurityHeaders(
     csp,
     frameAncestors,
     hsts: resolveHsts(settings.hsts),
-    permissionsPolicy: { ...BASELINE_PERMISSIONS_POLICY, ...(settings.permissionsPolicy ?? {}) },
+    permissionsPolicy: {
+      ...BASELINE_PERMISSIONS_POLICY,
+      ...(legacy.allowGeolocation ? { geolocation: ['self'] } : {}),
+      ...(settings.permissionsPolicy ?? {}),
+    },
     referrerPolicy: settings.referrerPolicy ?? 'strict-origin-when-cross-origin',
     reportRoute,
     strictDynamic,

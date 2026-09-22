@@ -414,4 +414,21 @@ describe('nuxt-security configuration', () => {
     expect(policy.geolocation).toEqual(['self'])
     expect(policy.camera).toEqual([])
   })
+
+  // narduk-libs#385: the env var used to reach only the legacy middleware.
+  it('grants geolocation from NUXT_PUBLIC_ALLOW_GEOLOCATION when the preset is on', () => {
+    const policyFor = (
+      options: Parameters<typeof resolveSecurityHeaders>[0],
+      allowGeolocation: boolean,
+    ) =>
+      buildNuxtSecurityConfig(resolveSecurityHeaders(options, { allowGeolocation })).headers
+        .permissionsPolicy as Record<string, unknown>
+    expect(policyFor(true, true).geolocation).toEqual(['self'])
+    expect(policyFor(true, true).camera).toEqual([])
+    expect(policyFor(true, false).geolocation).toEqual([])
+    // An explicit app setting wins over the env var, in both directions.
+    expect(
+      policyFor({ enabled: true, permissionsPolicy: { geolocation: [] } }, true).geolocation,
+    ).toEqual([])
+  })
 })
