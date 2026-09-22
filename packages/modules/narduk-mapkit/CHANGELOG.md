@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.8.2
+
+### Patch Changes
+
+- e61a56d: Docs only (#664). The README and SECURITY.md now say plainly that
+  `MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN` and `APPLE_MAPKIT_TOKEN` do nothing
+  since 2.1 and should not be set. The token route answers same-origin requests
+  only, whatever an allowlist holds. SECURITY.md previously told operators to
+  set `MAPKIT_ALLOWED_ORIGINS` on production endpoints, which had no effect.
+- e61a56d: `<AppMapKit>`'s default error content no longer draws a bare
+  browser-chrome button (#614). The title, status code and retry button carry
+  `.mk-status-title`, `.mk-status-code` and `.mk-status-retry`. The retry button
+  resets its native appearance and reads `--mk-ink`, `--mk-surface`,
+  `--mk-font-sans` and `--mk-focus`, with the same neutral fallbacks as the
+  marks stylesheet. The `#error` and `#loading` slots are unchanged.
+
 ## 2.8.1
 
 ### Patch Changes

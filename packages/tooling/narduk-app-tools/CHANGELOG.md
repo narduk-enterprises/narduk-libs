@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.19.1
+
+### Patch Changes
+
+- e61a56d: `narduk-app doctor` now refuses a rate-limit `namespace_id` that is
+  not a positive decimal integer, such as `"abc"`, `"0x1F"`, `"0120"`, `-5` or
+  `1.5` (#509). Scaffold ids and ids declared twice were already refused,
+  including across `env.*` overlays.
+
 ## 0.19.0
 
 ### Minor Changes

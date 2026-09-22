@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.5.1
+
+### Patch Changes
+
+- e61a56d: `meta.compatibility.nuxt` now says `>=4.0.0`, matching the `nuxt`
+  peer range these modules already declare (#444). Before, the module metadata
+  still claimed `>=3.16.0`, so a Nuxt 3 app got no compatibility warning from
+  Nuxt and failed later instead. Nuxt 4 apps see no change.
+
 ## 2.5.0
 
 ### Minor Changes
