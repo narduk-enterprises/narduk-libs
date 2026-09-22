@@ -1,5 +1,52 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.12.2
+
+### Patch Changes
+
+- 3dce8b4: Foundation item 11.3 no longer fails a job that calls a shared
+  workflow with no Node input, such as `cursor-review.yml`. It no longer tells a
+  caller of a `node-version`-only callable to use `node-version-file`, an input
+  that callable does not declare; 11.1 still holds that caller's literal to
+  `.node-version`. Workflows are also evaluated per job, so one job's
+  `node-version-file` no longer satisfies another job in the same file.
+- e42c8c9: `narduk-app doctor` checks Cloudflare rate-limit namespace ids
+  (#433). A `ratelimits` binding, top level or under `env.*`, fails if it uses a
+  scaffold id (`1001`, `50110`, `50121`, `50300`), if its id is declared more
+  than once, or if it has no `namespace_id`. `namespace_id` is unique per
+  account, so any of those shares counters with another Worker or environment.
+  An app with its own unique ids passes.
+
+  `create-narduk-app` writes the new app's own namespace prefix into
+  `wrangler.jsonc`, derived from the Worker name by narduk-core's scheme, beside
+  a commented example binding. It still emits no binding, because the limiter
+  needs none.
+
+- 8943c9e: `narduk-lint` can now fail a warning in a rule that has no budget
+  entry. A `lint-budget.json` carrying `"strict": true` gates every rule: a new
+  rule's warnings exit non-zero, naming the rule and its locations, instead of
+  being recorded as the rule's budget and passing (#673). Adopt a new rule's
+  current count deliberately with `narduk-lint --accept-new-rules`, which
+  refuses to run in CI or with `--no-write`. A budget file without `strict`
+  keeps the old record-and-pass behaviour and now says so on every run.
+  narduk-timeseries fixes the one warning that behaviour had let through.
+- b47ddc7: `narduk-testkit/d1`: `createD1QueryHarness` now runs on Miniflare 5,
+  which every Wrangler from 4.129 ships. It converts its options with
+  Miniflare's own `convertV4MiniflareOptions` when that exists and passes them
+  unchanged to Miniflare 4.
+
+  `create-narduk-app`: generated apps pin `wrangler` 4.136.3 and
+  `@cloudflare/workers-types` 5.20260922.1. The older Wrangler's Miniflare
+  brought `sharp` and `undici` versions with high advisories.
+
+- c541ef4: Add `waitForVueHydrated(page)`, a real hydration barrier. It waits
+  until the Vue app has mounted and Nuxt's `isHydrating` is `false`.
+  `waitForHydration` only ever waited for the document `load` event, which on a
+  Nuxt page fires before hydration. It is now deprecated with unchanged
+  behaviour, and `waitForPageLoad` is the same wait under an accurate name. The
+  shared auth, notifications and user-profile contract suites, and the
+  generator's e2e fixtures and audit spec, now use `waitForVueHydrated`.
+
 ## 0.12.1
 
 ### Patch Changes
