@@ -594,13 +594,21 @@ has no IP, say so with `{ unattributed: true }` (third review MEDIUM-5).
 
 `devices_replay_entries` and `devices_auth_attempts` grow with traffic, so
 `openSession` and `startClaim` each run a bounded opportunistic prune first: one
-`DELETE` of replay entries already past their expiry, one of auth attempts older
-than the widest lockout window (an hour), both index-backed predicates rather
-than a `LIMIT` (D1's SQLite is built without
-`SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads is ever
-removed. The opportunistic call swallows its own errors — housekeeping must not
-fail an authentication — so a consumer that wants the counts, or a cron sweep,
-calls `pruneExpired({ before })` and gets
+`DELETE` of replay entries already past their expiry, one of spent scoped nonces
+past theirs, one of auth attempts older than the widest lockout window (an
+hour), all index-backed predicates rather than a `LIMIT` (D1's SQLite is built
+without `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads
+is ever removed.
+
+The opportunistic prune runs at most once per interval per database object: the
+shorter of `challengeTtlSeconds` and the shortest lockout window, so five
+minutes by default (#227). `startClaim` is polled while an owner approves, and
+without the throttle every poll cost three `DELETE`s that removed nothing. The
+throttle is keyed on the `db` you pass, so build the service per request if you
+like, but over one shared database object; a fresh drizzle wrapper per request
+gets no throttle. The opportunistic call swallows its own errors — housekeeping
+must not fail an authentication — so a consumer that wants the counts, or a cron
+sweep, calls `pruneExpired({ before })` and gets
 `{ authAttempts, replayEntries, scopedNonces }` back.
 
 ### Sessions
