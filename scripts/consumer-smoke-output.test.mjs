@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { collectWarningFindings, isNetworkLatencyOnlyWarning } from './consumer-smoke-output.mjs'
+import {
+  collectRecoveredRetryNotices,
+  collectWarningFindings,
+  isNetworkLatencyOnlyWarning,
+  isRecoveredRetryNotice,
+} from './consumer-smoke-output.mjs'
 
 // pnpm renders a global warning as a WARN badge wrapped in U+2009 THIN SPACE
 // inside an ANSI background colour. Building the badge from code points keeps
@@ -159,5 +164,48 @@ test('a successful Rolldown plugin timing summary is informational', () => {
     `${timing} Build failed.`,
   ]) {
     assert.deepEqual(collectWarningFindings(line), [line])
+  }
+})
+
+// The exact line that turned the required packed-consumer-smoke context red on
+// narduk-libs#643 (run 35545349563) after a complete install -- narduk-libs#650.
+const observedRetry = warn(
+  'GET https://registry.npmjs.org/eslint error (ECONNRESET). Will retry in 10 seconds. 2 retries left.',
+)
+
+test('a pnpm retry notice from a successful install does not fail the gate', () => {
+  assert.equal(isRecoveredRetryNotice(observedRetry.trim()), true)
+  assert.deepEqual(collectWarningFindings(`${observedRetry}\nDone in 23.9s\n`), [])
+  assert.deepEqual(collectWarningFindings(styledWarn(observedRetry.slice(7))), [])
+  for (const code of ['ETIMEDOUT', 'EAI_AGAIN', 'ERR_SOCKET_TIMEOUT', '503', '429', '408']) {
+    const line = warn(
+      `GET https://registry.npmjs.org/vue error (${code}). Will retry in 1 minute 5 seconds. 1 retries left.`,
+    )
+    assert.deepEqual(collectWarningFindings(line), [], code)
+  }
+})
+
+test('a filtered retry notice is reported, not dropped', () => {
+  const output = `${observedRetry}\n${warn('Issues with peer dependencies found')}\n`
+  assert.deepEqual(collectRecoveredRetryNotices(output), [observedRetry.trim()])
+  assert.deepEqual(collectWarningFindings(output), [
+    warn('Issues with peer dependencies found').trim(),
+  ])
+})
+
+test('retries that are not transient, or that carry more text, still fail the gate', () => {
+  for (const line of [
+    warn(
+      'GET https://registry.npmjs.org/@narduk-enterprises%2fnarduk-core error (404). Will retry in 10 seconds. 2 retries left.',
+    ),
+    warn(
+      'GET https://registry.npmjs.org/vue error (401). Will retry in 10 seconds. 2 retries left.',
+    ),
+    warn(
+      'GET https://registry.npmjs.org/vue error (ECONNRESET). Will retry in 10 seconds. 2 retries left. Then gave up.',
+    ),
+    'ERROR  GET https://registry.npmjs.org/vue error (ECONNRESET). Will retry in 10 seconds. 2 retries left.',
+  ]) {
+    assert.equal(collectWarningFindings(line).length, 1, line)
   }
 })
