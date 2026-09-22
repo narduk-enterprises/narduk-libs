@@ -126,6 +126,8 @@ export const developmentSchema = z
     ),
     /** Must perform a frozen install; used only when dependency inputs change. */
     install: command,
+    /** Registry read credentials for `install` only, resolved only on a dependency cache miss. */
+    installSecrets: secretMap.default({}),
     additionalBuildInputs: z.array(relativePath).max(200).default([]),
     /** Applied files here become immutable once an authorized migration records them. */
     migrationDirectories: z.array(relativePath).max(50).default([]),
@@ -197,6 +199,10 @@ export const developmentSchema = z
     for (const [index, writer] of value.automation.continuingWriters.entries()) {
       if (writer.workflow && held.has(writer.workflow))
         add(['automation', 'continuingWriters', index], 'A continuing writer cannot also be held')
+    }
+    for (const key of Object.keys(value.installSecrets)) {
+      if (reservedDevelopmentVariable(key))
+        add(['installSecrets', key], 'Process controls cannot be install secrets')
     }
     for (const [id, component] of Object.entries(value.components)) {
       for (const key of Object.keys(component.buildVariables)) {

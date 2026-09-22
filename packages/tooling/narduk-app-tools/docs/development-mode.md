@@ -73,10 +73,13 @@ Declare the capability under `deployment.development`. Each component needs
 `appDir`, `wranglerConfig`, `accountId`, `workerName`, `origins`, `bindings`,
 `build`, `assertArtifact`, `behavior`, `artifactDirectory`,
 `deploymentCredential` and `buildsCredential`. A target set lists components and
-the `checks` gate. `install` must be a frozen install. `automation` classifies
-every workflow and names the `inventoryReference`: the human inventory that also
-covers GitHub Apps, dependency bots and cron. Commands are literal argv, never
-shell text. The schema, with comments, is `src/development-config.ts`.
+the `checks` gate. `install` must be a frozen install; `installSecrets` supplies
+its package-read credential (for example `GH_PACKAGES_READ` for
+`gh-packages-run`), resolved only when dependencies must be reinstalled.
+`automation` classifies every workflow and names the `inventoryReference`: the
+human inventory that also covers GitHub Apps, dependency bots and cron. Commands
+are literal argv, never shell text. The schema, with comments, is
+`src/development-config.ts`.
 
 `assertArtifact` is where you prove the build is the right environment. Assert
 the production configuration, and assert that no development-only or test-only

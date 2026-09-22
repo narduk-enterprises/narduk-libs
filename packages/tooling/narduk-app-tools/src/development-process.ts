@@ -153,7 +153,12 @@ export function prepareDevelopmentDependencies(
   cacheDirectory: string,
   install: DevelopmentCommand,
   packageManagerVersion: string,
-  context: { run?: typeof runDevelopmentCommand; env?: NodeJS.ProcessEnv } = {},
+  context: {
+    run?: typeof runDevelopmentCommand
+    env?: NodeJS.ProcessEnv
+    /** Called only on a cache miss, so warm deploys read no registry credential. */
+    secrets?: () => Record<string, string>
+  } = {},
 ): { reused: boolean; fingerprint: string } {
   const fingerprint = declarationDigest({
     inputs: dependencyFingerprint(snapshot, packageManagerVersion),
@@ -167,11 +172,13 @@ export function prepareDevelopmentDependencies(
   )
     return { reused: true, fingerprint }
   const run = context.run ?? runDevelopmentCommand
-  run(install, workspace, {
-    ...developmentSystemEnv(context.env),
-    CI: 'true',
-    NODE_ENV: 'development',
-  })
+  const secrets = context.secrets?.() ?? {}
+  run(
+    install,
+    workspace,
+    { ...developmentSystemEnv(context.env), ...secrets, CI: 'true', NODE_ENV: 'development' },
+    { redact: Object.values(secrets) },
+  )
   assertCapturedInputs(snapshot, workspace)
   if (!existsSync(join(workspace, 'node_modules')))
     throw new Error('Dependency preparation did not create node_modules')

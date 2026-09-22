@@ -125,6 +125,14 @@ function repository(paired = false) {
             primary: { components: Object.keys(components), checks: [cmd('fake-check')] },
           },
           install: cmd('fake-install'),
+          installSecrets: {
+            GH_PACKAGES_READ: {
+              project: 'github',
+              environment: 'prd',
+              config: 'packages-read',
+              key: 'GH_PACKAGES_READ',
+            },
+          },
           migrationDirectories: ['migrations'],
           automation: {
             workflows: ['.github/workflows/ci.yml', '.github/workflows/promote.yml'],
@@ -384,6 +392,7 @@ interface Harness {
   uploads: number
   fail: Set<string>
   proofFails: Set<string>
+  registryToken: Record<string, string | undefined>
   context: LifecycleContext & DevelopmentContext
   logs: string[]
 }
@@ -402,6 +411,7 @@ function harness(paired = false): Harness {
     uploads: 0,
     fail: new Set(),
     proofFails: new Set(),
+    registryToken: {},
     logs: [],
     context: {},
   }
@@ -419,6 +429,7 @@ function harness(paired = false): Harness {
     github: () => new DevelopmentGitHub(REPO, github.request),
     run: (command, workspace, env) => {
       h.runs.push(command.executable)
+      h.registryToken[command.executable] = env.GH_PACKAGES_READ
       if (h.fail.has(command.executable)) throw new Error(`${command.executable} failed`)
       if (command.executable === 'fake-install')
         mkdirSync(join(workspace, 'node_modules'), { recursive: true })
@@ -614,6 +625,24 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
       receipt.components.web.candidateVersionId,
     )
     expect(JSON.stringify(receipt)).not.toContain(SECRET)
+  })
+
+  it('gives the registry credential to a cold install only', async () => {
+    const h = harness()
+    await enter(h)
+    const reads: string[] = []
+    const readSecret = h.context.readSecret!
+    h.context.readSecret = (selector) => {
+      reads.push(selector.key)
+      return readSecret(selector)
+    }
+    await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(h.registryToken['fake-install']).toBe('value-of-GH_PACKAGES_READ-000000000000')
+    expect(h.registryToken['fake-check']).toBeUndefined()
+    expect(h.registryToken['fake-build']).toBeUndefined()
+    reads.length = 0
+    await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(reads).not.toContain('GH_PACKAGES_READ')
   })
 
   it('reuses warm dependencies and reinstalls when the lockfile changes', async () => {

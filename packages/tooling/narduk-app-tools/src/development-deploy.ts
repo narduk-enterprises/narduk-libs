@@ -341,7 +341,18 @@ export async function runDevelopmentDeploy(
         join(stateDirectory, 'cache', repositoryKey(project.repository)),
         project.development.install,
         context.packageManagerVersion ?? packageManagerVersion(project.checkout),
-        { run, env },
+        {
+          run,
+          env,
+          secrets: () =>
+            Object.fromEntries(
+              Object.entries(project.development.installSecrets).map(([name, selector]) => {
+                const value = readSecret(selector)
+                if (!value.trim()) throw new Error(`Required install input ${name} is missing`)
+                return [name, value]
+              }),
+            ),
+        },
       ).reused,
     }
 
