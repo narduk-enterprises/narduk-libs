@@ -709,6 +709,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         cspMediaSrc: process.env.CSP_MEDIA_SRC,
         cspScriptSrc: process.env.CSP_SCRIPT_SRC,
         cspWorkerSrc: process.env.CSP_WORKER_SRC,
+        allowGeolocation,
       })
       if (securityHeaders.mode !== 'off') {
         if (securityHeaders.reportRoute) {

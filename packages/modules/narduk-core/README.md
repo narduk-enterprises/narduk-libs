@@ -25,7 +25,28 @@ The core security headers keep browser geolocation disabled by default. Apps
 that intentionally need user-location prompts can set
 `NUXT_PUBLIC_ALLOW_GEOLOCATION=true` to emit
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
-blocked.
+blocked. With the `security.headers` preset on, the variable is read at build
+time. An explicit `security.headers.permissionsPolicy.geolocation` wins over it.
+
+`useCurrentLocation()` is the consent-first way to read that location, for "near
+me" features. It exposes `status`, `permission`, `coords`, `locate()` and
+`refreshPermission()`.
+
+- **Nothing is read until the app calls `locate()` from a user gesture.** Each
+  call is one `getCurrentPosition`. It never watches or polls, and it never
+  sends a coordinate anywhere.
+- **Server rendering is a no-op.** On mount, the composable asks the Permissions
+  API what the answer already is. That never prompts.
+- **Four failure outcomes stay separate:**
+  - `denied`: the person said no.
+  - `blocked`: the page's own Permissions-Policy forbids geolocation, so the fix
+    is the setting above. Chromium reports this as a denial, and the composable
+    tells the two apart.
+  - `unavailable`: no position could be had.
+  - `timeout`: no position arrived in time.
+
+It is not named `useGeolocation`, because VueUse's composable of that name
+watches continuously.
 
 narduk-core enables Nuxt UI color mode and defaults `@nuxtjs/color-mode` to
 `preference: system` (or `NUXT_COLOR_MODE_PREFERENCE`), `fallback: 'dark'`, and
