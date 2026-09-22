@@ -837,9 +837,18 @@ It reports two things.
 its version, the manifest it came from and the dependency block it sat in -- one
 row per `(package, manifest, block)`, across the root manifest and the workspace
 manifests at the same monorepo-candidate paths item 1 already reads. Beside it,
-the catalog of shared capabilities the estate publishes, each marked adopted or
-not. **The catalog is derived, never hand-typed**:
-`scripts/generate-capability-catalog.mjs` reads narduk-libs'
+the catalog of shared capabilities the estate publishes, each in one of three
+states. `absent` means no manifest pins the package. `adopted` means it is
+pinned and the app carries no copy of its internals. `forked` means it is pinned
+**and** the app carries its own copy (narduk-libs#620). A fork keeps the
+dependency, so a pin-only reading would call it adopted. A capability opts in
+with `forkStems`, set in the generator's `FORK_STEMS` (today only
+`narduk-mapkit`: `mapkit`). An app-local file counts toward a fork when a
+directory segment of its path, or its own name, equals a stem, and it imports no
+package named for that stem. A `forked` row carries its files and line count.
+9.1 names it and never counts it as adopted, but it is not a failure, because
+some forks are deliberate and tracked. **The catalog is derived, never
+hand-typed**: `scripts/generate-capability-catalog.mjs` reads narduk-libs'
 `pnpm-workspace.yaml` (the four families, D-WEBFOUND-2 Q2 (a)) and writes
 `src/foundation/capability-catalog.ts`; `--check` fails when the committed file
 falls out of step with the workspace, and `pnpm run scripts:test` runs that

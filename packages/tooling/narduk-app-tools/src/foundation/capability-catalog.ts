@@ -21,6 +21,13 @@ export interface SharedCapability {
   family: string
   /** The package's own `description`, verbatim. */
   description: string
+  /**
+   * Path names an app-local copy of this package's internals lives under, e.g.
+   * `utils/mapkit/*` or `mapkit.css` (narduk-libs#620). Opt-in, from
+   * `FORK_STEMS` in the generator: a generic stem such as `auth` or `seo`
+   * names ordinary app code.
+   */
+  forkStems?: readonly string[]
 }
 
 export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
@@ -118,6 +125,7 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
     family: 'modules',
     description:
       'Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.',
+    forkStems: ['mapkit'],
   },
   {
     id: 'mapkit-nuxt',

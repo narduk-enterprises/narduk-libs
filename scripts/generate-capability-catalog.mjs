@@ -66,7 +66,13 @@ export function deriveCapabilityCatalog(root = repoRoot) {
       package: manifest.name,
       family: relativeDirectory.split('/')[1],
       description: (manifest.description ?? '').trim(),
+      ...(FORK_STEMS[manifest.name] ? { forkStems: FORK_STEMS[manifest.name] } : {}),
     })
+  }
+  for (const name of Object.keys(FORK_STEMS)) {
+    if (!capabilities.some((capability) => capability.package === name)) {
+      throw new Error(`FORK_STEMS names ${name}, which is not a published workspace package.`)
+    }
   }
   capabilities.sort((left, right) => left.package.localeCompare(right.package))
   excluded.sort()
@@ -78,6 +84,16 @@ export function deriveCapabilityCatalog(root = repoRoot) {
     throw new Error('Derived an empty capability catalog; the workspace read must have failed.')
   }
   return { capabilities, excluded }
+}
+
+/**
+ * Path names an app-local copy of a package's internals lives under
+ * (narduk-libs#620). Opt-in and hand-kept, because it is judgement rather than
+ * workspace fact: a generic stem such as `auth` or `seo` names ordinary app
+ * code. A key that names no published package fails the build.
+ */
+export const FORK_STEMS = {
+  '@narduk-enterprises/narduk-mapkit': ['mapkit'],
 }
 
 const quote = (value) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
@@ -94,6 +110,9 @@ export async function renderCatalogModule({ capabilities, excluded }) {
         `    package: ${quote(capability.package)},\n` +
         `    family: ${quote(capability.family)},\n` +
         `    description: ${quote(capability.description)},\n` +
+        (capability.forkStems
+          ? `    forkStems: [${capability.forkStems.map(quote).join(', ')}],\n`
+          : '') +
         `  },`,
     )
     .join('\n')
@@ -120,6 +139,13 @@ export interface SharedCapability {
   family: string
   /** The package's own \`description\`, verbatim. */
   description: string
+  /**
+   * Path names an app-local copy of this package's internals lives under, e.g.
+   * \`utils/mapkit/*\` or \`mapkit.css\` (narduk-libs#620). Opt-in, from
+   * \`FORK_STEMS\` in the generator: a generic stem such as \`auth\` or \`seo\`
+   * names ordinary app code.
+   */
+  forkStems?: readonly string[]
 }
 
 export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [

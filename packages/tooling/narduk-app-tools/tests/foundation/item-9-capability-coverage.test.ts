@@ -127,6 +127,70 @@ describe('item 9.0-9.2 -- estate dependency inventory', () => {
     expect(byId.get('uploads')).toMatchObject({ adopted: false, version: null, manifests: [] })
   })
 
+  // narduk-libs#620: a pin plus an app-local copy of the internals is a fork.
+  function mapkitApp(root: string, pinned: boolean): void {
+    baseline(root, pinned ? { '@narduk-enterprises/narduk-mapkit': '2.0.0' } : {})
+    writeFile(
+      root,
+      'apps/web/app/utils/mapkit/marks.ts',
+      'export const a = 1\nexport const b = 2\n',
+    )
+    writeFile(root, 'apps/web/app/assets/css/mapkit.css', '.mk-callout {\n}\n')
+    // Adapts the package, so it is adoption, not a copy.
+    writeFile(
+      root,
+      'apps/web/app/components/mapkit/BuoyLayer.vue',
+      '<script setup lang="ts">\nimport { AppMapKit } from \'@narduk-enterprises/narduk-mapkit-nuxt\'\n</script>\n',
+    )
+    // A stem inside a longer name is not matched.
+    writeFile(root, 'apps/web/app/components/BuoyMapKitHost.vue', '<template><div /></template>\n')
+  }
+
+  it('a pinned capability with an app-local copy is forked, not adopted, and 9.1 says so', () => {
+    const repo = repoWith((root) => mapkitApp(root, true))
+    const mapkit = evaluateItem9(repo).inventory.capabilities.find((c) => c.id === 'mapkit')
+    expect(mapkit).toMatchObject({
+      state: 'forked',
+      adopted: false,
+      fork: {
+        files: ['apps/web/app/assets/css/mapkit.css', 'apps/web/app/utils/mapkit/marks.ts'],
+        lines: 4,
+      },
+    })
+    expect(statusOf(repo, '9.1')).toBe('pass')
+    const detail = detailOf(repo, '9.1')
+    expect(detail).not.toMatch(/adopted: [^;]*\bmapkit\b/u)
+    expect(detail).toContain(
+      'forked (pinned, with an app-local copy): mapkit (2 file(s), 4 line(s)',
+    )
+  })
+
+  it('the same tree without the pin is absent, and a pin with no copy is adopted', () => {
+    const unpinned = repoWith((root) => mapkitApp(root, false))
+    expect(
+      evaluateItem9(unpinned).inventory.capabilities.find((c) => c.id === 'mapkit'),
+    ).toMatchObject({ state: 'absent', adopted: false, fork: null })
+
+    const clean = repoWith((root) =>
+      baseline(root, { '@narduk-enterprises/narduk-mapkit': '2.0.0' }),
+    )
+    expect(
+      evaluateItem9(clean).inventory.capabilities.find((c) => c.id === 'mapkit'),
+    ).toMatchObject({ state: 'adopted', adopted: true, fork: null })
+    expect(detailOf(clean, '9.1')).not.toContain('forked')
+  })
+
+  it('a capability without forkStems is never forked, whatever the app names its code', () => {
+    const repo = repoWith((root) => {
+      baseline(root, { '@narduk-enterprises/narduk-seo': '2.2.0' })
+      writeFile(root, 'app/utils/seo/meta.ts', 'export const title = "x"\n')
+    })
+    expect(evaluateItem9(repo).inventory.capabilities.find((c) => c.id === 'seo')).toMatchObject({
+      state: 'adopted',
+      fork: null,
+    })
+  })
+
   it('9.2 is unknown for an estate pin the catalog cannot classify, pass otherwise', () => {
     const clean = repoWith((root) => baseline(root))
     expect(statusOf(clean, '9.2')).toBe('pass')
