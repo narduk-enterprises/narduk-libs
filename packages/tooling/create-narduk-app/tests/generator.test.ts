@@ -849,11 +849,11 @@ describe('create-narduk-app generation contract', () => {
       expect(webManifest.devDependencies['nitro-cloudflare-dev'], label).toBe(
         PACKAGE_VERSIONS['nitro-cloudflare-dev'],
       )
-      // `--checkout ..` because the item reads Config/cloudflare-app.json and
-      // the wrangler config from the repository root, while pnpm runs this
-      // script with the cwd at apps/web.
+      // `--checkout ../..` because the item reads Config/cloudflare-app.json
+      // and the wrangler config from the repository root, while pnpm runs this
+      // script with the cwd at apps/web (`..` is apps/, narduk-libs#679).
       expect(webManifest.scripts['foundation:deployment'], label).toBe(
-        'narduk-app foundation:check:deployment --checkout ..',
+        'narduk-app foundation:check:deployment --checkout ../..',
       )
     }
   })

@@ -568,13 +568,14 @@ export function createWebPackageManifest(
       // its Vite 8-incompatible config-retriever hook.
       'dev:test': 'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
-      // `--checkout ..` because the item reads the WHOLE checkout (root and
-      // apps/web manifests, nuxt.config, pages/components), and pnpm runs this
-      // script with the cwd at apps/web.
-      // Same `--checkout ..` reasoning: the item reads Config/cloudflare-app.json
-      // and the wrangler config from the repository root.
-      'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ..',
-      'foundation:shared-ui-pinned': 'narduk-app foundation:check:shared-ui-pinned --checkout ..',
+      // pnpm runs these with the cwd at apps/web, and both items read the
+      // checkout from the repository root: its manifests, Config/
+      // cloudflare-app.json, the wrangler config. That root is `../..`. `..` is
+      // apps/, where item 12 found no deployment block and reported N/A with
+      // exit 0 (narduk-libs#679).
+      'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ../..',
+      'foundation:shared-ui-pinned':
+        'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
       'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
       'og:generate': 'narduk-app og:generate',
       'og:check': 'narduk-app og:check',
