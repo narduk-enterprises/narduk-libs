@@ -38,7 +38,7 @@ data, error or CSP nonce replayed to others.
 
 All of these hold before the switch goes on.
 
-1. **narduk-core 2.10.0 or later.** Foundation check 12.7
+1. **narduk-core 2.10.1 or later.** Foundation check 12.7
    (`narduk-app foundation:check:deployment`) fails an older core with the
    switch on, even in rollout mode. What each release added:
 
@@ -47,9 +47,9 @@ All of these hold before the switch goes on.
    | 2.2.3       | thrown 4xx/5xx/429 rendered as HTML (`error-cache`, #429)                         |
    | 2.2.4       | SSR HTML under a nonce CSP (`nonce-csp-cache`, #435)                              |
    | 2.5.0       | any response that leaves with no posture (`default-private-cache`)                |
-   | 2.10.0      | thrown errors answered as JSON: `/api/*`, `Accept: application/json`, curl (#493) |
+   | 2.10.1      | thrown errors answered as JSON: `/api/*`, `Accept: application/json`, curl (#493) |
 
-   Before 2.10.0 a thrown API 404 left with Nitro's `no-cache` and was stored.
+   Before 2.10.1 a thrown API 404 left with Nitro's `no-cache` and was stored.
 
 2. **Per-request headers are stripped.** Core strips rate-limit quota and
    correlation ids from any shared-cacheable response (#412, #418). That code
@@ -96,7 +96,7 @@ Then run the repository check:
 pnpm exec narduk-app foundation:check:deployment
 ```
 
-12.7 must be `pass`. `fail` means the core is older than 2.10.0. `unknown` means
+12.7 must be `pass`. `fail` means the core is older than 2.10.1. `unknown` means
 the core spec names no version, such as `workspace:*`.
 
 ## Proving it after the deploy
