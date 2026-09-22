@@ -192,6 +192,10 @@ produces a version that serves no traffic, and a GitHub Actions job deploys that
 exact version at 100% only once the gate check is green on that exact main SHA
 (company-hq#745, deployment-standard design §1.5).
 
+An app whose Workers Build still deploys directly has no promote run to turn red
+when a build fails; it adds the
+[post-merge deploy assertion](docs/deploy-assertion.md) (narduk-libs#597).
+
 ### How a commit is linked to a version
 
 A Worker version carries **no commit field**. Read live on 2026-09-17 against
