@@ -1524,8 +1524,11 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(webManifest.scripts.lint, label).toBe('nuxt prepare && narduk-lint')
       expect(webManifest.scripts.lint, label).not.toContain('--max-warnings')
-      expect(files.get('apps/web/lint-budget.json'), label).toBe('{\n  "rules": {}\n}\n')
+      expect(files.get('apps/web/lint-budget.json'), label).toBe(
+        '{\n  "strict": true,\n  "rules": {}\n}\n',
+      )
       expect(JSON.parse(files.get('apps/web/lint-budget.json') ?? ''), label).toEqual({
+        strict: true,
         rules: {},
       })
     }

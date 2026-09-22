@@ -1317,9 +1317,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     {
       // narduk-lint's warning budget (see @narduk-enterprises/eslint-config's
       // README, "Warning budgets"). A new app starts with no warnings, so the
-      // budget starts empty; `pnpm lint` records any it later accepts.
+      // budget starts empty. `strict` (eslint-config 2.2.0+, #673) makes a
+      // warning in a rule with no entry fail instead of being recorded as that
+      // rule's budget; `narduk-lint --accept-new-rules` adopts one on purpose.
       path: 'apps/web/lint-budget.json',
-      contents: text('{', '  "rules": {}', '}'),
+      contents: text('{', '  "strict": true,', '  "rules": {}', '}'),
     },
     {
       path: 'eslint.config.mjs',
