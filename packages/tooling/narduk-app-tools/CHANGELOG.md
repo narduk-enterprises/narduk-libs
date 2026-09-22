@@ -1,5 +1,30 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.18.0
+
+### Minor Changes
+
+- e42c8c9: `narduk-app doctor` checks Cloudflare rate-limit namespace ids
+  (#433). A `ratelimits` binding, top level or under `env.*`, fails if it uses a
+  scaffold id (`1001`, `50110`, `50121`, `50300`), if its id is declared more
+  than once, or if it has no `namespace_id`. `namespace_id` is unique per
+  account, so any of those shares counters with another Worker or environment.
+  An app with its own unique ids passes.
+
+  `create-narduk-app` writes the new app's own namespace prefix into
+  `wrangler.jsonc`, derived from the Worker name by narduk-core's scheme, beside
+  a commented example binding. It still emits no binding, because the limiter
+  needs none.
+
+### Patch Changes
+
+- 3dce8b4: Foundation item 11.3 no longer fails a job that calls a shared
+  workflow with no Node input, such as `cursor-review.yml`. It no longer tells a
+  caller of a `node-version`-only callable to use `node-version-file`, an input
+  that callable does not declare; 11.1 still holds that caller's literal to
+  `.node-version`. Workflows are also evaluated per job, so one job's
+  `node-version-file` no longer satisfies another job in the same file.
+
 ## 0.17.0
 
 ### Minor Changes

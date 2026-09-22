@@ -1,5 +1,28 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.7.0
+
+### Minor Changes
+
+- c541ef4: Add `waitForVueHydrated(page)`, a real hydration barrier. It waits
+  until the Vue app has mounted and Nuxt's `isHydrating` is `false`.
+  `waitForHydration` only ever waited for the document `load` event, which on a
+  Nuxt page fires before hydration. It is now deprecated with unchanged
+  behaviour, and `waitForPageLoad` is the same wait under an accurate name. The
+  shared auth, notifications and user-profile contract suites, and the
+  generator's e2e fixtures and audit spec, now use `waitForVueHydrated`.
+
+### Patch Changes
+
+- b47ddc7: `narduk-testkit/d1`: `createD1QueryHarness` now runs on Miniflare 5,
+  which every Wrangler from 4.129 ships. It converts its options with
+  Miniflare's own `convertV4MiniflareOptions` when that exists and passes them
+  unchanged to Miniflare 4.
+
+  `create-narduk-app`: generated apps pin `wrangler` 4.136.3 and
+  `@cloudflare/workers-types` 5.20260922.1. The older Wrangler's Miniflare
+  brought `sharp` and `undici` versions with high advisories.
+
 ## 1.6.2
 
 ### Patch Changes
