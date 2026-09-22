@@ -760,6 +760,23 @@ export interface DevicesService {
 }
 
 /**
+ * The longest gap between two opportunistic prunes: the shortest lockout
+ * window. The interval actually used is the shorter of this and the service's
+ * challenge TTL (narduk-libs#227).
+ */
+export const OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS = Math.min(
+  DEVICES_LOCKOUT_POLICY.perTokenOrDevice.windowSeconds,
+  DEVICES_LOCKOUT_POLICY.perAccountOrIp.windowSeconds,
+)
+
+/**
+ * When each database was last opportunistically pruned. Keyed by the database
+ * object rather than held per service, so services built per request over one
+ * shared database still share the throttle.
+ */
+const lastOpportunisticPrune = new WeakMap<DevicesDatabase, number>()
+
+/**
  * Build the devices service over a caller-supplied database.
  *
  * Nothing here reads ambient request state, environment variables, or another
@@ -790,6 +807,7 @@ export function createDevices(
     )
   }
   const lockouts = createLockoutGate(db, now, nextId)
+  const pruneIntervalMs = Math.min(challengeTtlMs, OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS * 1000)
 
   async function audit(input: {
     action: DevicesAuditAction
@@ -1004,10 +1022,21 @@ export function createDevices(
     }
   }
 
-  /** Pruning is housekeeping: it must never turn into an authentication failure. */
+  /**
+   * Pruning is housekeeping: it must never turn into an authentication failure.
+   * It is also throttled (narduk-libs#227). `startClaim` is polled — an edge
+   * re-posts it every few seconds while an owner approves — and every run was
+   * three DELETEs that almost always removed nothing. Skipping a run only leaves
+   * already-expired rows a little longer; no live check reads them.
+   */
   async function pruneOpportunistically(): Promise<void> {
+    const at = now()
+    const last = lastOpportunisticPrune.get(db)
+    // A clock behind the last run (another instance's clock) prunes rather than waits.
+    if (last !== undefined && at >= last && at - last < pruneIntervalMs) return
+    lastOpportunisticPrune.set(db, at)
     try {
-      await prune()
+      await prune(at)
     } catch {
       // Deliberately swallowed. `pruneExpired()` is the surface that reports.
     }

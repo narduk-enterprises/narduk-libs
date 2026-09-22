@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 // ─── Users ──────────────────────────────────────────────────
 export const users = sqliteTable('users', {
@@ -70,7 +70,10 @@ export const apiKeys = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (table) => [index('api_keys_user_id_idx').on(table.userId)],
+  (table) => [
+    index('api_keys_user_id_idx').on(table.userId),
+    uniqueIndex('api_keys_key_hash_idx').on(table.keyHash),
+  ],
 )
 
 // ─── Notifications ──────────────────────────────────────────

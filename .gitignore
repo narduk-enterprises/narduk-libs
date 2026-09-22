@@ -47,6 +47,11 @@ packages/modules/narduk-mapkit-nuxt/dist/
 # narduk-mapkit deliberately COMMITS its dist/ (git-dependency consumers
 # install it without a build step); only the Nuxt adapter's build output
 # above is ignored.
+# narduk-realtime deliberately COMMITS its dist/ too, for the same reason
+# (#178). Its `build` ends in scripts/check-dist-clean.mjs, which fails on a
+# stale dist, and tests/package-exports.test.ts pins that. A build that
+# dirties dist/ means src/ changed without a committed rebuild: commit the
+# rebuild, do not ignore the directory (#654).
 .pack/
 # ESLint caches
 .eslint-results.json
