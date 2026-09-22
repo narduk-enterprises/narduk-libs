@@ -184,6 +184,44 @@ unknown addresses. Stored links contain only a SHA-256 token digest and expire
 after one use. Repeated credential attempts use persistent exponential lockout
 in addition to the package's outer IP rate limit.
 
+### Branded password emails
+
+The setup and reset emails are plain by default. An app replaces them with a
+Nitro plugin on the `narduk-auth:email` hook:
+
+```ts
+// server/plugins/auth-email.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('narduk-auth:email', (context) => {
+    context.message = renderMyPasswordEmail(context) // { subject, text, html }
+  })
+})
+```
+
+The context carries `purpose` (`setup` or `reset`), `actionUrl`, `appName`,
+`appUrl`, `email`, `ttlMinutes` and the default `message`. A template must keep
+`actionUrl` in both the text and the HTML part (HTML-escaped). A handler that
+throws or drops the link is ignored, and the default email is sent instead, so a
+template bug never costs a user their link.
+
+`sendAuthEmail(event, readLocalEmailSettings(event), { to, message })` from
+`@narduk-enterprises/narduk-auth/server/utils/auth-email` sends an app's own
+account email (an invitation, say) from the same verified sender. It returns
+whether the provider accepted the message and never logs the recipient.
+
+### Accounts for an address the app already proved
+
+`registerLocalUserWithProvenEmail(event, { email, name, password })` and
+`confirmSessionEmailWithProof(event, email)` from
+`@narduk-enterprises/narduk-auth/server/utils/proven-email` are for an app that
+has just redeemed a single-use token it emailed to that address, such as an
+invitation link. Holding the token proves the inbox, so the account is created
+confirmed and signed in, with no second confirmation email. The first answers
+409 for an address that already has an account. The second confirms only the
+signed-in user's own address and returns null for any other. Both work while
+`publicSignup` is off, so a closed app still admits the people it invites. Never
+pass an address the visitor merely typed.
+
 Application-specific authorization, membership, and roles remain app-owned.
 Machine access such as `/mcp` should continue to use a scoped API key or another
 explicit machine credential; browser email sessions are not a machine-auth
