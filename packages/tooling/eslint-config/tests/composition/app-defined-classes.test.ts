@@ -62,11 +62,15 @@ beforeAll(async () => {
       '@import "./tokens.css";',
       '@import "brand-kit/brand.css";',
       '@import "brand-kit";',
+      '@import url(./layout.css);',
+      "@import url( './type.css' );",
       '/* .commented-out { } */',
       '.page-title { font-weight: 600; }',
       '@media (width < 620px) { .page-title { font-size: 1.5rem; } }',
     ].join('\n'),
   )
+  write('app/assets/css/layout.css', '.page-grid { }\n')
+  write('app/assets/css/type.css', '.eyebrow { }\n')
   write('app/assets/css/tokens.css', ':root { --gap: .5rem; }\n.ns-readout, .ns-label:hover { }\n')
   write(
     'node_modules/brand-kit/package.json',
@@ -112,7 +116,7 @@ describe('what the collector walks', () => {
   it('follows relative imports and package imports that resolve to CSS', () => {
     expect(
       [...collector.classesInCssImportGraph(join(appRoot, 'app/assets/css/main.css'))].sort(),
-    ).toEqual(['brand-mark', 'ns-label', 'ns-readout', 'page-title'])
+    ).toEqual(['brand-mark', 'eyebrow', 'ns-label', 'ns-readout', 'page-grid', 'page-title'])
   })
 
   it('reads SFC styles but skips dot-directories and node_modules', () => {
@@ -154,7 +158,11 @@ describe('no-unknown-classes in a composed app config', () => {
 
     expect(override?.rules?.['better-tailwindcss/no-unknown-classes']).toEqual([
       'error',
-      { ignore: ['^(?:brand-mark|card-body|card-shell|ns-label|ns-readout|page-title)$'] },
+      {
+        ignore: [
+          '^(?:brand-mark|card-body|card-shell|eyebrow|ns-label|ns-readout|page-grid|page-title)$',
+        ],
+      },
     ])
   })
 

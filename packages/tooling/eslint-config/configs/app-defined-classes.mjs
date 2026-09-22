@@ -36,7 +36,8 @@ import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 const SKIPPED_DIRECTORIES = new Set(['coverage', 'dist', 'node_modules'])
 
 const CLASS_SELECTOR = /\.(-?[_a-z][\w-]*)/gi
-const IMPORT_SPECIFIER = /@import\s+(?:url\(\s*)?["']([^"']+)["']/g
+// `@import "x"`, `@import url("x")` and the unquoted `@import url(x)`.
+const IMPORT_SPECIFIER = /@import\s+(?:["']([^"']+)["']|url\(\s*(?:["']([^"']+)["']|([^)"'\s]+)))/g
 const STYLE_BLOCK = /<style\b[^>]*>([\s\S]*?)<\/style>/gi
 
 /**
@@ -116,7 +117,7 @@ export function classesInCssImportGraph(entryPath) {
     }
     for (const name of classSelectorsIn(css)) names.add(name)
     for (const match of css.replaceAll(/\/\*[\s\S]*?\*\//g, ' ').matchAll(IMPORT_SPECIFIER)) {
-      const imported = resolveCssImport(match[1], file)
+      const imported = resolveCssImport(match[1] ?? match[2] ?? match[3], file)
       if (imported && extname(imported) === '.css') pending.push(imported)
     }
   }
