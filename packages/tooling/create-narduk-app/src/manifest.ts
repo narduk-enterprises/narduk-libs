@@ -452,6 +452,22 @@ export function createRootPackageManifest(
         // the same version. Narduk modules depend on `@nuxt/kit@^4.0.0`, so
         // without this every upstream Nuxt minor silently splits the app's kit
         // from its nuxt and drags in that kit's transitive dependency block.
+        //
+        // This literal is the same shape that reddened gonogo's first safe
+        // Dependabot lane PR (gonogo#106: nuxt bumped to 4.5.2, this literal
+        // did not move, `@nuxt/kit` stayed behind, `buildDiagnostics` import
+        // broke). gonogo#108's fix -- `"@nuxt/kit": "$nuxt"` -- does NOT
+        // transfer here as a plain substitution: pnpm only resolves `$<name>`
+        // against a dependency declared in the SAME package.json as
+        // `pnpm.overrides` (this one, the root manifest), and `nuxt` is a
+        // dependency of apps/web/package.json, not this one (confirmed
+        // empirically -- a bare `$nuxt` here fails `pnpm install` with
+        // "Cannot resolve version $nuxt in overrides"). Every other
+        // `@narduk-enterprises/*` override below has the identical problem:
+        // none of their referenced packages are direct dependencies of this
+        // root manifest either. Making any of them track-by-reference needs
+        // that package anchored as a real root-manifest dependency too --
+        // narduk-libs#282's already-tracked follow-up, not done here.
         '@nuxt/kit': PACKAGE_VERSIONS.nuxt,
         'eslint-plugin-vitest>@typescript-eslint/utils':
           PACKAGE_VERSIONS['@typescript-eslint/utils'],

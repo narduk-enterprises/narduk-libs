@@ -183,6 +183,24 @@ vitest 4→5 landing in the same PR as ~24 otherwise-safe updates). Two lanes
 split by update type is the shape `gonogo` adopted first (gonogo#104, merged as
 `0c464d8`) and this generator now matches.
 
+**A `pnpm.overrides` entry pinning a sibling of a package the safe lane bumps
+must use pnpm's `$<direct-dep>` reference, or it reddens the lane on every
+bump.** gonogo's first safe PR (#106) went red on
+`@nuxt/kit does not provide an export named 'buildDiagnostics'`: `nuxt` bumped
+to 4.5.2 but the override pinning `@nuxt/kit` was a literal `"4.4.8"` that
+Dependabot never touches, so kit stayed behind; gonogo#108 fixed it with
+`"@nuxt/kit": "$nuxt"`, which tracks whatever `nuxt` resolves to and was
+verified to move to 4.5.2 alongside it (removing the override outright instead
+pulled in three copies of kit). This generator's own `@nuxt/kit` override in
+`manifest.ts` is the same literal shape and carries the same risk, but cannot
+take the plain `$nuxt` substitution today — pnpm only resolves `$<name>` against
+a dependency declared in the _same_ `package.json` as the override, and here
+`nuxt` lives in `apps/web/package.json` while `pnpm.overrides` lives in the root
+manifest (confirmed empirically: a bare `$nuxt` there fails `pnpm install` with
+`Cannot resolve version $nuxt in overrides`). Fixing it needs `nuxt` anchored as
+a real root-manifest dependency too, which is the broader follow-up
+narduk-libs#282 already tracks and this PR does not do.
+
 An existing app adopts both files the same way as any other managed unit:
 
 ```bash
