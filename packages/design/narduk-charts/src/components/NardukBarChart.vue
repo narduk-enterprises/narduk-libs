@@ -691,29 +691,34 @@ function horizontalBarRoundedPath(bar: BarRect): string {
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
-      <table v-if="showDataTable && !isEmpty" class="narduk-sr-only">
-        <caption>
-          {{
-            effectiveChartTitle
-          }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Category</th>
-            <th v-for="s in series" :key="s.name" scope="col">
-              {{ s.name }}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(lab, ri) in labels" :key="ri">
-            <th scope="row">{{ formatXAt(ri) }}</th>
-            <td v-for="s in series" :key="s.name">
-              {{ s.data[ri] ?? '' }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- The wrapper, not the table, is visually hidden: `overflow` does not
+           apply to a table box, and an auto-layout table grows to its content
+           whatever its declared width (narduk-libs#296). -->
+      <div v-if="showDataTable && !isEmpty" class="narduk-sr-only">
+        <table>
+          <caption>
+            {{
+              effectiveChartTitle
+            }}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Category</th>
+              <th v-for="s in series" :key="s.name" scope="col">
+                {{ s.name }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(lab, ri) in labels" :key="ri">
+              <th scope="row">{{ formatXAt(ri) }}</th>
+              <td v-for="s in series" :key="s.name">
+                {{ s.data[ri] ?? '' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>

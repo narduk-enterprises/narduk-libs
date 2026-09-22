@@ -116,3 +116,23 @@ test.describe('visual regression', () => {
     await expect(section).toHaveScreenshot('line-section.png', { timeout: 15_000 })
   })
 })
+
+test.describe('off-screen data tables', () => {
+  // narduk-libs#296: the off-screen data table must not widen its container.
+  // An auto-layout <table> grows to its content's min width whatever its
+  // declared 1px, and `overflow` does not apply to a table box, so the
+  // visually-hidden table pushed a 390px page out to 652px in Buoys.
+  test('an off-screen data table adds no width to a narrow container', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('.e2e-root', { timeout: 30_000 })
+    const section = page.locator('[data-testid="narrow-data-table-section"]')
+    await expect(section.locator('table')).toHaveCount(2)
+    const { clientWidth, scrollWidth } = await section.evaluate(el => ({
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    }))
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth)
+    // Still a real table, still in the accessibility tree.
+    await expect(section.getByRole('table', { name: 'Narrow line with data table' })).toHaveCount(1)
+  })
+})
