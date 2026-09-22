@@ -951,8 +951,13 @@ describe('feedback, operations, handoff and exit', { timeout: 30_000 }, () => {
       head_sha: release,
       head_branch: `narduk-validation/${release}/request`,
     })
-    await runDevelopmentExitComplete({ releaseSha: release, validationRun: '900' }, h.context)
+    const closed = await runDevelopmentExitComplete(
+      { releaseSha: release, validationRun: '900' },
+      h.context,
+    )
     expect(readActivation(REPO, h.state)).toBeUndefined()
+    // The archived record points at the release receipt file, not at a build ID.
+    expect(existsSync(closed.lastReceipt!)).toBe(true)
     expect(h.github.workflows.map((w) => w.state)).toEqual([
       'active',
       'disabled_manually',

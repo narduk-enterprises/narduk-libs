@@ -782,7 +782,6 @@ export async function runDevelopmentExitComplete(
       throw new Error(
         `Release deployment is ${describeOutcome(receipt.outcome)}; automation stays held. Fix and re-run exit.`,
       )
-    record.lastReceipt = receipt.buildId
     const fresh = readActivation(project.repository, stateDirectory)!
     fresh.journal.push('exit-deployed')
     fresh.mode = 'restoring'
