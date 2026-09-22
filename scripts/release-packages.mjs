@@ -40,7 +40,11 @@ import { subpathProbeProgram, subpathResolutionPlans } from './packed-consumer-s
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
 import { assertHostedPlaywrightToolchain } from './hosted-playwright-toolchain.mjs'
-import { collectWarningFindings, stripAnsi } from './consumer-smoke-output.mjs'
+import {
+  collectRecoveredRetryNotices,
+  collectWarningFindings,
+  stripAnsi,
+} from './consumer-smoke-output.mjs'
 import {
   fileDigest,
   fingerprintInputs,
@@ -185,6 +189,11 @@ async function runChecked(command, commandArgs, options) {
     writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
   }
   if (options.rejectWarnings !== false) {
+    // Reached only after the command exited 0, which is what makes a pnpm
+    // retry notice a recovered one (scripts/consumer-smoke-output.mjs).
+    for (const notice of collectRecoveredRetryNotices(output)) {
+      writeLine(`[consumer-smoke] Not a finding (retry recovered, command exited 0): ${notice}`)
+    }
     const findings = collectWarningFindings(output)
     if (findings.length > 0) {
       throw new Error(`${label} emitted warning/error output:\n${findings.join('\n')}`)

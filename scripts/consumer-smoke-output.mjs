@@ -60,6 +60,33 @@ const networkLatencyOnlyWarningPatterns = [
 ]
 
 /**
+ * pnpm's notice that a registry request failed transiently and is being
+ * retried. Emitted by pnpm 10.33.4's default reporter
+ * (`reporterForClient/reportRequestRetry.js`) as
+ *
+ *   `${method} ${url} error (${errorCode}). Will retry in ${prettyMs(timeout, { verbose: true })}. ${retriesLeft} retries left.`
+ *
+ * where `errorCode` is the HTTP status or the socket error code. The notice
+ * is printed BEFORE the outcome is known, so on its own it proves nothing.
+ * What makes it benign here is where it is read: `runChecked()` scans output
+ * only after the command exited 0, and pnpm exits non-zero when its retries
+ * run out. A retry notice in the output of a successful install is therefore a
+ * retry that recovered — the fetch completed, the install completed, and the
+ * notice carries no signal about the packed artifacts. On 2026-09-20 one such
+ * line (`GET https://registry.npmjs.org/eslint error (ECONNRESET)`) turned the
+ * required `packed-consumer-smoke` context red on narduk-libs#643 (run
+ * 35545349563) after a complete install (narduk-libs#650).
+ *
+ * Narrow on purpose: whole-line anchored, only the transient error classes —
+ * socket error codes (`ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, …), 5xx, 408 and
+ * 429. A retry after a 4xx that is not a throttle, or any other WARN about the
+ * same URL, still fails the gate. Filtered notices are printed by
+ * `runChecked()`, not dropped silently (see `collectRecoveredRetryNotices`).
+ */
+const recoveredRetryNoticePattern =
+  /^\s*WARN\s+[A-Z]+ https?:\/\/\S+ error \((?:E[A-Z0-9_]+|ERR_[A-Z0-9_]+|5\d\d|408|429)\)\. Will retry in \d+(?:\.\d+)? [a-z]+(?: \d+(?:\.\d+)? [a-z]+)*\. \d+ retries left\.$/u
+
+/**
  * Bundler warnings about THIRD-PARTY source that the bundler itself resolves
  * on its success path. Same bar as the network patterns above: provably
  * emitted from a success path, provably carrying no signal about the packed
@@ -124,6 +151,25 @@ export function isNetworkLatencyOnlyWarning(line) {
 }
 
 /**
+ * True when `line` is pnpm's transient-registry retry notice. Only meaningful
+ * for the output of a command that exited 0 -- see the pattern's comment.
+ */
+export function isRecoveredRetryNotice(line) {
+  return recoveredRetryNoticePattern.test(line)
+}
+
+/**
+ * The retry notices `collectWarningFindings` skipped, trimmed and in order, so
+ * the caller can print them: a filtered warning stays visible.
+ */
+export function collectRecoveredRetryNotices(output) {
+  return stripAnsi(output)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => isRecoveredRetryNotice(line))
+}
+
+/**
  * True when `line` is a bundler notice about third-party source, resolved on
  * the bundler's own success path, and therefore must not fail the gate.
  */
@@ -143,6 +189,7 @@ export function collectWarningFindings(output) {
       (line) =>
         warningOrErrorTokenPattern.test(line) &&
         !isNetworkLatencyOnlyWarning(line) &&
+        !isRecoveredRetryNotice(line) &&
         !isThirdPartyBundlerNotice(line) &&
         !buildTimingOnlyWarningPattern.test(line),
     )
