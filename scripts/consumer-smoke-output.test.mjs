@@ -167,6 +167,22 @@ test('a successful Rolldown plugin timing summary is informational', () => {
   }
 })
 
+test("narduk-core's build banner is not a finding; any other forwarded console.warn is", () => {
+  // The exact lines from narduk-libs#699's local release:consumer-smoke run.
+  const banner =
+    '[WebServer] [warn] [console.warn] [build] Narduk Libs Release Smoke v0.1.0 · 0.1.0 · deployed Sep 21, 2026, 10:35 AM UTC'
+  assert.deepEqual(collectWarningFindings(banner), [])
+  assert.deepEqual(collectWarningFindings(`${banner} (x2)`), [])
+  for (const line of [
+    '[WebServer] [warn] [console.warn] [Vue warn]: Failed to resolve component: NeTable',
+    '[WebServer] [warn] [console.warn] [build] chunk size limit exceeded',
+    banner.replace('[console.warn]', '[console.error]'),
+    `${banner} · hydration mismatch`,
+  ]) {
+    assert.deepEqual(collectWarningFindings(line), [line])
+  }
+})
+
 // The exact line that turned the required packed-consumer-smoke context red on
 // narduk-libs#643 (run 35545349563) after a complete install -- narduk-libs#650.
 const observedRetry = warn(

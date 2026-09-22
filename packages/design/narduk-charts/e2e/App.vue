@@ -40,6 +40,18 @@ const barSeries: ChartSeries[] = [
 ]
 const barLabels = ['Q1', 'Q2', 'Q3']
 
+// narduk-libs#296: a narrow chart with long names and many rows, so an
+// off-screen data table that sizes itself to its content would be far wider
+// than the 320px box it sits in.
+const narrowLabels = Array.from(
+  { length: 24 },
+  (_, i) => `2026-09-${String(i + 1).padStart(2, '0')} 12:00 UTC`,
+)
+const narrowSeries: ChartSeries[] = [
+  { name: 'Significant wave height (metres)', data: narrowLabels.map((_, i) => 1 + (i % 5) / 3) },
+  { name: 'Dominant wave period (seconds)', data: narrowLabels.map((_, i) => 8 + (i % 4)) },
+]
+
 const pieData = [
   { label: 'X', value: 30 },
   { label: 'Y', value: 70 },
@@ -99,6 +111,27 @@ const pieData = [
       <div data-testid="pie-chart">
         <NardukPieChart chart-title="Pie E2E" :data="pieData" :width="400" :height="320" />
       </div>
+    </section>
+    <section
+      data-testid="narrow-data-table-section"
+      style="margin-top: 32px; width: 320px; overflow-x: auto"
+    >
+      <NardukLineChart
+        chart-title="Narrow line with data table"
+        :series="narrowSeries"
+        :labels="narrowLabels"
+        :width="240"
+        :height="160"
+        :show-data-table="true"
+      />
+      <NardukBarChart
+        chart-title="Narrow bar with data table"
+        :series="narrowSeries"
+        :labels="narrowLabels"
+        :width="240"
+        :height="160"
+        :show-data-table="true"
+      />
     </section>
     <section data-testid="candle-section" style="margin-top: 32px">
       <div data-testid="candle-chart">

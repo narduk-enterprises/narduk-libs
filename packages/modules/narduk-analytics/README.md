@@ -32,6 +32,13 @@ export default defineNuxtConfig({
 })
 ```
 
+Being registered is not enough: narduk-core registers the overlay only when its
+own `app` option is on (the default). With `nardukCore: { app: false }`, or
+`app: false` in an inline narduk-core module tuple, the client plugins would run
+with no key and send nothing. So the build fails with that shape unless
+`nardukAnalytics.app` is `false` too, which keeps only the server half
+(narduk-libs#663).
+
 ## Module options
 
 Configure under the `nardukAnalytics` key (or pass inline module options):

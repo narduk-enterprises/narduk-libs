@@ -111,6 +111,29 @@ async function ensureNardukCoreInstalled(nuxt: Parameters<typeof hasNuxtModule>[
   await installModule(CORE_PACKAGE_NAME)
 }
 
+/**
+ * Whether the app registered narduk-core with `app: false`, through the
+ * `nardukCore` config key or an inline `[module, options]` tuple. Registration
+ * alone is not enough: narduk-core registers the runtime-public overlay the
+ * analytics client plugins read only when `app` is on, so `app: false` passes
+ * {@link ensureNardukCoreInstalled} and still loses every analytics value
+ * (narduk-libs#663). narduk-core defaults `app` to true, so an absent value is
+ * resolved, not unknown.
+ */
+function nardukCoreAppDisabled(nuxtOptions: {
+  modules?: readonly unknown[]
+  nardukCore?: unknown
+}): boolean {
+  const configured = nuxtOptions.nardukCore as { app?: unknown } | undefined
+  if (configured?.app === false) return true
+  return (nuxtOptions.modules ?? []).some(
+    (entry) =>
+      Array.isArray(entry) &&
+      (entry[0] === CORE_PACKAGE_NAME || entry[0] === `${CORE_PACKAGE_NAME}/nuxt`) &&
+      (entry[1] as { app?: unknown } | undefined)?.app === false,
+  )
+}
+
 export default defineNuxtModule<NardukAnalyticsModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
@@ -129,6 +152,18 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
     )
 
     await ensureNardukCoreInstalled(nuxt)
+    if (
+      options.app &&
+      nardukCoreAppDisabled(nuxt.options as unknown as Parameters<typeof nardukCoreAppDisabled>[0])
+    ) {
+      throw new Error(
+        `${PACKAGE_NAME}: narduk-core is registered with app: false, so its runtime-public ` +
+          'overlay never registers and the analytics client plugins would run with no PostHog ' +
+          'key, GA id or deployment target: no analytics, and no other signal. Turn ' +
+          'nardukCore.app back on, or set nardukAnalytics.app: false to keep only the server ' +
+          'half (narduk-libs#663).',
+      )
+    }
 
     pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
     addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)
