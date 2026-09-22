@@ -454,7 +454,9 @@ and none of these helpers measures one.
 
 `miniflare` is an optional peer dependency: add it to the app's
 `devDependencies`. It is loaded only when a harness is created, so importing the
-subpath never requires it.
+subpath never requires it. Miniflare 4 and 5 both work from 1.6.3. Keep
+`miniflare` on the major your `wrangler` ships: every `wrangler` from 4.129
+ships 5.
 
 ```ts
 import { drizzle } from 'drizzle-orm/d1'

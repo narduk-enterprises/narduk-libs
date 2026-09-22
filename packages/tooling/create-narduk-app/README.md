@@ -177,6 +177,44 @@ section they should own. Apps generated from this version carry them already.
 4. **Re-run until clean.** `upgrade` is idempotent: a second `--write` writes
    nothing and a following dry run exits 0.
 
+### Moving the Workers toolchain pins
+
+The generator writes `wrangler` and `@cloudflare/workers-types` once, at
+scaffold time. After that they belong to the app, and the scaffolded
+`.github/dependabot.yml` moves them with everything else in one weekly grouped
+pull request. `upgrade` never touches them. A new scaffold pin changes nothing
+in an existing app. An app gets the new versions from its own Dependabot PR, or
+from a hand bump.
+
+These packages move together. The grouped Dependabot PR moves them together, so
+don't split them with `ignore` rules:
+
+| Package                                  | Why it moves with the others                                                                                                                                                                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `wrangler`                               | Every release from 4.129 ships Miniflare 5, which refuses Miniflare 4's constructor options with `ERR_VALIDATION workers: undefined`. The first release that also clears the `sharp` and `undici` advisories is 4.131.                     |
+| `@narduk-enterprises/narduk-testkit`     | `narduk-testkit/d1` (`createD1QueryHarness`) runs on Miniflare 5 from 1.6.3. Older versions fail every D1 harness test once `wrangler` passes 4.128.                                                                                       |
+| `@cloudflare/workers-types`              | 5.20260921.1 and later declare a global `Buffer`. A test that calls `chunk.toString('utf8')` on child-process output typed `string \| Buffer` stops typechecking. Call `child.stdout.setEncoding('utf8')` and treat the chunks as strings. |
+| `miniflare`, if the app pins it directly | It must be the major that `wrangler` ships.                                                                                                                                                                                                |
+
+Two things Dependabot will not do for you:
+
+- **It does not touch `pnpm.overrides`.** An app that pinned a transitive
+  version to clear an advisory, such as `"sharp": "0.35.4"` or
+  `"undici@7": "7.29.1"`, keeps that pin after the bump that made it
+  unnecessary. It can later hold the transitive dependency back. Once the
+  grouped PR merges, remove the override in a follow-up PR. Run `pnpm install`
+  and `pnpm dedupe`, check with `pnpm why <package>` that the version you wanted
+  still resolves, and run `pnpm audit --audit-level high`.
+- **It does not fix app code.** If the grouped PR is red because of app code,
+  such as the `Buffer` typing above, fix that code on `main` in its own PR. Then
+  comment `@dependabot recreate` on the grouped PR. Don't push commits onto the
+  Dependabot branch.
+
+To bump by hand, move every row of the table in one change. Because the PR is
+your own, drop any overrides the bump makes unnecessary in the same change. Then
+run `pnpm dedupe` and the app's full gate. Without `pnpm dedupe`, the lockfile
+can keep the old Miniflare 4 tree beside the new one.
+
 ## One declared source per toolchain
 
 A scaffold declares its Node version **once**, in `.node-version`, and its pnpm

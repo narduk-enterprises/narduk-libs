@@ -152,7 +152,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
-    "miniflare": "4.20260701.0",
+    "miniflare": "5.20260921.0-alpha",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "4.1.11"
