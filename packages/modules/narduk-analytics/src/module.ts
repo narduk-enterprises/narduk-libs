@@ -115,7 +115,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
     configKey: 'nardukAnalytics',
-    compatibility: { nuxt: '>=3.16.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
   defaults: {
     app: true,
