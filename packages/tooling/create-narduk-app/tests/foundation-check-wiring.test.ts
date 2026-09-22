@@ -23,6 +23,8 @@
  * nothing later in the job has an ambient token.
  */
 
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { buildGeneratedFiles, SUPPORTED_CAPABILITIES, type Capability } from '../src/index.js'
@@ -53,7 +55,7 @@ describe('generated apps run foundation:check:shared-ui-pinned', () => {
   it('the web package invokes the command against the whole checkout', () => {
     const { web } = manifests(['auth'])
     expect(web.scripts['foundation:shared-ui-pinned']).toBe(
-      'narduk-app foundation:check:shared-ui-pinned --checkout ..',
+      'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
     )
   })
 
@@ -89,5 +91,28 @@ describe('generated apps run foundation:check:shared-ui-pinned', () => {
     expect(segments.indexOf('pnpm run foundation:shared-ui-pinned')).toBeLessThan(
       segments.indexOf('pnpm run build:ci'),
     )
+  })
+})
+
+describe('every foundation check the web package runs reads the repository root', () => {
+  // pnpm runs apps/web scripts with the cwd at apps/web. `--checkout ..` was
+  // apps/, where item 12 found no Config/ and reported N/A with exit 0
+  // (narduk-libs#679).
+  it.each([
+    { label: 'every capability', capabilities: [...SUPPORTED_CAPABILITIES] },
+    { label: 'no capability', capabilities: [] as Capability[] },
+  ])('$label', ({ capabilities }) => {
+    const { web } = manifests(capabilities)
+    const checkouts = Object.entries(web.scripts).flatMap(([name, script]) =>
+      [...script.matchAll(/--checkout\s+(\S+)/g)].map((match) => ({ name, checkout: match[1] })),
+    )
+
+    expect(checkouts.map(({ name }) => name).sort()).toEqual([
+      'foundation:deployment',
+      'foundation:shared-ui-pinned',
+    ])
+    for (const { name, checkout } of checkouts) {
+      expect(resolve('/repo/apps/web', checkout ?? ''), name).toBe('/repo')
+    }
   })
 })

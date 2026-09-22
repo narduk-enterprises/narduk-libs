@@ -655,6 +655,15 @@ warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
 company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
 for the weekly fleet rollup.
 
+**`--checkout` must be an app checkout.** `foundation:check`, and its
+`:shared-ui-pinned`, `:toolchain`, `:deployment` and `:coverage` variants, exit
+`1` before evaluating anything when the directory has no `package.json`. From
+`apps/web`, the repository root is `--checkout ../..`. `--checkout ..` is
+`apps/`, and item 12 used to read that as an app with no deployment block:
+`not-applicable`, exit `0` (narduk-libs#679). Apps scaffolded before the
+generator fix carry `--checkout ..` in `apps/web/package.json`. Change it to
+`../..`.
+
 **Registry reads follow the project's scope route.** Sub-check 2.3 needs the
 highest published `narduk-core` major. The reader takes the last
 `@narduk-enterprises:registry=` line in the checkout's own `.npmrc` (the same

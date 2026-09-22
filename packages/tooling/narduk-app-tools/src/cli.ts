@@ -31,6 +31,7 @@ import {
   parsePerformanceBudgetArgs,
   runPerformanceBudgetCheck,
 } from './performance.js'
+import { withAppCheckout } from './commands/checkout-root.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
 import { runCapabilityCoverageCheckCommand } from './commands/capability-coverage-check.js'
@@ -323,7 +324,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'foundation:check') {
-      const { exitCode } = await runFoundationCheckCommand(parseFoundationCheckArgs(rest))
+      const { exitCode } = await runFoundationCheckCommand(
+        withAppCheckout(parseFoundationCheckArgs(rest), command),
+      )
       return exitCode
     }
     if (command === 'foundation:check:security-headers') {
@@ -332,21 +335,25 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check:shared-ui-pinned') {
       const { exitCode } = await runSharedUiPinnedCheckCommand(
-        parseFoundationCheckArgs(rest, 'foundation:check:shared-ui-pinned'),
+        withAppCheckout(parseFoundationCheckArgs(rest, command), command),
       )
       return exitCode
     }
     if (command === 'foundation:check:toolchain') {
-      const { exitCode } = runToolchainCheckCommand(parseToolchainCheckArgs(rest))
+      const { exitCode } = runToolchainCheckCommand(
+        withAppCheckout(parseToolchainCheckArgs(rest), command),
+      )
       return exitCode
     }
     if (command === 'foundation:check:deployment') {
-      const { exitCode } = runDeploymentCheckCommand(parseDeploymentCheckArgs(rest))
+      const { exitCode } = runDeploymentCheckCommand(
+        withAppCheckout(parseDeploymentCheckArgs(rest), command),
+      )
       return exitCode
     }
     if (command === 'foundation:check:coverage') {
       const { exitCode } = runCapabilityCoverageCheckCommand(
-        parseFoundationCheckArgs(rest, 'foundation:check:coverage'),
+        withAppCheckout(parseFoundationCheckArgs(rest, command), command),
       )
       return exitCode
     }
