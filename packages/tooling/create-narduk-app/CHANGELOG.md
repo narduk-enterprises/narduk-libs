@@ -1,5 +1,46 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.12.1
+
+### Patch Changes
+
+- df7568d: Stop published server code from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-core` ships raw `.ts`, and a consumer's Nitro type program types
+  `useRuntimeConfig(event)` as `@nuxt/schema`'s `RuntimeConfig`
+  (`Record<string, unknown>`). `useHyperdriveConnectionString` indexed
+  `hyperdriveBinding || 'HYPERDRIVE'`, which is `{} | string` there, so every
+  consumer failed with TS2538 while this package's own `nuxt typecheck` stayed
+  green (narduk-libs#656, the same gap as #649). The legacy security-headers
+  middleware had the same shape on `public.appVersion` and the `csp*Src` keys: a
+  truthiness guard narrows `unknown` to `{}`.
+
+  Server code that reads a key the module actually writes now goes through
+  `coreRuntimeConfig(event)`. The type names only those keys —
+  `hyperdriveBinding` and the public version, CSP, and geolocation defaults from
+  `src/module.ts` — and leaves everything else `unknown`. A
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `runtime/server/**` against that unaugmented view and
+  fails if the view stops rejecting a direct `hyperdriveBinding` index.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+
+- 7aeacad: Add owner-enrolled development mode (company-hq#781).
+  `narduk-app development` gains `deploy`, `status`, `enter`, `pin`/`unpin`,
+  `exec`, `validate`, `handoff`, `resolve` and `exit`. The optional
+  `deployment.development` capability declares targets. A host-private
+  activation record grants custody. Deploys capture the checkout, dirty edits
+  included, and gate, build, upload, promote and prove the exact build ID under
+  a target lock shared with hotfixes. Entry holds classified workflows and
+  Workers Builds triggers and restores them exactly on exit, after the merged
+  release commit passes explicit validation. Existing apps are unchanged until
+  an owner enrolls them. See `docs/development-mode.md`.
+
+  create-narduk-app now emits a `deploy:dev` script, a private-app explicit
+  validation caller (`.github/workflows/validate.yml`, `narduk-validation/**`
+  pushes only) and a Development mode section in `docs/workers-builds.md`. It
+  never declares the capability.
+
 ## 0.12.0
 
 ### Minor Changes
