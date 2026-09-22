@@ -4,7 +4,7 @@
  * Column names match the SQLite schema so migrations and queries stay aligned.
  * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#narduk-core/schema` resolves here.
  */
-import { boolean, index, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -71,7 +71,10 @@ export const apiKeys = pgTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (table) => [index('api_keys_user_id_idx').on(table.userId)],
+  (table) => [
+    index('api_keys_user_id_idx').on(table.userId),
+    uniqueIndex('api_keys_key_hash_idx').on(table.keyHash),
+  ],
 )
 
 export const notifications = pgTable('notifications', {

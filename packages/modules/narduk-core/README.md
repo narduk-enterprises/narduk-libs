@@ -1671,9 +1671,10 @@ The numbered files in `runtime/drizzle/` are applied by `narduk-app db migrate`
 Upgrading narduk-core and running the app's migrate script (locally and in its
 deploy path) applies any new file; nothing is applied at runtime.
 
-| File                       | Adds                                                          |
-| -------------------------- | ------------------------------------------------------------- |
-| `0006_user_id_indexes.sql` | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
+| File                          | Adds                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| `0006_user_id_indexes.sql`    | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
+| `0007_api_key_hash_index.sql` | unique `api_keys_key_hash_idx` (see below)                    |
 
 `0006` indexes the `user_id` foreign-key columns. `api_keys.user_id` is the only
 predicate of narduk-auth's `GET /api/auth/api-keys`, which scanned the whole
@@ -1684,6 +1685,13 @@ small in current apps. `tests/user-id-indexes-d1.test.ts` applies every core
 migration on Miniflare D1 and checks both lookups with `EXPLAIN QUERY PLAN`. The
 Postgres schema (`pg-schema.ts`) declares the same indexes; core ships no
 Postgres migrations, so a Postgres app adds them with its own DDL.
+
+`0007` indexes `api_keys.key_hash`, the lookup of every API-key authentication
+(`authenticateApiKey`, `authenticateD1ApiKey`). Without it each authentication
+scanned `api_keys`, including one presenting a well-formed but fabricated key
+(#168). The index is `UNIQUE` because the column is the SHA-256 of a random
+32-byte token. `tests/api-key-hash-index-d1.test.ts` checks both lookups the
+same way.
 
 ## Database alias contract
 
