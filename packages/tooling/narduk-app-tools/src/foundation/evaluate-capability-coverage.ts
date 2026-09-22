@@ -130,6 +130,12 @@ export function formatCapabilityCoverageSummary(artefact: CapabilityCoverageArte
       `             ${capability.id.padEnd(18)} ${capability.package}@${capability.version}`,
     )
   }
+  for (const capability of inventory.capabilities.filter((c) => c.state === 'forked')) {
+    lines.push(
+      `             ${capability.id.padEnd(18)} FORKED: pinned at ${capability.version}, and the app ` +
+        `carries ${capability.fork?.files.length ?? 0} file(s) / ${capability.fork?.lines ?? 0} line(s) of its own copy`,
+    )
+  }
   if (inventory.unclassified.length > 0) {
     lines.push(`             unclassified: ${inventory.unclassified.join(', ')}`)
   }

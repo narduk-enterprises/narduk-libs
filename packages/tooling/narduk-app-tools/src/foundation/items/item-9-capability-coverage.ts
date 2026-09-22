@@ -43,6 +43,7 @@ import {
   collectCapabilityInventory,
   mergedEstateDeps,
   type CapabilityInventory,
+  type CapabilityRow,
 } from '../capability-inventory.js'
 import {
   NARDUK_ANALYTICS,
@@ -203,8 +204,24 @@ function runDetector(
   }
 }
 
+/** `mapkit (7 files, 3738 lines: utils/mapkit/marks.ts, ...)`. */
+export function forkList(forked: readonly CapabilityRow[]): string {
+  return forked
+    .map((capability) => {
+      const fork = capability.fork
+      if (!fork) return capability.id
+      const shown = fork.files.slice(0, 3).join(', ')
+      const more = fork.files.length > 3 ? `, +${fork.files.length - 3} more` : ''
+      return `${capability.id} (${fork.files.length} file(s), ${fork.lines} line(s): ${shown}${more})`
+    })
+    .join('; ')
+}
+
 function inventoryChecks(inventory: CapabilityInventory): FoundationSubCheck[] {
   const adopted = inventory.capabilities.filter((capability) => capability.adopted)
+  const forked = inventory.capabilities.filter((capability) => capability.state === 'forked')
+  // A fork is visible here and never counted as adopted, but it is not a
+  // failure: some forks are deliberate and tracked (narduk-libs#620).
   const inventoryCheck = check(
     '9.1',
     'estate dependency inventory and capability coverage',
@@ -212,7 +229,8 @@ function inventoryChecks(inventory: CapabilityInventory): FoundationSubCheck[] {
     `${inventory.dependencies.length} @narduk-enterprises pin(s) across ` +
       `${inventory.manifests.length} manifest(s) (${inventory.manifests.join(', ')}); ` +
       `${adopted.length}/${inventory.capabilities.length} shared capabilities adopted` +
-      (adopted.length > 0 ? `: ${adopted.map((c) => c.id).join(', ')}` : ''),
+      (adopted.length > 0 ? `: ${adopted.map((c) => c.id).join(', ')}` : '') +
+      (forked.length > 0 ? `; forked (pinned, with an app-local copy): ${forkList(forked)}` : ''),
     inventory.manifests[0],
   )
 

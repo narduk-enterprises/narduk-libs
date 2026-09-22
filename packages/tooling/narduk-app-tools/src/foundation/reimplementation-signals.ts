@@ -50,12 +50,12 @@ export const NARDUK_ANALYTICS = '@narduk-enterprises/narduk-analytics'
 
 /** Monorepo prefixes an app's own source can live under -- the same set
  * `PACKAGE_JSON_CANDIDATES` and `NUXT_CONFIG_CANDIDATES` already accept. */
-const APP_PREFIXES = ['', 'apps/web/', 'apps/api/', 'web/'] as const
+export const APP_PREFIXES = ['', 'apps/web/', 'apps/api/', 'web/'] as const
 
 /** Directory names walked under each prefix. Bounded on purpose: a full-repo
  * walk costs minutes on a large app and buys no signal these directories do not
  * already carry. */
-const SCAN_DIRECTORY_NAMES = [
+export const SCAN_DIRECTORY_NAMES = [
   'app',
   'src',
   'server',
@@ -68,7 +68,7 @@ const SCAN_DIRECTORY_NAMES = [
   'scripts',
 ] as const
 
-const SCAN_EXTENSIONS = ['.ts', '.mts', '.js', '.mjs', '.vue'] as const
+export const SCAN_EXTENSIONS = ['.ts', '.mts', '.js', '.mjs', '.vue'] as const
 
 /** Ceiling on files read in one run. A repository larger than this is reported
  * as `unknown` for the detectors rather than as a silently partial pass. */
