@@ -127,6 +127,8 @@ export const developmentSchema = z
     /** Must perform a frozen install; used only when dependency inputs change. */
     install: command,
     additionalBuildInputs: z.array(relativePath).max(200).default([]),
+    /** Applied files here become immutable once an authorized migration records them. */
+    migrationDirectories: z.array(relativePath).max(50).default([]),
     automation: z.strictObject({
       workflows: z.array(relativePath).min(1).max(100),
       /** Credentialed writers settle naturally; other held runs may be cancelled. */

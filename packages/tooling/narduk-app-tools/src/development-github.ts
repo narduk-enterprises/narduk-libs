@@ -4,6 +4,14 @@ import { z } from 'zod'
 import type { DevelopmentConfig } from './development-config.js'
 import { developmentSystemEnv } from './development-process.js'
 
+const ACTIVE_RUN_STATUSES = [
+  'queued',
+  'in_progress',
+  'waiting',
+  'requested',
+  'pending',
+  'action_required',
+] as const
 const workflowSchema = z.object({ id: z.number().int(), path: z.string(), state: z.string() })
 export interface SavedDevelopmentWorkflow {
   id: number
@@ -127,9 +135,19 @@ export class DevelopmentGitHub {
   settleWorkflows(saved: SavedDevelopmentWorkflow[]): Array<{ id: number; path: string }> {
     const pending: Array<{ id: number; path: string }> = []
     for (const workflow of saved) {
-      const runs = this.pages(`actions/workflows/${workflow.id}/runs`, 'workflow_runs')
-      for (const item of runs) {
-        const run = z.object({ id: z.number().int(), status: z.string() }).parse(item)
+      // Bounded by live work, not history: query only the unfinished statuses.
+      const runs = new Map<number, string>()
+      for (const status of ACTIVE_RUN_STATUSES) {
+        for (const item of this.pages(
+          `actions/workflows/${workflow.id}/runs?status=${status}`,
+          'workflow_runs',
+        )) {
+          const run = z.object({ id: z.number().int(), status: z.string() }).parse(item)
+          runs.set(run.id, run.status)
+        }
+      }
+      for (const [id, status] of runs) {
+        const run = { id, status }
         if (run.status === 'completed') continue
         if (!workflow.writes) this.request(this.path(`actions/runs/${run.id}/cancel`), 'POST')
         pending.push({ id: run.id, path: workflow.path })
@@ -149,6 +167,12 @@ export class DevelopmentGitHub {
     }
     if (this.inspectWorkflow(saved).state !== saved.desiredState)
       throw new Error(`Workflow restoration was not confirmed: ${saved.path}`)
+  }
+
+  branchHead(branch: string): string {
+    return z
+      .object({ commit: z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/u) }) })
+      .parse(this.request(this.path(`branches/${encodeURIComponent(branch)}`))).commit.sha
   }
 
   assertCandidateBranch(branch: string, sha: string): void {
