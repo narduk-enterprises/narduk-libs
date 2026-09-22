@@ -135,7 +135,11 @@ cannot be reused as browser or D1 evidence.
 
 `pnpm run release-plan:check` decides this in the `contracts` gate. It compares
 each changed workspace package against the Changesets base branch and applies
-two plain rules.
+two plain rules. The comparison ref defaults to the remote-tracking
+`origin/<baseBranch>`, not the local branch, and the first output line names it
+(#619): a stale local `main` makes every commit that landed upstream read as the
+branch's own. `--base <ref>` overrides it, and
+`pnpm run release-plan:check -- --base <ref>` works.
 
 **A devDependency-only change never needs a Changeset.** If the only thing that
 moved inside a package directory is `devDependencies`, or a `scripts` entry that

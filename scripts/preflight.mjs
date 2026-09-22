@@ -239,13 +239,10 @@ async function main() {
   // --- Contracts, in the contracts job's own order ------------------------
   phase('versions:check', 'pnpm', ['run', 'versions:check'])
   phase('scripts:test', 'pnpm', ['run', 'scripts:test'])
-  // Deliberately not `pnpm run release-plan:check`. That script resolves the
-  // Changesets base branch through `changesetsBaseBranch()`, which CI can rely
-  // on because its "Materialize Changesets base branch" step creates a local
-  // `main` at the remote's tip first. A working checkout's local `main` is
-  // whatever it was last pulled to, and comparing against a stale one reports
-  // packages the branch never touched (#492). Pass the ref the author asked
-  // for instead -- do not "fix" this back to the pnpm script.
+  // Pass the ref the author asked for, which the fetch above just refreshed.
+  // The script's own default is `origin/<baseBranch>` (#619), which is only as
+  // fresh as the last fetch of that remote; `--base` keeps this phase on the
+  // exact ref preflight planned against.
   phase('release-plan:check', 'node', [
     'scripts/check-generator-release-plan.mjs',
     '--base',
