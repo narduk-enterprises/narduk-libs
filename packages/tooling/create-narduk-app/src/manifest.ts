@@ -62,7 +62,7 @@ export const PACKAGE_VERSIONS = {
   // the reference app's own modules array and devDependency exactly.
   '@nuxt/icon': '2.5.1',
   '@nuxt/test-utils': '4.0.3',
-  '@nuxt/ui': '4.8.1',
+  '@nuxt/ui': '4.11.1',
   '@playwright/test': '1.61.1',
   // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
   // Vite 7, which makes a newly generated app install with a peer warning.
