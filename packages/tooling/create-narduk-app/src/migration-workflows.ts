@@ -35,7 +35,25 @@ export function createMigrationWorkflowFiles(visibility: AppVisibility): Generat
 # production-branch, successful workflow_run guards. Never use pull_request_target.
 # D1_MIGRATE_API_TOKEN is materialized from the declared D1-only migrate persona;
 # CLOUDFLARE_API_TOKEN below remains the existing separate promote credential.
+# The first two steps hold no credential. Worker rollback restores code, never a
+# schema, so a drop or rename that is not a reviewed contract migration must stop
+# here, before D1 changes (foundation sub-check 12.9, narduk-libs#399). Only 12.9
+# is judged: another sub-check's UNKNOWN is not a reason to refuse a migration.
 steps:
+  - name: Check migrations are expand-only (foundation 12.9)
+    run: pnpm exec narduk-app foundation:check:deployment --checkout ../.. --json "$RUNNER_TEMP/foundation-deployment.json" || true
+    working-directory: apps/web
+  - name: Refuse a drop or rename that is not a reviewed contract migration
+    run: |
+      node -e '
+        const report = require(process.argv[1])
+        const check = report.item.checks.find((c) => c.id === "12.9")
+        if (!check || check.status !== "pass") {
+          console.error("12.9 " + (check ? check.status + ": " + check.detail : "is missing from the report"))
+          process.exit(1)
+        }
+        console.log("12.9 pass: " + check.detail)
+      ' "$RUNNER_TEMP/foundation-deployment.json"
   - name: Require an eligible uploaded version before changing D1
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -64,6 +82,8 @@ steps:
 # All require preceding success. Only a completed promotion followed by failed
 # live proof can trigger Worker rollback; migration failure must never do so.
 # Rollback changes Worker traffic only. Never automate a database restore.
+# Automating rollback beside the migrate step is safe only with the 12.9 steps
+# above in place (narduk-libs#399); without them rollback stays a manual command.
 `,
     },
     {

@@ -130,29 +130,44 @@ The app's promote workflow must follow these steps in one serialized job:
 1. Require a successful same-repository CI `workflow_run` for the production
    branch. Check out **`workflow_run.head_sha`** and install its frozen
    toolchain.
-2. With the existing promote credential, run
+2. With no credential, run
+   `narduk-app foundation:check:deployment --json <path>` on that checkout and
+   refuse unless sub-check **12.9** is `pass`. That means no app-owned migration
+   drops or renames anything except a declared, checksum-pinned contract
+   migration (see below). Judge 12.9 alone. Another sub-check's UNKNOWN, such as
+   12.4's live preview read, is not a reason to refuse a migration. Generated
+   apps do not run this check in CI, so the promote job must run it itself on
+   the exact SHA it migrates.
+3. With the existing promote credential, run
    `narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --dry-run --json`.
    A missing upload or stale version fails before changing the database.
-3. Inject the **separate D1-only migrate persona** for this step only, then run:
+4. Inject the **separate D1-only migrate persona** for this step only, then run:
    ```sh
    narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"
    narduk-app db migrate-deployment --target production --check
    ```
-4. Only on success, restore the separate promote credential, promote that exact
+5. Only on success, restore the separate promote credential, promote that exact
    SHA, then perform live proof. Keep the app's existing alert and Worker
    rollback handling. Rollback requires a completed promotion followed by failed
    live proof; a migration failure must not trigger a Worker rollback.
-5. Upload `.narduk/recovery/d1` with `if: always()`, hidden files included and
+6. Upload `.narduk/recovery/d1` with `if: always()`, hidden files included and
    restricted artifact access. It contains schema/ledger metadata and a Time
    Travel bookmark, not application records or credentials. Missing evidence on
    a no-op run is normal; a pending migration requires successful capture.
 
-`create-narduk-app` emits `promote-d1.steps.yml` for this insertion. Keep
-workflow concurrency `cancel-in-progress: false`. Repository concurrency reduces
-overlap; the database lock below supplies cross-repository serialization.
-Multiple configured databases migrate sequentially after all have passed
-preflight. They are **not** one transaction: failure on database B can leave A
-advanced.
+**Automated rollback depends on step 2 (narduk-libs#399).**
+`narduk-app deploy rollback` restores code, never a schema. A promote workflow
+(slice W1) may run rollback automatically after failed live proof only when step
+2 runs before its migrate step. The same holds for an app wiring rollback into
+its own promote job, such as Buoys slice B3. Without step 2, rollback stays a
+manual command, run by someone who knows what the schema did.
+
+`create-narduk-app` emits `promote-d1.steps.yml` for this insertion, step 2
+included. Keep workflow concurrency `cancel-in-progress: false`. Repository
+concurrency reduces overlap; the database lock below supplies cross-repository
+serialization. Multiple configured databases migrate sequentially after all have
+passed preflight. They are **not** one transaction: failure on database B can
+leave A advanced.
 
 Register one per-app, per-purpose migrate persona through the workstation's
 canonical provisioner and nVault route, and issue its consumer a config-scoped
