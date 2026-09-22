@@ -1,4 +1,5 @@
 {
+  "strict": true,
   "rules": {
     "@typescript-eslint/array-type": 11,
     "@typescript-eslint/consistent-type-definitions": 1,

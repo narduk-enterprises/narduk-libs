@@ -11,11 +11,17 @@
  * - a warn-level rule **over** its recorded budget fails, naming the rule, the
  *   count, the budget and the first offending locations;
  * - a warn-level rule with **no** budget entry passes and is reported as
- *   unbudgeted — so shipping a new warn rule never turns a consumer red;
+ *   unbudgeted — so shipping a new warn rule never turns a consumer red —
+ *   unless the budget file is **strict** (`"strict": true`). Then it fails,
+ *   locally and in CI alike, and is recorded only when a person asks for it
+ *   with `--accept-new-rules` (#673). Without strict, a rule that has never had
+ *   an entry is a rule the gate cannot see, and a package with no budget file
+ *   has no warning gate at all;
  * - locally (the default) the budget file is rewritten whenever a count went
  *   **down** or a rule is unbudgeted: entries are lowered or recorded, never
- *   raised, and deleted when they reach zero. Committing that file is the
- *   ratchet;
+ *   raised, and deleted when they reach zero. A strict budget records an
+ *   unbudgeted rule only under `--accept-new-rules`. Committing that file is
+ *   the ratchet;
  * - in CI (`--ci`, or `CI=true`) the file is never written, and a stale budget
  *   (lower counts, unbudgeted rules) is a notice, not a failure — nobody has to
  *   intervene for the build to stay green.
@@ -24,10 +30,11 @@
  * package root; override with `--budget <path>`):
  *
  * ```json
- * { "rules": { "@typescript-eslint/no-explicit-any": 12 } }
+ * { "strict": true, "rules": { "@typescript-eslint/no-explicit-any": 12 } }
  * ```
  *
- * Exit codes: 0 pass; 1 lint errors or a rule over budget; 2 usage or
+ * Exit codes: 0 pass; 1 lint errors, a rule over budget, or (strict) a rule
+ * with warnings and no entry; 2 usage or
  * configuration error (bad flag, unreadable budget file, ESLint crash).
  */
 
@@ -53,6 +60,8 @@ Options:
   --ci                    CI mode: never write the budget file (default when CI=true)
   --local                 Force local mode even when CI=true
   --no-write              Local mode, but do not rewrite the budget file
+  --accept-new-rules      Local mode: record rules that have no budget entry,
+                          even in a strict budget (review the diff, then commit)
   --budget <path>         Budget file (default: ./lint-budget.json)
   --fix                   Apply ESLint autofixes before counting
   --cache                 Use the ESLint cache
@@ -61,13 +70,15 @@ Options:
   --verbose               Print every warning, not only errors
   -h, --help              Show this help
 
-Exit codes: 0 pass, 1 lint errors or a rule over budget, 2 usage/config error.`
+Exit codes: 0 pass, 1 lint errors, a rule over budget, or (strict budget) a rule
+with warnings and no entry, 2 usage/config error.`
 
 /**
  * @typedef {object} ParsedArgs
  * @property {string[]} patterns
  * @property {boolean} ci
  * @property {boolean} write
+ * @property {boolean} acceptNewRules
  * @property {string | undefined} budgetPath
  * @property {boolean} fix
  * @property {boolean} cache
@@ -94,6 +105,7 @@ export function parseArgs(argv, env = {}) {
     patterns: [],
     ci: isCiEnvironment(env),
     write: true,
+    acceptNewRules: false,
     budgetPath: undefined,
     fix: false,
     cache: false,
@@ -125,6 +137,10 @@ export function parseArgs(argv, env = {}) {
       }
       case '--no-write': {
         parsed.write = false
+        break
+      }
+      case '--accept-new-rules': {
+        parsed.acceptNewRules = true
         break
       }
       case '--budget': {
@@ -174,19 +190,26 @@ export function parseArgs(argv, env = {}) {
   }
 
   if (parsed.patterns.length === 0) parsed.patterns.push('.')
+  if (parsed.acceptNewRules && (parsed.ci || !parsed.write)) {
+    // Recording is a deliberate local act; a CI job must never absorb debt.
+    throw new UsageError(
+      '--accept-new-rules writes the budget, so it needs local mode and no --no-write',
+    )
+  }
   return parsed
 }
 
 export class UsageError extends Error {}
 
 /**
- * Read and validate a budget file. A missing file is an empty budget.
+ * Read and validate a budget file. A missing file is an empty, non-strict
+ * budget.
  *
  * @param {string} budgetPath
- * @returns {{ exists: boolean, rules: Record<string, number> }}
+ * @returns {{ exists: boolean, strict: boolean, rules: Record<string, number> }}
  */
 export function readBudget(budgetPath) {
-  if (!existsSync(budgetPath)) return { exists: false, rules: {} }
+  if (!existsSync(budgetPath)) return { exists: false, strict: false, rules: {} }
   let parsed
   try {
     parsed = JSON.parse(readFileSync(budgetPath, 'utf8'))
@@ -197,6 +220,10 @@ export function readBudget(budgetPath) {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new UsageError(`${budgetPath} must be an object of the form { "rules": { ... } }`)
+  }
+  const strict = parsed.strict ?? false
+  if (typeof strict !== 'boolean') {
+    throw new UsageError(`${budgetPath}: "strict" must be true or false`)
   }
   const rules = parsed.rules ?? {}
   if (!rules || typeof rules !== 'object' || Array.isArray(rules)) {
@@ -209,7 +236,7 @@ export function readBudget(budgetPath) {
       )
     }
   }
-  return { exists: true, rules: /** @type {Record<string, number>} */ (rules) }
+  return { exists: true, strict, rules: /** @type {Record<string, number>} */ (rules) }
 }
 
 /**
@@ -217,14 +244,16 @@ export function readBudget(budgetPath) {
  * newline — byte-identical to what Prettier produces for the same object.
  *
  * @param {Record<string, number>} rules
+ * @param {{ strict?: boolean }} [options]  a strict budget keeps its flag
  */
-export function serializeBudget(rules) {
+export function serializeBudget(rules, options = {}) {
   const sorted = Object.fromEntries(
     Object.keys(rules)
       .sort()
       .map((ruleId) => [ruleId, rules[ruleId]]),
   )
-  return `${JSON.stringify({ rules: sorted }, null, 2)}\n`
+  const body = options.strict ? { strict: true, rules: sorted } : { rules: sorted }
+  return `${JSON.stringify(body, null, 2)}\n`
 }
 
 /**
@@ -288,10 +317,14 @@ export function topLocations(locations, limit = 5) {
 /**
  * Compare observed warning counts to the budget. Pure: decides, never writes.
  *
+ * An unbudgeted rule is `recorded` into `nextBudget` unless the budget is
+ * strict, in which case it is `blocked` and fails the run (#673).
+ *
  * @param {Record<string, number>} counts  observed warnings per rule
  * @param {Record<string, number>} budget  recorded budget per rule
+ * @param {{ strict?: boolean }} [options]
  */
-export function evaluateBudget(counts, budget) {
+export function evaluateBudget(counts, budget, options = {}) {
   /** @type {Array<{ ruleId: string, count: number, budget: number }>} */
   const overBudget = []
   /** @type {Array<{ ruleId: string, count: number, budget: number }>} */
@@ -309,7 +342,7 @@ export function evaluateBudget(counts, budget) {
     if (count <= 0) continue
     if (!Object.hasOwn(budget, ruleId)) {
       unbudgeted.push({ ruleId, count })
-      nextBudget[ruleId] = count
+      if (!options.strict) nextBudget[ruleId] = count
       continue
     }
     const allowed = budget[ruleId]
@@ -329,8 +362,10 @@ export function evaluateBudget(counts, budget) {
     }
   }
 
-  const stale = lowered.length > 0 || unbudgeted.length > 0 || cleared.length > 0
-  return { overBudget, lowered, unbudgeted, cleared, nextBudget, stale }
+  const blocked = options.strict ? unbudgeted : []
+  const recorded = options.strict ? [] : unbudgeted
+  const stale = lowered.length > 0 || recorded.length > 0 || cleared.length > 0
+  return { overBudget, lowered, unbudgeted, blocked, recorded, cleared, nextBudget, stale }
 }
 
 /**
@@ -405,7 +440,10 @@ export async function runNardukLint(argv, options = {}) {
   const { byRule, errorCount } = tallyWarnings(results, cwd)
   /** @type {Record<string, number>} */
   const counts = Object.fromEntries([...byRule].map(([ruleId, list]) => [ruleId, list.length]))
-  const verdict = evaluateBudget(counts, budget.rules)
+  // `--accept-new-rules` is the one way a strict budget takes a new entry.
+  const verdict = evaluateBudget(counts, budget.rules, {
+    strict: budget.strict && !args.acceptNewRules,
+  })
   const budgetLabel = relative(cwd, budgetPath) || budgetPath
   const mode = args.ci ? 'ci' : 'local'
 
@@ -420,8 +458,21 @@ export async function runNardukLint(argv, options = {}) {
       logError(`    ${location}`)
     }
   }
-  for (const { ruleId, count } of verdict.unbudgeted) {
+  for (const { ruleId, count } of verdict.blocked) {
+    logError(`✖ unbudgeted: ${ruleId} has ${count} warning(s) and no budget entry`)
+    for (const location of topLocations(byRule.get(ruleId) ?? [])) {
+      logError(`    ${location}`)
+    }
+  }
+  for (const { ruleId, count } of verdict.recorded) {
     log(`• unbudgeted: ${ruleId} has ${count} warning(s)`)
+  }
+  if (verdict.recorded.length > 0 && !budget.strict) {
+    log(
+      budget.exists
+        ? `  ${budgetLabel} is not strict, so a rule with no entry is recorded, never failed. Add "strict": true to gate it.`
+        : `  no ${budgetLabel}: warnings are not gated at all. Commit one with "strict": true.`,
+    )
   }
 
   if (args.ci) {
@@ -441,21 +492,26 @@ export async function runNardukLint(argv, options = {}) {
     for (const { ruleId, budget: allowed } of verdict.cleared) {
       log(`• cleared: ${ruleId} ${allowed} → 0 (entry removed)`)
     }
-    for (const { ruleId, count } of verdict.unbudgeted) {
+    for (const { ruleId, count } of verdict.recorded) {
       log(`• recorded: ${ruleId} = ${count}`)
     }
     if (args.write) {
-      writeFileSync(budgetPath, serializeBudget(verdict.nextBudget))
+      writeFileSync(budgetPath, serializeBudget(verdict.nextBudget, { strict: budget.strict }))
       log(`  updated ${budgetLabel}; commit it.`)
     } else {
       log(`  --no-write: ${budgetLabel} left unchanged.`)
     }
   }
 
-  if (errorCount > 0 || verdict.overBudget.length > 0) {
+  if (errorCount > 0 || verdict.overBudget.length > 0 || verdict.blocked.length > 0) {
     if (verdict.overBudget.length > 0) {
       logError(
-        `narduk-lint: ${verdict.overBudget.length} rule(s) over budget. Fix the new warnings; budgets are never raised automatically.`,
+        `narduk-lint: ${verdict.overBudget.length} rule(s) over budget. Fix the new warnings; a recorded budget is never raised automatically.`,
+      )
+    }
+    if (verdict.blocked.length > 0) {
+      logError(
+        `narduk-lint: ${verdict.blocked.length} rule(s) have warnings but no entry in strict ${budgetLabel}. Fix them, or record them on purpose with \`narduk-lint --accept-new-rules\` locally and commit ${budgetLabel}.`,
       )
     }
     return EXIT_LINT_FAILURE

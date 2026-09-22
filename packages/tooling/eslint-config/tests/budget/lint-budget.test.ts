@@ -12,6 +12,8 @@ interface Verdict {
   overBudget: Array<{ ruleId: string; count: number; budget: number }>
   lowered: Array<{ ruleId: string; count: number; budget: number }>
   unbudgeted: Array<{ ruleId: string; count: number }>
+  blocked: Array<{ ruleId: string; count: number }>
+  recorded: Array<{ ruleId: string; count: number }>
   cleared: Array<{ ruleId: string; budget: number }>
   nextBudget: Record<string, number>
   stale: boolean
@@ -21,7 +23,11 @@ interface BudgetModule {
   EXIT_OK: number
   EXIT_LINT_FAILURE: number
   EXIT_USAGE: number
-  evaluateBudget: (counts: Record<string, number>, budget: Record<string, number>) => Verdict
+  evaluateBudget: (
+    counts: Record<string, number>,
+    budget: Record<string, number>,
+    options?: { strict?: boolean },
+  ) => Verdict
   parseArgs: (
     argv: string[],
     env?: Record<string, string>,
@@ -35,7 +41,7 @@ interface BudgetModule {
       logError: (line: string) => void
     },
   ) => Promise<number>
-  serializeBudget: (rules: Record<string, number>) => string
+  serializeBudget: (rules: Record<string, number>, options?: { strict?: boolean }) => string
   topLocations: (locations: Array<{ file: string; line: number }>, limit?: number) => string[]
 }
 
@@ -51,7 +57,8 @@ beforeAll(async () => {
   ;({ EXIT_OK, EXIT_LINT_FAILURE, EXIT_USAGE } = budgetModule)
 })
 
-const serializeBudget = (rules: Record<string, number>) => budgetModule.serializeBudget(rules)
+const serializeBudget = (rules: Record<string, number>, options?: { strict?: boolean }) =>
+  budgetModule.serializeBudget(rules, options)
 
 const CONFIG = `export default [
   { files: ['**/*.js'], rules: { 'no-console': 'warn', 'no-var': 'warn', 'no-debugger': 'error' } },
@@ -241,6 +248,66 @@ describe('narduk-lint end to end', () => {
   })
 })
 
+describe('narduk-lint strict budgets (#673)', () => {
+  const strictEmpty = () => serializeBudget({}, { strict: true })
+
+  it('non-strict: says that an unbudgeted rule was recorded rather than gated', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': serializeBudget({}) })
+    const result = await run(dir, ['--ci'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('is not strict')
+    const missing = await run(fixture({ 'a.js': THREE_CONSOLES }), ['--ci'])
+    expect(missing.out).toContain('no lint-budget.json: warnings are not gated at all')
+  })
+
+  it('local: a warning in a rule with no entry fails and is not recorded', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': strictEmpty() })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain('unbudgeted: no-console has 3 warning(s) and no budget entry')
+    expect(result.err).toContain('a.js:1')
+    expect(result.err).toContain('--accept-new-rules')
+    expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(strictEmpty())
+  })
+
+  it('ci: the same tree gets the same verdict', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': strictEmpty() })
+    const result = await run(dir, [], { CI: 'true' })
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(strictEmpty())
+  })
+
+  it('--accept-new-rules records the entry, keeps strict, and passes', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': strictEmpty() })
+    const result = await run(dir, ['--accept-new-rules'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('recorded: no-console = 3')
+    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3 } })
+    expect((await run(dir, ['--ci'])).code).toBe(EXIT_OK)
+  })
+
+  it('--accept-new-rules is refused in CI and with --no-write', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': strictEmpty() })
+    expect((await run(dir, ['--accept-new-rules'], { CI: 'true' })).code).toBe(EXIT_USAGE)
+    expect((await run(dir, ['--accept-new-rules', '--no-write'])).code).toBe(EXIT_USAGE)
+  })
+
+  it('ratcheting a strict budget down keeps it strict', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': serializeBudget({ 'no-console': 5, 'no-var': 2 }, { strict: true }),
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_OK)
+    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3 } })
+  })
+
+  it('exits 2 when strict is not a boolean', async () => {
+    const dir = fixture({ 'a.js': 'export const a = 1\n', 'lint-budget.json': '{"strict":"yes"}' })
+    expect((await run(dir)).code).toBe(EXIT_USAGE)
+  })
+})
+
 describe('evaluateBudget', () => {
   it('classifies every branch', () => {
     const verdict = budgetModule.evaluateBudget(
@@ -255,6 +322,18 @@ describe('evaluateBudget', () => {
     expect(verdict.stale).toBe(true)
   })
 
+  it('strict: blocks an unbudgeted rule instead of recording it', () => {
+    const verdict = budgetModule.evaluateBudget(
+      { fresh: 3, kept: 1 },
+      { kept: 1 },
+      { strict: true },
+    )
+    expect(verdict.blocked).toEqual([{ ruleId: 'fresh', count: 3 }])
+    expect(verdict.recorded).toEqual([])
+    expect(verdict.nextBudget).toEqual({ kept: 1 })
+    expect(verdict.stale).toBe(false)
+  })
+
   it('is not stale when every count matches', () => {
     expect(budgetModule.evaluateBudget({ a: 1 }, { a: 1 }).stale).toBe(false)
   })
@@ -266,6 +345,7 @@ describe('helpers', () => {
       '{\n  "rules": {\n    "a": 2,\n    "b": 1\n  }\n}\n',
     )
     expect(serializeBudget({})).toBe('{\n  "rules": {}\n}\n')
+    expect(serializeBudget({}, { strict: true })).toBe('{\n  "strict": true,\n  "rules": {}\n}\n')
   })
 
   it('topLocations favours the most-affected file and caps at five', () => {

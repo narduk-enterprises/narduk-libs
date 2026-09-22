@@ -199,6 +199,15 @@ export function classifyManifestChange(before, after) {
   return { devOnly, deferred, releaseRelevant }
 }
 
+/**
+ * Package-root files that feed only this repository's own gates and are in no
+ * package's `files` list, so no tarball contains them (pinned by
+ * scripts/lint-budget-strict.test.mjs). Changing one changes nothing a
+ * consumer installs, so, like a devDependency bump, it owes no release.
+ * `lint-budget.json` is narduk-lint's warning budget (#673).
+ */
+export const NEVER_PUBLISHED_FILES = new Set(['lint-budget.json'])
+
 function packageForPath(packages, path) {
   return packages
     .filter(
@@ -234,7 +243,7 @@ export function classifyChangedPackages({ packages, changedFiles, readManifests 
     const entry = touched.get(workspacePackage.name)
     const relativePath = path.slice(workspacePackage.relativeDirectory.length + 1)
     if (relativePath === 'package.json') entry.manifestChanged = true
-    else entry.otherFiles.push(relativePath)
+    else if (!NEVER_PUBLISHED_FILES.has(relativePath)) entry.otherFiles.push(relativePath)
   }
 
   return [...touched.values()]

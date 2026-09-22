@@ -72,7 +72,7 @@ export interface BucketReadingsOptions<TRow, TField extends string> {
 }
 
 export interface BucketReadingsResult<TField extends string> {
-  buckets: ReadingBucketRow<TField>[]
+  buckets: Array<ReadingBucketRow<TField>>
   /** Rows dropped because `time` returned nothing readable. */
   skipped: number
 }
