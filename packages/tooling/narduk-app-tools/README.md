@@ -451,6 +451,24 @@ narduk-app verify --live https://buoystat.us --no-health --no-smoke \
   --edge-cache-path /api/stations --edge-uncached-path /
 ```
 
+## Rate-limit namespace ids (`narduk-app doctor`)
+
+Cloudflare's `ratelimits[].namespace_id` is unique per **account**, not per
+Worker: two bindings with one id share counters across every Worker on the
+account, and one id reused by two environments couples preview to production.
+`narduk-app doctor` reads the app's wrangler config, top level and every
+`env.*`, and fails:
+
+- a scaffold id pasted from an example (`1001`, `50110`, `50121`, `50300`);
+- an id declared more than once;
+- a binding with no `namespace_id`.
+
+It does not require a particular scheme, so an app already on its own unique ids
+(Buoys' `2869300` / `2869120`) passes. New ids should come from narduk-core's
+`rateLimitNamespaceId(workerName, limit)`. `create-narduk-app` writes each new
+app's prefix into its `wrangler.jsonc` beside a commented example binding
+(narduk-libs#433).
+
 ## The deployment standard block
 
 An app declares its half of the standard in the `deployment` block of

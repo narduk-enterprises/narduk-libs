@@ -11,6 +11,7 @@ import {
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
 import { createMigrationWorkflowFiles } from './migration-workflows.js'
+import { rateLimitNamespacePrefix } from './rate-limit-namespace.js'
 
 import {
   createMigrationSourcesManifest,
@@ -1610,6 +1611,21 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "cache": { "enabled": true },',
         '  "workers_dev": ' + (exposure === 'public') + ',',
         '  "preview_urls": ' + (exposure === 'public') + ',',
+        // No `ratelimits` binding is emitted: narduk-core's limiter runs on its
+        // in-isolate window without one, and the binding is an upgrade, never
+        // a prerequisite. What IS emitted is this app's own namespace prefix
+        // (narduk-libs#433), because `namespace_id` is unique per Cloudflare
+        // account and the next binding would otherwise be pasted from another
+        // app. `narduk-app doctor` refuses scaffold and reused ids.
+        '  // Rate limits: add a Cloudflare binding per RL_<limit> when a route',
+        '  // needs one. namespace_id is unique per ACCOUNT, not per Worker, so',
+        "  // never copy one from another app: this app's prefix is " +
+          rateLimitNamespacePrefix(appName) +
+          ',',
+        "  // then the limit padded to three digits (narduk-core's rateLimitNamespaceId).",
+        '  //   "ratelimits": [{ "name": "RL_120", "namespace_id": "' +
+          rateLimitNamespacePrefix(appName) +
+          '120", "simple": { "limit": 120, "period": 60 } }]',
         ...(hasDatabase
           ? [
               '  "d1_databases": [',
