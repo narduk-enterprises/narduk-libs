@@ -3,7 +3,7 @@ import {
   expect,
   test,
   waitForBaseUrlReady,
-  waitForHydration,
+  waitForVueHydrated,
   warmUpApp,
 } from '../fixtures.js'
 
@@ -129,11 +129,11 @@ export function defineSharedAuthContract(options: SharedAuthContractOptions = {}
 
     test('guest-only footer links navigate between login and register', async ({ page }) => {
       await page.goto(resolvedLoginPath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
       await page.getByRole('link', { name: 'Sign up' }).click()
       await expect(page).toHaveURL(new RegExp(resolvedRegisterPath))
 
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
       await page.getByRole('link', { name: 'Sign in' }).click()
       await expect(page).toHaveURL(new RegExp(resolvedLoginPath))
     })
@@ -149,7 +149,7 @@ export function defineSharedAuthContract(options: SharedAuthContractOptions = {}
       const password = 'password123'
 
       await page.goto(resolvedRegisterPath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
       await registerViaApi(page, { name: 'E2E User', email, password })
 
       await page.goto(resolvedProtectedPath)
@@ -179,7 +179,7 @@ export function defineSharedAuthContract(options: SharedAuthContractOptions = {}
       const password = 'password123'
 
       await page.goto(resolvedRegisterPath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
       await registerViaApi(page, { name: 'Cookie User', email, password })
       await logoutViaApi(page)
 
@@ -204,7 +204,7 @@ export function defineSharedAuthContract(options: SharedAuthContractOptions = {}
       const email = createUniqueEmail(`${appName.replaceAll(/\s+/g, '-').toLowerCase()}-redirect`)
 
       await page.goto(resolvedRegisterPath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
       await registerViaApi(page, { name: 'Redirect User', email, password: 'password123' })
 
       await page.goto(resolvedProtectedPath)

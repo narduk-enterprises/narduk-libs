@@ -7,7 +7,7 @@ import {
   test,
   updateProfileViaApi,
   waitForBaseUrlReady,
-  waitForHydration,
+  waitForVueHydrated,
   warmUpApp,
 } from '../fixtures.js'
 
@@ -94,7 +94,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('GET /api/auth/me returns null when unauthenticated', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const data = await page.evaluate(async (url) => {
         const response = await fetch(url)
@@ -106,7 +106,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('GET /api/auth/me returns user when authenticated', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-me`)
       await registerAndLogin(page, { name: 'Profile User', email, password: 'password123' })
@@ -122,7 +122,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('PATCH /api/auth/me requires authentication', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const status = await page.evaluate(async (url) => {
         const response = await fetch(url, {
@@ -141,7 +141,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('PATCH /api/auth/me updates the user name', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-update`)
       await registerAndLogin(page, { name: 'Old Name', email, password: 'password123' })
@@ -160,7 +160,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('PATCH /api/auth/me trims whitespace from name', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-trim`)
       await registerAndLogin(page, { name: 'Trimmer', email, password: 'password123' })
@@ -182,13 +182,13 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
       page,
     }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-settings`)
       await registerAndLogin(page, { name: 'Settings User', email, password: 'password123' })
 
       await page.goto(resolvedSettingsPath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       await expect(page.getByRole('heading', { name: /api tokens/i })).toBeVisible()
     })
@@ -197,7 +197,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('logout clears session and redirects', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-logout`)
       await registerAndLogin(page, { name: 'Logout User', email, password: 'password123' })
@@ -224,7 +224,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('admin user has isAdmin flag set', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       await loginAsAdmin(page)
 
@@ -241,7 +241,7 @@ export function defineSharedUserProfileContract(options: SharedUserProfileContra
 
     test('normal user does not have isAdmin flag', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const email = createUniqueEmail(`${appName}-normal`)
       await registerAndLogin(page, { name: 'Normal User', email, password: 'password123' })

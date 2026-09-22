@@ -8,7 +8,7 @@ import {
   registerAndLogin,
   test,
   waitForBaseUrlReady,
-  waitForHydration,
+  waitForVueHydrated,
   warmUpApp,
 } from '../fixtures.js'
 
@@ -167,7 +167,7 @@ export function defineSharedNotificationsContract(
 
     test('GET /api/notifications requires authentication', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const status = await page.evaluate(async () => {
         const response = await fetch('/api/notifications')
@@ -179,7 +179,7 @@ export function defineSharedNotificationsContract(
 
     test('GET /api/notifications/unread-count requires authentication', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const status = await page.evaluate(async () => {
         const response = await fetch('/api/notifications/unread-count')
@@ -191,7 +191,7 @@ export function defineSharedNotificationsContract(
 
     test('authenticated user can fetch notifications', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const expected = await createUnreadNotificationFixture(page)
 
@@ -205,7 +205,7 @@ export function defineSharedNotificationsContract(
 
     test('authenticated user can fetch unread count', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       await createUnreadNotificationFixture(page)
 
@@ -217,7 +217,7 @@ export function defineSharedNotificationsContract(
 
     test('created notifications are returned with the expected shape', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const expected = await createUnreadNotificationFixture(page)
 
@@ -234,7 +234,7 @@ export function defineSharedNotificationsContract(
 
     test('mark-all-read clears unread count', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       await createUnreadNotificationFixture(page)
 
@@ -249,7 +249,7 @@ export function defineSharedNotificationsContract(
 
     test('PATCH /api/notifications/:id marks single notification as read', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const expected = await createUnreadNotificationFixture(page)
 
@@ -285,7 +285,7 @@ export function defineSharedNotificationsContract(
 
     test('DELETE /api/notifications/:id requires authentication', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const status = await page.evaluate(async () => {
         const response = await fetch('/api/notifications/fake-id', {
@@ -300,7 +300,7 @@ export function defineSharedNotificationsContract(
 
     test('POST /api/notifications/read-all requires authentication', async ({ page }) => {
       await page.goto(basePath)
-      await waitForHydration(page)
+      await waitForVueHydrated(page)
 
       const status = await page.evaluate(async () => {
         const response = await fetch('/api/notifications/read-all', {
