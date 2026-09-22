@@ -252,9 +252,31 @@ describe('the shipped stylesheet (K-6)', () => {
     expect(css).toContain('.mapkit-wrapper')
     expect(css).toContain('.mapkit-canvas')
     expect(css).toContain('.mapkit-status')
-    // Layout only: no colour, font, radius or shadow, because this is not a theme.
-    expect(css).not.toMatch(/\b(color|background|font-family|border-radius|box-shadow)\s*:/)
+    const rules = css
+      .replaceAll(/\/\*.*?\*\//gs, '')
+      .split('}')
+      .map((rule) => rule.split('{').map((part) => part.trim()))
+      .filter(([selector]) => selector)
+    for (const [selector, body = ''] of rules) {
+      if (selector?.startsWith('.mapkit-')) {
+        // Layout only: no colour, font, radius or shadow, because this is not a theme.
+        expect(body).not.toMatch(/\b(color|background|font-family|border-radius|box-shadow)\s*:/)
+      }
+      // The default error content is themed, but only through --mk-* (#614).
+      for (const [, value] of body.matchAll(
+        /\b(?:color|background|font-family|border|outline)\s*:\s*([^;]+)/g,
+      )) {
+        expect(value).toContain('var(--mk-')
+      }
+    }
     expect(css).not.toContain('!important')
+  })
+
+  it('draws the default retry button without the browser chrome (#614)', async () => {
+    const css = stylesheet(await setup()).getContents()
+
+    expect(css).toMatch(/\.mk-status-retry \{[^}]*appearance: none;/)
+    expect(css).toMatch(/\.mk-status-retry:where\(:focus-visible\) \{[^}]*var\(--mk-focus,/)
   })
 
   it('keeps every selector to a single class, so an app rule wins on order', async () => {
@@ -269,7 +291,8 @@ describe('the shipped stylesheet (K-6)', () => {
     for (const selector of selectors) {
       // One class, optionally with the universal child selector (which adds no
       // specificity). Anything else would out-rank an app's own `.mapkit-canvas`.
-      expect(selector).toMatch(/^\.[a-z-]+(?: > \*)?$/)
+      // A `:where()` state adds none either.
+      expect(selector).toMatch(/^\.[a-z-]+(?: > \*|:where\(:[a-z-]+\))?$/)
     }
   })
 
