@@ -406,7 +406,8 @@ describe('narduk-seo module', () => {
       ...PRODUCTION_ROBOTS_DEFAULTS,
       groups: [
         { userAgent: ['CCBot'], disallow: ['/'] },
-        { userAgent: ['GPTBot'], allow: ['/'] },
+        // A named group replaces `*` for GPTBot (RFC 9309), so it restates the disallows.
+        { userAgent: ['GPTBot'], allow: ['/'], disallow: PRODUCTION_ROBOTS_DEFAULTS.disallow },
       ],
     })
   })
