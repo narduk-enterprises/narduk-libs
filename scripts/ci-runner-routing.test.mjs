@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { test } from 'node:test'
 
 const source = (name) =>
@@ -116,6 +116,30 @@ test('every CI and release executor matches the supported root Node runtime', ()
       `${file}: ${versions}`,
     )
   }
+})
+
+test('every workspace package that pins a Volta Node pins the root one', () => {
+  // A package-local pin that disagrees with the root loads the root install's
+  // native modules (better-sqlite3) into the wrong Node ABI: every test in
+  // that package errors locally while CI, which never reads volta, stays
+  // green (narduk-libs#647).
+  const root = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const disagreeing = []
+  let pinned = 0
+  for (const group of readdirSync(new URL('../packages/', import.meta.url))) {
+    const groupUrl = new URL(`../packages/${group}/`, import.meta.url)
+    if (!statSync(groupUrl).isDirectory()) continue
+    for (const name of readdirSync(groupUrl)) {
+      const manifest = new URL(`../packages/${group}/${name}/package.json`, import.meta.url)
+      if (!existsSync(manifest)) continue
+      const node = JSON.parse(readFileSync(manifest, 'utf8')).volta?.node
+      if (node === undefined) continue
+      pinned += 1
+      if (node !== root.volta.node) disagreeing.push(`packages/${group}/${name}: ${node}`)
+    }
+  }
+  assert.ok(pinned > 0, 'no package pins volta.node; drop this test or the premise changed')
+  assert.deepEqual(disagreeing, [], `root volta.node is ${root.volta.node}`)
 })
 
 test('the Cursor reviewer workflow stays on the public hosted route with exactly one named secret', () => {
