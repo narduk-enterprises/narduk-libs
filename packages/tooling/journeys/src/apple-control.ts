@@ -10,6 +10,8 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 
+import type { AppleKey } from './types.js'
+
 export interface Recording {
   /** SIGINT and wait: `recordVideo` finalises on interrupt and leaves an unplayable fragment on a hard kill. */
   stop(): Promise<void>
@@ -38,6 +40,21 @@ export interface AppleInjector {
   type(text: string): void
   /** The accessibility hierarchy, as text. The landing predicate reads this. */
   describe(): string
+  /**
+   * Every control that carries an accessibility identifier, at the centre of its
+   * frame, on the screen as it is now. Needed only by `element` presses; an
+   * injector without it refuses them rather than guessing.
+   */
+  elements?(): AppleElement[]
+  /** Press one hardware-keyboard key. Needed only by `key` presses. */
+  key?(key: AppleKey): void
+}
+
+/** A control the injector can name, at the centre of its frame, in device points. */
+export interface AppleElement {
+  id: string
+  x: number
+  y: number
 }
 
 export interface InjectorTemplates {
@@ -49,6 +66,22 @@ export interface InjectorTemplates {
   describe: string
   /** Placeholders: {udid} {text} */
   text?: string
+  /** Placeholders: {udid} {hid} (the USB HID usage code) {key} (the key's name) */
+  key?: string
+}
+
+/** USB HID keyboard usage codes, which is what `idb ui key` takes. */
+export const APPLE_KEY_HID: Record<AppleKey, number> = {
+  return: 40,
+  escape: 41,
+  backspace: 42,
+  tab: 43,
+  space: 44,
+  delete: 76,
+  right: 79,
+  left: 80,
+  down: 81,
+  up: 82,
 }
 
 /**
@@ -62,6 +95,7 @@ export const IDB_INJECTOR_TEMPLATES: InjectorTemplates = {
   swipe: 'idb ui swipe --udid {udid} --duration {duration} {x1} {y1} {x2} {y2}',
   describe: 'idb ui describe-all --udid {udid}',
   text: 'idb ui text --udid {udid} {text}',
+  key: 'idb ui key --udid {udid} {hid}',
 }
 
 /** The environment names a repository can set instead of passing templates. */
@@ -70,7 +104,64 @@ export const INJECTOR_ENV = {
   swipe: 'JOURNEYS_SWIPE_CMD',
   describe: 'JOURNEYS_DESCRIBE_CMD',
   text: 'JOURNEYS_TEXT_CMD',
+  key: 'JOURNEYS_KEY_CMD',
 } as const
+
+interface IdbNode {
+  AXUniqueId?: unknown
+  frame?: { x?: unknown; y?: unknown; width?: unknown; height?: unknown }
+  children?: unknown
+}
+
+/**
+ * The identified controls in `idb ui describe-all` output: a JSON array of
+ * elements, each with `AXUniqueId` and a `frame` in points. One JSON document
+ * per line is accepted too, and nested `children` are walked. Anything else is
+ * a refusal, because a press by identifier that silently found nothing would be
+ * the coordinate guess this exists to replace.
+ */
+export function parseIdbElements(tree: string): AppleElement[] {
+  const documents: unknown[] = []
+  try {
+    documents.push(JSON.parse(tree))
+  } catch {
+    for (const line of tree.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        documents.push(JSON.parse(line))
+      } catch {
+        throw new Error(
+          'the describe command did not print idb-shaped JSON (elements with `AXUniqueId` and ' +
+            '`frame`), so no control can be located by identifier. Use the idb `describe` ' +
+            'template, or give the injector its own `elements()`.',
+        )
+      }
+    }
+  }
+  const found: AppleElement[] = []
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child)
+      return
+    }
+    if (!node || typeof node !== 'object') return
+    const { AXUniqueId: id, frame, children } = node as IdbNode
+    if (
+      typeof id === 'string' &&
+      id !== '' &&
+      frame &&
+      typeof frame.x === 'number' &&
+      typeof frame.y === 'number' &&
+      typeof frame.width === 'number' &&
+      typeof frame.height === 'number'
+    ) {
+      found.push({ id, x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 })
+    }
+    if (children !== undefined) visit(children)
+  }
+  visit(documents)
+  return found
+}
 
 function run(command: string, args: string[], label: string): string {
   const result = spawnSync(command, args, { encoding: 'utf8' })
@@ -125,6 +216,7 @@ export function resolveInjector(options: ResolveInjectorOptions): AppleInjector 
   const swipe = pick('swipe')
   const describe = pick('describe')
   const text = pick('text')
+  const keyTemplate = pick('key')
   const missing: string[] = []
   if (!tap) missing.push(INJECTOR_ENV.tap)
   if (!swipe) missing.push(INJECTOR_ENV.swipe)
@@ -140,6 +232,10 @@ export function resolveInjector(options: ResolveInjectorOptions): AppleInjector 
 
   const name = options.templates ? 'templates' : idbAvailable ? 'idb' : 'env-templates'
   const udid = options.udid
+  const readTree = (): string => {
+    const parts = fill(describe, { udid })
+    return run(parts[0] as string, parts.slice(1), 'describe')
+  }
   return {
     name,
     tap(x, y) {
@@ -166,9 +262,16 @@ export function resolveInjector(options: ResolveInjectorOptions): AppleInjector 
       const parts = fill(text, { udid, text: value })
       run(parts[0] as string, parts.slice(1), 'type')
     },
-    describe() {
-      const parts = fill(describe, { udid })
-      return run(parts[0] as string, parts.slice(1), 'describe')
+    describe: readTree,
+    elements: () => parseIdbElements(readTree()),
+    key(name) {
+      if (!keyTemplate) {
+        throw new Error(
+          `this journey presses a key and no injector can: set ${INJECTOR_ENV.key} or pass a \`key\` template`,
+        )
+      }
+      const parts = fill(keyTemplate, { udid, hid: String(APPLE_KEY_HID[name]), key: name })
+      run(parts[0] as string, parts.slice(1), `key ${name}`)
     },
   }
 }

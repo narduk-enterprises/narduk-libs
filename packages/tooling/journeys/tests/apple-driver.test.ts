@@ -13,10 +13,16 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { appleJourneyPlan, hashAppBundle, resolveInjector, runAppleJourneys } from '../src/apple.js'
+import {
+  appleJourneyPlan,
+  hashAppBundle,
+  parseIdbElements,
+  resolveInjector,
+  runAppleJourneys,
+} from '../src/apple.js'
 import type { AppleRunOptions, AppleWorldHooks } from '../src/apple.js'
 import { defineCatalog } from '../src/define.js'
-import type { Catalog, DrivenAppleJourney } from '../src/types.js'
+import type { AppleDrivenStep, Catalog, DrivenAppleJourney } from '../src/types.js'
 import { promoteRun, runPaths, verifyRun } from '../src/verify.js'
 import { buildWalkthrough } from '../src/walkthrough.js'
 import { createFakeClock, createFakeDevice } from './fixtures/fake-simulator.js'
@@ -563,5 +569,223 @@ describe('the driven declaration', () => {
       journeys: [{ ...journey(), compromises: [{ what: 'a flag', why: 'because', cost: '' }] }],
     } as unknown as Catalog
     expect(() => defineCatalog(broken)).toThrow(/what, why AND what it costs/)
+  })
+})
+
+/** The fixture catalog, with the journey's first beat replaced. */
+function catalogWithFirstStep(step: Partial<AppleDrivenStep>): Catalog {
+  const walk = journey()
+  walk.steps[0] = { ...(walk.steps[0] as AppleDrivenStep), ...step }
+  return defineCatalog({ ...fixtureCatalog(), journeys: [walk] })
+}
+
+const OPEN_ROW = { id: 'yard.open.WCF-TT-21', x: 201, y: 258 }
+const MENU = { id: 'yard.menu', x: 20, y: 60 }
+
+describe('a press by name, a key, and a world that is made (narduk-libs#75)', () => {
+  it('presses a control by its accessibility identifier, located on the screen it is pressed on', async () => {
+    const device = screens()
+    device.screens.yard = { ...device.screens.yard!, elements: [MENU, OPEN_ROW] }
+    const { options, device: fake } = harness('test', device, {
+      catalog: catalogWithFirstStep({ press: { kind: 'element', id: 'yard.open.WCF-TT-21' } }),
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.results[0]!.manifest.verdict).toBe('passed')
+    const located = fake.log.indexOf('elements')
+    expect(located).toBeGreaterThan(-1)
+    expect(fake.log[located + 1]).toBe('tap:201,258')
+  })
+
+  it('fails a press whose identifier is not on screen, and names what was', async () => {
+    const device = screens()
+    device.screens.yard = { ...device.screens.yard!, elements: [OPEN_ROW, MENU] }
+    const { options } = harness('test', device, {
+      catalog: catalogWithFirstStep({ press: { kind: 'element', id: 'yard.open.GONE' } }),
+    })
+    const manifest = (await runAppleJourneys(options)).results[0]!.manifest
+    expect(manifest.verdict).toBe('failed')
+    expect(manifest.steps[0]!.error).toBe(
+      'no control "yard.open.GONE" on screen; identifiers on screen: "yard.menu", "yard.open.WCF-TT-21"',
+    )
+  })
+
+  it('refuses an identifier that more than one control carries', async () => {
+    const device = screens()
+    device.screens.yard = { ...device.screens.yard!, elements: [OPEN_ROW, { ...OPEN_ROW, y: 400 }] }
+    const { options } = harness('test', device, {
+      catalog: catalogWithFirstStep({ press: { kind: 'element', id: OPEN_ROW.id } }),
+    })
+    const manifest = (await runAppleJourneys(options)).results[0]!.manifest
+    expect(manifest.steps[0]!.error).toMatch(/2 controls carry "yard.open.WCF-TT-21"/)
+  })
+
+  it('refuses a press by identifier when the injector cannot locate controls', async () => {
+    const { options, device } = harness('test', screens(), {
+      catalog: catalogWithFirstStep({ press: { kind: 'element', id: OPEN_ROW.id } }),
+    })
+    const { elements: _dropped, ...blind } = device.injector
+    const manifest = (await runAppleJourneys({ ...options, injector: blind })).results[0]!.manifest
+    expect(manifest.steps[0]!.error).toMatch(/cannot locate a control by identifier/)
+  })
+
+  it('presses a key as many times as the beat declares', async () => {
+    const device = screens()
+    device.screens.yard = { ...device.screens.yard!, on: { 'key:tab': 'sheet' } }
+    const { options, device: fake } = harness('test', device, {
+      catalog: catalogWithFirstStep({ press: { kind: 'key', key: 'tab', repeat: 3 } }),
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.results[0]!.manifest.verdict).toBe('passed')
+    expect(fake.log.filter((entry) => entry === 'key:tab')).toHaveLength(3)
+  })
+
+  it('refuses a key press when the injector cannot press keys', async () => {
+    const { options, device } = harness('test', screens(), {
+      catalog: catalogWithFirstStep({ press: { kind: 'key', key: 'return' } }),
+    })
+    const { key: _dropped, ...keyless } = device.injector
+    const manifest = (await runAppleJourneys({ ...options, injector: keyless })).results[0]!
+      .manifest
+    expect(manifest.steps[0]!.error).toMatch(/cannot press keys/)
+  })
+
+  it('fails a gesture kind nobody implemented instead of performing nothing', async () => {
+    const { options } = harness('test')
+    // Past the declaration gate, which refuses it: the adapter must refuse too.
+    const walk = options.catalog.journeys[0] as DrivenAppleJourney
+    walk.steps[0] = {
+      ...walk.steps[0]!,
+      press: { kind: 'pinch' } as unknown as AppleDrivenStep['press'],
+    }
+    const manifest = (await runAppleJourneys(options)).results[0]!.manifest
+    expect(manifest.steps[0]!.error).toBe('unknown gesture kind "pinch"')
+  })
+
+  it('makes the world before the app launches into it', async () => {
+    const { options, device } = harness('test', screens(), {
+      world: {
+        ...world,
+        prepare: ({ scenarioId }) => {
+          device.log.push(`prepare:${scenarioId}`)
+        },
+      },
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.results[0]!.manifest.verdict).toBe('passed')
+    const prepared = device.log.indexOf('prepare:walkthrough')
+    expect(prepared).toBeGreaterThan(-1)
+    expect(prepared).toBeLessThan(device.log.findIndex((entry) => entry.startsWith('launch:')))
+  })
+
+  it('stops the session, naming the journey and scenario, when the world cannot be made', async () => {
+    const { options } = harness('test', screens(), {
+      world: {
+        ...world,
+        prepare: () => {
+          throw new Error('seed refused')
+        },
+      },
+    })
+    await expect(runAppleJourneys(options)).rejects.toThrow(
+      'gate-to-gate: world.prepare("walkthrough") failed: seed refused',
+    )
+  })
+
+  it("fails the run when the world's own generation moves under the journey", async () => {
+    const seeds = ['seed-1', 'seed-2']
+    const { options } = harness('test', screens(), {
+      world: { ...world, generation: () => seeds.shift() ?? 'seed-3' },
+    })
+    const session = await runAppleJourneys(options)
+    const manifest = session.results[0]!.manifest
+    expect(manifest.scenario.generation).toBe('pid:4242 world:seed-1')
+    expect(manifest.scenario.generationAfter).toBe('pid:4242 world:seed-2')
+    expect(manifest.verdict).toBe('failed')
+    expect(
+      verifyRun(options.catalog, manifest, session.results[0]!.attemptDirectory, {
+        currentDigest: DIGEST,
+      }),
+    ).toEqual([expect.stringContaining('world generation changed mid-run')])
+  })
+
+  it('checks the start landing even when the world confirms itself by name', async () => {
+    const device = screens()
+    device.screens.yard = { tree: 'PACC TRAC yard | nothing due today', on: {} }
+    const { options } = harness('test', device, {
+      world: { ...world, confirm: () => 'walkthrough' },
+    })
+    const manifest = (await runAppleJourneys(options)).results[0]!.manifest
+    expect(manifest.scenario.preparedBy).toBe('fresh-launch:named')
+    expect(manifest.scenario.confirmed).toBe(false)
+    expect(manifest.verdict).toBe('failed')
+  })
+
+  it('prints element and key presses in the plan', () => {
+    const walk = journey()
+    walk.steps[0] = { ...walk.steps[0]!, press: { kind: 'element', id: OPEN_ROW.id } }
+    walk.steps[1] = { ...walk.steps[1]!, press: { kind: 'key', key: 'backspace', repeat: 3 } }
+    const plan = appleJourneyPlan(walk, 'walkthrough')
+    expect(plan).toContain('press #yard.open.WCF-TT-21')
+    expect(plan).toContain('key backspace ×3')
+  })
+
+  it('reads identified controls out of idb describe-all output', () => {
+    const idb = JSON.stringify([
+      { AXUniqueId: null, frame: { x: 0, y: 0, width: 402, height: 874 } },
+      {
+        AXUniqueId: 'yard.menu',
+        frame: { x: 0, y: 40, width: 40, height: 40 },
+        children: [
+          { AXUniqueId: 'yard.menu.badge', frame: { x: 30, y: 40, width: 10, height: 10 } },
+        ],
+      },
+    ])
+    expect(parseIdbElements(idb)).toEqual([
+      { id: 'yard.menu', x: 20, y: 60 },
+      { id: 'yard.menu.badge', x: 35, y: 45 },
+    ])
+    const perLine = ['{"AXUniqueId":"a","frame":{"x":0,"y":0,"width":2,"height":2}}', ''].join('\n')
+    expect(parseIdbElements(perLine)).toEqual([{ id: 'a', x: 1, y: 1 }])
+    expect(() => parseIdbElements('Button "Mark arrived"')).toThrow(/idb-shaped JSON/)
+  })
+
+  it('locates controls and presses keys through command templates', () => {
+    const injector = resolveInjector({
+      udid: 'UDID-1',
+      env: {},
+      commandExists: () => false,
+      templates: {
+        tap: 'echo tap {udid} {x} {y}',
+        swipe: 'echo swipe {udid} {x1} {y1} {x2} {y2} {duration}',
+        describe: 'echo [{"AXUniqueId":"row","frame":{"x":0,"y":10,"width":100,"height":20}}]',
+        key: 'echo key {udid} {hid} {key}',
+      },
+    })
+    expect(injector.elements?.()).toEqual([{ id: 'row', x: 50, y: 20 }])
+    expect(() => injector.key?.('return')).not.toThrow()
+    const keyless = resolveInjector({
+      udid: 'UDID-1',
+      env: {},
+      commandExists: () => false,
+      templates: { tap: 'echo', swipe: 'echo', describe: 'echo' },
+    })
+    expect(() => keyless.key?.('tab')).toThrow(/JOURNEYS_KEY_CMD/)
+  })
+
+  it('rejects an element with no identifier, an unknown key, a bad repeat and an unknown kind', () => {
+    const presses = [
+      { press: { kind: 'element', id: '' }, problem: /presses an element with no identifier/ },
+      { press: { kind: 'key', key: 'hyper' }, problem: /key "hyper" is not one of return, tab/ },
+      {
+        press: { kind: 'key', key: 'tab', repeat: 0 },
+        problem: /key repeat must be a positive integer/,
+      },
+      { press: { kind: 'pinch' }, problem: /unknown gesture kind "pinch"/ },
+    ]
+    for (const { press, problem } of presses) {
+      const walk = journey()
+      walk.steps[0] = { ...walk.steps[0]!, press } as unknown as AppleDrivenStep
+      expect(() => defineCatalog({ ...fixtureCatalog(), journeys: [walk] })).toThrow(problem)
+    }
   })
 })
