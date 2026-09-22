@@ -916,8 +916,14 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       ;(nuxt.hook as (name: string, handler: (nitro: NitroErrorHandlerHost) => void) => void)(
         'nitro:init',
         (nitro) => {
+          // Then the JSON no-store handler (narduk-libs#493): Nuxt hands a
+          // JSON error to Nitro's builtin, which answers `no-cache`.
+          // Resulting chain: sanitizer, json-error-no-store, Nuxt, builtin.
           nitro.options.errorHandler = prependNitroErrorHandler(
-            nitro.options.errorHandler,
+            prependNitroErrorHandler(
+              nitro.options.errorHandler,
+              resolver.resolve('../runtime/server/json-error-no-store'),
+            ),
             resolver.resolve('../runtime/server/error-sanitizer'),
           )
         },

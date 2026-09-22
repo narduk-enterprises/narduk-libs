@@ -1162,7 +1162,9 @@ Worker-owned switch is versioned with the code and needs no dashboard state:
 ```
 
 Until an app adds that, `setCacheProfile` still produces a correct browser
-`Cache-Control` and the edge headers are inert.
+`Cache-Control` and the edge headers are inert. Turning it on in an existing app
+is a per-app change with its own preconditions, proof and rollback:
+[narduk-app-tools `docs/workers-cache.md`](../../tooling/narduk-app-tools/docs/workers-cache.md).
 
 **It is not a one-line change.** With the switch on, Cloudflare checks the cache
 _before_ invoking the Worker and stores what the Worker returns according to its
@@ -1177,9 +1179,10 @@ unless the response says `public`.
 Preconditions, checked by `narduk-app foundation:check:deployment` sub-check
 12.7:
 
-- narduk-core **>= 2.2.4**: thrown 4xx/5xx/429 are `private, no-store`
-  (narduk-libs#429), preference-shaped responses are (#427), and SSR HTML under
-  a nonce CSP is (#435). An older core with the switch on fails 12.7.
+- narduk-core **>= 2.10.0**: thrown 4xx/5xx/429 are `private, no-store`
+  (narduk-libs#429), including when answered as JSON (#493), preference-shaped
+  responses are (#427), SSR HTML under a nonce CSP is (#435), and a response
+  with no posture is private. An older core with the switch on fails 12.7.
 - The per-request header strip below (#412, #418) becomes load-bearing the same
   day: a stored response would otherwise carry one caller's quota and
   correlation id to everyone.
@@ -1283,6 +1286,15 @@ re-checks the final status after the throw, not the status at the time
 immediately before its 429 throw, as a belt-and-suspenders — the plugin is the
 backstop either way. `Retry-After` and the `RateLimit-*` family are not
 shared-cache headers and are never touched.
+
+A thrown error answered as **JSON** needs a second piece (narduk-libs#493). For
+an `/api/*` or `.json` path, `Accept: application/json`, a CORS fetch, or curl,
+Nuxt's error handler hands the error back to Nitro, and Nitro's own handler
+sends the response itself: `no-cache` on every 404, and the plugin's hook never
+runs. So narduk-core also prepends a Nitro error handler (`json-error-no-store`)
+that answers those errors itself, with Nitro's own status and body and
+`private, no-store`. HTML errors still go through Nuxt's error page and the
+plugin. `nuxt dev` is left alone.
 
 This is a safe precondition for edge-caching error-adjacent routes: do not
 enable Workers Cache in a consuming app until it is running a narduk-core

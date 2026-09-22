@@ -363,8 +363,10 @@ describe('module prepends the sanitizer on nitro:init', () => {
     }
 
     expect(nitro.options.errorHandler[0]).toMatch(/\/runtime\/server\/error-sanitizer$/)
-    expect(nitro.options.errorHandler[1]).toBe(nuxtHandler)
-    expect(nitro.options.errorHandler[2]).toBe(builtin)
+    // #493: JSON errors are answered no-store before Nuxt hands them to Nitro.
+    expect(nitro.options.errorHandler[1]).toMatch(/\/runtime\/server\/json-error-no-store$/)
+    expect(nitro.options.errorHandler[2]).toBe(nuxtHandler)
+    expect(nitro.options.errorHandler[3]).toBe(builtin)
     expect(nuxt.options.nitro).not.toEqual(
       expect.objectContaining({ errorHandler: expect.anything() }),
     )
