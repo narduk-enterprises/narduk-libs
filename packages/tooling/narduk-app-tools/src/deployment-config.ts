@@ -226,6 +226,27 @@ export const stagingSchema = z
 
 export type StagingBlock = z.infer<typeof stagingSchema>
 
+/**
+ * One reviewed contract migration (narduk-libs#399): an app migration that
+ * drops or renames something, declared safe because the code that read it is
+ * past the rollback window. Pinned by checksum -- the same sha256 the migration
+ * ledger records -- so the waiver covers the reviewed bytes and nothing else.
+ */
+export const contractMigrationSchema = z.strictObject({
+  /** Checkout-relative path of the `.sql` file. */
+  path: z.string().trim().min(1).max(2000),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  /** Why no serving or rollback-target version still reads what it removes. */
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine((reason) => !reason.startsWith('<'), 'replace the placeholder with the actual reason'),
+})
+
+export type ContractMigration = z.infer<typeof contractMigrationSchema>
+
 export const deploymentMigrationsSchema = z.strictObject({
   compatibility: z.literal('expand-contract'),
   credential: z.string().trim().min(1).max(300),
@@ -238,6 +259,8 @@ export const deploymentMigrationsSchema = z.strictObject({
     )
     .min(1)
     .max(100),
+  /** The escape hatch from foundation sub-check 12.9's expand-only rule. */
+  contractMigrations: z.array(contractMigrationSchema).max(500).optional(),
 })
 
 export const deploymentBlockSchema = z.strictObject({
@@ -265,6 +288,12 @@ export const deploymentBlockSchema = z.strictObject({
     intervalSeconds: z.number().int().min(1).max(600).default(10),
   }),
   rollback: z.strictObject({
+    /**
+     * `manual` is the only mode anything honours: a person, or a step the app
+     * wrote into its own promote job, runs `narduk-app deploy rollback`.
+     * `auto` still parses so an older manifest does not stop the tools, but
+     * nothing reads it, and foundation sub-check 12.10 fails it (#399).
+     */
     mode: z.enum(['auto', 'manual']),
     alert: z.enum(['resend', 'none']),
   }),
@@ -382,7 +411,7 @@ export function defaultDeploymentBlock(options: {
       attempts: 6,
       intervalSeconds: 10,
     },
-    rollback: { mode: 'auto', alert: 'resend' },
+    rollback: { mode: 'manual', alert: 'resend' },
     staging: { enabled: false },
     previewBindings: { d1: [], kv: [], r2: [] },
   }

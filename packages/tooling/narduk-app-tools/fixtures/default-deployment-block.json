@@ -18,7 +18,7 @@
     "intervalSeconds": 10
   },
   "rollback": {
-    "mode": "auto",
+    "mode": "manual",
     "alert": "resend"
   },
   "staging": {
