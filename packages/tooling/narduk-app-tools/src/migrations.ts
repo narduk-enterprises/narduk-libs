@@ -340,7 +340,8 @@ export function loadMigrationConfig(configFile: string): {
   }
 }
 
-function isAppSource(source: string): boolean {
+/** An app-owned migration source (`app` or `app:<name>`), as opposed to a package's. */
+export function isAppSource(source: string): boolean {
   return source === 'app' || source.startsWith('app:')
 }
 
@@ -415,6 +416,9 @@ export function orderMigrationSources(
     .map(({ source }) => source)
 }
 
+/** A migration file name: a numeric prefix, an optional `_description`, `.sql`. */
+export const MIGRATION_FILENAME = /^\d{4,}(?:_\w[\w.-]*)?\.sql$/i
+
 export function checksumMigrationSql(sql: string): string {
   return createHash('sha256').update(sql).digest('hex')
 }
@@ -428,7 +432,7 @@ export function discoverMigrations(config: MigrationConfig, baseDir: string): Mi
       throw new Error(`Migration directory not found for ${source.source}: ${directory}`)
     }
     const names = readdirSync(directory)
-      .filter((name) => /^\d{4,}(?:_\w[\w.-]*)?\.sql$/i.test(name))
+      .filter((name) => MIGRATION_FILENAME.test(name))
       .sort((left, right) => left.localeCompare(right))
     for (const filename of names) {
       const path = join(directory, filename)

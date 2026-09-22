@@ -499,7 +499,7 @@ entering `foundation-check.json`, which is the ratified 7-item contract.
     "attempts": 6,
     "intervalSeconds": 10
   },
-  "rollback": { "mode": "auto", "alert": "resend" },
+  "rollback": { "mode": "manual", "alert": "resend" },
   "staging": { "enabled": false },
   "previewBindings": { "d1": [], "kv": [], "r2": [] }
 }
@@ -634,6 +634,26 @@ without a `deployment` block** -- the failure is one visitor's response being
 replayed to others, not a missing declaration. A spec that names no version
 (`workspace:*`, a git URL) is `unknown`. 12.7 cannot see whether the running
 Worker actually HITs; `verify --live --edge-cache-path` does.
+
+**D1 migrations are expand-only unless reviewed.** Check 12.9 (narduk-libs#399)
+reads every app-owned migration the `deployment.migrations` source manifests
+name and fails any `DROP TABLE`, `DROP VIEW`, `ALTER TABLE ... DROP [COLUMN]` or
+`ALTER TABLE ... RENAME` -- `narduk-app deploy rollback` restores code, never a
+schema, so a Worker rolled back past a contract migration talks to a database
+that no longer has what it reads. A file that drops or renames only what it
+created itself (a table rebuild's scratch table) passes. A deliberate contract
+migration is declared under `deployment.migrations.contractMigrations` as
+`{ "path", "sha256", "reason" }`, pinned to the checksum the migration ledger
+records, and the failure prints that entry for you; a waiver whose file changed,
+vanished or drops nothing fails too. Package-owned sources are not read. The
+classifier cannot see a data rewrite or a new constraint the old code violates.
+
+**The declared rollback mode is the one that runs.** Nothing reads
+`rollback.mode`: no tool rolls back on its own. Rollback happens only when a
+person, or a step the app wrote into its own promote job, runs
+`narduk-app deploy rollback`; a failed migration triggers nothing and no
+database is ever restored. So the generated default is `manual`, and check 12.10
+fails `"auto"`, which still parses so an older manifest does not stop the tools.
 
 **What a green verdict does not mean.** This is a repository read with no
 credential. It cannot see the deploy commands actually configured on the Workers

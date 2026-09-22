@@ -24,6 +24,7 @@ import {
 } from '../../src/foundation/evaluate-deployment.js'
 import { parseDeploymentCheckArgs } from '../../src/commands/deployment-check.js'
 import { AppRepo } from '../../src/foundation/source.js'
+import { checksumMigrationSql } from '../../src/migrations.js'
 import type { FoundationStatus, FoundationSubCheck } from '../../src/foundation/types.js'
 import { makeTempRepo, writeFile, writeJson } from './helpers.js'
 
@@ -1006,5 +1007,129 @@ describe('12.8 D1 migration declaration', () => {
   })
   it('does not impose migration infrastructure on an app with no D1', () => {
     expect(statusOf(baseline(), '12.8')).toBe('not-applicable')
+  })
+})
+
+describe('12.9 expand-only D1 migrations', () => {
+  /** An adopted D1 app whose `app` source is `migrations/`, holding `files`. */
+  function d1App(files: Record<string, string>, contractMigrations?: unknown[]): string {
+    const root = baseline()
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      workers_dev: false,
+      d1_databases: [{ binding: 'DB', database_id: 'd1-id', database_name: 'fixture-db' }],
+    })
+    const manifest = JSON.parse(readFileSync(`${root}/${CLOUDFLARE_APP_FILE}`, 'utf8'))
+    manifest.deployment.migrations = {
+      compatibility: 'expand-contract',
+      credential: 'cloudflare/prd/fixture-migrate',
+      databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+      ...(contractMigrations ? { contractMigrations } : {}),
+    }
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    writeJson(root, 'migrations.sources.json', {
+      sources: [
+        { source: 'narduk-auth', path: 'node_modules/@narduk-enterprises/narduk-auth/migrations' },
+        { source: 'app', path: 'migrations' },
+      ],
+    })
+    for (const [name, sql] of Object.entries(files)) writeFile(root, `migrations/${name}`, sql)
+    return root
+  }
+
+  const EXPAND = 'CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n'
+  const CONTRACT =
+    'ALTER TABLE users ADD COLUMN email TEXT;\nALTER TABLE users DROP COLUMN legacy;\n'
+  const CONTRACT_SHA = checksumMigrationSql(CONTRACT)
+
+  it('is not applicable without deployment.migrations', () => {
+    expect(statusOf(baseline(), '12.9')).toBe('not-applicable')
+  })
+
+  it('passes expand-only app migrations and names the package sources it does not read', () => {
+    const root = d1App({ '0001_init.sql': EXPAND })
+    expect(statusOf(root, '12.9')).toBe('pass')
+    expect(detailOf(root, '12.9')).toContain('1 app migration file(s)')
+    expect(detailOf(root, '12.9')).toContain('DB: narduk-auth')
+  })
+
+  it('fails a drop, naming file, line and object, and prints the waiver to add', () => {
+    const root = d1App({ '0001_init.sql': EXPAND, '0002_contract.sql': CONTRACT })
+    expect(statusOf(root, '12.9')).toBe('fail')
+    const detail = detailOf(root, '12.9')
+    expect(detail).toContain('migrations/0002_contract.sql:2 drops a column of users')
+    expect(detail).toContain(`"sha256":"${CONTRACT_SHA}"`)
+    expect(detail).not.toContain('0001_init.sql')
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('passes a reviewed contract migration pinned by checksum', () => {
+    const root = d1App({ '0002_contract.sql': CONTRACT }, [
+      {
+        path: 'migrations/0002_contract.sql',
+        sha256: CONTRACT_SHA,
+        reason: 'legacy was last read by v1.4, which left the rollback window on 2026-09-01',
+      },
+    ])
+    expect(statusOf(root, '12.9')).toBe('pass')
+    expect(detailOf(root, '12.9')).toContain('1 reviewed contract migration(s)')
+  })
+
+  it('fails a waiver whose file changed, is missing, or needs no waiver', () => {
+    const waiver = (path: string, sha256 = CONTRACT_SHA) => ({ path, sha256, reason: 'reviewed' })
+    const edited = d1App({ '0002_contract.sql': `${CONTRACT}-- edited\n` }, [
+      waiver('migrations/0002_contract.sql'),
+    ])
+    expect(statusOf(edited, '12.9')).toBe('fail')
+    expect(detailOf(edited, '12.9')).toContain('no longer has the reviewed checksum')
+
+    const missing = d1App({ '0001_init.sql': EXPAND }, [waiver('migrations/0009_gone.sql')])
+    expect(statusOf(missing, '12.9')).toBe('fail')
+
+    const needless = d1App({ '0001_init.sql': EXPAND }, [
+      waiver('migrations/0001_init.sql', checksumMigrationSql(EXPAND)),
+    ])
+    expect(statusOf(needless, '12.9')).toBe('fail')
+    expect(detailOf(needless, '12.9')).toContain('needs no waiver')
+  })
+
+  it('refuses the printed placeholder as a reason', () => {
+    const root = d1App({ '0002_contract.sql': CONTRACT }, [
+      {
+        path: 'migrations/0002_contract.sql',
+        sha256: CONTRACT_SHA,
+        reason: '<why no serving or rollback-target version still reads it>',
+      },
+    ])
+    expect(statusOf(root, '12.0')).toBe('fail')
+  })
+
+  it('is unknown, not green, when a source manifest cannot be parsed', () => {
+    const root = d1App({ '0001_init.sql': EXPAND })
+    writeFile(root, 'migrations.sources.json', '{ "sources": [] }')
+    expect(statusOf(root, '12.9')).toBe('unknown')
+  })
+
+  it('refuses a source directory outside the checkout', () => {
+    const root = d1App({})
+    writeJson(root, 'migrations.sources.json', {
+      sources: [{ source: 'app', path: '../elsewhere' }],
+    })
+    expect(statusOf(root, '12.9')).toBe('unknown')
+  })
+})
+
+describe('12.10 rollback mode', () => {
+  it('generates manual and passes it', () => {
+    expect(defaultDeploymentBlock({ appSlug: 'fixture' })).toMatchObject({
+      rollback: { mode: 'manual' },
+    })
+    expect(statusOf(baseline(), '12.10')).toBe('pass')
+  })
+
+  it('fails "auto", which nothing reads', () => {
+    const root = baseline({ deployment: block({ rollback: { mode: 'auto', alert: 'resend' } }) })
+    expect(statusOf(root, '12.10')).toBe('fail')
+    expect(detailOf(root, '12.10')).toContain('Set "mode": "manual"')
   })
 })

@@ -46,6 +46,8 @@
  * isolation that does not exist.
  */
 
+import { posix } from 'node:path'
+
 import { flattenWranglerDeployConfig } from '../../deploy.js'
 import {
   DEPLOYMENT_STANDARD,
@@ -70,6 +72,16 @@ import {
   ownershipCoverageIssues,
   type DatabaseOwnershipEntry,
 } from '../../database-ownership.js'
+import {
+  findDestructiveStatements,
+  type DestructiveStatement,
+} from '../../migration-compatibility.js'
+import {
+  checksumMigrationSql,
+  isAppSource,
+  MIGRATION_FILENAME,
+  parseMigrationConfig,
+} from '../../migrations.js'
 import { check } from '../schema.js'
 import {
   allDeps,
@@ -444,6 +456,26 @@ export interface DeploymentScan {
   databaseOwnership?: DatabaseOwnershipEntry[] | null
   /** Contract-owned entries naming a file or verify script that is not there. */
   ownershipEvidence?: string[]
+  /** What 12.9 reads: the app-owned migration SQL the declared manifests name. */
+  migrationCompatibility?: MigrationCompatibilityScan | null
+}
+
+export interface MigrationFileScan {
+  /** Checkout-relative path. */
+  rel: string
+  /** The checksum the migration ledger records for this file. */
+  sha256: string
+  destructive: DestructiveStatement[]
+}
+
+export interface MigrationCompatibilityScan {
+  /** Every app-owned migration file, once, in path order. */
+  files: MigrationFileScan[]
+  /** Package-owned sources, `binding: source`. Their SQL ships in a package
+   * and is not this checkout's to review. */
+  packageSources: string[]
+  /** Manifests or directories this read could not follow, with why. */
+  unreadable: string[]
 }
 
 export interface PreviewScan {
@@ -490,6 +522,72 @@ export function scanPreview(
   }
   const deployConfig = flattenWranglerDeployConfig(raw) as Record<string, unknown>
   return { blockers, plan: planPreviewConfig(deployConfig, previewBindings, [raw]) }
+}
+
+/** A checkout-relative path, normalised, or null when it leaves the checkout. */
+function checkoutRel(path: string): string | null {
+  if (posix.isAbsolute(path)) return null
+  const normalised = posix.normalize(path)
+  return normalised === '..' || normalised.startsWith('../') ? null : normalised
+}
+
+/**
+ * Reads every app-owned migration the declared source manifests name, the way
+ * `discoverMigrations` finds them, and classifies each statement (12.9).
+ */
+export function scanMigrationCompatibility(
+  repo: AppRepo,
+  databases: ReadonlyArray<{ binding: string; sources: string }>,
+): MigrationCompatibilityScan {
+  const files = new Map<string, MigrationFileScan>()
+  const packageSources: string[] = []
+  const unreadable: string[] = []
+  for (const database of databases) {
+    const manifestRel = checkoutRel(database.sources)
+    const text = manifestRel === null ? null : repo.read(manifestRel)
+    if (manifestRel === null || text === null) {
+      unreadable.push(`${database.binding}: ${database.sources} is not a file in this checkout`)
+      continue
+    }
+    let sources
+    try {
+      sources = parseMigrationConfig(parseJson(text)).sources
+    } catch (error) {
+      unreadable.push(`${database.binding}: ${manifestRel}: ${(error as Error).message}`)
+      continue
+    }
+    for (const source of sources) {
+      if (!isAppSource(source.source)) {
+        packageSources.push(`${database.binding}: ${source.source}`)
+        continue
+      }
+      const directory = checkoutRel(posix.join(posix.dirname(manifestRel), source.path))
+      if (directory === null) {
+        unreadable.push(
+          `${database.binding}: source ${source.source} directory ${source.path} leaves the checkout`,
+        )
+        continue
+      }
+      // A missing directory holds no migrations: nothing to classify. The
+      // runner refuses it at migrate time; this rule has nothing to say.
+      if (!repo.exists(directory)) continue
+      for (const rel of repo.walk(directory, ['.sql'], 0)) {
+        if (files.has(rel) || !MIGRATION_FILENAME.test(posix.basename(rel))) continue
+        const sql = repo.read(rel)
+        if (sql === null) continue
+        files.set(rel, {
+          rel,
+          sha256: checksumMigrationSql(sql),
+          destructive: findDestructiveStatements(sql),
+        })
+      }
+    }
+  }
+  return {
+    files: [...files.values()].sort((left, right) => left.rel.localeCompare(right.rel)),
+    packageSources,
+    unreadable,
+  }
 }
 
 export function scanDeployment(repo: AppRepo): DeploymentScan {
@@ -540,6 +638,10 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
             exists: repo.read(entry.sources) !== null,
           }))
         : [],
+    migrationCompatibility:
+      outcome.kind === 'valid' && outcome.block.migrations
+        ? scanMigrationCompatibility(repo, outcome.block.migrations.databases)
+        : null,
     databaseOwnership: outcome.kind === 'valid' ? (outcome.block.databaseOwnership ?? null) : null,
     ownershipEvidence:
       outcome.kind === 'valid' && outcome.block.databaseOwnership
@@ -1203,6 +1305,137 @@ function evaluate128(scan: DeploymentScan): FoundationSubCheck {
   })
 }
 
+/** How many offending statements a verdict lists before summarising the rest. */
+const LISTED_STATEMENTS = 10
+
+const DESTRUCTIVE_WORDING: Record<DestructiveStatement['kind'], string> = {
+  'drop-table': 'drops table',
+  'drop-view': 'drops view',
+  'drop-column': 'drops a column of',
+  'rename-table': 'renames table',
+  'rename-column': 'renames a column of',
+}
+
+/** 12.9 -- declared expand-contract migrations are expand-only (#399). */
+function evaluate129(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'D1 migrations are expand-only, or a reviewed contract migration'
+  return onlyWhenValid('12.9', name, scan, () => {
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    const migrations = scan.outcome.block.migrations
+    const read = scan.migrationCompatibility
+    if (!migrations || !read) {
+      return check('12.9', name, STATUS_NA, 'No deployment.migrations declared', scan.configFile)
+    }
+    if (read.unreadable.length > 0) {
+      return check(
+        '12.9',
+        name,
+        STATUS_UNKNOWN,
+        `Could not read every declared migration source, so the rule is unchecked: ` +
+          `${read.unreadable.join('; ')}`,
+        scan.configFile,
+      )
+    }
+    const byRel = new Map(read.files.map((file) => [file.rel, file]))
+    const waived = new Set<string>()
+    const stale: string[] = []
+    for (const waiver of migrations.contractMigrations ?? []) {
+      const rel = checkoutRel(waiver.path)
+      const file = rel === null ? undefined : byRel.get(rel)
+      if (!file) {
+        stale.push(`${waiver.path} is not an app migration file any declared source names`)
+      } else if (file.sha256 !== waiver.sha256) {
+        stale.push(
+          `${waiver.path} no longer has the reviewed checksum (now ${file.sha256}); applied ` +
+            `migration SQL is immutable, so review the change and pin the new checksum`,
+        )
+      } else if (file.destructive.length === 0) {
+        stale.push(`${waiver.path} drops and renames nothing, so it needs no waiver`)
+      } else {
+        waived.add(file.rel)
+      }
+    }
+    const offending = read.files.filter(
+      (file) => file.destructive.length > 0 && !waived.has(file.rel),
+    )
+    if (offending.length > 0 || stale.length > 0) {
+      const statements = offending.flatMap((file) =>
+        file.destructive.map(
+          (found) => `${file.rel}:${found.line} ${DESTRUCTIVE_WORDING[found.kind]} ${found.object}`,
+        ),
+      )
+      const listed = statements.slice(0, LISTED_STATEMENTS)
+      if (statements.length > listed.length) {
+        listed.push(`and ${statements.length - listed.length} more`)
+      }
+      const parts: string[] = []
+      if (offending.length > 0) {
+        const waivers = offending.map((file) => ({
+          path: file.rel,
+          sha256: file.sha256,
+          reason: '<why no serving or rollback-target version still reads it>',
+        }))
+        parts.push(
+          `deployment.migrations declares expand-contract, but these statements remove or ` +
+            `rename what the serving Worker or a rollback target may still read: ` +
+            `${listed.join('; ')}. \`narduk-app deploy rollback\` restores code, never a ` +
+            `schema. Expand instead (add, backfill, switch code), or, once no version inside ` +
+            `the rollback window reads it, declare the file a reviewed contract migration under ` +
+            `deployment.migrations.contractMigrations: ${JSON.stringify(waivers)}`,
+        )
+      }
+      if (stale.length > 0)
+        parts.push(`Contract-migration waivers that cover nothing: ${stale.join('; ')}`)
+      return check('12.9', name, STATUS_FAIL, parts.join(' '), scan.configFile)
+    }
+    const waivedNote =
+      waived.size > 0
+        ? ` ${waived.size} reviewed contract migration(s) are waived by checksum.`
+        : ''
+    const packageNote =
+      read.packageSources.length > 0
+        ? ` Package-owned sources are not read here (${read.packageSources.join(', ')}).`
+        : ''
+    return check(
+      '12.9',
+      name,
+      STATUS_PASS,
+      `${read.files.length} app migration file(s) drop and rename nothing.${waivedNote}` +
+        `${packageNote} This is a statement classifier: a data rewrite or a new constraint ` +
+        `the previous code cannot satisfy is not detected.`,
+      scan.configFile,
+    )
+  })
+}
+
+/** 12.10 -- the declared rollback mode is one something honours (#399). */
+function evaluate1210(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'declared rollback mode is the one that runs'
+  return onlyWhenValid('12.10', name, scan, () => {
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    if (scan.outcome.block.rollback.mode === 'auto') {
+      return check(
+        '12.10',
+        name,
+        STATUS_FAIL,
+        `deployment.rollback.mode is "auto", but nothing reads it: no tool rolls back on its ` +
+          `own. A rollback happens only when a person, or a step the app wrote into its own ` +
+          `promote job, runs \`narduk-app deploy rollback\`; a failed migration triggers ` +
+          `nothing, and no database is ever restored. Set "mode": "manual".`,
+        scan.configFile,
+      )
+    }
+    return check(
+      '12.10',
+      name,
+      STATUS_PASS,
+      "Rollback is manual: `narduk-app deploy rollback` runs only when a person or the app's " +
+        'own promote step invokes it, and it never restores a database.',
+      scan.configFile,
+    )
+  })
+}
+
 export function evaluateItem12(scan: DeploymentScan, strict = false): FoundationSubCheck[] {
   return [
     evaluate120(scan, strict),
@@ -1214,5 +1447,7 @@ export function evaluateItem12(scan: DeploymentScan, strict = false): Foundation
     evaluate126(scan),
     evaluate127(scan),
     evaluate128(scan),
+    evaluate129(scan),
+    evaluate1210(scan),
   ]
 }

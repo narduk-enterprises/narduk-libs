@@ -242,6 +242,32 @@ readers/writers and the rollback window are retired. SQL checksums cannot prove
 this property. The `expand-contract` declaration is a review contract, not a
 static proof of SQL or application compatibility.
 
+Foundation sub-check **12.9** holds the mechanical half of that contract: an
+app-owned migration that drops or renames a table, view or column fails unless
+it is declared a reviewed contract migration, pinned by the checksum the ledger
+records:
+
+```json
+"migrations": {
+  "compatibility": "expand-contract",
+  "credential": "cloudflare/prd/<app>-migrate",
+  "databases": [{ "binding": "DB", "sources": "apps/web/migrations.sources.json" }],
+  "contractMigrations": [
+    {
+      "path": "apps/web/migrations/0007_drop_legacy_flag.sql",
+      "sha256": "<the sha256 12.9 prints>",
+      "reason": "legacy_flag was last read by the version that left the rollback window on 2026-09-01"
+    }
+  ]
+}
+```
+
+The waiver says the file is safe _now_: no version still serving or eligible for
+rollback reads what it removes. It covers those bytes only. A migration history
+that already contains a contract migration adopts the rule by listing it once.
+12.9 does not read package-owned sources, and it cannot see a data rewrite or a
+new constraint the previous code violates; review still owns those.
+
 ## Lock, failure and recovery
 
 `_narduk_migration_lock` contains a singleton row with a unique owner and
