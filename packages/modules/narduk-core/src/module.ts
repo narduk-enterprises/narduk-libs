@@ -34,6 +34,7 @@ import {
 } from '../runtime/shared/vite-build-warnings'
 
 import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
+import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
 
 import type { NuxtModule } from '@nuxt/schema'
 
@@ -619,11 +620,15 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
       // collection contract before that installation so the icon server bundles
       // Lucide instead of attempting runtime API fallback.
+      const lateIconSeed = iconSeedArrivedLate(
+        nuxtOptions as Parameters<typeof iconSeedArrivedLate>[0],
+      )
+      if (lateIconSeed) console.warn(lateIconSeed)
       nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
         provider: 'server',
         fallbackToApi: false,
         clientBundle: {
-          icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+          icons: [...CORE_CLIENT_BUNDLE_ICONS],
         },
         serverBundle: {
           collections: ['lucide'],

@@ -89,7 +89,16 @@ describe('narduk-core module', () => {
       provider: 'server',
       fallbackToApi: false,
       clientBundle: {
-        icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+        icons: [
+          'lucide:check',
+          'lucide:copy',
+          'lucide:link',
+          'lucide:menu',
+          'lucide:monitor',
+          'lucide:moon',
+          'lucide:sun',
+          'lucide:x',
+        ],
       },
       serverBundle: {
         collections: ['lucide'],
