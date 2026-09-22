@@ -323,6 +323,95 @@ describe('item 11.3 / 11.4 -- CI restating instead of reading', () => {
   })
 })
 
+const PIN = '67968e304ba64e7733dc36d23d80eefda8d72e33'
+const callerJob = (job: string, callable: string, inputs: string[] = []) => [
+  `  ${job}:`,
+  `    uses: narduk-enterprises/workflows/.github/workflows/${callable}.yml@${PIN}`,
+  ...(inputs.length > 0 ? ['    with:', ...inputs.map((input) => `      ${input}`)] : []),
+]
+
+describe('item 11.3 -- what each shared callable can accept (#544)', () => {
+  it('does not treat a callable with no Node input as a Node site', () => {
+    const root = baseline()
+    writeFile(
+      root,
+      '.github/workflows/cursor-review.yml',
+      ['name: Cursor review', 'jobs:', ...callerJob('review', 'cursor-review', ['model: x'])].join(
+        '\n',
+      ),
+    )
+    expect(statusOf(root, '11.3')).toBe('pass')
+    expect(detailOf(root, '11.3')).not.toContain('cursor-review')
+  })
+
+  it('is n/a, not a failure, for a repo whose only callable has no Node input', () => {
+    const root = baseline()
+    rmSync(join(root, '.github/workflows/ci.yml'))
+    rmSync(join(root, '.github/workflows/copilot-setup-steps.yml'))
+    writeFile(
+      root,
+      '.github/workflows/cursor-review.yml',
+      ['name: Cursor review', 'jobs:', ...callerJob('review', 'cursor-review')].join('\n'),
+    )
+    expect(statusOf(root, '11.3')).toBe('not-applicable')
+  })
+
+  it('still fails a nuxt-cloudflare caller that passes nothing, since it can pass node-version-file', () => {
+    const root = baseline()
+    writeFile(
+      root,
+      '.github/workflows/ci.yml',
+      ['name: CI', 'jobs:', ...callerJob('ci', 'nuxt-cloudflare')].join('\n'),
+    )
+    expect(statusOf(root, '11.3')).toBe('fail')
+    expect(detailOf(root, '11.3')).toContain(`node-version-file: ${NODE_SOURCE_FILE}`)
+  })
+
+  it('never tells a node-version-only caller to use node-version-file; 11.1 holds its literal', () => {
+    const root = baseline()
+    const write = (value: string) =>
+      writeFile(
+        root,
+        '.github/workflows/library.yml',
+        [
+          'name: Library',
+          'jobs:',
+          ...callerJob('library', 'node-library', [`node-version: '${value}'`]),
+        ].join('\n'),
+      )
+    write(NODE)
+    expect(statusOf(root, '11.3')).toBe('pass')
+    expect(detailOf(root, '11.3')).toContain('workflows#135')
+    expect(statusOf(root, '11.1')).toBe('pass')
+
+    write('22.22.3')
+    expect(statusOf(root, '11.3')).toBe('pass')
+    expect(statusOf(root, '11.1')).toBe('fail')
+    expect(detailOf(root, '11.1')).toContain('22.22.3')
+  })
+
+  it("does not let one job's node-version-file satisfy another job in the same file", () => {
+    const root = baseline()
+    writeFile(
+      root,
+      '.github/workflows/ci.yml',
+      [
+        'name: CI',
+        'jobs:',
+        ...callerJob('ci', 'nuxt-cloudflare', [`node-version-file: '${NODE_SOURCE_FILE}'`]),
+        '  extra:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
+        '        with:',
+        `          node-version: '${NODE}'`,
+      ].join('\n'),
+    )
+    expect(statusOf(root, '11.3')).toBe('fail')
+    expect(detailOf(root, '11.3')).toContain('.github/workflows/ci.yml:12 (actions/setup-node step')
+  })
+})
+
 describe('item 11.5 -- the Workers Builds build environment', () => {
   const doc = (node: string, pnpm: string) =>
     [
