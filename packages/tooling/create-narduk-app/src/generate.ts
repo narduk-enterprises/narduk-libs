@@ -1598,7 +1598,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         // this block against a narduk-core older than that, so an app that
         // downgrades core is told rather than silently storing error pages.
         //
-        // Requires Wrangler >= 4.69.0; PACKAGE_VERSIONS pins 4.110.0.
+        // Requires Wrangler >= 4.69.0; PACKAGE_VERSIONS pins 4.136.3.
         // `cross_version_cache` is deliberately absent: a deployment partitions
         // the cache by Worker version by default, and sharing across versions
         // wants an app-specific reason.

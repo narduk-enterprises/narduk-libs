@@ -19,7 +19,7 @@ export const PNPM_VERSION = '10.33.4'
 export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
 export const PACKAGE_VERSIONS = {
-  '@cloudflare/workers-types': '5.20260714.1',
+  '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
   '@narduk-enterprises/narduk-mapkit': '2.8.1',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
@@ -100,7 +100,7 @@ export const PACKAGE_VERSIONS = {
   typescript: '5.9.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',
-  wrangler: '4.110.0',
+  wrangler: '4.136.3',
   zod: '4.4.3',
 } as const
 

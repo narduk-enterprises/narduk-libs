@@ -100,18 +100,29 @@ function recordingBinding(binding: D1Binding, statements: string[]): D1Binding {
 export async function createD1QueryHarness(
   options: D1QueryHarnessOptions,
 ): Promise<D1QueryHarness> {
-  const { Miniflare } = await import('miniflare').catch((error: unknown) => {
+  const miniflare = await import('miniflare').catch((error: unknown) => {
     throw new Error(
       'narduk-testkit/d1 needs the optional peer dependency `miniflare`. Add it to devDependencies.',
       { cause: error },
     )
   })
-  const runtime = new Miniflare({
+  const v4Options = {
     compatibilityDate: options.compatibilityDate ?? '2026-07-01',
     d1Databases: ['DB'],
     modules: true,
     script: 'export default { fetch() { return new Response("narduk-testkit d1") } }',
-  })
+  }
+  // Miniflare 5 (every wrangler from 4.129) takes a `workers` array of its own
+  // shape and refuses these options; it ships the converter for them. 4.x has
+  // no converter and takes them as they are.
+  const { convertV4MiniflareOptions } = miniflare as {
+    convertV4MiniflareOptions?: (options: typeof v4Options) => unknown
+  }
+  const runtime = new miniflare.Miniflare(
+    (convertV4MiniflareOptions
+      ? convertV4MiniflareOptions(v4Options)
+      : v4Options) as ConstructorParameters<typeof miniflare.Miniflare>[0],
+  )
 
   try {
     const raw = await runtime.getD1Database('DB')
