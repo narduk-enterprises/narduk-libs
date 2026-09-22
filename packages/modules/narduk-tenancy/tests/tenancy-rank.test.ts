@@ -135,9 +135,12 @@ describe('actor rank (narduk-libs#213)', () => {
     expect(snapshot(org)).toEqual(before)
   })
 
-  it('lets an actor change another member only within their own rank', async () => {
-    const mismatches: string[] = []
-    for (const actor of TENANCY_ROLES) {
+  // One test per actor role: the whole 5x5x5 matrix in one test sat on the 5 s
+  // default under load (narduk-libs#675), and a failure now names the actor.
+  it.each(TENANCY_ROLES)(
+    'lets an actor change another member only within their own rank: %s',
+    async (actor) => {
+      const mismatches: string[] = []
       for (const target of TENANCY_ROLES) {
         for (const next of TENANCY_ROLES) {
           const org = await rankedOrg()
@@ -156,9 +159,9 @@ describe('actor rank (narduk-libs#213)', () => {
           }
         }
       }
-    }
-    expect(mismatches).toEqual([])
-  })
+      expect(mismatches).toEqual([])
+    },
+  )
 
   it('lets a member lower their own role, never raise it', async () => {
     const mismatches: string[] = []

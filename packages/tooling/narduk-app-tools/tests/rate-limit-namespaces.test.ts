@@ -65,6 +65,20 @@ describe('rateLimitNamespaceIssues', () => {
     ])
   })
 
+  it('refuses an id that is not a positive decimal integer (#509)', () => {
+    const config = {
+      ratelimits: [limit('RL_A', 'abc'), limit('RL_B', '0x1F'), limit('RL_C', '0120')],
+      env: { preview: { ratelimits: [limit('RL_D', -5), limit('RL_E', 1.5)] } },
+    }
+    expect(rateLimitNamespaceIssues(config)).toEqual([
+      'ratelimits RL_A has namespace_id "abc", which is not a positive decimal integer',
+      'ratelimits RL_B has namespace_id "0x1F", which is not a positive decimal integer',
+      'ratelimits RL_C has namespace_id "0120", which is not a positive decimal integer',
+      'env.preview.ratelimits RL_D has namespace_id "-5", which is not a positive decimal integer',
+      'env.preview.ratelimits RL_E has namespace_id "1.5", which is not a positive decimal integer',
+    ])
+  })
+
   it("mirrors narduk-core's scaffold list", () => {
     const core = readFileSync(
       new URL(

@@ -47,7 +47,7 @@ export default defineNuxtModule<NardukTenancyModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
     configKey: 'nardukTenancy',
-    compatibility: { nuxt: '>=3.16.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
   defaults: {
     server: true,

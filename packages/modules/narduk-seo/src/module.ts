@@ -303,7 +303,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
     configKey: 'nardukSeo',
-    compatibility: { nuxt: '>=3.16.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
   defaults: {
     aiCrawlers: 'allow',

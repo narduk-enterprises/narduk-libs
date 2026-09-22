@@ -28,8 +28,9 @@ to upgrade.
 
 ## Package Security Expectations
 
-- Production token endpoints should set `allowedOrigins` or
-  `MAPKIT_ALLOWED_ORIGINS`.
+- Do not set `allowedOrigins` or `MAPKIT_ALLOWED_ORIGINS`. Since 2.1 they are
+  accepted and ignored: the token route answers same-origin requests only
+  (`isMapKitRequestSameOrigin`), which no allowlist widens or narrows.
 - Error responses and logs must not include private keys, tokens, or raw secret
   values.
 - Tests and examples must use synthetic credentials only.

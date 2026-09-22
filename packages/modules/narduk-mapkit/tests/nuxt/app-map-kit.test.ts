@@ -423,6 +423,19 @@ describe('failure and retry (§c.4, §c.6)', () => {
     expect(failure.status).toBe('Unauthorized')
   })
 
+  it('classes the default error content so a host can style it (#614)', async () => {
+    useFake({ auth: { mode: 'error', status: 'Unauthorized' } })
+
+    const wrapper = mount(AppMapKit, { attachTo: document.body, props: BASE_PROPS })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    })
+
+    expect(wrapper.get('.mk-status-title').text()).toBe('Map unavailable')
+    expect(wrapper.get('.mk-status-code').text()).toBe('Unauthorized')
+    expect(wrapper.get('button.mk-status-retry').attributes('type')).toBe('button')
+  })
+
   it('hands #error the failure and the retry', async () => {
     useFake({ auth: { mode: 'error', status: 'Too Many Requests' } })
     const wrapper = mount(AppMapKit, {

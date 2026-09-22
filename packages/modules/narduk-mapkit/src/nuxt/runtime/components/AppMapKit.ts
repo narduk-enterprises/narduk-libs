@@ -667,10 +667,14 @@ const AppMapKitImpl = defineComponent({
             'div',
             { class: 'mapkit-status', role: 'alert' },
             slots.error?.({ failure: failure.value, retry }) ?? [
-              h('strong', 'Map unavailable'),
+              h('strong', { class: 'mk-status-title' }, 'Map unavailable'),
               // Never the raw error: the code and a retry, per §c.4.
-              h('span', failure.value.status),
-              h('button', { onClick: retry, type: 'button' }, 'Try again'),
+              h('span', { class: 'mk-status-code' }, failure.value.status),
+              h(
+                'button',
+                { class: 'mk-status-retry', onClick: retry, type: 'button' },
+                'Try again',
+              ),
             ],
           ),
         )

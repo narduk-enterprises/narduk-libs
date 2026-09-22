@@ -366,10 +366,14 @@ bindings. Recognized runtime names:
 - `APPLE_TEAM_ID`
 - `APPLE_KEY_ID`
 
-`MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN`, and `APPLE_MAPKIT_TOKEN` are still
-read for 2.0.x compatibility and then ignored: the route mints per routed
-origin, and a static portal token can only ever work on one host. Their presence
-is reported through the route's log hook as a deprecation.
+`MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN`, and `APPLE_MAPKIT_TOKEN` are accepted
+for 2.0.x compatibility and do nothing; do not set them. In particular,
+`MAPKIT_ALLOWED_ORIGINS` is not an allowlist: the route answers same-origin
+requests only (`isMapKitRequestSameOrigin`), whatever the variable holds, and it
+mints per routed origin. A static portal token can only ever work on one host.
+When any of them is set, every `log` hook entry lists the ignored config key
+(`allowedOrigins` or `staticToken`) in `deprecatedKeys`, so an app that wants a
+warning reads it there.
 
 `APPLE_PRIVATE_KEY` must be PKCS#8 PEM with `BEGIN PRIVATE KEY`. Escaped
 newlines are accepted.
@@ -1730,7 +1734,9 @@ in the app.
 The repository keeps internal migration notes under `docs/`, but those notes are
 not part of the published package artifact. The short version:
 
-1. Move token routes to `server` helpers.
+1. Move token routes to `server` helpers. Drop `MAPKIT_ALLOWED_ORIGINS`,
+   `MAPKIT_TOKEN` and `APPLE_MAPKIT_TOKEN`: 2.1+ accepts and ignores them, and
+   the route is same-origin-only regardless of any allowlist.
 2. Move local script loaders to `initializeMapKit()` and pass `libraries`.
 3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client` region
    helpers.
