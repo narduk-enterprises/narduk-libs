@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Adds `useCurrentLocation()`, a consent-first "near me" location read (#385).
