@@ -515,6 +515,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         // Where `@narduk-enterprises/narduk-testkit` writes visual-audit artifacts
         // (narduk-libs#630); distinct from `.output` (Nitro's build output) above.
         'output',
+        // Where the root `foundation:check` script writes foundation-check.json,
+        // kept at a fixed path so a failed run can be read (narduk-libs#652).
+        '/foundation-check/',
         'playwright-report',
         'blob-report',
         'all-blob-reports',
