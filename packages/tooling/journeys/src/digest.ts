@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 /**
@@ -25,7 +25,14 @@ export function digestFiles(files: ReadonlyMap<string, Buffer | string>): string
 
 const IGNORED_DIRECTORIES = new Set(['node_modules', 'dist', '.git', '.journeys'])
 
-/** Digest every regular file under a catalog directory. */
+/**
+ * Digest every regular file under a catalog directory, whatever its size.
+ *
+ * There is no size cap: a file the walk skipped could change without moving
+ * the digest, so evidence captured under the old declaration would still
+ * verify (narduk-libs#118). Reading a few megabytes costs nothing next to the
+ * browser run the digest gates.
+ */
 export function digestDirectory(root: string): string {
   const files = new Map<string, Buffer>()
   const walk = (directory: string): void => {
@@ -34,7 +41,7 @@ export function digestDirectory(root: string): string {
       const full = join(directory, entry.name)
       if (entry.isDirectory()) {
         walk(full)
-      } else if (entry.isFile() && statSync(full).size < 1_000_000) {
+      } else if (entry.isFile()) {
         files.set(relative(root, full), readFileSync(full))
       }
     }
