@@ -1,12 +1,16 @@
 ---
+'@narduk-enterprises/journeys': patch
 '@narduk-enterprises/narduk-app': patch
 '@narduk-enterprises/narduk-devices': patch
 '@narduk-enterprises/narduk-platform': patch
 '@narduk-enterprises/narduk-postgres': patch
 '@narduk-enterprises/narduk-realtime': patch
+'@narduk-enterprises/narduk-seo': patch
+'@narduk-enterprises/narduk-tenancy': patch
 '@narduk-enterprises/narduk-testkit': patch
 '@narduk-enterprises/narduk-timeseries': patch
 '@narduk-enterprises/narduk-ui': patch
+'@narduk-enterprises/narduk-uploads': patch
 '@narduk-enterprises/status-runtime': patch
 ---
 

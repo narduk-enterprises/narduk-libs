@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const CORE = '@narduk-enterprises/narduk-core'
+
 function mockNuxtKit(hasNuxtModuleImpl: (name: string) => boolean) {
   const addComponentsDir = vi.fn()
   const addImportsDir = vi.fn()
@@ -73,14 +75,12 @@ describe('narduk-analytics module', () => {
 
     await mod.setup({ app: true, server: true }, nuxt)
 
-    expect(hasNuxtModule).toHaveBeenCalledWith('@narduk-enterprises/narduk-core', nuxt)
-    expect(installModule).toHaveBeenCalledWith('@narduk-enterprises/narduk-core')
+    expect(hasNuxtModule).toHaveBeenCalledWith(CORE, nuxt)
+    expect(installModule).toHaveBeenCalledWith(CORE)
   })
 
   it('does not double-install narduk-core when the app already lists it', async () => {
-    const { hasNuxtModule, installModule } = mockNuxtKit(
-      (name) => name === '@narduk-enterprises/narduk-core',
-    )
+    const { hasNuxtModule, installModule } = mockNuxtKit((name) => name === CORE)
 
     const mod = (await import('../src/module')).default as unknown as {
       setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
@@ -89,7 +89,7 @@ describe('narduk-analytics module', () => {
 
     await mod.setup({ app: true, server: true }, nuxt)
 
-    expect(hasNuxtModule).toHaveBeenCalledWith('@narduk-enterprises/narduk-core', nuxt)
+    expect(hasNuxtModule).toHaveBeenCalledWith(CORE, nuxt)
     expect(installModule).not.toHaveBeenCalled()
   })
 
@@ -108,10 +108,7 @@ describe('narduk-analytics module', () => {
 
   it.each([
     ['the nardukCore key', { nardukCore: { app: false, server: true } }],
-    [
-      'an inline module tuple',
-      { modules: [['@narduk-enterprises/narduk-core', { app: false, coreModules: false }]] },
-    ],
+    ['an inline module tuple', { modules: [[CORE, { app: false, coreModules: false }]] }],
     [
       'the /nuxt subpath tuple',
       { modules: [['@narduk-enterprises/narduk-core/nuxt', { app: false }]] },
@@ -144,7 +141,7 @@ describe('narduk-analytics module', () => {
   it.each([
     ['no nardukCore key', {}],
     ['a nardukCore key without app', { nardukCore: { server: true } }],
-    ['a bare module entry', { modules: ['@narduk-enterprises/narduk-core'] }],
+    ['a bare module entry', { modules: [CORE] }],
     ['app: true', { nardukCore: { app: true } }],
   ])("treats %s as narduk-core's default, app on", async (_, shape) => {
     const { addPlugin } = mockNuxtKit(() => true)
