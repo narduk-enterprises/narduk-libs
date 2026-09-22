@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import {
   DEFERRED_DEPENDENCY_FIELDS,
   DEV_ONLY_MANIFEST_FIELDS,
+  NEVER_PUBLISHED_FILES,
   PUBLISH_LIFECYCLE_SCRIPTS,
   SUGGESTED_CHANGESET_PATH,
   classifyChangedPackages,
@@ -83,6 +84,32 @@ test('a devDependency-only bump across the whole workspace needs no changeset', 
     entries.some((entry) => entry.otherFiles.length > 0),
     false,
   )
+})
+
+test('a lint-budget.json-only change needs no changeset, but a source change beside it does', () => {
+  // #673 made every package's budget strict in one PR: 26 packages whose only
+  // change was a file no tarball contains.
+  assert.equal(NEVER_PUBLISHED_FILES.has('lint-budget.json'), true)
+  const entries = classifyChangedPackages({
+    packages,
+    changedFiles: [
+      'packages/tooling/narduk-testkit/lint-budget.json',
+      'packages/design/narduk-charts/lint-budget.json',
+      'packages/design/narduk-charts/src/index.ts',
+      // Only the package root's budget is exempt; a nested file of the same
+      // name is ordinary package content.
+      'packages/tooling/narduk-app-tools/src/lint-budget.json',
+    ],
+    readManifests: () => {
+      throw new Error('no manifest changed')
+    },
+  })
+  const verdicts = Object.fromEntries(entries.map((entry) => [entry.name, entry.verdict]))
+  assert.deepEqual(verdicts, {
+    '@narduk-enterprises/narduk-testkit': 'ok',
+    '@narduk-enterprises/narduk-charts': 'needs-changeset',
+    '@narduk-enterprises/narduk-app-tools': 'needs-changeset',
+  })
 })
 
 test('a runtime dependency range bump is deferred to release-time synthesis', () => {

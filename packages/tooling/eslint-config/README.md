@@ -82,6 +82,7 @@ instead of `--max-warnings 0`. Use it as the lint script:
 
 ```json
 {
+  "strict": true,
   "rules": {
     "narduk/require-fetch-timeout": 3
   }
@@ -91,16 +92,25 @@ instead of `--max-warnings 0`. Use it as the lint script:
 - **Errors always fail.**
 - **A rule over its budget fails.** The output names the rule, its count, its
   budget, and the top five `file:line` locations.
-- **A rule with no budget entry passes.** A new warning rule never turns anyone
-  red on its own; only growth past a recorded count does.
+- **In a strict budget, a rule with no entry fails.** With `"strict": true`, a
+  warning in any rule the file does not list is a failure, locally and in CI,
+  with the rule and its locations printed. Fix the warnings, or adopt the
+  current count on purpose with `narduk-lint --accept-new-rules`, which records
+  it and leaves the change for review to see. That flag is refused in CI and
+  with `--no-write`. Every package in this repository is strict, and
+  `scripts/lint-budget-strict.test.mjs` keeps it that way.
+- **A budget without `strict` records instead of gating.** An unbudgeted rule
+  passes: a local run records its count as the rule's budget, and CI prints a
+  notice. Every run says the file is not strict. With no `lint-budget.json` at
+  all, warnings are not gated at all and the run says that too.
 - **Local runs ratchet down, never up.** Outside CI, `narduk-lint` lowers an
-  entry to the current count, records a rule that has no entry, deletes an entry
-  that reaches zero, and rewrites the file (keys sorted, trailing newline). It
-  never raises an entry: to accept more warnings, edit the file by hand and let
-  review see it.
-- **CI never writes.** With `--ci` or `CI=true`, an unbudgeted rule or a count
-  below its budget prints a notice asking for a local `pnpm lint` and a commit;
-  only errors and over-budget rules fail.
+  entry to the current count, deletes an entry that reaches zero, and rewrites
+  the file (keys sorted, trailing newline, `strict` kept). A recorded budget is
+  never raised automatically: to accept more warnings, edit the file by hand and
+  let review see it.
+- **CI never writes.** With `--ci` or `CI=true`, a count below its budget (or,
+  in a non-strict file, an unbudgeted rule) prints a notice asking for a local
+  `pnpm lint` and a commit.
 
 The budget file is read from the directory `narduk-lint` runs in (the package
 root under `pnpm run lint`), not from next to the ESLint config, so packages
@@ -112,8 +122,9 @@ Paths are positional (default `.`). `--fix`, `--cache`, `--cache-location` and
 `--ignore-pattern` pass through to ESLint. `--max-warnings` is refused.
 `--budget <path>` points at another file, `--verbose` prints every warning.
 
-Exit codes: `0` pass; `1` a lint error or a rule over budget; `2` a usage or
-configuration error, or ESLint itself crashed.
+Exit codes: `0` pass; `1` a lint error, a rule over budget, or an unbudgeted
+rule in a strict budget; `2` a usage or configuration error, or ESLint itself
+crashed.
 
 If Turbo caches the lint task, declare `lint-budget.json` as an output so a
 cache hit restores it.
