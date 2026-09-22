@@ -127,7 +127,8 @@ baseline 190 drained, and the count admitted since the freeze.
   `'@narduk-enterprises/create-narduk-app': patch`.
   `pnpm run release-plan:check` enforces it in `contracts`, and on a pull
   request that failure cancels every package job, so the whole run reads red
-  (#198). Run it locally with `main` at `origin/main` first; a stale local
-  `main` reports unrelated packages (#492).
+  (#198). It compares against `origin/main` by default and prints the base it
+  used; a local `--base` is named as local, because a stale local `main` reports
+  unrelated packages (#619).
 - Release mechanics, the `chore: release packages` PR's run approvals and the
   post-merge publication proof are in `docs/package-releases.md`.
