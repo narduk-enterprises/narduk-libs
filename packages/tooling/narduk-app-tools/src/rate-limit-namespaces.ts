@@ -8,9 +8,10 @@
  *
  * The scheme that avoids both is narduk-core's `rateLimitNamespaceId` (FNV-1a
  * of the Worker name, then the per-minute limit). This check does not require
- * it -- an app already on its own unique ids keeps them -- it refuses the two
- * shapes that are wrong whatever the scheme: a known scaffold id, and an id
- * declared twice in one config.
+ * it -- an app already on its own unique ids keeps them -- it refuses the
+ * shapes that are wrong whatever the scheme: a known scaffold id, an id
+ * declared twice in one config, and an id that is not a positive decimal
+ * integer.
  */
 
 /** Ids pasted from scaffolds or documentation. Mirrors narduk-core's
@@ -61,6 +62,13 @@ export function rateLimitNamespaceIssues(config: unknown): string[] {
     const where = `${binding.scope} ${binding.name}`
     if (binding.namespaceId === null) {
       issues.push(`${where} declares no namespace_id`)
+      continue
+    }
+    if (!/^[1-9]\d*$/.test(binding.namespaceId)) {
+      issues.push(
+        `${where} has namespace_id ${JSON.stringify(binding.namespaceId)}, which is not a ` +
+          `positive decimal integer`,
+      )
       continue
     }
     if (SCAFFOLD_NAMESPACE_IDS.includes(binding.namespaceId)) {
