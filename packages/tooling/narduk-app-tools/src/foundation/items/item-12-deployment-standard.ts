@@ -340,11 +340,11 @@ export const NARDUK_CORE_PACKAGE = '@narduk-enterprises/narduk-core'
  * out of it: thrown 4xx/5xx/429 are `private, no-store` (#429, 2.2.3),
  * preference-shaped responses are (#427/#386), SSR HTML under a nonce CSP is
  * (#435, 2.2.4), a route with no posture is private (2.5.0), and a thrown error
- * answered as JSON is too (#493, 2.10.0). Below this, `"cache": { "enabled":
+ * answered as JSON is too (#493, 2.10.1). Below this, `"cache": { "enabled":
  * true }` stores Nitro's `no-cache` API errors, and older still replays one
  * visitor's CSP nonce to everyone.
  */
-export const EDGE_CACHE_MIN_NARDUK_CORE = '2.10.0'
+export const EDGE_CACHE_MIN_NARDUK_CORE = '2.10.1'
 
 /** One scope of one wrangler config that turns Workers Cache on. */
 export interface EdgeCacheSwitch {

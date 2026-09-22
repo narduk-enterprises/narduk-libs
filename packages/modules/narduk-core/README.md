@@ -1179,7 +1179,7 @@ unless the response says `public`.
 Preconditions, checked by `narduk-app foundation:check:deployment` sub-check
 12.7:
 
-- narduk-core **>= 2.10.0**: thrown 4xx/5xx/429 are `private, no-store`
+- narduk-core **>= 2.10.1**: thrown 4xx/5xx/429 are `private, no-store`
   (narduk-libs#429), including when answered as JSON (#493), preference-shaped
   responses are (#427), SSR HTML under a nonce CSP is (#435), and a response
   with no posture is private. An older core with the switch on fails 12.7.

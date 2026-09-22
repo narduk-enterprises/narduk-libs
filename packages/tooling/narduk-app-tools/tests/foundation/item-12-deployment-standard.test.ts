@@ -919,7 +919,7 @@ describe('12.7 -- Workers Cache only on a narduk-core with the no-store guards',
     toml?: string
   }): string {
     const root = baseline({ deployment: options.deployment })
-    const deps = options.core === null ? {} : { [CORE]: options.core ?? '2.10.0' }
+    const deps = options.core === null ? {} : { [CORE]: options.core ?? '2.10.1' }
     writeJson(root, 'package.json', { name: 'fixture-app', dependencies: deps })
     if (options.toml !== undefined) {
       rmSync(`${root}/wrangler.json`)
@@ -941,26 +941,35 @@ describe('12.7 -- Workers Cache only on a narduk-core with the no-store guards',
   })
 
   it('passes Workers Cache on an exact-pinned core that has the guards', () => {
-    const root = app({ cache: { enabled: true }, core: '2.10.0' })
+    const root = app({ cache: { enabled: true }, core: '2.10.1' })
     expect(statusOf(root, '12.7')).toBe('pass')
     expect(detailOf(root, '12.7')).toContain('verify --live')
   })
 
   it('passes a caret range whose floor has the guards', () => {
-    expect(statusOf(app({ cache: { enabled: true }, core: '^2.10.0' }), '12.7')).toBe('pass')
+    expect(statusOf(app({ cache: { enabled: true }, core: '^2.10.1' }), '12.7')).toBe('pass')
     expect(statusOf(app({ cache: { enabled: true }, core: '3.0.0' }), '12.7')).toBe('pass')
   })
 
-  // 2.2.4 through 2.9.x keep nonce-CSP HTML out but store a thrown JSON 404
-  // as Nitro's `no-cache` (narduk-libs#493).
-  it.each(['2.9.0', '^2.9.0', '2.5.0', '2.2.4', '2.2.3', '^2.2.3', '2.1.0', '1.25.0'])(
-    'fails Workers Cache on narduk-core %s, which stores thrown errors',
-    (core) => {
-      const root = app({ cache: { enabled: true }, core })
-      expect(statusOf(root, '12.7')).toBe('fail')
-      expect(detailOf(root, '12.7')).toContain('2.10.0')
-    },
-  )
+  // 2.2.4 through 2.10.0 keep nonce-CSP HTML out but store a thrown JSON 404
+  // as Nitro's `no-cache` (narduk-libs#493). 2.10.0 was released minutes before
+  // the fix merged, so the fix is 2.10.1.
+  it.each([
+    '2.10.0',
+    '^2.10.0',
+    '2.9.0',
+    '^2.9.0',
+    '2.5.0',
+    '2.2.4',
+    '2.2.3',
+    '^2.2.3',
+    '2.1.0',
+    '1.25.0',
+  ])('fails Workers Cache on narduk-core %s, which stores thrown errors', (core) => {
+    const root = app({ cache: { enabled: true }, core })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(detailOf(root, '12.7')).toContain('2.10.1')
+  })
 
   it('fails even in rollout mode on an app that has not adopted the block', () => {
     const root = app({ cache: { enabled: true }, core: '2.2.3', deployment: null })

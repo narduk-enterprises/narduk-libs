@@ -631,7 +631,7 @@ Wrangler reads the config, not the declaration.
 config and scope (JSON, JSONC, TOML `[cache]` / `[env.<name>.cache]`). With the
 switch off it is `not-applicable`: `setCacheProfile`'s edge headers are inert.
 With it on, the app's `@narduk-enterprises/narduk-core` must be at least
-**2.10.0**, the first release that pins thrown 4xx/5xx/429 (narduk-libs#429),
+**2.10.1**, the first release that pins thrown 4xx/5xx/429 (narduk-libs#429),
 including those answered as JSON (#493), preference-shaped responses (#427) and
 nonce-CSP SSR HTML (#435) to `private, no-store`. An older core is a `fail`
 **even in rollout mode and even without a `deployment` block** -- the failure is
