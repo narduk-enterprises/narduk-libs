@@ -17,6 +17,19 @@ import {
 import { buildGeneratedFiles } from '../src/generate.js'
 import { createRootPackageManifest } from '../src/manifest.js'
 
+/**
+ * The caller's environment minus npm's registry config. An outer
+ * `gh-packages-run` exports `NPM_CONFIG_USERCONFIG`, which sends the generated
+ * script down its short-circuit, so a test that inherited it would be decided
+ * by who ran it (narduk-libs#634).
+ */
+function callerEnvWithoutNpmConfig(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !/^npm_config_(?:userconfig|globalconfig)$/iu.test(key),
+    ),
+  )
+}
 describe('generated CI boundaries', () => {
   it('keeps all private gates in the pinned shared workflow with separate runner classes', () => {
     const workflow = createCiWorkflow('private')
@@ -215,7 +228,7 @@ describe('generated CI boundaries', () => {
           cwd: directory,
           encoding: 'utf8',
           env: {
-            ...process.env,
+            ...callerEnvWithoutNpmConfig(),
             ...env,
             PATH: `${directory}:${process.env.PATH}`,
             RUNNER_TEMP: directory,
@@ -244,6 +257,25 @@ describe('generated CI boundaries', () => {
           'install --frozen-lockfile\n',
         )
       }
+
+      // A caller that already supplies a userconfig (an outer gh-packages-run)
+      // is left alone: its file is used, and no temp userconfig is written.
+      const callerConfig = join(directory, 'caller-userconfig')
+      await writeFile(callerConfig, '')
+      const passthrough = join(directory, 'passthrough-stub.sh')
+      await writeFile(
+        passthrough,
+        `#!/bin/bash\nset -euo pipefail\ntest "$NPM_CONFIG_USERCONFIG" = "${callerConfig}"\nexit 0\n`,
+      )
+      await chmod(passthrough, 0o755)
+      const nested = run({ GH_PACKAGES_READ: 'test-value', NPM_CONFIG_USERCONFIG: callerConfig }, [
+        '--',
+        passthrough,
+      ])
+      expect(nested.status, nested.stderr).toBe(0)
+      expect((await readdir(directory)).filter((name) => name.startsWith('npmrc-auth.'))).toEqual(
+        [],
+      )
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
@@ -269,7 +301,7 @@ describe('generated CI boundaries', () => {
         const result = spawnSync('bash', ['-c', script], {
           encoding: 'utf8',
           env: {
-            ...process.env,
+            ...callerEnvWithoutNpmConfig(),
             PATH: `${directory}:${process.env.PATH}`,
             RUNNER_TEMP: directory,
             GH_PACKAGES_READ: 'test-value',
