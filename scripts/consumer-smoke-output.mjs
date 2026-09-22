@@ -138,6 +138,17 @@ const thirdPartyBundlerNoticePatterns = [
 const buildTimingOnlyWarningPattern =
   /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] Plugin hooks ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
 
+// narduk-core's build-info client plugin logs one banner per page load through
+// console.warn (runtime/app/plugins/build-info.client.ts). A web server that
+// forwards the browser console prints it as a warning, so a local e2e run went
+// red on the app announcing its own build (narduk-libs#699). Only the exact
+// banner shape passes: `[build] <name> v<version> · <build> · deployed <time>`,
+// optionally with the forwarder's `(xN)` repeat count. Any other console.warn,
+// including a different `[build]` line, stays a finding. Generated apps'
+// consoleTracker ignores the same banner.
+const buildInfoBannerPattern =
+  /^(?:\[WebServer\]\s+)?\[warn\]\s+\[console\.warn\]\s+\[build\] .+ v\S+ · \S+ · deployed [^·]+?(?: \(x\d+\))?$/u
+
 export function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
 }
@@ -191,6 +202,7 @@ export function collectWarningFindings(output) {
         !isNetworkLatencyOnlyWarning(line) &&
         !isRecoveredRetryNotice(line) &&
         !isThirdPartyBundlerNotice(line) &&
-        !buildTimingOnlyWarningPattern.test(line),
+        !buildTimingOnlyWarningPattern.test(line) &&
+        !buildInfoBannerPattern.test(line),
     )
 }
