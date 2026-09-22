@@ -84,4 +84,20 @@ describe('findDestructiveStatements', () => {
       'drop-table:sessions',
     ])
   })
+
+  it('reads DROP with and without COLUMN as a column drop, and DROP CONSTRAINT as neither', () => {
+    expect(
+      kinds(`
+        ALTER TABLE users DROP COLUMN legacy_flag;
+        ALTER TABLE users DROP nickname;
+        ALTER TABLE users DROP CONSTRAINT users_email_key;
+      `),
+    ).toEqual(['drop-column:users', 'drop-column:users'])
+  })
+
+  it('reports the final statement when it has no terminating semicolon', () => {
+    expect(findDestructiveStatements('CREATE TABLE a (id INTEGER);\nDROP TABLE b')).toEqual([
+      { kind: 'drop-table', line: 2, object: 'b', statement: 'DROP TABLE b' },
+    ])
+  })
 })

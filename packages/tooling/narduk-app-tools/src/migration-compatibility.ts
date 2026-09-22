@@ -91,20 +91,25 @@ function splitStatements(sql: string): Statement[] {
   let line = 1
   let start = 0
   let startLine = 1
-  for (let position = 0; position <= out.length; position += 1) {
+  const flush = (end: number): void => {
+    const raw = out.slice(start, end)
+    const leading = raw.length - raw.trimStart().length
+    const offset = raw.slice(0, leading).split('\n').length - 1
+    const text = raw.trim()
+    if (text.length > 0) statements.push({ text, line: startLine + offset })
+  }
+  for (let position = 0; position < out.length; position += 1) {
     const char = out[position]
-    if (position === out.length || char === ';') {
-      const raw = out.slice(start, position)
-      const leading = raw.length - raw.trimStart().length
-      const offset = raw.slice(0, leading).split('\n').length - 1
-      const text = raw.trim()
-      if (text.length > 0) statements.push({ text, line: startLine + offset })
+    if (char === ';') {
+      flush(position)
       start = position + 1
       startLine = line
-      continue
+    } else if (char === '\n') {
+      line += 1
     }
-    if (char === '\n') line += 1
   }
+  // The last statement needs no terminating semicolon.
+  flush(out.length)
   return statements
 }
 
@@ -164,7 +169,9 @@ export function findDestructiveStatements(sql: string): DestructiveStatement[] {
     // Reshaping a table this file created is the file's own business.
     if (created.has(object)) continue
     const action = alter[2]
-    if (/^DROP\b/iu.test(action)) {
+    // SQLite accepts `DROP [COLUMN] name`. `DROP CONSTRAINT` is not SQLite, and it
+    // drops no column, so it is not reported as one.
+    if (/^DROP\s+(?!CONSTRAINT\b)/iu.test(action)) {
       found.push({ kind: 'drop-column', object, line, statement: excerpt(text) })
     } else if (/^RENAME\s+TO\b/iu.test(action)) {
       found.push({ kind: 'rename-table', object, line, statement: excerpt(text) })
