@@ -19,7 +19,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join, win32 } from 'node:path'
+import { basename, dirname, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments'
@@ -36,6 +36,7 @@ import tseslint from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
 import a11yConfigs from './configs/a11y.mjs'
+import { appDefinedClassesPattern } from './configs/app-defined-classes.mjs'
 import authConfigs from './configs/auth.mjs'
 import cloudflareConfigs from './configs/cloudflare.mjs'
 import complexityConfigs from './configs/complexity.mjs'
@@ -611,6 +612,12 @@ function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntry
   if (!existsSync(resolved)) {
     return []
   }
+  // Classes the app defines as bare selectors or in SFC <style> blocks are
+  // invisible to the plugin's theme lookup (narduk-libs#55).
+  const appDefinedClasses = appDefinedClassesPattern({
+    appRootDir: resolve(appRootDir ?? '.'),
+    entryPoint: resolve(resolved),
+  })
   return [
     {
       name: 'narduk/design-system-tailwind-theme',
@@ -619,7 +626,9 @@ function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntry
         'better-tailwindcss': { entryPoint: resolved },
       },
       rules: {
-        'better-tailwindcss/no-unknown-classes': 'error',
+        'better-tailwindcss/no-unknown-classes': appDefinedClasses
+          ? ['error', { ignore: [appDefinedClasses] }]
+          : 'error',
         'better-tailwindcss/no-deprecated-classes': 'error',
         'better-tailwindcss/enforce-canonical-classes': 'warn',
       },
