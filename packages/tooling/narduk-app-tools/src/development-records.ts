@@ -74,7 +74,13 @@ export interface DevelopmentProject {
   configDigest: string
 }
 
+// Options that make git run another program. No development operation needs
+// them, so refuse them anywhere in the argument list rather than trust callers.
+const EXECUTING_GIT_OPTION = /^(?:--upload-pack|--receive-pack|--exec|-u$|-c$|--config)/u
+
 export function developmentGit(cwd: string, args: string[]): string {
+  if (args.some((arg) => EXECUTING_GIT_OPTION.test(arg)))
+    throw new Error('Refusing a git option that executes another program')
   const result = spawnSync('git', args, {
     cwd,
     env: { ...developmentSystemEnv(), GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },

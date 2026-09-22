@@ -5,10 +5,9 @@ export * from './deploy-local.js'
 export * from './deploy-hotfix.js'
 export * from './promote.js'
 export * from './verify-live.js'
+// Development mode's public surface is the capability schema; its lifecycle is
+// driven only through the `narduk-app development` CLI.
 export * from './development-config.js'
-export * from './development-deploy.js'
-export * from './development-lifecycle.js'
-export * from './development-records.js'
 export * from './live-probe.js'
 export * from './dev.js'
 export * from './e2e-serve/e2e-serve.js'
