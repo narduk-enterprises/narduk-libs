@@ -129,7 +129,18 @@ export const developmentSchema = z
     additionalBuildInputs: z.array(relativePath).max(200).default([]),
     automation: z.strictObject({
       workflows: z.array(relativePath).min(1).max(100),
+      /** Credentialed writers settle naturally; other held runs may be cancelled. */
+      writeWorkflows: z.array(relativePath).max(100).default([]),
+      /** Unsafe historical workflow identities remain disabled on exit. */
+      retiredWorkflows: z.array(relativePath).max(100).default([]),
+      /** Independently operating production paths are inventoried, never held. */
+      independentWorkflows: z.array(relativePath).max(100).default([]),
       manualValidationWorkflow: relativePath,
+      validationRequiredJobs: z
+        .array(text)
+        .min(1)
+        .max(100)
+        .default(['ci / Build', 'ci / Checks', 'ci / Caller lint', 'ci / Required']),
       continuingWriters: z
         .array(
           z.strictObject({
@@ -170,6 +181,17 @@ export const developmentSchema = z
       add(['automation', 'workflows'], 'Automatic workflow paths must be unique')
     if (held.has(value.automation.manualValidationWorkflow))
       add(['automation', 'manualValidationWorkflow'], 'Manual validation must remain enabled')
+    for (const key of ['writeWorkflows', 'retiredWorkflows'] as const) {
+      for (const path of value.automation[key]) {
+        if (!held.has(path)) add(['automation', key], 'This workflow must also be held')
+      }
+    }
+    for (const path of value.automation.independentWorkflows) {
+      if (held.has(path))
+        add(['automation', 'independentWorkflows'], 'Independent production paths cannot be held')
+    }
+    if (!value.automation.validationRequiredJobs.includes('ci / Required'))
+      add(['automation', 'validationRequiredJobs'], 'The real required aggregate must be checked')
     for (const [index, writer] of value.automation.continuingWriters.entries()) {
       if (writer.workflow && held.has(writer.workflow))
         add(['automation', 'continuingWriters', index], 'A continuing writer cannot also be held')
