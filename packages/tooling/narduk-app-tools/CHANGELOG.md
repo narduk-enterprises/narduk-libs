@@ -1,5 +1,72 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.19.0
+
+### Minor Changes
+
+- 0e1a1ee: `foundation:check:deployment` enforces the expand-only half of
+  `deployment.migrations.compatibility: "expand-contract"` (#399). New sub-check
+  12.9 fails an app-owned D1 migration that drops or renames a table, view or
+  column, because `narduk-app deploy rollback` restores code, never a schema. A
+  deliberate contract migration is declared under
+  `deployment.migrations.contractMigrations` (`path`, `sha256`, `reason`),
+  pinned to the checksum the migration ledger records, and the failure prints
+  that entry. An app with such a migration in its history adopts the rule by
+  listing it once.
+
+  `deployment.rollback.mode` now defaults to `manual` in new apps. Nothing ever
+  read `"auto"`, so a generated app was declaring an automatic safety net it did
+  not have. New sub-check 12.10 fails `"auto"`; the value still parses, so older
+  manifests do not stop the tools. The generated deployment doc now says what
+  actually triggers a rollback: only the app's own promote step, after a
+  completed promotion fails its live proof. A failed migration triggers nothing.
+
+- 2a35b4e: `foundation:check:coverage` gives each shared capability one of three
+  states: `absent`, `adopted` or `forked` (#620). A capability is `forked` when
+  an app pins the package and also carries its own copy of the package's
+  internals. It is reported with its files and line count, and it no longer
+  counts as adopted. Item 9.1 names it but does not fail, because some forks are
+  deliberate and tracked.
+
+  The signal is opt-in per capability, through `forkStems` in the generated
+  catalog. Today only `narduk-mapkit` declares one (`mapkit`). A file counts
+  when a directory segment of its path, or its own name, equals the stem, and it
+  imports no package named for that stem.
+
+  Inventory rows gain `state` and `fork`. `adopted` is now true only for
+  `state: "adopted"`.
+
+- ca8f56f: Generated apps run `foundation:check:deployment` and
+  `foundation:check:shared-ui-pinned` with `--checkout ../..`, the repository
+  root. They used to pass `--checkout ..` from `apps/web`, which is `apps/`, and
+  item 12 read that as "no deployment block, not applicable" with exit 0 (#679).
+
+  The foundation checks now exit 1 when `--checkout` has no `package.json`,
+  naming the directory and the fix, so the old path cannot pass quietly. This
+  covers `foundation:check` and its `:shared-ui-pinned`, `:toolchain`,
+  `:deployment` and `:coverage` variants. **An app scaffolded before this fix
+  must change `--checkout ..` to `--checkout ../..` in `apps/web/package.json`**
+  before it takes this version.
+
+### Patch Changes
+
+- bbe7a1a: Document a post-merge deploy assertion for apps whose Workers Build
+  deploys directly: a job that runs
+  `narduk-app verify --live --expect-sha "$GITHUB_SHA"` over a build-length wait
+  and names the Workers Build on failure (narduk-libs#597).
+- c67b585: The generated `docs/deployment/promote-d1.steps.yml` now starts with
+  two credential-free steps. They run `foundation:check:deployment` on the exact
+  SHA being promoted, and refuse to migrate unless sub-check 12.9 passes. Only
+  12.9 is judged, so another sub-check's UNKNOWN does not block a promotion.
+  Worker rollback restores code, never a schema, so automating rollback beside
+  the migrate step is safe only with this check in front of it (#399). The
+  deployment-migrations runbook specifies the same ordering. It also names the
+  check as a precondition for any promote workflow that runs
+  `narduk-app deploy rollback` automatically.
+
+  Existing apps copied the template once. To adopt, paste the two new steps
+  above the dry-run step.
+
 ## 0.18.0
 
 ### Minor Changes
