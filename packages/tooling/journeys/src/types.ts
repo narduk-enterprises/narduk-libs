@@ -168,13 +168,41 @@ export interface XcTestAppleJourney extends JourneyBase {
 }
 
 /**
- * One gesture, in DEVICE POINTS. The adapter never invents a coordinate: a
- * point comes from a screenshot of the exact screen the previous beat landed
- * on, and `lands` is what stops a drifted one from quietly shifting every beat
- * after it (narduk-libs#70, requirement 5).
+ * The hardware-keyboard keys a beat may press. Each is a key a typed run cannot
+ * reach with text: `backspace` clears a pre-filled field (typing appends to it),
+ * `tab` reaches a field another element's frame occludes, and `return` commits
+ * a decimal pad that has no Done (narduk-libs#75).
+ */
+export const APPLE_KEYS = [
+  'return',
+  'tab',
+  'backspace',
+  'delete',
+  'escape',
+  'space',
+  'up',
+  'down',
+  'left',
+  'right',
+] as const
+export type AppleKey = (typeof APPLE_KEYS)[number]
+
+/**
+ * One gesture. A coordinate is in DEVICE POINTS, and the adapter never invents
+ * one: a point comes from a screenshot of the exact screen the previous beat
+ * landed on, and `lands` is what stops a drifted one from quietly shifting every
+ * beat after it (narduk-libs#70, requirement 5). Prefer `element` wherever the
+ * control carries an accessibility identifier: it is resolved on the screen the
+ * press happens on, so a layout change cannot move it (narduk-libs#75).
  */
 export type AppleGesture =
   | { kind: 'tap'; x: number; y: number }
+  /**
+   * Tap the centre of the ONE control whose accessibility identifier is `id`,
+   * read from the hierarchy immediately before the press. No match, or more
+   * than one, fails the beat and names the identifiers that were on screen.
+   */
+  | { kind: 'element'; id: string }
   | {
       kind: 'swipe'
       from: { x: number; y: number }
@@ -183,6 +211,8 @@ export type AppleGesture =
       duration?: number
     }
   | { kind: 'type'; text: string }
+  /** Press a hardware-keyboard key, `repeat` times (default 1). */
+  | { kind: 'key'; key: AppleKey; repeat?: number }
   /** No gesture: dwell on what the previous beat produced (an animation, a toast). */
   | { kind: 'wait' }
 

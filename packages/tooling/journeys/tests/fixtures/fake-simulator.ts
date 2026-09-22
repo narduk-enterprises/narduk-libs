@@ -11,11 +11,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-import type { AppleInjector, Recording, SimulatorControl } from '../../src/apple-control.js'
+import type {
+  AppleElement,
+  AppleInjector,
+  Recording,
+  SimulatorControl,
+} from '../../src/apple-control.js'
 
 export interface FakeScreen {
   /** The accessibility hierarchy, as the injector would print it. */
   tree: string
+  /** The identified controls on this screen, as the injector would locate them. */
+  elements?: AppleElement[]
   /** gesture key → the screen it leads to. A key absent here is a dead press. */
   on?: Record<string, string>
 }
@@ -111,6 +118,13 @@ export function createFakeDevice(options: FakeDeviceOptions): FakeDevice {
     describe() {
       log.push('describe')
       return options.screens[screen]?.tree ?? ''
+    },
+    elements() {
+      log.push('elements')
+      return options.screens[screen]?.elements ?? []
+    },
+    key(name) {
+      move(key('key', name))
     },
   }
 

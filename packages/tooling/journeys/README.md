@@ -189,14 +189,33 @@ What the adapter guarantees, and what it does not:
 - **`requires`/`forbids` read the hierarchy, not the pixels.** An element the
   app renders off-screen still reads as present. Tighten it where you need to by
   giving the injector a `describe` template that filters to what is on screen.
-- **Confirmation.** With no `world.confirm`, the run's confirmation is that the
-  launched world renders the journey's declared `start` landing — real, weaker
-  than a name, and recorded as `fresh-launch:start-landing` in the manifest so a
-  reader can tell the two apart.
+- **Presses.** `tap` takes a device point. `element` takes an accessibility
+  identifier (`{ kind: 'element', id: 'yard.action.markArrived' }`) and presses
+  the centre of the one control carrying it, located on the screen as it is at
+  the press. No match, or more than one, fails the beat and names the
+  identifiers that were on screen. Prefer it to a coordinate wherever the app
+  ships identifiers. `key` presses a hardware-keyboard key (`return`, `tab`,
+  `backspace`, `delete`, `escape`, `space`, and the arrows), with an optional
+  `repeat`: `backspace` clears a pre-filled field, `tab` reaches an occluded
+  one, and `return` commits a decimal pad. An unknown gesture kind is refused
+  when the catalog loads.
+- **World.** `world.prepare({ control, scenarioId })` makes a server-backed
+  world before the app launches into it: load the scenario, apply configuration,
+  sync media. `world.generation({ control, scenarioId })` returns the world's
+  own token, recorded beside the app's pid and re-read at the end, so a reseed
+  under a take fails the run the way a replaced binary does.
+- **Confirmation.** The declared `start` landing is always checked. With
+  `world.confirm` the world must also name the scenario it loaded, recorded as
+  `fresh-launch:named`. Without it, the landing is the only confirmation: real,
+  weaker than a name, and recorded as `fresh-launch:start-landing` so a reader
+  can tell the two apart.
 - **Injector.** Any command template works (`JOURNEYS_TAP_CMD` /
-  `JOURNEYS_SWIPE_CMD` / `JOURNEYS_DESCRIBE_CMD` / `JOURNEYS_TEXT_CMD`);
-  `fb-idb` is the documented default because it works headless and at a locked
-  login screen, and it is adopted only when `idb` is actually on PATH.
+  `JOURNEYS_SWIPE_CMD` / `JOURNEYS_DESCRIBE_CMD` / `JOURNEYS_TEXT_CMD` /
+  `JOURNEYS_KEY_CMD`, whose `{hid}` is the USB HID usage code `idb ui key`
+  takes); `fb-idb` is the documented default because it works headless and at a
+  locked login screen, and it is adopted only when `idb` is actually on PATH. An
+  `element` press reads the `describe` output as idb's JSON; an injector whose
+  hierarchy is some other shape supplies its own `elements()`.
 - **Not yet:** cumulative Apple sequences (every journey gets a fresh launch),
   the XCTest execution path (declare those journeys and run them through the
   test suite), and macOS, which the contract reserves and nothing implements.
