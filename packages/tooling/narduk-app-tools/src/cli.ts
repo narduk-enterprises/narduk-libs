@@ -79,7 +79,7 @@ function usage(): string {
     '                                       one. Refuses a no-op, and refuses to guess "previous"',
     '                                       when the live deployment may itself be a rollback',
     '                                       (exit 6).',
-    '  verify --live <url> [--expect-sha <sha>] [--health-path <p>] [--smoke-path <p>]',
+    '  verify --live <url> [--expect-sha <sha> | --expect-build-id <id>] [--deadline-ms <ms>]',
     '      [--expect-content-type <t>] [--attempts <n>] [--interval-seconds <n>]',
     '      [--allow-degraded] [--no-cache-bust] [--edge-cache-path <p>]...',
     '      [--edge-uncached-path <p>]... [--access-client-id-env <NAME>',

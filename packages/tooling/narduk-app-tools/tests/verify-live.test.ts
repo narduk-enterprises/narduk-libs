@@ -57,6 +57,108 @@ function scriptedProbe(script: Scripted): { probe: LiveProbe; requests: string[]
 
 const noSleep = async (): Promise<void> => {}
 
+describe('local build identity and overall proof deadline', () => {
+  it('compares the complete build ID without SHA prefix or case normalization', async () => {
+    const buildId = 'dev-20260922-AbC123'
+    const parsed = parseVerifyArgs([
+      '--live',
+      'https://a.test',
+      '--expect-build-id',
+      buildId,
+      '--no-health',
+      '--no-smoke',
+      '--attempts',
+      '1',
+    ])
+    for (const actual of [buildId, buildId.toLowerCase(), 'dev-20260922', `${buildId}-other`]) {
+      const report = await runVerifyLive(parsed, {
+        probe: async (url) => ({
+          url,
+          status: 200,
+          headers: { 'x-build-version': actual },
+        }),
+      })
+      expect(report.result).toBe(actual === buildId ? 'PASS' : 'FAIL')
+      expect(report.expectedBuildId).toBe(buildId)
+      expect(report.expectedSha).toBeNull()
+    }
+    expect(() =>
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        buildId,
+        '--expect-sha',
+        SHA,
+      ]),
+    ).toThrow('mutually exclusive')
+  })
+
+  it('limits request time and retry sleep to the remaining overall budget', async () => {
+    let elapsed = 0
+    const timeouts: number[] = []
+    const sleeps: number[] = []
+    const report = await runVerifyLive(
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        'dev-example',
+        '--no-health',
+        '--no-smoke',
+        '--deadline-ms',
+        '25',
+        '--timeout-ms',
+        '100',
+        '--interval-seconds',
+        '10',
+      ]),
+      {
+        now: () => elapsed,
+        probe: async (url, options) => {
+          timeouts.push(options!.timeoutMs!)
+          elapsed += 10
+          return { url, status: 200, headers: { 'x-build-version': 'old' } }
+        },
+        sleep: async (ms) => {
+          sleeps.push(ms)
+          elapsed += ms
+        },
+      },
+    )
+    expect(report.result).toBe('FAIL')
+    expect(report.attemptsUsed).toBe(1)
+    expect(timeouts).toEqual([25])
+    expect(sleeps).toEqual([15])
+    expect(elapsed).toBe(25)
+  })
+
+  it('does not accept a matching identity returned after the deadline', async () => {
+    let elapsed = 0
+    const report = await runVerifyLive(
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        'dev-example',
+        '--no-health',
+        '--no-smoke',
+        '--deadline-ms',
+        '5',
+      ]),
+      {
+        now: () => elapsed,
+        probe: async (url) => {
+          elapsed = 6
+          return { url, status: 200, headers: { 'x-build-version': 'dev-example' } }
+        },
+      },
+    )
+    expect(report.result).toBe('FAIL')
+    expect(report.exitCode).toBe(VERIFY_EXIT.unreachable)
+  })
+})
+
 function flags(extra: string[] = []): ReturnType<typeof parseVerifyArgs> {
   return parseVerifyArgs(['--live', 'https://buoystat.us', '--expect-sha', SHA, ...extra])
 }

@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { main } from '../src/cli.js'
 import { parseHotfixArgs, runHotfix, type HotfixContext } from '../src/deploy-hotfix.js'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
+import { acquireTargetLocks, developmentStateDirectory } from '../src/development-state.js'
 import {
   hotfixBuildEnv,
   hotfixProductionEnv,
@@ -107,6 +108,8 @@ function fixture(nested = true) {
 
 function harness(nested = true) {
   const f = fixture(nested)
+  const stateRoot = mkdtempSync(join(tmpdir(), 'hotfix-state-test-'))
+  roots.push(stateRoot)
   let active: WorkerDeployment = {
     id: 'previous-deployment',
     created_on: '2026-09-21T01:00:00Z',
@@ -187,7 +190,7 @@ function harness(nested = true) {
   })
   const context: HotfixContext = {
     cwd: f.root,
-    env,
+    env: { ...env, XDG_STATE_HOME: stateRoot },
     log: vi.fn(),
     run,
     client: () => client,
@@ -528,6 +531,22 @@ describe('local incident hotfix', () => {
     await expect(runHotfix(h.flags, h.context)).rejects.toThrow('EEXIST')
     expect(readFileSync(path, 'utf8')).toBe('existing-owner')
     expect(h.run).not.toHaveBeenCalled()
+  })
+
+  it('respects the same host target lock as development and secret writers', async () => {
+    const h = harness()
+    const held = acquireTargetLocks(
+      [{ accountId: ACCOUNT, workerName: 'example' }],
+      'development',
+      '/private/receipt.json',
+      developmentStateDirectory(h.context.env),
+    )
+    try {
+      await expect(runHotfix(h.flags, h.context)).rejects.toThrow('Target is locked')
+      expect(h.upload).not.toHaveBeenCalled()
+    } finally {
+      held.release()
+    }
   })
 
   it('only forwards public build configuration and forces the exact build identity', () => {

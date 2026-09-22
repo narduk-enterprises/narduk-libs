@@ -102,6 +102,7 @@ export interface VerifyReport {
   generated: string
   baseUrl: string
   expectedSha: string | null
+  expectedBuildId?: string | null
   attemptsUsed: number
   attemptsAllowed: number
   assertions: VerifyAssertion[]
@@ -112,6 +113,8 @@ export interface VerifyReport {
 export interface VerifyFlags {
   baseUrl: string
   expectSha: string | null
+  /** Local snapshots have identities distinct from their base commit. Exact match only. */
+  expectBuildId?: string | null
   buildVersionHeader: string
   healthPath: string | null
   smokePath: string | null
@@ -119,6 +122,8 @@ export interface VerifyFlags {
   attempts: number
   intervalSeconds: number
   timeoutMs: number
+  /** Overall proof budget, including requests and retry delays. */
+  deadlineMs?: number
   allowDegraded: boolean
   /** Add a per-run query parameter so no cache key can be shared with a browser's. */
   cacheBust: boolean
@@ -145,6 +150,7 @@ export const DEFAULT_VERIFY_FLAGS = {
   attempts: 6,
   intervalSeconds: 10,
   timeoutMs: 15_000,
+  deadlineMs: 180_000,
 } as const
 
 const SHA_PATTERN = /^[a-f\d]{7,64}$/iu
@@ -215,6 +221,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   let baseUrl: string | null = null
   const flags: Omit<VerifyFlags, 'baseUrl'> = {
     expectSha: null,
+    expectBuildId: null,
     buildVersionHeader: DEFAULT_VERIFY_FLAGS.buildVersionHeader,
     healthPath: DEFAULT_VERIFY_FLAGS.healthPath,
     smokePath: DEFAULT_VERIFY_FLAGS.smokePath,
@@ -222,6 +229,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     attempts: DEFAULT_VERIFY_FLAGS.attempts,
     intervalSeconds: DEFAULT_VERIFY_FLAGS.intervalSeconds,
     timeoutMs: DEFAULT_VERIFY_FLAGS.timeoutMs,
+    deadlineMs: DEFAULT_VERIFY_FLAGS.deadlineMs,
     allowDegraded: false,
     cacheBust: true,
     edgeCachePaths: [],
@@ -243,6 +251,8 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     } else if (arg === '--base-url') baseUrl = requireValue(args, (index += 1), '--base-url')
     else if (arg === '--expect-sha')
       flags.expectSha = requireValue(args, (index += 1), '--expect-sha')
+    else if (arg === '--expect-build-id')
+      flags.expectBuildId = requireValue(args, (index += 1), '--expect-build-id')
     else if (arg === '--build-version-header')
       flags.buildVersionHeader = requireValue(
         args,
@@ -275,6 +285,11 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
       flags.timeoutMs = requirePositiveInteger(
         requireValue(args, (index += 1), '--timeout-ms'),
         '--timeout-ms',
+      )
+    else if (arg === '--deadline-ms')
+      flags.deadlineMs = requirePositiveInteger(
+        requireValue(args, (index += 1), '--deadline-ms'),
+        '--deadline-ms',
       )
     else if (arg === '--allow-degraded') flags.allowDegraded = true
     else if (arg === '--no-cache-bust') flags.cacheBust = false
@@ -313,10 +328,17 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   if (flags.expectSha && !SHA_PATTERN.test(flags.expectSha)) {
     throw new Error(`--expect-sha must be a hex commit SHA, got ${JSON.stringify(flags.expectSha)}`)
   }
+  if (flags.expectSha && flags.expectBuildId) {
+    throw new Error('--expect-sha and --expect-build-id are mutually exclusive')
+  }
+  if (flags.expectBuildId && !/^[A-Za-z0-9][\w.-]{0,199}$/u.test(flags.expectBuildId)) {
+    throw new Error('--expect-build-id must be a nonempty identifier of at most 200 characters')
+  }
   if (
     flags.healthPath === null &&
     flags.smokePath === null &&
     !flags.expectSha &&
+    !flags.expectBuildId &&
     flags.edgeCachePaths.length === 0 &&
     flags.edgeUncachedPaths.length === 0
   ) {
@@ -458,6 +480,7 @@ export function assessBuildVersion(
   response: LiveResponse,
   expectedSha: string,
   header: string,
+  comparison: 'sha-prefix' | 'exact' = 'sha-prefix',
 ): VerifyAssertion {
   const base = { id: 'build-version' as const, exitCode: VERIFY_EXIT.buildVersionMismatch }
   if (response.error !== undefined || response.status === undefined) {
@@ -477,7 +500,9 @@ export function assessBuildVersion(
       evidence: { httpStatus: response.status },
     }
   }
-  return buildVersionMatches(expectedSha, actual)
+  return (
+    comparison === 'exact' ? expectedSha === actual : buildVersionMatches(expectedSha, actual)
+  )
     ? {
         ...base,
         status: 'pass',
@@ -720,6 +745,8 @@ export function resolveExitCode(assertions: readonly VerifyAssertion[]): number 
 
 export interface VerifyContext {
   probe?: LiveProbe
+  /** Monotonic clock; injected with sleep in deadline tests. */
+  now?: () => number
   /** Injected in tests so a retry loop costs no wall time. */
   sleep?: (ms: number) => Promise<void>
   generated?: string
@@ -761,13 +788,18 @@ async function runOnce(
   // The build-version header and the smoke route are read from ONE request:
   // `x-build-version` is on every response, so probing the smoke path twice
   // would only double the load on a deployment that is already under proof.
-  if (flags.expectSha || flags.smokePath) {
+  if (flags.expectSha || flags.expectBuildId || flags.smokePath) {
     const url = bust(new URL(flags.smokePath ?? '/', base).toString())
     const response = await probe(url, { timeoutMs: flags.timeoutMs })
     const origin = assessOrigin(response, flags.baseUrl)
     if (origin) assertions.push(origin)
     if (flags.expectSha) {
       assertions.push(assessBuildVersion(response, flags.expectSha, flags.buildVersionHeader))
+    }
+    if (flags.expectBuildId) {
+      assertions.push(
+        assessBuildVersion(response, flags.expectBuildId, flags.buildVersionHeader, 'exact'),
+      )
     }
     if (flags.smokePath) {
       assertions.push(assessSmoke(response, flags.expectContentType))
@@ -809,7 +841,21 @@ export async function runVerifyLive(
   flags: VerifyFlags,
   context: VerifyContext = {},
 ): Promise<VerifyReport> {
-  const probe = context.probe ?? createLiveProbe({ timeoutMs: flags.timeoutMs })
+  if (flags.expectSha && flags.expectBuildId) {
+    throw new Error('--expect-sha and --expect-build-id are mutually exclusive')
+  }
+  const now = context.now ?? (() => performance.now())
+  const deadline = now() + (flags.deadlineMs ?? DEFAULT_VERIFY_FLAGS.deadlineMs)
+  const rawProbe = context.probe ?? createLiveProbe({ timeoutMs: flags.timeoutMs })
+  const probe: LiveProbe = async (url, options = {}) => {
+    const remaining = Math.floor(deadline - now())
+    if (remaining <= 0) return { url, error: 'Overall live-proof deadline exceeded' }
+    const response = await rawProbe(url, {
+      ...options,
+      timeoutMs: Math.min(options.timeoutMs ?? flags.timeoutMs, remaining),
+    })
+    return now() > deadline ? { url, error: 'Overall live-proof deadline exceeded' } : response
+  }
   const accessHeaders = resolveAccessHeaders(flags, context.env)
   const sleep = context.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
   let assertions: VerifyAssertion[] = []
@@ -825,7 +871,12 @@ export async function runVerifyLive(
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
     if (exitCode === VERIFY_EXIT.pass) break
-    if (attempt < flags.attempts) await sleep(flags.intervalSeconds * 1000)
+    if (attempt < flags.attempts) {
+      const remaining = deadline - now()
+      if (remaining <= 0) break
+      await sleep(Math.min(flags.intervalSeconds * 1000, remaining))
+      if (now() >= deadline) break
+    }
   }
   return {
     schemaVersion: 1,
@@ -833,6 +884,7 @@ export async function runVerifyLive(
     generated: context.generated ?? new Date().toISOString(),
     baseUrl: flags.baseUrl,
     expectedSha: flags.expectSha,
+    expectedBuildId: flags.expectBuildId ?? null,
     attemptsUsed: attempt,
     attemptsAllowed: flags.attempts,
     assertions,
@@ -844,7 +896,7 @@ export async function runVerifyLive(
 export function formatVerifyReport(report: VerifyReport): string {
   const lines = [
     `narduk-app verify --live ${report.baseUrl}`,
-    `  expected   ${report.expectedSha ?? '(no --expect-sha)'}`,
+    `  expected   ${report.expectedBuildId ?? report.expectedSha ?? '(no build identity assertion)'}`,
     `  attempts   ${String(report.attemptsUsed)} of ${String(report.attemptsAllowed)}`,
     '',
   ]
