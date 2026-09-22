@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-auth': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Apps can brand the password setup and reset emails through the
