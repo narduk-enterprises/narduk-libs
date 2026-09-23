@@ -123,10 +123,5 @@ export function definePublishedDataHandler<
   )
 
   if (!rateLimit) return served
-  // defineRateLimitedHandler awaits the wrapped handler, so the response type
-  // is unchanged; its signature only nests the Promise one level deeper.
-  return defineRateLimitedHandler(served, rateLimit) as unknown as EventHandler<
-    Request,
-    Promise<Response>
-  >
+  return defineRateLimitedHandler(served, rateLimit)
 }

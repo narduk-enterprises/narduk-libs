@@ -82,7 +82,10 @@ narduk-app-tools' `foundation:check:no-local-copy` and
 - `narduk/prefer-shared-collection` warns on a bare `<UTable>` anywhere except
   narduk-shell's `NeDataTable.vue`. A native `<table>` is still an error from
   `vue/no-restricted-html-elements`, whose message now points at
-  `<NeDataTable>`.
+  `<NeDataTable>`. It is an app-tier rule. A narduk-libs Nuxt module sits below
+  narduk-shell and does not depend on it, so a module that renders tables turns
+  the rule off in its own `eslint.config.mjs`, as narduk-analytics does
+  (narduk-libs#744).
 
 ### Prettier vs Perfectionist
 

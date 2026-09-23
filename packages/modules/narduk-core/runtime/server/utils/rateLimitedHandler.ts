@@ -180,11 +180,30 @@ export function defineRateLimitedHandler<
   Request extends EventHandlerRequest = EventHandlerRequest,
   Response = unknown,
 >(
+  handler: EventHandler<Request, Promise<Response>>,
+  options: RateLimitedHandlerOptions,
+): EventHandler<Request, Promise<Response>>
+export function defineRateLimitedHandler<
+  Request extends EventHandlerRequest = EventHandlerRequest,
+  Response = unknown,
+>(
+  // eslint-disable-next-line @typescript-eslint/unified-signatures -- one union signature would infer `Response` as `Promise<T>` again; the separate async overload is the fix (narduk-libs#653)
   handler: EventHandler<Request, Response>,
   options: RateLimitedHandlerOptions,
-  // This wrapper is always async — it may await the Cloudflare binding before
-  // it reaches the route — so `Response` sits inside a `Promise` in h3's
-  // un-awaited return slot. Nitro unwraps it when deriving the route's type.
+): EventHandler<Request, Promise<Response>>
+// This wrapper is always async — it may await the Cloudflare binding before it
+// reaches the route — so `Response` sits inside a `Promise` in h3's un-awaited
+// return slot, and Nitro unwraps it when deriving the route's type. An async
+// handler already returns a `Promise`; the first overload keeps that one
+// `Promise` deep instead of nesting it, which is what the runtime does anyway
+// because the wrapper awaits the handler (narduk-libs#653). It must stay first,
+// or the general overload swallows every async handler.
+export function defineRateLimitedHandler<
+  Request extends EventHandlerRequest = EventHandlerRequest,
+  Response = unknown,
+>(
+  handler: EventHandler<Request, Response>,
+  options: RateLimitedHandlerOptions,
 ): EventHandler<Request, Promise<Response>> {
   // Thrown at module evaluation rather than on the first request: a missing key
   // is a wiring mistake, and a route that fails to build is far easier to find

@@ -33,6 +33,8 @@
  * on `AbortSignal`.
  */
 
+import { readBoundedBody } from './boundedBody'
+
 /** Origin every published narduk-data product is served from. */
 export const NARDUK_DATA_ORIGIN = 'https://data.nard.uk'
 
@@ -458,65 +460,6 @@ function assertOrigin(url: string, origin: string): void {
   }
 }
 
-/**
- * Read a body while holding `maxBytes` as a hard ceiling.
- *
- * The ceiling is enforced against bytes actually accumulated, so an upstream
- * that omits or lies about `content-length` cannot push more than one chunk
- * past it into isolate memory; the stream is cancelled rather than drained. A
- * single-chunk body is returned as-is, so the common small response never pays
- * for a merged copy.
- */
-async function readBoundedBody(
-  response: Response,
-  url: string,
-  maxBytes: number,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const declaredLength = Number(response.headers.get('content-length') ?? '')
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw tooLargeError(url, maxBytes)
-  }
-
-  const body = response.body
-  if (!body) {
-    const buffered = new Uint8Array(await response.arrayBuffer())
-    if (buffered.byteLength > maxBytes) throw tooLargeError(url, maxBytes)
-    return buffered
-  }
-
-  const reader = body.getReader()
-  const chunks: Array<Uint8Array<ArrayBufferLike>> = []
-  let byteCount = 0
-  try {
-    for (;;) {
-      // eslint-disable-next-line no-await-in-loop -- a stream is read one chunk at a time; that is the point of the ceiling
-      const { done, value } = await reader.read()
-      if (done) break
-      byteCount += value.byteLength
-      if (byteCount > maxBytes) {
-        // eslint-disable-next-line no-await-in-loop -- cancelling stops the download instead of draining the rest of it
-        await reader.cancel()
-        throw tooLargeError(url, maxBytes)
-      }
-      chunks.push(value)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-
-  const only = chunks.length === 1 ? chunks[0] : undefined
-  if (only && only.byteLength === byteCount && only.buffer instanceof ArrayBuffer) {
-    return only as Uint8Array<ArrayBuffer>
-  }
-  const merged = new Uint8Array(byteCount)
-  let offset = 0
-  for (const chunk of chunks) {
-    merged.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return merged
-}
-
 async function attemptRequest(
   url: string,
   policy: NardukDataRequestPolicy,
@@ -544,7 +487,10 @@ async function attemptRequest(
         response.status,
       )
     }
-    return await readBoundedBody(response, url, policy.maxBytes ?? DEFAULT_MAX_BYTES)
+    const maxBytes = policy.maxBytes ?? DEFAULT_MAX_BYTES
+    return await readBoundedBody(response, maxBytes, {
+      tooLarge: () => tooLargeError(url, maxBytes),
+    })
   } catch (error) {
     if (error instanceof NardukDataError) throw error
     if (isAbortError(error)) {

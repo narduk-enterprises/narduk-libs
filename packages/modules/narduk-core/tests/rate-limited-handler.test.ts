@@ -1,14 +1,14 @@
 import { createServer } from 'node:http'
 
 import { createApp, defineEventHandler, toNodeListener } from 'h3'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createRateLimitWindowStore } from '../runtime/server/rate-limit/window'
 import { setCacheProfile } from '../runtime/server/utils/cacheProfile'
 import { defineRateLimitedHandler } from '../runtime/server/utils/rateLimitedHandler'
 
 import type { RateLimitRuntimeConfig } from '../runtime/server/rate-limit/policy'
-import type { EventHandler, H3Event } from 'h3'
+import type { EventHandler, EventHandlerRequest, H3Event } from 'h3'
 
 /**
  * The handler reads its defaults from Nitro's runtime config, which only exists
@@ -480,5 +480,40 @@ describe('defineRateLimitedHandler — path variants share a bucket (narduk-libs
     ])
 
     expect(statuses).toEqual([200, 429])
+  })
+})
+
+describe('defineRateLimitedHandler types (narduk-libs#653)', () => {
+  const options = { key: 'types', limit: 1 }
+  type Handler<Response> = EventHandler<EventHandlerRequest, Response>
+
+  it('keeps an async handler one Promise deep', () => {
+    const wrapped = defineRateLimitedHandler(async () => ({ ok: true }), options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<{ ok: boolean }>>>()
+  })
+
+  it('wraps a synchronous handler in one Promise', () => {
+    const wrapped = defineRateLimitedHandler(() => ({ ok: true }), options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<{ ok: boolean }>>>()
+  })
+
+  it('keeps an async handler with a union response one Promise deep', () => {
+    const wrapped = defineRateLimitedHandler(
+      async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true }),
+      options,
+    )
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<
+      Handler<Promise<{ ok: true } | { ok: false; reason: string }>>
+    >()
+  })
+
+  it('accepts an h3 handler built with defineEventHandler', () => {
+    const inner = defineEventHandler(async () => 42)
+    const wrapped = defineRateLimitedHandler(inner, options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<number>>>()
   })
 })

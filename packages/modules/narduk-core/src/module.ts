@@ -34,6 +34,7 @@ import {
 } from '../runtime/shared/vite-build-warnings'
 
 import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
+import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
 
 import type { NuxtModule } from '@nuxt/schema'
@@ -567,12 +568,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         })
       const appVersion =
         process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
-      const buildVersion =
-        process.env.BUILD_VERSION ||
-        process.env.GITHUB_SHA?.slice(0, 12) ||
-        process.env.CF_PAGES_COMMIT_SHA?.slice(0, 12) ||
-        readGitSha() ||
-        appVersion
+      const buildVersion = resolveBuildVersion(process.env, readGitSha, appVersion)
       const buildTime = process.env.BUILD_TIME || new Date().toISOString()
       const openApiProduction: OpenApiProductionMode = (() => {
         switch (process.env.NUXT_OPENAPI_PRODUCTION) {
