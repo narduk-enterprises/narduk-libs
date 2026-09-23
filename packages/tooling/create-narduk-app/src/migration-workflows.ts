@@ -19,13 +19,26 @@ function setup(): string {
 `
 }
 
+/**
+ * The `linux-deploy` route's labels (preview-d1.yml's `runs-on:`). Fleet route
+ * resolved 2026-09-19; onboarding must grant group membership. The template is
+ * meant to be copied into `.github/workflows`, so `.github/actionlint.yaml`
+ * declares these labels too (narduk-libs#778).
+ */
+export const LINUX_DEPLOY_RUNNER_LABELS = [
+  'self-hosted',
+  'Linux',
+  'X64',
+  'proxmox',
+  'proxmox-deploy',
+] as const
+
 /** Inert onboarding files, owned by the app after one-shot generation. */
 export function createMigrationWorkflowFiles(visibility: AppVisibility): GeneratedFile[] {
-  // Fleet route resolved 2026-09-19. Onboarding must grant group membership.
   const deployRunner =
     visibility === 'public'
       ? 'ubuntu-24.04'
-      : '{ group: linux-deploy, labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy] }'
+      : `{ group: linux-deploy, labels: [${LINUX_DEPLOY_RUNNER_LABELS.join(', ')}] }`
   return [
     {
       path: 'docs/deployment/promote-d1.steps.yml',

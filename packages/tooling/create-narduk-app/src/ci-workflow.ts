@@ -36,6 +36,19 @@ const linuxRoute =
 const browserRoute =
   '{"group":"playwright-isolated","labels":["self-hosted","Linux","X64","proxmox-playwright-x64"]}'
 
+/**
+ * The `linux-ci` route's labels as a literal `runs-on:` block names them
+ * (dependabot-merge.yml). `.github/actionlint.yaml` declares the custom ones
+ * from this same array, so the two cannot drift (narduk-libs#778).
+ */
+export const LINUX_CI_RUNNER_LABELS = [
+  'self-hosted',
+  'Linux',
+  'X64',
+  'proxmox',
+  'linux-ci',
+] as const
+
 function setupSteps(): string[] {
   return [
     // Both pins verified tag-to-SHA against api.github.com on 2026-09-16 and
@@ -446,7 +459,7 @@ export function createDependabotMergeWorkflow(visibility: AppVisibility): string
       : [
           '    runs-on:',
           '      group: linux-ci',
-          '      labels: [self-hosted, Linux, X64, proxmox, linux-ci]',
+          `      labels: [${LINUX_CI_RUNNER_LABELS.join(', ')}]`,
         ].join('\n')
   return [
     'name: Dependabot merge',

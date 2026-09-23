@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { createActionlintConfig, customRunnerLabels } from './actionlint-config.js'
 import {
   createCiRegistryAuthScript,
   createCiWorkflow,
@@ -8,10 +9,11 @@ import {
   createValidationWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
+  LINUX_CI_RUNNER_LABELS,
 } from './ci-workflow.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
-import { createMigrationWorkflowFiles } from './migration-workflows.js'
+import { createMigrationWorkflowFiles, LINUX_DEPLOY_RUNNER_LABELS } from './migration-workflows.js'
 import { rateLimitNamespacePrefix } from './rate-limit-namespace.js'
 
 import {
@@ -585,6 +587,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           {
             path: '.github/workflows/validate.yml',
             contents: createValidationWorkflow(visibility)!,
+          },
+          {
+            // caller-lint runs actionlint, which rejects a self-hosted label it
+            // was not told about: dependabot-merge.yml names `proxmox` and
+            // `linux-ci`, and preview-d1.yml (a template for .github/workflows)
+            // names `proxmox-deploy`. A public app names none (narduk-libs#778).
+            path: '.github/actionlint.yaml',
+            contents: createActionlintConfig(
+              customRunnerLabels([
+                LINUX_CI_RUNNER_LABELS,
+                ...(databaseBackend === 'd1' ? [LINUX_DEPLOY_RUNNER_LABELS] : []),
+              ]),
+            ),
           },
         ]
       : []),
