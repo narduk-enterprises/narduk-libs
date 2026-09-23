@@ -27,12 +27,17 @@ belong on a Mac, not in a cloud session.
    `scripts/claude-cloud-env-setup.sh`. That gives Node 24, pnpm through
    corepack, shellcheck, PyYAML and the estate `AGENTS.md` imported from
    `~/.claude/CLAUDE.md`.
-2. uv, for the narduk-logging Python quality gate.
-3. Playwright Chromium and its system libraries, at the version the root
-   `package.json` pins, for the per-package `test:e2e` jobs.
-4. A warm `pnpm install --frozen-lockfile` when the repo is already on disk. It
+2. uv, at the version `logging-languages.yml` pins, for the narduk-logging
+   Python quality gate.
+3. A warm `pnpm install --frozen-lockfile` when the repo is already on disk. It
    also adds a user-level `SessionStart` hook that installs when `node_modules`
    is missing.
+4. Playwright Chromium and its system libraries, installed with
+   `pnpm exec playwright install --with-deps chromium` as `ci.yml` does. The
+   lockfile sets the version, so there is no separate pin to keep in sync.
+
+Steps 3 and 4 are capped at 120 seconds each. A step that times out is skipped,
+and the session can run the same command itself.
 
 The Swift toolchain is not installed. It is about 1 GB and does not fit the
 setup budget of about 5 minutes. Run `python3 scripts/install-swift-linux.py`

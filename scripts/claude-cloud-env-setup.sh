@@ -10,11 +10,16 @@
 #   1. The estate baseline: agent-infrastructure's scripts/claude-cloud-env-setup.sh
 #      (Node 24, pnpm through corepack, shellcheck, PyYAML, the estate manual
 #      at ~/.local/share/agent-infrastructure, and ~/.claude/CLAUDE.md).
-#   2. uv, for the narduk-logging Python quality gate (logging-languages.yml).
-#   3. Playwright Chromium and its system libraries, at the version the root
-#      package.json pins, for the per-package test:e2e jobs.
-#   4. A warm `pnpm install --frozen-lockfile` when the repo is already on disk,
+#   2. uv at the version logging-languages.yml pins, for the narduk-logging
+#      Python quality gate.
+#   3. A warm `pnpm install --frozen-lockfile` when the repo is already on disk,
 #      plus a SessionStart hook that installs if node_modules is missing.
+#   4. Playwright Chromium and its system libraries through the lockfile's own
+#      CLI (`pnpm exec playwright install --with-deps chromium`, as ci.yml does),
+#      for the per-package test:e2e jobs.
+#
+# Steps 3 and 4 are capped at 120 s each so the whole script fits the budget
+# after the estate baseline. A step that times out is skipped, not fatal.
 #
 # Not installed: the Swift toolchain for narduk-logging's Swift half. It is
 # about 1 GB and does not fit the setup budget. Run
@@ -28,7 +33,7 @@
 # package here is a workspace package, so install needs no registry token.
 set -uo pipefail
 
-PLAYWRIGHT_PIN="1.61.1"   # root package.json devDependencies @playwright/test
+UV_PIN="0.12.7"   # .github/workflows/logging-languages.yml setup-uv version
 AI_ROOT="${HOME}/.local/share/agent-infrastructure"
 AI_URL="https://github.com/narduk-enterprises/agent-infrastructure.git"
 REPO_DIR="/home/user/narduk-libs"
@@ -58,20 +63,25 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 hash -r
 
 # --- 2. uv -------------------------------------------------------------------------
-if ! command -v uv >/dev/null 2>&1; then
-  python3 -m pip install -q --break-system-packages uv 2>/dev/null \
-    || python3 -m pip install -q uv 2>/dev/null || log "WARN: uv install failed"
+if [ "$(uv --version 2>/dev/null | awk '{print $2}')" != "$UV_PIN" ]; then
+  python3 -m pip install -q --break-system-packages "uv==${UV_PIN}" 2>/dev/null \
+    || python3 -m pip install -q "uv==${UV_PIN}" 2>/dev/null || log "WARN: uv install failed"
 fi
 
-# --- 3. Playwright Chromium ------------------------------------------------------
-timeout 240 npx -y "playwright@${PLAYWRIGHT_PIN}" install --with-deps chromium >/dev/null 2>&1 \
-  && log "playwright ${PLAYWRIGHT_PIN} chromium ready" \
-  || log "WARN: playwright chromium install failed or timed out"
-
-# --- 4. dependencies -----------------------------------------------------------------
+# --- 3. dependencies, 4. Playwright Chromium -----------------------------------------
+# Playwright comes from the lockfile, so it needs the install first. Without the
+# repo on disk there is no lockfile, and the e2e browser is left to the session.
 if [ -f "${REPO_DIR}/pnpm-lock.yaml" ]; then
-  (cd "$REPO_DIR" && timeout 180 pnpm install --frozen-lockfile >/dev/null 2>&1) \
-    && log "pnpm install done" || log "WARN: pnpm install failed or timed out; the session hook retries"
+  if (cd "$REPO_DIR" && timeout 120 pnpm install --frozen-lockfile >/dev/null 2>&1); then
+    log "pnpm install done"
+    (cd "$REPO_DIR" && timeout 120 pnpm exec playwright install --with-deps chromium >/dev/null 2>&1) \
+      && log "playwright chromium ready" \
+      || log "WARN: playwright chromium install failed or timed out"
+  else
+    log "WARN: pnpm install failed or timed out; the session hook retries, then run: pnpm exec playwright install --with-deps chromium"
+  fi
+else
+  log "repo not on disk at setup; skipping pnpm install and Playwright"
 fi
 
 # If the snapshot has no node_modules, install at session start. This hook is
@@ -98,9 +108,10 @@ cat >> "${HOME}/.claude/CLAUDE.md" <<EOF
 
 ## narduk-libs environment
 This environment is set up for narduk-enterprises/narduk-libs. Read the repo's
-AGENTS.md first. \`pnpm run preflight\` is the cheap PR gate. Playwright Chromium
-and uv are installed. Swift is not: run \`python3 scripts/install-swift-linux.py\`
-if you need the narduk-logging Swift gate.
+AGENTS.md first. \`pnpm run preflight\` is the cheap PR gate. uv is installed.
+Playwright Chromium usually is; if an e2e run cannot find it, run
+\`pnpm exec playwright install --with-deps chromium\`. Swift is not installed: run
+\`python3 scripts/install-swift-linux.py\` if you need the narduk-logging Swift gate.
 EOF
 
 log "done"
