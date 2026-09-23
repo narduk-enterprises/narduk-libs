@@ -46,6 +46,7 @@
     "runtime/server/database/pg-schema.ts",
     "runtime/server/database/schema.ts",
     "runtime/server/health/**/*.ts",
+    "runtime/server/utils/atomic-batch.ts",
     "runtime/server/utils/auth.ts",
     "runtime/server/utils/database.ts",
     "runtime/server/utils/freshness-checks.ts",
