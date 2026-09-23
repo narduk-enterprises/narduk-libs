@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createRateLimitWindowStore } from '../runtime/server/rate-limit/window'
 import { setCacheProfile } from '../runtime/server/utils/cacheProfile'
-import { defineRateLimitedHandler } from '../runtime/server/utils/rateLimitedHandler'
+import {
+  consumeRateLimit,
+  defineRateLimitedHandler,
+} from '../runtime/server/utils/rateLimitedHandler'
 
 import type { RateLimitRuntimeConfig } from '../runtime/server/rate-limit/policy'
 import type { EventHandler, EventHandlerRequest, H3Event } from 'h3'
@@ -515,5 +518,70 @@ describe('defineRateLimitedHandler types (narduk-libs#653)', () => {
     const wrapped = defineRateLimitedHandler(inner, options)
     expect(wrapped).toBeTypeOf('function')
     expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<number>>>()
+  })
+})
+
+describe('consumeRateLimit (narduk-libs#413)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  it('returns a verdict instead of throwing, and leaves the response alone', async () => {
+    const store = createRateLimitWindowStore()
+    const hook = defineEventHandler(async (event) => {
+      const { allowed, enforcedBy, verdict } = await consumeRateLimit(event, {
+        key: 'hook',
+        limit: 2,
+        store,
+      })
+      return { allowed, enforcedBy, retryAfterSeconds: verdict?.retryAfterSeconds }
+    })
+
+    const results = await request(hook, [ROUTE, ROUTE, ROUTE])
+
+    expect(results.map((result) => result.status)).toEqual([200, 200, 200])
+    expect(JSON.parse(results[0]!.body)).toEqual({ allowed: true })
+    expect(JSON.parse(results[2]!.body)).toEqual({
+      allowed: false,
+      enforcedBy: 'window',
+      retryAfterSeconds: 60,
+    })
+    expect(results[2]!.headers.get(LIMIT_HEADER)).toBeNull()
+    expect(results[2]!.headers.get(RETRY_AFTER_HEADER)).toBeNull()
+  })
+
+  it('shares one allowance with a wrapped handler on the same key and store', async () => {
+    const store = createRateLimitWindowStore()
+    const options = { key: 'shared', limit: 2, store }
+    const wrapped = defineRateLimitedHandler(() => ({ ok: true }), options)
+    let hookVerdict: boolean | undefined
+    const both = defineEventHandler(async (event) => {
+      if (event.path.endsWith('hook')) {
+        hookVerdict = (await consumeRateLimit(event, options, ROUTE)).allowed
+        return { hookVerdict }
+      }
+      return wrapped(event)
+    })
+
+    const [, , wrappedAfter] = await request(both, [ROUTE, `${ROUTE}?hook`, ROUTE])
+
+    expect(hookVerdict).toBe(true)
+    expect(wrappedAfter!.status).toBe(429)
+  })
+
+  it('counts nothing when runtime config disables the policy', async () => {
+    setConfig({ enabled: false })
+    const store = createRateLimitWindowStore()
+    const hook = defineEventHandler(async (event) => {
+      const check = await consumeRateLimit(event, { key: 'off', limit: 1, store })
+      return { allowed: check.allowed, counted: check.verdict !== undefined }
+    })
+
+    const results = await request(hook, [ROUTE, ROUTE])
+
+    expect(results.map((result) => JSON.parse(result.body))).toEqual([
+      { allowed: true, counted: false },
+      { allowed: true, counted: false },
+    ])
   })
 })

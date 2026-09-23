@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   celsiusToFahrenheit,
   clearFormatterCachesForTests,
+  compassPoint16,
   createFormatters,
+  fahrenheitToCelsius,
+  feetToMetres,
   formatDecimal,
   formatDistance,
   formatHeight,
@@ -15,10 +18,17 @@ import {
   formatZonedDateTime,
   formatZonedTime,
   hectopascalsToInchesOfMercury,
+  inchesOfMercuryToHectopascals,
+  kilometresPerHourToMetresPerSecond,
+  knotsToMetresPerSecond,
   metresPerSecondToKilometresPerHour,
+  metresPerSecondToKnots,
   metresPerSecondToMilesPerHour,
   metresToFeet,
   metresToMiles,
+  milesPerHourToMetresPerSecond,
+  milesToMetres,
+  NE_COMPASS_POINTS_16,
   NE_EMPTY_VALUE,
 } from '../runtime/shared/utils/units'
 
@@ -55,6 +65,55 @@ describe('conversion accuracy', () => {
   it('converts pressure against the conventional inch of mercury', () => {
     expect(hectopascalsToInchesOfMercury(1013.25)).toBeCloseTo(29.92125984, 8)
     expect(hectopascalsToInchesOfMercury(33.8638815789)).toBeCloseTo(1, 9)
+  })
+})
+
+describe('knots, inverses and the compass (narduk-libs#518)', () => {
+  it('converts metres per second to knots with the exact 1852 m nautical mile', () => {
+    expect(metresPerSecondToKnots(1852 / 3600)).toBeCloseTo(1, 12)
+    expect(metresPerSecondToKnots(10)).toBeCloseTo(19.4384, 4)
+  })
+
+  it('round-trips every conversion through its inverse', () => {
+    const pairs: Array<[(value: number) => number, (value: number) => number]> = [
+      [celsiusToFahrenheit, fahrenheitToCelsius],
+      [metresToFeet, feetToMetres],
+      [metresToMiles, milesToMetres],
+      [metresPerSecondToMilesPerHour, milesPerHourToMetresPerSecond],
+      [metresPerSecondToKilometresPerHour, kilometresPerHourToMetresPerSecond],
+      [metresPerSecondToKnots, knotsToMetresPerSecond],
+      [hectopascalsToInchesOfMercury, inchesOfMercuryToHectopascals],
+    ]
+    for (const [forward, inverse] of pairs) {
+      for (const value of [-40, 0, 1.5, 1013.25]) {
+        expect(inverse(forward(value))).toBeCloseTo(value, 9)
+      }
+    }
+    expect(fahrenheitToCelsius(212)).toBe(100)
+    expect(feetToMetres(1)).toBe(0.3048)
+  })
+
+  it('names the nearest of the sixteen points, for any finite bearing', () => {
+    expect(NE_COMPASS_POINTS_16).toHaveLength(16)
+    expect(compassPoint16(0)).toBe('N')
+    expect(compassPoint16(22.5)).toBe('NNE')
+    expect(compassPoint16(11.24)).toBe('N')
+    expect(compassPoint16(11.25)).toBe('NNE')
+    expect(compassPoint16(90)).toBe('E')
+    expect(compassPoint16(200)).toBe('SSW')
+    expect(compassPoint16(348.75)).toBe('N')
+    expect(compassPoint16(359)).toBe('N')
+    expect(compassPoint16(360)).toBe('N')
+    expect(compassPoint16(720)).toBe('N')
+    expect(compassPoint16(-30)).toBe('NNW')
+    expect(compassPoint16(-30)).toBe(compassPoint16(330))
+    expect(compassPoint16(-720)).toBe('N')
+  })
+
+  it('answers undefined for absent or non-finite bearings', () => {
+    for (const value of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(compassPoint16(value)).toBeUndefined()
+    }
   })
 })
 
