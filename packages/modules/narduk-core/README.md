@@ -237,6 +237,21 @@ Nuxt major, or the nuxt-security version moves.
 `tests/nuxt-security-contract.test.ts` is the cheap tripwire that runs in CI
 instead.
 
+## Adding a row to the footer
+
+`LayerAppFooter` renders an `after` slot below its content. By default the slot
+renders every global component named in `appConfig.nardukCore.footer.after`, in
+order. A module adds its own row by registering a global component and appending
+its name there. narduk-seo adds `LayerNetworkFooter` this way. An app can pass
+its own `#after` slot to replace the listed rows.
+
+```ts
+// app.config.ts
+export default defineAppConfig({
+  nardukCore: { footer: { after: ['MyFooterRow'] } },
+})
+```
+
 ## Error page and exception capture
 
 Both ship with the module. An app that pins narduk-core gets them with no file

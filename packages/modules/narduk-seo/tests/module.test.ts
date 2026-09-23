@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface SetupModuleOptions {
@@ -12,6 +14,7 @@ function cloneConfig(value: unknown): unknown {
 }
 
 async function setupModule(options: SetupModuleOptions = {}) {
+  const addComponent = vi.fn()
   const addComponentsDir = vi.fn()
   const addImportsDir = vi.fn()
   const addPlugin = vi.fn()
@@ -46,6 +49,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   })
 
   vi.doMock('@nuxt/kit', () => ({
+    addComponent,
     addComponentsDir,
     addImportsDir,
     addPlugin,
@@ -76,6 +80,8 @@ async function setupModule(options: SetupModuleOptions = {}) {
   )
 
   return {
+    addComponent,
+    addComponentsDir,
     addImportsDir,
     addPlugin,
     addServerHandler,
@@ -144,6 +150,36 @@ describe('narduk-seo module', () => {
     // rationale, which is how the contradiction survived from the initial import
     // to a production 403.
     expect(extendRouteRules).not.toHaveBeenCalledWith('/_og/**', { prerender: false })
+  })
+
+  it("adds the network row through narduk-core's footer, not a copy of it (narduk-libs#743)", async () => {
+    const { addComponent, addComponentsDir, nuxt } = await setupModule({
+      nuxtOptions: { appConfig: { nardukCore: { footer: { after: ['AppOwnRow'] } } } },
+    })
+
+    expect(addComponent).toHaveBeenCalledWith({
+      name: 'LayerNetworkFooter',
+      filePath: expect.stringContaining('/app/components/shared/LayerNetworkFooter.vue'),
+      global: true,
+    })
+    // The scanned directory must not register the same file a second time.
+    expect(addComponentsDir).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.stringMatching(/\/app\/components$/),
+        ignore: ['shared/LayerNetworkFooter.vue'],
+      }),
+    )
+    // An app's own rows stay, and ours is appended once.
+    expect(
+      (nuxt.options as { appConfig?: { nardukCore?: { footer?: { after?: unknown } } } }).appConfig
+        ?.nardukCore?.footer?.after,
+    ).toEqual(['AppOwnRow', 'LayerNetworkFooter'])
+  })
+
+  it('ships no copy of narduk-core components', () => {
+    expect(existsSync(new URL('../app/components/app/LayerAppFooter.vue', import.meta.url))).toBe(
+      false,
+    )
   })
 
   it('suppresses every automatic twitter:* meta tag (narduk-libs#349)', async () => {

@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { footerAfterComponents } from '../../utils/footerExtensions'
 import { readRuntimeConfigString } from '../../utils/readRuntimeConfigString'
 
 /**
  * A highly configurable, responsive layer application footer.
+ *
+ * Below its content it renders the `after` slot. By default that slot renders
+ * the global components listed in `appConfig.nardukCore.footer.after`, which is
+ * how narduk-seo adds the network row without copying this component.
  */
 
 const props = withDefaults(
@@ -26,12 +31,14 @@ const resolvedAppName = computed(() => {
   const config = useRuntimeConfig()
   return readRuntimeConfigString(config.public.appName, 'Nuxt 4 App')
 })
+
+const afterComponents = computed(() => footerAfterComponents(useAppConfig()))
 </script>
 
 <template>
   <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
-  <footer class="border-t border-default py-6">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+  <footer class="border-t border-default">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <slot>
         <div class="flex flex-col md:flex-row items-center justify-between gap-4">
           <p v-if="showCopyright" class="text-sm text-muted text-center md:text-left">
@@ -50,5 +57,8 @@ const resolvedAppName = computed(() => {
         </div>
       </slot>
     </div>
+    <slot name="after">
+      <component :is="name" v-for="name in afterComponents" :key="name" />
+    </slot>
   </footer>
 </template>

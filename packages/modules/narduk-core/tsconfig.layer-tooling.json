@@ -30,6 +30,7 @@
     "runtime/app/utils/preferencesState.ts",
     "runtime/app/utils/lightboxRails.ts",
     "runtime/app/utils/snapStripReadout.ts",
+    "runtime/app/utils/footerExtensions.ts",
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",
     "runtime/server/middleware/00-canonical-host.ts",
@@ -96,6 +97,7 @@
     // `.nuxt/tsconfig.app.json`; this project is TypeScript-only.
     "tests/app-image.test.ts",
     "tests/app-lightbox.test.ts",
-    "tests/app-snap-strip.test.ts"
+    "tests/app-snap-strip.test.ts",
+    "tests/layer-app-footer.test.ts"
   ]
 }
