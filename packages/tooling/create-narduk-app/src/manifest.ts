@@ -457,6 +457,12 @@ export function createRootPackageManifest(
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
+        // Speed, not security. Miniflare pins its undici exactly (7.29.0 in
+        // 5.20260921.0-alpha), and below 7.29.1 every D1 call a test makes
+        // through narduk-testkit costs ~6.5ms instead of ~2ms, so seed-heavy
+        // suites time out on the CI pool (narduk-libs#740). A floor rather
+        // than a pin, so a lockfile refresh can still move it forward.
+        'miniflare>undici': '^7.29.1',
       },
       ...(capabilities.includes('auth')
         ? {
