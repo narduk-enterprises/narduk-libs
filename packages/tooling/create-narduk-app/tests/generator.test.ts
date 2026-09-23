@@ -1467,14 +1467,17 @@ describe('generated app typecheck and lint surfaces', () => {
   })
 
   // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-  // generator-parity audit narduk-libs#D2), not the older canonical
-  // template: `scope` is functionally required, not decorative -- without
-  // it Dependabot's npm_and_yarn update aborts outright the moment the repo
-  // carries any @narduk-enterprises/* dependency (coding-standards#9). One
-  // combined `dependencies` group still keeps a main-branch merge from
-  // triggering several simultaneous update PRs (foundation:check item 5.2's
-  // "grouping .github/dependabot.yml" acceptance shape, narduk-libs#233).
-  it('emits a .github/dependabot.yml with the required registry scope and a github-actions ecosystem block', () => {
+  // gonogo#104 / narduk-libs#U2), not the older canonical template: `scope`
+  // is functionally required, not decorative -- without it Dependabot's
+  // npm_and_yarn update aborts outright the moment the repo carries any
+  // @narduk-enterprises/* dependency (coding-standards#9). Two npm groups,
+  // split by `update-types` into a `safe` (minor + patch) lane and a
+  // `majors` lane, replace the old single all-in `dependencies` group: a
+  // main-branch merge still can't trigger more than one PR per lane
+  // (foundation:check item 5.2's "grouping .github/dependabot.yml"
+  // acceptance shape, narduk-libs#233, is indifferent to which group name
+  // carries the scope).
+  it('emits a .github/dependabot.yml with two update-type-split npm groups and a github-actions ecosystem block', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
       const dependabot = files.get('.github/dependabot.yml') ?? ''
@@ -1482,7 +1485,8 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(dependabot, label).toContain("package-ecosystem: 'npm'")
       expect(dependabot, label).toContain("package-ecosystem: 'github-actions'")
       expect(dependabot, label).toContain("scope: '@narduk-enterprises'")
-      expect(dependabot, label).toContain('dependencies:')
+      expect(dependabot, label).toContain('safe:')
+      expect(dependabot, label).toContain('majors:')
       expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
       // Reuses the same registry URL as the committed .npmrc and the same
       // org Actions secret name already used for install auth -- no new
@@ -1497,7 +1501,8 @@ describe('generated app typecheck and lint surfaces', () => {
           'package-ecosystem': string
           directory?: string
           registries?: string[]
-          groups: Record<string, { patterns: string[] }>
+          'open-pull-requests-limit'?: number
+          groups: Record<string, { patterns: string[]; 'update-types'?: string[] }>
         }>
       }
       expect(parsed.version, label).toBe(2)
@@ -1506,12 +1511,35 @@ describe('generated app typecheck and lint surfaces', () => {
       const npmUpdate = parsed.updates.find((update) => update['package-ecosystem'] === 'npm')
       expect(npmUpdate?.directory, label).toBe('/')
       expect(npmUpdate?.registries, label).toEqual(['narduk-github-packages'])
-      expect(npmUpdate?.groups.dependencies.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
+      expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups.safe['update-types'], label).toEqual(['minor', 'patch'])
+      expect(npmUpdate?.groups.majors.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups.majors['update-types'], label).toEqual(['major'])
       const actionsUpdate = parsed.updates.find(
         (update) => update['package-ecosystem'] === 'github-actions',
       )
       expect(actionsUpdate?.directory, label).toBe('/')
+      expect(actionsUpdate?.['open-pull-requests-limit'], label).toBe(1)
       expect(files.has('renovate.json'), label).toBe(false)
+    }
+  })
+
+  // Merges the `safe` lane once CI is green on its exact head; the majors
+  // and github-actions lanes stay manual (gonogo#104 / narduk-libs#U2).
+  it('emits a .github/workflows/dependabot-merge.yml that triggers on CI completion and merges only the safe lane', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const mergeWorkflow = files.get('.github/workflows/dependabot-merge.yml') ?? ''
+
+      expect(mergeWorkflow, label).toContain('workflow_run:')
+      expect(mergeWorkflow, label).toContain('workflows: [CI]')
+      expect(mergeWorkflow, label).toContain(
+        "startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/safe-')",
+      )
+      expect(mergeWorkflow, label).toContain('gh pr merge')
+      expect(mergeWorkflow, label).toContain('gh workflow run ci.yml')
+      expect(() => YAML.parse(mergeWorkflow), label).not.toThrow()
     }
   })
 

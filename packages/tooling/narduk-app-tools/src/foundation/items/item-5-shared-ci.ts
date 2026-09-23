@@ -181,3 +181,72 @@ function evaluate52(repo: AppRepo): FoundationSubCheck {
 export function evaluateItem5(repo: AppRepo): FoundationSubCheck[] {
   return [evaluate51(repo), evaluate52(repo)]
 }
+
+/**
+ * True when a `.github/dependabot.yml` npm-ecosystem update's `groups` block
+ * has at least one lane whose `update-types` is exactly minor+patch (the
+ * `safe` shape) and a separate lane whose `update-types` includes `major`
+ * (the `majors` shape) -- the split narduk-libs#U2 / gonogo#104 introduced.
+ * A group with no `update-types` at all (the old single `dependencies`
+ * group) satisfies neither side.
+ */
+function npmGroupsSplitByUpdateType(update: Record<string, unknown>): boolean {
+  const groups = update.groups
+  if (!isRecord(groups)) return false
+  const updateTypeSets = Object.values(groups)
+    .filter(isRecord)
+    .map((group) =>
+      Array.isArray(group['update-types'])
+        ? group['update-types'].filter((type): type is string => typeof type === 'string')
+        : [],
+    )
+  const hasSafeLane = updateTypeSets.some(
+    (types) => types.length > 0 && types.every((type) => type === 'minor' || type === 'patch'),
+  )
+  const hasMajorLane = updateTypeSets.some((types) => types.includes('major'))
+  return hasSafeLane && hasMajorLane
+}
+
+/**
+ * Advisory-only stacking-shape check for the npm ecosystem update (D-ORG-1
+ * follow-up, narduk-libs#U2). This is deliberately NOT a `FoundationSubCheck`
+ * folded into {@link evaluateItem5}: `types.ts` documents "No warning tier
+ * (D-WEBFOUND-2 Q9 (a))" and `schema.ts`'s `rollUp()` treats anything other
+ * than `pass`/`not-applicable` as gating -- even `unknown` fails CI (see
+ * `commands/foundation-check.ts`'s exit-code table). Folding this in as a
+ * sub-check would therefore redden CI for every app that has not yet
+ * migrated to the two-lane shape, the opposite of the "start as a warning"
+ * intent. It is surfaced instead as a printed advisory alongside the
+ * artefact (see `runFoundationCheckCommand`), which never touches
+ * `score`/`result`/`exitCode`.
+ *
+ * TODO(narduk-libs#U2): once the estate rollout to the two-lane shape
+ * completes, fold this into a real `5.3` FAIL sub-check instead of an
+ * advisory print.
+ */
+export function evaluateDependabotStackingShape(repo: AppRepo): string | null {
+  const config = readDependabotConfig(repo)
+  if (!isRecord(config)) return null
+  const updates = config.updates
+  if (!Array.isArray(updates)) return null
+
+  const reasons: string[] = []
+  for (const update of updates) {
+    if (!isRecord(update) || update['package-ecosystem'] !== 'npm') continue
+    const limit = update['open-pull-requests-limit']
+    if (typeof limit === 'number' && limit > 2) {
+      reasons.push(`open-pull-requests-limit is ${limit} (> 2) on the npm update`)
+    }
+    if (!npmGroupsSplitByUpdateType(update)) {
+      reasons.push(
+        'the npm update has no pair of groups split by update-types into a minor+patch ' +
+          '"safe" lane and a "major" lane',
+      )
+    }
+  }
+  if (reasons.length === 0) return null
+  return (
+    '.github/dependabot.yml may reproduce the PR-stacking failure mode two lanes fixed ' +
+    `(narduk-libs#U2, gonogo#104): ${reasons.join('; ')}`
+  )
+}

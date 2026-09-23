@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import {
   createCiRegistryAuthScript,
   createCiWorkflow,
+  createDependabotMergeWorkflow,
   createValidationWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
@@ -571,6 +572,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
+    {
+      // Merges the safe (minor + patch) Dependabot lane below once CI is
+      // green on its exact head; the majors and github-actions lanes stay
+      // manual. Both visibilities: a public app still needs the safe lane
+      // merged, just from a GitHub-hosted runner (D-VIS-1).
+      path: '.github/workflows/dependabot-merge.yml',
+      contents: createDependabotMergeWorkflow(visibility),
+    },
     ...(visibility === 'private'
       ? [
           {
@@ -587,16 +596,27 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: createCopilotSetupWorkflow(),
     },
     {
-      // components-library-plan.md #2 item 6 (narduk-libs#253): one
-      // Dependabot group for @narduk-enterprises/* so a fleet-wide bump
-      // lands as one PR per app, not one per package. The `groups.*.patterns`
-      // shape is the D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts
-      // (narduk-libs#233 / PR #235). The registries block reuses the same
-      // GitHub Packages registry URL as the committed .npmrc
-      // (`@narduk-enterprises:registry=...`). The token is read from the
-      // org-level DEPENDABOT secret NARDUK_PLATFORM_GH_PACKAGES_READ (verified
-      // present 2026-09-11) -- Dependabot secrets are a separate store from
-      // Actions secrets; the Actions secret of the same name is what CI uses.
+      // Two npm lanes, not one (narduk-libs#U2 / gonogo#104, the reference
+      // shape). A single all-in `dependencies` group used to stack: every
+      // app that adopted the old canonical shape (limit 10, ~10 groups)
+      // ended up with ~10 open PRs that all edited pnpm-lock.yaml, so
+      // merging one conflicted the rest and Dependabot rebased the whole
+      // stack on every merge. Collapsing to one combined group was not the
+      // fix either -- a single breaking major (typescript 5->6, vitest 4->5,
+      // riverstatus#215) holds every harmless patch bump red behind it. So
+      // `safe` (minor + patch) and `majors` (major) are split by
+      // `update-types` over the same packages: `safe` merges itself once CI
+      // is green on its exact head (.github/workflows/dependabot-merge.yml),
+      // `majors` is a deliberate person/agent PR. `open-pull-requests-limit`
+      // is 2 -- one PR per lane. The `groups.*.patterns` shape is the
+      // D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts (narduk-libs#233
+      // / PR #235); it does not care which group name carries the scope. The
+      // registries block reuses the same GitHub Packages registry URL as the
+      // committed .npmrc (`@narduk-enterprises:registry=...`). The token is
+      // read from the org-level DEPENDABOT secret
+      // NARDUK_PLATFORM_GH_PACKAGES_READ (verified present 2026-09-11) --
+      // Dependabot secrets are a separate store from Actions secrets; the
+      // Actions secret of the same name is what CI uses.
       path: '.github/dependabot.yml',
       // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
       // coding-standards/toolchain/dependabot.yml), not the older canonical
@@ -635,7 +655,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      timezone: 'America/Chicago'",
         '    labels:',
         "      - 'dependencies'",
-        '    open-pull-requests-limit: 1',
+        '    open-pull-requests-limit: 2',
         '    cooldown:',
         '      default-days: 0',
         '      semver-major-days: 0',
@@ -649,10 +669,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      - dependency-name: '@playwright/test'",
         "        versions: ['>1.61.1']",
         '    groups:',
-        '      dependencies:',
+        '      safe:',
         '        patterns:',
         "          - '*'",
         "          - '@narduk-enterprises/*' # explicit scope required by foundation item 5.2",
+        '        update-types:',
+        "          - 'minor'",
+        "          - 'patch'",
+        '      majors:',
+        '        patterns:',
+        "          - '*'",
+        "          - '@narduk-enterprises/*'",
+        '        update-types:',
+        "          - 'major'",
         "  - package-ecosystem: 'github-actions'",
         "    directory: '/'",
         '    schedule:',
