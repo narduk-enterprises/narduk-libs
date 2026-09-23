@@ -325,6 +325,7 @@ describe('create-narduk-app generation contract', () => {
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
+        'miniflare>undici': '^7.29.1',
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on

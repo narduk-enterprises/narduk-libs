@@ -18,7 +18,7 @@ overrides:
   svgo: ^4.1.0
   tar: ^7.5.21
   miniflare>sharp: ^0.35.4
-  miniflare>undici: ^7.29.0
+  miniflare>undici: ^7.29.1
   flatted: 3.4.2
   node-forge: 1.4.0
   defu: 6.1.7
