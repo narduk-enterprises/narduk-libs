@@ -131,6 +131,12 @@ Outcomes (the receipt under `receipts/` records names, never values):
 Commit locally as often as you like. Pushing is fine too and triggers nothing
 while held.
 
+The workspace is a repository of its own: the captured tree is committed there
+under a local branch with no remote, so checks written as
+`git rev-parse --show-toplevel`, `git ls-files -co --exclude-standard` or
+`git status` see exactly the captured source. The publisher's git identity,
+signing, hooks and init templates are excluded from it.
+
 ### Several contributors, one publisher
 
 Only the recorded publisher, on the recorded workstation, from the recorded

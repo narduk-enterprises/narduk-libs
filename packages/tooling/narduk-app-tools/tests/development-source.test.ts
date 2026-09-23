@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -138,6 +139,46 @@ describe('frozen local source and reusable workspace', () => {
     expect(dependencyFingerprint(third, '10.33.4')).not.toBe(
       dependencyFingerprint(third, '10.34.0'),
     )
+  })
+  it('gives the workspace its own repository so repository-shaped checks can run', () => {
+    const f = fixture()
+    const first = captureDevelopmentSource(f.checkout, f.snapshot)
+    populateDevelopmentWorkspace(first, f.workspace)
+    mkdirSync(join(f.workspace, 'node_modules'), { recursive: true })
+    writeFileSync(join(f.workspace, 'node_modules', 'warm'), 'keep')
+    const inWorkspace = (...args: string[]) =>
+      execFileSync('git', args, { cwd: f.workspace, encoding: 'utf8' }).trim()
+    expect(inWorkspace('rev-parse', '--show-toplevel')).toBe(realpathSync(f.workspace))
+    const listed = () =>
+      inWorkspace('ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)
+    expect(listed()).toContain('tracked.ts')
+    expect(listed().some((path) => path.startsWith('node_modules/'))).toBe(false)
+    expect(inWorkspace('status', '--porcelain')).toBe('')
+    rmSync(join(f.checkout, 'tracked.ts'))
+    writeFileSync(join(f.checkout, 'added.ts'), 'export const added = 1\n')
+    const second = captureDevelopmentSource(f.checkout, join(f.root, 'second'))
+    populateDevelopmentWorkspace(second, f.workspace)
+    expect(listed()).toContain('added.ts')
+    expect(listed()).not.toContain('tracked.ts')
+    expect(inWorkspace('status', '--porcelain')).toBe('')
+    expect(readFileSync(join(f.workspace, 'node_modules', 'warm'), 'utf8')).toBe('keep')
+  })
+  it('keeps warm dependencies out of the workspace repository without relying on app ignore rules', () => {
+    const f = fixture()
+    writeFileSync(join(f.checkout, '.gitignore'), '.env\n.output/\nignored-input.json\n')
+    populateDevelopmentWorkspace(captureDevelopmentSource(f.checkout, f.snapshot), f.workspace)
+    mkdirSync(join(f.workspace, 'apps/web/node_modules'), { recursive: true })
+    writeFileSync(join(f.workspace, 'apps/web/node_modules', 'installed.js'), 'dependency')
+    populateDevelopmentWorkspace(
+      captureDevelopmentSource(f.checkout, join(f.root, 'second')),
+      f.workspace,
+    )
+    const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard'], {
+      cwd: f.workspace,
+      encoding: 'utf8',
+    })
+    expect(listed).not.toContain('node_modules')
+    expect(listed).toContain('tracked.ts')
   })
   it('refuses modified captured inputs and inline registry credentials', () => {
     const f = fixture()
