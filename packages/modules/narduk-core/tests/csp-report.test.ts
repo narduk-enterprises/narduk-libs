@@ -270,6 +270,13 @@ describe('what the sink accepts (narduk-libs#444, CSP-1)', () => {
     expect(logger.warn).not.toHaveBeenCalled()
   })
 
+  it('never counts another content type against the allowance', async () => {
+    const junk = await post(CSP_REPORT_RATE_LIMIT.limit + 1, 'text/plain')
+    expect(junk.statuses.every((code) => code === 204)).toBe(true)
+    const real = await post(1)
+    expect(real.statuses).toEqual([204])
+  })
+
   it('answers 429 once a client passes its allowance, and logs nothing for the denial', async () => {
     const { statuses } = await post(CSP_REPORT_RATE_LIMIT.limit + 1)
     expect(statuses.at(-1)).toBe(429)

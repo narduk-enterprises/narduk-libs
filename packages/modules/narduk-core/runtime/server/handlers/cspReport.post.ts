@@ -235,12 +235,7 @@ export async function readCappedCspReportJson(
   return JSON.parse(raw) as unknown
 }
 
-const cspReportSink = defineEventHandler(async (event) => {
-  if (!isCspReportContentType(getRequestHeader(event, 'content-type'))) {
-    setResponseStatus(event, 204)
-    return null
-  }
-
+const cspReportSink = defineRateLimitedHandler(async (event) => {
   const logger = useLogger(event).child('SecurityHeaders')
 
   let payload: unknown
@@ -262,6 +257,14 @@ const cspReportSink = defineEventHandler(async (event) => {
   // has no response worth reading.
   setResponseStatus(event, 204)
   return null
-})
+}, CSP_REPORT_RATE_LIMIT)
 
-export default defineRateLimitedHandler(cspReportSink, CSP_REPORT_RATE_LIMIT)
+// Any other media type is answered before the limiter, so junk that is never
+// read cannot spend the allowance a real report from the same client needs.
+export default defineEventHandler((event) => {
+  if (!isCspReportContentType(getRequestHeader(event, 'content-type'))) {
+    setResponseStatus(event, 204)
+    return null
+  }
+  return cspReportSink(event)
+})
