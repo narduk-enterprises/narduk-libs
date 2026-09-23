@@ -98,3 +98,8 @@ packages/modules/geogrid-web/tests/fixtures/**
 
 # ── Generated changelogs (written by changesets, not hand-authored) ────
 **/CHANGELOG.md
+
+# ── Changeset markdown (release input copied into the ignored CHANGELOG) ─
+# narduk-libs#432: its body lands verbatim in CHANGELOG.md above, so
+# formatting it buys nothing and a rewrapped line cost a CI round per lane.
+.changeset/*.md
