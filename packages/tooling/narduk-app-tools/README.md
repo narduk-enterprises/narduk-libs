@@ -768,8 +768,11 @@ the app's declared `deployment.liveProof.smokePath` rather than to `/`, for the
 same reason. It reads `liveProof.healthPath` and `liveProof.buildVersionHeader`
 too -- the fields `foundation:check:deployment` item 12.3 already requires -- so
 requirements 5, 8 and 12 are decided against the routes the app says it serves.
-The hard-coded `/`, `/api/health` and `x-build-version` remain the fallback for
-an app that declares no `liveProof` block.
+With `liveProof.healthAuth: "authenticated"` it does not fetch `healthPath`
+anonymously at all: requirement 12 is reported unknown, with that reason, rather
+than failed on the 401 the app is right to send (#585). The hard-coded `/`,
+`/api/health` and `x-build-version` remain the fallback for an app that declares
+no `liveProof` block.
 
 What it decides, per route:
 
