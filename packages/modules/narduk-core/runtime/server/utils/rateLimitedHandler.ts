@@ -118,7 +118,6 @@ function logDenial(
   }
 }
 
-/** Options accepted by {@link defineRateLimitedHandler}, plus test seams. */
 /** What {@link consumeRateLimit} decided for one request. */
 export interface RateLimitCheck {
   /** Whether the request is within its allowance. */
@@ -239,6 +238,7 @@ export async function consumeRateLimit(
   )
 }
 
+/** Options accepted by {@link defineRateLimitedHandler}, plus test seams. */
 export interface RateLimitedHandlerOptions extends RateLimitRouteOptions {
   /** Injected clock, for deterministic tests. Defaults to `Date.now`. */
   now?: () => number
