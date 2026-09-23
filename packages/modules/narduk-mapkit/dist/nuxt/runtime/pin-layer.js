@@ -262,19 +262,19 @@ export class MapKitPinLayer {
         host.style.cursor = 'pointer';
         // `#assertLabelling` has already refused a focusable layer without one.
         host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '');
-        const activate = () => {
-            this.#options.onSelect?.(this.#selectedId === key ? null : key);
+        const activate = (via) => {
+            this.#options.onSelect?.(this.#selectedId === key ? null : key, via);
         };
         host.addEventListener('click', (event) => {
             event.stopPropagation();
-            activate();
+            activate('pointer');
         });
         host.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar')
                 return;
             event.preventDefault();
             event.stopPropagation();
-            activate();
+            activate('keyboard');
         });
         return host;
     }

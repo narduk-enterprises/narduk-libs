@@ -227,6 +227,12 @@ five-consumer evidence). Opened for `selectedId` by default;
 `calloutFollowSelection={false}` hands control to the exposed
 `openCallout`/`closeCallout`.
 
+**(2.9.0, narduk-libs#746)** A pin selected from the keyboard moves focus to the
+first focusable element in the `#callout` slot once it renders, so a keyboard or
+screen-reader user reaches the callout's action without tabbing back through the
+page. A pointer selection leaves focus where it is. `calloutFocus="never"` opts
+out; the default is `'keyboard'`.
+
 ### c.5 Emits
 
 | Event                            | Payload                                        | Change                                                                                                                                                                                                                       |

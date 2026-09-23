@@ -406,6 +406,86 @@ describe('the #callout slot (§c.4)', () => {
   })
 })
 
+describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
+  const CalloutCard = defineComponent({
+    props: { label: { required: true, type: String } },
+    setup: (props) => () =>
+      h('div', [
+        h('span', props.label),
+        h('a', { class: 'callout-link', href: '/details' }, 'View details'),
+      ]),
+  })
+  const slots = {
+    callout: (scope: { item: Station }) => h(CalloutCard, { label: scope.item.label }),
+  }
+
+  async function selectFrom(
+    wrapper: Awaited<ReturnType<typeof mountMap>>,
+    event: Event,
+  ): Promise<HTMLElement> {
+    const pin = document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement
+    pin.focus()
+    pin.dispatchEvent(event)
+    // The app owns the selection: apply what the component asked for.
+    const [[id]] = wrapper.emitted('update:selectedId') as [[string]]
+    await wrapper.setProps({ selectedId: id })
+    await nextTick()
+    await nextTick()
+    return pin
+  }
+
+  it('moves focus to the first focusable element in the callout', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+
+    await selectFrom(wrapper, new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+
+    const link = document.querySelector('[data-mapkit-callout="station-2"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+  })
+
+  it('leaves focus on the pin after a pointer selection', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+
+    const pin = await selectFrom(wrapper, new MouseEvent('click', { bubbles: true }))
+
+    expect(document.querySelector('[data-mapkit-callout="station-2"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
+  })
+
+  it('focuses the callout when a re-added pin is reselected under a kept selection', async () => {
+    const wrapper = await mountMap({ items: STATIONS, selectedId: 'station-2' }, slots)
+    // The pin leaves and comes back while the app keeps its selection, so the
+    // layer forgets it and the next activation asks for the same id again.
+    await wrapper.setProps({ items: STATIONS.filter((s) => s.id !== 'station-2') })
+    await wrapper.setProps({ items: STATIONS })
+    await nextTick()
+
+    const pin = document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement
+    pin.focus()
+    pin.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+    const link = document.querySelector('[data-mapkit-callout="station-2"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+  })
+
+  it("leaves focus on the pin when calloutFocus is 'never'", async () => {
+    const wrapper = await mountMap({ calloutFocus: 'never', items: STATIONS }, slots)
+
+    const pin = await selectFrom(
+      wrapper,
+      new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }),
+    )
+
+    expect(document.querySelector('[data-mapkit-callout="station-2"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
+  })
+})
+
 describe('failure and retry (§c.4, §c.6)', () => {
   it('reports the structured failure and offers a retry instead of the raw error', async () => {
     useFake({ auth: { mode: 'error', status: 'Unauthorized' } })

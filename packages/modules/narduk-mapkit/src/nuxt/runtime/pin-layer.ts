@@ -66,6 +66,9 @@ export interface MapKitPinElement {
   element: HTMLElement
 }
 
+/** How a pin selection was made. */
+export type MapKitSelectVia = 'keyboard' | 'pointer'
+
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
   clusteringIdentifier?: string
@@ -94,8 +97,11 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   itemLabel?: (item: T) => string
   map: MapKitMapLike
   mapkit: MapKitNamespaceLike
-  /** Called when a pin is activated by pointer or keyboard, with the toggled id. */
-  onSelect?: (id: string | null) => void
+  /**
+   * Called when a pin is activated by pointer or keyboard, with the toggled id
+   * and which of the two activated it.
+   */
+  onSelect?: (id: string | null, via: MapKitSelectVia) => void
   pinGeometry?: (item: T) => MapKitPinGeometry
 }
 
@@ -351,18 +357,18 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     // `#assertLabelling` has already refused a focusable layer without one.
     host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '')
 
-    const activate = (): void => {
-      this.#options.onSelect?.(this.#selectedId === key ? null : key)
+    const activate = (via: MapKitSelectVia): void => {
+      this.#options.onSelect?.(this.#selectedId === key ? null : key, via)
     }
     host.addEventListener('click', (event) => {
       event.stopPropagation()
-      activate()
+      activate('pointer')
     })
     host.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
       event.preventDefault()
       event.stopPropagation()
-      activate()
+      activate('keyboard')
     })
     return host
   }
