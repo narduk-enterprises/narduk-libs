@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import { batchPackages, packageGates } from './ci-package-plan.mjs'
-import { runBrowserGates, runPackageGates } from './ci-packages.mjs'
+import {
+  dependencyOrder,
+  outOfBatchBuilds,
+  runBrowserGates,
+  runPackageGates,
+} from './ci-packages.mjs'
 
 const names = ['one', 'two', 'three']
 const workspace = () => ({
@@ -102,5 +107,73 @@ test('a cancelled child stops the batch and cannot become a successful result', 
   assert.throws(
     () => runPackageGates(names, workspace(), () => ({ signal: 'SIGTERM', status: null })),
     /interrupted/,
+  )
+})
+
+// #292: a batch member's workspace dependencies are built before its gates.
+const graphWorkspace = (packages) => ({
+  byName: new Map(
+    Object.entries(packages).map(([name, { dependencies = {}, exports }]) => [
+      name,
+      {
+        manifest: {
+          name,
+          dependencies,
+          ...(exports ? { exports } : {}),
+          scripts: Object.fromEntries(packageGates.map((gate) => [gate, 'true'])),
+        },
+      },
+    ]),
+  ),
+})
+
+test('a batch runs each member after the in-batch packages it depends on (#292)', () => {
+  const graph = graphWorkspace({
+    consumer: { dependencies: { provider: 'workspace:*' } },
+    provider: { dependencies: { base: 'workspace:*' } },
+    base: {},
+  })
+  const order = []
+  runPackageGates(['consumer', 'provider', 'base'], graph, (command, args) => {
+    if (args[3] === 'lint') order.push(args[1])
+    return { status: 0 }
+  })
+  assert.deepEqual(order, ['base', 'provider', 'consumer'])
+})
+
+test('out-of-batch dependencies that export dist/ are built once, first, and transitively (#292)', () => {
+  const graph = graphWorkspace({
+    consumer: { dependencies: { built: 'workspace:*', source: 'workspace:*' } },
+    built: { exports: { '.': { import: './dist/index.js' } }, dependencies: { deep: '1.0.0' } },
+    deep: { exports: { '.': './dist/deep.js' } },
+    source: { exports: { '.': { import: './src/index.ts' } } },
+  })
+  const calls = []
+  const results = runPackageGates(['consumer'], graph, (command, args) => {
+    calls.push(args)
+    return { status: 0 }
+  })
+  assert.deepEqual(calls[0], ['--filter', 'built', '--filter', 'deep', 'run', 'build'])
+  assert.equal(calls.length, 1 + packageGates.length)
+  assert.deepEqual(results[0].gate, 'dependency build')
+  assert.deepEqual(outOfBatchBuilds(['consumer', 'built'], graph), ['deep'])
+  assert.deepEqual(dependencyOrder(['consumer', 'built'], graph), ['built', 'consumer'])
+})
+
+test('a failed dependency build stays red after the gates run (#292)', () => {
+  const graph = graphWorkspace({
+    consumer: { dependencies: { built: 'workspace:*' } },
+    built: { exports: { '.': './dist/index.js' } },
+  })
+  const results = runPackageGates(['consumer'], graph, (command, args) => ({
+    status: args.at(-1) === 'build' && args[1] === 'built' ? 2 : 0,
+  }))
+  assert.deepEqual(
+    results.filter(({ status }) => status !== 0).map(({ name, gate }) => ({ name, gate })),
+    [{ name: 'built', gate: 'dependency build' }],
+  )
+  assert.throws(
+    () => runPackageGates(['consumer'], graph, () => ({ signal: 'SIGTERM', status: null })),
+    /dependency build interrupted/,
   )
 })

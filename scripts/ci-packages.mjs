@@ -10,16 +10,103 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 import { packageGates } from './ci-package-plan.mjs'
+import { dependencySections } from './packed-consumer-scope.mjs'
 
 export function runPackageGates(names, workspace, execute = spawnSync) {
-  return runGates(names, workspace, packageGates, execute)
+  validateBatch(names, workspace, packageGates)
+  const ordered = dependencyOrder(names, workspace)
+  return [
+    ...buildOutOfBatchDependencies(ordered, workspace, execute),
+    ...runGates(ordered, workspace, packageGates, execute),
+  ]
 }
 
 export function runBrowserGates(names, workspace, execute = spawnSync) {
   return runGates(names, workspace, ['test:e2e'], execute)
 }
 
-function runGates(names, workspace, gates, execute) {
+function workspaceDependencies(name, workspace) {
+  const { manifest } = workspace.byName.get(name)
+  const names = new Set()
+  for (const section of dependencySections)
+    for (const dependency of Object.keys(manifest[section] || {}))
+      if (dependency !== name && workspace.byName.has(dependency)) names.add(dependency)
+  return [...names].sort()
+}
+
+// A batch member's gates run after every in-batch workspace package it depends
+// on, so the dependency's own `build` gate has produced its `dist/` first
+// (#292). Ties keep the selection order; a cycle keeps it too.
+export function dependencyOrder(names, workspace) {
+  const selected = new Set(names)
+  const ordered = []
+  const visiting = new Set()
+  const visit = (name) => {
+    if (ordered.includes(name) || visiting.has(name)) return
+    visiting.add(name)
+    for (const dependency of workspaceDependencies(name, workspace))
+      if (selected.has(dependency)) visit(dependency)
+    visiting.delete(name)
+    ordered.push(name)
+  }
+  for (const name of names) visit(name)
+  return ordered
+}
+
+// A workspace package that exports from `dist/` cannot be resolved by a
+// consumer until it is built. One that exports source needs nothing.
+function exportsBuildOutput(manifest) {
+  return /["/]dist\//.test(JSON.stringify([manifest.exports, manifest.main, manifest.types]))
+}
+
+// Every workspace package the batch reaches outside itself, transitively, that
+// exports build output: a gate must never depend on a `dist/` that happens to
+// be lying around from an earlier run, which is how a local run passed while
+// the same package failed CI with a bare TS2307 (#292, PR #290).
+export function outOfBatchBuilds(names, workspace) {
+  const selected = new Set(names)
+  const reached = new Set()
+  const pending = [...names]
+  while (pending.length) {
+    for (const dependency of workspaceDependencies(pending.pop(), workspace)) {
+      if (selected.has(dependency) || reached.has(dependency)) continue
+      reached.add(dependency)
+      pending.push(dependency)
+    }
+  }
+  return [...reached]
+    .filter((name) => {
+      const { manifest } = workspace.byName.get(name)
+      return exportsBuildOutput(manifest) && typeof manifest.scripts?.build === 'string'
+    })
+    .sort()
+}
+
+function buildOutOfBatchDependencies(names, workspace, execute) {
+  const dependencies = outOfBatchBuilds(names, workspace)
+  if (dependencies.length === 0) return []
+  const started = performance.now()
+  console.log(`::group::dependency build: ${dependencies.join(', ')}`)
+  // A recursive `pnpm run` over several filters runs them in dependency order.
+  const result = execute(
+    'pnpm',
+    [...dependencies.flatMap((name) => ['--filter', name]), 'run', 'build'],
+    { cwd: root, stdio: 'inherit' },
+  )
+  console.log('::endgroup::')
+  if (result.error) throw result.error
+  if (result.signal) throw new Error(`dependency build interrupted by ${result.signal}`)
+  return [
+    {
+      name: dependencies.join(', '),
+      gate: 'dependency build',
+      status: result.status ?? 1,
+      seconds: (performance.now() - started) / 1000,
+    },
+  ]
+}
+
+function validateBatch(names, workspace, gates) {
   if (!Array.isArray(names) || names.length === 0 || new Set(names).size !== names.length) {
     throw new Error('A batch must contain a nonempty, unique package selection.')
   }
@@ -37,6 +124,10 @@ function runGates(names, workspace, gates, execute) {
       }
     }
   }
+}
+
+function runGates(names, workspace, gates, execute) {
+  validateBatch(names, workspace, gates)
   const results = []
   for (const name of names) {
     for (const gate of gates) {
