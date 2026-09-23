@@ -7,8 +7,11 @@ public, independently versioned packages through GitHub Packages:
   geometry, temporal, vector-overlay, and Apple Maps Server API helpers, plus
   the `./nuxt` entry: a Nuxt 4 module registering `<AppMapKit>`, `useMapKit()`,
   and the same-host token route.
-- `@narduk-enterprises/narduk-mapkit-nuxt` — the 2.0.x adapter, for apps that
-  have not moved to the `./nuxt` entry.
+- `@narduk-enterprises/narduk-mapkit-nuxt` — the 2.0.x adapter, **frozen**: it
+  receives no further releases (`docs/api-2.1.md` § a). It exists for apps that
+  have not moved to the `./nuxt` entry. A new app uses
+  `@narduk-enterprises/narduk-mapkit/nuxt` and does not install it
+  (narduk-libs#696).
 
 This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
 token routes, browser bootstrapping, coordinate and region math, GeoJSON and
@@ -77,17 +80,29 @@ Configure the scoped registry with a GitHub token that has `read:packages`:
 pnpm add @narduk-enterprises/narduk-mapkit
 ```
 
-Nuxt apps install both immutable releases:
-
-```sh
-pnpm add @narduk-enterprises/narduk-mapkit @narduk-enterprises/narduk-mapkit-nuxt
-```
+Nuxt apps register the package's own `./nuxt` entry; there is no second package
+to install:
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit/nuxt'],
 })
 ```
+
+An app still on the frozen 2.0.x adapter
+(`modules: ['@narduk-enterprises/narduk-mapkit-nuxt']`) moves by editing
+`nuxt.config.ts`; no version bump hands it the new module. The two surfaces are
+not identical, so check what the app uses before moving:
+
+| Only in the frozen adapter                                              | Only in `narduk-mapkit/nuxt` |
+| ----------------------------------------------------------------------- | ---------------------------- |
+| `<AppMapKitCallout>`, `useMapKitCallouts` (use the `#callout` slot)     | `useMapKitFullscreen`        |
+| `useMapKitVectorTiles`, `useMapkitToken`                                | `useMapKitView`              |
+| `callouts*`, `fullscreenControl`, `fullscreenMode`, `centerLabel` props |                              |
+
+The 3.0.0 plan
+([`docs/plans/mapkit-consolidation-plan.md`](../../../docs/plans/mapkit-consolidation-plan.md))
+names both packages, so an app on either line meets the same break.
 
 Do not use mutable Git branches, absolute tarball paths, or vendored source in
 production consumers. Publish immutable SemVer packages and pin or range those

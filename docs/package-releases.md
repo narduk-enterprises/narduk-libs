@@ -192,6 +192,36 @@ default.
 The check is skipped on `changeset-release/*` branches, whose version commits
 legitimately rewrite every manifest with the Changesets already consumed.
 
+## Consuming a fix that is merged but not yet published
+
+An app that needs a library fix sees a gap between the fix merging here and a
+version containing it existing on the registry. It closes when the
+`chore: release packages` PR (branch `changeset-release/main`) merges and
+publishes (narduk-libs#589).
+
+- **What triggers the release PR.** The Release workflow opens or updates it on
+  every merge to `main` that carries a Changeset. Nothing batches it on a
+  cadence: it sits open, collecting every pending Changeset, until someone
+  merges it.
+- **Who merges it.** If a campaign orchestrator is running in this repository,
+  it owns release merges; ask it rather than merging. Otherwise the lane blocked
+  on the fix may merge it through the same gate as any PR (`verify-pr-gate.py`
+  GREEN on its current head, after approving held runs as described in
+  [Approving `chore: release packages` PR runs](#approving-chore-release-packages-pr-runs)).
+  The PR publishes every pending package, not only yours, so read its package
+  list before merging, and treat the
+  [Release publication proof](#release-publication-proof) as the end of the job,
+  not the merge.
+- **Pinning ahead of publication.** Do not push an app PR that pins a version
+  which does not exist yet. Its install fails for a reason that is not the PR's
+  fault, and the red check looks the same as a real failure. Keep the pin local,
+  or open the app PR as a draft that says which version it waits for, and push
+  the pin once `npm view <package>@<version>` resolves on `npm.nard.uk`.
+- **Never work around it in the app.** Copying the fix into the app, patching
+  `node_modules` or vendoring the source is exactly the fork this repository
+  exists to prevent, and it is the hardest to find later. Wait for the release.
+  If the wait itself is the blocker, say so to whoever owns release merges.
+
 ## Failed or partial publish
 
 - Do not change, delete, or reuse a version that may have reached the registry.

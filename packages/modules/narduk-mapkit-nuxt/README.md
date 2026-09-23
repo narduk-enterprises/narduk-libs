@@ -5,6 +5,12 @@ Nuxt integration for `@narduk-enterprises/narduk-mapkit`. It adds the
 `useMapKitVectorTiles`, `useMapkitToken`, and a Worker-compatible
 `GET /api/mapkit-token` route.
 
+> **Frozen at 2.0.x.** This adapter receives no further releases. A new app
+> registers `@narduk-enterprises/narduk-mapkit/nuxt` from the core package
+> instead, and does not install this one. The two surfaces differ, and moving an
+> existing app is a `nuxt.config.ts` edit; see the core package README,
+> "Install", for the table (narduk-libs#696).
+
 ## Install
 
 ```sh

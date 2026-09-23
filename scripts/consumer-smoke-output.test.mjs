@@ -165,6 +165,13 @@ test('a successful Rolldown plugin timing summary is informational', () => {
   ]) {
     assert.deepEqual(collectWarningFindings(line), [line])
   }
+  // The later Rolldown wording, verbatim from narduk-libs#753's red run.
+  const reworded =
+    '[warn] [PLUGIN_TIMINGS] JavaScript callbacks ran for 4.3s of this 4.4s build (96%).'
+  assert.deepEqual(collectWarningFindings(reworded), [])
+  assert.deepEqual(collectWarningFindings(reworded.replace('JavaScript callbacks', 'Callbacks')), [
+    reworded.replace('JavaScript callbacks', 'Callbacks'),
+  ])
 })
 
 test("narduk-core's build banner is not a finding; any other forwarded console.warn is", () => {
