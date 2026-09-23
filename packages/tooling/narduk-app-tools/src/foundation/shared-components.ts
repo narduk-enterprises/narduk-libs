@@ -89,11 +89,40 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
   },
 ]
 
-/** scule's `splitByCase`, which Nuxt uses to name components. */
+const isUpper = (char: string | undefined): boolean =>
+  char !== undefined && char >= 'A' && char <= 'Z'
+const isLower = (char: string | undefined): boolean =>
+  char !== undefined && char >= 'a' && char <= 'z'
+const isDigit = (char: string | undefined): boolean =>
+  char !== undefined && char >= '0' && char <= '9'
+
+/**
+ * scule's `splitByCase`, which Nuxt uses to name components: words are a
+ * capital run (`HTML`) or an optional capital plus lowercase letters and
+ * digits (`Parser`, `chart2`); everything else separates. A scanner rather
+ * than the equivalent `/[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+/g`, which CodeQL
+ * flags as polynomial on long capital runs.
+ */
 function splitByCase(value: string): string[] {
-  return value
-    .split(/[-_.\s]+/)
-    .flatMap((part) => part.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+/g) ?? [])
+  const parts: string[] = []
+  let start = 0
+  while (start < value.length) {
+    let end = start
+    while (isUpper(value[end])) end++
+    // A capital run followed by a lowercase letter hands its last capital to that word.
+    if (end > start && isLower(value[end])) end--
+    if (end === start) {
+      if (isUpper(value[end])) end++
+      while (isLower(value[end]) || isDigit(value[end])) end++
+    }
+    if (end === start) {
+      start++
+      continue
+    }
+    parts.push(value.slice(start, end))
+    start = end
+  }
+  return parts
 }
 
 function pascal(parts: readonly string[]): string {

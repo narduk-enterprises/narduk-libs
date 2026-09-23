@@ -89,6 +89,9 @@ describe('nuxtComponentName', () => {
     ['orders/parts/Row.vue', 'OrdersPartsRow'],
     ['orders/index.vue', 'Orders'],
     ['base/base-button.vue', 'BaseButton'],
+    ['HTMLParser.vue', 'HTMLParser'],
+    ['charts/Chart2D.vue', 'ChartsChart2D'],
+    ['ui/AB2.vue', 'UiAB2'],
   ])('%s registers as %s', (path, name) => {
     expect(nuxtComponentName(path)).toBe(name)
   })
