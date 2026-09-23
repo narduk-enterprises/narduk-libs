@@ -271,8 +271,48 @@ function filenameMethodOf(routeRelativePath: string): string | null {
   return FILENAME_METHOD_SUFFIXES.has(candidate) ? candidate : null
 }
 
-/** Pure path classification — no AST, no filesystem, no ESLint context. */
-export function analyzeServerRoutePath(filename: string): ServerRoutePathInfo {
+/**
+ * The URL path a route file serves: `server/api/devices/[id]/ingest.post.ts`
+ * -> `/api/devices/[id]/ingest`, `server/routes/hooks/index.ts` -> `/hooks`.
+ * Dynamic segments stay bracketed, so only a `/*` entry can cover them.
+ */
+export function routeUrlPath(area: RouteArea, routeRelativePath: string): string {
+  const parts = routeRelativePath.split('/')
+  const basename = parts.pop() ?? ''
+  const pieces = basename.split('.')
+  if (pieces.length > 1 && ROUTE_EXTENSIONS.has(pieces.at(-1)?.toLowerCase() ?? '')) pieces.pop()
+  if (pieces.length > 1 && FILENAME_METHOD_SUFFIXES.has(pieces.at(-1)?.toLowerCase() ?? ''))
+    pieces.pop()
+  const stem = pieces.join('.')
+  if (stem !== 'index') parts.push(stem)
+  const path = parts.filter(Boolean).join('/')
+  return area === 'api' ? `/api${path ? `/${path}` : ''}` : `/${path}`
+}
+
+/**
+ * Whether a route URL is covered by an app's declared
+ * `nardukCore.csrf.exemptPaths` — the same exact-or-`/*`-prefix match, with one
+ * trailing slash tolerated, that narduk-core's `isCsrfExemptPath` applies at
+ * request time (narduk-libs#510).
+ */
+export function isDeclaredCsrfExempt(urlPath: string, exemptPaths: readonly string[]): boolean {
+  const trim = (value: string) =>
+    value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value
+  const normalized = trim(urlPath)
+  return exemptPaths.some((entry) =>
+    entry.endsWith('/*') ? normalized.startsWith(entry.slice(0, -1)) : normalized === trim(entry),
+  )
+}
+
+/**
+ * Pure path classification — no AST, no filesystem, no ESLint context.
+ * `exemptPaths` is the app's declared `nardukCore.csrf.exemptPaths`; a route it
+ * covers is CSRF-exempt exactly like a `webhooks/` route.
+ */
+export function analyzeServerRoutePath(
+  filename: string,
+  exemptPaths: readonly string[] = [],
+): ServerRoutePathInfo {
   const root = findRouteRoot(filename)
   if (!root) {
     return {
@@ -284,7 +324,9 @@ export function analyzeServerRoutePath(filename: string): ServerRoutePathInfo {
     }
   }
 
-  const isCsrfExempt = CSRF_EXEMPT_ROUTE_PREFIXES.some((prefix) => root.rest.startsWith(prefix))
+  const isCsrfExempt =
+    CSRF_EXEMPT_ROUTE_PREFIXES.some((prefix) => root.rest.startsWith(prefix)) ||
+    isDeclaredCsrfExempt(routeUrlPath(root.area, root.rest), exemptPaths)
 
   return {
     isServerRoute: true,
@@ -731,8 +773,9 @@ export function collectHandlerMethodEvidence(ast: any): HandlerMethodEvidence {
 export function analyzeMutationRoute(
   filename: string,
   sourceCode?: SourceCode | null,
+  exemptPaths: readonly string[] = [],
 ): MutationRouteInfo {
-  const pathInfo = analyzeServerRoutePath(filename)
+  const pathInfo = analyzeServerRoutePath(filename, exemptPaths)
 
   const filenameMethods = new Set<string>()
   if (pathInfo.filenameMethod) filenameMethods.add(pathInfo.filenameMethod.toUpperCase())
