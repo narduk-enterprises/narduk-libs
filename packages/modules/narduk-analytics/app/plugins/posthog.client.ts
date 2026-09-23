@@ -7,6 +7,12 @@ import {
   resolveAnalyticsEnvironment,
   runWithAnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
+import {
+  composeBeforeSend,
+  createStrictPrivacyBeforeSend,
+  normalizeAnalyticsPrivacy,
+  templatePath,
+} from '../utils/analyticsPrivacy'
 import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
 
 import type {
@@ -32,10 +38,19 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
       runtimeConfig.public.analyticsLoadStrategy,
     )
     const isLocalhost = isLocalAnalyticsHost(window.location.hostname)
-    const sessionReplayEnabled = runtimeConfig.public.posthogSessionReplayEnabled === true
+    // Strict privacy is decided in nuxt.config (`nardukAnalytics.privacy`), not
+    // by the runtime-public overlay, so a Worker variable cannot switch replay,
+    // surveys or attribution back on for a private app. See the README.
+    const strict = normalizeAnalyticsPrivacy(runtimeConfig.public.analyticsPrivacy) === 'strict'
+    const sessionReplayEnabled =
+      !strict && runtimeConfig.public.posthogSessionReplayEnabled === true
+    const surveysEnabled = !strict && runtimeConfig.public.posthogSurveysEnabled === true
     const webVitalsEnabled = runtimeConfig.public.posthogWebVitalsEnabled === true
+    // Attribution carries element selectors and resource URLs: never in strict.
     const webVitalsAttributionEnabled =
-      webVitalsEnabled && runtimeConfig.public.posthogWebVitalsAttributionEnabled === true
+      !strict &&
+      webVitalsEnabled &&
+      runtimeConfig.public.posthogWebVitalsAttributionEnabled === true
 
     if (
       !posthogApiKey ||
@@ -78,20 +93,54 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         })
       }
 
+      const resolveRoute = (path: string) => router.resolve(path)
+      // Web vitals first: it reads the raw URL on each nested metric to find the
+      // route. The strict scrub runs last, so nothing an earlier hook adds escapes.
+      const beforeSend = composeBeforeSend(
+        webVitalsEnabled
+          ? createWebVitalsBeforeSend({
+              buildVersion: runtimeConfig.public.buildVersion,
+              navigator: typeof navigator === 'undefined' ? undefined : navigator,
+              resolveRoute,
+            })
+          : undefined,
+        strict
+          ? createStrictPrivacyBeforeSend({ origin: window.location.origin, resolveRoute })
+          : undefined,
+      )
+
       const posthogClient = posthog.init(posthogApiKey, {
         api_host: posthogHost === '' ? 'https://us.i.posthog.com' : posthogHost,
         capture_pageview: false, // We'll handle this manually for Nuxt SPA navigation
         capture_pageleave: true,
 
         disable_session_recording: !sessionReplayEnabled,
-        disable_surveys: runtimeConfig.public.posthogSurveysEnabled !== true,
-        disable_surveys_automatic_display: runtimeConfig.public.posthogSurveysEnabled !== true,
-        capture_dead_clicks: runtimeConfig.public.posthogDeadClicksEnabled === true,
+        disable_surveys: !surveysEnabled,
+        disable_surveys_automatic_display: !surveysEnabled,
+        capture_dead_clicks: !strict && runtimeConfig.public.posthogDeadClicksEnabled === true,
+        // Strict: no element capture of any kind — clicks, rage clicks, heatmaps
+        // — and every URL-bearing property reduced to its route pattern below.
+        ...(strict
+          ? {
+              autocapture: false,
+              rageclick: false,
+              capture_heatmaps: false,
+              mask_all_text: true,
+              mask_all_element_attributes: true,
+            }
+          : {}),
+        // Strict never loads PostHog's remote extensions (toolbar, heatmaps,
+        // exception autocapture): each one is a capture path this hook list
+        // did not review.
         disable_external_dependency_loading:
-          !sessionReplayEnabled &&
-          runtimeConfig.public.posthogExternalDependencyLoadingEnabled !== true,
-        advanced_disable_flags: false,
-        advanced_disable_feature_flags: runtimeConfig.public.posthogFeatureFlagsEnabled !== true,
+          strict ||
+          (!sessionReplayEnabled &&
+            runtimeConfig.public.posthogExternalDependencyLoadingEnabled !== true),
+        // Strict makes no /flags request at all: its payload carries person
+        // properties, which include the initial URL.
+        advanced_disable_flags: strict,
+        advanced_disable_feature_flags:
+          strict || runtimeConfig.public.posthogFeatureFlagsEnabled !== true,
 
         // Use XHR instead of sendBeacon on page unload (avoids 64KB cap entirely)
         transport: 'XHR',
@@ -104,15 +153,7 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
           web_vitals: webVitalsEnabled,
           web_vitals_attribution: webVitalsAttributionEnabled,
         },
-        ...(webVitalsEnabled
-          ? {
-              before_send: createWebVitalsBeforeSend({
-                buildVersion: runtimeConfig.public.buildVersion,
-                navigator: typeof navigator === 'undefined' ? undefined : navigator,
-                resolveRoute: (path: string) => router.resolve(path),
-              }),
-            }
-          : {}),
+        ...(beforeSend ? { before_send: beforeSend } : {}),
 
         loaded: (ph) => {
           if (import.meta.dev) ph.debug()
@@ -173,7 +214,7 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
 
         lastTrackedPath = path
         posthog.capture('$pageview', {
-          $current_url: window.location.origin + path,
+          $current_url: window.location.origin + (strict ? templatePath(path, resolveRoute) : path),
         })
       }
 

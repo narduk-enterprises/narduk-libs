@@ -13,6 +13,7 @@ interface AnalyticsRuntimeConfig {
 
 interface AnalyticsPublicRuntimeConfig {
   analyticsLoadStrategy: 'immediate' | 'idle' | 'interaction' | 'off'
+  analyticsPrivacy: 'standard' | 'strict'
   gaMeasurementId: string
   indexNowKey: string
   posthogDeadClicksEnabled: boolean

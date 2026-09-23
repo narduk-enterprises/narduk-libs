@@ -194,6 +194,22 @@ describe('narduk-analytics module', () => {
     }
   })
 
+  it('defaults to standard privacy, and a strict option overrides the app config', async () => {
+    mockNuxtKit(() => true)
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+
+    const standard = makeNuxt()
+    await mod.setup({ app: false, server: false }, standard)
+    expect(standard.options.runtimeConfig.public.analyticsPrivacy).toBe('standard')
+
+    const strict = makeNuxt()
+    strict.options.runtimeConfig = { public: { analyticsPrivacy: 'standard' } }
+    await mod.setup({ app: false, server: false, privacy: 'strict' }, strict)
+    expect(strict.options.runtimeConfig.public.analyticsPrivacy).toBe('strict')
+  })
+
   describe('admin routes on an app with no database (#524)', () => {
     async function scanned(
       options: Record<string, unknown>,

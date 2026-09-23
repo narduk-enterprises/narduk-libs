@@ -30,7 +30,7 @@ const bodySchema = z.object({
  *
  * Usage after deploy:
  *   curl -X POST https://your-site.com/api/indexnow/submit \
- *     -H "Content-Type: application/json" \
+ *     -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" \
  *     -d '{"urls": ["https://your-site.com/", "https://your-site.com/about"]}'
  */
 export default definePublicMutation(
