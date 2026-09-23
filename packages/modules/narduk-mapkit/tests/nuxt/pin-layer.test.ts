@@ -54,7 +54,7 @@ function makeLayer(options: {
   focusable?: boolean
   itemKey: (item: Station, index: number) => string
   itemLabel?: (item: Station) => string
-  onSelect?: (id: string | null) => void
+  onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
   pinGeometry?: (item: Station) => { anchor?: 'center'; size?: { height: number; width: number } }
 }): MapKitPinLayer<Station> {
   return new MapKitPinLayer<Station>({
@@ -230,7 +230,7 @@ describe('the library-owned host (§c.2)', () => {
     expect(host?.getAttribute('data-mapkit-pin')).toBe('station-1')
   })
 
-  it('activates on Enter and on Space, not only on click', () => {
+  it('activates on Enter and on Space, not only on click, and says which', () => {
     const onSelect = vi.fn()
     const layer = layerFor({ onSelect })
     layer.setItems([station(1)])
@@ -240,7 +240,11 @@ describe('the library-owned host (§c.2)', () => {
     host.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ' ' }))
     host.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-    expect(onSelect.mock.calls).toStrictEqual([['station-1'], ['station-1'], ['station-1']])
+    expect(onSelect.mock.calls).toStrictEqual([
+      ['station-1', 'keyboard'],
+      ['station-1', 'keyboard'],
+      ['station-1', 'pointer'],
+    ])
   })
 
   it('toggles the selection off when the selected pin is activated again', () => {
@@ -251,7 +255,7 @@ describe('the library-owned host (§c.2)', () => {
 
     layer.hostFor('station-1')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-    expect(onSelect).toHaveBeenCalledWith(null)
+    expect(onSelect).toHaveBeenCalledWith(null, 'pointer')
   })
 
   it('refuses to render a pin with no accessible name', () => {

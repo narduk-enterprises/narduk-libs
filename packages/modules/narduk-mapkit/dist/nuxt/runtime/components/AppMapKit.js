@@ -18,7 +18,7 @@
  * TypeScript and the seam has to hold without Vue (narduk-libs#422). This file
  * turns props into calls on those controllers and renders the slots.
  */
-import { Teleport, computed, defineComponent, h, inject, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
+import { Teleport, computed, defineComponent, h, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
 import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js';
 import { MapKitCalloutHostLayer } from '../callout-host.js';
 import { useMapKitPreload } from '../preload.js';
@@ -28,9 +28,22 @@ import { MapKitPinLayer, defaultMapKitItemKey } from '../pin-layer.js';
 import { mapKitBoundingRegion, mapKitGeometryPoints } from '../region.js';
 import { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from '../injection-keys.js';
 import { useMapKit } from '../composables/useMapKit.js';
+const CALLOUT_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+    'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const props = {
     ariaLabel: { default: 'Map', type: String },
     boundingPadding: { default: 0.05, type: Number },
+    /**
+     * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+     * moves it to the first focusable element in the `#callout` slot once the
+     * callout renders, so a keyboard or screen-reader user can reach its action.
+     * A pointer selection always leaves focus where it is. `'never'` opts out.
+     */
+    calloutFocus: {
+        default: 'keyboard',
+        type: String,
+        validator: (value) => value === 'keyboard' || value === 'never',
+    },
     /** Open the callout for the selected item. Off hands control to `openCallout`. */
     calloutFollowSelection: { default: true, type: Boolean },
     circleScaleFactor: { default: 0.004, type: Number },
@@ -293,20 +306,43 @@ const AppMapKitImpl = defineComponent({
                     emit('callout-close', { id: target, item });
             }
         }
-        function select(id) {
+        // The id whose callout should take focus once it renders: set by a keyboard
+        // selection, consumed by the next `applySelection` (narduk-libs#746).
+        let focusCalloutFor = null;
+        function select(id, via = 'pointer') {
+            focusCalloutFor =
+                via === 'keyboard' && id !== null && componentProps.calloutFocus === 'keyboard' ? id : null;
             if (id === componentProps.selectedId)
                 return;
             emit('update:selectedId', id);
+        }
+        function focusCallout(id, retry = true) {
+            if (componentProps.selectedId !== id)
+                return;
+            const host = calloutLayer?.entries().find((entry) => entry.id === id)?.host;
+            const target = host?.querySelector(CALLOUT_FOCUSABLE);
+            if (target) {
+                target.focus({ preventScroll: true });
+                return;
+            }
+            // Slot content that renders a frame late still gets focus, once.
+            if (retry && host)
+                requestAnimationFrame(() => focusCallout(id, false));
         }
         function applySelection(id) {
             if (!pinLayer)
                 return;
             pinLayer.setSelected(id);
+            const focusFor = focusCalloutFor;
+            focusCalloutFor = null;
             if (!componentProps.calloutFollowSelection)
                 return;
             closeCallout();
-            if (id !== null)
-                openCallout(id);
+            if (id === null)
+                return;
+            openCallout(id);
+            if (focusFor === id)
+                void nextTick(() => focusCallout(id));
         }
         function zoomToItem(namespace, item) {
             map?.setRegionAnimated(toRegion(namespace, { lat: item.lat, lng: item.lng }, componentProps.zoomSpan), true);

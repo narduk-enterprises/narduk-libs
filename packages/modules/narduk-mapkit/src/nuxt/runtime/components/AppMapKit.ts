@@ -24,6 +24,7 @@ import {
   defineComponent,
   h,
   inject,
+  nextTick,
   onBeforeUnmount,
   ref,
   shallowRef,
@@ -44,7 +45,7 @@ import type { MapKitCalloutEntry, MapKitCalloutPoint } from '../callout-host.js'
 import type { MapKitMapLike, MapKitNamespaceLike, MapKitRegionLike } from '../mapkit-surface.js'
 import type { MapKitOverlayMapLike, MapKitOverlayNamespaceLike } from '../overlay-layer.js'
 import type { MapKitPinGeometry } from '../pin-geometry.js'
-import type { MapKitDiff, MapKitPinElement, MapKitPinItem } from '../pin-layer.js'
+import type { MapKitDiff, MapKitPinElement, MapKitPinItem, MapKitSelectVia } from '../pin-layer.js'
 import type { MapKitLatLng } from '../region.js'
 import type { MapKitFailure, MapKitLibrary } from '../../../client/mapkit.js'
 import type {
@@ -60,6 +61,13 @@ import type { PropType, SlotsType, VNode } from 'vue'
 
 type MapKitItem = MapKitPinItem & { id?: string }
 
+/** `<AppMapKit>`'s `calloutFocus` prop. */
+export type MapKitCalloutFocus = 'keyboard' | 'never'
+
+const CALLOUT_FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export interface MapKitCalloutSlotScope<T> {
   close: () => void
   id: string
@@ -71,6 +79,17 @@ export interface MapKitCalloutSlotScope<T> {
 const props = {
   ariaLabel: { default: 'Map', type: String },
   boundingPadding: { default: 0.05, type: Number },
+  /**
+   * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+   * moves it to the first focusable element in the `#callout` slot once the
+   * callout renders, so a keyboard or screen-reader user can reach its action.
+   * A pointer selection always leaves focus where it is. `'never'` opts out.
+   */
+  calloutFocus: {
+    default: 'keyboard' as const,
+    type: String as PropType<MapKitCalloutFocus>,
+    validator: (value: unknown) => value === 'keyboard' || value === 'never',
+  },
   /** Open the callout for the selected item. Off hands control to `openCallout`. */
   calloutFollowSelection: { default: true, type: Boolean },
   circleScaleFactor: { default: 0.004, type: Number },
@@ -365,17 +384,39 @@ const AppMapKitImpl = defineComponent({
       }
     }
 
-    function select(id: string | null): void {
+    // The id whose callout should take focus once it renders: set by a keyboard
+    // selection, consumed by the next `applySelection` (narduk-libs#746).
+    let focusCalloutFor: string | null = null
+
+    function select(id: string | null, via: MapKitSelectVia = 'pointer'): void {
+      focusCalloutFor =
+        via === 'keyboard' && id !== null && componentProps.calloutFocus === 'keyboard' ? id : null
       if (id === componentProps.selectedId) return
       emit('update:selectedId', id)
+    }
+
+    function focusCallout(id: string, retry = true): void {
+      if (componentProps.selectedId !== id) return
+      const host = calloutLayer?.entries().find((entry) => entry.id === id)?.host
+      const target = host?.querySelector<HTMLElement>(CALLOUT_FOCUSABLE)
+      if (target) {
+        target.focus({ preventScroll: true })
+        return
+      }
+      // Slot content that renders a frame late still gets focus, once.
+      if (retry && host) requestAnimationFrame(() => focusCallout(id, false))
     }
 
     function applySelection(id: string | null): void {
       if (!pinLayer) return
       pinLayer.setSelected(id)
+      const focusFor = focusCalloutFor
+      focusCalloutFor = null
       if (!componentProps.calloutFollowSelection) return
       closeCallout()
-      if (id !== null) openCallout(id)
+      if (id === null) return
+      openCallout(id)
+      if (focusFor === id) void nextTick(() => focusCallout(id))
     }
 
     function zoomToItem(namespace: MapKitNamespaceLike, item: MapKitItem): void {

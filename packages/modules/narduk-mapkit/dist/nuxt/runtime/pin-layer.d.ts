@@ -16,6 +16,8 @@ export interface MapKitPinElement {
     cleanup?: () => void;
     element: HTMLElement;
 }
+/** How a pin selection was made. */
+export type MapKitSelectVia = 'keyboard' | 'pointer';
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
     clusteringIdentifier?: string;
@@ -44,8 +46,11 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     itemLabel?: (item: T) => string;
     map: MapKitMapLike;
     mapkit: MapKitNamespaceLike;
-    /** Called when a pin is activated by pointer or keyboard, with the toggled id. */
-    onSelect?: (id: string | null) => void;
+    /**
+     * Called when a pin is activated by pointer or keyboard, with the toggled id
+     * and which of the two activated it.
+     */
+    onSelect?: (id: string | null, via: MapKitSelectVia) => void;
     pinGeometry?: (item: T) => MapKitPinGeometry;
 }
 /** `item.id` is the default key, so the common case needs no `itemKey` prop. */

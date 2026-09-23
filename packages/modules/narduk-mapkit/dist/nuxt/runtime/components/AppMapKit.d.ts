@@ -9,6 +9,8 @@ import type { PropType, SlotsType, VNode } from 'vue';
 type MapKitItem = MapKitPinItem & {
     id?: string;
 };
+/** `<AppMapKit>`'s `calloutFocus` prop. */
+export type MapKitCalloutFocus = 'keyboard' | 'never';
 export interface MapKitCalloutSlotScope<T> {
     close: () => void;
     id: string;
@@ -24,6 +26,17 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly boundingPadding: {
         readonly default: 0.05;
         readonly type: NumberConstructor;
+    };
+    /**
+     * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+     * moves it to the first focusable element in the `#callout` slot once the
+     * callout renders, so a keyboard or screen-reader user can reach its action.
+     * A pointer selection always leaves focus where it is. `'never'` opts out.
+     */
+    readonly calloutFocus: {
+        readonly default: "keyboard";
+        readonly type: PropType<MapKitCalloutFocus>;
+        readonly validator: (value: unknown) => value is "keyboard" | "never";
     };
     /** Open the callout for the selected item. Off hands control to `openCallout`. */
     readonly calloutFollowSelection: {
@@ -215,6 +228,17 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: 0.05;
         readonly type: NumberConstructor;
     };
+    /**
+     * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+     * moves it to the first focusable element in the `#callout` slot once the
+     * callout renders, so a keyboard or screen-reader user can reach its action.
+     * A pointer selection always leaves focus where it is. `'never'` opts out.
+     */
+    readonly calloutFocus: {
+        readonly default: "keyboard";
+        readonly type: PropType<MapKitCalloutFocus>;
+        readonly validator: (value: unknown) => value is "keyboard" | "never";
+    };
     /** Open the callout for the selected item. Off hands control to `openCallout`. */
     readonly calloutFollowSelection: {
         readonly default: true;
@@ -396,6 +420,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly overlayStyleFn: (properties: GeoJSONFeatureProperties) => OverlayStyle;
     readonly ariaLabel: string;
     readonly boundingPadding: number;
+    readonly calloutFocus: MapKitCalloutFocus;
     readonly calloutFollowSelection: boolean;
     readonly circleScaleFactor: number;
     readonly circles: MapKitCircle[];
