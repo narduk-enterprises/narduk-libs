@@ -46,7 +46,8 @@
     "lint": "narduk-lint",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "typecheck": "vue-tsc --noEmit --project tsconfig.json"
+    "typecheck": "vue-tsc --noEmit --project tsconfig.json",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "@narduk-enterprises/narduk-platform": "workspace:*",

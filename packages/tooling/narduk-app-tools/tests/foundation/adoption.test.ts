@@ -713,15 +713,25 @@ describe('the doctor --adoption flags', () => {
     expect(flags.paths).toEqual([])
   })
 
-  it('leaves bare doctor alone', () => {
-    // The existing report has callers. `--adoption` replaces it; it does not
-    // reshape what they already parse.
-    const root = makeTempRepo()
-    tempDirs.push(root)
-    const report = runDoctor(root)
+  // Bare `runDoctor` really spawns node, pnpm, wrangler and doppler. On macOS
+  // each spawn can wait on Gatekeeper, which under --coverage pushed this past
+  // vitest's 5 s default on a developer Mac while CI stayed green
+  // (narduk-libs#651). The budget is for the spawns, not for the assertions.
+  const DOCTOR_SPAWN_BUDGET_MS = 30_000
 
-    expect(report).toHaveProperty('checks')
-    expect(report).toHaveProperty('clean')
-    expect(report).not.toHaveProperty('requirements')
-  })
+  it(
+    'leaves bare doctor alone',
+    () => {
+      // The existing report has callers. `--adoption` replaces it; it does not
+      // reshape what they already parse.
+      const root = makeTempRepo()
+      tempDirs.push(root)
+      const report = runDoctor(root)
+
+      expect(report).toHaveProperty('checks')
+      expect(report).toHaveProperty('clean')
+      expect(report).not.toHaveProperty('requirements')
+    },
+    DOCTOR_SPAWN_BUDGET_MS,
+  )
 })

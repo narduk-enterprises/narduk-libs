@@ -60,7 +60,8 @@
     "prepare": "node scripts/ensure-dist.mjs",
     "prepublishOnly": "pnpm run build",
     "test:unit": "vitest run",
-    "typecheck": "node ../../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../../tools/package-quality.mjs typecheck tsconfig.json"
+    "typecheck": "node ../../../tools/package-quality.mjs typecheck tsconfig.build.json && node ../../../tools/package-quality.mjs typecheck tsconfig.json",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "zod": "^4.4.3"

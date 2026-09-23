@@ -479,22 +479,32 @@ function assertSchemaEvidence(
       `Legacy migration ${adoptionLegacyKey(adoption)} requires explicit schema probe evidence`,
     )
   }
+  // Name the adoption entry and the likely cause: the bare "did not find table"
+  // sent one diagnosis to the build instead of the migration that dropped the
+  // table (narduk-libs#600).
+  const missing = (what: string): Error =>
+    new Error(
+      `Schema adoption probe did not find ${what}, which adoption ${adoptionLegacyKey(adoption)} ` +
+        `cites as evidence for ${adoption.source}:${adoption.filename}. That migration has no ` +
+        `_narduk_migrations receipt yet, so the probe still decides. If a migration in this ` +
+        `repository dropped it, the evidence is stale: record the adoption (a successful ` +
+        `\`narduk-app db migrate\` while the evidence still exists writes the receipt that ` +
+        `supersedes this probe) or correct evidence in migrations.sources.json.`,
+    )
   const tables = new Set(schemaEvidence.tables)
   for (const table of adoption.evidence.tables) {
-    if (!tables.has(table)) {
-      throw new Error(`Schema adoption probe did not find table ${table}`)
-    }
+    if (!tables.has(table)) throw missing(`table ${table}`)
   }
   const columns = new Set(schemaEvidence.columns.map((entry) => `${entry.table}:${entry.column}`))
   for (const entry of adoption.evidence.columns ?? []) {
     if (!columns.has(`${entry.table}:${entry.column}`)) {
-      throw new Error(`Schema adoption probe did not find column ${entry.table}.${entry.column}`)
+      throw missing(`column ${entry.table}.${entry.column}`)
     }
   }
   const indexes = new Set(schemaEvidence.indexes.map((entry) => `${entry.table}:${entry.name}`))
   for (const entry of adoption.evidence.indexes ?? []) {
     if (!indexes.has(`${entry.table}:${entry.name}`)) {
-      throw new Error(`Schema adoption probe did not find index ${entry.table}.${entry.name}`)
+      throw missing(`index ${entry.table}.${entry.name}`)
     }
   }
 }

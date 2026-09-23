@@ -10,7 +10,9 @@
     "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions scripts/*.mts",
     "lint": "narduk-lint",
     "test:unit": "node --experimental-strip-types --test scripts/build.test.mts",
-    "check:package": "node --experimental-strip-types scripts/check-package.mts"
+    "check:package": "node --experimental-strip-types scripts/check-package.mts",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@narduk-enterprises/narduk-shell": "workspace:*",
