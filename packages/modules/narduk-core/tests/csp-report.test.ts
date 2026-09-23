@@ -5,7 +5,9 @@ import { createApp, createEvent, toNodeListener } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import cspReportHandler, {
+  CSP_REPORT_RATE_LIMIT,
   cspReportDeclaredLengthExceedsLimit,
+  isCspReportContentType,
   MAX_CSP_REPORT_BODY_BYTES,
   normalizeCspReports,
   readCappedCspReportJson,
@@ -19,7 +21,10 @@ const { logger } = vi.hoisted(() => {
   return { logger }
 })
 
-vi.mock('../runtime/server/utils/logger', () => ({ useLogger: () => logger }))
+vi.mock('../runtime/server/utils/logger', () => ({
+  ensureRequestId: () => 'req-test',
+  useLogger: () => logger,
+}))
 
 /** The wire spelling browsers actually send, as opposed to the camelCase one
  * the Reporting API spec drafts used. Named because it appears in almost every
@@ -213,5 +218,62 @@ describe('raw body ceiling', () => {
     const response = await postReport(oversized)
     expect(response.status).toBe(413)
     expect(logger.warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('what the sink accepts (narduk-libs#444, CSP-1)', () => {
+  afterEach(() => {
+    logger.warn.mockClear()
+  })
+
+  const report = JSON.stringify({ 'csp-report': { [DIRECTIVE]: SCRIPT_SRC } })
+
+  async function post(
+    count: number,
+    contentType = 'application/csp-report',
+  ): Promise<{ statuses: number[] }> {
+    const app = createApp().use(cspReportHandler)
+    const server = createServer(toNodeListener(app))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
+    const statuses: number[] = []
+    try {
+      for (let index = 0; index < count; index += 1) {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/_security/csp-report`, {
+          body: report,
+          headers: { 'content-type': contentType },
+          method: 'POST',
+        })
+        statuses.push(response.status)
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
+    return { statuses }
+  }
+
+  it('accepts only the two browser report media types, parameters and case aside', () => {
+    expect(isCspReportContentType('application/csp-report')).toBe(true)
+    expect(isCspReportContentType('application/reports+json; charset=utf-8')).toBe(true)
+    expect(isCspReportContentType('Application/CSP-Report')).toBe(true)
+    expect(isCspReportContentType('application/json')).toBe(false)
+    expect(isCspReportContentType('text/plain')).toBe(false)
+    expect(isCspReportContentType(undefined)).toBe(false)
+  })
+
+  it('answers 204 to any other content type and logs nothing', async () => {
+    const { statuses } = await post(1, 'text/plain')
+    expect(statuses).toEqual([204])
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('answers 429 once a client passes its allowance, and logs nothing for the denial', async () => {
+    const { statuses } = await post(CSP_REPORT_RATE_LIMIT.limit + 1)
+    expect(statuses.at(-1)).toBe(429)
+    const logged = logger.warn.mock.calls.filter(([message]) => message === 'CSP violation')
+    expect(logged.length).toBe(statuses.filter((code) => code === 204).length)
   })
 })
