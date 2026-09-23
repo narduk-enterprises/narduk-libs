@@ -453,6 +453,26 @@ describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
     expect(document.activeElement).toBe(pin)
   })
 
+  it('focuses the callout when a re-added pin is reselected under a kept selection', async () => {
+    const wrapper = await mountMap({ items: STATIONS, selectedId: 'station-2' }, slots)
+    // The pin leaves and comes back while the app keeps its selection, so the
+    // layer forgets it and the next activation asks for the same id again.
+    await wrapper.setProps({ items: STATIONS.filter((s) => s.id !== 'station-2') })
+    await wrapper.setProps({ items: STATIONS })
+    await nextTick()
+
+    const pin = document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement
+    pin.focus()
+    pin.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+    const link = document.querySelector('[data-mapkit-callout="station-2"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+  })
+
   it("leaves focus on the pin when calloutFocus is 'never'", async () => {
     const wrapper = await mountMap({ calloutFocus: 'never', items: STATIONS }, slots)
 

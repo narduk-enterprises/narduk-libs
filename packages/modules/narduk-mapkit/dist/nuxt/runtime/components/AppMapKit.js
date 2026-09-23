@@ -312,9 +312,14 @@ const AppMapKitImpl = defineComponent({
         function select(id, via = 'pointer') {
             focusCalloutFor =
                 via === 'keyboard' && id !== null && componentProps.calloutFocus === 'keyboard' ? id : null;
-            if (id === componentProps.selectedId)
+            if (id !== componentProps.selectedId) {
+                emit('update:selectedId', id);
                 return;
-            emit('update:selectedId', id);
+            }
+            // No emit means no `applySelection`: a pin re-added under a selection the
+            // app kept still gets its selected state, callout and focus back.
+            if (focusCalloutFor !== null)
+                applySelection(focusCalloutFor);
         }
         function focusCallout(id, retry = true) {
             if (componentProps.selectedId !== id)
