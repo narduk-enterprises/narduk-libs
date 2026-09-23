@@ -2,6 +2,7 @@
 '@narduk-enterprises/eslint-config': patch
 '@narduk-enterprises/narduk-core': patch
 '@narduk-enterprises/narduk-auth': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 The shared imports block now sets `import-x/resolver-next` to
