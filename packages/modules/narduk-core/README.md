@@ -519,6 +519,9 @@ response is never cached (`Cache-Control: no-store`).
 | `degraded` | 200  | An optional check failed          |
 | `error`    | 503  | A required check failed           |
 
+A failure reported at `notice` severity (below) is published with `notice: true`
+and does not move `status`.
+
 `database` summarizes the built-in probe:
 
 | `database`       | Meaning                                                                                                                 |
@@ -572,8 +575,12 @@ export default defineNitroPlugin(() => {
   [freshness checks](#reporting-data-freshness) below.
 - `timeoutMs`: defaults to 3000 and may be at most 30000. A check that runs out
   of time fails, and its `signal` is aborted.
-- `run`: resolve to pass; throw or return `{ ok: false }` to fail. Checks run
-  concurrently with each other and with the database probe.
+- `run`: resolve to pass; throw or return `{ ok: false }` to fail. Return
+  `{ ok: false, severity: 'notice' }` to publish a failure that is worth showing
+  but not worth a page: the entry says `result: 'fail'` with `notice: true` and
+  its `detail`, and the report's `status` stays where the other checks put it
+  (narduk-libs#414). Checks run concurrently with each other and with the
+  database probe.
 - `detail`: an optional JSON object published with the result. It is left out,
   with `detailOmitted` saying why, when it is not a plain object, cannot be
   serialized, is larger than 1 KiB, or has a `status` or `database` key at any
@@ -641,20 +648,26 @@ Each registration adds one entry to `checks`:
   computed fields.
 - `warnAfter` / `failAfter`: ages in **seconds**, at most one year. `failAfter`
   must be at least `warnAfter` and may be omitted.
+- `noticeAfter`: optional, in seconds, at most `warnAfter`. The first band of a
+  producer's fresh / aging / stale policy: past it the entry fails as a notice
+  and nothing pages.
 - `now`: an epoch-millisecond clock, for tests. Defaults to `Date.now`.
 
-| Data age            | `result` | `required`  | Report     | HTTP |
-| ------------------- | -------- | ----------- | ---------- | ---- |
-| at most `warnAfter` | `pass`   | as declared | unchanged  | 200  |
-| past `warnAfter`    | `fail`   | `false`     | `degraded` | 200  |
-| past `failAfter`    | `fail`   | `true`      | `error`    | 503  |
+| Data age                               | `result`                | `required`  | Report     | HTTP |
+| -------------------------------------- | ----------------------- | ----------- | ---------- | ---- |
+| at most `noticeAfter` (or `warnAfter`) | `pass`                  | as declared | unchanged  | 200  |
+| past `noticeAfter`                     | `fail` + `notice: true` | `false`     | unchanged  | 200  |
+| past `warnAfter`                       | `fail`                  | `false`     | `degraded` | 200  |
+| past `failAfter`                       | `fail`                  | `true`      | `error`    | 503  |
 
-A stale feed therefore degrades the app; it takes it down only once `failAfter`
-is crossed, and a check registered without `failAfter` can never get there.
-`observedAt` and `ageSeconds` are published while the check is passing too, so a
-dashboard can plot age before anything is wrong. A timestamp in the future is
-never stale — a producer clock ahead of the Worker shows up as a negative
-`ageSeconds`.
+A stale feed therefore makes the report `degraded` and answers 503 only once
+`failAfter` is crossed; a check registered without `failAfter` can never get
+there. `degraded` still pages a monitor that matches `"status":"ok"` (see
+below), so `warnAfter` is the age that deserves a page and `noticeAfter` the one
+that only deserves a mark on a dashboard. `observedAt` and `ageSeconds` are
+published while the check is passing too, so a dashboard can plot age before
+anything is wrong. A timestamp in the future is never stale — a producer clock
+ahead of the Worker shows up as a negative `ageSeconds`.
 
 A freshness check **fails closed**. No timestamp, an unparseable one, a `read`
 that throws, and a `read` that runs out of time all fail at the strongest
@@ -662,10 +675,11 @@ severity the thresholds allow, never pass, and say which in `detail.reason`
 (`missing-timestamp`, `invalid-timestamp`, `unreadable`, or `stale`). The cause
 of a thrown read goes to the server log only.
 
-Under the hood a check that can fail at two severities returns
-`{ ok: false, severity: 'degraded' }` from `run`, which publishes that entry's
-`required` as `false`. A check declared `required: false` can never escalate
-itself to `error`, so the rollup keeps reading a single field.
+Under the hood a check that can fail at more than one severity returns
+`{ ok: false, severity: 'degraded' }` (or `'notice'`) from `run`, which
+publishes that entry's `required` as `false`, and `notice: true` for a notice. A
+check declared `required: false` can never escalate itself to `error`, so the
+rollup keeps reading a single field.
 
 ### Monitoring the endpoint
 
@@ -1424,8 +1438,9 @@ Note what that means before adding a freshness check to an app already enrolled
 in an uptime detector: a monitor matching `"status":"ok"` alerts on `degraded`
 as well as on `error`, because the substring is simply absent. That is often the
 point — a stale feed should be noticed — but it makes `warnAfter` an alerting
-threshold, not just a dashboard one. Pick it accordingly, or move the monitor to
-the HTTP status so only `failAfter` pages.
+threshold, not just a dashboard one. Pick it accordingly, put the
+not-worth-a-page band in `noticeAfter`, or move the monitor to the HTTP status
+so only `failAfter` pages.
 
 Negative, fractional and non-numeric overrides are ignored rather than emitted.
 An inline profile is the app's own configuration already, so it is used
