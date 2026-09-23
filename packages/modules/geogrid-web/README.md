@@ -5,12 +5,15 @@ decode gridded geo payloads and render them either as a **full-screen sibling
 canvas overlay** or as **Web-Mercator raster tiles**, with **WebGL2** (primary)
 and a **CPU fallback**.
 
-|         |                                            |
-| ------- | ------------------------------------------ |
-| Package | `@narduk-enterprises/geogrid-web`          |
-| Repo    | `github.com/narduk-enterprises/GeoGridWeb` |
-| GPU     | WebGL2 + Canvas2D / CPU fallback           |
-| WebGPU  | Not in v0.x                                |
+|         |                                                                                                  |
+| ------- | ------------------------------------------------------------------------------------------------ |
+| Package | `@narduk-enterprises/geogrid-web`                                                                |
+| Repo    | `github.com/narduk-enterprises/narduk-libs` -- `packages/modules/geogrid-web` (canonical source) |
+| GPU     | WebGL2 + Canvas2D / CPU fallback                                                                 |
+| WebGPU  | Not in v0.x                                                                                      |
+
+The standalone `narduk-enterprises/GeoGridWeb` repository is a superseded
+duplicate pending retirement; do not treat it as a source.
 
 ## Two render paths
 
