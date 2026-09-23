@@ -779,6 +779,13 @@ export interface PromoteFlags {
   force: boolean
   /** The bound on the `--sha` lookup. See `DEFAULT_VERSION_SEARCH_LIMIT`. */
   maxVersions: number
+  /**
+   * Seconds to keep re-listing while the `--sha` lookup finds nothing. 0 (the
+   * default) looks once. See `--wait-for-version` (narduk-libs#695).
+   */
+  waitForVersionSeconds: number
+  /** Seconds between those re-listings. */
+  waitIntervalSeconds: number
   json: boolean
   dryRun: boolean
 }
@@ -793,6 +800,14 @@ function requireMaxVersions(raw: string): number {
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 1 || value > 10_000) {
     throw new Error(`--max-versions must be an integer 1..10000, got ${JSON.stringify(raw)}`)
+  }
+  return value
+}
+
+function requireSeconds(raw: string, flag: string, min: number): number {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < min || value > 3600) {
+    throw new Error(`${flag} must be an integer ${String(min)}..3600, got ${JSON.stringify(raw)}`)
   }
   return value
 }
@@ -817,6 +832,8 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     anyBranch: false,
     force: false,
     maxVersions: DEFAULT_VERSION_SEARCH_LIMIT,
+    waitForVersionSeconds: 0,
+    waitIntervalSeconds: 30,
     json: false,
     dryRun: false,
   }
@@ -835,6 +852,18 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
       flags.percentage = requirePercentage(requireValue(args, (index += 1), '--percentage'))
     else if (arg === '--max-versions')
       flags.maxVersions = requireMaxVersions(requireValue(args, (index += 1), '--max-versions'))
+    else if (arg === '--wait-for-version')
+      flags.waitForVersionSeconds = requireSeconds(
+        requireValue(args, (index += 1), '--wait-for-version'),
+        '--wait-for-version',
+        0,
+      )
+    else if (arg === '--wait-interval')
+      flags.waitIntervalSeconds = requireSeconds(
+        requireValue(args, (index += 1), '--wait-interval'),
+        '--wait-interval',
+        1,
+      )
     else if (arg === '--any-branch') flags.anyBranch = true
     else if (arg === '--force') flags.force = true
     else if (arg === '--json') flags.json = true
@@ -977,6 +1006,10 @@ export interface PromoteContext {
   /** Injected in tests; `readWranglerScriptName` otherwise. */
   resolveWorkerName?: (appDir: string) => string
   resolveAccountId?: (appDir: string) => string | null
+  /** Injected in tests; `Date.now` otherwise. Drives `--wait-for-version`. */
+  now?: () => number
+  /** Injected in tests; a real timer otherwise. */
+  sleep?: (milliseconds: number) => Promise<void>
 }
 
 function resolveWorker(
@@ -1119,15 +1152,38 @@ export async function runVersionsPromote(
 
   // One listing serves both the SHA lookup and the ordering guard, so the guard
   // costs no extra call and sees exactly the window the lookup saw.
-  const versionsRead = await withWranglerFailure(
-    'versions-promote',
-    workerName,
-    'versions list',
-    false,
-    async () => client.listVersions(flags.maxVersions),
-  )
-  if (!versionsRead.ok) return versionsRead.result
-  const listing = versionsRead.value
+  //
+  // Under narduk-v1 the Workers Build uploads the version while `workflow_run`
+  // on the gate starts this job, and nothing orders the two: a build slower
+  // than CI makes an unbroken merge exit 3 (narduk-libs#695, Buoys 2026-09-22,
+  // 51 s). `--wait-for-version` re-lists while the SHA is simply absent, and
+  // only then. Ambiguity, branch and ordering refusals are about the commit,
+  // not timing, so they still answer on the listing that produced them.
+  const now = context.now ?? (() => Date.now())
+  const sleep =
+    context.sleep ??
+    ((milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds)))
+  const waitStarted = now()
+  const deadline = waitStarted + flags.waitForVersionSeconds * 1000
+  let listAttempts = 0
+  let listing: VersionListing
+  for (;;) {
+    listAttempts += 1
+    const versionsRead = await withWranglerFailure(
+      'versions-promote',
+      workerName,
+      'versions list',
+      false,
+      async () => client.listVersions(flags.maxVersions),
+    )
+    if (!versionsRead.ok) return versionsRead.result
+    listing = versionsRead.value
+    if (flags.versionId || !sha) break
+    if (resolveVersionForSha(listing.versions, sha).kind !== 'not-found') break
+    const remaining = deadline - now()
+    if (remaining <= 0) break
+    await sleep(Math.min(flags.waitIntervalSeconds * 1000, remaining))
+  }
   const versions = listing.versions
   const versionSearch: VersionSearchInfo = {
     source: listing.source,
@@ -1153,7 +1209,13 @@ export async function runVersionsPromote(
         percentage: null,
         searchedVersions,
         versionSearch,
-        detail: describeVersionSearch(sha, match.searched, versionSearch),
+        detail:
+          describeVersionSearch(sha, match.searched, versionSearch) +
+          (flags.waitForVersionSeconds > 0
+            ? ` Waited ${String(Math.round((now() - waitStarted) / 1000))}s over ` +
+              `${String(listAttempts)} listings (--wait-for-version ` +
+              `${String(flags.waitForVersionSeconds)}).`
+            : ''),
         exitCode: PROMOTE_EXIT.versionNotFound,
       }
     }

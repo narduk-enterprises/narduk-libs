@@ -1377,3 +1377,91 @@ describe('Versions API pagination (#457 diff-read)', () => {
     expect(listing.complete).toBe(false)
   })
 })
+
+describe('--wait-for-version (narduk-libs#695)', () => {
+  /** A client whose listing gains `arriving` on the `arrivesOn`th call; a fake clock. */
+  function racing(arrivesOn: number, arriving: WorkerVersion[] = [version('v-new', SHA)]) {
+    const { client, calls } = stubClient([], [])
+    let listings = 0
+    let clock = 0
+    const slept: number[] = []
+    const ctx: PromoteContext = {
+      appDir: '/tmp/app',
+      client: {
+        ...client,
+        listVersions: async (limit) => {
+          listings += 1
+          const versions = listings >= arrivesOn ? arriving : [version('v-old', 'abcdef1')]
+          return { versions, complete: true, limit, source: 'api' }
+        },
+      },
+      env: ACTIONS_ENV,
+      now: () => clock,
+      resolveWorkerName: () => 'buoys',
+      sleep: async (milliseconds) => {
+        slept.push(milliseconds)
+        clock += milliseconds
+      },
+    }
+    return { calls, ctx, listings: () => listings, slept }
+  }
+
+  it('looks once by default, exactly as before', async () => {
+    const run = racing(2)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), run.ctx)
+    expect(result.outcome).toBe('version-not-found')
+    expect(run.listings()).toBe(1)
+    expect(run.slept).toEqual([])
+    expect(result.detail).not.toContain('Waited')
+  })
+
+  it('promotes the version that lands while it waits', async () => {
+    const run = racing(3)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs([
+        '--sha',
+        SHA,
+        '--wait-for-version',
+        '300',
+        '--wait-interval',
+        '20',
+      ]),
+      run.ctx,
+    )
+    expect(result.exitCode).toBe(PROMOTE_EXIT.ok)
+    expect(run.calls.deployed.map((call) => call.versionId)).toEqual(['v-new'])
+    expect(run.listings()).toBe(3)
+    expect(run.slept).toEqual([20_000, 20_000])
+  })
+
+  it('gives up at the deadline with exit 3, naming the wait', async () => {
+    const run = racing(Number.POSITIVE_INFINITY)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--wait-for-version', '50', '--wait-interval', '20']),
+      run.ctx,
+    )
+    expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    // 20 + 20 + the 10 left, never past the deadline.
+    expect(run.slept).toEqual([20_000, 20_000, 10_000])
+    expect(run.listings()).toBe(4)
+    expect(result.detail).toContain('Waited 50s over 4 listings (--wait-for-version 50).')
+  })
+
+  it('never waits out an ambiguous match: that is about the commit, not timing', async () => {
+    const run = racing(1, [version('a', SHA), version('b', SHA)])
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--wait-for-version', '300']),
+      run.ctx,
+    )
+    expect(result.outcome).toBe('ambiguous-version')
+    expect(run.listings()).toBe(1)
+    expect(run.slept).toEqual([])
+  })
+
+  it('bounds its flags', () => {
+    expect(parseVersionsPromoteArgs(['--sha', SHA]).waitForVersionSeconds).toBe(0)
+    expect(() => parseVersionsPromoteArgs(['--wait-for-version', '-1'])).toThrow('0..3600')
+    expect(() => parseVersionsPromoteArgs(['--wait-for-version', '3601'])).toThrow('0..3600')
+    expect(() => parseVersionsPromoteArgs(['--wait-interval', '0'])).toThrow('1..3600')
+  })
+})
