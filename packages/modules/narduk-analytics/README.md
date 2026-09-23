@@ -127,6 +127,17 @@ All `/api/admin/**` routes require an authenticated admin session
 additionally 403 when `previewSafeMode` is active
 (`assertAnalyticsWriteAllowed`).
 
+`requireAdmin` resolves the admin through the auth session **and the app's
+database**, so on an app without one these routes could only ever answer 401.
+They therefore register only when the app has a database: an app that declares
+`nardukCore.databaseBackend: 'none'` (or builds with
+`NUXT_DATABASE_BACKEND=none`) gets none of them, and neither the admin
+composables nor the dashboard components have anything to call. Set
+`nardukAnalytics.admin: true` or `false` to decide outright. A DB-less app that
+wants its GSC and PostHog numbers reads them outside the app for now
+(narduk-libs#524). The handlers live in `server/admin/api/admin/**`, a scan dir
+the module adds only when admin is on.
+
 | Route                           | Method       | Purpose                                                                                                                                     |
 | ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/api/owner-tag`                | `POST`       | Set/clear `narduk_owner` (client-readable flag) and the httpOnly HMAC proof cookie. Requires `OWNER_TAG_SECRET`.                            |
