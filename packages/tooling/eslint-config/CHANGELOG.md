@@ -1,5 +1,33 @@
 # @narduk-enterprises/eslint-config
 
+## 2.3.0
+
+### Minor Changes
+
+- 85cd719: `narduk/no-csrf-exempt-route-misuse` and
+  `narduk/require-csrf-header-on-mutations` take an `exemptPaths` option: the
+  app's `nardukCore.csrf.exemptPaths`. A route it covers is CSRF-exempt to both
+  rules, so it must verify a credential header rather than the browser CSRF
+  header (#510).
+- bad1b0d: Two rules keep apps on the shared components (narduk-libs#260).
+  `narduk/no-shadowed-shared-component` reports an app-local `.vue` component
+  whose file name, or the name Nuxt registers from its path, matches one that
+  narduk-shell, narduk-core, narduk-auth, narduk-ui or narduk-charts publishes.
+  `narduk/prefer-shared-collection` reports `<UTable>` outside narduk-shell's
+  `NeDataTable`. Both are on at `warn` in the design-system pack. The component
+  list lives in `src/rules/utils/shared-components.ts`, and a test fails when it
+  differs from the components the packages actually ship.
+
+### Patch Changes
+
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
 ## 2.2.1
 
 ### Patch Changes

@@ -1,5 +1,68 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.21.0
+
+### Minor Changes
+
+- 1bca010: `deployment.liveProof.healthAuth: "anonymous" | "authenticated"`
+  (default `anonymous`). An authenticated health route stays declared,
+  `deploy hotfix` and `development deploy` skip the anonymous health assertion,
+  item 12.3 says so, and the adoption live read reports requirement 12 unknown
+  instead of failing a 401 (#585).
+- bad1b0d: Two foundation checks for the components-library plan
+  (narduk-libs#260). `narduk-app foundation:check:no-local-copy` (item 13) fails
+  when an app depends on a shared UI package and keeps its own copy of one of
+  its components. `narduk-app foundation:check:list-routes` (item 14) fails when
+  a GET server route reads pagination from its query without narduk-core's
+  `parseListQuery`. Each writes its own JSON artefact and uses the usual exit
+  codes: 0 pass, 1 fail, 2 unknown. The README documents both.
+- ff26c60: `narduk-app doctor` warns when a worker whose `main` is Nitro's
+  `.output/server` lacks `no_bundle`, `find_additional_modules` or `base_dir`.
+  Without them, wrangler re-bundles the build and every server-rendered 404/500
+  comes out empty (#245).
+  `deploy versions-promote --wait-for-version <seconds> [--wait-interval <seconds>]`
+  re-lists while the commit's version is absent, so a Workers Build that
+  finishes after CI no longer turns an unbroken merge into exit 3 (#695). The
+  default is 0, which keeps today's single look.
+- e6c9263: `.github/dependabot.yml`'s npm update now splits into two groups by
+  `update-types` over the same packages: `safe` (minor + patch) and `majors`
+  (major), `open-pull-requests-limit: 2`. A new generated
+  `.github/workflows/dependabot-merge.yml` merges the `safe` lane once CI is
+  green on its exact PR head; `majors` and the `github-actions` lane stay a
+  deliberate person/agent PR. This replaces the old single all-in `dependencies`
+  group (gonogo#104, the reference shape): apps on the old canonical shape
+  (`open-pull-requests-limit: 10`, ~10 groups) stacked roughly ten open PRs that
+  all edited `pnpm-lock.yaml`, so merging any one conflicted the rest, and a
+  single combined group let one breaking major hold every harmless patch bump
+  red behind it (riverstatus#215).
+
+  `create-narduk-app upgrade` delivers `.github/workflows/dependabot-merge.yml`
+  to existing apps as a new whole-file managed target alongside the refreshed
+  `.github/dependabot.yml`.
+
+  `narduk-app-tools`' `foundation:check` gains an advisory-only print (not a
+  `FoundationSubCheck`, since this framework has no warning tier) that flags a
+  `.github/dependabot.yml` npm update reproducing the old stacking shape:
+  `open-pull-requests-limit` above 2, or npm groups not split by `update-types`
+  into a safe and a majors lane. It never affects the check's `score`, `result`,
+  or `exitCode`.
+
+### Patch Changes
+
+- 8ec9bb9: Tooling carpool: the migration runner refuses a contract-owned D1
+  database named by its `database_name` as well as its id (#637); foundation
+  item 5.2 accepts the canonical Dependabot recipe, an npm update routed through
+  a registry scoped to `@narduk-enterprises` (#241); a failed schema-adoption
+  probe names the adoption, says the migration has no receipt yet, and says how
+  to record it or correct the evidence (#600).
+- 6255d0c: Give the development build workspace a repository of its own, so an
+  app's existing repository-shaped checks (`git rev-parse --show-toplevel`,
+  `git ls-files -co --exclude-standard`, `git status`) run against the captured
+  source instead of refusing the deploy with "fatal: not a git repository". The
+  workspace repository is local-only, excludes the publisher's git identity,
+  signing, hooks and init templates, and is kept between deploys so each
+  iteration costs one incremental commit.
+
 ## 0.20.0
 
 ### Minor Changes

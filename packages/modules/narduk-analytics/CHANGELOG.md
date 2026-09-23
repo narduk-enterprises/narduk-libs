@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.23.1
+
+### Patch Changes
+
+- 5747011: narduk-analytics turns `narduk/prefer-shared-collection` off for its
+  admin panels (narduk-libs#744). The rule is app-tier, and a module sits below
+  narduk-shell, so the panels keep plain `<UTable>`s. Only the package's lint
+  configuration changed; the published output is the same.
+
 ## 1.23.0
 
 ### Minor Changes
