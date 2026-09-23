@@ -2054,12 +2054,14 @@ release; the snippet above is the shape it takes.
 
 ## Size-capped upstream reads: `readBoundedBody`
 
-The client above reads its bodies through `readBoundedBody`, and an app that
-reads any other upstream API can use it too. It checks a declared
-`content-length`, then streams the body and cancels the download once it passes
-`maxBytes`, so an upstream that omits or understates its length cannot fill
-isolate memory. `response.text()` followed by a length check buffers the whole
-body first, so it does not protect anything.
+The published-data client (`fetchNardukDataJson`) reads artifact bytes through
+`readBoundedBody`, and an app that reads any other upstream API can use it too.
+(The app-owned `readBoundedBody` in the "before" example above was that app's
+own helper, not this one.) It checks a declared `content-length`, then streams
+the body and cancels the download once it passes `maxBytes`, so an upstream that
+omits or understates its length cannot fill isolate memory. `response.text()`
+followed by a length check buffers the whole body first, so it does not protect
+anything.
 
 ```ts
 const issues = await readBoundedJson<Issue[]>(response, 256 * 1024, {
