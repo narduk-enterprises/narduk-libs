@@ -47,6 +47,8 @@ const excludedDirectories = new Set([
   'test-results',
   'playwright-report',
 ])
+/** The build workspace's own branch; it has no remote and is never pushed. */
+const workspaceBranch = 'narduk-development-workspace'
 export function excludedSourcePath(path: string): boolean {
   const parts = path.split('/')
   const name = parts.at(-1) ?? ''
@@ -212,7 +214,10 @@ export function populateDevelopmentWorkspace(snapshot: SourceSnapshot, workspace
   privateDirectory(workspace)
   const prune = (directory: string): void => {
     for (const name of readdirSync(directory)) {
-      if (name === 'node_modules') continue
+      // Publisher-owned build state: installed dependencies and the workspace's
+      // own repository. Both are rebuilt incrementally, which is what keeps the
+      // loop cheap; neither is ever part of the captured source.
+      if (name === 'node_modules' || name === '.git') continue
       const path = join(directory, name)
       const stat = lstatSync(path)
       if (stat.isDirectory() && !stat.isSymbolicLink()) {
@@ -234,7 +239,52 @@ export function populateDevelopmentWorkspace(snapshot: SourceSnapshot, workspace
       chmodSync(path, entry.mode)
     } else symlinkSync(entry.link!, path)
   }
+  initializeWorkspaceRepository(snapshot, workspace)
   assertCapturedInputs(snapshot, workspace)
+}
+
+/**
+ * Apps gate with repository-shaped commands -- `git rev-parse --show-toplevel`
+ * to find the root, `git ls-files -co --exclude-standard` to enumerate what a
+ * sensitive scan must read. The build workspace is a private copy rather than a
+ * checkout, so without a repository of its own those checks die with "fatal:
+ * not a git repository" and refuse the deploy before it ever builds. Committing
+ * the captured tree answers all three shapes -- toplevel, tracked and
+ * untracked, and a clean `git status` -- against exactly the source that was
+ * captured, with no network remote and no branch to push. The repository is
+ * kept between deploys, so this costs one incremental commit per iteration.
+ *
+ * The publisher's own git configuration is excluded deliberately: identity,
+ * signing, hooks and init templates from the authoring machine must not run
+ * against a build tree.
+ */
+function initializeWorkspaceRepository(snapshot: SourceSnapshot, workspace: string): void {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
+  }
+  const run = (...args: string[]): void => {
+    execFileSync('git', args, { cwd: workspace, env, stdio: 'ignore' })
+  }
+  run('init', '--quiet', '--template=', '--initial-branch', workspaceBranch)
+  run('add', '--all')
+  run(
+    '-c',
+    'user.name=narduk-app development',
+    '-c',
+    'user.email=development@narduk.invalid',
+    'commit',
+    '--quiet',
+    '--allow-empty',
+    '--no-verify',
+    '--no-gpg-sign',
+    '--message',
+    `captured source ${snapshot.digest} from ${snapshot.baseCommit}`,
+  )
 }
 
 export function assertCapturedInputs(snapshot: SourceSnapshot, workspace: string): void {
