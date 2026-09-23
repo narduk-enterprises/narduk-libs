@@ -8,9 +8,9 @@
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
     "directory": "packages/modules/geogrid-web"
   },
-  "homepage": "https://github.com/narduk-enterprises/GeoGridWeb#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/geogrid-web#readme",
   "bugs": {
-    "url": "https://github.com/narduk-enterprises/GeoGridWeb/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
   },
   "license": "MIT",
   "keywords": [
