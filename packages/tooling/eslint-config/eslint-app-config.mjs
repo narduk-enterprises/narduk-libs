@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments'
 import vitest from '@vitest/eslint-plugin'
 import eslintConfigPrettier from 'eslint-config-prettier'
-import importX from 'eslint-plugin-import-x'
+import importX, { createNodeResolver } from 'eslint-plugin-import-x'
 import noOnlyTests from 'eslint-plugin-no-only-tests'
 import promise from 'eslint-plugin-promise'
 import regexp from 'eslint-plugin-regexp'
@@ -268,11 +268,17 @@ const sharedTailConfigs = [
     //
     // `import-x/core-modules: ['vue']` was v1's separate
     // `eslint-nuxt-flat-fragments` export; it is inlined here in v2.
+    //
+    // `import-x/resolver-next` pins the plugin's own Node resolver. With no
+    // resolver set, import-x falls back to its legacy `node` probe, which
+    // crashes `import-x/no-cycle` on a `vitest.config.ts` ("node with invalid
+    // interface loaded as resolver", narduk-libs#562).
     name: 'narduk/imports',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
     plugins: { 'import-x': importX },
     settings: {
       'import-x/core-modules': ['vue'],
+      'import-x/resolver-next': [createNodeResolver()],
     },
     rules: {
       'import-x/no-duplicates': 'error',
