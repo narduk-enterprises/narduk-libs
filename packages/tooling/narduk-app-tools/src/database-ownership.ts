@@ -298,21 +298,28 @@ export function readDeclaredDatabaseOwnership(cwd: string): DeclaredOwnership {
 /** The production database ids of contract-owned bindings, read from the app's
  * own wrangler config. Best effort: a config that cannot be read contributes
  * nothing, because the binding-name check is the primary guard. */
-function contractOwnedDatabaseIds(root: string, bindings: Set<string>): Set<string> {
+interface ContractOwnedDatabases {
+  ids: Set<string>
+  names: Set<string>
+}
+
+function contractOwnedDatabases(root: string, bindings: Set<string>): ContractOwnedDatabases {
   const ids = new Set<string>()
-  if (bindings.size === 0) return ids
+  const names = new Set<string>()
+  const found = { ids, names }
+  if (bindings.size === 0) return found
   let wranglerConfig: string | undefined
   try {
     const manifest = JSON.parse(readFileSync(join(root, CLOUDFLARE_APP_MANIFEST), 'utf8')) as {
       worker?: { wranglerConfig?: unknown }
     }
     const declared = manifest.worker?.wranglerConfig
-    if (typeof declared !== 'string' || declared.trim() === '' || isAbsolute(declared)) return ids
+    if (typeof declared !== 'string' || declared.trim() === '' || isAbsolute(declared)) return found
     wranglerConfig = join(root, declared)
   } catch {
-    return ids
+    return found
   }
-  if (!existsSync(wranglerConfig)) return ids
+  if (!existsSync(wranglerConfig)) return found
   try {
     // `jsonc-parser` directly, not `./deploy.js`'s `readJsonc`: importing that
     // module here would close the cycle database-ownership -> deploy ->
@@ -326,14 +333,21 @@ function contractOwnedDatabaseIds(root: string, bindings: Set<string>): Set<stri
     const list = Array.isArray(config?.d1_databases) ? config.d1_databases : []
     for (const entry of list) {
       if (entry === null || typeof entry !== 'object') continue
-      const { binding, database_id: databaseId } = entry as Record<string, unknown>
-      if (typeof binding !== 'string' || typeof databaseId !== 'string') continue
-      if (bindings.has(binding.trim())) ids.add(databaseId.trim())
+      const {
+        binding,
+        database_id: databaseId,
+        database_name: databaseName,
+      } = entry as Record<string, unknown>
+      if (typeof binding !== 'string' || !bindings.has(binding.trim())) continue
+      if (typeof databaseId === 'string') ids.add(databaseId.trim())
+      // `wrangler d1` takes the database name as readily as the binding, so it
+      // is a third spelling of the same request (narduk-libs#637).
+      if (typeof databaseName === 'string') names.add(databaseName.trim())
     }
   } catch {
-    return ids
+    return found
   }
-  return ids
+  return found
 }
 
 export interface OwnershipCoverageInput {
@@ -475,18 +489,20 @@ export function assertMigrationRunnerOwnership(options: MigrationOwnershipCheck)
         `the migration runner must never write to a contract-owned database.`,
     )
   }
+  const bindings = contract.map((entry) => entry.binding.trim())
+  const owned = contractOwnedDatabases(declared.root, new Set(bindings))
+  if (owned.names.has(requested)) {
+    throw new Error(
+      `Refusing to run migrations against ${requested}: it is the database name of a ` +
+        `contract-owned binding (${bindings.join(', ')}), and a name selects the same database ` +
+        `as the binding does.`,
+    )
+  }
   const databaseId = options.databaseId?.trim()
-  if (!databaseId) return
-  const ids = contractOwnedDatabaseIds(
-    declared.root,
-    new Set(contract.map((entry) => entry.binding.trim())),
-  )
-  if (ids.has(databaseId)) {
+  if (databaseId && owned.ids.has(databaseId)) {
     throw new Error(
       `Refusing to run migrations against database ${databaseId}: it is the database of a ` +
-        `contract-owned binding (${contract
-          .map((entry) => entry.binding.trim())
-          .join(', ')}), whatever binding name selects it.`,
+        `contract-owned binding (${bindings.join(', ')}), whatever binding name selects it.`,
     )
   }
 }

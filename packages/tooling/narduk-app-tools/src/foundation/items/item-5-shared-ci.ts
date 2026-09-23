@@ -81,8 +81,20 @@ function dependabotAddressesScope(config: unknown): boolean {
   if (!isRecord(config)) return false
   const updates = config.updates
   if (!Array.isArray(updates)) return false
+  const scopedRegistries = registriesNamingScope(config.registries)
   for (const update of updates) {
     if (!isRecord(update)) continue
+    // The canonical coding-standards recipe (D-TOOLCHAIN-1) updates the scope
+    // ungrouped, through a registry declared for it. That is a deliberate,
+    // reviewed choice, not an unaddressed scope (narduk-libs#241).
+    const registries = update.registries
+    if (
+      update['package-ecosystem'] === 'npm' &&
+      Array.isArray(registries) &&
+      registries.some((name) => typeof name === 'string' && scopedRegistries.has(name))
+    ) {
+      return true
+    }
     const ignore = update.ignore
     if (Array.isArray(ignore) && JSON.stringify(ignore).includes('narduk-enterprises')) {
       return true
@@ -93,6 +105,18 @@ function dependabotAddressesScope(config: unknown): boolean {
     }
   }
   return false
+}
+
+/** Names of the top-level `registries` entries whose `scope` is the estate's. */
+function registriesNamingScope(registries: unknown): Set<string> {
+  const names = new Set<string>()
+  if (!isRecord(registries)) return names
+  for (const [name, registry] of Object.entries(registries)) {
+    if (isRecord(registry) && String(registry.scope ?? '').includes('narduk-enterprises')) {
+      names.add(name)
+    }
+  }
+  return names
 }
 
 function renovateAddressesScope(renovate: unknown): boolean {
@@ -121,7 +145,7 @@ function evaluate52(repo: AppRepo): FoundationSubCheck {
       '5.2',
       ITEM_5_2_NAME,
       STATUS_PASS,
-      'dependabot.yml groups or ignores the @narduk-enterprises scope',
+      'dependabot.yml groups, ignores or updates the @narduk-enterprises scope through its registry',
       '.github/dependabot.yml',
     )
   }
@@ -141,8 +165,8 @@ function evaluate52(repo: AppRepo): FoundationSubCheck {
       '5.2',
       ITEM_5_2_NAME,
       STATUS_FAIL,
-      'dependabot.yml has no group or ignore entry naming the @narduk-enterprises scope, ' +
-        'and no renovate.json names it either',
+      'dependabot.yml has no group, ignore or scoped registry naming the @narduk-enterprises ' +
+        'scope, and no renovate.json names it either',
       '.github/dependabot.yml',
     )
   }
