@@ -522,6 +522,15 @@ entering `foundation-check.json`, which is the ratified 7-item contract.
 }
 ```
 
+`liveProof.healthAuth` is `"anonymous"` (the default) or `"authenticated"`.
+Declare `"authenticated"` when `healthPath` sits behind the app's auth and
+refuses an anonymous request: the path stays required, because the route exists,
+but `deploy hotfix` and `development deploy` pass `--no-health` instead of
+asserting it, item 12.3 says so in its detail, and `doctor --adoption --live`
+reports requirement 12 as unknown, with the reason, rather than failing on the
+401 the app is right to send (#585). An app whose promote workflow passes
+`--no-health` should declare it here, so the manifest and the workflow agree.
+
 `staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
 block that omits them still validates. `previewChecks` is accepted and optional
 (the shared workflow's `preview-checks` input). A `standard` other than

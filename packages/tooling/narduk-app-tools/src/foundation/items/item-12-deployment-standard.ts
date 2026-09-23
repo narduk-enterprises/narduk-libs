@@ -835,7 +835,11 @@ function evaluate123(scan: DeploymentScan): FoundationSubCheck {
       '12.3',
       name,
       STATUS_PASS,
-      `${BUILD_VERSION_HEADER}, health ${liveProof.healthPath}, smoke ${liveProof.smokePath}, ` +
+      `${BUILD_VERSION_HEADER}, health ${liveProof.healthPath}` +
+        (liveProof.healthAuth === 'authenticated'
+          ? ' (authenticated, not asserted anonymously)'
+          : '') +
+        `, smoke ${liveProof.smokePath}, ` +
         `up to ${liveProof.attempts} attempts ${liveProof.intervalSeconds}s apart`,
       scan.configFile,
     )

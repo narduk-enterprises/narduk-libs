@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 
 import { runDeploy } from './deploy.js'
+import { healthArgs } from './deployment-config.js'
 import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
 import type { DevelopmentComponent } from './development-config.js'
 import {
@@ -180,8 +181,7 @@ function verifyFlagsFor(
     buildId,
     '--build-version-header',
     proof.buildVersionHeader,
-    '--health-path',
-    proof.healthPath,
+    ...healthArgs(proof),
     '--smoke-path',
     proof.smokePath,
     '--attempts',

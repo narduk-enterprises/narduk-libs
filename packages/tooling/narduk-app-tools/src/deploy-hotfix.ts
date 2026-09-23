@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 
 import { runDeploy } from './deploy.js'
+import { healthArgs } from './deployment-config.js'
 import { acquireTargetLocks, developmentStateDirectory } from './development-state.js'
 import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
 import {
@@ -126,8 +127,7 @@ export async function runHotfix(flags: HotfixFlags, context: HotfixContext = {})
     plan.sha,
     '--build-version-header',
     plan.deployment.liveProof.buildVersionHeader,
-    '--health-path',
-    plan.deployment.liveProof.healthPath,
+    ...healthArgs(plan.deployment.liveProof),
     '--smoke-path',
     plan.deployment.liveProof.smokePath,
     '--attempts',
