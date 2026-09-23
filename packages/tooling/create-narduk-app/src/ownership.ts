@@ -106,6 +106,17 @@ export const MANAGED_SCRIPT_KEYS = [
   'manifests:validate',
 ] as const
 
+/**
+ * Managed keys whose NAME is the contract once present: upgrade creates a
+ * missing one, and leaves a present, non-empty body alone. `manifests:validate`
+ * has two independently authored shapes in the estate -- Buoys delegates to
+ * `apps/web`'s bindings diff, riverstatus runs its state-contract and
+ * template-independence proofs -- and `foundation:check` item 1.3 already
+ * accepts either by name, so rewriting the body would replace a working proof
+ * with a scaffold one that may not exist in that repo (narduk-libs#468).
+ */
+export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set(['manifests:validate'])
+
 export type OwnershipMode = 'file' | 'keys' | 'pin' | 'region'
 
 export interface ManagedTarget {

@@ -6,6 +6,7 @@ import { buildGeneratedFiles } from './generate.js'
 import { packageNamesForCapability } from './manifest.js'
 import {
   CI_CALLER_PIN_PATTERN,
+  CREATE_ONLY_SCRIPT_KEYS,
   isDisowned,
   MANAGED_SCRIPT_KEYS,
   MANAGED_TARGETS,
@@ -540,7 +541,9 @@ function resolveKeys(current: string | null, desired: string): Resolution {
     // A key the generator does not emit for this profile -- the migrate
     // scripts of a database-less app -- is not managed, and is never removed.
     if (typeof value !== 'string') continue
-    if (currentScripts[key] !== value) updates.set(key, value)
+    const present = currentScripts[key]
+    if (CREATE_ONLY_SCRIPT_KEYS.has(key) && typeof present === 'string' && present.trim()) continue
+    if (present !== value) updates.set(key, value)
   }
   if (updates.size === 0) {
     return { detail: 'Contract scripts match the generator template.', status: 'clean' }
