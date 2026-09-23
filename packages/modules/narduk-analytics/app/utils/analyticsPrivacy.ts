@@ -92,6 +92,12 @@ function scrubProperties(
     } else if (isPlainObject(value)) {
       // `$set`, `$set_once`, and the nested `$web_vitals_*_event` payloads.
       scrubbed[key] = scrubProperties(value, origin, resolveRoute)
+    } else if (Array.isArray(value)) {
+      // Lists of objects (`$exception_list`, anything an app captures) get the
+      // same rules per entry; scalar entries pass through.
+      scrubbed[key] = value.map((entry: unknown) =>
+        isPlainObject(entry) ? scrubProperties(entry, origin, resolveRoute) : entry,
+      )
     } else {
       scrubbed[key] = value
     }

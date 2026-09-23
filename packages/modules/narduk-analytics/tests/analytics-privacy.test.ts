@@ -122,6 +122,19 @@ describe('createStrictPrivacyBeforeSend', () => {
     })
   })
 
+  it('scrubs objects inside arrays and passes scalar entries through', () => {
+    const result = scrub(
+      event('farm_viewed', {
+        visits: [{ $current_url: `${ORIGIN}/farms/frm_1/2024`, title: 'Renz Farm' }, 3, 'x'],
+      }),
+    )
+    expect(result?.properties?.visits).toEqual([
+      { $current_url: `${ORIGIN}/farms/:farmId/:year` },
+      3,
+      'x',
+    ])
+  })
+
   it('replaces raw exception messages with the redacted copy', () => {
     const result = scrub(
       event('$exception', {
