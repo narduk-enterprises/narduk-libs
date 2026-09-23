@@ -30,6 +30,7 @@ import {
 } from 'h3'
 
 import { useLogger } from '../utils/logger'
+import { defineRateLimitedHandler } from '../utils/rateLimitedHandler'
 
 import type { H3Event } from 'h3'
 
@@ -49,6 +50,31 @@ const MAX_REPORTS_PER_REQUEST = 20
  * of {@link MAX_REPORTS_PER_REQUEST} field-capped reports with room to spare.
  */
 export const MAX_CSP_REPORT_BODY_BYTES = 64 * 1024
+
+/**
+ * The two media types a browser sends here (see the file header). Anything
+ * else is not a browser report, so it is answered 204 without reading or
+ * logging the body (narduk-libs#444, CSP-1).
+ */
+export const CSP_REPORT_CONTENT_TYPES: readonly string[] = [
+  'application/csp-report',
+  'application/reports+json',
+]
+
+/**
+ * Per-client allowance for the sink. `report-uri` sends one POST per
+ * violation, so a report-only soak on a busy page can legitimately produce a
+ * few dozen a minute; a client far past that is filling the log. The key is
+ * the `runtimeConfig.nardukRateLimit.routes` override for an app that needs
+ * more (narduk-libs#444, CSP-1).
+ */
+export const CSP_REPORT_RATE_LIMIT = { key: 'csp-report', limit: 60, windowSeconds: 60 } as const
+
+/** Is this `Content-Type` header one of {@link CSP_REPORT_CONTENT_TYPES}? */
+export function isCspReportContentType(header: string | undefined): boolean {
+  const mediaType = (header ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+  return CSP_REPORT_CONTENT_TYPES.includes(mediaType)
+}
 
 interface CspReportBody {
   'blocked-uri'?: unknown
@@ -209,7 +235,7 @@ export async function readCappedCspReportJson(
   return JSON.parse(raw) as unknown
 }
 
-export default defineEventHandler(async (event) => {
+const cspReportSink = defineRateLimitedHandler(async (event) => {
   const logger = useLogger(event).child('SecurityHeaders')
 
   let payload: unknown
@@ -231,4 +257,14 @@ export default defineEventHandler(async (event) => {
   // has no response worth reading.
   setResponseStatus(event, 204)
   return null
+}, CSP_REPORT_RATE_LIMIT)
+
+// Any other media type is answered before the limiter, so junk that is never
+// read cannot spend the allowance a real report from the same client needs.
+export default defineEventHandler((event) => {
+  if (!isCspReportContentType(getRequestHeader(event, 'content-type'))) {
+    setResponseStatus(event, 204)
+    return null
+  }
+  return cspReportSink(event)
 })

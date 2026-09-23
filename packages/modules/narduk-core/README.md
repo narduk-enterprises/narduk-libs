@@ -152,7 +152,10 @@ on the `-Report-Only` one, so the soak cannot break a page.
    and, for an inline violation, a sample of the offending source, and shipping
    that to a third-party collector is a data-egress decision nobody made. Change
    the path with `reportRoute`, or set `reportRoute: false` to serve no route
-   and emit no `report-uri`.
+   and emit no `report-uri`. The route reads only `application/csp-report` and
+   `application/reports+json` bodies (anything else is answered 204 unread) and
+   allows each client 60 reports a minute under the rate-limit key `csp-report`,
+   which `runtimeConfig.nardukRateLimit.routes` can raise.
 3. **Fix what it found**, usually by adding the origin to `allow`. A week of
    real traffic across the routes that matter is a reasonable soak; a quiet
    route proves nothing about a busy one.

@@ -217,6 +217,41 @@ describe('upgrade ownership contract', () => {
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
   })
 
+  it('keeps an app-authored manifests:validate body: the name is the contract (#468)', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents
+        .replace(
+          /"manifests:validate": "[^"]*"/u,
+          '"manifests:validate": "pnpm run contract:check"',
+        )
+        .replace(/"build:ci": "[^"]*"/u, '"build:ci": "pnpm run build"'),
+    )
+    const before = await read(targetDir, 'package.json')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    const after = JSON.parse(await read(targetDir, 'package.json'))
+
+    expect(after.scripts['manifests:validate']).toBe('pnpm run contract:check')
+    // A body-owned key beside it is still restored, so the manifest was edited.
+    expect(after.scripts['build:ci']).not.toBe('pnpm run build')
+    expect(report.changes.find((entry) => entry.path === 'package.json')?.detail).not.toContain(
+      'manifests:validate',
+    )
+    expect(await read(targetDir, 'package.json')).not.toBe(before)
+  })
+
+  it('treats an empty manifests:validate body as missing and fills it', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents.replace(/"manifests:validate": "[^"]*"/u, '"manifests:validate": " "'),
+    )
+
+    await upgradeNardukApp({ targetDir, write: true })
+    const after = JSON.parse(await read(targetDir, 'package.json'))
+    expect(after.scripts['manifests:validate']).toBe('pnpm --filter web run manifests:validate')
+  })
+
   it('restores a Prettier-wrapped script entry to the generated manifest byte for byte', async () => {
     const targetDir = await scaffold()
     const pristine = await read(targetDir, 'package.json')
