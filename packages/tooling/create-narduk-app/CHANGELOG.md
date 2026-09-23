@@ -1,5 +1,21 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.13.1
+
+### Patch Changes
+
+- 3f8eac8: The `/api/admin/**` GA, Search Console, Indexing and PostHog routes
+  register only when the app has a database: an app declaring
+  `nardukCore.databaseBackend: 'none'` (or `NUXT_DATABASE_BACKEND=none`) no
+  longer ships routes `requireAdmin` could only ever refuse.
+  `nardukAnalytics.admin` overrides either way (#524).
+- 551e39a: The canonical-host redirect takes a host list:
+  `CANONICAL_REDIRECT_HOSTS` (or `runtimeConfig.public.canonicalRedirectHosts`)
+  redirects only the named hosts, such as `www`, to the canonical origin and
+  serves every other host where it was asked, so `*.workers.dev` previews keep
+  working. It needs no `ENFORCE_CANONICAL_HOST`, and a `*.workers.dev` entry is
+  ignored (#515).
+
 ## 0.13.0
 
 ### Minor Changes
