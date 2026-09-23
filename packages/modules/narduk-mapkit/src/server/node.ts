@@ -2,6 +2,7 @@ import {
   MAPKIT_SIGNING_FAILED_MESSAGE,
   clearMapKitTokenCacheForTests,
   getOriginFromRequest,
+  isMapKitHostAllowed,
   issueMapKitTokenForRequest as issueWorkerMapKitTokenForRequest,
   mapKitRoutedOrigin,
   mapKitTokenResponse as workerMapKitTokenResponse,
@@ -21,6 +22,7 @@ export {
   MAPKIT_SIGNING_FAILED_MESSAGE,
   clearMapKitTokenCacheForTests,
   getOriginFromRequest,
+  isMapKitHostAllowed,
   mapKitRoutedOrigin,
   mapKitTokenResponseFromEnv,
 }

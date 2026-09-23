@@ -1,8 +1,8 @@
-import { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitRoutedOrigin, mapKitTokenResponseFromEnv } from './handler.js';
+import { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, isMapKitHostAllowed, mapKitRoutedOrigin, mapKitTokenResponseFromEnv } from './handler.js';
 import type { MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult } from './handler.js';
 import type { MapKitServerConfig } from './shared-config.js';
 export * from './config.js';
-export { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, mapKitRoutedOrigin, mapKitTokenResponseFromEnv, };
+export { MAPKIT_SIGNING_FAILED_MESSAGE, clearMapKitTokenCacheForTests, getOriginFromRequest, isMapKitHostAllowed, mapKitRoutedOrigin, mapKitTokenResponseFromEnv, };
 export type { MapKitRateLimitContext, MapKitRateLimitDecision, MapKitRateLimitHook, MapKitRoutedOriginOptions, MapKitTokenRequestOptions, MapKitTokenResponseOptions, MapKitTokenResult, } from './handler.js';
 /**
  * Node-only token resolver. It may read `process.env` and use the optional

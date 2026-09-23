@@ -12,6 +12,7 @@ import { createServer } from 'node:http'
 import { decodeJwt } from '../src/token/index.js'
 import {
   clearMapKitTokenCacheForTests,
+  isMapKitHostAllowed,
   mapKitRoutedOrigin,
   mapKitTokenResponse,
 } from '../src/server/index.js'
@@ -27,6 +28,9 @@ let base: string
 /** The same handler mounted catch-all -- see the §F2 describe block. */
 let catchAllServer: Server
 let catchAllPort: number
+/** Catch-all with `allowedHosts` set -- the narduk-libs#437 describe block. */
+let allowListServer: Server
+let allowListPort: number
 
 /**
  * THE lines a Nuxt/Nitro consumer writes.
@@ -78,6 +82,23 @@ beforeAll(async () => {
   catchAllApp.use(handler)
   catchAllServer = createServer(toNodeListener(catchAllApp))
   catchAllPort = await listen(catchAllServer)
+
+  const allowListApp = createApp()
+  allowListApp.use(
+    defineEventHandler(async (event) => {
+      const request = new Request(getRequestURL(event).toString(), {
+        headers: event.headers,
+        method: event.method,
+      })
+      return await mapKitTokenResponse(
+        request,
+        { ...config, allowedHosts: ['app.example', '*.preview.example'] },
+        { self: routedSelf(event) },
+      )
+    }),
+  )
+  allowListServer = createServer(toNodeListener(allowListApp))
+  allowListPort = await listen(allowListServer)
 })
 
 /**
@@ -107,7 +128,7 @@ async function rawRequest(port: number, requestTarget: string, host: string): Pr
 
 afterAll(async () => {
   await Promise.all(
-    [server, catchAllServer].map(
+    [server, catchAllServer, allowListServer].map(
       async (instance) =>
         await new Promise<void>((resolve, reject) => {
           instance.close((error) => {
@@ -276,5 +297,46 @@ describe('§e.5 preview host (narduk-libs#408, landed in #426)', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
     expect(decodeJwt(payload.token).payload.origin).toBe(base)
+  })
+})
+
+describe('narduk-libs#437 a forged Host cannot name the origin claim once allowedHosts is set', () => {
+  it('refuses an origin-form request whose Host is not on the list, and never echoes it', async () => {
+    const raw = await rawRequest(allowListPort, '/api/mapkit-token', 'evil.example')
+
+    expect(raw).toContain('403 ')
+    expect(raw).not.toContain('"token"')
+    expect(raw).not.toContain('evil.example')
+  })
+
+  it('mints for a listed host, with exactly that host in the claim', async () => {
+    const raw = await rawRequest(allowListPort, '/api/mapkit-token', 'app.example')
+
+    expect(raw).toContain('200 ')
+    const token = /"token":"([^"]+)"/u.exec(raw)?.[1]
+    expect(token).toBeDefined()
+    expect(decodeJwt(token!).payload.origin).toBe('http://app.example')
+  })
+
+  it('matches a wildcard entry on a subdomain but not on its apex', async () => {
+    const sub = await rawRequest(allowListPort, '/api/mapkit-token', 'pr-7.preview.example')
+    const apex = await rawRequest(allowListPort, '/api/mapkit-token', 'preview.example')
+
+    expect(sub).toContain('200 ')
+    expect(apex).toContain('403 ')
+  })
+
+  it('treats an unset or empty list as allow-all, the Workers default', () => {
+    expect(isMapKitHostAllowed('https://anything.example', undefined)).toBe(true)
+    expect(isMapKitHostAllowed('https://anything.example', [])).toBe(true)
+    expect(isMapKitHostAllowed('https://anything.example', ' , ')).toBe(true)
+  })
+
+  it('compares host and port case-insensitively, and reads a comma list from an env string', () => {
+    expect(isMapKitHostAllowed('https://APP.example', ['app.example'])).toBe(true)
+    expect(isMapKitHostAllowed('http://localhost:3000', 'localhost:3000, app.example')).toBe(true)
+    expect(isMapKitHostAllowed('http://localhost:3001', 'localhost:3000')).toBe(false)
+    expect(isMapKitHostAllowed('https://app.example.evil', ['app.example'])).toBe(false)
+    expect(isMapKitHostAllowed('https://evilpreview.example', ['*.preview.example'])).toBe(false)
   })
 })

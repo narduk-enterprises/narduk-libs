@@ -204,6 +204,29 @@ export function isMapKitRequestSameOrigin(request: Request, self: string): boole
   return false
 }
 
+function allowedHostList(allowedHosts: MapKitServerConfig['allowedHosts']): string[] {
+  const entries = typeof allowedHosts === 'string' ? allowedHosts.split(',') : (allowedHosts ?? [])
+  return entries.map((entry) => entry.trim().toLowerCase()).filter(Boolean)
+}
+
+/**
+ * Is the routed origin's host on the app's `allowedHosts` list? An unset or
+ * empty list allows every host (see `MapKitServerConfig.allowedHosts`).
+ */
+export function isMapKitHostAllowed(
+  self: string,
+  allowedHosts: MapKitServerConfig['allowedHosts'],
+): boolean {
+  const list = allowedHostList(allowedHosts)
+  if (list.length === 0) return true
+  const host = new URL(self).host.toLowerCase()
+  return list.some((entry) =>
+    entry.startsWith('*.')
+      ? host.endsWith(entry.slice(1)) && host.length > entry.length - 1
+      : host === entry,
+  )
+}
+
 function clampTtlSeconds(value: number | undefined): number {
   const requested = value ?? MAPKIT_TOKEN_TTL_MAX_SECONDS
   if (!Number.isFinite(requested)) return MAPKIT_TOKEN_TTL_MAX_SECONDS
@@ -248,6 +271,12 @@ export async function issueMapKitTokenForRequest(
   }
 
   if (!isMapKitRequestSameOrigin(options.request, self)) {
+    return { refusal: 'not-same-origin', self, status: 403, token: '' }
+  }
+
+  // A forged `Host` on a Node listener is same-origin with itself; only the
+  // app's own list can tell it from a routed one (narduk-libs#437).
+  if (!isMapKitHostAllowed(self, config.allowedHosts)) {
     return { refusal: 'not-same-origin', self, status: 403, token: '' }
   }
 

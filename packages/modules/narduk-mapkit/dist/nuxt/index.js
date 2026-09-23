@@ -98,9 +98,13 @@ const module = defineNuxtModule({
         runtimeConfig.appleSecretKey ??= '';
         runtimeConfig.appleTeamId ??= '';
         runtimeConfig.public.mapkitTokenEndpoint ??= tokenRoutePath;
-        // Server-side and non-secret: a ceiling, not a credential. Empty unless the
-        // app opted in, so the route's default is no limit at all.
-        runtimeConfig['nardukMapKit'] = options.rateLimit ? { rateLimit: { ...options.rateLimit } } : {};
+        // Server-side and non-secret: a ceiling and a host list, not credentials.
+        // Each is absent unless the app opted in, so the route's default is no
+        // limit and every routed host.
+        runtimeConfig['nardukMapKit'] = {
+            ...(options.rateLimit ? { rateLimit: { ...options.rateLimit } } : {}),
+            ...(options.allowedHosts?.length ? { allowedHosts: [...options.allowedHosts] } : {}),
+        };
         warnRetiredKeys(runtimeConfig);
         // The client runtime's own non-secret configuration. Deliberately one key,
         // and deliberately not a place a token could ever be put.

@@ -126,10 +126,15 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   const sources = [readCloudflareEnv(event), readProcessEnv()]
   const rateLimit = resolveRateLimit(event, config)
+  // `nardukMapKit.allowedHosts` (narduk-libs#437); an env override arrives as a
+  // comma-separated string, which the handler reads as a list.
+  const allowedHosts = (config['nardukMapKit'] as { allowedHosts?: string[] | string } | undefined)
+    ?.allowedHosts
 
   return await mapKitTokenResponse(
     requestFromEvent(event),
     {
+      ...(allowedHosts === undefined ? {} : { allowedHosts }),
       doppler: false,
       keyId: readRuntimeString(sources, ['APPLE_KEY_ID'], config['appleKeyId']),
       privateKey: readRuntimeString(
