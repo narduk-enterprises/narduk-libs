@@ -163,6 +163,23 @@ describe('frozen local source and reusable workspace', () => {
     expect(inWorkspace('status', '--porcelain')).toBe('')
     expect(readFileSync(join(f.workspace, 'node_modules', 'warm'), 'utf8')).toBe('keep')
   })
+  it('keeps warm dependencies out of the workspace repository without relying on app ignore rules', () => {
+    const f = fixture()
+    writeFileSync(join(f.checkout, '.gitignore'), '.env\n.output/\nignored-input.json\n')
+    populateDevelopmentWorkspace(captureDevelopmentSource(f.checkout, f.snapshot), f.workspace)
+    mkdirSync(join(f.workspace, 'apps/web/node_modules'), { recursive: true })
+    writeFileSync(join(f.workspace, 'apps/web/node_modules', 'installed.js'), 'dependency')
+    populateDevelopmentWorkspace(
+      captureDevelopmentSource(f.checkout, join(f.root, 'second')),
+      f.workspace,
+    )
+    const listed = execFileSync('git', ['ls-files', '-co', '--exclude-standard'], {
+      cwd: f.workspace,
+      encoding: 'utf8',
+    })
+    expect(listed).not.toContain('node_modules')
+    expect(listed).toContain('tracked.ts')
+  })
   it('refuses modified captured inputs and inline registry credentials', () => {
     const f = fixture()
     const snapshot = captureDevelopmentSource(f.checkout, f.snapshot)

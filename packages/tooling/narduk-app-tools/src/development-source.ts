@@ -49,6 +49,14 @@ const excludedDirectories = new Set([
 ])
 /** The build workspace's own branch; it has no remote and is never pushed. */
 const workspaceBranch = 'narduk-development-workspace'
+/**
+ * Publisher-owned build state the workspace keeps between deploys. It survives
+ * pruning and, because it is not captured source, it is excluded from the
+ * workspace repository too -- otherwise a warm dependency tree would be listed
+ * by a gate enumerating with `git ls-files -co` whenever the app's own ignore
+ * rules happen not to cover it.
+ */
+const workspacePreserved = ['node_modules']
 export function excludedSourcePath(path: string): boolean {
   const parts = path.split('/')
   const name = parts.at(-1) ?? ''
@@ -217,7 +225,7 @@ export function populateDevelopmentWorkspace(snapshot: SourceSnapshot, workspace
       // Publisher-owned build state: installed dependencies and the workspace's
       // own repository. Both are rebuilt incrementally, which is what keeps the
       // loop cheap; neither is ever part of the captured source.
-      if (name === 'node_modules' || name === '.git') continue
+      if (name === '.git' || workspacePreserved.includes(name)) continue
       const path = join(directory, name)
       const stat = lstatSync(path)
       if (stat.isDirectory() && !stat.isSymbolicLink()) {
@@ -271,6 +279,15 @@ function initializeWorkspaceRepository(snapshot: SourceSnapshot, workspace: stri
     execFileSync('git', args, { cwd: workspace, env, stdio: 'ignore' })
   }
   run('init', '--quiet', '--template=', '--initial-branch', workspaceBranch)
+  // Not the app's `.gitignore`, which may or may not cover its own dependency
+  // directories: the capture boundary itself, stated where no app rule can
+  // weaken it.
+  mkdirSync(join(workspace, '.git', 'info'), { recursive: true, mode: 0o700 })
+  writeFileSync(
+    join(workspace, '.git', 'info', 'exclude'),
+    `${workspacePreserved.map((name) => `${name}/`).join('\n')}\n`,
+    { mode: 0o600 },
+  )
   run('add', '--all')
   run(
     '-c',
