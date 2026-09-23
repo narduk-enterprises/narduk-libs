@@ -1802,6 +1802,21 @@ scanned `api_keys`, including one presenting a well-formed but fabricated key
 32-byte token. `tests/api-key-hash-index-d1.test.ts` checks both lookups the
 same way.
 
+## Type declarations in `types/`
+
+Nuxt's generated tsconfigs (`.nuxt/tsconfig.app.json`, `.server.json`,
+`.shared.json`, `.node.json`) include `app/`, `server/`, `shared/**/*.d.ts` and
+the root `*.d.ts`, but not `types/`. A `nuxt/schema` augmentation placed in
+`types/` was therefore in no program at all. Because `RuntimeConfig` is an open
+record, every key it claimed to type stayed `unknown`, and a truthiness guard on
+one always took the branch. Nothing reported it.
+
+narduk-core adds `types/**/*.d.ts` (relative to the app root) to all four
+generated configs, so a declaration there types what it says (narduk-libs#669).
+`shared/types/` works as well and needs nothing from core. An augmentation that
+was silently inert before can now surface type errors it was hiding. That is the
+point, but expect it on the first typecheck after upgrading.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`

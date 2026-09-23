@@ -33,6 +33,7 @@ import {
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
 
+import { includeAppTypesDir } from './app-types-dir'
 import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
@@ -889,6 +890,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxt.hook('prepare:types', (prepareOptions) => {
         registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
       })
+      includeAppTypesDir(nuxt)
       nuxt.hook('imports:extend', (imports) => {
         for (let i = imports.length - 1; i >= 0; i--) {
           const entry = imports[i]
