@@ -25,3 +25,14 @@ test('.prettierignore excludes generated package CHANGELOG.md files', async () =
   )
   assert.equal(info.ignored, true)
 })
+
+// narduk-libs#432: a changeset's body is copied into that generated
+// CHANGELOG.md, which is already outside the format contract, so formatting
+// the changeset buys nothing. It cost lanes a CI round each on a rewrapped
+// line. Changeset markdown is release input and, like its output, is out of scope.
+test('.prettierignore excludes changeset markdown', async () => {
+  const info = await prettier.getFileInfo(join(repoRoot, '.changeset/some-change.md'), {
+    ignorePath: [join(repoRoot, '.gitignore'), join(repoRoot, '.prettierignore')],
+  })
+  assert.equal(info.ignored, true)
+})
