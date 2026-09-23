@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from 'node:fs'
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const CORE = '@narduk-enterprises/narduk-core'
@@ -190,5 +192,76 @@ describe('narduk-analytics module', () => {
       if (previous === undefined) delete process.env.POSTHOG_SESSION_REPLAY_ENABLED
       else process.env.POSTHOG_SESSION_REPLAY_ENABLED = previous
     }
+  })
+
+  describe('admin routes on an app with no database (#524)', () => {
+    async function scanned(
+      options: Record<string, unknown>,
+      nuxtOptions: Record<string, unknown> = {},
+      env?: string,
+    ): Promise<string[]> {
+      const previous = process.env.NUXT_DATABASE_BACKEND
+      if (env === undefined) delete process.env.NUXT_DATABASE_BACKEND
+      else process.env.NUXT_DATABASE_BACKEND = env
+      try {
+        vi.resetModules()
+        const { addServerScanDir } = mockNuxtKit(() => true)
+        const mod = (await import('../src/module')).default as unknown as {
+          setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+        }
+        const nuxt = makeNuxt()
+        Object.assign(nuxt.options, nuxtOptions)
+        await mod.setup({ app: false, server: true, ...options }, nuxt)
+        return addServerScanDir.mock.calls.map(([dir]) =>
+          String(dir).replace(/^.*\/(server(?:\/admin)?)$/, '$1'),
+        )
+      } finally {
+        if (previous === undefined) delete process.env.NUXT_DATABASE_BACKEND
+        else process.env.NUXT_DATABASE_BACKEND = previous
+      }
+    }
+
+    it('keeps every admin handler out of the always-scanned server/api tree', () => {
+      const root = new URL('../server/', import.meta.url)
+      expect(existsSync(new URL('api/admin', root))).toBe(false)
+      expect(readdirSync(new URL('admin/api/admin', root), { recursive: true })).toContain(
+        'gsc/performance.get.ts',
+      )
+    })
+
+    it('registers the admin routes by default', async () => {
+      expect(await scanned({})).toEqual(['server', 'server/admin'])
+      expect(await scanned({}, { nardukCore: { databaseBackend: 'd1' } })).toEqual([
+        'server',
+        'server/admin',
+      ])
+    })
+
+    it('leaves them out when the app declares no database, however it declares it', async () => {
+      expect(await scanned({}, { nardukCore: { databaseBackend: 'none' } })).toEqual(['server'])
+      expect(
+        await scanned(
+          {},
+          { modules: [['@narduk-enterprises/narduk-core/nuxt', { databaseBackend: 'none' }]] },
+        ),
+      ).toEqual(['server'])
+      expect(await scanned({}, {}, 'none')).toEqual(['server'])
+    })
+
+    it('lets the config key win over the environment, as narduk-core does', async () => {
+      expect(await scanned({}, { nardukCore: { databaseBackend: 'd1' } }, 'none')).toEqual([
+        'server',
+        'server/admin',
+      ])
+    })
+
+    it('honours an explicit admin option either way', async () => {
+      expect(await scanned({ admin: true }, { nardukCore: { databaseBackend: 'none' } })).toEqual([
+        'server',
+        'server/admin',
+      ])
+      expect(await scanned({ admin: false })).toEqual(['server'])
+      expect(await scanned({ admin: true, server: false })).toEqual([])
+    })
   })
 })

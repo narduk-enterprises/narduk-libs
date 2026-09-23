@@ -37,6 +37,15 @@ interface TypePrepareOptions {
 }
 
 export interface NardukAnalyticsModuleOptions {
+  /**
+   * The `/api/admin/**` GA, Search Console, Indexing and PostHog routes. They
+   * authorise with narduk-core's `requireAdmin`, which resolves the admin
+   * through the auth session and the app's database. Omitted, they register
+   * unless the app declares it has no database (`nardukCore.databaseBackend:
+   * 'none'` or `NUXT_DATABASE_BACKEND=none`), where every one of them could
+   * only ever answer 401 (narduk-libs#524). `true` or `false` decides outright.
+   */
+  admin?: boolean
   app?: boolean
   server?: boolean
 }
@@ -134,6 +143,28 @@ function nardukCoreAppDisabled(nuxtOptions: {
   )
 }
 
+/**
+ * Whether the app declares it has no database, read from the same sources
+ * narduk-core resolves `databaseBackend` from: the `nardukCore` config key, an
+ * inline `[module, options]` tuple, then `NUXT_DATABASE_BACKEND`. Read here
+ * rather than from narduk-core's resolved runtime config, because a module
+ * listed before narduk-core runs before narduk-core has written it.
+ */
+function declaresNoDatabase(
+  nuxtOptions: { modules?: readonly unknown[]; nardukCore?: unknown },
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const configured = (nuxtOptions.nardukCore as { databaseBackend?: unknown } | undefined)
+    ?.databaseBackend
+  const inline = (nuxtOptions.modules ?? []).find(
+    (entry): entry is [unknown, { databaseBackend?: unknown } | undefined] =>
+      Array.isArray(entry) &&
+      (entry[0] === CORE_PACKAGE_NAME || entry[0] === `${CORE_PACKAGE_NAME}/nuxt`),
+  )?.[1]?.databaseBackend
+  const declared = configured ?? inline ?? env.NUXT_DATABASE_BACKEND
+  return declared === 'none'
+}
+
 export default defineNuxtModule<NardukAnalyticsModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
@@ -187,6 +218,10 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
 
     if (options.server) {
       addServerScanDir(resolver.resolve('../server'))
+      const admin =
+        options.admin ??
+        !declaresNoDatabase(nuxt.options as unknown as Parameters<typeof declaresNoDatabase>[0])
+      if (admin) addServerScanDir(resolver.resolve('../server/admin'))
     }
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
