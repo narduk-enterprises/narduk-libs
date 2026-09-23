@@ -2052,6 +2052,26 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Size-capped upstream reads: `readBoundedBody`
+
+The client above reads its bodies through `readBoundedBody`, and an app that
+reads any other upstream API can use it too. It checks a declared
+`content-length`, then streams the body and cancels the download once it passes
+`maxBytes`, so an upstream that omits or understates its length cannot fill
+isolate memory. `response.text()` followed by a length check buffers the whole
+body first, so it does not protect anything.
+
+```ts
+const issues = await readBoundedJson<Issue[]>(response, 256 * 1024, {
+  label: 'GitHub issues',
+})
+```
+
+At the ceiling it throws `BoundedBodyTooLargeError`, which carries `maxBytes`.
+Pass `tooLarge: () => new MyError(...)` to throw your own error instead. Both
+functions are Nitro auto-imports, or import them from
+`@narduk-enterprises/narduk-core/server/utils/boundedBody`.
+
 ## Shared media components
 
 Auto-registered from `runtime/app/components/shared/` (`addComponentsDir` with
