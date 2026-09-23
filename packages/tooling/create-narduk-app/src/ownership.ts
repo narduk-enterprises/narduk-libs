@@ -150,6 +150,11 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     unit: 'whole file',
   },
   { path: '.github/dependabot.yml', mode: 'file', unit: 'whole file' },
+  {
+    path: '.github/workflows/dependabot-merge.yml',
+    mode: 'file',
+    unit: 'whole file',
+  },
   { path: 'AGENTS.md', mode: 'region', region: 'agentsRouter', unit: 'narduk:router block' },
   {
     path: 'docs/e2e-testing.md',

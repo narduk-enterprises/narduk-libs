@@ -414,6 +414,125 @@ export function createCiWorkflow(visibility: AppVisibility): string {
 }
 
 /**
+ * Merges the `safe` Dependabot lane (.github/dependabot.yml, minor + patch)
+ * once CI on its exact head is green, then starts CI on `main` for the
+ * merged commit. Reference shape: gonogo#104 (merged as 0c464d8),
+ * narduk-libs#U2.
+ *
+ * Why `workflow_run` and not GitHub's own auto-merge: a merge made with this
+ * workflow's GITHUB_TOKEN fires no push workflows, so the merged commit would
+ * never get its own `ci / Required` run on `main`. Merging here, after CI has
+ * already passed on the PR head, lets the same job start main CI by
+ * `workflow_dispatch`, which GitHub does allow from GITHUB_TOKEN. Nothing
+ * from the pull request is checked out or executed -- the job only reads PR
+ * metadata and calls the API -- so running with a write token on
+ * `workflow_run` never hands that token to Dependabot's branch.
+ *
+ * The `majors` lane and the `github-actions` lane are never touched here: a
+ * major bump usually needs a code change, and a workflow-file edit cannot be
+ * merged by GITHUB_TOKEN at all, so both stay a deliberate person/agent PR.
+ *
+ * Runner: private apps route through the same self-hosted `linux-ci` group
+ * ci.yml's reusable-workflow caller uses (`linuxRoute` above, expressed here
+ * as a literal `runs-on:` block since this job calls no reusable workflow).
+ * Public apps must use a GitHub-hosted runner -- no self-hosted runner ever
+ * sees a fork PR's or a bot's code (D-VIS-1) -- so they get `ubuntu-24.04`,
+ * matching the public path's own jobs above.
+ */
+export function createDependabotMergeWorkflow(visibility: AppVisibility): string {
+  const runsOn =
+    visibility === 'public'
+      ? '    runs-on: ubuntu-24.04'
+      : [
+          '    runs-on:',
+          '      group: linux-ci',
+          '      labels: [self-hosted, Linux, X64, proxmox, linux-ci]',
+        ].join('\n')
+  return [
+    'name: Dependabot merge',
+    '',
+    "# Merges Dependabot's `safe` lane (minor + patch, see .github/dependabot.yml)",
+    '# once CI on its exact head is green, then starts CI on main.',
+    '#',
+    '# Why workflow_run and not GitHub auto-merge: a merge made with this',
+    "# workflow's GITHUB_TOKEN fires no push workflows, so the merged commit",
+    '# would never get its own `ci / Required` run on main. Merging here, after',
+    '# CI has already passed, lets the same job start main CI by',
+    '# workflow_dispatch, which GitHub does allow from GITHUB_TOKEN.',
+    '#',
+    '# Nothing from the pull request is checked out or executed: the job only',
+    '# reads PR metadata and calls the API, so running with a write token on',
+    "# workflow_run does not hand that token to Dependabot's branch.",
+    'on:',
+    '  workflow_run:',
+    '    workflows: [CI]',
+    '    types: [completed]',
+    '',
+    // Required by the shared workflow's caller-lint gate: every workflow
+    // that is not workflow_call-only needs a workflow-level concurrency
+    // block (see the workflowSha comment above). A completed CI run is a
+    // one-shot event per head branch, so this never has anything in flight
+    // to cancel -- it exists to satisfy the audited rule, not to serialize
+    // real contention.
+    'concurrency:',
+    '  group: dependabot-merge-${{ github.event.workflow_run.head_branch }}',
+    '  cancel-in-progress: false',
+    '',
+    'permissions: {}',
+    '',
+    'jobs:',
+    '  merge:',
+    '    if: >-',
+    "      github.event.workflow_run.conclusion == 'success' &&",
+    "      github.event.workflow_run.event == 'pull_request' &&",
+    "      github.event.workflow_run.actor.login == 'dependabot[bot]' &&",
+    "      startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/safe-')",
+    runsOn,
+    '    timeout-minutes: 10',
+    '    permissions:',
+    '      actions: write',
+    '      contents: write',
+    '      pull-requests: write',
+    '    steps:',
+    '      - name: Merge the safe lane at the head CI proved',
+    '        id: merge',
+    '        env:',
+    '          GH_TOKEN: ${{ github.token }}',
+    '          REPO: ${{ github.repository }}',
+    '          BRANCH: ${{ github.event.workflow_run.head_branch }}',
+    '          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}',
+    '        run: |',
+    '          set -euo pipefail',
+    '          pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \\',
+    '            --json number,headRefOid,author \\',
+    '            --jq ".[] | select(.author.login == \\"app/dependabot\\" and .headRefOid == \\"$HEAD_SHA\\") | .number")',
+    '          if [ -z "$pr" ]; then',
+    '            echo "No open Dependabot PR on $BRANCH at $HEAD_SHA; the lane moved on or already merged."',
+    '            exit 0',
+    '          fi',
+    '          # Only dependency manifests may change. Anything else means a person',
+    '          # pushed to the branch, and a person merges it.',
+    '          unexpected=$(gh pr view "$pr" --repo "$REPO" --json files \\',
+    '            --jq \'[.files[].path | select(test("(^|/)(package\\\\.json|pnpm-lock\\\\.yaml|pnpm-workspace\\\\.yaml)$") | not)] | join(" ")\')',
+    '          if [ -n "$unexpected" ]; then',
+    '            echo "::warning::PR #$pr changes more than dependency manifests ($unexpected); leaving it for a person."',
+    '            exit 0',
+    '          fi',
+    '          gh pr merge "$pr" --repo "$REPO" --squash --match-head-commit "$HEAD_SHA"',
+    '          echo "Merged #$pr at $HEAD_SHA."',
+    '          echo "merged=true" >> "$GITHUB_OUTPUT"',
+    '',
+    '      - name: Start CI on main for the merged commit',
+    "        if: steps.merge.outputs.merged == 'true'",
+    '        env:',
+    '          GH_TOKEN: ${{ github.token }}',
+    '          REPO: ${{ github.repository }}',
+    '        run: gh workflow run ci.yml --repo "$REPO" --ref main',
+    '',
+  ].join('\n')
+}
+
+/**
  * Explicit full validation for development mode (company-hq#781). Ordinary
  * pushes stay quiet while automation is held; `narduk-app development validate`
  * pushes the exact commit to a reserved `narduk-validation/<sha>/<id>` ref, which

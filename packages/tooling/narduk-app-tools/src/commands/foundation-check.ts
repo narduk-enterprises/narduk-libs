@@ -13,7 +13,9 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { runFoundationCheck } from '../foundation/evaluate.js'
+import { evaluateDependabotStackingShape } from '../foundation/items/item-5-shared-ci.js'
 import { formatArtefactSummary } from '../foundation/schema.js'
+import { AppRepo } from '../foundation/source.js'
 import type { FoundationCheckArtefact } from '../foundation/types.js'
 import { readOwnVersion } from './own-version.js'
 
@@ -61,6 +63,15 @@ export async function runFoundationCheckCommand(flags: FoundationCheckFlags): Pr
     console.log(JSON.stringify(artefact, null, 2))
   } else {
     console.log(formatArtefactSummary(artefact))
+  }
+  // Advisory only (narduk-libs#U2): the dependabot-stacking-shape check has
+  // no `FoundationSubCheck` of its own on purpose -- see
+  // `evaluateDependabotStackingShape`'s doc comment for why folding it into
+  // item 5 would fail CI on every unmigrated app instead of warning it. This
+  // print never touches `artefact` or `exitCode`.
+  const stackingWarning = evaluateDependabotStackingShape(new AppRepo(flags.checkoutDir))
+  if (stackingWarning) {
+    console.warn(`::warning::${stackingWarning}`)
   }
   return { artefact, exitCode: artefact.exitCode }
 }

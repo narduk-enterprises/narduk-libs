@@ -56,7 +56,7 @@
     "pretest:unit": "pnpm run deps:build",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
