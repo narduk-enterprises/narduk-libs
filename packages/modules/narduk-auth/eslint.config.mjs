@@ -30,16 +30,6 @@ export default createAppLintConfig({
         'no-restricted-imports': PORTABLE_LAYER_RESTRICTED_IMPORTS_RULE,
       },
     },
-    {
-      // `@vitejs/plugin-vue` trips eslint-plugin-import-x's resolver
-      // (`node with invalid interface loaded as resolver`) on
-      // `import-x/no-cycle` when this file is linted.
-      name: 'narduk-auth/vitest-config-import-resolver',
-      files: ['vitest.config.ts'],
-      rules: {
-        'import-x/no-cycle': 'off',
-      },
-    },
   ],
   seoMode: 'disabled',
 })

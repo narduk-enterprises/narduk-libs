@@ -95,19 +95,6 @@ const nonceFixture = {
   ignores: ['tests/fixtures/**'],
 }
 
-/**
- * 5. `@vitejs/plugin-vue` trips eslint-plugin-import-x's resolver
- * (`node with invalid interface loaded as resolver`) on `import-x/no-cycle`
- * when `vitest.config.ts` is linted. Same override as narduk-auth.
- */
-const vitestConfigImportResolver = {
-  name: 'narduk-core/vitest-config-import-resolver',
-  files: ['vitest.config.ts'],
-  rules: {
-    'import-x/no-cycle': 'off',
-  },
-}
-
 export default createAppLintConfig({
   withNuxt,
   capabilityPacks: [...nardukTemplateStrictCapabilityPacks],
@@ -116,7 +103,6 @@ export default createAppLintConfig({
     portableLayerServerImports,
     ssrfValidatorNodeNet,
     sequentialByDesign,
-    vitestConfigImportResolver,
   ],
   seoMode: 'required',
 })

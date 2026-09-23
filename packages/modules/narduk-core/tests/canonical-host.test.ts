@@ -301,14 +301,71 @@ describe('canonical-host middleware', () => {
   })
 
   describe('exactly one canonical redirect is registered (narduk-libs#409)', () => {
+    /**
+     * The source with its comments removed, so a middleware whose doc comment
+     * only mentions canonicalisation does not read as a second redirect
+     * (narduk-libs#682). A redirect still has to be written in code, and code
+     * keeps every string and identifier, so the guard loses no strength. A
+     * scanner, not a lazy block-comment regex, which is polynomial on an
+     * unterminated `/*`. A `//` right after `:` is a URL scheme.
+     */
+    function withoutComments(source: string): string {
+      let code = ''
+      let index = 0
+      while (index < source.length) {
+        if (source.startsWith('/*', index)) {
+          const end = source.indexOf('*/', index + 2)
+          index = end === -1 ? source.length : end + 2
+          code += ' '
+        } else if (source.startsWith('//', index) && source[index - 1] !== ':') {
+          const end = source.indexOf('\n', index)
+          index = end === -1 ? source.length : end
+        } else {
+          code += source[index]
+          index++
+        }
+      }
+      return code
+    }
+
+    function mentionsCanonicalInCode(source: string): boolean {
+      return /canonical/i.test(withoutComments(source))
+    }
+
     it('leaves one canonical-host middleware in the auto-scanned tree', () => {
       const canonicalMiddleware = readdirSync(middlewareDirectory)
         .filter((entry) => entry.endsWith('.ts'))
         .filter((entry) =>
-          /canonical/i.test(readFileSync(join(middlewareDirectory, entry), 'utf-8')),
+          mentionsCanonicalInCode(readFileSync(join(middlewareDirectory, entry), 'utf-8')),
         )
 
-      expect(canonicalMiddleware).toEqual(['00-canonical-host.ts'])
+      expect(
+        canonicalMiddleware,
+        'server/middleware files whose code (comments excluded) mentions "canonical"; only one canonical redirect may be auto-scanned (narduk-libs#409)',
+      ).toEqual(['00-canonical-host.ts'])
+    })
+
+    it('ignores prose about canonicalisation but not a redirect in code (narduk-libs#682)', () => {
+      const prose = [
+        '/**',
+        ' * Runs right after the canonical-host redirect.',
+        ' */',
+        '// keep ordering with the canonical middleware',
+        'export default defineEventHandler(() => {})',
+      ].join('\n')
+      const redirect = [
+        '// a comment that says nothing',
+        'const canonicalOrigin = "https://example.com"',
+        'export default defineEventHandler((event) => {',
+        '  setResponseStatus(event, 308)',
+        '  setResponseHeader(event, "location", canonicalOrigin + event.path)',
+        '})',
+      ].join('\n')
+
+      expect(mentionsCanonicalInCode(prose)).toBe(false)
+      expect(mentionsCanonicalInCode(redirect)).toBe(true)
+      expect(mentionsCanonicalInCode('/* unterminated canonical')).toBe(false)
+      expect(mentionsCanonicalInCode('const url = "https://x.test/canonical"')).toBe(true)
     })
 
     it('resolves the retired middleware specifier to the live handler', () => {

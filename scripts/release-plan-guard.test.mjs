@@ -8,9 +8,11 @@ import {
   NEVER_PUBLISHED_FILES,
   PUBLISH_LIFECYCLE_SCRIPTS,
   SUGGESTED_CHANGESET_PATH,
+  TEST_ONLY_PATH_PATTERNS,
   classifyChangedPackages,
   classifyManifestChange,
   ignoredPackageNames,
+  isInPublishedFiles,
   publishLifecycleScriptKeys,
   renderGuardReport,
   renderSuggestedChangeset,
@@ -460,4 +462,83 @@ test('an added or removed manifest is always a release decision', () => {
     deferred: [],
     releaseRelevant: [],
   })
+})
+
+test('a test-only change outside `files` needs no changeset (#686)', () => {
+  // #685's shape: geogrid-web publishes dist/ and its docs, and the PR changed
+  // only a test, so the tarball could not differ.
+  const geogrid = {
+    name: '@narduk-enterprises/geogrid-web',
+    relativeDirectory: 'packages/modules/geogrid-web',
+    files: ['CHANGELOG.md', 'LICENSE', 'README.md', 'dist/'],
+  }
+  const entries = classifyChangedPackages({
+    packages: [geogrid],
+    changedFiles: [
+      'packages/modules/geogrid-web/tests/temporal.test.ts',
+      'packages/modules/geogrid-web/test/fixtures/grid.json',
+      'packages/modules/geogrid-web/vitest.config.ts',
+      'packages/modules/geogrid-web/playwright.config.mjs',
+    ],
+    readManifests: () => {
+      throw new Error('no manifest changed')
+    },
+  })
+  assert.deepEqual(
+    entries.map(({ name, verdict }) => ({ name, verdict })),
+    [{ name: '@narduk-enterprises/geogrid-web', verdict: 'ok' }],
+  )
+})
+
+test('a change inside the published surface still needs a changeset (#686)', () => {
+  const analytics = {
+    name: '@narduk-enterprises/narduk-analytics',
+    relativeDirectory: 'packages/modules/narduk-analytics',
+    // narduk-analytics publishes its own vitest config and its app/ tree.
+    files: ['app/', 'server/', 'src/', 'eslint.config.mjs', 'vitest.config.ts', 'README.md'],
+  }
+  const geogrid = {
+    name: '@narduk-enterprises/geogrid-web',
+    relativeDirectory: 'packages/modules/geogrid-web',
+    files: ['dist/'],
+  }
+  const noFiles = {
+    name: '@narduk-enterprises/narduk-testkit',
+    relativeDirectory: 'packages/tooling/narduk-testkit',
+  }
+  const entries = classifyChangedPackages({
+    packages: [analytics, geogrid, noFiles],
+    changedFiles: [
+      'packages/modules/narduk-analytics/vitest.config.ts',
+      // src/ is outside `files` but dist/ is built from it.
+      'packages/modules/geogrid-web/src/temporal.ts',
+      // With no `files`, npm packs tests too.
+      'packages/tooling/narduk-testkit/tests/d1.test.ts',
+    ],
+    readManifests: () => {
+      throw new Error('no manifest changed')
+    },
+  })
+  const verdicts = Object.fromEntries(entries.map((entry) => [entry.name, entry.otherFiles]))
+  assert.deepEqual(verdicts, {
+    '@narduk-enterprises/geogrid-web': ['src/temporal.ts'],
+    '@narduk-enterprises/narduk-analytics': ['vitest.config.ts'],
+    '@narduk-enterprises/narduk-testkit': ['tests/d1.test.ts'],
+  })
+  assert.ok(entries.every((entry) => entry.verdict === 'needs-changeset'))
+})
+
+test('the published-files match resolves every doubt toward published (#686)', () => {
+  assert.equal(isInPublishedFiles('tests/a.test.ts', undefined), true)
+  assert.equal(isInPublishedFiles('tests/a.test.ts', ['dist']), false)
+  assert.equal(isInPublishedFiles('tests/a.test.ts', ['./tests/']), true)
+  assert.equal(isInPublishedFiles('tests/a.test.ts', ['tests/**/*.ts']), true)
+  assert.equal(isInPublishedFiles('tests/a.test.ts', ['*.md']), false)
+  assert.equal(isInPublishedFiles('README.md', ['dist']), true)
+  assert.equal(isInPublishedFiles('tests/a.test.ts', [42]), true)
+  // A path the test-only list names must never be a build input.
+  assert.equal(
+    TEST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test('src/a.test.ts')),
+    false,
+  )
 })

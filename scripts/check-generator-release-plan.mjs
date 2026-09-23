@@ -203,6 +203,7 @@ function main() {
         relativeDirectory,
         private: manifest.private === true,
         frozen: frozenNames.has(name),
+        files: manifest.files,
       })),
       changedFiles,
       readManifests: (relativeDirectory) => ({
