@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.29.1
+
+### Patch Changes
+
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+- Updated dependencies [5747011]
+- Updated dependencies [02b6c1a]
+- Updated dependencies [b0dca25]
+- Updated dependencies [45ea540]
+- Updated dependencies [f395bd6]
+  - @narduk-enterprises/narduk-core@2.11.0
+  - @narduk-enterprises/narduk-app@1.20.2
+
 ## 1.29.0
 
 ### Minor Changes

@@ -1,5 +1,112 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.13.0
+
+### Minor Changes
+
+- e6c9263: `.github/dependabot.yml`'s npm update now splits into two groups by
+  `update-types` over the same packages: `safe` (minor + patch) and `majors`
+  (major), `open-pull-requests-limit: 2`. A new generated
+  `.github/workflows/dependabot-merge.yml` merges the `safe` lane once CI is
+  green on its exact PR head; `majors` and the `github-actions` lane stay a
+  deliberate person/agent PR. This replaces the old single all-in `dependencies`
+  group (gonogo#104, the reference shape): apps on the old canonical shape
+  (`open-pull-requests-limit: 10`, ~10 groups) stacked roughly ten open PRs that
+  all edited `pnpm-lock.yaml`, so merging any one conflicted the rest, and a
+  single combined group let one breaking major hold every harmless patch bump
+  red behind it (riverstatus#215).
+
+  `create-narduk-app upgrade` delivers `.github/workflows/dependabot-merge.yml`
+  to existing apps as a new whole-file managed target alongside the refreshed
+  `.github/dependabot.yml`.
+
+  `narduk-app-tools`' `foundation:check` gains an advisory-only print (not a
+  `FoundationSubCheck`, since this framework has no warning tier) that flags a
+  `.github/dependabot.yml` npm update reproducing the old stacking shape:
+  `open-pull-requests-limit` above 2, or npm groups not split by `update-types`
+  into a safe and a majors lane. It never affects the check's `score`, `result`,
+  or `exitCode`.
+
+### Patch Changes
+
+- 8ec9bb9: Tooling carpool: the migration runner refuses a contract-owned D1
+  database named by its `database_name` as well as its id (#637); foundation
+  item 5.2 accepts the canonical Dependabot recipe, an npm update routed through
+  a registry scoped to `@narduk-enterprises` (#241); a failed schema-adoption
+  probe names the adoption, says the migration has no receipt yet, and says how
+  to record it or correct the evidence (#600).
+- 1bca010: `deployment.liveProof.healthAuth: "anonymous" | "authenticated"`
+  (default `anonymous`). An authenticated health route stays declared,
+  `deploy hotfix` and `development deploy` skip the anonymous health assertion,
+  item 12.3 says so, and the adoption live read reports requirement 12 unknown
+  instead of failing a 401 (#585).
+- bad1b0d: Two foundation checks for the components-library plan
+  (narduk-libs#260). `narduk-app foundation:check:no-local-copy` (item 13) fails
+  when an app depends on a shared UI package and keeps its own copy of one of
+  its components. `narduk-app foundation:check:list-routes` (item 14) fails when
+  a GET server route reads pagination from its query without narduk-core's
+  `parseListQuery`. Each writes its own JSON artefact and uses the usual exit
+  codes: 0 pass, 1 fail, 2 unknown. The README documents both.
+- ff26c60: `narduk-app doctor` warns when a worker whose `main` is Nitro's
+  `.output/server` lacks `no_bundle`, `find_additional_modules` or `base_dir`.
+  Without them, wrangler re-bundles the build and every server-rendered 404/500
+  comes out empty (#245).
+  `deploy versions-promote --wait-for-version <seconds> [--wait-interval <seconds>]`
+  re-lists while the commit's version is absent, so a Workers Build that
+  finishes after CI no longer turns an unbroken merge into exit 3 (#695). The
+  default is 0, which keeps today's single look.
+- 5747011: Three small narduk-core changes.
+
+  - `readBoundedBody` and `readBoundedJson` are exported server utils
+    (narduk-libs#565). They read an upstream body with a hard size ceiling,
+    cancelling the stream once it passes `maxBytes`, and throw
+    `BoundedBodyTooLargeError`, or your own error via `tooLarge`. The
+    narduk-data client already read its bodies this way. The README documents
+    it. An app with its own util of the same name gets a duplicate auto-import
+    warning; delete the app's copy.
+  - `x-build-version` reads `WORKERS_CI_COMMIT_SHA` before it asks `git`
+    (narduk-libs#584). A Workers Build no longer depends on its checkout
+    carrying `.git` to stamp the commit.
+  - `defineRateLimitedHandler` given an async handler returns
+    `EventHandler<Request, Promise<Response>>`, not `Promise<Promise<Response>>`
+    (narduk-libs#653). Runtime behaviour is unchanged, and the cast in
+    `definePublishedDataHandler` is gone.
+
+- 02b6c1a: The CSP report route answers 204 without reading any body that is not
+  `application/csp-report` or `application/reports+json`, and limits each client
+  to 60 reports a minute (rate-limit key `csp-report`); a request of any other
+  type is answered before the limiter and never counts against it (#444).
+- b0dca25: `LayerAppFooter` has an extension point for extra rows
+  (narduk-libs#743). It renders an `after` slot below its content, and by
+  default that slot renders the global components listed in
+  `appConfig.nardukCore.footer.after`. A module can now add a footer row without
+  shipping its own copy of the footer. The README documents it.
+- 45ea540: `consumeRateLimit(event, options, path?)`:
+  `defineRateLimitedHandler`'s decision step as a non-throwing verdict, for a
+  route the app cannot wrap, such as a module's token route (#413). The wrapper
+  now calls it, so the two share one counter key, store, binding and override
+  surface.
+
+  `shared/utils/units` adds knots (`metresPerSecondToKnots`,
+  `knotsToMetresPerSecond`), the inverse of every existing conversion, and
+  `compassPoint16(degrees)` with `NE_COMPASS_POINTS_16` (#518).
+
+- 02b6c1a: `upgrade` creates a missing `manifests:validate` script but no longer
+  rewrites one an app has already given a body, so an app whose own proofs run
+  under that name keeps them (#468).
+- 85cd719: `narduk/no-csrf-exempt-route-misuse` and
+  `narduk/require-csrf-header-on-mutations` take an `exemptPaths` option: the
+  app's `nardukCore.csrf.exemptPaths`. A route it covers is CSRF-exempt to both
+  rules, so it must verify a credential header rather than the browser CSRF
+  header (#510).
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
 ## 0.12.5
 
 ### Patch Changes

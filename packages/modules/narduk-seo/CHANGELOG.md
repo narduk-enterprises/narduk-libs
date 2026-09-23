@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.5.3
+
+### Patch Changes
+
+- bad1b0d: `LayerAppFooter.vue` now carries a justified inline disable for the
+  new `narduk/no-shadowed-shared-component` rule. The component is a deliberate
+  fork of narduk-core's footer, kept only to render `<LayerNetworkFooter />`,
+  and narduk-libs#743 replaces it with a core slot. Runtime behaviour is
+  unchanged.
+
 ## 2.5.2
 
 ### Patch Changes

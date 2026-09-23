@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.9.0
+
+### Minor Changes
+
+- ab2a69b: `allowedHosts` (on `MapKitServerConfig`, and the
+  `nardukMapKit.allowedHosts` module option) refuses a token for any routed host
+  outside the list with `403 not-same-origin`, before the limiter and before
+  signing, so a forged `Host` on a Node listener can no longer name the origin
+  claim. Unset, nothing changes (#437).
+- d671cdc: `<AppMapKit>` moves focus into the callout when a pin is selected
+  from the keyboard (narduk-libs#746). Once the `#callout` slot renders, focus
+  goes to its first focusable element, so a keyboard or screen-reader user
+  reaches the callout's action, such as a "View details" link, without tabbing
+  back through the page. A pointer selection leaves focus where it is.
+  `calloutFocus="never"` opts out; the default is `'keyboard'`. The pin layer's
+  `onSelect` now receives a second argument, `'keyboard' | 'pointer'`, which
+  existing handlers can ignore. An app that focuses the callout itself, as
+  Buoys' `focusSelectedCalloutAction` does, can delete that code.
+
 ## 2.8.2
 
 ### Patch Changes

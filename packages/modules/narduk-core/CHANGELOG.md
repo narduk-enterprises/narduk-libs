@@ -1,5 +1,55 @@
 # @narduk-enterprises/narduk-core
 
+## 2.11.0
+
+### Minor Changes
+
+- 5747011: Three small narduk-core changes.
+
+  - `readBoundedBody` and `readBoundedJson` are exported server utils
+    (narduk-libs#565). They read an upstream body with a hard size ceiling,
+    cancelling the stream once it passes `maxBytes`, and throw
+    `BoundedBodyTooLargeError`, or your own error via `tooLarge`. The
+    narduk-data client already read its bodies this way. The README documents
+    it. An app with its own util of the same name gets a duplicate auto-import
+    warning; delete the app's copy.
+  - `x-build-version` reads `WORKERS_CI_COMMIT_SHA` before it asks `git`
+    (narduk-libs#584). A Workers Build no longer depends on its checkout
+    carrying `.git` to stamp the commit.
+  - `defineRateLimitedHandler` given an async handler returns
+    `EventHandler<Request, Promise<Response>>`, not `Promise<Promise<Response>>`
+    (narduk-libs#653). Runtime behaviour is unchanged, and the cast in
+    `definePublishedDataHandler` is gone.
+
+- b0dca25: `LayerAppFooter` has an extension point for extra rows
+  (narduk-libs#743). It renders an `after` slot below its content, and by
+  default that slot renders the global components listed in
+  `appConfig.nardukCore.footer.after`. A module can now add a footer row without
+  shipping its own copy of the footer. The README documents it.
+- 45ea540: `consumeRateLimit(event, options, path?)`:
+  `defineRateLimitedHandler`'s decision step as a non-throwing verdict, for a
+  route the app cannot wrap, such as a module's token route (#413). The wrapper
+  now calls it, so the two share one counter key, store, binding and override
+  surface.
+
+  `shared/utils/units` adds knots (`metresPerSecondToKnots`,
+  `knotsToMetresPerSecond`), the inverse of every existing conversion, and
+  `compassPoint16(degrees)` with `NE_COMPASS_POINTS_16` (#518).
+
+### Patch Changes
+
+- 02b6c1a: The CSP report route answers 204 without reading any body that is not
+  `application/csp-report` or `application/reports+json`, and limits each client
+  to 60 reports a minute (rate-limit key `csp-report`); a request of any other
+  type is answered before the limiter and never counts against it (#444).
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
 ## 2.10.1
 
 ### Patch Changes
