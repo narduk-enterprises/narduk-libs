@@ -465,6 +465,32 @@ With `'none'`:
 - The build fails if `@narduk-enterprises/narduk-auth` is installed, because
   sign-in stores users, sessions and API keys in the app database.
 
+### Atomic batches on D1 and better-sqlite3
+
+`runAtomicBatch(db, statements)` (auto-imported in server code, or
+`@narduk-enterprises/narduk-core/server/utils/atomic-batch`) runs a group of
+writes as one transaction on either driver an app's database runs on, so the
+same code works in the Worker and under vitest against the merged migrations:
+D1's `db.batch(statements)`, or every statement's `.all()` inside
+better-sqlite3's `db.$client.transaction`. Any other database is refused rather
+than run statement by statement, because a half-applied batch is the failure it
+exists to prevent.
+
+Under better-sqlite3 every statement must return rows, so give writes a
+`.returning(...)`; otherwise the driver throws "This statement does not return
+data" (narduk-libs#201).
+
+```ts
+await runAtomicBatch(db, [
+  db.insert(frames).values(frame).returning({ id: frames.id }),
+  db
+    .insert(latest)
+    .values(row)
+    .onConflictDoUpdate({ target: latest.vesselId, set: row })
+    .returning(),
+])
+```
+
 ## Health endpoint
 
 Core serves `GET /api/health` for uptime monitors and deploy checks. The
