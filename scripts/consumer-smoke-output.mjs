@@ -135,8 +135,11 @@ const thirdPartyBundlerNoticePatterns = [
 // compatibility failure. Every other PLUGIN_* diagnostic remains a finding.
 // Source: rolldown/rolldown crates/rolldown_binding/src/binding_bundler.rs,
 // report_plugin_timings; crates/rolldown_error/.../events/plugin_timings.rs.
+// A later Rolldown reworded "Plugin hooks" to "JavaScript callbacks" with the
+// same meaning and shape, and the old-only pattern turned a README-only PR red
+// (narduk-libs#753), so both wordings pass and nothing else does.
 const buildTimingOnlyWarningPattern =
-  /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] Plugin hooks ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
+  /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] (?:Plugin hooks|JavaScript callbacks) ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
 
 // narduk-core's build-info client plugin logs one banner per page load through
 // console.warn (runtime/app/plugins/build-info.client.ts). A web server that
