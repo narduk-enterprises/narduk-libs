@@ -120,6 +120,74 @@ export function createWorldQuery(base: string): WorldQuery {
  */
 const SCROLL_TIMEOUT_MS = 4_000
 
+const LISTED_NAMES = 20
+const LISTED_NAME_CHARS = 60
+
+/**
+ * The accessible names present for `role`, capped and truncated. Read with
+ * `evaluateAll`, which never waits, so a failing path stays as fast as it was;
+ * anything that goes wrong here returns nothing rather than masking the
+ * failure it is describing.
+ */
+async function namesForRole(page: Page, role: string): Promise<string[] | null> {
+  try {
+    const names = await page
+      .getByRole(role as Parameters<Page['getByRole']>[0])
+      .evaluateAll((elements) =>
+        elements.map((element) =>
+          (element.getAttribute('aria-label') ?? (element as HTMLElement).innerText ?? '')
+            .replaceAll(/\s+/g, ' ')
+            .trim(),
+        ),
+      )
+    return names.filter(Boolean)
+  } catch {
+    return null
+  }
+}
+
+function listNames(role: string, names: string[] | null): string | null {
+  if (names === null) return null
+  if (names.length === 0) return `  no ${role}s on the page`
+  const shown = names
+    .slice(0, LISTED_NAMES)
+    .map((name) =>
+      JSON.stringify(
+        name.length > LISTED_NAME_CHARS ? `${name.slice(0, LISTED_NAME_CHARS - 1)}…` : name,
+      ),
+    )
+  const more = names.length > LISTED_NAMES ? ` (+${names.length - LISTED_NAMES} more)` : ''
+  return `  ${role}s on the page: ${shown.join(', ')}${more}`
+}
+
+/**
+ * A `must()` that finds nothing is a finding: a renamed control, a state that
+ * never arrived, a drifted beat. So the message says what WAS there, and on
+ * which page, instead of only what the declaration wanted (narduk-libs#68).
+ * A missing `button` also lists links, the commonest role confusion.
+ */
+async function describeMissingControl(
+  page: Page,
+  role: string,
+  name: string | RegExp,
+): Promise<string> {
+  let url = ''
+  try {
+    url = page.url()
+  } catch {
+    // A closed page has no URL; the rest of the message still helps.
+  }
+  const wanted = typeof name === 'string' ? JSON.stringify(name) : String(name)
+  const lines = [`no ${role} matching ${wanted}${url ? ` on ${url}` : ''}`]
+  const listed = listNames(role, await namesForRole(page, role))
+  if (listed) lines.push(listed)
+  if (role === 'button') {
+    const links = listNames('link', await namesForRole(page, 'link'))
+    if (links) lines.push(links)
+  }
+  return lines.join('\n')
+}
+
 /**
  * Exported for the unit suite, not for consumers: the bound above is a property
  * of these five helpers, and a browser is far too expensive a way to assert
@@ -136,7 +204,7 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
       const locator = page.getByRole(role, { name }).nth(opts.nth ?? 0)
       await locator.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})
       if ((await locator.count()) === 0) {
-        throw new Error(`no ${String(role)} matching ${String(name)}`)
+        throw new Error(await describeMissingControl(page, String(role), name))
       }
       // Bounded, and it runs in BOTH modes: unlike `point()` below, a parked
       // scroll here wedges the regression gate too, not only the camera.
