@@ -132,3 +132,71 @@ describe('the web context helpers are bounded', () => {
     expect(calls).toEqual([])
   })
 })
+
+describe('a must() that finds nothing says what was there (#68)', () => {
+  function emptyPage(byRole: Record<string, string[] | Error>): Page {
+    const page = {
+      url: () => 'https://trac-demo.example/board',
+      getByRole: (role: string) => ({
+        nth: () => ({
+          async waitFor() {},
+          async count() {
+            return 0
+          },
+        }),
+        async evaluateAll() {
+          const names = byRole[role] ?? []
+          if (names instanceof Error) throw names
+          return names
+        },
+      }),
+    }
+    return page as unknown as Page
+  }
+
+  it('names the page, the buttons present and, for a button, the links', async () => {
+    const api = createContextApi(
+      emptyPage({
+        button: ['Place trailer', '', 'Record arrival check-in'],
+        link: ['Load into station'],
+      }),
+      'https://trac-demo.example',
+      'test',
+    )
+    await expect(api.must('Load into station')).rejects.toThrow(
+      [
+        'no button matching "Load into station" on https://trac-demo.example/board',
+        '  buttons on the page: "Place trailer", "Record arrival check-in"',
+        '  links on the page: "Load into station"',
+      ].join('\n'),
+    )
+  })
+
+  it('caps the list at 20 names of 60 characters, and says when a role has none', async () => {
+    const names = Array.from({ length: 23 }, (_, index) => `${index}`.padEnd(80, 'x'))
+    const api = createContextApi(emptyPage({ tab: names }), 'https://x.example', 'test')
+    const error = await api.must(/Settings/, { role: 'tab' }).catch((caught: Error) => caught)
+    const message = (error as Error).message
+    expect(message).toMatch(
+      /^no tab matching \/Settings\/ on https:\/\/trac-demo\.example\/board\n/,
+    )
+    expect(message).toContain(`"0${'x'.repeat(58)}…"`)
+    expect(message).toContain('(+3 more)')
+    expect(message).not.toContain('links on the page')
+    const none = createContextApi(emptyPage({}), 'https://x.example', 'test')
+    await expect(none.must('Go')).rejects.toThrow(
+      /\n {2}no buttons on the page\n {2}no links on the page$/,
+    )
+  })
+
+  it('never lets the listing mask the failure it describes', async () => {
+    const api = createContextApi(
+      emptyPage({ button: new Error('page closed'), link: new Error('page closed') }),
+      'https://x.example',
+      'test',
+    )
+    await expect(api.must('Go')).rejects.toThrow(
+      /^no button matching "Go" on https:\/\/trac-demo\.example\/board$/,
+    )
+  })
+})
