@@ -101,12 +101,44 @@ function toSegments(filename: string): string[] {
  * ```
  */
 export function inAppScope(filename: string, ...segments: string[]): boolean {
+  return findDirectoryRun(filename, segments) !== null
+}
+
+/**
+ * The segments of `filename` below the first directory run `segments` names,
+ * or `null` when `filename` is not inside one. Matching is exactly
+ * `inAppScope`'s, so a rule that gates on `inAppScope(f, 'components')` and
+ * then needs the path *under* that root gets both answers from one definition.
+ *
+ * This is the segment-aware replacement for `filename.indexOf('components/')`,
+ * which matched inside a checkout directory such as `app-components/` and made
+ * every folder after it count (narduk-libs#777).
+ *
+ * ```ts
+ * segmentsAfter('app/components/orders/Row.vue', 'app', 'components')  // ['orders', 'Row.vue']
+ * segmentsAfter('/w/app-components/repo/components/Row.vue', 'components')  // ['Row.vue']
+ * segmentsAfter('app/pages/index.vue', 'components')                    // null
+ * ```
+ */
+export function segmentsAfter(filename: string, ...segments: string[]): string[] | null {
+  const run = findDirectoryRun(filename, segments)
+  return run === null ? null : run.parts.slice(run.end)
+}
+
+/**
+ * Locate the first contiguous, in-order run of `segments` in `filename`'s
+ * segments that ends above the basename. `end` is the index just past it.
+ */
+function findDirectoryRun(
+  filename: string,
+  segments: readonly string[],
+): { end: number; parts: string[] } | null {
   const wanted = segments
     .flatMap((segment) => toPosixPath(segment).split('/'))
     .filter((segment) => segment.length > 0 && segment !== '.')
 
   if (wanted.length === 0) {
-    return false
+    return null
   }
 
   const parts = toSegments(filename)
@@ -126,11 +158,11 @@ export function inAppScope(filename: string, ...segments: string[]): boolean {
     }
 
     if (matched) {
-      return true
+      return { end: start + wanted.length, parts }
     }
   }
 
-  return false
+  return null
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   inAppScope,
   inTestOrFixtureDirectory,
   isTestOrFixturePath,
+  segmentsAfter,
   toPosixPath,
 } from '../../src/rules/utils/path-scope'
 
@@ -102,6 +103,33 @@ describe('inAppScope', () => {
     it('ignores empty and `.` segment arguments', () => {
       expect(inAppScope('app/stores/user.ts', '', '.', 'app', 'stores')).toBe(true)
     })
+  })
+})
+
+describe('segmentsAfter', () => {
+  it('returns the segments below the first matching run', () => {
+    expect(segmentsAfter('app/components/orders/Row.vue', 'app', 'components')).toEqual([
+      'orders',
+      'Row.vue',
+    ])
+    expect(segmentsAfter('C:\\repo\\components\\Row.vue', 'components')).toEqual(['Row.vue'])
+  })
+
+  it('never matches inside a segment (narduk-libs#777)', () => {
+    // `indexOf('components/')` matched the tail of `app-components/` here.
+    expect(
+      segmentsAfter(
+        '/w/core-module-app-components/repo/app/components/app/Header.vue',
+        'components',
+      ),
+    ).toEqual(['app', 'Header.vue'])
+    expect(segmentsAfter('/w/app-components/Header.vue', 'components')).toBeNull()
+  })
+
+  it('agrees with inAppScope on what is inside the directory', () => {
+    expect(segmentsAfter('app/components', 'app', 'components')).toBeNull()
+    expect(segmentsAfter('app/pages/index.vue', 'components')).toBeNull()
+    expect(segmentsAfter('app/components/Row.vue')).toBeNull()
   })
 })
 

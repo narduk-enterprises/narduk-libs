@@ -29,6 +29,16 @@ vue.run('component-directory-structure', rule, {
     // Not a component.
     { filename: 'app/pages/index.vue', code: SFC },
     { filename: 'tests/components/OrderRow.vue', code: SFC },
+    // A checkout directory ending in `components` is not the components root
+    // (narduk-libs#777: every narduk-core component reported depth 7).
+    { filename: '/x/app-components/repo/app/components/shared/Foo.vue', code: SFC },
+    {
+      filename:
+        '/Users/l/code-worktrees/narduk-libs/core-module-app-components/packages/modules/narduk-core/runtime/app/components/app/LayerAppHeader.vue',
+      code: SFC,
+    },
+    // Nor is one literally named `components`, in the app/ layout.
+    { filename: '/w/components/repo/app/components/orders/OrderRow.vue', code: SFC },
   ],
   invalid: [
     {
@@ -40,6 +50,18 @@ vue.run('component-directory-structure', rule, {
       filename: 'components/OrderRow.vue',
       code: SFC,
       errors: [{ messageId: 'rootLevelComponent' }],
+    },
+    {
+      // The root is still found behind such a checkout path, not just skipped.
+      filename: '/x/app-components/repo/app/components/Foo.vue',
+      code: SFC,
+      errors: [{ messageId: 'rootLevelComponent' }],
+    },
+    {
+      // A `components/` folder inside the tree is an ordinary folder to Nuxt.
+      filename: 'app/components/admin/components/rows/Cell.vue',
+      code: SFC,
+      errors: [{ messageId: 'componentTreeTooDeep', data: { actualDepth: '3', maxDepth: '2' } }],
     },
     {
       filename: 'app/components/orders/parts/rows/Cell.vue',
