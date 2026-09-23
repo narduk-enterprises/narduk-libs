@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url'
 
 import { applyCoreViteBuildWarningPolicy } from '@narduk-enterprises/narduk-core/shared/vite-build-warnings'
 import {
-  addComponent,
   addComponentsDir,
   addImportsDir,
   addPlugin,
@@ -300,20 +299,6 @@ function applyNonProductionSeoSafety(nuxtOptions: MutableNuxtOptionsRecord): voi
   extendRouteRules('/**', nonProductionRouteRule, { override: true })
 }
 
-const NETWORK_FOOTER_COMPONENT = 'LayerNetworkFooter'
-const NETWORK_FOOTER_FILE = 'shared/LayerNetworkFooter.vue'
-
-/** Adds the network row to narduk-core's footer extension list, once. */
-function appendFooterAfterComponent(options: { appConfig?: Record<string, unknown> }): void {
-  const appConfig = (options.appConfig ??= {})
-  const nardukCore = (appConfig.nardukCore ??= {}) as { footer?: { after?: unknown } }
-  const footer = (nardukCore.footer ??= {})
-  const after = Array.isArray(footer.after) ? footer.after : []
-  footer.after = after.includes(NETWORK_FOOTER_COMPONENT)
-    ? after
-    : [...after, NETWORK_FOOTER_COMPONENT]
-}
-
 export default defineNuxtModule<NardukSeoModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
@@ -476,17 +461,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       addComponentsDir({
         path: resolver.resolve('../app/components'),
         pathPrefix: false,
-        ignore: [NETWORK_FOOTER_FILE],
       })
-      // narduk-core's LayerAppFooter renders the global components listed in
-      // appConfig.nardukCore.footer.after below its content (narduk-libs#743),
-      // so the network row needs no copy of the footer.
-      addComponent({
-        name: NETWORK_FOOTER_COMPONENT,
-        filePath: resolver.resolve(`../app/components/${NETWORK_FOOTER_FILE}`),
-        global: true,
-      })
-      appendFooterAfterComponent(nuxt.options as { appConfig?: Record<string, unknown> })
       addComponentsDir({
         path: resolver.resolve('../components'),
         pathPrefix: false,

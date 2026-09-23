@@ -242,8 +242,8 @@ instead.
 `LayerAppFooter` renders an `after` slot below its content. By default the slot
 renders every global component named in `appConfig.nardukCore.footer.after`, in
 order. A module adds its own row by registering a global component and appending
-its name there. narduk-seo adds `LayerNetworkFooter` this way. An app can pass
-its own `#after` slot to replace the listed rows.
+its name there, instead of shipping a copy of the footer (narduk-libs#743). An
+app can pass its own `#after` slot to replace the listed rows.
 
 ```ts
 // app.config.ts

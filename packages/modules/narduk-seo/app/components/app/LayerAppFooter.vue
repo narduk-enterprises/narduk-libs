@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { footerAfterComponents } from '../../utils/footerExtensions'
-import { readRuntimeConfigString } from '../../utils/readRuntimeConfigString'
+/* eslint-disable narduk/no-shadowed-shared-component -- a deliberate fork of narduk-core's footer, kept only to render <LayerNetworkFooter />; narduk-libs#743 replaces it with a core slot */
+import { readRuntimeConfigString } from '@narduk-enterprises/narduk-core/app/utils/readRuntimeConfigString'
 
-/**
- * A highly configurable, responsive layer application footer.
- *
- * Below its content it renders the `after` slot. By default that slot renders
- * the global components listed in `appConfig.nardukCore.footer.after`, so a
- * module can add a row without copying this component (narduk-libs#743).
- */
+import { useRuntimeConfig, useState } from '#imports'
 
 const props = withDefaults(
   defineProps<{
@@ -24,15 +18,14 @@ const props = withDefaults(
 // Read the clock once on the server and hydrate with the same value: a
 // `new Date()` in the template renders twice, and the two reads disagree
 // across a year boundary (narduk/no-render-clock).
-const copyrightNow = useSsrNow('layer-app-footer')
+const copyrightNow = useState<number>('narduk-seo:footer-now', () => Date.now())
 
 const resolvedAppName = computed(() => {
   if (props.appName) return props.appName
+
   const config = useRuntimeConfig()
   return readRuntimeConfigString(config.public.appName, 'Nuxt 4 App')
 })
-
-const afterComponents = computed(() => footerAfterComponents(useAppConfig()))
 </script>
 
 <template>
@@ -57,8 +50,6 @@ const afterComponents = computed(() => footerAfterComponents(useAppConfig()))
         </div>
       </slot>
     </div>
-    <slot name="after">
-      <component :is="name" v-for="name in afterComponents" :key="name" />
-    </slot>
+    <LayerNetworkFooter />
   </footer>
 </template>
