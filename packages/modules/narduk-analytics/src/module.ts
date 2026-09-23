@@ -47,6 +47,17 @@ export interface NardukAnalyticsModuleOptions {
    */
   admin?: boolean
   app?: boolean
+  /**
+   * `'strict'` for an app whose pages hold private records: PostHog runs with
+   * no autocapture, heatmaps, dead clicks, session replay, surveys or remote
+   * extensions, and every URL, pathname, title and exception message is
+   * reduced to its route pattern before it leaves the browser; GA4 receives
+   * route patterns only, with Google signals and ad personalisation off.
+   * Decided here, at build time, and written to
+   * `runtimeConfig.public.analyticsPrivacy`, which the runtime-public overlay
+   * does not carry — a Worker variable cannot turn it off. Default `'standard'`.
+   */
+  privacy?: 'standard' | 'strict'
   server?: boolean
 }
 
@@ -173,6 +184,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
   },
   defaults: {
     app: true,
+    privacy: 'standard',
     server: true,
   },
   async setup(options, nuxt) {
@@ -230,6 +242,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       indexNowKey: process.env.NUXT_INDEXNOW_KEY || process.env.INDEXNOW_KEY || '',
       public: {
         analyticsLoadStrategy: readAnalyticsLoadStrategy(),
+        analyticsPrivacy: 'standard',
         gaMeasurementId: process.env.GA_MEASUREMENT_ID || '',
         posthogHost: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
         posthogDeadClicksEnabled: readBooleanEnv('POSTHOG_DEAD_CLICKS_ENABLED'),
@@ -246,6 +259,12 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         indexNowKey: process.env.NUXT_PUBLIC_INDEXNOW_KEY || '',
       },
     })
+
+    // Strict wins from either source: the module option overrides an app's own
+    // `runtimeConfig.public.analyticsPrivacy`, and never the other way round.
+    if (options.privacy === 'strict') {
+      ;(nuxtOptions.runtimeConfig.public as Record<string, unknown>).analyticsPrivacy = 'strict'
+    }
 
     const registerAnalyticsTypes = (prepareOptions: TypePrepareOptions) => {
       registerTypeReference(prepareOptions, analyticsRuntimeConfigTypesPath)
