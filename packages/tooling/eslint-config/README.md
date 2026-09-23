@@ -44,25 +44,45 @@ disable. Use `composeSharedConfigs()` unless you are assembling those yourself.
 
 ## Capability packs
 
-| Pack            | What it covers                                                                                                                     |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `core`          | Hydration safety, Nuxt data-fetching discipline, Vue 3 composition correctness, Pinia hygiene, client `app/**` perf                |
-| `design-system` | Nuxt UI element discipline (`vue/no-restricted-html-elements`) and the Tailwind v4 token tier (`eslint-plugin-better-tailwindcss`) |
-| `nuxt-ui`       | Nuxt UI v4 legacy overlay/options API migration                                                                                    |
-| `seo`           | Registered, contributes no rules in v2                                                                                             |
-| `cloudflare`    | Worker runtime guardrails and the Node-built-in import ban                                                                         |
-| `server`        | Nitro handler data discipline, Cloudflare guardrails, server import hygiene, type-aware promise errors                             |
-| `auth`          | CSRF and rate-limit gates on mutation routes                                                                                       |
-| `template`      | Starter/layer structure, file-size budgets, layer-source import ban                                                                |
-| `correctness`   | TypeScript hygiene and type-aware checks (warn-only) plus type-aware parser wiring                                                 |
-| `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only                                                                                     |
-| `complexity`    | High-signal `sonarjs` rules, warn-only                                                                                             |
-| `formatting`    | `eslint-plugin-perfectionist` import/type ordering                                                                                 |
-| `e2e`           | `eslint-plugin-playwright`, scoped to Playwright specs                                                                             |
-| `monorepo`      | Registered, contributes no rules                                                                                                   |
+| Pack            | What it covers                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `core`          | Hydration safety, Nuxt data-fetching discipline, Vue 3 composition correctness, Pinia hygiene, client `app/**` perf         |
+| `design-system` | Nuxt UI element discipline (`vue/no-restricted-html-elements`), shared-component use (below) and the Tailwind v4 token tier |
+| `nuxt-ui`       | Nuxt UI v4 legacy overlay/options API migration                                                                             |
+| `seo`           | Registered, contributes no rules in v2                                                                                      |
+| `cloudflare`    | Worker runtime guardrails and the Node-built-in import ban                                                                  |
+| `server`        | Nitro handler data discipline, Cloudflare guardrails, server import hygiene, type-aware promise errors                      |
+| `auth`          | CSRF and rate-limit gates on mutation routes                                                                                |
+| `template`      | Starter/layer structure, file-size budgets, layer-source import ban                                                         |
+| `correctness`   | TypeScript hygiene and type-aware checks (warn-only) plus type-aware parser wiring                                          |
+| `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only                                                                              |
+| `complexity`    | High-signal `sonarjs` rules, warn-only                                                                                      |
+| `formatting`    | `eslint-plugin-perfectionist` import/type ordering                                                                          |
+| `e2e`           | `eslint-plugin-playwright`, scoped to Playwright specs                                                                      |
+| `monorepo`      | Registered, contributes no rules                                                                                            |
 
 Both v1 spellings resolve, so `'designSystem'` and `'nuxtUi'` keep working
 alongside `'design-system'` and `'nuxt-ui'`.
+
+### Shared components (`design-system`, warn)
+
+These two rules are the lint half of the component suite's "use the shared one"
+rule (narduk-libs#260, `docs/plans/components-library-plan.md` §2 item 13).
+narduk-app-tools' `foundation:check:no-local-copy` and
+`foundation:check:list-routes` are the repository half.
+
+- `narduk/no-shadowed-shared-component` warns on a `.vue` file under
+  `components/` whose name matches a component that narduk-shell, narduk-core,
+  narduk-auth, narduk-ui or narduk-charts publishes. It checks both the file
+  name and the name Nuxt registers from the path, so `shared/AppTabs.vue` and
+  `ne/StatePanel.vue` are both reported. The names are a static list in
+  `src/rules/utils/shared-components.ts`. A drift test reads each owner's real
+  component files, so the list cannot go stale unnoticed. The owners' own source
+  directories are skipped.
+- `narduk/prefer-shared-collection` warns on a bare `<UTable>` anywhere except
+  narduk-shell's `NeDataTable.vue`. A native `<table>` is still an error from
+  `vue/no-restricted-html-elements`, whose message now points at
+  `<NeDataTable>`.
 
 ### Prettier vs Perfectionist
 
