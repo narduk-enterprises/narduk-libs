@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-shell",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": false,
   "type": "module",
   "description": "Home of the app-tier Ne* component suite. A Nuxt module that registers every shared component with an explicit addComponent, wrapping Nuxt UI rather than reimplementing it.",

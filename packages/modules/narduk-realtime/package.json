@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-realtime",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "type": "module",
   "description": "Durable Object build wiring, a WebSocket upgrade router, and a hibernating WebSocket base class for Narduk Cloudflare apps.",

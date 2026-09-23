@@ -1,5 +1,28 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.29.0
+
+### Minor Changes
+
+- a7e08a4: Apps can brand the password setup and reset emails through the
+  `narduk-auth:email` Nitro hook. A template that throws or drops the link falls
+  back to the default email. `sendAuthEmail` sends an app's own account email,
+  such as an invitation, from the configured sender.
+  `registerLocalUserWithProvenEmail` and `confirmSessionEmailWithProof` create
+  or confirm an account for an address the app has just proven by redeeming a
+  single-use token it emailed there, so an invited person sets a password and is
+  in without a second confirmation email.
+
+### Patch Changes
+
+- Updated dependencies [0da668a]
+- Updated dependencies [5ac629e]
+- Updated dependencies [1759259]
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-core@2.10.1
+  - @narduk-enterprises/narduk-app@1.20.2
+  - @narduk-enterprises/narduk-platform@2.1.1
+
 ## 1.28.17
 
 ### Patch Changes

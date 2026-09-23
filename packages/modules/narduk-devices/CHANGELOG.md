@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-devices
 
+## 0.6.1
+
+### Patch Changes
+
+- 0da668a: The opportunistic prune in `openSession` and `startClaim` runs at
+  most once per interval per database object: the shorter of the challenge TTL
+  and the shortest lockout window, five minutes by default (#227). A device
+  polling `startClaim` every 5 s for 15 minutes used to cost 540 `DELETE`s,
+  almost all of them removing nothing. It now costs three prunes.
+  `pruneExpired()` is unchanged and always runs.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
 ## 0.6.0
 
 ### Minor Changes

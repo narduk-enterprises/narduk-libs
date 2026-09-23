@@ -1,5 +1,20 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.7.1
+
+### Patch Changes
+
+- 2d25947: Generated apps now override `miniflare>undici` to `^7.29.1`.
+  Miniflare pins undici exactly, and below 7.29.1 each D1 call a test makes
+  through the testkit harness costs about 6.5ms instead of about 2ms. That is
+  enough to push seed-heavy suites past their CI timeouts (narduk-libs#740). The
+  testkit README documents the override for existing apps.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
 ## 1.7.0
 
 ### Minor Changes

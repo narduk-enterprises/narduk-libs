@@ -1,5 +1,33 @@
 # @narduk-enterprises/narduk-core
 
+## 2.10.1
+
+### Patch Changes
+
+- 0da668a: Core migration `0007_api_key_hash_index.sql` adds a unique index on
+  `api_keys.key_hash` (#168). Every API-key authentication looks the key up by
+  its hash, and without the index each one scanned `api_keys`, including a
+  request presenting a well-formed but fabricated key. The D1 and Postgres
+  schemas declare the same index. Apply it with the app's migrate script
+  (`narduk-app db migrate`). A Postgres app adds it with its own DDL.
+- 5ac629e: The seeded `@nuxt/icon` client bundle now includes `lucide:check`,
+  `lucide:copy` and `lucide:link`, which `AppCopyButton` and `AppShareButtons`
+  render. The build now warns when an app lists `@nuxt/icon` before narduk-core
+  without setting `icon.fallbackToApi: false`: `@nuxt/icon` has then already
+  installed with the Iconify API fallback, which an enforcing CSP refuses
+  (narduk-libs#467). The README states the module order.
+- 1759259: A thrown error answered as JSON now leaves `private, no-store`
+  (narduk-libs#493). For an `/api/*` or `.json` path,
+  `Accept: application/json`, a CORS fetch or curl, Nuxt hands the error to
+  Nitro's own handler, which sent `Cache-Control: no-cache` on every 404 and
+  bypassed the `error-cache` plugin. Workers Cache stores `no-cache`, so an app
+  with `"cache": { "enabled": true }` stored its API errors. A new prepended
+  Nitro error handler, `json-error-no-store`, answers those errors itself with
+  Nitro's status and body and `private, no-store`, and strips any CDN headers a
+  route set before it threw. HTML errors and `nuxt dev` are unchanged.
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-platform@2.1.1
+
 ## 2.10.0
 
 ### Minor Changes
