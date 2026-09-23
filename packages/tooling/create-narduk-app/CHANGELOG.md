@@ -1,5 +1,66 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.12.5
+
+### Patch Changes
+
+- 1759259: Foundation check 12.7 now needs narduk-core **2.10.1** or later
+  before an app turns on Workers Cache, up from 2.2.4. Cores from 2.2.4 to
+  2.10.0 still let Cloudflare store a thrown JSON 404 as Nitro's `no-cache`
+  (narduk-libs#493). An app with the switch on and an older core now fails 12.7;
+  upgrade narduk-core or remove the `cache` block.
+
+  New `docs/workers-cache.md`: the standard for turning Workers Cache on in an
+  existing app (narduk-libs#435), with its preconditions, the wrangler change,
+  the `verify --live --edge-cache-path` proof, purging and rollback.
+
+- a7e08a4: Apps can brand the password setup and reset emails through the
+  `narduk-auth:email` Nitro hook. A template that throws or drops the link falls
+  back to the default email. `sendAuthEmail` sends an app's own account email,
+  such as an invitation, from the configured sender.
+  `registerLocalUserWithProvenEmail` and `confirmSessionEmailWithProof` create
+  or confirm an account for an address the app has just proven by redeeming a
+  single-use token it emailed there, so an invited person sets a password and is
+  in without a second confirmation email.
+- 0da668a: Core migration `0007_api_key_hash_index.sql` adds a unique index on
+  `api_keys.key_hash` (#168). Every API-key authentication looks the key up by
+  its hash, and without the index each one scanned `api_keys`, including a
+  request presenting a well-formed but fabricated key. The D1 and Postgres
+  schemas declare the same index. Apply it with the app's migrate script
+  (`narduk-app db migrate`). A Postgres app adds it with its own DDL.
+- 5ac629e: The seeded `@nuxt/icon` client bundle now includes `lucide:check`,
+  `lucide:copy` and `lucide:link`, which `AppCopyButton` and `AppShareButtons`
+  render. The build now warns when an app lists `@nuxt/icon` before narduk-core
+  without setting `icon.fallbackToApi: false`: `@nuxt/icon` has then already
+  installed with the Iconify API fallback, which an enforcing CSP refuses
+  (narduk-libs#467). The README states the module order.
+- 1759259: A thrown error answered as JSON now leaves `private, no-store`
+  (narduk-libs#493). For an `/api/*` or `.json` path,
+  `Accept: application/json`, a CORS fetch or curl, Nuxt hands the error to
+  Nitro's own handler, which sent `Cache-Control: no-cache` on every 404 and
+  bypassed the `error-cache` plugin. Workers Cache stores `no-cache`, so an app
+  with `"cache": { "enabled": true }` stored its API errors. A new prepended
+  Nitro error handler, `json-error-no-store`, answers those errors itself with
+  Nitro's status and body and `private, no-store`, and strips any CDN headers a
+  route set before it threw. HTML errors and `nuxt dev` are unchanged.
+- 0da668a: New apps ignore `/foundation-check/`, where the root
+  `foundation:check` script writes `foundation-check.json` (#652). A cold
+  scaffold's first local run no longer leaves an untracked directory. The
+  artefact stays at the same path, so a failed run can still be read. Existing
+  apps add the line by hand; most already have.
+- 0da668a: New apps get a strict `apps/web/lint-budget.json`,
+  `{ "strict": true, "rules": {} }` (#713). A warning in a rule with no budget
+  entry now fails `pnpm lint` in a fresh app, instead of being recorded as that
+  rule's budget and passing. Adopt one on purpose with
+  `narduk-lint --accept-new-rules`. Needs `@narduk-enterprises/eslint-config`
+  2.2.0 or later, which the generator already pins (2.2.1). Existing apps are
+  unchanged until they add the key.
+- 2d25947: Generated apps now override `miniflare>undici` to `^7.29.1`.
+  Miniflare pins undici exactly, and below 7.29.1 each D1 call a test makes
+  through the testkit harness costs about 6.5ms instead of about 2ms. That is
+  enough to push seed-heavy suites past their CI timeouts (narduk-libs#740). The
+  testkit README documents the override for existing apps.
+
 ## 0.12.4
 
 ### Patch Changes

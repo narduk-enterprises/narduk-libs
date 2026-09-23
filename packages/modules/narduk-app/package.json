@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-app",
-  "version": "1.20.1",
+  "version": "1.20.2",
   "private": false,
   "type": "module",
   "description": "Runtime app helpers for Narduk Cloudflare and Nuxt apps.",

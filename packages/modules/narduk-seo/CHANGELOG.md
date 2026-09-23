@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.5.2
+
+### Patch Changes
+
+- c99908b: A `nardukSeo.aiCrawlers` group that names crawlers to **allow** now
+  repeats the wildcard group's `disallow` paths, including narduk-seo's
+  non-public routes. A crawler obeys only the most specific group naming it (RFC
+  9309), so `{ allow: ['GPTBot'] }` used to emit `User-agent: GPTBot` /
+  `Allow: /` and open every path the `*` group disallows to GPTBot alone.
+  `'allow'`, `'disallow'`, and `disallow` lists are unchanged.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
 ## 2.5.1
 
 ### Patch Changes
