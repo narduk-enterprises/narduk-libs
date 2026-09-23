@@ -37,6 +37,11 @@ import { includeAppTypesDir } from './app-types-dir'
 import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
+import {
+  APP_RUNTIME_NUXT_IMPORTS,
+  APP_RUNTIME_VUE_IMPORTS,
+  selectMissingRuntimeImports,
+} from './runtime-import-bridge'
 
 import type { NuxtModule } from '@nuxt/schema'
 
@@ -201,33 +206,6 @@ function allowNitroEsbuildForNardukPackages(nuxtOptions: MutableNuxtOptionsRecor
   nitro.esbuild.options.exclude = /node_modules\/(?!.*@narduk-enterprises(?:\+|\/)narduk-)/
 }
 
-function identifierReferencePattern(name: string): string {
-  return `(?<![\\w$])${name}(?![\\w$])`
-}
-
-function hasIdentifier(code: string, name: string): boolean {
-  return new RegExp(identifierReferencePattern(name)).test(code)
-}
-
-function hasImportOrDeclaration(code: string, name: string): boolean {
-  const identifier = identifierReferencePattern(name)
-
-  return (
-    new RegExp(
-      `import\\s+(?:type\\s+)?(?:\\{[^}]*${identifier}[^}]*\\}|\\*\\s+as\\s+${identifier}|${identifier})`,
-      'm',
-    ).test(code) ||
-    new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${name}(?![\\w$])`).test(code) ||
-    new RegExp(
-      `\\b(?:export\\s+)?(?:const|let|var|class|interface|type)\\s+${name}(?![\\w$])`,
-    ).test(code)
-  )
-}
-
-function selectMissingRuntimeImports(code: string, names: string[]): string[] {
-  return names.filter((name) => hasIdentifier(code, name) && !hasImportOrDeclaration(code, name))
-}
-
 function isNardukPackageServerRuntimeFile(id: string): boolean {
   const normalizedId = id.replaceAll('\\', '/')
   if (!/\.[cm]?[jt]s$/.test(normalizedId)) return false
@@ -289,61 +267,6 @@ function addNardukAppRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord):
     return
   }
 
-  const vueImports = [
-    'computed',
-    'nextTick',
-    'onMounted',
-    'onUnmounted',
-    'reactive',
-    'ref',
-    'shallowRef',
-    'toRefs',
-    'toValue',
-    'unref',
-    'watch',
-    'watchEffect',
-  ]
-  const nuxtImports = [
-    'clearError',
-    'createError',
-    'defineNuxtPlugin',
-    'defineNuxtRouteMiddleware',
-    'defineOgImage',
-    'definePageMeta',
-    'formatBuildTimeLocal',
-    'navigateTo',
-    'reloadNuxtApp',
-    'useAdminOgImagePreviews',
-    'useAppConfig',
-    'useAppFetch',
-    'useAsyncData',
-    'useAuth',
-    'useAuthRuntimePublic',
-    'useColorModeToggle',
-    'useCookie',
-    'useCsrfFetch',
-    'useFetch',
-    'useHead',
-    'useItemListSchema',
-    'useManagedSupabaseClient',
-    'useNardukNetworkDirectory',
-    'useNotifications',
-    'useNuxtApp',
-    'useOgImageData',
-    'useRequestURL',
-    'useRoute',
-    'useRouter',
-    'useRuntimeConfig',
-    'useSeo',
-    'useSeoMeta',
-    'useSiteConfig',
-    'useState',
-    'useToast',
-    'useUserSession',
-    'useWebPageSchema',
-    'useWebSiteSchema',
-  ]
-
   vite.plugins.push({
     name: 'narduk-app-runtime-import-bridge',
     enforce: 'pre',
@@ -351,8 +274,8 @@ function addNardukAppRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord):
       if (!isNardukPackageAppRuntimeFile(id)) return null
 
       const importGroups: Array<[string[], string]> = [
-        [selectMissingRuntimeImports(code, vueImports), 'vue'],
-        [selectMissingRuntimeImports(code, nuxtImports), '#imports'],
+        [selectMissingRuntimeImports(code, APP_RUNTIME_VUE_IMPORTS), 'vue'],
+        [selectMissingRuntimeImports(code, APP_RUNTIME_NUXT_IMPORTS), '#imports'],
       ]
 
       const imports = importGroups

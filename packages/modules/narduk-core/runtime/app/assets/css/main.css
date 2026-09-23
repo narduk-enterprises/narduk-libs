@@ -3,6 +3,13 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
 
+/*
+ * Tailwind skips node_modules when it detects sources, so the utilities used
+ * only by core's own components (LayerAppHeader's `md:flex` nav, for one) were
+ * never generated in a consuming app. Scan runtime/app explicitly.
+ */
+@source '../../';
+
 :root {
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
