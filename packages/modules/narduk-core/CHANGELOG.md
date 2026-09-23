@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-core
 
+## 2.13.0
+
+### Minor Changes
+
+- e8a373e: Health checks can fail at `notice` severity: the entry publishes
+  `result: 'fail'` with `notice: true` and its `detail`, and the report's
+  `status` does not move, so a monitor matching `"status":"ok"` does not page.
+  `registerFreshnessCheck` takes an optional `noticeAfter` below `warnAfter` for
+  the aging band of a three-band freshness policy. The docs no longer describe
+  `degraded` as something that does not take the app down: to a `"status":"ok"`
+  monitor it pages like `error` (#414).
+- 12f3294: `runAtomicBatch(db, statements)` runs a group of writes as one
+  transaction on D1 (`batch()`) or better-sqlite3 (`$client.transaction`), so
+  apps stop copying tenancy's dual-driver helper (#201).
+- e87803e: `types/**/*.d.ts` joins Nuxt's generated app, server, shared and node
+  tsconfigs, so a `nuxt/schema` runtime-config augmentation in `types/` types
+  its keys instead of leaving them `unknown` with no error (#669). An
+  augmentation that was inert before can now surface type errors it was hiding.
+
 ## 2.12.0
 
 ### Minor Changes

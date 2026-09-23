@@ -1,5 +1,41 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.13.2
+
+### Patch Changes
+
+- 1b14eaf: Add `nardukAnalytics.privacy: 'strict'` for apps whose pages hold
+  private records. PostHog then runs with no autocapture, rage clicks, dead
+  clicks, heatmaps, session replay, surveys, `/flags` request or remote
+  extensions, and a final `before_send` hook reduces every URL, pathname and
+  referrer property — including `$set`, `$set_once` and nested web-vitals
+  payloads — to the matched route pattern, drops page titles and element text,
+  and reports exception messages only in narduk-core's redacted form. GA4
+  receives route patterns as `page_path`, `page_location` and `page_title`, with
+  Google signals and ad personalisation off. The option is build-time and wins
+  over an app's own `runtimeConfig.public.analyticsPrivacy`; the runtime-public
+  overlay never carries it, so a Worker variable cannot switch a strict app back
+  to standard. Standard apps see no change.
+- e8a373e: Health checks can fail at `notice` severity: the entry publishes
+  `result: 'fail'` with `notice: true` and its `detail`, and the report's
+  `status` does not move, so a monitor matching `"status":"ok"` does not page.
+  `registerFreshnessCheck` takes an optional `noticeAfter` below `warnAfter` for
+  the aging band of a three-band freshness policy. The docs no longer describe
+  `degraded` as something that does not take the app down: to a `"status":"ok"`
+  monitor it pages like `error` (#414).
+- 12f3294: `runAtomicBatch(db, statements)` runs a group of writes as one
+  transaction on D1 (`batch()`) or better-sqlite3 (`$client.transaction`), so
+  apps stop copying tenancy's dual-driver helper (#201).
+- e87803e: `types/**/*.d.ts` joins Nuxt's generated app, server, shared and node
+  tsconfigs, so a `nuxt/schema` runtime-config augmentation in `types/` types
+  its keys instead of leaving them `unknown` with no error (#669). An
+  augmentation that was inert before can now surface type errors it was hiding.
+- d8aec20: narduk-seo no longer ships its own copy of `LayerAppFooter`
+  (narduk-libs#743). It registers `LayerNetworkFooter` globally and adds it to
+  `appConfig.nardukCore.footer.after`, so narduk-core's footer renders the
+  network row. The footer an app sees is unchanged. This needs narduk-core
+  2.11.0 or later, and the peer range now says so.
+
 ## 0.13.1
 
 ### Patch Changes
