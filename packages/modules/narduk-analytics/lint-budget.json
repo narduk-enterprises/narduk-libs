@@ -1,6 +1,7 @@
 {
   "strict": true,
   "rules": {
+    "narduk/prefer-shared-collection": 6,
     "narduk/require-fetch-timeout": 6
   }
 }

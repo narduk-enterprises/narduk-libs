@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable narduk/no-shadowed-shared-component -- a deliberate fork of narduk-core's footer, kept only to render <LayerNetworkFooter />; narduk-libs#743 replaces it with a core slot */
 import { readRuntimeConfigString } from '@narduk-enterprises/narduk-core/app/utils/readRuntimeConfigString'
 
 import { useRuntimeConfig, useState } from '#imports'

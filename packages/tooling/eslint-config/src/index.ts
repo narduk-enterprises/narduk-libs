@@ -64,6 +64,7 @@ import noModuleScopeRef from './rules/vue/no-module-scope-ref'
 import noNonSerializableStoreState from './rules/vue/no-non-serializable-store-state'
 import noSetupTopLevelSideEffects from './rules/vue/no-setup-top-level-side-effects'
 import noTemplateComplexExpressions from './rules/vue/no-template-complex-expressions'
+import preferSharedCollection from './rules/vue/prefer-shared-collection'
 
 // ── nuxt ────────────────────────────────────────────────────────────────────
 import componentDirectoryStructure from './rules/nuxt/component-directory-structure'
@@ -76,6 +77,7 @@ import noRawFetch from './rules/nuxt/no-raw-fetch'
 import noRawFetchInStores from './rules/nuxt/no-raw-fetch-in-stores'
 import noSecretInPublicRuntimeConfig from './rules/nuxt/no-secret-in-public-runtime-config'
 import noSequentialAwaitedIoInEventHandler from './rules/nuxt/no-sequential-awaited-io-in-event-handler'
+import noShadowedSharedComponent from './rules/nuxt/no-shadowed-shared-component'
 import requireUsePrefixForComposables from './rules/nuxt/require-use-prefix-for-composables'
 
 // ── server — the Nitro mutation-route security tier ─────────────────────────
@@ -143,6 +145,7 @@ const plugin = {
     'no-non-serializable-store-state': noNonSerializableStoreState,
     'no-setup-top-level-side-effects': noSetupTopLevelSideEffects,
     'no-template-complex-expressions': noTemplateComplexExpressions,
+    'prefer-shared-collection': preferSharedCollection,
 
     // nuxt
     'component-directory-structure': componentDirectoryStructure,
@@ -155,6 +158,7 @@ const plugin = {
     'no-raw-fetch-in-stores': noRawFetchInStores,
     'no-secret-in-public-runtime-config': noSecretInPublicRuntimeConfig,
     'no-sequential-awaited-io-in-event-handler': noSequentialAwaitedIoInEventHandler,
+    'no-shadowed-shared-component': noShadowedSharedComponent,
     'require-use-prefix-for-composables': requireUsePrefixForComposables,
 
     // server
