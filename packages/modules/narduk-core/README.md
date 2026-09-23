@@ -389,6 +389,16 @@ to `runtimeConfig.public.appUrl`, and disables itself when that origin is not
 `https:` or is localhost. It reads the `host` header only — never
 `x-forwarded-host`, which a client can set to bypass the redirect.
 
+`ENFORCE_CANONICAL_HOST` redirects **every** non-canonical host, which includes
+`*.workers.dev` previews and the production `workers.dev` alias a live proof
+curls for a 200. To redirect only duplicate hosts such as `www`, name them
+instead: `CANONICAL_REDIRECT_HOSTS=www.example.com` (env, comma-separated) or
+`runtimeConfig.public.canonicalRedirectHosts` (a string or a list). A named list
+turns the redirect on without `ENFORCE_CANONICAL_HOST`, and when set it is the
+whole rule: only the named hosts redirect, every other host is served where it
+was asked, and a `*.workers.dev` entry is ignored (narduk-libs#515). The
+navigation-only rule below applies either way.
+
 **It redirects top-level document navigations only.** Canonicalisation is worth
 something on a navigation: search engines, bookmarks, and an auth cookie that
 has to be set on the canonical host. On a `fetch()` or a sub-resource it is only

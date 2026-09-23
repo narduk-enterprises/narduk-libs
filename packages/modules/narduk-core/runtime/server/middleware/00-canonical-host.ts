@@ -48,6 +48,45 @@ function isDocumentNavigation(event: H3Event) {
   return !isSubresourceOnlyPath(getRequestURL(event).pathname)
 }
 
+function isWorkersDevHost(host: string) {
+  const hostname = host.replace(/:\d+$/, '')
+  return hostname === 'workers.dev' || hostname.endsWith('.workers.dev')
+}
+
+function normalizeRedirectHost(entry: string) {
+  const trimmed = entry.trim().toLowerCase()
+  if (!trimmed.includes('://')) return trimmed.replace(/\/.*$/, '')
+  try {
+    return new URL(trimmed).host
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * The hosts that `CANONICAL_REDIRECT_HOSTS` (or
+ * `runtimeConfig.public.canonicalRedirectHosts`, a comma-separated string or a
+ * list) names for redirection. When any are named, only those hosts redirect,
+ * so a `*.workers.dev` preview, a per-version preview URL and the production
+ * `workers.dev` alias keep answering on the host they were asked on
+ * (narduk-libs#515). A `*.workers.dev` entry is ignored.
+ */
+function readRedirectHosts(
+  event: H3Event,
+  config: Record<string, unknown>,
+  publicConfig: Record<string, unknown>,
+) {
+  const configured = publicConfig.canonicalRedirectHosts
+  const raw = readRuntimeString(event, 'CANONICAL_REDIRECT_HOSTS', {
+    config,
+    fallback: Array.isArray(configured) ? configured.join(',') : configured,
+  })
+  return raw
+    .split(/[\s,]+/)
+    .map(normalizeRedirectHost)
+    .filter((host) => host && !isWorkersDevHost(host))
+}
+
 export default defineEventHandler((event) => {
   if (event.method !== 'GET' && event.method !== 'HEAD') {
     return
@@ -68,7 +107,8 @@ export default defineEventHandler((event) => {
       config,
       fallback: publicConfig.authEnforceCanonicalHost,
     })
-  if (!enforceCanonicalHost) {
+  const redirectHosts = readRedirectHosts(event, config, publicConfig)
+  if (!enforceCanonicalHost && redirectHosts.length === 0) {
     return
   }
 
@@ -101,7 +141,11 @@ export default defineEventHandler((event) => {
   }
 
   const requestUrl = getRequestURL(event)
-  if (requestHost === canonicalHost && requestUrl.protocol === canonicalUrl.protocol) {
+  if (redirectHosts.length > 0) {
+    // A named host list is the whole rule: every other host, including the
+    // canonical one, is served where it was asked.
+    if (requestHost === canonicalHost || !redirectHosts.includes(requestHost)) return
+  } else if (requestHost === canonicalHost && requestUrl.protocol === canonicalUrl.protocol) {
     return
   }
 
