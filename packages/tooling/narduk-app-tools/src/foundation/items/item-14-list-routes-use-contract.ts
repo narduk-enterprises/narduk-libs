@@ -52,10 +52,36 @@ const NAMES_PAGINATION = new RegExp(
 )
 const USES_CONTRACT = /\bparseListQuery\s*\(/
 
+/**
+ * The source with its comments removed, so a documented `'limit'` or a
+ * commented-out `parseListQuery(` decides nothing. A scanner rather than a
+ * lazy block-comment regex, which is polynomial on unterminated `/*` runs. A
+ * `//` right after `:` is a URL scheme, not a comment.
+ */
+function stripComments(source: string): string {
+  let code = ''
+  let index = 0
+  while (index < source.length) {
+    if (source.startsWith('/*', index)) {
+      const end = source.indexOf('*/', index + 2)
+      index = end === -1 ? source.length : end + 2
+      code += ' '
+    } else if (source.startsWith('//', index) && source[index - 1] !== ':') {
+      const end = source.indexOf('\n', index)
+      index = end === -1 ? source.length : end
+    } else {
+      code += source[index]
+      index++
+    }
+  }
+  return code
+}
+
 /** A GET route that already uses the contract, or reads pagination from its query. */
 export function isListRoute(file: string, source: string): boolean {
   if (NON_GET_SUFFIX.test(file)) return false
-  return USES_CONTRACT.test(source) || (READS_QUERY.test(source) && NAMES_PAGINATION.test(source))
+  const code = stripComments(source)
+  return USES_CONTRACT.test(code) || (READS_QUERY.test(code) && NAMES_PAGINATION.test(code))
 }
 
 export function evaluateItem14(repo: AppRepo): FoundationSubCheck[] {
@@ -79,7 +105,9 @@ export function evaluateItem14(repo: AppRepo): FoundationSubCheck[] {
     ]
   }
 
-  const offenders = listRoutes.filter((file) => !USES_CONTRACT.test(repo.read(file) ?? ''))
+  const offenders = listRoutes.filter(
+    (file) => !USES_CONTRACT.test(stripComments(repo.read(file) ?? '')),
+  )
   if (offenders.length > 0) {
     return [
       check(
@@ -87,7 +115,7 @@ export function evaluateItem14(repo: AppRepo): FoundationSubCheck[] {
         name,
         STATUS_FAIL,
         `${offenders.length} of ${listRoutes.length} list route(s) parse their own query: ` +
-          `${offenders.join(', ')} -- use narduk-core's parseListQuery and listResponse`,
+          `${offenders.join(', ')} -- parse it with narduk-core's parseListQuery`,
       ),
     ]
   }

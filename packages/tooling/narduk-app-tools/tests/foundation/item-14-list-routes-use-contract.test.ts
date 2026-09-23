@@ -85,6 +85,26 @@ describe('item 14 list-routes-use-contract', () => {
     expect(isListRoute('server/api/items/index.get.ts', schema)).toBe(true)
   })
 
+  it('does not count pagination keys or the contract call that appear only in comments', () => {
+    const documented = `// Accepts ?id=. Not paginated: no 'limit' or 'offset'.
+export default defineEventHandler((event) => {
+  /* parseListQuery( is not needed here; see 'cursor' docs */
+  const { id } = getQuery(event)
+  return fetchItem(String(id), 'https://example.test/items')
+})`
+    expect(isListRoute('server/api/items/detail.get.ts', documented)).toBe(false)
+
+    const commentedOut = `export default defineEventHandler((event) => {
+  // const query = parseListQuery(event, schema)
+  const query = getQuery(event)
+  return listItems(Number(query.limit))
+})`
+    const root = app({ 'server/api/items/index.get.ts': commentedOut })
+    const artefact = runListRoutesCheck({ root, toolVersion: 'test' })
+    expect(artefact.result).toBe('FAIL')
+    expect(artefact.item.checks[0]?.detail).toContain("parse it with narduk-core's parseListQuery")
+  })
+
   it('ignores mutation routes', () => {
     expect(isListRoute('server/api/items/index.post.ts', HAND_ROLLED)).toBe(false)
     expect(isListRoute('server/api/items.ts', HAND_ROLLED)).toBe(true)
