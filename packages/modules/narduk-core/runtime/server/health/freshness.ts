@@ -50,8 +50,17 @@ export interface FreshnessThresholds {
    */
   failAfter?: number
   /**
+   * Seconds of age past which the check fails at `notice` severity: the entry
+   * reports `result: 'fail'`, `reason: 'stale'` and `notice: true`, and the
+   * report's `status` is unaffected. For the first band of a producer's
+   * three-band policy (fresh / aging / stale), which is worth showing but not
+   * worth a page. At most `warnAfter` (narduk-libs#414).
+   */
+  noticeAfter?: number
+  /**
    * Seconds of age past which the check fails at `degraded` severity, leaving
-   * the report `degraded` (HTTP 200).
+   * the report `degraded` (HTTP 200). A monitor matching `"status":"ok"` reads
+   * that as down, so this is the threshold that pages.
    */
   warnAfter: number
 }
@@ -101,6 +110,7 @@ function isPlainDetail(value: unknown): value is HealthCheckDetail {
 function baseDetail(thresholds: FreshnessThresholds, source: string): HealthCheckDetail {
   return {
     source,
+    ...(thresholds.noticeAfter === undefined ? {} : { noticeAfterSeconds: thresholds.noticeAfter }),
     warnAfterSeconds: thresholds.warnAfter,
     failAfterSeconds: thresholds.failAfter ?? null,
   }
@@ -155,6 +165,9 @@ export function evaluateFreshness(input: FreshnessEvaluationInput): HealthCheckO
   }
   if (ageMs > input.warnAfter * 1000) {
     return { ok: false, severity: 'degraded', detail: { ...detail, reason: 'stale' } }
+  }
+  if (input.noticeAfter !== undefined && ageMs > input.noticeAfter * 1000) {
+    return { ok: false, severity: 'notice', detail: { ...detail, reason: 'stale' } }
   }
   return { detail }
 }

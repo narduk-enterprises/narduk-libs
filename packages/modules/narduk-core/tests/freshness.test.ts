@@ -56,6 +56,7 @@ interface HealthCheckBody {
   error?: string
   kind?: string
   name: string
+  notice?: true
   reason?: string
   required: boolean
   result: 'pass' | 'fail' | 'skipped'
@@ -316,6 +317,8 @@ describe('registerFreshnessCheck validation', () => {
     ],
     ['a zero failAfter', { failAfter: 0 }, /failAfter must be a positive number/u],
     ['failAfter below warnAfter', { failAfter: 599 }, /must be at least warnAfter/u],
+    ['a zero noticeAfter', { noticeAfter: 0 }, /noticeAfter must be a positive number/u],
+    ['noticeAfter above warnAfter', { noticeAfter: 601 }, /must be at most warnAfter/u],
   ])('rejects %s', (_label, overrides, message) => {
     expect(() =>
       registerFreshnessCheck({ ...valid, ...overrides } as FreshnessCheckDefinition),
@@ -389,6 +392,49 @@ describe('GET /api/health with a freshness check', () => {
     expect(entry).toMatchObject({ result: 'fail', required: false, kind: FRESHNESS_CHECK_KIND })
     expect(entry.detail).toMatchObject({ reason: 'stale', ageSeconds: 3000 })
     expect(text).not.toContain(STATUS_OK)
+  })
+
+  describe('the noticeAfter band (narduk-libs#414)', () => {
+    const threeBands = { noticeAfter: 90 * 60, warnAfter: 360 * 60, failAfter: 24 * 3600 }
+
+    it('publishes an aging feed as a failing notice and leaves the report ok', async () => {
+      const { entry, httpStatus, status, text } = await reportFor({
+        ...threeBands,
+        read: () => ({ at: ageOf(2 * 3600) }),
+      })
+
+      expect(httpStatus).toBe(200)
+      expect(status).toBe('ok')
+      expect(entry).toMatchObject({ result: 'fail', required: false, notice: true })
+      expect(entry.detail).toMatchObject({
+        reason: 'stale',
+        ageSeconds: 7200,
+        noticeAfterSeconds: 5400,
+        warnAfterSeconds: 21_600,
+      })
+      expect(text.slice(0, MONITOR_WINDOW_CHARS)).toContain(STATUS_OK)
+      expect(logger.error).not.toHaveBeenCalled()
+    })
+
+    it('passes below noticeAfter, and still degrades past warnAfter', async () => {
+      const fresh = await reportFor({ ...threeBands, read: () => ({ at: ageOf(60 * 60) }) })
+      expect(fresh.entry).toMatchObject({ result: 'pass' })
+      expect(fresh.entry.notice).toBeUndefined()
+      getHealthCheckRegistry().clear()
+
+      const stale = await reportFor({ ...threeBands, read: () => ({ at: ageOf(7 * 3600) }) })
+      expect(stale.status).toBe('degraded')
+      expect(stale.entry).toMatchObject({ result: 'fail', required: false })
+      expect(stale.entry.notice).toBeUndefined()
+    })
+
+    it('fails closed past the notice band when the timestamp is missing', async () => {
+      const { entry, status } = await reportFor({ ...threeBands, read: () => ({ at: undefined }) })
+
+      expect(status).toBe('error')
+      expect(entry).toMatchObject({ result: 'fail', required: true })
+      expect(entry.notice).toBeUndefined()
+    })
   })
 
   it('turns the report red only once failAfter is crossed', async () => {
@@ -545,5 +591,45 @@ describe('report compatibility with checks that are not freshness checks', () =>
     expect(resolveFailureRequired(true, 'error')).toBe(true)
     expect(resolveFailureRequired(true, undefined)).toBe(true)
     expect(resolveFailureRequired(true, 'nonsense')).toBe(true)
+    expect(resolveFailureRequired(true, 'notice')).toBe(false)
+  })
+
+  it('publishes a notice failure from any check without moving the status (narduk-libs#414)', async () => {
+    state.config = { ...NO_DATABASE }
+    registerHealthCheck({
+      name: 'upstream-lag',
+      required: true,
+      run: () => ({ ok: false, severity: 'notice', detail: { lagMinutes: 95 } }),
+    })
+    registerHealthCheck({ name: 'publication', required: false, run: () => ({}) })
+
+    const { body, httpStatus, text } = await requestHealth()
+    const entry = body.data.checks.find((check) => check.name === 'upstream-lag')
+
+    expect(httpStatus).toBe(200)
+    expect(body.data.status).toBe('ok')
+    expect(text.slice(0, MONITOR_WINDOW_CHARS)).toContain(STATUS_OK)
+    expect(entry).toMatchObject({
+      result: 'fail',
+      required: false,
+      notice: true,
+      detail: { lagMinutes: 95 },
+    })
+  })
+
+  it('still counts a notice check that throws, at its declared severity', async () => {
+    state.config = { ...NO_DATABASE }
+    registerHealthCheck({
+      name: 'upstream-lag',
+      required: true,
+      run: () => {
+        throw new Error('unreachable')
+      },
+    })
+
+    const { body, httpStatus } = await requestHealth()
+
+    expect(httpStatus).toBe(503)
+    expect(body.data.checks.find((check) => check.name === 'upstream-lag')?.notice).toBeUndefined()
   })
 })

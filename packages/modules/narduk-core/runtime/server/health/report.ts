@@ -240,11 +240,14 @@ function probeDatabase(
   return d1 ? probeD1(d1, authTables, log) : reportMissingD1Binding(config, authTables, log)
 }
 
-/** `error` when a required check failed, `degraded` when only optional ones did. */
+/**
+ * `error` when a required check failed, `degraded` when only optional ones did.
+ * A failure reported at `notice` severity is published but never counted.
+ */
 export function summarizeHealthStatus(checks: readonly HealthCheckReport[]): HealthStatus {
   let status: HealthStatus = 'ok'
   for (const check of checks) {
-    if (check.result !== 'fail') {
+    if (check.result !== 'fail' || check.notice) {
       continue
     }
     if (check.required) {

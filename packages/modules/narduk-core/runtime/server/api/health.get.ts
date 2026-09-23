@@ -15,7 +15,9 @@ import { useLogger } from '../utils/logger'
  * `{ success: true, data: { status, timestamp, database, missingAuthTables, checks } }`.
  *
  * - `status` is `ok`; `degraded` (HTTP 200) when an optional check failed; or
- *   `error` (HTTP 503) when a required check failed.
+ *   `error` (HTTP 503) when a required check failed. A monitor matching
+ *   `"status":"ok"` reads `degraded` as down, so to the estate detector it
+ *   pages exactly like `error`; only the HTTP code differs.
  * - `database` follows `databaseBackend`: `not_applicable` for `'none'`;
  *   otherwise `ok`, `error`, `not_available` (no D1 `DB` binding) or
  *   `schema_error` (narduk-auth tables missing). A missing binding is an
@@ -29,8 +31,10 @@ import { useLogger } from '../utils/logger'
  *   family of checks without knowing app-chosen names.
  * - `required` on a failing entry is that failure's own rollup contribution. A
  *   freshness check with `failAfter` declares `required: true` but publishes
- *   `required: false` while it is merely stale, so an old feed degrades the app
- *   instead of taking it down.
+ *   `required: false` while it is merely stale, so an old feed makes the report
+ *   `degraded` (HTTP 200) rather than `error` (HTTP 503). An entry carrying
+ *   `notice: true` failed at `notice` severity and is left out of `status`
+ *   entirely (narduk-libs#414).
  *
  * The auth-table probe runs only when narduk-auth is installed; otherwise D1
  * gets a plain `SELECT 1`. Failure text is fixed and the causes are logged.
