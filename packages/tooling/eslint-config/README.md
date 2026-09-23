@@ -64,6 +64,37 @@ disable. Use `composeSharedConfigs()` unless you are assembling those yourself.
 Both v1 spellings resolve, so `'designSystem'` and `'nuxtUi'` keep working
 alongside `'design-system'` and `'nuxt-ui'`.
 
+### Declared CSRF exemptions (`auth`)
+
+`narduk/no-csrf-exempt-route-misuse` and
+`narduk/require-csrf-header-on-mutations` know the built-in exempt prefixes
+(`webhooks/`, `cron/`, `callbacks/`). A route an app exempts through
+`nardukCore.csrf.exemptPaths` is exempt to the CSRF middleware as well, so pass
+the same list to both rules as `exemptPaths`, from one constant that
+`nuxt.config` also reads (narduk-libs#510):
+
+```js
+// csrf-exempt-paths.mjs, imported by nuxt.config.ts and eslint.config.mjs
+export const csrfExemptPaths = ['/api/devices/ingest', '/api/sensors/*']
+
+// eslint.config.mjs
+const csrf = { exemptPaths: csrfExemptPaths }
+export default [
+  ...config,
+  {
+    rules: {
+      'narduk/no-csrf-exempt-route-misuse': ['warn', csrf],
+      'narduk/require-csrf-header-on-mutations': ['error', csrf],
+    },
+  },
+]
+```
+
+A declared route then has to verify a credential header, like a webhook does,
+instead of the browser CSRF header. Matching is narduk-core's: an exact path
+with one trailing slash tolerated, or a `/*` prefix, which is the only form that
+covers a dynamic `[id]` segment.
+
 ### Shared components (`design-system`, warn)
 
 These two rules are the lint half of the component suite's "use the shared one"

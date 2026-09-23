@@ -47,6 +47,12 @@ interface Options {
   csrfHeaders?: string[]
   /** App directories treated as client API surfaces in `auto` mode. */
   clientScopes?: string[]
+  /**
+   * The app's declared `nardukCore.csrf.exemptPaths`. Pass the same constant
+   * `nuxt.config` declares, so the lint rules and the CSRF middleware exempt the
+   * same routes (narduk-libs#510).
+   */
+  exemptPaths?: string[]
 }
 
 const DEFAULT_CSRF_HEADERS = ['x-requested-with', 'x-csrf-token', 'x-xsrf-token']
@@ -146,6 +152,7 @@ export default {
           mode: { enum: ['auto', 'server', 'client', 'off'] },
           csrfHeaders: { type: 'array', items: { type: 'string' }, uniqueItems: true },
           clientScopes: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+          exemptPaths: { type: 'array', items: { type: 'string' }, uniqueItems: true },
         },
         additionalProperties: false,
       },
@@ -173,7 +180,7 @@ export default {
     )
     const clientScopes = options.clientScopes ?? DEFAULT_CLIENT_SCOPES
 
-    const routeInfo = analyzeMutationRoute(filename, sourceCode)
+    const routeInfo = analyzeMutationRoute(filename, sourceCode, options.exemptPaths ?? [])
     const inClientScope = clientScopes.some((scope) => inAppScope(filename, scope))
 
     const useServerMode =
