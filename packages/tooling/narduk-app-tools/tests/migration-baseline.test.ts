@@ -22,6 +22,7 @@ import {
   BASELINE_RECEIPTS_TABLE,
 } from '../src/migration-baseline.js'
 import { runBaselineCommand } from '../src/commands/baseline.js'
+import { wranglerJson } from './wrangler-d1-fake.js'
 
 const cleanups: Array<() => void> = []
 afterEach(() => {
@@ -60,8 +61,7 @@ function fixture(schema = 'CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT
       return ''
     }
     const sql = args[args.indexOf('--command') + 1]!
-    if (args.includes('--json'))
-      return JSON.stringify([{ success: true, results: db.prepare(sql).all() }])
+    if (args.includes('--json')) return wranglerJson(db, sql)
     db.exec(sql)
     return ''
   }

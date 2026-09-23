@@ -31,6 +31,7 @@ import {
 import { AppRepo } from '../src/foundation/source.js'
 import { inspectMigrations, runMigrations, type MigrationExecutor } from '../src/migrations.js'
 import type { FoundationStatus } from '../src/foundation/types.js'
+import { wranglerJson } from './wrangler-d1-fake.js'
 
 const AUTH_DB_ID = 'c9c9a190-7e04-4fb7-a2ed-d82d26bf50a1'
 const READ_MODEL_ID = 'e1c9a190-7e04-4fb7-a2ed-d82d26bf50a1'
@@ -145,8 +146,7 @@ function recordingExecutor(): { executor: MigrationExecutor; calls: string[][] }
       return ''
     }
     const command = args[args.indexOf('--command') + 1]!
-    if (args.includes('--json'))
-      return JSON.stringify([{ success: true, results: db.prepare(command).all() }])
+    if (args.includes('--json')) return wranglerJson(db, command)
     db.exec(command)
     return ''
   }
