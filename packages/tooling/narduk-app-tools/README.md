@@ -864,10 +864,11 @@ A list route is found from its source. It is a file under `server/api/` or
 `server/routes/` at any monorepo prefix that answers GET (a `.get.` file or no
 method suffix) and either calls `parseListQuery(`, or reads its query
 (`getQuery(` / `getValidatedQuery(`) and names a pagination key: `limit`,
-`offset`, `cursor`, `pageSize` or `perPage`. A key counts as an object key, a
-string, or a property read that is not a call, so a Drizzle `.limit(10)` alone
-does not make a route a list route. It is a heuristic, and a false positive is a
-reason to fix the heuristic, not to reword the route.
+`offset`, `cursor`, `pageSize` or `perPage`. A key counts as an object key not
+given a number literal, a string, or a property read that is not a call. So a
+Drizzle `.limit(10)` or a fixed `{ limit: 1 }` alone does not make a route a
+list route. It is a heuristic, and a false positive is a reason to fix the
+heuristic, not to reword the route.
 
 | Sub-check | Condition                                          | Verdict                   |
 | --------- | -------------------------------------------------- | ------------------------- |

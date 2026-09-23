@@ -15,7 +15,8 @@
  *   1. answers GET -- a `.get.` file, or one with no method suffix;
  *   2. reads its query -- `getQuery(` or `getValidatedQuery(`; and
  *   3. names a pagination key -- `limit`, `offset`, `cursor`, `pageSize` or
- *      `perPage` -- as an object key (`limit:`), a property read that is not a
+ *      `perPage` -- as an object key not given a number literal (`limit:` in
+ *      a query schema, but not `{ limit: 1 }`), a property read that is not a
  *      call (`query.limit`, but not the Drizzle builder's `.limit(10)`) or a
  *      string (`'limit'`).
  *
@@ -43,7 +44,8 @@ const READS_QUERY = /\bget(?:Validated)?Query\s*\(/
 const PAGINATION_KEY = String.raw`(?:limit|offset|cursor|pageSize|perPage)`
 const NAMES_PAGINATION = new RegExp(
   [
-    String.raw`\b${PAGINATION_KEY}\s*:`,
+    // A key given a number literal (`{ limit: 1 }`) is a fixed value, not a query read.
+    String.raw`\b${PAGINATION_KEY}\s*:(?!\s*\d)`,
     String.raw`\.${PAGINATION_KEY}\b(?!\s*\()`,
     String.raw`['"]${PAGINATION_KEY}['"]`,
   ].join('|'),

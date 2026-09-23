@@ -69,6 +69,22 @@ describe('item 14 list-routes-use-contract', () => {
     expect(artefact.item.checks[0]?.detail).toContain('no list routes among 1 handler(s)')
   })
 
+  it('does not take a fixed { limit: 1 } in a detail route for pagination', () => {
+    const detail = `export default defineEventHandler(async (event) => {
+  const { id } = getQuery(event)
+  return db.query.items.findMany({ where: eq(items.id, String(id)), limit: 1 })
+})`
+    expect(isListRoute('server/api/items/detail.get.ts', detail)).toBe(false)
+  })
+
+  it('still counts a query schema that names a pagination key', () => {
+    const schema = `export default defineEventHandler(async (event) => {
+  const query = await getValidatedQuery(event, z.object({ limit: z.coerce.number() }).parse)
+  return listItems(query)
+})`
+    expect(isListRoute('server/api/items/index.get.ts', schema)).toBe(true)
+  })
+
   it('ignores mutation routes', () => {
     expect(isListRoute('server/api/items/index.post.ts', HAND_ROLLED)).toBe(false)
     expect(isListRoute('server/api/items.ts', HAND_ROLLED)).toBe(true)

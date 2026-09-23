@@ -2,10 +2,16 @@ import { rmSync } from 'node:fs'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { SHARED_COMPONENT_OWNERS as LINT_OWNERS } from '../../../eslint-config/src/rules/utils/shared-components.js'
+import {
+  SHARED_COMPONENT_OWNERS as LINT_OWNERS,
+  nuxtComponentName as lintNuxtComponentName,
+} from '../../../eslint-config/src/rules/utils/shared-components.js'
 import { runNoLocalCopyCheck } from '../../src/foundation/evaluate-component-suite.js'
 import { evaluateItem13 } from '../../src/foundation/items/item-13-no-local-copy.js'
-import { SHARED_COMPONENT_OWNERS } from '../../src/foundation/shared-components.js'
+import {
+  SHARED_COMPONENT_OWNERS,
+  nuxtComponentName,
+} from '../../src/foundation/shared-components.js'
 import { AppRepo } from '../../src/foundation/source.js'
 import { makeTempRepo, writeFile, writeJson } from './helpers.js'
 
@@ -36,6 +42,22 @@ describe('item 13 no-local-copy', () => {
     const lint = LINT_OWNERS.map((o) => [`@narduk-enterprises/${o.pkg}`, [...o.names].sort()])
     const tools = SHARED_COMPONENT_OWNERS.map((o) => [o.pkg, [...o.names].sort()])
     expect(tools).toEqual(lint)
+  })
+
+  it.each([
+    'AppTabs.vue',
+    'shared/AppTabs.vue',
+    'app/AppHeader.vue',
+    'ne/StatePanel.vue',
+    'orders/parts/Row.vue',
+    'orders/index.vue',
+    'base/base-button.vue',
+    'HTMLParser.vue',
+    'charts/Chart2D.vue',
+    'ui/AB2.vue',
+    'my-app/data_table/Ne.DataTable.vue',
+  ])('derives the same Nuxt name as the lint rule for %s', (relativePath) => {
+    expect(nuxtComponentName(relativePath)).toBe(lintNuxtComponentName(relativePath))
   })
 
   it('passes an app whose components are its own', () => {
