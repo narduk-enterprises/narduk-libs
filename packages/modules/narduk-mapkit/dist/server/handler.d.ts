@@ -113,6 +113,11 @@ export declare function getOriginFromRequest(request: Request, _fallbackOrigin?:
  */
 export declare function isMapKitRequestSameOrigin(request: Request, self: string): boolean;
 /**
+ * Is the routed origin's host on the app's `allowedHosts` list? An unset or
+ * empty list allows every host (see `MapKitServerConfig.allowedHosts`).
+ */
+export declare function isMapKitHostAllowed(self: string, allowedHosts: MapKitServerConfig['allowedHosts']): boolean;
+/**
  * Decide one token request. Order is deliberate: method, then same-origin, then
  * the rate limiter, then signing config. A cross-origin caller is refused
  * WITHOUT consuming a legitimate caller's allowance.

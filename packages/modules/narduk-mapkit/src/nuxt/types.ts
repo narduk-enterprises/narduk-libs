@@ -37,6 +37,14 @@ export interface ModuleOptions {
   /** Passed to Apple's loader. */
   language?: string
   /**
+   * Opt-in list of hosts the token route mints for; any other routed host is
+   * refused 403 before the limiter and before signing. Omitted, every routed
+   * host is accepted, which is right on Cloudflare Workers. Set it when the app
+   * runs on a Node listener that accepts arbitrary `Host` headers. Entries are
+   * `host[:port]`, or `*.example.com` for any subdomain (narduk-libs#437).
+   */
+  allowedHosts?: string[]
+  /**
    * Opt-in fixed-window ceiling on the token route, per routed origin. Omitted
    * (the default), the route applies NO rate limit: MapKit tokens are cheap,
    * same-origin and short-lived, and a default ceiling kept tripping real users

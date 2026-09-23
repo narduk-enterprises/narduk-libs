@@ -316,7 +316,13 @@ turns into a `403` rather than a token for the host in that line. **On a Node
 listener a forged `Host:` header on an ordinary request target still names the
 origin claim**: nothing at this layer can tell a routed `Host` from a forged
 one, so a Node deployment must refuse unknown hosts itself (a vhost filter, or a
-proxy that only forwards the hostnames it serves) before this route is exposed.
+proxy that only forwards the hostnames it serves) before this route is exposed,
+or set `allowedHosts`. With `allowedHosts` set (on `MapKitServerConfig`, or the
+`nardukMapKit.allowedHosts` module option), a routed host outside the list is
+refused `403 not-same-origin` before the limiter and before signing. Entries are
+`host[:port]`, compared case-insensitively, or `*.example.com` for any subdomain
+but not the apex; an env-supplied string is read as a comma-separated list.
+Unset, every routed host is accepted, which is correct on Cloudflare Workers.
 
 The `/node` entry point is the only surface that reads `process.env` or uses the
 optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
