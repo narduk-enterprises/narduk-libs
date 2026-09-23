@@ -41,7 +41,8 @@
     "lint": "narduk-lint src tests",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test:unit": "vitest run --coverage --config vitest.config.ts"
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",

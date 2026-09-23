@@ -206,6 +206,28 @@ describe('migration config and planning', () => {
     ).toThrow('did not find index users.users_email_idx')
   })
 
+  it('names the adoption and the receipt when a cited table is gone (narduk-libs#600)', () => {
+    const file = migration('package:a', '0001.sql')
+    const plan = () =>
+      planMigrations({
+        migrations: [file],
+        ledgerRows: [{ filename: file.filename }],
+        adoptions: [
+          {
+            evidence: { tables: ['states'] },
+            filename: file.filename,
+            legacy: { filename: file.filename },
+            checksum: file.checksum,
+            source: file.source,
+            sourceVersion: file.sourceVersion,
+          },
+        ],
+        schemaEvidence: { tables: [], columns: [], indexes: [] },
+      })
+    expect(plan).toThrow(`which adoption ${file.filename} cites as evidence for package:a:0001.sql`)
+    expect(plan).toThrow('_narduk_migrations receipt')
+  })
+
   it('discovers files and applies package-before-app ordering', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-migrations-'))
     tempDirs.push(root)

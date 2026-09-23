@@ -346,6 +346,23 @@ describe('the migration runner never opens a contract-owned database', () => {
     expect(calls).toEqual([])
   })
 
+  it('refuses the contract-owned database named by its database name (narduk-libs#637)', () => {
+    const app = checkout('authenticated-contract-owned-read-model.json', [authDb, readModel])
+    const { executor, calls } = recordingExecutor()
+    const options = {
+      cwd: join(app.root, 'apps', 'web'),
+      configFile: join(app.root, 'apps/web/migrations.sources.json'),
+      database: 'portal-read-model',
+      location: '--remote' as const,
+    }
+    expect(() => inspectMigrations(options, executor)).toThrow(
+      'Refusing to run migrations against portal-read-model',
+    )
+    expect(calls).toEqual([])
+    // The migration-owned database's own name still runs.
+    expect(() => inspectMigrations({ ...options, database: 'portal-auth' }, executor)).not.toThrow()
+  })
+
   it('refuses to run at all when the ownership declaration cannot be read', () => {
     const app = checkout('authenticated-contract-owned-read-model.json', [authDb, readModel])
     app.manifest.deployment.databaseOwnership = [{ binding: 'DB', owner: 'invented' }]

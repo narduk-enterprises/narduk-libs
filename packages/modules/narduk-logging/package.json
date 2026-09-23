@@ -68,7 +68,7 @@
   },
   "scripts": {
     "prepare": "pnpm run build",
-    "quality": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run check:package",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run check:package",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit",

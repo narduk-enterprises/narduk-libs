@@ -160,4 +160,33 @@ describe('item 5 -- shared CI', () => {
     )
     expect(subCheckStatus(await run(root), '5.2')).toBe('fail')
   })
+
+  it('5.2 accepts the canonical recipe: an ungrouped npm update through a registry scoped to the estate (narduk-libs#241)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/renovate.json`, { force: true })
+
+    writeFile(
+      root,
+      '.github/dependabot.yml',
+      [
+        'version: 2',
+        'registries:',
+        '  narduk-packages:',
+        '    type: npm-registry',
+        '    url: https://npm.pkg.github.com',
+        '    token: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+        '    scope: "@narduk-enterprises"',
+        'updates:',
+        '  - package-ecosystem: "npm"',
+        '    directory: "/"',
+        '    registries:',
+        '      - narduk-packages',
+        '    schedule:',
+        '      interval: "weekly"',
+      ].join('\n'),
+    )
+    expect(subCheckStatus(await run(root), '5.2')).toBe('pass')
+  })
 })

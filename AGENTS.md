@@ -117,8 +117,12 @@ baseline 190 drained, and the count admitted since the freeze.
   `narduk-shell` registers, and every `./format` export, has a README section,
   tests and a design card shipped beside it. Failures print the exact fix; see
   `packages/design/narduk-shell/README.md` § "Component surface check".
-- For a touched package, also run its focused typecheck/unit tests and
-  `pnpm pack --dry-run` before publication.
+- For a touched package, run `pnpm --filter <package> run quality` (format
+  check, lint, typecheck and unit tests;
+  `scripts/package-quality-scripts.test.mjs` keeps every package's `quality`
+  meaning that, #666) and `pnpm pack --dry-run` before publication. For a
+  seconds-long format check of just your diff:
+  `npx prettier --check $(git diff --name-only HEAD)`.
 - New package releases must be installable from their packed artifact by a
   consumer fixture outside the workspace.
 - A Changeset that moves the version of any package the generator pins
