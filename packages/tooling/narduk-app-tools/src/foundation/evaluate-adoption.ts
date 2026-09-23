@@ -170,6 +170,7 @@ export const FALLBACK_SMOKE_PATH = '/'
 /** The resolved probe contract: always populated, declaration first. */
 export interface LiveProofContract {
   buildVersionHeader: string
+  healthAuth: 'anonymous' | 'authenticated'
   healthPath: string
   smokePath: string
 }
@@ -188,6 +189,7 @@ export function resolveLiveProofContract(
     buildVersionHeader: (
       declared?.buildVersionHeader ?? FALLBACK_BUILD_VERSION_HEADER
     ).toLowerCase(),
+    healthAuth: declared?.healthAuth ?? 'anonymous',
     healthPath: declared?.healthPath ?? FALLBACK_HEALTH_PATH,
     smokePath: declared?.smokePath ?? FALLBACK_SMOKE_PATH,
   }
@@ -270,6 +272,10 @@ async function readLive(
 
   let health: string | null = null
   let healthOk: boolean | null = null
+  // An authenticated health route answers an anonymous read with 401 by
+  // design; reading it would report that refusal as an unhealthy app
+  // (narduk-libs#585). Both stay null, so R12 says why it is unknown.
+  if (contract.healthAuth === 'authenticated') return { ...base, health, healthOk }
   try {
     const response = await reality.read(healthUrl)
     if (response.status !== null) {
@@ -802,7 +808,10 @@ function requirement12(
 ): AdoptionRequirement {
   if (live === null || live.healthOk === null) {
     return {
-      detail: 'no live health reading; counts, filters and freshness are checked by the app',
+      detail:
+        contract.healthAuth === 'authenticated'
+          ? `liveProof.healthAuth is authenticated, so ${contract.healthPath} is not read anonymously; counts, filters and freshness are checked by the app`
+          : 'no live health reading; counts, filters and freshness are checked by the app',
       enforcement: 'manual',
       evidence: [`GET ${contract.healthPath}`, "the app's own capability contract tests"],
       id: 'R12',

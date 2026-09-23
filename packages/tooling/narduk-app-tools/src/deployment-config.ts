@@ -283,6 +283,14 @@ export const deploymentBlockSchema = z.strictObject({
   liveProof: z.strictObject({
     buildVersionHeader: z.string().trim().min(1).max(200).default(BUILD_VERSION_HEADER),
     healthPath: appPath,
+    /**
+     * Whether `healthPath` answers an anonymous request. `authenticated` means
+     * it sits behind the app's auth: the path stays declared, because the route
+     * exists, but nothing asserts it anonymously -- the hotfix and development
+     * deploy proofs skip the health assertion, and the adoption read reports it
+     * unknown rather than failing a 401 (narduk-libs#585).
+     */
+    healthAuth: z.enum(['anonymous', 'authenticated']).default('anonymous'),
     smokePath: appPath,
     attempts: z.number().int().min(1).max(60).default(6),
     intervalSeconds: z.number().int().min(1).max(600).default(10),
@@ -328,6 +336,18 @@ export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>
  * Read first, so an app on a different standard is reported as exempt rather
  * than as 20 schema violations against a contract it never claimed. */
 const deploymentEnvelopeSchema = z.looseObject({ standard: z.string().trim().min(1).max(200) })
+
+/**
+ * The `verify --live` health arguments a declared `liveProof` asks for: the
+ * path, or `--no-health` when the route is authenticated (narduk-libs#585).
+ */
+export function healthArgs(
+  liveProof: Pick<DeploymentBlock['liveProof'], 'healthAuth' | 'healthPath'>,
+): string[] {
+  return liveProof.healthAuth === 'authenticated'
+    ? ['--no-health']
+    : ['--health-path', liveProof.healthPath]
+}
 
 export interface DeploymentIssue {
   path: string

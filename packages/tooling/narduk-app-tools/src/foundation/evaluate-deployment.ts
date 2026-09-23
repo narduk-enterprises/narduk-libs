@@ -56,6 +56,9 @@ export interface DeclaredLiveProof {
   buildVersionHeader: string
   /** The path a health probe must read. */
   healthPath: string
+  /** `authenticated`: the health path refuses an anonymous read by design.
+   * Absent means `anonymous`, the schema's default. */
+  healthAuth?: 'anonymous' | 'authenticated'
   /** The path a delivery-path probe must read. */
   smokePath: string
 }
@@ -167,6 +170,7 @@ export function runDeploymentCheck(options: RunDeploymentCheckOptions): Deployme
         ? {
             buildVersionHeader: block.liveProof.buildVersionHeader,
             healthPath: block.liveProof.healthPath,
+            healthAuth: block.liveProof.healthAuth,
             smokePath: block.liveProof.smokePath,
           }
         : null,

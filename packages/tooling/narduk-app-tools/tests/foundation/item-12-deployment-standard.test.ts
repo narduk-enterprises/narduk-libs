@@ -280,6 +280,41 @@ describe('item 12 standard conformance', () => {
     expect(detailOf(root, '12.3')).toContain('x-build-version')
   })
 
+  it('passes 12.3 for an authenticated health route and says it is not asserted anonymously (#585)', () => {
+    const root = baseline({
+      deployment: block({
+        liveProof: {
+          buildVersionHeader: 'x-build-version',
+          healthAuth: 'authenticated',
+          healthPath: '/api/health',
+          smokePath: '/login',
+          attempts: 6,
+          intervalSeconds: 10,
+        },
+      }),
+    })
+    expect(statusOf(root, '12.3')).toBe('pass')
+    expect(detailOf(root, '12.3')).toContain(
+      '/api/health (authenticated, not asserted anonymously)',
+    )
+  })
+
+  it('rejects a healthAuth value outside anonymous|authenticated', () => {
+    const root = baseline({
+      deployment: block({
+        liveProof: {
+          buildVersionHeader: 'x-build-version',
+          healthAuth: 'session',
+          healthPath: '/api/health',
+          smokePath: '/',
+          attempts: 6,
+          intervalSeconds: 10,
+        },
+      }),
+    })
+    expect(statusOf(root, '12.3')).not.toBe('pass')
+  })
+
   it('fails two different account ids across environments', () => {
     const root = baseline()
     writeJson(root, 'wrangler.json', {

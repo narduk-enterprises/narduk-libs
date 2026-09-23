@@ -384,7 +384,10 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
    * contract (R12) -- and rewarded an app that left its health route open to
    * anonymous callers over one that did not.
    */
-  function writeAuthenticatedBaseline(root: string): void {
+  function writeAuthenticatedBaseline(
+    root: string,
+    liveProofOverrides: Record<string, unknown> = {},
+  ): void {
     writeAdoptionBaseline(root)
     const block = defaultDeploymentBlock({ appSlug: 'fixture' })
     writeJson(root, 'Config/cloudflare-app.json', {
@@ -400,6 +403,7 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
           healthPath: '/healthz',
           intervalSeconds: 10,
           smokePath: '/login',
+          ...liveProofOverrides,
         },
       },
       product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
@@ -460,6 +464,31 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
     expect(artefact.live?.healthUrl).toBe('https://ops.example/healthz')
   })
 
+  it('does not read an authenticated health route anonymously, and says why R12 is unknown (#585)', async () => {
+    const read: string[] = []
+    const live = fakeAuthenticatedLive()
+    const artefact = await run(
+      (root) => {
+        writeAuthenticatedBaseline(root, { healthAuth: 'authenticated', healthPath: '/api/health' })
+      },
+      {
+        headerProbe: fakeHeaderProbe,
+        liveReality: {
+          async read(url) {
+            read.push(new URL(url).pathname)
+            return live.read(url)
+          },
+        },
+        liveUrl: 'https://ops.example',
+      },
+    )
+
+    // Read anonymously, `/api/health` answers 401 here -- a FAIL the app is right to earn.
+    expect(read).not.toContain('/api/health')
+    expect(req(artefact, 'R12').verdict).toBe('unknown')
+    expect(req(artefact, 'R12').detail).toContain('healthAuth is authenticated')
+  })
+
   it('points requirement 8 at the declared smoke path', async () => {
     const probed: string[] = []
     await run(writeAuthenticatedBaseline, {
@@ -486,6 +515,7 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
   it('falls back to the standard defaults only when nothing is declared', () => {
     expect(resolveLiveProofContract(null)).toEqual({
       buildVersionHeader: 'x-build-version',
+      healthAuth: 'anonymous',
       healthPath: '/api/health',
       smokePath: '/',
     })
@@ -498,6 +528,7 @@ describe('the paths a live probe reads (narduk-libs#632, absorbing #638)', () =>
       }),
     ).toEqual({
       buildVersionHeader: 'x-build-version',
+      healthAuth: 'anonymous',
       healthPath: '/healthz',
       smokePath: '/login',
     })
