@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.29.2
+
+### Patch Changes
+
+- Updated dependencies [551e39a]
+  - @narduk-enterprises/narduk-core@2.12.0
+
 ## 1.29.1
 
 ### Patch Changes
