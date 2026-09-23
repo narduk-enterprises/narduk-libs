@@ -34,6 +34,10 @@ import {
 import { withAppCheckout } from './commands/checkout-root.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
+import {
+  runListRoutesCheckCommand,
+  runNoLocalCopyCheckCommand,
+} from './commands/component-suite-check.js'
 import { runCapabilityCoverageCheckCommand } from './commands/capability-coverage-check.js'
 import {
   parseSecurityHeadersCheckArgs,
@@ -118,6 +122,10 @@ function usage(): string {
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
     '  foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]',
     '                                       Item 8: UI apps must exact-pin published shared-UI packages',
+    '  foundation:check:no-local-copy [--checkout <dir>] [--json [path]]',
+    '                                       Item 13: no app-local copy of a shared package component',
+    '  foundation:check:list-routes [--checkout <dir>] [--json [path]]',
+    '                                       Item 14: list routes parse their query with parseListQuery',
     '  foundation:check:coverage [--checkout <dir>] [--json [path]]',
     '                                       Item 9: estate package inventory and app-local reimplementations',
     '  foundation:check:security-headers --base-url <url> [--path <p>]... [--json [path]]',
@@ -338,6 +346,16 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         withAppCheckout(parseFoundationCheckArgs(rest, command), command),
       )
       return exitCode
+    }
+    if (command === 'foundation:check:no-local-copy') {
+      return runNoLocalCopyCheckCommand(
+        withAppCheckout(parseFoundationCheckArgs(rest, command), command),
+      ).exitCode
+    }
+    if (command === 'foundation:check:list-routes') {
+      return runListRoutesCheckCommand(
+        withAppCheckout(parseFoundationCheckArgs(rest, command), command),
+      ).exitCode
     }
     if (command === 'foundation:check:toolchain') {
       const { exitCode } = runToolchainCheckCommand(

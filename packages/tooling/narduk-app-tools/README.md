@@ -823,6 +823,59 @@ apps are `not-applicable` in full.
 | 8.1 / 8.2 / 8.3 | depended on, but the pin is a range or a `workspace:` / `file:` specifier                 | `fail`, names the package and the fix                                             |
 | 8.1 / 8.2 / 8.3 | depended on and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                   | `pass`, annotated with the latest published version when the registry is readable |
 
+### No local copy of a shared component (`foundation:check:no-local-copy`)
+
+`narduk-app foundation:check:no-local-copy [--checkout <dir>] [--json [path]]`
+-- item 13, components-library plan
+([narduk-libs#260](https://github.com/narduk-enterprises/narduk-libs/issues/260);
+numbered 13 because 9-12 were taken first). This is the repository half of the
+`narduk/no-shadowed-shared-component` lint rule in
+`@narduk-enterprises/eslint-config`. The evaluator is
+`src/foundation/items/item-13-no-local-copy.ts`. It has its own JSON artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/no-local-copy'`) for the same
+reason as item 8, and the same exit codes: `0` PASS, `1` FAIL, `2` UNKNOWN.
+
+The component list is `src/foundation/shared-components.ts`. Its test fails if
+it differs from the eslint-config registry, so the lint rule and this check
+always name the same components. A name matches on the file name or on the name
+Nuxt registers from the path (`components/ne/DataTable.vue` is `NeDataTable`).
+
+| Sub-check    | Condition                                                                  | Verdict                                                 |
+| ------------ | -------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 13.1 only    | no UI surface (same rule as item 8)                                        | `not-applicable` (whole check)                          |
+| 13.1 to 13.5 | the owning package is a dependency, and a local component carries its name | `fail`, naming each file                                |
+| 13.1 to 13.5 | the owning package is a dependency, and nothing matches                    | `pass`                                                  |
+| 13.1 to 13.5 | the owning package is not a dependency                                     | `not-applicable`; any same-named files are still listed |
+
+The sub-checks are one per owner: narduk-shell, narduk-core, narduk-auth,
+narduk-ui and narduk-charts.
+
+### List routes use the query contract (`foundation:check:list-routes`)
+
+`narduk-app foundation:check:list-routes [--checkout <dir>] [--json [path]]` --
+item 14, the same plan and issue. A server list route parses its query with
+narduk-core's `parseListQuery`
+([narduk-libs#257](https://github.com/narduk-enterprises/narduk-libs/issues/257)):
+limit clamped, sort from an allowlist, unknown keys rejected. The evaluator is
+`src/foundation/items/item-14-list-routes-use-contract.ts`. Its artefact is
+`tool: '@narduk-enterprises/narduk-app-tools/list-routes-use-contract'`.
+
+A list route is found from its source. It is a file under `server/api/` or
+`server/routes/` at any monorepo prefix that answers GET (a `.get.` file or no
+method suffix) and either calls `parseListQuery(`, or reads its query
+(`getQuery(` / `getValidatedQuery(`) and names a pagination key: `limit`,
+`offset`, `cursor`, `pageSize` or `perPage`. A key counts as an object key, a
+string, or a property read that is not a call, so a Drizzle `.limit(10)` alone
+does not make a route a list route. It is a heuristic, and a false positive is a
+reason to fix the heuristic, not to reword the route.
+
+| Sub-check | Condition                                          | Verdict                   |
+| --------- | -------------------------------------------------- | ------------------------- |
+| 14.1      | no `server/api` or `server/routes` handlers        | `not-applicable`          |
+| 14.1      | handlers exist, none is a list route               | `pass`                    |
+| 14.1      | every list route calls `parseListQuery(`           | `pass`                    |
+| 14.1      | a list route reads pagination without the contract | `fail`, naming each route |
+
 ### Shared-capability coverage (`foundation:check:coverage`)
 
 `narduk-app foundation:check:coverage [--checkout <dir>] [--json [path]]` --
