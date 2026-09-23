@@ -222,7 +222,8 @@ hold, and `narduk-app deploy versions-upload` now sets it automatically from
 narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
-  [--max-versions <n>] [--dry-run] [--json]
+  [--max-versions <n>] [--wait-for-version <seconds>] \
+  [--wait-interval <seconds>] [--dry-run] [--json]
 ```
 
 Resolves the version whose `workers/tag` matches the commit (prefix-compared in
@@ -246,6 +247,18 @@ detail names the SHA, how many versions were read, the bound, and whether the
 search reached the end of the Worker's history (no build ever uploaded this
 commit) or stopped at the bound (raise `--max-versions`, or use `--version-id`).
 Wire the step so that exit is a **red** job, never a skip.
+
+**The build and the promote are not ordered.** Under narduk-v1 the Workers Build
+uploads the version, while `workflow_run` on the gate starts the promote, and
+nothing sequences the two. When the build finishes after CI, an unbroken merge
+exits 3 and production stays on the previous release: Buoys hit this on
+2026-09-22 with a 51-second gap (narduk-libs#695).
+`--wait-for-version <seconds>` (0..3600, default 0 = look once) re-lists every
+`--wait-interval` seconds (default 30) while the SHA is simply absent, and
+promotes as soon as it appears. Only absence waits. An ambiguous match, a branch
+refusal or an ordering refusal is about the commit, not about timing, so each
+still answers on the first listing. On expiry the exit is still 3, and the
+detail adds how long it waited and how many listings it read.
 
 **`--sha` under `workflow_run`.** It defaults to `GITHUB_SHA` on every event but
 one. Under `on: workflow_run`, `GITHUB_SHA` is the default branch's head at
@@ -472,6 +485,17 @@ It does not require a particular scheme, so an app already on its own unique ids
 `rateLimitNamespaceId(workerName, limit)`. `create-narduk-app` writes each new
 app's prefix into its `wrangler.jsonc` beside a commented example binding
 (narduk-libs#433).
+
+## Nitro output deployed as built (`narduk-app doctor`)
+
+When the wrangler config's `main` is Nitro's `.output/server/...`,
+`narduk-app doctor` warns unless `no_bundle`, `find_additional_modules` and
+`base_dir` are all set, as `create-narduk-app` generates them. Without them,
+wrangler re-bundles the built server with esbuild, which breaks the dynamic
+`import()` Nuxt uses for its server error component, so every 404 and 500
+renders an empty `<div id="__nuxt">`. Six apps shipped that to production before
+anything checked (narduk-libs#245). A worker whose `main` is not Nitro output
+passes with nothing to check.
 
 ## The deployment standard block
 
