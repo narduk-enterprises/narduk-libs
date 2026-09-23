@@ -824,6 +824,38 @@ record, and exactly one structured `warn` through
 `windowSeconds`, `scope`, `enforcedBy` and the **matched route template** — not
 the raw path, which carries caller-chosen identifiers and query values.
 
+### A route you cannot wrap: `consumeRateLimit`
+
+Some routes belong to a module rather than the app: `narduk-mapkit`'s
+`/api/mapkit-token`, for example, registered with `addServerHandler`. There is
+no handler to wrap, and copying the route into the app would fork a
+credential-minting endpoint. `consumeRateLimit(event, options, path?)` is the
+wrapper's own decision step, exported (narduk-libs#413). It uses the same
+counter key, window store, binding and `runtimeConfig.nardukRateLimit`
+overrides, and logs a denial the same way, but it returns the verdict instead of
+throwing and sets no headers:
+
+```ts
+// server/middleware/mapkit-token-rate-limit.ts
+export default defineEventHandler((event) => {
+  if (event.path !== '/api/mapkit-token') return
+  event.context.nardukMapKit = {
+    rateLimit: async () => {
+      const { allowed, verdict } = await consumeRateLimit(event, {
+        key: 'mapkit-token',
+        limit: 60,
+      })
+      return allowed
+        ? { allowed }
+        : { allowed, retryAfterSeconds: verdict?.retryAfterSeconds }
+    },
+  }
+})
+```
+
+Every call counts, so call it once per request. `verdict` is absent when nothing
+was counted, because the policy is disabled or the path is exempt.
+
 ### What a caller is counted as
 
 The `'ip'` and `'ip-path'` scopes key on the `cf-connecting-ip` address, with
@@ -1464,6 +1496,14 @@ Both composables are auto-imported by this module. The pure functions import
 explicitly from `@narduk-enterprises/narduk-core/shared/utils/units`, and a
 Nitro route reads the same preferences with `readPreferences(event)` from
 `@narduk-enterprises/narduk-core/server/utils/preferences`.
+
+The same module exports the raw conversions both ways: SI to display
+(`celsiusToFahrenheit`, `metresToFeet`, `metresPerSecondToKnots`, ...) and each
+inverse (`fahrenheitToCelsius`, `feetToMetres`, `knotsToMetresPerSecond`, ...),
+with exact factors. It also exports `compassPoint16(degrees)`, which names the
+nearest of `NE_COMPASS_POINTS_16` for any finite bearing, negative or above 360,
+and returns `undefined` for absent input. Great-circle distance is
+`haversineDistanceMetres` in `@narduk-enterprises/narduk-mapkit/geometry`.
 
 ### The cookie
 
