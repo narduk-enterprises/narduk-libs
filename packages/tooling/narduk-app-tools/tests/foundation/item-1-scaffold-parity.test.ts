@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
 import {
   CONFORMANT_REALITY,
+  itemStatus,
   makeTempRepo,
   subCheckStatus,
   writeConformantBaseline,
+  writeCoolifyOnlyApp,
   writeFile,
   writeJson,
 } from './helpers.js'
@@ -158,5 +160,32 @@ describe('item 1 -- scaffold parity', () => {
 
     writeJson(root, 'wrangler.json', { workers_dev: false, preview_urls: false })
     expect(subCheckStatus(await run(root), '1.4')).toBe('pass')
+  })
+
+  it('1.1/1.2/1.4 are not-applicable for a Coolify-only app (narduk-libs#158)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.1')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.2')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.3')).toBe('pass')
+    expect(subCheckStatus(artefact, '1.4')).toBe('not-applicable')
+    expect(itemStatus(artefact, 1)).toBe('pass')
+  })
+
+  it('1.1 is not-applicable for a Worker that declares nitroPreset none', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'none' },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+    })
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.1')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.2')).not.toBe('not-applicable')
   })
 })
