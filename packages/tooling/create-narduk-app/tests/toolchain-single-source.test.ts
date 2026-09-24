@@ -10,7 +10,7 @@
  *    and never restates either in a workflow.
  * 2. Every workflow the generator writes passes the hygiene rules
  *    `caller-lint` audits, re-implemented here from the job's own inline script
- *    in narduk-enterprises/workflows `nuxt-cloudflare.yml@6f56678`. That gate is
+ *    in narduk-enterprises/workflows `nuxt-cloudflare.yml@1513b2a2`. That gate is
  *    always-run and required, so a template that fails it breaks CI for every
  *    private app the generator has ever produced.
  */
