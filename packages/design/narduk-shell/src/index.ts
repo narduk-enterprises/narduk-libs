@@ -73,6 +73,23 @@ export type {
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
 /**
+ * The card / card-list / detail-view family (narduk-libs#264). Types only:
+ * the SFCs stay out of the barrel's value-import graph, matching the rest
+ * of the suite.
+ */
+export type { NeCardBadge, NeCardProps, NeCardStat } from './runtime/components/ne-card-types'
+export type {
+  NeCardListBreakpoint,
+  NeCardListColumnCount,
+  NeCardListProps,
+} from './runtime/components/ne-card-list-types'
+export type {
+  NeDetailFormat,
+  NeDetailItem,
+  NeDetailViewProps,
+} from './runtime/components/ne-detail-view-types'
+
+/**
  * The filter bar's caller-built shapes (narduk-libs#261). `ne-filter-bar-types`
  * exists so a page can type its items array without importing the SFC, which
  * only works if the barrel carries the types: the exports map exposes `.`,

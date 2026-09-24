@@ -55,6 +55,10 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // Item 15 (narduk-libs#262): NeKpiTile + NeKpiBand.
   { name: 'NeKpiTile', filePath: './runtime/components/NeKpiTile.vue' },
   { name: 'NeKpiBand', filePath: './runtime/components/NeKpiBand.vue' },
+  // Item 17 (narduk-libs#264): NeCard, NeCardList, NeDetailView.
+  { name: 'NeCard', filePath: './runtime/components/NeCard.vue' },
+  { name: 'NeCardList', filePath: './runtime/components/NeCardList.vue' },
+  { name: 'NeDetailView', filePath: './runtime/components/NeDetailView.vue' },
   // narduk-libs#528: the UTable data-table preset, its sort header and CSV.
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },

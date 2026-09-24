@@ -1925,6 +1925,207 @@ CSS.
 | --------- | -------------------------------------------------- |
 | `default` | The tiles (or anything else) laid out in the grid. |
 
+### NeCard
+
+One entity card wrapping Nuxt UI's `UCard`. Backlog item 17
+([narduk-libs#264](https://github.com/narduk-enterprises/narduk-libs/issues/264)).
+Media, title, badge, stat rows, actions. Numbers go through the `./format`
+subpath (`formatNumber`, or `formatQuantity` when a `unit` is set), never
+`toLocaleString`. A missing stat is the formatter empty placeholder (`—`),
+not 0.
+
+The badge is `NeStatusBadge`: a string is a neutral chip, `{ label, tone }` is
+what `defineStatusMap` already returns. Colour is never the only signal — the
+badge's accessible name includes the tone.
+
+#### Example
+
+```vue
+<NeCard
+  title="Des Plaines at Riverside"
+  :badge="{ label: 'Action', tone: 'warn' }"
+  :stats="[
+    { label: 'Stage', unit: 'foot', value: 5.2 },
+    { label: 'Flow', unit: 'cfs', value: 1234 },
+  ]"
+>
+  <template #actions>
+    <UButton label="Open" />
+  </template>
+</NeCard>
+```
+
+#### Props
+
+| Prop       | Type                                              | Default | Notes                                                                                |
+| ---------- | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `title`    | `string`                                          | `''`    | The card's name. The `#title` slot overrides it.                                     |
+| `badge`    | `string \| { label: string; tone: NeStatusTone }` | —       | Status chip opposite the title. A string is a neutral label.                         |
+| `media`    | `string`                                          | `''`    | Image URL. Prefer the `#media` slot for anything else.                               |
+| `mediaAlt` | `string`                                          | `''`    | Accessible name of `media`. Falls back to `title`.                                   |
+| `stats`    | `readonly NeCardStat[]`                           | `[]`    | Measured rows. A `number` is formatted; a `string` is rendered as-is; `null` is `—`. |
+
+#### Slots
+
+| Slot      | When it renders                                 |
+| --------- | ----------------------------------------------- |
+| `title`   | Replaces the title text.                        |
+| `badge`   | Replaces the badge chip.                        |
+| `media`   | Replaces the `<img>` when `media` is not a URL. |
+| `default` | Body under the stats.                           |
+| `actions` | Trailing controls, in `UCard`'s footer.         |
+
+#### Types
+
+```ts
+import type {
+  NeCardBadge,
+  NeCardProps,
+  NeCardStat,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCardList
+
+The card reading of the same collection a table draws. Bind `v-model:state` or
+`:collection` — both are the `useCollection()` snapshot `NePager` already takes
+— so one page toggles cards and table without a second fetch. `NeStatePanel` and
+`NePager` are built in.
+
+Empty, loading and error are the panel's contract, and only when there is
+nothing to show. A collection keeps the last good page on a later error or a
+refetch; drawing a panel over those cards would hide the rows the reader already
+has.
+
+`columns` picks the Tailwind `grid-cols-*` utility per breakpoint the same way
+`NeKpiBand` does. Every class this component could apply is a literal string in
+`src/runtime/components/NeCardList.vue`, not a computed `` `grid-cols-${n}` ``.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const c = useCollection({ fetch })
+const mode = ref<'cards' | 'table'>('cards')
+</script>
+
+<template>
+  <NeCardList
+    v-if="mode === 'cards'"
+    :collection="c"
+    :card="RiverCard"
+    :columns="{ base: 1, md: 2, xl: 3 }"
+    noun="rivers"
+  />
+  <template v-else>
+    <NeDataTable :columns="columns" :rows="c.items" />
+    <NePager v-model:state="c.state" noun="rivers" />
+  </template>
+</template>
+```
+
+The `#card` slot is the other form, when the card needs more than `item`:
+
+```vue
+<NeCardList :collection="c" noun="rivers">
+  <template #card="{ item }">
+    <NeCard :title="item.name" :stats="[{ label: 'Stage', unit: 'foot', value: item.stage }]" />
+  </template>
+</NeCardList>
+```
+
+#### Props
+
+| Prop             | Type                                                                        | Default                     | Notes                                                                                             |
+| ---------------- | --------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `collection`     | `NeCollection<T>`                                                           | —                           | The live `useCollection()` return. Wins over `v-model:state` when both are given.                 |
+| `card`           | `Component`                                                                 | —                           | Per-item component. Receives the row as `item`. Prefer `#card` when more than one prop is needed. |
+| `columns`        | `Partial<Record<'base' \| 'sm' \| 'md' \| 'lg' \| 'xl', 1\|2\|3\|4\|5\|6>>` | `{ base: 1, md: 2, xl: 3 }` | Columns per breakpoint.                                                                           |
+| `noun`           | `string`                                                                    | `'results'`                 | Plural noun for the built-in pager summary.                                                       |
+| `density`        | `'default' \| 'dense'`                                                      | `'default'`                 | Forwards to `NePager`.                                                                            |
+| `mode`           | `'pages' \| 'more' \| 'auto'`                                               | `'pages'`                   | Forwards to `NePager`.                                                                            |
+| `pageSizes`      | `readonly number[]`                                                         | —                           | Forwards to `NePager`.                                                                            |
+| `maxLimit`       | `number`                                                                    | —                           | Forwards to `NePager`.                                                                            |
+| `to`             | `(page: number) => RouteLocationRaw`                                        | —                           | Forwards to `NePager`. Real hrefs.                                                                |
+| `rowKey`         | `(item: T, index: number) => string`                                        | index                       | Stable identity for each card.                                                                    |
+| `emptyTitle`     | `string`                                                                    | `''`                        | Empty-panel headline.                                                                             |
+| `emptyMessage`   | `string`                                                                    | `''`                        | Empty-panel sentence.                                                                             |
+| `loadingTitle`   | `string`                                                                    | `''`                        | Loading-panel headline.                                                                           |
+| `loadingMessage` | `string`                                                                    | `''`                        | Loading-panel sentence.                                                                           |
+| `errorTitle`     | `string`                                                                    | `''`                        | Error-panel headline.                                                                             |
+| `errorMessage`   | `string`                                                                    | `''`                        | Error-panel sentence. The collection's `error` is not stringified onto the page.                  |
+
+`v-model:state` is `NeCollectionState<T>`. Assigning to it applies `page` only
+when the parent is `useCollection`. `update:limit` is forwarded to
+`collection.setLimit` when `:collection` is bound.
+
+#### Slots
+
+| Slot   | When it renders                                                                  |
+| ------ | -------------------------------------------------------------------------------- |
+| `card` | One card. Slot props: `{ item, index }`. Preferred over `:card` for composition. |
+
+#### Types
+
+```ts
+import type {
+  NeCardListBreakpoint,
+  NeCardListColumnCount,
+  NeCardListProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeDetailView
+
+A key-value panel: label, value, `format`, `unit`, and an unavailable sentence
+for a missing reading. Backlog item 17
+([narduk-libs#264](https://github.com/narduk-enterprises/narduk-libs/issues/264)).
+
+Numbers and dates go through `./format`. A `date` / `datetime` row without an
+explicit zone (row or panel) is treated as unavailable rather than rendered in
+the host time zone — that is the hydration class item 5 exists to remove.
+`relative` is not a format here: it needs a caller-supplied `now`. Format that
+string at the call site and pass it as a pre-formatted value.
+
+#### Example
+
+```vue
+<NeDetailView
+  :items="[{ label: 'Stage', value: stage, format: 'quantity', unit: 'ft' }]"
+  unavailable-message="No reading"
+/>
+```
+
+#### Props
+
+| Prop                 | Type                      | Default                           | Notes                                                                                             |
+| -------------------- | ------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `items`              | `readonly NeDetailItem[]` | —                                 | Required. Each row is a label, a value, and optional `format` / `unit` / `currency` / `timeZone`. |
+| `unavailableMessage` | `string`                  | formatter empty placeholder (`—`) | What a missing reading prints.                                                                    |
+| `timeZone`           | `string`                  | —                                 | IANA zone for every `date` / `datetime` row that does not set its own.                            |
+
+#### `NeDetailItem`
+
+| Field      | Type                                      | Notes                                                                                               |
+| ---------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `label`    | `string`                                  | Required. Always visible, so the row never depends on colour.                                       |
+| `value`    | `NeDateInput \| number \| string \| null` | `null` / `undefined` / a non-finite number render the unavailable message.                          |
+| `format`   | `NeDetailFormat`                          | `'number' \| 'compact' \| 'percent' \| 'money' \| 'quantity' \| 'date' \| 'datetime' \| 'duration'` |
+| `unit`     | `string`                                  | Required for `format: 'quantity'`.                                                                  |
+| `currency` | `string`                                  | Required for `format: 'money'`.                                                                     |
+| `timeZone` | `string`                                  | Per-row override of the panel `timeZone`.                                                           |
+| `empty`    | `string`                                  | Per-row override of `unavailableMessage`.                                                           |
+
+#### Types
+
+```ts
+import type {
+  NeDetailFormat,
+  NeDetailItem,
+  NeDetailViewProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
 ## Formatters (`./format`)
 
 ```ts
