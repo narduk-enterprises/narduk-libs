@@ -1,10 +1,3 @@
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-} from '@simplewebauthn/server'
-import { isoBase64URL } from '@simplewebauthn/server/helpers'
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 
@@ -28,6 +21,13 @@ import {
 import { establishLocalSessionUser } from './session'
 import { consumeWebauthnChallenge, issueWebauthnChallenge } from './webauthn-challenges'
 import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  isoBase64URL,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from './webauthn-server'
+import {
   assertPasskeyManagementPrincipal,
   evaluateSignatureCounter,
   normalizePasskeyName,
@@ -36,7 +36,7 @@ import {
 } from './webauthn-verification'
 
 import type { AppSessionUser } from './types'
-import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server'
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from './webauthn-server'
 import type { H3Event } from 'h3'
 
 // Re-exported so the routes keep one import site for the passkey surface; the
