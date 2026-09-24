@@ -100,8 +100,9 @@ export interface ConvergenceOptions {
   sleep?: (ms: number) => Promise<void>
 }
 
-export interface PreviewProofOptions extends ConvergenceOptions {
+export interface PreviewProofOptions extends Omit<ConvergenceOptions, 'url'> {
   origin: string
+  url?: string
   identityPath?: string
   diagnostics?: PreviewDiagnosticSpec
 }

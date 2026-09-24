@@ -159,7 +159,7 @@ export async function fetchWorkerPlainTextVars(
     throw new Error(describeActiveWorkerResolution(options.scriptName, resolved))
   }
   const detail = await fetchCloudflareJson<{
-    resources?: { bindings?: { name?: string; text?: string; type?: string }[] }
+    resources?: { bindings?: Array<{ name?: string; text?: string; type?: string }> }
   }>(`${base}/versions/${encodeURIComponent(resolved.versionId)}`, options.apiToken, fetchImpl)
 
   const vars: Record<string, string> = {}

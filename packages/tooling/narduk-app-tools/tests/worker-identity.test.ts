@@ -35,7 +35,7 @@ function deployment(
   versionId: string,
   createdOn: string,
   percentage = 100,
-  extraVersions: { version_id: string; percentage: number }[] = [],
+  extraVersions: Array<{ version_id: string; percentage: number }> = [],
 ) {
   return {
     id,
@@ -66,7 +66,7 @@ function version(id: string, tag?: string): WorkerVersion {
  * selection reads the stale vars; allocation-based selection reads the live
  * ones.
  */
-function providerFetch(options: { versions: { id: string }[]; deployments: unknown }): {
+function providerFetch(options: { versions: Array<{ id: string }>; deployments: unknown }): {
   fetchImpl: typeof fetch
   requested: string[]
 } {

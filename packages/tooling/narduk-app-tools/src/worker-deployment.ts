@@ -14,7 +14,7 @@ export interface WorkerDeployment {
   strategy?: string
   created_on?: string
   annotations?: Record<string, string>
-  versions: { version_id: string; percentage: number }[]
+  versions: Array<{ version_id: string; percentage: number }>
 }
 
 /**
