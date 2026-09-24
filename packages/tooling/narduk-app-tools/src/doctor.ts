@@ -98,9 +98,9 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
         },
   )
   checks.push(
-    commandAvailable('doppler')
-      ? { name: 'doppler', status: 'pass' }
-      : { detail: 'doppler is not available on PATH', name: 'doppler', status: 'warn' },
+    commandAvailable('nvault', ['version'])
+      ? { name: 'nvault', status: 'pass' }
+      : { detail: 'nvault is not available on PATH', name: 'nvault', status: 'warn' },
   )
   const scripts = packageJson?.scripts ?? {}
   for (const name of ['cf:build', 'db:migrate:remote']) {

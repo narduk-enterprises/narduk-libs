@@ -3,11 +3,15 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { fetchWorkerPlainTextVars } from './cloudflare.js'
-import { assertDopplerCliAvailable, readDopplerSecret } from './doppler.js'
 import { readWranglerScriptName, resolveAppDir, runDeploy } from './deploy.js'
 
-const DOPPLER_PROJECT = 'narduk'
-const DOPPLER_CONFIG = 'tokens'
+/**
+ * Build secrets come from the process environment, which the caller fills from
+ * the app's nvault config (`nvault run -p <app> -e prd -c <config> -- narduk-app
+ * deploy-local ...`). This command used to read them from Doppler `narduk/tokens`;
+ * Doppler is retired except the `ne` root store (2026-09-24), so there is
+ * deliberately no Doppler route and no fallback.
+ */
 const DEFAULT_SECRET_KEYS = [
   'GH_PACKAGES_READ',
   'NUXT_OG_IMAGE_SECRET',
@@ -62,9 +66,9 @@ export function isGitWorkingTreeClean(repoRoot: string, env = process.env): bool
 export function buildMergedDeployEnv(args: {
   base: NodeJS.ProcessEnv
   cfVars: Record<string, string>
-  dopplerSecrets: Record<string, string>
+  secrets: Record<string, string>
 }): NodeJS.ProcessEnv {
-  return { ...args.base, ...args.cfVars, ...args.dopplerSecrets }
+  return { ...args.base, ...args.cfVars, ...args.secrets }
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'])
@@ -141,10 +145,32 @@ export function scanPublicAssetsForSecretLeaks(
 }
 
 function parseSecretKeys(env: NodeJS.ProcessEnv, keys: readonly string[]): readonly string[] {
-  const configured = env.NARDUK_APP_DOPPLER_KEYS?.split(',')
+  // NARDUK_APP_DOPPLER_KEYS is the historical name of the same key list.
+  const configured = (env.NARDUK_APP_SECRET_KEYS ?? env.NARDUK_APP_DOPPLER_KEYS)
+    ?.split(',')
     .map((key) => key.trim())
     .filter(Boolean)
   return configured && configured.length > 0 ? configured : keys
+}
+
+/** The build secrets, read from the environment only; missing keys fail closed. */
+export function readDeployLocalSecrets(
+  env: NodeJS.ProcessEnv,
+  keys: readonly string[],
+): Record<string, string> {
+  const missing = keys.filter((key) => !env[key]?.trim())
+  if (missing.length > 0) {
+    throw new Error(
+      [
+        `deploy-local needs ${missing.join(', ')} in its environment.`,
+        'It no longer reads Doppler narduk/tokens: Doppler is retired except the ne root store.',
+        'Run it under the app nvault config, for example',
+        '`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`,',
+        'or use `narduk-app deploy-hotfix` (docs/local-hotfix.md).',
+      ].join(' '),
+    )
+  }
+  return Object.fromEntries(keys.map((key) => [key, env[key]?.trim() ?? '']))
 }
 
 async function probeSiteUrl(siteUrl: string): Promise<void> {
@@ -175,17 +201,11 @@ export async function runDeployLocal(options: DeployLocalOptions): Promise<numbe
   if (!accountId || !apiToken)
     throw new Error('CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN must be set.')
 
-  assertDopplerCliAvailable()
   const scriptName = readWranglerScriptName(appDir)
   const cfVars = await fetchWorkerPlainTextVars({ accountId, apiToken, scriptName })
   const siteUrl = cfVars.SITE_URL?.trim() ?? ''
   const secretKeys = parseSecretKeys(env, options.secretKeys ?? DEFAULT_SECRET_KEYS)
-  const dopplerSecrets: Record<string, string> = {}
-  for (const key of secretKeys) {
-    const result = readDopplerSecret(key, { config: DOPPLER_CONFIG, project: DOPPLER_PROJECT })
-    if (!result.ok) throw new Error(`Failed to read Doppler secret ${key}: ${result.error}`)
-    dopplerSecrets[key] = result.value ?? ''
-  }
+  const secrets = readDeployLocalSecrets(env, secretKeys)
 
   const dirty = !isGitWorkingTreeClean(repoRoot, env)
   if (dirty && !options.flags.force) {
@@ -200,7 +220,7 @@ export async function runDeployLocal(options: DeployLocalOptions): Promise<numbe
     throw new Error('Interactive confirmation is required; pass --yes for headless use.')
   }
 
-  const mergedEnv = buildMergedDeployEnv({ base: env, cfVars, dopplerSecrets })
+  const mergedEnv = buildMergedDeployEnv({ base: env, cfVars, secrets })
   const runPnpm = (script: string): number => {
     const result = spawnSync('pnpm', ['run', script], {
       cwd: appDir,
@@ -211,7 +231,7 @@ export async function runDeployLocal(options: DeployLocalOptions): Promise<numbe
   }
   const buildStatus = runPnpm('cf:build')
   if (buildStatus !== 0) return buildStatus
-  const leaks = scanPublicAssetsForSecretLeaks(appDir, dopplerSecrets)
+  const leaks = scanPublicAssetsForSecretLeaks(appDir, secrets)
   if (leaks.length > 0) {
     console.error('[deploy-local] bundle leak scan failed:')
     for (const leak of leaks) console.error(`  - ${leak}`)
