@@ -571,8 +571,10 @@ against what Playwright actually collected (`playwright test --list`), so an
 untagged test in `quarantine` or a tagged test still collected by `pr` fails the
 unit suite. Default `--list` titles omit `{ tag: '@quarantine' }` from
 `quarantineDetails`, so pass `readSource`. The source check uses the listed
-`file:line:col`, so one quarantined test does not quarantine its siblings. JSON
-`--list --reporter=json` fills `tags` and does not need `readSource`.
+`file:line:col`, so one quarantined test does not quarantine its siblings.
+`readSource` does not see `test.describe(..., quarantineDetails(...), …)` — tag
+the test itself, or use JSON `--list --reporter=json`, which fills `tags`
+including describe-inherited ones.
 
 ```ts
 import { execFileSync } from 'node:child_process'

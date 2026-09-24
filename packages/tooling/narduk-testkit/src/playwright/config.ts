@@ -318,7 +318,7 @@ export function createNardukPlaywrightPreset(
       grep: QUARANTINE_GREP,
       dependencies: [SETUP_PROJECT_NAME],
       use: { ...browserUse },
-      metadata: { e2eTier: 'quarantine', visualAuditViewports: [...prViewports] },
+      metadata: { e2eTier: 'quarantine', visualAuditViewports: [...webViewports] },
     })
   }
 

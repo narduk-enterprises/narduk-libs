@@ -82,6 +82,7 @@ describe('preset excludes quarantined specs from pr (#520)', () => {
     expect(web?.grepInvert).toEqual(QUARANTINE_GREP)
     expect(quarantine?.grep).toEqual(QUARANTINE_GREP)
     expect(quarantine?.metadata?.e2eTier).toBe('quarantine')
+    expect(quarantine?.metadata?.visualAuditViewports).toEqual(web?.metadata?.visualAuditViewports)
   })
 
   it('copies grepInvert onto the chromium alias of web', () => {
@@ -263,5 +264,6 @@ describe('quarantine documentation (#520)', () => {
     expect(readme).toContain('quarantineDetails')
     expect(readme).toContain('readSource')
     expect(readme).toContain("readFileSync(file, 'utf8')")
+    expect(readme).toContain('test.describe(..., quarantineDetails')
   })
 })
