@@ -34,7 +34,14 @@ const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 test('only the verified main release receives a job-scoped package write token', () => {
   assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 4)
   assert.match(release, /github\.ref == 'refs\/heads\/main'/u)
-  assert.match(release, /environment: npm-release/u)
+  // npm-release holds the estate App key, and environment secrets reach every
+  // job that uses the environment. Only the install-free notify-mirror may.
+  assert.doesNotMatch(releasePublish, /^\s+environment:/mu)
+  assert.deepEqual(
+    [...release.matchAll(/^ {4}environment: (\S+)$/gmu)].map((match) => match[1]),
+    ['npm-release'],
+  )
+  assert.match(releaseNotify, /^ {4}environment: npm-release$/mu)
   assert.match(release, /packages: write/u)
   assert.match(release, /PACKAGE_WRITE_TOKEN: \$\{\{ github\.token \}\}/u)
   assert.match(release, /persist-credentials: false/u)

@@ -35,7 +35,7 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main')
-    # Verify the exact main commit before the publishing environment unlocks.
+    # Verify the exact main commit before the publishing job runs.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -60,9 +60,17 @@ jobs:
           node scripts/verify-release-ci.mjs
           echo "sha=${VERIFIED_SHA}" >> "$GITHUB_OUTPUT"
 
+  # No `environment:` here, on purpose. The npm-release environment holds the
+  # estate App key (LANE_AUTOMATION_APP_KEY). GitHub makes environment secrets
+  # available only to jobs that use the environment, and it scrubs only the
+  # secrets a workflow never names; this workflow names the key in
+  # notify-mirror. So a job that runs `pnpm install` and changesets/action must
+  # stay out of npm-release, or the key could share a runner with dependency
+  # scripts. That environment's main-only branch policy protected nothing else:
+  # publishing uses the job-scoped GITHUB_TOKEN below, and verify-ci has already
+  # pinned the run to a CI-verified commit on main.
   release:
     needs: verify-ci
-    environment: npm-release
     permissions:
       contents: write
       packages: write
@@ -259,7 +267,8 @@ jobs:
   # (environment npm-release, gated to main) and LANE_AUTOMATION_APP_ID
   # (repository variable) are delivered, the job records a notice and
   # dispatches nothing. It checks out no code and installs nothing, so the key
-  # never shares a job with dependency install scripts.
+  # never shares a job with dependency install scripts. It is the only job in
+  # this workflow that uses npm-release.
   notify-mirror:
     needs: [verify-ci, release]
     if: needs.release.outputs.published == 'true'

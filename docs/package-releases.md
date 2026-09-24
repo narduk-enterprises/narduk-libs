@@ -49,7 +49,12 @@ previous verification failure cannot turn green merely because publication is
 now a no-op.
 
 Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
-`packages: write` inside the main-only `npm-release` environment. GitHub
+`packages: write`, after `verify-ci` pins the run to a CI-verified commit on
+main. The publishing job does not use the main-only `npm-release` environment:
+that environment holds the estate App key, and GitHub gives environment secrets
+to every job that uses the environment. Only install-free jobs use it
+(`notify-mirror` in `release.yml`, `mirror-redispatch` in `release-proof.yml`),
+so the key never shares a runner with dependency install scripts. GitHub
 Packages must grant this repository Actions access to every existing package,
 including packages not automatically linked to this repository. Before writing
 registry auth, the job checks that its token can read metadata for every current
