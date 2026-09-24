@@ -167,8 +167,9 @@ const designSystemConfigs = [
       // context emits a "No tailwind css entry point found at `…`. Option
       // `entryPoint` may be misconfigured" report per class (proven on the
       // workspace's own library packages, which have no CSS entry).
-      // createAppLintConfig enables them when the app's entry point exists on
-      // disk; standalone consumers opt in via
+      // createAppLintConfig enables them when the app declares
+      // `tailwindEntryPoint` and that file exists (narduk-libs#665);
+      // standalone consumers opt in via
       // settings['better-tailwindcss'].entryPoint plus these rules.
       // Replaces narduk/no-invalid-nuxt-ui-token.
       'better-tailwindcss/no-unknown-classes': 'off',
