@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
+import { registerNuxtUiSources } from '@narduk-enterprises/narduk-core/nuxt-ui-sources'
 import {
   addComponentsDir,
   addImportsDir,
@@ -14,6 +15,8 @@ import { defu } from 'defu'
 
 // Explicit import (not a Nuxt auto-import): module setup runs in Node before Nuxt app auto-imports exist.
 import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../shared/utils/auth-environment'
+
+import { AUTH_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-auth'
 const AUTH_PRIVATE_HEADERS = {
@@ -251,6 +254,12 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
           path: '/settings/passkeys',
           file: resolver.resolve('../app/pages/settings/passkeys.vue'),
         })
+      })
+      // A module is not a Nuxt layer, so neither Tailwind nor Nuxt UI's
+      // componentDetection scans app/ unless it is registered (#700).
+      registerNuxtUiSources(nuxt, {
+        sources: [resolver.resolve('../app')],
+        components: AUTH_NUXT_UI_COMPONENTS,
       })
     }
 

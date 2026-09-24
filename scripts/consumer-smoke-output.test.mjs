@@ -140,6 +140,17 @@ test('the unused H3Event re-export in the Nuxt 4.5.2 compatibility barrel is ben
   assert.deepEqual(collectWarningFindings(nuxtH3BarrelNotice.replace('WARN ', '[warn]')), [])
 })
 
+const nuxtH3BarrelBothUnusedNotice =
+  '[warn] "H3Error" and "H3Event" are imported from external module "file:///tmp/consumer/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs" but never used in "../../node_modules/.pnpm/@nuxt+nitro-server@4.5.2_peerhash/node_modules/@nuxt/nitro-server/dist/h3.mjs".'
+
+test('the unused H3Error and H3Event re-exports in the Nuxt 4.5.2 barrel are benign', () => {
+  assert.deepEqual(collectWarningFindings(nuxtH3BarrelBothUnusedNotice), [])
+  assert.deepEqual(
+    collectWarningFindings(nuxtH3BarrelBothUnusedNotice.replace('[warn]', 'WARN ')),
+    [],
+  )
+})
+
 test('unused app imports, other symbols, other versions and actual errors still fail', () => {
   for (const line of [
     nuxtH3BarrelNotice.replace(

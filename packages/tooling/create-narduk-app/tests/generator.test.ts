@@ -372,6 +372,10 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-testkit']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
     )
+    // narduk-seo's optional nuxt-og-image peer (narduk-libs#170). Generated
+    // SEO apps still request runtime OG, so the scaffold must install it.
+    expect(dependencies['nuxt-og-image']).toBe(PACKAGE_VERSIONS['nuxt-og-image'])
+    expect(knipConfig.ignoreDependencies).toContain('nuxt-og-image')
     expect(dependencies.nuxt).toBe('4.5.2')
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
@@ -726,6 +730,10 @@ describe('create-narduk-app generation contract', () => {
       // never saw. The runbook must show the triggering commit and must not
       // hand anyone `$GITHUB_SHA` to copy.
       expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
+      // narduk-libs#400: the promote binds the gate result to the same commit
+      // it promotes -- the workflow_run head SHA, never GITHUB_SHA.
+      expect(runbook, label).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
+      expect(runbook, label).not.toContain('Required@$GITHUB_SHA')
       expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
@@ -1334,12 +1342,24 @@ describe('generated app typecheck and lint surfaces', () => {
   // or auth-only scaffold fail `nuxt typecheck` with TS2353 on its first run.
   it('emits the nuxt-site-config `site` block only for an seo scaffold', () => {
     for (const { capabilities, label } of capabilitySets) {
-      const nuxtConfig = generate(capabilities).get('apps/web/nuxt.config.ts') ?? ''
+      const files = generate(capabilities)
+      const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
       const hasSeo = capabilities.includes('seo')
+      const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        dependencies?: Record<string, string>
+      }
+      const knip = JSON.parse(files.get('knip.json') ?? '{}') as {
+        ignoreDependencies?: string[]
+      }
 
       expect(nuxtConfig.includes('  site: {'), label).toBe(hasSeo)
       expect(nuxtConfig.includes('zeroRuntime: true'), label).toBe(hasSeo)
       expect(nuxtConfig.includes("routeRules: { '/': { prerender: true } }"), label).toBe(hasSeo)
+      expect(
+        webManifest.dependencies?.['nuxt-og-image'] === PACKAGE_VERSIONS['nuxt-og-image'],
+        label,
+      ).toBe(hasSeo)
+      expect(knip.ignoreDependencies?.includes('nuxt-og-image'), label).toBe(hasSeo)
       // The consts the seo block reads stay used by runtimeConfig either way, so
       // dropping the block never leaves an unused binding behind.
       expect(nuxtConfig).toContain('      appName,')

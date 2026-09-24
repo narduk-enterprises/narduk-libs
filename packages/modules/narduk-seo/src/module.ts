@@ -4,6 +4,7 @@ import { applyCoreViteBuildWarningPolicy } from '@narduk-enterprises/narduk-core
 import {
   addComponent,
   addComponentsDir,
+  addImports,
   addImportsDir,
   addPlugin,
   addServerHandler,
@@ -13,10 +14,18 @@ import {
   extendPages,
   extendRouteRules,
   installModule,
+  useLogger,
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
+import {
+  canResolveNuxtOgImage,
+  isNuxtOgImageModuleRequested,
+  isRuntimeOgImageGenerationEnabled,
+  isRuntimeOgImageGenerationExplicitlyRequested,
+  MISSING_NUXT_OG_IMAGE_MESSAGE,
+} from '../shared/nuxtOgImagePackage'
 import {
   assertOgImageSigningSecretForBuild,
   resolveOgImageSigningSecret,
@@ -304,6 +313,71 @@ const NETWORK_FOOTER_COMPONENT = 'LayerNetworkFooter'
 const NETWORK_FOOTER_FILE = 'shared/LayerNetworkFooter.vue'
 
 /** Adds the network row to narduk-core's footer extension list, once. */
+interface ResolvedOgImageOptions {
+  enabled?: boolean
+  security?: { secret?: unknown }
+  zeroRuntime?: boolean
+}
+
+function applyOgImageSigningSecret(ogImage: ResolvedOgImageOptions): string {
+  const secret = resolveOgImageSigningSecret(ogImage.security?.secret)
+  if (ogImage.security) {
+    if (secret) {
+      ogImage.security.secret = secret
+    } else {
+      delete ogImage.security.secret
+    }
+  }
+  return secret
+}
+
+function resolveOgImageModuleState(input: {
+  incomingOgImage: ResolvedOgImageOptions
+  ogImage: ResolvedOgImageOptions
+  packagePresent: boolean
+  seoModule: boolean
+}): { moduleAvailable: boolean; runtimeAvailable: boolean } {
+  const moduleRequested = input.seoModule && isNuxtOgImageModuleRequested(input.ogImage)
+  const runtimeRequested = input.seoModule && isRuntimeOgImageGenerationEnabled(input.ogImage)
+  if (moduleRequested && !input.packagePresent) {
+    input.ogImage.enabled = false
+    // The generated static-card app never sets `ogImage.enabled`. Our defu
+    // default of `true` must not warn -- release-packages treats Nuxt
+    // `[warn]` as a typecheck failure (narduk-libs#170).
+    if (isRuntimeOgImageGenerationExplicitlyRequested(input.incomingOgImage)) {
+      useLogger(PACKAGE_NAME).warn(MISSING_NUXT_OG_IMAGE_MESSAGE)
+    }
+  }
+  return {
+    moduleAvailable: moduleRequested && input.packagePresent,
+    runtimeAvailable: runtimeRequested && input.packagePresent,
+  }
+}
+
+async function installSeoUtilityModules(input: {
+  defineOgImageStub: string
+  ogImageModuleAvailable: boolean
+  seoModule: boolean
+}): Promise<void> {
+  if (input.seoModule) {
+    await installModule('nuxt-site-config')
+    await installModule('@nuxtjs/robots')
+    await installModule('@nuxtjs/sitemap')
+    await installModule('nuxt-link-checker')
+    if (input.ogImageModuleAvailable) {
+      await installModule('nuxt-og-image')
+    }
+    await installModule('nuxt-schema-org')
+    await installModule('nuxt-seo-utils')
+  }
+  if (!input.ogImageModuleAvailable) {
+    addImports({
+      name: 'defineOgImage',
+      from: input.defineOgImageStub,
+    })
+  }
+}
+
 function appendFooterAfterComponent(options: { appConfig?: Record<string, unknown> }): void {
   const appConfig = (options.appConfig ??= {})
   const nardukCore = (appConfig.nardukCore ??= {}) as { footer?: { after?: unknown } }
@@ -371,6 +445,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         nardukSeoDefaultImage: options.defaultOgImage ?? null,
         nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
+        nardukSeoOgImageModule: true,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
         // Deprecated and unread since narduk-libs#349; kept so existing
@@ -389,6 +464,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       automaticTwitterTags: false,
     })
     const ogImageSecret = readTrimmedEnv(['NUXT_OG_IMAGE_SECRET'])
+    const incomingOgImage = {
+      ...((nuxtOptions.ogImage ?? {}) as ResolvedOgImageOptions),
+    }
     nuxtOptions.ogImage = defu((nuxtOptions.ogImage ?? {}) as Record<string, unknown>, {
       enabled: true,
       // narduk-libs#349: without this, every `defineOgImage` route also emits
@@ -416,27 +494,25 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         },
       },
     })
-    const resolvedOgImage = nuxtOptions.ogImage as {
-      enabled?: boolean
-      security?: { secret?: unknown }
-      zeroRuntime?: boolean
-    }
-    const resolvedOgImageSecret = resolveOgImageSigningSecret(resolvedOgImage.security?.secret)
-    if (resolvedOgImage.security) {
-      if (resolvedOgImageSecret) {
-        resolvedOgImage.security.secret = resolvedOgImageSecret
-      } else {
-        delete resolvedOgImage.security.secret
-      }
-    }
+    const resolvedOgImage = nuxtOptions.ogImage as ResolvedOgImageOptions
+    const resolvedOgImageSecret = applyOgImageSigningSecret(resolvedOgImage)
     const nuxtBuildFlags = nuxt.options as { _prepare?: boolean; dev?: boolean }
+    // narduk-libs#170: nuxt-og-image is an optional peer. A consumer that
+    // omits it (static defaultOgImage only) must not inherit the package.
+    // Skip installModule instead of failing the build.
+    const { moduleAvailable: ogImageModuleAvailable, runtimeAvailable: runtimeOgAvailable } =
+      resolveOgImageModuleState({
+        incomingOgImage,
+        ogImage: resolvedOgImage,
+        packagePresent: canResolveNuxtOgImage(),
+        seoModule: Boolean(options.seoModule),
+      })
+    const publicRuntimeConfig = nuxtOptions.runtimeConfig.public as Record<string, unknown>
+    publicRuntimeConfig.nardukSeoOgImageModule = ogImageModuleAvailable
     assertOgImageSigningSecretForBuild({
       isDev: Boolean(nuxtBuildFlags.dev),
       isPrepare: Boolean(nuxtBuildFlags._prepare),
-      runtimeGenerationEnabled:
-        Boolean(options.seoModule) &&
-        resolvedOgImage.enabled !== false &&
-        resolvedOgImage.zeroRuntime !== true,
+      runtimeGenerationEnabled: runtimeOgAvailable,
       secret: resolvedOgImageSecret,
     })
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
@@ -459,15 +535,11 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
     }
 
-    if (options.seoModule) {
-      await installModule('nuxt-site-config')
-      await installModule('@nuxtjs/robots')
-      await installModule('@nuxtjs/sitemap')
-      await installModule('nuxt-link-checker')
-      await installModule('nuxt-og-image')
-      await installModule('nuxt-schema-org')
-      await installModule('nuxt-seo-utils')
-    }
+    await installSeoUtilityModules({
+      defineOgImageStub: resolver.resolve('../shared/defineOgImageStub'),
+      ogImageModuleAvailable,
+      seoModule: Boolean(options.seoModule),
+    })
 
     if (options.app) {
       if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))
