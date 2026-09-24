@@ -20,6 +20,7 @@ import {
   resolveInjector,
   runAppleJourneys,
 } from '../src/apple.js'
+import { sha256File } from '../src/media.js'
 import type { AppleRunOptions, AppleWorldHooks } from '../src/apple.js'
 import { defineCatalog } from '../src/define.js'
 import type { AppleDrivenStep, Catalog, DrivenAppleJourney } from '../src/types.js'
@@ -258,6 +259,30 @@ describe('the Apple adapter, driven', () => {
     expect(html).toContain('video.mp4')
     // A declared compromise travels with the evidence it changed.
     expect(html).toContain('no checklist card appears in this recording')
+  })
+
+  it('normalises the simulator recording and keeps the raw take as evidence', async () => {
+    const { options, device } = harness('capture')
+    const published = { bytes: '' }
+    const session = await runAppleJourneys(
+      Object.assign(options, {
+        normaliseVideo: (input: string, output: string) => {
+          writeFileSync(output, `normalised-from:${input}`)
+          published.bytes = `normalised-from:${input}`
+          return true
+        },
+      }),
+    )
+    const result = session.results[0]!
+    const rawPath = join(result.attemptDirectory, 'video.raw.mp4')
+    const artefactPath = join(result.attemptDirectory, 'video.mp4')
+    expect(device.recordings).toEqual([rawPath])
+    expect(existsSync(rawPath)).toBe(true)
+    expect(readFileSync(rawPath, 'utf8')).toMatch(/^mp4:/)
+    expect(readFileSync(artefactPath, 'utf8')).toBe(published.bytes)
+    expect(result.manifest.video?.file).toBe('video.mp4')
+    expect(result.manifest.video?.sha256).toBe(sha256File(artefactPath))
+    expect(result.manifest.video?.sha256).not.toBe(sha256File(rawPath))
   })
 
   it('performs the identical gestures and assertions in both modes', async () => {
