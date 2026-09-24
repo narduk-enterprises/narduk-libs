@@ -28,9 +28,12 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
     pkg: 'narduk-shell',
     sourceDir: 'src/runtime/components',
     names: [
+      'NeCard',
+      'NeCardList',
       'NeConfirmDialog',
       'NeCsvDownload',
       'NeDataTable',
+      'NeDetailView',
       'NeFilterBar',
       'NeForm',
       'NeFormSection',

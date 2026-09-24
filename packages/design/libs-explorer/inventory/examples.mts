@@ -95,6 +95,13 @@ export const EXAMPLES: readonly ExampleMeta[] = [
   ),
   shell('NeKpiTile', 'KPI tile', 'A headline number with a signed, glyph-marked delta.'),
   shell('NeKpiBand', 'KPI band', 'A responsive row of KPI tiles.'),
+  shell('NeCard', 'Card', 'One entity card: media, title, badge, stat rows and actions.'),
+  shell('NeCardList', 'Card list', 'The card reading of the same collection state as the table.'),
+  shell(
+    'NeDetailView',
+    'Detail view',
+    'A key-value panel with format, unit and an unavailable message.',
+  ),
   shell(
     'NeMeter',
     'Meter',
