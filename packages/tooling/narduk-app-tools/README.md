@@ -71,7 +71,7 @@ exit. Nothing enrolls automatically. See the
 
 ```sh
 narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
-  [--assets <dir>] [--cwd <dir>]
+  [--assets <dir>] [--cwd <dir>] [--keep-service-bindings]
 ```
 
 Serves an already-built Worker for Playwright when the shared `nuxt-cloudflare`
@@ -90,6 +90,14 @@ hung poll.
 app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
 
 `wrangler is not installed in this app. Add it as a dependency and retry.`
+
+Only the one Worker runs, so a `services` binding to any other Worker is dropped
+from the started config and named on stderr
+(`[e2e-serve] dropping service binding ENGINE → loadtest-dev-engine (not part of the E2E run)`);
+the app sees that binding as missing. A binding back to the Worker itself is
+kept. Nothing is written to the app tree. `--keep-service-bindings` passes the
+config through untouched for an app that runs the target Worker alongside.
+Dropping needs the app's wrangler at 4.99.0 or later.
 
 Real worker errors pass through. The only filtered stderr is workerd's
 client-abort block
