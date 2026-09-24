@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { loadWorkspace } from './compute-affected-packages.mjs'
 
@@ -10,6 +11,27 @@ export function publishedPackageNames(workspace) {
     .map(({ name }) => name)
   if (!names.length) throw new Error('No GitHub Packages publication targets found')
   return names
+}
+
+// A package with no `<name>@<version>` release tag has never been published, so
+// GitHub Packages has nothing to show the job token yet: its metadata route is a
+// 404 until the first publish creates it. Only released packages can prove the
+// grant. The first publish creates the tag, so from then on the package is
+// checked like every other (#817 added stylelint-config, which blocked every
+// release until this split existed).
+export function splitByRelease(names, tags) {
+  const released = new Set(tags.map((tag) => tag.slice(0, tag.lastIndexOf('@'))).filter(Boolean))
+  return {
+    existing: names.filter((name) => released.has(name)),
+    firstPublish: names.filter((name) => !released.has(name)),
+  }
+}
+
+export function releaseTags() {
+  return execFileSync('git', ['tag', '--list', '@narduk-enterprises/*@*'], { encoding: 'utf8' })
+    .split('\n')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }
 
 export async function verifyPackageActionsAccess({ names, token, repository, request = fetch }) {
@@ -40,10 +62,16 @@ export async function verifyPackageActionsAccess({ names, token, repository, req
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const tags = releaseTags()
+  if (!tags.length)
+    throw new Error('No release tags found; fetch tags before verifying package access')
+  const { existing, firstPublish } = splitByRelease(publishedPackageNames(loadWorkspace()), tags)
   const count = await verifyPackageActionsAccess({
-    names: publishedPackageNames(loadWorkspace()),
+    names: existing,
     token: process.env.GH_TOKEN,
     repository: process.env.GITHUB_REPOSITORY,
   })
   console.log(`Job token read metadata for all ${count} existing publication targets.`)
+  for (const name of firstPublish)
+    console.log(`${name} has no release tag yet; its first publish creates the package.`)
 }

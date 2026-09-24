@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   publishedPackageNames,
+  splitByRelease,
   verifyPackageActionsAccess,
 } from './verify-package-actions-access.mjs'
 
@@ -81,4 +82,21 @@ test('requires the job token to see every exact package before publishing', asyn
     verifyPackageActionsAccess({ names, repository: 'someone/fork', token, request }),
     /job token/,
   )
+})
+
+test('checks only released packages; a never-tagged package is left to its first publish', () => {
+  const tags = [
+    '@narduk-enterprises/one@1.0.0',
+    '@narduk-enterprises/one@1.1.0',
+    '@narduk-enterprises/two-extra@0.1.0',
+  ]
+  assert.deepEqual(splitByRelease(['@narduk-enterprises/one', '@narduk-enterprises/two'], tags), {
+    existing: ['@narduk-enterprises/one'],
+    firstPublish: ['@narduk-enterprises/two'],
+  })
+  // A tag for one package never counts for another whose name it merely prefixes.
+  assert.deepEqual(splitByRelease(['@narduk-enterprises/two-extra'], tags).existing, [
+    '@narduk-enterprises/two-extra',
+  ])
+  assert.deepEqual(splitByRelease(names, []), { existing: [], firstPublish: names })
 })
