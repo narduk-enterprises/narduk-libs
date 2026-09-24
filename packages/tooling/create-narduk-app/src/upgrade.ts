@@ -114,8 +114,13 @@ function capabilitiesFromDependencies(manifest: Record<string, unknown> | null):
     ...Object.keys((manifest?.dependencies as Record<string, string>) ?? {}),
     ...Object.keys((manifest?.devDependencies as Record<string, string>) ?? {}),
   ])
+  // Only our own packages identify a capability. The seo list also pins the
+  // third-party nuxt-og-image peer (narduk-libs#825), and an app that installs
+  // that package without narduk-seo is not an seo app.
   return SUPPORTED_CAPABILITIES.filter((capability) =>
-    packageNamesForCapability(capability).some((name) => installed.has(name)),
+    packageNamesForCapability(capability).some(
+      (name) => name.startsWith('@narduk-enterprises/') && installed.has(name),
+    ),
   )
 }
 

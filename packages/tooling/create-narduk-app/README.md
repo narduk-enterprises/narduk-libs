@@ -352,11 +352,23 @@ Scaffolds match the reference app shape Buoys is being brought to
   replicate Buoys' own app-specific routes, selectors, or its
   wrapper-script/analyzer CLI infrastructure — those stay app-owned.
 
-A freshly generated app is web-foundation conformant:
-`pnpm run foundation:check` reports `PASS` on an untouched scaffold, before or
-after its first build. That is what makes a green first CI run reachable at all
-— generated CI calls the shared workflow with `foundation-check: true`, which
-fails the build on a `FAIL` **or** an `UNKNOWN` result.
+A freshly generated app is web-foundation conformant once its database exists:
+`pnpm run foundation:check` reports `PASS`, before or after its first build,
+after one command. Generated CI calls the shared workflow with
+`foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN`
+result.
+
+That one command is `pnpm exec narduk-app db create`. The generator never calls
+Cloudflare, so the `DB` binding in `apps/web/wrangler.jsonc` carries the
+placeholder `database_id` `00000000-0000-0000-0000-000000000000`. Every build,
+dry-run and test accepts it, but no request that touches the database can
+succeed, so `foundation:check` sub-check 1.5 fails on it, deliberately, until
+the database is created (narduk-libs#662). `db create` creates `<app>-db` in the
+account named by `CLOUDFLARE_ACCOUNT_ID`, writes the returned id into
+`apps/web/wrangler.jsonc` with its comments intact, and prints the id and
+account. The generated `README.md`, `docs/workers-builds.md` and a comment above
+the binding all say so. A `--no-database` scaffold has no D1 binding and passes
+untouched.
 
 Earlier versions were not. The generator left `Config/cloudflare-app.json` to
 onboarding, so item 1.2 was a decided FAIL (`apps/web/wrangler.jsonc` exists but
@@ -369,7 +381,9 @@ identity, the Worker shape, the exposure class and the bindings mirror — and
 leaves the live Cloudflare facts (`product.repository`, the account id,
 `domains`, the `deployment` block) to onboarding, absent rather than fabricated.
 `packages/tooling/narduk-app-tools/tests/foundation/generated-app-conformance.test.ts`
-runs the real checker over real generator output and is what keeps this true.
+runs the real checker over real generator output and is what keeps this true:
+1.5 is the only thing an untouched scaffold fails, and after `db create` it
+passes.
 
 One check is deliberately outside the local chain. `foundation:check` reads the
 package registry over the network, so it stays out of `quality:static`. Default
