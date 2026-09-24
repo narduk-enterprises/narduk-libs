@@ -68,6 +68,14 @@ describe('quarantine tag helper (#520)', () => {
       sourceDeclaresQuarantineTag("test('home', { tag: '@quarantine' }, async () => {})"),
     ).toBe(true)
     expect(sourceDeclaresQuarantineTag(UNTAGGED_SOURCE)).toBe(false)
+    expect(
+      sourceDeclaresQuarantineTag(
+        "test('home', async () => { expect('@quarantine').toBeDefined() })",
+      ),
+    ).toBe(false)
+    expect(sourceDeclaresQuarantineTag("test('home', async () => { /* @quarantine */ })")).toBe(
+      false,
+    )
   })
 })
 

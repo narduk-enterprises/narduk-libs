@@ -78,11 +78,20 @@ export function titleDeclaresQuarantineTag(title: string): boolean {
 }
 
 export function sourceDeclaresQuarantineTag(source: string): boolean {
-  return (
-    source.includes(QUARANTINE_TAG) ||
-    source.includes('quarantineDetails(') ||
-    source.includes('QUARANTINE_TAG')
-  )
+  if (source.includes('quarantineDetails(')) return true
+  if (source.includes('tag: QUARANTINE_TAG') || source.includes('tags: [QUARANTINE_TAG]')) {
+    return true
+  }
+  if (source.includes(`tag: '${QUARANTINE_TAG}'`) || source.includes(`tag: "${QUARANTINE_TAG}"`)) {
+    return true
+  }
+  if (
+    source.includes(`tags: ['${QUARANTINE_TAG}']`) ||
+    source.includes(`tags: ["${QUARANTINE_TAG}"]`)
+  ) {
+    return true
+  }
+  return callTitleDeclaresQuarantineTag(source)
 }
 
 /**
@@ -334,6 +343,25 @@ function sourceFor(
   } catch {
     return undefined
   }
+}
+
+function callTitleDeclaresQuarantineTag(source: string): boolean {
+  const open = source.indexOf('(')
+  if (open === -1) return false
+  const rest = source.slice(open + 1).trimStart()
+  const quote = rest[0]
+  if (quote !== "'" && quote !== '"' && quote !== '`') return false
+  let index = 1
+  while (index < rest.length) {
+    const char = rest[index]
+    if (char === '\\') {
+      index += 2
+      continue
+    }
+    if (char === quote) break
+    index += 1
+  }
+  return rest.slice(1, index).includes(QUARANTINE_TAG)
 }
 
 function isTestCallStart(line: string): boolean {
