@@ -16,6 +16,7 @@ import {
   unifiedDiff,
   upgradeNardukApp,
 } from '../src/index.js'
+import { findTopLevelValue, scanJsonc, stripJsonc } from '../src/jsonc.js'
 import type { UpgradeReport } from '../src/index.js'
 
 const tempDirectories: string[] = []
@@ -284,9 +285,30 @@ describe('upgrade ownership contract', () => {
 })
 
 function parseJsonc(text: string): Record<string, unknown> {
-  return JSON.parse(
-    text.replaceAll(/\/\*[\s\S]*?\*\/|(?<!:)\/\/.*$/gm, '').replaceAll(/,(\s*[}\]])/gu, '$1'),
-  ) as Record<string, unknown>
+  return JSON.parse(stripJsonc(text)) as Record<string, unknown>
+}
+
+const WRANGLER = 'apps/web/wrangler.jsonc'
+const TEMPLATE_CACHE_LINE = /\n {2}"cache": \{ "enabled": true \},\n/u
+
+/** Removes the template's `cache` line: an app generated before #658. */
+function withoutCache(contents: string): string {
+  expect(contents, 'the template still emits the cache line').toMatch(TEMPLATE_CACHE_LINE)
+  return contents.replace(TEMPLATE_CACHE_LINE, '\n')
+}
+
+/** `contents` with `line` inserted just above its final closing brace. */
+function insertBeforeClosingBrace(contents: string, line: string): string {
+  const at = contents.lastIndexOf('\n}') + 1
+  return contents.slice(0, at) + line + contents.slice(at)
+}
+
+/** A route whose pattern ends in `/*`, above the template's `**\/*.mjs` glob. */
+function withEdgeRoute(contents: string): string {
+  return contents.replace(
+    '  "main": ',
+    '  "routes": [{ "pattern": "edge.example.com/*", "zone_name": "example.com" }],\n  "main": ',
+  )
 }
 
 describe('upgrade Workers Cache key (narduk-libs#672)', () => {
@@ -361,6 +383,168 @@ describe('upgrade Workers Cache key (narduk-libs#672)', () => {
     await expect(read(targetDir, 'apps/web/wrangler.jsonc')).rejects.toMatchObject({
       code: 'ENOENT',
     })
+  })
+
+  it('is not fooled by /* in a route pattern above the **/* glob', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) => withEdgeRoute(withoutCache(contents)))
+    const before = await read(targetDir, WRANGLER)
+    expect(parseJsonc(before).routes).toEqual([
+      { pattern: 'edge.example.com/*', zone_name: 'example.com' },
+    ])
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      insertBeforeClosingBrace(before, '  "cache": { "enabled": true },\n'),
+    )
+  })
+
+  it('leaves an explicit cache.enabled false alone beside a /* route pattern', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      withEdgeRoute(
+        contents.replace('"cache": { "enabled": true }', '"cache": { "enabled": false }'),
+      ),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('clean')
+    expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, WRANGLER)).toBe(before)
+  })
+
+  it('treats // inside a string value as string content', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      withoutCache(contents).replace(
+        '"main": "./.output/server/index.mjs"',
+        '"main": "./.output//server/index.mjs"',
+      ),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    const after = await read(targetDir, WRANGLER)
+    expect(after).toBe(insertBeforeClosingBrace(before, '  "cache": { "enabled": true },\n'))
+    expect(parseJsonc(after).main).toBe('./.output//server/index.mjs')
+  })
+
+  it('puts the separating comma before a trailing // comment on the last property', async () => {
+    const targetDir = await scaffold()
+    await writeFile(
+      join(targetDir, WRANGLER),
+      [
+        '{',
+        '  "name": "upgrade-fixture",',
+        '  "main": "./.output/server/index.mjs", // built by nuxi',
+        '  "compatibility_date": "2026-06-01" // pinned, see README',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      [
+        '{',
+        '  "name": "upgrade-fixture",',
+        '  "main": "./.output/server/index.mjs", // built by nuxi',
+        '  "compatibility_date": "2026-06-01", // pinned, see README',
+        '  "cache": { "enabled": true }',
+        '}',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('adds a top-level cache beside a nested env.<name>.cache it leaves alone', async () => {
+    const targetDir = await scaffold()
+    const nested = [
+      '{',
+      '  "name": "upgrade-fixture",',
+      '  "env": {',
+      '    "production": {',
+      '      "cache": { "enabled": false },',
+      '    },',
+      '  },',
+      '}',
+      '',
+    ].join('\n')
+    await writeFile(join(targetDir, WRANGLER), nested, 'utf8')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    const after = await read(targetDir, WRANGLER)
+    expect(after).toBe(insertBeforeClosingBrace(nested, '  "cache": { "enabled": true },\n'))
+    expect(parseJsonc(after)).toEqual({
+      cache: { enabled: true },
+      env: { production: { cache: { enabled: false } } },
+      name: 'upgrade-fixture',
+    })
+  })
+
+  it('replaces only the value of a top-level cache that sets no enabled flag', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": {}'),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      before.replace('"cache": {}', '"cache": { "enabled": true }'),
+    )
+  })
+
+  it('refuses rather than drop a sibling key of cache.enabled', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": { "cross_version_cache": true }'),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('unresolved')
+    expect(await read(targetDir, WRANGLER)).toBe(before)
+  })
+})
+
+describe('JSONC scanner (narduk-libs#672)', () => {
+  it('strips comments and trailing commas only outside strings', () => {
+    const source = [
+      '{',
+      '  // a comment with a "quote" and narduk-core\'s apostrophe',
+      '  "routes": [{ "pattern": "edge.example.com/*" }], /* block */',
+      '  "globs": ["**/*.mjs"],',
+      '  "url": "https://example.com//x", // trailing',
+      '  "escaped": "a\\"//b,]",',
+      '}',
+    ].join('\n')
+    expect(JSON.parse(stripJsonc(source))).toEqual({
+      escaped: 'a"//b,]',
+      globs: ['**/*.mjs'],
+      routes: [{ pattern: 'edge.example.com/*' }],
+      url: 'https://example.com//x',
+    })
+  })
+
+  it('reports an unterminated string or block comment as incomplete', () => {
+    expect(scanJsonc('{ "a": "b }').complete).toBe(false)
+    expect(scanJsonc('{ /* open }').complete).toBe(false)
+    expect(scanJsonc('{ "a": "/*" }').complete).toBe(true)
+  })
+
+  it('finds only the top-level key', () => {
+    const source = '{ "env": { "p": { "cache": 1 } }, "name": "cache", "cache": [2] }'
+    const found = findTopLevelValue(scanJsonc(source).tokens, 'cache')
+    expect(found && source.slice(found.start, found.end)).toBe('[2]')
+    expect(findTopLevelValue(scanJsonc('{ "env": { "cache": 1 } }').tokens, 'cache')).toBeNull()
   })
 })
 

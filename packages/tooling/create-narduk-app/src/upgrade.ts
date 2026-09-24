@@ -3,6 +3,8 @@ import { dirname, resolve } from 'node:path'
 
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
+import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
+import type { JsoncToken } from './jsonc.js'
 import { packageNamesForCapability } from './manifest.js'
 import {
   CI_CALLER_PIN_PATTERN,
@@ -526,22 +528,6 @@ function applyScriptKeys(
   return { contents: next.join('\n'), unresolved }
 }
 
-function stripJsonc(text: string): string {
-  return text.replaceAll(/\/\*[\s\S]*?\*\/|(?<!:)\/\/.*$/gm, '').replaceAll(/,(\s*[}\]])/gu, '$1')
-}
-
-function parseJsoncObject(contents: string | null): Record<string, unknown> | null {
-  if (contents === null) return null
-  try {
-    const parsed: unknown = JSON.parse(stripJsonc(contents))
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch {
-    return null
-  }
-}
-
 function cacheEnabledFlag(config: Record<string, unknown>): boolean | undefined {
   const cache = config.cache
   if (!cache || typeof cache !== 'object' || Array.isArray(cache)) return undefined
@@ -551,92 +537,78 @@ function cacheEnabledFlag(config: Record<string, unknown>): boolean | undefined 
   return undefined
 }
 
-function rootObjectRange(lines: readonly string[]): { start: number; end: number } | null {
-  const start = lines.findIndex((line) => /^\s*\{\s*$/u.test(line))
-  if (start === -1) return null
-  const indent = leadingIndent(lines[start] as string)
-  const closing = new RegExp('^' + indent + '\\}\\s*$', 'u')
-  for (let index = lines.length - 1; index > start; index -= 1) {
-    if (closing.test(lines[index] as string)) return { end: index, start }
+/**
+ * The config with `cache.enabled` removed -- and `cache` itself when nothing
+ * else is in it -- so a before/after comparison proves the edit wrote that
+ * one key and nothing else, a sibling such as `cache.cross_version_cache`
+ * included.
+ */
+function withoutCacheEnabled(config: Record<string, unknown>): string {
+  const copy: Record<string, unknown> = { ...config }
+  const cache = copy.cache
+  if (cache && typeof cache === 'object' && !Array.isArray(cache)) {
+    const rest: Record<string, unknown> = { ...(cache as Record<string, unknown>) }
+    delete rest.enabled
+    if (Object.keys(rest).length > 0) copy.cache = rest
+    else delete copy.cache
+  } else {
+    delete copy.cache
   }
-  return null
+  return JSON.stringify(copy)
 }
 
-function findJsonProperty(
-  lines: readonly string[],
-  range: { start: number; end: number },
-  key: string,
-): { from: number; to: number; hasComma: boolean } | null {
-  const opener = new RegExp('^\\s*"' + key.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') + '"\\s*:', 'u')
-  for (let from = range.start + 1; from < range.end; from += 1) {
-    if (!opener.test(lines[from] as string)) continue
-    let text = ''
-    for (let to = from; to < range.end; to += 1) {
-      text += lines[to]
-      const hasComma = /,\s*$/u.test(text)
-      try {
-        const parsed: unknown = JSON.parse('{' + stripJsonc(text).replace(/,\s*$/u, '') + '}')
-        if (parsed && typeof parsed === 'object' && key in (parsed as object)) {
-          return { from, hasComma, to }
-        }
-      } catch {
-        // Not a complete property yet.
-      }
-    }
-    return null
-  }
-  return null
-}
+const WORKERS_CACHE_VALUE = '{ "enabled": true }'
 
-function deepEqualIgnoringKeys(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  ignored: readonly string[],
-): boolean {
-  const strip = (value: Record<string, unknown>): string => {
-    const copy = { ...value }
-    for (const key of ignored) delete copy[key]
-    return JSON.stringify(copy)
-  }
-  return strip(before) === strip(after)
+function lineStartOf(text: string, offset: number): number {
+  return text.lastIndexOf('\n', offset - 1) + 1
 }
-
-const WORKERS_CACHE_PROPERTY = '"cache": { "enabled": true }'
 
 /**
  * Inserts or replaces the top-level `cache` property in place. A stringify
  * round trip would drop comments and reorder bindings, which are app-owned
- * (narduk-libs#672).
+ * (narduk-libs#672). Offsets come from a string-aware scan, so a `/*` or
+ * `//` inside a string value is never mistaken for a comment, and a comma
+ * added after the last property lands before any trailing `// comment`.
  */
 function applyWorkersCacheKey(source: string): { contents: string; unresolved: boolean } {
-  const lines = source.split('\n')
-  const range = rootObjectRange(lines)
-  if (!range) return { contents: source, unresolved: true }
-  const indent =
-    range.end > range.start + 1
-      ? leadingIndent(lines[range.start + 1] as string)
-      : leadingIndent(lines[range.start] as string) + '  '
-  const existing = findJsonProperty(lines, range, 'cache')
-  const next = [...lines]
+  const { tokens } = scanJsonc(source)
+  const existing = findTopLevelValue(tokens, 'cache')
   if (existing) {
-    next.splice(
-      existing.from,
-      existing.to - existing.from + 1,
-      indent + WORKERS_CACHE_PROPERTY + (existing.hasComma ? ',' : ''),
-    )
-    return { contents: next.join('\n'), unresolved: false }
+    return {
+      contents: source.slice(0, existing.start) + WORKERS_CACHE_VALUE + source.slice(existing.end),
+      unresolved: false,
+    }
   }
-  let lastProp = range.end - 1
-  while (lastProp > range.start) {
-    const line = next[lastProp] as string
-    if (line.trim() !== '' && !/^\s*\/\//u.test(line)) break
-    lastProp -= 1
+  const open = tokens[0]
+  const close = tokens.at(-1)
+  const last = tokens.at(-2)
+  if (open?.text !== '{' || close?.text !== '}' || !last) {
+    return { contents: source, unresolved: true }
   }
-  if (lastProp > range.start && !/,\s*$/u.test(next[lastProp] as string)) {
-    next[lastProp] = (next[lastProp] as string).replace(/\s*$/u, ',')
+  // The new property goes on its own line just above the closing brace, so
+  // that brace must be alone on its line.
+  const closeLine = lineStartOf(source, close.start)
+  if (closeLine <= open.start || source.slice(closeLine, close.start).trim() !== '') {
+    return { contents: source, unresolved: true }
   }
-  next.splice(range.end, 0, indent + WORKERS_CACHE_PROPERTY + ',')
-  return { contents: next.join('\n'), unresolved: false }
+  const first = tokens[1] as JsoncToken
+  const firstLine = lineStartOf(source, first.start)
+  const indent =
+    first !== close && firstLine > open.start
+      ? leadingIndent(source.slice(firstLine, first.start))
+      : leadingIndent(source.slice(closeLine)) + '  '
+  // Match the file's style: a trailing comma on the new property only when
+  // the old last property had one.
+  const trailingComma = last.text === ','
+  const needsSeparator = !trailingComma && last !== open
+  const property = indent + '"cache": ' + WORKERS_CACHE_VALUE + (trailingComma ? ',' : '') + '\n'
+  const contents =
+    source.slice(0, last.end) +
+    (needsSeparator ? ',' : '') +
+    source.slice(last.end, closeLine) +
+    property +
+    source.slice(closeLine)
+  return { contents, unresolved: false }
 }
 
 function resolveJsoncKeys(
@@ -695,7 +667,7 @@ function resolveJsoncKeys(
   if (
     !verified ||
     cacheEnabledFlag(verified) !== true ||
-    !deepEqualIgnoringKeys(currentConfig, verified, ['cache'])
+    withoutCacheEnabled(verified) !== withoutCacheEnabled(currentConfig)
   ) {
     return {
       detail: 'Refusing to write: the edit would have changed app-owned wrangler content.',
