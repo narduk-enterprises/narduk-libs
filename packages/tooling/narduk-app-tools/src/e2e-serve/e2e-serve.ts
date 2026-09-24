@@ -356,6 +356,17 @@ export async function runE2eServe(
     const heartbeat = setInterval(() => note('still starting the worker...'), 15_000)
     heartbeat.unref()
     let derivedConfigPath: string | null = null
+    const removeDerivedConfig = () => {
+      if (!derivedConfigPath) return
+      const path = derivedConfigPath
+      derivedConfigPath = null
+      try {
+        unlinkSync(path)
+      } catch {
+        // Already removed or start failed before the write settled.
+      }
+    }
+    process.once('exit', removeDerivedConfig)
 
     try {
       const prepared = materializeE2eServeWranglerConfig(options.config, {
@@ -382,6 +393,8 @@ export async function runE2eServe(
 
       note('worker constructed; awaiting ready')
       await worker.ready
+      // watch is off; wrangler has already loaded the sibling config.
+      removeDerivedConfig()
       clearInterval(heartbeat)
       note(`ready on http://${options.host}:${String(options.port)}`)
 
@@ -391,13 +404,8 @@ export async function runE2eServe(
       return 0
     } finally {
       clearInterval(heartbeat)
-      if (derivedConfigPath) {
-        try {
-          unlinkSync(derivedConfigPath)
-        } catch {
-          // Already removed or start failed before the write settled.
-        }
-      }
+      process.removeListener('exit', removeDerivedConfig)
+      removeDerivedConfig()
     }
   } finally {
     uninstall()
