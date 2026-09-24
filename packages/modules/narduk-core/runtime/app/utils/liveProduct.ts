@@ -87,6 +87,7 @@ export function createLiveProduct(
   const mounted = shallowRef(false)
   const inFlight = useInFlightTracker<null>()
   let lastStartedAt: number | null = null
+  let armedAt: number | null = null
 
   async function refresh(): Promise<void> {
     await inFlight.dedupe('refresh', async () => {
@@ -117,16 +118,21 @@ export function createLiveProduct(
     visible.value = isVisible
     if (!isVisible || !enabled()) return
     const intervalMs = toValue(options.intervalMs)
-    const dueWhileHidden =
-      lastStartedAt === null ||
-      (Number.isFinite(intervalMs) && intervalMs > 0 && Date.now() - lastStartedAt >= intervalMs)
-    if (dueWhileHidden) void refresh()
+    const origin = lastStartedAt ?? armedAt
+    const skippedImmediate = (options.immediate ?? true) && lastStartedAt === null
+    const intervalElapsed =
+      origin !== null &&
+      Number.isFinite(intervalMs) &&
+      intervalMs > 0 &&
+      Date.now() - origin >= intervalMs
+    if (skippedImmediate || intervalElapsed) void refresh()
   }
 
   onMounted(() => {
     visible.value = document.visibilityState !== 'hidden'
     document.addEventListener('visibilitychange', onVisibility)
     mounted.value = true
+    armedAt = Date.now()
     if ((options.immediate ?? true) && visible.value && enabled()) void refresh()
   })
 

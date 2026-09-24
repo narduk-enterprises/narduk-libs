@@ -175,6 +175,37 @@ describe('useLiveProduct: polling', () => {
     expect(live.handle().visible.value).toBe(true)
   })
 
+  it('does not treat a never-started immediate:false poll as already due', async () => {
+    const refresh = vi.fn(async () => {})
+    mount(refresh, { immediate: false, intervalMs: MINUTE })
+    expect(refresh).not.toHaveBeenCalled()
+
+    setVisibility('hidden')
+    vi.advanceTimersByTime(20_000)
+    setVisibility('visible')
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('still refreshes on return when an immediate:false poll fell due while hidden', async () => {
+    const refresh = vi.fn(async () => {})
+    mount(refresh, { immediate: false, intervalMs: MINUTE })
+
+    setVisibility('hidden')
+    vi.advanceTimersByTime(MINUTE)
+    setVisibility('visible')
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the skipped mount refresh when a hidden tab becomes visible', async () => {
+    visibility = 'hidden'
+    const refresh = vi.fn(async () => {})
+    mount(refresh, { intervalMs: MINUTE })
+    expect(refresh).not.toHaveBeenCalled()
+
+    setVisibility('visible')
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
   it('honours enabled: no mount refresh, no interval, but refresh() still works', async () => {
     const refresh = vi.fn(async () => {})
     const enabled = ref(false)
