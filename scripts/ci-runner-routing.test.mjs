@@ -27,12 +27,12 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.doesNotMatch(ci, /git fetch/u)
 })
 
-// notify-mirror and the release-PR mint may name LANE_AUTOMATION_APP_KEY;
-// package writes still use the job-scoped GITHUB_TOKEN alone.
+// The mirror-notify job is the only place release.yml may name a secret; the
+// verify, publish and release-PR CI jobs run on the job-scoped GITHUB_TOKEN alone.
 const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 
 test('only the verified main release receives a job-scoped package write token', () => {
-  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 3)
+  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 4)
   assert.match(release, /github\.ref == 'refs\/heads\/main'/u)
   assert.match(release, /environment: npm-release/u)
   assert.match(release, /packages: write/u)
@@ -43,17 +43,9 @@ test('only the verified main release receives a job-scoped package write token',
   assert.doesNotMatch(release, /git fetch/u)
   assert.doesNotMatch(
     releasePublish,
-    /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted/u,
+    /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted|secrets\.|create-github-app-token/u,
   )
-  assert.deepEqual(
-    [...new Set([...releasePublish.matchAll(/secrets\.([A-Z_]+)/gu)].map((match) => match[1]))],
-    ['LANE_AUTOMATION_APP_KEY'],
-  )
-  assert.match(releasePublish, /id: release-app-token/u)
-  assert.match(
-    releasePublish,
-    /GITHUB_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \|\| github\.token \}\}/u,
-  )
+  assert.match(releasePublish, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u)
   assert.doesNotMatch(
     release,
     /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted/u,
@@ -66,6 +58,30 @@ test('only the verified main release receives a job-scoped package write token',
     /  workflow_run:\n(?:    #.*\n)*    workflows:\n      - CI\n    types:\n      - completed\n    branches:\n      - main\n/u,
   )
   assert.match(release, /github\.event\.workflow_run\.head_branch == 'main'/u)
+})
+
+test('the release PR CI start is secret-free, dispatch-only and never fails the release', () => {
+  // A GITHUB_TOKEN-pushed release PR's pull_request run waits as
+  // action_required (#805); a workflow_dispatch on the release branch is the
+  // documented GITHUB_TOKEN exception. No App key may join a job that ran
+  // dependency install scripts.
+  const [, releasePrCi] = releasePublish.split(/^  release-pr-ci:$/mu)
+  assert.ok(releasePrCi, 'release.yml has a release-pr-ci job before notify-mirror')
+  assert.match(
+    releasePublish,
+    /release-pr: \$\{\{ steps\.changesets\.outputs\.pullRequestNumber \}\}/u,
+  )
+  assert.match(releasePrCi, /^    needs: release$/mu)
+  assert.match(releasePrCi, /if: needs\.release\.outputs\.release-pr != ''/u)
+  assert.match(releasePrCi, /^    permissions:\n      actions: write\n    runs-on:/mu)
+  assert.match(releasePrCi, /continue-on-error: true/u)
+  assert.doesNotMatch(releasePrCi, /actions\/checkout|pnpm|npm install|environment:|secrets\./u)
+  assert.match(releasePrCi, /GH_TOKEN: \$\{\{ github\.token \}\}/u)
+  assert.match(
+    releasePrCi,
+    /gh workflow run ci\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref changeset-release\/main/u,
+  )
+  assert.match(ci, /^ {2}workflow_dispatch:$/mu)
 })
 
 test('the mirror notify is credential-isolated, downscoped and never fails the release', () => {

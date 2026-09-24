@@ -71,6 +71,7 @@ jobs:
     timeout-minutes: 45
     outputs:
       published: ${{ steps.changesets.outputs.published }}
+      release-pr: ${{ steps.changesets.outputs.pullRequestNumber }}
     env:
       VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -179,44 +180,6 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/changesets-home"
           install -m 0600 /dev/null "${RUNNER_TEMP}/changesets-home/.netrc"
 
-      # A commit/PR made with the default GITHUB_TOKEN cannot trigger new
-      # workflow runs (GitHub's own loop-prevention on actions taken by the
-      # built-in token), so the "chore: release packages" version PR's
-      # required CI checks never start and the PR can sit stalled instead of
-      # ever going green. Mint a token from the same estate write-ceiling app
-      # already used by notify-mirror below, downscoped to exactly this
-      # repository with only the two permissions the PR push/open need, so
-      # the commit and PR are authored by the app instead and CI runs
-      # normally. Falls back to the default token so a release is never
-      # blocked on this credential being present.
-      - name: Check for the release-PR app-token credential
-        id: release-app-credential
-        env:
-          LANE_AUTOMATION_APP_KEY: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
-          LANE_AUTOMATION_APP_ID: ${{ vars.LANE_AUTOMATION_APP_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_APP_ID:-}" ]; then
-            echo 'present=true' >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice title=Release PR app-token skipped::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_APP_ID (repository variable) is absent; the release PR falls back to the default GITHUB_TOKEN, so its checks may not auto-trigger."
-          fi
-
-      - name: Mint a release-PR token scoped to this repository
-        id: release-app-token
-        if: >-
-          (steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true')
-          && steps.release-app-credential.outputs.present == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.LANE_AUTOMATION_APP_ID }}
-          private-key: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
-          owner: narduk-enterprises
-          repositories: narduk-libs
-          permission-contents: write
-          permission-pull-requests: write
-
       - name: Prepare or publish the independently verified package versions
         id: changesets
         if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
@@ -228,7 +191,7 @@ jobs:
           commit: "chore: release packages"
         env:
           HOME: ${{ runner.temp }}/changesets-home
-          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify immutable published package versions
         if: steps.release-mode.outputs.publish == 'true'
@@ -239,6 +202,43 @@ jobs:
         run: |
           rm -f "${NPM_CONFIG_USERCONFIG}"
           rm -f "${RUNNER_TEMP}/changesets-home/.netrc"
+
+  # The "chore: release packages" PR is pushed with the job-scoped
+  # GITHUB_TOKEN above. GitHub creates that PR's pull_request CI run but holds
+  # it as `action_required` until a maintainer clicks "Approve and run" (seen
+  # on #796, approved by hand, and #805), so every release PR stalls on a
+  # human. workflow_dispatch is GitHub's documented exception to GITHUB_TOKEN
+  # loop prevention, so this job starts CI on the release branch itself:
+  # ci.yml plans --all for a dispatch, and its `ci / Required` and `verify`
+  # checks land on the release PR's head commit (#215 merged on exactly such
+  # a dispatched run).
+  #
+  # CREDENTIAL. Job-scoped GITHUB_TOKEN with `actions: write` only. No
+  # secret, no environment, no checkout, no install: the estate App key stays
+  # in notify-mirror alone, never in a job that ran dependency scripts.
+  release-pr-ci:
+    needs: release
+    if: needs.release.outputs.release-pr != ''
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Start CI on the release PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR: ${{ needs.release.outputs.release-pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_PR}" =~ ^[0-9]+$ ]]
+          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref changeset-release/main
+          echo "started CI (workflow_dispatch) on changeset-release/main for release PR #${RELEASE_PR}"
+
+      - name: Report a failed CI start without failing the release
+        if: failure()
+        run: echo "::warning title=Release PR CI not started::approve the pending CI run on the release PR, or run CI by hand on changeset-release/main."
 
   # npm.nard.uk mirrors GitHub Packages through package-delivery's "Sync to R2"
   # workflow. Its schedule is the correctness mechanism; this dispatch only
