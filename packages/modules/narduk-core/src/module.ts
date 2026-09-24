@@ -21,6 +21,7 @@ import {
   type DatabaseBackend,
   findDatabaseBackendConflict,
   resolveDatabaseBackendSelection,
+  usesNardukAuth,
 } from '../runtime/shared/database-backend'
 import {
   buildNuxtSecurityConfig,
@@ -34,7 +35,13 @@ import {
 } from '../runtime/shared/vite-build-warnings'
 
 import { includeAppTypesDir } from './app-types-dir'
-import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
+import {
+  findAuthOptOutConflict,
+  maybeInstallNuxtAuthUtils,
+  sessionRuntimeConfigSeed,
+  shouldRegisterUserSessionStub,
+  USER_SESSION_IMPORT_NAME,
+} from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
 import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
@@ -82,6 +89,7 @@ interface NuxtAppTemplateState {
 type OpenApiProductionMode = false | 'runtime' | 'prerender'
 
 interface MutableNuxtOptionsRecord {
+  _installedModules?: Array<{ meta?: { name?: unknown } }>
   alias: Record<string, string>
   app: Record<string, unknown>
   appConfig?: Record<string, unknown>
@@ -108,6 +116,13 @@ interface MutableNuxtOptionsRecord {
 
 export interface NardukCoreModuleOptions {
   app?: boolean
+  /**
+   * Install `nuxt-auth-utils` and seed `runtimeConfig.session.password`.
+   * Default `true` keeps today's install for existing apps. `false` skips
+   * the module and does not seed an empty session password, so a site with
+   * no accounts does not serve `/api/_auth/session` (narduk-libs#169).
+   */
+  auth?: boolean
   coreModules?: boolean
   /**
    * CSRF middleware options. `exemptPaths` declares credential-free routes —
@@ -161,6 +176,55 @@ function addFallbackLayout(
       file: `#build/${filename}`,
       name,
     }
+  })
+}
+
+/**
+ * With `nardukCore.auth: false` nothing registers `useUserSession`, but the
+ * dashboard layout's shell and account menu call it and the import bridge
+ * injects it from `#imports`. Register a signed-out stub under that name,
+ * unless the app installs `nuxt-auth-utils` itself (narduk-libs#169).
+ * `imports:extend` first fires at `modules:done`, so every module's install is
+ * visible when the handler decides.
+ */
+function addSignedOutUserSession(
+  nuxt: {
+    hook: (
+      name: 'imports:extend',
+      handler: (imports: Array<{ as?: string; from: string; name: string }>) => void,
+    ) => void
+    options: unknown
+  },
+  options: Pick<NardukCoreModuleOptions, 'app' | 'auth'>,
+  stubPath: string,
+): void {
+  if (options.auth !== false) return
+  const nuxtOptions = nuxt.options as MutableNuxtOptionsRecord
+  nuxt.hook('imports:extend', (imports) => {
+    if (
+      shouldRegisterUserSessionStub({
+        app: options.app,
+        auth: options.auth,
+        imports,
+        installedModules: nuxtOptions._installedModules,
+        modules: nuxtOptions.modules,
+      })
+    ) {
+      imports.push({ from: stubPath, name: USER_SESSION_IMPORT_NAME })
+    }
+  })
+}
+
+/** narduk-auth relies on core installing `nuxt-auth-utils` (narduk-libs#169). */
+function findNardukAuthConflict(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  auth: boolean | undefined,
+): string | null {
+  return findAuthOptOutConflict({
+    auth,
+    installedModules: nuxtOptions._installedModules,
+    modules: nuxtOptions.modules,
+    nardukAuthInstalled: usesNardukAuth(nuxtOptions.runtimeConfig),
   })
 }
 
@@ -474,6 +538,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
     },
     defaults: {
       app: true,
+      auth: true,
       coreModules: true,
       image: true,
       server: true,
@@ -570,16 +635,15 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         await installModule('@nuxt/eslint')
         // Session fetch is opt-in: `loadStrategy: 'none'` skips the
         // nuxt-auth-utils session plugin so a no-auth app never calls
-        // `/api/_auth/session` during SSR (narduk-libs#540).
-        await installModule(
-          'nuxt-auth-utils',
-          resolveNuxtAuthUtilsInstallOptions({
-            configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
-            env: process.env,
-            modules: nuxtOptions.modules,
-            runtimeConfig: existingRuntimeConfig,
-          }),
-        )
+        // `/api/_auth/session` during SSR (narduk-libs#540). `auth: false`
+        // skips the install entirely so the session route is not registered
+        // (narduk-libs#169).
+        await maybeInstallNuxtAuthUtils(options.auth, installModule, {
+          configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
+          env: process.env,
+          modules: nuxtOptions.modules,
+          runtimeConfig: existingRuntimeConfig,
+        })
         dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
       }
 
@@ -596,6 +660,11 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
         addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
+        addSignedOutUserSession(
+          nuxt,
+          options,
+          resolver.resolve('../runtime/app/session/useUserSessionStub'),
+        )
         addFallbackErrorPage(nuxt, resolver.resolve('../runtime/app/error.vue'))
         addFallbackLayout(
           nuxt,
@@ -694,9 +763,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         },
         cronSecret: process.env.CRON_SECRET || '',
         logLevel: process.env.LOG_LEVEL || 'warn',
-        session: {
-          password: process.env.NUXT_SESSION_PASSWORD || '',
-        },
+        ...sessionRuntimeConfigSeed(options.auth, process.env),
         // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
         // headers it still owns, and by the app-tools live probe.
         nardukSecurityHeaders: {
@@ -735,7 +802,9 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       // Other modules (narduk-auth) finish configuring after this setup runs, so
       // the conflict check waits until every module is installed.
       nuxt.hook('modules:done', () => {
-        const conflict = findDatabaseBackendConflict(nuxtOptions.runtimeConfig)
+        const conflict =
+          findDatabaseBackendConflict(nuxtOptions.runtimeConfig) ??
+          findNardukAuthConflict(nuxtOptions, options.auth)
         if (conflict) {
           throw new Error(conflict)
         }
