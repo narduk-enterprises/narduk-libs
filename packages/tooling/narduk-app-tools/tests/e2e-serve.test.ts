@@ -1,5 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -12,8 +20,14 @@ import { main } from '../src/cli.js'
 import {
   INVALID_HOST_MESSAGE,
   INVALID_PORT_MESSAGE,
+  KEEP_SERVICE_BINDINGS_ENV,
   MISSING_WRANGLER_MESSAGE,
+  collectServiceBindings,
+  formatDroppedServiceBinding,
+  isKeepServiceBindings,
+  materializeE2eServeWranglerConfig,
   parseE2eServeArgs,
+  stripServiceBindings,
 } from '../src/e2e-serve/e2e-serve.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -98,6 +112,75 @@ describe('e2e-serve argument and host validation', () => {
   })
 })
 
+describe('e2e-serve service bindings', () => {
+  it('strips top-level and env-scoped services and names each drop', () => {
+    const { config, dropped } = stripServiceBindings({
+      name: 'loadtest-dev',
+      services: [{ binding: 'ENGINE', service: 'loadtest-dev-engine' }],
+      env: {
+        production: {
+          name: 'loadtest-dev-production',
+          services: [{ binding: 'OTHER', service: 'other-engine' }],
+        },
+      },
+    })
+
+    expect(config.services).toBeUndefined()
+    expect(config.env).toEqual({
+      production: { name: 'loadtest-dev-production' },
+    })
+    expect(dropped).toEqual([
+      { binding: 'ENGINE', service: 'loadtest-dev-engine' },
+      { binding: 'OTHER', service: 'other-engine' },
+    ])
+    expect(formatDroppedServiceBinding(dropped[0]!)).toBe(
+      'dropping service binding ENGINE (service loadtest-dev-engine)',
+    )
+  })
+
+  it('collects nothing when the config has no services', () => {
+    expect(collectServiceBindings({ name: 'fixture' })).toEqual([])
+    expect(stripServiceBindings({ name: 'fixture' }).dropped).toEqual([])
+  })
+
+  it('writes a sibling config without services and leaves the original file', () => {
+    const root = tempDir('narduk-e2e-serve-services-config-')
+    writeFileSync(
+      join(root, 'wrangler.jsonc'),
+      `{
+  "name": "loadtest-dev",
+  // comment kept only in the source file
+  "services": [{ "binding": "ENGINE", "service": "loadtest-dev-engine" }]
+}
+`,
+    )
+
+    const prepared = materializeE2eServeWranglerConfig(join(root, 'wrangler.jsonc'), {
+      pid: 4242,
+    })
+
+    expect(prepared.derived).toBe(true)
+    expect(prepared.configPath).toBe(join(root, '.wrangler.e2e.4242.json'))
+    expect(prepared.dropped).toEqual([{ binding: 'ENGINE', service: 'loadtest-dev-engine' }])
+    expect(JSON.parse(readFileSync(prepared.configPath, 'utf8'))).toEqual({ name: 'loadtest-dev' })
+    expect(readFileSync(join(root, 'wrangler.jsonc'), 'utf8')).toContain('"services"')
+  })
+
+  it(`leaves the source config in place when ${KEEP_SERVICE_BINDINGS_ENV} is set`, () => {
+    const root = tempDir('narduk-e2e-serve-keep-services-')
+    writeJson(root, 'wrangler.json', {
+      name: 'loadtest-dev',
+      services: [{ binding: 'ENGINE', service: 'loadtest-dev-engine' }],
+    })
+    const source = join(root, 'wrangler.json')
+
+    expect(isKeepServiceBindings({ [KEEP_SERVICE_BINDINGS_ENV]: '1' })).toBe(true)
+    const prepared = materializeE2eServeWranglerConfig(source, { keepServiceBindings: true })
+    expect(prepared).toEqual({ configPath: source, dropped: [], derived: false })
+    expect(existsSync(join(root, '.wrangler.e2e.4242.json'))).toBe(false)
+  })
+})
+
 describe('e2e-serve refusal paths', () => {
   it('fails with one line when the prebuilt artifact is missing', async () => {
     const root = tempDir('narduk-e2e-serve-missing-artifact-')
@@ -171,6 +254,50 @@ describe('e2e-serve real worker start', () => {
       `e2e-serve teardown pid=${String(pid)} exit=${String(child.exitCode)} signal=${String(child.signalCode)} stderr=${stderr}`,
     ).toBe(true)
   }, 60_000)
+
+  it('boots when wrangler.json declares a service binding', async () => {
+    const root = tempDir('narduk-e2e-serve-service-binding-')
+    writeFixtureWorker(root, {
+      services: [{ binding: 'ENGINE', service: 'loadtest-dev-engine' }],
+    })
+    linkWorkspaceWrangler(root)
+    const port = await allocatePort()
+    const child = spawn(process.execPath, [ensureBuiltBin(), 'e2e-serve', String(port)], {
+      cwd: root,
+      env: { ...process.env, E2E_HOST: '127.0.0.1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const pid = child.pid
+    expect(pid).toEqual(expect.any(Number))
+
+    let stderr = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+
+    try {
+      await waitForReady(child, () => stderr, port)
+      expect(stderr).toContain(
+        '[e2e-serve] dropping service binding ENGINE (service loadtest-dev-engine)',
+      )
+      expect(stderr).toContain(`[e2e-serve] ready on http://127.0.0.1:${String(port)}`)
+      expect(stderr).not.toContain('no such service is defined')
+
+      const response = await fetch(`http://127.0.0.1:${String(port)}/`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe('e2e-serve-fixture-ok')
+    } finally {
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, 'SIGTERM')
+        } catch {
+          // Already exited.
+        }
+      }
+      await waitForExit(child)
+      expect(existsSync(join(root, `.wrangler.e2e.${String(pid)}.json`))).toBe(false)
+    }
+  }, 60_000)
 })
 
 function ensureBuiltBin(): string {
@@ -188,7 +315,10 @@ function ensureBuiltBin(): string {
   return bin
 }
 
-function writeFixtureWorker(root: string): void {
+function writeFixtureWorker(
+  root: string,
+  extras: { services?: { binding: string; service: string }[] } = {},
+): void {
   writeJson(root, 'package.json', {
     name: 'e2e-serve-fixture',
     type: 'module',
@@ -198,6 +328,7 @@ function writeFixtureWorker(root: string): void {
     name: 'e2e-serve-fixture',
     main: '.output/server/index.mjs',
     compatibility_date: '2024-09-17',
+    ...(extras.services ? { services: extras.services } : {}),
   })
   mkdirSync(join(root, '.output', 'server'), { recursive: true })
   writeFileSync(

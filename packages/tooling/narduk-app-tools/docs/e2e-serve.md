@@ -27,6 +27,19 @@ narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
 forwarded as plain-text Worker bindings so Playwright `webServer.env` test
 secrets reach the isolate. Do not put real secrets in those names.
 
+## Service bindings
+
+`unstable_startWorker` is called with `dev.remote: false`. A `services` entry
+whose target Worker is not in this process makes workerd refuse to start
+(narduk-libs#788). e2e-serve writes a sibling `.wrangler.e2e.<pid>.json` with
+those entries removed (top-level and every `env.*` block), logs each dropped
+binding, and deletes the file on shutdown. The original config is left as-is.
+Set `E2E_KEEP_SERVICE_BINDINGS=1` to pass the app config through unchanged.
+
+```text
+[e2e-serve] dropping service binding ENGINE (service loadtest-dev-engine)
+```
+
 ## What it will not do
 
 - Build or watch. If the entrypoint is missing it exits with
@@ -44,6 +57,7 @@ Playwright copies only stderr from a `webServer` child. The launcher writes:
 [e2e-serve] cwd=…
 [e2e-serve] entrypoint=…
 [e2e-serve] server output: N files, X.Y MiB
+[e2e-serve] dropping service binding ENGINE (service …)   # when the config has services
 [e2e-serve] calling unstable_startWorker
 [e2e-serve] worker constructed; awaiting ready
 [e2e-serve] ready on http://127.0.0.1:<port>
