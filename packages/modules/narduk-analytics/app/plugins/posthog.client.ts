@@ -9,8 +9,10 @@ import {
 } from '../utils/analyticsLoadStrategy'
 import {
   composeBeforeSend,
+  createStandardPrivacyBeforeSend,
   createStrictPrivacyBeforeSend,
   normalizeAnalyticsPrivacy,
+  sanitizeStandardUrl,
   templatePath,
 } from '../utils/analyticsPrivacy'
 import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
@@ -106,7 +108,7 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
           : undefined,
         strict
           ? createStrictPrivacyBeforeSend({ origin: window.location.origin, resolveRoute })
-          : undefined,
+          : createStandardPrivacyBeforeSend(),
       )
 
       const posthogClient = posthog.init(posthogApiKey, {
@@ -213,8 +215,9 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         if (path === lastTrackedPath) return
 
         lastTrackedPath = path
+        const pagePath = strict ? templatePath(path, resolveRoute) : path
         posthog.capture('$pageview', {
-          $current_url: window.location.origin + (strict ? templatePath(path, resolveRoute) : path),
+          $current_url: sanitizeStandardUrl(window.location.origin + pagePath),
         })
       }
 

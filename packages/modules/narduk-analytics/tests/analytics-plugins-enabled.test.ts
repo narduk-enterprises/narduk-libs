@@ -234,7 +234,7 @@ describe('gtag.client — enabled path', () => {
         {
           page_path: '/',
           page_location: 'https://example.com/',
-          page_title: '',
+          page_title: '/',
         },
       ],
       [
@@ -243,7 +243,7 @@ describe('gtag.client — enabled path', () => {
         {
           page_path: '/ports',
           page_location: 'https://example.com/ports',
-          page_title: '',
+          page_title: '/ports',
         },
       ],
     ])

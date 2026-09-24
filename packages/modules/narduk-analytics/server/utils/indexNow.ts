@@ -4,6 +4,7 @@ import {
   readRuntimeString,
   trimRuntimeString,
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
+import { createError } from 'h3'
 
 import { analyticsRuntimeConfig, type AnalyticsServerRuntimeConfig } from './runtimeConfig'
 
@@ -63,6 +64,31 @@ export function resolveIndexNowKeyFromRuntimeConfig(
   }
 
   return fallback
+}
+
+export function indexNowUrlBelongsToHost(url: string, siteHost: string): boolean {
+  const expected = siteHost.trim().toLowerCase()
+  if (!expected) return false
+  try {
+    const parsed = new URL(url)
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.host.toLowerCase() === expected
+    )
+  } catch {
+    return false
+  }
+}
+
+export function assertIndexNowUrlsBelongToHost(urls: readonly string[], siteHost: string): void {
+  const rejected = urls.filter((url) => !indexNowUrlBelongsToHost(url, siteHost))
+  if (rejected.length === 0) return
+
+  throw createError({
+    statusCode: 400,
+    statusMessage: 'IndexNow URLs must be on this site host',
+    data: { state: 'host_mismatch', host: siteHost, rejected },
+  })
 }
 
 export interface IndexNowResult {

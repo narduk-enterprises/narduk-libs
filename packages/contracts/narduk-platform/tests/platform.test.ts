@@ -29,6 +29,17 @@ describe('neutral platform contracts', () => {
     expect(existsSync(join(packageRoot, 'dist', 'starter-composition.js'))).toBe(false)
   })
 
+  it('treats INDEXNOW_KEY as unique per app, not a shared Doppler token', () => {
+    const entry = ENV_CATALOG.find((item) => item.key === 'INDEXNOW_KEY')
+
+    expect(entry).toMatchObject({
+      from: 'generate:nonce-32',
+      scope: 'one-app',
+    })
+    expect(entry?.note).not.toMatch(/Shared IndexNow key/u)
+    expect(entry?.from).not.toMatch(/doppler:/u)
+  })
+
   it('contains only app capability environment entries', () => {
     expect(MODULE_IDS.every((moduleId) => !moduleId.startsWith('command-'))).toBe(true)
     expect(

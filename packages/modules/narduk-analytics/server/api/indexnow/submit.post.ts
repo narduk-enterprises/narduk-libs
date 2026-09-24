@@ -8,7 +8,10 @@ import {
   withOptionalValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { resolveIndexNowKeyFromRuntimeConfig } from '#narduk-analytics-server/utils/indexNow'
+import {
+  assertIndexNowUrlsBelongToHost,
+  resolveIndexNowKeyFromRuntimeConfig,
+} from '#narduk-analytics-server/utils/indexNow'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const bodySchema = z.object({
@@ -64,6 +67,7 @@ export default definePublicMutation(
     }
 
     const host = new URL(siteUrl).host
+    assertIndexNowUrlsBelongToHost(urls, host)
     const keyLocation = `${siteUrl.replace(/\/$/, '')}/${key}.txt`
 
     // IndexNow batch API — submit to Bing (which shares with all IndexNow engines)
