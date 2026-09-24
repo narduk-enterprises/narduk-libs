@@ -1,3 +1,9 @@
+import {
+  describeActiveWorkerResolution,
+  resolveActiveWorkerVersion,
+  type WorkerDeployment,
+} from './worker-deployment.js'
+
 interface CloudflareErrorBody {
   errors?: Array<{ code?: number; message?: string }>
   result?: unknown
@@ -104,21 +110,57 @@ export async function fetchCloudflareJson<T>(
   return (await fetchCloudflareEnvelope<T>(url, apiToken, fetchImpl)).result
 }
 
+function isDeployment(value: unknown): value is WorkerDeployment {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return typeof record.id === 'string' && Array.isArray(record.versions)
+}
+
+/**
+ * Deployments envelopes vary: REST uses `{ deployments }`, some fixtures use
+ * `{ items }`, wrangler `--json` is a bare array. The whole list is returned.
+ * Callers must still resolve via allocation, never `items[0]`.
+ */
+export function readDeploymentList(result: unknown): WorkerDeployment[] {
+  if (Array.isArray(result)) return result.filter((row) => isDeployment(row))
+  if (typeof result !== 'object' || result === null) return []
+  const record = result as Record<string, unknown>
+  if (Array.isArray(record.deployments)) {
+    return record.deployments.filter((row) => isDeployment(row))
+  }
+  if (Array.isArray(record.items)) return record.items.filter((row) => isDeployment(row))
+  return []
+}
+
+export async function listWorkerDeploymentsViaApi(options: {
+  accountId: string
+  apiToken: string
+  scriptName: string
+  fetchImpl?: typeof fetch
+}): Promise<WorkerDeployment[]> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}/deployments`
+  return readDeploymentList(await fetchCloudflareJson<unknown>(url, options.apiToken, fetchImpl))
+}
+
 export async function fetchWorkerPlainTextVars(
   options: WorkerPlainTextOptions,
 ): Promise<Record<string, string>> {
   const fetchImpl = options.fetchImpl ?? fetch
   const base = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}`
-  const versions = await fetchCloudflareJson<{ items?: Array<{ id?: string }> }>(
-    `${base}/versions?per_page=5`,
-    options.apiToken,
+  const deployments = await listWorkerDeploymentsViaApi({
+    accountId: options.accountId,
+    apiToken: options.apiToken,
+    scriptName: options.scriptName,
     fetchImpl,
-  )
-  const versionId = versions.items?.[0]?.id
-  if (!versionId) throw new Error(`No deployed Worker versions found for ${options.scriptName}`)
+  })
+  const resolved = resolveActiveWorkerVersion(deployments)
+  if (resolved.kind !== 'resolved') {
+    throw new Error(describeActiveWorkerResolution(options.scriptName, resolved))
+  }
   const detail = await fetchCloudflareJson<{
-    resources?: { bindings?: Array<{ name?: string; text?: string; type?: string }> }
-  }>(`${base}/versions/${encodeURIComponent(versionId)}`, options.apiToken, fetchImpl)
+    resources?: { bindings?: { name?: string; text?: string; type?: string }[] }
+  }>(`${base}/versions/${encodeURIComponent(resolved.versionId)}`, options.apiToken, fetchImpl)
 
   const vars: Record<string, string> = {}
   for (const binding of detail.resources?.bindings ?? []) {
