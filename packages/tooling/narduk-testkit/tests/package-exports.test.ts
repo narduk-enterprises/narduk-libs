@@ -63,6 +63,22 @@ describe('narduk-testkit runner boundaries', () => {
     expect(Object.keys(packageJson.exports)).toContain('./playwright/dev-port')
   })
 
+  it('publishes the pr/web Playwright preset for config load, without the root barrel', () => {
+    const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
+    const source = readFileSync(join(packageRoot, 'src/playwright/config.ts'), 'utf8')
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, Record<string, string>>
+    }
+
+    expect(rootSource).not.toContain('./playwright/config')
+    expect(source).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(source).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    expect(Object.keys(packageJson.exports)).toContain('./playwright/config')
+    const config = packageJson.exports['./playwright/config']
+    expect(config.require).toBe('./dist/playwright/config.js')
+    expect(config.require).toBe(config.import)
+  })
+
   it('lets the dev-port helper be required, because Playwright loads a config as CJS', () => {
     const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, Record<string, string>>

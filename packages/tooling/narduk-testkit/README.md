@@ -467,6 +467,102 @@ instead of becoming another silent wrong-branch pass.
 Like `e2e/fixture-server`, this subpath is deliberately absent from the root
 barrel — it is imported from a Playwright config, before the runner exists.
 
+## Playwright `pr` / `web` tier preset
+
+`playwright/config` is the estate Playwright config: a cheap `pr` project for
+pull requests and a full `web` project for push/main. Spread it. Do not invent a
+third `chromium`-only project — that is how an undeclared spec is collected
+twice and a 10-test PR suite becomes 36 (narduk-libs#434).
+
+```ts
+import { defineConfig, devices } from '@playwright/test'
+
+import { createNardukPlaywrightPreset } from '@narduk-enterprises/narduk-testkit/playwright/config'
+import {
+  assertLocalDevPortAvailable,
+  resolveLocalDevPort,
+  shouldReuseExistingServer,
+} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'
+
+const devPort = resolveLocalDevPort({
+  rootDir: process.cwd(),
+  declaredPort: 51952,
+})
+const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })
+if (!reuseExistingServer) assertLocalDevPortAvailable({ resolution: devPort })
+
+export default defineConfig({
+  testDir: './apps/web/tests/e2e',
+  ...createNardukPlaywrightPreset({
+    baseURL: `http://127.0.0.1:${devPort.port}`,
+    browserUse: devices['Desktop Chrome'],
+    testDir: './apps/web/tests/e2e',
+  }),
+  webServer: {
+    command: `PORT=${devPort.port} pnpm --filter web run dev:test`,
+    url: `http://127.0.0.1:${devPort.port}/api/health`,
+    reuseExistingServer,
+  },
+})
+```
+
+The preset is `fullyParallel: true` and `workers: 2`. That worker count is the
+measured default from Buoys' `e2e-parallel-config` experiment (2026-09-17): 1 is
+Playwright's `CI` default and is why 2-vCPU and 8g slots both ran serial; 2 cut
+local web median 69s → 39s; 4 workers were slower on one workerd. Do not raise
+`e2e-shards` — a second pool slot recreates the queue storms.
+
+A file that must not contend with another heavy file on that one workerd
+(visual-audit, a 44-scan a11y file) opts out **per file**, not by flipping the
+preset:
+
+```ts
+test.describe.configure({ mode: 'serial' })
+```
+
+### Spec → tier
+
+A spec declares its tier in the filename. Collection uses `testMatch`, so an
+undeclared file is in **no** project — and
+`createNardukPlaywrightPreset({ testDir })` throws if one still exists, so it
+cannot hide.
+
+| File                       | Collected by                       |
+| -------------------------- | ---------------------------------- |
+| `home.pr.spec.ts`          | `pr`                               |
+| `visual-audit.web.spec.ts` | `web`                              |
+| `headers.pr-web.spec.ts`   | `pr` and `web` (explicit dual-run) |
+| `orphan.spec.ts`           | none — config load throws          |
+| `global.setup.ts`          | `setup` only                       |
+
+Dual-run is the `.pr-web.` name, an explicit reviewable choice. CI selects the
+tier with `--project=pr` on pull_request and `--project=web` on push. A
+`chromium` project is kept for one release as an alias of `web` so existing
+`--project=chromium` invocations still run the web tier.
+
+### Collection-time viewports
+
+Viewport slice lives on project metadata (`metadata.visualAuditViewports`).
+Filter at collection so a skipped viewport never constructs a `page` fixture —
+in-body `test.skip` still pays setup.
+
+```ts
+import { viewportsAtCollection } from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const viewports = viewportsAtCollection(ALL_VIEWPORTS, { name: 'pr' })
+for (const viewport of viewports) {
+  test(`a11y ${viewport.name}`, async ({ page }) => {
+    /* … */
+  })
+}
+```
+
+`pr` defaults to `desktop` + `mobile`. `web` defaults to those plus `tablet` and
+`wide`. Pass `prViewports` / `webViewports` to change the slice.
+
+This subpath is config-safe: `import` and `require` both resolve, and it is
+absent from the root barrel.
+
 The UI-quality analyzer is also available as a small binary:
 
 ```sh
