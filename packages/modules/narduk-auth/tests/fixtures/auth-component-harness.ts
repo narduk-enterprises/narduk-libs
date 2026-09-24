@@ -79,12 +79,35 @@ const UTextarea = defineComponent({
 const USelectMenu = defineComponent({
   name: 'USelectMenu',
   props: {
+    items: { default: () => [], type: Array },
     modelValue: { default: EMPTY, type: [String, Number] },
   },
   emits: [UPDATE_MODEL_VALUE],
-  setup(props, { attrs }) {
+  setup(props, { attrs, emit }) {
     return () =>
-      h('div', { ...attrs, [STUB_ATTR]: 'USelectMenu' }, String(props.modelValue ?? EMPTY))
+      h(
+        'div',
+        {
+          ...attrs,
+          [STUB_ATTR]: 'USelectMenu',
+          'data-select-value': String(props.modelValue ?? EMPTY),
+        },
+        [
+          h('span', { 'data-select-current': '' }, String(props.modelValue ?? EMPTY)),
+          ...(props.items as unknown[]).map((item) => {
+            const label = String(item)
+            return h(
+              'button',
+              {
+                type: 'button',
+                'data-select-item': label,
+                onClick: () => emit(UPDATE_MODEL_VALUE, item),
+              },
+              label,
+            )
+          }),
+        ],
+      )
   },
 })
 
