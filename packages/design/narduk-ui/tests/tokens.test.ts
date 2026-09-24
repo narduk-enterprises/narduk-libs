@@ -131,11 +131,15 @@ describe("phase 1c token scale (narduk-libs#535)", () => {
   });
 
   it("maps --bs-* aliases onto --ns-* so the duplicate token set is one source", () => {
-    const aliases = [...tokens.matchAll(/--bs-([a-z0-9-]+):\s*var\(--ns-\1\);/gu)].map(
-      (match) => match[1],
-    );
-    expect(aliases.length).toBeGreaterThanOrEqual(20);
-    expect(aliases).toEqual(expect.arrayContaining(["ink", "surface", "space-4", "r-md"]));
-    expect(tokens).not.toMatch(/--bs-[a-z0-9-]+:\s+(?!var\(--ns-)/u);
+    const stems: string[] = [];
+    for (const line of tokens.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("--bs-")) continue;
+      const match = /^--bs-([a-z0-9-]+): var\(--ns-\1\);$/u.exec(trimmed);
+      expect(match, `expected --bs-* alias, got ${trimmed}`).not.toBeNull();
+      stems.push(match![1]);
+    }
+    expect(stems.length).toBeGreaterThanOrEqual(20);
+    expect(stems).toEqual(expect.arrayContaining(["ink", "surface", "space-4", "r-md"]));
   });
 });
