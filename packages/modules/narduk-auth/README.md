@@ -348,6 +348,12 @@ deferred until the card mechanism in
 The stonx `AuthBackground` / `AuthLegalFooter` rename and the been-sober-for and
 bluebonnet `auth/*` copies are app-repo work, not this package.
 
+The module registers `app/` as a Tailwind source in Nuxt UI's `ui.css`, and when
+an app turns on `ui.experimental.componentDetection`, it adds the Nuxt UI
+components its pages and cards render (`src/nuxt-ui-components.ts`, `UAlert` and
+`UCard` among them) to the detection list. An app does not list this package's
+files or components itself (narduk-libs#700).
+
 ### `AuthLoginCard`
 
 Email/password sign-in, with optional Apple and passkey buttons when the runtime

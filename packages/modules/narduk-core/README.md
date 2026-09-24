@@ -367,6 +367,27 @@ not escalated.
 Operational guide:
 [an error page is showing / exceptions are spiking](../../../docs/operations/error-page-and-exceptions.md).
 
+## Tailwind sources and Nuxt UI component detection
+
+Nuxt UI adds an `@source` and scans for `U*` components only in Nuxt _layers_.
+narduk-core is a module installed under `node_modules`, so it registers its own
+files (narduk-libs#700):
+
+- `main.css` carries `@source '../../'`, so the utilities core's `runtime/app`
+  files use (the error page's `text-7xl` and `min-h-screen`, the header's
+  `md:flex`) are generated in an app that never names them.
+- When an app turns on `ui.experimental.componentDetection`, core adds the Nuxt
+  UI components its own files render (`src/nuxt-ui-components.ts`; `UButton` on
+  the error page, the `UDashboard*` set for the `dashboard` layout) to the
+  detection list. `true` becomes that list, which Nuxt UI still treats as
+  "detect, and always include these". An app lists only its own components.
+
+Another module does the same with `registerNuxtUiSources` from
+`@narduk-enterprises/narduk-core/nuxt-ui-sources`. Given `sources` (absolute
+directories) and `components`, it prepends an `@source` per directory to Nuxt
+UI's `ui.css` and extends the detection list, once every module is installed.
+narduk-auth uses it for its `app/` directory.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
