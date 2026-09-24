@@ -4,7 +4,11 @@ import { buildWranglerCommandArgs, resolveVersionTagArgs } from '../src/deploy.j
 import {
   checkPromoteContext,
   formatPromoteResult,
+  checkGateAgainstSha,
+  checkGateAgainstVersion,
   compareVersionRecency,
+  GATE_ATTESTATION_MISSING_WARNING,
+  parseGateAttestation,
   createWranglerCli,
   currentDeployment,
   DEFAULT_VERSION_SEARCH_LIMIT,
@@ -119,7 +123,17 @@ function context(
   env: Record<string, string | undefined> = ACTIONS_ENV,
 ): { context: PromoteContext; calls: StubCalls } {
   const { client, calls } = stubClient(versions, deployments)
-  return { calls, context: { client, env, resolveWorkerName: () => 'buoys', appDir: '/tmp/app' } }
+  return {
+    calls,
+    context: {
+      client,
+      env,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+      // Keep the gate-attestation warning (#400) out of the test output.
+      log: () => {},
+    },
+  }
 }
 
 describe('promote guard', () => {
@@ -597,6 +611,17 @@ describe('B2 -- every documented exit code is reachable', () => {
       context([numbered('v1', SHA_NEW, 2)], []).context,
     )
     expect(ok.exitCode).toBe(PROMOTE_EXIT.ok)
+
+    const gateMismatch = await runVersionsPromote(
+      parseVersionsPromoteArgs([
+        '--sha',
+        SHA,
+        '--gate-verified',
+        `ci / Required@${'e'.repeat(40)}`,
+      ]),
+      context([numbered('v1', SHA, 2)], []).context,
+    )
+    expect(gateMismatch.exitCode).toBe(PROMOTE_EXIT.gateMismatch)
   })
 })
 
@@ -1463,5 +1488,181 @@ describe('--wait-for-version (narduk-libs#695)', () => {
     expect(() => parseVersionsPromoteArgs(['--wait-for-version', '-1'])).toThrow('0..3600')
     expect(() => parseVersionsPromoteArgs(['--wait-for-version', '3601'])).toThrow('0..3600')
     expect(() => parseVersionsPromoteArgs(['--wait-interval', '0'])).toThrow('1..3600')
+  })
+})
+
+describe('--gate-verified binds the gate result to the promoted commit (narduk-libs#400)', () => {
+  const GATE = 'ci / Required'
+  const OTHER = '0123456789abcdef0123456789abcdef01234567'
+  const versions = [
+    numbered('v-target', SHA, 12),
+    numbered('v-other', OTHER, 11),
+    version('v-untagged', undefined, { number: 10 }),
+  ]
+  const live = [deployment('d1', 'v-live', '2026-09-17T01:00:00Z')]
+
+  function run(args: string[], env: Record<string, string | undefined> = ACTIONS_ENV) {
+    const lines: string[] = []
+    const { context: ctx, calls } = context(versions, live, env)
+    return {
+      calls,
+      lines,
+      result: runVersionsPromote(parseVersionsPromoteArgs(args), {
+        ...ctx,
+        log: (line) => lines.push(line),
+      }),
+    }
+  }
+
+  it('parses <check>@<sha> on the LAST @, keeping spaces and slashes in the check name', () => {
+    expect(parseGateAttestation(`${GATE}@${SHA}`)).toEqual({ check: GATE, sha: SHA })
+    expect(parseGateAttestation(`ci / Required@${SHA.toUpperCase()}`).sha).toBe(SHA)
+    expect(parseGateAttestation(`deploy@prod / gate@${SHA}`)).toEqual({
+      check: 'deploy@prod / gate',
+      sha: SHA,
+    })
+    expect(parseVersionsPromoteArgs(['--gate-verified', `${GATE}@${SHA}`]).gateVerified).toEqual({
+      check: GATE,
+      sha: SHA,
+    })
+    expect(parseVersionsPromoteArgs([]).gateVerified).toBeNull()
+  })
+
+  it('refuses a malformed attestation as a usage error', async () => {
+    expect(() => parseGateAttestation(GATE)).toThrow('<check>@<sha>')
+    expect(() => parseGateAttestation(`@${SHA}`)).toThrow('names no check')
+    expect(() => parseGateAttestation(`${GATE}@${SHORT}`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`${GATE}@${SHA}0`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`${GATE}@`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`ci\n::error::forged@${SHA}`)).toThrow('control characters')
+    expect(() => parseGateAttestation(`${'x'.repeat(201)}@${SHA}`)).toThrow('longer than')
+    expect(() => parseVersionsPromoteArgs(['--gate-verified'])).toThrow(
+      '--gate-verified requires a value',
+    )
+    expect(await main(['deploy', 'versions-promote', '--sha', SHA, '--gate-verified', SHORT])).toBe(
+      PROMOTE_EXIT.usage,
+    )
+  })
+
+  it('promotes when the attestation names the promoted commit, and logs the binding', async () => {
+    const { result, calls, lines } = run(['--sha', SHA, '--gate-verified', `${GATE}@${SHA}`])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.gateVerified).toEqual({ check: GATE, sha: SHA })
+    expect(calls.deployed.map((call) => call.versionId)).toEqual(['v-target'])
+    expect(lines).toEqual([expect.stringContaining(`gate attestation: ${GATE} passed on ${SHA}`)])
+    expect(lines[0]).toContain('bound to version v-target')
+    expect(lines[0]).toContain('not read from GitHub')
+    expect(formatPromoteResult(promoted)).toContain(`gate       ${GATE} @ ${SHA}`)
+  })
+
+  it('refuses, before any Cloudflare read, when the attestation names another commit', async () => {
+    let reads = 0
+    const { client: stub, calls } = stubClient(versions, live)
+    const client: WranglerVersionsClient = {
+      ...stub,
+      listVersions: async (limit) => {
+        reads += 1
+        return stub.listVersions(limit)
+      },
+      listDeployments: async () => {
+        reads += 1
+        return stub.listDeployments()
+      },
+    }
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--gate-verified', `${GATE}@${OTHER}`]),
+      { ...context(versions, live).context, client },
+    )
+    expect(result.outcome).toBe('gate-mismatch')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.gateMismatch)
+    expect(result.detail).toContain(`${GATE} passed on ${OTHER}`)
+    expect(result.detail).toContain(`this promote is for ${SHA}`)
+    expect(result.gateVerified).toEqual({ check: GATE, sha: OTHER })
+    expect(reads).toBe(0)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('requires the full SHA: a short --sha is not the attested commit', async () => {
+    const { result, calls } = run(['--sha', SHORT, '--gate-verified', `${GATE}@${SHA}`])
+    expect((await result).outcome).toBe('gate-mismatch')
+    expect(calls.deployed).toEqual([])
+    expect(checkGateAgainstSha({ check: GATE, sha: SHA }, SHA.toUpperCase())).toBeNull()
+  })
+
+  it('checks a GITHUB_SHA default against the attestation too', async () => {
+    const { result, calls } = run(['--gate-verified', `${GATE}@${OTHER}`], {
+      ...ACTIONS_ENV,
+      GITHUB_EVENT_NAME: 'push',
+    })
+    expect((await result).outcome).toBe('gate-mismatch')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('binds a --version-id promote through the version tag', async () => {
+    const ok = run(['--version-id', 'v-target', '--gate-verified', `${GATE}@${SHA}`])
+    expect((await ok.result).outcome).toBe('promoted')
+
+    const other = run(['--version-id', 'v-other', '--gate-verified', `${GATE}@${SHA}`])
+    const refused = await other.result
+    expect(refused.outcome).toBe('gate-mismatch')
+    expect(refused.versionId).toBe('v-other')
+    expect(refused.detail).toContain(`built from ${OTHER}`)
+    expect(other.calls.deployed).toEqual([])
+
+    const untagged = run(['--version-id', 'v-untagged', '--gate-verified', `${GATE}@${SHA}`])
+    const noTag = await untagged.result
+    expect(noTag.outcome).toBe('gate-mismatch')
+    expect(noTag.detail).toContain('carries no workers/tag')
+
+    const missing = run(['--version-id', 'v-gone', '--gate-verified', `${GATE}@${SHA}`])
+    const gone = await missing.result
+    expect(gone.outcome).toBe('gate-mismatch')
+    expect(gone.detail).toContain('was not in the searched listing')
+    expect(missing.calls.deployed).toEqual([])
+  })
+
+  it('checks the binding before a dry run reports success', async () => {
+    const { result } = run([
+      '--version-id',
+      'v-other',
+      '--gate-verified',
+      `${GATE}@${SHA}`,
+      '--dry-run',
+    ])
+    expect((await result).outcome).toBe('gate-mismatch')
+  })
+
+  it('keeps promoting without the flag, but warns that the attestation is missing', async () => {
+    const { result, calls, lines } = run(['--sha', SHA])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.gateVerified).toBeNull()
+    expect(calls.deployed.map((call) => call.versionId)).toEqual(['v-target'])
+    expect(lines).toEqual([GATE_ATTESTATION_MISSING_WARNING])
+    expect(lines[0]).toContain('--gate-verified')
+    expect(formatPromoteResult(promoted)).toContain('gate       NOT ATTESTED')
+  })
+
+  it('says nothing about the gate on a guard refusal or a rollback', async () => {
+    const refused = run(['--sha', SHA, '--gate-verified', `${GATE}@${SHA}`], { CI: 'true' })
+    expect((await refused.result).outcome).toBe('guard-refused')
+    expect(refused.lines).toEqual([])
+
+    const rolled = await runRollback(
+      parseRollbackArgs(['--to', 'v-target']),
+      context(versions, live).context,
+    )
+    expect(rolled.gateVerified).toBeUndefined()
+    expect(formatPromoteResult(rolled)).not.toContain('gate ')
+  })
+
+  it('rejects a version whose tag is another commit even when prefixes collide', () => {
+    const gate = { check: GATE, sha: SHA }
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', SHA, 1))).toBeNull()
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', SHA.slice(0, 12), 1))).toBeNull()
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', `${SHA.slice(0, 39)}0`, 1))).toContain(
+      'built from',
+    )
   })
 })

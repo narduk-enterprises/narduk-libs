@@ -4,7 +4,10 @@
  * readings shaped like the buoys round-2 history board: column groups with
  * their unit once, a day row, right-aligned tabular numerals, a missing
  * reading as an em dash, and the sorted column's break row. A second table
- * shows the loading reading — the rows stay, dimmed, under a 2 px bar.
+ * shows the loading reading — the rows stay, dimmed, under a 2 px bar. The
+ * last one declares fixed widths beside a width-less column carrying an
+ * unbreakable SHA: the table-level floor keeps that column at least 200px
+ * and the table's own scroll box, not the page, scrolls (narduk-libs#684).
  */
 import NeDataTable from '../runtime/components/NeDataTable.vue'
 
@@ -68,6 +71,22 @@ const stations: Station[] = [
   { name: 'Apk', wind: null },
   { name: 'Aransas Bay', wind: null },
 ]
+
+interface Deploy {
+  app: string
+  sha: string
+  status: string
+}
+
+const deployColumns: Array<NeDataColumn<Deploy>> = [
+  { key: 'app', label: 'App', width: '8rem' },
+  { key: 'sha', label: 'Commit' },
+  { key: 'status', label: 'Status', width: '6rem' },
+]
+const deploys: Deploy[] = [
+  { app: 'buoys', sha: '8affc4a3e1d94b0c7f2a61e5d0b93c4f7e2a1d68', status: 'Live' },
+  { app: 'stonx', sha: '75403b3c9e2f1a8d6b4e0f7c3a5d9e1b2c8f4a06', status: 'Building' },
+]
 </script>
 
 <template>
@@ -81,7 +100,9 @@ const stations: Station[] = [
     <p>
       <code>UTable</code> with the estate's reading: groups carry the unit once, numerals line up
       right, missing is “—” and never 0, and a day row opens each calendar day. On a phone a switch
-      picks which group shows beside the sticky Time column.
+      picks which group shows beside the sticky Time column. The table owns its sideways overflow: a
+      long hash scrolls the table, never the page, and a width-less column beside fixed widths is
+      floored at 200px.
     </p>
     <div class="preview-row">
       <NeDataTable
@@ -103,6 +124,9 @@ const stations: Station[] = [
     </div>
     <div class="preview-row">
       <NeDataTable :columns="stationColumns" :rows="stations.slice(0, 2)" loading />
+    </div>
+    <div class="preview-row">
+      <NeDataTable :columns="deployColumns" :rows="deploys" :sticky-header="false" />
     </div>
   </section>
 </template>

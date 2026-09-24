@@ -9,23 +9,54 @@ launcher; this command is that launcher (narduk-libs#447, lifted from Buoys
 
 ```sh
 narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
-  [--assets <dir>] [--cwd <dir>]
+  [--assets <dir>] [--cwd <dir>] [--keep-service-bindings]
 ```
 
-| Input          | Default (narduk-app layout)                       |
-| -------------- | ------------------------------------------------- |
-| `<port>`       | required, integer 1–65535                         |
-| host           | `127.0.0.1` (`E2E_HOST` must be that or unset)    |
-| `--entrypoint` | `<app>/.output/server/index.mjs`                  |
-| `--config`     | `<app>/wrangler.jsonc` or `<app>/wrangler.json`   |
-| `--assets`     | `<app>/.output/public` when that directory exists |
-| `--cwd`        | process cwd; app dir is `cwd` or `cwd/apps/web`   |
+| Input                     | Default (narduk-app layout)                        |
+| ------------------------- | -------------------------------------------------- |
+| `<port>`                  | required, integer 1–65535                          |
+| host                      | `127.0.0.1` (`E2E_HOST` must be that or unset)     |
+| `--entrypoint`            | `<app>/.output/server/index.mjs`                   |
+| `--config`                | `<app>/wrangler.jsonc` or `<app>/wrangler.json`    |
+| `--assets`                | `<app>/.output/public` when that directory exists  |
+| `--cwd`                   | process cwd; app dir is `cwd` or `cwd/apps/web`    |
+| `--keep-service-bindings` | off: service bindings to other Workers are dropped |
 
 `<app>` is the directory that holds the Wrangler config (`resolveAppDir`).
 
 `NUXT_*` and `NITRO_*` environment variables present on the process are
 forwarded as plain-text Worker bindings so Playwright `webServer.env` test
 secrets reach the isolate. Do not put real secrets in those names.
+
+## Service bindings
+
+The run holds exactly one Worker. A `services` binding to any other Worker has
+no target in it, and workerd refuses to start
+(`binding "ENGINE" refers to a service "core:user:…", but no such service is defined`,
+narduk-libs#788). So e2e-serve reads the config the way `unstable_startWorker`
+would (same environment selection, including `CLOUDFLARE_ENV`, and the same
+redirected-config handling), removes each service binding whose `service` is not
+this Worker's own `name`, and starts the Worker from that in-memory config. Each
+one is named on stderr:
+
+```text
+[e2e-serve] dropping service binding ENGINE → loadtest-dev-engine (not part of the E2E run)
+```
+
+The app then sees that binding as missing and should answer the way it does for
+any missing binding (for example a 503 on the route that needs it). A binding
+back to the Worker itself is kept. Nothing is written into the app tree, so a
+checked-in or gitignored `.wrangler.e2e.json` copy without `services` is no
+longer needed.
+
+Starting from an in-memory config needs the app's wrangler at 4.99.0 or later.
+With an older wrangler and a binding to drop, the command names the bindings and
+exits, asking for the upgrade or `--keep-service-bindings`. A config with no
+external service binding starts from the config path exactly as before.
+
+`--keep-service-bindings` skips all of this and hands the config path to
+wrangler untouched, for an app that runs the target Worker alongside the E2E
+run.
 
 ## What it will not do
 

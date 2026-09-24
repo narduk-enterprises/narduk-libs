@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { DevelopmentConfig } from './development-config.js'
@@ -24,7 +24,10 @@ export interface SavedDevelopmentWorkflow {
 }
 export type DevelopmentGitHubRequest = (path: string, method?: string) => unknown
 
-/** Management-only route. Ordinary deploy:dev never constructs or calls this client. */
+/**
+ * Management route. deploy:dev reads only the open `red-main` issues through
+ * it; the validation push after a verified deploy runs in a detached worker.
+ */
 export function developmentGitHubRequest(path: string, method = 'GET'): unknown {
   let output: string
   try {
@@ -221,10 +224,90 @@ export class DevelopmentGitHub {
     }) => void,
   ): string {
     if (!reason.trim()) throw new Error('An explicit validation reason is required')
-    const env = developmentSystemEnv()
+    this.assertOrigin(cwd)
+    this.assertCandidateBranch(branch, sha)
+    const validationRef = `narduk-validation/${sha}/${randomUUID()}`
+    beforePush({ branch, sha, reason, validationRef })
+    this.pushValidationRef(cwd, sha, validationRef)
+    return validationRef
+  }
+
+  /**
+   * The automatic validation after a verified deploy. The deployed commit (the
+   * base commit, or a capture commit of the dirty tree) need not be on any
+   * branch yet: the push itself is what places it on GitHub.
+   */
+  requestDeployedValidation(cwd: string, sha: string): string {
+    if (!/^[a-f0-9]{40}$/u.test(sha)) throw new Error('Validation requires a full commit SHA')
+    this.assertOrigin(cwd)
+    const validationRef = `narduk-validation/${sha}/${randomUUID()}`
+    this.pushValidationRef(cwd, sha, validationRef)
+    return validationRef
+  }
+
+  /**
+   * Delete an automatic validation branch once a newer deploy supersedes it.
+   * Its runs and their results stay on GitHub; only the branch goes. A branch
+   * that is already gone counts as deleted.
+   */
+  deleteValidationRef(cwd: string, validationRef: string): void {
+    if (!/^narduk-validation\/[a-f0-9]{40}\/[\w-]+$/u.test(validationRef))
+      throw new Error('Only validation refs are deleted here')
+    this.assertOrigin(cwd)
+    const result = spawnSync('git', ['push', 'origin', '--delete', `refs/heads/${validationRef}`], {
+      cwd,
+      env: developmentSystemEnv(),
+      encoding: 'utf8',
+      timeout: 60_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    if (result.status === 0 || /remote ref does not exist/u.test(result.stderr ?? '')) return
+    throw new Error(`Validation-ref delete of ${validationRef} was not confirmed`)
+  }
+
+  /** Unfinished runs on one validation ref: bounded by live work, a few runs per ref. */
+  activeValidationRuns(validationRef: string): number[] {
+    if (!validationRef.startsWith('narduk-validation/'))
+      throw new Error('Only validation refs are inspected here')
+    const response = z
+      .object({
+        workflow_runs: z.array(z.object({ id: z.number().int(), status: z.string() })),
+      })
+      .parse(
+        this.request(
+          this.path(`actions/runs?branch=${encodeURIComponent(validationRef)}&per_page=20`),
+        ),
+      )
+    return response.workflow_runs
+      .filter((run) => (ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status))
+      .map((run) => run.id)
+  }
+
+  cancelRun(id: number): void {
+    this.request(this.path(`actions/runs/${id}/cancel`), 'POST')
+  }
+
+  /** Open issues labelled `red-main`: the post-merge safety net's notice per repository. */
+  openRedMainIssues(): Array<{ number: number; title: string; createdAt: string }> {
+    const issues = z
+      .array(
+        z.object({
+          number: z.number().int(),
+          title: z.string(),
+          created_at: z.string(),
+          pull_request: z.unknown().optional(),
+        }),
+      )
+      .parse(this.request(this.path('issues?labels=red-main&state=open&per_page=100')))
+    return issues
+      .filter((issue) => issue.pull_request === undefined)
+      .map((issue) => ({ number: issue.number, title: issue.title, createdAt: issue.created_at }))
+  }
+
+  private assertOrigin(cwd: string): void {
     const origin = execFileSync('git', ['remote', 'get-url', 'origin'], {
       cwd,
-      env,
+      env: developmentSystemEnv(),
       encoding: 'utf8',
       timeout: 10_000,
     }).trim()
@@ -238,13 +321,13 @@ export class DevelopmentGitHub {
       ].includes(origin)
     )
       throw new Error('The origin remote does not match the approved repository')
-    this.assertCandidateBranch(branch, sha)
-    const validationRef = `narduk-validation/${sha}/${randomUUID()}`
-    beforePush({ branch, sha, reason, validationRef })
+  }
+
+  private pushValidationRef(cwd: string, sha: string, validationRef: string): void {
     try {
       execFileSync('git', ['push', 'origin', `${sha}:refs/heads/${validationRef}`], {
         cwd,
-        env,
+        env: developmentSystemEnv(),
         timeout: 60_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
@@ -253,7 +336,6 @@ export class DevelopmentGitHub {
         'Validation-ref push was not confirmed; inspect the recorded ref and run before retrying',
       )
     }
-    return validationRef
   }
 
   verifyValidation(

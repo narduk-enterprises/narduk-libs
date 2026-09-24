@@ -96,6 +96,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
   shell('NeKpiTile', 'KPI tile', 'A headline number with a signed, glyph-marked delta.'),
   shell('NeKpiBand', 'KPI band', 'A responsive row of KPI tiles.'),
   shell(
+    'NeMeter',
+    'Meter',
+    'One value against a known ceiling; an unreported value is hatched, never empty.',
+  ),
+  shell(
     'NeDataTable',
     'Data table',
     'UTable with grouped units, tabular numerals, missing-last sorting and a phone column switch.',

@@ -53,6 +53,9 @@ describe('NeKpiTile server rendering', () => {
   it('carries the empty-value placeholder into the server output', async () => {
     const html = await renderTile({ label: 'Runners online', value: null })
     expect(html).toContain('—')
+    // The unreported treatment (#602) is in the first paint, not added later.
+    expect(html).toContain('ne-kpi-tile__value--unreported')
+    expect(html).toContain('aria-label="Not reported"')
   })
 
   it('carries a pre-formatted string value into the server output unchanged', async () => {
