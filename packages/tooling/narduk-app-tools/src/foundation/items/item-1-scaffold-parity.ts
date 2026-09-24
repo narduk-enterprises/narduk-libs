@@ -6,8 +6,15 @@
  * disagree on a manifest-only question. Sub-check 1.1 is the one this tool
  * OWNS per spec §3: "Absent ⇒ unknown in the static evaluator;
  * `foundation:check` resolves the config for real and must decide it."
+ * Sub-check 1.5 (D1 bindings name a real database, narduk-libs#662) is this
+ * tool's too; it lives in `../d1-placeholder.ts`.
  */
 
+import {
+  D1_PROVISIONED_CHECK_ID,
+  D1_PROVISIONED_CHECK_NAME,
+  evaluateD1Provisioned,
+} from '../d1-placeholder.js'
 import {
   CLOUDFLARE_APP_FILE,
   classifyDeploymentPlatform,
@@ -318,6 +325,26 @@ function evaluate14(
   )
 }
 
+/** Sub-check 1.5 lives in `../d1-placeholder.ts`; only the platform gate is
+ * here. A D1 binding is a Workers binding, so an app whose only declared
+ * target is not Cloudflare has no database for it to name -- a leftover
+ * wrangler config in such a checkout deploys nothing (narduk-libs#158). */
+function evaluate15(
+  repo: AppRepo,
+  wranglerRel: string | null,
+  platform: DeploymentPlatform,
+): FoundationSubCheck {
+  if (isNonCloudflareOnly(platform)) {
+    return nonCloudflareWorkersCheck(
+      D1_PROVISIONED_CHECK_ID,
+      D1_PROVISIONED_CHECK_NAME,
+      platform,
+      'Cloudflare D1 bindings do not apply',
+    )
+  }
+  return evaluateD1Provisioned(repo, wranglerRel)
+}
+
 export function evaluateItem1(repo: AppRepo): FoundationSubCheck[] {
   const cfApp = parseJson(repo.read(CLOUDFLARE_APP_FILE))
   const wranglerRel = findWranglerConfig(repo)
@@ -328,6 +355,7 @@ export function evaluateItem1(repo: AppRepo): FoundationSubCheck[] {
     evaluate12(repo, cfApp, wranglerRel, platform),
     evaluate13(repo),
     evaluate14(repo, exposureClass, wranglerRel, platform),
+    evaluate15(repo, wranglerRel, platform),
   ]
 }
 

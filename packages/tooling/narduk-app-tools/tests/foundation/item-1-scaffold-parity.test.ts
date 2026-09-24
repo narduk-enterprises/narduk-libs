@@ -162,7 +162,7 @@ describe('item 1 -- scaffold parity', () => {
     expect(subCheckStatus(await run(root), '1.4')).toBe('pass')
   })
 
-  it('1.1/1.2/1.4 are not-applicable for a Coolify-only app (narduk-libs#158)', async () => {
+  it('1.1/1.2/1.4/1.5 are not-applicable for a Coolify-only app (narduk-libs#158)', async () => {
     const root = makeTempRepo()
     tempDirs.push(root)
     writeCoolifyOnlyApp(root)
@@ -171,6 +171,25 @@ describe('item 1 -- scaffold parity', () => {
     expect(subCheckStatus(artefact, '1.2')).toBe('not-applicable')
     expect(subCheckStatus(artefact, '1.3')).toBe('pass')
     expect(subCheckStatus(artefact, '1.4')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.5')).toBe('not-applicable')
+    expect(itemStatus(artefact, 1)).toBe('pass')
+  })
+
+  it('1.5 is not-applicable for a Coolify-only app with a leftover placeholder D1 binding', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    writeJson(root, 'wrangler.json', {
+      d1_databases: [
+        {
+          binding: 'DB',
+          database_name: 'fixture-app-db',
+          database_id: '00000000-0000-0000-0000-000000000000',
+        },
+      ],
+    })
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.5')).toBe('not-applicable')
     expect(itemStatus(artefact, 1)).toBe('pass')
   })
 

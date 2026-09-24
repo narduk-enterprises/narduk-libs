@@ -1,16 +1,18 @@
-import { and, eq } from 'drizzle-orm'
 import { createError, getRouterParam } from 'h3'
 
-import { AUTH_API_KEY_SCOPES } from '#layer/server/utils/auth'
-import { executeDatabaseQuery, useDatabase } from '#layer/server/utils/database'
+import { AUTH_API_KEY_SCOPES, revokeApiKey } from '#layer/server/utils/auth'
+import { useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
 import { defineUserMutation } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { apiKeys } from '#narduk-core/schema'
 
 /**
  * DELETE /api/auth/api-keys/:id
- * Revoke (delete) an API key. Users can only delete their own keys.
+ * Revoke an API key. Users can only revoke their own keys.
+ *
+ * The row is kept with `revoked_at` set (narduk-core's `revokeApiKey`,
+ * narduk-libs#806), so `last_used_at`, the prefix and the scopes survive for
+ * audit. An unknown, foreign or already-revoked key answers 404.
  */
 export default defineUserMutation(
   {
@@ -25,17 +27,10 @@ export default defineUserMutation(
       throw createError({ statusCode: 400, message: 'Missing key ID' })
     }
 
-    const db = useDatabase(event)
+    const revoked = await revokeApiKey(useDatabase(event), id, { userId: user.id })
 
-    const deleted = await executeDatabaseQuery<Array<typeof apiKeys.$inferSelect>>(
-      db
-        .delete(apiKeys)
-        .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
-        .returning(),
-    )
-
-    if (deleted.length === 0) {
-      log.warn('API key not found for deletion', { keyId: id, userId: user.id })
+    if (!revoked) {
+      log.warn('API key not found for revocation', { keyId: id, userId: user.id })
       throw createError({ statusCode: 404, message: 'API key not found' })
     }
 

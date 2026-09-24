@@ -12,11 +12,18 @@ import { join, resolve } from 'node:path'
 import type { DevelopmentComponent } from './development-config.js'
 import {
   describeOutcome,
+  rollBackDevelopmentTarget,
   runDevelopmentDeploy,
   type DevelopmentContext,
   type DevelopmentReceipt,
 } from './development-deploy.js'
 import { DevelopmentGitHub, type SavedDevelopmentWorkflow } from './development-github.js'
+import {
+  assessDevelopmentMigrations,
+  developmentReceiptPath,
+  planDevelopmentRollback,
+  type RollbackPlan,
+} from './development-guards.js'
 import { readDevelopmentSecret } from './development-process.js'
 import { DevelopmentCloudflare } from './development-provider.js'
 import {
@@ -40,6 +47,12 @@ import {
   writePrivateJson,
   type TargetLockRecord,
 } from './development-state.js'
+import {
+  drainDeployedValidations,
+  readValidationHistory,
+  type ValidationHistoryEntry,
+} from './development-validation.js'
+import { runVerifyLive } from './verify-live.js'
 
 export type DevelopmentGitHubClient = Pick<
   DevelopmentGitHub,
@@ -51,6 +64,11 @@ export type DevelopmentGitHubClient = Pick<
   | 'requestValidation'
   | 'verifyValidation'
   | 'workflows'
+  | 'openRedMainIssues'
+  | 'requestDeployedValidation'
+  | 'activeValidationRuns'
+  | 'cancelRun'
+  | 'deleteValidationRef'
 > & { branchHead?: (branch: string) => string }
 export type DevelopmentBuildsClient = Pick<
   DevelopmentCloudflare,
@@ -264,6 +282,17 @@ export async function runDevelopmentEnter(
       writeActivation(record, stateDirectory, 'settings-saved')
     }
     if (!step(record, 'held')) {
+      // The production branch as this checkout knows it before anything is
+      // held: everything in it was pushed while normal delivery still ran.
+      if (
+        record.mode === 'entering' &&
+        !record.migrationBaseline &&
+        !record.workflows.some((workflow) => workflow.held) &&
+        !Object.values(record.triggers).some((triggers) =>
+          triggers.some((trigger) => trigger.retired),
+        )
+      )
+        recordMigrationBaseline(project, record, log)
       for (const workflow of record.workflows) {
         if (workflow.held) continue
         github.holdWorkflow(workflow)
@@ -308,6 +337,7 @@ export async function runDevelopmentEnter(
       }
       record.journal.push('verified')
     }
+    if (!record.migrationBaseline) recoverMigrationBaseline(project, record, log)
     record.mode = 'active'
     record.configDigest = project.configDigest
     record.toolVersion = toolVersion()
@@ -352,6 +382,85 @@ function newRecord(
   }
 }
 
+/**
+ * Pin the production branch as this checkout has it fetched. Called only on a
+ * fresh entry before anything is held: a ref read then holds only commits
+ * pushed while normal delivery (and its own 12.9 check) still ran. No fetch
+ * here; a stale ref only makes the check stricter.
+ */
+function recordMigrationBaseline(
+  project: DevelopmentProject,
+  record: ActivationRecord,
+  log: (message: string) => void,
+): void {
+  const branch = project.deployment.productionBranch
+  try {
+    const commit = developmentGit(project.checkout, [
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `refs/remotes/origin/${branch}^{commit}`,
+    ])
+    record.migrationBaseline = { commit, recordedAt: new Date().toISOString(), source: 'hold' }
+  } catch {
+    log(
+      `[development] WARNING: origin/${branch} is not fetched; development migrations will re-check every tracked file`,
+    )
+  }
+}
+
+/**
+ * An enrollment without a baseline (entered before it existed, or unfetched
+ * at entry) recovers one from this checkout's reflog of origin/<branch>: the
+ * newest value fetched in a whole second before `enter-started`, so before
+ * the hold. Never the current ref: a file that landed while the hold was on
+ * skipped the held CI and its 12.9 check. When the reflog does not reach back
+ * that far, or history no longer starts at `enter-started`, nothing is
+ * recorded and every tracked file stays judged.
+ */
+function recoverMigrationBaseline(
+  project: DevelopmentProject,
+  record: ActivationRecord,
+  log: (message: string) => void,
+): void {
+  const branch = project.deployment.productionBranch
+  const started = record.history[0]
+  const cutoff =
+    started?.event === 'enter-started' ? Math.floor(Date.parse(started.at) / 1000) : Number.NaN
+  let entries = ''
+  if (Number.isFinite(cutoff)) {
+    try {
+      entries = developmentGit(project.checkout, [
+        'reflog',
+        'show',
+        '--date=unix',
+        '--format=%H%x09%gd',
+        `refs/remotes/origin/${branch}`,
+      ])
+    } catch {
+      entries = ''
+    }
+  }
+  for (const line of entries.split('\n')) {
+    const [commit = '', selector = ''] = line.split('\t')
+    const at = Number(/@\{(\d+)\}$/u.exec(selector)?.[1])
+    if (/^[a-f0-9]{40}$/u.test(commit) && at < cutoff) {
+      record.migrationBaseline = {
+        commit,
+        recordedAt: new Date().toISOString(),
+        source: 'reflog',
+      }
+      log(
+        `[development] migration baseline: origin/${branch} was ${commit.slice(0, 12)} before this enrollment began`,
+      )
+      return
+    }
+  }
+  log(
+    `[development] WARNING: this checkout has no record of origin/${branch} from before this enrollment began; development migrations will re-check every tracked file`,
+  )
+}
+
 // ─── status / resolve ─────────────────────────────────────────────────────────
 
 export interface StatusReport {
@@ -364,6 +473,8 @@ export interface StatusReport {
     { servingVersionId: string; expected?: string; unexpected: boolean; triggers?: number }
   >
   workflows?: Array<{ path: string; state: string }>
+  /** The newest automatic validation push after a verified deploy. */
+  autoValidation?: ValidationHistoryEntry
 }
 
 export async function runDevelopmentStatus(
@@ -387,6 +498,8 @@ export async function runDevelopmentStatus(
       timings: receipt.timings,
     }
   }
+  if (record)
+    report.autoValidation = readValidationHistory(stateDirectory, project.repository).at(-1)
   if (flags.remote && record) {
     report.remote = {}
     for (const id of Object.keys(record.components)) {
@@ -430,6 +543,15 @@ export function formatStatus(report: StatusReport): string {
   if (report.lastReceipt)
     lines.push(
       `  last deploy ${report.lastReceipt.buildId}: ${describeOutcome(report.lastReceipt.outcome)} (base ${report.lastReceipt.baseCommit.slice(0, 12)}${report.lastReceipt.dirty ? ' + local changes' : ''})`,
+    )
+  const auto = report.autoValidation
+  if (auto?.failed)
+    lines.push(
+      `  last automatic validation: ${auto.sha.slice(0, 12)} (${auto.buildId}) NOT PUSHED after ${auto.failed.attempts} attempt(s): ${auto.failed.error}; run development validate`,
+    )
+  else if (auto)
+    lines.push(
+      `  last automatic validation: ${auto.sha.slice(0, 12)} (${auto.buildId}) via ${auto.validationRef}${auto.supersededAt ? ', superseded' : ''}`,
     )
   for (const [id, version] of Object.entries(record.expectedServing))
     lines.push(`  ${id} expected serving ${version}`)
@@ -618,6 +740,68 @@ function migrationFiles(project: DevelopmentProject): Array<{ path: string; sha2
   }))
 }
 
+/** A blob ID at a revision, or undefined when the path is absent there. */
+function blobAt(checkout: string, revision: string, path: string): string | undefined {
+  try {
+    return developmentGit(checkout, ['rev-parse', '--verify', '--quiet', `${revision}:${path}`])
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The promote path's expand-only rule (12.9) on every development-mode
+ * migration: refuse before anything runs when a file this run may apply drops
+ * or renames what serving code reads, unless it is a reviewed contract
+ * migration already landed on the production branch (O-D9).
+ */
+function expandOnlyMigrations(
+  project: DevelopmentProject,
+  record: ActivationRecord,
+  files: Array<{ path: string; sha256: string }>,
+  commit: string,
+): 'expand-only' | 'contract' {
+  const branch = project.deployment.productionBranch
+  const baseline = record.migrationBaseline?.commit
+  // An app that declares deployment.migrations (expand-contract) has foundation
+  // 12.9 judge every file on every run, so a baseline file that is destructive
+  // and unwaived is one normal delivery FAILED (merged under "CI after" while
+  // main went red), not one it shipped. Only where 12.9 is NA (migrations
+  // undeclared) is the baseline a real exemption.
+  const expandContract = Boolean(project.deployment.migrations)
+  const assessment = assessDevelopmentMigrations({
+    files,
+    applied: record.appliedMigrations,
+    beforeEnrollment: expandContract
+      ? undefined
+      : (path) => {
+          if (!baseline) return false
+          const here = blobAt(project.checkout, commit, path)
+          return Boolean(here) && here === blobAt(project.checkout, baseline, path)
+        },
+    read: (path) => readFileSync(join(project.checkout, path), 'utf8'),
+    waivers: project.deployment.migrations?.contractMigrations ?? [],
+    landed: (path) => {
+      const here = blobAt(project.checkout, commit, path)
+      return (
+        Boolean(here) && here === blobAt(project.checkout, `refs/remotes/origin/${branch}`, path)
+      )
+    },
+    productionBranch: branch,
+  })
+  if (assessment.refusals.length)
+    throw new Error(
+      `Refusing the migration: ${assessment.refusals.join(' | ')}${
+        expandContract
+          ? ' | This app declares deployment.migrations (expand-contract), so every file is judged, including files already on the production branch before enrollment: a drop or rename there needs its contractMigrations waiver'
+          : baseline
+            ? ''
+            : ` | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too. development enter --refresh recovers one only from this checkout's reflog of origin/${branch} before the enrollment began (fetching now does not help); otherwise declare the file under deployment.migrations.contractMigrations`
+      }`,
+    )
+  return assessment.contract.length ? 'contract' : 'expand-only'
+}
+
 export async function runDevelopmentExec(
   flags: ExecFlags,
   context: LifecycleContext = {},
@@ -631,6 +815,7 @@ export async function runDevelopmentExec(
     throw new Error('A feedback pin is active; close the round before changing data or secrets')
   if (!flags.argv.length) throw new Error('Pass the operation command after --')
   let files: Array<{ path: string; sha256: string }> = []
+  let migrationCompatibility: 'expand-only' | 'contract' = 'expand-only'
   if (flags.operation === 'migration') {
     const commit = flags.commit
     if (!commit || !/^[a-f0-9]{40}$/u.test(commit))
@@ -649,6 +834,7 @@ export async function runDevelopmentExec(
     if (changed)
       throw new Error('Migration sources differ from the frozen commit; commit them first')
     files = migrationFiles(project)
+    migrationCompatibility = expandOnlyMigrations(project, record, files, commit)
   }
   const lock = lockTargets(record, `exec-${flags.operation}`, stateDirectory)
   try {
@@ -667,6 +853,7 @@ export async function runDevelopmentExec(
         approvalRef: flags.approvalRef,
         appliedAt: new Date().toISOString(),
         files,
+        compatibility: migrationCompatibility,
       })
     }
     for (const id of Object.keys(record.components)) {
@@ -718,6 +905,98 @@ export function runDevelopmentValidate(
     `[development] find the run: gh run list --repo ${project.repository} --branch ${validationRef}`,
   )
   return validationRef
+}
+
+/**
+ * The detached worker deploy:dev starts: push the newest queued deployed
+ * commit for full validation and cancel what it supersedes. Exits when the
+ * queue is empty; another worker already draining it makes this a no-op.
+ */
+export function runDevelopmentValidationWorker(context: LifecycleContext = {}): string[] {
+  const { stateDirectory, log, project, github } = resolveContext(context)
+  return drainDeployedValidations({ repository: project.repository, stateDirectory, github, log })
+}
+
+// ─── rollback ─────────────────────────────────────────────────────────────────
+
+/**
+ * Move serving back to a known-good build and prove it: the rehearsal command,
+ * and the manual path while automatic rollback is off. It refuses exactly
+ * where the automatic path pages: across a Durable Object, binding or
+ * non-expand-only migration change.
+ */
+export async function runDevelopmentRollback(
+  flags: { to: string; dryRun: boolean },
+  context: LifecycleContext = {},
+): Promise<RollbackPlan> {
+  const { stateDirectory, log, project, builds } = resolveContext(context)
+  const record = activeRecord(project, stateDirectory)
+  if (record.pin) throw new Error('A feedback pin is active; close it before rolling back')
+  if (record.pendingAttempt) throw new Error('Resolve the unfinished attempt before rolling back')
+  if (!record.knownGood.includes(flags.to))
+    throw new Error(
+      `--to must name a known-good build on this workstation: ${record.knownGood.join(', ') || '(none recorded)'}`,
+    )
+  const components = targetsFor(project, record.targetSet).map(({ id }) => ({
+    id,
+    component: project.development.components[id],
+  }))
+  const lock = lockTargets(record, 'development-rollback', stateDirectory)
+  try {
+    for (const { id } of components) {
+      const serving = (await builds(id).inspect()).versionId
+      if (serving !== record.expectedServing[id])
+        throw new Error(`${id} serves ${serving}, not the recorded ${record.expectedServing[id]}`)
+    }
+    const current =
+      record.lastReceipt && existsSync(record.lastReceipt)
+        ? (readPrivateJson(record.lastReceipt) as DevelopmentReceipt)
+        : undefined
+    const plan = planDevelopmentRollback({
+      stateDirectory,
+      record,
+      targetBuildId: flags.to,
+      components: components.map(({ id }) => id),
+      current: Object.fromEntries(
+        components.map(({ id }) => [id, current?.components[id]?.bindings]),
+      ),
+    })
+    if (plan.kind === 'page')
+      throw new Error(`Refusing to roll back to ${flags.to}: ${plan.reasons.join('; ')}`)
+    if (components.every(({ id }) => record.expectedServing[id] === plan.versions[id]))
+      throw new Error(`${flags.to} already serves; nothing to roll back`)
+    if (flags.dryRun) {
+      for (const { id } of components)
+        log(`[development] would move ${id} ${record.expectedServing[id]} -> ${plan.versions[id]}`)
+      return plan
+    }
+    writeActivation(record, stateDirectory, 'rollback-intent', flags.to)
+    const readSecret = context.readSecret ?? readDevelopmentSecret
+    const result = await rollBackDevelopmentTarget({
+      project,
+      components,
+      provider: (id) =>
+        context.provider?.(project.development.components[id]) ??
+        new DevelopmentCloudflare(project.development.components[id], readSecret),
+      plan,
+      message: `narduk-app development rollback -> ${flags.to}`,
+      verify: context.verify ?? ((verifyFlags) => runVerifyLive(verifyFlags)),
+      log,
+    })
+    for (const [id, version] of Object.entries(result.serving)) record.expectedServing[id] = version
+    if (!result.proven) {
+      writeActivation(record, stateDirectory, 'rollback-unproven', result.failure)
+      throw new Error(`Rollback to ${flags.to} is unproven: ${result.failure}`)
+    }
+    record.knownGood = [flags.to, ...record.knownGood.filter((id) => id !== flags.to)]
+    // What serves is the known-good build again; its receipt describes it.
+    record.lastReceipt = developmentReceiptPath(stateDirectory, record.repository, flags.to)
+    writeActivation(record, stateDirectory, 'rolled-back', flags.to)
+    log(`[development] rolled back to ${flags.to} and proved it`)
+    return plan
+  } finally {
+    lock.release()
+  }
 }
 
 // ─── publisher handoff ────────────────────────────────────────────────────────

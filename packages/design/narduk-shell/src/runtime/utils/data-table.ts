@@ -46,6 +46,34 @@ export function nextSortDirection(
   return current === 'asc' ? 'desc' : 'asc'
 }
 
+/** The least a width-less column is given once its neighbours declare widths. */
+export const DATA_TABLE_COLUMN_FLOOR = '200px'
+
+/**
+ * The table-level column floor (narduk-libs#684, proven in operator-portal's
+ * CollectionTable): `calc(<each column's width, or 200px for a width-less
+ * one> + …)`, applied as the `<table>`'s `min-width`.
+ *
+ * A width on a table cell is only a hint and `min-width` on a cell is
+ * ignored, so fixed-width columns hand a width-less one whatever they leave
+ * over — 146–191 px on a 1024 px iPad, with rows wrapped thousands of pixels
+ * tall. Flooring the TABLE instead is honoured, and floors every width-less
+ * column, not only the first. It is only safe inside a scroll box: the table
+ * grows wider than its container and the box, not the page, scrolls.
+ *
+ * `undefined` — no floor — when no column declares a width (nothing squeezes
+ * a width-less column, and a table from before `width` renders exactly as it
+ * did) and when every column declares one (the widths are the floor already).
+ */
+export function dataTableMinWidth<TRow>(
+  columns: ReadonlyArray<Pick<NeDataColumn<TRow>, 'width'>>,
+): string | undefined {
+  const declared = columns.filter((column) => column.width).length
+  if (declared === 0 || declared === columns.length) return undefined
+  const terms = columns.map((column) => column.width || DATA_TABLE_COLUMN_FLOOR)
+  return `calc(${terms.join(' + ')})`
+}
+
 /** Characters a spreadsheet treats as the start of a formula. */
 const FORMULA_LEAD = /^[=+\-@\t\r]/u
 
