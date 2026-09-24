@@ -238,6 +238,97 @@ function privateCallerInputs(): string[] {
   ]
 }
 
+/** Hosted job that can produce a log when self-hosted `ci` never leaves queued. */
+export const RUNNER_ONBOARDING_JOB_NAME = 'Runner group onboarding'
+
+export const RUNNER_ONBOARDING_MESSAGE =
+  'This repository is not in the fleet runner groups its private CI names (linux-ci and playwright-isolated). The route names in .github/workflows/ci.yml do not grant selected-repository membership. Onboard this repository into both groups and grant it access to the shared workflows, then re-run. A job that stays queued with no runner is this gap, not a queue you can wait out.'
+
+/**
+ * Detects a missing selected-repository runner-group assignment.
+ *
+ * The org runner-groups API needs admin:org, which `github.token` usually
+ * lacks. When that listing works, absence is a hard failure and the sibling
+ * self-hosted `ci` job is not the only signal. When it does not, this watches
+ * the sibling jobs on this run: if they stay `queued` with no runner, it
+ * annotates the run. It does not fail on that heuristic -- a busy queue looks
+ * the same from inside the repository (narduk-libs#625).
+ */
+export function createRunnerOnboardingScript(): string {
+  return `set -euo pipefail
+message='${RUNNER_ONBOARDING_MESSAGE}'
+org="\${REPO%%/*}"
+wait_seconds="\${RUNNER_ONBOARDING_WAIT_SECONDS:-90}"
+
+listed=0
+missing=0
+while IFS=$'\\t' read -r id visibility name; do
+  [ -n "$id" ] || continue
+  listed=1
+  if [ "$visibility" = "all" ]; then
+    continue
+  fi
+  if ! gh api --paginate "orgs/\${org}/actions/runner-groups/\${id}/repositories" --jq '.repositories[].full_name' | grep -Fxq "$REPO"; then
+    echo "Not a member of \${name} (id \${id})."
+    missing=1
+  fi
+done < <(gh api --paginate "orgs/\${org}/actions/runner-groups" --jq '.runner_groups[] | select(.name=="linux-ci" or .name=="playwright-isolated") | [.id, .visibility, .name] | @tsv' 2>/dev/null || true)
+
+if [ "$listed" -gt 0 ]; then
+  if [ "$missing" -eq 1 ]; then
+    echo "::error::$message"
+    exit 1
+  fi
+  echo "Repository is listed in the named runner groups."
+  exit 0
+fi
+
+deadline=$((SECONDS + wait_seconds))
+started=0
+while :; do
+  started=$(gh api "repos/\${REPO}/actions/runs/\${RUN_ID}/jobs" --jq '[.jobs[] | select(.name != "Runner group onboarding") | select(.status=="in_progress" or .status=="completed")] | length' || echo 0)
+  if [ "$started" -gt 0 ]; then
+    echo "Sibling CI job left queued; runner groups look reachable."
+    exit 0
+  fi
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    break
+  fi
+  sleep "\${RUNNER_ONBOARDING_POLL_SECONDS:-5}"
+done
+echo "::warning::$message"
+`
+}
+
+function createRunnerOnboardingJob(): string[] {
+  const runBody = createRunnerOnboardingScript()
+    .split('\n')
+    .map((line) => (line.length === 0 ? '' : `          ${line}`))
+    .join('\n')
+  return [
+    '  # Hosted on purpose: a missing runner-group assignment leaves every',
+    '  # self-hosted job in `queued` with no log. This job still starts and',
+    '  # annotates the run (narduk-libs#625). It does not `needs:` `ci` and',
+    '  # `ci` does not `needs:` it, so a healthy self-hosted job can start',
+    '  # immediately and this job can observe that.',
+    '  runner-onboarding:',
+    `    name: ${RUNNER_ONBOARDING_JOB_NAME}`,
+    '    runs-on: ubuntu-24.04',
+    '    timeout-minutes: 5',
+    '    permissions:',
+    '      contents: read',
+    '      actions: read',
+    '    steps:',
+    '      - name: Detect a missing runner-group assignment',
+    '        env:',
+    '          GH_TOKEN: ${{ github.token }}',
+    '          REPO: ${{ github.repository }}',
+    '          RUN_ID: ${{ github.run_id }}',
+    '        run: |',
+    runBody,
+  ]
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -266,6 +357,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       ...header,
       '  # Before the first run, onboard this repository into both fleet groups.',
       '  # These routes do not grant selected-repository membership themselves.',
+      ...createRunnerOnboardingJob(),
       '  ci:',
       `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${workflowSha}`,
       '    permissions:',

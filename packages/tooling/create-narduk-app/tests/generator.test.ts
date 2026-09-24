@@ -2124,11 +2124,10 @@ describe('a fresh scaffold passes its own gate', () => {
         visibility,
       }).find((file) => file.path === 'README.md')?.contents ?? ''
 
-    // Self-hosted CI gives no error, no timeout and no log when no runner can
-    // pick a job up -- the run just sits in `queued`. The route names in the
-    // generated workflow do not grant membership, so this has to be said
-    // where the person about to push will read it.
-    expect(readme('private')).toContain('sits in `queued` indefinitely')
+    // Self-hosted jobs sit in `queued` with no log when no runner can pick
+    // them up. The hosted onboarding job still starts and annotates the run.
+    expect(readme('private')).toContain('Runner group onboarding')
+    expect(readme('private')).toContain('annotates the run')
     expect(readme('private')).toContain('fleet runner groups')
     // Public apps run on GitHub-hosted runners and never hit this.
     expect(readme('public')).not.toContain('fleet runner groups')

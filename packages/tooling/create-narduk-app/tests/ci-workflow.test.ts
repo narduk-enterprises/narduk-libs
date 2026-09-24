@@ -8,6 +8,9 @@ import {
   createCiWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
+  createRunnerOnboardingScript,
+  RUNNER_ONBOARDING_JOB_NAME,
+  RUNNER_ONBOARDING_MESSAGE,
 } from '../src/ci-workflow.js'
 import {
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
@@ -52,6 +55,21 @@ describe('generated CI boundaries', () => {
     expect(workflow).not.toContain('e2e-browsers-path:')
     expect(workflow).not.toContain('playwright install')
     expect(workflow).toContain('selected-repository membership')
+    expect(workflow).toContain(`name: ${RUNNER_ONBOARDING_JOB_NAME}`)
+    expect(workflow).toContain('runner-onboarding:')
+    expect(workflow).toContain('runs-on: ubuntu-24.04')
+    expect(workflow).toContain(RUNNER_ONBOARDING_MESSAGE)
+    const parsed = YAML.parse(workflow) as {
+      jobs: Record<
+        string,
+        { name?: string; 'runs-on'?: string; needs?: unknown; 'timeout-minutes'?: number }
+      >
+    }
+    expect(parsed.jobs['runner-onboarding']?.name).toBe(RUNNER_ONBOARDING_JOB_NAME)
+    expect(parsed.jobs['runner-onboarding']?.['runs-on']).toBe('ubuntu-24.04')
+    expect(parsed.jobs['runner-onboarding']?.['timeout-minutes']).toBe(5)
+    expect(parsed.jobs['runner-onboarding']?.needs).toBeUndefined()
+    expect(parsed.jobs.ci?.needs).toBeUndefined()
     expect(workflow).toContain('workflow_dispatch:')
     // Cancel superseded pull-request runs only; a push (main) run queues
     // instead, so the commit that merged keeps a completed CI record.
@@ -272,5 +290,108 @@ describe('generated CI boundaries', () => {
     expect(workflow).not.toContain('npm.pkg.github.com')
     expect(workflow).not.toContain('GH_PACKAGES_READ')
     expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+  })
+
+  it('does not emit the hosted runner-onboarding job on public apps', () => {
+    const workflow = createCiWorkflow('public')
+    expect(workflow).not.toContain(RUNNER_ONBOARDING_JOB_NAME)
+    expect(workflow).not.toContain('runner-onboarding:')
+  })
+})
+
+describe('runner-onboarding detection script', () => {
+  async function runScript(ghScript: string) {
+    const directory = await mkdtemp(join(tmpdir(), 'runner-onboard-'))
+    try {
+      const gh = join(directory, 'gh')
+      await writeFile(gh, ghScript)
+      await chmod(gh, 0o755)
+      const executable = join(directory, 'check.sh')
+      await writeFile(executable, createRunnerOnboardingScript())
+      return spawnSync('bash', [executable], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${directory}:${process.env.PATH}`,
+          REPO: 'narduk-enterprises/new-app',
+          RUN_ID: '99',
+          RUNNER_ONBOARDING_WAIT_SECONDS: '0',
+          RUNNER_ONBOARDING_POLL_SECONDS: '0',
+        },
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  }
+
+  it('fails when the org API shows the repo is not in linux-ci', async () => {
+    const result = await runScript(`#!/bin/bash
+if [[ "$*" == *runner-groups* && "$*" != *repositories* ]]; then
+  printf '1\\tselected\\tlinux-ci\\n'
+  exit 0
+fi
+if [[ "$*" == *repositories* ]]; then
+  printf 'narduk-enterprises/other\\n'
+  exit 0
+fi
+exit 1
+`)
+    expect(result.status, result.stderr).toBe(1)
+    expect(result.stdout).toContain('::error::')
+    expect(result.stdout).toContain(RUNNER_ONBOARDING_MESSAGE)
+  })
+
+  it('warns when sibling jobs stay queued and the org API is forbidden', async () => {
+    const result = await runScript(`#!/bin/bash
+if [[ "$*" == *runner-groups* ]]; then
+  exit 1
+fi
+if [[ "$*" == *in_progress* ]]; then
+  echo 0
+  exit 0
+fi
+exit 1
+`)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('::warning::')
+    expect(result.stdout).toContain(RUNNER_ONBOARDING_MESSAGE)
+  })
+
+  it('succeeds when the org API lists the repo in the named groups', async () => {
+    const result = await runScript(`#!/bin/bash
+if [[ "$*" == *runner-groups* && "$*" != *repositories* ]]; then
+  printf '1\\tselected\\tlinux-ci\\n2\\tselected\\tplaywright-isolated\\n'
+  exit 0
+fi
+if [[ "$*" == *repositories* ]]; then
+  printf 'narduk-enterprises/other\\nnarduk-enterprises/new-app\\n'
+  exit 0
+fi
+exit 1
+`)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Repository is listed in the named runner groups.')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).not.toContain('::error::')
+  })
+
+  it('succeeds when a sibling CI job has already started', async () => {
+    const result = await runScript(`#!/bin/bash
+if [[ "$*" == *runner-groups* ]]; then
+  exit 1
+fi
+if [[ "$*" == *in_progress* ]]; then
+  echo 1
+  exit 0
+fi
+if [[ "$*" == *queued* ]]; then
+  echo 0
+  exit 0
+fi
+exit 1
+`)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('runner groups look reachable')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).not.toContain('::error::')
   })
 })
