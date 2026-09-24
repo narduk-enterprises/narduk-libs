@@ -3,7 +3,7 @@
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
-narduk-seo no longer hard-depends on nuxt-og-image. The package is an optional peer at 6.8.0. Static-card apps omit it and set `ogImage.enabled: false`. Runtime OG or build-time prerender cards (`ogImage.zeroRuntime: true`) add `nuxt-og-image@6.8.0` themselves -- `zeroRuntime` still installs the module and only disables the request-time renderer. If the peer is missing, the layer skips `installModule`, registers a no-op `defineOgImage`, and `useSeo` falls back to the static image. A missing peer is a silent skip on the default/static path and when the app set only `ogImage.zeroRuntime: true`; the layer warns only when the app set `ogImage.enabled: true`.
+narduk-seo no longer hard-depends on nuxt-og-image. The package is an optional peer at 6.8.0. Static-card apps omit it and set `ogImage.enabled: false`. Runtime OG or build-time prerender cards (`ogImage.zeroRuntime: true`) add `nuxt-og-image@6.8.0` themselves -- `zeroRuntime` still installs the module and only disables the request-time renderer. If the peer is missing, the layer skips `installModule`, registers a no-op `defineOgImage`, and `useSeo` falls back to the static image. A missing peer is a silent skip on the default/static path and when the app set only `ogImage.zeroRuntime: true`; the layer warns only when the app set `ogImage.enabled: true`. Generated SEO apps pin `nuxt-og-image@6.8.0` so the default `useSeo()` path still produces `/_og/` cards (narduk-libs#316).
 
 The three image-size highs that originally filed narduk-libs#170 are already gone at nuxt-og-image 6.8.0 (`image-size` is not in the lockfile). This change is the coupling half.
 
