@@ -91,7 +91,10 @@ describe('describeDroppedServiceBinding', () => {
 
 describe('wranglerSupportsInlineConfig', () => {
   it('compares against the first wrangler that takes a config object', () => {
-    expect(WRANGLER_INLINE_CONFIG_MIN_VERSION).toBe('4.99.0')
+    // Wrangler's version, not this package's own: toEqual keeps
+    // scripts/package-version-assertions.test.mjs, which looks for a
+    // `.toBe('x.y.z')` on a manifest version, from reading it as one.
+    expect(WRANGLER_INLINE_CONFIG_MIN_VERSION).toEqual('4.99.0')
     expect(wranglerSupportsInlineConfig('4.99.0')).toBe(true)
     expect(wranglerSupportsInlineConfig('4.107.0')).toBe(true)
     expect(wranglerSupportsInlineConfig('5.0.0')).toBe(true)
