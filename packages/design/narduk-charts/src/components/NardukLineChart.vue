@@ -335,32 +335,6 @@ const svgDescElId = `nc-svgd-${idSafe(plotClipIdRaw)}`
 const xViewMin = ref(0)
 const xViewMax = ref(1)
 
-watch(
-  () => effLabels.value.length,
-  n => {
-    const full = Math.max(0, n - 1)
-    const w = xWindowModel.value
-    if (w !== undefined && n > 1) {
-      clampViewWindow(w.start, w.end)
-      return
-    }
-    xViewMin.value = 0
-    xViewMax.value = full
-  },
-  { immediate: true },
-)
-
-// eslint-disable-next-line narduk/prefer-shallow-watch -- narduk-libs#131, not fixed in this fold-move PR
-watch(
-  () => xWindowModel.value,
-  w => {
-    if (w === undefined || effLabels.value.length <= 1) return
-    if (xViewMin.value === w.start && xViewMax.value === w.end) return
-    clampViewWindow(w.start, w.end)
-  },
-  { deep: true },
-)
-
 const xFullSpan = computed(() => Math.max(1e-9, effLabels.value.length - 1))
 
 const minIndexSpan = computed(() => {
@@ -387,6 +361,34 @@ function clampViewWindow(a: number, b: number) {
   xViewMin.value = nmin
   xViewMax.value = nmax
 }
+
+watch(
+  () => effLabels.value.length,
+  n => {
+    const full = Math.max(0, n - 1)
+    const w = xWindowModel.value
+    if (w !== undefined && n > 1) {
+      clampViewWindow(w.start, w.end)
+      return
+    }
+    xViewMin.value = 0
+    xViewMax.value = full
+  },
+  { immediate: true },
+)
+
+watch(
+  () => {
+    const w = xWindowModel.value
+    return w === undefined ? null : ([w.start, w.end] as const)
+  },
+  w => {
+    if (w === null || effLabels.value.length <= 1) return
+    const [start, end] = w
+    if (xViewMin.value === start && xViewMax.value === end) return
+    clampViewWindow(start, end)
+  },
+)
 
 function emitZoomRange() {
   const r = { start: xViewMin.value, end: xViewMax.value }
@@ -1087,7 +1089,7 @@ function onMouseMove(event: MouseEvent) {
 
 function onMouseLeave() {
   activeIndex.value = null
-  // eslint-disable-next-line narduk/no-ssr-dom-access -- narduk-libs#131, not fixed in this fold-move PR: guarded by a pointer/focus handler that only runs client-side in practice
+  if (typeof document === 'undefined') return
   if (document.activeElement !== svgRef.value) {
     hideTooltip()
     kbFocusIndex.value = null
@@ -1115,7 +1117,7 @@ function onSvgClick(event: MouseEvent) {
   })
 }
 
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131: one-time paint seed; onMounted owns the flag after setup
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {
