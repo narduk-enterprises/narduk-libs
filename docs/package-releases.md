@@ -206,12 +206,13 @@ publishes (narduk-libs#589).
 - **Who merges it.** If a campaign orchestrator is running in this repository,
   it owns release merges; ask it rather than merging. Otherwise the lane blocked
   on the fix may merge it through the same gate as any PR (`verify-pr-gate.py`
-  GREEN on its current head, after approving held runs as described in
-  [Approving `chore: release packages` PR runs](#approving-chore-release-packages-pr-runs)).
-  The PR publishes every pending package, not only yours, so read its package
-  list before merging, and treat the
-  [Release publication proof](#release-publication-proof) as the end of the job,
-  not the merge.
+  GREEN on its current head, after
+  [Approving `chore: release packages` PR runs](#approving-chore-release-packages-pr-runs)
+  has landed required checks on that head — normally via `release-pr-ci`
+  dispatch, with manual approve only if that job warns). The PR publishes every
+  pending package, not only yours, so read its package list before merging, and
+  treat the [Release publication proof](#release-publication-proof) as the end
+  of the job, not the merge.
 - **Pinning ahead of publication.** Do not push an app PR that pins a version
   which does not exist yet. Its install fails for a reason that is not the PR's
   fault, and the red check looks the same as a real failure. Keep the pin local,
@@ -314,11 +315,21 @@ Prevention:
 
 ### Approving `chore: release packages` PR runs
 
-The `changeset-release/main` PR is pushed by the Release workflow's
-`github-actions[bot]` token, so each push's `pull_request` CI run can wait in
-`action_required` until someone approves it, and `verify-pr-gate.py` then sees
-no result on the current head. Approve only the runs for the release PR's
-current head:
+The Release workflow's `release-pr-ci` job starts CI on `changeset-release/main`
+after changesets/action reports a release PR number. It runs
+`gh workflow run ci.yml --ref changeset-release/main` with the job-scoped
+`GITHUB_TOKEN` (`actions: write` only; no secret, no environment, no checkout).
+`workflow_dispatch` is GitHub's documented exception to `GITHUB_TOKEN` loop
+prevention. A dispatch plans `--all`, and the required `ci / Required` and
+`verify` checks land on the release PR's head commit.
+
+That job is `continue-on-error`. If the dispatch fails, the run posts a warning
+and the situation is the same as before the job existed: GitHub has already
+created the PR's `pull_request` CI run and may be holding it as
+`action_required` until someone approves it, which leaves `verify-pr-gate.py`
+with no result on the current head. Approve only the held run for the release
+PR's current head — do not approve a stale held run when `release-pr-ci` has
+already started CI on that head:
 
 ```bash
 head=$(gh pr view changeset-release/main --repo narduk-enterprises/narduk-libs \
@@ -335,9 +346,9 @@ concurrency group. On 2026-09-22 an unfiltered approve released 20 runs, 19 of
 them stale. They took the group and cancelled the current head's run, which then
 had to be re-run.
 
-Removing the approval step entirely (authoring the release PR with a GitHub App
-token instead of `GITHUB_TOKEN`) widens that App's grant on this repository, so
-it is Logan's decision and is tracked on #198.
+The designed path is the `release-pr-ci` dispatch, not authoring the release PR
+with a GitHub App token. Widening that App's grant on this repository remains
+Logan's decision and is tracked on #198.
 
 ## Bad release rollback
 
