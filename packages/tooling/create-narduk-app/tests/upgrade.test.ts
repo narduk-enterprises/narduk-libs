@@ -318,17 +318,65 @@ describe('upgrade opt-outs and notices', () => {
     expect(after).toContain('This app runs its suite through a wrapper.')
   })
 
-  it('treats a missing router region as an opt-in notice, not drift', async () => {
+  it('inserts the narduk:router region into an existing AGENTS.md that predates it (#377)', async () => {
     const targetDir = await scaffold()
-    await edit(targetDir, 'AGENTS.md', (contents) =>
-      contents
-        .replace(REGION_MARKERS.agentsRouter.start + '\n', '')
-        .replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
+    const appProse = [
+      '# Upgrade fixture agent guide',
+      '',
+      'This file predates the managed router region.',
+      '',
+      '## Marine domain',
+      '',
+      'App prose.',
+      '',
+    ].join('\n')
+    await writeFile(join(targetDir, 'AGENTS.md'), appProse, 'utf8')
+
+    const dryRun = await upgradeNardukApp({ targetDir })
+    expect(statusOf(dryRun, 'AGENTS.md')).toBe('drift')
+    expect(dryRun.driftCount).toBeGreaterThan(0)
+    expect(await read(targetDir, 'AGENTS.md')).toBe(appProse)
+
+    const applied = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(applied, 'AGENTS.md')).toBe('drift')
+    expect(applied.changes.find((change) => change.path === 'AGENTS.md')?.applied).toBe(true)
+
+    const after = await read(targetDir, 'AGENTS.md')
+    expect(after).toContain('## Marine domain')
+    expect(after).toContain('App prose.')
+    expect(after).toContain(REGION_MARKERS.agentsRouter.start)
+    expect(after).toContain(REGION_MARKERS.agentsRouter.end)
+    expect(after).toContain('Every shareable route needs a preview.')
+    expect(after.indexOf('## Marine domain')).toBeLessThan(
+      after.indexOf(REGION_MARKERS.agentsRouter.start),
     )
 
-    const report = await upgradeNardukApp({ targetDir })
+    const second = await upgradeNardukApp({ targetDir })
+    expect(statusOf(second, 'AGENTS.md')).toBe('clean')
+    expect(second.driftCount).toBe(0)
+  })
+
+  it('leaves an incomplete narduk:router pair as an opt-in notice', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'AGENTS.md', (contents) =>
+      contents.replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
+    )
+    const before = await read(targetDir, 'AGENTS.md')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, 'AGENTS.md')).toBe('unmanaged')
     expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, 'AGENTS.md')).toBe(before)
+  })
+
+  it('does not create AGENTS.md when the file is absent', async () => {
+    const targetDir = await scaffold()
+    await rm(join(targetDir, 'AGENTS.md'))
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('absent')
+    expect(report.driftCount).toBe(0)
+    await expect(read(targetDir, 'AGENTS.md')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('treats an app e2e document with no policy markers as an opt-in notice', async () => {

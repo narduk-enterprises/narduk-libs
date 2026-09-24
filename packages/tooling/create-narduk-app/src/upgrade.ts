@@ -257,6 +257,21 @@ function replaceRegion(
   return contents.slice(0, start + markers.start.length) + replacement + contents.slice(end)
 }
 
+function hasEitherRegionMarker(contents: string, markers: { start: string; end: string }): boolean {
+  return contents.includes(markers.start) || contents.includes(markers.end)
+}
+
+/** Append a complete marker pair after the app's own prose. */
+function appendRegion(
+  contents: string,
+  markers: { start: string; end: string },
+  replacement: string,
+): string {
+  const block = markers.start + replacement + markers.end
+  const trimmed = contents.replace(/\s*$/u, '')
+  return (trimmed.length === 0 ? '' : trimmed + '\n\n') + block + '\n'
+}
+
 /**
  * Line counts, so a whole-file rewrite that would delete a lot of app-written
  * content is legible in the one-line summary and not only in the diff body.
@@ -358,6 +373,32 @@ function resolveRegion(
   }
   const currentRegion = regionOf(current, markers)
   if (currentRegion === null) {
+    // A predating AGENTS.md has no markers. Insert the shipped `narduk:router`
+    // block rather than skipping (narduk-libs#377). Keep the shipped marker
+    // names; do not add a second vocabulary. An incomplete pair, or a missing
+    // e2e-policy region, stays an opt-in notice. The sanctioned opt-out for
+    // either file is a `narduk:unmanaged` header. Absent AGENTS.md stays
+    // absent: its prose is app-owned, so upgrade does not create the file.
+    if (hasEitherRegionMarker(current, markers)) {
+      return {
+        detail:
+          'Incomplete ' +
+          markers.start +
+          ' / ' +
+          markers.end +
+          ' pair. Add the missing marker or a ' +
+          UNMANAGED_MARKER +
+          ' header.',
+        status: 'unmanaged',
+      }
+    }
+    if (region === 'agentsRouter') {
+      return {
+        detail: 'Inserts the narduk:router block; the rest of the file is untouched.',
+        next: appendRegion(current, markers, desiredRegion),
+        status: 'drift',
+      }
+    }
     return {
       detail:
         'No ' +
