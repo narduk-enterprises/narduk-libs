@@ -2,10 +2,19 @@
 
 This is the narduk-app standard for making `setCacheProfile` bind at the edge
 (narduk-libs#435). New apps from `create-narduk-app` 0.12.0 and later already
-ship the switch. An existing app turns it on by hand, one app at a time,
-following this page. `narduk-app upgrade` does not do it:
-`apps/web/wrangler.jsonc` is app-owned, and a cache switch is a decision about
-that app's routes, not a template fix.
+ship the switch. Existing apps receive the same top-level key from
+`create-narduk-app upgrade` (narduk-libs#672): the file stays app-owned, and the
+only unit upgrade writes is `"cache": { "enabled": true }`. Bindings, routes,
+`account_id` and env blocks are never rewritten. An explicit `"enabled": false`
+is left alone — that is the recorded reason an app is off.
+
+```sh
+pnpm dlx @narduk-enterprises/create-narduk-app upgrade . --only apps/web/wrangler.jsonc
+pnpm dlx @narduk-enterprises/create-narduk-app upgrade . --only apps/web/wrangler.jsonc --write
+```
+
+An app that cannot run upgrade, or that wants the comments beside the key, can
+still add the block by hand using the snippet below.
 
 The mechanism is Cloudflare's
 [Workers Cache](https://developers.cloudflare.com/workers/cache/configuration/),
