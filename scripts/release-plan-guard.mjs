@@ -226,6 +226,20 @@ export const TEST_ONLY_PATH_PATTERNS = Object.freeze([
   /^(?:vitest|playwright)(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/u,
 ])
 
+/**
+ * Package-root `swift/` paths ship as SwiftPM products on the repository
+ * `vX.Y.Z` tags (docs/architecture/narduk-logging.md: NardukLogging and
+ * NardukAuthKit). They owe no npm release under the same two conditions as
+ * `TEST_ONLY_PATH_PATTERNS`: the relative path matches this list, and the
+ * package `files` list leaves it out.
+ *
+ * `examples/swift/` in narduk-logging is published (`files` includes
+ * `examples`). This pattern matches only a package-root `swift/` prefix, so
+ * that path keeps the original requirement. A `swift/` path whose `files`
+ * entry names it does too.
+ */
+export const SWIFT_ONLY_PATH_PATTERNS = Object.freeze([/^swift\//u])
+
 // npm packs these from the package root whatever `files` says.
 const ALWAYS_PACKED = /^(?:package\.json|readme|licen[cs]e|changelog)(?:\.[^/]*)?$/iu
 const GLOB_CHARS = /[*?[\]{}!]/u
@@ -256,10 +270,13 @@ export function isInPublishedFiles(relativePath, files) {
 
 function owesNoRelease(relativePath, files) {
   if (NEVER_PUBLISHED_FILES.has(relativePath)) return true
-  return (
-    TEST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(relativePath)) &&
-    !isInPublishedFiles(relativePath, files)
-  )
+  // Same pair of conditions for every named exemption: the path is on the
+  // list, and `files` leaves it out. Either condition failing keeps the
+  // original requirement (#686 tests, #862 SwiftPM `swift/`).
+  const namedExemption =
+    TEST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(relativePath)) ||
+    SWIFT_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(relativePath))
+  return namedExemption && !isInPublishedFiles(relativePath, files)
 }
 
 function packageForPath(packages, path) {
