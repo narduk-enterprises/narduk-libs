@@ -264,6 +264,14 @@ Verification uses [`@simplewebauthn/server`](https://simplewebauthn.dev) on the
 server and `@simplewebauthn/browser` in the client, both **exact-pinned** — a
 security-critical verifier is not a `^` range (D3).
 
+On a Cloudflare Workers build the module loads a Reflect metadata polyfill
+before `@simplewebauthn/server` evaluates. That package pulls `tsyringe`, which
+throws at import time unless `Reflect.getMetadata` exists; Workers does not
+provide it, and Nitro will tree-shake a bare `import 'reflect-metadata'` unless
+`reflect-metadata` is on `nitro.moduleSideEffects` (narduk-libs#786). Consuming
+apps should not add their own `00.reflect-metadata` plugin or allowlist entry —
+remove any app-local stopgap after this package ships the fix.
+
 ### Enabling
 
 1. Apply `drizzle/0003_webauthn_credentials.sql`.

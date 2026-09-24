@@ -95,6 +95,14 @@ function addNitroInlinePackage(nuxtOptions: MutableNuxtOptionsRecord, packageNam
   pushUnique(nitro.externals.inline, packageName)
 }
 
+function addNitroModuleSideEffect(nuxtOptions: MutableNuxtOptionsRecord, specifier: string): void {
+  const nitro = (nuxtOptions.nitro ??= {}) as {
+    moduleSideEffects?: string[]
+  }
+  nitro.moduleSideEffects ??= []
+  pushUnique(nitro.moduleSideEffects, specifier)
+}
+
 function addFallbackLayout(
   nuxt: { hook: (name: 'app:templates', handler: (app: NuxtAppTemplateState) => void) => void },
   template: { src: string },
@@ -158,6 +166,11 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
 
     pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
     addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)
+    // Nitro's moduleSideEffects is an allowlist. Keep both the in-tree
+    // polyfill and `@peculiar/x509`'s bare `import 'reflect-metadata'` so
+    // tsyringe can load on a cloudflare_module Worker (narduk-libs#786).
+    addNitroModuleSideEffect(nuxtOptions, 'reflect-metadata')
+    addNitroModuleSideEffect(nuxtOptions, 'reflect-metadata-polyfill')
     nuxtOptions.alias = {
       ...nuxtOptions.alias,
       '#narduk-auth-server': resolver.resolve('../server'),
