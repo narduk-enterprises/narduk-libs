@@ -20,9 +20,7 @@ import {
   isSharedComponentSource,
   nuxtComponentName,
 } from '../utils/shared-components'
-import { getFilename, inDir, isTestOrFixturePath } from './_internal'
-
-const COMPONENTS_SEGMENT = 'components/'
+import { componentPathSegments, getFilename, isTestOrFixturePath } from './_internal'
 
 export default {
   meta: {
@@ -41,13 +39,16 @@ export default {
   create(context: Rule.RuleContext): Rule.RuleListener {
     const filename = getFilename(context)
     if (isTestOrFixturePath(filename)) return {}
-    if (!filename.endsWith('.vue') || !inDir(filename, 'components')) return {}
+    if (!filename.endsWith('.vue')) return {}
     if (isSharedComponentSource(filename)) return {}
 
-    const rootIndex = filename.lastIndexOf(COMPONENTS_SEGMENT)
-    if (rootIndex < 0) return {}
-    const relativePath = filename.slice(rootIndex + COMPONENTS_SEGMENT.length)
-    const baseName = (relativePath.split('/').at(-1) ?? '').replace(/\.vue$/, '')
+    // The same segment-aware root as component-directory-structure: the old
+    // `lastIndexOf('components/')` cut a `my-components/` folder in half, so
+    // Nuxt's name for the component was never the one compared (#777).
+    const segments = componentPathSegments(filename)
+    if (!segments) return {}
+    const relativePath = segments.join('/')
+    const baseName = (segments.at(-1) ?? '').replace(/\.vue$/, '')
 
     const name = [baseName, nuxtComponentName(relativePath)].find((candidate) =>
       SHARED_COMPONENT_OWNER_BY_NAME.has(candidate),

@@ -223,3 +223,136 @@ describe.each(VISIBILITIES)('%s app: passes the shared workflow caller-lint gate
     expect(findings).toEqual([])
   })
 })
+
+/* -------------------------------------------------------------------------- */
+/* caller-lint's actionlint runner-label rule                                  */
+/* -------------------------------------------------------------------------- */
+
+const ACTIONLINT_CONFIG = '.github/actionlint.yaml'
+
+/** Self-hosted labels actionlint knows unconfigured (compared lower-cased). */
+const ACTIONLINT_SELF_HOSTED = new Set([
+  'self-hosted',
+  'linux',
+  'macos',
+  'windows',
+  'x64',
+  'arm',
+  'arm64',
+])
+/** GitHub-hosted images; actionlint checks the exact list, this only needs the shape. */
+const ACTIONLINT_HOSTED = /^(?:ubuntu|windows|macos)-/iu
+
+/**
+ * The workflows actionlint would read: everything in `.github/workflows`, plus
+ * the `docs/deployment` templates an app is told to copy there.
+ */
+function lintedWorkflowPaths(files: Map<string, string>): string[] {
+  return [...files.keys()].filter(
+    (path) =>
+      /^\.github\/workflows\/.+\.ya?ml$/u.test(path) ||
+      (/^docs\/deployment\/.+\.ya?ml$/u.test(path) &&
+        (parse(files.get(path)!) as Record<string, unknown> | null)?.jobs != null),
+  )
+}
+
+function runsOnLabels(runsOn: unknown): string[] {
+  if (typeof runsOn === 'string') return [runsOn]
+  if (Array.isArray(runsOn)) return runsOn.map(String)
+  if (runsOn && typeof runsOn === 'object') {
+    const labels = (runsOn as { labels?: unknown }).labels
+    return labels == null ? [] : runsOnLabels(labels)
+  }
+  return []
+}
+
+function declaredLabels(files: Map<string, string>): Set<string> {
+  const config = files.get(ACTIONLINT_CONFIG)
+  if (config === undefined) return new Set()
+  const doc = parse(config) as { 'self-hosted-runner'?: { labels?: string[] } }
+  return new Set((doc['self-hosted-runner']?.labels ?? []).map((label) => label.toLowerCase()))
+}
+
+/**
+ * actionlint's `runner-label` rule, which `caller-lint` runs over the caller's
+ * own workflows: a label that is neither built in nor declared in
+ * `.github/actionlint.yaml` is an error (narduk-libs#778, loadtest-dev#4).
+ */
+function unknownRunnerLabels(path: string, text: string, declared: Set<string>): string[] {
+  const jobs = ((parse(text) as { jobs?: unknown } | null)?.jobs ?? {}) as Record<
+    string,
+    { 'runs-on'?: unknown } | null
+  >
+  return Object.entries(jobs).flatMap(([jobId, job]) =>
+    runsOnLabels(job?.['runs-on'])
+      .filter(
+        (label) =>
+          !label.includes('${{') &&
+          !ACTIONLINT_HOSTED.test(label) &&
+          !ACTIONLINT_SELF_HOSTED.has(label.toLowerCase()) &&
+          !declared.has(label.toLowerCase()),
+      )
+      .map((label) => `${path}: job '${jobId}': label "${label}" is unknown`),
+  )
+}
+
+function generatedFor(
+  visibility: AppVisibility,
+  databaseBackend: 'd1' | 'none',
+): Map<string, string> {
+  return new Map(
+    buildGeneratedFiles({ appName: 'toolchain-fixture', databaseBackend, visibility }).map(
+      (file) => [file.path, file.contents],
+    ),
+  )
+}
+
+describe.each(
+  VISIBILITIES.flatMap((visibility) =>
+    (['d1', 'none'] as const).map((databaseBackend) => ({ databaseBackend, visibility })),
+  ),
+)('$visibility app, $databaseBackend backend: actionlint knows every runner label', (profile) => {
+  it('declares every custom label a workflow names, and no other', () => {
+    const files = generatedFor(profile.visibility, profile.databaseBackend)
+    const declared = declaredLabels(files)
+    const paths = lintedWorkflowPaths(files)
+
+    const findings = paths.flatMap((path) => unknownRunnerLabels(path, files.get(path)!, declared))
+    expect(findings).toEqual([])
+
+    // Exactly: nothing declared that no workflow names.
+    const named = new Set(
+      paths.flatMap((path) =>
+        Object.values(
+          ((parse(files.get(path)!) as { jobs?: Record<string, { 'runs-on'?: unknown }> }).jobs ??
+            {}) as Record<string, { 'runs-on'?: unknown }>,
+        ).flatMap((job) => runsOnLabels(job['runs-on']).map((label) => label.toLowerCase())),
+      ),
+    )
+    expect([...declared].filter((label) => !named.has(label))).toEqual([])
+
+    // A public app names no self-hosted label, so it gets no config at all.
+    expect(files.has(ACTIONLINT_CONFIG)).toBe(profile.visibility === 'private')
+  })
+})
+
+describe('the runner-label check itself', () => {
+  it('reproduces loadtest-dev#4 without the config', () => {
+    const files = generatedFor('private', 'd1')
+    const path = '.github/workflows/dependabot-merge.yml'
+    expect(unknownRunnerLabels(path, files.get(path)!, new Set())).toEqual([
+      `${path}: job 'merge': label "proxmox" is unknown`,
+      `${path}: job 'merge': label "linux-ci" is unknown`,
+    ])
+  })
+
+  it('fails on a label the config does not declare', () => {
+    const files = generatedFor('private', 'd1')
+    const path = '.github/workflows/dependabot-merge.yml'
+    const withGpu = files.get(path)!.replace('linux-ci]', 'linux-ci, gpu-runner]')
+    expect(withGpu).not.toBe(files.get(path))
+    expect(unknownRunnerLabels(path, withGpu, declaredLabels(files))).toEqual([
+      `${path}: job 'merge': label "gpu-runner" is unknown`,
+    ])
+  })
+})

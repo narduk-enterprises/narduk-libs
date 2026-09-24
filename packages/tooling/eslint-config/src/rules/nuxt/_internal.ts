@@ -7,13 +7,25 @@
 
 import type { Rule } from 'eslint'
 
-import { inAppScope, isTestOrFixturePath } from '../utils/path-scope'
+import { inAppScope, isTestOrFixturePath, segmentsAfter } from '../utils/path-scope'
 
 export { isTestOrFixturePath }
 
 /** See the note on the identical adapter in `hydration/_internal.ts`. */
 export function inDir(filename: string, dir: string): boolean {
   return inAppScope(filename, dir)
+}
+
+/**
+ * A component's path below its Nuxt `components/` root, as segments, or
+ * `null` outside one. The Nuxt 4 / layer root (`app/components`) is preferred
+ * over a bare `components` segment, so a checkout directory that happens to
+ * be named `components` does not become the root of an `app/` layout; in the
+ * Nuxt 3 layout the first `components` segment is the root, and a nested
+ * `components/` folder below it counts as an ordinary folder, as Nuxt does.
+ */
+export function componentPathSegments(filename: string): string[] | null {
+  return segmentsAfter(filename, 'app', 'components') ?? segmentsAfter(filename, 'components')
 }
 
 export function getFilename(context: Rule.RuleContext): string {

@@ -155,6 +155,10 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     mode: 'file',
     unit: 'whole file',
   },
+  // The runner labels the managed workflows above name, so it moves with them
+  // (narduk-libs#778). An app that routes its own workflows elsewhere disowns
+  // it with a `# narduk:unmanaged` header.
+  { path: '.github/actionlint.yaml', mode: 'file', unit: 'whole file' },
   { path: 'AGENTS.md', mode: 'region', region: 'agentsRouter', unit: 'narduk:router block' },
   {
     path: 'docs/e2e-testing.md',

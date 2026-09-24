@@ -25,6 +25,9 @@ vue.run('no-shadowed-shared-component', rule, {
     // Not a component directory.
     { filename: 'app/pages/AppTabs.vue', code: SFC },
     { filename: 'tests/components/AppTabs.vue', code: SFC },
+    // Nuxt registers this as MyComponentsAppTabs; `lastIndexOf('components/')`
+    // cut the path at `my-components/` and compared `AppTabs` (#777).
+    { filename: 'app/components/my-components/app/Tabs.vue', code: SFC },
     // The owners' own sources are the shared component, not a copy of it.
     {
       filename: '/repo/packages/modules/narduk-core/runtime/app/components/shared/AppTabs.vue',

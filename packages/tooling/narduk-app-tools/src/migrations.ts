@@ -653,7 +653,7 @@ export function buildWranglerTimeTravelInfoArgs(database: string): string[] {
   return ['d1', 'time-travel', 'info', database, '--json']
 }
 
-export function parseWranglerJson<T>(output: string): WranglerResult<T> {
+function parseWranglerEntries(output: string): unknown[] {
   let parsed: unknown
   try {
     parsed = JSON.parse(output)
@@ -662,19 +662,40 @@ export function parseWranglerJson<T>(output: string): WranglerResult<T> {
   }
   const entries = Array.isArray(parsed) ? parsed : [parsed]
   if (entries.length === 0) throw new Error('Wrangler returned no D1 query result')
-  const results = entries.flatMap((entry) => {
-    if (
-      !entry ||
-      typeof entry !== 'object' ||
-      ('success' in entry && entry.success !== true) ||
-      !('results' in entry) ||
-      !Array.isArray(entry.results)
-    ) {
-      throw new Error('Wrangler returned an unsuccessful or malformed D1 query result')
-    }
-    return entry.results
-  }) as T[]
-  return { results }
+  return entries
+}
+
+function wranglerEntryResults(entry: unknown): unknown[] {
+  if (
+    !entry ||
+    typeof entry !== 'object' ||
+    ('success' in entry && entry.success !== true) ||
+    !('results' in entry) ||
+    !Array.isArray(entry.results)
+  ) {
+    throw new Error('Wrangler returned an unsuccessful or malformed D1 query result')
+  }
+  return entry.results
+}
+
+export function parseWranglerJson<T>(output: string): WranglerResult<T> {
+  return { results: parseWranglerEntries(output).flatMap(wranglerEntryResults) as T[] }
+}
+
+/**
+ * One result set per statement of a multi-statement `--command`, in order --
+ * which is how `wrangler d1 execute --local --json` reports it (one
+ * `db.batch` entry per statement). Fails closed when the count differs, so a
+ * result can never be read as another statement's.
+ */
+export function parseWranglerBatchJson(output: string, statements: number): unknown[][] {
+  const entries = parseWranglerEntries(output)
+  if (entries.length !== statements) {
+    throw new Error(
+      `Wrangler returned ${entries.length} D1 result sets for ${statements} statements`,
+    )
+  }
+  return entries.map(wranglerEntryResults)
 }
 
 function runWrangler(args: string[], cwd: string, json: boolean): string {
@@ -696,6 +717,17 @@ export type MigrationExecutor = (args: string[], cwd: string, json: boolean) => 
 
 interface MigrationDatabase {
   rows<T>(sql: string): T[]
+  /**
+   * Read-only statements, one result set each, in order. `--local` runs them
+   * in ONE wrangler process: its startup is the whole cost of a local read
+   * (~1.3 s), and a no-op `db migrate --local` used to pay it about twenty
+   * times (narduk-libs#704). `--remote` keeps one process per statement --
+   * that path was not measured, and its multi-statement result shape is not
+   * proven here.
+   */
+  batch(statements: readonly string[]): unknown[][]
+  /** True when `batch` costs one process however many statements it carries. */
+  readonly batchIsOneProcess: boolean
   execute(sql: string): void
   file(path: string): void
   bookmark(): string
@@ -738,6 +770,17 @@ function migrationDatabase(
     })
   return {
     rows: <T>(sql: string) => parseWranglerJson<T>(run(args(sql, true), true)).results,
+    batchIsOneProcess: options.location === '--local',
+    batch: (statements) => {
+      if (statements.length === 0) return []
+      if (options.location !== '--local') {
+        return statements.map((sql) => parseWranglerJson(run(args(sql, true), true)).results)
+      }
+      for (const sql of statements) {
+        if (!sql.trimEnd().endsWith(';')) throw new Error(`Unterminated batched statement: ${sql}`)
+      }
+      return parseWranglerBatchJson(run(args(statements.join('\n'), true), true), statements.length)
+    },
     execute: (sql) => {
       run(args(sql, false), false)
     },
@@ -772,46 +815,43 @@ function validateIdentifier(value: string): void {
   if (!/^[A-Za-z_]\w*$/u.test(value)) throw new Error(`Unsafe schema identifier: ${value}`)
 }
 
-function readSchemaEvidence(
-  config: MigrationConfig,
-  db: MigrationDatabase,
-): MigrationSchemaEvidence | undefined {
-  if (config.adoptions.length === 0) return undefined
-  const tables = [...new Set(config.adoptions.flatMap((adoption) => adoption.evidence.tables))]
-  for (const table of tables) validateIdentifier(table)
-  const tableRows = db.rows<{ name: string }>(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${tables.map(quoteSql).join(', ')});`,
-  )
-  const columns: Array<{ column: string; table: string }> = []
-  const indexes: Array<{ name: string; table: string }> = []
-  for (const table of tables) {
-    for (const row of db.rows<{ name: string }>(`PRAGMA table_info(${table});`)) {
-      columns.push({ column: row.name, table })
-    }
-    for (const row of db.rows<{ name: string }>(`PRAGMA index_list(${table});`)) {
-      indexes.push({ name: row.name, table })
-    }
-  }
-  return { columns, indexes, tables: tableRows.map((row) => row.name) }
+interface LedgerRead {
+  sql: string
+  rows(results: unknown[]): MigrationLedgerRow[]
 }
 
-function readLegacyRows(db: MigrationDatabase, tables: Set<string>): MigrationLedgerRow[] {
-  const rows: MigrationLedgerRow[] = []
+/** Reads of the legacy ledgers `tables` proves exist, to run in one `db.batch`. */
+function legacyLedgerReads(tables: Set<string>): LedgerRead[] {
+  const reads: LedgerRead[] = []
   if (tables.has('_applied_migrations')) {
-    for (const row of db.rows<{ filename: string }>(
-      'SELECT filename FROM _applied_migrations ORDER BY filename;',
-    )) {
-      rows.push({ filename: requireText(row.filename, 'Legacy filename'), source: null })
-    }
+    reads.push({
+      sql: 'SELECT filename FROM _applied_migrations ORDER BY filename;',
+      rows: (results) =>
+        (results as Array<{ filename: string }>).map((row) => ({
+          filename: requireText(row.filename, 'Legacy filename'),
+          source: null,
+        })),
+    })
   }
   // A distinct source prevents identical filenames from two legacy ledgers
   // being silently treated as the same adoption evidence.
   if (tables.has('d1_migrations')) {
-    for (const row of db.rows<{ name: string }>('SELECT name FROM d1_migrations ORDER BY name;')) {
-      rows.push({ filename: requireText(row.name, 'Wrangler migration name'), source: 'wrangler' })
-    }
+    reads.push({
+      sql: 'SELECT name FROM d1_migrations ORDER BY name;',
+      rows: (results) =>
+        (results as Array<{ name: string }>).map((row) => ({
+          filename: requireText(row.name, 'Wrangler migration name'),
+          source: 'wrangler',
+        })),
+    })
   }
-  return rows
+  return reads
+}
+
+function readLegacyRows(db: MigrationDatabase, tables: Set<string>): MigrationLedgerRow[] {
+  const reads = legacyLedgerReads(tables)
+  const results = db.batch(reads.map((read) => read.sql))
+  return reads.flatMap((read, index) => read.rows(results[index] ?? []))
 }
 
 function quoteSql(value: string): string {
@@ -958,21 +998,76 @@ function captureRemoteRecoveryState(
   )
 }
 
-function inspectDatabase(options: MigrationRunOptions, db: MigrationDatabase): MigrationPlan {
+interface DatabaseInspection {
+  plan: MigrationPlan
+  /**
+   * Who holds the lock, for a `readLock` inspection whose plan has nothing to
+   * do -- the one case a caller decides on it. Otherwise null, unread.
+   */
+  lockOwner: string | null
+}
+
+/**
+ * Everything planning needs, in as few wrangler processes as the database
+ * handle allows (narduk-libs#704). The first batch names the tables and is
+ * valid whether any exist or not -- `PRAGMA` on a missing table is an empty
+ * result, not an error; the second reads only tables the first proved exist,
+ * and is skipped when none do.
+ *
+ * Where a batch is one process (`--local`), reads the answer may not need --
+ * the ledger's shape before the ledger is known to exist, the lock owner
+ * before the plan is known to be a no-op -- ride along for free. Where each
+ * statement is its own process (`--remote`), they are made only once needed,
+ * so no remote run starts more processes than it did before.
+ */
+function inspectDatabase(
+  options: MigrationRunOptions,
+  db: MigrationDatabase,
+  { readLock = false }: { readLock?: boolean } = {},
+): DatabaseInspection {
   const loaded = loadMigrationConfig(resolve(options.cwd ?? process.cwd(), options.configFile))
   const config = resolveMigrationConfigVersions(loaded.config, loaded.baseDir)
   const migrations = discoverMigrations(config, loaded.baseDir)
-  const tables = new Set(
-    db
-      .rows<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table';")
-      .map((row) => row.name),
-  )
-  let stableRows: MigrationLedgerRow[] = []
-  if (tables.has(MIGRATION_LEDGER_TABLE)) {
-    validateLedgerSchema(db.rows(migrationLedgerInfoSql()))
-    stableRows = db.rows<MigrationLedgerRow>(migrationLedgerRowsSql())
+  const evidenceTables = [
+    ...new Set(config.adoptions.flatMap((adoption) => adoption.evidence.tables)),
+  ]
+  for (const table of evidenceTables) validateIdentifier(table)
+  const speculate = db.batchIsOneProcess
+  const lockOwnerSql = `SELECT owner FROM ${MIGRATION_LOCK_TABLE} LIMIT 1;`
+
+  const first = db.batch([
+    "SELECT name FROM sqlite_master WHERE type = 'table';",
+    ...(speculate ? [migrationLedgerInfoSql()] : []),
+    ...evidenceTables.flatMap((table) => [
+      `PRAGMA table_info(${table});`,
+      `PRAGMA index_list(${table});`,
+    ]),
+  ])
+  const tables = new Set((first.shift() as Array<{ name: string }>).map((row) => row.name))
+  const speculativeLedgerColumns = speculate ? first.shift() : undefined
+  const evidenceRows = first as Array<Array<{ name: string }>>
+  const hasLedger = tables.has(MIGRATION_LEDGER_TABLE)
+  const hasLock = readLock && tables.has(MIGRATION_LOCK_TABLE)
+  if (hasLedger) {
+    // Before the rows are read, so a malformed ledger is named, not a SQL error.
+    validateLedgerSchema(
+      (speculativeLedgerColumns ?? db.batch([migrationLedgerInfoSql()])[0]) as Array<{
+        name?: string
+        pk?: number
+      }>,
+    )
   }
-  const legacyRows = readLegacyRows(db, tables)
+
+  const legacyReads = legacyLedgerReads(tables)
+  const second = db.batch([
+    ...(hasLock && speculate ? [lockOwnerSql] : []),
+    ...(hasLedger ? [migrationLedgerRowsSql()] : []),
+    ...legacyReads.map((read) => read.sql),
+  ])
+  const speculativeLockRows = hasLock && speculate ? second.shift() : undefined
+  const stableRows = (hasLedger ? second.shift() : []) as MigrationLedgerRow[]
+  const legacyRows = legacyReads.flatMap((read) => read.rows(second.shift() ?? []))
+
   const applicationTables = [...tables].filter((name) => !isMigrationMetadata(name))
   if (
     (options.strict ?? true) &&
@@ -984,13 +1079,32 @@ function inspectDatabase(options: MigrationRunOptions, db: MigrationDatabase): M
       'Existing application schema has no migration history; explicit reviewed baseline evidence is required before migration or a current-status claim',
     )
   }
-  return planMigrations({
+  const plan = planMigrations({
     adoptions: config.adoptions,
     migrations,
     ledgerRows: [...stableRows, ...legacyRows],
-    schemaEvidence: readSchemaEvidence(config, db),
+    schemaEvidence:
+      config.adoptions.length === 0
+        ? undefined
+        : {
+            columns: evidenceTables.flatMap((table, index) =>
+              evidenceRows[index * 2]!.map((row) => ({ column: row.name, table })),
+            ),
+            indexes: evidenceTables.flatMap((table, index) =>
+              evidenceRows[index * 2 + 1]!.map((row) => ({ name: row.name, table })),
+            ),
+            tables: [...tables].filter((name) => evidenceTables.includes(name)),
+          },
     strict: options.strict ?? true,
   })
+
+  let lockOwner: string | null = null
+  if (hasLock && plan.apply + plan.adopt === 0) {
+    const rows = (speculativeLockRows ?? db.batch([lockOwnerSql])[0]) as Array<{ owner?: unknown }>
+    const owner = rows[0]?.owner
+    lockOwner = typeof owner === 'string' ? owner : null
+  }
+  return { lockOwner, plan }
 }
 
 /** No CREATE, lock, recovery capture, or ledger write; usable with D1 Read. */
@@ -1011,7 +1125,7 @@ export function inspectMigrations(
     }
   }
   assertUnlocked()
-  const plan = inspectDatabase(options, db)
+  const { plan } = inspectDatabase(options, db)
   assertUnlocked()
   return plan
 }
@@ -1050,9 +1164,20 @@ export function runMigrations(
     )
   const db = migrationDatabase(options, executor)
   // Fail on history conflicts and bad manifests before taking any remote mutation path.
-  inspectDatabase(options, db)
+  const before = inspectDatabase(options, db, { readLock: true })
+  // Nothing to write and no run holding the lock: there is no mutation to
+  // serialize, so none is made -- not even the lock row. The answer is the one
+  // `db status` gives. A held lock still goes the locked path below and fails
+  // to acquire, exactly as before, so a retained lock is never skipped past
+  // (narduk-libs#704: this read is all a warm run now costs).
+  if (before.plan.apply + before.plan.adopt === 0 && before.lockOwner === null) {
+    return before.plan
+  }
   return withMigrationLock(options, db, (owner) => {
-    const plan = inspectDatabase(options, db)
+    const { plan } = inspectDatabase(options, db)
+    // Another run finished the work between the first read and the lock. Nothing
+    // is written under the lock, so the read above is already the after-state.
+    if (plan.apply + plan.adopt === 0) return plan
     const recoveryPath =
       options.location === '--remote' && plan.apply + plan.adopt > 0
         ? captureRemoteRecoveryState(
@@ -1068,7 +1193,7 @@ export function runMigrations(
       if (action.kind === 'apply') applyMigrationAndRecord(action, db)
       else if (action.kind === 'adopt') db.execute(recordMigrationSql(action))
     }
-    const after = inspectDatabase(options, db)
+    const { plan: after } = inspectDatabase(options, db)
     if (after.apply + after.adopt !== 0)
       throw new Error('D1 migrations remain pending after application')
     return { ...plan, ...(recoveryPath ? { recoveryPath } : {}) }

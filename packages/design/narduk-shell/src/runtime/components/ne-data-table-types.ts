@@ -7,6 +7,8 @@
  * is what a non-Vue-aware tool can read a named interface out of.
  */
 
+import type { VNode } from 'vue'
+
 /** A sort direction as the list-query wire form spells it. */
 export type NeSortDirection = 'asc' | 'desc'
 
@@ -141,6 +143,45 @@ export interface NeDataTableProps<TRow = Record<string, unknown>> {
   empty?: string
   /** Screen-reader caption. */
   caption?: string
+}
+
+/** What a `<key>-cell` slot receives: the column, its row, and the value read from it. */
+export interface NeDataTableCellSlotProps<TRow = Record<string, unknown>> {
+  column: NeDataColumn<TRow>
+  row: TRow
+  /** `column.value(row)`, or `row[column.key]`. May be a missing value. */
+  value: unknown
+}
+
+/** What the `group` slot receives for one group (day) row. */
+export interface NeDataTableGroupSlotProps<TRow = Record<string, unknown>> {
+  /** The `groupBy` key that opened this group. */
+  key: string
+  rows: TRow[]
+}
+
+/** What the `break` slot receives for the "no value, sorted last" row. */
+export interface NeDataTableBreakSlotProps<TRow = Record<string, unknown>> {
+  /** The sorted column. */
+  column: NeDataColumn<TRow> | undefined
+  /** Rows with no value in it: `missingCount` when given, else this page's count. */
+  count: number
+}
+
+/**
+ * `NeDataTable`'s slots (narduk-libs#780). A `<key>-cell` slot is keyed by a
+ * template-literal pattern, so `#status-cell="{ row }"` type-checks and `row`
+ * is the table's own row type. A wrapper that forwards the slots can declare
+ * `defineSlots<NeDataTableSlots<T>>()` rather than re-deriving the shape.
+ */
+export type NeDataTableSlots<TRow = Record<string, unknown>> = {
+  /** Replaces a group row's label. */
+  group?: (props: NeDataTableGroupSlotProps<TRow>) => VNode[]
+  /** Replaces the break row's text. */
+  break?: (props: NeDataTableBreakSlotProps<TRow>) => VNode[]
+} & {
+  /** A custom cell for the column whose `key` precedes `-cell`. */
+  [name: `${string}-cell`]: ((props: NeDataTableCellSlotProps<TRow>) => VNode[]) | undefined
 }
 
 export interface NeCsvDownloadProps<TRow = Record<string, unknown>> {

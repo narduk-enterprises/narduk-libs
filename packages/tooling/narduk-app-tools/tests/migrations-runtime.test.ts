@@ -7,10 +7,12 @@ import {
   inspectMigrations,
   runMigrations,
   MIGRATION_LOCK_TABLE,
+  parseWranglerBatchJson,
   parseWranglerJson,
   type MigrationExecutor,
   type MigrationRunOptions,
 } from '../src/migrations.js'
+import { wranglerJson } from './wrangler-d1-fake.js'
 
 const cleanup: Array<() => void> = []
 afterEach(() => {
@@ -46,8 +48,7 @@ function fixture(sql = 'CREATE TABLE example (id TEXT);') {
       return ''
     }
     const command = args[args.indexOf('--command') + 1]!
-    if (args.includes('--json'))
-      return JSON.stringify([{ success: true, results: db.prepare(command).all() }])
+    if (args.includes('--json')) return wranglerJson(db, command)
     db.exec(command)
     return ''
   }
@@ -173,9 +174,107 @@ describe('D1 migration database protocol', () => {
     )
   })
   it.each(['{}', '[]', '[{"success":false,"results":[]}]', '[{"success":true}]'])(
+    'fails closed on malformed batched output %s',
+    (output) => {
+      expect(() => parseWranglerBatchJson(output, 1)).toThrow()
+    },
+  )
+  it("never reads one statement's result as another's", () => {
+    const two = '[{"success":true,"results":[]},{"success":true,"results":[{"a":1}]}]'
+    expect(parseWranglerBatchJson(two, 2)).toEqual([[], [{ a: 1 }]])
+    expect(() => parseWranglerBatchJson(two, 3)).toThrow('2 D1 result sets for 3 statements')
+  })
+  it.each(['{}', '[]', '[{"success":false,"results":[]}]', '[{"success":true}]'])(
     'fails closed on malformed provider output %s',
     (output) => {
       expect(() => parseWranglerJson(output)).toThrow()
     },
   )
+})
+
+/** Every wrangler process a run started, by kind. */
+function spawns(calls: string[][]) {
+  const commands = calls.filter((args) => args.includes('--command'))
+  return {
+    total: calls.length,
+    reads: commands.filter((args) => args.includes('--json')).length,
+    writes: calls.length - commands.filter((args) => args.includes('--json')).length,
+  }
+}
+
+describe('wrangler process count (narduk-libs#704)', () => {
+  function withHistory() {
+    const f = fixture()
+    writeFileSync(join(f.root, 'sql', '0002.sql'), 'CREATE TABLE second (id TEXT);')
+    writeFileSync(join(f.root, 'sql', '0003.sql'), 'CREATE INDEX second_id ON second (id);')
+    // Legacy ledgers are read too; make both present so every read is exercised.
+    f.db.exec(
+      'CREATE TABLE _applied_migrations (filename TEXT); CREATE TABLE d1_migrations (name TEXT);',
+    )
+    const local: MigrationRunOptions = { ...f.options, location: '--local' }
+    return { ...f, local }
+  }
+
+  it('a warm --local run is two read processes, and writes nothing', () => {
+    const f = withHistory()
+    expect(runMigrations(f.local, f.executor)).toMatchObject({ apply: 3, skip: 0 })
+    f.calls.length = 0
+    expect(runMigrations(f.local, f.executor)).toMatchObject({ apply: 0, skip: 3 })
+    // Before: three inspections of five reads each plus three lock statements.
+    expect(spawns(f.calls)).toEqual({ total: 2, reads: 2, writes: 0 })
+    expect(f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+  })
+
+  it('reads the lock and every ledger in the same --local process', () => {
+    const f = withHistory()
+    runMigrations(f.local, f.executor)
+    f.calls.length = 0
+    runMigrations(f.local, f.executor)
+    const second = f.calls[1]!
+    const sql = second[second.indexOf('--command') + 1]!
+    for (const table of [
+      MIGRATION_LOCK_TABLE,
+      '_narduk_migrations',
+      '_applied_migrations',
+      'd1_migrations',
+    ]) {
+      expect(sql).toContain(`FROM ${table}`)
+    }
+  })
+
+  it('a warm run still refuses a retained lock rather than reporting success', () => {
+    const f = withHistory()
+    runMigrations(f.local, f.executor)
+    f.db.exec(
+      `INSERT INTO ${MIGRATION_LOCK_TABLE} (id, owner, acquired_at) VALUES (1, 'crashed-run', datetime('now'));`,
+    )
+    expect(() => runMigrations(f.local, f.executor)).toThrow('Could not acquire')
+    expect(() => runMigrations(f.options, f.executor)).toThrow('Could not acquire')
+  })
+
+  it('a warm --remote run takes no lock and sends each statement on its own', () => {
+    const f = withHistory()
+    runMigrations(f.options, f.executor)
+    f.calls.length = 0
+    expect(runMigrations(f.options, f.executor)).toMatchObject({ apply: 0, skip: 3 })
+    expect(spawns(f.calls).writes).toBe(0)
+    for (const args of f.calls) {
+      const sql = args[args.indexOf('--command') + 1]!
+      expect(
+        sql
+          .trim()
+          .split(';')
+          .filter((part) => part.trim()),
+      ).toHaveLength(1)
+    }
+  })
+
+  it('still applies and proves a cold --local run', () => {
+    const f = withHistory()
+    expect(runMigrations(f.local, f.executor)).toMatchObject({ apply: 3, skip: 0 })
+    expect(f.db.prepare('SELECT filename FROM _narduk_migrations ORDER BY filename').all()).toEqual(
+      [{ filename: '0001.sql' }, { filename: '0002.sql' }, { filename: '0003.sql' }],
+    )
+    expect(f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+  })
 })

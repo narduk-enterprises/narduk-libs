@@ -1772,6 +1772,40 @@ update on mount.
 control that reproduces the mismatch when the client reads its own clock. The
 `narduk/no-render-clock` lint rule points at this composable.
 
+## Live data: `useLiveProduct`
+
+The recommended replacement for a bare `useIntervalRefresh` whenever what it
+refreshes is user-visible live content (narduk-libs#374). It takes any refresh
+callback -- `refresh` from `useFetch`/`useAsyncData`, a store action -- and
+fetches nothing itself:
+
+```ts
+// Auto-imported in apps that enable narduk-core's app features.
+const { data, refresh } = await useFetch('/api/buoys/status')
+const live = useLiveProduct(refresh, {
+  intervalMs: 60_000,
+  updatedAt: () => data.value?.observedAt, // optional: the product's own freshness
+})
+// live.updatedAgo -> "3 minutes ago"; live.pending, live.error, live.refresh()
+```
+
+- **Hidden tab:** polling pauses while the page is hidden. On return, if a poll
+  fell due meanwhile, it refreshes at once and re-arms the interval.
+- **Coalesced:** overlapping refreshes -- a click during a tick -- share the run
+  already in flight. `refresh()` never rejects; a failure lands in `error` and
+  the next success clears it.
+- **Hydration-safe:** nothing runs until mount, so `pending` cannot flip before
+  the hydrating render. `updatedAgo` is `formatRelative` read against
+  `useSsrNow` (key `clockKey`, default `'live-product'`, re-read every
+  `labelTickMs`, default 30 s), never against `new Date()`, which the server and
+  the browser read at different instants. It is `null` until there is something
+  to date: `updatedAt` when given, else the last successful refresh.
+
+`enabled` (reactive) pauses polling without disabling `refresh()`, and
+`immediate: false` skips the refresh on mount. Call it from component `setup()`.
+`tests/use-live-product.test.ts` proves it through real SSR and hydration on
+fake timers.
+
 ## Core D1 migrations
 
 The numbered files in `runtime/drizzle/` are applied by `narduk-app db migrate`

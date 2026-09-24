@@ -34,13 +34,18 @@
  */
 import UTable from '@nuxt/ui/components/Table.vue'
 import UTabs from '@nuxt/ui/components/Tabs.vue'
-import { computed, h, shallowRef, useSlots, type VNodeChild } from 'vue'
+import { computed, h, shallowRef, type VNodeChild } from 'vue'
 
 import { formatNumber } from '../../format'
 import { isMissingValue, parseSort, readColumnValue } from '../utils/data-table'
 import NeSortHeader from './NeSortHeader.vue'
 
-import type { NeDataColumn, NeDataColumnGroup, NeDataTableProps } from './ne-data-table-types'
+import type {
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableProps,
+  NeDataTableSlots,
+} from './ne-data-table-types'
 
 const props = withDefaults(defineProps<NeDataTableProps<T>>(), {
   caption: undefined,
@@ -65,7 +70,7 @@ const emit = defineEmits<{
   'update:columnSet': [id: string]
 }>()
 
-const slots = useSlots()
+const slots = defineSlots<NeDataTableSlots<T>>()
 
 type Entry =
   | { id: string; index: number; kind: 'row'; row: T }

@@ -293,6 +293,11 @@ writing. Retire old scripts/direct Wrangler writers before claiming all writers
 serialize; this library cannot stop unrelated credentials executing arbitrary
 SQL.
 
+A run whose first read finds nothing to apply or adopt, and no lock row, writes
+nothing at all -- not even the lock -- and reports what `db status` would. A
+lock row still sends it down the locked path, so a retained lock fails that run
+exactly as it fails one with pending work (narduk-libs#704).
+
 Remote errors, client timeout or cancellation **retain the lock**. There is no
 TTL/automatic lock stealing: a disconnected client does not prove that the
 provider stopped the import. Promotion fails. The currently serving Worker

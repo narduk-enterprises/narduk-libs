@@ -1369,6 +1369,18 @@ never `0`.
 | `break`      | `{ column, count }`      | Replaces the break row’s text.  |
 | `<key>-cell` | `{ column, row, value }` | Custom cell for that column.    |
 
+The slots are declared (`NeDataTableSlots<T>`), so `vue-tsc` and
+`nuxt typecheck` accept a `<key>-cell` template and type its `row` as the
+table's row type — no local typed wrapper needed:
+
+```vue
+<NeDataTable :columns="columns" :rows="stations">
+  <template #status-cell="{ row }">
+    <NeStatusBadge :tone="row.online ? 'ok' : 'error'" :label="row.online ? 'Online' : 'Offline'" />
+  </template>
+</NeDataTable>
+```
+
 | Event              | Payload  | Notes                                                   |
 | ------------------ | -------- | ------------------------------------------------------- |
 | `update:sort`      | `string` | Next wire sort (`'wind:desc'`). Hand it to `c.setSort`. |
@@ -1395,7 +1407,9 @@ Nothing is replaced with a skeleton, so the table does not jump.
 import type {
   NeDataColumn,
   NeDataColumnGroup,
+  NeDataTableCellSlotProps,
   NeDataTableProps,
+  NeDataTableSlots,
 } from '@narduk-enterprises/narduk-shell'
 ```
 

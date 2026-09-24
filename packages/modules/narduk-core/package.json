@@ -97,7 +97,7 @@
     "typecheck": "nuxt typecheck",
     "prelint": "pnpm run nuxt:prepare",
     "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
-    "lint": "narduk-lint",
+    "lint": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_LINT_MAX_OLD_SPACE_SIZE:-4096}\"; narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage",
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
