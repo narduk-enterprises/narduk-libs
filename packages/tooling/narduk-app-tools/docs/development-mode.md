@@ -96,6 +96,16 @@ The dry run lists what would be held and restored. Entry is journaled. If it is
 interrupted, re-run the same command and it resumes. After editing the
 declaration, `enter --refresh` re-verifies the holds.
 
+A held workflow that is already `disabled_*` at entry has an ambiguous prior
+state: the tool cannot tell an intentional disable from a stale hold left by
+something else. `enter` and `enter --dry-run` refuse and name the paths.
+Re-enable them first so entry captures the true restore state, or pass
+`--accept-prior-state` to record the live disabled state as the intended restore
+state (journaled). Retired workflows (`automation.retiredWorkflows`) are not
+ambiguous — they stay disabled on exit by declaration. Exit names any workflow
+it restores to a disabled state. `development status` lists those restore
+targets too.
+
 ## The daily loop
 
 ```sh

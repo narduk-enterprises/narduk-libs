@@ -16,7 +16,7 @@ import {
   type DevelopmentContext,
   type DevelopmentReceipt,
 } from './development-deploy.js'
-import { DevelopmentGitHub } from './development-github.js'
+import { DevelopmentGitHub, type SavedDevelopmentWorkflow } from './development-github.js'
 import { readDevelopmentSecret } from './development-process.js'
 import { DevelopmentCloudflare } from './development-provider.js'
 import {
@@ -119,6 +119,37 @@ function step(record: ActivationRecord, name: string): boolean {
   return record.journal.includes(name)
 }
 
+function assertPriorWorkflows(
+  saved: SavedDevelopmentWorkflow[],
+  retiredWorkflows: readonly string[],
+  acceptPriorState: boolean | undefined,
+): SavedDevelopmentWorkflow[] {
+  const ambiguous = DevelopmentGitHub.ambiguousPriorWorkflows(saved, retiredWorkflows)
+  if (ambiguous.length && !acceptPriorState)
+    throw new Error(DevelopmentGitHub.describeAmbiguousPriorWorkflows(ambiguous))
+  return ambiguous
+}
+
+function recordAcceptedPriorWorkflows(
+  record: ActivationRecord,
+  accepted: SavedDevelopmentWorkflow[],
+  stateDirectory: string,
+): void {
+  if (!accepted.length) return
+  record.acceptedPriorWorkflows = [
+    ...new Set([
+      ...(record.acceptedPriorWorkflows ?? []),
+      ...accepted.map((workflow) => workflow.path),
+    ]),
+  ]
+  writeActivation(
+    record,
+    stateDirectory,
+    'accepted-prior-state',
+    record.acceptedPriorWorkflows.join(','),
+  )
+}
+
 // ─── entry ────────────────────────────────────────────────────────────────────
 
 export interface EnterFlags {
@@ -127,6 +158,8 @@ export interface EnterFlags {
   publisher: string
   refresh: boolean
   dryRun: boolean
+  /** Record an already-disabled held workflow as the intended restore state. */
+  acceptPriorState?: boolean
 }
 
 export async function runDevelopmentEnter(
@@ -149,8 +182,17 @@ export async function runDevelopmentEnter(
   )
   if (flags.dryRun) {
     const workflows = github.saveWorkflows(automation)
-    for (const workflow of workflows)
-      log(`[development]   hold workflow ${workflow.path} (${workflow.previousState})`)
+    const retired = new Set(automation.retiredWorkflows)
+    for (const workflow of workflows) {
+      const ambiguous =
+        workflow.previousState.startsWith('disabled_') && !retired.has(workflow.path)
+      log(
+        `[development]   hold workflow ${workflow.path} (${workflow.previousState})${
+          ambiguous ? ' — AMBIGUOUS prior state' : ''
+        }`,
+      )
+    }
+    assertPriorWorkflows(workflows, automation.retiredWorkflows, flags.acceptPriorState)
     for (const path of [automation.manualValidationWorkflow, ...automation.independentWorkflows])
       log(`[development]   keep workflow ${path}`)
     for (const writer of automation.continuingWriters)
@@ -167,22 +209,44 @@ export async function runDevelopmentEnter(
     log('[development] dry run: no provider state was changed')
     return existing ?? newRecord(project, targetSet, flags)
   }
+  if (!existing) {
+    // Refuse before writing an `entering` record so a first-time enter that
+    // hits ambiguous prior state does not leave a file later resume would
+    // keep failing on.
+    assertPriorWorkflows(
+      github.saveWorkflows(automation),
+      automation.retiredWorkflows,
+      flags.acceptPriorState,
+    )
+  }
   const record = existing ?? newRecord(project, targetSet, flags)
   if (!existing) writeActivation(record, stateDirectory, 'enter-started', flags.approvalRef)
   const lock = lockTargets(record, 'development-enter', stateDirectory)
   try {
     if (flags.refresh) {
       const current = github.saveWorkflows(automation)
-      for (const workflow of current) {
-        if (!record.workflows.some((saved) => saved.id === workflow.id)) {
-          record.workflows.push(workflow)
-          writeActivation(record, stateDirectory, 'hold-added', workflow.path)
-        }
+      const added = current.filter(
+        (workflow) => !record.workflows.some((saved) => saved.id === workflow.id),
+      )
+      recordAcceptedPriorWorkflows(
+        record,
+        assertPriorWorkflows(added, automation.retiredWorkflows, flags.acceptPriorState),
+        stateDirectory,
+      )
+      for (const workflow of added) {
+        record.workflows.push(workflow)
+        writeActivation(record, stateDirectory, 'hold-added', workflow.path)
       }
       record.journal = record.journal.filter((name) => name !== 'held' && name !== 'verified')
     }
     if (!step(record, 'saved')) {
-      record.workflows = github.saveWorkflows(automation)
+      const workflows = github.saveWorkflows(automation)
+      recordAcceptedPriorWorkflows(
+        record,
+        assertPriorWorkflows(workflows, automation.retiredWorkflows, flags.acceptPriorState),
+        stateDirectory,
+      )
+      record.workflows = workflows
       for (const { id } of targets) {
         const client = builds(id)
         const tag = await client.workerTag()
@@ -368,6 +432,15 @@ export function formatStatus(report: StatusReport): string {
     )
   for (const workflow of report.workflows ?? [])
     lines.push(`  workflow ${workflow.path}: ${workflow.state}`)
+  for (const workflow of record.workflows) {
+    if (!workflow.desiredState.startsWith('disabled_')) continue
+    const accepted = record.acceptedPriorWorkflows?.includes(workflow.path)
+    lines.push(
+      `  workflow ${workflow.path}: exit restores ${workflow.desiredState}${
+        accepted ? ' (accepted prior state at entry)' : ''
+      }`,
+    )
+  }
   if (record.appliedMigrations.length)
     lines.push(
       `  applied unmerged migrations: ${record.appliedMigrations.map((m) => m.commit.slice(0, 12)).join(', ')}`,
@@ -830,6 +903,15 @@ export async function runDevelopmentExitComplete(
     }
     for (const workflow of record.workflows) {
       if (workflow.restored) continue
+      if (workflow.desiredState.startsWith('disabled_')) {
+        const accepted = record.acceptedPriorWorkflows?.includes(workflow.path)
+        const retired = project.development.automation.retiredWorkflows.includes(workflow.path)
+        log(
+          `[development] restoring ${workflow.path} to ${workflow.desiredState}${
+            retired ? ' (retired)' : accepted ? ' (accepted prior state at entry)' : ''
+          }`,
+        )
+      }
       github.restoreWorkflow(workflow)
       workflow.restored = true
       writeActivation(

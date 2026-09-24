@@ -16,10 +16,12 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
+import { DEVELOPMENT_USAGE } from '../src/development-cli.js'
 import type { DevelopmentCommand } from '../src/development-config.js'
 import { runDevelopmentDeploy, type DevelopmentContext } from '../src/development-deploy.js'
 import { DevelopmentGitHub } from '../src/development-github.js'
 import {
+  formatStatus,
   runDevelopmentAccept,
   runDevelopmentEnter,
   runDevelopmentExec,
@@ -53,6 +55,18 @@ function temp(prefix: string): string {
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+}
+
+function patchAutomation(
+  root: string,
+  mutate: (automation: Record<string, unknown>) => void,
+): void {
+  const path = join(root, 'Config', 'cloudflare-app.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
+    deployment: { development: { automation: Record<string, unknown> } }
+  }
+  mutate(manifest.deployment.development.automation)
+  writeFileSync(path, JSON.stringify(manifest))
 }
 
 const cmd = (executable: string): DevelopmentCommand => ({
@@ -318,7 +332,7 @@ class Cloudflare {
 class GitHub {
   workflows = [
     { id: 1, path: '.github/workflows/ci.yml', state: 'active' },
-    { id: 2, path: '.github/workflows/promote.yml', state: 'disabled_manually' },
+    { id: 2, path: '.github/workflows/promote.yml', state: 'active' },
     { id: 3, path: '.github/workflows/validate.yml', state: 'active' },
     { id: 4, path: '.github/workflows/refresh.yml', state: 'active' },
   ]
@@ -498,6 +512,43 @@ async function enter(h: Harness) {
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 describe('development mode entry', { timeout: 30_000 }, () => {
+  it('classifies already-disabled held workflows as ambiguous unless retired', () => {
+    const saved = [
+      {
+        id: 1,
+        path: '.github/workflows/ci.yml',
+        previousState: 'disabled_manually',
+        desiredState: 'disabled_manually',
+        writes: false,
+        held: false,
+        restored: false,
+      },
+      {
+        id: 2,
+        path: '.github/workflows/old.yml',
+        previousState: 'disabled_inactivity',
+        desiredState: 'disabled_manually',
+        writes: false,
+        held: false,
+        restored: false,
+      },
+      {
+        id: 3,
+        path: '.github/workflows/ok.yml',
+        previousState: 'active',
+        desiredState: 'active',
+        writes: false,
+        held: false,
+        restored: false,
+      },
+    ]
+    expect(
+      DevelopmentGitHub.ambiguousPriorWorkflows(saved, ['.github/workflows/old.yml']).map(
+        (workflow) => workflow.path,
+      ),
+    ).toEqual(['.github/workflows/ci.yml'])
+  })
+
   it('refuses to deploy an unenrolled repository', async () => {
     const h = harness()
     await expect(runDevelopmentDeploy({ dryRun: false, json: false }, h.context)).rejects.toThrow(
@@ -515,6 +566,132 @@ describe('development mode entry', { timeout: 30_000 }, () => {
     expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
     expect(h.cloudflare.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
     expect(readActivation(REPO, h.state)).toBeUndefined()
+  })
+
+  it('refuses enter when a held workflow is already disabled', async () => {
+    const h = harness()
+    const ci = h.github.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))!
+    ci.state = 'disabled_manually'
+    await expect(enter(h)).rejects.toThrow(/Ambiguous prior workflow state/u)
+    expect(ci.state).toBe('disabled_manually')
+    expect(h.github.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))!.state).toBe(
+      'disabled_manually',
+    )
+    expect(h.cloudflare.workers.get('fixture-app')!.triggers.size).toBe(1)
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+  })
+
+  it('refuses dry-run when a held workflow is already disabled', async () => {
+    const h = harness()
+    h.github.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))!.state =
+      'disabled_inactivity'
+    await expect(
+      runDevelopmentEnter(
+        { approvalRef: 'owner#1', publisher: 'lane-a', refresh: false, dryRun: true },
+        h.context,
+      ),
+    ).rejects.toThrow(/Ambiguous prior workflow state/u)
+    expect(h.logs.some((line) => line.includes('AMBIGUOUS prior state'))).toBe(true)
+    expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(h.cloudflare.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+  })
+
+  it('does not treat a retired already-disabled workflow as ambiguous', async () => {
+    const h = harness()
+    patchAutomation(h.root, (automation) => {
+      automation.retiredWorkflows = ['.github/workflows/ci.yml']
+    })
+    h.github.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))!.state =
+      'disabled_manually'
+    const record = await enter(h)
+    expect(record.mode).toBe('active')
+    expect(record.acceptedPriorWorkflows).toBeUndefined()
+    expect(record.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))).toMatchObject({
+      previousState: 'disabled_manually',
+      desiredState: 'disabled_manually',
+    })
+  })
+
+  it('records --accept-prior-state so exit can restore the disabled state on purpose', async () => {
+    const h = harness()
+    h.github.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))!.state =
+      'disabled_manually'
+    const record = await runDevelopmentEnter(
+      {
+        approvalRef: 'owner-approval#1',
+        publisher: 'lane-a',
+        refresh: false,
+        dryRun: false,
+        acceptPriorState: true,
+      },
+      h.context,
+    )
+    expect(record.acceptedPriorWorkflows).toEqual(['.github/workflows/ci.yml'])
+    expect(record.history.some((event) => event.event === 'accepted-prior-state')).toBe(true)
+    expect(record.workflows.find((workflow) => workflow.path.endsWith('ci.yml'))).toMatchObject({
+      previousState: 'disabled_manually',
+      desiredState: 'disabled_manually',
+    })
+    expect(formatStatus(await runDevelopmentStatus({ remote: false }, h.context))).toMatch(
+      /exit restores disabled_manually \(accepted prior state at entry\)/u,
+    )
+    expect(DEVELOPMENT_USAGE.join('\n')).toContain('--accept-prior-state')
+    runDevelopmentExitPrepare(h.context)
+    const release = git(h.root, 'rev-parse', 'HEAD')
+    h.github.mainHead = release
+    h.github.runs.push({
+      id: 910,
+      workflow: 3,
+      status: 'completed',
+      head_sha: release,
+      head_branch: `narduk-validation/${release}/request`,
+    })
+    await runDevelopmentExitComplete({ releaseSha: release, validationRun: '910' }, h.context)
+    expect(h.github.workflows.map((workflow) => workflow.state)).toEqual([
+      'disabled_manually',
+      'active',
+      'active',
+      'active',
+    ])
+    expect(
+      h.logs.some((line) =>
+        line.includes(
+          'restoring .github/workflows/ci.yml to disabled_manually (accepted prior state at entry)',
+        ),
+      ),
+    ).toBe(true)
+  })
+
+  it('refuses --refresh when a newly held workflow is already disabled', async () => {
+    const h = harness()
+    await enter(h)
+    patchAutomation(h.root, (automation) => {
+      automation.workflows = [
+        ...(automation.workflows as string[]),
+        '.github/workflows/nightly.yml',
+      ]
+    })
+    h.github.workflows.push({
+      id: 5,
+      path: '.github/workflows/nightly.yml',
+      state: 'disabled_manually',
+    })
+    await expect(
+      runDevelopmentEnter(
+        {
+          approvalRef: 'owner-approval#1',
+          publisher: 'lane-a',
+          refresh: true,
+          dryRun: false,
+        },
+        h.context,
+      ),
+    ).rejects.toThrow(/Ambiguous prior workflow state/u)
+    expect(readActivation(REPO, h.state)!.workflows.map((workflow) => workflow.path)).toEqual([
+      '.github/workflows/ci.yml',
+      '.github/workflows/promote.yml',
+    ])
   })
 
   it('holds workflows and retires triggers, preserving manual validation and writers', async () => {
@@ -559,7 +736,7 @@ describe('development mode entry', { timeout: 30_000 }, () => {
     expect(partial.mode).toBe('entering')
     expect(partial.workflows.every((workflow) => workflow.held)).toBe(true)
     expect(partial.workflows.find((w) => w.path.endsWith('promote.yml'))!.previousState).toBe(
-      'disabled_manually',
+      'active',
     )
     await expect(runDevelopmentDeploy({ dryRun: false, json: false }, h.context)).rejects.toThrow(
       /entering/u,
@@ -958,12 +1135,7 @@ describe('feedback, operations, handoff and exit', { timeout: 30_000 }, () => {
     expect(readActivation(REPO, h.state)).toBeUndefined()
     // The archived record points at the release receipt file, not at a build ID.
     expect(existsSync(closed.lastReceipt!)).toBe(true)
-    expect(h.github.workflows.map((w) => w.state)).toEqual([
-      'active',
-      'disabled_manually',
-      'active',
-      'active',
-    ])
+    expect(h.github.workflows.map((w) => w.state)).toEqual(['active', 'active', 'active', 'active'])
     const worker = h.cloudflare.workers.get('fixture-app')!
     expect(worker.triggers.size).toBe(1)
     const [id] = [...worker.triggers.keys()]
