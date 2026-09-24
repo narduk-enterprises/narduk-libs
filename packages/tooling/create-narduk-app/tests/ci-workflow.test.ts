@@ -8,6 +8,9 @@ import {
   createCiWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
+  createRunnerOnboardingScript,
+  RUNNER_ONBOARDING_JOB_NAME,
+  RUNNER_ONBOARDING_MESSAGE,
 } from '../src/ci-workflow.js'
 import {
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
@@ -52,6 +55,21 @@ describe('generated CI boundaries', () => {
     expect(workflow).not.toContain('e2e-browsers-path:')
     expect(workflow).not.toContain('playwright install')
     expect(workflow).toContain('selected-repository membership')
+    expect(workflow).toContain(`name: ${RUNNER_ONBOARDING_JOB_NAME}`)
+    expect(workflow).toContain('runner-onboarding:')
+    expect(workflow).toContain('runs-on: ubuntu-24.04')
+    expect(workflow).toContain(RUNNER_ONBOARDING_MESSAGE)
+    const parsed = YAML.parse(workflow) as {
+      jobs: Record<
+        string,
+        { name?: string; 'runs-on'?: string; needs?: unknown; 'timeout-minutes'?: number }
+      >
+    }
+    expect(parsed.jobs['runner-onboarding']?.name).toBe(RUNNER_ONBOARDING_JOB_NAME)
+    expect(parsed.jobs['runner-onboarding']?.['runs-on']).toBe('ubuntu-24.04')
+    expect(parsed.jobs['runner-onboarding']?.['timeout-minutes']).toBe(5)
+    expect(parsed.jobs['runner-onboarding']?.needs).toBeUndefined()
+    expect(parsed.jobs.ci?.needs).toBeUndefined()
     expect(workflow).toContain('workflow_dispatch:')
     // Cancel superseded pull-request runs only; a push (main) run queues
     // instead, so the commit that merged keeps a completed CI record.
@@ -272,5 +290,241 @@ describe('generated CI boundaries', () => {
     expect(workflow).not.toContain('npm.pkg.github.com')
     expect(workflow).not.toContain('GH_PACKAGES_READ')
     expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+  })
+
+  it('does not emit the hosted runner-onboarding job on public apps', () => {
+    const workflow = createCiWorkflow('public')
+    expect(workflow).not.toContain(RUNNER_ONBOARDING_JOB_NAME)
+    expect(workflow).not.toContain('runner-onboarding:')
+  })
+})
+
+describe('runner-onboarding detection script', () => {
+  /** One canned `gh api` answer: the body `gh` prints on stdout, and its exit. */
+  interface GhAnswer {
+    body: unknown
+    status?: number
+  }
+
+  /**
+   * A `gh` stand-in that answers by path and applies `--jq` with the real jq,
+   * the way `gh api --jq` does. A refused call prints its JSON error body as a
+   * line on stdout and exits 1 -- what `gh api` really does on a 403.
+   */
+  const FAKE_GH = `#!/bin/bash
+path=''
+jq_expr=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    api | --paginate) shift ;;
+    --jq) jq_expr="$2"; shift 2 ;;
+    *) path="$1"; shift ;;
+  esac
+done
+case "$path" in
+  orgs/*/actions/runner-groups/*/repositories) id="\${path#*/runner-groups/}"; key="members-\${id%%/*}" ;;
+  orgs/*/actions/runner-groups) key=groups ;;
+  repos/*/actions/runs/*/jobs*) key=jobs ;;
+  *) echo "unexpected gh api $path" >&2; exit 2 ;;
+esac
+dir="$(dirname "$0")"
+[ -f "$dir/$key.json" ] || { echo "no answer for $path" >&2; exit 2; }
+if [ "$(cat "$dir/$key.status")" != 0 ]; then
+  cat "$dir/$key.json"
+  echo
+  echo "gh: Resource not accessible by integration (HTTP 403)" >&2
+  exit 1
+fi
+if [ -n "$jq_expr" ]; then jq -r "$jq_expr" "$dir/$key.json"; else cat "$dir/$key.json"; fi
+`
+
+  const FORBIDDEN: GhAnswer = {
+    body: {
+      documentation_url: 'https://docs.github.com/rest/actions/self-hosted-runner-groups',
+      message: 'Resource not accessible by integration',
+      status: '403',
+    },
+    status: 1,
+  }
+
+  const LINUX_CI_LABELS = ['self-hosted', 'Linux', 'X64', 'proxmox', 'linux-ci']
+
+  function job(name: string, fields: Record<string, unknown>) {
+    return { conclusion: null, labels: LINUX_CI_LABELS, name, runner_id: null, ...fields }
+  }
+
+  const ONBOARDING = job(RUNNER_ONBOARDING_JOB_NAME, {
+    labels: ['ubuntu-24.04'],
+    runner_id: 3,
+    status: 'in_progress',
+  })
+
+  async function runScript(answers: Record<string, GhAnswer>) {
+    const directory = await mkdtemp(join(tmpdir(), 'runner-onboard-'))
+    try {
+      const gh = join(directory, 'gh')
+      await writeFile(gh, FAKE_GH)
+      await chmod(gh, 0o755)
+      for (const [key, answer] of Object.entries(answers)) {
+        await writeFile(join(directory, `${key}.json`), JSON.stringify(answer.body))
+        await writeFile(join(directory, `${key}.status`), String(answer.status ?? 0))
+      }
+      const executable = join(directory, 'check.sh')
+      await writeFile(executable, createRunnerOnboardingScript())
+      return spawnSync('bash', [executable], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${directory}:${process.env.PATH}`,
+          REPO: 'narduk-enterprises/new-app',
+          RUN_ID: '99',
+          RUNNER_ONBOARDING_WAIT_SECONDS: '0',
+          RUNNER_ONBOARDING_POLL_SECONDS: '0',
+        },
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  }
+
+  function groups(...entries: Array<[number, string, string]>): GhAnswer {
+    return {
+      body: {
+        runner_groups: entries.map(([id, visibility, name]) => ({ id, name, visibility })),
+      },
+    }
+  }
+
+  function members(...names: string[]): GhAnswer {
+    return { body: { repositories: names.map((full_name) => ({ full_name })) } }
+  }
+
+  it('has the real jq the fake gh applies --jq with', () => {
+    expect(spawnSync('jq', ['--version']).status, 'install jq to run these tests').toBe(0)
+  })
+
+  it('fails when the org API shows the repo is not in linux-ci', async () => {
+    const result = await runScript({
+      groups: groups([1, 'selected', 'linux-ci']),
+      'members-1': members('narduk-enterprises/other'),
+    })
+    expect(result.status, result.stderr).toBe(1)
+    expect(result.stdout).toContain('Not a member of linux-ci (id 1).')
+    expect(result.stdout).toContain(`::error::${RUNNER_ONBOARDING_MESSAGE}`)
+  })
+
+  it('succeeds when the org API lists the repo in the named groups', async () => {
+    const result = await runScript({
+      groups: groups([1, 'selected', 'linux-ci'], [2, 'selected', 'playwright-isolated']),
+      'members-1': members('narduk-enterprises/other', 'narduk-enterprises/new-app'),
+      'members-2': members('narduk-enterprises/new-app'),
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Repository is listed in the named runner groups.')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).not.toContain('::error::')
+  })
+
+  it('counts a group open to every private repository as membership', async () => {
+    const result = await runScript({
+      groups: groups([1, 'private', 'linux-ci'], [2, 'all', 'playwright-isolated']),
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Repository is listed in the named runner groups.')
+  })
+
+  it('treats a forbidden org listing as unknown, not as a listed group', async () => {
+    // Post-onboarding and healthy: the token still cannot list org groups,
+    // and the self-hosted Build job has a runner.
+    const result = await runScript({
+      groups: FORBIDDEN,
+      jobs: {
+        body: {
+          jobs: [
+            ONBOARDING,
+            job('ci / Build', { runner_id: 41, status: 'in_progress' }),
+            job('ci / Checks', { status: 'queued' }),
+          ],
+        },
+      },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).not.toContain('Not a member')
+    expect(result.stdout).not.toContain('::error::')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).toContain('runner groups look reachable')
+  })
+
+  it('warns when self-hosted jobs stay queued beside skipped and hosted siblings', async () => {
+    // The #625 first push: Build and Checks never get a runner. Extra gate and
+    // Deploy dry run skip at once (`completed`, no runner), and Caller lint
+    // starts on a hosted lightweight runner -- none of which proves the
+    // self-hosted groups are reachable.
+    const result = await runScript({
+      groups: FORBIDDEN,
+      jobs: {
+        body: {
+          jobs: [
+            ONBOARDING,
+            job('ci / Build', { status: 'queued' }),
+            job('ci / Checks', { status: 'queued' }),
+            job('ci / Extra gate', { conclusion: 'skipped', status: 'completed' }),
+            job('ci / Deploy dry run', {
+              conclusion: 'skipped',
+              labels: [],
+              runner_id: 0,
+              status: 'completed',
+            }),
+            job('ci / Caller lint', {
+              labels: ['ubuntu-latest'],
+              runner_id: 7,
+              status: 'in_progress',
+            }),
+          ],
+        },
+      },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).not.toContain('look reachable')
+    expect(result.stdout).toContain(`::warning::${RUNNER_ONBOARDING_MESSAGE}`)
+    expect(result.stdout).not.toContain('::error::')
+  })
+
+  it('falls back to the sibling jobs when a group membership listing is refused', async () => {
+    const result = await runScript({
+      groups: groups([1, 'selected', 'linux-ci']),
+      jobs: { body: { jobs: [ONBOARDING, job('ci / Build', { status: 'queued' })] } },
+      'members-1': FORBIDDEN,
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Could not list the repositories in linux-ci (id 1).')
+    expect(result.stdout).toContain(`::warning::${RUNNER_ONBOARDING_MESSAGE}`)
+    expect(result.stdout).not.toContain('::error::')
+  })
+
+  it('warns rather than failing when the jobs listing is refused too', async () => {
+    const result = await runScript({ groups: FORBIDDEN, jobs: FORBIDDEN })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`::warning::${RUNNER_ONBOARDING_MESSAGE}`)
+    expect(result.stderr).not.toContain('integer expression expected')
+  })
+
+  it('has nothing to report when no sibling job asks for a self-hosted runner', async () => {
+    const result = await runScript({
+      groups: FORBIDDEN,
+      jobs: {
+        body: {
+          jobs: [
+            ONBOARDING,
+            job('ci / Build', {
+              labels: ['blacksmith-2vcpu-ubuntu-2404'],
+              status: 'queued',
+            }),
+          ],
+        },
+      },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('No sibling job in this run asks for a self-hosted runner.')
+    expect(result.stdout).not.toContain('::warning::')
   })
 })

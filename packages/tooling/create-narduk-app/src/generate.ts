@@ -820,7 +820,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         ...(visibility === 'private'
           ? [
-              '> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. A repository that has not been added to the selected-repository runner groups has no runner to pick its jobs up, so the first workflow run sits in `queued` indefinitely -- no error, no timeout, no log. The route names in `.github/workflows/ci.yml` do not grant membership. Onboard this repository into both fleet runner groups, and grant it access to the shared workflows, before pushing. If a run is already stuck queued, that is the cause: cancel it and re-run after onboarding.',
+              '> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. A repository that has not been added to the selected-repository runner groups has no runner to pick those jobs up, so they sit in `queued` with no log. The hosted `Runner group onboarding` job still starts on GitHub-hosted Ubuntu and annotates the run when sibling jobs stay queued. The route names in `.github/workflows/ci.yml` do not grant membership. Onboard this repository into both fleet runner groups, and grant it access to the shared workflows, before pushing. If a run is already stuck queued, that is the cause: cancel it and re-run after onboarding.',
               '',
             ]
           : []),

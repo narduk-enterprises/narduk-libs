@@ -238,6 +238,123 @@ function privateCallerInputs(): string[] {
   ]
 }
 
+/** Hosted job that can produce a log when self-hosted `ci` never leaves queued. */
+export const RUNNER_ONBOARDING_JOB_NAME = 'Runner group onboarding'
+
+export const RUNNER_ONBOARDING_MESSAGE =
+  'This repository is not in the fleet runner groups its private CI names (linux-ci and playwright-isolated). The route names in .github/workflows/ci.yml do not grant selected-repository membership. Onboard this repository into both groups and grant it access to the shared workflows, then re-run. A job that stays queued with no runner is this gap, not a queue you can wait out.'
+
+/**
+ * Detects a missing selected-repository runner-group assignment.
+ *
+ * The org runner-groups API needs admin:org, which `github.token` usually
+ * lacks. A refused call still prints its JSON error body on stdout, so only a
+ * listing from a `gh` that exited 0 counts. When the listing works, absence is
+ * a hard failure. When it does not -- the usual case -- this watches the
+ * sibling jobs on this run that ask for a self-hosted runner: one that gets a
+ * runner proves the groups are reachable. A skipped job is `completed` with no
+ * runner and proves nothing, and a job on a hosted runner proves nothing about
+ * the self-hosted groups, so neither counts. If none starts in time it
+ * annotates the run. It does not fail on that heuristic -- a busy queue looks
+ * the same from inside the repository (narduk-libs#625).
+ */
+export function createRunnerOnboardingScript(): string {
+  return `set -euo pipefail
+message='${RUNNER_ONBOARDING_MESSAGE}'
+org="\${REPO%%/*}"
+wait_seconds="\${RUNNER_ONBOARDING_WAIT_SECONDS:-90}"
+
+groups=''
+if listing=$(gh api --paginate "orgs/\${org}/actions/runner-groups" --jq '.runner_groups[] | select(.name=="linux-ci" or .name=="playwright-isolated") | [.id, .visibility, .name] | @tsv' 2>/dev/null); then
+  groups="$listing"
+fi
+
+listed=0
+missing=0
+unknown=0
+while IFS=$'\\t' read -r id visibility name; do
+  [ -n "$id" ] || continue
+  listed=1
+  # 'all' admits every repository and 'private' every private one; this job
+  # is only generated for private repositories.
+  if [ "$visibility" = "all" ] || [ "$visibility" = "private" ]; then
+    continue
+  fi
+  if ! members=$(gh api --paginate "orgs/\${org}/actions/runner-groups/\${id}/repositories" --jq '.repositories[].full_name' 2>/dev/null); then
+    echo "Could not list the repositories in \${name} (id \${id})."
+    unknown=1
+    continue
+  fi
+  if ! grep -Fxq "$REPO" <<<"$members"; then
+    echo "Not a member of \${name} (id \${id})."
+    missing=1
+  fi
+done <<<"$groups"
+
+if [ "$listed" -gt 0 ]; then
+  if [ "$missing" -eq 1 ]; then
+    echo "::error::$message"
+    exit 1
+  fi
+  if [ "$unknown" -eq 0 ]; then
+    echo "Repository is listed in the named runner groups."
+    exit 0
+  fi
+fi
+
+deadline=$((SECONDS + wait_seconds))
+while :; do
+  counts=''
+  if job_counts=$(gh api "repos/\${REPO}/actions/runs/\${RUN_ID}/jobs?per_page=100" --jq '[.jobs[] | select(.name != "${RUNNER_ONBOARDING_JOB_NAME}")] | [length, (map(select((.labels // []) | index("self-hosted"))) | length), (map(select((.labels // []) | index("self-hosted")) | select(.runner_id != null and .runner_id != 0)) | length)] | @tsv' 2>/dev/null); then
+    counts="$job_counts"
+  fi
+  IFS=$'\\t' read -r siblings self_hosted started <<<"$counts" || true
+  if [[ "\${started:-}" =~ ^[0-9]+$ ]] && [ "$started" -gt 0 ]; then
+    echo "A self-hosted sibling job got a runner; runner groups look reachable."
+    exit 0
+  fi
+  if [[ "\${siblings:-}" =~ ^[0-9]+$ ]] && [ "$siblings" -gt 0 ] && [ "\${self_hosted:-}" = "0" ]; then
+    echo "No sibling job in this run asks for a self-hosted runner."
+    exit 0
+  fi
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    break
+  fi
+  sleep "\${RUNNER_ONBOARDING_POLL_SECONDS:-5}"
+done
+echo "::warning::$message"
+`
+}
+
+function createRunnerOnboardingJob(): string[] {
+  const runBody = createRunnerOnboardingScript()
+    .split('\n')
+    .map((line) => (line.length === 0 ? '' : `          ${line}`))
+    .join('\n')
+  return [
+    '  # Hosted on purpose: a missing runner-group assignment leaves every',
+    '  # self-hosted job in `queued` with no log. This job still starts and',
+    '  # annotates the run (narduk-libs#625). It does not `needs:` `ci` and',
+    '  # `ci` does not `needs:` it, so a healthy self-hosted job can start',
+    '  # immediately and this job can observe that.',
+    '  runner-onboarding:',
+    `    name: ${RUNNER_ONBOARDING_JOB_NAME}`,
+    '    runs-on: ubuntu-24.04',
+    '    timeout-minutes: 5',
+    '    permissions:',
+    '      contents: read',
+    '      actions: read',
+    '    steps:',
+    '      - name: Detect a missing runner-group assignment',
+    '        env:',
+    '          GH_TOKEN: ${{ github.token }}',
+    '          REPO: ${{ github.repository }}',
+    '          RUN_ID: ${{ github.run_id }}',
+    '        run: |',
+    runBody,
+  ]
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -266,6 +383,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       ...header,
       '  # Before the first run, onboard this repository into both fleet groups.',
       '  # These routes do not grant selected-repository membership themselves.',
+      ...createRunnerOnboardingJob(),
       '  ci:',
       `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${workflowSha}`,
       '    permissions:',
