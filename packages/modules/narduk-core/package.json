@@ -15,10 +15,10 @@
   },
   "exports": {
     ".": {
-      "import": "./src/module.ts"
+      "import": "./src/module-entry.ts"
     },
     "./nuxt": {
-      "import": "./src/module.ts"
+      "import": "./src/module-entry.ts"
     },
     "./app/components/app/*": {
       "import": "./runtime/app/components/app/*.vue"

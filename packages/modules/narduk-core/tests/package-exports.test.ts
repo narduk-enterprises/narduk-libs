@@ -16,6 +16,12 @@ function readPackageJson() {
 }
 
 describe('narduk-core package exports', () => {
+  it('publishes the CSP contribution wrapper as the module entry (narduk-libs#410)', () => {
+    const { exports } = readPackageJson()
+    expect(exports['.']).toEqual({ import: './src/module-entry.ts' })
+    expect(exports['./nuxt']).toEqual({ import: './src/module-entry.ts' })
+  })
+
   it('exports server runtime files for package-owned reuse', async () => {
     expect(readPackageJson().exports['./server/*']).toEqual({
       import: './runtime/server/*.ts',
