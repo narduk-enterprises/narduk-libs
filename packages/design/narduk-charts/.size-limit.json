@@ -18,5 +18,10 @@
     "name": "Candle entry",
     "path": "dist/candle.js",
     "limit": "48 KB"
+  },
+  {
+    "name": "Spark entry",
+    "path": "dist/spark.js",
+    "limit": "4 KB"
   }
 ]
