@@ -24,6 +24,10 @@
     "./migrations": {
       "types": "./dist/migrations.d.ts",
       "import": "./dist/migrations.js"
+    },
+    "./wrangler-public-runtime": {
+      "types": "./dist/wrangler-public-runtime.d.ts",
+      "import": "./dist/wrangler-public-runtime.js"
     }
   },
   "files": [

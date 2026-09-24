@@ -57,3 +57,4 @@ export * from './foundation/npm-registry.js'
 export * from './foundation/wave1-file-list.js'
 
 export * from './migration-baseline.js'
+export * from './wrangler-public-runtime.js'
