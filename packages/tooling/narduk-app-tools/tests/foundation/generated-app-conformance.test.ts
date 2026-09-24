@@ -35,6 +35,7 @@ const tempDirs: string[] = []
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { force: true, recursive: true })
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 /** A registry that agrees with the generator's own pins: every package the
@@ -163,8 +164,25 @@ describe('an app straight out of create-narduk-app', () => {
     // red on a workstation is the same local/CI divergence the comment above
     // is about, pointed the other way once more (agent-infrastructure#1644).
     clearRegistryCredentials()
+    // Clearing credentials stopped being enough when the generator moved the
+    // scaffold's `.npmrc` to the anonymous `https://npm.nard.uk` mirror
+    // (D-PKG-6, narduk-libs#821): the reader follows that route with no
+    // credential at all, so wherever the mirror answers -- every CI runner --
+    // the live read succeeded and this went PASS (narduk-libs#846). The
+    // network is the other half of "unreadable", so the test establishes that
+    // too: every request the real reader makes fails the way a dead link
+    // does. Nothing the reader decides is faked -- its route, retry budget and
+    // fail-closed answer all still run.
+    const requests: Array<{ url: string; headers: Record<string, string> }> = []
+    vi.stubGlobal('fetch', (url: string, init?: { headers?: Record<string, string> }) => {
+      requests.push({ url, headers: init?.headers ?? {} })
+      return Promise.reject(new TypeError('fetch failed'))
+    })
     const artefact = await check(await scaffold({ built: true }), undefined)
 
+    // Whatever the reader tried, it tried without a credential: the cleared
+    // environment reached it, and the anonymous route never carries one.
+    expect(requests.filter((request) => 'Authorization' in request.headers)).toEqual([])
     expect(artefact.failingItems).toEqual([])
     expect(artefact.result).toBe('UNKNOWN')
     expect(subCheckStatus(artefact, '2.3')).toBe('unknown')
