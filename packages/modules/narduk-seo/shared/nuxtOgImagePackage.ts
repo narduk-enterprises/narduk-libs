@@ -10,7 +10,7 @@ export const NUXT_OG_IMAGE_PACKAGE = 'nuxt-og-image'
  * image-processing tree (narduk-libs#170). Runtime OG still needs the pin.
  */
 export const MISSING_NUXT_OG_IMAGE_MESSAGE =
-  '[@narduk-enterprises/narduk-seo] Runtime OG image generation requires the optional nuxt-og-image@6.8.0 peer. Add it to the app. Apps that only ship a static defaultOgImage should set ogImage.enabled: false or ogImage.zeroRuntime: true and omit the package so they do not inherit its image-processing tree.'
+  '[@narduk-enterprises/narduk-seo] Runtime OG image generation requires the optional nuxt-og-image@6.8.0 peer. Add it to the app. Apps that only ship a static defaultOgImage should set ogImage.enabled: false and omit the package so they do not inherit its image-processing tree. ogImage.zeroRuntime: true still needs the peer for build-time prerender cards.'
 
 export function isRuntimeOgImageGenerationEnabled(ogImage: {
   enabled?: boolean

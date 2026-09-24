@@ -41,6 +41,9 @@ describe('nuxt-og-image optional peer (narduk-libs#170)', () => {
       }),
     ).toBe(false)
     expect(MISSING_NUXT_OG_IMAGE_MESSAGE).toMatch(/optional nuxt-og-image@6\.8\.0 peer/u)
-    expect(MISSING_NUXT_OG_IMAGE_MESSAGE).toMatch(/image-processing tree/u)
+    expect(MISSING_NUXT_OG_IMAGE_MESSAGE).toMatch(/ogImage\.enabled: false and omit/u)
+    expect(MISSING_NUXT_OG_IMAGE_MESSAGE).toMatch(
+      /zeroRuntime: true still needs the peer for build-time prerender cards/u,
+    )
   })
 })
