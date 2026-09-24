@@ -1,3 +1,5 @@
+import { readStoredCloudflareContext } from './cloudflare-request-env'
+
 import type { H3Event } from 'h3'
 
 export type WorkerRuntimeEnv = Record<string, unknown>
@@ -24,8 +26,12 @@ function getCloudflareEnvFromEvent(event: H3Event): unknown {
         cloudflare?: { env?: unknown }
       }
     | undefined
-  if (ctx == null) return undefined
-  return ctx.cloudflare?.env ?? ctx._platform?.cloudflare?.env
+  const fromEvent = ctx?.cloudflare?.env ?? ctx?._platform?.cloudflare?.env
+  if (fromEvent != null) return fromEvent
+  // Nested Nitro SSR fetches omit `event.context.cloudflare` (narduk-libs#49).
+  // The request plugin stores the outer env; read it here so useDatabase and
+  // KV/Hyperdrive helpers keep working even if a hook ran out of order.
+  return readStoredCloudflareContext()?.env
 }
 
 function readNodeRuntimeEnv(): WorkerRuntimeEnv {
