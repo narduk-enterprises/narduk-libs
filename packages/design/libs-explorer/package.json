@@ -17,7 +17,9 @@
     "test:unit": "node --test inventory/*.test.mts demo/*.test.mts scripts/*.test.mts",
     "test:e2e": "nuxt generate && playwright test",
     "preview": "node scripts/serve.mts",
-    "check:package": "node scripts/check-package.mts"
+    "check:package": "node scripts/check-package.mts",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@narduk-enterprises/narduk-shell": "workspace:*",
