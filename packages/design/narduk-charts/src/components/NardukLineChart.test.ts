@@ -692,3 +692,22 @@ describe('NardukLineChart pinned Y domain and tick count', () => {
     expect(w.findAll('.narduk-axis')[0]!.findAll('text').length).toBeLessThanOrEqual(12)
   })
 })
+
+describe('NardukLineChart xWindow', () => {
+  it('keeps a path after a controlled xWindow update', async () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'a', data: [1, 2, 3, 4, 5] }],
+        labels: ['a', 'b', 'c', 'd', 'e'],
+        width: 300,
+        height: 150,
+        animate: false,
+        zoomable: true,
+        xWindow: { start: 0, end: 4 },
+      },
+    })
+    expect(w.findAll('.narduk-line-path').some(p => (p.attributes('d') ?? '') !== '')).toBe(true)
+    await w.setProps({ xWindow: { start: 1, end: 3 } })
+    expect(w.findAll('.narduk-line-path').some(p => (p.attributes('d') ?? '') !== '')).toBe(true)
+  })
+})
