@@ -1,0 +1,108 @@
+# Opt-in live canary for accepted PR-to-main packed-consumer reuse
+# (narduk-libs#202). Dispatch from main only. It writes one executed
+# receipt, uploads it under the production artifact name, then consumes
+# it through findReusablePackedConsumerProof against the live Actions
+# artifact zip. Missing-artifact and one-changed-input paths must
+# execute. Production lookupConsumerProof stays push-to-main and
+# ci.yml-only. This workflow does not pack, install, generate, deploy
+# or publish. Artifacts expire in seven days; re-dispatch replaces the
+# in-progress run. See docs/ci.md, "Packed-consumer reuse canary".
+name: Packed-consumer reuse canary
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: narduk-libs-packed-consumer-reuse-canary
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  produce:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Write an executed packed-consumer receipt
+        run: node scripts/packed-consumer-reuse-canary.mjs produce
+      - name: Retain the exact installed consumer proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packed-consumer-proof-${{ github.run_attempt }}
+          path: .ci-evidence/packed-consumer-proof/proof.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  consume-accepted:
+    needs: produce
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Reuse the live proof artifact through the production finder
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/packed-consumer-reuse-canary.mjs consume-accepted
+
+  fallback-missing:
+    needs: produce
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Execute when the proof artifact is missing
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/packed-consumer-reuse-canary.mjs fallback-missing
+
+  fallback-changed:
+    needs: produce
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Execute when one substantive input changed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/packed-consumer-reuse-canary.mjs fallback-changed

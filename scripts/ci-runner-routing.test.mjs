@@ -106,7 +106,7 @@ test('every CI and release executor matches the supported root Node runtime', ()
   assert.ok(Number(root.volta.node.split('.')[0]) >= Number(eslint.engines.node.match(/\d+/u)[0]))
   assert.equal(root.engines.node, root.volta.node)
   assert.equal(readFileSync(new URL('../.nvmrc', import.meta.url), 'utf8').trim(), root.volta.node)
-  for (const file of ['ci.yml', 'release.yml']) {
+  for (const file of ['ci.yml', 'release.yml', 'packed-consumer-reuse-canary.yml']) {
     const versions = [...source(file).matchAll(/node-version: ["']?([\d.]+)/gu)].map(
       (match) => match[1],
     )
@@ -160,4 +160,32 @@ test('the Cursor reviewer workflow stays on the public hosted route with exactly
   )
   assert.match(review, /pull-requests: write/u)
   assert.doesNotMatch(ci, /cursor-review/u)
+})
+
+test('the packed-consumer reuse canary is opt-in on main and never publishes', () => {
+  // narduk-libs#202: accepted PR-to-main reuse stays cold unless a live
+  // canary manufactures an unchanged receipt. The workflow is dispatch-only
+  // so ordinary PRs do not pay for it, and it must not weaken production
+  // lookup or publish anything.
+  const canary = source('packed-consumer-reuse-canary.yml')
+  assert.match(canary, /^name: Packed-consumer reuse canary$/mu)
+  assert.match(canary, /^on:\n {2}workflow_dispatch:\n/mu)
+  assert.doesNotMatch(canary, /pull_request:|push:|workflow_call:|workflow_run:/u)
+  assert.match(canary, /^permissions: \{\}$/mu)
+  assert.doesNotMatch(canary, /self-hosted|BLACKSMITH_|secrets\.|GH_PACKAGES_READ|environment:/u)
+  assert.doesNotMatch(canary, /packages: (?:read|write)|download-artifact/u)
+  assert.doesNotMatch(canary, /create-narduk-app|release:publish|changeset/u)
+  assert.equal((canary.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 4)
+  assert.equal((canary.match(/github\.ref == 'refs\/heads\/main'/gu) || []).length, 4)
+  assert.match(canary, /node scripts\/packed-consumer-reuse-canary\.mjs produce/u)
+  assert.match(canary, /node scripts\/packed-consumer-reuse-canary\.mjs consume-accepted/u)
+  assert.match(canary, /node scripts\/packed-consumer-reuse-canary\.mjs fallback-missing/u)
+  assert.match(canary, /node scripts\/packed-consumer-reuse-canary\.mjs fallback-changed/u)
+  assert.match(canary, /name: packed-consumer-proof-\$\{\{ github\.run_attempt \}\}/u)
+  assert.match(canary, /path: \.ci-evidence\/packed-consumer-proof\/proof\.json/u)
+  assert.match(canary, /needs: produce/u)
+  assert.match(canary, /actions: read/u)
+  assert.match(canary, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u)
+  for (const uses of canary.matchAll(/uses: (\S+)/gu))
+    assert.match(uses[1], /@[0-9a-f]{40}$/u, `${uses[1]} must be SHA-pinned`)
 })
