@@ -1,13 +1,16 @@
 ---
 '@narduk-enterprises/narduk-shell': patch
 '@narduk-enterprises/eslint-config': patch
+'@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/libs-explorer': patch
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
 Add `NeCard`, `NeCardList` and `NeDetailView` (item 17, #264).
 
-The eslint-config shared-component list names those three plus `NeSearchInput`
-so `shared-components-drift` matches `narduk-shell`'s registry.
+The eslint-config and narduk-app-tools shared-component lists name those three
+plus `NeSearchInput` so the drift and item-13 tests match `narduk-shell`'s
+registry. Explorer inventory, catalog, and usage ship beside the components.
 
 `NeCard` wraps `UCard` with media, title, badge, stat rows and actions.
 `NeCardList` renders the same collection state as the table (`v-model:state` or
