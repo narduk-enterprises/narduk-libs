@@ -99,6 +99,12 @@ database across the pool — the wrong-but-green overwrite the contract exists t
 kill. `workers: 1` with today's scalars stays the correct setting for a single
 world.
 
+Playwright does not publish the pool size at spec-load. Set `TEST_WORKERS` to
+the same number as `workers` in the Playwright config so `registerJourneys` can
+refuse a scalar pair before any `test()` is registered. Without it the refusal
+still runs in `test.beforeAll` and at the start of each journey, from
+`test.info().config.workers`.
+
 - `JOURNEYS_MODE=test npx playwright test` — every journey, every declared
   scenario, no artefacts, fail fast.
 - `JOURNEYS_MODE=capture npx playwright test` — first declared scenario,
