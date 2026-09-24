@@ -1,0 +1,70 @@
+# One-shot: the integration token cannot createPullRequest. A push here
+# asks Actions (pull-requests: write) to open foundation-check-non-cf-158.
+# That branch is not modified.
+name: Open #158 pull request
+
+on:
+  push:
+    branches:
+      - chore/open-158-pr
+
+concurrency:
+  group: open-158-pr
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  open:
+    if: github.repository == 'narduk-enterprises/narduk-libs'
+    name: Open foundation-check-non-cf-158
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Open PR and request review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: narduk-enterprises/narduk-libs
+          PR_TITLE: 'fix(narduk-app-tools): non-Cloudflare foundation:check branch (#158)'
+          PR_BODY: |
+            ## Problem
+
+            `foundation:check` item 1.1 required a Nitro `cloudflare_module` preset with no branch for an app that does not deploy to Cloudflare Workers. A Coolify/node-server app failed item 1 forever, and 1.2/1.4/3.1/3.2 stayed unknown because they only read `Config/cloudflare-app.json`. A hand-rolled Worker that declared `worker.nitroPreset: "none"` failed 1.1 the same way.
+
+            ## Change
+
+            - Read `Config/project-lifecycle.json` `environments[].deploymentTargets[].provider`. When every named provider is non-Cloudflare, items **1.1 / 1.2 / 1.4** are `not-applicable`. `Config/coolify-app.json` without `Config/cloudflare-app.json` is the same signal.
+            - A Worker that sets `worker.nitroPreset` (or `worker.framework`) to `none` makes **1.1** `not-applicable`; 1.2/1.4 still apply.
+            - Mixed `coolify` + `cloudflare` targets keep the Workers rules. Item **1.3** still requires `manifests:validate`.
+            - Items **3.1 / 3.2** read `access.exposureClass` from `Config/coolify-app.json` when the Cloudflare manifest is absent.
+
+            Does not edit `narduk-app-tools` README, verify-live, or development-mode files reserved by #807/#833. Does not edit generator source.
+
+            Work branch: `foundation-check-non-cf-158`.
+
+            ## Changeset
+
+            Patch on `@narduk-enterprises/narduk-app-tools` and `@narduk-enterprises/create-narduk-app` because `PACKAGE_VERSIONS` pins narduk-app-tools.
+
+            ## Merge
+
+            Do not merge #805.
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head foundation-check-non-cf-158 --state open --json url --jq '.[0].url // empty')"
+          if [ -n "${existing}" ]; then
+            url="${existing}"
+            echo "PR already open: ${url}"
+          else
+            url="$(gh pr create --base main --head foundation-check-non-cf-158 --title "${PR_TITLE}" --body "${PR_BODY}")"
+            echo "Opened ${url}"
+          fi
+          gh pr edit "${url}" --add-label review-now
+          echo "Labeled review-now on ${url}"
