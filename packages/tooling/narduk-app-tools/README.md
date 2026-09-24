@@ -71,7 +71,7 @@ exit. Nothing enrolls automatically. See the
 
 ```sh
 narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
-  [--assets <dir>] [--cwd <dir>]
+  [--assets <dir>] [--cwd <dir>] [--keep-service-bindings]
 ```
 
 Serves an already-built Worker for Playwright when the shared `nuxt-cloudflare`
@@ -91,6 +91,14 @@ app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
 
 `wrangler is not installed in this app. Add it as a dependency and retry.`
 
+Only the one Worker runs, so a `services` binding to any other Worker is dropped
+from the started config and named on stderr
+(`[e2e-serve] dropping service binding ENGINE → loadtest-dev-engine (not part of the E2E run)`);
+the app sees that binding as missing. A binding back to the Worker itself is
+kept. Nothing is written to the app tree. `--keep-service-bindings` passes the
+config through untouched for an app that runs the target Worker alongside.
+Dropping needs the app's wrangler at 4.99.0 or later.
+
 Real worker errors pass through. The only filtered stderr is workerd's
 client-abort block
 (`kj::getCaughtExceptionAsKj() … disconnected: ::write(…): Broken pipe` or
@@ -98,6 +106,44 @@ client-abort block
 following `ECONNREFUSED` is the real crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 See [the e2e-serve guide](docs/e2e-serve.md).
+
+## Creating the D1 database (`narduk-app db create`)
+
+`create-narduk-app` binds `DB` to the placeholder `database_id`
+`00000000-0000-0000-0000-000000000000`: the generator never calls Cloudflare, so
+the real id cannot exist yet. Every build, `wrangler deploy --dry-run` and test
+accepts that placeholder, and `foundation:check` sub-check 1.5 fails on it
+(narduk-libs#662). One command clears it, run once from the repository root:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \
+  pnpm exec narduk-app db create [--binding <NAME>] [--dry-run] [--json]
+```
+
+- **It refuses when the id is already real.** Only a binding still carrying the
+  placeholder is created, so it cannot make a second database for an app that
+  has one. A re-run after success exits `1` without calling Wrangler.
+- **The name comes from `Config/cloudflare-app.json`, never an argument.** The
+  manifest's `bindings.d1[]` entry may set `database_name`; otherwise the name
+  is `<worker.name>-<binding>` (`<app>-db` for `DB`), Wrangler's own
+  auto-provisioning convention and the name the generator writes. The wrangler
+  config must already say the same, or the command refuses.
+- **The account is explicit.** `account_id` in the wrangler config or
+  `CLOUDFLARE_ACCOUNT_ID`; neither, or two that disagree, is a refusal.
+  Credentials are Wrangler's own, exactly as `db migrate --remote` uses them.
+- **It writes the id into the wrangler config the manifest names**
+  (`worker.wranglerConfig`, JSON/JSONC only) with a `jsonc-parser` edit, so
+  comments and formatting survive, and prints the id and where the account came
+  from. An `account_id` from the wrangler config is printed; one from
+  `CLOUDFLARE_ACCOUNT_ID` is used but not echoed, so a value read from the
+  environment never lands in a terminal or CI log. If the file changed while
+  Wrangler ran it writes nothing and prints the id to record.
+- **It never deletes.** Removing a data store is an operator action.
+
+`--binding` is needed only when more than one top-level binding is a
+placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
+under the same credentials, then setting that binding's `database_id` to the id
+it prints.
 
 ## Migration config
 
@@ -225,7 +271,8 @@ narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
   [--max-versions <n>] [--wait-for-version <seconds>] \
-  [--wait-interval <seconds>] [--dry-run] [--json]
+  [--wait-interval <seconds>] [--gate-verified "<check>@<sha>"] \
+  [--dry-run] [--json]
 ```
 
 Resolves the version whose `workers/tag` matches the commit (prefix-compared in
@@ -273,11 +320,45 @@ env:
   VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
 steps:
   - run:
-      narduk-app deploy versions-promote --sha "$VERIFIED_SHA"
-      --production-branch main --json
+      narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified
+      "ci / Required@$VERIFIED_SHA" --production-branch main --json
   - run:
       narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"
 ```
+
+**`--gate-verified <check>@<sha>` binds the gate result to the commit.** The
+command proves its execution context but cannot read whether `ci / Required` is
+green on the commit it promotes: narduk-app-tools is deliberately never given a
+GitHub token. Of the three options in narduk-libs#400 — (1) rely on the
+workflow's step ordering alone, (2) have the workflow pass what it observed as
+an explicit attestation, (3) read the check conclusion with `GITHUB_TOKEN`,
+which would put a GitHub credential in the process holding the promote
+credential — **option 2 was chosen**. The workflow passes the gate check's name
+and the full SHA it ran on (`workflow_run.head_sha`), and the promote refuses
+with `gate-mismatch` (exit 9), before touching anything, unless
+
+- the attested SHA is exactly the commit being promoted (`--sha`, or its
+  `GITHUB_SHA` default) — a full 40-character SHA, compared in full; and
+- the resolved version's `workers/tag` is that commit. A `--version-id` promote
+  is bound this way only, so a version with no tag, or one outside the searched
+  window, is refused rather than assumed to match.
+
+The value is split on its **last** `@`, so a check name may contain spaces,
+slashes and even `@`; control characters are refused because the name is logged.
+On success the promote logs the check and SHA it was given, and the result
+carries them as `gateVerified`. This is still an attestation, not a
+verification: it does not catch a workflow that lies, but it does catch one that
+promotes a different commit from the one its gate ran on, and it leaves the
+claim in the log. Keep the promote job conditioned on the `workflow_run`
+conclusion being `success`.
+
+The flag is optional so that existing app-owned promote workflows keep working.
+Without it the promote behaves as before and prints a warning (stderr, so
+`--json` stays parseable) that no gate attestation was passed, and the result
+carries `gateVerified: null`. `promote.yml` is app-owned — the generator only
+documents it — so each app adds the flag to its own workflow; the generated
+`docs/workers-builds.md` and `docs/deployment/promote-d1.steps.yml` templates
+already pass it.
 
 It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
 reusing that would force every promotion through
@@ -324,6 +405,7 @@ from a `pull_request` run.
 | 5    | `wrangler-failed` — see `trafficMayHaveChanged`                 |
 | 7    | `stale-promote` — the target is older than the live version     |
 | 8    | `branch-mismatch` — not a production-branch build               |
+| 9    | `gate-mismatch` — `--gate-verified` names another commit        |
 
 The 1/2-versus-5 split is the one a promote job branches on. 1 and 2 mean
 production is untouched; 5 means wrangler died, and `trafficMayHaveChanged` says
@@ -358,7 +440,8 @@ the rollback itself.
 narduk-app verify --live <url> [--expect-sha <sha>] [--health-path <p>] \
   [--smoke-path <p>] [--expect-content-type <t>] [--attempts <n>] \
   [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] \
-  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] [--json [path]]
+  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] \
+  [--resolver system|public] [--json [path]]
 ```
 
 Three assertions against a running deployment, so the preview gate, the promote
@@ -407,6 +490,34 @@ halves are required together; an unset or empty variable fails the run before
 any request, naming the variable and not its value. Neither value appears in the
 report or the JSON. This proves the right build is live to a holder of the
 token; that anonymous visitors are still refused is a separate proof.
+
+#### A stale local DNS answer (`--resolver public`)
+
+After a DNS change, a workstation's resolver can keep a negative (NXDOMAIN)
+answer for a hostname that is already live, and every probe then fails "could
+not resolve host" exactly like a dead deployment (narduk-libs#783). So when the
+system lookup fails with `ENOTFOUND` or `EAI_AGAIN`, the proof asks 1.1.1.1 and
+8.8.8.8 directly (`node:dns` `Resolver`, bypassing the local cache). If they
+answer, the report carries its own assertion:
+
+```text
+[UNKN] dns: local resolver has a stale negative answer for loadtest.dev: the system
+lookup failed with ENOTFOUND, but public DNS (1.1.1.1, 8.8.8.8) resolves it to ...
+```
+
+with the hostname, the local error and the public addresses in its `evidence`.
+It is still exit 2 — this process could not read the deployment, so nothing was
+proven — but a job can tell it from a dead deployment by the `dns` assertion id.
+When public DNS has no address either, or cannot be asked, the ordinary
+unreachable verdict says so instead.
+
+Two ways out: flush the local cache (macOS:
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`), or rerun with
+`--resolver public`. That dials an address the public resolvers returned while
+keeping the real hostname in the URL, so TLS SNI, the certificate check and the
+`Host` header are unchanged — `curl --resolve` done for you — and the report
+records `resolver: "public"`. It is for a human at a workstation; CI keeps the
+default `--resolver system`, which proves what visitors' resolvers see.
 
 #### What this proves, and what it does not
 
@@ -726,6 +837,17 @@ Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
 (then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
 corroborates an ambiguous 404 with a scope probe. Other scopes, such as
 `@narduk-geo`, always stay on GitHub Packages.
+
+**Sub-check 1.5 fails a D1 binding that names no real database.** Any
+`d1_databases[].database_id` in the app's wrangler config (top level or any
+`env.<name>`) that is still the scaffold placeholder
+`00000000-0000-0000-0000-000000000000` is a decided FAIL naming
+`narduk-app db create` and the raw `wrangler d1 create <name>` step. An app with
+no D1 binding is `not-applicable`. A fresh `create-narduk-app` scaffold with a
+database therefore fails 1.5, and only 1.5, until it is provisioned: the
+placeholder builds and deploys, but no request that touches the database can
+succeed (narduk-libs#662). A PASS reads the file only; it does not prove the
+database exists.
 
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;

@@ -21,6 +21,7 @@ import {
 } from './promote.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
 import { inspectMigrations, runMigrations, type MigrationLocation } from './migrations.js'
+import { formatD1CreateResult, parseD1CreateArgs, runD1Create } from './d1-create.js'
 import {
   parseDeploymentMigrationArgs,
   runDeploymentMigrations,
@@ -63,11 +64,20 @@ function usage(): string {
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
+    '  db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]',
+    '                                       Create the D1 database a placeholder binding stands',
+    '                                       for (database_id 00000000-...) and write its id into the',
+    '                                       wrangler config Config/cloudflare-app.json names. The',
+    '                                       name comes from that manifest, never an argument; the',
+    '                                       account from account_id or CLOUDFLARE_ACCOUNT_ID.',
+    '                                       Refuses a binding that already has a real id; never',
+    '                                       deletes.',
     '  deploy <deploy|versions-upload|triggers-deploy> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
     '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
     '      [--percentage <1-100>] [--message <text>] [--max-versions <n>]',
-    '      [--wait-for-version <seconds> [--wait-interval <seconds>]] [--dry-run] [--json]',
+    '      [--wait-for-version <seconds> [--wait-interval <seconds>]]',
+    '      [--gate-verified "<check>@<40-hex sha>"] [--dry-run] [--json]',
     '                                       Deploy the already-uploaded version for a commit at',
     '                                       100%. GitHub Actions only (NARDUK_ALLOW_MANUAL_PROMOTE=1',
     '                                       for recovery). The --sha lookup walks the Versions API',
@@ -78,11 +88,15 @@ function usage(): string {
     '                                       --wait-for-version re-lists (every --wait-interval,',
     '                                       default 30) while the SHA is absent, for a build that',
     '                                       finishes after CI; default 0 looks once.',
+    '                                       --gate-verified "ci / Required@<sha>" binds the gate',
+    '                                       result the workflow observed to the promoted commit',
+    '                                       (split on the last @; full 40-hex SHA); without it the',
+    '                                       promote warns that no gate attestation was passed.',
     '                                       Exit 1 guard refused (nothing attempted),',
     '                                       2 usage, 3 version not found, 4 ambiguous, 5 wrangler',
     '                                       failed (traffic state may be unknown), 7 the target is',
     '                                       older than the live version, 8 not a production-branch',
-    '                                       build.',
+    '                                       build, 9 --gate-verified names a different commit.',
     '  deploy rollback [--to <version-id>] [--name <worker>] [--account-id <id>]',
     '      [--message <text>] [--dry-run] [--json]',
     '                                       Roll back to the previous deployed version, or a named',
@@ -93,18 +107,24 @@ function usage(): string {
     '      [--expect-content-type <t>] [--attempts <n>] [--interval-seconds <n>]',
     '      [--allow-degraded] [--no-cache-bust] [--edge-cache-path <p>]...',
     '      [--edge-uncached-path <p>]... [--access-client-id-env <NAME>',
-    '      --access-client-secret-env <NAME>] [--json [path]]',
+    '      --access-client-secret-env <NAME>] [--resolver system|public] [--json [path]]',
     '                                       Live proof of a deployment: x-build-version, health,',
     '                                       and one smoke route, read no-cache and refused if a',
     '                                       redirect leaves the origin. --edge-cache-path GETs a',
     '                                       route twice and needs Cf-Cache-Status HIT on the',
     '                                       second; --edge-uncached-path needs no HIT. Exit 2',
     '                                       unreachable, 3 build version mismatch, 4 health,',
-    '                                       5 smoke, 6 wrong origin, 7 edge cache.',
+    '                                       5 smoke, 6 wrong origin, 7 edge cache. A host the',
+    '                                       local resolver cannot find but 1.1.1.1/8.8.8.8 can is',
+    '                                       a "dns" UNKNOWN (stale negative cache; exit 2);',
+    '                                       --resolver public dials that answer, SNI/Host kept.',
     '  e2e-serve <port> [--entrypoint <file>] [--config <file>] [--assets <dir>] [--cwd <dir>]',
+    '      [--keep-service-bindings]',
     '                                       Serve a prebuilt Worker for Playwright',
     '                                       (E2E_PREBUILT_ARTIFACT=1). 127.0.0.1 only;',
     '                                       refuses to build when the artifact is missing.',
+    '                                       Drops (and names) service bindings to other',
+    '                                       Workers; --keep-service-bindings keeps them.',
     '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
     '  deploy-hotfix --incident <id> --reason <text> --operator <name> --sha <full HEAD>',
     '      --confirm-worker <name> --base-url <https origin> [--dry-run | --yes --automation-paused]',
@@ -221,6 +241,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         writeDeploymentMigrationBundle(migrateArgs[1])
         return 0
       }
+      if (subcommand === 'create') {
+        const flags = withAppCheckout(parseD1CreateArgs(migrateArgs), 'db create')
+        const result = runD1Create(flags)
+        console.log(flags.json ? JSON.stringify(result, null, 2) : formatD1CreateResult(result))
+        return 0
+      }
       if (subcommand === 'migrate-deployment') {
         const options = parseDeploymentMigrationArgs(migrateArgs)
         const plans = runDeploymentMigrations(options)
@@ -234,7 +260,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         return options.check && plans.some((plan) => plan.apply + plan.adopt > 0) ? 2 : 0
       }
       if (subcommand !== 'migrate' && subcommand !== 'status')
-        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment ...')
+        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment|create ...')
       const options = parseMigrationArgs(migrateArgs)
       if (subcommand === 'status') {
         const plan = inspectMigrations(options)

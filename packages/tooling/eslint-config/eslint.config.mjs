@@ -3,7 +3,7 @@
  * This package needs its own flat config for the same reason
  * `create-narduk-app` does: a flat config's relative `files` globs resolve
  * against the directory of the config file that declares them. Linted from the
- * workspace root, `sharedTailConfigs`' `narduk/rule-authoring` entry
+ * workspace root, the baseline tail's `narduk/rule-authoring` entry
  * (`src/rules/**`, where rule implementations legitimately traffic in
  * parser-specific `any` nodes) can never match `packages/eslint-config/src/…`,
  * so its documented exemption was inert and the package reported ~420 warnings

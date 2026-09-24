@@ -28,12 +28,6 @@ import { computed, inject, onMounted, onUpdated } from 'vue'
 
 import { appMapKitCalloutInjectionKey } from '../callouts'
 
-interface CalloutSlotEntry {
-  host: HTMLElement
-  item: TItem
-  key: string
-}
-
 defineProps<{
   /**
    * The same array passed to `<AppMapKit>`. Optional, and never read at
@@ -44,6 +38,20 @@ defineProps<{
    */
   items?: readonly TItem[]
 }>()
+// A root `<Teleport>` cannot receive fallthrough attributes. Declaring that
+// here is the `narduk/no-attrs-on-fragment` fix; Teleport never applied them
+// (narduk-libs#138).
+defineOptions({ inheritAttrs: false })
+defineSlots<{
+  /** `calloutKey` rather than `key`, which Vue reserves on a `<slot>` element. */
+  default: (props: { calloutKey: string; close: () => void; item: TItem }) => unknown
+}>()
+
+interface CalloutSlotEntry {
+  host: HTMLElement
+  item: TItem
+  key: string
+}
 
 const injected = inject(appMapKitCalloutInjectionKey, null)
 if (!injected) {
@@ -60,11 +68,6 @@ const callouts = injected
  */
 const entries = computed(() => callouts.entries.value as CalloutSlotEntry[])
 
-defineSlots<{
-  /** `calloutKey` rather than `key`, which Vue reserves on a `<slot>` element. */
-  default: (props: { calloutKey: string; close: () => void; item: TItem }) => unknown
-}>()
-
 /**
  * Content that grows or shrinks changes where the callout should sit, and only
  * Vue knows when that happened. The reposition is coalesced into the
@@ -75,10 +78,6 @@ onUpdated(() => callouts.reposition())
 </script>
 
 <template>
-  <!-- Fixing this means adding `defineOptions({ inheritAttrs: false })` or a
-       wrapper element, both of which change the component's rendered attribute
-       surface. Deferred rather than changed by the fold; the rule is scoped off
-       for this file in the repo-root eslint.config.mjs (narduk-libs#138). -->
   <Teleport v-for="entry in entries" :key="entry.key" :to="entry.host">
     <slot :callout-key="entry.key" :close="() => callouts.close(entry.key)" :item="entry.item" />
   </Teleport>

@@ -156,7 +156,7 @@ describe('upgrade ownership contract', () => {
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
-      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
+      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
     )
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
       pristine.copilot,
@@ -380,6 +380,33 @@ describe('upgrade profile inference', () => {
     expect(profile.inferred).toContain('databaseBackend')
   })
 
+  // narduk-libs#825: the seo capability also pins the third-party
+  // nuxt-og-image peer. An app with no `narduk.capabilities` block is read
+  // from its dependencies, and nuxt-og-image alone must not read as seo.
+  it('infers seo from narduk-seo, not from the nuxt-og-image pin', async () => {
+    const targetDir = await scaffold({ capabilities: 'analytics' })
+    const dropDescriptor = (contents: string, extra: Record<string, string> = {}) => {
+      const manifest = JSON.parse(contents) as {
+        dependencies?: Record<string, string>
+        narduk?: unknown
+      }
+      delete manifest.narduk
+      manifest.dependencies = { ...manifest.dependencies, ...extra }
+      return JSON.stringify(manifest, null, 2) + '\n'
+    }
+    await edit(targetDir, 'package.json', (contents) => dropDescriptor(contents))
+    await edit(targetDir, 'apps/web/package.json', (contents) =>
+      dropDescriptor(contents, { 'nuxt-og-image': '6.8.0' }),
+    )
+
+    expect((await inferUpgradeProfile(targetDir)).capabilities).toEqual(['analytics'])
+
+    await edit(targetDir, 'apps/web/package.json', (contents) =>
+      dropDescriptor(contents, { '@narduk-enterprises/narduk-seo': '2.6.0' }),
+    )
+    expect((await inferUpgradeProfile(targetDir)).capabilities).toEqual(['seo', 'analytics'])
+  })
+
   it('detects a database-free app from its nuxt config', async () => {
     const targetDir = await scaffold({ capabilities: 'seo', databaseBackend: 'none' })
     const profile = await inferUpgradeProfile(targetDir)
@@ -476,7 +503,8 @@ describe('upgrade CLI', () => {
       '--write',
     ])
     expect(result.code).toBe(0)
-    expect(await read(targetDir, '.github/dependabot.yml')).toContain('registries:')
+    expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
+    expect(await read(targetDir, '.github/dependabot.yml')).not.toContain('registries:')
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe('name: Stale\n')
   })
 

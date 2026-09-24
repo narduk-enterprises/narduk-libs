@@ -435,12 +435,10 @@ export class MapKitLayerRegistry {
                 crossfadeDurationMs,
                 ...(options.signal !== undefined ? { signal: options.signal } : {}),
             }).then(() => {
-                // Side-effecting continuation on a crossfade that resolves to void;
-                // returning a value would change the settled shape of `replacements`.
                 const current = this.#entries.get(descriptor.id);
-                // eslint-disable-next-line promise/always-return -- narduk-libs#138
                 if (current)
                     current.descriptor = descriptor;
+                return;
             }));
         }
         await Promise.all(replacements);

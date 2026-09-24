@@ -647,6 +647,15 @@ describe('MapKitPinScalingController per-class curves', () => {
     })
     expect(() => harness.controller.track('x', 'oil&gas')).toThrow(/CSS identifier/)
   })
+
+  it('accepts a hyphenated or underscored class id as a CSS identifier', () => {
+    const harness = createHarness([], {
+      'oil-gas': { rank: 2, sizeCurve: defaultMapKitPinSizeCurve },
+      oil_gas: { rank: 2, sizeCurve: defaultMapKitPinSizeCurve },
+    })
+    expect(() => harness.controller.track('a', 'oil-gas')).not.toThrow()
+    expect(() => harness.controller.track('b', 'oil_gas')).not.toThrow()
+  })
 })
 
 describe('MapKitPinScalingController deferred painting', () => {

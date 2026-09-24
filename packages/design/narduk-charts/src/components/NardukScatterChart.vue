@@ -97,7 +97,7 @@ function resolveColor(s: ScatterSeries): string {
   return s.color || getColor(props.colors, idx)
 }
 
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131: one-time paint seed; onMounted owns the flag after setup
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {

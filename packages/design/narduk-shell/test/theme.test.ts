@@ -22,7 +22,13 @@ function declarations(block: string): Map<string, string> {
   const found = new Map<string, string>()
   const withoutComments = block.replaceAll(/\/\*[\s\S]*?\*\//g, '')
   for (const [, property, value] of withoutComments.matchAll(/(--[a-z0-9-]+)\s*:([^;]+);/gi)) {
-    found.set(property, value.trim().replaceAll(/\s+/g, ' '))
+    // Whitespace is collapsed, and dropped just inside parentheses, so a value
+    // Prettier wraps across lines (`--ne-hatch-soft`'s gradient) reads the same
+    // as the one-line form the README table documents.
+    found.set(
+      property,
+      value.trim().replaceAll(/\s+/g, ' ').replaceAll(/\(\s+/g, '(').replaceAll(/\s+\)/g, ')'),
+    )
   }
   return found
 }
@@ -211,6 +217,46 @@ describe('theme.css token sheet', () => {
     // design-system-build's renderBundle refuses a stylesheet with either.
     expect(themeCss).not.toMatch(/@import\s/)
     expect(themeCss).not.toMatch(/url\(\s*['"]?(?!data:)/i)
+  })
+})
+
+/**
+ * narduk-libs#602: the unreported treatment. The hatch is material, not a
+ * colour — it has to follow the scheme and any override of the ink and line
+ * tokens without a colour of its own, and it has to stay 1px diagonals, which
+ * is what makes it read as "no magnitude" rather than as a short bar.
+ */
+describe('the unreported material (--ne-hatch)', () => {
+  const HATCHES = {
+    '--ne-hatch': '--ne-ink-dimmed',
+    '--ne-hatch-soft': '--ne-line-strong',
+  } as const
+
+  it.each(Object.entries(HATCHES))(
+    '%s is a 1px diagonal hatch drawn in %s, declared identically in every scheme',
+    (token, ink) => {
+      const value = light.get(token)
+      expect(value, `${token} missing from the light block`).toBe(
+        `repeating-linear-gradient(135deg, var(${ink}) 0 1px, transparent 1px 6px)`,
+      )
+      // Declared again (not inherited) in `.dark`, so a `var()` inside it
+      // resolves against a pinned `<div class="dark">` subtree's own ink.
+      expect(dark.get(token)).toBe(value)
+      expect(auto.get(token)).toBe(value)
+      expect(light.has(ink), `${token} reads undefined ${ink}`).toBe(true)
+    },
+  )
+
+  it('carries no colour literal: every colour in it is a token read or transparent', () => {
+    for (const token of Object.keys(HATCHES)) {
+      const withoutReads = light.get(token)!.replaceAll(/var\(--ne-[a-z0-9-]+\)/g, '')
+      expect(withoutReads).not.toMatch(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch)\s*\(/i)
+    }
+  })
+
+  it('documents the CSS contract a figure component follows', () => {
+    expect(readme).toMatch(/### The unreported treatment/)
+    expect(readme).toMatch(/background-image: var\(--ne-hatch\)/)
   })
 })
 

@@ -57,6 +57,27 @@ describe('NeKpiTile', () => {
     expect(wrapper.get('.ne-kpi-tile__value').text()).toBe('—')
   })
 
+  it.each([null, undefined, Number.NaN])(
+    'renders a %s value as unreported: hatched slot, em-dash, "Not reported" name (#602)',
+    (value) => {
+      const wrapper = mountTile({ label: 'Runners online', value })
+      const slot = wrapper.get('.ne-kpi-tile__value')
+      expect(slot.classes()).toContain('ne-kpi-tile__value--unreported')
+      expect(slot.attributes('data-state')).toBe('unreported')
+      const figure = slot.get('[role="img"]')
+      expect(figure.attributes('aria-label')).toBe('Not reported')
+      expect(figure.text()).toBe('—')
+    },
+  )
+
+  it('keeps a reported zero a plain zero, not the unreported treatment', () => {
+    const slot = mountTile({ label: 'Queue depth', value: 0 }).get('.ne-kpi-tile__value')
+    expect(slot.text()).toBe('0')
+    expect(slot.classes()).not.toContain('ne-kpi-tile__value--unreported')
+    expect(slot.attributes('data-state')).toBeUndefined()
+    expect(slot.find('[role="img"]').exists()).toBe(false)
+  })
+
   it('passes a string value through unchanged, with no formatting applied', () => {
     const wrapper = mountTile({ label: 'Spend', value: '$1,234.00' })
     expect(wrapper.get('.ne-kpi-tile__value').text()).toBe('$1,234.00')

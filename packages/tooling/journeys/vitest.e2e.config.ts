@@ -10,6 +10,11 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 // toolchain resolves via PLAYWRIGHT_BROWSERS_PATH and nothing is downloaded.
 export default defineConfig({
   root: packageRoot,
+  server: {
+    deps: {
+      external: [/[/\\]tests[/\\]fixtures[/\\]pw-project[/\\]/],
+    },
+  },
   test: {
     environment: 'node',
     include: ['tests/web-e2e.test.ts'],

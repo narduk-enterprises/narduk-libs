@@ -156,6 +156,27 @@ describe('NeDataTable server-rendered without a DOM', () => {
     expect(html).toContain('top-(--ui-header-height)')
   })
 
+  it('carries the scroll box and the table-level column floor into the first paint', async () => {
+    const html = await render({
+      columns: [
+        { key: 'time', label: 'Time', sticky: true },
+        { key: 'wind', label: 'avg', numeric: true, width: '6rem' },
+        { key: 'day', label: 'Day' },
+      ],
+    })
+
+    expect(html).toContain('data-ne-data-table-scroll')
+    expect(html).toContain('--ne-data-table-min:calc(200px + 6rem + 200px)')
+    expect(html).toContain('sm:min-w-[max(100%,var(--ne-data-table-min,0px))]')
+  })
+
+  it('server-renders no floor for a table that declares no widths', async () => {
+    const html = await render()
+
+    expect(html).toContain('data-ne-data-table-scroll')
+    expect(html).not.toContain('--ne-data-table-min')
+  })
+
   it('does not touch a DOM global merely by rendering twice', async () => {
     await expect(render()).resolves.toContain('data-ne-data-table')
     await expect(render({ loading: true })).resolves.toContain('aria-busy="true"')

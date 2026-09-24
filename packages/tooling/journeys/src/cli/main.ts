@@ -59,8 +59,11 @@ const USAGE = `journeys <command>
               [--profile-<surface> <name>] [--env-<surface> <name>]
               [--allow-mixed-app-revision]
 
-  --catalog-dir <dir>   directory whose files form the declaration digest
-                        (default: the catalog module's directory)
+  --catalog-dir <dir>   directory whose files form the catalog-wide
+                        declaration digest (default: the catalog module's
+                        directory). Used only for manifests that predate
+                        the per-journey digest; new captures record
+                        journeyDigest and ignore sibling-file drift.
   --profile-<surface>   the capture profile that surface's promoted runs live
                         under, when it is not --profile
   --env-<surface>       the environment that surface's runs live under, when it

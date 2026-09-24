@@ -44,6 +44,43 @@ event, which on a Nuxt page fires **before** hydration (#697). It keeps that
 behaviour so existing suites do not all change at once. `waitForPageLoad(page)`
 is the same wait under an accurate name.
 
+### Hydration mismatch failures
+
+The shared `page` fixture fails any test whose console logs a Vue hydration
+mismatch. Production Vue logs only `Hydration completed but contains mismatches`
+— no URL, no element — so a consumer CI line used to name nothing.
+
+The fixture installs an `addInitScript` that wraps `console.warn` and, as the
+warning fires, serialises `location.pathname`, the page URL, the mismatched
+node's `outerHTML`, and its parent (truncated). Those strings are appended to
+the warning so Playwright's `msg.text()` already carries them. A
+`page.on('console')` handler that `await`s `arg.evaluate` loses the handle as
+soon as the test navigates again, which is the back-to-back `goto` pattern that
+exposes these bugs.
+
+Production Vue strips the node arguments unless the E2E or CI preview artifact
+is built with `vite.define.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = 'true'`.
+That flag is never for the production deploy. Import the helper from the
+config-safe subpath — not from `e2e/fixtures`, which registers Playwright
+fixtures at module scope:
+
+```ts
+import { VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE } from '@narduk-enterprises/narduk-testkit/e2e/hydration-mismatch'
+
+export default defineNuxtConfig({
+  vite: {
+    define: {
+      ...(process.env.NARDUK_E2E === '1'
+        ? VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE
+        : {}),
+    },
+  },
+})
+```
+
+With the flag on, Vue prints the server node and the client expectation on the
+first mismatch; the fixture then names the page those arguments belonged to.
+
 Apps whose users endpoint is not the default `/api/admin/users` can configure
 the reusable API spec without copying it:
 
@@ -429,6 +466,166 @@ instead of becoming another silent wrong-branch pass.
 
 Like `e2e/fixture-server`, this subpath is deliberately absent from the root
 barrel — it is imported from a Playwright config, before the runner exists.
+
+## Playwright `pr` / `web` tier preset
+
+`playwright/config` is the estate Playwright config: a cheap `pr` project for
+pull requests and a full `web` project for push/main. Spread it. Do not invent a
+third `chromium`-only project — that is how an undeclared spec is collected
+twice and a 10-test PR suite becomes 36 (narduk-libs#434).
+
+```ts
+import { defineConfig, devices } from '@playwright/test'
+
+import { createNardukPlaywrightPreset } from '@narduk-enterprises/narduk-testkit/playwright/config'
+import {
+  assertLocalDevPortAvailable,
+  resolveLocalDevPort,
+  shouldReuseExistingServer,
+} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'
+
+const devPort = resolveLocalDevPort({
+  rootDir: process.cwd(),
+  declaredPort: 51952,
+})
+const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })
+if (!reuseExistingServer) assertLocalDevPortAvailable({ resolution: devPort })
+
+export default defineConfig({
+  testDir: './apps/web/tests/e2e',
+  ...createNardukPlaywrightPreset({
+    baseURL: `http://127.0.0.1:${devPort.port}`,
+    browserUse: devices['Desktop Chrome'],
+    testDir: './apps/web/tests/e2e',
+  }),
+  webServer: {
+    command: `PORT=${devPort.port} pnpm --filter web run dev:test`,
+    url: `http://127.0.0.1:${devPort.port}/api/health`,
+    reuseExistingServer,
+  },
+})
+```
+
+The preset is `fullyParallel: true` and `workers: 2`. That worker count is the
+measured default from Buoys' `e2e-parallel-config` experiment (2026-09-17): 1 is
+Playwright's `CI` default and is why 2-vCPU and 8g slots both ran serial; 2 cut
+local web median 69s → 39s; 4 workers were slower on one workerd. Do not raise
+`e2e-shards` — a second pool slot recreates the queue storms.
+
+A file that must not contend with another heavy file on that one workerd
+(visual-audit, a 44-scan a11y file) opts out **per file**, not by flipping the
+preset:
+
+```ts
+test.describe.configure({ mode: 'serial' })
+```
+
+### Spec → tier
+
+A spec declares its tier in the filename. Collection uses `testMatch`, so an
+undeclared file is in **no** project — and
+`createNardukPlaywrightPreset({ testDir })` throws if one still exists, so it
+cannot hide.
+
+| File                       | Collected by                       |
+| -------------------------- | ---------------------------------- |
+| `home.pr.spec.ts`          | `pr`                               |
+| `visual-audit.web.spec.ts` | `web`                              |
+| `headers.pr-web.spec.ts`   | `pr` and `web` (explicit dual-run) |
+| `orphan.spec.ts`           | none — config load throws          |
+| `global.setup.ts`          | `setup` only                       |
+
+Dual-run is the `.pr-web.` name, an explicit reviewable choice. CI selects the
+tier with `--project=pr` on pull_request and `--project=web` on push. Pass
+`chromiumAlias: true` to register a `chromium` project that collects the same
+specs as `web`, so `--project=chromium` still runs the web tier. The alias is
+off by default: a bare `playwright test` would otherwise run every `.web` /
+`.pr-web` spec twice.
+
+`specFiles` is an extra assertion list, not a replacement for the `testDir`
+scan. When both are passed, undeclared files still under `testDir` fail config
+load.
+
+### Quarantine (`@quarantine`)
+
+A flake leaves the PR gate with a Playwright tag, not `test.skip` and not
+`test.fixme`. `pr` and `web` set `grepInvert: /@quarantine/`, so a tagged spec
+is not collected there. The `quarantine` project sets `grep: /@quarantine/` so
+the same spec still has a home (`--project=quarantine`).
+
+```ts
+import { test } from '@playwright/test'
+import { quarantineDetails } from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+test(
+  'flaky checkout',
+  quarantineDetails({ issue: 'app#12', date: '2026-09-24', owner: 'logan' }),
+  async ({ page }) => {
+    /* … */
+  },
+)
+```
+
+A quarantine with no issue is not a quarantine. The vitest guard is checked
+against what Playwright actually collected (`playwright test --list`), so an
+untagged test in `quarantine` or a tagged test still collected by `pr` fails the
+unit suite. Default `--list` titles omit `{ tag: '@quarantine' }` from
+`quarantineDetails`, so pass `readSource`. The source check uses the listed
+`file:line:col`, so one quarantined test does not quarantine its siblings.
+`readSource` does not see `test.describe(..., quarantineDetails(...), …)` — tag
+the test itself, or use JSON `--list --reporter=json`, which fills `tags`
+including describe-inherited ones.
+
+```ts
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+import {
+  assertPlaywrightQuarantineCollection,
+  parsePlaywrightListOutput,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const listed = execFileSync('pnpm', ['exec', 'playwright', 'test', '--list'], {
+  encoding: 'utf8',
+})
+assertPlaywrightQuarantineCollection({
+  collected: parsePlaywrightListOutput(listed),
+  readSource: (file) => readFileSync(file, 'utf8'),
+})
+```
+
+### Collection-time viewports
+
+Viewport slice lives on project metadata (`metadata.visualAuditViewports`).
+Filter at collection so a skipped viewport never constructs a `page` fixture —
+in-body `test.skip` still pays setup.
+
+```ts
+import {
+  createNardukPlaywrightPreset,
+  viewportsAtCollection,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const preset = createNardukPlaywrightPreset({
+  testDir,
+  prViewports: ['desktop'],
+})
+const prProject = preset.projects.find((project) => project.name === 'pr')!
+const viewports = viewportsAtCollection(ALL_VIEWPORTS, prProject)
+for (const viewport of viewports) {
+  test(`a11y ${viewport.name}`, async ({ page }) => {
+    /* … */
+  })
+}
+```
+
+`pr` defaults to `desktop` + `mobile`. `web` defaults to those plus `tablet` and
+`wide`. Pass `prViewports` / `webViewports` to change the slice. Pass the
+project from the preset — not `{ name: 'pr' }` — so collection uses that custom
+slice.
+
+This subpath is config-safe: `import` and `require` both resolve, and it is
+absent from the root barrel.
 
 The UI-quality analyzer is also available as a small binary:
 
