@@ -1,5 +1,3 @@
-import { readStoredCloudflareContext } from './cloudflare-request-env'
-
 import type { H3Event } from 'h3'
 
 export type WorkerRuntimeEnv = Record<string, unknown>
@@ -28,10 +26,29 @@ function getCloudflareEnvFromEvent(event: H3Event): unknown {
     | undefined
   const fromEvent = ctx?.cloudflare?.env ?? ctx?._platform?.cloudflare?.env
   if (fromEvent != null) return fromEvent
-  // Nested Nitro SSR fetches omit `event.context.cloudflare` (narduk-libs#49).
-  // The request plugin stores the outer env; read it here so useDatabase and
-  // KV/Hyperdrive helpers keep working even if a hook ran out of order.
-  return readStoredCloudflareContext()?.env
+  return readIsolateWorkerEnv()
+}
+
+/**
+ * The Worker `env` Nitro's cloudflare presets stamp on `globalThis.__env__`
+ * before every fetch, scheduled, queue and email handler runs (and the
+ * `nitro-cloudflare-dev` proxy stamps in `nuxt dev`).
+ *
+ * A relative `useFetch` / `$fetch` during SSR goes through Nitro's
+ * `localFetch`, which builds a new H3 event without the outer request's
+ * `_platform.cloudflare`, so the nested handler has no `event.context.cloudflare`
+ * and `useDatabase` 500s even though the Worker still has `DB`
+ * (narduk-libs#49). Bindings are identical for every request an isolate
+ * serves, so the isolate env is the same object the outer event carried.
+ *
+ * Deliberately not AsyncLocalStorage: workerd does not implement
+ * `AsyncLocalStorage.enterWith()`, which a request-hook propagation would
+ * need. When neither the event nor the isolate has an env (Node, tests,
+ * prerender), this returns `undefined` and callers fail closed as before.
+ */
+function readIsolateWorkerEnv(): unknown {
+  const env: unknown = Reflect.get(globalThis, '__env__')
+  return env != null && typeof env === 'object' ? env : undefined
 }
 
 function readNodeRuntimeEnv(): WorkerRuntimeEnv {
@@ -44,7 +61,8 @@ function readNodeRuntimeEnv(): WorkerRuntimeEnv {
 /**
  * Deployed Cloudflare Workers expose request-scoped bindings on
  * `event.context.cloudflare.env` (populated by the Nitro cloudflare-module
- * preset). We deliberately avoid a top-level
+ * preset). An event without it — a nested SSR fetch — falls back to the
+ * isolate's `globalThis.__env__` (narduk-libs#49). We deliberately avoid a top-level
  * `import { env } from 'cloudflare:workers'` because Nuxt's Nitro prerenderer
  * runs compiled modules under Node's default ESM loader, which rejects the
  * `cloudflare:` URL scheme and crashes the build.
