@@ -668,8 +668,8 @@ DOM-free path helpers for KPI / marine tiles that draw their own `<path>`:
 - **`trailingSparkWindow(points, window, now?)`** — keep `{ t }` samples in the
   last `24h` / `7d` / `30d`. When `now` is omitted, the latest finite `t` is the
   window end so a stale station still shows its own last window.
-- **`SPARK_WINDOWS`**, **`SPARK_WINDOW_MS`**, **`sparkWindowMs(window)`** —
-  the three inclusive trailing windows.
+- **`SPARK_WINDOWS`**, **`SPARK_WINDOW_MS`**, **`sparkWindowMs(window)`** — the
+  three inclusive trailing windows.
 
 ## Histoire (component stories)
 
