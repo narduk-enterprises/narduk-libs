@@ -283,6 +283,12 @@ test('the proof workflow triggers on main manifests and keeps its secret in one 
   assert.match(redispatch, /environment: npm-release/u)
   assert.match(redispatch, /permissions: \{\}/u)
   assert.doesNotMatch(redispatch, /actions\/checkout|pnpm|node /u)
+  assert.match(redispatch, /client-id: \$\{\{ vars\.LANE_AUTOMATION_CLIENT_ID \}\}/u)
+  assert.doesNotMatch(redispatch, /^\s+app-id:/mu)
+  assert.match(
+    redispatch,
+    /LANE_AUTOMATION_CLIENT_ID: \$\{\{ vars\.LANE_AUTOMATION_CLIENT_ID \}\}/u,
+  )
   assert.match(redispatch, /repositories: package-delivery\n\s+permission-contents: write\n/u)
   assert.match(redispatch, /"narduk-enterprises\/package-delivery "/u)
   assert.match(unprivileged, /actions: write\n\s+contents: read\n\s+packages: read\n/u)
