@@ -76,6 +76,7 @@
     "runtime/server/utils/logger.ts",
     "runtime/server/utils/logSanitizer.ts",
     "runtime/server/utils/narduk-data.ts",
+    "runtime/server/plugins/00-runtime-public.ts",
     "runtime/server/plugins/default-private-cache.ts",
     "runtime/server/plugins/error-cache.ts",
     "runtime/server/plugins/error-logger.ts",

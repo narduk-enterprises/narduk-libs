@@ -105,6 +105,18 @@ describe('neutral platform contracts', () => {
     expect(patched).not.toContain('@narduk-geo:registry=https://registry.npmjs.org')
   })
 
+  it('records that public analytics keys are request-time, not wrangler-to-build', () => {
+    const posthog = ENV_CATALOG.find((entry) => entry.key === 'POSTHOG_PUBLIC_KEY')
+    const ga = ENV_CATALOG.find((entry) => entry.key === 'GA_MEASUREMENT_ID')
+    const geolocation = ENV_CATALOG.find((entry) => entry.key === 'NUXT_PUBLIC_ALLOW_GEOLOCATION')
+
+    expect(posthog?.to).toEqual(['cf:build-var', 'cf:runtime-var'])
+    expect(ga?.to).toEqual(['cf:build-var', 'cf:runtime-var'])
+    expect(posthog?.note).toContain('Workers Builds does not copy wrangler.json vars')
+    expect(ga?.note).toContain('Workers Builds does not copy wrangler.json vars')
+    expect(geolocation?.note).toContain('same class of bug as empty analytics keys')
+  })
+
   it('advertises the app-owned Workers Builds commands emitted by the generator', () => {
     const settings = getCloudflareWorkersBuildsSettings()
 

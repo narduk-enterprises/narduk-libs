@@ -99,6 +99,15 @@ function readBooleanEnv(name: string, defaultValue = false): boolean {
   return defaultValue
 }
 
+/** First non-empty process env value. Workers Builds often has none of these. */
+function readPublicEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim()
+    if (value) return value
+  }
+  return ''
+}
+
 function readAnalyticsLoadStrategy() {
   const value = (
     process.env.NUXT_PUBLIC_ANALYTICS_LOAD_STRATEGY ||
@@ -243,8 +252,14 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       public: {
         analyticsLoadStrategy: readAnalyticsLoadStrategy(),
         analyticsPrivacy: 'standard',
-        gaMeasurementId: process.env.GA_MEASUREMENT_ID || '',
-        posthogHost: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
+        // Build-time seeds only. Workers Builds does not copy wrangler.json
+        // vars into `nuxt build`; narduk-core's request-time overlay fills
+        // these from Worker bindings (short names or NUXT_PUBLIC_* aliases)
+        // before SSR serializes `__NUXT__`. Do not read wrangler.json here.
+        gaMeasurementId: readPublicEnv('GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'),
+        posthogPublicKey: readPublicEnv('POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'),
+        posthogHost:
+          readPublicEnv('POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST') || 'https://us.i.posthog.com',
         posthogDeadClicksEnabled: readBooleanEnv('POSTHOG_DEAD_CLICKS_ENABLED'),
         posthogExternalDependencyLoadingEnabled: readBooleanEnv(
           'POSTHOG_EXTERNAL_DEPENDENCY_LOADING_ENABLED',

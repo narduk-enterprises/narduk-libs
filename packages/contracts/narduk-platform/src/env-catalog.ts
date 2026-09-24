@@ -285,7 +285,7 @@ const APP_BASE: CatalogEntry[] = [
     scope: 'one-app',
     secret: false,
     module: 'site',
-    note: 'Public opt-in flag that allows browser geolocation prompts via Permissions-Policy.',
+    note: 'Public opt-in flag that allows browser geolocation prompts via Permissions-Policy. Request-time headers read the Worker binding. Workers Builds does not copy wrangler.json vars into `nuxt build`, so a nuxt.config bake of this flag is the same class of bug as empty analytics keys (buoys#133).',
   },
   {
     key: 'GH_PACKAGES_READ',
@@ -516,6 +516,7 @@ const POSTHOG_MODULE: CatalogEntry[] = [
     scope: 'every-app',
     secret: false,
     module: 'posthog',
+    note: 'Public PostHog project key. `cf:runtime-var` is the contract: narduk-core applies it to SSR `__NUXT__` from the Worker env. Workers Builds does not copy wrangler.json vars into `nuxt build`, so `cf:build-var` is optional/legacy. Do not read wrangler.json from nuxt.config to fill the bake (buoys#133). Optional alias: NUXT_PUBLIC_POSTHOG_PUBLIC_KEY.',
   },
   {
     key: 'POSTHOG_HOST',
@@ -624,7 +625,7 @@ const GA_MODULE: CatalogEntry[] = [
     scope: 'one-app',
     secret: false,
     module: 'ga',
-    note: 'Public GA client id; set per app.',
+    note: 'Public GA client id; set per app. `cf:runtime-var` is the contract: narduk-core applies it to SSR `__NUXT__` from the Worker env. Workers Builds does not copy wrangler.json vars into `nuxt build`, so `cf:build-var` is optional/legacy. Do not read wrangler.json from nuxt.config to fill the bake (buoys#133). Optional alias: NUXT_PUBLIC_GA_MEASUREMENT_ID.',
   },
   {
     key: 'GA_PROPERTY_ID',

@@ -203,6 +203,16 @@ unrelated environment flags never bypass that guard. A package-manager
 passthrough separator is normalized before invoking Wrangler so it cannot
 neutralize `--dry-run`.
 
+Workers Builds does **not** copy the Worker's wrangler `vars` into the
+`nuxt build` process environment. Public keys such as `GA_MEASUREMENT_ID` and
+`POSTHOG_PUBLIC_KEY` must be read at request time:
+`@narduk-enterprises/narduk-core` writes them into `runtimeConfig.public` before
+SSR, so `__NUXT__` is not an empty bake while `/api/runtime/public` looks
+healthy (buoys#133). Apps must not read `wrangler.json` from `nuxt.config.ts` to
+paper over that gap. A build-time `NUXT_PUBLIC_ALLOW_GEOLOCATION` default used
+for Permissions-Policy is the same class of bug; prefer narduk-core's
+request-time header path.
+
 Generated Workers Builds scripts pass `--workers-build-only` to the remote
 migration command. That attestation is checked before D1 recovery capture or
 mutation, so invoking the production script locally cannot migrate a remote

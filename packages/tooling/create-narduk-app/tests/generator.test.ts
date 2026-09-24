@@ -724,6 +724,9 @@ describe('create-narduk-app generation contract', () => {
       )
       expect(runbook, label).toContain('"previewBindings"')
       expect(runbook, label).toContain('narduk-app foundation:check:deployment')
+      expect(runbook, label).toContain('## Public runtime keys vs wrangler vars')
+      expect(runbook, label).toContain('does **not** export `wrangler.jsonc` `vars`')
+      expect(runbook, label).toContain('Do **not** read `wrangler.jsonc` from `nuxt.config.ts`')
       // narduk-libs#451 defect 2: under `on: workflow_run` GITHUB_SHA is the
       // default branch head at trigger time, not the commit whose run went
       // green, so a snippet that passes it can promote a commit the gate check

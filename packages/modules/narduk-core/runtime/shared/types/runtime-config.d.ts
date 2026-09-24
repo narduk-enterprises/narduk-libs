@@ -102,6 +102,8 @@ interface CorePublicRuntimeConfig {
    */
   seoSearchActionUrlTemplate: string
   posthogPublicKey: string
+  /** Public GA4 measurement id (`G-…`). Filled at request time from Worker env. */
+  gaMeasurementId: string
   posthogHost: string
   posthogDeadClicksEnabled: boolean
   posthogExternalDependencyLoadingEnabled: boolean
