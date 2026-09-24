@@ -131,6 +131,28 @@ export const developmentSchema = z
     additionalBuildInputs: z.array(relativePath).max(200).default([]),
     /** Applied files here become immutable once an authorized migration records them. */
     migrationDirectories: z.array(relativePath).max(50).default([]),
+    /**
+     * Repository-relative globs (`*`, `**`, `?`) whose change takes the gated
+     * route: deploy:dev refuses a capture that changes one since the last
+     * verified capture unless run with `--gated`. Absent means
+     * DEFAULT_PROTECTED_PATHS. The migration directories and a Wrangler binding
+     * or Durable Object change are always protected. Optional without a default,
+     * so an app that says nothing keeps its declaration digest.
+     */
+    protectedPaths: z.array(relativePath).max(200).optional(),
+    /**
+     * Automatic rollback when live proof fails. Off unless declared, and it can
+     * be switched on only with a reference to a passed live rollback rehearsal
+     * against the real Worker. It never crosses a Durable Object, binding or
+     * non-expand-only migration change; those page instead.
+     */
+    rollback: z
+      .strictObject({
+        automatic: z.boolean(),
+        /** Where the live rollback rehearsal for this app is recorded. */
+        rehearsalRef: text.optional(),
+      })
+      .optional(),
     automation: z.strictObject({
       workflows: z.array(relativePath).min(1).max(100),
       /** Credentialed writers settle naturally; other held runs may be cancelled. */
@@ -194,6 +216,11 @@ export const developmentSchema = z
       if (held.has(path))
         add(['automation', 'independentWorkflows'], 'Independent production paths cannot be held')
     }
+    if (value.rollback?.automatic && !value.rollback.rehearsalRef)
+      add(
+        ['rollback', 'rehearsalRef'],
+        'Automatic rollback stays off until a live rollback rehearsal is recorded here',
+      )
     if (!value.automation.validationRequiredJobs.includes('ci / Required'))
       add(['automation', 'validationRequiredJobs'], 'The real required aggregate must be checked')
     for (const [index, writer] of value.automation.continuingWriters.entries()) {
@@ -218,6 +245,19 @@ export const developmentSchema = z
       }
     }
   })
+
+/**
+ * Protected paths when an app declares none: auth, session, payment and
+ * credential code takes the gated route (the T2 path escalation).
+ */
+export const DEFAULT_PROTECTED_PATHS = [
+  '**/auth/**',
+  '**/session/**',
+  '**/sessions/**',
+  '**/payments/**',
+  '**/billing/**',
+  '**/credentials/**',
+] as const
 
 export type DevelopmentConfig = z.infer<typeof developmentSchema>
 export type DevelopmentComponent = z.infer<typeof developmentComponentSchema>

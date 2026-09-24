@@ -49,7 +49,9 @@ It never:
   running `development enter`.
 
 Ordinary pushes run **no** CI while the mode is active. That is deliberate. Full
-validation runs only when you ask for it and on exit.
+validation runs after every verified deploy, in the background (see
+[Validation after every deploy](#validation-after-every-deploy)), when you ask
+for it, and on exit.
 
 ## Enrollment
 
@@ -113,39 +115,90 @@ targets too.
 ```sh
 pnpm run deploy:dev                      # web package: narduk-app development deploy
 pnpm run deploy:dev -- --handoff "open /settings and try the new filter"
+pnpm run deploy:dev -- --gated           # the capture changes protected paths
+pnpm run deploy:dev -- --red-main-fix 42 # this deploy fixes red-main issue #42
 narduk-app development status [--remote]
 ```
 
 Each deploy:
 
 1. takes the target lock (shared across every clone and worktree on the host);
-2. captures the checkout: tracked edits, deletions and unignored untracked
-   files;
+2. refuses if `main` has been red for more than 24 hours (see
+   [Red main](#red-main));
 3. refuses if the target serves something other than what this record last
    proved. Someone changed it out of band; see recovery below;
-4. runs the target set's checks, builds in a private reusable workspace (the
+4. captures the checkout: tracked edits, deletions and unignored untracked
+   files, and refuses a capture that changes protected paths unless run with
+   `--gated` (see [Protected paths](#protected-paths-and---gated));
+5. runs the target set's checks, builds in a private reusable workspace (the
    frozen install runs only when dependency inputs change), and runs
    `assertArtifact`;
-5. uploads a version tagged with its build ID, promotes it at 100%, reconciles
+6. uploads a version tagged with its build ID, promotes it at 100%, reconciles
    the Worker's script-level crons and routes from the artifact
    (`.output/server/wrangler.json`, falling back to the source Wrangler config
    when the artifact omits those keys), and proves it: exact `x-build-version`,
    health envelope and smoke path, then your `behavior` probe. Version promotion
    carries code only; without the trigger step, a cron or route change would
-   never apply.
+   never apply;
+7. after a `verified` or `awaiting-owner` deploy, queues full validation of the
+   deployed commit and returns without waiting for it (see
+   [Validation after every deploy](#validation-after-every-deploy)).
 
 Outcomes (the receipt under `receipts/` records names, never values):
 
-| Outcome                 | Meaning                                                                                                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verified`              | Serving and proven.                                                                                                                                                       |
-| `awaiting-owner`        | Serving. The component declares an owner-only behavior proof; the owner confirms it.                                                                                      |
-| `refused`               | A gate failed before anything uploaded. Nothing changed.                                                                                                                  |
-| `failed-before-traffic` | Uploaded but not promoted; the previous version still serves.                                                                                                             |
-| `unproven`              | Promoted, but proof failed. **It is serving.** The receipt says exactly what serves. Fix forward with another deploy. There is no automatic rollback in development mode. |
+| Outcome                 | Meaning                                                                                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verified`              | Serving and proven.                                                                                                                                                                    |
+| `awaiting-owner`        | Serving. The component declares an owner-only behavior proof; the owner confirms it.                                                                                                   |
+| `refused`               | A gate failed before anything uploaded. Nothing changed.                                                                                                                               |
+| `failed-before-traffic` | Uploaded but not promoted; the previous version still serves.                                                                                                                          |
+| `unproven`              | Promoted, but proof failed. **It is serving.** The receipt says exactly what serves and what the rollback decision was. Fix forward, or roll back by hand (see [Rollback](#rollback)). |
+| `rolled-back`           | Proof failed and the app's automatic rollback moved serving back to the last verified build, which was proven again. Exit code 1.                                                      |
+
+### Timings
+
+Every receipt carries `timings` (seconds per phase), `steps` (seconds and
+pass/fail for each check, build, `assertArtifact`, schema check, upload,
+promote, trigger apply, proof and behavior probe) and `totalSeconds`. The deploy
+prints one line with the total and the five slowest steps, so the check worth
+trimming from `checks` is visible rather than guessed. A failed step is recorded
+with its time before the deploy refuses.
 
 Commit locally as often as you like. Pushing is fine too and triggers nothing
 while held.
+
+### Protected paths and `--gated`
+
+Some changes take the gated route even in development mode: auth, session,
+payment and credential code, migrations, and Worker binding or Durable Object
+changes. deploy:dev diffs the capture against the last verified capture on this
+workstation (or, before the first one, against the merge base with
+`origin/<productionBranch>`) and refuses when the diff touches:
+
+- a glob in `deployment.development.protectedPaths` (`*`, `**`, `?`, matched
+  against repository-relative paths). When the app declares none, the defaults
+  are `**/auth/**`, `**/session/**`, `**/sessions/**`, `**/payments/**`,
+  `**/billing/**` and `**/credentials/**`. Declaring a list replaces the
+  defaults;
+- any file under a `migrationDirectories` entry;
+- the binding declarations of a component's Wrangler config (D1, KV, R2,
+  services, queues and the rest; `vars`, crons and routes are not bindings), or
+  its Durable Object bindings and class migrations.
+
+`--gated` deploys it anyway, records the matched paths in the receipt's `gate`,
+and marks the validation queued after the deploy as gated. When no base can be
+established (no verified capture here and no fetched production branch), the
+deploy refuses unless `--gated`.
+
+### Red main
+
+When the repository has an open issue labelled `red-main` that is more than 24
+hours old, deploy:dev refuses: red is fixed or reverted, not built on. A deploy
+that is the fix names it with `--red-main-fix <issue>`; naming an issue that is
+not an open `red-main` issue refuses too. A younger red-main issue is printed
+and does not block. If GitHub cannot be read, the receipt records
+`redMain.status: unknown` and the deploy proceeds with a warning: the guard
+stops red from accumulating, it is not the gate on one deploy.
 
 The workspace is a repository of its own: the captured tree is committed there
 under a local branch with no remote, so checks written as
@@ -188,11 +241,48 @@ narduk-app development exec --operation recovery --approval-ref <ref> -- <comman
   differ, refuses. Write expand-then-contract migrations, exactly as in
   [D1 deployment migrations](deployment-migrations.md). The development database
   is often the retained production database.
+
+  The promote path's expand-only rule (foundation sub-check 12.9) applies here
+  too, before the command runs. A `.sql` file this run may apply (not yet
+  recorded as applied with the same bytes) that drops or renames a table, view
+  or column refuses. The one exception is a reviewed contract migration:
+  declared under `deployment.migrations.contractMigrations` with its exact
+  checksum **and** already landed byte-identical on `origin/<productionBranch>`.
+  Contract migrations are reviewed on the gated path; development mode never
+  introduces one. Each applied migration records `compatibility` (`expand-only`
+  or `contract`), which rollback reads.
+
 - **Secrets**: stage runtime secrets with the provider CLI under `secret-stage`.
   Receipts carry names only. A deploy whose declared `requiredRuntimeSecrets`
   are missing ends `failed-before-traffic`.
 - **Recovery**: when the target was changed out of band, inspect the change,
   then record the fix under `recovery` so the record matches what serves.
+
+## Validation after every deploy
+
+After a `verified` or `awaiting-owner` deploy, deploy:dev queues full validation
+of the deployed commit and returns; nobody waits on CI. The deployed commit is
+the base commit for a clean capture. For a dirty one it is a commit whose parent
+is the base commit and whose tree is exactly what `git add -A` would stage from
+the capture: tracked edits and deletions plus unignored untracked files, never
+ignored additional build inputs. It is written with plumbing only (no hooks,
+filters, signing or local identity) and kept reachable at
+`refs/narduk/development/validation`; the checkout's index and working tree are
+untouched.
+
+A detached worker (`narduk-app development validation-worker`, logging to
+`$XDG_STATE_HOME/narduk-app-tools/development/validation/<repo>/worker.log`)
+pushes it to `narduk-validation/<sha>/<uuid>`, which triggers `validate.yml`:
+the full CI, e2e included, on the exact tree production serves, and that tree is
+now on GitHub. One worker runs per repository on a host. A newer deploy replaces
+a queued commit that has not been pushed yet, and once the newer one is pushed
+the worker cancels the unfinished runs of the older automatic requests, so the
+newest deployed SHA wins. Explicit `development validate` requests are never
+cancelled. `development status` shows the latest automatic request; the
+receipt's `validation` says what was queued, or why nothing was.
+
+A red validation files nothing by itself here; the repository's red-main routing
+(and the 24 hour guard above) owns what happens next.
 
 ## Explicit validation
 
@@ -205,6 +295,41 @@ alone triggers `validate.yml`. Because it is a push event on the candidate
 commit, the run's `ci / Required` counts for a pull request at that head. Use it
 before merging a PR while the mode is active, or whenever you want a full-CI
 answer. It never deploys.
+
+## Rollback
+
+```sh
+narduk-app development rollback --to <known-good build id> [--dry-run]
+```
+
+Moves every component of the target set back to a known-good build's versions
+(the last two verified builds on this workstation), proves them against that
+build's ID, and records them as the expected serving versions. It is the
+rehearsal command, and the manual path while automatic rollback is off. It
+refuses, and a failed deploy pages instead of rolling back, when anything a
+Worker rollback cannot undo happened since that build:
+
+- a Durable Object binding or class migration changed;
+- any other Worker binding changed;
+- a migration applied since that build is a contract migration, or predates the
+  expand-only record and so is not proven expand-only.
+
+**Automatic rollback is off by default.** When live proof or the behavior probe
+fails, the receipt records `rollback.decision`: `off` (with the manual command
+printed), `page` (with the reasons, printed as a `PAGE:` line), `rolled-back`,
+or `failed`. Switch it on per app only after a live rollback rehearsal against
+the real Worker (deploy N+1, `development rollback --to <N>`, prove, then deploy
+forward again):
+
+```json
+"development": {
+  "rollback": { "automatic": true, "rehearsalRef": "<where the rehearsal is recorded>" }
+}
+```
+
+The schema refuses `automatic: true` without `rehearsalRef`. Changing the
+declaration needs `development enter --refresh`, like any other declaration
+change.
 
 ## Handoff
 
@@ -246,13 +371,16 @@ trigger ID changes; the definition and variables are what restore.
 
 ## When something goes wrong
 
-| Symptom                        | Action                                                                                                                                                                               |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A deploy was interrupted       | `development resolve` records what actually serves and closes the attempt as `unproven` or `failed-before-traffic`.                                                                  |
-| `lock held`                    | Another command on this host holds the target. Wait for it. If its process is gone: `development resolve --release-stale-lock`. It refuses to release a live or remote owner's lock. |
-| "serves X, not the verified Y" | Something changed the target out of band. Inspect it, then fix it under `exec --operation recovery`.                                                                                 |
-| `unproven`                     | It is serving. Read the receipt, fix, deploy again.                                                                                                                                  |
-| Production is on fire          | Break-glass is separate and incident-only: [local hotfix](local-hotfix.md). It participates in the same target lock.                                                                 |
+| Symptom                                | Action                                                                                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A deploy was interrupted               | `development resolve` records what actually serves and closes the attempt as `unproven` or `failed-before-traffic`.                                                                  |
+| `lock held`                            | Another command on this host holds the target. Wait for it. If its process is gone: `development resolve --release-stale-lock`. It refuses to release a live or remote owner's lock. |
+| "serves X, not the verified Y"         | Something changed the target out of band. Inspect it, then fix it under `exec --operation recovery`.                                                                                 |
+| `unproven`                             | It is serving. Read the receipt, fix, deploy again.                                                                                                                                  |
+| `PAGE:` after a failed proof           | A rollback would cross a Durable Object, binding or non-expand-only migration change. It is serving; fix forward or decide by hand.                                                  |
+| "Protected changes since ..."          | The capture touches protected paths or bindings. Deploy with `--gated`, or land the change through a reviewed pull request.                                                          |
+| "main has been red for more than 24 h" | Fix main first, or deploy the fix with `--red-main-fix <issue>`.                                                                                                                     |
+| Production is on fire                  | Break-glass is separate and incident-only: [local hotfix](local-hotfix.md). It participates in the same target lock.                                                                 |
 
 Never use legacy `deploy-local`, `--skip-checks`, `--force-production`, or a
 hand-run `wrangler deploy` against an enrolled target. Each bypasses the record,

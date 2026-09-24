@@ -15,20 +15,29 @@ import {
   runDevelopmentResolve,
   runDevelopmentStatus,
   runDevelopmentUnpin,
+  runDevelopmentRollback,
   runDevelopmentValidate,
+  runDevelopmentValidationWorker,
   type ExecFlags,
 } from './development-lifecycle.js'
 
 export const DEVELOPMENT_USAGE = [
-  '  development deploy [--handoff <what to try>] [--dry-run] [--json]',
+  '  development deploy [--handoff <what to try>] [--gated] [--red-main-fix <issue>] [--dry-run] [--json]',
   '                                       deploy:dev: capture the checkout (dirty edits included),',
-  '                                       gate, build, upload, promote and prove the enrolled target',
+  '                                       gate, build, upload, promote and prove the enrolled target,',
+  '                                       then queue full validation of it in the background.',
+  '                                       --gated deploys protected-path changes; --red-main-fix',
+  '                                       names the red-main issue a deploy fixes after 24 h red',
+  '  development rollback --to <known-good build id> [--dry-run]',
+  '                                       Serve and prove a known-good build again; refuses across',
+  '                                       a Durable Object, binding or non-expand-only migration change',
   '  development status [--remote] [--json]',
   '  development enter --approval-ref <ref> --publisher <id> [--target-set <id>] [--refresh] [--dry-run] [--accept-prior-state]',
   '  development pin --scenario <file> | development unpin --feedback-ref <ref>',
   '  development exec --operation <migration|secret-stage|recovery> --approval-ref <ref>',
   '      [--commit <sha>] -- <command...>  Authorized operation under the same target lock',
   '  development validate --ref <branch> --sha <full sha> --reason <text>',
+  '  development validation-worker        (internal) push queued deployed commits for validation',
   '  development handoff --to <publisher> | handoff --accept <bundle> --publisher <id>',
   '  development resolve [--release-stale-lock]',
   '  development exit --prepare | exit --release-sha <sha> --validation-run <id> [--owner-proof-ref <ref>]',
@@ -122,6 +131,19 @@ export async function runDevelopmentCommand(args: string[]): Promise<number> {
       ref: required(values, 'ref'),
       sha: required(values, 'sha'),
       reason: required(values, 'reason'),
+    })
+    return 0
+  }
+  if (action === 'validation-worker') {
+    options(rest, [])
+    runDevelopmentValidationWorker()
+    return 0
+  }
+  if (action === 'rollback') {
+    const values = options(rest, ['to'], ['dry-run'])
+    await runDevelopmentRollback({
+      to: required(values, 'to'),
+      dryRun: Boolean(values['dry-run']),
     })
     return 0
   }

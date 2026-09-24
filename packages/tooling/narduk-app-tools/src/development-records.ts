@@ -20,7 +20,7 @@ import { readDeploymentBlock, type DeploymentBlock } from './deployment-config.j
 
 export type DevelopmentMode = 'entering' | 'active' | 'suspended' | 'exiting' | 'restoring'
 export type DevelopmentOutcome =
-  'verified' | 'awaiting-owner' | 'refused' | 'failed-before-traffic' | 'unproven'
+  'verified' | 'awaiting-owner' | 'refused' | 'failed-before-traffic' | 'unproven' | 'rolled-back'
 
 export interface AppliedMigration {
   commit: string
@@ -28,6 +28,12 @@ export interface AppliedMigration {
   approvalRef: string
   appliedAt: string
   files: Array<{ path: string; sha256: string }>
+  /**
+   * What the expand-only rule (12.9) found in the files this run applied.
+   * Absent on records written before the rule ran here, which rollback treats
+   * as unknown, never as expand-only.
+   */
+  compatibility?: 'expand-only' | 'contract'
 }
 
 export interface ActivationRecord {

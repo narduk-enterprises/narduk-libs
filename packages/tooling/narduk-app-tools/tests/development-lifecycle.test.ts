@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -17,8 +17,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import { DEVELOPMENT_USAGE } from '../src/development-cli.js'
-import type { DevelopmentCommand } from '../src/development-config.js'
-import { runDevelopmentDeploy, type DevelopmentContext } from '../src/development-deploy.js'
+import { developmentSchema, type DevelopmentCommand } from '../src/development-config.js'
+import {
+  parseDevelopmentDeployArgs,
+  runDevelopmentDeploy,
+  type DevelopmentContext,
+  type DevelopmentDeployFlags,
+} from '../src/development-deploy.js'
+import { globToRegExp, matchProtectedPaths } from '../src/development-guards.js'
+import { developmentFixture } from './development-fixture.js'
 import {
   parseDeclaredScriptTriggers,
   readDeclaredScriptTriggers,
@@ -35,13 +42,21 @@ import {
   runDevelopmentHandoff,
   runDevelopmentPin,
   runDevelopmentResolve,
+  runDevelopmentRollback,
   runDevelopmentStatus,
   runDevelopmentUnpin,
   type LifecycleContext,
 } from '../src/development-lifecycle.js'
 import { DevelopmentCloudflare } from '../src/development-provider.js'
 import { readActivation, writeActivation } from '../src/development-records.js'
-import { acquireTargetLocks, readPrivateJson } from '../src/development-state.js'
+import { acquireTargetLocks, readPrivateJson, writePrivateJson } from '../src/development-state.js'
+import {
+  drainDeployedValidations,
+  enqueueDeployedValidation,
+  readValidationHistory,
+  validationDirectory,
+  type DeployedValidationRequest,
+} from '../src/development-validation.js'
 import type { VerifyReport } from '../src/verify-live.js'
 
 const ACCOUNT = 'a'.repeat(32)
@@ -170,6 +185,8 @@ function repository(paired = false) {
   git(root, 'remote', 'add', 'origin', `git@github.com:${REPO}.git`)
   git(root, 'add', '.')
   git(root, 'commit', '-qm', 'initial')
+  // A fetched production branch: the protected-path base before any verified capture.
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
   return root
 }
 
@@ -362,10 +379,16 @@ class GitHub {
   }> = []
   calls: string[] = []
   mainHead = ''
+  redMain: Array<{ number: number; title: string; created_at: string; pull_request?: object }> = []
+  redMainUnavailable = false
   request = (path: string, method = 'GET'): unknown => {
     this.calls.push(`${method} ${path}`)
     const url = new URL(`https://api.github.com/${path}`)
     const route = url.pathname.replace(`/repos/${REPO}/`, '')
+    if (route === 'issues' && url.searchParams.get('labels') === 'red-main') {
+      if (this.redMainUnavailable) throw new Error('GitHub GET request failed')
+      return this.redMain
+    }
     if (route === 'actions/workflows') return { workflows: this.workflows }
     let match = /^actions\/workflows\/(\d+)(?:\/(disable|enable|runs))?$/u.exec(route)
     if (match) {
@@ -427,6 +450,7 @@ interface Harness {
   registryToken: Record<string, string | undefined>
   context: LifecycleContext & DevelopmentContext
   logs: string[]
+  validations: DeployedValidationRequest[]
 }
 
 function harness(paired = false): Harness {
@@ -447,6 +471,7 @@ function harness(paired = false): Harness {
     registryToken: {},
     logs: [],
     context: {},
+    validations: [],
   }
   const readSecret = (source: { key: string }) =>
     source.key === 'NUXT_SESSION_PASSWORD' ? SECRET : `value-of-${source.key}-000000000000`
@@ -460,6 +485,10 @@ function harness(paired = false): Harness {
     provider: (component) => new DevelopmentCloudflare(component, readSecret, cloudflare.fetch),
     builds: (component) => new DevelopmentCloudflare(component, readSecret, cloudflare.fetch),
     github: () => new DevelopmentGitHub(REPO, github.request),
+    queueValidation: (request) => {
+      h.validations.push(request)
+      return 'queued'
+    },
     run: (command, workspace, env) => {
       h.runs.push(command.executable)
       h.registryToken[command.executable] = env.GH_PACKAGES_READ
@@ -870,10 +899,10 @@ describe('development mode entry', { timeout: 30_000 }, () => {
 })
 
 describe('deploy:dev transaction', { timeout: 30_000 }, () => {
-  it('deploys dirty edits, deletions and untracked source without GitHub access', async () => {
+  it('deploys dirty edits, deletions and untracked source reading only red-main from GitHub', async () => {
     const h = harness()
     await enter(h)
-    const githubCalls = h.github.calls.length
+    const githubCalls = h.github.calls.length + 1
     writeFileSync(join(h.root, 'apps/web/src/page.ts'), 'export const page = 2\n')
     writeFileSync(join(h.root, 'apps/web/src/new.ts'), 'export const fresh = true\n')
     unlinkSync(join(h.root, 'obsolete.txt'))
@@ -1333,5 +1362,535 @@ describe('feedback, operations, handoff and exit', { timeout: 30_000 }, () => {
     expect(readActivation(REPO, h.state)!.mode).toBe('exiting')
     expect(h.github.workflows[0].state).toBe('disabled_manually')
     expect(h.cloudflare.workers.get('fixture-app')!.triggers.size).toBe(0)
+  })
+})
+
+// ─── receipts, guards, background validation and rollback ────────────────────
+
+function deploy(h: Harness, flags: Partial<DevelopmentDeployFlags> = {}) {
+  return runDevelopmentDeploy({ dryRun: false, json: false, ...flags }, h.context)
+}
+
+function patchDeployment(
+  root: string,
+  mutate: (development: Record<string, unknown>, deployment: Record<string, unknown>) => void,
+  land = true,
+): void {
+  const path = join(root, 'Config', 'cloudflare-app.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
+    deployment: Record<string, unknown> & { development: Record<string, unknown> }
+  }
+  mutate(manifest.deployment.development, manifest.deployment)
+  writeFileSync(path, JSON.stringify(manifest))
+  git(root, 'add', '.')
+  git(root, 'commit', '-qm', 'patch deployment declaration')
+  if (land) git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+}
+
+function enableRollback(root: string): void {
+  patchDeployment(root, (development) => {
+    development.rollback = { automatic: true, rehearsalRef: 'narduk-farm#147' }
+  })
+}
+
+/** Live proof passes only for one build: the known-good version a rollback restores. */
+function passProofOnlyFor(h: Harness, buildId: string): void {
+  h.context.verify = async (flags) => {
+    const pass = flags.expectBuildId === buildId
+    return {
+      result: pass ? 'PASS' : 'FAIL',
+      exitCode: pass ? 0 : 4,
+      attemptsUsed: 1,
+      assertions: [{ id: 'build-id', status: pass ? 'pass' : 'fail' }],
+    } as unknown as VerifyReport
+  }
+}
+
+describe('deploy:dev receipts and background validation', { timeout: 30_000 }, () => {
+  it('times every phase and step, and queues validation of the clean base commit', async () => {
+    const h = harness()
+    await enter(h)
+    const receipt = await deploy(h)
+    expect(receipt.outcome).toBe('verified')
+    expect(h.github.calls.at(-1)).toMatch(/issues\?labels=red-main/u)
+    expect(receipt.steps!.map((item) => item.name)).toEqual([
+      'red-main',
+      'inspect:web',
+      'capture',
+      'workspace',
+      'protected-paths',
+      'check:fake-check',
+      'build:web',
+      'assert:web',
+      'schema:web:fake-schema',
+      'upload:web',
+      'promote:web',
+      'triggers:web',
+      'proof:web',
+      'behavior:web',
+      'queue-validation',
+    ])
+    expect(receipt.steps!.every((item) => item.status === 'passed' && item.seconds >= 0)).toBe(true)
+    expect(Object.keys(receipt.timings)).toEqual(
+      expect.arrayContaining(['guarding', 'inspecting', 'capturing', 'checking', 'building']),
+    )
+    expect(receipt.totalSeconds).toBeGreaterThanOrEqual(0)
+    expect(h.logs.some((line) => line.startsWith('[deploy:dev] timings: total'))).toBe(true)
+    expect(h.validations).toEqual([
+      expect.objectContaining({
+        sha: git(h.root, 'rev-parse', 'HEAD'),
+        buildId: receipt.buildId,
+        gated: false,
+      }),
+    ])
+    expect(receipt.validation).toMatchObject({ status: 'queued', source: 'base-commit' })
+  })
+
+  it('records the failing check with its time', async () => {
+    const h = harness()
+    await enter(h)
+    h.fail.add('fake-check')
+    const receipt = await deploy(h)
+    expect(receipt.outcome).toBe('refused')
+    expect(receipt.steps!.at(-1)).toMatchObject({ name: 'check:fake-check', status: 'failed' })
+    expect(receipt.timings.checking).toBeGreaterThanOrEqual(0)
+    expect(h.validations).toHaveLength(0)
+  })
+
+  it('validates a dirty deploy as a capture commit of exactly what add -A stages', async () => {
+    const h = harness()
+    await enter(h)
+    const head = git(h.root, 'rev-parse', 'HEAD')
+    writeFileSync(join(h.root, 'apps/web/src/page.ts'), 'export const page = 2\n')
+    writeFileSync(join(h.root, 'apps/web/src/new.ts'), 'export const fresh = true\n')
+    unlinkSync(join(h.root, 'obsolete.txt'))
+    const receipt = await deploy(h)
+    expect(receipt.outcome).toBe('verified')
+    const sha = h.validations[0].sha
+    expect(sha).not.toBe(head)
+    expect(receipt.validation).toMatchObject({ sha, source: 'capture-commit' })
+    expect(git(h.root, 'rev-parse', `${sha}^`)).toBe(head)
+    expect(git(h.root, 'show', `${sha}:apps/web/src/page.ts`)).toBe('export const page = 2')
+    expect(git(h.root, 'show', `${sha}:apps/web/src/new.ts`)).toContain('fresh')
+    const files = git(h.root, 'ls-tree', '-r', '--name-only', sha).split('\n')
+    expect(files).not.toContain('obsolete.txt')
+    expect(files).toContain('migrations/0001_init.sql')
+    expect(git(h.root, 'rev-parse', 'refs/narduk/development/validation')).toBe(sha)
+    // The authoring index and working tree are untouched.
+    expect(git(h.root, 'status', '--porcelain')).toMatch(/D obsolete\.txt/u)
+  })
+
+  it('queues nothing after an unproven deploy', async () => {
+    const h = harness()
+    await enter(h)
+    h.proofFails.add('https://fixture-app.example.com')
+    expect((await deploy(h)).outcome).toBe('unproven')
+    expect(h.validations).toHaveLength(0)
+  })
+})
+
+describe('deploy:dev protected paths and red main', { timeout: 30_000 }, () => {
+  it('refuses protected-path changes unless --gated, then diffs from that capture', async () => {
+    const h = harness()
+    await enter(h)
+    mkdirSync(join(h.root, 'apps/web/src/auth'), { recursive: true })
+    writeFileSync(join(h.root, 'apps/web/src/auth/login.ts'), 'export const login = 1\n')
+    const refused = await deploy(h)
+    expect(refused.outcome).toBe('refused')
+    expect(refused.failure).toMatch(
+      /Protected changes since origin\/main merge base [a-f0-9]{12}: apps\/web\/src\/auth\/login\.ts/u,
+    )
+    expect(h.uploads).toBe(0)
+    const gated = await deploy(h, { gated: true })
+    expect(gated.outcome).toBe('verified')
+    expect(gated.gate).toMatchObject({
+      gated: true,
+      protectedPaths: ['apps/web/src/auth/login.ts'],
+    })
+    expect(h.validations.at(-1)).toMatchObject({ gated: true })
+    writeFileSync(join(h.root, 'apps/web/src/page.ts'), 'export const page = 3\n')
+    const next = await deploy(h)
+    expect(next.outcome).toBe('verified')
+    expect(next.gate).toMatchObject({
+      base: `last verified ${gated.buildId}`,
+      changed: 1,
+      protectedPaths: [],
+    })
+  })
+
+  it('protects migrations, bindings and Durable Objects, but not trigger edits', async () => {
+    const h = harness()
+    await enter(h)
+    expect((await deploy(h)).outcome).toBe('verified')
+    writeFileSync(join(h.root, 'migrations', '0002_add.sql'), 'alter table t add column x;\n')
+    expect((await deploy(h)).failure).toMatch(/migrations\/0002_add\.sql/u)
+    unlinkSync(join(h.root, 'migrations', '0002_add.sql'))
+    const wrangler = join(h.root, 'apps/web/wrangler.jsonc')
+    const config = JSON.parse(readFileSync(wrangler, 'utf8')) as Record<string, unknown>
+    writeFileSync(wrangler, JSON.stringify({ ...config, triggers: { crons: ['0 1 * * *'] } }))
+    expect((await deploy(h)).outcome).toBe('verified')
+    writeFileSync(
+      wrangler,
+      JSON.stringify({ ...config, d1_databases: [{ binding: 'DB', database_id: 'x' }] }),
+    )
+    const binding = await deploy(h)
+    expect(binding.failure).toMatch(/web: Worker bindings changed/u)
+    expect(binding.failure).not.toMatch(/Durable Object/u)
+    writeFileSync(
+      wrangler,
+      JSON.stringify({
+        ...config,
+        durable_objects: { bindings: [{ name: 'R', class_name: 'R' }] },
+      }),
+    )
+    expect((await deploy(h)).failure).toMatch(/web: Durable Object bindings or class migrations/u)
+  })
+
+  it('refuses without a base to diff against, unless --gated', async () => {
+    const h = harness()
+    await enter(h)
+    git(h.root, 'update-ref', '-d', 'refs/remotes/origin/main')
+    expect((await deploy(h)).failure).toMatch(/No base to diff this capture against/u)
+    expect((await deploy(h, { gated: true })).outcome).toBe('verified')
+  })
+
+  it('refuses after 24 h of red main unless the deploy names the fix', async () => {
+    const h = harness()
+    await enter(h)
+    const old = new Date(Date.now() - 25 * 3_600_000).toISOString()
+    h.github.redMain = [
+      { number: 12, title: 'main is red: ci', created_at: old },
+      { number: 13, title: 'a pull request', created_at: old, pull_request: {} },
+    ]
+    const refused = await deploy(h)
+    expect(refused.outcome).toBe('refused')
+    expect(refused.failure).toMatch(/main has been red for more than 24 h: #12 "main is red: ci"/u)
+    expect(refused.redMain).toMatchObject({ open: [12], stale: [12] })
+    expect(h.uploads).toBe(0)
+    expect((await deploy(h, { redMainFix: 99 })).failure).toMatch(/names no open red-main issue/u)
+    const fix = await deploy(h, { redMainFix: 12 })
+    expect(fix.outcome).toBe('verified')
+    expect(fix.redMain).toMatchObject({ status: 'fix', fix: 12 })
+    h.github.redMain = [
+      { number: 14, title: 'main is red: e2e', created_at: new Date().toISOString() },
+    ]
+    expect((await deploy(h)).outcome).toBe('verified')
+    h.github.redMainUnavailable = true
+    const unknown = await deploy(h)
+    expect(unknown.outcome).toBe('verified')
+    expect(unknown.redMain?.status).toBe('unknown')
+  })
+
+  it('skips the guards for the validated exit release', async () => {
+    const h = harness()
+    await enter(h)
+    h.github.redMain = [{ number: 12, title: 'main is red', created_at: new Date(0).toISOString() }]
+    runDevelopmentExitPrepare(h.context)
+    const release = git(h.root, 'rev-parse', 'HEAD')
+    const receipt = await runDevelopmentDeploy(
+      { dryRun: false, json: false, releaseSha: release },
+      h.context,
+    )
+    expect(receipt.outcome).toBe('verified')
+    expect(receipt.redMain).toBeUndefined()
+    expect(h.validations).toHaveLength(0)
+  })
+})
+
+describe('development-mode rollback', { timeout: 30_000 }, () => {
+  it('stays off by default and names the manual command', async () => {
+    const h = harness()
+    await enter(h)
+    const good = await deploy(h)
+    h.proofFails.add('https://fixture-app.example.com')
+    const bad = await deploy(h)
+    expect(bad.outcome).toBe('unproven')
+    expect(bad.rollback).toEqual({ decision: 'off', target: good.buildId })
+    expect(h.cloudflare.serving('fixture-app')).toBe(bad.components.web.candidateVersionId)
+    expect(h.logs.join('\n')).toContain(`narduk-app development rollback --to ${good.buildId}`)
+  })
+
+  it('rolls a failed proof back to the last verified build once switched on', async () => {
+    const h = harness()
+    enableRollback(h.root)
+    await enter(h)
+    const good = await deploy(h)
+    const verify = h.context.verify
+    passProofOnlyFor(h, good.buildId)
+    const bad = await deploy(h)
+    expect(bad.outcome).toBe('rolled-back')
+    expect(bad.rollback).toEqual({ decision: 'rolled-back', target: good.buildId })
+    expect(bad.components.web.servingVersionId).toBe(good.components.web.servingVersionId)
+    expect(h.cloudflare.serving('fixture-app')).toBe(good.components.web.servingVersionId)
+    const record = readActivation(REPO, h.state)!
+    expect(record.expectedServing.web).toBe(good.components.web.servingVersionId)
+    expect(record.knownGood[0]).toBe(good.buildId)
+    expect(record.history.at(-1)?.event).toBe('deploy-rolled-back')
+    h.context.verify = verify
+    expect((await deploy(h)).outcome).toBe('verified')
+  })
+
+  it('pages instead of rolling back across a binding change', async () => {
+    const h = harness()
+    enableRollback(h.root)
+    await enter(h)
+    const good = await deploy(h)
+    const wrangler = join(h.root, 'apps/web/wrangler.jsonc')
+    const config = JSON.parse(readFileSync(wrangler, 'utf8')) as Record<string, unknown>
+    writeFileSync(
+      wrangler,
+      JSON.stringify({ ...config, kv_namespaces: [{ binding: 'KV', id: 'k' }] }),
+    )
+    passProofOnlyFor(h, good.buildId)
+    const bad = await deploy(h, { gated: true })
+    expect(bad.outcome).toBe('unproven')
+    expect(bad.rollback).toMatchObject({ decision: 'page', target: good.buildId })
+    expect(bad.rollback?.reasons?.join('; ')).toMatch(/web: Worker bindings changed/u)
+    expect(h.cloudflare.serving('fixture-app')).toBe(bad.components.web.candidateVersionId)
+    expect(h.logs.join('\n')).toMatch(/PAGE: proof failed and a rollback is not safe/u)
+  })
+
+  it('pages across a migration not proven expand-only, and rolls back across one that is', async () => {
+    const h = harness()
+    enableRollback(h.root)
+    await enter(h)
+    const good = await deploy(h)
+    const record = readActivation(REPO, h.state)!
+    record.appliedMigrations.push({
+      commit: 'c'.repeat(40),
+      ref: 'refs/narduk/development/migrations/legacy',
+      approvalRef: 'owner#legacy',
+      appliedAt: new Date(Date.now() + 1000).toISOString(),
+      files: [],
+    })
+    writeActivation(record, h.state)
+    passProofOnlyFor(h, good.buildId)
+    const paged = await deploy(h)
+    expect(paged.rollback?.decision).toBe('page')
+    expect(paged.rollback?.reasons?.join('; ')).toMatch(/not proven expand-only/u)
+
+    const next = harness()
+    enableRollback(next.root)
+    await enter(next)
+    const verified = await deploy(next)
+    writeFileSync(join(next.root, 'migrations', '0002_add.sql'), 'alter table t add column x;\n')
+    git(next.root, 'add', '.')
+    git(next.root, 'commit', '-qm', 'expand')
+    const commit = git(next.root, 'rev-parse', 'HEAD')
+    const { record: applied } = await runDevelopmentExec(
+      { operation: 'migration', approvalRef: 'owner#m', commit, argv: ['apply'] },
+      { ...next.context, exec: () => 0 },
+    )
+    expect(applied.appliedMigrations.at(-1)?.compatibility).toBe('expand-only')
+    passProofOnlyFor(next, verified.buildId)
+    const rolled = await deploy(next, { gated: true })
+    expect(rolled.outcome).toBe('rolled-back')
+  })
+
+  it('pages when no verified build is recorded', async () => {
+    const h = harness()
+    enableRollback(h.root)
+    await enter(h)
+    h.proofFails.add('https://fixture-app.example.com')
+    const bad = await deploy(h)
+    expect(bad.outcome).toBe('unproven')
+    expect(bad.rollback).toMatchObject({ decision: 'page' })
+    expect(bad.rollback?.reasons).toEqual(['no verified build is recorded on this workstation'])
+  })
+
+  it('rolls back by hand to a known-good build, proves it, then rolls forward', async () => {
+    const h = harness()
+    await enter(h)
+    const first = await deploy(h)
+    writeFileSync(join(h.root, 'apps/web/src/page.ts'), 'export const page = 2\n')
+    const second = await deploy(h)
+    await expect(
+      runDevelopmentRollback({ to: 'dev-unknown', dryRun: false }, h.context),
+    ).rejects.toThrow(/known-good build/u)
+    await runDevelopmentRollback({ to: first.buildId, dryRun: true }, h.context)
+    expect(h.cloudflare.serving('fixture-app')).toBe(second.components.web.servingVersionId)
+    const plan = await runDevelopmentRollback({ to: first.buildId, dryRun: false }, h.context)
+    expect(plan.kind).toBe('rollback')
+    expect(h.cloudflare.serving('fixture-app')).toBe(first.components.web.servingVersionId)
+    const record = readActivation(REPO, h.state)!
+    expect(record.knownGood).toEqual([first.buildId, second.buildId])
+    expect(record.expectedServing.web).toBe(first.components.web.servingVersionId)
+    await expect(
+      runDevelopmentRollback({ to: first.buildId, dryRun: false }, h.context),
+    ).rejects.toThrow(/already serves/u)
+    expect((await deploy(h)).outcome).toBe('verified')
+  })
+})
+
+describe('development-mode migrations are expand-only (12.9)', { timeout: 30_000 }, () => {
+  it('refuses a migration that drops what serving code reads', async () => {
+    const h = harness()
+    await enter(h)
+    writeFileSync(join(h.root, 'migrations', '0002_drop.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'drop')
+    const commit = git(h.root, 'rev-parse', 'HEAD')
+    const ran: string[][] = []
+    await expect(
+      runDevelopmentExec(
+        { operation: 'migration', approvalRef: 'owner#m', commit, argv: ['apply'] },
+        { ...h.context, exec: (argv) => (ran.push(argv), 0) },
+      ),
+    ).rejects.toThrow(
+      /migrations\/0002_drop\.sql:1 drops table t\. Development-mode migrations are expand-only/u,
+    )
+    expect(ran).toEqual([])
+    expect(readActivation(REPO, h.state)!.appliedMigrations).toEqual([])
+  })
+
+  it('applies a reviewed contract migration only once it has landed', async () => {
+    const h = harness()
+    writeFileSync(join(h.root, 'migrations', '0002_drop.sql'), 'drop table t;\n')
+    const digest = createHash('sha256').update('drop table t;\n').digest('hex')
+    patchDeployment(
+      h.root,
+      (_development, deployment) => {
+        deployment.migrations = {
+          compatibility: 'expand-contract',
+          credential: 'cloudflare/prd/fixture-app-migrate',
+          databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+          contractMigrations: [
+            { path: 'migrations/0002_drop.sql', sha256: digest, reason: 'no version reads t' },
+          ],
+        }
+      },
+      false,
+    )
+    await enter(h)
+    const commit = git(h.root, 'rev-parse', 'HEAD')
+    const exec = { ...h.context, exec: () => 0 }
+    const flags = {
+      operation: 'migration' as const,
+      approvalRef: 'owner#m',
+      commit,
+      argv: ['apply'],
+    }
+    await expect(runDevelopmentExec(flags, exec)).rejects.toThrow(/has not landed on main/u)
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    const { record } = await runDevelopmentExec(flags, exec)
+    expect(record.appliedMigrations.at(-1)?.compatibility).toBe('contract')
+  })
+})
+
+describe('background validation worker', () => {
+  const sha = (char: string) => char.repeat(40)
+  const request = (checkout: string, char: string, buildId: string): DeployedValidationRequest => ({
+    repository: REPO,
+    checkout,
+    sha: sha(char),
+    buildId,
+    reason: 'verified development deploy',
+    gated: false,
+    queuedAt: new Date().toISOString(),
+  })
+
+  it('pushes only the newest queued commit and cancels what it supersedes', () => {
+    const state = temp('dev-validation-')
+    const pushed: string[] = []
+    const cancelled: number[] = []
+    const github = {
+      requestDeployedValidation: (_cwd: string, value: string) => {
+        const ref = `narduk-validation/${value}/${pushed.length}`
+        pushed.push(ref)
+        return ref
+      },
+      activeValidationRuns: (ref: string) => (ref.includes(sha('b')) ? [77] : []),
+      cancelRun: (id: number) => {
+        cancelled.push(id)
+      },
+    }
+    const log = (): void => undefined
+    enqueueDeployedValidation(request(state, 'a', 'dev-1'), state)
+    enqueueDeployedValidation(request(state, 'b', 'dev-2'), state)
+    expect(
+      drainDeployedValidations({ repository: REPO, stateDirectory: state, github, log }),
+    ).toEqual([`narduk-validation/${sha('b')}/0`])
+    enqueueDeployedValidation(request(state, 'c', 'dev-3'), state)
+    drainDeployedValidations({ repository: REPO, stateDirectory: state, github, log })
+    expect(cancelled).toEqual([77])
+    const history = readValidationHistory(state, REPO)
+    expect(history.map((entry) => [entry.buildId, Boolean(entry.supersededAt)])).toEqual([
+      ['dev-2', true],
+      ['dev-3', false],
+    ])
+  })
+
+  it('leaves the queue to a live worker', () => {
+    const state = temp('dev-validation-')
+    const lock = join(validationDirectory(state, REPO), 'worker.lock')
+    mkdirSync(lock, { recursive: true, mode: 0o700 })
+    writePrivateJson(join(lock, 'owner.json'), {
+      pid: process.pid,
+      workstation: hostname(),
+      startedAt: new Date().toISOString(),
+    })
+    enqueueDeployedValidation(request(state, 'a', 'dev-1'), state)
+    const github = {
+      requestDeployedValidation: (): string => {
+        throw new Error('must not push')
+      },
+      activeValidationRuns: (): number[] => [],
+      cancelRun: (): void => undefined,
+    }
+    expect(
+      drainDeployedValidations({
+        repository: REPO,
+        stateDirectory: state,
+        github,
+        log: (): void => undefined,
+      }),
+    ).toEqual([])
+    expect(existsSync(join(validationDirectory(state, REPO), 'queue.json'))).toBe(true)
+  })
+})
+
+describe('guard building blocks', () => {
+  it('matches ** across directories and * within one segment', () => {
+    expect(
+      matchProtectedPaths(
+        [
+          'apps/web/server/auth/login.ts',
+          'auth/x.ts',
+          'apps/web/authz.ts',
+          'migrations/0001.sql',
+          'a/migrations/0001.sql',
+        ],
+        ['**/auth/**', 'migrations/**'],
+      ),
+    ).toEqual(['apps/web/server/auth/login.ts', 'auth/x.ts', 'migrations/0001.sql'])
+    expect(globToRegExp('apps/*/wrangler.jsonc').test('apps/web/wrangler.jsonc')).toBe(true)
+    expect(globToRegExp('apps/*/wrangler.jsonc').test('apps/web/x/wrangler.jsonc')).toBe(false)
+    expect(globToRegExp('**/*.sql').test('0001.sql')).toBe(true)
+    expect(globToRegExp('a?c').test('abc')).toBe(true)
+    expect(globToRegExp('a.c').test('abc')).toBe(false)
+  })
+
+  it('requires a rehearsal reference before automatic rollback can be switched on', () => {
+    expect(() =>
+      developmentSchema.parse({ ...developmentFixture(), rollback: { automatic: true } }),
+    ).toThrow(/live rollback rehearsal/u)
+    expect(
+      developmentSchema.parse({
+        ...developmentFixture(),
+        rollback: { automatic: true, rehearsalRef: 'narduk-farm#147' },
+      }).rollback,
+    ).toEqual({ automatic: true, rehearsalRef: 'narduk-farm#147' })
+    // Absent stays absent, so enrolled apps keep their declaration digest.
+    expect('protectedPaths' in developmentFixture()).toBe(false)
+    expect('rollback' in developmentFixture()).toBe(false)
+  })
+
+  it('parses --gated and --red-main-fix', () => {
+    expect(parseDevelopmentDeployArgs(['--gated', '--red-main-fix', '#12'])).toMatchObject({
+      gated: true,
+      redMainFix: 12,
+    })
+    expect(() => parseDevelopmentDeployArgs(['--red-main-fix', 'soon'])).toThrow(/issue number/u)
+    expect(DEVELOPMENT_USAGE.join('\n')).toMatch(/development rollback --to/u)
   })
 })
