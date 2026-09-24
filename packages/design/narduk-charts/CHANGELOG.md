@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.7.0
+
+### Minor Changes
+
+- 7484b7d: Carry the options the retired standalone narduk-charts repository
+  published as 2.6.0 on 2026-09-23: line-series `spanGaps`, `mode: 'points'`,
+  `marker` (`radius`, `filled: false` rings), `opacity` and `showValues` /
+  `formatValue`; point annotations' `ring`; `xTickIndices` with thinning on
+  narrow charts; and bar `yMin` / `yMax`, `showXAxis`, `showYAxis`, `showGrid`,
+  `showLegend` and `padding`. narduk-libs continues from 2.6.0, the registry's
+  `latest`, so this release is the first to ship those options together with
+  narduk-libs' 2.5.x fixes and the `./spark` export. The package docs now name
+  narduk-libs as the only source and release path. `create-narduk-app` releases
+  alongside because it pins narduk-charts.
+- 1df13cb: Add `@narduk-enterprises/narduk-charts/spark`: axis choice, SVG path
+  generation (optional timestamp X via `times`), and 24h/7d/30d trailing-window
+  helpers for micro-sparklines. The Vue line-chart sparkline recipe is
+  unchanged. `create-narduk-app` releases alongside because it pins
+  narduk-charts.
+
+### Patch Changes
+
+- 8226f05: Address narduk-charts lint findings deferred at eslint-config
+  adoption (#131). `create-narduk-app` releases alongside because it pins
+  narduk-charts.
+
 ## 2.6.0
 
 Published on 2026-09-23 from the retired standalone

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [b59c4a8]
+  - @narduk-enterprises/narduk-postgres@0.2.5
+
 ## 0.3.2
 
 ### Patch Changes
