@@ -66,6 +66,23 @@ export type { CandleResolutionId } from './utils/candleResolution'
 export { sma, ema, vwap, bollinger, rsi, macd } from './studies'
 export type { BollingerBandRow } from './studies'
 
+export {
+  SPARK_WINDOWS,
+  SPARK_WINDOW_MS,
+  sparkAxis,
+  sparkPath,
+  sparkWindowMs,
+  trailingSparkWindow,
+} from './utils/spark'
+export type {
+  SparkAxis,
+  SparkAxisMode,
+  SparkAxisOptions,
+  SparkPathOptions,
+  SparkTimedPoint,
+  SparkWindowId,
+} from './utils/spark'
+
 export { recommendMaxDrawBars, suggestCandleRenderStrategy } from './perf/candleRenderBudget'
 export type { CandleRenderStrategy } from './perf/candleRenderBudget'
 export type { DecimatedCategoryData, XYPoint, AggregatedCandleBucket } from './utils/math'

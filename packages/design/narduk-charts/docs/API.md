@@ -17,7 +17,8 @@ Types ship from `dist/index.d.ts`. Import paths:
   `import { NardukLineChart } from '@narduk-enterprises/narduk-charts/line'`
   (same stylesheet import as above); `@narduk-enterprises/narduk-charts/candle`
   for `NardukCandleChart` only; `@narduk-enterprises/narduk-charts/studies` for
-  indicator math only (no Vue).
+  indicator math only (no Vue); `@narduk-enterprises/narduk-charts/spark` for
+  micro-sparkline axis, path, and 24h/7d/30d trailing-window helpers (no Vue).
 
 ## Components
 

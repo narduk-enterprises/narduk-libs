@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
-function entryConfig(name: 'line' | 'bar' | 'pie' | 'candle' | 'studies') {
+function entryConfig(name: 'line' | 'bar' | 'pie' | 'candle' | 'studies' | 'spark') {
   return defineConfig({
     plugins: [vue(), tailwindcss()],
     build: {
@@ -26,9 +26,12 @@ function entryConfig(name: 'line' | 'bar' | 'pie' | 'candle' | 'studies') {
   })
 }
 
-const target = process.env.NC_ENTRY as 'line' | 'bar' | 'pie' | 'candle' | 'studies' | undefined
-if (!target || !['line', 'bar', 'pie', 'candle', 'studies'].includes(target)) {
-  throw new Error('Set NC_ENTRY=line|bar|pie|candle|studies when using vite.entries.config.ts')
+const target = process.env.NC_ENTRY as
+  'line' | 'bar' | 'pie' | 'candle' | 'studies' | 'spark' | undefined
+if (!target || !['line', 'bar', 'pie', 'candle', 'studies', 'spark'].includes(target)) {
+  throw new Error(
+    'Set NC_ENTRY=line|bar|pie|candle|studies|spark when using vite.entries.config.ts',
+  )
 }
 
 export default entryConfig(target)

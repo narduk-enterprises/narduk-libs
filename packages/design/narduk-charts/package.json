@@ -37,6 +37,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/studies.js"
     },
+    "./spark": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/spark.js"
+    },
     "./style.css": "./dist/narduk-charts.css"
   },
   "sideEffects": [
@@ -47,8 +51,8 @@
   ],
   "scripts": {
     "dev": "histoire dev",
-    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts && rm -f dist/entry-*.css",
-    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts",
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && NC_ENTRY=spark vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts && rm -f dist/entry-*.css",
+    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && NC_ENTRY=spark vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "lint": "narduk-lint",

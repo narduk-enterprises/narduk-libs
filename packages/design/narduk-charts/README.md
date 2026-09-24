@@ -232,6 +232,27 @@ breaks the line where the data breaks, and `showIsolatedPoints` (on by default)
 draws the values that end up with no measured neighbour, which would otherwise
 be invisible.
 
+When the tile only needs an SVG `path` — no Vue chart, no CSS — import
+`@narduk-enterprises/narduk-charts/spark`. `sparkAxis` picks a Y domain,
+`sparkPath` turns a series into a `d` string, and `trailingSparkWindow` keeps
+the last 24h / 7d / 30d of `{ t }` samples.
+
+```ts
+import {
+  sparkAxis,
+  sparkPath,
+  trailingSparkWindow,
+} from '@narduk-enterprises/narduk-charts/spark'
+
+const windowed = trailingSparkWindow(samples, '24h')
+const d = sparkPath(
+  windowed.map(point => point.v),
+  80,
+  24,
+  { axis: sparkAxis(windowed.map(point => point.v)) },
+)
+```
+
 ---
 
 ### NardukBarChart
