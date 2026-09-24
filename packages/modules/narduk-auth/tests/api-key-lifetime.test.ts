@@ -140,6 +140,10 @@ describe('POST /api/auth/api-keys mint path', () => {
       name: 'ops',
       scopes: ['*'],
       rawKey: 'nk_testkey',
+      // Stubbed `resolveApiKeyExpiry(30)` in tests/stubs/layer-auth.ts. A
+      // handler that skips `mintExpiry.expiresInDays` and returns the raw
+      // `expiresInDays` (or omits expiry) fails this.
+      expiresAt: 1_700_000_000 + 30 * 86_400,
     })
   })
 })

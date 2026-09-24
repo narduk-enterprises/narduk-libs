@@ -448,15 +448,40 @@ describe('AuthApiKeysPanel mount', () => {
   })
 
   it('warns that a wildcard token must expire and cannot use Never', async () => {
+    authApiMocks.createApiKey.mockResolvedValue({
+      id: 'k-star',
+      rawKey: 'nk_star',
+      scopes: ['*'],
+      expiresAt: 1_700_000_000 + 30 * 86_400,
+    })
     const wrapper = mountAuthCard(AuthApiKeysPanel)
     await flushPromises()
+
+    await wrapper.get('input').setValue('Ops token')
+    const offeredBefore = wrapper.findAll('[data-select-item]').map((item) => item.text())
+    expect(offeredBefore).toContain('Never')
+    await wrapper.get('[data-select-item="Never"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-select-value]').attributes('data-select-value')).toBe('Never')
 
     await wrapper.get('textarea').setValue('*')
     await flushPromises()
 
+    const offeredAfter = wrapper.findAll('[data-select-item]').map((item) => item.text())
+    expect(offeredAfter).toEqual(['7 days', '30 days', '90 days'])
+    expect(offeredAfter).not.toContain('Never')
+    expect(wrapper.get('[data-select-value]').attributes('data-select-value')).toBe('30 days')
     expect(wrapper.text()).toContain('Wildcard token')
     expect(wrapper.text()).toContain('capped at 90 days')
     expect(wrapper.text()).not.toContain('No expiry selected')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(authApiMocks.createApiKey).toHaveBeenCalledWith({
+      name: 'Ops token',
+      scopes: ['*'],
+      expiresInDays: 30,
+    })
     wrapper.unmount()
   })
 
