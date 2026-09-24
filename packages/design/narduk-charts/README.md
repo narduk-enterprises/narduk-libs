@@ -234,24 +234,26 @@ be invisible.
 
 When the tile only needs an SVG `path` — no Vue chart, no CSS — import
 `sparkAxis`, `sparkPath`, and `trailingSparkWindow` from
-`@narduk-enterprises/narduk-charts`. `sparkAxis` picks a Y domain, `sparkPath`
-turns a series into a `d` string, and `trailingSparkWindow` keeps the last 24h /
-7d / 30d of `{ t }` samples.
+`@narduk-enterprises/narduk-charts/spark`. `sparkAxis` picks a Y domain,
+`sparkPath` turns a series into a `d` string, and `trailingSparkWindow` keeps
+the last 24h / 7d / 30d of `{ t }` samples. Pass those timestamps as `times` so
+X follows `t` instead of array index. The window helper keeps input order; sort
+by `t` first if the feed is unsorted.
 
 ```ts
 import {
   sparkAxis,
   sparkPath,
   trailingSparkWindow,
-} from '@narduk-enterprises/narduk-charts'
+} from '@narduk-enterprises/narduk-charts/spark'
 
 const windowed = trailingSparkWindow(samples, '24h')
-const d = sparkPath(
-  windowed.map(point => point.v),
-  80,
-  24,
-  { axis: sparkAxis(windowed.map(point => point.v)) },
-)
+const values = windowed.map(point => point.v)
+const times = windowed.map(point => point.t)
+const d = sparkPath(values, 80, 24, {
+  axis: sparkAxis(values),
+  times,
+})
 ```
 
 ---
@@ -664,10 +666,13 @@ DOM-free path helpers for KPI / marine tiles that draw their own `<path>`:
   sits close to zero pin `min` at 0 (`fromZero`); tight bands far from zero stay
   `linear`. Override with `mode` / `padRatio` (default `0.08`).
 - **`sparkPath(values, width, height, options?)`** — SVG path `d`. Null / NaN
-  break the line. Default `inset` is `1` so a 1px stroke is not clipped.
+  break the line. Default `inset` is `1` so a 1px stroke is not clipped. Pass
+  `times` (same length as `values`) to space X by timestamp; otherwise X is
+  index-spaced.
 - **`trailingSparkWindow(points, window, now?)`** — keep `{ t }` samples in the
   last `24h` / `7d` / `30d`. When `now` is omitted, the latest finite `t` is the
-  window end so a stale station still shows its own last window.
+  window end so a stale station still shows its own last window. Preserves input
+  order.
 - **`SPARK_WINDOWS`**, **`SPARK_WINDOW_MS`**, **`sparkWindowMs(window)`** — the
   three inclusive trailing windows.
 

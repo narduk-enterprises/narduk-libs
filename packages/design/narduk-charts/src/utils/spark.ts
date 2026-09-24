@@ -78,6 +78,13 @@ export interface SparkPathOptions {
   /** Inset in px so a 1px stroke is not clipped. Default `1`. */
   inset?: number
   smooth?: boolean
+  /**
+   * Parallel timestamps for `values`. When present and the same length, X is
+   * scaled by `t` so irregular samples keep their gaps. A finite value with a
+   * non-finite time is treated as a break. Omit (or pass a different length)
+   * to space X by array index.
+   */
+  times?: Array<number | null | undefined>
 }
 
 /**
@@ -97,14 +104,30 @@ export function sparkPath(
   const innerWidth = Math.max(0, width - inset * 2)
   const innerHeight = Math.max(0, height - inset * 2)
   const last = Math.max(1, values.length - 1)
+  const times = options.times
+  const useTimes = times != null && times.length === values.length
+  const finiteTimes = useTimes
+    ? times.filter((time): time is number => time != null && Number.isFinite(time))
+    : []
+  const tMin = finiteTimes.length > 0 ? Math.min(...finiteTimes) : 0
+  const tMax = finiteTimes.length > 0 ? Math.max(...finiteTimes) : 1
 
-  const segments = segmentLinePoints(
-    values.map(value => (value == null || Number.isNaN(value) ? null : value)),
-    (index, value) => [
-      inset + linearScale(index, 0, last, 0, innerWidth),
-      inset + linearScale(value, axis.max, axis.min, 0, innerHeight),
-    ],
-  )
+  const series = values.map((value, index) => {
+    if (value == null || Number.isNaN(value)) return null
+    if (useTimes && finiteTimes.length > 0) {
+      const time = times[index]
+      if (time == null || !Number.isFinite(time)) return null
+    }
+    return value
+  })
+
+  const segments = segmentLinePoints(series, (index, value) => {
+    const x =
+      useTimes && finiteTimes.length > 0
+        ? linearScale(times[index] as number, tMin, tMax, 0, innerWidth)
+        : linearScale(index, 0, last, 0, innerWidth)
+    return [inset + x, inset + linearScale(value, axis.max, axis.min, 0, innerHeight)]
+  })
 
   return lineSegmentsToPaths(segments, options.smooth === true)
     .filter(Boolean)
@@ -120,6 +143,7 @@ export interface SparkTimedPoint {
  * Keep samples whose `t` falls in the trailing window ending at `now`.
  * When `now` is omitted, the latest finite `t` is the end (a stale station
  * still shows its own last 24h / 7d / 30d, not an empty wall-clock window).
+ * Preserves input order; sort by `t` first if the feed is unsorted.
  */
 export function trailingSparkWindow<T extends SparkTimedPoint>(
   points: readonly T[],

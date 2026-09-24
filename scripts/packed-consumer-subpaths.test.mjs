@@ -136,6 +136,7 @@ test('the live workspace plans narduk-ui, narduk-charts and narduk-shell subpath
     '@narduk-enterprises/narduk-charts/pie',
     '@narduk-enterprises/narduk-charts/candle',
     '@narduk-enterprises/narduk-charts/studies',
+    '@narduk-enterprises/narduk-charts/spark',
     '@narduk-enterprises/narduk-charts/style.css',
   ])
 

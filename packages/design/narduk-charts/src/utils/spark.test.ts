@@ -76,6 +76,15 @@ describe('sparkPath', () => {
     })
     expect(d).toBe('M0,20 L100,0')
   })
+
+  it('spaces X by timestamp when times are supplied', () => {
+    const d = sparkPath([0, 5, 10], 100, 20, {
+      axis: { max: 10, min: 0, mode: 'linear' },
+      inset: 0,
+      times: [0, 10, 100],
+    })
+    expect(d).toBe('M0,20 L10,10 L100,0')
+  })
 })
 
 describe('trailingSparkWindow', () => {
@@ -100,5 +109,14 @@ describe('trailingSparkWindow', () => {
 
   it('returns an empty list when nothing falls in the window', () => {
     expect(trailingSparkWindow([{ t: end - 40 * hour }], '24h', end)).toEqual([])
+  })
+
+  it('preserves input order instead of sorting by t', () => {
+    const shuffled = [
+      { t: end, v: 4 },
+      { t: end - 2 * hour, v: 3 },
+      { t: end - 10 * hour, v: 2 },
+    ]
+    expect(trailingSparkWindow(shuffled, '24h', end).map(point => point.v)).toEqual([4, 3, 2])
   })
 })

@@ -7,7 +7,8 @@
  * packed tarball in an external consumer, but the only package whose `exports`
  * subpaths were ever exercised there was narduk-testkit, by name, in a hardcoded
  * block. Every other package's exports map -- narduk-ui's `./tokens.css`,
- * narduk-charts's five entry points and `./style.css`, narduk-core's six plain
+ * narduk-charts's line/bar/pie/candle/studies/spark entries and `./style.css`,
+ * narduk-core's six plain
  * subpaths -- was believed, not proven: a subpath naming a file the `files`
  * allowlist does not ship installs cleanly and only fails in the app that
  * imports it.
