@@ -100,14 +100,17 @@ export interface WebJourneyContext {
    */
   noControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
   /**
-   * Wait until a distinctive sentence that *was* on the page has left.
-   * Fails if the text was never seen: a count of zero on the first sample
-   * is not evidence it went away.
+   * Wait until a distinctive sentence that *was visible* on the page is no
+   * longer visible. Fails if the text was never seen: a hidden-only or
+   * zero-count first sample is not evidence it went away. Hidden template
+   * nodes do not count as seen (narduk-libs#67).
    */
   gone(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
   /**
    * Fill a field (CSS selector or accessible label) and read the value back.
    * A write that lands in the wrong box, or not at all, fails the step.
+   * Labels may contain `:` or brackets (`Email:`, `Quantity [kg]`); pass an
+   * explicit `input[…]` / `#id` / `.class` when you mean a selector.
    */
   fill(target: string, value: string, opts?: { timeout?: number; nth?: number }): Promise<void>
   /** Set files on a file input. `page` stays the escape hatch for everything else. */

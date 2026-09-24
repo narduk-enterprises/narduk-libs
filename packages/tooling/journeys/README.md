@@ -103,9 +103,13 @@ once, and it does not match body-text substrings (narduk-libs#67):
   (`Record as sent` matching `Records that the invoice was sent.`), and do not
   use `waitFor({ state: 'detached' })` — that resolves immediately against a
   locator matching nothing.
-- `gone(text)` — a distinctive sentence that was on the page has left. A first
-  sample of nothing is not evidence it went away.
-- `fill(target, value)` — writes, then reads the value back.
+- `gone(text)` — a distinctive sentence that was visible has left (including
+  hidden-but-still-in-the-tree). A first sample of nothing, or of a hidden
+  template node, is not evidence it went away.
+- `fill(target, value)` — writes, then reads the value back. Labels may contain
+  `:` or brackets (`Email:`, `Quantity [kg]`); pass `input[name=…]`, `#id`, or
+  `.class` when you mean a selector. A missing field fails naming the target and
+  URL, not as a generic Playwright fill timeout.
 - `attach(selector, file)` — a file input.
 
 `page` stays the escape hatch. Do not assert the absence of a control by body

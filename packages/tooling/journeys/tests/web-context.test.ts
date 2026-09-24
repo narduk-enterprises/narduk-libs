@@ -398,13 +398,47 @@ describe('assertion vocabulary (#67)', () => {
     ).rejects.toThrow(/never saw "Records that the invoice was sent\."/)
   })
 
-  it('gone() waits until text that was present has left', async () => {
-    let count = 1
+  it('gone() does not treat a hidden-only node as having been seen', async () => {
     const locator = locatorFrom({
-      count: () => {
-        const current = count
-        count = 0
+      count: () => 1,
+      isVisible: () => false,
+    })
+    const page = {
+      url: () => 'https://yard.example/board',
+      getByText: () => locator,
+    } as unknown as Page
+    await expect(
+      createContextApi(page, 'https://yard.example', 'test').gone('Working…', { timeout: 40 }),
+    ).rejects.toThrow(/never saw "Working…"/)
+  })
+
+  it('gone() succeeds when visible text is hidden but still in the tree', async () => {
+    let visible = true
+    const locator = locatorFrom({
+      count: () => 1,
+      isVisible: () => {
+        const current = visible
+        visible = false
         return current
+      },
+    })
+    const page = {
+      url: () => 'https://yard.example/board',
+      getByText: () => locator,
+    } as unknown as Page
+    await expect(
+      createContextApi(page, 'https://yard.example', 'test').gone('Working…', { timeout: 200 }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('gone() waits until text that was present has left', async () => {
+    let remaining = 1
+    const locator = locatorFrom({
+      count: () => remaining,
+      isVisible: () => {
+        const visible = remaining > 0
+        remaining = 0
+        return visible
       },
     })
     const page = {
@@ -460,8 +494,28 @@ describe('assertion vocabulary (#67)', () => {
     const api = createContextApi(page, 'https://yard.example', 'test')
     await api.fill('Quantity', '12')
     await api.fill('input[name=qty]', '12')
-    expect(labels).toEqual(['Quantity'])
+    await api.fill('Email:', '12')
+    await api.fill('Quantity [kg]', '12')
+    expect(labels).toEqual(['Quantity', 'Email:', 'Quantity [kg]'])
     expect(selectors).toEqual(['input[name=qty]'])
+  })
+
+  it('fill() names the target when the field never appears', async () => {
+    const locator = locatorFrom({
+      count: () => 0,
+      async waitFor() {
+        throw new Error('Timeout 40ms exceeded.')
+      },
+    })
+    const page = {
+      url: () => 'https://yard.example/form',
+      getByLabel: () => locator,
+    } as unknown as Page
+    await expect(
+      createContextApi(page, 'https://yard.example', 'test').fill('Quantity', '12', {
+        timeout: 40,
+      }),
+    ).rejects.toThrow('no field matching "Quantity" on https://yard.example/form within 40ms')
   })
 
   it('attach() sets files through a bounded input locator', async () => {

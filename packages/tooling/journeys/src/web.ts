@@ -173,11 +173,13 @@ function quoted(value: string | RegExp): string {
 }
 
 function looksLikeSelector(target: string): boolean {
+  const trimmed = target.trim()
+  // Labels commonly contain `:`, `=`, and unit brackets (`Quantity [kg]`).
+  // Treat as a selector only when it starts like one or carries an attribute.
   return (
-    /[#.=:>~+]/.test(target) ||
-    target.includes('[') ||
-    target.includes(']') ||
-    /^(?:input|textarea|select)\b/i.test(target)
+    /^[.#[]/.test(trimmed) ||
+    /^(?:input|textarea|select)\b/i.test(trimmed) ||
+    /\[[a-z][\w-]*\s*[~|^$*]?=/i.test(trimmed)
   )
 }
 
@@ -204,7 +206,7 @@ type PresenceLocator = {
  * Presence is a visible match. `waitFor({ state: 'visible' })` can fail while
  * `count()` is still non-zero (off-screen, `aria-hidden`, a template node).
  * Swallowing that failure and treating count as success was the hidden-match
- * pass #818 called out.
+ * pass narduk-libs#67 called out.
  */
 async function hasVisibleMatch(locator: PresenceLocator, timeout: number): Promise<boolean> {
   const first = locator.first()
@@ -338,7 +340,8 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
       let saw = false
       const left = await pollUntil(async () => {
         const count = await locator.count()
-        if (count > 0) {
+        const visible = count > 0 && (await locator.first().isVisible())
+        if (visible) {
           saw = true
           return false
         }
@@ -362,7 +365,12 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
         ? page.locator(target)
         : page.getByLabel(target, { exact: true })
       const locator = field.nth(opts.nth ?? 0)
-      await locator.waitFor({ state: 'visible', timeout }).catch(() => {})
+      if (!(await hasVisibleMatch(locator, timeout))) {
+        const url = pageUrl(page)
+        throw new Error(
+          `no field matching ${JSON.stringify(target)}${url ? ` on ${url}` : ''} within ${timeout}ms`,
+        )
+      }
       await locator.fill(value, { timeout })
       const read = await locator.inputValue()
       if (read !== value) {
