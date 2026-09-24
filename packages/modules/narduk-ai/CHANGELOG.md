@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.3.22
+
+### Patch Changes
+
+- Updated dependencies [dfa8d39]
+  - @narduk-enterprises/narduk-core@2.13.1
+
 ## 0.3.21
 
 ### Patch Changes
