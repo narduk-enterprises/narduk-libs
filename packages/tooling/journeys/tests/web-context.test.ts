@@ -210,6 +210,7 @@ describe('assertion vocabulary (#67)', () => {
   function locatorFrom(hooks: {
     count: () => number | Promise<number>
     waitFor?: (opts?: { state?: string; timeout?: number }) => Promise<void>
+    isVisible?: () => boolean | Promise<boolean>
     fill?: (value: string) => Promise<void>
     inputValue?: () => Promise<string>
     setInputFiles?: (files: unknown, opts?: { timeout?: number }) => Promise<void>
@@ -221,6 +222,9 @@ describe('assertion vocabulary (#67)', () => {
       nth: () => locator,
       async count() {
         return hooks.count()
+      },
+      async isVisible() {
+        return hooks.isVisible ? hooks.isVisible() : (await hooks.count()) > 0
       },
       async waitFor(opts?: { state?: string; timeout?: number }) {
         records?.push({ method: 'waitFor', options: opts })
@@ -277,6 +281,23 @@ describe('assertion vocabulary (#67)', () => {
     )
   })
 
+  it('see() does not pass when the text is in the DOM but not visible', async () => {
+    const locator = locatorFrom({
+      count: () => 1,
+      isVisible: () => false,
+      async waitFor() {
+        throw new Error('Timeout 40ms exceeded.')
+      },
+    })
+    const page = {
+      url: () => 'https://yard.example/board',
+      getByText: () => locator,
+    } as unknown as Page
+    await expect(
+      createContextApi(page, 'https://yard.example', 'test').see('VERIFIED', { timeout: 40 }),
+    ).rejects.toThrow('expected "VERIFIED" on https://yard.example/board within 40ms')
+  })
+
   it('see() matches a string exactly, so VERIFIED does not pass on PENDING VERIFICATION', async () => {
     const seen: Array<{ exact?: boolean }> = []
     const locator = locatorFrom({
@@ -309,6 +330,23 @@ describe('assertion vocabulary (#67)', () => {
     } as unknown as Page
     await createContextApi(page, 'https://yard.example', 'test').hasControl('Cancel')
     expect(seen).toEqual([{ name: 'Cancel', exact: true }])
+  })
+
+  it('hasControl() does not pass when the control is in the tree but not visible', async () => {
+    const locator = locatorFrom({
+      count: () => 1,
+      isVisible: () => false,
+      async waitFor() {
+        throw new Error('Timeout 40ms exceeded.')
+      },
+    })
+    const page = {
+      url: () => 'https://yard.example/board',
+      getByRole: () => locator,
+    } as unknown as Page
+    await expect(
+      createContextApi(page, 'https://yard.example', 'test').hasControl('Cancel', { timeout: 40 }),
+    ).rejects.toThrow(/^no button matching "Cancel" on https:\/\/yard.example\/board$/)
   })
 
   it('noControl() polls count() to zero and never waitFor(detached)', async () => {

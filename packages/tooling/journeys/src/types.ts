@@ -77,21 +77,26 @@ export interface WebJourneyContext {
   /** Click by accessible name or THROW naming what was missing. */
   must(name: string | RegExp, opts?: { role?: string; nth?: number }): Promise<void>
   /**
-   * Wait until this exact text is on the page. A string is matched exactly —
-   * `see('VERIFIED')` does not pass on `PENDING VERIFICATION` — and the helper
-   * waits, it does not read once (narduk-libs#67). Throws naming the text, the
-   * URL and the timeout. Prefer `hasControl` when the claim is about a control.
+   * Wait until this exact text is visible on the page. A string is matched
+   * exactly — `see('VERIFIED')` does not pass on `PENDING VERIFICATION` — and
+   * the helper waits, it does not read once (narduk-libs#67). A match that is
+   * only in the DOM (hidden, `aria-hidden`, a template node) is not enough.
+   * Throws naming the text, the URL and the timeout. Prefer `hasControl` when
+   * the claim is about a control.
    */
   see(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
   /**
-   * Wait until a control with this accessible name is offered. Never body
-   * text: `hasControl('Cancel')` does not pass on a `Cancelled` label.
+   * Wait until a control with this accessible name is visible. Never body
+   * text: `hasControl('Cancel')` does not pass on a `Cancelled` label. A
+   * hidden match is not "offered".
    */
   hasControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
   /**
    * Poll until no control with this accessible name remains. Never body text,
    * and never `waitFor({ state: 'detached' })` — that resolves immediately
-   * against a locator matching nothing (narduk-libs#67).
+   * against a locator matching nothing (narduk-libs#67). Succeeds immediately
+   * if the control was never in the tree; call `hasControl` first when you
+   * mean it disappeared after an action.
    */
   noControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
   /**

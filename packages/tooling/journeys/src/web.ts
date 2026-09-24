@@ -192,6 +192,26 @@ function textLocator(page: Page, text: string | RegExp) {
   return typeof text === 'string' ? page.getByText(text, { exact: true }) : page.getByText(text)
 }
 
+type PresenceLocator = {
+  count: () => Promise<number>
+  first: () => {
+    waitFor: (opts: { state: 'visible'; timeout: number }) => Promise<void>
+    isVisible: () => Promise<boolean>
+  }
+}
+
+/**
+ * Presence is a visible match. `waitFor({ state: 'visible' })` can fail while
+ * `count()` is still non-zero (off-screen, `aria-hidden`, a template node).
+ * Swallowing that failure and treating count as success was the hidden-match
+ * pass #818 called out.
+ */
+async function hasVisibleMatch(locator: PresenceLocator, timeout: number): Promise<boolean> {
+  const first = locator.first()
+  await first.waitFor({ state: 'visible', timeout }).catch(() => {})
+  return (await locator.count()) > 0 && (await first.isVisible())
+}
+
 /**
  * The accessible names present for `role`, capped and truncated. Read with
  * `evaluateAll`, which never waits, so a failing path stays as fast as it was;
@@ -284,11 +304,7 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
     async see(text, opts = {}) {
       const timeout = assertionTimeout(opts.timeout)
       const locator = textLocator(page, text)
-      await locator
-        .first()
-        .waitFor({ state: 'visible', timeout })
-        .catch(() => {})
-      if ((await locator.count()) === 0) {
+      if (!(await hasVisibleMatch(locator, timeout))) {
         const url = pageUrl(page)
         throw new Error(`expected ${quoted(text)} on ${url || 'the page'} within ${timeout}ms`)
       }
@@ -297,11 +313,7 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
       const timeout = assertionTimeout(opts.timeout)
       const role = (opts.role ?? 'button') as Parameters<Page['getByRole']>[0]
       const locator = roleLocator(page, role, name)
-      await locator
-        .first()
-        .waitFor({ state: 'visible', timeout })
-        .catch(() => {})
-      if ((await locator.count()) === 0) {
+      if (!(await hasVisibleMatch(locator, timeout))) {
         throw new Error(await describeMissingControl(page, String(role), name))
       }
     },
