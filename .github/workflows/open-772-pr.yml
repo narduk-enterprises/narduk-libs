@@ -66,5 +66,8 @@ jobs:
             url="$(gh pr create --base main --head analytics-standard-mode-772 --title "${PR_TITLE}" --body "${PR_BODY}")"
             echo "Opened ${url}"
           fi
-          gh pr edit "${url}" --add-label review-deep --add-label review-now
-          echo "Labeled review-deep and review-now on ${url}"
+          # Labels are consumed before launch. Re-add review-now on the new head
+          # (c71d2a9e). Do not add review-deep here — that races the standard request.
+          gh pr edit "${url}" --remove-label review-now || true
+          gh pr edit "${url}" --add-label review-now
+          echo "Labeled review-now on ${url}"
