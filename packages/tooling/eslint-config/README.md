@@ -60,9 +60,12 @@ export default createAppLintConfig({
 export default composeSharedConfigs({ packs: ['a11y'], communityLayer: false })
 ```
 
-Parser layer and `eslint-config-prettier` still apply. Turning the tail back on
-later is when those `error`-severity community rules (`import-x/no-cycle`,
-`import-x/named`, `unicorn/no-instanceof-builtins`, `unicorn/throw-new-error`,
+Parser layer, `eslint-config-prettier`, and the baseline tail still apply:
+`narduk/ignores` (`.nuxt/**`, `.output/**`, `dist/**`, …), the
+`@typescript-eslint` project rules, console hygiene, rule-authoring relaxations,
+and the composable-helpers bypass. Turning the plugin tail back on later is when
+those `error`-severity community rules (`import-x/no-cycle`, `import-x/named`,
+`unicorn/no-instanceof-builtins`, `unicorn/throw-new-error`,
 `promise/no-return-wrap`, `regexp` recommended,
 `@eslint-community/eslint-comments/no-unused-disable`) will surface pre-existing
 findings; budget triage then, not on the first pack.
@@ -287,12 +290,12 @@ New major. A consumer `eslint.config.mjs` that calls `createAppLintConfig` with
 capability packs should need only a version bump, an ESLint 10 upgrade, and a
 sweep of stale `eslint-disable` comments.
 
-v1's `recommended` / `app` presets did not compose this community layer.
+v1's `recommended` / `app` presets did not compose this community plugin layer.
 Adopting v2 one pack at a time on an existing app is therefore
 `communityLayer: false` (above) or a direct
 `@narduk-enterprises/eslint-config/config/<pack>` import — not "name one pack
-and inherit the whole tail." The default stays on for callers that omit the
-flag.
+and inherit the plugin wave." Baseline ignores and housekeeping still apply. The
+default stays on for callers that omit the flag.
 
 ### 1. Move the app to ESLint 10
 

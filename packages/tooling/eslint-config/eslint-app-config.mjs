@@ -140,9 +140,13 @@ const parserConfigs = [
   },
 ]
 
-// ─── Shared community layer ─────────────────────────────────────────────────
+// ─── Shared tail ────────────────────────────────────────────────────────────
+//
+// Two arrays so `communityLayer: false` can skip the plugin finding wave
+// without dropping Nuxt ignores or the typescript/console housekeeping
+// (narduk-libs#167, review on #813).
 
-const sharedTailConfigs = [
+const sharedBaselineTailConfigs = [
   {
     name: 'narduk/ignores',
     ignores: ['.agents/**', '.nuxt/**', '.output/**', 'dist/**', 'node_modules/**', '**/*.d.ts'],
@@ -154,38 +158,6 @@ const sharedTailConfigs = [
     rules: {
       'no-unused-vars': 'off',
       'no-undef': 'off',
-    },
-  },
-
-  {
-    name: 'narduk/vue-house-style',
-    files: ['**/*.vue'],
-    plugins: { vue: vuePlugin },
-    rules: {
-      'vue/component-name-in-template-casing': [
-        'warn',
-        'PascalCase',
-        { registeredComponentsOnly: false },
-      ],
-      'vue/prefer-define-options': 'warn',
-      'vue/prefer-import-from-vue': 'warn',
-      'vue/block-order': ['warn', { order: ['script', 'template', 'style'] }],
-      'vue/attributes-order': 'off',
-      'vue/no-multiple-template-root': 'off',
-      'vue/no-v-for-template-key': 'off',
-      'vue/no-v-html': 'warn',
-      'vue/define-macros-order': 'warn',
-      'vue/define-props-declaration': ['warn', 'type-based'],
-      'vue/define-emits-declaration': ['warn', 'type-based'],
-      'vue/no-ref-as-operand': 'warn',
-      'vue/no-watch-after-await': 'warn',
-      // Replaces v1's narduk/no-unknown-nuxt-ui-component. Fail-closed here;
-      // createAppLintConfig() replaces it with the app's real component graph.
-      'vue/no-undef-components': [
-        'warn',
-        { ignorePatterns: NUXT_BUILT_IN_COMPONENT_IGNORE_PATTERNS },
-      ],
-      'vue/no-undef-properties': 'warn',
     },
   },
 
@@ -258,6 +230,40 @@ const sharedTailConfigs = [
     files: ['app/composables/helpers/**/*.ts'],
     rules: {
       'narduk/require-use-prefix-for-composables': 'off',
+    },
+  },
+]
+
+const sharedCommunityPluginTailConfigs = [
+  {
+    name: 'narduk/vue-house-style',
+    files: ['**/*.vue'],
+    plugins: { vue: vuePlugin },
+    rules: {
+      'vue/component-name-in-template-casing': [
+        'warn',
+        'PascalCase',
+        { registeredComponentsOnly: false },
+      ],
+      'vue/prefer-define-options': 'warn',
+      'vue/prefer-import-from-vue': 'warn',
+      'vue/block-order': ['warn', { order: ['script', 'template', 'style'] }],
+      'vue/attributes-order': 'off',
+      'vue/no-multiple-template-root': 'off',
+      'vue/no-v-for-template-key': 'off',
+      'vue/no-v-html': 'warn',
+      'vue/define-macros-order': 'warn',
+      'vue/define-props-declaration': ['warn', 'type-based'],
+      'vue/define-emits-declaration': ['warn', 'type-based'],
+      'vue/no-ref-as-operand': 'warn',
+      'vue/no-watch-after-await': 'warn',
+      // Replaces v1's narduk/no-unknown-nuxt-ui-component. Fail-closed here;
+      // createAppLintConfig() replaces it with the app's real component graph.
+      'vue/no-undef-components': [
+        'warn',
+        { ignorePatterns: NUXT_BUILT_IN_COMPONENT_IGNORE_PATTERNS },
+      ],
+      'vue/no-undef-properties': 'warn',
     },
   },
 
@@ -548,10 +554,12 @@ function parseComposeSharedConfigsArgs(args) {
  * Compose the shared parser and community layers with one or more capability
  * packs. Prettier's disable config is always last.
  *
- * Pack-name arguments keep today's composition, including the community tail
- * (`import-x`, `unicorn`, `promise`, `security`, `regexp`, `eslint-comments`,
- * `vitest`, Vue house style). Pass `{ packs, communityLayer: false }` to take
- * those packs without that tail — parser layer and Prettier stay (narduk-libs#167).
+ * Pack-name arguments keep today's composition, including the community plugin
+ * tail (`import-x`, `unicorn`, `promise`, `security`, `regexp`,
+ * `eslint-comments`, `vitest`, Vue house style). Pass
+ * `{ packs, communityLayer: false }` to take those packs without that wave.
+ * Parser layer, Prettier, and the baseline tail (`narduk/ignores`,
+ * typescript-eslint project rules, console hygiene) stay (narduk-libs#167).
  *
  * @param {...(string | string[] | ComposeSharedConfigsOptions)} args
  * @returns {import('eslint').Linter.Config[]}
@@ -578,7 +586,8 @@ export function composeSharedConfigs(...args) {
   return [
     ...parserConfigs,
     ...selectedCapabilityConfigs,
-    ...(communityLayer ? sharedTailConfigs : []),
+    ...sharedBaselineTailConfigs,
+    ...(communityLayer ? sharedCommunityPluginTailConfigs : []),
     prettierDisableConfig,
   ]
 }
@@ -990,7 +999,7 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {Function}                              options.withNuxt              app-local `withNuxt()` wrapper
  * @param {string[]}                              [options.capabilityPacks]
  * @param {boolean}                               [options.communityLayer=true] set false to omit the
- *   shared community tail; default stays on so existing callers do not change
+ *   community plugin tail; baseline ignores and housekeeping stay on
  * @param {'required'|'internal-only'|'disabled'} [options.seoMode]             accepted, inert in v2
  * @param {string[]}                              [options.internalOnlyPageGlobs] accepted, inert in v2
  * @param {string[]}                              [options.contentRelaxedFiles]

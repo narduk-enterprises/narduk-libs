@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 type FlatConfig = {
   name?: string
+  ignores?: string[]
   rules?: Record<string, unknown>
 }
 
@@ -19,7 +20,7 @@ interface AppConfigModule {
   createAppLintConfig: (options: Record<string, unknown>) => FlatConfig[]
 }
 
-/** Named entries that exist only because `sharedTailConfigs` is composed. */
+/** Named entries that exist only because the community plugin tail is composed. */
 const COMMUNITY_TAIL_CONFIG_NAMES = [
   'narduk/vue-house-style',
   'narduk/imports',
@@ -28,6 +29,14 @@ const COMMUNITY_TAIL_CONFIG_NAMES = [
   'narduk/eslint-directive-hygiene',
   'narduk/vitest',
   'narduk/security',
+] as const
+
+/** Housekeeping that must stay on when the plugin wave is opted out. */
+const BASELINE_TAIL_CONFIG_NAMES = [
+  'narduk/ignores',
+  'narduk/typescript-base-off',
+  'narduk/console-hygiene',
+  'narduk/typescript-project-rules',
 ] as const
 
 /** Rule prefixes the issue listed as the unplanned finding wave. */
@@ -61,6 +70,9 @@ const communityTailRules = (configs: FlatConfig[]): string[] =>
   ruleNames(configs.filter((entry) => entry.name !== PRETTIER_CONFIG_NAME)).filter((ruleName) =>
     COMMUNITY_TAIL_RULE_PREFIXES.some((prefix) => ruleName.startsWith(prefix)),
   )
+
+const hasNuxtIgnore = (configs: FlatConfig[]): boolean =>
+  configs.some((entry) => entry.name === 'narduk/ignores' && entry.ignores?.includes('.nuxt/**'))
 
 describe('composeSharedConfigs community-layer opt-out', () => {
   it('keeps the community tail on the existing pack-name call', () => {
@@ -100,6 +112,8 @@ describe('composeSharedConfigs community-layer opt-out', () => {
 
     expect(communityTailRules(composed)).toEqual([])
     expect(rules).not.toContain('vue/define-macros-order')
+    expect(names).toEqual(expect.arrayContaining([...BASELINE_TAIL_CONFIG_NAMES]))
+    expect(hasNuxtIgnore(composed)).toBe(true)
     expect(rules.some((ruleName) => ruleName.startsWith('vuejs-accessibility/'))).toBe(true)
     expect(composed.at(-1)?.name).toBe(PRETTIER_CONFIG_NAME)
   })
@@ -144,6 +158,8 @@ describe('createAppLintConfig community-layer opt-out', () => {
     }
 
     expect(communityTailRules(composed)).toEqual([])
+    expect(namedEntries(composed)).toEqual(expect.arrayContaining([...BASELINE_TAIL_CONFIG_NAMES]))
+    expect(hasNuxtIgnore(composed)).toBe(true)
     expect(
       ruleNames(composed).some((ruleName) => ruleName.startsWith('vuejs-accessibility/')),
     ).toBe(true)
