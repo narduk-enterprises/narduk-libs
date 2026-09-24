@@ -1,10 +1,12 @@
 ---
 '@narduk-enterprises/narduk-shell': minor
 '@narduk-enterprises/create-narduk-app': patch
+'@narduk-enterprises/libs-explorer': patch
 ---
 
 Add `NeSearchInput`: the debounced search field beside a collection (item 14,
-#261), the other half of `NeFilterBar`.
+#261), the other half of `NeFilterBar`. Explorer inventory, catalog, and usage
+ship beside the component so the private showcase stays complete.
 
 `v-model` is the applied term, not the keystroke — the box updates as you type
 and the model updates after 250 ms, the same window `useCollection` uses for
