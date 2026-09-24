@@ -484,10 +484,12 @@ export async function runDevelopmentDeploy(
       }
       const upload = context.upload ?? runDeploy
       const appDir = join(workspace, component.appDir)
-      if (upload(['triggers-deploy'], appDir, deployEnv) !== 0)
+      if (upload(['triggers-deploy'], appDir, deployEnv) !== 0) {
+        receipt.components[id].status = 'failed'
         throw new Error(
           `${id} trigger apply failed; inspect script schedules and routes before retrying`,
         )
+      }
       const declared = readDeclaredScriptTriggers(appDir)
       receipt.components[id].triggers = {
         crons: declared.triggers.crons,

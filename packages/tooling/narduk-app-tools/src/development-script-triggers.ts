@@ -56,7 +56,7 @@ export interface DeclaredScriptTriggers {
 }
 
 export interface ResolvedScriptTriggers {
-  /** Path the declared values were read from (artifact when it exists). */
+  /** Path that supplied the declared crons/routes (artifact only if it named one). */
   source: string
   triggers: DeclaredScriptTriggers
 }
@@ -154,6 +154,9 @@ export function mergeArtifactScriptTriggers(
         : {}
     result.triggers = { ...existing, crons: declared.crons }
   }
-  if (declared.routes !== undefined) result.routes = declared.routes
+  if (declared.routes !== undefined) {
+    result.routes = declared.routes
+    delete result.route
+  }
   return result
 }

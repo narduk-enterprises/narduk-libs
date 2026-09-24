@@ -696,6 +696,21 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
     })
   })
 
+  it('records trigger-apply failure as unproven with failed component status', async () => {
+    const h = harness()
+    await enter(h)
+    const upload = h.context.upload!
+    h.context.upload = (args, appDir, env, options) => {
+      if (args[0] === 'triggers-deploy') return 1
+      return upload(args, appDir, env, options)
+    }
+    const receipt = await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(receipt.outcome).toBe('unproven')
+    expect(receipt.components.web.status).toBe('failed')
+    expect(receipt.failure).toMatch(/trigger apply failed/u)
+    expect(h.cloudflare.serving('fixture-app')).toBe(receipt.components.web.candidateVersionId)
+  })
+
   it('gives the registry credential to a cold install only', async () => {
     const h = harness()
     await enter(h)

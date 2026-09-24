@@ -81,4 +81,16 @@ describe('declared Worker script triggers', () => {
       routes: ['app.example.com/*'],
     })
   })
+
+  it('drops singular route when the artifact supplies routes', () => {
+    const merged = mergeArtifactScriptTriggers(
+      { name: 'app', route: 'old.example.com/*' },
+      { route: 'new.example.com/*' },
+    )
+    expect(merged).toEqual({
+      name: 'app',
+      routes: ['new.example.com/*'],
+    })
+    expect(merged).not.toHaveProperty('route')
+  })
 })
