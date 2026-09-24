@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { digestJourney } from '../src/digest.js'
 import { expectedStepIds, promoteRun, verifyRun } from '../src/verify.js'
 import {
   attemptFiles,
@@ -105,6 +106,33 @@ describe('verifyRun', () => {
   it('fails an internally consistent run against a changed declaration', () => {
     const { directory, manifest } = freshAttempt()
     expect(verifyRun(catalog(), manifest, directory, { currentDigest: 'sha256:changed' })).toEqual([
+      expect.stringContaining('stale run'),
+    ])
+  })
+
+  it('does not treat a promoted capture as stale when a sibling journey is added (#66)', () => {
+    // The catalog-wide digest moves when journey N+1 is added. The unit of
+    // evidence is this journey: a capture that recorded its journey digest
+    // must still verify after that add.
+    const first = webJourney()
+    const { directory, manifest } = freshAttempt((m) => {
+      m.journeyDigest = digestJourney(first)
+    })
+    const two = catalog()
+    two.journeys.push(webJourney({ id: 'second-journey' }))
+    expect(verifyRun(two, manifest, directory, { currentDigest: 'sha256:after-sibling' })).toEqual(
+      [],
+    )
+  })
+
+  it("still treats a capture as stale when that journey's declaration moves (#66)", () => {
+    const original = webJourney()
+    const { directory, manifest } = freshAttempt((m) => {
+      m.journeyDigest = digestJourney(original)
+    })
+    const changed = catalog()
+    changed.journeys[0] = webJourney({ outcome: 'A different ending.' })
+    expect(verifyRun(changed, manifest, directory, { currentDigest: DIGEST })).toEqual([
       expect.stringContaining('stale run'),
     ])
   })

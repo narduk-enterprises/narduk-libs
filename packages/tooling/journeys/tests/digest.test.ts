@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { digestDirectory, digestFiles } from '../src/digest.js'
+import { digestDirectory, digestFiles, digestJourney } from '../src/digest.js'
+import { drivenJourney, webJourney } from './helpers.js'
 
 describe('digestFiles', () => {
   it('is stable across insertion order', () => {
@@ -45,5 +46,56 @@ describe('digestDirectory', () => {
 
     writeFileSync(join(dir, 'seed.json'), Buffer.alloc(1_200_000, 'b'))
     expect(digestDirectory(dir)).not.toBe(before)
+  })
+})
+
+describe('digestJourney', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { force: true, recursive: true })
+  })
+
+  it('does not move when a sibling journey is added to the catalog (#66)', () => {
+    const first = webJourney({ id: 'one-load-gate-to-gate' })
+    const before = digestJourney(first)
+    const sibling = webJourney({ id: 'the-money-day' })
+    expect(digestJourney(first)).toBe(before)
+    expect(digestJourney(sibling)).not.toBe(before)
+  })
+
+  it('does not move when a sibling file is added under the catalog directory (#66)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'journeys-digest-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 'one.ts'), 'export const one = 1\n')
+    const first = webJourney({ id: 'one-load-gate-to-gate' })
+    const beforeJourney = digestJourney(first)
+    const beforeDirectory = digestDirectory(dir)
+
+    writeFileSync(join(dir, 'two.ts'), 'export const two = 2\n')
+    expect(digestDirectory(dir)).not.toBe(beforeDirectory)
+    expect(digestJourney(first)).toBe(beforeJourney)
+  })
+
+  it("moves when this journey's prose or step body changes", () => {
+    const base = digestJourney(webJourney({ id: 'walk' }))
+    expect(digestJourney(webJourney({ id: 'walk', title: 'Changed title' }))).not.toBe(base)
+    expect(
+      digestJourney(
+        webJourney({
+          id: 'walk',
+          steps: [
+            {
+              id: 'open-start',
+              say: 'Open the start page',
+              do: async () => {
+                void 1
+              },
+            },
+            { id: 'finish', say: 'Press Finish', do: async () => {} },
+          ],
+        }),
+      ),
+    ).not.toBe(base)
+    expect(digestJourney(drivenJourney({ id: 'walk' }))).not.toBe(base)
   })
 })

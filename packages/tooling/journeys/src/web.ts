@@ -23,6 +23,7 @@ import { spawnSync } from 'node:child_process'
 import { test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 
+import { digestJourney } from './digest.js'
 import { sha256File, videoSeconds } from './media.js'
 
 import type {
@@ -435,6 +436,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     base: options.base,
     commit,
     declarationDigest: options.declarationDigest,
+    journeyDigest: digestJourney(journey),
     appRevision,
     profile: {
       name: options.profileName,

@@ -4,10 +4,17 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { digestJourney } from '../src/digest.js'
 import type { RunManifest } from '../src/types.js'
 import { runPaths } from '../src/verify.js'
 import { buildWalkthrough } from '../src/walkthrough.js'
-import { attemptFiles, catalog, passedCaptureManifest, writeAttempt } from './helpers.js'
+import {
+  attemptFiles,
+  catalog,
+  passedCaptureManifest,
+  webJourney,
+  writeAttempt,
+} from './helpers.js'
 
 const DIGEST = 'sha256:current'
 
@@ -75,6 +82,21 @@ describe('buildWalkthrough', () => {
       manifest.declarationDigest = 'sha256:older'
     })
     expect(() => buildWalkthrough(catalog(), options(outRoot))).toThrow(/stale run/)
+  })
+
+  it('does not refuse a promoted capture as stale when a sibling journey is added (#66)', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const first = webJourney()
+    promoted(outRoot, (manifest) => {
+      manifest.journeyDigest = digestJourney(first)
+    })
+    const two = catalog()
+    two.journeys.push(webJourney({ id: 'second-journey' }))
+    const { missing } = buildWalkthrough(two, {
+      ...options(outRoot),
+      currentDigest: 'sha256:after-sibling',
+    })
+    expect(missing).toEqual(['second-journey: no promoted capture run'])
   })
 
   it('refuses mixed application revisions without the explicit override', () => {

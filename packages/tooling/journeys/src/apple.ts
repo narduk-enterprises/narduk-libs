@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { digestJourney } from './digest.js'
 import { sha256File, videoSeconds } from './media.js'
 import type {
   AppleDrivenStep,
@@ -626,6 +627,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
     base: `simulator://${control.udid}/${options.bundleId}`,
     commit: args.commit,
     declarationDigest: options.declarationDigest,
+    journeyDigest: digestJourney(journey),
     appRevision: await options.world.appRevision(),
     profile: {
       name: options.profileName,
