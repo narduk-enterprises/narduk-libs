@@ -24,7 +24,7 @@ export const DEVELOPMENT_USAGE = [
   '                                       deploy:dev: capture the checkout (dirty edits included),',
   '                                       gate, build, upload, promote and prove the enrolled target',
   '  development status [--remote] [--json]',
-  '  development enter --approval-ref <ref> --publisher <id> [--target-set <id>] [--refresh] [--dry-run]',
+  '  development enter --approval-ref <ref> --publisher <id> [--target-set <id>] [--refresh] [--dry-run] [--accept-prior-state]',
   '  development pin --scenario <file> | development unpin --feedback-ref <ref>',
   '  development exec --operation <migration|secret-stage|recovery> --approval-ref <ref>',
   '      [--commit <sha>] -- <command...>  Authorized operation under the same target lock',
@@ -81,7 +81,7 @@ export async function runDevelopmentCommand(args: string[]): Promise<number> {
     const values = options(
       rest,
       ['approval-ref', 'publisher', 'target-set'],
-      ['refresh', 'dry-run'],
+      ['refresh', 'dry-run', 'accept-prior-state'],
     )
     await runDevelopmentEnter({
       approvalRef: required(values, 'approval-ref'),
@@ -89,6 +89,7 @@ export async function runDevelopmentCommand(args: string[]): Promise<number> {
       targetSet: values['target-set'] as string | undefined,
       refresh: Boolean(values.refresh),
       dryRun: Boolean(values['dry-run']),
+      acceptPriorState: Boolean(values['accept-prior-state']),
     })
     return 0
   }

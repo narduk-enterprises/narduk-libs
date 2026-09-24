@@ -117,6 +117,29 @@ export class DevelopmentGitHub {
     })
   }
 
+  /**
+   * A held workflow that is already disabled, and is not retired, has an
+   * ambiguous prior state: entry cannot tell an intentional disable from a
+   * stale hold left by something else (narduk-libs#754).
+   */
+  static ambiguousPriorWorkflows(
+    saved: SavedDevelopmentWorkflow[],
+    retiredWorkflows: readonly string[],
+  ): SavedDevelopmentWorkflow[] {
+    const retired = new Set(retiredWorkflows)
+    return saved.filter(
+      (workflow) => workflow.previousState.startsWith('disabled_') && !retired.has(workflow.path),
+    )
+  }
+
+  static describeAmbiguousPriorWorkflows(ambiguous: SavedDevelopmentWorkflow[]): string {
+    return [
+      'Ambiguous prior workflow state (already disabled; enter cannot tell an intentional disable from a stale hold):',
+      ...ambiguous.map((workflow) => `  ${workflow.path} is ${workflow.previousState}`),
+      'Re-enable them first so entry captures the true restore state, or pass --accept-prior-state to record this as the intended restore state (journaled).',
+    ].join('\n')
+  }
+
   inspectWorkflow(saved: SavedDevelopmentWorkflow): z.infer<typeof workflowSchema> {
     const actual = workflowSchema.parse(this.request(this.path(`actions/workflows/${saved.id}`)))
     if (actual.id !== saved.id || actual.path !== saved.path)

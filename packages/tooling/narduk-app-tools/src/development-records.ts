@@ -63,6 +63,8 @@ export interface ActivationRecord {
   handoff?: { to: string; suspendedAt: string; bundle: string }
   exit?: { preparedAt: string; releaseSha?: string; validationRun?: number }
   history: Array<{ at: string; event: string; detail?: string }>
+  /** Held paths whose already-disabled live state was explicitly accepted at entry. */
+  acceptedPriorWorkflows?: string[]
 }
 
 export interface DevelopmentProject {
