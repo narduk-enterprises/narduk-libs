@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -185,5 +185,27 @@ describe('buildWalkthrough', () => {
     expect(html).toContain('On the phone')
     expect(html).toContain('ios-0.2.0-18')
     expect(html).toContain('fixture-r1')
+  })
+
+  it('writes a complete page, copies the promoted media, and emits Markdown (narduk-libs#69)', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    promoted(outRoot)
+    const dest = join(outRoot, 'published')
+    const { written } = buildWalkthrough(catalog(), { ...options(outRoot), destination: dest })
+    const html = readFileSync(written, 'utf8')
+    expect(written).toBe(join(dest, 'walkthrough.html'))
+    expect(html.toLowerCase()).toContain('<!doctype html>')
+    expect(html).toContain('<head>')
+    expect(html).toContain('<style>')
+    expect(html).toContain('prefers-color-scheme')
+    expect(existsSync(join(dest, 'happy-path', 'steps/01-open-start.png'))).toBe(true)
+    expect(existsSync(join(dest, 'happy-path', 'video.mp4'))).toBe(true)
+    expect(readFileSync(join(dest, 'happy-path', 'steps/01-open-start.png'), 'utf8')).toBe(
+      'png-bytes-1',
+    )
+    const markdown = readFileSync(join(dest, 'walkthrough.md'), 'utf8')
+    expect(markdown).toContain('# Walkthrough')
+    expect(markdown).toContain('![Open the start page](happy-path/steps/01-open-start.png)')
+    expect(markdown).toContain('happy-path/video.mp4')
   })
 })
