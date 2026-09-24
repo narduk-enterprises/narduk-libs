@@ -470,13 +470,94 @@ function requestedCapabilityPackNames(presetNames) {
 }
 
 /**
+ * @typedef {object} ComposeSharedConfigsOptions
+ * @property {string | Array<string | string[]>} [packs]
+ * @property {boolean} [communityLayer]
+ */
+
+/**
+ * True for the single-options-object form of `composeSharedConfigs`. A pack-name
+ * string or a pack-name array stays on the existing varargs path, so today's
+ * callers do not change meaning (narduk-libs#167).
+ *
+ * @param {unknown} value
+ * @returns {value is ComposeSharedConfigsOptions}
+ */
+function isComposeSharedConfigsOptions(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    ('packs' in value || 'communityLayer' in value)
+  )
+}
+
+/**
+ * @param {unknown} packs
+ * @returns {Array<string | string[]>}
+ */
+function normalizeComposePacks(packs) {
+  if (packs === undefined || packs === null) {
+    return []
+  }
+
+  if (typeof packs === 'string') {
+    return [packs]
+  }
+
+  if (Array.isArray(packs)) {
+    return packs
+  }
+
+  throw new TypeError(
+    `composeSharedConfigs packs must be a string or an array of pack names, got ${typeof packs}`,
+  )
+}
+
+/**
+ * @param {unknown[]} args
+ * @returns {{ presetNames: Array<string | string[]>, communityLayer: boolean }}
+ */
+function parseComposeSharedConfigsArgs(args) {
+  if (args.length === 1 && isComposeSharedConfigsOptions(args[0])) {
+    const options = args[0]
+
+    if (options.communityLayer !== undefined && typeof options.communityLayer !== 'boolean') {
+      throw new TypeError('composeSharedConfigs communityLayer must be a boolean')
+    }
+
+    return {
+      presetNames: normalizeComposePacks(options.packs),
+      communityLayer: options.communityLayer !== false,
+    }
+  }
+
+  if (args.some((arg) => isComposeSharedConfigsOptions(arg))) {
+    throw new TypeError(
+      'composeSharedConfigs accepts pack names, or a single { packs, communityLayer } object, not both',
+    )
+  }
+
+  return {
+    presetNames: /** @type {Array<string | string[]>} */ (args),
+    communityLayer: true,
+  }
+}
+
+/**
  * Compose the shared parser and community layers with one or more capability
  * packs. Prettier's disable config is always last.
  *
- * @param {...(string | string[])} presetNames
+ * Pack-name arguments keep today's composition, including the community tail
+ * (`import-x`, `unicorn`, `promise`, `security`, `regexp`, `eslint-comments`,
+ * `vitest`, Vue house style). Pass `{ packs, communityLayer: false }` to take
+ * those packs without that tail — parser layer and Prettier stay (narduk-libs#167).
+ *
+ * @param {...(string | string[] | ComposeSharedConfigsOptions)} args
  * @returns {import('eslint').Linter.Config[]}
  */
-export function composeSharedConfigs(...presetNames) {
+export function composeSharedConfigs(...args) {
+  const { presetNames, communityLayer } = parseComposeSharedConfigsArgs(args)
   const requestedPresetNames = requestedCapabilityPackNames(presetNames)
 
   const selectedCapabilityConfigs = requestedPresetNames.flatMap((presetName) => {
@@ -497,7 +578,7 @@ export function composeSharedConfigs(...presetNames) {
   return [
     ...parserConfigs,
     ...selectedCapabilityConfigs,
-    ...sharedTailConfigs,
+    ...(communityLayer ? sharedTailConfigs : []),
     prettierDisableConfig,
   ]
 }
@@ -908,6 +989,8 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {object}                                options
  * @param {Function}                              options.withNuxt              app-local `withNuxt()` wrapper
  * @param {string[]}                              [options.capabilityPacks]
+ * @param {boolean}                               [options.communityLayer=true] set false to omit the
+ *   shared community tail; default stays on so existing callers do not change
  * @param {'required'|'internal-only'|'disabled'} [options.seoMode]             accepted, inert in v2
  * @param {string[]}                              [options.internalOnlyPageGlobs] accepted, inert in v2
  * @param {string[]}                              [options.contentRelaxedFiles]
@@ -924,6 +1007,7 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
 export function createAppLintConfig({
   withNuxt,
   capabilityPacks = [],
+  communityLayer = true,
   seoMode = 'required',
   internalOnlyPageGlobs = [],
   contentRelaxedFiles = [],
@@ -947,11 +1031,18 @@ export function createAppLintConfig({
     throw new TypeError('createAppLintConfig requires the app-local withNuxt() wrapper')
   }
 
+  if (typeof communityLayer !== 'boolean') {
+    throw new TypeError('createAppLintConfig communityLayer must be a boolean')
+  }
+
   void seoMode
   void internalOnlyPageGlobs
   void allowedBrandIconFiles
 
-  const sharedConfigsForApp = composeSharedConfigs(...capabilityPacks)
+  const sharedConfigsForApp = composeSharedConfigs({
+    packs: capabilityPacks,
+    communityLayer,
+  })
   const sanitizedSharedConfigs = sharedConfigsForApp
     .map(stripNuxtManagedPlugins)
     .map((config) => patchCorrectnessProjectServiceConfig(config, appRootDir))

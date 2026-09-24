@@ -25,9 +25,10 @@ result to the app's generated `withNuxt()` wrapper. It also reads the app's
 allowlist, and points the type-aware parser service at the app's generated
 tsconfig.
 
-Options: `capabilityPacks`, `contentRelaxedFiles`, `additionalNuxtUiComponents`,
-`utilityComposableFiles`, `trustedHtmlFiles`, `appType` (`'admin' | 'content'`),
-`extraOverrides`, `appRootDir`, `tailwindEntryPoint`.
+Options: `capabilityPacks`, `communityLayer` (default `true`),
+`contentRelaxedFiles`, `additionalNuxtUiComponents`, `utilityComposableFiles`,
+`trustedHtmlFiles`, `appType` (`'admin' | 'content'`), `extraOverrides`,
+`appRootDir`, `tailwindEntryPoint`.
 
 Composing by hand, without the Nuxt wrapper:
 
@@ -41,6 +42,30 @@ A single pack can also be imported directly, e.g.
 `@narduk-enterprises/eslint-config/config/core`. A directly imported pack is
 just that pack — it carries no parser layer, no community layer, and no Prettier
 disable. Use `composeSharedConfigs()` unless you are assembling those yourself.
+
+Existing callers keep the community tail (`import-x`, `unicorn`, `promise`,
+`security`, `regexp` recommended, `eslint-comments`, `vitest`, Vue house style).
+That layer is a reasonable default for a new app. For an existing app that is
+not ready for it, pass `communityLayer: false` so a pack can land without that
+finding wave (narduk-libs#167):
+
+```js
+export default createAppLintConfig({
+  withNuxt,
+  capabilityPacks: ['a11y'],
+  communityLayer: false,
+})
+
+// or, without the Nuxt wrapper:
+export default composeSharedConfigs({ packs: ['a11y'], communityLayer: false })
+```
+
+Parser layer and `eslint-config-prettier` still apply. Turning the tail back on
+later is when those `error`-severity community rules (`import-x/no-cycle`,
+`import-x/named`, `unicorn/no-instanceof-builtins`, `unicorn/throw-new-error`,
+`promise/no-return-wrap`, `regexp` recommended,
+`@eslint-community/eslint-comments/no-unused-disable`) will surface pre-existing
+findings; budget triage then, not on the first pack.
 
 ## Capability packs
 
@@ -261,6 +286,13 @@ and its types), `configs/` (the fourteen packs), `eslint-app-config.mjs`,
 New major. A consumer `eslint.config.mjs` that calls `createAppLintConfig` with
 capability packs should need only a version bump, an ESLint 10 upgrade, and a
 sweep of stale `eslint-disable` comments.
+
+v1's `recommended` / `app` presets did not compose this community layer.
+Adopting v2 one pack at a time on an existing app is therefore
+`communityLayer: false` (above) or a direct
+`@narduk-enterprises/eslint-config/config/<pack>` import — not "name one pack
+and inherit the whole tail." The default stays on for callers that omit the
+flag.
 
 ### 1. Move the app to ESLint 10
 
