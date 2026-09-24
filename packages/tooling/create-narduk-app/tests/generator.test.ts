@@ -1544,6 +1544,33 @@ describe('generated app typecheck and lint surfaces', () => {
     }
   })
 
+  // narduk-libs#787: a GITHUB_TOKEN merge fires no push workflows, so the
+  // job already starts main CI by workflow_dispatch. That dispatched CI
+  // also emits no workflow_run, so Promote never starts unless this job
+  // waits for CI and dispatches promote.yml with the SHA that run verified.
+  it('starts Promote after Dependabot-merge CI because workflow_run will not fire (#787)', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const mergeWorkflow = files.get('.github/workflows/dependabot-merge.yml') ?? ''
+      const runbook = files.get('docs/workers-builds.md') ?? ''
+
+      expect(mergeWorkflow, label).toContain('gh run watch')
+      expect(mergeWorkflow, label).toContain('--exit-status')
+      expect(mergeWorkflow, label).toContain('--commit "$SHA"')
+      expect(mergeWorkflow, label).toContain('gh workflow run promote.yml')
+      expect(mergeWorkflow, label).toContain('-f verified-sha=')
+      expect(mergeWorkflow, label).toContain('workflow_run will not fire')
+      expect(mergeWorkflow.indexOf('gh run watch'), label).toBeLessThan(
+        mergeWorkflow.indexOf('gh workflow run promote.yml'),
+      )
+      expect(() => YAML.parse(mergeWorkflow), label).not.toThrow()
+
+      expect(runbook, label).toContain('workflow_dispatch:')
+      expect(runbook, label).toContain('verified-sha')
+      expect(runbook, label).toContain('inputs.verified-sha')
+    }
+  })
+
   // components-library-plan.md #2 item 4 (narduk-libs#251): every new app
   // starts on the Nuxt UI element discipline and Tailwind v4 token tier
   // (`design-system`) and the legacy-API guardrails (`nuxt-ui`), the same way

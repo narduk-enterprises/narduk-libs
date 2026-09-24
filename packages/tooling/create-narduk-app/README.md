@@ -168,7 +168,13 @@ section they should own. Apps generated from this version carry them already.
 The generated `.github/dependabot.yml` npm update splits into two groups by
 `update-types`, over the same packages: `safe` (minor + patch) and `majors`
 (major). `.github/workflows/dependabot-merge.yml` merges `safe` on its own once
-CI is green on its exact PR head — nobody has to touch it. `majors` always waits
+CI is green on its exact PR head — nobody has to touch it. The merge uses this
+workflow's `GITHUB_TOKEN`, which starts no push workflows, so the same job then
+starts main CI by `workflow_dispatch`. That dispatched CI also emits no
+`workflow_run` (narduk-libs#787), so the job waits for it and starts
+`promote.yml` with the SHA that run verified. The app-owned `promote.yml` must
+accept `workflow_dispatch` with `verified-sha` (the generated
+`docs/workers-builds.md` excerpt shows the `on:` block). `majors` always waits
 for a person or an agent: a major bump usually needs a code change, and a
 workflow-file edit (the `github-actions` ecosystem lane) can never be merged by
 a workflow's own `GITHUB_TOKEN` at all, so that lane stays manual regardless.

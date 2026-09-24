@@ -401,7 +401,9 @@ export function createCiWorkflow(visibility: AppVisibility): string {
  * workflow's GITHUB_TOKEN fires no push workflows, so the merged commit would
  * never get its own `ci / Required` run on `main`. Merging here, after CI has
  * already passed on the PR head, lets the same job start main CI by
- * `workflow_dispatch`, which GitHub does allow from GITHUB_TOKEN. Nothing
+ * `workflow_dispatch`, which GitHub does allow from GITHUB_TOKEN. That
+ * dispatched CI also emits no `workflow_run` (narduk-libs#787), so this job
+ * waits for it and starts Promote with the SHA that run verified. Nothing
  * from the pull request is checked out or executed -- the job only reads PR
  * metadata and calls the API -- so running with a write token on
  * `workflow_run` never hands that token to Dependabot's branch.
@@ -438,6 +440,11 @@ export function createDependabotMergeWorkflow(visibility: AppVisibility): string
     '# CI has already passed, lets the same job start main CI by',
     '# workflow_dispatch, which GitHub does allow from GITHUB_TOKEN.',
     '#',
+    '# That dispatched CI also emits no workflow_run (narduk-libs#787), so',
+    '# Promote would never start. After CI succeeds this job starts promote.yml',
+    '# with the SHA that run verified. promote.yml must accept',
+    '# workflow_dispatch.inputs.verified-sha.',
+    '#',
     '# Nothing from the pull request is checked out or executed: the job only',
     '# reads PR metadata and calls the API, so running with a write token on',
     "# workflow_run does not hand that token to Dependabot's branch.",
@@ -466,7 +473,9 @@ export function createDependabotMergeWorkflow(visibility: AppVisibility): string
     "      github.event.workflow_run.actor.login == 'dependabot[bot]' &&",
     "      startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/safe-')",
     runsOn,
-    '    timeout-minutes: 10',
+    // Waits for the dispatched main CI run (public worst case is quality +
+    // browser + report job timeouts) before starting Promote.
+    '    timeout-minutes: 90',
     '    permissions:',
     '      actions: write',
     '      contents: write',
@@ -497,15 +506,43 @@ export function createDependabotMergeWorkflow(visibility: AppVisibility): string
     '            exit 0',
     '          fi',
     '          gh pr merge "$pr" --repo "$REPO" --squash --match-head-commit "$HEAD_SHA"',
-    '          echo "Merged #$pr at $HEAD_SHA."',
+    '          sha=$(gh pr view "$pr" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)',
+    '          if [ -z "$sha" ]; then',
+    '            echo "::error::Squash merge of #$pr produced no mergeCommit oid."',
+    '            exit 1',
+    '          fi',
+    '          echo "Merged #$pr at $HEAD_SHA as $sha on main."',
     '          echo "merged=true" >> "$GITHUB_OUTPUT"',
+    '          echo "sha=$sha" >> "$GITHUB_OUTPUT"',
     '',
-    '      - name: Start CI on main for the merged commit',
+    '      - name: Start CI on main, then Promote, for the merged commit',
     "        if: steps.merge.outputs.merged == 'true'",
     '        env:',
     '          GH_TOKEN: ${{ github.token }}',
     '          REPO: ${{ github.repository }}',
-    '        run: gh workflow run ci.yml --repo "$REPO" --ref main',
+    '          SHA: ${{ steps.merge.outputs.sha }}',
+    '        run: |',
+    '          set -euo pipefail',
+    '          gh workflow run ci.yml --repo "$REPO" --ref main',
+    '          run_id=""',
+    '          for _ in $(seq 1 60); do',
+    '            run_id=$(gh run list --repo "$REPO" --workflow=ci.yml --branch=main \\',
+    '              --event=workflow_dispatch --commit "$SHA" --limit=1 \\',
+    '              --json databaseId --jq ".[0].databaseId // empty")',
+    '            if [ -n "$run_id" ]; then',
+    '              break',
+    '            fi',
+    '            sleep 2',
+    '          done',
+    '          if [ -z "$run_id" ]; then',
+    '            echo "::error::CI dispatch for $SHA did not appear."',
+    '            exit 1',
+    '          fi',
+    '          gh run watch "$run_id" --repo "$REPO" --exit-status',
+    '          # GITHUB_TOKEN-started CI emits no workflow_run (narduk-libs#787),',
+    '          # so Promote would never start. Dispatch it with the SHA that run',
+    '          # verified. workflow_run will not fire for this path.',
+    '          gh workflow run promote.yml --repo "$REPO" --ref main -f verified-sha="$SHA"',
     '',
   ].join('\n')
 }
