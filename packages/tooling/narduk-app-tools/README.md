@@ -449,16 +449,18 @@ job's post-deploy proof and a human debugging an incident all run one code path
 (design §6.2):
 
 1. `x-build-version` is the expected commit (prefix compare; narduk-core
-   publishes 12 characters).
+   publishes 12 characters). Exact-SHA / build-id proof reads this header from
+   the health route when one is enabled. A prerendered smoke path (generated SEO
+   apps prerender `/`) is a static asset and has no Worker header. `--no-health`
+   falls back to the smoke path.
 2. `/api/health` is healthy per the narduk-core health contract —
    `{ success, data: { status, checks } }`, with every `required: true` check
    passing.
 3. One app-declared smoke route answers 2xx with the expected content type.
 
-The build-version and smoke assertions share one request. Defaults match design
-§2.1 `liveProof`: `/api/health`, `/`, 6 attempts, 10 s apart, 15 s timeout.
-Retries cover the whole pass, because a promotion has to propagate and a cold
-isolate is roughly 10× slower than a warm one.
+Defaults match design §2.1 `liveProof`: `/api/health`, `/`, 6 attempts, 10 s
+apart, 15 s timeout. Retries cover the whole pass, because a promotion has to
+propagate and a cold isolate is roughly 10× slower than a warm one.
 
 `degraded` fails by default. Design §6.2 asks for both `data.status == "ok"` and
 "every required check passing", and those two disagree exactly in the degraded

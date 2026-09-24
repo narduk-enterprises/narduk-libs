@@ -214,16 +214,18 @@ overrides them, and those reasons are the specific ones:
 
 - **All three theme-resolving `better-tailwindcss` rules are gated, not two.**
   `no-unknown-classes` and `no-deprecated-classes` were already off in the pack
-  and enabled by `createAppLintConfig` only when the app's Tailwind entry point
-  exists on disk. `enforce-canonical-classes` (the
-  `prefer-tailwind-var-shorthand` replacement) resolves the compiled theme
-  through the same shared plugin context and so emitted the identical "No
-  tailwind css entry point found at `app/assets/css/main.css`. Option
-  `entryPoint` may be misconfigured" report — 16 of them across `narduk-core`,
-  `narduk-seo` and `narduk-auth`, none of which is fixable in app code. It now
-  sits behind the same gate, at its original `warn` severity. Proof:
-  `eslint-plugin-better-tailwindcss@4.7.0` `lib/utils/context.js`
-  (`getEntryPointWarning`) is reached by
+  and enabled by `createAppLintConfig` only when the app declares
+  `tailwindEntryPoint` and that file exists (narduk-libs#665). Inferring from a
+  conventional stylesheet or from `tailwindcss` resolving is how a non-Tailwind
+  app picked up 2411 unknown-class errors (operator-portal#431).
+  `enforce-canonical-classes` (the `prefer-tailwind-var-shorthand` replacement)
+  resolves the compiled theme through the same shared plugin context and so
+  emitted the identical "No tailwind css entry point found at
+  `app/assets/css/main.css`. Option `entryPoint` may be misconfigured" report —
+  16 of them across `narduk-core`, `narduk-seo` and `narduk-auth`, none of which
+  is fixable in app code. It now sits behind the same gate, at its original
+  `warn` severity. Proof: `eslint-plugin-better-tailwindcss@4.7.0`
+  `lib/utils/context.js` (`getEntryPointWarning`) is reached by
   `lib/rules/enforce-canonical-classes.js` exactly as by the other two. Pinned
   by `tests/composition/tailwind-theme-override.test.ts`.
 - **`eslint-nuxt-flat-fragments.mjs` was missing from `files`.** The export
