@@ -25,16 +25,25 @@
  * injector installed.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { digestJourney } from './digest.js'
-import { sha256File, videoSeconds } from './media.js'
+import { normaliseVideo, sha256File, videoSeconds } from './media.js'
 import type {
   AppleDrivenStep,
   AppleGesture,
   AppleLanding,
   AppleProfile,
+  CaptureEncode,
   Catalog,
   DrivenAppleJourney,
   Mode,
@@ -132,6 +141,12 @@ export interface AppleRunOptions {
   /** Seams for hermetic tests. */
   sleep?: (ms: number) => Promise<void>
   now?: () => number
+  /**
+   * Re-encode the simulator recording. Production uses `normaliseVideo`;
+   * tests inject a writer so a Linux runner without a real take still
+   * proves the artefact is the normalised file (narduk-libs#115).
+   */
+  normaliseVideo?: (input: string, output: string, target: CaptureEncode) => boolean
 }
 
 export interface AppleJourneyResult {
@@ -532,8 +547,9 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
   const generation = await readGeneration(pid)
 
   // 3 · roll the camera (capture only). Pacing is the only thing mode changes.
-  const recording =
-    mode === 'capture' ? control.record(join(paths.attemptDirectory, 'video.mp4')) : null
+  const rawVideoPath = join(paths.attemptDirectory, 'video.raw.mp4')
+  const artefactVideoPath = join(paths.attemptDirectory, 'video.mp4')
+  const recording = mode === 'capture' ? control.record(rawVideoPath) : null
   if (recording) await sleep(1_500)
   const clockStart = now()
 
@@ -608,12 +624,18 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
   if (recording) {
     await sleep(1_200)
     await recording.stop()
-    const videoPath = join(paths.attemptDirectory, 'video.mp4')
-    if (existsSync(videoPath)) {
-      video = {
-        file: 'video.mp4',
-        seconds: videoSeconds(videoPath),
-        sha256: sha256File(videoPath),
+    if (existsSync(rawVideoPath)) {
+      const encode = options.normaliseVideo ?? normaliseVideo
+      const ok = encode(rawVideoPath, artefactVideoPath, profile)
+      if (!ok && !existsSync(artefactVideoPath)) {
+        copyFileSync(rawVideoPath, artefactVideoPath)
+      }
+      if (existsSync(artefactVideoPath)) {
+        video = {
+          file: 'video.mp4',
+          seconds: videoSeconds(artefactVideoPath),
+          sha256: sha256File(artefactVideoPath),
+        }
       }
     }
   }

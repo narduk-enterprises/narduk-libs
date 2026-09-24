@@ -387,15 +387,59 @@ export interface Sequence {
   journeys: [string, ...string[]]
 }
 
+/**
+ * What a published capture is encoded to (narduk-libs#115). Declarable on
+ * any capture profile so "how a take is published" is one decision. The
+ * Apple adapter reads it today; the web adapter still has its private
+ * `toMp4` until that file is free to share the helper.
+ */
+export type X264Preset =
+  | 'ultrafast'
+  | 'superfast'
+  | 'veryfast'
+  | 'faster'
+  | 'fast'
+  | 'medium'
+  | 'slow'
+  | 'slower'
+  | 'veryslow'
+  | 'placebo'
+
+export const X264_PRESETS: readonly X264Preset[] = [
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+  'veryslow',
+  'placebo',
+]
+
+export interface CaptureEncode {
+  /** libx264 preset. Default `medium`. */
+  preset?: X264Preset
+  /** Constant rate factor, 0–51. Default 23. */
+  crf?: number
+  /**
+   * Scale so the long edge is at most this many pixels. A 3× Retina
+   * handset recording is otherwise published at panel size. No library
+   * default — declare it on the profile.
+   */
+  maxLongEdge?: number
+}
+
 /** A named capture profile; the name joins the artefact path (§4.2, §4.3). */
-export interface WebProfile {
+export interface WebProfile extends CaptureEncode {
   kind: 'web'
   viewport: { width: number; height: number }
   dpr?: number
   colorScheme?: 'light' | 'dark'
 }
 
-export interface AppleProfile {
+export interface AppleProfile extends CaptureEncode {
   kind: 'apple'
   device: string
   orientation?: 'portrait' | 'landscape'

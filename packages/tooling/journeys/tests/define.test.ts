@@ -69,6 +69,58 @@ describe('defineCatalog', () => {
     expect(() => defineCatalog(bad)).toThrow(/binding.xcClass is empty/)
   })
 
+  it('rejects a capture encode that cannot be an ffmpeg target', () => {
+    expect(() =>
+      defineCatalog(
+        catalog({
+          profiles: {
+            desktop: { kind: 'web', viewport: { width: 1280, height: 800 }, crf: 99 },
+          },
+        }),
+      ),
+    ).toThrow(/crf must be an integer from 0 to 51/)
+    expect(() =>
+      defineCatalog(
+        catalog({
+          profiles: {
+            desktop: { kind: 'web', viewport: { width: 1280, height: 800 }, maxLongEdge: 0 },
+          },
+        }),
+      ),
+    ).toThrow(/maxLongEdge must be a positive integer/)
+    expect(() =>
+      defineCatalog(
+        catalog({
+          profiles: {
+            desktop: {
+              kind: 'web',
+              viewport: { width: 1280, height: 800 },
+              preset: 'nope' as 'medium',
+            },
+          },
+        }),
+      ),
+    ).toThrow(/preset must be an x264 preset/)
+  })
+
+  it('accepts a declared capture encode on a profile', () => {
+    expect(() =>
+      defineCatalog(
+        catalog({
+          profiles: {
+            desktop: {
+              kind: 'web',
+              viewport: { width: 1280, height: 800 },
+              preset: 'veryfast',
+              crf: 28,
+              maxLongEdge: 1080,
+            },
+          },
+        }),
+      ),
+    ).not.toThrow()
+  })
+
   it('rejects a sequence whose member disagrees on surface or scenario', () => {
     const bad = catalog({
       journeys: [webJourney(), appleJourney()],
