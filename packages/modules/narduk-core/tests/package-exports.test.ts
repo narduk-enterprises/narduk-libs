@@ -47,6 +47,15 @@ describe('narduk-core package exports', () => {
     })
   })
 
+  it('raises the narduk-lint heap so the 3072 MB lifecycle cap does not OOM (#789)', () => {
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')) as {
+      scripts: Record<string, string>
+    }
+
+    expect(packageJson.scripts.lint).toContain('NARDUK_LINT_MAX_OLD_SPACE_SIZE:-4096')
+    expect(packageJson.scripts.lint).toContain('narduk-lint')
+  })
+
   it('declares explicit runtime imports for packed color-mode UI', () => {
     const source = readFileSync(
       join(packageRoot, 'runtime/app/composables/useColorModeToggle.ts'),
