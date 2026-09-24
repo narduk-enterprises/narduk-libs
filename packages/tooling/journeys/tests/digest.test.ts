@@ -76,6 +76,25 @@ describe('digestJourney', () => {
     expect(digestJourney(first)).toBe(beforeJourney)
   })
 
+  it('is stable across Playwright and Node function pretty-printing', () => {
+    const nodeSource =
+      "async do(c) {\n            await c.goto('/start')\n            await c.must('Begin')\n          }"
+    const playwrightSource =
+      "async do(c) {\n        await c.goto('/start');\n        await c.must('Begin');\n        await c.page.getByText('x').waitFor({\n          timeout: 5000\n        });\n      }"
+    const sameBody =
+      "async do(c) {\n            await c.goto('/start')\n            await c.must('Begin')\n            await c.page.getByText('x').waitFor({ timeout: 5000 })\n          }"
+    const withSource = (source: string) => {
+      const run = async () => {}
+      run.toString = () => source
+      return webJourney({
+        id: 'walk',
+        steps: [{ id: 'open-start', say: 'Open the start page', do: run }],
+      })
+    }
+    expect(digestJourney(withSource(playwrightSource))).toBe(digestJourney(withSource(sameBody)))
+    expect(digestJourney(withSource(nodeSource))).not.toBe(digestJourney(withSource(sameBody)))
+  })
+
   it("moves when this journey's prose or step body changes", () => {
     const base = digestJourney(webJourney({ id: 'walk' }))
     expect(digestJourney(webJourney({ id: 'walk', title: 'Changed title' }))).not.toBe(base)
@@ -88,7 +107,7 @@ describe('digestJourney', () => {
               id: 'open-start',
               say: 'Open the start page',
               do: async () => {
-                void 1
+                await Promise.resolve('body-changed')
               },
             },
             { id: 'finish', say: 'Press Finish', do: async () => {} },

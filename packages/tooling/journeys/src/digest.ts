@@ -52,16 +52,26 @@ export function digestDirectory(root: string): string {
   return digestFiles(files)
 }
 
+/**
+ * Capture (Playwright) and verify (plain Node / Vitest) pretty-print the
+ * same function differently: ASI semicolons, indent, and object literals
+ * broken across lines. Collapse that so the digest is about the body, not
+ * the loader (narduk-libs#66).
+ */
+function normalizeFunctionSource(source: string): string {
+  return source.replaceAll(/\s+/g, ' ').replaceAll(';', '').trim()
+}
+
 function functionSource(value: unknown): string | null {
-  return typeof value === 'function' ? Function.prototype.toString.call(value) : null
+  return typeof value === 'function' ? normalizeFunctionSource(value.toString()) : null
 }
 
 /**
  * The digest of ONE journey's declared shape, including executable step
- * bodies (`Function.prototype.toString` of `do` / `appliesIf`). Sibling
- * journeys and other files under the catalog directory are not part of this
- * hash, so adding journey N+1 does not invalidate a promoted capture of
- * journey N (narduk-libs#66).
+ * bodies (`do` / `appliesIf` source, normalized so Playwright and Node
+ * agree). Sibling journeys and other files under the catalog directory are
+ * not part of this hash, so adding journey N+1 does not invalidate a
+ * promoted capture of journey N (narduk-libs#66).
  *
  * Shared helpers a step *calls* are the honest gap: a change inside an
  * imported function does not move this digest unless the step's own source
