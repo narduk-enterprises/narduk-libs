@@ -12,7 +12,8 @@
     "verbatimModuleSyntax": true,
     "noEmitOnError": true,
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    "rootDir": "../.."
   },
   "include": ["src/**/*.ts", "tests/**/*.test.ts"]
 }

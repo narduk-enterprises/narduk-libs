@@ -12,7 +12,7 @@
     "prepare": "nuxt prepare",
     "dev": "nuxt dev",
     "build": "nuxt generate",
-    "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions --allowJs --types node inventory/*.mts demo/*.mts scripts/*.mts",
+    "typecheck": "nuxt typecheck && tsc --ignoreConfig --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions --allowJs --types node inventory/*.mts demo/*.mts scripts/*.mts",
     "lint": "narduk-lint",
     "test:unit": "node --test inventory/*.test.mts demo/*.test.mts scripts/*.test.mts",
     "test:e2e": "nuxt generate && playwright test",
@@ -29,7 +29,7 @@
     "@types/node": "^22.19.19",
     "nuxt": "^4.5.2",
     "postcss": "8.5.28",
-    "typescript": "^5.9.3",
+    "typescript": "~6.0.3",
     "vue": "3.5.39",
     "vue-tsc": "^3.2.5"
   }

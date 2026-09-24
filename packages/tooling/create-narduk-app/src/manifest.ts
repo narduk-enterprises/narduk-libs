@@ -102,7 +102,7 @@ export const PACKAGE_VERSIONS = {
   '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
   tailwindcss: '4.3.2',
-  typescript: '5.9.3',
+  typescript: '6.0.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',
   wrangler: '4.136.3',

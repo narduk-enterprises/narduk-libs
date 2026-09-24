@@ -49,7 +49,7 @@
     "eslint": "^10.8.0",
     "happy-dom": "20.10.6",
     "prettier": "^3.8.3",
-    "typescript": "^5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.11",
     "vue": "^3.5.39",
     "vue-tsc": "^3.2.5"
