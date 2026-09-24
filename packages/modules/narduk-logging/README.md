@@ -52,11 +52,13 @@ measures wall time waiting on something external.
 | Swift 6.3+                | SwiftPM `NardukLogging`, swift-log            | OSLog or structured streams; optional app endpoint                        |
 | Apple OS minimums         | macOS 15, iOS/tvOS 18, watchOS 11, visionOS 2 | Strict concurrency, typed private metadata                                |
 | Shell tools               | Python distribution's `narduk-log`            | One JSON record on stderr                                                 |
+| Go 1.22+                  | `go/`, `log/slog`                             | One schema JSON record per line; never installs a process default         |
 
 The JavaScript root has no Nuxt, H3, Node, or browser-global requirement.
 Optional framework/exporter dependencies stay behind their entry points. Swift's
 stream and core code also build on Linux; OSLog is available only on Apple
-platforms. Local development uses Python 3.14.7 and Xcode 26.6 / Swift 6.3.3.
+platforms. Local development uses Python 3.14.7, Xcode 26.6 / Swift 6.3.3, and
+Go 1.22.
 
 - [Quickstarts and copyable examples](docs/quickstarts.md)
 - [API, configuration, and record contract](docs/api.md)
@@ -75,5 +77,6 @@ From the repository root, run `pnpm run quality`. Focused TypeScript checks are
 `pnpm --filter @narduk-enterprises/narduk-logging run quality`. Python uses
 `uv run python scripts/quality.py` from `python/`; Swift uses
 `python3 packages/modules/narduk-logging/scripts/swift-quality.py` from the
-root. Release checks additionally install all three packaged artifacts outside
-this workspace.
+root; Go uses `python3 packages/modules/narduk-logging/scripts/go-quality.py`
+from the root. Release checks additionally install the packaged artifacts
+outside this workspace.

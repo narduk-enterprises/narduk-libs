@@ -214,6 +214,15 @@ swift-log logger; metadata using `LogPrivacy.private` is removed before output.
 Opaque object descriptions are omitted. Swift values and state are Sendable,
 with shared state protected by `Synchronization.Mutex`.
 
+Go uses `narduklogging.NewHandler(w, Options{Service, Environment})` or
+`NewLogger`. The handler implements `slog.Handler` and writes one schema JSON
+record per line. It never calls `slog.SetDefault`. `slog.Level` maps onto the
+schema enum (`<debug` → `trace`, `debug`, `info`, `warn`, `error`, `error+4` →
+`fatal`). Root attributes named `requestId`, `operationId`, `method`, `path`,
+`traceId`, `spanId`, `source`, and `error` lift to the canonical top-level
+fields; everything else is the sanitized `data` object. OTLP export and
+framework bridges stay out of this adapter.
+
 ## Canonical JSON
 
 ```json
