@@ -16,7 +16,17 @@ const verifyMocks = vi.hoisted(() => ({
   verifyRegistrationResponse: vi.fn(),
 }))
 
+const logMocks = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+}))
+
 const harness = vi.hoisted(() => ({
+  counterRace: null as null | {
+    credentialReads: number
+    releaseUpdates: () => void
+    updatesReady: Promise<void>
+  },
   database: null as unknown,
 }))
 
@@ -29,6 +39,23 @@ const SESSION_USER = {
 }
 
 vi.mock('#layer/server/utils/database', () => {
+  function querySql(query: unknown): string {
+    if (!query || typeof query !== 'object' || !('toSQL' in query)) return ''
+    const toSQL = (query as { toSQL?: () => { sql?: string } }).toSQL
+    if (typeof toSQL !== 'function') return ''
+    try {
+      const compiled = toSQL.call(query)
+      return typeof compiled?.sql === 'string' ? compiled.sql : ''
+    } catch {
+      return ''
+    }
+  }
+
+  function mentionsCredentialTable(query: unknown, verb: 'select' | 'update'): boolean {
+    const sql = querySql(query).toLowerCase()
+    return sql.includes(verb) && sql.includes('auth_webauthn_credentials')
+  }
+
   async function runQuery(query: unknown) {
     if (
       query &&
@@ -43,9 +70,18 @@ vi.mock('#layer/server/utils/database', () => {
 
   return {
     createAppDatabase: () => () => harness.database,
-    executeDatabaseQuery: async (query: unknown) => await runQuery(query),
+    executeDatabaseQuery: async (query: unknown) => {
+      if (harness.counterRace && mentionsCredentialTable(query, 'update')) {
+        await harness.counterRace.updatesReady
+      }
+      return runQuery(query)
+    },
     getDatabaseRow: async (query: unknown) => {
       const result = await runQuery(query)
+      if (harness.counterRace && mentionsCredentialTable(query, 'select')) {
+        harness.counterRace.credentialReads += 1
+        if (harness.counterRace.credentialReads >= 2) harness.counterRace.releaseUpdates()
+      }
       return Array.isArray(result) ? result[0] : result
     },
     getDatabaseRows: async (query: unknown) => {
@@ -55,6 +91,17 @@ vi.mock('#layer/server/utils/database', () => {
     useDatabase: () => harness.database,
   }
 })
+
+vi.mock('#layer/server/utils/logger', () => ({
+  useLogger: () => ({
+    child: () => ({
+      debug: () => {},
+      error: logMocks.error,
+      info: () => {},
+      warn: logMocks.warn,
+    }),
+  }),
+}))
 
 vi.mock('#narduk-auth-server/utils/auth-runtime-env', () => ({
   readAuthRuntimeEnv: () => ({
@@ -208,6 +255,9 @@ describe('passkey ceremony database paths on D1 (narduk-libs#165)', () => {
   afterAll(() => runtime.dispose())
 
   beforeEach(async () => {
+    harness.counterRace = null
+    logMocks.error.mockReset()
+    logMocks.warn.mockReset()
     verifyMocks.verifyAuthenticationResponse.mockReset()
     verifyMocks.verifyRegistrationResponse.mockReset()
     await binding.prepare('DELETE FROM auth_webauthn_challenges').run()
@@ -452,6 +502,19 @@ describe('passkey ceremony database paths on D1 (narduk-libs#165)', () => {
       verified: true,
     })
 
+    // Hold both UPDATEs until both SELECTs have read counter 5. Otherwise one
+    // call can finish the write first; the other then reads 6, fails
+    // evaluateSignatureCounter, and the test stays green even if the
+    // `WHERE counter = <read value>` predicate is removed.
+    let releaseUpdates = () => {}
+    harness.counterRace = {
+      credentialReads: 0,
+      releaseUpdates: () => releaseUpdates(),
+      updatesReady: new Promise<void>((resolve) => {
+        releaseUpdates = resolve
+      }),
+    }
+
     const results = await Promise.allSettled([
       finishPasskeyAuthentication(event(), authenticationResponse('counter-a')),
       finishPasskeyAuthentication(event(), authenticationResponse('counter-b')),
@@ -467,6 +530,14 @@ describe('passkey ceremony database paths on D1 (narduk-libs#165)', () => {
       statusCode: 401,
       statusMessage: 'Passkey sign-in failed.',
     })
+    expect(logMocks.warn).toHaveBeenCalledWith(
+      'Passkey sign-in lost the counter update race',
+      expect.objectContaining({ credentialId: 'cred-1' }),
+    )
+    expect(logMocks.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/counter regressed/iu),
+      expect.anything(),
+    )
     expect(await credentialCounter()).toBe(6)
   })
 })
