@@ -104,7 +104,9 @@ export default defineNuxtPlugin({
         gtag('event', 'page_view', {
           page_path: path,
           page_location: window.location.origin + path,
-          page_title: document.title,
+          // Standard floor: do not send document.title (page text). The path
+          // is already query- and fragment-free.
+          page_title: path,
         })
       }
 

@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   composeBeforeSend,
+  createStandardPrivacyBeforeSend,
   createStrictPrivacyBeforeSend,
   normalizeAnalyticsPrivacy,
+  sanitizeStandardUrl,
   templatePath,
   templateUrl,
   UNMATCHED_ROUTE,
@@ -56,6 +58,52 @@ describe('analytics privacy helpers', () => {
     )
     expect(templateUrl('$direct', ORIGIN, resolveRoute)).toBe('$direct')
     expect(templateUrl('', ORIGIN, resolveRoute)).toBe('')
+  })
+})
+
+describe('sanitizeStandardUrl', () => {
+  it('strips fragments and sensitive query keys, keeps UTM and the path', () => {
+    expect(sanitizeStandardUrl(`${ORIGIN}/join?token=invite-secret&utm_source=mail#frag`)).toBe(
+      `${ORIGIN}/join?utm_source=mail`,
+    )
+    expect(sanitizeStandardUrl(`${ORIGIN}/farms/frm_1/2024?tab=yield#x`)).toBe(
+      `${ORIGIN}/farms/frm_1/2024?tab=yield`,
+    )
+    expect(sanitizeStandardUrl('/reset?code=abc&next=/home')).toBe('/reset?next=%2Fhome')
+    expect(sanitizeStandardUrl('$direct')).toBe('$direct')
+    expect(sanitizeStandardUrl('')).toBe('')
+  })
+})
+
+describe('createStandardPrivacyBeforeSend', () => {
+  const sanitize = createStandardPrivacyBeforeSend()
+
+  it('does not template paths and still drops tokens, titles and element text', () => {
+    const result = sanitize(
+      event(
+        '$pageleave',
+        {
+          $current_url: `${ORIGIN}/join?token=invite-secret#x`,
+          $pathname: '/farms/frm_1/2024?tab=yield#z',
+          $el_text: '20.7 bu/ac',
+          $elements_chain: 'span:text="20.7"',
+          title: 'Field 3 · Renz',
+          app: 'narduk-farm',
+        },
+        {
+          $set: { $current_url: `${ORIGIN}/farms/frm_1?reset=1` },
+        },
+      ),
+    )
+
+    expect(result?.properties).toEqual({
+      $current_url: `${ORIGIN}/join`,
+      $pathname: '/farms/frm_1/2024',
+      app: 'narduk-farm',
+    })
+    expect(result?.$set).toEqual({ $current_url: `${ORIGIN}/farms/frm_1` })
+    expect(JSON.stringify(result)).not.toMatch(/invite-secret|20\.7|Renz/u)
+    expect(JSON.stringify(result)).toMatch(/frm_1/u)
   })
 })
 
@@ -269,7 +317,7 @@ describe('posthog.client — strict privacy', () => {
     })
   })
 
-  it('leaves standard apps exactly as they were', async () => {
+  it('does not turn on strict mode: paths stay raw and autocapture stays the default', async () => {
     runtimeConfigValue = {
       public: {
         analyticsLoadStrategy: 'immediate',
@@ -284,10 +332,21 @@ describe('posthog.client — strict privacy', () => {
 
     const config = posthogInit.mock.calls[0]?.[1] as Record<string, unknown>
     expect(config).not.toHaveProperty('autocapture')
-    expect(config).not.toHaveProperty('before_send')
+    expect(config.mask_all_text).toBeUndefined()
+    expect(typeof config.before_send).toBe('function')
     expect(posthogCapture).toHaveBeenCalledWith('$pageview', {
       $current_url: `${ORIGIN}/farms/frm_1/2024`,
     })
+
+    const sent = (config.before_send as (r: CaptureResult) => CaptureResult)(
+      event('$pageleave', {
+        $current_url: `${ORIGIN}/join?token=invite-secret#x`,
+        $el_text: 'invite body',
+      }),
+    )
+    expect(sent.properties.$current_url).toBe(`${ORIGIN}/join`)
+    expect(sent.properties).not.toHaveProperty('$el_text')
+    expect(sent.properties.$current_url).not.toContain(':farmId')
   })
 })
 

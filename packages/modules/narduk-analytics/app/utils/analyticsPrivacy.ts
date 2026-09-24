@@ -4,10 +4,11 @@ import type { ResolvedRouteLike } from './webVitals'
 import type { CaptureResult, Properties } from 'posthog-js'
 
 /**
- * `standard` is the behaviour every app had before this option existed.
- * `strict` is for an app whose pages hold private records: nothing that leaves
- * the browser may carry a raw path, a query string, a fragment, a page title or
- * the text of an element. See the README's "Strict privacy mode".
+ * `standard` is the default floor: fragments and sensitive query keys are
+ * stripped from URL properties, and element/page text is not sent. Paths and
+ * record ids stay visible. `strict` is opt-in for an app whose pages hold
+ * private records: nothing that leaves the browser may carry a raw path, a
+ * query string, a fragment, a page title or the text of an element.
  */
 export type AnalyticsPrivacy = 'standard' | 'strict'
 
@@ -69,9 +70,49 @@ export function templateUrl(
 const URL_KEY = /^\$.*(?:url|referrer)$/u
 const PATHNAME_KEY = /^\$.*pathname$/u
 // Element text and structure: autocapture, rage clicks and dead clicks. Strict
-// mode turns those off; these keys are dropped anyway in case a PostHog project
-// setting or a future default turns one back on.
+// mode turns those off; standard mode drops the keys so `$el_text` cannot leak
+// page copy while click-structure autocapture stays on.
 const DROPPED_KEYS = new Set(['title', '$title', '$el_text', '$elements', '$elements_chain'])
+
+/**
+ * Query keys that commonly carry reset, invite, OAuth or session secrets.
+ * UTM and ordinary UI params (`tab`, `layer`) are left alone.
+ */
+const SENSITIVE_QUERY_KEY =
+  /^(?:.*(?:token|secret|password|passwd|pwd|invite|invitation|auth|authorization|session|jwt|otp|magic)|code|key|api[_-]?key|email|state|reset)$/iu
+
+function isSensitiveQueryKey(key: string): boolean {
+  return SENSITIVE_QUERY_KEY.test(key)
+}
+
+function stripQueryAndFragment(path: string): string {
+  return path.split(/[?#]/u, 1)[0] || '/'
+}
+
+/**
+ * Standard-mode URL floor: drop the fragment and any sensitive query keys.
+ * Paths, record ids and ordinary params (including UTM) stay. Values that are
+ * not a URL or a path (`$direct`, empty) pass through unchanged.
+ */
+export function sanitizeStandardUrl(value: string): string {
+  if (!value) return value
+  const looksAbsolute = /^https?:\/\//iu.test(value)
+  const looksPath = value.startsWith('/') || value.startsWith('?') || value.startsWith('#')
+  if (!looksAbsolute && !looksPath) return value
+
+  try {
+    const url = looksAbsolute ? new URL(value) : new URL(value, 'https://narduk.invalid')
+    if (looksAbsolute && url.protocol !== 'http:' && url.protocol !== 'https:') return value
+    for (const key of [...url.searchParams.keys()]) {
+      if (isSensitiveQueryKey(key)) url.searchParams.delete(key)
+    }
+    const search = url.searchParams.toString()
+    const suffix = `${url.pathname}${search ? `?${search}` : ''}`
+    return looksAbsolute ? `${url.origin}${suffix}` : suffix
+  } catch {
+    return stripQueryAndFragment(value)
+  }
+}
 
 function isPlainObject(value: unknown): value is Properties {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -148,6 +189,49 @@ export function createStrictPrivacyBeforeSend(options: StrictPrivacyBeforeSendOp
     }
     if (isPlainObject(result.$set_once)) {
       scrubbed.$set_once = scrubProperties(result.$set_once, options.origin, options.resolveRoute)
+    }
+    return scrubbed
+  }
+}
+
+function sanitizeStandardProperties(properties: Properties): Properties {
+  const sanitized: Properties = {}
+  for (const [key, value] of Object.entries(properties)) {
+    if (DROPPED_KEYS.has(key)) continue
+    if (typeof value === 'string' && URL_KEY.test(key)) {
+      sanitized[key] = sanitizeStandardUrl(value)
+    } else if (typeof value === 'string' && PATHNAME_KEY.test(key)) {
+      sanitized[key] = stripQueryAndFragment(value)
+    } else if (isPlainObject(value)) {
+      sanitized[key] = sanitizeStandardProperties(value)
+    } else if (Array.isArray(value)) {
+      sanitized[key] = value.map((entry: unknown) =>
+        isPlainObject(entry) ? sanitizeStandardProperties(entry) : entry,
+      )
+    } else {
+      sanitized[key] = value
+    }
+  }
+  return sanitized
+}
+
+/**
+ * Standard-mode `before_send`: strips fragments and sensitive query keys from
+ * URL properties, drops element/page text, and leaves paths untemplated.
+ * This is not strict mode — record ids in the path still leave the browser.
+ */
+export function createStandardPrivacyBeforeSend() {
+  return (result: CaptureResult | null): CaptureResult | null => {
+    if (!result) return result
+    const scrubbed: CaptureResult = {
+      ...result,
+      properties: sanitizeStandardProperties(result.properties ?? {}),
+    }
+    if (isPlainObject(result.$set)) {
+      scrubbed.$set = sanitizeStandardProperties(result.$set)
+    }
+    if (isPlainObject(result.$set_once)) {
+      scrubbed.$set_once = sanitizeStandardProperties(result.$set_once)
     }
     return scrubbed
   }

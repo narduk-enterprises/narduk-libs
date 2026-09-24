@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { H3Event } from 'h3'
@@ -14,8 +18,14 @@ vi.mock('@narduk-enterprises/narduk-core/server/utils/logger', () => ({
   useLogger: () => noopLogger,
 }))
 
-const { notifyIndexNow, resolveIndexNowKeyFromRuntimeConfig } =
-  await import('../server/utils/indexNow')
+const {
+  assertIndexNowUrlsBelongToHost,
+  indexNowUrlBelongsToHost,
+  notifyIndexNow,
+  resolveIndexNowKeyFromRuntimeConfig,
+} = await import('../server/utils/indexNow')
+
+const SITE_HOST = 'example.com'
 
 function makeEvent(bindings: Record<string, unknown> = {}): H3Event {
   return {
@@ -62,6 +72,56 @@ describe('resolveIndexNowKeyFromRuntimeConfig', () => {
     const event = makeEvent({ NUXT_PUBLIC_INDEXNOW_KEY: 'alias-key' })
 
     expect(resolveIndexNowKeyFromRuntimeConfig(config, event)).toBe('alias-key')
+  })
+})
+
+describe('indexNowUrlBelongsToHost', () => {
+  it('accepts only URLs on the site host', () => {
+    expect(indexNowUrlBelongsToHost('https://example.com/about', SITE_HOST)).toBe(true)
+    expect(indexNowUrlBelongsToHost('https://example.com:443/about', SITE_HOST)).toBe(true)
+    expect(indexNowUrlBelongsToHost('https://evil.example/about', SITE_HOST)).toBe(false)
+    expect(indexNowUrlBelongsToHost('https://example.com.evil/about', SITE_HOST)).toBe(false)
+    expect(indexNowUrlBelongsToHost('not-a-url', SITE_HOST)).toBe(false)
+  })
+})
+
+describe('assertIndexNowUrlsBelongToHost', () => {
+  it('rejects a list that contains an off-host URL', () => {
+    try {
+      assertIndexNowUrlsBelongToHost(
+        ['https://example.com/ok', 'https://other.example/leak'],
+        SITE_HOST,
+      )
+      throw new Error('expected host_mismatch')
+    } catch (error: unknown) {
+      expect(error).toMatchObject({
+        statusCode: 400,
+        data: {
+          state: 'host_mismatch',
+          host: SITE_HOST,
+          rejected: ['https://other.example/leak'],
+        },
+      })
+    }
+  })
+
+  it('accepts an on-host list', () => {
+    expect(() =>
+      assertIndexNowUrlsBelongToHost(
+        ['https://example.com/', 'https://example.com/about'],
+        SITE_HOST,
+      ),
+    ).not.toThrow()
+  })
+})
+
+describe('indexnow submit route', () => {
+  it('keeps caller URLs on SITE_URL host', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'server/api/indexnow/submit.post.ts'),
+      'utf8',
+    )
+    expect(source).toContain('assertIndexNowUrlsBelongToHost')
   })
 })
 

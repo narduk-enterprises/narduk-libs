@@ -340,7 +340,7 @@ describe('posthog.client — web vitals wiring', () => {
       web_vitals: false,
       web_vitals_attribution: false,
     })
-    expect(options.before_send).toBeUndefined()
+    expect(options.before_send).toBeTypeOf('function')
     expect(extensionsWindow().__PosthogExtensions__).toBeUndefined()
   })
 
