@@ -21,5 +21,9 @@ export { default } from '@narduk-enterprises/stylelint-config'
 ```
 
 ```json
-{ "scripts": { "lint": "narduk-stylelint" } }
+{ "scripts": { "lint": "narduk-stylelint \"**/*.css\"" } }
 ```
+
+With no arguments, `narduk-stylelint` lints `**/*.{css,scss}` only. Vue SFCs
+need a Stylelint `customSyntax` (for example `postcss-html`) and an explicit
+path; the shared config does not parse `<style>` blocks.

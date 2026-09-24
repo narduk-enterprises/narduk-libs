@@ -14,6 +14,8 @@ import { relative, resolve } from 'node:path'
 import stylelint from 'stylelint'
 
 export const BUDGET_FILENAME = 'stylelint-budget.json'
+/** CSS and SCSS only. Vue SFCs need `customSyntax` and are not in the default glob. */
+export const DEFAULT_LINT_GLOBS = ['**/*.{css,scss}']
 export const EXIT_OK = 0
 export const EXIT_LINT_FAILURE = 1
 export const EXIT_USAGE = 2
@@ -205,7 +207,7 @@ export async function runNardukStylelint(argv, options = {}) {
   try {
     linted = await stylelint.lint({
       cwd,
-      files: args.patterns.length > 0 ? args.patterns : ['**/*.{css,vue,scss}'],
+      files: args.patterns.length > 0 ? args.patterns : DEFAULT_LINT_GLOBS,
       formatter: 'string',
     })
   } catch (error) {

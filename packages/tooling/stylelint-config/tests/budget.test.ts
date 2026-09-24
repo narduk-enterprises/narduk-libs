@@ -53,4 +53,22 @@ describe('narduk-stylelint budget', () => {
     })
     expect(code).toBe(EXIT_OK)
   })
+
+  it('does not lint Vue SFCs when no paths are passed', async () => {
+    const dir = fixture({
+      'ok.css': '.stack { z-index: var(--ns-z-dropdown); }\n',
+      'broken.vue':
+        '<script setup>\nconst computed = 1\n</script>\n<template><div /></template>\n<style>\n.x { z-index: 1; }\n</style>\n',
+      'stylelint-budget.json': JSON.stringify({ strict: true, rules: {}, files: {} }),
+    })
+    const logs: string[] = []
+    const code = await runNardukStylelint(['--no-write'], {
+      cwd: dir,
+      env: { CI: 'true' },
+      log: (line) => logs.push(line),
+      logError: (line) => logs.push(line),
+    })
+    expect(code).toBe(EXIT_OK)
+    expect(logs.join('\n')).not.toMatch(/CssSyntaxError|broken\.vue/u)
+  })
 })
