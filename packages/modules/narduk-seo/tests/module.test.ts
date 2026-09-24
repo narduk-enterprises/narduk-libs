@@ -205,13 +205,14 @@ describe('narduk-seo module', () => {
     ).toBe(true)
   })
 
-  it('skips nuxt-og-image when the optional peer is not installed (narduk-libs#170)', async () => {
+  async function expectSilentMissingPeerSkip(nuxtOptions?: Record<string, unknown>) {
     nuxtOgImagePackage.resolvable = false
 
-    const { addImports, installModule, loggerWarn, nuxt } = await setupModule()
+    const { addImports, installModule, loggerWarn, nuxt } = await setupModule(
+      nuxtOptions ? { nuxtOptions } : {},
+    )
 
     expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
-    expect(nuxt.options.ogImage).toMatchObject({ enabled: false })
     expect(addImports).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'defineOgImage',
@@ -222,10 +223,14 @@ describe('narduk-seo module', () => {
       (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
         ?.nardukSeoOgImageModule,
     ).toBe(false)
-    // Generated / static-card apps never set `ogImage.enabled`. The defu
-    // default of `true` must not warn -- packed-consumer-smoke treats Nuxt
-    // `[warn]` as a typecheck failure.
+    // packed-consumer-smoke treats Nuxt `[warn]` as a typecheck/build failure.
     expect(loggerWarn).not.toHaveBeenCalled()
+    return { nuxt }
+  }
+
+  it('skips nuxt-og-image when the optional peer is not installed (narduk-libs#170)', async () => {
+    const { nuxt } = await expectSilentMissingPeerSkip()
+    expect(nuxt.options.ogImage).toMatchObject({ enabled: false })
   })
 
   it('warns only when runtime OG is explicitly requested without the peer (narduk-libs#170)', async () => {
@@ -238,6 +243,13 @@ describe('narduk-seo module', () => {
     expect(loggerWarn).toHaveBeenCalledWith(
       expect.stringMatching(/optional nuxt-og-image@6\.8\.0 peer/u),
     )
+  })
+
+  it('stays silent when zeroRuntime is set and the peer is missing (narduk-libs#170)', async () => {
+    // `zeroRuntime` is not a runtime-OG request, so this skip stays silent
+    // the same way the default generated app does.
+    const { nuxt } = await expectSilentMissingPeerSkip({ ogImage: { zeroRuntime: true } })
+    expect(nuxt.options.ogImage).toMatchObject({ enabled: false, zeroRuntime: true })
   })
 
   it("adds the network row through narduk-core's footer, not a copy of it (narduk-libs#743)", async () => {

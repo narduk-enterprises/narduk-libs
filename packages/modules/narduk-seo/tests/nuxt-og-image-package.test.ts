@@ -21,6 +21,7 @@ describe('nuxt-og-image optional peer (narduk-libs#170)', () => {
     expect(isRuntimeOgImageGenerationExplicitlyRequested({})).toBe(false)
     expect(isRuntimeOgImageGenerationExplicitlyRequested({ enabled: true })).toBe(true)
     expect(isRuntimeOgImageGenerationExplicitlyRequested({ enabled: false })).toBe(false)
+    expect(isRuntimeOgImageGenerationExplicitlyRequested({ zeroRuntime: true })).toBe(false)
     expect(
       isRuntimeOgImageGenerationExplicitlyRequested({ enabled: true, zeroRuntime: true }),
     ).toBe(false)
