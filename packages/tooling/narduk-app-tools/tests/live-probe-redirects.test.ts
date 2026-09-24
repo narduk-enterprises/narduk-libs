@@ -79,6 +79,19 @@ describe('live probe credential origin boundary', () => {
     expect(requests).toBe(21)
   })
 
+  it('returns the first 3xx when redirect is manual', async () => {
+    const origin = await serve((_request, response) => {
+      response.writeHead(302, { location: '/new' })
+      response.end()
+    })
+    const result = await createLiveProbe()(origin + '/old', { redirect: 'manual' })
+    expect(result).toMatchObject({
+      status: 302,
+      redirected: true,
+      finalUrl: `${origin}/new`,
+    })
+  })
+
   it('preserves ordinary cross-origin redirects when no caller headers are supplied', async () => {
     const foreign = await serve((_request, response) => response.end('ok'))
     const origin = await serve((_request, response) => {

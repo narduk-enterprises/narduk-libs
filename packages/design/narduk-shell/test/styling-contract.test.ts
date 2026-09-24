@@ -104,12 +104,33 @@ const sources = new Map(
  * purpose, in the single place the contract is stated; the alternative was to
  * restyle two shipped components with no visual proof in the same change.
  */
+/**
+ * A declaration whose whole value is one token read — `var(--ne-radius-tag)`,
+ * `var(--ui-radius)` — reads a token; anything else in the value is raw.
+ *
+ * The three rules below used to reject the property name outright, which was
+ * right while every component styled itself through Nuxt UI utility classes
+ * and never wrote a declaration at all. `NeMeter` (narduk-libs#601) is the
+ * suite's first plain-element instrument with a `<style scoped>` block, and
+ * `font-family: var(--ne-font-mono)` is the contract working, not a breach of
+ * it: the token table says `--ne-font-mono` is for every measured number.
+ * Narrowed to exactly one `var()` of an NE or Nuxt UI token, with no fallback
+ * — a fallback is where a literal would hide.
+ */
+const TOKEN_READ_ONLY = String.raw`(?!\s*var\(--(?:ne|ui)-[a-z0-9-]+\)\s*(?:[;}]|$))`
+
 const FORBIDDEN = [
   { name: 'hex colour', pattern: /#[0-9a-f]{3,8}\b/i },
   { name: 'rgb/hsl/oklch colour', pattern: /\b(?:rgba?|hsla?|oklch)\s*\(/ },
-  { name: 'font-family', pattern: /\bfont-family\s*:/ },
-  { name: 'box-shadow', pattern: /\bbox-shadow\s*:/ },
-  { name: 'border-radius', pattern: /\bborder-radius\s*:/ },
+  {
+    name: 'font-family',
+    pattern: new RegExp(String.raw`\bfont-family\s*:` + TOKEN_READ_ONLY, 'm'),
+  },
+  { name: 'box-shadow', pattern: new RegExp(String.raw`\bbox-shadow\s*:` + TOKEN_READ_ONLY, 'm') },
+  {
+    name: 'border-radius',
+    pattern: new RegExp(String.raw`\bborder-radius\s*:` + TOKEN_READ_ONLY, 'm'),
+  },
   {
     name: 'Tailwind radius or shadow step',
     pattern: /\b(?:rounded-(?:md|lg|xl)|shadow-(?:md|lg))\b/,
@@ -125,6 +146,22 @@ const FORBIDDEN = [
 ]
 
 describe('styling contract', () => {
+  it('lets a declaration read one token, and still rejects a raw or fallback value', () => {
+    const rule = (name: string) => FORBIDDEN.find((entry) => entry.name === name)!.pattern
+    // Token reads: allowed.
+    expect('font-family: var(--ne-font-mono);').not.toMatch(rule('font-family'))
+    expect('border-radius: var(--ne-radius-tag);').not.toMatch(rule('border-radius'))
+    expect('box-shadow: var(--ne-shadow-1)\n}').not.toMatch(rule('box-shadow'))
+    expect('border-radius:var(--ui-radius)}').not.toMatch(rule('border-radius'))
+    // Raw values, fallbacks and compound values: still rejected.
+    expect("font-family: 'IBM Plex Mono', monospace;").toMatch(rule('font-family'))
+    expect('font-family: var(--ne-font-mono, monospace);').toMatch(rule('font-family'))
+    expect('border-radius: 9999px;').toMatch(rule('border-radius'))
+    expect('border-radius: calc(var(--ne-radius-base) * 2);').toMatch(rule('border-radius'))
+    expect('box-shadow: 0 1px 2px var(--ne-hairline);').toMatch(rule('box-shadow'))
+    expect('box-shadow: var(--app-shadow);').toMatch(rule('box-shadow'))
+  })
+
   it('covers every registered component', () => {
     expect(sources.size).toBe(NE_SHELL_COMPONENTS.length)
     expect(sources.size).toBeGreaterThan(0)

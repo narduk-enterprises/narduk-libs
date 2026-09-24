@@ -14,6 +14,23 @@ describe('narduk-testkit runner boundaries', () => {
     expect(rootSource).not.toContain("export * from './server/kit/")
   })
 
+  it('publishes hydration-mismatch for vite.define without pulling Playwright', () => {
+    const source = readFileSync(join(packageRoot, 'src/e2e/hydration-mismatch.ts'), 'utf8')
+    const fixtures = readFileSync(join(packageRoot, 'src/e2e/fixtures.ts'), 'utf8')
+
+    /*
+     * nuxt.config / vite.config must be able to spread the E2E-only Vue define
+     * without importing `e2e/fixtures`, which calls `test.extend` at module
+     * scope. The helper file is therefore a subpath with no Playwright import.
+     */
+    expect(source).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(fixtures).toContain("from './hydration-mismatch.js'")
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+    }
+    expect(Object.keys(packageJson.exports)).toContain('./e2e/hydration-mismatch')
+  })
+
   it('keeps the fixture server out of the root barrel', () => {
     const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
 
@@ -44,6 +61,25 @@ describe('narduk-testkit runner boundaries', () => {
       exports: Record<string, unknown>
     }
     expect(Object.keys(packageJson.exports)).toContain('./playwright/dev-port')
+  })
+
+  it('publishes the pr/web Playwright preset for config load, without the root barrel', () => {
+    const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
+    const source = readFileSync(join(packageRoot, 'src/playwright/config.ts'), 'utf8')
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, Record<string, string>>
+    }
+
+    expect(rootSource).not.toContain('./playwright/config')
+    const quarantine = readFileSync(join(packageRoot, 'src/playwright/quarantine.ts'), 'utf8')
+    expect(source).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(source).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    expect(quarantine).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(quarantine).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    expect(Object.keys(packageJson.exports)).toContain('./playwright/config')
+    const config = packageJson.exports['./playwright/config']
+    expect(config.require).toBe('./dist/playwright/config.js')
+    expect(config.require).toBe(config.import)
   })
 
   it('lets the dev-port helper be required, because Playwright loads a config as CJS', () => {

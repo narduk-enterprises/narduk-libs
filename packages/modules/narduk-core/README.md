@@ -385,6 +385,27 @@ not escalated.
 Operational guide:
 [an error page is showing / exceptions are spiking](../../../docs/operations/error-page-and-exceptions.md).
 
+## Tailwind sources and Nuxt UI component detection
+
+Nuxt UI adds an `@source` and scans for `U*` components only in Nuxt _layers_.
+narduk-core is a module installed under `node_modules`, so it registers its own
+files (narduk-libs#700):
+
+- `main.css` carries `@source '../../'`, so the utilities core's `runtime/app`
+  files use (the error page's `text-7xl` and `min-h-screen`, the header's
+  `md:flex`) are generated in an app that never names them.
+- When an app turns on `ui.experimental.componentDetection`, core adds the Nuxt
+  UI components its own files render (`src/nuxt-ui-components.ts`; `UButton` on
+  the error page, the `UDashboard*` set for the `dashboard` layout) to the
+  detection list. `true` becomes that list, which Nuxt UI still treats as
+  "detect, and always include these". An app lists only its own components.
+
+Another module does the same with `registerNuxtUiSources` from
+`@narduk-enterprises/narduk-core/nuxt-ui-sources`. Given `sources` (absolute
+directories) and `components`, it prepends an `@source` per directory to Nuxt
+UI's `ui.css` and extends the detection list, once every module is installed.
+narduk-auth uses it for its `app/` directory.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
@@ -1050,7 +1071,9 @@ Two more, both carrying `data.code`:
 A declared `content-length` is rejected before a byte is parsed. A body sent
 chunked — no declared length — is measured after the read, so the ceiling bounds
 what reaches `JSON.parse` and the schema, which is the cost this wrapper owns;
-the request size itself is bounded by the platform.
+the request size itself is bounded by the platform. On Cloudflare, Nitro reads
+the whole body before this wrapper runs. See
+[Inbound request bodies](#inbound-request-bodies-what-the-worker-reads-before-a-route-runs).
 
 The 415 covers a body sent with **no `content-type` at all**, not only one sent
 with the wrong type. Declaring `application/json` is what forces a CORS
@@ -1836,6 +1859,7 @@ deploy path) applies any new file; nothing is applied at runtime.
 | ----------------------------- | ------------------------------------------------------------- |
 | `0006_user_id_indexes.sql`    | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
 | `0007_api_key_hash_index.sql` | unique `api_keys_key_hash_idx` (see below)                    |
+| `0008_api_key_revoked_at.sql` | nullable `api_keys.revoked_at` (see below)                    |
 
 `0006` indexes the `user_id` foreign-key columns. `api_keys.user_id` is the only
 predicate of narduk-auth's `GET /api/auth/api-keys`, which scanned the whole
@@ -1853,6 +1877,20 @@ scanned `api_keys`, including one presenting a well-formed but fabricated key
 (#168). The index is `UNIQUE` because the column is the SHA-256 of a random
 32-byte token. `tests/api-key-hash-index-d1.test.ts` checks both lookups the
 same way.
+
+`0008` adds `api_keys.revoked_at` (ISO text, null while the key is live), so a
+key is withdrawn without deleting its row: `last_used_at`, `key_prefix` and the
+scopes are the audit trail a suspected leak needs (#806).
+`revokeApiKey(db, id, { userId?, now? })` sets it and returns `true`, or `false`
+when no live key matched (unknown id, another user's key when `userId` is given,
+or already revoked, whose first `revoked_at` is kept). `authenticateApiKey`
+returns `null` for a revoked key, and `authenticateD1ApiKey` answers
+`{ ok: false, reason: 'revoked' }`, checked before expiry. narduk-auth's
+`DELETE /api/auth/api-keys/:id` revokes this way, and its list omits revoked
+keys. Both authenticate functions read the column, so apply `0008` before
+deploying a Worker built with this version. A Postgres app adds the column with
+its own DDL: `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+`tests/api-key-revocation-d1.test.ts` covers it on Miniflare D1.
 
 ## Type declarations in `types/`
 
@@ -2234,6 +2272,59 @@ At the ceiling it throws `BoundedBodyTooLargeError`, which carries `maxBytes`.
 Pass `tooLarge: () => new MyError(...)` to throw your own error instead. Both
 functions are Nitro auto-imports, or import them from
 `@narduk-enterprises/narduk-core/server/utils/boundedBody`.
+
+## Inbound request bodies: what the Worker reads before a route runs
+
+This is a security note, not an API. On the `cloudflare-module` preset that
+narduk-core sets, Nitro reads the **whole** request body into memory before h3,
+any Nitro plugin or middleware, or any route handler runs. So no byte ceiling in
+this package, or in an app, can stop that first read (narduk-libs#458).
+
+The read is in nitropack 2.13.4, in
+`dist/presets/cloudflare/runtime/_module-handler.mjs`, in `fetchHandler`:
+
+```js
+if (requestHasBody(request)) {
+  body = Buffer.from(await request.arrayBuffer())
+}
+```
+
+`requestHasBody` looks only at the method (`POST`, `PUT` or `PATCH`), so neither
+a missing nor a large `content-length` skips the read. Nitro's first runtime
+hook, `request`, runs inside `nitroApp.localFetch`, which is reached only after
+that read. The only earlier code is the preset's own `fetch` step, which serves
+static assets and WebSocket upgrades, and nothing can add to it. Cloudflare's
+`request.arrayBuffer()` waits for the full body; it does not stream.
+
+**What bounds the read.** Only Cloudflare's edge. It refuses a request body over
+the plan's maximum (100 MB on Free and Pro, more on Business and Enterprise)
+before the Worker sees it. A Worker isolate has 128 MB of memory, so one body
+near the edge limit can cost most of an isolate before any route can refuse it.
+
+**What this package bounds.** Once the body is in memory, these ceilings limit
+what gets parsed. They do not stop the read above:
+
+- `defineValidatedHandler` answers 413 over `maxBodyBytes` (1 MiB by default).
+  It checks a declared length before parsing and measures a chunked body after
+  the read.
+- The CSP report route (`/api/_security/csp-report`) answers 413 over 64 KiB.
+
+**Why there is no Content-Length gate.** A check before the read would have to
+run in the Worker's `fetch` export. Nitro 2 has no hook there. The only way to
+add one is to replace the preset's entry with a wrapper that re-imports Nitro's
+internal runtime file, or to rewrite that file at build time. Either one breaks
+silently when the Nitro pin moves. It would also stop only a declared length: a
+chunked upload has no `content-length` and would be read in full anyway. So the
+cost of a wrapper outweighs what it would protect.
+
+**When to re-test.** Check this again whenever the `nitropack` pin in this
+package moves, and when the fleet moves to Nitro v3. On 2026-09-24, 2.13.4 was
+the newest nitropack 2.x on npm. In the Nitro v3 beta checked that day
+(`nitro@3.0.260903-beta`), the Cloudflare handler passes the `Request` itself to
+`nitroApp.fetch(request)` and does not buffer it. On v3, handlers can therefore
+stream the body and cancel it at a ceiling the way `readBoundedBody` does for
+responses. At that point, move the ceilings above from after the read to during
+it.
 
 ## Shared media components
 

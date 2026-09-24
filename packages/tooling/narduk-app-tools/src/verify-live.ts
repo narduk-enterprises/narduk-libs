@@ -54,7 +54,15 @@
  *     own configuration matches what the repository declares.
  */
 
-import { createLiveProbe, type LiveProbe, type LiveResponse } from './live-probe.js'
+import {
+  createDnsDiagnoser,
+  createResolverProbe,
+  PUBLIC_RESOLVERS,
+  VERIFY_RESOLVER_MODES,
+  type PublicResolve,
+  type VerifyResolverMode,
+} from './live-dns.js'
+import type { LiveProbe, LiveResponse } from './live-probe.js'
 
 /** Distinct per failure class, so a promote job can branch without parsing text. */
 export const VERIFY_EXIT = {
@@ -79,7 +87,17 @@ export const VERIFY_EXIT = {
 } as const
 
 export type VerifyAssertionId =
-  'origin' | 'build-version' | 'health' | 'smoke' | 'edge-cache' | 'edge-uncached'
+  | 'origin'
+  | 'build-version'
+  | 'health'
+  | 'smoke'
+  | 'edge-cache'
+  | 'edge-uncached'
+  /**
+   * The system resolver had no address for the host but public DNS did: a stale
+   * local negative answer, always `unknown` and exit 2 (narduk-libs#783).
+   */
+  | 'dns'
 export type VerifyAssertionStatus = 'pass' | 'fail' | 'unknown' | 'skipped'
 
 export interface VerifyAssertion {
@@ -105,6 +123,8 @@ export interface VerifyReport {
   expectedBuildId?: string | null
   attemptsUsed: number
   attemptsAllowed: number
+  /** Present only when the probes went through `--resolver public`. */
+  resolver?: 'public'
   assertions: VerifyAssertion[]
   result: 'PASS' | 'FAIL'
   exitCode: number
@@ -140,6 +160,12 @@ export interface VerifyFlags {
    */
   accessClientIdEnv: string | null
   accessClientSecretEnv: string | null
+  /**
+   * `system` (default) resolves the host like any other process. `public` dials
+   * an address from 1.1.1.1 / 8.8.8.8 instead, keeping the hostname for SNI and
+   * `Host` -- for a workstation holding a stale negative DNS answer.
+   */
+  resolver?: VerifyResolverMode
 }
 
 export const DEFAULT_VERIFY_FLAGS = {
@@ -238,6 +264,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     jsonPath: null,
     accessClientIdEnv: null,
     accessClientSecretEnv: null,
+    resolver: 'system',
   }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -307,7 +334,13 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
         requireValue(args, (index += 1), '--access-client-secret-env'),
         '--access-client-secret-env',
       )
-    else if (arg === '--json') {
+    else if (arg === '--resolver') {
+      const value = requireValue(args, (index += 1), '--resolver')
+      if (!VERIFY_RESOLVER_MODES.includes(value as VerifyResolverMode)) {
+        throw new Error(`--resolver must be system or public, got ${JSON.stringify(value)}`)
+      }
+      flags.resolver = value as VerifyResolverMode
+    } else if (arg === '--json') {
       const next = args[index + 1]
       if (next && !next.startsWith('--')) {
         flags.jsonPath = next
@@ -755,6 +788,11 @@ export interface VerifyContext {
   cacheBustToken?: (attempt: number) => string
   /** Where the Access service-token variables are read from; process.env by default. */
   env?: Record<string, string | undefined>
+  /**
+   * Public-DNS lookup for the stale-negative-cache diagnosis and for
+   * `--resolver public`; `node:dns` pinned to 1.1.1.1 / 8.8.8.8 by default.
+   */
+  resolvePublic?: PublicResolve
 }
 
 /** The query parameter name the cache buster uses. */
@@ -846,7 +884,19 @@ export async function runVerifyLive(
   }
   const now = context.now ?? (() => performance.now())
   const deadline = now() + (flags.deadlineMs ?? DEFAULT_VERIFY_FLAGS.deadlineMs)
-  const rawProbe = context.probe ?? createLiveProbe({ timeoutMs: flags.timeoutMs })
+  const resolverMode = flags.resolver ?? 'system'
+  const dns = createDnsDiagnoser({
+    mode: resolverMode,
+    exitCode: VERIFY_EXIT.unreachable,
+    resolvePublic: context.resolvePublic,
+  })
+  const rawProbe = dns.wrap(
+    context.probe ??
+      createResolverProbe(resolverMode, {
+        timeoutMs: flags.timeoutMs,
+        resolvePublic: context.resolvePublic,
+      }),
+  )
   const probe: LiveProbe = async (url, options = {}) => {
     const remaining = Math.floor(deadline - now())
     if (remaining <= 0) return { url, error: 'Overall live-proof deadline exceeded' }
@@ -867,7 +917,7 @@ export async function runVerifyLive(
       `${Date.now().toString(36)}-${String(n)}-${Math.random().toString(36).slice(2, 8)}`)
   while (attempt < flags.attempts) {
     attempt += 1
-    assertions = await runOnce(flags, probe, token(attempt), accessHeaders)
+    assertions = dns.annotate(await runOnce(flags, probe, token(attempt), accessHeaders))
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
     if (exitCode === VERIFY_EXIT.pass) break
@@ -887,6 +937,7 @@ export async function runVerifyLive(
     expectedBuildId: flags.expectBuildId ?? null,
     attemptsUsed: attempt,
     attemptsAllowed: flags.attempts,
+    ...(resolverMode === 'public' ? { resolver: 'public' as const } : {}),
     assertions,
     result: exitCode === VERIFY_EXIT.pass ? 'PASS' : 'FAIL',
     exitCode,
@@ -898,8 +949,11 @@ export function formatVerifyReport(report: VerifyReport): string {
     `narduk-app verify --live ${report.baseUrl}`,
     `  expected   ${report.expectedBuildId ?? report.expectedSha ?? '(no build identity assertion)'}`,
     `  attempts   ${String(report.attemptsUsed)} of ${String(report.attemptsAllowed)}`,
-    '',
   ]
+  if (report.resolver === 'public') {
+    lines.push(`  resolver   public (${PUBLIC_RESOLVERS.join(', ')}), SNI and Host kept`)
+  }
+  lines.push('')
   for (const assertion of report.assertions) {
     const mark =
       assertion.status === 'pass'

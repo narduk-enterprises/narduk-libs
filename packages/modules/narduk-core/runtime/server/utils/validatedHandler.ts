@@ -54,6 +54,20 @@ export interface ValidatedHandlerContext<QuerySchema, ParamsSchema, BodySchema> 
   query: ParsedOr<QuerySchema, undefined>
 }
 
+/**
+ * What {@link defineValidatedHandler} hands `authorize`.
+ *
+ * Params and query have already passed; the body has not been read. That is
+ * the point of the seam: `requireAuth(event)` used to live inside `handler`,
+ * so an unauthenticated caller still paid for the payload and the schema
+ * (narduk-libs#371).
+ */
+export interface ValidatedAuthorizeContext<QuerySchema, ParamsSchema> {
+  event: H3Event
+  params: ParsedOr<ParamsSchema, undefined>
+  query: ParsedOr<QuerySchema, undefined>
+}
+
 type ParsedOr<Schema, Fallback> = Schema extends ZodType ? ZodOutput<Schema> : Fallback
 
 type Awaitable<T> = T | Promise<T>
@@ -74,6 +88,13 @@ export interface ValidatedHandlerOptions<
   ResponseSchema extends ZodType | undefined,
   Result,
 > {
+  /**
+   * Runs after params and query pass, before the body is read. Throw an H3
+   * error (401/403) to reject. Prefer this over `requireAuth(event)` inside
+   * `handler` so an unauthenticated caller never pays for the body read
+   * (narduk-libs#371).
+   */
+  authorize?: (context: ValidatedAuthorizeContext<QuerySchema, ParamsSchema>) => Awaitable<void>
   /** JSON request body. Only read for `POST`, `PUT`, `PATCH` and `DELETE`. */
   body?: BodySchema
   /** The route itself. Receives the parsed values, never the raw request. */
@@ -137,6 +158,18 @@ export interface ValidatedHandlerOptions<
  * wire. Use `z.strictObject` to have an unpromised field *rejected* rather than
  * silently stripped.
  *
+ * ## Authorize before the body
+ *
+ * `authorize` runs after params and query pass and **before** the body is
+ * read. Put `requireAuth` (or any other gate) there, not inside `handler`.
+ * A 401 then never pays for the payload or the body schema.
+ *
+ * A `foundation:check` / lint rule that flags hand-rolled `zod` `safeParse`
+ * in app routes is out of scope here: that check belongs in narduk-app-tools
+ * or eslint-config, and needs a fleet-wide false-positive pass before it can
+ * be required. This wrapper is the library half; Buoys adoption is a
+ * separate app change.
+ *
  * ## Composing with `defineRateLimitedHandler`
  *
  * Rate limit **outside**, validate inside, so a throttled caller is rejected
@@ -184,6 +217,14 @@ export function defineValidatedHandler<
     // The body is only read once they pass: a request already doomed should not
     // buy a payload read, and on Workers that read is the expensive half.
     if (issues.length > 0) throw badRequest(issues)
+
+    if (options.authorize) {
+      await options.authorize({
+        event,
+        params,
+        query,
+      } as ValidatedAuthorizeContext<QuerySchema, ParamsSchema>)
+    }
 
     const body = await parseInput(
       options.body,
@@ -340,6 +381,20 @@ function badRequest(issues: ValidationIssue[]) {
     message: 'Request validation failed',
     data: { code: 'VALIDATION_FAILED', issues } satisfies ValidationErrorData,
   })
+}
+
+/**
+ * The same 400 {@link defineValidatedHandler} answers with, for callers that
+ * still parse zod themselves (mutation helpers). `unrecognized_keys` become
+ * path segments with a constant message — never key names in `statusMessage`.
+ */
+export function createValidationFailedError(
+  source: string,
+  issues: readonly RawIssue[],
+): ReturnType<typeof createError> {
+  const collected: ValidationIssue[] = []
+  collectIssues(source, issues, collected)
+  return badRequest(collected)
 }
 
 function payloadTooLarge(maxBodyBytes: number) {

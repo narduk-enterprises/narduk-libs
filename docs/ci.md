@@ -50,10 +50,13 @@ Python/Swift checks and browser/consumer gates. Forked PRs receive no registry
 secret: every workspace package dependency in this repository's lockfile is
 resolved locally, and `package-registry-auth: disabled` prevents the callable
 from generating a registry credential. The release job runs on `ubuntu-latest`
-after exact-SHA CI verification and requires the main-only `npm-release`
-environment. The job-scoped `GITHUB_TOKEN` publishes with `packages: write`;
-each existing package must grant this repository Actions access. Publication and
-external registry proof still run only from verified main history.
+after exact-SHA CI verification of a main commit. It stays out of the main-only
+`npm-release` environment, which holds the estate App key and is used only by
+jobs that check out and install nothing (see
+[package-releases.md](package-releases.md)). The job-scoped `GITHUB_TOKEN`
+publishes with `packages: write`; each existing package must grant this
+repository Actions access. Publication and external registry proof still run
+only from verified main history.
 
 The packed-consumer job restores a lockfile-keyed pnpm store seeded by a green
 main run, and shares that store across its root and generated consumer installs.
@@ -110,6 +113,35 @@ latency or CPU utilization.
 The packed-consumer proof hashes the downloaded Chromium binary, installed
 Playwright packages and manifest, OS release and native package inventory. A
 different hosted image or browser binary causes a full generated-app proof.
+
+### Packed-consumer reuse canary
+
+Accepted PR-to-main reuse is usually cold: a concurrent version commit changes
+the tree, tarballs, lock or generated sources, so main correctly executes the
+full generated-app proof. That fallback does not demonstrate the accepted path
+(narduk-libs#202).
+
+Trigger: Actions → **Packed-consumer reuse canary** → Run workflow, branch
+`main` only. The workflow is `workflow_dispatch` and asserts
+`github.ref == 'refs/heads/main'`. It does not run on pull requests and does not
+pack, install, generate, deploy or publish.
+
+The produce job writes one `kind: executed` receipt and uploads
+`packed-consumer-proof-${attempt}`. The consume jobs call
+`findReusablePackedConsumerProof` with a synthetic same-repo PR-to-main envelope
+(`ci.yml`, `package / packed-consumer-smoke`) and a **live** Actions artifact
+list/zip. `lookupConsumerProof` stays closed on dispatch. `consume-accepted`
+must log reuse of the expensive generated-app phases; `fallback-missing` and
+`fallback-changed` must log that those phases would execute. Every phase logs
+that a fresh external install remains required.
+
+Report the four job durations separately. Do not project a sub-eight-minute full
+pipeline from this canary.
+
+Cleanup: the receipt expires in seven days (the production retention).
+Re-dispatch cancels an in-progress canary. No branches, packages or registry
+state are created. After changing receipt lookup, CI permissions or runner
+images, re-dispatch from current `main`.
 
 ## Prebuilt-Worker e2e
 
