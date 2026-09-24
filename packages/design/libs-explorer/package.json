@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/libs-explorer",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "Narduk Libs Explorer: a browsable showcase of the workspace's components, foundations and package catalog.",

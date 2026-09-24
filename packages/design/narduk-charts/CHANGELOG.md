@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.6
+
+### Patch Changes
+
+- 42019f6: Pin SSR hydration for `NardukLineChart` and `ChartTooltip`. The
+  components are unchanged; these are the first hydration tests in the package,
+  added while narrowing riverstatus#204 — they server-render each component,
+  hydrate that exact markup and assert that Vue raised no warning, which is the
+  only place a hydration mismatch is visible.
+
+  `create-narduk-app` releases alongside because it pins narduk-charts.
+
 ## 2.5.5
 
 ### Patch Changes
