@@ -481,6 +481,11 @@ None. Toasts report add/remove; failures stay on the card.
 
 Mints and revokes personal API tokens. Renders on `/settings/api-keys`.
 
+A token whose scopes include `*` is a boundary-class credential
+(narduk-libs#168): `POST /api/auth/api-keys` refuses `expiresInDays: null` and
+caps the lifetime at 90 days. Narrow machine scopes may still omit expiry. The
+unique index on `api_keys.key_hash` lives in narduk-core (migration 0007).
+
 #### Props
 
 | Prop                    | Default | Purpose                                                                                         |

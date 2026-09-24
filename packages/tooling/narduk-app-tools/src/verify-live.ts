@@ -10,9 +10,11 @@
  *   1. `x-build-version` is the commit that was promoted. Compared as a hex
  *      prefix in both directions: narduk-core publishes `GITHUB_SHA.slice(0,12)`
  *      or a 12-character git SHA (`packages/modules/narduk-core/src/module.ts`),
- *      while `git rev-parse --short` emits 7 and `GITHUB_SHA` is 40. Verified
- *      live 2026-09-17: `curl -sSI https://buoystat.us/` ->
- *      `x-build-version: f736b07d7f49`.
+ *      while `git rev-parse --short` emits 7 and `GITHUB_SHA` is 40. Exact-SHA
+ *      proof reads this header from the health route when one is enabled: a
+ *      prerendered smoke path (generated SEO apps set `routeRules['/'].prerender`)
+ *      is a static asset and has no Worker header (narduk-libs#781). `--no-health`
+ *      falls back to the smoke path, then `/`.
  *   2. `/api/health` is healthy per the narduk-core health contract:
  *      `{ success, data: { status, timestamp, database, missingAuthTables, checks } }`
  *      (`packages/modules/narduk-core/runtime/server/api/health.get.ts`).
@@ -811,6 +813,14 @@ export function cacheBustedUrl(url: string, token: string, enabled: boolean): st
   return parsed.toString()
 }
 
+/** Route that carries `x-build-version` for exact-SHA / build-id proof. */
+export function identityProofPath(
+  flags: Pick<VerifyFlags, 'expectSha' | 'expectBuildId' | 'healthPath' | 'smokePath'>,
+): string | null {
+  if (!flags.expectSha && !flags.expectBuildId) return null
+  return flags.healthPath ?? flags.smokePath ?? '/'
+}
+
 async function runOnce(
   flags: VerifyFlags,
   rawProbe: LiveProbe,
@@ -823,32 +833,52 @@ async function runOnce(
   const assertions: VerifyAssertion[] = []
   const base = new URL(flags.baseUrl)
   const bust = (url: string): string => cacheBustedUrl(url, token, flags.cacheBust)
-  // The build-version header and the smoke route are read from ONE request:
-  // `x-build-version` is on every response, so probing the smoke path twice
-  // would only double the load on a deployment that is already under proof.
-  if (flags.expectSha || flags.expectBuildId || flags.smokePath) {
-    const url = bust(new URL(flags.smokePath ?? '/', base).toString())
-    const response = await probe(url, { timeoutMs: flags.timeoutMs })
-    const origin = assessOrigin(response, flags.baseUrl)
-    if (origin) assertions.push(origin)
-    if (flags.expectSha) {
-      assertions.push(assessBuildVersion(response, flags.expectSha, flags.buildVersionHeader))
-    }
-    if (flags.expectBuildId) {
-      assertions.push(
-        assessBuildVersion(response, flags.expectBuildId, flags.buildVersionHeader, 'exact'),
-      )
-    }
-    if (flags.smokePath) {
-      assertions.push(assessSmoke(response, flags.expectContentType))
-    }
+  const identity = identityProofPath(flags)
+  let smokeResponse: LiveResponse | undefined
+  let healthResponse: LiveResponse | undefined
+  let extraIdentity: LiveResponse | undefined
+  if (flags.smokePath) {
+    smokeResponse = await probe(bust(new URL(flags.smokePath, base).toString()), {
+      timeoutMs: flags.timeoutMs,
+    })
   }
   if (flags.healthPath) {
-    const url = bust(new URL(flags.healthPath, base).toString())
-    const response = await probe(url, { readBody: true, timeoutMs: flags.timeoutMs })
-    const origin = assessOrigin(response, flags.baseUrl)
+    healthResponse = await probe(bust(new URL(flags.healthPath, base).toString()), {
+      readBody: true,
+      timeoutMs: flags.timeoutMs,
+    })
+  }
+  if (identity && identity !== flags.smokePath && identity !== flags.healthPath) {
+    extraIdentity = await probe(bust(new URL(identity, base).toString()), {
+      timeoutMs: flags.timeoutMs,
+    })
+  }
+  const identityResponse =
+    identity === flags.healthPath
+      ? healthResponse
+      : identity === flags.smokePath
+        ? smokeResponse
+        : extraIdentity
+  const originSource = smokeResponse ?? healthResponse ?? extraIdentity
+  if (originSource) {
+    const origin = assessOrigin(originSource, flags.baseUrl)
+    if (origin) assertions.push(origin)
+  }
+  if (flags.expectSha && identityResponse) {
+    assertions.push(assessBuildVersion(identityResponse, flags.expectSha, flags.buildVersionHeader))
+  }
+  if (flags.expectBuildId && identityResponse) {
+    assertions.push(
+      assessBuildVersion(identityResponse, flags.expectBuildId, flags.buildVersionHeader, 'exact'),
+    )
+  }
+  if (flags.smokePath && smokeResponse) {
+    assertions.push(assessSmoke(smokeResponse, flags.expectContentType))
+  }
+  if (flags.healthPath && healthResponse) {
+    const origin = assessOrigin(healthResponse, flags.baseUrl)
     if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
-    assertions.push(assessHealth(response, { allowDegraded: flags.allowDegraded }))
+    assertions.push(assessHealth(healthResponse, { allowDegraded: flags.allowDegraded }))
   }
   // The edge proof must look like a visitor: no no-cache request headers, and
   // the same URL twice. With the cache buster on, that URL is fresh for this

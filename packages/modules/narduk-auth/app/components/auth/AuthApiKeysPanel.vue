@@ -4,6 +4,12 @@ import { formatBuildTimeLocal } from '@narduk-enterprises/narduk-core/app/utils/
 import { z } from 'zod'
 
 import {
+  BOUNDARY_API_KEY_MAX_EXPIRY_DAYS,
+  DEFAULT_API_KEY_EXPIRY_DAYS,
+  isBoundaryClassApiKey,
+  resolveApiKeyMintExpiry,
+} from '../../../shared/utils/api-key-lifetime'
+import {
   type AuthApiKeyCreateResponse,
   type AuthApiKeyScopeOption,
   type AuthApiKeySummary,
@@ -39,6 +45,7 @@ const AUTH_API_KEY_SCOPE_SUGGESTIONS = [
   },
 ] as const
 const API_KEY_EXPIRY_PRESETS = ['7 days', '30 days', '90 days', 'Never'] as const
+const BOUNDED_API_KEY_EXPIRY_PRESETS = ['7 days', '30 days', '90 days'] as const
 
 const formSchema = z.object({
   name: z
@@ -79,7 +86,20 @@ const tokenProfiles = computed(() => [...props.tokenProfiles])
 const showUnscopedWarning = computed(
   () => scopeSuggestions.value.length > 0 && draftScopes.value.length === 0,
 )
-const showNeverExpiresWarning = computed(() => formState.expiryPreset === 'Never')
+const isBoundaryDraft = computed(() => isBoundaryClassApiKey(draftScopes.value))
+const expiryPresets = computed(() =>
+  isBoundaryDraft.value ? BOUNDED_API_KEY_EXPIRY_PRESETS : API_KEY_EXPIRY_PRESETS,
+)
+const showNeverExpiresWarning = computed(
+  () => formState.expiryPreset === 'Never' && !isBoundaryDraft.value,
+)
+const showWildcardBoundWarning = computed(() => isBoundaryDraft.value)
+
+watch(isBoundaryDraft, (isBoundary) => {
+  if (isBoundary && formState.expiryPreset === 'Never') {
+    formState.expiryPreset = '30 days'
+  }
+})
 
 async function loadKeys() {
   loading.value = true
@@ -156,22 +176,31 @@ function resolveExpiryPreset(expiresInDays: number | null | undefined) {
   }
 }
 
-function formatPresetExpiry(expiresInDays: number | null | undefined) {
-  if (expiresInDays === null) {
+function formatPresetExpiry(
+  expiresInDays: number | null | undefined,
+  scopes: readonly string[] = [],
+) {
+  const mintExpiry = resolveApiKeyMintExpiry(scopes, expiresInDays)
+  const days = mintExpiry.ok ? mintExpiry.expiresInDays : DEFAULT_API_KEY_EXPIRY_DAYS
+  if (days === null) {
     return 'No expiry'
   }
 
-  return `${expiresInDays ?? 30} day expiry`
+  return `${days} day expiry`
 }
 
 function applyTokenProfile(tokenProfile: AuthApiKeyTokenProfile) {
   const trimmedName = tokenProfile.name?.trim()
+  const scopes = [
+    ...new Set((tokenProfile.scopes ?? []).map((scope) => scope.trim()).filter(Boolean)),
+  ]
+  const mintExpiry = resolveApiKeyMintExpiry(scopes, tokenProfile.expiresInDays)
   formState.name =
     trimmedName !== undefined && trimmedName !== '' ? trimmedName : tokenProfile.label
-  formState.scopesText = [
-    ...new Set((tokenProfile.scopes ?? []).map((scope) => scope.trim()).filter(Boolean)),
-  ].join('\n')
-  formState.expiryPreset = resolveExpiryPreset(tokenProfile.expiresInDays)
+  formState.scopesText = scopes.join('\n')
+  formState.expiryPreset = resolveExpiryPreset(
+    mintExpiry.ok ? mintExpiry.expiresInDays : DEFAULT_API_KEY_EXPIRY_DAYS,
+  )
 }
 
 function appendScopeSuggestion(scope: string) {
@@ -336,7 +365,7 @@ onMounted(() => {
                     Unscoped
                   </UBadge>
                   <UBadge color="neutral" variant="soft">
-                    {{ formatPresetExpiry(tokenProfile.expiresInDays) }}
+                    {{ formatPresetExpiry(tokenProfile.expiresInDays, tokenProfile.scopes) }}
                   </UBadge>
                 </div>
               </div>
@@ -397,7 +426,7 @@ onMounted(() => {
             <!-- eslint-disable narduk/no-unknown-component-prop -- False positive on v-model mapping to modelValue -->
             <USelectMenu
               v-model="formState.expiryPreset"
-              :items="[...API_KEY_EXPIRY_PRESETS]"
+              :items="[...expiryPresets]"
               class="w-full"
             />
             <!-- eslint-enable narduk/no-unknown-component-prop -->
@@ -417,6 +446,14 @@ onMounted(() => {
             variant="subtle"
             title="No expiry selected"
             description="Long-lived tokens are harder to contain. Prefer a short-lived token unless you have a concrete automation reason."
+          />
+
+          <UAlert
+            v-if="showWildcardBoundWarning"
+            color="warning"
+            variant="subtle"
+            title="Wildcard token"
+            :description="`A * token admits its bearer to every scoped route. It must expire, and the lifetime is capped at ${BOUNDARY_API_KEY_MAX_EXPIRY_DAYS} days.`"
           />
 
           <UButton type="submit" color="primary" icon="i-lucide-key-round" :loading="creating">

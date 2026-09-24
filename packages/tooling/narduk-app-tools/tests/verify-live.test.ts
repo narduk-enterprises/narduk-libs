@@ -7,6 +7,7 @@ import {
   buildVersionMatches,
   cacheBustedUrl,
   formatVerifyReport,
+  identityProofPath,
   parseVerifyArgs,
   resolveAccessHeaders,
   resolveExitCode,
@@ -220,7 +221,7 @@ describe('verify --live outcomes', () => {
   const okHealth: LiveResponse = {
     url: '',
     status: 200,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
     body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
   }
 
@@ -234,13 +235,45 @@ describe('verify --live outcomes', () => {
     expect(formatVerifyReport(report)).toContain('RESULT: PASS')
   })
 
-  it('retries a propagation delay and then passes', async () => {
-    const stale: LiveResponse = {
+  it('reads x-build-version from health when the smoke path is a prerendered static asset', async () => {
+    // create-narduk-app SEO apps prerender `/`; Cloudflare serves it as an
+    // asset with no Worker header. Health stays on the Worker (narduk-libs#781).
+    const prerenderedHome: LiveResponse = {
       url: '',
       status: 200,
-      headers: { 'x-build-version': 'aaaaaaaaaaaa', 'content-type': 'text/html' },
+      headers: { 'content-type': 'text/html;charset=utf-8' },
     }
-    const { probe } = scriptedProbe({ '/': [stale, stale, okHead], '/api/health': okHealth })
+    const workerHealth: LiveResponse = {
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': SHORT },
+    }
+    const { probe } = scriptedProbe({ '/': prerenderedHome, '/api/health': workerHealth })
+    const report = await runVerifyLive(flags(['--attempts', '1']), { probe, sleep: noSleep })
+    expect(report.result).toBe('PASS')
+    expect(report.exitCode).toBe(VERIFY_EXIT.pass)
+    expect(report.assertions.find((assertion) => assertion.id === 'build-version')).toMatchObject({
+      status: 'pass',
+    })
+    expect(report.assertions.find((assertion) => assertion.id === 'smoke')?.status).toBe('pass')
+  })
+
+  it('falls back to the smoke path for x-build-version when health is disabled', async () => {
+    const { probe } = scriptedProbe({ '/': okHead })
+    const report = await runVerifyLive(flags(['--no-health', '--attempts', '1']), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.result).toBe('PASS')
+    expect(identityProofPath(flags(['--no-health']))).toBe('/')
+    expect(identityProofPath(flags())).toBe('/api/health')
+  })
+
+  it('retries a propagation delay and then passes', async () => {
+    const stale: LiveResponse = {
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': 'aaaaaaaaaaaa' },
+    }
+    const { probe } = scriptedProbe({ '/': okHead, '/api/health': [stale, stale, okHealth] })
     const report = await runVerifyLive(flags(['--attempts', '4']), { probe, sleep: noSleep })
     expect(report.result).toBe('PASS')
     expect(report.attemptsUsed).toBe(3)
@@ -248,11 +281,10 @@ describe('verify --live outcomes', () => {
 
   it('exits 3 on a build version that never becomes the expected one', async () => {
     const stale: LiveResponse = {
-      url: '',
-      status: 200,
-      headers: { 'x-build-version': 'aaaaaaaaaaaa', 'content-type': 'text/html' },
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': 'aaaaaaaaaaaa' },
     }
-    const { probe } = scriptedProbe({ '/': stale, '/api/health': okHealth })
+    const { probe } = scriptedProbe({ '/': okHead, '/api/health': stale })
     const report = await runVerifyLive(flags(['--attempts', '2']), { probe, sleep: noSleep })
     expect(report.exitCode).toBe(VERIFY_EXIT.buildVersionMismatch)
     expect(report.attemptsUsed).toBe(2)
@@ -271,7 +303,7 @@ describe('verify --live outcomes', () => {
     const unhealthy: LiveResponse = {
       url: '',
       status: 503,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
       body: healthBody('error', [{ name: 'database', required: true, result: 'fail' }]),
     }
     const { probe } = scriptedProbe({ '/': okHead, '/api/health': unhealthy })
@@ -409,7 +441,7 @@ describe('exit code severity order', () => {
 const HEALTHY: LiveResponse = {
   url: '',
   status: 200,
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
   body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
 }
 
@@ -435,19 +467,15 @@ describe('B3 -- the live proof must not be satisfiable by a cached response', ()
 
   it('gives every attempt its own cache key, so a stale first answer cannot be replayed', async () => {
     const { probe, requests } = scriptedProbe({
-      '/': [
-        {
-          url: '',
-          status: 200,
-          headers: { 'x-build-version': 'deadbee', 'content-type': 'text/html' },
-        },
-        {
-          url: '',
-          status: 200,
-          headers: { 'x-build-version': SHORT, 'content-type': 'text/html' },
-        },
+      '/': {
+        url: '',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      },
+      '/api/health': [
+        { ...HEALTHY, headers: { ...HEALTHY.headers, 'x-build-version': 'deadbee' } },
+        HEALTHY,
       ],
-      '/api/health': HEALTHY,
     })
     const report = await runVerifyLive(flags(['--attempts', '2']), {
       probe,
@@ -736,7 +764,7 @@ describe('verify --live behind Cloudflare Access', () => {
       '/api/health': {
         url: '',
         status: 200,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
         body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
       },
     })
