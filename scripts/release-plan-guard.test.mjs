@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
 
 import {
@@ -8,6 +8,7 @@ import {
   NEVER_PUBLISHED_FILES,
   PUBLISH_LIFECYCLE_SCRIPTS,
   SUGGESTED_CHANGESET_PATH,
+  SWIFT_ONLY_PATH_PATTERNS,
   TEST_ONLY_PATH_PATTERNS,
   classifyChangedPackages,
   classifyManifestChange,
@@ -310,11 +311,17 @@ test('reordering a manifest is not a change', () => {
   assert.deepEqual(entry.manifest, { devOnly: [], deferred: [], releaseRelevant: [] })
 })
 
-test('any non-manifest file under a package keeps the original requirement', () => {
+test('any non-manifest file under a package keeps the original requirement; exemption: an unpublished swift/ path (#862)', () => {
   const entry = classifyOne(baseManifest, {
     changedFiles: ['packages/tooling/narduk-testkit/src/index.ts'],
   })
   assert.equal(entry.verdict, 'needs-changeset')
+  // The exemption this test names is SWIFT_ONLY_PATH_PATTERNS: a package-root
+  // `swift/` path the `files` list leaves out. `src/` is not on that list.
+  assert.equal(
+    SWIFT_ONLY_PATH_PATTERNS.some((pattern) => pattern.test('src/index.ts')),
+    false,
+  )
 
   const failing = renderGuardReport([entry], [])
   assert.equal(failing.ok, false)
@@ -541,4 +548,163 @@ test('the published-files match resolves every doubt toward published (#686)', (
     TEST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test('src/a.test.ts')),
     false,
   )
+})
+
+test('a SwiftPM-only swift/ change outside files owes no npm changeset (#862)', () => {
+  const loggingManifest = JSON.parse(
+    readFileSync(
+      new URL('../packages/modules/narduk-logging/package.json', import.meta.url),
+      'utf8',
+    ),
+  )
+  const authManifest = JSON.parse(
+    readFileSync(new URL('../packages/modules/narduk-auth/package.json', import.meta.url), 'utf8'),
+  )
+  const logging = {
+    name: '@narduk-enterprises/narduk-logging',
+    relativeDirectory: 'packages/modules/narduk-logging',
+    files: loggingManifest.files,
+  }
+  const auth = {
+    name: '@narduk-enterprises/narduk-auth',
+    relativeDirectory: 'packages/modules/narduk-auth',
+    files: authManifest.files,
+  }
+  const swiftLogging = 'swift/Sources/NardukLogging/Logger.swift'
+  const swiftAuth = 'swift/Sources/NardukAuthKit/NardukAuthClient.swift'
+  const exampleSwift = 'examples/swift/main.swift'
+  assert.equal(isInPublishedFiles(swiftLogging, logging.files), false)
+  assert.equal(isInPublishedFiles(swiftAuth, auth.files), false)
+  assert.equal(isInPublishedFiles(exampleSwift, logging.files), true)
+  assert.equal(
+    SWIFT_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(swiftLogging)),
+    true,
+  )
+  assert.equal(
+    SWIFT_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(exampleSwift)),
+    false,
+  )
+
+  const readManifests = () => {
+    throw new Error('no manifest changed')
+  }
+
+  // Swift-only: both SwiftPM products, neither path is in `files`.
+  const swiftOnly = classifyChangedPackages({
+    packages: [logging, auth],
+    changedFiles: [
+      `packages/modules/narduk-logging/${swiftLogging}`,
+      `packages/modules/narduk-auth/${swiftAuth}`,
+    ],
+    readManifests,
+  })
+  assert.deepEqual(
+    swiftOnly.map(({ name, verdict, otherFiles }) => ({ name, verdict, otherFiles })),
+    [
+      {
+        name: '@narduk-enterprises/narduk-auth',
+        verdict: 'ok',
+        otherFiles: [],
+      },
+      {
+        name: '@narduk-enterprises/narduk-logging',
+        verdict: 'ok',
+        otherFiles: [],
+      },
+    ],
+  )
+  assert.equal(renderGuardReport(swiftOnly, []).ok, true)
+
+  // examples/swift is published via narduk-logging's `examples` files entry.
+  const example = classifyChangedPackages({
+    packages: [logging],
+    changedFiles: [`packages/modules/narduk-logging/${exampleSwift}`],
+    readManifests,
+  })
+  assert.equal(example[0].verdict, 'needs-changeset')
+  assert.deepEqual(example[0].otherFiles, [exampleSwift])
+  assert.equal(renderGuardReport(example, []).ok, false)
+
+  // Mixed: the Swift path drops out; the npm source still owes a Changeset.
+  const mixed = classifyChangedPackages({
+    packages: [logging],
+    changedFiles: [
+      `packages/modules/narduk-logging/${swiftLogging}`,
+      'packages/modules/narduk-logging/src/logger.ts',
+    ],
+    readManifests,
+  })
+  assert.equal(mixed[0].verdict, 'needs-changeset')
+  assert.deepEqual(mixed[0].otherFiles, ['src/logger.ts'])
+  assert.equal(renderGuardReport(mixed, []).ok, false)
+
+  // The second condition: a `files` entry that names swift/ keeps the requirement.
+  const publishedSwift = classifyChangedPackages({
+    packages: [{ ...logging, files: [...logging.files, 'swift'] }],
+    changedFiles: [`packages/modules/narduk-logging/${swiftLogging}`],
+    readManifests,
+  })
+  assert.equal(publishedSwift[0].verdict, 'needs-changeset')
+  assert.deepEqual(publishedSwift[0].otherFiles, [swiftLogging])
+
+  // No `files` list means npm packs the tree, so swift/ stays release-relevant.
+  const packedByDefault = classifyChangedPackages({
+    packages: [
+      {
+        name: logging.name,
+        relativeDirectory: logging.relativeDirectory,
+      },
+    ],
+    changedFiles: [`packages/modules/narduk-logging/${swiftLogging}`],
+    readManifests,
+  })
+  assert.equal(packedByDefault[0].verdict, 'needs-changeset')
+
+  // Sibling language trees are not SwiftPM products and stay release-relevant.
+  const siblings = classifyChangedPackages({
+    packages: [logging],
+    changedFiles: [
+      'packages/modules/narduk-logging/go/handler.go',
+      'packages/modules/narduk-logging/python/src/narduk_logging/logger.py',
+    ],
+    readManifests,
+  })
+  assert.equal(siblings[0].verdict, 'needs-changeset')
+  assert.deepEqual(siblings[0].otherFiles, ['go/handler.go', 'python/src/narduk_logging/logger.py'])
+})
+
+test('every package-root swift/ tree is a target the root Package.swift builds (#862)', () => {
+  // SWIFT_ONLY_PATH_PATTERNS exempts a package-root `swift/` path because it
+  // ships on the repository `vX.Y.Z` tags, not in an npm tarball. A package
+  // whose `swift/` tree no Package.swift target builds breaks that premise, so
+  // it fails here instead of silently owing no release.
+  const root = new URL('../', import.meta.url)
+  const swiftPmPaths = [
+    ...readFileSync(new URL('Package.swift', root), 'utf8').matchAll(/path:\s*"([^"]+)"/gu),
+  ].map(([, path]) => path)
+  const families = [
+    ...readFileSync(new URL('pnpm-workspace.yaml', root), 'utf8').matchAll(
+      /^\s*-\s*"?(packages\/[\w-]+)\/\*"?\s*$/gmu,
+    ),
+  ].map(([, family]) => family)
+  assert.ok(families.length > 0)
+
+  const swiftTrees = families
+    .flatMap((family) =>
+      readdirSync(new URL(`${family}/`, root), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => `${family}/${entry.name}/swift`),
+    )
+    .filter((tree) => existsSync(new URL(tree, root)))
+    .sort()
+  assert.deepEqual(swiftTrees, [
+    'packages/modules/narduk-auth/swift',
+    'packages/modules/narduk-logging/swift',
+  ])
+  for (const tree of swiftTrees) {
+    assert.ok(
+      swiftPmPaths.some((path) => path.startsWith(`${tree}/`)),
+      `${tree} is exempt from the npm changeset guard, but no Package.swift target builds it`,
+    )
+  }
 })
