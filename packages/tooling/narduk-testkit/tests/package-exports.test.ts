@@ -71,8 +71,11 @@ describe('narduk-testkit runner boundaries', () => {
     }
 
     expect(rootSource).not.toContain('./playwright/config')
+    const quarantine = readFileSync(join(packageRoot, 'src/playwright/quarantine.ts'), 'utf8')
     expect(source).not.toMatch(/from ['"]@playwright\/test['"]/)
     expect(source).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    expect(quarantine).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(quarantine).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
     expect(Object.keys(packageJson.exports)).toContain('./playwright/config')
     const config = packageJson.exports['./playwright/config']
     expect(config.require).toBe('./dist/playwright/config.js')

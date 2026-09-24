@@ -69,7 +69,7 @@ steps:
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
       VERIFIED_SHA: \${{ github.event.workflow_run.head_sha }}
-    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --dry-run --json
+    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
     working-directory: apps/web
   - name: Apply compatible D1 migrations and require no drift
     env:

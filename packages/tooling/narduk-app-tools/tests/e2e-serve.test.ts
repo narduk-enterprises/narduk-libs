@@ -171,9 +171,66 @@ describe('e2e-serve real worker start', () => {
       `e2e-serve teardown pid=${String(pid)} exit=${String(child.exitCode)} signal=${String(child.signalCode)} stderr=${stderr}`,
     ).toBe(true)
   }, 60_000)
+
+  it('starts when the config binds a Worker outside the run, and says so (#788)', async () => {
+    const root = tempDir('narduk-e2e-serve-services-real-')
+    writeFixtureWorker(root, {
+      config: {
+        services: [
+          { binding: 'ENGINE', service: 'e2e-serve-fixture-engine' },
+          { binding: 'SELF', service: 'e2e-serve-fixture' },
+        ],
+      },
+      source: [
+        'export default {',
+        '  fetch(request, env) {',
+        '    return new Response(`engine=${typeof env.ENGINE} self=${typeof env.SELF?.fetch}`)',
+        '  },',
+        '}',
+        '',
+      ].join('\n'),
+    })
+    linkWorkspaceWrangler(root)
+    const port = await allocatePort()
+    const child = spawn(process.execPath, [ensureBuiltBin(), 'e2e-serve', String(port)], {
+      cwd: root,
+      env: { ...process.env, E2E_HOST: '127.0.0.1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let stderr = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+
+    try {
+      await waitForReady(child, () => stderr, port)
+      expect(stderr).toContain(
+        '[e2e-serve] dropping service binding ENGINE → e2e-serve-fixture-engine (not part of the E2E run)',
+      )
+      expect(stderr).not.toContain('dropping service binding SELF')
+
+      const response = await fetch(`http://127.0.0.1:${String(port)}/`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe('engine=undefined self=function')
+    } finally {
+      if (child.pid !== undefined) {
+        try {
+          process.kill(child.pid, 'SIGTERM')
+        } catch {
+          // Already exited.
+        }
+      }
+      await waitForExit(child)
+    }
+  }, 60_000)
 })
 
+let builtBin: string | undefined
+
+/** Build `dist/` once per file; both real-start tests spawn the same bin. */
 function ensureBuiltBin(): string {
+  if (builtBin) return builtBin
   const bin = join(packageRoot, 'dist', 'bin.js')
   const result = spawnSync('pnpm', ['exec', 'tsc', '--project', 'tsconfig.build.json'], {
     cwd: packageRoot,
@@ -185,10 +242,14 @@ function ensureBuiltBin(): string {
     )
   }
   if (!existsSync(bin)) throw new Error(`e2e-serve start test expected ${bin}`)
+  builtBin = bin
   return bin
 }
 
-function writeFixtureWorker(root: string): void {
+function writeFixtureWorker(
+  root: string,
+  fixture: { config?: Record<string, unknown>; source?: string } = {},
+): void {
   writeJson(root, 'package.json', {
     name: 'e2e-serve-fixture',
     type: 'module',
@@ -198,11 +259,13 @@ function writeFixtureWorker(root: string): void {
     name: 'e2e-serve-fixture',
     main: '.output/server/index.mjs',
     compatibility_date: '2024-09-17',
+    ...fixture.config,
   })
   mkdirSync(join(root, '.output', 'server'), { recursive: true })
   writeFileSync(
     join(root, '.output', 'server', 'index.mjs'),
-    'export default { fetch() { return new Response("e2e-serve-fixture-ok") } }\n',
+    fixture.source ??
+      'export default { fetch() { return new Response("e2e-serve-fixture-ok") } }\n',
   )
 }
 

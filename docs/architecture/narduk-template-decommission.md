@@ -11,10 +11,12 @@ last_verified: 2026-07-22
 The **canonical source of truth** for narduk-template decoupling and final
 decommission is:
 
-**https://github.com/narduk-enterprises/company-hq/blob/main/untangle/narduk-template-decommission-ledger.md**
+**https://github.com/narduk-enterprises/company-hq/blob/archive/untangle-2026-09-23/untangle/narduk-template-decommission-ledger.md**
 
 (`narduk-enterprises/company-hq` →
-`untangle/narduk-template-decommission-ledger.md`)
+`untangle/narduk-template-decommission-ledger.md`, archived at the
+`archive/untangle-2026-09-23` tag after company-hq#799 deleted `untangle/` with
+no live relocation for this file)
 
 This path historically forked a full copy of the ledger. Dual SSOT caused agent
 drift (fundamentals program 2026-07-22). Keep this file as a short pointer only.
