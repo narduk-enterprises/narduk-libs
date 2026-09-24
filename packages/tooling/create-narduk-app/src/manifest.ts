@@ -94,6 +94,11 @@ export const PACKAGE_VERSIONS = {
   // narduk-seo's current module set uses Unhead 3's tree-shake transform.
   // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
   nuxt: '4.5.2',
+  // narduk-seo@2.6+ treats this as an optional peer (narduk-libs#170).
+  // Generated SEO apps still call useSeo() with runtime OG on by default,
+  // so the scaffold must install the peer -- otherwise packed-consumer-smoke
+  // typecheck/build warns and the #316 /_og/ proofs receive /og.png.
+  'nuxt-og-image': '6.8.0',
   '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
   tailwindcss: '4.3.2',
@@ -115,7 +120,7 @@ const capabilityPackages: Record<Capability, readonly string[]> = {
   // [...]` array for exactly this reason.
   charts: ['@narduk-enterprises/narduk-charts'],
   mapkit: ['@narduk-enterprises/narduk-mapkit', '@narduk-enterprises/narduk-mapkit-nuxt'],
-  seo: ['@narduk-enterprises/narduk-seo'],
+  seo: ['@narduk-enterprises/narduk-seo', 'nuxt-og-image'],
   uploads: ['@narduk-enterprises/narduk-uploads'],
 }
 
@@ -260,11 +265,10 @@ export function createRootPackageManifest(
         'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
-      // authenticate and install before `narduk-app` / `nuxt` exist. The
-      // helper writes a temp userconfig (never a tracked file) and runs a
-      // frozen install; the web package's `cf:build` is the Nuxt compile.
-      'cf:build':
-        'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+      // install before `narduk-app` / `nuxt` exist. The frozen install reads
+      // `@narduk-enterprises/*` from `https://npm.nard.uk` with no token.
+      // `scripts/gh-packages-run.mjs` remains opt-in break-glass.
+      'cf:build': 'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
       ...(databaseBackend === 'none'

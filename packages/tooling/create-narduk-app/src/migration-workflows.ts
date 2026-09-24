@@ -13,9 +13,7 @@ function setup(): string {
           node-version-file: .node-version
           package-manager-cache: false
       - name: Install frozen trusted toolchain
-        env:
-          GH_PACKAGES_READ: \${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-        run: node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 `
 }
 

@@ -1,5 +1,7 @@
 export * from './assets.js'
 export * from './cloudflare.js'
+export * from './worker-identity.js'
+export * from './preview-proof.js'
 export * from './deploy.js'
 export * from './deploy-local.js'
 export * from './deploy-hotfix.js'
