@@ -53,10 +53,15 @@ ships `NeKpiTile` and `NeKpiBand`;
 [narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)
 ships `NeDataTable`, `NeSortHeader` and `NeCsvDownload` — the `UTable` preset
 with column groups, the promoted sort header, and CSV of the rows in view — and
-extends `NePager` with a page-size select and a “Show more” mode. Components
-read Nuxt UI semantic tokens and `UBadge` colour/variant props, and do not
-hardcode a colour, radius, shadow or font. Each later item adds its own
-component, README section, tests and NE Base card.
+extends `NePager` with a page-size select and a “Show more” mode;
+[narduk-libs#601](https://github.com/narduk-enterprises/narduk-libs/issues/601)
+ships `NeMeter`, and
+[narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602)
+adds the `--ne-hatch` unreported treatment that `NeMeter` and `NeKpiTile` render
+for a figure with no producer. Components read Nuxt UI semantic tokens and
+`UBadge` colour/variant props, and do not hardcode a colour, radius, shadow or
+font. Each later item adds its own component, README section, tests and NE Base
+card.
 
 ## Install
 
@@ -269,7 +274,11 @@ a component is covered the moment it is registered and cannot be silently left
 out. It reads the template, the script and any style block (comments removed)
 and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw `font-family` /
 `box-shadow` / `border-radius` declaration, and Tailwind's named radius and
-shadow steps.
+shadow steps. "Raw" is exact: a declaration whose whole value is one token read
+— `font-family: var(--ne-font-mono)`, `border-radius: var(--ne-radius-tag)` —
+passes, and anything else in the value, a `var()` fallback included, fails. That
+narrowing arrived with `NeMeter`, the first component with a `<style scoped>`
+block of its own.
 
 Tailwind's **type scale is not** a hardcoded value: under Tailwind v4 `text-sm`
 compiles to `font-size: var(--text-sm)` and `font-medium` to
@@ -345,50 +354,52 @@ blocks, so nothing resolves by accident.
 
 <!-- ne-token-table:start -->
 
-| Token                   | Purpose                                                                          | Light                                                                    | Dark                                                               |
-| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `--ne-ground`           | Page ground behind every panel. Painted by the app on `body`.                    | `#f4f6f7`                                                                | `#0c1216`                                                          |
-| `--ne-surface`          | Base panel and card surface.                                                     | `#ffffff`                                                                | `#141c22`                                                          |
-| `--ne-surface-muted`    | Muted fill: table headers, quiet sections.                                       | `#f4f6f7`                                                                | `#0f171c`                                                          |
-| `--ne-surface-elevated` | Raised fill: inputs, menus, popovers.                                            | `#eef1f3`                                                                | `#1c252d`                                                          |
-| `--ne-surface-accented` | Strongest neutral fill: hover, active, wells.                                    | `#e3e8eb`                                                                | `#26313a`                                                          |
-| `--ne-surface-inverted` | Inverted chip and tooltip fill.                                                  | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-ink`              | Headings and the strongest ink.                                                  | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-ink-body`         | Body text.                                                                       | `#18212a`                                                                | `#dde5ea`                                                          |
-| `--ne-ink-secondary`    | Strong secondary text.                                                           | `#3c4a54`                                                                | `#b1bec8`                                                          |
-| `--ne-ink-muted`        | Labels and metadata. The lightest ink allowed on text.                           | `#5a6570`                                                                | `#9aa8b3`                                                          |
-| `--ne-ink-dimmed`       | Placeholders and disabled chrome. Never body text.                               | `#8b949d`                                                                | `#6d7b85`                                                          |
-| `--ne-ink-inverted`     | Ink on an inverted surface.                                                      | `#ffffff`                                                                | `#0c1216`                                                          |
-| `--ne-hairline`         | Card and panel hairline.                                                         | `#dde3e7`                                                                | `#243039`                                                          |
-| `--ne-divider`          | Row rules and soft dividers.                                                     | `#eaeef1`                                                                | `#1b242b`                                                          |
-| `--ne-line-strong`      | Control borders and focus rings.                                                 | `#c9d1d7`                                                                | `#33424d`                                                          |
-| `--ne-line-inverted`    | Border on an inverted surface.                                                   | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-accent`           | Brand hook. Interaction, links, data ink, the brand mark.                        | `#2f6b8f`                                                                | `#63a6cd`                                                          |
-| `--ne-accent-soft`      | Accent tint for fills and selected rows.                                         | `#e6eef3`                                                                | `#17303f`                                                          |
-| `--ne-accent-ink`       | Ink on an accent fill.                                                           | `#ffffff`                                                                | `#0c1216`                                                          |
-| `--ne-structure`        | Brand hook. Structural chrome: rails, headers, bezels.                           | `#18212a`                                                                | `#0c1216`                                                          |
-| `--ne-structure-ink`    | Ink on structural chrome.                                                        | `#ffffff`                                                                | `#f3f7f9`                                                          |
-| `--ne-radius-base`      | Radius unit. Bridged to `--ui-radius`, so Nuxt UI's radius ramp derives from it. | `0.375rem`                                                               | `0.375rem`                                                         |
-| `--ne-radius-control`   | Control radius. Equals Tailwind `rounded-md`.                                    | `calc(var(--ne-radius-base) * 1.5)`                                      | `calc(var(--ne-radius-base) * 1.5)`                                |
-| `--ne-radius-panel`     | Panel and card radius. Equals Tailwind `rounded-lg`.                             | `calc(var(--ne-radius-base) * 2)`                                        | `calc(var(--ne-radius-base) * 2)`                                  |
-| `--ne-radius-tag`       | Tag, chip and pill radius.                                                       | `9999px`                                                                 | `9999px`                                                           |
-| `--ne-shadow-1`         | Resting panel depth.                                                             | `0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04)`         | `0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05)`    |
-| `--ne-shadow-2`         | Raised and overlay depth.                                                        | `0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28)` | `0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75)` |
-| `--ne-shadow-control`   | Inset control depth.                                                             | `inset 0 1px 2px rgb(14 20 24 / 0.08)`                                   | `inset 0 1px 2px rgb(0 0 0 / 0.45)`                                |
-| `--ne-font-sans`        | Language. Instrument Sans, not bundled.                                          | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                 | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`           |
-| `--ne-font-mono`        | Every measured number. IBM Plex Mono, not bundled.                               | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                        | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                  |
-| `--ne-text-display`     | Display size.                                                                    | `38px`                                                                   | `38px`                                                             |
-| `--ne-text-title`       | Page title size.                                                                 | `28px`                                                                   | `28px`                                                             |
-| `--ne-text-heading`     | Section heading size.                                                            | `22px`                                                                   | `22px`                                                             |
-| `--ne-text-body`        | Body size.                                                                       | `15px`                                                                   | `15px`                                                             |
-| `--ne-text-small`       | Secondary and dense-table size.                                                  | `13px`                                                                   | `13px`                                                             |
-| `--ne-text-label`       | Uppercase mono label size.                                                       | `11px`                                                                   | `11px`                                                             |
-| `--ne-leading-tight`    | Line height for display, title and heading.                                      | `1.1`                                                                    | `1.1`                                                              |
-| `--ne-leading-body`     | Line height for prose.                                                           | `1.55`                                                                   | `1.55`                                                             |
-| `--ne-tracking-tight`   | Tracking for display, title and heading.                                         | `-0.03em`                                                                | `-0.03em`                                                          |
-| `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                 | `0.12em`                                                           |
-| `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                 | `1320px`                                                           |
-| `--ne-header-height`    | App header height.                                                               | `4rem`                                                                   | `4rem`                                                             |
+| Token                   | Purpose                                                                          | Light                                                                                 | Dark                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `--ne-ground`           | Page ground behind every panel. Painted by the app on `body`.                    | `#f4f6f7`                                                                             | `#0c1216`                                                                             |
+| `--ne-surface`          | Base panel and card surface.                                                     | `#ffffff`                                                                             | `#141c22`                                                                             |
+| `--ne-surface-muted`    | Muted fill: table headers, quiet sections.                                       | `#f4f6f7`                                                                             | `#0f171c`                                                                             |
+| `--ne-surface-elevated` | Raised fill: inputs, menus, popovers.                                            | `#eef1f3`                                                                             | `#1c252d`                                                                             |
+| `--ne-surface-accented` | Strongest neutral fill: hover, active, wells.                                    | `#e3e8eb`                                                                             | `#26313a`                                                                             |
+| `--ne-surface-inverted` | Inverted chip and tooltip fill.                                                  | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-ink`              | Headings and the strongest ink.                                                  | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-ink-body`         | Body text.                                                                       | `#18212a`                                                                             | `#dde5ea`                                                                             |
+| `--ne-ink-secondary`    | Strong secondary text.                                                           | `#3c4a54`                                                                             | `#b1bec8`                                                                             |
+| `--ne-ink-muted`        | Labels and metadata. The lightest ink allowed on text.                           | `#5a6570`                                                                             | `#9aa8b3`                                                                             |
+| `--ne-ink-dimmed`       | Placeholders and disabled chrome. Never body text.                               | `#8b949d`                                                                             | `#6d7b85`                                                                             |
+| `--ne-ink-inverted`     | Ink on an inverted surface.                                                      | `#ffffff`                                                                             | `#0c1216`                                                                             |
+| `--ne-hairline`         | Card and panel hairline.                                                         | `#dde3e7`                                                                             | `#243039`                                                                             |
+| `--ne-divider`          | Row rules and soft dividers.                                                     | `#eaeef1`                                                                             | `#1b242b`                                                                             |
+| `--ne-line-strong`      | Control borders and focus rings.                                                 | `#c9d1d7`                                                                             | `#33424d`                                                                             |
+| `--ne-line-inverted`    | Border on an inverted surface.                                                   | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-hatch`            | Unreported material for a small slot: a meter track, a chip.                     | `repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px)`  | `repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px)`  |
+| `--ne-hatch-soft`       | Unreported material for a large area with its own em-dash.                       | `repeating-linear-gradient(135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px)` | `repeating-linear-gradient(135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px)` |
+| `--ne-accent`           | Brand hook. Interaction, links, data ink, the brand mark.                        | `#2f6b8f`                                                                             | `#63a6cd`                                                                             |
+| `--ne-accent-soft`      | Accent tint for fills and selected rows.                                         | `#e6eef3`                                                                             | `#17303f`                                                                             |
+| `--ne-accent-ink`       | Ink on an accent fill.                                                           | `#ffffff`                                                                             | `#0c1216`                                                                             |
+| `--ne-structure`        | Brand hook. Structural chrome: rails, headers, bezels.                           | `#18212a`                                                                             | `#0c1216`                                                                             |
+| `--ne-structure-ink`    | Ink on structural chrome.                                                        | `#ffffff`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-radius-base`      | Radius unit. Bridged to `--ui-radius`, so Nuxt UI's radius ramp derives from it. | `0.375rem`                                                                            | `0.375rem`                                                                            |
+| `--ne-radius-control`   | Control radius. Equals Tailwind `rounded-md`.                                    | `calc(var(--ne-radius-base) * 1.5)`                                                   | `calc(var(--ne-radius-base) * 1.5)`                                                   |
+| `--ne-radius-panel`     | Panel and card radius. Equals Tailwind `rounded-lg`.                             | `calc(var(--ne-radius-base) * 2)`                                                     | `calc(var(--ne-radius-base) * 2)`                                                     |
+| `--ne-radius-tag`       | Tag, chip and pill radius.                                                       | `9999px`                                                                              | `9999px`                                                                              |
+| `--ne-shadow-1`         | Resting panel depth.                                                             | `0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04)`                      | `0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05)`                       |
+| `--ne-shadow-2`         | Raised and overlay depth.                                                        | `0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28)`              | `0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75)`                    |
+| `--ne-shadow-control`   | Inset control depth.                                                             | `inset 0 1px 2px rgb(14 20 24 / 0.08)`                                                | `inset 0 1px 2px rgb(0 0 0 / 0.45)`                                                   |
+| `--ne-font-sans`        | Language. Instrument Sans, not bundled.                                          | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                              | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                              |
+| `--ne-font-mono`        | Every measured number. IBM Plex Mono, not bundled.                               | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                                     | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                                     |
+| `--ne-text-display`     | Display size.                                                                    | `38px`                                                                                | `38px`                                                                                |
+| `--ne-text-title`       | Page title size.                                                                 | `28px`                                                                                | `28px`                                                                                |
+| `--ne-text-heading`     | Section heading size.                                                            | `22px`                                                                                | `22px`                                                                                |
+| `--ne-text-body`        | Body size.                                                                       | `15px`                                                                                | `15px`                                                                                |
+| `--ne-text-small`       | Secondary and dense-table size.                                                  | `13px`                                                                                | `13px`                                                                                |
+| `--ne-text-label`       | Uppercase mono label size.                                                       | `11px`                                                                                | `11px`                                                                                |
+| `--ne-leading-tight`    | Line height for display, title and heading.                                      | `1.1`                                                                                 | `1.1`                                                                                 |
+| `--ne-leading-body`     | Line height for prose.                                                           | `1.55`                                                                                | `1.55`                                                                                |
+| `--ne-tracking-tight`   | Tracking for display, title and heading.                                         | `-0.03em`                                                                             | `-0.03em`                                                                             |
+| `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                              | `0.12em`                                                                              |
+| `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                              | `1320px`                                                                              |
+| `--ne-header-height`    | App header height.                                                               | `4rem`                                                                                | `4rem`                                                                                |
 
 <!-- ne-token-table:end -->
 
@@ -414,6 +425,92 @@ required 4.5:1 — on the rendered `/login` card subtitle and footer. The test
 reproduces that pair, asserts it fails, and asserts the shipped `--ne-ink-muted`
 clears 4.5:1 on every surface in both schemes, so the same values cannot come
 back as a default.
+
+### The unreported treatment
+
+[narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602).
+A figure can be in one of three states, and each needs a different look:
+
+| State          | What it means                                  | What it looks like                                           |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| **Zero**       | Something measured, and the answer was `0`.    | An empty track; the digit `0`.                               |
+| **Stale**      | Something measured, a while ago.               | The last figure and its age (`narduk-ui`'s freshness chips). |
+| **Unreported** | Nothing produced a figure. There is no answer. | The hatch; an em-dash; named "not reported".                 |
+
+The rule for the third: **an unreported figure gets geometry with texture and no
+magnitude.** A hatch of 1px diagonals has no length to compare, so it says
+"there is a slot here and nothing filled it". An empty bar says "the answer is
+zero", which for a figure nobody measured is false. `narduk-ui`'s `NsLevelWell`
+had this rule first ("missing wells are hatched with an em-dash, never rendered
+empty"); this is the same rule on the NE token layer.
+
+It comes in two shapes, and the second is the one to reach for:
+
+1. **Components take `null` and render it themselves.** `NeMeter` and
+   `NeKpiTile` accept a `null` (or `undefined`, or a non-finite number) value
+   and draw the treatment on their own, so a call site cannot forget it — pass
+   the `null` straight from the API rather than defaulting it to `0`.
+2. **A token and a CSS contract**, for a figure in your own markup:
+
+```css
+/* The slot keeps its reported size — a row must not reflow when data arrives. */
+.my-figure[data-state='unreported'] {
+  background-color: var(--ne-surface);
+  background-image: var(--ne-hatch); /* or --ne-hatch-soft for a large area */
+  color: var(--ne-ink-muted);
+}
+```
+
+```vue
+<script setup lang="ts">
+import {
+  isUnreported,
+  NE_UNREPORTED_TEXT,
+} from '@narduk-enterprises/narduk-shell'
+import { formatNumber } from '@narduk-enterprises/narduk-shell/format'
+
+const props = defineProps<{ value: number | null }>()
+const missing = computed(() => isUnreported(props.value))
+</script>
+
+<template>
+  <span
+    class="my-figure"
+    :data-state="missing ? 'unreported' : undefined"
+    :role="missing ? 'img' : undefined"
+    :aria-label="missing ? NE_UNREPORTED_TEXT : undefined"
+    >{{ formatNumber(value) }}</span
+  >
+</template>
+```
+
+The contract, in full:
+
+- **Decide it with `isUnreported(value)`**: `null`, `undefined` or a non-finite
+  number (a `NaN` is no more a measurement than a `null` is). A string is a
+  caller's own formatted figure and never counts. Exported from the package
+  root, and the test `NeMeter` and `NeKpiTile` use.
+
+- **Paint the hatch with `background-image`**, over the slot's own surface
+  colour, at the slot's reported size. `--ne-hatch` (drawn in `--ne-ink-dimmed`)
+  is for a small slot where the texture is the whole signal — a meter track, a
+  chip. `--ne-hatch-soft` (drawn in `--ne-line-strong`) is for a large area that
+  carries its own em-dash on top — a tile's value, a chart well.
+- **Print an em-dash, never `0` and never blank.** `formatNumber(null)` already
+  returns `—`.
+- **Name it.** The accessible text is `NE_UNREPORTED_TEXT` (`'Not reported'`,
+  exported from the package root), prefixed with the figure's label where there
+  is one. Never expose an unreported figure as `aria-valuenow="0"`: `NeMeter`
+  switches from `role="meter"` to `role="img"` rather than invent a value.
+- **Mark it** with `data-state="unreported"`, which is what the suite's own
+  components set and what a test or a stylesheet can select on.
+
+Both tokens derive from existing ink and line tokens, so they follow the scheme
+and any override of those tokens with no colour of their own;
+`test/theme.test.ts` asserts that they stay 1px diagonals and carry no colour
+literal. `NeFilterBar` meets the same rule a different way: an uncounted control
+renders no count element at all (see
+[A count is your figure, rendered](#a-count-is-your-figure-rendered)).
 
 ## Components
 
@@ -1883,15 +1980,15 @@ lets the server and the browser render the same digits on the first paint.
 
 #### Props
 
-| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                |
-| -------------- | --------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                   |
-| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` render `formatNumber`'s empty placeholder (`—`). |
-| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                         |
-| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.             |
-| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                         |
-| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                           |
-| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                 |
+| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                                                                                                      |
+| -------------- | --------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                                                                                                         |
+| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` (or a non-finite number) render the [unreported treatment](#the-unreported-treatment): `—` on `--ne-hatch-soft`, named "Not reported". |
+| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                                                                                                               |
+| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.                                                                                                   |
+| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                                                                                                               |
+| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                                                                                                                 |
+| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                                                                                                       |
 
 Tone → colour, the same vocabulary `NeStatusBadge` uses:
 
@@ -1921,6 +2018,12 @@ mercy of how the template compiler treats the whitespace between the two, and
 the sign alone already carries the direction with no glyph at all.
 `test/NeKpiTile.mount.test.ts` proves the delta text is identical across every
 tone.
+
+An unreported value — `null`, `undefined` or a non-finite number — is an em-dash
+inside `role="img"` named "Not reported", on the soft hatch, with
+`data-state="unreported"` on the value's `<dd>`. A reported `0` stays a plain
+`0`. Pass the API's `null` through rather than defaulting it to `0`; see
+[The unreported treatment](#the-unreported-treatment).
 
 `NeNumberOptions` is the `./format` subpath's own type
 (`import type { NeNumberOptions } from '@narduk-enterprises/narduk-shell/format'`).
@@ -1957,6 +2060,86 @@ CSS.
 | Slot      | When it renders                                    |
 | --------- | -------------------------------------------------- |
 | `default` | The tiles (or anything else) laid out in the grid. |
+
+### NeMeter
+
+One value against a known ceiling
+([narduk-libs#601](https://github.com/narduk-enterprises/narduk-libs/issues/601)):
+a filled track with the figure beside it — a rate-limit budget, a quota,
+headroom against a plan. The figure reads `4,200 / 5,000`, formatted through
+`./format`'s `formatNumber`, so the server and the browser print the same digits
+on the first paint.
+
+A value with no producer is **not** an empty bar. `:value="null"` (or
+`undefined`, an omitted `value`, or a non-finite number) renders the
+[unreported treatment](#the-unreported-treatment): the `--ne-hatch` track with
+no fill, `— / 5,000` as the figure, and an accessible name ending "not
+reported". A reported `0` is an empty track and the digit `0`; the two never
+look alike.
+
+It is a plain element with a scoped stylesheet of token reads, not a wrapped
+Nuxt UI primitive. `UProgress` is the nearest one and fits neither half: it is a
+`progressbar` (a task heading for completion), not a `meter` (a quantity inside
+a known range), and its `null` value is the animated indeterminate state —
+"working on it" — which is exactly the reading an unreported figure must not
+give. The prior art is `narduk-ui`'s `NsRangeBar` and `NsLevelWell`; they read
+the `--ns-*` layer and are not aliased here.
+
+#### Example
+
+```vue
+<NeMeter :value="4200" :max="5000" label="Core REST" />
+<NeMeter :value="headroom" :max="budget" variant="inline" />
+<!-- Nothing reported yet: hatched, em-dash, "Search: not reported". -->
+<NeMeter :value="null" :max="30" label="Search" />
+```
+
+#### Props
+
+| Prop      | Type                  | Default   | What it does                                                                                                                                                                 |
+| --------- | --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value`   | `number \| null`      | `null`    | The measured quantity. `null`/`undefined`/non-finite renders the unreported treatment. The fill is clamped to `[0, max]`; the figure always shows the real, unclamped value. |
+| `max`     | `number`              | —         | The ceiling. Zero or less (or not finite) is a ceiling with no room: a reported `0` renders empty, anything above it renders full, and nothing divides by zero.              |
+| `label`   | `string`              | `''`      | Shown beside the track and used as the accessible name. Without one, the meter is named by its own reading (`4,200 of 5,000`).                                               |
+| `variant` | `'block' \| 'inline'` | `'block'` | `block`: label and figure on one line, the track full-width under them. `inline`: label, track and figure in one row, for a table cell or a list row.                        |
+
+#### Slots
+
+None. The figure is always `formatNumber(value) / formatNumber(max)`; a meter
+that needs a different unit is a follow-up prop, not a slot.
+
+#### Events
+
+None. A meter reports; it is not a control.
+
+#### Accessibility
+
+A reported meter is `role="meter"` with `aria-valuemin="0"`, `aria-valuemax`,
+`aria-valuenow` (the clamped value) and `aria-valuetext` (`"5,400 of 5,000"` —
+the real reading, so an overrun is not announced as exactly full). An unreported
+one has no value to give — ARIA requires `aria-valuenow` on a `meter`, and `0`
+would be the lie this component exists to avoid — so it is `role="img"` named
+`"<label>: not reported"` (or `NE_UNREPORTED_TEXT`, `"Not reported"`, with no
+label). Both roles have presentational children, so the visible label and figure
+are not read a second time. The root carries `data-state="reported"` or
+`"unreported"`.
+
+The track keeps the same footprint in both states, so a list of meters does not
+reflow as figures arrive. Under forced colours the track keeps an outline and
+the fill paints in `Highlight`.
+
+#### Types
+
+```ts
+import {
+  isUnreported,
+  NE_UNREPORTED_TEXT,
+} from '@narduk-enterprises/narduk-shell'
+import type {
+  NeMeterProps,
+  NeMeterVariant,
+} from '@narduk-enterprises/narduk-shell'
+```
 
 ## Formatters (`./format`)
 

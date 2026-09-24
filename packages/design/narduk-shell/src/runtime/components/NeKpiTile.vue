@@ -36,6 +36,7 @@
 import { computed } from 'vue'
 
 import { formatNumber } from '../../format'
+import { isUnreported, NE_UNREPORTED_TEXT } from '../utils/unreported'
 
 import type { NeNumberOptions } from '../../format'
 import type { NeStatusTone } from '../utils/status-map'
@@ -68,7 +69,9 @@ export interface NeKpiTileProps {
    * (never `toLocaleString`); pass a pre-formatted `string` when the metric
    * needs a different formatter (`formatMoney`, `formatPercent`,
    * `formatCompact`, or a bound `createFormatters()` set). `null`/`undefined`
-   * render `formatNumber`'s own empty placeholder (`—`).
+   * (or a non-finite number) is an unreported figure: `formatNumber`'s own
+   * empty placeholder (`—`) on the `--ne-hatch-soft` material, named "Not
+   * reported" — never a `0` (narduk-libs#602).
    */
   value: number | string | null | undefined
   /** Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value. */
@@ -111,6 +114,9 @@ const TONE_TEXT_CLASS: Readonly<Record<NeStatusTone, string>> = {
   pending: 'text-muted',
 }
 
+/** Nothing produced a figure: the unreported treatment, not a zero. */
+const unreported = computed(() => isUnreported(props.value))
+
 const displayValue = computed(() =>
   typeof props.value === 'string' ? props.value : formatNumber(props.value, props.valueOptions),
 )
@@ -140,7 +146,16 @@ const toneClass = computed(() => TONE_TEXT_CLASS[props.tone ?? 'neutral'])
   <UCard data-testid="ne-kpi-tile">
     <dl class="ne-kpi-tile">
       <dt class="text-xs font-medium uppercase tracking-wide text-muted">{{ label }}</dt>
-      <dd class="ne-kpi-tile__value mt-1 font-medium text-highlighted">{{ displayValue }}</dd>
+      <dd
+        class="ne-kpi-tile__value mt-1 font-medium text-highlighted"
+        :class="{ 'ne-kpi-tile__value--unreported': unreported }"
+        :data-state="unreported ? 'unreported' : undefined"
+      >
+        <span v-if="unreported" role="img" :aria-label="NE_UNREPORTED_TEXT">{{
+          displayValue
+        }}</span>
+        <template v-else>{{ displayValue }}</template>
+      </dd>
       <dd
         v-if="deltaDisplay || detail"
         class="ne-kpi-tile__meta mt-1 flex flex-wrap items-baseline gap-x-1.5 text-sm"
@@ -160,3 +175,16 @@ const toneClass = computed(() => TONE_TEXT_CLASS[props.tone ?? 'neutral'])
     </div>
   </UCard>
 </template>
+
+<style scoped>
+/*
+ * The unreported treatment (README, "The unreported treatment"): the value's
+ * slot keeps its geometry and takes the soft hatch, under an em-dash that says
+ * no figure arrived. Token reads only.
+ */
+.ne-kpi-tile__value--unreported {
+  padding-inline: 0.5rem;
+  color: var(--ne-ink-muted);
+  background-image: var(--ne-hatch-soft);
+}
+</style>
