@@ -83,11 +83,18 @@ export interface NardukPlaywrightPresetOptions {
    */
   browserUse?: Record<string, unknown>
   /**
-   * Keep a `chromium` project that collects the same specs as `web`. Default
-   * true for one release so generated CI `--project=chromium` still runs.
+   * Register a `chromium` project that collects the same specs as `web`. Off
+   * by default: a bare `playwright test` would otherwise run every `.web` /
+   * `.pr-web` spec twice. Pass `true` so `--project=chromium` still runs the
+   * web tier.
    */
   chromiumAlias?: boolean
   prViewports?: readonly string[]
+  /**
+   * Extra paths to assert. When `testDir` is also set, the disk scan is
+   * unioned in so an explicit list cannot hide an undeclared file still
+   * under `testDir`.
+   */
   specFiles?: readonly string[]
   testDir?: string
   webViewports?: readonly string[]
@@ -194,10 +201,25 @@ function viewportsForProjectName(name: string | undefined): readonly string[] | 
   return undefined
 }
 
+function filesForTierAssertion(options: NardukPlaywrightPresetOptions): string[] {
+  const fromDir = options.testDir ? listE2eFiles(options.testDir) : []
+  if (options.specFiles === undefined) return fromDir
+  if (fromDir.length === 0) return [...options.specFiles]
+
+  const seen = new Set(fromDir)
+  const files = [...fromDir]
+  for (const file of options.specFiles) {
+    if (seen.has(file)) continue
+    seen.add(file)
+    files.push(file)
+  }
+  return files
+}
+
 export function createNardukPlaywrightPreset(
   options: NardukPlaywrightPresetOptions = {},
 ): NardukPlaywrightPreset {
-  const chromiumAlias = options.chromiumAlias !== false
+  const chromiumAlias = options.chromiumAlias === true
   const prViewports = options.prViewports ?? DEFAULT_PR_VIEWPORT_NAMES
   const webViewports = options.webViewports ?? DEFAULT_WEB_VIEWPORT_NAMES
   const browserUse = options.browserUse ?? { browserName: 'chromium' }
@@ -206,8 +228,7 @@ export function createNardukPlaywrightPreset(
     options.assertSpecTiers !== false &&
     (options.specFiles !== undefined || options.testDir !== undefined)
   if (shouldAssert) {
-    const files = options.specFiles ?? (options.testDir ? listE2eFiles(options.testDir) : [])
-    assertE2eSpecTiers(files)
+    assertE2eSpecTiers(filesForTierAssertion(options))
   }
 
   const pr: NardukPlaywrightProject = {

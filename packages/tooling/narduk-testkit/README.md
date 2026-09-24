@@ -536,9 +536,15 @@ cannot hide.
 | `global.setup.ts`          | `setup` only                       |
 
 Dual-run is the `.pr-web.` name, an explicit reviewable choice. CI selects the
-tier with `--project=pr` on pull_request and `--project=web` on push. A
-`chromium` project is kept for one release as an alias of `web` so existing
-`--project=chromium` invocations still run the web tier.
+tier with `--project=pr` on pull_request and `--project=web` on push. Pass
+`chromiumAlias: true` to register a `chromium` project that collects the same
+specs as `web`, so `--project=chromium` still runs the web tier. The alias is
+off by default: a bare `playwright test` would otherwise run every `.web` /
+`.pr-web` spec twice.
+
+`specFiles` is an extra assertion list, not a replacement for the `testDir`
+scan. When both are passed, undeclared files still under `testDir` fail config
+load.
 
 ### Collection-time viewports
 
@@ -547,9 +553,17 @@ Filter at collection so a skipped viewport never constructs a `page` fixture —
 in-body `test.skip` still pays setup.
 
 ```ts
-import { viewportsAtCollection } from '@narduk-enterprises/narduk-testkit/playwright/config'
+import {
+  createNardukPlaywrightPreset,
+  viewportsAtCollection,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
 
-const viewports = viewportsAtCollection(ALL_VIEWPORTS, { name: 'pr' })
+const preset = createNardukPlaywrightPreset({
+  testDir,
+  prViewports: ['desktop'],
+})
+const prProject = preset.projects.find((project) => project.name === 'pr')!
+const viewports = viewportsAtCollection(ALL_VIEWPORTS, prProject)
 for (const viewport of viewports) {
   test(`a11y ${viewport.name}`, async ({ page }) => {
     /* … */
@@ -558,7 +572,9 @@ for (const viewport of viewports) {
 ```
 
 `pr` defaults to `desktop` + `mobile`. `web` defaults to those plus `tablet` and
-`wide`. Pass `prViewports` / `webViewports` to change the slice.
+`wide`. Pass `prViewports` / `webViewports` to change the slice. Pass the
+project from the preset — not `{ name: 'pr' }` — so collection uses that custom
+slice.
 
 This subpath is config-safe: `import` and `require` both resolve, and it is
 absent from the root barrel.

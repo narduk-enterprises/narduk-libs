@@ -105,7 +105,6 @@ describe('viewportsAtCollection (#434)', () => {
     const pageConstructions: string[] = []
     const preset = createNardukPlaywrightPreset({
       assertSpecTiers: false,
-      chromiumAlias: false,
     })
     const pr = preset.projects.find((project) => project.name === PR_PROJECT_NAME)
     expect(pr?.metadata?.visualAuditViewports).toEqual([...DEFAULT_PR_VIEWPORT_NAMES])
@@ -128,6 +127,21 @@ describe('viewportsAtCollection (#434)', () => {
     expect(pageConstructions).not.toContain('wide')
   })
 
+  it('honors custom prViewports from the preset project, not { name: pr }', () => {
+    const preset = createNardukPlaywrightPreset({
+      assertSpecTiers: false,
+      prViewports: ['desktop'],
+    })
+    const prProject = preset.projects.find((project) => project.name === PR_PROJECT_NAME)
+
+    expect(
+      viewportsAtCollection(ESTATE_VIEWPORTS, { name: 'pr' }).map((viewport) => viewport.name),
+    ).toEqual(['desktop', 'mobile'])
+    expect(
+      viewportsAtCollection(ESTATE_VIEWPORTS, prProject!).map((viewport) => viewport.name),
+    ).toEqual(['desktop'])
+  })
+
   it('reads a lone --project from argv', () => {
     expect(projectNameFromArgv(['node', 'playwright', 'test', '--project', 'pr'])).toBe('pr')
     expect(projectNameFromArgv(['node', 'playwright', 'test', '--project=web'])).toBe('web')
@@ -141,7 +155,6 @@ describe('createNardukPlaywrightPreset (#434)', () => {
   it('exports setup, pr, web, fullyParallel true, and workers 2', () => {
     const preset = createNardukPlaywrightPreset({
       assertSpecTiers: false,
-      chromiumAlias: false,
       baseURL: 'http://127.0.0.1:51952',
       browserUse: { browserName: 'chromium', channel: 'chrome' },
     })
@@ -161,8 +174,21 @@ describe('createNardukPlaywrightPreset (#434)', () => {
     expect(preset.projects[1]?.use).toEqual({ browserName: 'chromium', channel: 'chrome' })
   })
 
-  it('keeps a documented chromium alias of web for one release', () => {
+  it('omits the chromium alias unless opted in, so a bare run does not double web', () => {
     const preset = createNardukPlaywrightPreset({ assertSpecTiers: false })
+    expect(preset.projects.map((project) => project.name)).toEqual([
+      SETUP_PROJECT_NAME,
+      PR_PROJECT_NAME,
+      WEB_PROJECT_NAME,
+    ])
+    expect(preset.projects.some((project) => project.name === CHROMIUM_PROJECT_ALIAS)).toBe(false)
+  })
+
+  it('registers chromium as an opt-in alias of web', () => {
+    const preset = createNardukPlaywrightPreset({
+      assertSpecTiers: false,
+      chromiumAlias: true,
+    })
     const chromium = preset.projects.find((project) => project.name === CHROMIUM_PROJECT_ALIAS)
     const web = preset.projects.find((project) => project.name === WEB_PROJECT_NAME)
     expect(chromium?.testMatch).toEqual(web?.testMatch)
@@ -185,6 +211,11 @@ describe('createNardukPlaywrightPreset (#434)', () => {
         testDir: dir,
         specFiles: listE2eFiles(dir).filter((file) => !file.endsWith('leaked.spec.ts')),
       }),
+    ).toThrow(/leaked\.spec\.ts/)
+    expect(() =>
+      createNardukPlaywrightPreset({
+        specFiles: listE2eFiles(dir).filter((file) => !file.endsWith('leaked.spec.ts')),
+      }),
     ).not.toThrow()
   })
 })
@@ -196,5 +227,8 @@ describe('preset documentation (#434)', () => {
     expect(readme).toContain('workers: 2')
     expect(readme).toContain('e2e-parallel-config')
     expect(readme).toContain('e2e-shards')
+    expect(readme).toContain("preset.projects.find((project) => project.name === 'pr')")
+    expect(readme).toContain('chromiumAlias: true')
+    expect(readme).not.toContain("viewportsAtCollection(ALL_VIEWPORTS, { name: 'pr' })")
   })
 })
