@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import { digestJourney } from '../src/digest.js'
-import { expectedStepIds, promoteRun, verifyRun } from '../src/verify.js'
+import { expectedStepIds, promoteAll, promoteRun, runPaths, verifyRun } from '../src/verify.js'
 import {
   attemptFiles,
   catalog,
@@ -176,3 +176,57 @@ describe('promoteRun', () => {
     ).toThrow(/refusing to promote[\s\S]*stale run[\s\S]*only a passed run/)
   })
 })
+
+describe('promoteAll', () => {
+  it('promotes the newest passed capture per journey and reports the rest', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'njr-promote-all-'))
+    const two = catalog()
+    two.journeys.push(webJourney({ id: 'second-journey' }))
+    writeCapture(outRoot, 'happy-path', '20260824-old', DIGEST)
+    writeCapture(outRoot, 'happy-path', '20260825-new', DIGEST)
+    writeCapture(outRoot, 'second-journey', 'run-1', DIGEST, (manifest) => {
+      manifest.verdict = 'failed'
+    })
+    const result = promoteAll(two, {
+      outRoot,
+      environment: 'fixture',
+      profileName: 'desktop',
+      currentDigest: DIGEST,
+    })
+    expect(result.promoted).toEqual([{ journey: 'happy-path', runId: '20260825-new' }])
+    expect(result.skipped).toEqual(['second-journey: no passed capture that verifies'])
+    const latest = runPaths({
+      outRoot,
+      environment: 'fixture',
+      surface: 'web',
+      journeyId: 'happy-path',
+      profileName: 'desktop',
+      mode: 'capture',
+      runId: 'unused',
+    }).latestPath
+    expect(readFileSync(latest, 'utf8').trim()).toBe('20260825-new')
+  })
+})
+
+function writeCapture(
+  outRoot: string,
+  journeyId: string,
+  runId: string,
+  digest: string,
+  mutate: (manifest: ReturnType<typeof passedCaptureManifest>) => void = () => {},
+): void {
+  const manifest = passedCaptureManifest(digest)
+  manifest.journey = journeyId
+  mutate(manifest)
+  const paths = runPaths({
+    outRoot,
+    environment: 'fixture',
+    surface: 'web',
+    journeyId,
+    profileName: 'desktop',
+    mode: 'capture',
+    runId,
+  })
+  writeAttempt(paths.attemptDirectory, manifest, attemptFiles)
+  mkdirSync(paths.modeDirectory, { recursive: true })
+}

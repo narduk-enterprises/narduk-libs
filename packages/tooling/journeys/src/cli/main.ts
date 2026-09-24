@@ -11,7 +11,7 @@ import { defineCatalog } from '../define.js'
 import { digestDirectory } from '../digest.js'
 import { buildRehearsal } from '../rehearse.js'
 import type { Catalog, Surface } from '../types.js'
-import { promoteRun, readRunManifest, verifyRun } from '../verify.js'
+import { promoteAll, promoteRun, readRunManifest, verifyRun } from '../verify.js'
 import { buildWalkthrough } from '../walkthrough.js'
 
 interface Flags {
@@ -54,10 +54,12 @@ const USAGE = `journeys <command>
 
   rehearse    --catalog <module>                      print the watermarked rehearsal script
   verify      --catalog <module> --run <dir>          verify one run attempt against the declaration
-  promote     --catalog <module> --run <dir> --run-id <id> --latest <path>
+  promote     --catalog <module> --run <dir> --latest <path> [--run-id <id>]
+  promote     --all --catalog <module> --out-root <dir> --env <name> --profile <name>
+              [--profile-<surface> <name>] [--env-<surface> <name>]
   walkthrough --catalog <module> --out-root <dir> --env <name> --profile <name> --dest <dir>
               [--profile-<surface> <name>] [--env-<surface> <name>]
-              [--allow-mixed-app-revision]
+              [--allow-mixed-app-revision] [--format html|md|both]
 
   --catalog-dir <dir>   directory whose files form the catalog-wide
                         declaration digest (default: the catalog module's
@@ -100,6 +102,35 @@ export async function main(argv: string[]): Promise<number> {
       }
       case 'promote': {
         const { catalog, catalogDir } = await loadCatalog(flags)
+        if (flags.bare.has('all')) {
+          const outRoot = flags.named.get('out-root')
+          const environment = flags.named.get('env')
+          const profileName = flags.named.get('profile')
+          if (!outRoot || !environment || !profileName) {
+            throw new Error('--all requires --out-root, --env and --profile')
+          }
+          const profileNames: Partial<Record<Surface, string>> = {}
+          const environments: Partial<Record<Surface, string>> = {}
+          for (const surface of ['web', 'ios', 'macos'] as const) {
+            const named = flags.named.get(`profile-${surface}`)
+            if (named) profileNames[surface] = named
+            const env = flags.named.get(`env-${surface}`)
+            if (env) environments[surface] = env
+          }
+          const result = promoteAll(catalog, {
+            outRoot,
+            environment,
+            profileName,
+            profileNames,
+            environments,
+            currentDigest: digestDirectory(catalogDir),
+          })
+          for (const entry of result.promoted) {
+            process.stdout.write(`promoted ${entry.journey} (${entry.runId})\n`)
+          }
+          for (const entry of result.skipped) process.stderr.write(`skipped: ${entry}\n`)
+          return result.promoted.length === 0 ? 1 : 0
+        }
         const runDirectory = flags.named.get('run')
         const latestPath = flags.named.get('latest')
         if (!runDirectory || !latestPath) {
@@ -131,7 +162,11 @@ export async function main(argv: string[]): Promise<number> {
           const env = flags.named.get(`env-${surface}`)
           if (env) environments[surface] = env
         }
-        const { written, missing } = buildWalkthrough(catalog, {
+        const format = flags.named.get('format') ?? 'both'
+        if (format !== 'html' && format !== 'md' && format !== 'both') {
+          throw new Error('--format must be html, md, or both')
+        }
+        const { written, markdown, missing } = buildWalkthrough(catalog, {
           outRoot,
           environment,
           profileName,
@@ -140,9 +175,11 @@ export async function main(argv: string[]): Promise<number> {
           destination,
           currentDigest: digestDirectory(catalogDir),
           allowMixedAppRevision: flags.bare.has('allow-mixed-app-revision'),
+          format,
         })
         for (const entry of missing) process.stderr.write(`missing: ${entry}\n`)
         process.stdout.write(`${written}\n`)
+        if (markdown && markdown !== written) process.stdout.write(`${markdown}\n`)
         return missing.length > 0 ? 1 : 0
       }
       default: {

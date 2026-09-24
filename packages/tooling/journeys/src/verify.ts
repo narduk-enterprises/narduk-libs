@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { digestJourney } from './digest.js'
-import type { Catalog, Journey, Mode, RunManifest } from './types.js'
+import type { Catalog, Journey, Mode, RunManifest, Surface } from './types.js'
 import { RUN_SCHEMA } from './types.js'
 
 /**
@@ -180,6 +180,82 @@ export function promoteRun(
   const temporary = `${options.latestPath}.tmp-${process.pid}`
   writeFileSync(temporary, `${options.runId}\n`)
   renameSync(temporary, options.latestPath)
+}
+
+export interface PromoteAllOptions {
+  outRoot: string
+  environment: string
+  profileName: string
+  profileNames?: Partial<Record<Surface, string>>
+  environments?: Partial<Record<Surface, string>>
+  currentDigest: string
+}
+
+/**
+ * Promote the newest passed, verifying capture per journey. Same
+ * `promoteRun` semantics, once per journey, so a consumer does not have
+ * to list `runs/` after every capture (narduk-libs#69).
+ */
+export function promoteAll(
+  catalog: Catalog,
+  options: PromoteAllOptions,
+): { promoted: Array<{ journey: string; runId: string }>; skipped: string[] } {
+  const promoted: Array<{ journey: string; runId: string }> = []
+  const skipped: string[] = []
+  for (const journey of catalog.journeys) {
+    const profileName = options.profileNames?.[journey.surface] ?? options.profileName
+    const environment = options.environments?.[journey.surface] ?? options.environment
+    const profile = catalog.profiles[profileName]
+    const wantedKind = journey.surface === 'web' ? 'web' : 'apple'
+    if (!profile || profile.kind !== wantedKind) {
+      skipped.push(
+        `${journey.id}: no ${wantedKind} capture profile for surface "${journey.surface}" ` +
+          `(resolved "${profileName}")`,
+      )
+      continue
+    }
+    const paths = runPaths({
+      outRoot: options.outRoot,
+      environment,
+      surface: journey.surface,
+      journeyId: journey.id,
+      profileName,
+      mode: 'capture',
+      runId: 'unused',
+    })
+    const runsDir = join(paths.modeDirectory, 'runs')
+    const runIds = existsSync(runsDir)
+      ? readdirSync(runsDir, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+          .sort()
+          .reverse()
+      : []
+    let chosen: { runId: string; attemptDirectory: string; manifest: RunManifest } | undefined
+    for (const runId of runIds) {
+      const attemptDirectory = join(runsDir, runId)
+      if (!existsSync(join(attemptDirectory, 'run.json'))) continue
+      const manifest = readRunManifest(attemptDirectory)
+      if (manifest.mode !== 'capture' || manifest.verdict !== 'passed') continue
+      const issues = verifyRun(catalog, manifest, attemptDirectory, {
+        currentDigest: options.currentDigest,
+      })
+      if (issues.length > 0) continue
+      chosen = { runId, attemptDirectory, manifest }
+      break
+    }
+    if (!chosen) {
+      skipped.push(`${journey.id}: no passed capture that verifies`)
+      continue
+    }
+    promoteRun(catalog, chosen.manifest, chosen.attemptDirectory, {
+      currentDigest: options.currentDigest,
+      runId: chosen.runId,
+      latestPath: paths.latestPath,
+    })
+    promoted.push({ journey: journey.id, runId: chosen.runId })
+  }
+  return { promoted, skipped }
 }
 
 /** Read and minimally shape-check a run manifest from an attempt directory. */
