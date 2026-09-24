@@ -126,7 +126,10 @@ export function readDeclaredScriptTriggers(appDir: string): ResolvedScriptTrigge
     const fromArtifact = parseDeclaredScriptTriggers(readJsonc(artifact))
     const fromSource = sourcePath ? parseDeclaredScriptTriggers(readJsonc(sourcePath)) : {}
     return {
-      source: artifact,
+      source:
+        fromArtifact.crons !== undefined || fromArtifact.routes !== undefined
+          ? artifact
+          : (sourcePath ?? artifact),
       triggers: {
         crons: fromArtifact.crons ?? fromSource.crons,
         routes: fromArtifact.routes ?? fromSource.routes,

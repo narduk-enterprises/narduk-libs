@@ -61,10 +61,12 @@ describe('declared Worker script triggers', () => {
       join(root, '.output', 'server', 'wrangler.json'),
       JSON.stringify({ name: 'app', main: './index.mjs' }),
     )
-    expect(readDeclaredScriptTriggers(root).triggers).toEqual({
+    const resolved = readDeclaredScriptTriggers(root)
+    expect(resolved.triggers).toEqual({
       crons: ['20 9 * * *'],
       routes: ['app.example.com/*'],
     })
+    expect(resolved.source).toBe(join(root, 'wrangler.jsonc'))
   })
 
   it('overlays artifact triggers onto the flattened deploy config', () => {
