@@ -9,6 +9,10 @@
  * chrome. We pass that when the app has not configured auth, and leave the
  * default (`server-first`) when it has. An app that already set
  * `auth.loadStrategy` keeps its own value.
+ *
+ * `nardukCore.auth: false` skips the install entirely and does not seed an
+ * empty session password (narduk-libs#169). That is the opt-out for a site
+ * with no accounts; `loadStrategy: 'none'` is not a substitute.
  */
 
 export type NuxtAuthUtilsLoadStrategy = 'client-only' | 'none' | 'server-first'
@@ -92,4 +96,30 @@ export function resolveNuxtAuthUtilsInstallOptions(
     return {}
   }
   return { loadStrategy: 'none' }
+}
+
+/** `nardukCore.auth` defaults to true; only an explicit `false` opts out. */
+export function shouldInstallNuxtAuthUtils(auth: boolean | undefined): boolean {
+  return auth !== false
+}
+
+export function sessionRuntimeConfigSeed(
+  auth: boolean | undefined,
+  env: Record<string, string | undefined> | undefined,
+): { session: { password: string } } | Record<string, never> {
+  if (!shouldInstallNuxtAuthUtils(auth)) return {}
+  return {
+    session: {
+      password: env?.NUXT_SESSION_PASSWORD || '',
+    },
+  }
+}
+
+export async function maybeInstallNuxtAuthUtils(
+  auth: boolean | undefined,
+  install: (name: string, options?: NuxtAuthUtilsInstallOptions) => Promise<unknown> | unknown,
+  signals: NuxtAuthUtilsInstallSignals,
+): Promise<void> {
+  if (!shouldInstallNuxtAuthUtils(auth)) return
+  await install('nuxt-auth-utils', resolveNuxtAuthUtilsInstallOptions(signals))
 }

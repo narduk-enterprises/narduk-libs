@@ -34,7 +34,7 @@ import {
 } from '../runtime/shared/vite-build-warnings'
 
 import { includeAppTypesDir } from './app-types-dir'
-import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
+import { maybeInstallNuxtAuthUtils, sessionRuntimeConfigSeed } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
 import {
@@ -106,6 +106,13 @@ interface MutableNuxtOptionsRecord {
 
 export interface NardukCoreModuleOptions {
   app?: boolean
+  /**
+   * Install `nuxt-auth-utils` and seed `runtimeConfig.session.password`.
+   * Default `true` keeps today's install for existing apps. `false` skips
+   * the module and does not seed an empty session password, so a site with
+   * no accounts does not serve `/api/_auth/session` (narduk-libs#169).
+   */
+  auth?: boolean
   coreModules?: boolean
   /**
    * CSRF middleware options. `exemptPaths` declares credential-free routes —
@@ -472,6 +479,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
     },
     defaults: {
       app: true,
+      auth: true,
       coreModules: true,
       image: true,
       server: true,
@@ -568,16 +576,15 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         await installModule('@nuxt/eslint')
         // Session fetch is opt-in: `loadStrategy: 'none'` skips the
         // nuxt-auth-utils session plugin so a no-auth app never calls
-        // `/api/_auth/session` during SSR (narduk-libs#540).
-        await installModule(
-          'nuxt-auth-utils',
-          resolveNuxtAuthUtilsInstallOptions({
-            configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
-            env: process.env,
-            modules: nuxtOptions.modules,
-            runtimeConfig: existingRuntimeConfig,
-          }),
-        )
+        // `/api/_auth/session` during SSR (narduk-libs#540). `auth: false`
+        // skips the install entirely so the session route is not registered
+        // (narduk-libs#169).
+        await maybeInstallNuxtAuthUtils(options.auth, installModule, {
+          configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
+          env: process.env,
+          modules: nuxtOptions.modules,
+          runtimeConfig: existingRuntimeConfig,
+        })
         dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
       }
 
@@ -687,9 +694,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         },
         cronSecret: process.env.CRON_SECRET || '',
         logLevel: process.env.LOG_LEVEL || 'warn',
-        session: {
-          password: process.env.NUXT_SESSION_PASSWORD || '',
-        },
+        ...sessionRuntimeConfigSeed(options.auth, process.env),
         // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
         // headers it still owns, and by the app-tools live probe.
         nardukSecurityHeaders: {

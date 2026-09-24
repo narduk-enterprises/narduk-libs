@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   isAuthLoadStrategy,
+  maybeInstallNuxtAuthUtils,
   moduleDeclaresAuth,
   resolveNuxtAuthUtilsInstallOptions,
   sessionPasswordConfigured,
+  sessionRuntimeConfigSeed,
+  shouldInstallNuxtAuthUtils,
 } from '../src/auth-utils-install'
 
 describe('resolveNuxtAuthUtilsInstallOptions (narduk-libs#540)', () => {
@@ -157,5 +160,30 @@ describe('auth-utils install signals', () => {
     expect(sessionPasswordConfigured({ NUXT_SESSION_PASSWORD: 'x' }, {})).toBe(true)
     expect(sessionPasswordConfigured({}, { session: { password: 'x' } })).toBe(true)
     expect(sessionPasswordConfigured({ NUXT_SESSION_PASSWORD: '' }, {})).toBe(false)
+  })
+})
+
+describe('nardukCore.auth install gate (narduk-libs#169)', () => {
+  it('treats omitted and true as install, and only false as opt-out', () => {
+    expect(shouldInstallNuxtAuthUtils(undefined)).toBe(true)
+    expect(shouldInstallNuxtAuthUtils(true)).toBe(true)
+    expect(shouldInstallNuxtAuthUtils(false)).toBe(false)
+  })
+
+  it('seeds an empty session password only when auth stays on', () => {
+    expect(sessionRuntimeConfigSeed(undefined, {})).toEqual({ session: { password: '' } })
+    expect(sessionRuntimeConfigSeed(true, { NUXT_SESSION_PASSWORD: 'secret' })).toEqual({
+      session: { password: 'secret' },
+    })
+    expect(sessionRuntimeConfigSeed(false, { NUXT_SESSION_PASSWORD: 'secret' })).toEqual({})
+  })
+
+  it('skips installModule when auth is false', async () => {
+    const install = vi.fn()
+    await maybeInstallNuxtAuthUtils(false, install, { env: {}, modules: [] })
+    expect(install).not.toHaveBeenCalled()
+
+    await maybeInstallNuxtAuthUtils(undefined, install, { env: {}, modules: [] })
+    expect(install).toHaveBeenCalledWith('nuxt-auth-utils', { loadStrategy: 'none' })
   })
 })
