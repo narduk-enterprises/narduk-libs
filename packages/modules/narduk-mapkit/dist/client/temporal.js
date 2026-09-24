@@ -471,9 +471,9 @@ export class MapKitTemporalLayerController {
         const promise = prefetchFrame(frame, index, controller.signal)
             // Readiness bookkeeping only; the chain is deliberately Promise<void>.
             .then(() => {
-            // eslint-disable-next-line promise/always-return -- narduk-libs#138
             if (!controller.signal.aborted)
                 this.#setReadiness(index, 'ready');
+            return;
         })
             .catch((reason) => {
             if (controller.signal.aborted)

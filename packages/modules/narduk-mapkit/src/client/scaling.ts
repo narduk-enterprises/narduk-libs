@@ -481,11 +481,8 @@ export interface MapKitPinScalingOptions<TAnnotation = unknown> {
 const DEFAULT_DOT_HYSTERESIS_PX = 1.5
 const DEFAULT_RANK_HYSTERESIS_ZOOM = 0.25
 const DEFAULT_STEP_HYSTERESIS_ZOOM = 0.15
-// The explicit class spells out exactly what a CSS identifier may contain. The
-// autofix (/^[A-Z][\w-]*$/i) is equivalent, but it rewrites a runtime literal,
-// which this fold deliberately does not do.
-// eslint-disable-next-line regexp/prefer-w, regexp/use-ignore-case -- narduk-libs#138
-const CSS_IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]*$/
+// Same language as `/^[A-Za-z][A-Za-z0-9_-]*$/` (narduk-libs#138).
+const CSS_IDENTIFIER = /^[A-Z][\w-]*$/i
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>()
 
 /** Precedence when several causes coalesce into one frame; highest wins. */
