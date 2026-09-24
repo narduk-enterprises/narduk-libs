@@ -1,5 +1,20 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.13.4
+
+### Patch Changes
+
+- 1716307: Exclude the private Libs Explorer from the shared capability catalog
+  so foundation coverage does not treat the showcase as an app-adoptable
+  package.
+- 42019f6: Pin SSR hydration for `NardukLineChart` and `ChartTooltip`. The
+  components are unchanged; these are the first hydration tests in the package,
+  added while narrowing riverstatus#204 — they server-render each component,
+  hydrate that exact markup and assert that Vue raised no warning, which is the
+  only place a hydration mismatch is visible.
+
+  `create-narduk-app` releases alongside because it pins narduk-charts.
+
 ## 0.13.3
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.21.1
+
+### Patch Changes
+
+- 1716307: Exclude the private Libs Explorer from the shared capability catalog
+  so foundation coverage does not treat the showcase as an app-adoptable
+  package.
+
 ## 0.21.0
 
 ### Minor Changes
