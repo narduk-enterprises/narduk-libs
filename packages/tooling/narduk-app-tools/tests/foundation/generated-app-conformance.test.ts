@@ -12,6 +12,18 @@
  * construction. `create-narduk-app`'s README documented that state as
  * "expected and not a generator defect"; it was one.
  *
+ * One sub-check is deliberately red on an untouched scaffold, and that is the
+ * honest verdict rather than a return of the defect above: 1.5 fails while the
+ * `DB` binding still carries the all-zero placeholder `database_id`
+ * (narduk-libs#662). The generator must not call Cloudflare, so it cannot know
+ * the real id -- but a green gate over a database that does not exist is how
+ * `narduk-farm` shipped a fully green first CI run that could not serve a
+ * request. Unlike the #617 failures, one command inside the app clears it:
+ * `narduk-app db create`. So the claim this file makes is exact: 1.5 is the
+ * ONLY thing a fresh scaffold fails, and after `db create` (run here against
+ * the real generator output, with Wrangler replaced at the process seam) the
+ * app is conformant.
+ *
  * The generator is imported from its SOURCE by relative path, never as a
  * dependency: `create-narduk-app` has no runtime dependencies and must not
  * gain one on this package, and the per-package CI gates run
@@ -20,13 +32,14 @@
  * `generator.test.ts` uses to read this package's fixture by relative path.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createNardukApp, PACKAGE_VERSIONS } from '../../../create-narduk-app/src/index.js'
+import { PLACEHOLDER_D1_DATABASE_ID, runD1Create } from '../../src/d1-create.js'
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
 import type { RegistryReality } from '../../src/foundation/npm-registry.js'
 import { fakeReality, subCheckStatus } from './helpers.js'
@@ -64,14 +77,35 @@ function registryAgreeingWithGeneratorPins(): RegistryReality {
   })
 }
 
-async function scaffold(options: { built: boolean }): Promise<string> {
+const PROVISIONED_ID = '3f2a9c1e-7b4d-4e8f-9a6b-1c2d3e4f5a6b'
+
+/** `narduk-app db create` over the generated checkout, Wrangler replaced by
+ * what `wrangler d1 create` prints -- the step onboarding runs before CI. */
+function provision(dir: string): void {
+  runD1Create(
+    { checkoutDir: dir, env: { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32) } },
+    (args) =>
+      `✅ Successfully created DB '${args[2]}'\n` +
+      JSON.stringify({ d1_databases: [{ database_name: args[2], database_id: PROVISIONED_ID }] }),
+  )
+}
+
+async function scaffold(options: {
+  built: boolean
+  provisioned?: boolean
+  database?: 'd1' | 'none'
+}): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), 'generated-app-conformance-'))
   tempDirs.push(root)
   const dir = join(root, 'app')
   await createNardukApp({
     appName: 'conformance-app',
-    capabilities: ['auth', 'seo', 'analytics', 'uploads'],
-    exposure: 'authenticated',
+    // `auth` needs the app database, so the database-free variant is a public
+    // site without it (an authenticated app with no login fails 3.2).
+    capabilities:
+      options.database === 'none' ? ['seo', 'analytics'] : ['auth', 'seo', 'analytics', 'uploads'],
+    exposure: options.database === 'none' ? 'public' : 'authenticated',
+    ...(options.database ? { databaseBackend: options.database } : {}),
     // Long enough to cross the generated Prettier printWidth -- the shape
     // that shipped a pre-broken scaffold. Irrelevant to conformance, and
     // that is the point: the fixture is a realistic app, not a minimal one.
@@ -92,6 +126,7 @@ async function scaffold(options: { built: boolean }): Promise<string> {
       JSON.stringify({ preset: 'cloudflare-module' }),
     )
   }
+  if (options.provisioned) provision(dir)
   return dir
 }
 
@@ -108,8 +143,35 @@ describe('an app straight out of create-narduk-app', () => {
   it.each([
     { label: 'before its first build', built: false },
     { label: 'after build:ci has run', built: true },
-  ])('is web-foundation conformant $label', async ({ built }) => {
+  ])('fails exactly sub-check 1.5 -- the unprovisioned database -- $label', async ({ built }) => {
     const artefact = await check(await scaffold({ built }), registryAgreeingWithGeneratorPins())
+
+    const notPassing = artefact.items
+      .flatMap((item) => item.checks)
+      .filter((sub) => sub.status === 'fail' || sub.status === 'unknown')
+    expect(
+      notPassing.map((sub) => `${sub.id}:${sub.status}`),
+      JSON.stringify(notPassing),
+    ).toEqual(['1.5:fail'])
+    expect(artefact.failingItems).toEqual([1])
+    expect(artefact.exitCode).toBe(1)
+    // The failure names the one step that clears it.
+    expect(notPassing[0]!.detail).toContain('`narduk-app db create`')
+    expect(notPassing[0]!.detail).toContain('`wrangler d1 create conformance-app-db`')
+  })
+
+  it.each([
+    { label: 'before its first build', built: false },
+    { label: 'after build:ci has run', built: true },
+  ])('is web-foundation conformant once db create has run, $label', async ({ built }) => {
+    const dir = await scaffold({ built, provisioned: true })
+    const wrangler = readFileSync(join(dir, 'apps/web/wrangler.jsonc'), 'utf8')
+    expect(wrangler).toContain(`"database_id": "${PROVISIONED_ID}"`)
+    expect(wrangler).not.toContain(PLACEHOLDER_D1_DATABASE_ID)
+    // The generator's comments survive the write.
+    expect(wrangler).toContain('// Workers Cache:')
+
+    const artefact = await check(dir, registryAgreeingWithGeneratorPins())
 
     expect(artefact.failingItems, JSON.stringify(artefact.failingItems)).toEqual([])
     expect(artefact.score.unknown, JSON.stringify(artefact.items)).toBe(0)
@@ -119,9 +181,19 @@ describe('an app straight out of create-narduk-app', () => {
     expect(artefact.exitCode).toBe(0)
   })
 
+  it('is conformant untouched when scaffolded with --no-database', async () => {
+    const artefact = await check(
+      await scaffold({ built: true, database: 'none' }),
+      registryAgreeingWithGeneratorPins(),
+    )
+    expect(subCheckStatus(artefact, '1.5')).toBe('not-applicable')
+    expect(artefact.result).toBe('PASS')
+    expect(artefact.exitCode).toBe(0)
+  })
+
   it('decides every sub-check the missing declaration used to leave open', async () => {
     const artefact = await check(
-      await scaffold({ built: true }),
+      await scaffold({ built: true, provisioned: true }),
       registryAgreeingWithGeneratorPins(),
     )
 
@@ -177,7 +249,7 @@ describe('an app straight out of create-narduk-app', () => {
       sentAuthorization.push(init?.headers?.Authorization !== undefined)
       return Promise.reject(new TypeError('fetch failed'))
     })
-    const artefact = await check(await scaffold({ built: true }), undefined)
+    const artefact = await check(await scaffold({ built: true, provisioned: true }), undefined)
 
     expect(artefact.failingItems).toEqual([])
     expect(artefact.result).toBe('UNKNOWN')

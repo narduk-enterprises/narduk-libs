@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 
 import { AUTH_API_KEY_SCOPES, parseApiKeyScopes } from '#layer/server/utils/auth'
 import { getDatabaseRows, useDatabase } from '#layer/server/utils/database'
@@ -16,7 +16,9 @@ const API_KEY_LIST_LIMIT = 100
 
 /**
  * GET /api/auth/api-keys
- * List the current user's API keys (never returns the full key), newest first.
+ * List the current user's live API keys (never returns the full key), newest
+ * first. A revoked key keeps its row for audit (narduk-libs#806) but is not
+ * listed: it can no longer authenticate or be revoked again.
  */
 export default defineUserQuery(
   {
@@ -31,7 +33,7 @@ export default defineUserQuery(
       db
         .select()
         .from(apiKeys)
-        .where(eq(apiKeys.userId, user.id))
+        .where(and(eq(apiKeys.userId, user.id), isNull(apiKeys.revokedAt)))
         .orderBy(desc(apiKeys.createdAt))
         .limit(API_KEY_LIST_LIMIT),
     )

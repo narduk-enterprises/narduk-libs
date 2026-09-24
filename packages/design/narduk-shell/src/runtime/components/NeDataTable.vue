@@ -25,6 +25,25 @@
  * the remaining cells are `hidden`, so the markup stays one `<tr>` per line and
  * TanStack still owns the body.
  *
+ * ## It owns its sideways overflow
+ *
+ * `UTable`'s root is the table's scroll box (`data-ne-data-table-scroll`), and
+ * both it and the outer wrapper carry `min-w-0 max-w-full`, so one long
+ * unbreakable string (a hostname, a SHA) scrolls the box, never the page —
+ * including inside a flex or grid parent, whose item would otherwise grow to
+ * the table's width. `stickyHeader: 'page'` gives the box up (a scroll box
+ * would pin the header to itself), and with it the column floor below.
+ *
+ * ## The column floor is on the table, not the cell
+ *
+ * A cell ignores `min-width`, so a width-less column beside fixed-width ones
+ * gets only what they leave over. Once any column declares a `width`, the
+ * `<table>` takes `min-width: max(100%, var(--ne-data-table-min))`, where the
+ * custom property is `calc(<each width, or 200px> + …)` set inline on the
+ * scroll box (`dataTableMinWidth`, narduk-libs#684). It applies from `sm` up
+ * only: on a phone the column-set switch hides groups the sum still counts,
+ * so the floor would force a sideways scroll the switch exists to avoid.
+ *
  * ## Styling
  *
  * Tokens only (see the README's styling contract). Numerals are
@@ -37,7 +56,7 @@ import UTabs from '@nuxt/ui/components/Tabs.vue'
 import { computed, h, shallowRef, type VNodeChild } from 'vue'
 
 import { formatNumber } from '../../format'
-import { isMissingValue, parseSort, readColumnValue } from '../utils/data-table'
+import { dataTableMinWidth, isMissingValue, parseSort, readColumnValue } from '../utils/data-table'
 import NeSortHeader from './NeSortHeader.vue'
 
 import type {
@@ -267,6 +286,7 @@ const tableColumns = computed(() => {
         td: (cell: CellContext) =>
           index === 0 && cell.row.original.kind !== 'row' ? leafCount : undefined,
       },
+      style: { th: column.width ? { width: column.width } : undefined },
     },
   })
 
@@ -320,8 +340,22 @@ const tableMeta = {
 
 const pageSticky = computed(() => props.stickyHeader === 'page')
 
+/**
+ * The table-level column floor, or `undefined`. Never under a page-sticky
+ * header: without the scroll box a floor would scroll the page sideways.
+ */
+const tableMinWidth = computed(() =>
+  pageSticky.value ? undefined : dataTableMinWidth(shownColumns.value),
+)
+
+const scrollStyle = computed(() =>
+  tableMinWidth.value ? { '--ne-data-table-min': tableMinWidth.value } : undefined,
+)
+
 const ui = computed(() => ({
-  root: pageSticky.value ? 'overflow-visible' : undefined,
+  root: ['min-w-0 max-w-full', pageSticky.value ? 'overflow-visible' : 'overflow-auto'].join(' '),
+  // `min-w-full` from the theme still holds below `sm`; see "column floor" above.
+  base: tableMinWidth.value ? 'sm:min-w-[max(100%,var(--ne-data-table-min,0px))]' : undefined,
   thead: [
     pageSticky.value ? 'top-(--ui-header-height)' : '',
     props.loading ? 'after:h-0.5' : '',
@@ -337,7 +371,7 @@ const tabItems = computed(() =>
 </script>
 
 <template>
-  <div data-ne-data-table :aria-busy="loading ? 'true' : undefined">
+  <div data-ne-data-table class="min-w-0 max-w-full" :aria-busy="loading ? 'true' : undefined">
     <UTabs
       v-if="phoneSets"
       v-model="activeSet"
@@ -349,6 +383,8 @@ const tabItems = computed(() =>
       aria-label="Columns shown"
     />
     <UTable
+      :data-ne-data-table-scroll="pageSticky ? undefined : ''"
+      :style="scrollStyle"
       :caption="caption"
       :column-pinning="columnPinning"
       :columns="tableColumns as never"

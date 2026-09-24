@@ -59,6 +59,10 @@
       "types": "./src/nuxt-module-package-config.ts",
       "import": "./src/nuxt-module-package-config.ts"
     },
+    "./nuxt-ui-sources": {
+      "types": "./src/nuxt-ui-sources.ts",
+      "import": "./src/nuxt-ui-sources.ts"
+    },
     "./internal/*": {
       "import": "./runtime/internal/*.ts"
     },
