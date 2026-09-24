@@ -197,6 +197,16 @@ other manifest field, including one this repository has never seen -- the
 dev-only list is an allowlist, so a new npm field cannot become exempt by
 default.
 
+Three kinds of package file are the exception. `lint-budget.json` is never
+published and owes no release (#673). Test-only paths such as `tests/` and
+`vitest.config.ts` (#686), and a package-root `swift/` tree (#862), owe none
+only while the package's `files` list leaves them out of the tarball. The
+`swift/` trees in narduk-logging and narduk-auth ship as the SwiftPM products
+`NardukLogging` and `NardukAuthKit` on the repository `vX.Y.Z` tags, not on npm,
+so a Swift-only change merges without a Changeset. A change that also touches
+the npm source still needs one, and narduk-logging's `examples/swift/` is
+published, so it still needs one too.
+
 The check is skipped on `changeset-release/*` branches, whose version commits
 legitimately rewrite every manifest with the Changesets already consumed.
 

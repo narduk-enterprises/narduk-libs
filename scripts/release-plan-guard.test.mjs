@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
 
 import {
@@ -671,4 +671,40 @@ test('a SwiftPM-only swift/ change outside files owes no npm changeset (#862)', 
   })
   assert.equal(siblings[0].verdict, 'needs-changeset')
   assert.deepEqual(siblings[0].otherFiles, ['go/handler.go', 'python/src/narduk_logging/logger.py'])
+})
+
+test('every package-root swift/ tree is a target the root Package.swift builds (#862)', () => {
+  // SWIFT_ONLY_PATH_PATTERNS exempts a package-root `swift/` path because it
+  // ships on the repository `vX.Y.Z` tags, not in an npm tarball. A package
+  // whose `swift/` tree no Package.swift target builds breaks that premise, so
+  // it fails here instead of silently owing no release.
+  const root = new URL('../', import.meta.url)
+  const swiftPmPaths = [
+    ...readFileSync(new URL('Package.swift', root), 'utf8').matchAll(/path:\s*"([^"]+)"/gu),
+  ].map(([, path]) => path)
+  const families = [
+    ...readFileSync(new URL('pnpm-workspace.yaml', root), 'utf8').matchAll(
+      /^\s*-\s*"?(packages\/[\w-]+)\/\*"?\s*$/gmu,
+    ),
+  ].map(([, family]) => family)
+  assert.ok(families.length > 0)
+
+  const swiftTrees = families
+    .flatMap((family) =>
+      readdirSync(new URL(`${family}/`, root), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => `${family}/${entry.name}/swift`),
+    )
+    .filter((tree) => existsSync(new URL(tree, root)))
+    .sort()
+  assert.deepEqual(swiftTrees, [
+    'packages/modules/narduk-auth/swift',
+    'packages/modules/narduk-logging/swift',
+  ])
+  for (const tree of swiftTrees) {
+    assert.ok(
+      swiftPmPaths.some((path) => path.startsWith(`${tree}/`)),
+      `${tree} is exempt from the npm changeset guard, but no Package.swift target builds it`,
+    )
+  }
 })
