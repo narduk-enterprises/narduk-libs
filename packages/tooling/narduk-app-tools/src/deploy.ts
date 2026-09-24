@@ -5,13 +5,14 @@ import { dirname, join, resolve } from 'node:path'
 import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
 
 import { readDeploymentBlock } from './deployment-config.js'
+import { mergeArtifactScriptTriggers } from './development-script-triggers.js'
 import {
   describePreviewPlan,
   planPreviewConfig,
   PREVIEW_CONFIG_FILENAME,
 } from './preview-config.js'
 
-export type DeployAction = 'deploy' | 'versions-upload'
+export type DeployAction = 'deploy' | 'versions-upload' | 'triggers-deploy'
 export type DeployEnv = Record<string, string | undefined>
 
 interface WranglerConfig {
@@ -43,7 +44,12 @@ export function isWorkersBuildDeployAllowed(env: DeployEnv = process.env): boole
 }
 
 export function getDeployGuardMessage(action: DeployAction): string {
-  const label = action === 'deploy' ? 'wrangler deploy' : 'wrangler versions upload'
+  const label =
+    action === 'deploy'
+      ? 'wrangler deploy'
+      : action === 'versions-upload'
+        ? 'wrangler versions upload'
+        : 'wrangler triggers deploy'
   return `Local ${label} is disabled by default. Push to the configured Workers Builds branch, or set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for intentional recovery work.`
 }
 
@@ -58,7 +64,8 @@ export function parseDeployArgs(args: string[]): {
   }
   if (first === 'versions-upload') return { action: 'versions-upload', passthroughArgs }
   if (first === 'deploy') return { action: 'deploy', passthroughArgs }
-  throw new Error('Usage: narduk-app deploy <deploy|versions-upload> [args...]')
+  if (first === 'triggers-deploy') return { action: 'triggers-deploy', passthroughArgs }
+  throw new Error('Usage: narduk-app deploy <deploy|versions-upload|triggers-deploy> [args...]')
 }
 
 export function isDryRunDeploy(args: readonly string[]): boolean {
@@ -275,10 +282,18 @@ export function buildWranglerCommandArgs(options: {
   appDir?: string
   env?: DeployEnv
 }): string[] {
-  const command = options.action === 'deploy' ? ['deploy'] : ['versions', 'upload']
+  const command =
+    options.action === 'deploy'
+      ? ['deploy']
+      : options.action === 'triggers-deploy'
+        ? ['triggers', 'deploy']
+        : ['versions', 'upload']
   const keepVars = options.action === 'deploy' ? ['--keep-vars'] : []
   const envTarget = hasExplicitWranglerEnvTarget(options.passthroughArgs) ? [] : ['--env=']
-  const tag = resolveVersionTagArgs(options.passthroughArgs, options.env ?? process.env)
+  const tag =
+    options.action === 'triggers-deploy'
+      ? []
+      : resolveVersionTagArgs(options.passthroughArgs, options.env ?? process.env)
   const appDir = options.appDir ?? process.cwd()
   if (options.sourceConfigPath) {
     return [
@@ -361,6 +376,18 @@ export function runDeploy(
           env,
         })
       : productionConfigPath
+  if (action === 'triggers-deploy' && sourceConfigPath && existsSync(sourceConfigPath)) {
+    const artifact = join(appDir, '.output', 'server', 'wrangler.json')
+    if (existsSync(artifact)) {
+      writeJson(
+        sourceConfigPath,
+        mergeArtifactScriptTriggers(
+          readJsonc<Record<string, unknown>>(sourceConfigPath),
+          readJsonc(artifact),
+        ),
+      )
+    }
+  }
   const commandArgs = buildWranglerCommandArgs({
     action,
     appDir,

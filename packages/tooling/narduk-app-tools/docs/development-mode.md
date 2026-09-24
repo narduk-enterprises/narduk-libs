@@ -114,9 +114,13 @@ Each deploy:
 4. runs the target set's checks, builds in a private reusable workspace (the
    frozen install runs only when dependency inputs change), and runs
    `assertArtifact`;
-5. uploads a version tagged with its build ID, promotes it at 100%, and proves
-   it: exact `x-build-version`, health envelope and smoke path, then your
-   `behavior` probe.
+5. uploads a version tagged with its build ID, promotes it at 100%, reconciles
+   the Worker's script-level crons and routes from the artifact
+   (`.output/server/wrangler.json`, falling back to the source Wrangler config
+   when the artifact omits those keys), and proves it: exact `x-build-version`,
+   health envelope and smoke path, then your `behavior` probe. Version promotion
+   carries code only; without the trigger step, a cron or route change would
+   never apply.
 
 Outcomes (the receipt under `receipts/` records names, never values):
 

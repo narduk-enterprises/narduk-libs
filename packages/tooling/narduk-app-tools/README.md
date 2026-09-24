@@ -61,8 +61,10 @@ behavior for compatibility; it is not the new hotfix procedure.
 For an app still being built, an owner can enroll it in **development mode**:
 one approved workstation deploys its checkout, uncommitted edits included, with
 `narduk-app development deploy` (`pnpm run deploy:dev`), while push/merge
-automation and Workers Builds triggers are held and later restored exactly. Full
-validation runs on request and on exit. Nothing enrolls automatically. See the
+automation and Workers Builds triggers are held and later restored exactly. Each
+deploy also reconciles the Worker's script-level crons and routes from the
+artifact; version promotion does not. Full validation runs on request and on
+exit. Nothing enrolls automatically. See the
 [development mode runbook](docs/development-mode.md).
 
 ## Prebuilt-Worker e2e (`narduk-app e2e-serve`)

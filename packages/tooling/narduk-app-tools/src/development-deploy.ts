@@ -1,4 +1,4 @@
-/** The ordinary loop: capture → gate → build → assert → inspect → upload → promote → prove. */
+/** The ordinary loop: capture → gate → build → assert → inspect → upload → promote → triggers → prove. */
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -31,6 +31,7 @@ import {
   type DevelopmentOutcome,
   type DevelopmentProject,
 } from './development-records.js'
+import { readDeclaredScriptTriggers, routePattern } from './development-script-triggers.js'
 import {
   assertCapturedInputs,
   captureDevelopmentSource,
@@ -108,6 +109,8 @@ export interface ComponentReceipt {
     assertions: Array<{ id: string; status: string }>
   }
   behavior?: 'passed' | 'awaiting-owner' | 'failed'
+  /** Script-level crons/routes applied after promote (not Workers Builds triggers). */
+  triggers?: { crons?: string[]; routes?: string[] }
   status: 'pending' | 'built' | 'uploaded' | 'promoting' | 'serving' | 'proven' | 'failed'
 }
 
@@ -269,7 +272,7 @@ export async function runDevelopmentDeploy(
     log(`[deploy:dev]   ${component.workerName} → ${component.origins.join(', ')}`)
   if (flags.dryRun) {
     log(
-      '[deploy:dev] dry run: capture → install if changed → checks → build → assert → schema → upload → promote → proof',
+      '[deploy:dev] dry run: capture → install if changed → checks → build → assert → schema → upload → promote → triggers → proof',
     )
     return receipt
   }
@@ -471,6 +474,37 @@ export async function runDevelopmentDeploy(
       receipt.components[id].status = 'promoting'
       save('promoting')
       await provider.promote(candidate, message)
+      const deployEnv: NodeJS.ProcessEnv = {
+        ...developmentSystemEnv(env),
+        CLOUDFLARE_ACCOUNT_ID: component.accountId,
+        CLOUDFLARE_API_TOKEN: readSecret(component.deploymentCredential),
+        NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1',
+        WRANGLER_SEND_METRICS: 'false',
+        CI: 'true',
+      }
+      const upload = context.upload ?? runDeploy
+      const appDir = join(workspace, component.appDir)
+      let applyStatus: number
+      try {
+        applyStatus = upload(['triggers-deploy'], appDir, deployEnv)
+      } catch (error) {
+        receipt.components[id].status = 'failed'
+        throw error
+      }
+      if (applyStatus !== 0) {
+        receipt.components[id].status = 'failed'
+        throw new Error(
+          `${id} trigger apply failed; inspect script schedules and routes before retrying`,
+        )
+      }
+      const declared = readDeclaredScriptTriggers(appDir)
+      receipt.components[id].triggers = {
+        crons: declared.triggers.crons,
+        routes: declared.triggers.routes?.map(routePattern),
+      }
+      log(
+        `[deploy:dev]   ${id} script triggers from ${declared.source}: crons=${JSON.stringify(declared.triggers.crons ?? '(unchanged)')} routes=${JSON.stringify(receipt.components[id].triggers.routes ?? '(unchanged)')}`,
+      )
       const actual = await provider.inspect()
       receipt.components[id].servingVersionId = actual.versionId
       record.expectedServing[id] = actual.versionId
