@@ -58,6 +58,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
       sitemap: cloneConfig(nuxt.options.sitemap),
     })
   })
+  const loggerWarn = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
@@ -74,7 +75,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     extendPages,
     extendRouteRules,
     installModule,
-    useLogger: () => ({ warn: vi.fn() }),
+    useLogger: () => ({ warn: loggerWarn }),
   }))
 
   const mod = (await import('../src/module')).default as unknown as {
@@ -104,6 +105,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     extendRouteRules,
     installSnapshots,
     installModule,
+    loggerWarn,
     nuxt,
   }
 }
@@ -206,7 +208,7 @@ describe('narduk-seo module', () => {
   it('skips nuxt-og-image when the optional peer is not installed (narduk-libs#170)', async () => {
     nuxtOgImagePackage.resolvable = false
 
-    const { addImports, installModule, nuxt } = await setupModule()
+    const { addImports, installModule, loggerWarn, nuxt } = await setupModule()
 
     expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
     expect(nuxt.options.ogImage).toMatchObject({ enabled: false })
@@ -220,6 +222,22 @@ describe('narduk-seo module', () => {
       (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
         ?.nardukSeoOgImageModule,
     ).toBe(false)
+    // Generated / static-card apps never set `ogImage.enabled`. The defu
+    // default of `true` must not warn -- packed-consumer-smoke treats Nuxt
+    // `[warn]` as a typecheck failure.
+    expect(loggerWarn).not.toHaveBeenCalled()
+  })
+
+  it('warns only when runtime OG is explicitly requested without the peer (narduk-libs#170)', async () => {
+    nuxtOgImagePackage.resolvable = false
+
+    const { loggerWarn } = await setupModule({
+      nuxtOptions: { ogImage: { enabled: true } },
+    })
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringMatching(/optional nuxt-og-image@6\.8\.0 peer/u),
+    )
   })
 
   it("adds the network row through narduk-core's footer, not a copy of it (narduk-libs#743)", async () => {

@@ -19,6 +19,19 @@ export function isRuntimeOgImageGenerationEnabled(ogImage: {
   return ogImage.enabled !== false && ogImage.zeroRuntime !== true
 }
 
+/**
+ * True only when the app set `ogImage.enabled: true` itself. Our module
+ * defaults `enabled: true` after `defu`, which must not count as a request
+ * -- the generated static-card app never sets this and must not warn
+ * (narduk-libs#170).
+ */
+export function isRuntimeOgImageGenerationExplicitlyRequested(ogImage: {
+  enabled?: boolean
+  zeroRuntime?: boolean
+}): boolean {
+  return ogImage.enabled === true && ogImage.zeroRuntime !== true
+}
+
 /** `zeroRuntime` still needs the module: it only turns off the request-time renderer. */
 export function isNuxtOgImageModuleRequested(ogImage: { enabled?: boolean }): boolean {
   return ogImage.enabled !== false

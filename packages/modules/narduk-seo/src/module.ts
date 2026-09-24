@@ -23,6 +23,7 @@ import {
   canResolveNuxtOgImage,
   isNuxtOgImageModuleRequested,
   isRuntimeOgImageGenerationEnabled,
+  isRuntimeOgImageGenerationExplicitlyRequested,
   MISSING_NUXT_OG_IMAGE_MESSAGE,
 } from '../shared/nuxtOgImagePackage'
 import {
@@ -330,20 +331,26 @@ function applyOgImageSigningSecret(ogImage: ResolvedOgImageOptions): string {
   return secret
 }
 
-function resolveOgImageModuleState(
-  seoModule: boolean,
-  ogImage: ResolvedOgImageOptions,
-  packagePresent: boolean,
-): { moduleAvailable: boolean; runtimeAvailable: boolean } {
-  const moduleRequested = seoModule && isNuxtOgImageModuleRequested(ogImage)
-  const runtimeRequested = seoModule && isRuntimeOgImageGenerationEnabled(ogImage)
-  if (moduleRequested && !packagePresent) {
-    ogImage.enabled = false
-    useLogger(PACKAGE_NAME).warn(MISSING_NUXT_OG_IMAGE_MESSAGE)
+function resolveOgImageModuleState(input: {
+  incomingOgImage: ResolvedOgImageOptions
+  ogImage: ResolvedOgImageOptions
+  packagePresent: boolean
+  seoModule: boolean
+}): { moduleAvailable: boolean; runtimeAvailable: boolean } {
+  const moduleRequested = input.seoModule && isNuxtOgImageModuleRequested(input.ogImage)
+  const runtimeRequested = input.seoModule && isRuntimeOgImageGenerationEnabled(input.ogImage)
+  if (moduleRequested && !input.packagePresent) {
+    input.ogImage.enabled = false
+    // The generated static-card app never sets `ogImage.enabled`. Our defu
+    // default of `true` must not warn -- release-packages treats Nuxt
+    // `[warn]` as a typecheck failure (narduk-libs#170).
+    if (isRuntimeOgImageGenerationExplicitlyRequested(input.incomingOgImage)) {
+      useLogger(PACKAGE_NAME).warn(MISSING_NUXT_OG_IMAGE_MESSAGE)
+    }
   }
   return {
-    moduleAvailable: moduleRequested && packagePresent,
-    runtimeAvailable: runtimeRequested && packagePresent,
+    moduleAvailable: moduleRequested && input.packagePresent,
+    runtimeAvailable: runtimeRequested && input.packagePresent,
   }
 }
 
@@ -457,6 +464,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       automaticTwitterTags: false,
     })
     const ogImageSecret = readTrimmedEnv(['NUXT_OG_IMAGE_SECRET'])
+    const incomingOgImage = {
+      ...((nuxtOptions.ogImage ?? {}) as ResolvedOgImageOptions),
+    }
     nuxtOptions.ogImage = defu((nuxtOptions.ogImage ?? {}) as Record<string, unknown>, {
       enabled: true,
       // narduk-libs#349: without this, every `defineOgImage` route also emits
@@ -491,11 +501,12 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     // omits it (static defaultOgImage only) must not inherit the package.
     // Skip installModule instead of failing the build.
     const { moduleAvailable: ogImageModuleAvailable, runtimeAvailable: runtimeOgAvailable } =
-      resolveOgImageModuleState(
-        Boolean(options.seoModule),
-        resolvedOgImage,
-        canResolveNuxtOgImage(),
-      )
+      resolveOgImageModuleState({
+        incomingOgImage,
+        ogImage: resolvedOgImage,
+        packagePresent: canResolveNuxtOgImage(),
+        seoModule: Boolean(options.seoModule),
+      })
     const publicRuntimeConfig = nuxtOptions.runtimeConfig.public as Record<string, unknown>
     publicRuntimeConfig.nardukSeoOgImageModule = ogImageModuleAvailable
     assertOgImageSigningSecretForBuild({

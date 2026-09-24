@@ -4,6 +4,7 @@ import {
   canResolveNuxtOgImage,
   isNuxtOgImageModuleRequested,
   isRuntimeOgImageGenerationEnabled,
+  isRuntimeOgImageGenerationExplicitlyRequested,
   MISSING_NUXT_OG_IMAGE_MESSAGE,
   NUXT_OG_IMAGE_PACKAGE,
 } from '../shared/nuxtOgImagePackage'
@@ -14,6 +15,15 @@ describe('nuxt-og-image optional peer (narduk-libs#170)', () => {
     expect(isRuntimeOgImageGenerationEnabled({ enabled: true })).toBe(true)
     expect(isRuntimeOgImageGenerationEnabled({ enabled: false })).toBe(false)
     expect(isRuntimeOgImageGenerationEnabled({ zeroRuntime: true })).toBe(false)
+  })
+
+  it('treats only an explicit enabled: true as a runtime OG request', () => {
+    expect(isRuntimeOgImageGenerationExplicitlyRequested({})).toBe(false)
+    expect(isRuntimeOgImageGenerationExplicitlyRequested({ enabled: true })).toBe(true)
+    expect(isRuntimeOgImageGenerationExplicitlyRequested({ enabled: false })).toBe(false)
+    expect(
+      isRuntimeOgImageGenerationExplicitlyRequested({ enabled: true, zeroRuntime: true }),
+    ).toBe(false)
   })
 
   it('still requests the module for zeroRuntime build-time cards', () => {
